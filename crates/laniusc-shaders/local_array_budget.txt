@@ -17,9 +17,6 @@
 512 type_checker/interface/type_topology/05_mark_reverse
 396 type_checker/trait_solver/entries/41_normalize_original
 396 type_checker/trait_solver/entries/42_normalize_prerequisite
-384 type_checker/trait_solver/entries/55_commit_substitutions
-356 type_checker/trait_solver/entries/45_commit_normalized_terms
-256 tests/proof_span_coverage_probe
 256 type_checker/modules/10e0l_normalize_type_aliases
 88 type_checker/predicates/01f2_validate_imported_methods
 48 type_checker/dependencies/07_project_calls

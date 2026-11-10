@@ -7,12 +7,27 @@ use laniusc_compiler::{
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    // Pick a small sample; allow overriding with CLI arg.
-    let args: Vec<String> = std::env::args().collect();
-    let input = if args.len() > 1 {
-        std::fs::read_to_string(&args[1])?
-    } else {
-        String::from("fn main() { let x = 1 + 2; return x; }")
+    // Usage: parse_demo [--tokens] [--resident] [--full] [PATH]
+    // `--tokens` prints every token, `--resident` parses the lexer's resident
+    // token buffers, and `--full` prints every tree node. Without PATH a
+    // small sample is parsed.
+    let mut print_tokens = false;
+    let mut resident = false;
+    let mut full = false;
+    let mut path = None;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--tokens" => print_tokens = true,
+            "--resident" => resident = true,
+            "--full" => full = true,
+            flag if flag.starts_with("--") => anyhow::bail!("unknown flag {flag}"),
+            _ if path.is_none() => path = Some(arg),
+            _ => anyhow::bail!("parse_demo takes at most one input path"),
+        }
+    }
+    let input = match path {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => String::from("fn main() { let x = 1 + 2; return x; }"),
     };
 
     // 1) GPU lex
@@ -21,15 +36,13 @@ async fn main() -> Result<()> {
 
     // Build token_kinds (post-retag) from tokens_out; append a sentinel 0.
     if tokens.is_empty() {
-        eprintln!(
-            "[parse_demo] got 0 tokens. Ensure LANIUS_READBACK=1 (default) and input has tokens."
-        );
+        eprintln!("[parse_demo] got 0 tokens. Ensure the input has tokens.");
     }
     let mut token_kinds_u32: Vec<u32> = Vec::with_capacity(tokens.len() + 1);
     for t in &tokens {
         token_kinds_u32.push(t.kind as u32);
     }
-    if std::env::var_os("LANIUS_PARSE_DEMO_TOKENS").is_some() {
+    if print_tokens {
         for (i, t) in tokens.iter().enumerate() {
             println!(
                 "token[{i}] kind={} start={} len={} text={:?}",
@@ -52,7 +65,7 @@ async fn main() -> Result<()> {
 
     // 3) GPU parser (pairs → headers → pack → brackets → tree)
     let parser = GpuParser::new().await?;
-    if std::env::var_os("LANIUS_PARSE_DEMO_RESIDENT").is_some() {
+    if resident {
         let parsed = lexer
             .with_resident_tokens(&input, |_, _, bufs| {
                 parser.parse_resident_tokens(bufs.n, &bufs.tokens_out, &bufs.token_count, &tables)
@@ -74,7 +87,7 @@ async fn main() -> Result<()> {
                 parsed.node_kind[i], parsed.parent[i]
             );
         }
-        if std::env::var_os("LANIUS_PARSE_DEMO_FULL").is_some() {
+        if full {
             for (i, &kind) in parsed.node_kind.iter().enumerate() {
                 let hir = parsed.hir_kind.get(i).copied().unwrap_or(u32::MAX);
                 let pos = parsed.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);
@@ -272,7 +285,7 @@ async fn main() -> Result<()> {
             res.node_kind[i], res.parent[i]
         );
     }
-    if std::env::var_os("LANIUS_PARSE_DEMO_FULL").is_some() {
+    if full {
         for (i, &kind) in res.node_kind.iter().enumerate() {
             let hir = res.hir_kind.get(i).copied().unwrap_or(u32::MAX);
             let pos = res.hir_token_pos.get(i).copied().unwrap_or(u32::MAX);

@@ -32,9 +32,6 @@ impl CheckedConstantValue {
     pub(crate) const fn scalar(self) -> u32 {
         self.scalar
     }
-    pub(crate) const fn bits(self) -> [u32; 2] {
-        self.bits
-    }
     pub(crate) const fn words(self) -> [u32; 3] {
         [self.scalar, self.bits[0], self.bits[1]]
     }

@@ -11,8 +11,8 @@ indexing, division, literals and match inside expressions), printed as
 Lanius, C programs to a file. laniusc
 parses each file on the GPU, under target/claude-work/bin/heavy; its parse
 tree (the node_kind and parent arrays) is captured right after the kernel
-that builds it (LANIUS_DEBUG_CAPTURE_PASS=parser/tree/parent_parallel), and
-its lexer tokens are dumped (LANIUS_DEBUG_DUMP_BUFFERS=token_words).
+that builds it (LANIUS_CAPTURE=parser/tree/parent_parallel), and
+its lexer tokens are dumped (LANIUS_DUMP=token_words).
 
 Then, under `lake env lean`, `sourceProgram` (the Lean lexer, then the
 extracted validator and builder) reads each file with laniusc's tree, and the
@@ -985,12 +985,8 @@ def capture_env(cap, dump):
     """laniusc's environment for capturing the parse tree into cap and dumping
     the tokens into dump."""
     return dict(os.environ,
-                LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel',
-                LANIUS_DEBUG_CAPTURE_DIR=cap,
-                LANIUS_DEBUG_CAPTURE_PER_JOB='1',
-                LANIUS_DEBUG_DUMP_BUFFERS='token_words,token_count',
-                LANIUS_DEBUG_DUMP_WORDS='4000000',
-                LANIUS_DEBUG_DUMP_DIR=dump)
+                LANIUS_CAPTURE=f'parser/tree/parent_parallel,dir={cap},per-job',
+                LANIUS_DUMP=f'token_words,token_count,words=4000000,dir={dump}')
 
 
 def clear_capture(cap, dump):
@@ -1098,7 +1094,7 @@ def serve_parses(laniusc, server):
     and each one's [prods, parents, tokens] (null when laniusc gives none).
     Each file is compiled as a distinct copy (the daemon caches by path), the
     capture directory and the dumps cleared before each job, and
-    LANIUS_DEBUG_CAPTURE_PER_JOB makes the daemon capture each job's first
+    LANIUS_CAPTURE's `per-job` word makes the daemon capture each job's first
     parse. A daemon that captures nothing for a file (it happens after some
     dozens of jobs, when its resident buffers grow) is replaced by a new one
     and the file tried again."""

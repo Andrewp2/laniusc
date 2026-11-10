@@ -94,7 +94,7 @@ fi
 if [ "$lane" = gpu ] && [ -z "$LCC_FALLBACK" ] && [ -z "$quiet" ] && [[ "${1:-}" == *laniusc ]] \
    && [ "$(realpath -m -- "$1" 2>/dev/null)" = /home/andrew-peterson/code/laniusc/target/release/laniusc ] \
    && [[ "${2:-}" != daemon && "${2:-}" != check && "${2:-}" != fmt && "${2:-}" != lsp && "${2:-}" != diagnostics && "${2:-}" != doctor && "${2:-}" != package ]] \
-   && ! env | grep -q "^LANIUS_DEBUG_"; then
+   && ! env | grep -qE "^LANIUS_(CAPTURE|DUMP|TRACE|REPORT|CHECK|EXPERIMENT|OPERATION_LIMIT|PERFETTO_TRACE)="; then
   exec "$here/lcc" "${@:2}"
 fi
 if [ "$lane" = build ]; then

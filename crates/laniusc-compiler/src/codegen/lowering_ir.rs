@@ -642,8 +642,6 @@ pub(crate) const LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION: u32 = 43;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_TOKEN: u32 = 1;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE: u32 = 3;
-// Packed dense SSA value definition; high bytes identify the use category.
-pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_VALUE_SOURCE: u32 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]

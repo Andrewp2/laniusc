@@ -2,7 +2,7 @@ use super::*;
 
 /// Emits a WASM compile trace line when WASM tracing is enabled.
 pub(super) fn trace_wasm_compile(stage: &str) {
-    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+    if crate::options::get().trace.wasm {
         eprintln!("[laniusc][wasm] {stage}");
     }
 }
@@ -336,7 +336,7 @@ pub(super) fn stage_execution_failed_for_source(
     source: &str,
     err: impl std::fmt::Display,
 ) -> CompileError {
-    if std::env::var_os("LANIUS_DEBUG_STAGE_EXECUTION").is_some() {
+    if crate::options::get().trace.stage_errors {
         eprintln!("[laniusc][stage-execution] {err}");
     }
     let (start, len) = first_nonempty_source_span(source);
@@ -359,7 +359,7 @@ pub(super) fn stage_execution_failed_for_source_pack(
     diagnostic_files: &[DiagnosticSourceFile],
     err: impl std::fmt::Display,
 ) -> CompileError {
-    if std::env::var_os("LANIUS_DEBUG_STAGE_EXECUTION").is_some() {
+    if crate::options::get().trace.stage_errors {
         eprintln!("[laniusc][stage-execution] {err}");
     }
     let diagnostic = Diagnostic::error(failure.code, failure.message)

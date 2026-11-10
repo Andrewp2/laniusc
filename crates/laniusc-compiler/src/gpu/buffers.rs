@@ -106,7 +106,7 @@ pub(crate) fn with_uniform_buffer_arena<T>(
             .take()
             .expect("uniform-buffer arena disappeared")
     });
-    if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+    if crate::options::get().report.buffers {
         eprintln!(
             "gpu_uniform_arena label=\"{}\" logical_bindings={} physical_buffers={} reserved_bytes={} used_bytes={}",
             arena.label,
@@ -428,6 +428,9 @@ pub struct TrackedBufferLabelStats {
     pub allocations: u64,
     pub bytes: u64,
 }
+
+/// How many label rows a buffer breakdown report lists.
+pub const BUFFER_BREAKDOWN_ROWS: usize = 64;
 
 pub fn tracked_buffer_allocation_stats_by_label() -> Vec<TrackedBufferLabelStats> {
     let labels = LIVE_BUFFER_BYTES_BY_LABEL
@@ -938,11 +941,8 @@ impl<T> Deref for LaniusBuffer<T> {
 /// Adds `COPY_SRC` while a debug dump or dispatch capture is requested, so
 /// bindings can be copied out; mappable staging buffers are left unchanged.
 pub(crate) fn with_debug_copy(usage: wgpu::BufferUsages) -> wgpu::BufferUsages {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let enabled = *ENABLED.get_or_init(|| {
-        std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_some()
-            || std::env::var_os("LANIUS_DEBUG_DUMP_BUFFERS").is_some()
-    });
+    let options = crate::options::get();
+    let enabled = options.capture.is_some() || options.dump.is_some();
     if enabled && !usage.intersects(wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::MAP_WRITE) {
         usage | wgpu::BufferUsages::COPY_SRC
     } else {

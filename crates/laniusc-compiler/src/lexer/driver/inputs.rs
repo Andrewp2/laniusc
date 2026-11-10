@@ -20,9 +20,7 @@ fn capacity_bucket(value: u32, granularity: u32) -> u32 {
 /// Reports a lexer buffer replacement, which also replaces the identities the
 /// resident type-check workspace is bound to.
 fn trace_lexer_resize(old_bytes: u32, new_bytes: u32, old_files: u32, new_files: u32) {
-    if crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false)
-        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
-    {
+    if crate::options::get().report.host_timing {
         eprintln!(
             "[gpu_compile_host_timer] lexer.resident_cache: allocate=true bytes={old_bytes}->{new_bytes} files={old_files}->{new_files}"
         );

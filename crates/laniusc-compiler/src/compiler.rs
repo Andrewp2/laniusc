@@ -186,7 +186,7 @@ impl CompileError {
     /// This is the non-consuming form used by `Display` and other reporting
     /// paths that must not leak legacy phase-specific strings.
     pub fn to_public_diagnostic(&self) -> Diagnostic {
-        if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+        if crate::options::get().trace.stage_errors {
             match self {
                 CompileError::GpuFrontend(detail)
                 | CompileError::GpuSyntax(detail)

@@ -26,7 +26,7 @@ impl GpuTypeChecker {
         let token_capacity = allocation.token_capacity;
         let hir_node_capacity = allocation.hir_node_capacity;
         let allocation_timing =
-            crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+            crate::options::get().report.host_timing;
         let allocation_start = std::time::Instant::now();
         let mut allocation_last = allocation_start;
         macro_rules! allocation_stamp {

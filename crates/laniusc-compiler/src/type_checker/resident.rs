@@ -13,7 +13,7 @@ impl TypeCheckRecordHostTimer {
         let now = std::time::Instant::now();
         let compute_passes = recorded_compute_pass_count();
         Self {
-            enabled: crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false),
+            enabled: crate::options::get().report.host_timing,
             start: now,
             last: now,
             baseline_compute_passes: compute_passes,
@@ -54,15 +54,8 @@ static CALL_INFERENCE_ROUNDS: std::sync::LazyLock<
 
 /// How many rounds the next inference batch records: the rounds the last
 /// converged inference of this workspace shape needed (the round that
-/// changed nothing included), two for a new shape, or
-/// `LANIUS_CALL_INFERENCE_BATCH`.
+/// changed nothing included), or two for a new shape.
 fn call_inference_batch(key: (u32, u32)) -> u32 {
-    if let Some(forced) = std::env::var("LANIUS_CALL_INFERENCE_BATCH")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-    {
-        return forced.clamp(1, CALL_INFERENCE_MAX_BATCH);
-    }
     CALL_INFERENCE_ROUNDS
         .lock()
         .expect("call inference round memory poisoned")
@@ -129,117 +122,6 @@ impl CallInferenceRepeats {
     }
 }
 
-// Opt-in source fact dump only: no inference, normalization, or semantic writes.
-fn trace_range_inference(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    state: &ResidentTypeCheckWorkspace,
-    hir: &crate::parser::buffers::GpuHirView,
-) -> Result<()> {
-    let graph = &state.typecheck_graph;
-    let mut columns = vec![
-        ("count", hir.count.alias::<u32>(hir.count.byte_size / 4)),
-        ("core", hir.core.alias::<u32>(hir.core.byte_size / 4)),
-        ("payload", hir.payload.alias::<u32>(hir.payload.byte_size / 4)),
-        ("expr_parent", hir.expr_parent.alias::<u32>(hir.expr_parent.byte_size / 4)),
-    ];
-    for name in ["call_inference_result_tag", "call_inference_result_payload",
-        "literal_context_type_by_hir", "decl_type_ref_tag", "decl_type_ref_payload",
-        "call_fn_index", "call_return_type", "visible_decl", "visible_type",
-        "argument_expected_ref_tag", "argument_expected_ref_payload",
-        "call_arg_row_count_out", "call_arg_row_node", "call_arg_row_call_node",
-        "call_arg_row_ordinal", "call_arg_param_row", "call_param_row_ref_tag",
-        "call_param_row_ref_payload", "call_dependency_library_id"] {
-        columns.push((name, graph.u32_buffer(name)?));
-    }
-    let words = columns.iter().try_fold(0usize, |total, (_, buffer)| {
-        total.checked_add(buffer.byte_size / 4)
-            .ok_or_else(|| anyhow::anyhow!("range inference trace size overflow"))
-    })?;
-    let readback = readback_u32s(device, "rb.type_check.range_inference", words);
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("type-check-range-inference-trace"),
-    });
-    let mut offsets = Vec::new();
-    let mut offset = 0usize;
-    for (_, source) in &columns {
-        offsets.push(offset);
-        source.copy_to(&mut encoder, 0, &readback, (offset * 4) as u64, source.byte_size as u64);
-        offset += source.byte_size / 4;
-    }
-    crate::gpu::passes_core::submit_with_progress(queue, "range inference trace", encoder.finish());
-    let slice = readback.slice(..);
-    crate::gpu::passes_core::map_readback_blocking(device, &slice, "type_check.range_inference")?;
-    let mapped = slice.get_mapped_range();
-    let data = mapped.chunks_exact(4).map(|bytes|
-        u32::from_le_bytes(bytes.try_into().expect("four-byte trace word"))).collect::<Vec<_>>();
-    drop(mapped);
-    readback.unmap();
-    let get = |column: usize, row: u32| -> u32 {
-        let row = row as usize;
-        if row >= columns[column].1.byte_size / 4 { return u32::MAX; }
-        data[offsets[column] + row]
-    };
-    let count = get(0, 0).min(hir.capacity);
-    let dump = |label: &str, node: u32| {
-        if node >= count {
-            eprintln!("[typecheck.range_inference] {label} node={node} invalid");
-            return;
-        }
-        let core = [get(1,node*4),get(1,node*4+1),get(1,node*4+2),get(1,node*4+3)];
-        let value = [get(2,node*4),get(2,node*4+1),get(2,node*4+2),get(2,node*4+3)];
-        eprintln!("[typecheck.range_inference] {label} node={node} core={core:?} payload={value:?} expr_parent={} result=({}, {}) literal_context={} expected=({}, {})",
-            get(3,node),get(4,node),get(5,node),get(6,node),get(13,node),get(14,node));
-    };
-    let dump_forward_chain = |label: &str, mut node: u32| {
-        for _ in 0..count {
-            dump(label,node);
-            if node >= count { break; }
-            let kind=get(1,node*4); let form=get(2,node*4);
-            if !matches!(kind,14|16|17) || form != 1 { break; }
-            let next=get(2,node*4+1); if next == node { break; } node=next;
-        }
-        node
-    };
-    eprintln!("[typecheck.range_inference] converged hir_count={count}");
-    for node in 0..count {
-        let kind=get(1,node*4); let form=get(2,node*4);
-        if kind == 30 || (kind == 7 && form == 7) {
-            dump("for",node);
-            let binder=get(2,node*4+1);
-            eprintln!("[typecheck.range_inference] binder token={binder} ref=({}, {}) visible=({}, {})",
-                get(7,binder),get(8,binder),get(11,binder),get(12,binder));
-            let iterable=dump_forward_chain("iterable",get(2,node*4+2));
-            if iterable < count && matches!(get(1,iterable*4),14|16) &&
-                (30..=35).contains(&get(2,iterable*4)) {
-                dump_forward_chain("start",get(2,iterable*4+1));
-                dump_forward_chain("end",get(2,iterable*4+2));
-            }
-        }
-        // All calls are printed so a missing range edge cannot hide its actual
-        // endpoint call. Raw HIR/token identities permit exact source pairing.
-        if kind == 19 {
-            dump("call",node);
-            let callee=get(2,node*4); dump("callee",callee);
-            if callee < count {
-                let kind=get(1,callee*4);
-                let token=if kind==21 {get(2,callee*4+2)} else {get(2,callee*4+3)};
-                let token=if token < state.cache_key.token_capacity {token} else {get(1,callee*4+2)};
-                eprintln!("[typecheck.range_inference] callee_token={token} fn={} return={} visible=({}, {}) dependency={}",
-                    get(9,token),get(10,token),get(11,token),get(12,token),get(22,token));
-            }
-        }
-    }
-    let argument_count = get(15, 0).min(hir.capacity);
-    for row in 0..argument_count {
-        let node = get(16,row); let call = get(17,row); let parameter = get(19,row);
-        eprintln!("[typecheck.range_inference] argument row={row} call={call} ordinal={} parameter={parameter} parameter_ref=({}, {})",
-            get(18,row),get(20,parameter),get(21,parameter));
-        dump_forward_chain("argument",node);
-    }
-    Ok(())
-}
-
 /// Submits the recorded work and reads a small host-visible buffer.
 fn submit_and_read_u32s(
     device: &wgpu::Device,
@@ -288,13 +170,10 @@ fn submit_recorded(
 }
 
 /// Whether this job's canonical stages read their counters after every batch.
-/// Tracing and validation read them, and `LANIUS_CANONICAL_SYNCHRONOUS=1`
-/// selects it for every job (an A/B of the deferred recording in one
-/// binary); otherwise only a re-record does.
+/// Tracing and validation read them; otherwise only a re-record does.
 fn canonical_stages_synchronous(requested: bool) -> bool {
     requested
-        || crate::gpu::env::env_bool_truthy("LANIUS_CANONICAL_SYNCHRONOUS", false)
-        || crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false)
+        || crate::options::get().trace.canonical
         || canonical_passes::canonical_validation_enabled()
 }
 
@@ -327,7 +206,7 @@ fn record_canonical_types(
         submit_recorded(device, queue, encoder, "type_check.canonical");
         return Ok(());
     }
-    let trace = crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false);
+    let trace = crate::options::get().trace.canonical;
     let batches = canonical_passes::CANONICAL_MAX_ROUNDS / canonical_passes::CANONICAL_ROUNDS_PER_BATCH;
     for batch in 0..batches {
         let batch_started = std::time::Instant::now();
@@ -744,10 +623,7 @@ impl GpuTypeChecker {
             .map(|previous| previous.grow_to_cover(cache_key))
             .unwrap_or_else(|| cache_key.first_allocation())
             .bucketed();
-        let resident_cache_trace =
-            crate::gpu::env::env_bool_truthy("LANIUS_TYPECHECK_RESIDENT_CACHE_TRACE", false);
-        if (crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
-            || resident_cache_trace)
+        if crate::options::get().report.host_timing
             && needs_rebuild
             && let Some(previous) = resident_workspace_guard.as_ref()
         {
@@ -769,34 +645,6 @@ impl GpuTypeChecker {
                 cache_key.parser_feature_flags,
                 previous.cache_key.semantic_interface_required,
                 cache_key.semantic_interface_required,
-            );
-        }
-        if resident_cache_trace {
-            eprintln!(
-                "[typecheck.resident_cache] rebuild={needs_rebuild} source={} files={} tokens={} hir={} modules={} call_params={} call_args={} features={:#010x} semantic_interface={} fingerprint={:#018x} input_fingerprint={:#018x} hir_fingerprint={:#018x} upstream_workspace_fingerprint={:#018x} dependency_fingerprint={:#018x} allocation_source={} allocation_files={} allocation_tokens={} allocation_hir={} allocation_modules={} allocation_call_params={} allocation_call_args={} allocation_features={:#010x} allocation_semantic_interface={}",
-                cache_key.source_byte_capacity,
-                cache_key.source_file_capacity,
-                cache_key.token_capacity,
-                cache_key.hir_node_capacity,
-                cache_key.module_record_capacity,
-                cache_key.call_param_row_capacity,
-                cache_key.call_arg_row_capacity,
-                cache_key.parser_feature_flags,
-                cache_key.semantic_interface_required,
-                cache_key.input_fingerprint,
-                buffer_fingerprint(&input_buffers),
-                buffer_fingerprint(&hir_buffers),
-                buffer_fingerprint(&upstream_workspace_buffers),
-                buffer_fingerprint(&dependency_buffers),
-                allocation.source_byte_capacity,
-                allocation.source_file_capacity,
-                allocation.token_capacity,
-                allocation.hir_node_capacity,
-                allocation.module_record_capacity,
-                allocation.call_param_row_capacity,
-                allocation.call_arg_row_capacity,
-                allocation.parser_feature_flags,
-                allocation.semantic_interface_required,
             );
         }
         if needs_rebuild {
@@ -985,9 +833,7 @@ impl GpuTypeChecker {
         // generic syntax of its own, still roots their library chains. Its
         // unit facts read the closure back.
         let closure_allowed = hir_items.semantic_interface_required
-            && hir_items.body_specialization.is_none()
-            // LANIUS_INSTANCE_CLOSURE=0 (A/B runs) leaves the closure out.
-            && crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true);
+            && hir_items.body_specialization.is_none();
         let canonical_synchronous = canonical_stages_synchronous(
             self.canonical_synchronous
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -1013,25 +859,6 @@ impl GpuTypeChecker {
             None => {
                 let header = [0u8; closure_summary::SUMMARY_HEADER_WORDS * 4];
                 self.closure_summary_inputs.write(queue, 0, &header);
-            }
-        }
-        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
-            eprintln!(
-                "[instance-closure] gate closure={instance_closure} interface={} specialization={} \
-                 type_args={} dependency_pages={} summaries={} import_rounds={closure_import_rounds}",
-                hir_items.semantic_interface_required,
-                hir_items.body_specialization.is_some(),
-                generic_call_claim_passes_required(parser_feature_flags),
-                dependency_pages.is_some(),
-                closure_summaries.is_some(),
-            );
-        }
-        if let Some(pages) = dependency_pages.filter(|pages| pages.interfaces_without_summary() != 0) {
-            if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
-                eprintln!(
-                    "[instance-closure] dependency without summary: {} interfaces",
-                    pages.interfaces_without_summary()
-                );
             }
         }
         {
@@ -2102,7 +1929,7 @@ impl GpuTypeChecker {
                     .saturating_mul(compiler_graph::CALL_INFERENCE_CHANGES_PER_SLOT);
                 let mut total_changed = 0u64;
                 let trace_inference =
-                    crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CALL_INFERENCE", false);
+                    crate::options::get().trace.call_inference;
                 let mut repeats = CallInferenceRepeats::new();
                 let mut repeat_warned = false;
                 let mut first_error_round = None;
@@ -2203,9 +2030,6 @@ impl GpuTypeChecker {
                         }
                         if changed == 0 {
                             converged_rounds = Some(round + 1);
-                            if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_RANGE_INFERENCE", false) {
-                                trace_range_inference(device, queue, bind_groups, hir_items.hir)?;
-                            }
                             break 'rounds;
                         }
                         if round + 1 == round_limit {
@@ -2461,14 +2285,11 @@ impl GpuTypeChecker {
             }
             // An original job's closure selects the functions the body
             // passes bind in place (closure/inplace_read.slang).
-            let in_place =
-                instance_closure && super::instance_closure_passes::inplace_instances_enabled();
+            let in_place = instance_closure;
             if instance_closure {
                 let closure = &bind_groups.semantic_projection.instance_closure;
                 closure.record(encoder, closure_import_rounds)?;
-                if in_place {
-                    closure.record_inplace_select(encoder)?;
-                }
+                closure.record_inplace_select(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.instance_closure.done");
                 }
@@ -2637,7 +2458,8 @@ impl GpuTypeChecker {
             }
             if instance_closure && instance_closure_passes::instance_table_enabled() {
                 // D2: the closure's instances' rows, from the final
-                // expression references (behind LANIUS_INSTANCE_TABLE).
+                // expression references (behind
+                // `LANIUS_EXPERIMENT=instance-table`).
                 bind_groups.semantic_projection.instance_table.record(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.instance_table.done");
@@ -2677,7 +2499,7 @@ impl GpuTypeChecker {
             batch_pending: counts[canonical_passes::CANONICAL_COUNT_BATCH_PENDING] != 0,
             overflow: counts[canonical_passes::CANONICAL_COUNT_OVERFLOW],
         };
-        if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL_RETRY", false) {
+        if crate::options::get().trace.canonical {
             eprintln!("[typecheck.canonical] {retry}; recording the job again");
         }
         self.canonical_synchronous

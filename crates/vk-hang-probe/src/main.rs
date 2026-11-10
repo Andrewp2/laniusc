@@ -7,7 +7,7 @@
 //! With `--no-dispatch` only the pipeline is created and its executable
 //! properties dumped; CAPTURE_DIR may then be `-` (every binding zero-filled).
 //!
-//! CAPTURE_DIR is a `LANIUS_DEBUG_CAPTURE_DIR` capture (manifest.json plus one
+//! CAPTURE_DIR is a `LANIUS_CAPTURE` capture directory (manifest.json plus one
 //! .bin per binding). Every buffer lives in host-visible, host-coherent memory
 //! that stays mapped, so `--watch` buffers are printed every second while the
 //! dispatch runs, and are still readable if it never finishes. Shader bindings

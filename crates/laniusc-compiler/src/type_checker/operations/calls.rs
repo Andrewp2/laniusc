@@ -308,8 +308,6 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND: ReflectedCom
             ("call_explicit_binding_payload", AccessMode::Write),
         ])
         .with_indirect_dispatch("explicit_application_dispatch_args");
-pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND_INFERENCE: ReflectedComputeSpec =
-    CALLS_EXPLICIT_APPLICATIONS_BIND.with_name("type_check.calls.explicit_applications.bind.inference");
 pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: ReflectedComputeSpec =
     call_pass!("explicit_applications.validate", HirNodes,
         "type_checker/calls/03a8_validate_explicit_applications")

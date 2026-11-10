@@ -176,7 +176,7 @@ compiler generation:
 
 Every native executable passed the strict x86 checker, exited zero and produced
 empty stdout/stderr. The core test ran with
-`LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1`. Its repeated behavioral entry recorded
+`LANIUS_CHECK=library-instance-cache`. Its repeated behavioral entry recorded
 one actual two-body cache hit checked equal to fresh replay:
 `[library-instance-cache] check ok unit=0:0 bodies=2`.
 

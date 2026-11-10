@@ -350,11 +350,9 @@ impl LibraryInstanceCache {
     /// pending-original cache): a user's edit never changes them. The
     /// template must be a registered standard-library original of this job.
     pub(super) fn cacheable_template(&self, unit: &CompiledSourcePackUnit) -> bool {
-        library_instance_cache_enabled()
-            && self
-                .standard_templates
-                .iter()
-                .any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
+        self.standard_templates
+            .iter()
+            .any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
     }
 
     fn register_standard_template(&mut self, sources: &Arc<[String]>) {
@@ -485,15 +483,10 @@ impl LibraryInstanceCache {
     }
 }
 
-/// `LANIUS_LIBRARY_INSTANCE_CACHE=0` replays every library instance in every job.
-fn library_instance_cache_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_LIBRARY_INSTANCE_CACHE", true)
-}
-
-/// `LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1` replays every hit run anyway and
+/// `LANIUS_CHECK=library-instance-cache` replays every hit run anyway and
 /// fails the job when its outputs differ from the cached ones.
 pub(super) fn library_instance_cache_checked() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_CHECK_LIBRARY_INSTANCE_CACHE", false)
+    crate::options::get().check.library_instance_cache
 }
 
 /// A byte-bounded least-recently-used map from unit identity to a value.
@@ -506,11 +499,6 @@ pub(super) struct UnitCache<V> {
     hits: u64,
     misses: u64,
     evictions: u64,
-}
-
-pub(super) struct CachedCompiledSourcePackUnit {
-    pub value: Arc<CompiledSourcePackUnit>,
-    pub cache_hit: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -819,7 +807,7 @@ impl GpuCompiler<'_> {
         standard_library: bool,
         source_files: &[ExplicitSourcePathFile],
         dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
-    ) -> Result<CachedCompiledSourcePackUnit, super::CompileError> {
+    ) -> Result<Arc<CompiledSourcePackUnit>, super::CompileError> {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error(format!(
@@ -839,10 +827,7 @@ impl GpuCompiler<'_> {
             .as_ref()
             .and_then(|hint| self.cached_compiled_unit_by_hint(hint))
         {
-            return Ok(CachedCompiledSourcePackUnit {
-                value,
-                cache_hit: true,
-            });
+            return Ok(value);
         }
 
         let sources =
@@ -861,10 +846,7 @@ impl GpuCompiler<'_> {
             .with_source_paths(source_files)
         };
         if let Some(value) = self.cached_compiled_unit(&cache_key) {
-            return Ok(CachedCompiledSourcePackUnit {
-                value,
-                cache_hit: true,
-            });
+            return Ok(value);
         }
 
         let source_paths = source_files
@@ -883,10 +865,7 @@ impl GpuCompiler<'_> {
             .await?,
         );
         self.cache_compiled_unit(cache_hint, cache_key, Arc::clone(&value), standard_library);
-        Ok(CachedCompiledSourcePackUnit {
-            value,
-            cache_hit: false,
-        })
+        Ok(value)
     }
 
     /// Drops compiled source-unit results without releasing GPU job capacity.
@@ -1001,7 +980,7 @@ impl GpuCompiler<'_> {
     /// unit of the manifest's standard library (`standard_library`, from
     /// `ExplicitSourcePackPathManifest::standard_library_id`, never a bare
     /// library id) is retained; every other unit is compiled on every job and
-    /// counts as a miss. `LANIUS_PENDING_ORIGINAL_CACHE=0` disables reuse.
+    /// counts as a miss.
     pub(super) async fn compile_cached_pending_original_unit(
         &self,
         target: SourcePackArtifactTarget,
@@ -1014,10 +993,9 @@ impl GpuCompiler<'_> {
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error("pending native source-unit index exceeds u32")
         })?;
-        let cacheable = standard_library && pending_original_cache_enabled();
         // A retained original serves later programs, which may need its facts.
         let elide_closed_facts = elide_closed_facts && !standard_library;
-        let cache_hint = if cacheable {
+        let cache_hint = if standard_library {
             CompiledUnitCacheHintKey::new(
                 target,
                 job.library_id,
@@ -1039,7 +1017,7 @@ impl GpuCompiler<'_> {
         }
         let sources =
             read_explicit_source_path_files("pending native library-interface job", source_files)?;
-        let cache_key = match (&cache_hint, cacheable) {
+        let cache_key = match (&cache_hint, standard_library) {
             (Some(hint), _) => Some(CompiledUnitCacheKey::from_hint(hint)),
             (None, true) => Some(
                 CompiledUnitCacheKey::new(
@@ -1112,10 +1090,6 @@ impl GpuCompiler<'_> {
         }
         pending
     }
-}
-
-fn pending_original_cache_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_PENDING_ORIGINAL_CACHE", true)
 }
 
 #[cfg(test)]

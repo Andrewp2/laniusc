@@ -45,9 +45,6 @@ pub(crate) struct GpuDependencyInterfacePages {
     current_unit_id: u32,
     /// The dependencies' closure summaries (D1b), None without any.
     closure_summaries: Option<Arc<JobClosureSummaries>>,
-    /// Dependencies whose interface carries no summary (deserialized, or
-    /// checked without one): the closure has no rows for their functions.
-    interfaces_without_summary: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -502,7 +499,7 @@ impl GpuDependencyInterfacePages {
         {
             // A new allocation changes the type-check workspace's input
             // fingerprint, so the whole resident workspace is rebuilt.
-            if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+            if crate::options::get().report.host_timing {
                 eprintln!(
                     "[gpu_compile_host_timer] typecheck.dependency_interfaces.allocate: previous={:?} required={required:?} pages={}",
                     resident_state.as_ref().map(GpuDependencyInterfaceState::capacities),
@@ -551,17 +548,11 @@ impl GpuDependencyInterfacePages {
             .expect("dependency resident state allocated")
             .clone();
         let interfaces = interface_pages.iter().flat_map(|page| page.iter());
-        let interfaces_without_summary =
-            interfaces.clone().filter(|interface| interface.closure_summary.is_none()).count();
-        // LANIUS_INSTANCE_CLOSURE_DEPS=0 (A/B runs) leaves the dependency
-        // closure out.
-        let closure_summaries = crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE_DEPS", true)
-            .then(|| JobClosureSummaries::new(
-                [current_library_id, current_unit_id],
-                interfaces.filter_map(|interface| interface.closure_summary.clone()),
-            ))
-            .flatten()
-            .map(Arc::new);
+        let closure_summaries = JobClosureSummaries::new(
+            [current_library_id, current_unit_id],
+            interfaces.filter_map(|interface| interface.closure_summary.clone()),
+        )
+        .map(Arc::new);
         let pages = Self {
             state,
             pages,
@@ -569,7 +560,6 @@ impl GpuDependencyInterfacePages {
             current_library_id,
             current_unit_id,
             closure_summaries,
-            interfaces_without_summary,
         };
         pages.write(queue, 0)?;
         Ok(pages)
@@ -577,10 +567,6 @@ impl GpuDependencyInterfacePages {
 
     pub(crate) fn closure_summaries(&self) -> Option<&Arc<JobClosureSummaries>> {
         self.closure_summaries.as_ref()
-    }
-
-    pub(crate) fn interfaces_without_summary(&self) -> usize {
-        self.interfaces_without_summary
     }
 
     pub(crate) fn state(&self) -> &GpuDependencyInterfaceState {

@@ -903,7 +903,7 @@ impl CanonicalTypeOperations {
         Ok(())
     }
 
-    /// Debug validation (`LANIUS_DEBUG_VALIDATE_CANONICAL=1`).
+    /// Debug validation (`LANIUS_CHECK=canonical`).
     pub(in crate::type_checker) fn record_validation(
         &self,
         encoder: &mut wgpu::CommandEncoder,

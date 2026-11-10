@@ -146,7 +146,7 @@ fn laniusc_bin() -> PathBuf {
 fn traced_check(fixture: &str) -> (bool, String) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(fixture);
     let mut command = Command::new(laniusc_bin());
-    command.arg("check").arg(&path).env("LANIUS_TRACE_CALL_INFERENCE", "1");
+    command.arg("check").arg(&path).env("LANIUS_TRACE", "call-inference");
     let output = common::command_output_with_timeout(fixture, &mut command);
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     (output.status.success(), stderr)

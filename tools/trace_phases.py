@@ -22,7 +22,7 @@ Time under no host span is host work nobody instrumented, or the host idling on
 the GPU; the GPU-busy column (the union of gpu.frontend pass spans) tells which.
 Readbacks are grouped by phase: call inference, canonical rounds and so on.
 
---stderr reads the daemon's stderr and, with LANIUS_TRACE_CALL_INFERENCE=1, lists
+--stderr reads the daemon's stderr and, with LANIUS_TRACE=call-inference, lists
 the changed count of each call-inference round of the original compile. The
 rounds of earlier jobs in the same stderr are skipped by counting their
 `type_check.call_inference` readbacks, one per round.
@@ -256,7 +256,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("trace")
     parser.add_argument("--job", help="daemon job id (default: the last job in the trace)")
-    parser.add_argument("--stderr", help="the daemon's stderr, for LANIUS_TRACE_CALL_INFERENCE rounds")
+    parser.add_argument("--stderr", help="the daemon's stderr, for LANIUS_TRACE=call-inference rounds")
     parser.add_argument("--top", type=int, default=15)
     args = parser.parse_args()
     lanes, spans = load_trace(args.trace)

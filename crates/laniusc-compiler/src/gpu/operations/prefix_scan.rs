@@ -664,15 +664,12 @@ impl PrefixScanPairOperation {
                 "paired prefix scans must use the same storage mode in both lanes"
             ));
         }
-        let paired_scan_enabled =
-            !crate::gpu::env::env_bool_strict("LANIUS_GPU_DISABLE_PAIRED_PREFIX_SCAN", false);
         let fused_passes = if left_in_place {
             pair_in_place_passes(kernels)
         } else {
             pair_passes(kernels)
         };
         if compatible
-            && paired_scan_enabled
             && let Some(passes) = fused_passes
         {
             return Ok(Self {

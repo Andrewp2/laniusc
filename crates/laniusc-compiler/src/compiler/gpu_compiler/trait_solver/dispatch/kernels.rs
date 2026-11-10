@@ -165,43 +165,6 @@ pub(super) fn record_phase(
     )
 }
 
-/// Host time of the current check's dispatch recording (LANIUS_DEBUG_SOLVER_WAVES
-/// solve lines): parameter blocks, bind groups, pass recording, in ns, and the
-/// recorded dispatch count.
-pub(super) mod record_timing {
-    use std::cell::Cell;
-    thread_local! {
-        pub static PARAMS_NS: Cell<u64> = const { Cell::new(0) };
-        pub static BIND_NS: Cell<u64> = const { Cell::new(0) };
-        pub static PASS_NS: Cell<u64> = const { Cell::new(0) };
-        pub static WAIT_NS: Cell<u64> = const { Cell::new(0) };
-        pub static SUBMIT_NS: Cell<u64> = const { Cell::new(0) };
-        pub static DISPATCHES: Cell<u64> = const { Cell::new(0) };
-    }
-    pub fn add(counter: &'static std::thread::LocalKey<Cell<u64>>, since: std::time::Instant) {
-        let ns = since.elapsed().as_nanos() as u64;
-        counter.with(|cell| cell.set(cell.get() + ns));
-    }
-    pub fn reset() {
-        for counter in [&PARAMS_NS, &BIND_NS, &PASS_NS, &WAIT_NS, &SUBMIT_NS, &DISPATCHES] {
-            counter.with(|cell| cell.set(0));
-        }
-    }
-    /// `rec_params=…ms rec_bind=…ms rec_pass=…ms submit=…ms wait=…ms dispatches=N`.
-    pub fn summary() -> String {
-        let ms = |counter: &'static std::thread::LocalKey<Cell<u64>>| counter.with(|cell| cell.get()) as f64 / 1e6;
-        format!(
-            "rec_params={:.3}ms rec_bind={:.3}ms rec_pass={:.3}ms submit={:.3}ms wait={:.3}ms dispatches={}",
-            ms(&PARAMS_NS),
-            ms(&BIND_NS),
-            ms(&PASS_NS),
-            ms(&SUBMIT_NS),
-            ms(&WAIT_NS),
-            DISPATCHES.with(|cell| cell.get()),
-        )
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(super) struct ProofResources<'a> {
     pub storage: &'a Arena,
@@ -214,13 +177,6 @@ pub(super) struct ProofResources<'a> {
 /// declares with a dynamic offset, so one bind group serves every dispatch of
 /// a pass over the same arenas and params-ring page.
 const PARAMS_BLOCKS: [&str; 2] = ["trait_solver_params", "proof_store_params"];
-
-/// LANIUS_TRAIT_SOLVER_PARAMS_RING=0 gives every dispatch its own parameter buffers
-/// (and so its own bind group) again, for A/B timing.
-fn params_ring_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_TRAIT_SOLVER_PARAMS_RING", true))
-}
 
 /// The dynamic offsets of a pass's parameter blocks in binding order (the
 /// order WGPU applies them): `offsets[i]` belongs to `PARAMS_BLOCKS[i]`, and a
@@ -237,20 +193,9 @@ fn params_offsets(pass: &PassData, offsets: [u32; 2]) -> Vec<u32> {
     declared.into_iter().map(|(_, offset)| offset).collect()
 }
 
-/// One parameter block's buffer and dynamic offset: a params-ring record, or
-/// (LANIUS_TRAIT_SOLVER_PARAMS_RING=0) a workspace slot of its own.
-fn params_block(catalog: &Arena, label: &str, words: [u32; 8]) -> Result<(wgpu::Buffer, u32)> {
-    let workspace = catalog.workspace();
-    if params_ring_enabled() {
-        return workspace.push_params(&words);
-    }
-    let buffer = workspace.initialized(label, 8, wgpu::BufferUsages::UNIFORM, Some(&words))?;
-    owned_params_block(&buffer)
-}
-
-/// A parameter block in a buffer of its own, bound through its dynamic offset.
-fn owned_params_block(buffer: &LaniusBuffer<u32>) -> Result<(wgpu::Buffer, u32)> {
-    Ok((buffer.buffer.clone(), u32::try_from(buffer.byte_offset)?))
+/// One parameter block's buffer and dynamic offset: a params-ring record.
+fn params_block(catalog: &Arena, words: [u32; 8]) -> Result<(wgpu::Buffer, u32)> {
+    catalog.workspace().push_params(&words)
 }
 
 fn params_binding(buffer: &wgpu::Buffer) -> wgpu::BindingResource<'_> {
@@ -304,7 +249,6 @@ fn record_phase_with_resources(
     if span.count == 0 {
         return Ok(());
     }
-    let mut started = std::time::Instant::now();
     let limits = device.limits();
     ensure!(
         threads <= limits.max_compute_invocations_per_workgroup
@@ -335,17 +279,6 @@ fn record_phase_with_resources(
         }
         _ => None,
     };
-    // LANIUS_DEBUG_SOLVER_DISPATCHES=1 logs each requested span, for sizing
-    // the scratch chunk against real row counts.
-    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_SOLVER_DISPATCHES", false) {
-        eprintln!(
-            "[lanius-trait-solver] {} rows={} chunk={} scratch={}",
-            pass.shader_id,
-            span.count,
-            max_rows,
-            scratch.is_some()
-        );
-    }
     let mut done = 0u32;
     while done < span.count {
         let count = (span.count - done).min(max_rows);
@@ -362,12 +295,12 @@ fn record_phase_with_resources(
             recipes.map_or(0, |recipes| recipes.logical_words),
             layout_work.map_or(0, |work| work.logical_words),
         ];
-        let (uniform, uniform_offset) = params_block(catalog, "trait_solver.params", params)?;
+        let (uniform, uniform_offset) = params_block(catalog, params)?;
         // Some phases optimize an unused resource out. The existing reflected
         // constructor selects active names and rejects unknown required names.
         // These four resources are always distinct physical allocations.
         let proof_uniform = if let Some(proof) = proof {
-            Some(params_block(catalog, "trait_solver.proof_params", proof_params_words(proof, phase))?)
+            Some(params_block(catalog, proof_params_words(proof, phase))?)
         } else {
             None
         };
@@ -375,8 +308,6 @@ fn record_phase_with_resources(
             pass,
             [uniform_offset, proof_uniform.as_ref().map_or(0, |(_, offset)| *offset)],
         );
-        record_timing::add(&record_timing::PARAMS_NS, started);
-        started = std::time::Instant::now();
         let mut resources = vec![
             ("trait_solver_params", params_binding(&uniform)),
             (
@@ -421,12 +352,7 @@ fn record_phase_with_resources(
             0,
             &resources,
         )?;
-        record_timing::add(&record_timing::BIND_NS, started);
-        started = std::time::Instant::now();
         dispatch_pass(encoder, pass, &bindings, &offsets, Launch::Direct((count.div_ceil(threads), 1, 1)));
-        record_timing::add(&record_timing::PASS_NS, started);
-        record_timing::DISPATCHES.with(|cell| cell.set(cell.get() + 1));
-        started = std::time::Instant::now();
         done += count;
     }
     Ok(())
@@ -445,7 +371,7 @@ fn thread_scratch(catalog: &Arena) -> Result<LaniusBuffer<u32>> {
 /// The commit audits' shared words (proof_commit_audit.slang): a header, then
 /// one claim word per two words of the proof arena. The role is shared: a
 /// stage's audit lanes and committing thread are recorded together, and
-/// stale claim words can only send a commit to its serial stage.
+/// the thread retires the lanes' claim tag.
 const COMMIT_AUDIT: &str = "trait_solver_commit_audit";
 const COMMIT_AUDIT_HEADER_WORDS: u32 = 16;
 pub(super) fn commit_audit(catalog: &Arena, proof: &Arena) -> Result<LaniusBuffer<u32>> {
@@ -459,8 +385,8 @@ pub(super) fn commit_audit(catalog: &Arena, proof: &Arena) -> Result<LaniusBuffe
         None,
     )
 }
-/// Zeroes the audit header for a solver attempt, keeping its epoch word: an
-/// earlier attempt may have stopped between a stage's audit and its commit.
+/// Zeroes the audit header for a solver attempt, keeping its epoch word:
+/// claim words of earlier attempts carry tags up to that epoch.
 pub(super) fn reset_commit_audit(catalog: &Arena, proof: ProofResources<'_>) -> Result<()> {
     let audit = commit_audit(catalog, proof.storage)?;
     let zeros = [0u8; (COMMIT_AUDIT_HEADER_WORDS as usize - 1) * 4];
@@ -487,7 +413,7 @@ fn dispatch_pass(
         Launch::Direct(groups) => dispatch_capture::CaptureLaunch::Direct(groups),
         Launch::Indirect(buffer, offset) => dispatch_capture::CaptureLaunch::Indirect(buffer, offset),
     };
-    // LANIUS_DEBUG_CAPTURE_PASS support (tools/cpu_kernel_replay.py).
+    // `LANIUS_CAPTURE` support (tools/cpu_kernel_replay.py).
     let captured = dispatch_capture::debug_capture_begin(
         encoder,
         &pass.shader_id,
@@ -850,7 +776,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/trait_solver/entries/52_resolve_work",
         256,
     ),
-    // Work selection: see ProofKernels::record_selection.
+    // Work selection: see SELECTION_STEPS.
     (53, SELECT_IMPLEMENTATIONS, 256),
     (
         53,
@@ -862,8 +788,8 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         "type_checker/trait_solver/entries/53_select_work",
         256,
     ),
-    // Substitution walk (phases 54, 59 and 66): see
-    // ProofKernels::record_substitutions.
+    // Substitution walk (phases 54, 59 and 66): see SUBSTITUTION_STEPS and
+    // IMPLEMENTATION_PROOF_STEPS.
     (54, WALK_GOALS, 256),
     (54, WALK_ROOTS, 256),
     (54, WALK_BINDINGS, 256),
@@ -942,27 +868,9 @@ impl ProofKernels {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { passes })
     }
-    /// Normalization of the round's `work`; its two commits audit
-    /// `all_work`, every admitted Work.
-    pub fn record_normalization(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        work: Span,
-        all_work: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        for phase in 41..=47 {
-            let span = if matches!(phase, 45 | 47) { all_work } else { work };
-            self.record(device, encoder, phase, span, catalog, input, output, proof)?;
-        }
-        Ok(())
-    }
-    /// Records one stage over `span`. For a commit stage (COMMIT_STAGES)
-    /// `span` is its lanes' rows, and each of its threads runs once.
+    /// Records one stage outside the solver rounds over `span`: store
+    /// initialization (40), Work initialization (48) or the final
+    /// classification (64). The rounds' stages record through wave templates.
     pub fn record(
         &self,
         device: &wgpu::Device,
@@ -974,185 +882,11 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<()> {
-        ensure!(
-            !matches!(phase, SELECTION_PHASE | SUBSTITUTION_PHASE | IMPLEMENTATION_PROOF_PHASE
-                | WAVE_PLAN_PHASE | COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
-            "proof stage {phase} records through its own recorder"
-        );
-        if let Some(keys) = commit_stage(phase) {
-            for key in keys {
-                let index = proof_key_index(key)?;
-                let span = if PROOF_KEYS[index].2 == 1 { Span::new(0, 1)? } else { span };
-                self.record_index(device, encoder, index, span, catalog, input, output, proof)?;
-            }
-            return Ok(());
-        }
+        ensure!(matches!(phase, 40 | 48 | 64), "proof stage {phase} records through a wave template");
         let index = PROOF_KEYS
             .iter()
             .position(|(entry, _, _)| *entry == phase)
             .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
-        self.record_index(device, encoder, index, span, catalog, input, output, proof)
-    }
-    /// Counts the rows the next normalization of `span` reserves (phase 67
-    /// for original Works, 68 for prerequisite Works) into a zeroed demand
-    /// table, one word per proof-store table, which it returns.
-    pub fn record_normalization_count(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        phase: u32,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<LaniusBuffer<u32>> {
-        ensure!(
-            matches!(phase, COUNT_ORIGINAL_NORMALIZATION | COUNT_PREREQUISITE_NORMALIZATION),
-            "proof stage {phase} is not a normalization count"
-        );
-        let demand = proof_demand(catalog)?;
-        let index = PROOF_KEYS
-            .iter()
-            .position(|(entry, _, _)| *entry == phase)
-            .ok_or_else(|| anyhow::anyhow!("unregistered proof stage {phase}"))?;
-        record_phase_with_resources(device, encoder, &self.passes[index], phase, span,
-            PROOF_KEYS[index].2, catalog, input, output, Some(proof), None, None, Some(&demand))?;
-        Ok(demand)
-    }
-    /// INTERIM (P7): work selection runs as four dispatches per chunk of at
-    /// most THREAD_SCRATCH_SLOTS work rows, so no kernel inlines more than
-    /// one search: exact implementation match, caller assumption search,
-    /// generic implementation match (the first kernel again, as phase 65),
-    /// then the finish (proof_frontier_selection.slang).
-    pub fn record_selection(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        self.record_chunked(device, encoder, &SELECTION_STEPS, span, catalog, input, output, proof)
-    }
-    /// INTERIM (P7): substitution admission walks each selected work's
-    /// substitution as three dispatches per chunk of at most
-    /// THREAD_SCRATCH_SLOTS work rows: up to the head match, the head's root
-    /// unification, then the bindings (proof_substitution_walk.slang).
-    pub fn record_substitutions(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        self.record_chunked(device, encoder, &SUBSTITUTION_STEPS, span, catalog, input, output, proof)
-    }
-    /// INTERIM (P7): implementation proof admission over ready proof events:
-    /// the same three walk dispatches per chunk as record_substitutions, then
-    /// the root unification kernel again (phase 66) for the proof's fixed
-    /// prerequisite checks.
-    pub fn record_implementation_proofs(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        self.record_chunked(device, encoder, &IMPLEMENTATION_PROOF_STEPS, span, catalog, input,
-            output, proof)
-    }
-    /// A proof stage split over several dispatches per chunk of at most
-    /// THREAD_SCRATCH_SLOTS rows. Each step hands its rows' progress on to
-    /// the next in the row's thread-scratch slot (proof_scratch_handoff.slang),
-    /// so all steps of one chunk run before the next chunk's.
-    fn record_chunked(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        steps: &[(&str, u32)],
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        let steps = steps
-            .iter()
-            .map(|&(key, phase)| {
-                PROOF_KEYS
-                    .iter()
-                    .position(|(_, entry, _)| *entry == key)
-                    .map(|index| (index, phase))
-                    .ok_or_else(|| anyhow::anyhow!("unregistered proof kernel {key}"))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let mut done = 0u32;
-        while done < span.count {
-            let count = (span.count - done).min(THREAD_SCRATCH_SLOTS);
-            let chunk = Span::new(span.first.checked_add(done).expect("checked span"), count)?;
-            for &(index, phase) in &steps {
-                record_phase_with_proof(device, encoder, &self.passes[index], phase, chunk,
-                    PROOF_KEYS[index].2, catalog, input, output, Some(proof))?;
-            }
-            done += count;
-        }
-        Ok(())
-    }
-    pub fn record_binding_rows(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        let index = PROOF_KEYS
-            .iter()
-            .position(|(_, entry, _)| *entry == BINDING_ROWS)
-            .expect("binding admission is a required proof kernel");
-        self.record_index(device, encoder, index, span, catalog, input, output, proof)
-    }
-    pub fn record_assumption_proofs(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        let index = PROOF_KEYS
-            .iter()
-            .position(|(_, entry, _)| *entry == ASSUMPTION_PROOFS)
-            .expect("assumption admission is a required proof kernel");
-        self.record_index(device, encoder, index, span, catalog, input, output, proof)
-    }
-    pub fn record_proof_edge_rows(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        span: Span,
-        catalog: &Arena,
-        input: &Arena,
-        output: &Arena,
-        proof: ProofResources<'_>,
-    ) -> Result<()> {
-        let index = PROOF_KEYS
-            .iter()
-            .position(|(_, entry, _)| *entry == PROOF_EDGE_ROWS)
-            .expect("proof-edge admission is a required proof kernel");
         self.record_index(device, encoder, index, span, catalog, input, output, proof)
     }
     fn record_index(
@@ -1194,7 +928,14 @@ pub(super) mod wave {
     pub const WORK_CURSOR: usize = 2;
     pub const REQUIREMENT_CURSOR: usize = 3;
     pub const QUEUE_CURSOR: usize = 4;
-    pub const ROUNDS: usize = 12;
+    #[cfg(test)]
+    pub const WORK_ACTIVE: usize = 5;
+    #[cfg(test)]
+    pub const QUEUE_ACTIVE: usize = 6;
+    #[cfg(test)]
+    pub const WORK_FIRST: usize = 7;
+    #[cfg(test)]
+    pub const WORK_COUNT: usize = 8;
     pub const OVERFLOW_POINT: usize = 13;
     pub const OVERFLOW_ROWS: usize = 14;
     pub const CHUNK_ROWS: usize = 15;
@@ -1226,8 +967,8 @@ const SLOT_MIN_WORDS: u32 = 64;
 /// 32-bit row count allows.
 pub(super) const WAVE_MAX_CHUNKS: u32 = 1 << 20;
 
-/// Planning points, in recording order: where the host loop read the
-/// counters back (dispatch/mod.rs, run_solver_attempt).
+/// Planning points, in recording order: where the planner reads the
+/// counters and computes the spans of the steps up to the next point.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum WavePoint {
     FirstWork = 0,
@@ -1255,6 +996,33 @@ impl WavePoint {
             point => &Self::ROUND[point as usize - 1..],
         }
     }
+}
+
+/// Some consecutive step groups of one point (`wave_segment`). The point's
+/// planner runs before them.
+#[derive(Clone, Copy)]
+pub(super) struct WavePiece {
+    pub point: WavePoint,
+    first: usize,
+    end: usize,
+}
+impl WavePiece {
+    pub fn whole(point: WavePoint) -> Self {
+        Self { point, first: 0, end: usize::MAX }
+    }
+    /// Groups `first..end` of the point, for a test pause inside it.
+    #[cfg(test)]
+    pub fn groups(point: WavePoint, first: usize, end: usize) -> Self {
+        Self { point, first, end }
+    }
+}
+/// How many leading groups of a round's first point run stages up to `phase`.
+#[cfg(test)]
+pub(super) fn round_groups_through(phase: u32) -> Result<usize> {
+    Ok(wave_segment(WavePoint::Round)?
+        .iter()
+        .take_while(|(_, steps)| steps.iter().all(|(_, entry)| *entry <= phase))
+        .count())
 }
 
 /// Row spans the planner computes (proof_solver_wave.slang, PSW_SPAN_*).
@@ -1295,8 +1063,9 @@ impl WaveSpan {
     }
 }
 
-/// The steps between one point and the next, as the host loop recorded them:
-/// groups of kernels over one span, each group dispatched chunk by chunk.
+/// The steps between one point and the next: groups of kernels over one
+/// span, each group dispatched chunk by chunk. This is the solver's stage
+/// order.
 fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
     let stage = |phase: u32| -> Result<(&'static str, u32)> {
         PROOF_KEYS
@@ -1317,8 +1086,8 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
     };
     use WaveSpan::*;
     Ok(match point {
-        // Each Work admission counts the next normalization's rows, as the
-        // stepped loop does (GpuTraitSolver::admit_counted_work).
+        // Each Work admission counts the rows the next normalization
+        // reserves, so the store can grow in place before it runs.
         WavePoint::FirstWork => {
             let mut groups = vec![(FirstWork, vec![stage(49)?])];
             groups.extend(commit(50, FirstWork, FirstOne)?);
@@ -1326,7 +1095,7 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups
         }
         WavePoint::Round => {
-            // ProofKernels::record_normalization, 51, 52, 57, record_selection.
+            // Normalization (41 to 47), 51, 52, 57, then selection.
             let mut groups = Vec::new();
             for phase in 41..=47 {
                 if matches!(phase, 45 | 47) {
@@ -1424,27 +1193,9 @@ impl WaveStep {
 pub(super) struct WaveTemplate {
     slots: LaniusBuffer<u32>,
     steps: Vec<WaveStep>,
-    pub chunks: u32,
-    pub dispatches: usize,
 }
 
 impl ProofKernels {
-    /// Whether every kernel of the recorded rounds chunks by thread-scratch
-    /// slots, as the stepped recorder chunks it.
-    pub fn waves_supported(&self) -> Result<bool> {
-        for point in [WavePoint::FirstWork].into_iter().chain(WavePoint::ROUND) {
-            for (_, steps) in wave_segment(point)? {
-                for (key, _) in steps {
-                    let index = proof_key_index(key)?;
-                    if !passes_core::bind_group::declares_binding(&self.passes[index], 0, "thread_scratch") {
-                        return Ok(false);
-                    }
-                }
-            }
-        }
-        Ok(true)
-    }
-
     /// Builds the steps of `points` with `chunks` chunk steps for every span
     /// that is not a single row.
     pub fn wave_template(
@@ -1459,15 +1210,34 @@ impl ProofKernels {
         output: &Arena,
         proof: ProofResources<'_>,
     ) -> Result<WaveTemplate> {
+        let pieces = points.iter().map(|&point| WavePiece::whole(point)).collect::<Vec<_>>();
+        self.wave_pieces_template(device, &pieces, chunks, state, demand, catalog, input, output, proof)
+    }
+
+    /// `wave_template` over pieces of points.
+    pub fn wave_pieces_template(
+        &self,
+        device: &wgpu::Device,
+        pieces: &[WavePiece],
+        chunks: u32,
+        state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
+        catalog: &Arena,
+        input: &Arena,
+        output: &Arena,
+        proof: ProofResources<'_>,
+    ) -> Result<WaveTemplate> {
         ensure!((1..=WAVE_MAX_CHUNKS).contains(&chunks), "solver wave chunk count {chunks}");
-        let started = std::time::Instant::now();
         let stride = wave_slot_words(device);
         // (pass, phase, span, chunk, recorded rows of the span) per slot.
         let mut slots: Vec<(usize, u32, WaveSpan, u32, u32)> = Vec::new();
         let mut segments = Vec::new();
-        for &point in points {
+        for piece in pieces {
+            let point = piece.point;
             let first = slots.len();
-            for (span, steps) in wave_segment(point)? {
+            let groups = wave_segment(point)?;
+            let end = piece.end.min(groups.len());
+            for (span, steps) in groups.into_iter().take(end).skip(piece.first) {
                 let span_chunks = if span.is_one() || span.is_whole() { 1 } else { chunks };
                 let limit = if span.is_whole() {
                     u32::MAX
@@ -1533,7 +1303,7 @@ impl ProofKernels {
         }
         let proof_uniforms = phases
             .iter()
-            .map(|&phase| params_block(catalog, "trait_solver.proof_params", proof_params_words(proof, phase)))
+            .map(|&phase| params_block(catalog, proof_params_words(proof, phase)))
             .collect::<Result<Vec<_>>>()?;
         let proof_uniform = |phase: u32| {
             &proof_uniforms[phases.iter().position(|entry| *entry == phase).expect("phase block")]
@@ -1548,7 +1318,6 @@ impl ProofKernels {
         for (point, first, end) in segments {
             let (params, params_offset) = params_block(
                 catalog,
-                "trait_solver.params",
                 [0, 1, catalog.logical_words, input.logical_words, output.logical_words, WAVE_PLAN_PHASE, 0, 0],
             )?;
             let plan_params = workspace.initialized(
@@ -1620,9 +1389,7 @@ impl ProofKernels {
                 });
             }
         }
-        let dispatches = steps.len();
-        record_timing::add(&record_timing::BIND_NS, started);
-        Ok(WaveTemplate { slots: slot_buffer, steps, chunks, dispatches })
+        Ok(WaveTemplate { slots: slot_buffer, steps })
     }
 
     /// Records every step of each template, in order, in one compute pass:
@@ -1630,16 +1397,11 @@ impl ProofKernels {
     /// step cost more than the steps. Operation limits and timers that cannot
     /// stamp inside a pass keep a pass per step.
     pub fn record_waves(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
-        let started = std::time::Instant::now();
-        let recorded: u64 = templates.iter().map(|template| template.steps.len() as u64).sum();
-        record_timing::DISPATCHES.with(|cell| cell.set(cell.get() + recorded));
-        self.record_wave_steps(encoder, templates);
-        record_timing::add(&record_timing::PASS_NS, started);
-    }
-
-    fn record_wave_steps(&self, encoder: &mut wgpu::CommandEncoder, templates: &[&WaveTemplate]) {
+        // A dispatch capture (`LANIUS_CAPTURE`) copies buffers
+        // around its dispatch, which needs a pass per step too.
         if crate::gpu::timer::operation_capture_requires_split_passes()
             || passes_core::debug_operation_limited()
+            || crate::gpu::dispatch_capture::capture_pass().is_some()
         {
             for template in templates {
                 for step in &template.steps {

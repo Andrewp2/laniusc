@@ -199,7 +199,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         // bounded jobs instead.
         let file_backed = path_manifest_requires_file_backed_build(source_pack, limits);
         let resident_units = !file_backed && path_manifest_has_multiple_libraries(source_pack);
-        let report_memory = crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false);
+        let report_memory = crate::options::get().report.buffers;
         if report_memory {
             crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
         }
@@ -282,23 +282,15 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         limits: CompilationUnitLimits,
     ) -> Result<Vec<u8>, CompileError> {
-        let started = std::time::Instant::now();
         let artifact = self
             .compile_path_manifest_bounded_artifact(source_pack, target, limits)
             .await?;
-        let executed = started.elapsed();
         let bytes = fs::read(&artifact.path).map_err(|err| {
             source_pack_artifact_store_error(format!(
                 "read bounded source-pack linked output {}: {err}",
                 artifact.path.display()
             ))
         })?;
-        if std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some() {
-            eprintln!(
-                "source_pack_timing phase=bounded_final_read target={target:?} final_read_ms={:.3}",
-                (started.elapsed() - executed).as_secs_f64() * 1000.0,
-            );
-        }
         Ok(bytes)
     }
 
@@ -308,13 +300,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         limits: CompilationUnitLimits,
     ) -> Result<CompletedBoundedArtifact, CompileError> {
-        let timing = std::env::var_os("LANIUS_SOURCE_PACK_TIMING").is_some();
-        let started = std::time::Instant::now();
         let artifact_root = TemporaryBoundedArtifactRoot::create()?;
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
-        let planned = started.elapsed();
         let mut executor = GpuSourcePackArtifactExecutor::new(self, artifact_root.path(), target)
             .with_standard_library(source_pack.standard_library_id);
         let linked_output_path = execute_path_batched_link_build_async(
@@ -326,7 +315,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         .await?
         .linked_output
         .path;
-        let executed = started.elapsed();
 
         let descriptor_bytes = fs::read(&linked_output_path).map_err(|err| {
             source_pack_artifact_store_error(format!(
@@ -353,14 +341,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
         let artifact_path = artifact_path(artifact_root.path(), storage_key)?;
-        if timing {
-            eprintln!(
-                "source_pack_timing phase=bounded_total target={target:?} plan_ms={:.3} execute_ms={:.3} total_ms={:.3}",
-                planned.as_secs_f64() * 1000.0,
-                (executed - planned).as_secs_f64() * 1000.0,
-                started.elapsed().as_secs_f64() * 1000.0,
-            );
-        }
         Ok(CompletedBoundedArtifact {
             path: artifact_path,
             _root: artifact_root,

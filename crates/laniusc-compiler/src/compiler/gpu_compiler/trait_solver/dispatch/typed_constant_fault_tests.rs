@@ -135,7 +135,8 @@ pub(super) fn inject_pending_substitution_fault(gpu: &GpuTraitSolver, packet: &G
         observation.writes.push(ArenaWrite {
             first_word: row_word(packet, BINDINGS, second, 8)?, words: b,
         });
-        observation.expected_receipt = [Some(2), Some(66), Some(NODES as u32), Some(second)];
+        // Both bindings now claim the first one's node row.
+        observation.expected_receipt = [Some(2), Some(66), Some(NODES as u32), Some(a[4])];
     } else if fault.kind == FaultKind::OrphanSubstitution {
         let substitutions = table_words(gpu, packet, SUBSTITUTIONS, progress.reserved[SUBSTITUTIONS], 4)?;
         let Some(original) = substitutions.chunks_exact(4).skip(pending.first as usize)
@@ -150,8 +151,9 @@ pub(super) fn inject_pending_substitution_fault(gpu: &GpuTraitSolver, packet: &G
             first_word: PROOF_STORE_DIRECTORY + SUBSTITUTIONS as u32 * 6 + 1,
             words: vec![add(new_row, 1, "orphan reserved suffix")?],
         });
-        let uncovered_word = pending.first + (new_row - pending.first) / 32 * 32;
-        observation.expected_receipt = [Some(2), Some(66), Some(SUBSTITUTIONS as u32), Some(uncovered_word)];
+        // The selected Works still claim only the rows that were pending.
+        observation.expected_receipt = [Some(2), Some(66), Some(SUBSTITUTIONS as u32),
+            Some(new_row - pending.first)];
     } else {
         ensure!(fault.binding_recipe_seeded, "binding fold ABI recipe was not installed");
         let binding_span = progress.pending(BINDINGS)?;
@@ -372,17 +374,6 @@ fn wrap_literal_environment_with_depth(packet: &mut GpuPacket, depth: u32) -> [u
     panic!("fold fixture needs a literal constant environment binding");
 }
 
-/// Commits of the last solver attempt, by how each was decided: proven by
-/// its grid-wide audit lanes, or by its serial stage (PCA_GRID, PCA_SERIAL in
-/// proof_commit_audit.slang).
-pub(super) fn commit_audit_counts(gpu: &GpuTraitSolver, packet: &GpuPacket) -> (u32, u32) {
-    let audit = kernels::commit_audit(&gpu.storage, &packet.proof).unwrap();
-    let raw = gpu.readback.read_regions(&gpu.device, &gpu.queue, &[
-        ReadbackRegion::from_buffer(&audit, 0, arena::byte_len(16).unwrap(), "commit audit header").unwrap(),
-    ], "commit audit header").unwrap();
-    let header = words(&raw[0]).unwrap();
-    (header[6], header[5])
-}
 fn assert_failed_prefixes(gpu: &GpuTraitSolver, packet: &GpuPacket,
     error: &anyhow::Error, observation: &Observation) {
     let failure = error.downcast_ref::<SolverDispatchFailure>().expect("owned GPU admission receipt");
@@ -543,8 +534,6 @@ fn gpu_rejects_duplicate_equal_binding_spans_before_publication() {
     arm(&packet, FaultKind::DuplicateBindingSpan, None);
     let error = gpu.check(&mut packet).expect_err("aliased binding allocations must fail");
     assert_failed_prefixes(&gpu, &packet, &error, &observation(&packet));
-    // The audit lanes cannot prove an aliased cover; the serial stage reports it.
-    assert_ne!(commit_audit_counts(&gpu, &packet).1, 0, "the serial stage decides a failed audit");
     assert!(packet.packet_mut().is_err());
 }
 #[test]
@@ -557,7 +546,6 @@ fn gpu_rejects_orphan_substitution_before_publication() {
     arm(&packet, FaultKind::OrphanSubstitution, None);
     let error = gpu.check(&mut packet).expect_err("unowned substitution must fail");
     assert_failed_prefixes(&gpu, &packet, &error, &observation(&packet));
-    assert_ne!(commit_audit_counts(&gpu, &packet).1, 0, "the serial stage decides a failed audit");
     assert!(packet.packet_mut().is_err());
 }
 #[test]

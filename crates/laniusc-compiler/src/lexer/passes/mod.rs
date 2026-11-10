@@ -5,7 +5,6 @@ use crate::{
     gpu::passes_core::{
         ComputePassBatch,
         InputElements,
-        compute_pass_batching_enabled,
         validation_scopes_enabled,
     },
     lexer::{Pass, buffers::GpuBuffers},
@@ -96,7 +95,6 @@ pub fn record_all_passes(
 
     let can_batch = ctx.maybe_dbg.is_none()
         && ctx.bg_cache.is_some()
-        && compute_pass_batching_enabled()
         && !crate::gpu::timer::operation_capture_requires_split_passes()
         && !validation_scopes_enabled();
     if can_batch {

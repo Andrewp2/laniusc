@@ -351,7 +351,7 @@ fn decode_words(bytes: &[u8]) -> Vec<u32> {
 #[test]
 fn physical_gpu_float_decimal_matches_native_rounding_and_bounds() {
     assert!(
-        !super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        !crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU"
     );
     let mut f = fixture();

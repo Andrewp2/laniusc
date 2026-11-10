@@ -44,7 +44,6 @@ use sizing::{
     resident_virtual_pair_width,
 };
 use storage::alias_storage_buffer;
-pub(crate) use storage::pointer_jump_step_capacity;
 
 use crate::gpu::buffers::{
     JobResetPolicy,
@@ -99,13 +98,8 @@ impl ParserBuffers {
         self.copy_operations.record(name, encoder)
     }
 
-    fn clear_overwritten_allocations() -> bool {
-        crate::gpu::env::env_bool_strict("LANIUS_GPU_CLEAR_OVERWRITTEN", false)
-    }
-
     fn clears_before_job(buffer: &crate::gpu::buffers::ResettableBuffer) -> bool {
         buffer.reset_policy == JobResetPolicy::ClearBeforeJob
-            || Self::clear_overwritten_allocations()
     }
 
     /// Updates the logical token dimensions for a reused resident allocation.
@@ -338,7 +332,7 @@ impl ParserBuffers {
                 .allocation_id()
                 .is_none_or(|allocation| !retained.contains(&allocation))
         }));
-        if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+        if crate::options::get().report.buffers {
             let (retained_allocations, retained_bytes, workspace_bytes) = self
                 .resettable_buffers
                 .iter()
@@ -364,12 +358,7 @@ impl ParserBuffers {
                 workspace.len(),
                 workspace_bytes,
             );
-            let limit = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")
-                .ok()
-                .and_then(|value| value.parse::<usize>().ok())
-                .filter(|&value| value != 0)
-                .unwrap_or(64)
-                .min(16_384);
+            let limit = crate::gpu::buffers::BUFFER_BREAKDOWN_ROWS;
             let mut rows = self
                 .resettable_buffers
                 .iter()

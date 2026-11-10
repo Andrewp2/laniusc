@@ -159,7 +159,6 @@ pub(in crate::compiler::gpu_compiler::trait_solver) struct ProjectedImplApplicat
     application: [u32; 12],
     bindings: Box<[[u32; 12]]>,
     prerequisites: Box<[[u32; 4]]>,
-    hops: Box<[[u32; 4]]>,
 }
 impl ProjectedImplApplication {
     pub fn implementation(&self) -> u32 {
@@ -176,9 +175,6 @@ impl ProjectedImplApplication {
     }
     pub fn prerequisites(&self) -> &[[u32; 4]] {
         &self.prerequisites
-    }
-    pub fn assumption_hops(&self) -> &[[u32; 4]] {
-        &self.hops
     }
     pub fn type_sources(&self) -> Vec<[u32; 2]> {
         self.bindings
@@ -399,7 +395,7 @@ impl GpuTraitSolver {
             );
             let selected_bindings = span(&bindings, application[4], application[5])?;
             let selected_prerequisites = span(&prerequisites, application[6], application[7])?;
-            let selected_hops = span(&hops, application[8], application[9])?;
+            span(&hops, application[8], application[9])?;
             covered = [
                 application[4] + application[5],
                 application[6] + application[7],
@@ -415,7 +411,6 @@ impl GpuTraitSolver {
                 application,
                 bindings: selected_bindings.into(),
                 prerequisites: selected_prerequisites.into(),
-                hops: selected_hops.into(),
             });
         }
         ensure!(

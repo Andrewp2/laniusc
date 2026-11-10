@@ -24,7 +24,7 @@ use crate::{
         passes::{LexerPasses, record_all_passes},
         tables::{compact::load_compact_tables_from_bytes, tokens::TokenKind},
         types::{GpuToken, LexicalFailure, Token},
-        util::{read_tokens_from_mapped, readback_enabled, u32_from_first_4},
+        util::{read_tokens_from_mapped, u32_from_first_4},
     },
 };
 
@@ -208,9 +208,6 @@ impl GpuLexer {
     }
 
     /// Lexes one source string and reads kept tokens back to the host.
-    ///
-    /// If lexer readback is disabled by environment, this still records and
-    /// submits the GPU work but returns an empty vector.
     pub async fn lex(&self, input: &str) -> Result<Vec<Token>> {
         #[cfg(feature = "graphics_debugger")]
         unsafe {
@@ -233,7 +230,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
 
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
 
@@ -288,10 +285,8 @@ impl GpuLexer {
 
         record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, passes)?;
 
-        let rb_enabled = readback_enabled();
-
-        // Submit work, optionally also copy back token count when readback is enabled.
-        let token_count_u32 = if rb_enabled {
+        // Submit the work and copy back the token count.
+        let token_count_u32 = {
             if let Some(timer) = maybe_timer.as_mut() {
                 timer.stamp(&mut enc, "before copy count");
             }
@@ -362,47 +357,7 @@ impl GpuLexer {
                 return Ok(Vec::new());
             }
             token_count_u32
-        } else {
-            if let Some(timer) = maybe_timer.as_mut() {
-                // No count copy; still resolve timer queries for printing later.
-                timer.resolve(&mut enc);
-            }
-            crate::gpu::passes_core::submit_with_optional_validation(
-                &self.device,
-                &self.queue,
-                "lex.batch-without-count",
-                enc.finish(),
-                use_scopes,
-                "lex batch",
-            );
-            // We intentionally skip token-count readback when readback is disabled.
-            0usize
         };
-
-        if !rb_enabled {
-            if let Some(timer) = maybe_timer
-                && let Some(vals) = timer.try_read(&self.device)
-                && !vals.is_empty()
-            {
-                let period_ns = timer.period_ns() as f64;
-                let t0 = vals[0].ticks;
-                let mut prev = t0;
-                for sample in vals {
-                    let label = sample.label;
-                    let t = sample.ticks;
-                    let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
-                    let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
-                    if dt_ms < MINIMUM_TIME_TO_NOT_ELIDE_MS {
-                        continue;
-                    }
-                    eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
-                    prev = t;
-                }
-            }
-
-            // No token count; return empty vector to avoid any token readback.
-            return Ok(Vec::new());
-        }
 
         let need_bytes = (token_count_u32 * std::mem::size_of::<GpuToken>()) as u64;
 
@@ -544,7 +499,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
 
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::debug::DebugOutput::default();
@@ -628,7 +583,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after source pack preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
 
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::debug::DebugOutput::default();
@@ -734,7 +689,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after source pack preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
 
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::debug::DebugOutput::default();
@@ -934,7 +889,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after source pack preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         let mut host_timer = HostCompileTimer::new();
         let timers_on = self.timers_supported && crate::gpu::timer::compile_timing_requested();
         let mut lex_timer = if timers_on {
@@ -1146,7 +1101,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
 
         #[cfg(feature = "gpu-debug")]
         let mut debug_output = crate::lexer::debug::DebugOutput::default();
@@ -1276,7 +1231,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         let mut host_timer = HostCompileTimer::new();
 
         #[cfg(feature = "gpu-debug")]
@@ -1459,7 +1414,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         let mut host_timer = HostCompileTimer::new();
 
         #[cfg(feature = "gpu-debug")]
@@ -1648,7 +1603,7 @@ impl GpuLexer {
             .as_mut()
             .expect("GpuLexer buffers must exist after preparation");
 
-        let use_scopes = crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         let mut host_timer = HostCompileTimer::new();
 
         #[cfg(feature = "gpu-debug")]

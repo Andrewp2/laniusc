@@ -12,8 +12,6 @@
 //! and every reader is bounded by a job-written count or by the job's ids, so
 //! rows past the job's grid are never read.
 
-use std::{collections::HashSet, sync::OnceLock};
-
 use anyhow::{Result, ensure};
 
 use super::lowering_ir::LoweringCapacities;
@@ -42,9 +40,6 @@ impl JobSized {
             "job-sized operation `{}` was built for {actual:?} elements, but its capacity function gives {expected}",
             operation.name(),
         );
-        if std::env::var_os("LANIUS_JOB_SIZED_LIST").is_some() {
-            eprintln!("[job_sized] {}", operation.name());
-        }
         Ok(Self {
             operation,
             elements,
@@ -59,31 +54,11 @@ impl JobSized {
         encoder: &mut wgpu::CommandEncoder,
         job: Option<LoweringCapacities>,
     ) -> Result<()> {
-        match job.filter(|_| job_sized_allows(self.operation.name())) {
+        match job {
             Some(job) => self
                 .operation
                 .record_elements(encoder, (self.elements)(job).min(self.built)),
             None => self.operation.record(encoder),
         }
     }
-}
-
-/// Whether `name` may record a job-sized grid. `LANIUS_JOB_SIZED_ONLY` set
-/// to a comma-separated list of operation names (as `LANIUS_JOB_SIZED_LIST`
-/// prints them, plus `schedule.sort`) sizes only those operations, to find
-/// one whose grid must not follow the job. Unset, every operation may.
-pub(crate) fn job_sized_allows(name: &str) -> bool {
-    static ONLY: OnceLock<Option<HashSet<String>>> = OnceLock::new();
-    ONLY.get_or_init(|| {
-        std::env::var("LANIUS_JOB_SIZED_ONLY").ok().map(|names| {
-            names
-                .split(',')
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .map(str::to_owned)
-                .collect()
-        })
-    })
-    .as_ref()
-    .is_none_or(|names| names.contains(name))
 }

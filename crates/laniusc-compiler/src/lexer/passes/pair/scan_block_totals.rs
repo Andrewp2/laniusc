@@ -5,7 +5,6 @@ use crate::{
         DispatchDim,
         InputElements,
         PassData,
-        compute_pass_batching_enabled,
         record_compiler_operation,
         validation_scopes_enabled,
     },
@@ -75,7 +74,6 @@ impl crate::gpu::passes_core::Pass<GpuBuffers, DebugOutput> for Pair02ScanBlockT
         }
 
         let can_batch = maybe_dbg.is_none()
-            && compute_pass_batching_enabled()
             && !crate::gpu::timer::operation_capture_requires_split_passes()
             && !use_scopes;
         if scan_steps.is_empty() {

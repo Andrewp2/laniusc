@@ -34,9 +34,7 @@ struct TraceState {
 
 impl TraceState {
     fn new() -> Self {
-        let path = std::env::var_os("LANIUS_PERFETTO_TRACE")
-            .or_else(|| std::env::var_os("LANIUS_GPU_TRACE_JSON"))
-            .map(PathBuf::from);
+        let path = crate::options::get().perfetto_trace.clone();
         Self {
             path,
             start: Instant::now(),

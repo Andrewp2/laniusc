@@ -10,42 +10,7 @@ import type_checker.trait_solver.proof_frontier_expansion;
 import type_checker.trait_solver.proof_frontier_reduction;
 import type_checker.trait_solver.proof_substitution_walk;
 import type_checker.trait_solver.proof_row_admission;
-import type_checker.trait_solver.proof_span_coverage;
 import type_checker.trait_solver.proof_commit_audit;
-
-struct PendingBindingNodeSpans : IProofSpanSource
-{
-    static bool span(uint binding, uint table, out uint first, out uint count)
-    {
-        first = 0u; count = 0u; uint4 row; uint4 allocation;
-        if (table != PPS_TERM_NODES || !pps_read_pending8(PPS_BINDINGS, binding, row, allocation) ||
-            !pps_binding_node_span(allocation, true)) return false;
-        first = allocation.x; count = allocation.y; return true;
-    }
-}
-struct PendingSubstitutionBindingSpans : IProofSpanSource
-{
-    static bool span(uint substitution, uint table, out uint first, out uint count)
-    {
-        first = 0u; count = 0u; uint4 row;
-        if (table != PPS_BINDINGS || !pps_read_pending4(PPS_SUBSTITUTIONS, substitution, 0u, row) ||
-            row.z > 64u) return false;
-        first = row.y; count = row.z; return true;
-    }
-}
-struct SelectedWorkSubstitutionSpans : IProofSpanSource
-{
-    static bool span(uint work, uint table, out uint first, out uint count)
-    {
-        first = 0u; count = 0u;
-        uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 row;
-        if (table != PPS_SUBSTITUTIONS || !pps_work_read(work, key, selected, completion, source)) return false;
-        if (key.z != PPS_WORK_SELECTED) return true;
-        if (!pps_read_pending4(PPS_SUBSTITUTIONS, selected.y, 0u, row) ||
-            row.x != selected.x || row.w != key.y) return false;
-        first = selected.y; count = 1u; return true;
-    }
-}
 
 public bool pps_stage_row(uint local, uint table, out uint row)
 {
@@ -133,12 +98,11 @@ public void pps_stage_audit_work(uint local)
     uint row; uint4 source;
     if (!pps_stage_row(local, PPS_WORK, row)) return;
     pca_add(PCA_AUDITED, 1u);
-    if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u) { pca_fail(); return; }
+    if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u) { pca_fail_owner(row); return; }
     pca_add(PCA_TOTALS + source.x, 1u);
 }
-// The reserving thread. When the audit lanes did not count every pending row
-// it counts them itself and, after the reservation, completes the phase
-// serially for its exact result; the later lanes and thread then do nothing.
+// The reserving thread. The audit lanes counted the pending rows by source
+// kind. On any failure the later lanes and thread do nothing.
 public void pps_stage_reserve_goal_index()
 {
     bool building = pps_building() && ts_batch_is_building();
@@ -149,23 +113,13 @@ public void pps_stage_reserve_goal_index()
         pps_descriptor(PPS_REQUIREMENTS, requirements, accepted) &&
         pps_descriptor(PPS_ROOT_LINKS, roots, accepted) && index.y == work.w;
     uint root_sources = pca_word(PCA_TOTALS); uint requirement_sources = pca_word(PCA_TOTALS + 1u);
-    bool counted = described && pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == work.y - work.w;
+    uint failed = pca_word(PCA_FAILED);
+    SolverStatus audit = pca_audit_verdict(work.y - work.w);
     pca_reset();
     if (!building) return;
-    pca_count(counted);
     if (!described) { ts_batch_failure(ts_invalid(70u, PPS_WORK, PPS_GOAL_INDEX)); return; }
-    if (!counted)
-    {
-        root_sources = 0u; requirement_sources = 0u;
-        [loop]
-        for (uint row = work.w; row < work.y; row++)
-        {
-            uint4 source;
-            if (!pps_pending4(PPS_WORK, row, 12u, source) || source.x > 1u)
-            { ts_batch_failure(ts_invalid(70u, row, PPS_WORK)); return; }
-            if (source.x == 0u) root_sources++; else requirement_sources++;
-        }
-    }
+    if (failed != 0u) { ts_batch_failure(ts_invalid(70u, ~failed, PPS_WORK)); return; }
+    if (audit.state != TS_VALID) { ts_batch_failure(audit); return; }
     // Every request proved a unique row backlink in 49. Equal counts therefore
     // cover the entire pending edge/root inventory, including unused rows.
     if (root_sources != roots.y - roots.w || requirement_sources != requirements.y - requirements.w)
@@ -175,13 +129,7 @@ public void pps_stage_reserve_goal_index()
     if (status.state != TS_VALID) { ts_batch_failure(status); return; }
     if (work.y != work.w && first != work.w)
     { ts_batch_failure(ts_invalid(70u, first, work.w)); return; }
-    if (counted) { trait_solver_commit_audit[PCA_PUBLISHED] = 50u; return; }
-    [loop]
-    for (uint row = work.w; row < work.y; row++)
-        if (!pps_write4(PPS_GOAL_INDEX, row, 0u, uint4(0u, TS_INVALID, row, 0u)))
-        { ts_batch_failure(ts_invalid(1u, row, PPS_GOAL_INDEX)); return; }
-    ts_batch_failure(pps_commit_tables(PPS_WORK | (PPS_REQUIREMENTS << 4u) | (PPS_ROOT_LINKS << 8u) |
-        (PPS_REDUCTION_QUEUE << 12u) | (PPS_GOAL_INDEX << 16u), 5u));
+    trait_solver_commit_audit[PCA_PUBLISHED] = 50u;
 }
 public void pps_stage_write_goal_index(uint local)
 {
@@ -257,88 +205,93 @@ public void pps_stage_walk_bindings(uint local, uint consumer)
 public void pps_stage_admit_binding_rows(uint local)
 { uint row; if (pps_stage_row(local, PPS_BINDINGS, row)) ts_batch_failure(pps_admit_binding_row(row)); }
 // Phase 55 over the whole grid: one audit lane per Work, then one committing
-// thread (proof_commit_audit.slang). A selected Work's lane claims its
-// substitution, the substitution's bindings and each binding's nodes, making
-// the checks the three span sources above make of them.
-//
-// The serial audits cover the nodes from the pending bindings and the bindings
-// from the pending substitutions. They agree with the lanes once each level's
-// cover is exact, which the same audit proves from the Works down: then the
-// rows reached through the Works are every pending row of that level, once.
+// thread (proof_commit_audit.slang). A selected Work owns its substitution,
+// the substitution's bindings and each binding's nodes. Exact replay
+// validates bytes; this cover validates ownership. Equal requests must not
+// alias an allocation and hide an unchecked row.
+
+// The audit of one Work: the checks of the rows it owns and, when `claim` is
+// set, a claim on each of them and their counts. The Work's lane claims. The
+// committing thread repeats the checks of the lowest invalid Work for its
+// status.
+SolverStatus pps_audit_substitutions_work(uint work, bool claim)
+{
+    uint4 key; uint4 selected; uint4 completion; uint4 source;
+    if (!pps_work_read(work, key, selected, completion, source))
+        return ts_invalid(66u, PPS_SUBSTITUTIONS, work);
+    if (key.z != PPS_WORK_SELECTED) return ts_ok();
+    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint4 row;
+    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
+        !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
+        !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted))
+        return ts_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES);
+    if (selected.y < substitutions.w || selected.y >= substitutions.y ||
+        !pps_read_pending4(PPS_SUBSTITUTIONS, selected.y, 0u, row) ||
+        row.x != selected.x || row.w != key.y) return ts_invalid(66u, PPS_SUBSTITUTIONS, work);
+    if (row.z > 64u || !pca_pending_span(bindings, row.y, row.z))
+        return ts_invalid(66u, PPS_BINDINGS, selected.y);
+    uint tag = pca_tag();
+    uint node_total = 0u;
+    [loop]
+    for (uint offset = 0u; offset < row.z; offset++)
+    {
+        uint4 binding; uint4 allocation;
+        // At most 64 bindings below the depth limit each: the sum fits.
+        if (!pps_read_pending8(PPS_BINDINGS, row.y + offset, binding, allocation) ||
+            !pps_binding_node_span(allocation, true)) return ts_invalid(66u, PPS_TERM_NODES, row.y + offset);
+        node_total += allocation.y;
+        if (claim) pca_claim(0u, PPS_TERM_NODES, nodes, allocation.x, allocation.y, tag);
+    }
+    if (!claim) return ts_ok();
+    pca_claim(1u, PPS_BINDINGS, bindings, row.y, row.z, tag);
+    pca_claim(2u, PPS_SUBSTITUTIONS, substitutions, selected.y, 1u, tag);
+    pca_add(PCA_TOTALS, node_total);
+    pca_add(PCA_TOTALS + 1u, row.z);
+    pca_add(PCA_TOTALS + 2u, 1u);
+    return ts_ok();
+}
 public void pps_stage_audit_substitutions(uint local)
 {
     uint works; uint work;
     if (!pps_building() || !ts_batch_is_building() || !pps_count(PPS_WORK, works) ||
         !ts_dispatch_row(local, works, work)) return;
     pca_add(PCA_AUDITED, 1u);
-    uint4 key; uint4 selected; uint4 completion; uint4 source;
-    if (!pps_work_read(work, key, selected, completion, source)) { pca_fail(); return; }
-    if (key.z != PPS_WORK_SELECTED) return;
-    uint4 nodes; uint4 bindings; uint4 substitutions; uint accepted; uint4 row;
-    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
-        !pps_descriptor(PPS_BINDINGS, bindings, accepted) ||
-        !pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) ||
-        !pps_read_pending4(PPS_SUBSTITUTIONS, selected.y, 0u, row) ||
-        row.x != selected.x || row.w != key.y || row.z > 64u) { pca_fail(); return; }
-    uint tag = pca_tag();
-    pca_cover(PPS_SUBSTITUTIONS, substitutions, selected.y, 1u, tag);
-    pca_cover(PPS_BINDINGS, bindings, row.y, row.z, tag);
-    uint node_total = 0u;
-    [loop]
-    for (uint offset = 0u; offset < row.z; offset++)
-    {
-        uint4 binding; uint4 allocation;
-        // A sum past 32 bits cannot equal the pending node count.
-        if (!pps_read_pending8(PPS_BINDINGS, row.y + offset, binding, allocation) ||
-            !pps_binding_node_span(allocation, true) || allocation.y > TS_INVALID - node_total)
-        { pca_fail(); return; }
-        node_total += allocation.y;
-        pca_cover(PPS_TERM_NODES, nodes, allocation.x, allocation.y, tag);
-    }
-    pca_add(PCA_TOTALS, node_total);
-    pca_add(PCA_TOTALS + 1u, row.z);
-    pca_add(PCA_TOTALS + 2u, 1u);
+    if (pps_audit_substitutions_work(work, true).state != TS_VALID) pca_fail_owner(work);
 }
-// The committing thread. The lanes proved the serial cover audits when none
-// failed, every Work was audited, each table's claimed rows number its pending
-// rows, and the serial audits' visits stay within their budget. Otherwise it
-// runs the serial audits for their exact result. One call site keeps one
-// inlined copy of the commit.
+// The lanes' verdict, in the order a walk over the Works and then the tables
+// meets the failures.
+SolverStatus pps_substitutions_verdict()
+{
+    uint works; uint failed = pca_word(PCA_FAILED);
+    if (!pps_count(PPS_WORK, works)) return ts_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES);
+    if (failed != 0u)
+    {
+        SolverStatus invalid = pps_audit_substitutions_work(~failed, false);
+        return invalid.state != TS_VALID ? invalid : ts_invalid(66u, PPS_SUBSTITUTIONS, ~failed);
+    }
+    SolverStatus status = pca_audit_verdict(works);
+    [loop]
+    for (uint t = 0u; t < 3u && status.state == TS_VALID; t++)
+    {
+        uint4 span; uint accepted;
+        uint table = t == 0u ? PPS_TERM_NODES : t == 1u ? PPS_BINDINGS : PPS_SUBSTITUTIONS;
+        status = pps_descriptor(table, span, accepted) ?
+            pca_cover_verdict(t, table, span.y - span.w, 66u) : ts_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES);
+    }
+    return status;
+}
+// The committing thread: it publishes when the lanes proved an exact cover of
+// all three suffixes and otherwise reports their verdict.
 public void pps_stage_commit_substitutions()
 {
     bool building = pps_building() && ts_batch_is_building();
-    uint4 nodes = uint4(0u, 0u, 0u, 0u); uint4 bindings = nodes; uint4 substitutions = nodes;
-    uint accepted; uint works = 0u;
-    bool described = building && pps_descriptor(PPS_TERM_NODES, nodes, accepted) &&
-        pps_descriptor(PPS_BINDINGS, bindings, accepted) &&
-        pps_descriptor(PPS_SUBSTITUTIONS, substitutions, accepted) && pps_count(PPS_WORK, works);
-    uint charges = pps_cover_charge_add(0u, pca_word(PCA_TOUCHED));
-    charges = pps_cover_charge(charges, nodes.y - nodes.w, bindings.y - bindings.w);
-    charges = pps_cover_charge(charges, bindings.y - bindings.w, substitutions.y - substitutions.w);
-    charges = pps_cover_charge(charges, substitutions.y - substitutions.w, works);
-    bool proven = described && pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == works &&
-        pca_word(PCA_TOTALS) == nodes.y - nodes.w && pca_word(PCA_TOTALS + 1u) == bindings.y - bindings.w &&
-        pca_word(PCA_TOTALS + 2u) == substitutions.y - substitutions.w && charges <= TS_VISIT_LIMIT;
+    SolverStatus status = ts_ok();
+    if (building) status = pps_substitutions_verdict();
     pca_reset();
     if (!building) return;
-    pca_count(proven);
-    if (!described) { ts_batch_failure(ts_invalid(68u, PPS_BINDINGS, PPS_TERM_NODES)); return; }
-    if (!proven)
-    {
-        // Exact replay validates bytes; independent coverage validates ownership.
-        // Equal requests must not alias an allocation and hide an unchecked row.
-        uint visits = 0u;
-        SolverStatus cover = pps_check_span_cover<PendingBindingNodeSpans>(PPS_TERM_NODES,
-            nodes.w, nodes.y, bindings.w, bindings.y, visits);
-        if (cover.state != TS_VALID) { ts_batch_failure(cover); return; }
-        cover = pps_check_span_cover<PendingSubstitutionBindingSpans>(PPS_BINDINGS,
-            bindings.w, bindings.y, substitutions.w, substitutions.y, visits);
-        if (cover.state != TS_VALID) { ts_batch_failure(cover); return; }
-        cover = pps_check_span_cover<SelectedWorkSubstitutionSpans>(PPS_SUBSTITUTIONS,
-            substitutions.w, substitutions.y, 0u, works, visits);
-        if (cover.state != TS_VALID) { ts_batch_failure(cover); return; }
-    }
-    ts_batch_failure(pps_commit_tables(PPS_TERM_NODES | (PPS_SUBSTITUTIONS << 4u) | (PPS_BINDINGS << 8u), 3u));
+    if (status.state == TS_VALID)
+        status = pps_commit_tables(PPS_TERM_NODES | (PPS_SUBSTITUTIONS << 4u) | (PPS_BINDINGS << 8u), 3u);
+    ts_batch_failure(status);
 }
 public void pps_stage_expand_work(uint local)
 { uint row; if (pps_stage_row(local, PPS_WORK, row)) ts_batch_failure(pps_expand_work(row)); }

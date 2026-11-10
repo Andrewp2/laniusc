@@ -19,9 +19,7 @@ use crate::type_checker::{CheckedGenericCall, CheckedGenericTarget};
 #[path = "packet_tests.rs"]
 mod tests;
 mod implementation_application;
-pub(super) use implementation_application::{
-    AdmittedImplementationApplication, AdmittedImplementationMethod, ImplApplicationRequest,
-};
+pub(super) use implementation_application::{AdmittedImplementationApplication, ImplApplicationRequest};
 
 /// Results may only be copied after the orchestrator has observed successful
 /// GPU catalog, batch, context and call status for this exact Submission.
@@ -31,7 +29,6 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedSolverResult {
     epoch: u64,
     arena_id: u64,
     input_row: u32,
-    pub predicate_identity: StableWitnessIdentity,
     /// The catalog predicate (table 8) this proof concludes.
     pub predicate_row: u32,
     /// The catalog implementation (table 9) the GPU selected for an
@@ -48,6 +45,7 @@ impl ValidatedSolverResult {
         self.proof.as_ref().is_some_and(|proof| proof.is_concrete())
     }
     /// The GPU refuted this obligation under a soft context: it has no proof.
+    #[cfg(test)]
     pub fn is_refuted(&self) -> bool {
         self.proof.is_none()
     }
@@ -109,12 +107,6 @@ pub(in crate::compiler::gpu_compiler) struct RetainedCallSite {
 }
 
 impl RetainedCallSite {
-    pub fn source(&self) -> SourceCallIdentity {
-        self.source
-    }
-    pub fn source_unit(&self) -> [u32; 2] {
-        self.catalog.snapshots[self.snapshot as usize].unit
-    }
     pub fn source_texts(&self) -> &[String] {
         &self.catalog.snapshots[self.snapshot as usize].sources
     }
@@ -206,13 +198,7 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
 /// obligation rows, so the GPU sees exactly the tables the full encoding
 /// writes. Only environments whose graph copy writes no compound (table 5)
 /// or edge (table 6) row are reused. Lives for one packet (one job).
-///
-/// `LANIUS_SOLVER_ENCODING_MEMO=0` encodes every call in full.
-/// `LANIUS_CHECK_SOLVER_ENCODING_MEMO=1` encodes every call in full and
-/// fails the append if a reusable encoding would have written other rows.
 struct EnvironmentEncodings {
-    enabled: bool,
-    checked: bool,
     by_owner: HashMap<u32, Vec<EnvironmentEncoding>>,
     predicates: HashMap<u32, Arc<[u32]>>,
 }
@@ -228,16 +214,10 @@ struct EnvironmentEncoding {
 
 impl EnvironmentEncodings {
     fn new() -> Self {
-        Self {
-            enabled: crate::gpu::env::env_bool_truthy("LANIUS_SOLVER_ENCODING_MEMO", true),
-            checked: crate::gpu::env::env_bool_truthy("LANIUS_CHECK_SOLVER_ENCODING_MEMO", false),
-            by_owner: HashMap::new(),
-            predicates: HashMap::new(),
-        }
+        Self { by_owner: HashMap::new(), predicates: HashMap::new() }
     }
 
     fn find(&self, owner: u32, call: &CheckedGenericCall) -> Option<usize> {
-        if !self.enabled { return None; }
         self.by_owner.get(&owner)?.iter().position(|known| {
             let known = &known.facts[known.fact_index];
             known.required_generic_parameters == call.required_generic_parameters
@@ -316,6 +296,7 @@ impl ProgramPacket {
         }
         Ok(())
     }
+    #[cfg(test)]
     fn combined_row(&self, table: usize, row: u32) -> Result<&[u32]> {
         if row < self.prefix[table] {
             self.catalog.tables.row(table, row)
@@ -332,9 +313,6 @@ impl ProgramPacket {
         )
     }
 
-    pub fn original_context(&mut self, snapshot: u32, actual_function_hir: u32) -> Result<u32> {
-        self.append_guard(|this| this.original_context_inner(snapshot, actual_function_hir))
-    }
     fn original_context_inner(&mut self, snapshot: u32, actual_function_hir: u32) -> Result<u32> {
         ensure!(
             (snapshot as usize) < self.catalog.snapshots.len(),
@@ -1016,9 +994,6 @@ impl ProgramPacket {
     }
     /// The callee owner's applicable predicates (a frozen-catalog function).
     fn call_predicates(&mut self, owner: u32) -> Result<Arc<[u32]>> {
-        if !self.encodings.enabled {
-            return Ok(self.catalog.applicable_predicates(owner)?.into());
-        }
         if let Some(predicates) = self.encodings.predicates.get(&owner) {
             return Ok(predicates.clone());
         }
@@ -1036,8 +1011,7 @@ impl ProgramPacket {
         call_row: u32,
     ) -> Result<u32> {
         let call = facts.get(fact_index).ok_or_else(|| anyhow!("checked call index absent"))?;
-        let known = self.encodings.find(owner, call);
-        if let Some(index) = known && !self.encodings.checked {
+        if let Some(index) = self.encodings.find(owner, call) {
             let Self { encodings, tables, prefix, .. } = self;
             let encoding = &encodings.by_owner[&owner][index];
             let base = add(prefix[7], tables.count(7)?, "environment roots")?;
@@ -1061,9 +1035,6 @@ impl ProgramPacket {
         }
         let before = [5, 6, 7, 12].map(|table| self.tables.count(table));
         let environment = self.encoded_environment(owner, call, call_row)?;
-        if !self.encodings.enabled {
-            return Ok(environment);
-        }
         let [nodes, edges, roots, bindings] = before.map(|count| count.unwrap_or(u32::MAX));
         if self.tables.count(5)? != nodes || self.tables.count(6)? != edges {
             // A compound graph's rows are positional; it is encoded in full.
@@ -1082,23 +1053,12 @@ impl ProgramPacket {
                 Ok((row[1], position as usize))
             })
             .collect::<Result<Vec<_>>>()?;
-        match known {
-            Some(index) => {
-                let encoding = &self.encodings.by_owner[&owner][index];
-                ensure!(
-                    encoding.roots == written_roots && encoding.bindings == written_bindings,
-                    "[solver-encoding-memo] MISMATCH: call HIR {} encodes other environment rows than call HIR {}",
-                    call.call_hir,
-                    encoding.facts[encoding.fact_index].call_hir
-                );
-            }
-            None => self.encodings.by_owner.entry(owner).or_default().push(EnvironmentEncoding {
-                facts: facts.clone(),
-                fact_index,
-                roots: written_roots,
-                bindings: written_bindings,
-            }),
-        }
+        self.encodings.by_owner.entry(owner).or_default().push(EnvironmentEncoding {
+            facts: facts.clone(),
+            fact_index,
+            roots: written_roots,
+            bindings: written_bindings,
+        });
         Ok(environment)
     }
 
@@ -1446,13 +1406,11 @@ impl ProgramPacket {
                             && call_statuses[(call - submission.call_span.first) as usize][0] == 8,
                         "GPU obligation failed outside a refuted soft call"
                     );
-                    let predicate_identity =
-                        self.catalog.stable_witness(self.catalog.tables.row(8, goal[1])?[0])?;
+                    self.catalog.stable_witness(self.catalog.tables.row(8, goal[1])?[0])?;
                     retained.push(ValidatedSolverResult {
                         epoch: self.catalog.epoch,
                         arena_id: self.arena_id,
                         input_row: INVALID,
-                        predicate_identity,
                         predicate_row: goal[1],
                         implementation: None,
                         proof: None,
@@ -1484,7 +1442,7 @@ impl ProgramPacket {
                     "proof readback differs from retained result"
                 );
                 let predicate_atom = self.catalog.tables.row(8, evidence[1])?[0];
-                let predicate_identity = self.catalog.stable_witness(predicate_atom)?;
+                self.catalog.stable_witness(predicate_atom)?;
                 // Result word 7 is the root proof's implementation plus one
                 // (pps_publish_root); 0 for an assumption proof.
                 let implementation = status[7].checked_sub(1);
@@ -1497,7 +1455,6 @@ impl ProgramPacket {
                     epoch: self.catalog.epoch,
                     arena_id: self.arena_id,
                     input_row,
-                    predicate_identity,
                     predicate_row: evidence[1],
                     implementation,
                     proof: Some(proof),

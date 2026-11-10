@@ -81,15 +81,35 @@ impl InstanceSources {
     /// that file's continuation. None when the body cannot replay as a copy
     /// and replays in its original scope: it crosses a file, or it is a
     /// trait-impl method whose self type is declared in another file (its
-    /// inherent copy must be in the type's module). Bodies of earlier files
-    /// copy unless `LANIUS_REPLAY_MULTIFILE_COPIES=0`.
+    /// inherent copy must be in the type's module).
     pub(super) fn copy_rank(template: &[String], span: &CheckedOwnerSpan) -> Option<u32> {
-        copy_rank_with(template, span, multifile_copies_enabled()).ok()
-    }
-
-    /// Why `copy_rank` is None, for the specialization trace.
-    pub(super) fn copy_miss(template: &[String], span: &CheckedOwnerSpan) -> Option<&'static str> {
-        copy_rank_with(template, span, multifile_copies_enabled()).err()
+        let first = span.first_byte() as usize;
+        let mut file_start = 0usize;
+        let mut found = None;
+        for (file, source) in template.iter().enumerate() {
+            let file_end = file_start + source.len();
+            if first >= file_start && first < file_end {
+                found = Some((file, file_end));
+                break;
+            }
+            file_start = file_end;
+        }
+        let (file, file_end) = found?;
+        let in_file = |byte: u32| (byte as usize) >= file_start && (byte as usize) < file_end;
+        if (span.end_byte as usize) > file_end {
+            return None;
+        }
+        if !span.enclosing_impl
+            .and_then(|header| header.trait_cut)
+            .is_none_or(|cut| in_file(cut.self_declaration_byte))
+        {
+            return None;
+        }
+        if file + 1 == template.len() {
+            Some(0)
+        } else {
+            u32::try_from(file + 1).ok()
+        }
     }
 
     /// Copy each span once, in the given order, which must be by
@@ -103,17 +123,13 @@ impl InstanceSources {
     /// never use the reserved prefix, so a copy cannot collide with a
     /// declared method. Copy bytes increase with the entry index.
     pub(super) fn build(template: &[String], spans: &[CheckedOwnerSpan]) -> Result<Self> {
-        Self::build_with(template, spans, multifile_copies_enabled())
-    }
-
-    fn build_with(template: &[String], spans: &[CheckedOwnerSpan], multifile: bool) -> Result<Self> {
         ensure!(!template.is_empty(), "an instance unit needs a template source file");
         let template_len = template.iter().try_fold(0u32, |total, source| {
             u32::try_from(source.len()).ok().and_then(|len| total.checked_add(len))
         }).ok_or_else(|| anyhow!("template source pack exceeds u32 bytes"))?;
         let last_start = template_len as usize - template.last().expect("nonempty").len();
         let ranks = spans.iter()
-            .map(|span| copy_rank_with(template, span, multifile).ok())
+            .map(|span| Self::copy_rank(template, span))
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("an instance copy's body cannot be copied from its template file"))?;
         ensure!(ranks.windows(2).all(|pair| pair[0] <= pair[1]),
@@ -302,44 +318,6 @@ fn strip_instance_names(text: &str) -> String {
     out
 }
 
-/// `copy_rank` with copies of earlier files allowed or not.
-/// `copy_rank`, or why the body replays in its original scope.
-fn copy_rank_with(template: &[String], span: &CheckedOwnerSpan, multifile: bool) -> Result<u32, &'static str> {
-    let first = span.first_byte() as usize;
-    let mut file_start = 0usize;
-    let mut found = None;
-    for (file, source) in template.iter().enumerate() {
-        let file_end = file_start + source.len();
-        if first >= file_start && first < file_end {
-            found = Some((file, file_end));
-            break;
-        }
-        file_start = file_end;
-    }
-    let (file, file_end) = found.ok_or("span outside the template")?;
-    let in_file = |byte: u32| (byte as usize) >= file_start && (byte as usize) < file_end;
-    if (span.end_byte as usize) > file_end {
-        Err("body crosses its file")
-    } else if !span.enclosing_impl
-        .and_then(|header| header.trait_cut)
-        .is_none_or(|cut| in_file(cut.self_declaration_byte))
-    {
-        Err("trait-impl self type declared in another file")
-    } else if file + 1 == template.len() {
-        Ok(0)
-    } else if multifile {
-        u32::try_from(file + 1).map_err(|_| "file index exceeds u32")
-    } else {
-        Err("multi-file copies are off")
-    }
-}
-
-/// `LANIUS_REPLAY_MULTIFILE_COPIES=0` replays bodies of every file but the
-/// template's last in their original scope, as before continuation files.
-fn multifile_copies_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_MULTIFILE_COPIES", true)
-}
-
 /// Template bytes `[start, end)` when they lie in one file on character
 /// boundaries.
 fn global_slice(template: &[String], start: u32, end: u32) -> Option<&str> {
@@ -524,40 +502,35 @@ mod tests {
 
     #[test]
     fn copy_ranks_follow_the_body_file() {
-        let rank = |template: &[String], span: &CheckedOwnerSpan, multifile: bool| {
-            copy_rank_with(template, span, multifile).ok()
-        };
+        let rank = InstanceSources::copy_rank;
         // The same declarations split over two files: the trait impl in the
         // first, or its self type in the first.
         let split_at = find(TRAIT_TEMPLATE, "impl<T> Get") as usize;
         let impl_first = vec![TRAIT_TEMPLATE.to_string(), "fn tail() {}\n".to_string()];
         let span = trait_span(TRAIT_TEMPLATE);
-        assert_eq!(rank(&impl_first, &span, true), Some(1), "impl and self type share file 0");
-        assert_eq!(rank(&impl_first, &span, false), None);
-        assert!(InstanceSources::build_with(&impl_first, &[span], false).is_err());
-        let instance = InstanceSources::build_with(&impl_first, &[span], true).unwrap();
+        assert_eq!(rank(&impl_first, &span), Some(1), "impl and self type share file 0");
+        let instance = InstanceSources::build(&impl_first, &[span]).unwrap();
         assert_eq!(instance.continuations, vec![0]);
 
         let type_first = vec![TRAIT_TEMPLATE[..split_at].to_string(), TRAIT_TEMPLATE[split_at..].to_string()];
-        assert_eq!(rank(&type_first, &span, true), None, "self type declared in another file");
+        assert_eq!(rank(&type_first, &span), None, "self type declared in another file");
         let mut local_type = span;
         if let Some(header) = local_type.enclosing_impl.as_mut() {
             header.trait_cut.as_mut().unwrap().self_declaration_byte = split_at as u32 + 2;
         }
-        assert_eq!(rank(&type_first, &local_type, false), Some(0));
+        assert_eq!(rank(&type_first, &local_type), Some(0));
 
         // A top-level function or inherent method copies by its own bytes.
         let spans = spans();
         let one = vec![TEMPLATE.to_string()];
-        assert!(spans.iter().all(|span| rank(&one, span, false) == Some(0)));
+        assert!(spans.iter().all(|span| rank(&one, span) == Some(0)));
         let keep_end = spans[0].end_byte as usize;
         let keep_first = vec![TEMPLATE[..keep_end].to_string(), TEMPLATE[keep_end..].to_string()];
-        assert_eq!(rank(&keep_first, &spans[0], false), None);
-        assert_eq!(rank(&keep_first, &spans[0], true), Some(1));
-        assert_eq!(rank(&keep_first, &spans[1], false), Some(0));
+        assert_eq!(rank(&keep_first, &spans[0]), Some(1));
+        assert_eq!(rank(&keep_first, &spans[1]), Some(0));
         // A span leaving its file never copies.
         let crossing = CheckedOwnerSpan { end_byte: keep_end as u32 + 2, ..spans[0] };
-        assert_eq!(rank(&keep_first, &crossing, true), None);
+        assert_eq!(rank(&keep_first, &crossing), None);
     }
 
     const FILES: [&str; 3] = [
@@ -578,7 +551,7 @@ mod tests {
     fn copies_of_earlier_files_go_to_continuation_files() {
         let template = FILES.map(str::to_string).to_vec();
         let (keep, pass, last) = (file_span("keep", 2), file_span("pass", 5), file_span("last", 8));
-        let instance = InstanceSources::build_with(&template, &[last, keep, keep, pass], true).unwrap();
+        let instance = InstanceSources::build(&template, &[last, keep, keep, pass]).unwrap();
         assert_eq!(instance.template_len as usize, FILES.concat().len());
         assert_eq!(instance.continuations, vec![0, 1]);
         assert_eq!(instance.sources.len(), 5);
@@ -602,11 +575,10 @@ mod tests {
         let call = all.rfind("keep(x)").unwrap() as u32;
         assert_eq!(instance.original_body_span(3, [call, 7]), Some([find(&FILES.concat(), "keep(x)"), 7]));
 
-        // Entries must be in rank order, and earlier files need multifile copies.
-        assert!(InstanceSources::build_with(&template, &[keep, last], true).is_err());
-        assert!(InstanceSources::build_with(&template, &[pass, keep], true).is_err());
-        assert!(InstanceSources::build_with(&template, &[last, keep], false).is_err());
-        let single = InstanceSources::build_with(&template, &[last, last], false).unwrap();
+        // Entries must be in rank order.
+        assert!(InstanceSources::build(&template, &[keep, last]).is_err());
+        assert!(InstanceSources::build(&template, &[pass, keep]).is_err());
+        let single = InstanceSources::build(&template, &[last, last]).unwrap();
         assert!(single.continuations.is_empty());
         assert_eq!(single.sources.len(), 3);
     }
@@ -614,8 +586,8 @@ mod tests {
     #[test]
     fn a_diagnostic_in_a_continuation_file_names_the_template_file() {
         let template = FILES.map(str::to_string).to_vec();
-        let instance = InstanceSources::build_with(
-            &template, &[file_span("keep", 2), file_span("pass", 5)], true).unwrap();
+        let instance = InstanceSources::build(
+            &template, &[file_span("keep", 2), file_span("pass", 5)]).unwrap();
         let paths = [Some(PathBuf::from("a.lani")), Some(PathBuf::from("b.lani")), Some(PathBuf::from("c.lani"))];
         // The frontend names continuation file 4 `<source pack file 4>`.
         let continuation = &instance.sources[4];

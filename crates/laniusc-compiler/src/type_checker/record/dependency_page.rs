@@ -247,9 +247,8 @@ pub(in crate::type_checker) fn reset_dependency_type_index(
         return;
     };
     let single_page = pages.is_none_or(|pages| pages.len() <= 1);
-    let enabled = crate::gpu::env::env_bool_truthy("LANIUS_REUSE_DEPENDENCY_TYPE_INDEX", true);
     visibility.type_index_current.store(false, Relaxed);
-    visibility.type_index_reusable.store(single_page && enabled, Relaxed);
+    visibility.type_index_reusable.store(single_page, Relaxed);
 }
 
 /// Collects candidate identities or projects the finalized winner for the

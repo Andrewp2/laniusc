@@ -163,7 +163,7 @@ fn fixture() -> Vec<Case> {
 #[test]
 fn physical_gpu_typed_constant_atoms_preserve_complete_values_and_checked_counts() {
     assert!(
-        !super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        !crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU"
     );
     let cases = fixture();

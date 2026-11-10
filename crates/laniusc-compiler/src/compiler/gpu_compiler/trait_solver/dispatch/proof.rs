@@ -11,7 +11,9 @@ use super::{
     },
     Submission,
 };
-use anyhow::{Result, anyhow, ensure};
+#[cfg(test)]
+use anyhow::anyhow;
+use anyhow::{Result, ensure};
 
 pub(super) const BATCH_BUILDING: u32 = 0x8000_0001;
 pub(super) const STORE_BUILDING: u32 = 0xffff_fffe;
@@ -123,6 +125,7 @@ impl ProofProgress {
         Ok(Some(capacities))
     }
 
+    #[cfg(test)]
     pub fn pending(&self, table: usize) -> Result<Span> {
         let first = *self
             .admitted
@@ -136,17 +139,6 @@ impl ProofProgress {
         Span::new(first, reserved - first)
     }
 
-    pub fn appended(&self, table: usize, cursor: u32) -> Result<Span> {
-        let count = *self
-            .admitted
-            .get(table)
-            .ok_or_else(|| anyhow!("solver table absent"))?;
-        ensure!(
-            cursor <= count,
-            "solver work cursor moved beyond admitted rows"
-        );
-        Span::new(cursor, count - cursor)
-    }
 }
 
 // Bucket count follows possible Work rows, including every capacity retry.
@@ -196,11 +188,6 @@ pub(super) fn with_floor(
     }
     size_work_bounded(&mut capacities, session.accepted_prefix())?;
     Ok(capacities)
-}
-
-/// LANIUS_TRAIT_SOLVER_CAPACITY_FLOOR=0 seeds every solve from its own counts only.
-pub(super) fn capacity_floor_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_TRAIT_SOLVER_CAPACITY_FLOOR", true)
 }
 
 // Each source obligation creates one root Work, Goal, RootLink and normalization

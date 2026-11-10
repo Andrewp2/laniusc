@@ -29,6 +29,9 @@ pub mod gpu;
 /// GPU lexer driver, buffers, token records, and lexer table integration.
 pub mod lexer;
 
+/// Run-time options, read once from the process environment.
+pub mod options;
+
 /// GPU parser driver, LL tables, HIR records, and parser readback helpers.
 pub mod parser;
 

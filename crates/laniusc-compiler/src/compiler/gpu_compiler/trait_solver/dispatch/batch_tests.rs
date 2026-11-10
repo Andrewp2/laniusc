@@ -188,10 +188,6 @@ fn gpu_batch_selects_imported_callers_nested_length_implementation() {
     assert_eq!(result.len(), 1);
     assert!(result[0].is_concrete(),
         "GPU-owned proof discharges the caller's length-3 goal despite the provider's length-2 candidate");
-    // A valid solve never runs a serial commit stage: its grid-wide audit
-    // lanes prove every commit.
-    let (grid, serial) = super::typed_constant_fault_tests::commit_audit_counts(&gpu, &packet);
-    assert!(grid >= 4 && serial == 0, "commits proven by lanes: {grid}, by the serial stage: {serial}");
 }
 
 #[test]
@@ -1135,7 +1131,7 @@ fn main() -> i32 {
     assert_eq!(query_allocation_ids(&gpu), allocations,
         "over-capacity rejection happens before any scratch allocation");
     assert_eq!(values[0].words(), 3, "later jobs preserve the earlier owned result");
-    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    // `LANIUS_CAPTURE` only: save the selected materialization dispatch.
     crate::compiler::write_debug_dispatch_capture();
 }
 
@@ -1188,7 +1184,7 @@ fn main() -> i32 { return inspect<Gap<i32, 3>>(); }
         native_layout_source(&packet, expected[0].0)).unwrap();
     assert_eq!(native_layout_semantic_shape(actual.clone()),
         native_layout_semantic_shape(expected[0].1.clone()));
-    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    // `LANIUS_CAPTURE` only: save the selected materialization dispatch.
     crate::compiler::write_debug_dispatch_capture();
 }
 
@@ -1277,7 +1273,7 @@ fn main() -> i32 { return inspect<Cell<[i32; 3]>>(); }
     assert_eq!(valid[0].words(), 3);
     assert_eq!(native_layout_source(&packet, reference), provenance);
     assert!(!packet.poisoned);
-    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
+    // `LANIUS_CAPTURE` only: save the selected materialization dispatch.
     crate::compiler::write_debug_dispatch_capture();
 }
 

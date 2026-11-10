@@ -324,6 +324,7 @@ impl PagedReadback {
     /// vector in which each region's words follow the previous region's.
     /// Readers of thousands of rows slice it instead of decoding a vector per
     /// region; [`Self::read_words`] also takes rows.
+    #[cfg(test)]
     pub(crate) fn read_regions_words(
         &self,
         device: &wgpu::Device,
@@ -404,7 +405,7 @@ impl PagedReadback {
         }
         let regions = reads.iter().map(WordRead::regions).sum::<usize>();
         let timing = regions >= 32
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+            && crate::options::get().report.host_timing;
         let started = std::time::Instant::now();
         let mut first_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
@@ -489,7 +490,7 @@ impl PagedReadback {
         // Sparse fact readers pass thousands of regions; report where their
         // time goes (copy encoding vs. the GPU round trip).
         let timing = regions.len() >= 32
-            && crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+            && crate::options::get().report.host_timing;
         let started = std::time::Instant::now();
 
         let mut first_encoder =

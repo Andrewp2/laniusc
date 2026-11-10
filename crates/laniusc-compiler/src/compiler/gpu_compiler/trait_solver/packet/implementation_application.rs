@@ -21,7 +21,6 @@ use crate::{
         CheckedGenericArgument,
         CheckedGenericConstant,
         CheckedGenericConstantValue,
-        CheckedGenericParameter,
         CheckedParameterDomain,
     },
 };
@@ -85,8 +84,6 @@ pub(in crate::compiler::gpu_compiler::trait_solver) struct AdmittedImplementatio
     /// Retains the opaque successful readback and its assumption/prerequisite
     /// provenance. It is never converted into new table-17 root evidence.
     projection: ProjectedImplApplication,
-    implementation_owner: u32,
-    parameters: Box<[CheckedGenericParameter]>,
     arguments: Box<[CheckedGenericArgument]>,
     constants: Box<[CheckedGenericConstant]>,
     methods: Box<[AdmittedImplementationMethod]>,
@@ -98,9 +95,6 @@ impl AdmittedImplementationApplication {
     pub fn subject_slot(&self) -> u32 {
         self.request.subject_slot
     }
-    pub fn implementation(&self) -> u32 {
-        self.projection.implementation()
-    }
     pub fn arguments(&self) -> &[CheckedGenericArgument] {
         &self.arguments
     }
@@ -109,12 +103,6 @@ impl AdmittedImplementationApplication {
     }
     pub fn methods(&self) -> &[AdmittedImplementationMethod] {
         &self.methods
-    }
-    pub fn implementation_owner(&self) -> u32 {
-        self.implementation_owner
-    }
-    pub fn parameters(&self) -> &[CheckedGenericParameter] {
-        &self.parameters
     }
     /// An admitted old root remains valid through monotone accepted growth.
     /// Exact-current serial validation belongs to raw projection receipt mint.
@@ -261,7 +249,6 @@ impl ProgramPacket {
         let mut types = types.into_iter();
         let mut arguments = Vec::new();
         let mut constants = Vec::new();
-        let mut parameters = Vec::new();
         for ((parameter_row, parameter), binding) in
             contract.parameters.iter().zip(projection.bindings())
         {
@@ -273,7 +260,6 @@ impl ProgramPacket {
                     && binding[3] == parameter.identity.source_ordinal,
                 "implementation binding has another parameter identity or domain slot"
             );
-            parameters.push(*parameter);
             if domain == 0 {
                 ensure!(
                     binding[6..12] == [0; 6],
@@ -337,8 +323,6 @@ impl ProgramPacket {
         Ok(Arc::new(AdmittedImplementationApplication {
             request,
             projection,
-            implementation_owner: contract.owner,
-            parameters: parameters.into_boxed_slice(),
             arguments: arguments.into_boxed_slice(),
             constants: constants.into_boxed_slice(),
             methods: methods.into_boxed_slice(),

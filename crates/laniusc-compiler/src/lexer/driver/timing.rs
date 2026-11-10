@@ -10,12 +10,7 @@ pub(crate) fn print_timer_trace(
         return;
     }
     let _span = crate::gpu::trace::HostSpan::new("host.trace", "trace.timer_events");
-    let min_ms = std::env::var("LANIUS_GPU_COMPILE_TIMING_MIN_MS")
-        .ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(MINIMUM_TIME_TO_NOT_ELIDE_MS);
-    let print_enabled = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false);
+    let print_enabled = crate::options::get().report.gpu_timing;
     // A timer's first stamp can run in an earlier submission than the one
     // that produced `gpu_anchor` (typecheck readbacks submit partial
     // encoders), so place spans through the job's clock calibration when
@@ -43,7 +38,7 @@ pub(crate) fn print_timer_trace(
         };
         total += dt_ms;
         let submission_gap = is_submission_begin(label);
-        if print_enabled && dt_ms >= min_ms {
+        if print_enabled && dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
             let timer_kind = if submission_gap {
                 "gpu_compile_submission_gap"
             } else {
@@ -114,10 +109,7 @@ impl HostCompileTimer {
     pub(super) fn new() -> Self {
         let now = std::time::Instant::now();
         Self {
-            print_enabled: crate::gpu::env::env_bool_truthy(
-                "LANIUS_GPU_COMPILE_HOST_TIMING",
-                false,
-            ),
+            print_enabled: crate::options::get().report.host_timing,
             trace_enabled: crate::gpu::trace::enabled(),
             start: now,
             last: now,

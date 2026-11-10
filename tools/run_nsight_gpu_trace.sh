@@ -170,7 +170,7 @@ fi
 
 mkdir -p -- "$output_dir"
 export LANIUS_BACKEND="${LANIUS_NGFX_BACKEND:-vulkan}"
-export LANIUS_GPU_DEBUG_LABELS=1
+export LANIUS_TRACE="${LANIUS_TRACE:+$LANIUS_TRACE,}gpu-labels"
 if [[ -n ${LANIUS_NGFX_LOG_FILE:-} ]]; then
     log_file=$(readlink -m -- "$LANIUS_NGFX_LOG_FILE")
     mkdir -p -- "$(dirname -- "$log_file")"

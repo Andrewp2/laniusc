@@ -2,8 +2,8 @@
 //! GPU parser driver, reshaped to mirror the style used by the lexer driver:
 //! - One compiler-graph schedule shared by resident and one-shot parsing
 //! - Bind-group cache reuse across passes
-//! - Env-gated timers and validation scopes
-//! - Optional readback (LANIUS_READBACK), returning empty streams when off
+//! - Timers and validation scopes chosen by `crate::options`
+//! - Readback of every result stream in the one-shot entry point
 
 use std::{
     collections::HashMap,
@@ -179,7 +179,7 @@ impl GpuParser {
         let status_readback = bufs.ll1_status_readback.buffer.clone();
         bufs.status_readback_operations.record_full(&mut encoder);
 
-        let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
@@ -358,7 +358,7 @@ impl GpuParser {
             retain_debug_hir_buffers,
             parser_feature_flags,
         );
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             eprintln!(
                 "[gpu_compile_host_timer] parser.optional_capacities: flags=0x{parser_feature_flags:08x} tree={} arrays={} enum_match={} structs={}",
                 bufs.tree_capacity,
@@ -373,7 +373,7 @@ impl GpuParser {
             .min(bufs.tree_capacity)
             .max(1);
         let cleared_bytes = bufs.clear_job_storage(encoder, active_tree_capacity);
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             let (allocations, bytes) = bufs.resettable_storage_totals();
             eprintln!(
                 "[gpu_compile_host_timer] parser.workspace_clear: allocations={allocations} active_bytes={cleared_bytes} resident_bytes={bytes}"
@@ -918,7 +918,7 @@ impl GpuParser {
             .clear();
 
         // Timing is gated the same way as the lexer (and only if supported).
-        let timers_on = self.timers_supported && bool_from_env("LANIUS_GPU_TIMING", false);
+        let timers_on = self.timers_supported && crate::options::get().report.gpu_timing;
         let mut maybe_timer = if timers_on {
             Some(GpuTimer::new(
                 &self.device,
@@ -948,24 +948,16 @@ impl GpuParser {
         let mut timer_ref = maybe_timer.as_mut();
         self.record_ll1_resident_passes(&mut encoder, &bufs, true, true, None, &mut timer_ref)?;
 
-        // -------- Submit & (optionally) read back --------
-        let rb_enabled = readback_enabled();
-
-        // Build readback buffers only when needed (keeps resource count and bandwidth low).
-        let rb_handles = if rb_enabled {
-            let rb = readback::ParserReadbacks::create(&self.device, &bufs);
-            rb.encode_copies(&mut encoder, &bufs);
-            Some(rb)
-        } else {
-            None
-        };
+        // -------- Submit & read back --------
+        let rb_handles = readback::ParserReadbacks::create(&self.device, &bufs);
+        rb_handles.encode_copies(&mut encoder, &bufs);
 
         if let Some(t) = maybe_timer.as_mut() {
             t.stamp(&mut encoder, "resolve timers");
             t.resolve(&mut encoder);
         }
 
-        let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,
@@ -975,140 +967,11 @@ impl GpuParser {
             "parser batch",
         );
 
-        // If readback is off, return empty result shells (timers still print).
-        if !rb_enabled {
-            if let Some(timer) = maybe_timer
-                && let Some(vals) = timer.try_read(&self.device)
-                && !vals.is_empty()
-            {
-                let period_ns = timer.period_ns() as f64;
-                let t0 = vals[0].ticks;
-                let mut prev = t0;
-                for sample in vals {
-                    let label = sample.label;
-                    let t = sample.ticks;
-                    let dt_ms = ((t - prev) as f64 * period_ns) / 1.0e6;
-                    let total_ms = ((t - t0) as f64 * period_ns) / 1.0e6;
-                    if dt_ms >= MINIMUM_TIME_TO_NOT_ELIDE_MS {
-                        eprintln!("[gpu_timer] {label}: {dt_ms:.3}ms (total {total_ms:.3}ms)");
-                    }
-                    prev = t;
-                }
-            }
-
-            return Ok(ParseResult {
-                ll1: Ll1AcceptResult {
-                    accepted: true,
-                    error_pos: 0,
-                    error_code: 0,
-                    detail: 0,
-                    steps: 0,
-                    emit_len: 0,
-                },
-                headers: Vec::new(),
-                sc_stream: Vec::new(),
-                emit_stream: Vec::new(),
-                brackets: BracketsMatchResult {
-                    valid: true,
-                    final_depth: 0,
-                    min_depth: 0,
-                    match_for_index: Vec::new(),
-                },
-                node_kind: Vec::new(),
-                parent: Vec::new(),
-                first_child: Vec::new(),
-                next_sibling: Vec::new(),
-                subtree_end: Vec::new(),
-                hir_kind: Vec::new(),
-                hir_semantic_prefix_before_node: Vec::new(),
-                hir_semantic_dense_node: Vec::new(),
-                hir_semantic_subtree_end: Vec::new(),
-                hir_semantic_parent: Vec::new(),
-                hir_semantic_first_child: Vec::new(),
-                hir_semantic_next_sibling: Vec::new(),
-                hir_semantic_depth: Vec::new(),
-                hir_semantic_child_index: Vec::new(),
-                hir_token_pos: Vec::new(),
-                hir_token_end: Vec::new(),
-                hir_type_form: Vec::new(),
-                hir_type_value_node: Vec::new(),
-                hir_type_len_token: Vec::new(),
-                hir_type_len_operand: Vec::new(),
-                hir_type_file_id: Vec::new(),
-                hir_type_path_leaf_node: Vec::new(),
-                hir_type_arg_start: Vec::new(),
-                hir_type_arg_count: Vec::new(),
-                hir_type_arg_next: Vec::new(),
-                hir_type_alias_target_node: Vec::new(),
-                hir_fn_return_type_node: Vec::new(),
-                hir_method_signature_flags: Vec::new(),
-                hir_stmt_record_kind: Vec::new(),
-                hir_stmt_record_operand0: Vec::new(),
-                hir_stmt_record_operand1: Vec::new(),
-                hir_stmt_record_operand2: Vec::new(),
-                hir_stmt_scope_end: Vec::new(),
-                hir_item_kind: Vec::new(),
-                hir_item_name_token: Vec::new(),
-                hir_item_decl_token: Vec::new(),
-                hir_item_namespace: Vec::new(),
-                hir_item_visibility: Vec::new(),
-                hir_item_path_start: Vec::new(),
-                hir_item_path_end: Vec::new(),
-                hir_item_path_node: Vec::new(),
-                hir_item_file_id: Vec::new(),
-                hir_item_import_target_kind: Vec::new(),
-                hir_variant_parent_enum: Vec::new(),
-                hir_variant_ordinal: Vec::new(),
-                hir_variant_payload_start: Vec::new(),
-                hir_variant_payload_count: Vec::new(),
-                hir_variant_payload_node: Vec::new(),
-                hir_match_scrutinee_node: Vec::new(),
-                hir_match_arm_start: Vec::new(),
-                hir_match_arm_count: Vec::new(),
-                hir_match_arm_next: Vec::new(),
-                hir_match_arm_pattern_node: Vec::new(),
-                hir_match_arm_payload_start: Vec::new(),
-                hir_match_arm_payload_count: Vec::new(),
-                hir_match_arm_result_node: Vec::new(),
-                hir_match_payload_owner_arm: Vec::new(),
-                hir_match_payload_match_node: Vec::new(),
-                hir_match_payload_ordinal: Vec::new(),
-                hir_call_callee_node: Vec::new(),
-                hir_call_arg_start: Vec::new(),
-                hir_call_arg_end: Vec::new(),
-                hir_call_arg_count: Vec::new(),
-                hir_call_arg_parent_call: Vec::new(),
-                hir_call_arg_ordinal: Vec::new(),
-                hir_array_lit_first_element: Vec::new(),
-                hir_array_lit_element_count: Vec::new(),
-                hir_array_element_parent_lit: Vec::new(),
-                hir_array_element_ordinal: Vec::new(),
-                hir_array_element_next: Vec::new(),
-                hir_expr_string_start: Vec::new(),
-                hir_expr_string_len: Vec::new(),
-                hir_member_receiver_node: Vec::new(),
-                hir_member_receiver_token: Vec::new(),
-                hir_member_name_token: Vec::new(),
-                hir_struct_field_parent_struct: Vec::new(),
-                hir_struct_field_ordinal: Vec::new(),
-                hir_struct_field_type_node: Vec::new(),
-                hir_struct_decl_field_start: Vec::new(),
-                hir_struct_decl_field_count: Vec::new(),
-                hir_struct_lit_head_node: Vec::new(),
-                hir_struct_lit_field_start: Vec::new(),
-                hir_struct_lit_field_count: Vec::new(),
-                hir_struct_lit_field_parent_lit: Vec::new(),
-                hir_struct_lit_field_value_node: Vec::new(),
-                hir_struct_lit_field_next: Vec::new(),
-                debug: DebugOutput::default(),
-            });
-        }
-
         // ------------ map & decode staging buffers -------------
         let decoded = readback::DecodedParserReadbacks::map_and_decode(
             &self.device,
             &bufs,
-            rb_handles.expect("rb_enabled"),
+            rb_handles,
         )?;
 
         // Print timers (same as lexer).

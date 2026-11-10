@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use super::{
     source_pack_executor::validate_gpu_source_pack_descriptor_job_source_file_records,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
+    typecheck::{CompiledSourcePackObject, OriginalUnitFacts, PendingOriginalUnit},
     *,
 };
 
@@ -41,7 +39,6 @@ pub(super) enum ResidentLinkedOutput {
 #[derive(Clone)]
 pub(super) enum ResidentSourcePackArtifact {
     PendingNative(PendingNativeArtifact),
-    StrictPublished(Arc<CompiledSourcePackUnit>),
 }
 
 #[derive(Clone)]
@@ -54,7 +51,6 @@ impl ResidentSourcePackArtifact {
     fn interface(&self) -> &GpuSemanticInterfaceArtifact {
         match self {
             Self::PendingNative(handle) => handle.facts.interface(),
-            Self::StrictPublished(unit) => &unit.interface,
         }
     }
 }
@@ -163,10 +159,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // wrapper into the session's private publication boundary.
         let mut present = vec![false; self.pending_originals.len()];
         for artifact in &handle.objects {
-            let ResidentSourcePackArtifact::PendingNative(artifact) = artifact else {
-                return Err(source_pack_artifact_store_error(
-                    "pending native link received a published object"));
-            };
+            let ResidentSourcePackArtifact::PendingNative(artifact) = artifact;
             let pending = self.pending_originals.get(artifact.slot).ok_or_else(||
                 source_pack_artifact_store_error("pending native link has a foreign unit slot"))?;
             if !pending.facts().same_snapshot(&artifact.facts) {

@@ -25,17 +25,11 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DEBUG");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_OPT_LEVEL");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_MINIMUM_SLANG_OPT");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_SKIP_SPIRV_VALIDATION");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_DOWNSTREAM_TIME");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_PERF");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_REPORT_DETAILED_PERF");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_MAX_SPV_BYTES");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_BUILD_JOBS");
     println!("cargo:rerun-if-env-changed=SLANGC_EXTRA_FLAGS");
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_INLINED_BUDGET");
-    println!("cargo:rerun-if-env-changed=LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS");
 
     let workspace_root = workspace_root()?;
     let shader_root = workspace_root.join("shaders");
@@ -76,7 +70,6 @@ fn main() -> Result<()> {
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
-    let noinline_min_instructions = shader_noinline_min_instructions()?;
 
     // Only compile files that contain an entrypoint attribute, e.g. [shader("compute")]
     for ep in sources {
@@ -104,26 +97,12 @@ fn main() -> Result<()> {
         let extra_args = slangc_extra_args(&extra)?;
         let opt_level = shader_opt_level_for_artifact(&artifact_key)?;
         let minimum_slang_opt = shader_minimum_slang_optimization();
-        let disable_non_essential_validations =
-            env_truthy("LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS");
-        let skip_spirv_validation = env_truthy("LANIUS_SHADER_SKIP_SPIRV_VALIDATION");
-        let report_downstream_time = env_truthy("LANIUS_SHADER_REPORT_DOWNSTREAM_TIME");
-        let report_perf = env_truthy("LANIUS_SHADER_REPORT_PERF");
-        let report_detailed_perf = env_truthy("LANIUS_SHADER_REPORT_DETAILED_PERF");
         let source_digest = shader_source_digest(&shader_root, &ep)?;
-        let noinline_min_instructions =
-            if noinline_harness_exempt(&artifact_key) { 0 } else { noinline_min_instructions };
         let compile_stamp = format!(
-            "slangc={}\nopt={}\nminimum_slang_opt={}\ndisable_non_essential_validations={}\nskip_spirv_validation={}\nreport_downstream_time={}\nreport_perf={}\nreport_detailed_perf={}\nnoinline_min_instructions={}\nsource_digest={}\nextra={}\n",
+            "slangc={}\nopt={}\nminimum_slang_opt={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
             opt_level,
             minimum_slang_opt,
-            disable_non_essential_validations,
-            skip_spirv_validation,
-            report_downstream_time,
-            report_perf,
-            report_detailed_perf,
-            noinline_stamp(noinline_min_instructions),
             source_digest,
             extra
         );
@@ -148,14 +127,8 @@ fn main() -> Result<()> {
             stamp_out,
             opt_level,
             minimum_slang_opt,
-            disable_non_essential_validations,
-            skip_spirv_validation,
-            report_downstream_time,
-            report_perf,
-            report_detailed_perf,
             debug: env_truthy("LANIUS_SHADER_DEBUG"),
             extra_args,
-            noinline_min_instructions,
             compile_stamp,
         });
     }
@@ -391,7 +364,7 @@ fn slangc_extra_args(extra: &str) -> Result<Vec<String>> {
     for arg in &args {
         if is_build_policy_slangc_flag(arg) {
             return Err(anyhow!(
-                "SLANGC_EXTRA_FLAGS contains {arg:?}, but this build owns Slang optimization, validation, and timing flags through named Lanius env vars. Use LANIUS_SHADER_OPT_LEVEL, LANIUS_SHADER_MINIMUM_SLANG_OPT, LANIUS_SHADER_DISABLE_NON_ESSENTIAL_VALIDATIONS, LANIUS_SHADER_SKIP_SPIRV_VALIDATION, LANIUS_SHADER_REPORT_DOWNSTREAM_TIME, LANIUS_SHADER_REPORT_PERF, or LANIUS_SHADER_REPORT_DETAILED_PERF instead."
+                "SLANGC_EXTRA_FLAGS contains {arg:?}, but this build owns the Slang optimization, validation and timing flags. Set the optimization with LANIUS_SHADER_OPT_LEVEL or LANIUS_SHADER_MINIMUM_SLANG_OPT. The build does not accept the validation and timing flags."
             ));
         }
     }
@@ -712,67 +685,6 @@ fn driver_hazard_result(hazards: &[(String, Vec<(String, &'static str)>)]) -> Re
     Err(anyhow!(message))
 }
 
-/// TEMPORARY test harness (see `spirv_size::mark_dont_inline`): zero, the
-/// default, leaves every call inlinable. Only kernels of at least
-/// `NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS` are marked; smaller ones compile
-/// fully inlined in under a minute, and marking them only exposes them to the
-/// driver's divergent out-of-line call hangs.
-const NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS: u64 = 100_000;
-
-/// The harness settings an artifact was marked with, so changing either one
-/// recompiles instead of reusing artifacts marked under the other.
-fn noinline_stamp(min_instructions: u64) -> String {
-    if min_instructions == 0 {
-        "0".to_string()
-    } else {
-        format!("{min_instructions} kernel>={NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS}")
-    }
-}
-
-fn shader_noinline_min_instructions() -> Result<u64> {
-    match env::var("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS") {
-        Err(env::VarError::NotPresent) => Ok(0),
-        Err(env::VarError::NotUnicode(_)) => {
-            Err(anyhow!("LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS must be a UTF-8 instruction count"))
-        }
-        Ok(value) if value.trim().is_empty() => Ok(0),
-        Ok(value) => value.trim().parse::<u64>().with_context(|| {
-            format!("parse LANIUS_SHADER_NOINLINE_MIN_INSTRUCTIONS={value:?} as an instruction count")
-        }),
-    }
-}
-
-/// Kernels the harness leaves fully inlined: out of line, their dispatches hang
-/// on NVIDIA depending on the input (01c fully inlined takes ~2 min to create
-/// once, then comes from the pipeline cache). Canonical-ID kernels are small
-/// and run the lock-free interning protocol, which is only validated fully
-/// inlined (docs/canonical-type-ids.md), so the harness never marks them.
-fn noinline_harness_exempt(artifact_key: &str) -> bool {
-    matches!(artifact_key, "type_checker/semantic/artifact/01c_generic_native_words")
-        || artifact_key.starts_with("type_checker/canonical/")
-        || artifact_key.starts_with("tests/canonical_intern_")
-}
-
-fn mark_dont_inline(spv_path: &Path, min_instructions: u64) -> Result<()> {
-    let bytes = fs::read(spv_path)
-        .with_context(|| format!("read shader artifact {}", spv_path.display()))?;
-    let mut words = bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
-        .collect::<Vec<_>>();
-    let marked = spirv_size::mark_dont_inline(
-        &mut words,
-        NOINLINE_HARNESS_MIN_KERNEL_INSTRUCTIONS,
-        min_instructions,
-    )
-        .with_context(|| format!("mark DontInline helpers in {}", spv_path.display()))?;
-    if marked == 0 {
-        return Ok(());
-    }
-    let out = words.iter().flat_map(|word| word.to_le_bytes()).collect::<Vec<_>>();
-    fs::write(spv_path, out).with_context(|| format!("write shader artifact {}", spv_path.display()))
-}
-
 fn shader_max_spv_bytes() -> Result<Option<u64>> {
     const DEFAULT_MAX_SPV_BYTES: u64 = 512 * 1024;
 
@@ -823,14 +735,8 @@ struct ShaderCompileJob {
     stamp_out: PathBuf,
     opt_level: String,
     minimum_slang_opt: bool,
-    disable_non_essential_validations: bool,
-    skip_spirv_validation: bool,
-    report_downstream_time: bool,
-    report_perf: bool,
-    report_detailed_perf: bool,
     debug: bool,
     extra_args: Vec<String>,
-    noinline_min_instructions: u64,
     compile_stamp: String,
 }
 
@@ -948,21 +854,6 @@ fn compile_shader_job(
     if job.minimum_slang_opt {
         cmd.arg("-minimum-slang-optimization");
     }
-    if job.disable_non_essential_validations {
-        cmd.arg("-disable-non-essential-validations");
-    }
-    if job.skip_spirv_validation {
-        cmd.arg("-skip-spirv-validation");
-    }
-    if job.report_downstream_time {
-        cmd.arg("-report-downstream-time");
-    }
-    if job.report_perf {
-        cmd.arg("-report-perf-benchmark");
-    }
-    if job.report_detailed_perf {
-        cmd.arg("-report-detailed-perf-benchmark");
-    }
     if job.debug {
         cmd.arg("-g3");
     }
@@ -989,9 +880,6 @@ fn compile_shader_job(
             job.ep,
             out.status.code()
         ));
-    }
-    if job.noinline_min_instructions != 0 {
-        mark_dont_inline(&job.spv_out, job.noinline_min_instructions)?;
     }
     validate_shader_artifact_size(&job.ep, &job.spv_out, max_shader_spv_bytes)?;
     fs::write(&job.stamp_out, &job.compile_stamp)

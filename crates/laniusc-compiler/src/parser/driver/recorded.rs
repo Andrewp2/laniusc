@@ -5,7 +5,7 @@ use super::{
     Ll1AcceptResult,
     RecordedHirSemanticCount,
     RecordedResidentLl1HirCheck,
-    support::{bool_from_env, read_u32_words, stamp_timer},
+    support::{read_u32_words, stamp_timer},
 };
 use crate::{
     gpu::timer::GpuTimer,
@@ -51,7 +51,7 @@ impl GpuParser {
         let words = read_u32_words(&mapped, 30)?;
         drop(mapped);
         recorded.count_readback.unmap();
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+        if crate::options::get().report.buffers {
             eprintln!(
                 "gpu_hir_rows semantic={} canonical={} candidates={} unique_anchors={} call_args={} params={} type_args={} generic_params={} paths={} path_segments={} fields={} variants={} variant_payloads={} match_arms={} match_payloads={} array_elements={} strings={} methods={} predicates={} max_anchor={} anchor_sum={} capacity={} status={} detail_row={} reason_bits={} bad_ref_raw_plus_one={} bad_ref_input_plus_one={} bad_ref_anchor_plus_one={} bad_ref_winner_plus_one={}",
                 words[0],
@@ -150,7 +150,7 @@ impl GpuParser {
             Err(err) => return Ok(Err(err)),
         };
 
-        let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,

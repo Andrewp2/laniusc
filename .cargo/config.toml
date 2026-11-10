@@ -6,4 +6,6 @@ RUST_TEST_THREADS = { value = "1" }
 # Release builds skip wgpu's indirect-dispatch argument check
 # (`indirect_dispatch_validation` in gpu/device.rs). Tests keep it, so a
 # kernel that writes an out-of-range dispatch is still caught.
-LANIUS_WGPU_INDIRECT_VALIDATION = { value = "1" }
+# This is a default: a `LANIUS_CHECK` set in the shell replaces it, so add
+# `indirect-dispatch` to that list to keep the check.
+LANIUS_CHECK = { value = "indirect-dispatch" }

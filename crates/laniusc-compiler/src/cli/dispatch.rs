@@ -1,6 +1,8 @@
+use std::io::IsTerminal;
+
 use super::{
     args::{self, Command},
-    common::CliError,
+    common::{CliError, DiagnosticFormat, diagnostic_format_from_args},
     compile,
     daemon,
     diagnostics,
@@ -13,6 +15,8 @@ use super::{
 
 /// Parses raw CLI arguments and routes the resulting command to its owner.
 pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
+    let text_diagnostics =
+        matches!(diagnostic_format_from_args(raw_args.iter().cloned()), DiagnosticFormat::Text);
     match args::parse_args(raw_args)? {
         Command::Help => {
             help::print_help();
@@ -31,9 +35,13 @@ pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
         Command::Compile(request) => {
             // A one-shot compile creates every GPU pipeline again; the resident
             // compiler pays that once and then compiles in tens of milliseconds.
-            eprintln!(
-                "laniusc: warning: this one-shot compile starts the GPU compiler from scratch; use `laniusc daemon` (one resident compiler) for repeated compiles"
-            );
+            // The hint is for a person at a terminal. A piped or JSON stderr
+            // carries only diagnostics.
+            if text_diagnostics && std::io::stderr().is_terminal() {
+                eprintln!(
+                    "laniusc: warning: this one-shot compile starts the GPU compiler from scratch; use `laniusc daemon` (one resident compiler) for repeated compiles"
+                );
+            }
             compile::run(request)
         }
     }

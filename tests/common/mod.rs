@@ -239,7 +239,7 @@ pub fn type_check_source_pack_with_dependencies_with_timeout(
             &dependency_interfaces,
         ))
     });
-    // LANIUS_DEBUG_CAPTURE_PASS only: save the selected dispatch for replay.
+    // LANIUS_CAPTURE only: save the selected dispatch for replay.
     write_debug_dispatch_capture();
     result
 }
@@ -739,7 +739,7 @@ fn timeout_message(context: &str, timeout: Duration, details: TimeoutDetails) ->
         ));
     }
     message.push_str(
-        "; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang",
+        "; cold pipeline initialization can dominate the first GPU codegen test, so set LANIUS_REPORT=host-timing before classifying this as a backend hang",
     );
     message
 }

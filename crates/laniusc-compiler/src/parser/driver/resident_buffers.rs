@@ -168,7 +168,7 @@ impl GpuParser {
             .bucketed();
         let needs_allocate = cached_allocation != Some(allocation);
 
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             if let Some(cached) = slot.as_ref() {
                 eprintln!(
                     "[gpu_compile_host_timer] parser.resident_cache: allocate={needs_allocate} wanted_tokens={wanted_capacity} cached_tokens={} wanted_tree={wanted_tree_capacity} cached_tree={} wanted_features=0x{parser_feature_flags:08x} cached_features=0x{:08x} wanted_debug={retain_debug_hir_buffers} cached_debug={}",
@@ -330,9 +330,9 @@ impl GpuParser {
 /// thousand tokens of extra grid.
 pub(crate) const WARM_SHAPE_TOKEN_HEADROOM: u32 = ResidentParserAllocation::GRANULARITY;
 
-/// Which headroom a cold job's parser shape gets: (tokens, tree).
-/// `LANIUS_PARSER_SHAPE_HEADROOM` is `0` for exact shapes, `tokens` or `tree`
-/// for one, and anything else (the default) for both.
+/// Which headroom a cold job's parser shape gets: (tokens, tree). Both by
+/// default. A test can turn both off for its thread with
+/// `override_warm_shape_headroom`.
 pub(crate) fn warm_shape_headroom() -> (bool, bool) {
     #[cfg(test)]
     {
@@ -342,19 +342,13 @@ pub(crate) fn warm_shape_headroom() -> (bool, bool) {
             return (mode == 1, mode == 1);
         }
     }
-    static MODE: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("LANIUS_PARSER_SHAPE_HEADROOM").as_deref() {
-        Ok("0" | "off" | "false") => (false, false),
-        Ok("tokens") => (true, false),
-        Ok("tree") => (false, true),
-        _ => (true, true),
-    })
+    (true, true)
 }
 
-// Test override of `LANIUS_PARSER_SHAPE_HEADROOM` for compiles on this thread
-// (0 off, 1 both, anything else follows the environment), and how many times
-// a compile on this thread read it. Per thread, so a test that turns headroom
-// on does not turn it on for the tests running beside it.
+// Test override of `warm_shape_headroom` for compiles on this thread (0 off,
+// 1 both, anything else leaves the default), and how many times a compile on
+// this thread read it. Per thread, so a test that turns headroom off does
+// not turn it off for the tests running beside it.
 #[cfg(test)]
 thread_local! {
     static TEST_WARM_SHAPE_HEADROOM: std::cell::Cell<u8> = const { std::cell::Cell::new(u8::MAX) };

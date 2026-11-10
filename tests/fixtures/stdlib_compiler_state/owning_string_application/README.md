@@ -112,7 +112,7 @@ From the repository root, the original minimal probe used this bounded command
 with the original helper in `stdlib/alloc/clone.lani`:
 
 ```sh
-RUST_MIN_STACK=16777216 LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc --stdlib-root stdlib --emit x86_64 tests/fixtures/stdlib_compiler_state/owning_string_application/01_vec_string.lani -o target/stdlib-work/owning-iterators-admission/probe-01.elf > target/stdlib-work/owning-iterators-admission/probe-01.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_TRACE=stage-errors timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc --stdlib-root stdlib --emit x86_64 tests/fixtures/stdlib_compiler_state/owning_string_application/01_vec_string.lani -o target/stdlib-work/owning-iterators-admission/probe-01.elf > target/stdlib-work/owning-iterators-admission/probe-01.log 2>&1
 ```
 
 The typed-local retry used the original minimal entry and `probe-01-fixed`
@@ -134,7 +134,7 @@ timeout --kill-after=2s 100s tar -xf target/stdlib-work/owning-iterators-admissi
 The verified original-state control then used:
 
 ```sh
-RUST_MIN_STACK=16777216 LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc --stdlib-root target/stdlib-work/owning-iterators-admission/original-stdlib/stdlib --emit x86_64 tests/fixtures/stdlib_compiler_state/owning_string_application/06_vec_string_finish_projection.lani -o target/stdlib-work/owning-iterators-admission/probe-06-original.elf > target/stdlib-work/owning-iterators-admission/probe-06-original.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_TRACE=stage-errors timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc --stdlib-root target/stdlib-work/owning-iterators-admission/original-stdlib/stdlib --emit x86_64 tests/fixtures/stdlib_compiler_state/owning_string_application/06_vec_string_finish_projection.lani -o target/stdlib-work/owning-iterators-admission/probe-06-original.elf > target/stdlib-work/owning-iterators-admission/probe-06-original.log 2>&1
 ```
 
 To repeat minimal 01 against that historical stdlib, substitute

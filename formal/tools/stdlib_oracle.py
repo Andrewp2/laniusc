@@ -1022,8 +1022,7 @@ RUN_ALL = 'formal/.lake/build/bin/runAll'
 def capture_tree(laniusc, lani_path, workdir, index):
     """The parser's tree at one capture index, or None."""
     cap = os.path.join(workdir, 'cap')
-    env = dict(os.environ, LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel', LANIUS_DEBUG_CAPTURE_DIR=cap,
-               LANIUS_DEBUG_CAPTURE_INDEX=str(index))
+    env = dict(os.environ, LANIUS_CAPTURE=f'parser/tree/parent_parallel,dir={cap},index={index}')
     shutil.rmtree(cap, ignore_errors=True)
     run_cache.release_gpu()
     subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, *source_root_args(SOURCE_ROOTS), '-o',

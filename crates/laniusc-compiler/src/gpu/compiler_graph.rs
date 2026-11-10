@@ -660,8 +660,6 @@ struct PhaseResetSlot {
 pub(crate) struct PhaseResetPlan {
     clears: Vec<LaniusBuffer<u8>>,
     tails: Vec<LaniusBuffer<u8>>,
-    cleared_bytes: u64,
-    imported_bytes: u64,
 }
 
 impl PhaseResetPlan {
@@ -676,12 +674,9 @@ impl PhaseResetPlan {
         &self.tails
     }
 
-    pub(crate) fn cleared_bytes(&self) -> u64 {
-        self.cleared_bytes
-    }
-
-    pub(crate) fn imported_bytes(&self) -> u64 {
-        self.imported_bytes
+    #[cfg(test)]
+    fn cleared_bytes(&self) -> u64 {
+        self.clears.iter().map(|range| range.byte_size as u64).sum()
     }
 }
 
@@ -890,11 +885,6 @@ impl CompilerGraphWorkspace {
         upstream: &[TrackedBufferView<'_>],
         import_outputs: bool,
     ) -> Result<Self, String> {
-        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some()
-            || std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_UPSTREAM_REUSE").is_some()
-        {
-            return Self::new(device, label, graph);
-        }
         // A phase may expose several typed aliases of the same physical
         // allocation. Treat that allocation as one candidate. The producer
         // phase is complete, so multiple consumer slots may safely occupy
@@ -983,24 +973,6 @@ impl CompilerGraphWorkspace {
                     assignment.name
                 )
             })?;
-            if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
-                let resources = graph
-                    .workspace
-                    .assignments
-                    .iter()
-                    .filter(|assignment| assignment.slot == slot.slot)
-                    .map(|assignment| assignment.name)
-                    .collect::<Vec<_>>();
-                eprintln!(
-                    "compiler_graph_import label={label} slot={} resource={} allocation={:?} offset={} bytes={} slot_bytes={} resources={resources:?}",
-                    slot.slot,
-                    assignment.name,
-                    buffer.allocation_id(),
-                    buffer.byte_offset,
-                    allocation.byte_size,
-                    slot.bytes,
-                );
-            }
             imports.push((resource, buffer.alias::<u8>(slot.bytes as usize)));
         }
         Self::new_with_imports(device, label, graph, &imports)
@@ -1099,21 +1071,6 @@ impl CompilerGraphWorkspace {
             WorkspaceArenaLimits::from_device_limits(&device.limits())?,
             &graph.workspace_arena_conflicts(),
         )?;
-        if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
-            for placement in &arena_layout.placements {
-                let resources = graph
-                    .workspace
-                    .assignments
-                    .iter()
-                    .filter(|assignment| assignment.slot == placement.slot)
-                    .map(|assignment| assignment.name)
-                    .collect::<Vec<_>>();
-                eprintln!(
-                    "compiler_graph_arena label={label} arena={} slot={} offset={} bytes={} resources={resources:?}",
-                    placement.arena, placement.slot, placement.byte_offset, placement.byte_size,
-                );
-            }
-        }
         let arena_usage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST
@@ -1237,10 +1194,8 @@ impl CompilerGraphWorkspace {
         let mut ranges_by_allocation =
             BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
         let mut tails = Vec::new();
-        let mut imported_bytes = 0u64;
         for slot in &self.phase_reset_slots {
             let slot_bytes = slot.view.byte_size as u64;
-            imported_bytes += slot_bytes;
             let prefix = slot
                 .resources
                 .iter()
@@ -1265,23 +1220,16 @@ impl CompilerGraphWorkspace {
             }
         }
         let mut clears = Vec::new();
-        let mut cleared_bytes = 0u64;
         for (allocation_id, (buffer, ranges)) in ranges_by_allocation {
             for (start, end) in merge_byte_ranges(ranges) {
                 let bytes = end - start;
-                cleared_bytes += bytes;
                 clears.push(
                     TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
                         .alias::<u8>(bytes as usize),
                 );
             }
         }
-        Ok(PhaseResetPlan {
-            clears,
-            tails,
-            cleared_bytes,
-            imported_bytes,
-        })
+        Ok(PhaseResetPlan { clears, tails })
     }
 
     #[cfg(test)]
@@ -1901,17 +1849,6 @@ impl CompilerGraph {
             .iter()
             .map(|slot| slot.slot)
             .collect::<Vec<_>>();
-        if std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some() {
-            return all_slots
-                .iter()
-                .enumerate()
-                .flat_map(|(index, &left)| {
-                    all_slots[index + 1..]
-                        .iter()
-                        .map(move |&right| (left.min(right), left.max(right)))
-                })
-                .collect();
-        }
         let slot_by_resource = self
             .workspace
             .assignments
@@ -2401,7 +2338,7 @@ impl CompilerGraph {
 fn compiler_graph_diagnostics_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED
-        .get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_COMPILER_GRAPH_BREAKDOWN", false))
+        .get_or_init(|| crate::options::get().report.graph)
 }
 
 static COMPILER_GRAPH_DIAGNOSTICS: std::sync::OnceLock<
@@ -4884,39 +4821,29 @@ fn plan_graph_workspace(
         )
     });
 
-    // This diagnostic mode is intentionally internal: it preserves the graph
-    // and all pass bindings while giving every logical workspace resource a
-    // distinct allocation. A semantic difference flags dependence on storage
-    // sharing, including incomplete lifetimes and shader views exposing physical
-    // slot capacity instead of declared logical bounds.
-    let disable_coloring = std::env::var_os("LANIUS_COMPILER_GRAPH_DISABLE_COLORING").is_some();
     let mut slots = Vec::<SlotState>::new();
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
         let retained_output = resource.class == ResourceClass::Output;
-        let reusable = (!disable_coloring)
-            .then(|| {
-                slots
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, slot)| {
-                        slot.plan.usage == resource.usage
-                            && slot.retained_output == retained_output
-                            && slot.lifetimes.iter().all(|other| {
-                                lifetime.last_pass < other.first_pass
-                                    || other.last_pass < lifetime.first_pass
-                            })
+        let reusable = slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| {
+                slot.plan.usage == resource.usage
+                    && slot.retained_output == retained_output
+                    && slot.lifetimes.iter().all(|other| {
+                        lifetime.last_pass < other.first_pass
+                            || other.last_pass < lifetime.first_pass
                     })
-                    .min_by_key(|(_, slot)| {
-                        (
-                            std::cmp::Reverse(slot.plan.bytes),
-                            slot.lifetimes.len(),
-                            slot.plan.slot,
-                        )
-                    })
-                    .map(|(index, _)| index)
             })
-            .flatten();
+            .min_by_key(|(_, slot)| {
+                (
+                    std::cmp::Reverse(slot.plan.bytes),
+                    slot.lifetimes.len(),
+                    slot.plan.slot,
+                )
+            })
+            .map(|(index, _)| index);
         let slot_index = reusable.unwrap_or_else(|| {
             let index = slots.len();
             slots.push(SlotState {
@@ -4936,7 +4863,7 @@ fn plan_graph_workspace(
         assignment_by_resource.insert(resource_index, slot.plan.slot);
     }
 
-    let plan = WorkspacePlan {
+    Ok(WorkspacePlan {
         assignments: resources
             .iter()
             .enumerate()
@@ -4951,28 +4878,7 @@ fn plan_graph_workspace(
             })
             .collect(),
         slots: slots.into_iter().map(|slot| slot.plan).collect(),
-    };
-    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
-        for assignment in &plan.assignments {
-            let resource_index = resources
-                .iter()
-                .position(|resource| resource.name == assignment.name)
-                .expect("workspace assignment resource");
-            let lifetime = lifetimes[resource_index].expect("workspace resource lifetime");
-            eprintln!(
-                "compiler_graph_slot slot={} index={} resource={} bytes={} usage={:?} class={:?} first={} last={}",
-                assignment.slot,
-                resource_index,
-                assignment.name,
-                resources[resource_index].bytes,
-                resources[resource_index].usage,
-                resources[resource_index].class,
-                lifetime.first_pass.index(),
-                lifetime.last_pass.index(),
-            );
-        }
-    }
-    Ok(plan)
+    })
 }
 
 #[cfg(test)]
@@ -5183,7 +5089,7 @@ mod tests {
         // A job whose resources keep their built sizes clears the same range.
         let full = workspace.phase_reset_plan(|_| None).unwrap();
         assert_eq!((full.clears.len(), full.tails().len()), (1, 0));
-        assert_eq!((full.cleared_bytes(), full.imported_bytes()), (128, 128));
+        assert_eq!(full.cleared_bytes(), 128);
         let built = workspace.phase_reset_plan(|_| Some(64)).unwrap();
         assert_eq!((built.clears.len(), built.cleared_bytes()), (1, 128));
         // A smaller job clears whole words of its own bytes, and the cleared

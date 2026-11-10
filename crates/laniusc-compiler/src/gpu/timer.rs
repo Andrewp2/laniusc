@@ -82,9 +82,7 @@ pub(crate) const JOB_SESSION_QUERY_CAPACITY: u32 = 256 * wgpu::QUERY_SET_MAX_QUE
 
 /// Returns whether compile GPU timestamps are needed for console output or tracing.
 pub(crate) fn compile_timing_requested() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_TIMING", false)
-        || crate::gpu::env::env_bool_truthy("LANIUS_GPU_TIMING", false)
-        || crate::gpu::trace::enabled()
+    crate::options::get().report.gpu_timing || crate::gpu::trace::enabled()
 }
 
 /// A timer for measuring GPU execution time.

@@ -631,6 +631,7 @@ impl CheckedBodySpecializationBatch {
     /// Canonical environment semantics and retained input layout witnesses in
     /// the same sorted order as `impl_bindings`, including empty nongeneric
     /// environments. Native width or shared graph ordinals never enter identity.
+    #[cfg(test)]
     pub(crate) fn binding_scheduling_environments(&self) -> Result<Vec<(Vec<u32>, Vec<u32>)>> {
         self.impl_bindings.iter().map(|binding| binding.environment.scheduling_environment()).collect()
     }
@@ -964,17 +965,6 @@ impl CheckedBodySpecializationBatch {
 }
 
 impl super::GpuTypeChecker {
-    /// Called after this replay's successful status readback and before its
-    /// retained workspace can be replaced. The seed and native row order are
-    /// exact; no source token or host-computed layout is used as a substitute.
-    pub(crate) fn retained_body_native_layouts(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        specialization: &CheckedBodySpecializationBatch,
-    ) -> Result<Vec<Vec<u32>>> {
-        Ok(self.retained_body_native_layouts_with_bindings(device, queue, specialization)?.0)
-    }
 
     /// Collect entry and sorted-binding environment witnesses in one shared
     /// seed-node readback. Binding-only types need the same GPU layout

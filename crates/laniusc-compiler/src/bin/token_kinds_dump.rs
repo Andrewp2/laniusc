@@ -12,11 +12,9 @@
 // edited copies of every lexed stream (token deletes, inserts and swaps), so
 // unbalanced and unusual delimiter structure is covered too. `--concat` adds
 // one stream holding every file's tokens back to back, which exercises the
-// multi-block delimiter hierarchy. With LANIUS_DEBUG_TOKEN_KINDS_SYMBOLS_ONLY=1
-// the frontend stops after `parser.tokens_to_kinds`, so the dump is that
-// pass's output rather than the final parser alphabet. `--syntax` also writes
-// the GPU syntax checker's verdict (`label#syntax`) for every lexed stream and
-// for N mutated copies of it.
+// multi-block delimiter hierarchy. `--syntax` also writes the GPU syntax
+// checker's verdict (`label#syntax`) for every lexed stream and for N mutated
+// copies of it.
 
 use std::{
     io::Write,

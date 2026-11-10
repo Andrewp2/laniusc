@@ -13,8 +13,6 @@ mod proof_store;
 
 pub(super) use dispatch::{SolverWorkspacePool, prepare_kernels as prepare_solver_kernels};
 
-pub(super) use abi::{ArenaCopy, ArenaWrite, OutputRange, UploadPlan};
-pub(super) use catalog::{CatalogInput, FrozenCatalog, FrozenSnapshotId, StableWitnessIdentity};
 pub(super) use native_session::{
     CheckedReplayCalls,
     DeclarationsOnlyTemplate,
@@ -22,20 +20,10 @@ pub(super) use native_session::{
     ReplayScope,
     ValidatedOriginalUnit,
     ValidatedReplayRequest,
-    declarations_only_templates_checked,
-    declarations_only_templates_enabled,
-    instance_closure_enabled,
     native_program_error,
     unit_span,
 };
-pub(super) use packet::{
-    AdmittedCall,
-    ProgramPacket,
-    ReplayContextInput,
-    SourceCallIdentity,
-    Submission,
-    ValidatedSolverResult,
-};
+pub(super) use packet::AdmittedCall;
 
 // Callable native identities come from accepted owner retention; actual public
 // aliases are joined against the accepted interface, never guessed from tags.

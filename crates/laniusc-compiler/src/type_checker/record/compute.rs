@@ -8,7 +8,7 @@ pub(in crate::type_checker) fn stamp_typecheck_timer(
     encoder: &mut wgpu::CommandEncoder,
     label: &str,
 ) {
-    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+    if crate::options::get().report.host_timing {
         eprintln!(
             "[gpu_compile_host_timer] typecheck.pass_checkpoint: label={label} total_compute_passes={}",
             recorded_compute_pass_count(),

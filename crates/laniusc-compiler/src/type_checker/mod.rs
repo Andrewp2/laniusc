@@ -24,24 +24,28 @@ pub(crate) use instance_closure_passes::instance_table_checked;
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod owner_spans;
-pub(crate) use owner_spans::{CheckedBodySpan, CheckedImplHeader, CheckedOwnerSpan, CheckedOwnerSpans, CheckedTraitCut};
+pub(crate) use owner_spans::{CheckedBodySpan, CheckedOwnerSpan, CheckedOwnerSpans};
+#[cfg(test)]
+pub(crate) use owner_spans::{CheckedImplHeader, CheckedTraitCut};
 mod template_blanking;
 pub(crate) use template_blanking::{BlankingDirection, TemplateBlanking, TemplateIdentityMap};
 mod checked_contracts;
 #[cfg(test)]
 mod scoped_type_graph_tests;
 pub(crate) use checked_contracts::{
-    CheckedCallOwner, CheckedNominalRecipe, CheckedNominalRecipeKind, CheckedUnitContracts,
+    CheckedCallOwner, CheckedNominalRecipeKind, CheckedUnitContracts,
 };
 #[cfg(test)]
 pub(crate) use checked_contracts::{
     CheckedCallableOwner, CheckedContractOwner, CheckedImplementationContract,
     CheckedPredicateContract,
 };
+#[cfg(test)]
+pub(crate) use generic_calls::CheckedParameterIdentity;
 pub(crate) use generic_body::{BODY_COPY_TARGET, BodyImplBinding, BodyImplEnvironment, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_CONTINUATION_FILES, MAX_BODY_ENTRIES, MAX_BODY_IMPL_BINDINGS, MAX_ORIGINAL_REPLAY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
-    CheckedNominalIdentity, CheckedParameterDomain, CheckedParameterIdentity,
+    CheckedNominalIdentity, CheckedParameterDomain,
 };
 pub(crate) use generic_calls::{
     CheckedGenericApplicationArgument,
@@ -52,10 +56,11 @@ pub(crate) use generic_calls::{
     CheckedGenericConstant,
     CheckedGenericTarget,
     CheckedGenericType,
-    dependency_method_requirements,
     resolve_generic_requirements,
     scope_generic_type_identities,
 };
+#[cfg(test)]
+pub(crate) use generic_calls::dependency_method_requirements;
 mod dependency_interface;
 mod module_path;
 mod operations;

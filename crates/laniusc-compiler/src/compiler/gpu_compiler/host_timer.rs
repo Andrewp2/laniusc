@@ -1,5 +1,3 @@
-use super::*;
-
 /// Host-side timing helper for GPU compiler orchestration.
 pub(super) struct CompilerHostTimer {
     /// Prefix used for emitted timing labels.
@@ -20,10 +18,7 @@ impl CompilerHostTimer {
         let now = std::time::Instant::now();
         Self {
             label,
-            print_enabled: crate::gpu::env::env_bool_truthy(
-                "LANIUS_GPU_COMPILE_HOST_TIMING",
-                false,
-            ),
+            print_enabled: crate::options::get().report.host_timing,
             trace_enabled: crate::gpu::trace::enabled(),
             start: now,
             last: now,
@@ -46,42 +41,5 @@ impl CompilerHostTimer {
             crate::gpu::trace::record_host_span("host.compiler", &name, self.last, now);
         }
         self.last = now;
-    }
-
-    /// Samples and optionally traces the backend pipeline-cache byte size.
-    pub(super) fn pipeline_cache_size(&self, gpu: &GpuDevice, stage: &str) {
-        if !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_BREAKDOWN", false) {
-            return;
-        }
-        let start = std::time::Instant::now();
-        let size = gpu.pipeline_cache_data_len();
-        let end = std::time::Instant::now();
-        let sample_ms = end.duration_since(start).as_secs_f64() * 1000.0;
-        match size {
-            Some(bytes) => {
-                eprintln!(
-                    "[pipeline_cache_breakdown] stage={stage} bytes={bytes} sample_ms={sample_ms:.3}"
-                );
-                if self.trace_enabled {
-                    crate::gpu::trace::record_host_span(
-                        "host.pipeline_cache",
-                        &format!("pipeline_cache.sample.{stage}"),
-                        start,
-                        end,
-                    );
-                    crate::gpu::trace::record_counter(
-                        "host.pipeline_cache.size",
-                        "pipeline_cache_bytes",
-                        end,
-                        bytes as f64,
-                    );
-                }
-            }
-            None => {
-                eprintln!(
-                    "[pipeline_cache_breakdown] stage={stage} bytes=unavailable sample_ms={sample_ms:.3}"
-                );
-            }
-        }
     }
 }

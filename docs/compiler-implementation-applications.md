@@ -134,7 +134,7 @@ The stream gate passes **seven compilation jobs and four native executions**
 in 7.97 seconds. Missing Read, missing Write and unrelated-owner bounds reject
 with source-local `LNC0008`. The repeated behavioral program follows those
 rejections in the same compiler process. With
-`LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1`, an observed two-body cache hit equals
+`LANIUS_CHECK=library-instance-cache`, an observed two-body cache hit equals
 fresh replay, including code, calls, contracts and layouts.
 
 A separate constant gate passes one compilation and one native execution in

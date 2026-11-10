@@ -191,9 +191,7 @@ impl GpuDevice {
             *last = Some(Instant::now());
         }
         let timer = PipelineCachePersistTimer::new();
-        let force_persist =
-            crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false);
-        if !take_pipeline_cache_dirty(&self.pipeline_cache_dirty, force_persist) {
+        if !take_pipeline_cache_dirty(&self.pipeline_cache_dirty) {
             let now = Instant::now();
             timer.span("skipped.clean", now, now);
             return;
@@ -236,7 +234,7 @@ impl GpuDevice {
             .ok()
             .and_then(|hash| *hash)
             == Some(data_hash);
-        if !force_persist && already_persisted {
+        if already_persisted {
             timer.span("skipped.unchanged", total_start, Instant::now());
             return;
         }
@@ -290,16 +288,6 @@ impl GpuDevice {
         timer.span("total", total_start, end);
     }
 
-    /// Returns current pipeline-cache payload length, if cache data is available.
-    pub fn pipeline_cache_data_len(&self) -> Option<usize> {
-        self.pipeline_cache
-            .lock()
-            .ok()
-            .and_then(|cache| cache.clone())
-            .and_then(|cache| cache.get_data())
-            .map(|data| data.len())
-    }
-
     /// Persists and releases the driver cache after eager pipeline creation.
     pub fn persist_and_release_pipeline_cache(&self) {
         self.persist_pipeline_cache();
@@ -311,8 +299,8 @@ impl GpuDevice {
     }
 }
 
-fn take_pipeline_cache_dirty(dirty: &AtomicBool, force: bool) -> bool {
-    dirty.swap(false, Ordering::AcqRel) || force
+fn take_pipeline_cache_dirty(dirty: &AtomicBool) -> bool {
+    dirty.swap(false, Ordering::AcqRel)
 }
 
 fn write_pipeline_cache_tmp(
@@ -363,10 +351,7 @@ struct PipelineCachePersistTimer {
 impl PipelineCachePersistTimer {
     fn new() -> Self {
         Self {
-            print_enabled: crate::gpu::env::env_bool_truthy(
-                "LANIUS_GPU_COMPILE_HOST_TIMING",
-                false,
-            ),
+            print_enabled: crate::options::get().report.host_timing,
             trace_enabled: crate::gpu::trace::enabled(),
         }
     }
@@ -409,25 +394,18 @@ impl PipelineCachePersistTimer {
 }
 
 fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
-    let backends = crate::gpu::env::env_string("LANIUS_BACKEND", "auto").to_ascii_lowercase();
-    let backends = match backends.as_str() {
-        "vulkan" | "vk" => wgpu::Backends::VULKAN,
-        "dx12" => wgpu::Backends::DX12,
-        "metal" | "mtl" => wgpu::Backends::METAL,
-        "gl" => wgpu::Backends::GL,
-        "auto" => wgpu::Backends::all(),
-        other => {
-            warn!("unknown LANIUS_BACKEND '{other}'; using default backends");
-            wgpu::Backends::all()
-        }
+    let options = crate::options::get();
+    let backends = match options.backend {
+        crate::options::Backend::Vulkan => wgpu::Backends::VULKAN,
+        crate::options::Backend::Dx12 => wgpu::Backends::DX12,
+        crate::options::Backend::Metal => wgpu::Backends::METAL,
+        crate::options::Backend::Gl => wgpu::Backends::GL,
+        crate::options::Backend::Auto => wgpu::Backends::all(),
     };
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends,
-        flags: instance_flags(crate::gpu::env::env_bool_truthy(
-            "LANIUS_GPU_DEBUG_LABELS",
-            false,
-        )),
+        flags: instance_flags(crate::options::get().trace.gpu_labels),
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
@@ -442,7 +420,7 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
         adapter_info.device_type,
         &adapter_info.name,
         adapter_info.backend,
-        crate::gpu::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        crate::options::get().allow_software_adapter,
     )?;
 
     let adapter_limits = adapter.limits();
@@ -635,9 +613,9 @@ fn instance_flags(debug_labels: bool) -> wgpu::InstanceFlags {
 /// for a u32 count of 256-wide groups). So release builds skip the check.
 /// Debug builds keep it, and so does `cargo test` (`.cargo/config.toml`), so
 /// an out-of-range dispatch is still caught there.
-/// `LANIUS_WGPU_INDIRECT_VALIDATION=1|0` overrides both defaults.
+/// `LANIUS_CHECK=indirect-dispatch` turns it on in a release build.
 fn indirect_dispatch_validation() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_WGPU_INDIRECT_VALIDATION", cfg!(debug_assertions))
+    crate::options::get().check.indirect_dispatch
 }
 
 /// Returns a reference to the global GPU context (created on first use).
@@ -666,9 +644,7 @@ pub fn persist_pipeline_cache() {
 pub fn persist_created_pipelines() {
     check_named_driver_shard();
     wait_for_background_persist();
-    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) != 0
-        || crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
-    {
+    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) != 0 {
         persist_pipeline_cache();
     }
 }
@@ -699,9 +675,7 @@ fn spawn_background_persist(global: &'static GpuDevice) {
     if global.pipeline_cache_path.is_none() {
         return;
     }
-    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) == 0
-        && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
-    {
+    if PIPELINES_CREATED_SINCE_PERSIST.load(Ordering::Acquire) == 0 {
         return;
     }
     if BACKGROUND_PERSIST_RUNNING
@@ -738,9 +712,7 @@ const PIPELINE_CACHE_HIT_MAX: Duration = Duration::from_millis(10);
 /// creation marks the cache file for a check, so a warm start skips reading
 /// the cache back (~90 ms for the full kernel set).
 pub(crate) fn note_pipeline_creation(device: &wgpu::Device, took: Duration) {
-    if took < PIPELINE_CACHE_HIT_MAX
-        && !crate::gpu::env::env_bool_truthy("LANIUS_PIPELINE_CACHE_PERSIST_ALWAYS", false)
-    {
+    if took < PIPELINE_CACHE_HIT_MAX {
         return;
     }
     mark_pipeline_cache_dirty(device);
@@ -843,10 +815,10 @@ fn pipeline_cache_registry() -> &'static Mutex<HashMap<usize, RegisteredPipeline
 /// Where the pipeline cache files live: `LANIUS_PIPELINE_CACHE_DIR`, else
 /// `target/wgpu-pipeline-cache`.
 fn pipeline_cache_dir() -> PathBuf {
-    crate::gpu::env::env_path(
-        "LANIUS_PIPELINE_CACHE_DIR",
-        PathBuf::from("target").join("wgpu-pipeline-cache"),
-    )
+    crate::options::get()
+        .pipeline_cache_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("target").join("wgpu-pipeline-cache"))
 }
 
 const NVIDIA_VENDOR_ID: u32 = 0x10de;
@@ -974,7 +946,7 @@ unsafe fn configure_driver_shader_cache() {
 /// did not configure it), so the pipeline cache files serve pipelines.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn driver_shader_cache_requested() -> bool {
-    std::env::var_os("LANIUS_DRIVER_SHADER_CACHE").is_none_or(|value| value != "0")
+    crate::options::get().driver_shader_cache
 }
 
 /// The driver's cache directory: `__GL_SHADER_DISK_CACHE_PATH`, else
@@ -1061,7 +1033,7 @@ fn classify_shard_naming(glcache: &std::path::Path, app_name: &str, started: Sys
 }
 
 /// What NVIDIA's shader disk cache did for this process, for startup reports
-/// (the daemon's ready event, `LANIUS_GPU_COMPILE_HOST_TIMING`).
+/// (the daemon's ready event, `LANIUS_REPORT=host-timing`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DriverShaderCacheStatus {
     /// The device's PCI vendor; 0 before the compiler opened a device.
@@ -1301,10 +1273,7 @@ fn create_pipeline_cache(
         // This kernel set has no file yet: start from the most recently
         // written set's file, so pipelines the shader edit left unchanged
         // stay cache hits.
-        let seed_max_bytes = crate::gpu::env::env_u64(
-            "LANIUS_PIPELINE_CACHE_SEED_MAX_BYTES",
-            PIPELINE_CACHE_SEED_MAX_BYTES,
-        );
+        let seed_max_bytes = PIPELINE_CACHE_SEED_MAX_BYTES;
         let now = Instant::now();
         match choose_pipeline_cache_seed(&others, &key, seed_max_bytes) {
             PipelineCacheSeed::None => timer.span_prefixed("create", "seed.none", now, now),
@@ -1679,21 +1648,8 @@ fn prune_pipeline_cache_dir(
             modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
         });
     }
-    if !crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_CACHE_PRUNE", true) {
-        return entries;
-    }
-    let budget = PipelineCacheBudget {
-        max_files: crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_FILES", 6) as usize,
-        max_bytes: crate::gpu::env::env_u64(
-            "LANIUS_PIPELINE_CACHE_MAX_BYTES",
-            768u64.saturating_mul(1024).saturating_mul(1024),
-        ),
-        max_age: Duration::from_secs(
-            crate::gpu::env::env_u64("LANIUS_PIPELINE_CACHE_MAX_AGE_DAYS", 30)
-                .saturating_mul(24 * 60 * 60),
-        ),
-    };
-    let (kept, removed) = plan_pipeline_cache_prune(entries, &budget, SystemTime::now());
+    let (kept, removed) =
+        plan_pipeline_cache_prune(entries, &PIPELINE_CACHE_BUDGET, SystemTime::now());
     for (entry, reason) in removed {
         remove_pipeline_cache_file(&entry.path, reason);
     }
@@ -1707,6 +1663,14 @@ struct PipelineCacheBudget {
     max_bytes: u64,
     max_age: Duration,
 }
+
+/// What a scan of the cache directory keeps per adapter: 6 files, 768 MiB in
+/// the other kernel sets' files, and nothing older than 30 days.
+const PIPELINE_CACHE_BUDGET: PipelineCacheBudget = PipelineCacheBudget {
+    max_files: 6,
+    max_bytes: 768 * 1024 * 1024,
+    max_age: Duration::from_secs(30 * 24 * 60 * 60),
+};
 
 /// Splits the other kernel sets' files into kept and removed (with the
 /// reason): the newest are kept while they fit the budget.
@@ -1941,19 +1905,10 @@ mod tests {
     fn clean_pipeline_cache_skips_serialization_until_marked_dirty() {
         let dirty = AtomicBool::new(false);
 
-        assert!(!take_pipeline_cache_dirty(&dirty, false));
+        assert!(!take_pipeline_cache_dirty(&dirty));
         dirty.store(true, Ordering::Release);
-        assert!(take_pipeline_cache_dirty(&dirty, false));
-        assert!(!take_pipeline_cache_dirty(&dirty, false));
-    }
-
-    #[test]
-    fn forced_pipeline_cache_persistence_consumes_any_dirty_mark() {
-        let dirty = AtomicBool::new(true);
-
-        assert!(take_pipeline_cache_dirty(&dirty, true));
-        assert!(!dirty.load(Ordering::Acquire));
-        assert!(take_pipeline_cache_dirty(&dirty, true));
+        assert!(take_pipeline_cache_dirty(&dirty));
+        assert!(!take_pipeline_cache_dirty(&dirty));
     }
 
     fn cache_entry(name: &str, len: u64, age_secs: u64) -> PipelineCacheDirEntry {

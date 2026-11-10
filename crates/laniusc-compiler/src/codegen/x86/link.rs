@@ -633,7 +633,6 @@ impl GpuX86Linker {
         });
         dispatch_compute_pass(
             &mut encoder,
-            "link.relocate",
             "codegen.x86.link.relocate",
             &self.link_relocate_pass,
             &group,
@@ -940,7 +939,6 @@ impl GpuX86Linker {
         encoder.clear_buffer(&output_status.buffer, 0, None);
         dispatch_compute_pass(
             &mut encoder,
-            "link.layout_scan_local",
             "codegen.x86.link.layout_scan_local",
             &self.link_layout_scan_local_pass,
             &local_group,
@@ -949,7 +947,6 @@ impl GpuX86Linker {
         for group in &scan_groups {
             dispatch_compute_pass(
                 &mut encoder,
-                "link.layout_scan_blocks",
                 "codegen.x86.link.layout_scan_blocks",
                 &self.link_layout_scan_blocks_pass,
                 group,
@@ -958,7 +955,6 @@ impl GpuX86Linker {
         }
         dispatch_compute_pass(
             &mut encoder,
-            "link.layout",
             "codegen.x86.link.layout",
             &self.link_layout_pass,
             &layout_group,
@@ -966,7 +962,6 @@ impl GpuX86Linker {
         );
         dispatch_compute_pass(
             &mut encoder,
-            "link.elf_write",
             "codegen.x86.link.elf_write",
             &self.elf_write_pass,
             &elf_group,
@@ -975,7 +970,6 @@ impl GpuX86Linker {
         let copy_items = input.text_len().max(input.rodata_len()).max(1) as u32;
         dispatch_compute_pass(
             &mut encoder,
-            "link.copy_sections",
             "codegen.x86.link.copy_sections",
             &self.link_copy_sections_pass,
             &copy_group,

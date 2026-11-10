@@ -3,7 +3,7 @@
 use super::*;
 
 fn benchmark_parser_execution_error(src: &str, err: impl std::fmt::Display) -> CompileError {
-    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+    if crate::options::get().report.host_timing {
         eprintln!("[gpu_compile_host_timer] benchmark.parser.error: {err}");
     }
     parser_execution_failed_for_source(Path::new("<benchmark>"), src, err)
@@ -110,10 +110,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         .read_status_result(device)
                         .map_err(|err| benchmark_parser_execution_error(&src, err))?;
                     if !ll1.accepted {
-                        if crate::gpu::env::env_bool_truthy(
-                            "LANIUS_GPU_COMPILE_HOST_TIMING",
-                            false,
-                        ) {
+                        if crate::options::get().report.host_timing {
                             eprintln!(
                                 "[gpu_compile_host_timer] benchmark.parser.status: accepted={} error_pos={} error_code={} detail={} steps={} emit_len={}",
                                 ll1.accepted,

@@ -11,7 +11,7 @@ use anyhow::Result;
 use crate::gpu::{
     buffers::CapacityBufferCache,
     device,
-    passes_core::{PassData, make_traced_main_pass},
+    passes_core::{PassData, make_main_pass},
 };
 
 mod link;
@@ -39,7 +39,6 @@ pub use object::{
 };
 
 mod support;
-use support::trace_x86_codegen;
 
 /// Daemon-resident GPU linker pipelines for durable x86 objects.
 pub struct GpuX86Linker {
@@ -70,13 +69,11 @@ impl GpuX86Linker {
     pub fn new_with_device(gpu: &device::GpuDevice) -> Result<Self> {
         macro_rules! load_x86_pass {
             ($name:literal, $spv:literal, $reflection:literal) => {{
-                make_traced_main_pass!(
+                make_main_pass!(
                     &gpu.device,
-                    trace_x86_codegen,
-                    $name,
                     concat!("codegen_x86_", $name),
                     artifacts: ($spv, $reflection)
-                )
+                )?
             }};
         }
 

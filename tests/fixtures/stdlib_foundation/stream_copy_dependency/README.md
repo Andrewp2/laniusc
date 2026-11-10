@@ -23,8 +23,8 @@ timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
   -o target/stdlib-work/repro-stream-copy
 ```
 
-Adding `LANIUS_DEBUG_INSTANCE_CLOSURE=1 LANIUS_DEBUG_STAGE_ERRORS=1` to the
-compiler's environment prints the generic closure and rejection detail.
+Adding `LANIUS_TRACE=stage-errors` to the compiler's environment prints the
+rejection detail.
 
 The production `core::io::copy` handles short writes directly in its copy loop.
 That implementation retains the same public contracts and executes for native

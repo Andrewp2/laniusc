@@ -357,7 +357,7 @@ fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
         .arg("x86_64")
         .arg("--stdlib-root")
         .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
-        .env("LANIUS_GPU_COMPILE_HOST_TIMING", "1")
+        .env("LANIUS_REPORT", "host-timing")
         .stdin(Stdio::from(stdin));
     let output =
         common::codegen_command_output_with_timeout("laniusc daemon x86 job", &mut command);

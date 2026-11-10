@@ -1,25 +1,25 @@
 //! Debug capture of one compute dispatch for offline replay.
 //!
-//! `LANIUS_DEBUG_CAPTURE_PASS=<name>` selects the dispatches recorded under that
-//! operation label (as `LANIUS_DEBUG_OPERATION_LOG=1` prints it) or of that
+//! `LANIUS_CAPTURE=<name>` selects the dispatches recorded under that
+//! operation label (as `LANIUS_TRACE=operations` prints it) or of that
 //! kernel (shader artifact key, e.g. `parser/tokens/to/kinds`), and
-//! `LANIUS_DEBUG_CAPTURE_INDEX=k` (default 0) picks the k-th of them. The selected dispatch is recorded in a compute pass of its own,
+//! `,index=k` (default 0) picks the k-th of them. The selected dispatch is recorded in a compute pass of its own,
 //! with every bound range copied right before it (the inputs) and right after
 //! it (the GPU's outputs), plus its indirect dispatch arguments.
-//! `debug_write_capture` saves all of it to `LANIUS_DEBUG_CAPTURE_DIR` (default
+//! `debug_write_capture` saves all of it to the directory `,dir=PATH` names (default
 //! `lanius-capture`): `manifest.json`, one `NNN_name.bin` per binding with the
 //! inputs and `post/NNN_name.bin` with the outputs. `tools/cpu_kernel_replay.py`
 //! reruns the kernel on the CPU from such a capture (see
 //! docs/cpu-kernel-replay.md); `src/bin/shader_dispatch_replay.rs` and
 //! `crates/vk-hang-probe` replay it on the GPU.
 //!
-//! `LANIUS_DEBUG_CAPTURE_PER_JOB=1` restarts the count at each write, so a
+//! `,per-job` restarts the count at each write, so a
 //! resident daemon captures the k-th dispatch of every job.
 //!
-//! With `LANIUS_DEBUG_OPERATION_LIMIT` the first dispatch of the label that the
+//! With `LANIUS_OPERATION_LIMIT` the first dispatch of the label that the
 //! limit drops is captured instead (hang debugging): only its inputs exist.
 
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 use super::passes_core::{
     PassData,
@@ -63,7 +63,7 @@ struct Selected {
     indirect: Option<(wgpu::Buffer, u64)>,
     indirect_copy: Option<wgpu::Buffer>,
     dynamic_offsets: Vec<u32>,
-    /// False when `LANIUS_DEBUG_OPERATION_LIMIT` dropped the dispatch.
+    /// False when `LANIUS_OPERATION_LIMIT` dropped the dispatch.
     dispatched: bool,
     pre_done: bool,
     post_done: bool,
@@ -85,22 +85,18 @@ static STATE: LazyLock<Mutex<CaptureState>> = LazyLock::new(Default::default);
 
 /// The operation label being captured, if any.
 pub(crate) fn capture_pass() -> Option<&'static str> {
-    static PASS: OnceLock<Option<String>> = OnceLock::new();
-    PASS.get_or_init(|| std::env::var("LANIUS_DEBUG_CAPTURE_PASS").ok())
-        .as_deref()
+    crate::options::get().capture.as_ref().map(|capture| capture.pass.as_str())
 }
 
 fn capture_index() -> u64 {
-    crate::gpu::env::env_u64("LANIUS_DEBUG_CAPTURE_INDEX", 0)
+    crate::options::get().capture.as_ref().map_or(0, |capture| capture.index)
 }
 
-/// `LANIUS_DEBUG_CAPTURE_PER_JOB=1`: restart the count of the captured label's
-/// dispatches at each write (a resident daemon writes after every job), so
-/// `LANIUS_DEBUG_CAPTURE_INDEX` picks the k-th dispatch of each job rather than
-/// of the daemon's life.
+/// `per-job`: restart the count of the captured label's dispatches at each
+/// write (a resident daemon writes after every job), so `index=k` picks the
+/// k-th dispatch of each job rather than of the daemon's life.
 fn capture_per_job() -> bool {
-    static PER_JOB: OnceLock<bool> = OnceLock::new();
-    *PER_JOB.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_DEBUG_CAPTURE_PER_JOB", false))
+    crate::options::get().capture.as_ref().is_some_and(|capture| capture.per_job)
 }
 
 fn state() -> std::sync::MutexGuard<'static, CaptureState> {
@@ -401,7 +397,7 @@ fn read_back(
     Ok(data)
 }
 
-/// Writes the selected capture to `LANIUS_DEBUG_CAPTURE_DIR`.
+/// Writes the selected capture to the capture directory.
 pub(crate) fn debug_write_capture(device: &wgpu::Device, queue: &wgpu::Queue) {
     let Some(pass) = capture_pass() else { return };
     if let Err(err) = write_capture(device, queue, pass) {
@@ -423,9 +419,10 @@ fn write_capture(device: &wgpu::Device, queue: &wgpu::Queue, pass: &str) -> anyh
             "no dispatch captured ({seen} dispatches of this label went through a capturing dispatch path)"
         );
     };
-    let dir = std::path::PathBuf::from(
-        std::env::var("LANIUS_DEBUG_CAPTURE_DIR").unwrap_or_else(|_| "lanius-capture".into()),
-    );
+    let dir = crate::options::get()
+        .capture
+        .as_ref()
+        .map_or_else(|| std::path::PathBuf::from("lanius-capture"), |capture| capture.dir.clone());
     let has_post = capture.post_done;
     std::fs::create_dir_all(if has_post {
         dir.join("post")

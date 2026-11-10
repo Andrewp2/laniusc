@@ -16,7 +16,7 @@ fn traced_check(fixture: &str) -> (bool, String, usize) {
     command
         .arg("check")
         .arg(&path)
-        .env("LANIUS_TRACE_CALL_INFERENCE", "1");
+        .env("LANIUS_TRACE", "call-inference");
     let output = common::command_output_with_timeout(fixture, &mut command);
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     let rounds = stderr

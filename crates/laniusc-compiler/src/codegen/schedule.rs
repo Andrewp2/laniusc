@@ -240,9 +240,7 @@ impl GpuStableScheduleSorter {
         mut timer: Option<&mut GpuTimer>,
         job_rows: Option<u32>,
     ) -> Result<()> {
-        let rows = job_rows
-            .filter(|_| super::job_sized::job_sized_allows("schedule.sort"))
-            .map(|rows| rows.max(1).min(self.target_capacity));
+        let rows = job_rows.map(|rows| rows.max(1).min(self.target_capacity));
         let mut stamp = |label: String, encoder: &mut wgpu::CommandEncoder| {
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, label);

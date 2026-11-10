@@ -43,7 +43,7 @@ one 1.6 s start took 236 s.
 
 The daemon's ready event reports `driver_shader_cache` (`hit`, `miss`, `off`,
 `not-nvidia` or `unknown`) with the pipeline creation time. With
-`LANIUS_GPU_COMPILE_HOST_TIMING=1` it is also printed on stderr.
+`LANIUS_REPORT=host-timing` it is also printed on stderr.
 
 **Concurrent processes.** While one process holds `laniusc0`, the driver gives
 a second concurrent process the next shard, `laniusc1`, and so on. Each
@@ -86,7 +86,7 @@ start.
 growing near 100 MB. A set file seeded from a full one never gains new
 pipelines, so every start recompiled its misses (about 110 s) and saved the
 same bytes. Seeds are therefore limited to 64 MiB
-(`LANIUS_PIPELINE_CACHE_SEED_MAX_BYTES`). A seeded set still carries its
+(`PIPELINE_CACHE_SEED_MAX_BYTES` in `gpu/device.rs`). A seeded set still carries its
 seed's stale pipelines forward, so a long chain of kernel changes eventually
 needs a fresh set and one cold start.
 

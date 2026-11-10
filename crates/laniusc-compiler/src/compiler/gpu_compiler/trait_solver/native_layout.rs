@@ -60,8 +60,10 @@ impl NativeLayoutDirectory {
 /// it does not mutate this retained image or confer authority on another epoch.
 #[derive(Clone, Debug)]
 pub(super) struct FrozenNativeLayout {
+    #[cfg(test)]
     pub epoch: u64,
     pub words: Arc<[u32]>,
+    #[cfg(test)]
     pub input_end_words: u32,
     pub recipes: NativeLayoutDirectory,
     pub groups: NativeLayoutDirectory,
@@ -250,8 +252,10 @@ impl FrozenNativeLayout {
             words[first..cursor as usize].fill(INVALID);
         }
         Ok(Self {
+            #[cfg(test)]
             epoch,
             words: words.into(),
+            #[cfg(test)]
             input_end_words,
             recipes: recipes_directory,
             groups: groups_directory,

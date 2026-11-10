@@ -29,6 +29,7 @@ pub(in crate::compiler::gpu_compiler::trait_solver) struct MaterializedProofType
     catalog: Arc<FrozenCatalog>,
     source: NativeLayoutSource,
     ty: CheckedGenericType,
+    #[cfg(test)]
     words: u32,
 }
 impl MaterializedProofType {
@@ -45,6 +46,7 @@ impl MaterializedProofType {
         );
         Ok(&self.ty)
     }
+    #[cfg(test)]
     pub fn words(&self) -> u32 {
         self.words
     }
@@ -269,7 +271,7 @@ impl GpuTraitSolver {
         };
         self.query_scratch_poisoned = false;
         let mut results = Vec::with_capacity(plans.len());
-        for ((plan, &(_, _, root, native_words)), indexes) in
+        for ((plan, prefix), indexes) in
             plans.iter().zip(&prefixes).zip(&region_indices)
         {
             let region = |part: usize| -> Result<Vec<u32>> {
@@ -288,13 +290,14 @@ impl GpuTraitSolver {
                 layouts: &layouts,
                 visits: 0,
             };
-            let ty = reader.ty(root, 0)?;
+            let ty = reader.ty(prefix.2, 0)?;
             ensure!(ty.is_closed(), "native readback returned a symbolic type");
             results.push(MaterializedProofType {
                 catalog: self.catalog.clone(),
                 source: plan.source,
                 ty,
-                words: native_words,
+                #[cfg(test)]
+                words: prefix.3,
             });
         }
         Ok(results)

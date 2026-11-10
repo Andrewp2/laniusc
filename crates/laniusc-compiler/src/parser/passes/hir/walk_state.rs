@@ -83,7 +83,7 @@ impl HirWalk {
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 /// Word indices, in `hir_walk_state`, of one round's previous and own region.
-pub(in crate::parser) struct HirWalkRound {
+pub struct HirWalkRound {
     pub previous: u32,
     pub this_round: u32,
 }

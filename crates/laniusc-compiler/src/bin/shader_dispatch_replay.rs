@@ -1,7 +1,7 @@
 //! Replays one captured compute dispatch against a SPIR-V file.
 //!
 //! A capture directory comes from running the compiler with
-//! `LANIUS_DEBUG_CAPTURE_PASS` (see `gpu/dispatch_capture.rs`). The
+//! `LANIUS_CAPTURE=<pass>` (see `gpu/dispatch_capture.rs`). The
 //! shader is loaded from disk, so patched SPIR-V variants of one kernel can
 //! be compared on identical inputs without rebuilding the compiler. Reports
 //! whether the dispatch finished within `LANIUS_READBACK_TIMEOUT_MS` and a

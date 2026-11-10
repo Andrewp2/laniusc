@@ -52,8 +52,10 @@ pub(super) struct NativeLayoutWorkDirectory {
 #[derive(Clone, Debug)]
 pub(super) struct NativeLayoutWorkPlan {
     pub source: NativeLayoutSource,
+    #[cfg(test)]
     pub limits: NativeLayoutWorkLimits,
     pub dirs: [NativeLayoutWorkDirectory; NATIVE_LAYOUT_WORK_TABLES],
+    #[cfg(test)]
     pub word_count: u32,
     pub words: Arc<[u32]>,
 }
@@ -136,8 +138,10 @@ impl NativeLayoutWorkPlan {
         words[result..result + 4].copy_from_slice(&[0, INVALID, INVALID, 0]);
         Ok(Self {
             source,
+            #[cfg(test)]
             limits,
             dirs,
+            #[cfg(test)]
             word_count,
             words: words.into(),
         })

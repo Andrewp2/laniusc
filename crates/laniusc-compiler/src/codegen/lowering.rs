@@ -64,9 +64,6 @@ pub(crate) struct LoweringOutputDemand {
 pub(crate) struct LoweringJobBounds {
     /// Exact GPU demand retained only across this compilation's retries.
     pub(crate) output_demand: LoweringOutputDemand,
-    /// The lexer's parser feature bits for the job's source pack
-    /// (`crate::lexer::features`). A clear bit proves the syntax is absent.
-    pub(crate) parser_features: u32,
     /// An upper bound on the job's compact-HIR rows, or `u32::MAX` when the
     /// host does not know one. The pointer-jump pairs come from it
     /// (`LoweringCapacities::job_jump_pairs`).
@@ -83,22 +80,13 @@ impl LoweringJobBounds {
         output_demand: LoweringOutputDemand {
             target_instructions: 0, artifact_bytes: 0,
         },
-        parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
         hir_rows: u32::MAX,
         source_bytes: u32::MAX,
     };
 
-    pub(crate) fn from_parser_features(parser_features: u32) -> Self {
+    /// Bounds a job from its lexer input length.
+    pub(crate) fn from_lexed_bytes(lexed_bytes: u32) -> Self {
         Self {
-            parser_features,
-            ..Self::CONSERVATIVE
-        }
-    }
-
-    /// Bounds a job from its feature bits and its lexer input length.
-    pub(crate) fn from_lexed_bytes(parser_features: u32, lexed_bytes: u32) -> Self {
-        Self {
-            parser_features,
             source_bytes: lexed_bytes,
             ..Self::CONSERVATIVE
         }
@@ -1920,30 +1908,19 @@ impl GpuSemanticLoweringStage {
     ) -> Result<()> {
         // A replay object holds only the selected bodies; calls to ordinary
         // local helpers link against the original object's definitions.
-        // LANIUS_REPLAY_KEEP_LOCAL_HELPERS=1 emits them again (old behavior).
-        const KEEP_LOCAL_HELPERS: u32 = 0x8000_0000;
         let (selected_hirs, copy_start) = match selection {
             ReplaySelection::Functions(hirs) => (hirs, 0),
             ReplaySelection::CopiesFrom(row) => (&[][..], row.checked_add(1)
-                .filter(|&value| value < KEEP_LOCAL_HELPERS)
                 .context("first instance copy row cannot be encoded")?),
         };
         ensure!(selected_hirs.len() <= 1 + REPLAY_EXTRA_ROWS * 4,
             "a batched replay selects at most {} bodies", 1 + REPLAY_EXTRA_ROWS * 4);
         let encoded = selected_hirs.iter().map(|&hir| {
             hir.checked_add(1)
-                .filter(|&value| value < KEEP_LOCAL_HELPERS)
                 .context("replay callable HIR cannot be encoded")
         }).collect::<Result<Vec<_>>>()?;
         // A copy replay is a replay too: it drops ordinary local helpers.
         let first = encoded.first().copied().unwrap_or(copy_start);
-        let first = if first != 0
-            && crate::gpu::env::env_bool_truthy("LANIUS_REPLAY_KEEP_LOCAL_HELPERS", false)
-        {
-            first | KEEP_LOCAL_HELPERS
-        } else {
-            first
-        };
         let extra = encoded.get(1..).unwrap_or(&[]);
         let mut bytes = Vec::with_capacity(20 + 12 + extra.len() * 4);
         bytes.extend_from_slice(&first.to_le_bytes());
@@ -2108,12 +2085,8 @@ mod tests {
     #[test]
     fn only_the_token_capacity_bounds_the_hir_rows() {
         let one = "enum A { X(i32) } struct S { a: A }";
-        let bounds = LoweringJobBounds::from_lexed_bytes(
-            crate::lexer::features::PARSER_FEATURE_ENUMS,
-            one.len() as u32,
-        );
+        let bounds = LoweringJobBounds::from_lexed_bytes(one.len() as u32);
         assert_eq!(LoweringJobBounds::CONSERVATIVE.hir_rows, u32::MAX);
-        assert_eq!(LoweringJobBounds::from_parser_features(0).hir_rows, u32::MAX);
         assert_eq!(bounds.hir_rows, u32::MAX);
         assert_eq!(bounds.source_bytes, one.len() as u32);
         assert_eq!(LoweringJobBounds::CONSERVATIVE.source_bytes, u32::MAX);

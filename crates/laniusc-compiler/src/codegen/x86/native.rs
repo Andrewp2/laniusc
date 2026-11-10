@@ -948,17 +948,6 @@ pub(crate) fn link_native_file_executable(
     })
 }
 
-/// Bounded bytes boundary for callers that explicitly request resident output.
-pub(crate) fn link_native_executable(
-    objects: &[GpuX86FileObject],
-    bindings: &[NativeCFunction],
-    main: NativeMainBridge,
-    options: &NativeLinkOptions,
-) -> Result<Vec<u8>> {
-    link_native_file_executable(objects, bindings, main, options)?
-        .read_bytes(options.max_output_bytes)
-}
-
 pub(crate) fn validate_options(options: &NativeLinkOptions) -> Result<()> {
     ensure!(
         !options.timeout.is_zero() && options.timeout <= MAX_LINK_TIMEOUT,

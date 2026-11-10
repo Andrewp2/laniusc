@@ -202,13 +202,10 @@ pub(super) fn canonical_retry_scale(scale: u32, overflow: u32) -> Option<u32> {
 }
 
 /// Debug only: divide the records, argument words and frontier lists by `2^n`
-/// (`LANIUS_DEBUG_CANONICAL_SHRINK=n`, at most 16), so that small programs
+/// (`LANIUS_CHECK=canonical-retry=n`, at most 16), so that small programs
 /// overflow and exercise the retry.
 fn canonical_capacity_shrink() -> u32 {
-    std::env::var("LANIUS_DEBUG_CANONICAL_SHRINK")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        .map_or(0, |shift| shift.min(16))
+    crate::options::get().check.canonical_retry
 }
 /// Local declarations of a job without an owning library use this library
 /// and unit; such jobs have no dependency interfaces to unify with.
@@ -218,7 +215,7 @@ pub(super) const CANONICAL_NO_LIBRARY: u32 = 0xffff_fffe;
 /// and the cross-check against the previous graph equality) is compiled and
 /// recorded.
 pub(super) fn canonical_validation_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_VALIDATE_CANONICAL", false)
+    crate::options::get().check.canonical
 }
 
 /// Names of the `canonical_validation` counters (88_validate_table, 90_validate).

@@ -3704,18 +3704,6 @@ mod tests {
                 );
             }
         }
-        if std::env::var_os("LANIUS_TEST_PRINT_PARSER_EXTERNALS").is_some() {
-            let external = graph
-                .resources()
-                .iter()
-                .filter(|resource| resource.class == ResourceClass::External)
-                .map(|resource| resource.name)
-                .collect::<Vec<_>>();
-            eprintln!(
-                "parser external resources ({}): {external:#?}",
-                external.len()
-            );
-        }
         for name in [
             "node_kind",
             "parent",

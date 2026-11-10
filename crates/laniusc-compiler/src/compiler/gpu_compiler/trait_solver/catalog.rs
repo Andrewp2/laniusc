@@ -28,7 +28,7 @@ use crate::{
 static NEXT_OWNED_ID: AtomicU64 = AtomicU64::new(1);
 pub(super) fn owned_id() -> Result<u64> {
     NEXT_OWNED_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
         .map_err(|_| anyhow!("immutable evidence identity space exhausted"))
 }
 
@@ -94,7 +94,6 @@ pub(super) struct FrozenSnapshot {
     /// The complete original accepted inventory is authoritative even when a
     /// reparse produces fresh environments for the same source occurrences.
     pub original_calls: Arc<[CheckedGenericCall]>,
-    pub original_call_owners: Arc<[CheckedCallOwner]>,
     pub call_owner_by_hir: BTreeMap<u32, u32>,
 }
 
@@ -115,12 +114,6 @@ impl Atoms {
         self.keys.push(key);
         self.by_key.insert(key, index);
         Ok(index)
-    }
-    pub fn find(&self, key: &[u32; 8]) -> Result<u32> {
-        self.by_key
-            .get(key)
-            .copied()
-            .ok_or_else(|| anyhow!("identity absent from frozen catalog"))
     }
 }
 
@@ -240,7 +233,6 @@ impl FrozenCatalog {
                     std::sync::OnceLock::new()
                 },
                 original_calls: input.facts.generic_calls().clone(),
-                original_call_owners: input.facts.checked_call_owners().clone(),
                 call_owner_by_hir,
             });
         }
@@ -699,12 +691,6 @@ impl FrozenCatalog {
             }
         }
         Ok(result)
-    }
-    /// The source unit that declares an implementation (table-9 row).
-    pub fn implementation_unit(&self, row: u32) -> Result<[u32; 2]> {
-        let &(snapshot, _) = self.implementation_sources.get(row as usize)
-            .ok_or_else(|| anyhow!("implementation row outside the frozen catalog"))?;
-        Ok(self.snapshots[snapshot as usize].unit)
     }
 
     /// The method targets of a nongeneric implementation (table-9 row), in

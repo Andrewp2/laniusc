@@ -33,7 +33,7 @@ fn wasm_sample_programs_compile_run_and_match_stdout() {
             &bytes,
             &initial_files,
         );
-        if std::env::var_os("LANIUS_WASM_TRACE").is_some() {
+        if laniusc_compiler::options::get().trace.wasm {
             let files = result
                 .files
                 .iter()

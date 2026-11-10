@@ -132,7 +132,7 @@ impl GpuWasmLinker {
 }
 
 fn trace_wasm_codegen(stage: &str) {
-    if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+    if crate::options::get().trace.wasm {
         eprintln!("[laniusc][wasm-link] {stage}");
     }
 }

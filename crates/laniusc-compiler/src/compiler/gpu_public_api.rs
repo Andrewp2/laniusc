@@ -385,12 +385,12 @@ pub async fn type_check_source_pack_with_gpu<S: AsRef<str>>(
         .await
 }
 
-/// Debug only: writes the dispatch selected by `LANIUS_DEBUG_CAPTURE_PASS` to
-/// `LANIUS_DEBUG_CAPTURE_DIR` (docs/cpu-kernel-replay.md). The CLI does this
+/// Debug only: writes the dispatch selected by `LANIUS_CAPTURE` to its
+/// directory (docs/cpu-kernel-replay.md). The CLI does this
 /// when its compile ends; tests call it after the compile they replay.
 /// Without the variable it does nothing.
 pub fn write_debug_dispatch_capture() {
-    if std::env::var_os("LANIUS_DEBUG_CAPTURE_PASS").is_none() {
+    if crate::options::get().capture.is_none() {
         return;
     }
     if let Ok(gpu) = crate::gpu::device::global_result() {

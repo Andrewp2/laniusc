@@ -67,8 +67,6 @@ RWStructuredBuffer<uint> semantic_function_flag;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint INVALID = 0xffffffffu;
 static const uint SYMBOLIC_CONST_PARAMETER = 0x20000000u;
-// Set with a replay callable: also emit ordinary local helpers (old behavior).
-static const uint REPLAY_KEEP_LOCAL_HELPERS = 0x80000000u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 #include "type_closure_graph.slang"
@@ -141,13 +139,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    uint replay = gParams.replay_function & ~REPLAY_KEEP_LOCAL_HELPERS;
-    bool keep_helpers = (gParams.replay_function & REPLAY_KEEP_LOCAL_HELPERS) != 0u;
+    uint replay = gParams.replay_function;
     if (replay != 0u && row < count &&
         compact_hir_core[row].kind == 3u &&
         !replay_selects_function(row, replay) &&
         (function_has_generic_environment(row, count) ||
-         (!keep_helpers && compact_hir_payload[row].a != HIR_ITEM_KIND_EXTERN_FN)))
+         compact_hir_payload[row].a != HIR_ITEM_KIND_EXTERN_FN))
     {
         // Scratch substitutions can close sibling impl methods. The replay
         // request authorizes its selected concrete bodies, not those siblings.

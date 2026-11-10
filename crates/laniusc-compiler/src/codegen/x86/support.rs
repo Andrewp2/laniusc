@@ -1,6 +1,6 @@
 //! Small shared helpers for the GPU x86 linker.
 
-use std::{ops::Range, sync::OnceLock};
+use std::ops::Range;
 
 #[cfg(test)]
 use anyhow::Result;
@@ -11,24 +11,6 @@ use super::GpuX86Linker;
 use crate::gpu::buffers::LaniusBuffer;
 #[cfg(test)]
 use crate::gpu::passes_core::{PassData, bind_group};
-
-fn trace_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_X86_TRACE", false))
-}
-
-pub(super) fn trace_x86_codegen(stage: &str) {
-    if trace_enabled() {
-        eprintln!("[laniusc][x86-link] {stage}");
-    }
-}
-
-#[cfg(test)]
-fn trace_event(stage: &str, event: &str) {
-    if trace_enabled() {
-        eprintln!("[laniusc][x86-link] {stage}.{event}");
-    }
-}
 
 const INCREMENTAL_UPLOAD_CHUNK_BYTES: usize = 256 * 1024;
 
@@ -303,13 +285,11 @@ pub(super) fn workgroup_grid_1d(groups: u32) -> (u32, u32) {
 #[cfg(test)]
 pub(super) fn dispatch_compute_pass(
     encoder: &mut wgpu::CommandEncoder,
-    trace_stage: &str,
     label: &str,
     pass: &PassData,
     bind_group: &wgpu::BindGroup,
     groups: (u32, u32),
 ) {
-    trace_event(trace_stage, "record.start");
     if !crate::gpu::passes_core::defer_compute_direct(
         pass,
         bind_group,
@@ -330,7 +310,6 @@ pub(super) fn dispatch_compute_pass(
             compute.dispatch_workgroups(groups.0, groups.1, 1);
         }
     }
-    trace_event(trace_stage, "record.done");
 }
 
 #[cfg(test)]

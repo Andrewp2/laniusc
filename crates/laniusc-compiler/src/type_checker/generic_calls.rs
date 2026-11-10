@@ -749,23 +749,14 @@ pub(crate) struct CheckedInstanceClosure {
     /// Instances the GPU found at any depth, and its IC_FLAG_* bits.
     pub found: u32,
     pub flags: u32,
-    /// Linked edges, and edges without a closed instance (trace only).
-    pub edges: u32,
-    pub skipped: u32,
-    /// Exported instances whose arity disagrees with their template call.
-    pub dropped: u32,
     /// Instances of dependency bodies (D1b): a summary edge of a library
     /// unit as template, with this job's closed arguments, sorted like
     /// `instances` within each unit.
     pub dependency_instances: Vec<CheckedDependencyClosureInstance>,
-    /// Rows the decode skipped (trace only): not exported, depth < 2, no
-    /// argument block, bad shape, arguments past the read table, template
-    /// call not retained, a dependency instance naming this job's types.
-    pub rejects: [u32; 7],
     /// Why the readback failed, when it did.
     pub error: Option<String>,
     /// The instance table of an original job (D2), read back only in
-    /// validation mode (`LANIUS_CHECK_INSTANCE_TABLE`).
+    /// validation mode (`LANIUS_CHECK=instance-table`).
     pub table: Option<CheckedInstanceTable>,
     /// An instance-copy replay in that validation mode: each copy's rows
     /// (its function row's subtree), in copy order.
@@ -945,6 +936,7 @@ impl CheckedGenericCall {
             && self.arguments.iter().all(|arg| arg.ty.is_closed())
     }
 
+    #[cfg(test)]
     pub(crate) fn has_complete_arguments(&self) -> bool {
         self.has_all_parameter_slots()
             && self
@@ -1130,7 +1122,7 @@ impl Drop for UnitFactsPlanRecorder<'_> {
         let Some((plan, stats)) = self.readback.finish_read_plan() else {
             return;
         };
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             eprintln!(
                 "[gpu_compile_host_timer] unit_facts.read_plan: reads={} answered={} gpu_reads={} fetched={} fetched_words={}",
                 plan.len(),
@@ -1295,13 +1287,6 @@ impl<'a> WordBatch<'a> {
         debug_assert_eq!(words.len(), self.words);
         Ok(words)
     }
-}
-
-/// Scalar contract requests and nominal headers are read as one row read per
-/// table; LANIUS_UNIT_FACTS_ROW_READS=0 reads one region per word or header
-/// row instead (the earlier transport, same words).
-pub(super) fn unit_facts_row_reads() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_UNIT_FACTS_ROW_READS", true)
 }
 
 /// The 10-word retained nominal header rows from their two row reads: one
@@ -2133,10 +2118,6 @@ pub(super) fn read_unit_facts(
     // closure ran; a unit without generic parameters never consults them.
     let solver_closed = solver_demand.is_some_and(|start| {
         let demand = &counts[start..start + 3];
-        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_CLOSED_RELEASE", false) {
-            eprintln!("[closed-release] solver demand obligations={} implementations={} calls={} generic_parameters={} closure={closure_active}",
-                demand[0], demand[1], demand[2], counts[4]);
-        }
         demand.iter().all(|&word| word == 0) && (counts[4] == 0 || closure_active)
     });
     // Every other fact feeds the trait solver (or a dependent unit's closure
@@ -2414,27 +2395,15 @@ pub(super) fn read_unit_facts(
     }
     // Two row reads, not four regions per header; decoded as 10 words per
     // header (name token's declaration, HIR core, HIR payload, public index).
-    let nominal_hir_start = if unit_facts_row_reads() {
+    let nominal_hir_start = {
         let tokens = nominal_headers.iter().map(|header| header.2).collect::<Vec<_>>();
         let hirs = nominal_headers.iter().map(|header| header.1).collect::<Vec<_>>();
         batch.rows(nominal_columns[0], &tokens, 1, 1, "retained nominal ownership")?;
-        Some(batch.table_rows(
+        batch.table_rows(
             &hirs,
             &[(nominal_columns[1], 4, 4), (nominal_columns[2], 4, 4), (nominal_columns[3], 1, 1)],
             "retained nominal ownership",
-        )?)
-    } else {
-        for &(_, hir, token, _) in &nominal_headers {
-            for (buffer, row, width) in [
-                (nominal_columns[0], token, 1),
-                (nominal_columns[1], hir, 4),
-                (nominal_columns[2], hir, 4),
-                (nominal_columns[3], hir, 1),
-            ] {
-                batch.push(buffer, u64::from(row) * width as u64, width, "retained nominal ownership")?;
-            }
-        }
-        None
+        )?
     };
     let caller_metadata_start = batch.len();
     batch.rows(&semantic.enclosing_fn_by_hir, &call_ids, 1, 1, "retained actual caller")?;
@@ -2500,13 +2469,10 @@ pub(super) fn read_unit_facts(
     types.argument_row_count = Some(counts[12]);
     types.read_nominal_metadata(
         &nominal_headers,
-        &match nominal_hir_start {
-            Some(hir_start) => nominal_headers_words(
-                &metadata[nominal_metadata_start..hir_start],
-                &metadata[hir_start..caller_metadata_start],
-            ),
-            None => metadata[nominal_metadata_start..caller_metadata_start].to_vec(),
-        },
+        &nominal_headers_words(
+            &metadata[nominal_metadata_start..nominal_hir_start],
+            &metadata[nominal_hir_start..caller_metadata_start],
+        ),
     )?;
     timer.stamp("rows");
     let callers = &metadata[caller_metadata_start..mask_start];
@@ -3286,7 +3252,7 @@ fn read_instance_closure(
     calls: &[Option<CheckedGenericCall>],
     types: &mut CheckedTypeReadback,
 ) -> Result<CheckedInstanceClosure> {
-    let &[length, _, _, _, flags, argument_words, edges, skipped] = counts else {
+    let &[length, _, _, _, flags, argument_words, _, _] = counts else {
         return Err(anyhow!("instance closure counters are truncated"));
     };
     let table = inputs.buffer("instance_closure_instances");
@@ -3294,8 +3260,6 @@ fn read_instance_closure(
     let mut closure = CheckedInstanceClosure {
         found: length as u32,
         flags,
-        edges,
-        skipped,
         ..Default::default()
     };
     if length == 0 || flags & INSTANCE_CLOSURE_FLAG_DEPTH != 0 {
@@ -3318,21 +3282,22 @@ fn read_instance_closure(
     let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
     // (depth, template, argument base, type count, arity)
     let mut kept = Vec::new();
-    let debug = crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false);
     let summaries = inputs.closure_summaries.as_deref();
     for (row, target) in instances.chunks_exact(8).zip(targets.chunks_exact(4)) {
         let &[_, callee, depth, _, base, template_word, status, shape] = row else { unreachable!() };
         let target = [target[0], target[1], target[2], target[3]];
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
-        let reject = if status != INSTANCE_CLOSURE_EXPORTED { Some(0) }
-            else if depth < 2 { Some(1) }
-            else if base == INVALID { Some(2) }
-            else if type_count > arity { Some(3) }
-            else if (base as usize + arity) * 2 > ref_words { Some(4) }
-            else { None };
+        // The decode skips a row that is not exported, has depth below 2,
+        // has no argument block, has a bad shape, or has arguments past the
+        // read table.
+        let decodable = status == INSTANCE_CLOSURE_EXPORTED
+            && depth >= 2
+            && base != INVALID
+            && type_count <= arity
+            && (base as usize + arity) * 2 <= ref_words;
         // A summary instance's template is a job edge (closure/03b): the
         // library unit's retained call.
-        let template = reject.is_none().then(|| if callee & super::closure_summary::SUMMARY_TAG != 0 {
+        let template = decodable.then(|| if callee & super::closure_summary::SUMMARY_TAG != 0 {
             summaries.and_then(|summaries| summaries.edge_template(template_word))
                 .map(|(unit, call)| ClosureTemplate::Dependency(unit, call))
         } else {
@@ -3343,14 +3308,9 @@ fn read_instance_closure(
                     (None, _) => Some(ClosureTemplate::Routed(position, target)),
                 })
         }).flatten();
-        if debug {
-            eprintln!("[instance-closure] row={row:?} ref_words={ref_words} reject={reject:?} template_found={}",
-                template.is_some());
-        }
-        match (reject, template) {
-            (Some(reason), _) => closure.rejects[reason] += 1,
-            (None, None) => closure.rejects[5] += 1,
-            (None, Some(template)) => kept.push((depth, template, base as usize, type_count, arity)),
+        // A row whose template call was not retained is skipped as well.
+        if let Some(template) = template {
+            kept.push((depth, template, base as usize, type_count, arity));
         }
     }
     let type_roots = kept.iter()
@@ -3375,7 +3335,7 @@ fn read_instance_closure(
         if template.required_generic_parameters != Some(type_count as u32)
             || template.required_constant_parameters != Some((arity - type_count) as u32)
         {
-            closure.dropped += 1;
+            // The instance's arity disagrees with its template call.
             continue;
         }
         let mut arguments = Vec::with_capacity(type_count);
@@ -3402,7 +3362,6 @@ fn read_instance_closure(
         // in the library's replay: left to the replays (fail closed).
         let current = summaries.map_or([INVALID, INVALID], super::JobClosureSummaries::current_unit);
         if !call.arguments.iter().all(|argument| argument.ty.names_only_dependencies(current)) {
-            closure.rejects[6] += 1;
             continue;
         }
         closure.dependency_instances.push(CheckedDependencyClosureInstance { unit, depth, call });
@@ -3462,12 +3421,12 @@ fn attach_copy_rows(
             }
             Err(error) => closure.error = Some(format!("copy rows: {error:#}")),
         }
-        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false) {
+        if crate::options::get().trace.instance_table {
             eprintln!("[instance-table] copy rows: first copy row {first}, {} copies of {} callables, {} read",
                 functions.len(), callable_hirs.len(), closure.copy_rows.len());
         }
     } else if instance_copies.is_some() && super::instance_closure_passes::instance_table_checked()
-        && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false)
+        && crate::options::get().trace.instance_table
     {
         eprintln!("[instance-table] copy rows: the replay batch has no copy rows");
     }

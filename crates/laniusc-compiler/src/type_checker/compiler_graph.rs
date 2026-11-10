@@ -2537,7 +2537,7 @@ impl TypeCheckCompilerGraph {
         passes: &TypeCheckPasses,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
     ) -> Result<Self> {
-        let timing = crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false);
+        let timing = crate::options::get().report.host_timing;
         let started = std::time::Instant::now();
         let mut last = started;
         macro_rules! stamp {
@@ -3025,11 +3025,11 @@ fn build_graph(
     let constant_rows = u64::from(dependency_capacity.constant_storage_plan(
         hir_capacity, token_capacity, parser_feature_flags)?.total_rows);
     graph_resources!(graph, Output {
-        checked_constant_atoms in Types => constant_rows * 16;
-        checked_constant_projections in Types => constant_rows * 16;
+        _checked_constant_atoms as "checked_constant_atoms" in Types => constant_rows * 16;
+        _checked_constant_projections as "checked_constant_projections" in Types => constant_rows * 16;
     });
     graph_resources!(graph, Workspace {
-        checked_constant_storage_state in Types => 16;
+        _checked_constant_storage_state as "checked_constant_storage_state" in Types => 16;
         dependency_constant_ref_by_type in Types => dependency_type_rows * 8;
     });
     graph.add_resource_alias("dependency_constant_ref_by_type_out", dependency_constant_ref_by_type)?;
@@ -6728,8 +6728,9 @@ fn build_graph(
             "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
-    // The instance table (D2, behind LANIUS_INSTANCE_TABLE) realizes the
-    // closure's instances' rows from the final expression references.
+    // The instance table (D2, behind `LANIUS_EXPERIMENT=instance-table`)
+    // realizes the closure's instances' rows from the final expression
+    // references.
     super::instance_closure_passes::register_instance_table_passes(
         &mut graph,
         kernels,

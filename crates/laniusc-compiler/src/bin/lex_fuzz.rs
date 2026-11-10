@@ -212,21 +212,6 @@ fn dump_kind_text_diff(got: &[(TokenKind, String)], exp: &[GoldenTok], from: usi
 }
 
 fn main() {
-    match std::env::var("LANIUS_READBACK") {
-        Ok(value) => {
-            if value == "0" {
-                panic!("LANIUS_READBACK=0 not supported (we can't fuzz output that we can't get)");
-            }
-            if value != "1" && !value.eq_ignore_ascii_case("true") {
-                warn!(
-                    "LANIUS_READBACK has value '{value}'; expected 0/1/true/false. continuing with default enabled mode"
-                );
-            }
-        }
-        Err(_) => {
-            warn!("LANIUS_READBACK is unset; using default readback-enabled mode");
-        }
-    }
     if let Err(err) = pollster::block_on(laniusc_compiler::lexer::lex_on_gpu("warmup")) {
         warn!("GPU warmup lex failed: {err}");
         std::process::exit(1);

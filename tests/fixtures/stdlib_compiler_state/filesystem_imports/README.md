@@ -75,7 +75,7 @@ outer deadline below two minutes:
 
 ```sh
 timeout --kill-after=2s 100s flock target/stdlib-work/library-gpu.lock \
-  env LANIUS_DEBUG_STAGE_ERRORS=1 target/stdlib-build/debug/laniusc \
+  env LANIUS_TRACE=stage-errors target/stdlib-build/debug/laniusc \
   --stdlib-root stdlib --emit x86_64 \
   tests/fixtures/stdlib_compiler_state/filesystem_imports/cast_guard.lani \
   -o /tmp/readlink-cast-guard.elf

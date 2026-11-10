@@ -462,10 +462,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             queue,
                             encoder,
                             timer.as_deref_mut(),
-                            LoweringJobBounds::from_lexed_bytes(
-                                parser_feature_flags,
-                                bufs.n,
-                            )
+                            LoweringJobBounds::from_lexed_bytes(bufs.n)
                             .with_token_capacity(token_capacity)
                             .with_output_demand(output_demand),
                         )
@@ -766,14 +763,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         diagnostic_files: &[DiagnosticSourceFile],
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         emit_semantic_interface: bool,
-        object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<DeferredParserRecord<()>, CompileError> {
-        let (emit_semantic_interface, _, _) = resolve_source_pack_lowering_request(
-            parser_feature_flags,
-            emit_semantic_interface,
-            None,
-            object_request,
-        );
         let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
         self.record_parser_with_deferred_status(
             device,
@@ -827,13 +817,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         object_request: Option<LoweringObjectRequest<'_>>,
         output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
-        let (emit_semantic_interface, lowering_target, object_request) =
-            resolve_source_pack_lowering_request(
-                parser.parser_feature_flags,
-                emit_semantic_interface,
-                lowering_target,
-                object_request,
-            );
         self.parser
             .with_current_resident_buffers_with_tree_capacity_and_features(
                 parser.token_capacity,
@@ -857,10 +840,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         unit_id,
                         lowering_target,
                         object_request,
-                        LoweringJobBounds::from_lexed_bytes(
-                            parser.parser_feature_flags,
-                            bufs.n,
-                        ),
+                        LoweringJobBounds::from_lexed_bytes(bufs.n),
                         output_demand,
                     )
                 },
@@ -887,13 +867,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         object_request: Option<LoweringObjectRequest<'_>>,
         output_demand: LoweringOutputDemand,
     ) -> Result<DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>, CompileError> {
-        let (emit_semantic_interface, lowering_target, object_request) =
-            resolve_source_pack_lowering_request(
-                parser_feature_flags,
-                emit_semantic_interface,
-                lowering_target,
-                object_request,
-            );
         let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
         self.record_parser_with_deferred_status(
             device,
@@ -940,10 +913,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unit_id,
                     lowering_target,
                     object_request,
-                    LoweringJobBounds::from_lexed_bytes(
-                        parser_feature_flags,
-                        bufs.n,
-                    ),
+                    LoweringJobBounds::from_lexed_bytes(bufs.n),
                     output_demand,
                 )
             },
@@ -961,12 +931,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
-        let (_, lowering_target, object_request) = resolve_source_pack_lowering_request(
-            deferred.parser_feature_flags,
-            false,
-            lowering_target,
-            object_request,
-        );
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
         let ll1 = deferred
             .check
@@ -1726,6 +1690,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// The same source and dependency snapshots feed checking and remain
     /// available for later body specialization. Their allocation ownership
     /// moves here without copying source bytes or interface records.
+    #[cfg(test)]
     pub(in crate::compiler) async fn compile_source_pack_unit_with_dependency_pages(
         &self,
         template_sources: std::sync::Arc<[String]>,
@@ -1759,6 +1724,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     /// unit. Trait implementation selection is deferred to whole-program
     /// admission. This path cannot return an object or populate the compiled-unit
     /// cache; only the exact program admission receipt can release its result.
+    #[cfg(test)]
     pub(super) async fn compile_pending_original_source_pack_unit(
         &self,
         template_sources: std::sync::Arc<[String]>,
@@ -1838,21 +1804,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         request: &trait_solver::ValidatedReplayRequest<'_>,
     ) -> Result<PendingReplayUnit, CompileError> {
-        let template = request.template();
-        let declarations_only = request.declarations_only();
-        let compiled = match declarations_only {
-            Some(blanked) if trait_solver::declarations_only_templates_checked() => {
-                let full = self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await;
-                let short = self
-                    .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
-                    .await;
-                compare_declarations_only_replay(template.interface(), blanked, &full, &short)?;
-                full?
-            }
-            Some(blanked) if trait_solver::declarations_only_templates_enabled() => self
+        let compiled = match request.declarations_only() {
+            Some(blanked) => self
                 .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
                 .await?,
-            _ => self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await?,
+            None => self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await?,
         };
         Ok(PendingReplayUnit {
             request_identity: request.identity(),
@@ -1890,6 +1846,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         })
     }
 
+    #[cfg(test)]
     pub(super) async fn compile_body_specialization(
         &self,
         template: &CompiledSourcePackUnit,
@@ -2229,7 +2186,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 &diagnostic_files,
                                 dependency_pages.as_ref(),
                                 emit_semantic_interface,
-                                object_request,
                             )?;
                             self.remember_parser_shape(parser_shape_key, &recorded);
                             Ok(recorded)
@@ -2484,7 +2440,7 @@ impl<'gpu> GpuCompiler<'gpu> {
 }
 
 fn debug_parser_rejection(failure: &crate::parser::driver::ParserFailure) {
-    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_none() {
+    if !crate::options::get().trace.stage_errors {
         return;
     }
     let status = failure.ll1();
@@ -2578,16 +2534,11 @@ impl OriginalUnitFacts {
 
     /// Succeeds exactly when `interface().check_serializable()` does. When
     /// validate already passed on this interface earlier in this job, only
-    /// the encoded length is checked. LANIUS_CHECK_INTERFACE_REVALIDATE=1
-    /// runs validate again anyway and fails if the two results disagree.
+    /// the encoded length is checked.
     pub(super) fn check_interface_serializable(&self) -> Result<(), String> {
         let interface = &self.snapshot.interface;
         if !self.interface_validated_in_this_job {
             return interface.check_serializable();
-        }
-        if crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INTERFACE_REVALIDATE", false) {
-            interface.validate().map_err(|reason| format!(
-                "semantic interface validated in this job no longer validates: {reason}"))?;
         }
         interface.check_encoded_len()
     }
@@ -2700,6 +2651,7 @@ impl OriginalUnitFacts {
 impl CompiledSourcePackUnit {
     /// Strict standalone compilation has already released this object. Project
     /// only immutable native facts for the same mandatory program admission gate.
+    #[cfg(test)]
     pub(super) fn original_facts(&self) -> anyhow::Result<OriginalUnitFacts> {
         Ok(OriginalUnitFacts::from_unit(self))
     }
@@ -2824,6 +2776,7 @@ struct BodySpecializationInput<'a> {
 }
 
 impl<'a> BodySpecializationInput<'a> {
+    #[cfg(test)]
     fn strict(
         specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
         interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
@@ -2880,8 +2833,6 @@ impl<'a> BodySpecializationInput<'a> {
 
 #[derive(Clone, Copy)]
 enum LoweringObjectRequest<'a> {
-    /// Select executable or object emission from GPU-classified parser facts.
-    AutoX86_64,
     /// A strict standalone object.
     Strict {
         target: LoweringTarget,
@@ -2944,7 +2895,6 @@ impl<'a> LoweringObjectRequest<'a> {
     }
     fn target(self) -> LoweringTarget {
         match self {
-            Self::AutoX86_64 => LoweringTarget::X86_64,
             Self::Strict { target, .. }
             | Self::PendingOriginal { target, .. }
             | Self::Specialized { target, .. } => target,
@@ -2953,7 +2903,6 @@ impl<'a> LoweringObjectRequest<'a> {
 
     fn ids(self) -> (u32, u32) {
         match self {
-            Self::AutoX86_64 => (0, 0),
             Self::Strict { library_id, unit_id, .. }
             | Self::PendingOriginal { library_id, unit_id, .. }
             | Self::Specialized { library_id, unit_id, .. } => (library_id, unit_id),
@@ -2971,38 +2920,6 @@ fn object_lowering_target(target: SourcePackArtifactTarget) -> Result<LoweringTa
         )),
     }
 }
-
-/// A cached parser shape is validated against the lexer features before its
-/// artifact is accepted. Both cold and warm jobs therefore select the same
-/// path without a second parse or a host scan for generic syntax.
-fn resolve_source_pack_lowering_request<'a>(
-    parser_features: u32,
-    emit_interface: bool,
-    target: Option<LoweringTarget>,
-    request: Option<LoweringObjectRequest<'a>>,
-) -> (
-    bool,
-    Option<LoweringTarget>,
-    Option<LoweringObjectRequest<'a>>,
-) {
-    if !matches!(request, Some(LoweringObjectRequest::AutoX86_64)) {
-        return (emit_interface, target, request);
-    }
-    if parser_features & crate::lexer::features::PARSER_FEATURE_TYPE_ARGS != 0 {
-        (
-            true,
-            None,
-            Some(LoweringObjectRequest::Strict {
-                target: LoweringTarget::X86_64,
-                library_id: 0,
-                unit_id: 0,
-            }),
-        )
-    } else {
-        (false, Some(LoweringTarget::X86_64), None)
-    }
-}
-
 
 fn retain_native_call_owners(
     native_hirs: &[u32],
@@ -3094,7 +3011,7 @@ fn finish_source_pack_unit(
         .iter()
         .map(|owner| owner.call_hir)
         .collect::<std::collections::BTreeSet<_>>();
-    if crate::gpu::env::env_bool_truthy("LANIUS_TRACE_CANONICAL", false) {
+    if crate::options::get().trace.canonical {
         // Call environments of the unit, for sizing the canonical
         // environment and substitution tables: distinct (target, type
         // arguments, constant arguments) bindings over the retained calls.
@@ -3126,23 +3043,13 @@ fn finish_source_pack_unit(
     // its dependents. A unit whose summary cannot be built has none, which
     // its dependents treat as an absent summary.
     if original && !artifacts.facts_elided {
-        match gpu_type_checker::ClosureSummary::build(
+        if let Ok(summary) = gpu_type_checker::ClosureSummary::build(
             [library_id, unit_id],
             &artifacts.generic_calls,
             &artifacts.checked_call_owners,
             &artifacts.checked_contracts,
         ) {
-            Ok(summary) => {
-                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
-                    eprintln!("[instance-closure] unit {library_id}:{unit_id} summary {}", summary.describe());
-                }
-                interface.closure_summary = Some(std::sync::Arc::new(summary));
-            }
-            Err(error) => {
-                if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_CLOSURE", false) {
-                    eprintln!("[instance-closure] unit {library_id}:{unit_id} has no summary: {error}");
-                }
-            }
+            interface.closure_summary = Some(std::sync::Arc::new(summary));
         }
     }
     let closure = &artifacts.instance_closure;
@@ -3183,80 +3090,6 @@ struct CheckedSourcePackArtifacts {
     solver_closed: bool,
     facts_elided: bool,
     native_call_hirs: Vec<u32>,
-}
-
-/// `LANIUS_CHECK_DECL_ONLY_TEMPLATES=1`: a replay against the
-/// declarations-only template must give exactly what the full template
-/// gives (calls, owners, native object and inventory, layouts, or the same
-/// diagnostic). Any difference fails the compile.
-fn compare_declarations_only_replay(
-    interface: &crate::compiler::GpuSemanticInterfaceArtifact,
-    blanked: &trait_solver::DeclarationsOnlyTemplate,
-    full: &Result<CompiledSourcePackUnit, CompileError>,
-    short: &Result<CompiledSourcePackUnit, CompileError>,
-) -> Result<(), CompileError> {
-    let mut differences = Vec::new();
-    match (full, short) {
-        (Ok(full), Ok(short)) => {
-            let (objects, symbols) = match (&full.object, &short.object) {
-                (CompiledSourcePackObject::X86_64(full), CompiledSourcePackObject::X86_64(short)) => (
-                    full == short,
-                    full.symbols == short.symbols && full.identity_bytes == short.identity_bytes,
-                ),
-                _ => (false, false),
-            };
-            let mut check = |name: &str, same: bool| if !same { differences.push(name.to_string()) };
-            check("native symbols", symbols);
-            check("generic calls", full.generic_calls == short.generic_calls);
-            check("checked call owners", full.checked_call_owners == short.checked_call_owners);
-            check("native call rows", full.native_call_hirs == short.native_call_hirs);
-            check("native call functions", full.native_call_function_hirs == short.native_call_function_hirs);
-            check("native layouts", full.body_native_layouts == short.body_native_layouts);
-            check("implementation native layouts", full.body_binding_native_layouts == short.body_binding_native_layouts);
-            check("contracts", full.checked_contracts == short.checked_contracts);
-            check("native object", objects);
-            if !differences.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
-                if let (CompiledSourcePackObject::X86_64(a), CompiledSourcePackObject::X86_64(b)) = (&full.object, &short.object) {
-                    let first = |x: &[u8], y: &[u8]| x.iter().zip(y).position(|(l, r)| l != r);
-                    eprintln!("[decl-only] object text {} / {} first diff {:?}; rodata {} / {} first diff {:?}; relocations {} / {} same {}; entry {:?} / {:?}",
-                        a.text.len(), b.text.len(), first(&a.text, &b.text), a.rodata.len(), b.rodata.len(),
-                        first(&a.rodata, &b.rodata), a.relocations.len(), b.relocations.len(),
-                        a.relocations == b.relocations, a.entry_offset, b.entry_offset);
-                    for (index, (x, y)) in a.relocations.iter().zip(&b.relocations).enumerate().filter(|(_, (x, y))| x != y).take(4) {
-                        eprintln!("[decl-only] relocation {index}: full {x:?} short {y:?}");
-                    }
-                    if let Some(at) = first(&a.text, &b.text) {
-                        let window = |t: &[u8]| t[at.saturating_sub(8)..(at + 24).min(t.len())].iter().map(|b| format!("{b:02x}")).collect::<String>();
-                        eprintln!("[decl-only] text at {at}: full {} short {}", window(&a.text), window(&b.text));
-                    }
-                }
-                eprintln!("[decl-only] full calls {:?}\n[decl-only] short calls {:?}", full.generic_calls, short.generic_calls);
-                eprintln!("[decl-only] full owners {:?}\n[decl-only] short owners {:?}", full.checked_call_owners, short.checked_call_owners);
-                eprintln!("[decl-only] full native {:?} {:?}\n[decl-only] short native {:?} {:?}",
-                    full.native_call_hirs, full.native_call_function_hirs, short.native_call_hirs, short.native_call_function_hirs);
-            }
-        }
-        (Err(full), Err(short)) => {
-            if format!("{full:?}") != format!("{short:?}") {
-                differences.push(format!("diagnostics: full {full:?}; declarations-only {short:?}"));
-            }
-        }
-        (Ok(_), Err(short)) => differences.push(format!("only the declarations-only replay failed: {short:?}")),
-        (Err(full), Ok(_)) => differences.push(format!("only the full replay failed: {full:?}")),
-    }
-    let (tokens, rows) = blanked.blanking.removed();
-    if differences.is_empty() {
-        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
-            eprintln!("[decl-only] unit {}:{} match: {} bodies, {tokens} tokens, {rows} rows left out",
-                interface.library_id, interface.unit_id, blanked.blanking.body_count());
-        }
-        return Ok(());
-    }
-    let message = format!(
-        "declarations-only template of unit {}:{} ({} bodies, {tokens} tokens, {rows} rows left out) differs from the full template: {}",
-        interface.library_id, interface.unit_id, blanked.blanking.body_count(), differences.join("; "));
-    eprintln!("[decl-only] MISMATCH {message}");
-    Err(CompileError::GpuFrontend(message))
 }
 
 impl CheckedSourcePackArtifacts {
@@ -3597,15 +3430,6 @@ impl CompiledSourcePackObject {
                     }
                 }
             }
-        }
-    }
-
-    /// Code bytes (x86 text, Wasm function bodies).
-    pub(in crate::compiler) fn code_len(&self) -> usize {
-        match self {
-            Self::X86_64(object) => object.text.len(),
-            Self::X86_64File(object) => object.layout.text_byte_len as usize,
-            Self::Wasm(object) => object.body_bytes.len(),
         }
     }
 
@@ -4124,7 +3948,7 @@ pub(super) fn type_check_error_to_compile_error_for_source(
             code,
             detail,
         } => {
-            if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            if crate::options::get().trace.stage_errors {
                 eprintln!("GPU type-check rejection: token={token} code={code:?} detail={detail}");
             }
             let (start, len) = read_single_token_for_diagnostic(device, queue, bufs, token)
@@ -4149,7 +3973,7 @@ fn type_check_error_to_compile_error_for_source_pack(
             code,
             detail,
         } => {
-            if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+            if crate::options::get().trace.stage_errors {
                 eprintln!(
                     "GPU source-pack type-check rejection: token={token} code={code:?} detail={detail}"
                 );
@@ -4199,7 +4023,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_execution_failed_for_source(
     source: &str,
     err: impl std::fmt::Display + std::fmt::Debug,
 ) -> CompileError {
-    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+    if crate::options::get().trace.stage_errors {
         eprintln!("GPU type-check detail: {err:?}");
     }
     stage_execution_failed_for_source(type_check_execution_failure(), diagnostic_path, source, err)
@@ -4209,7 +4033,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_execution_failed_for_source_
     diagnostic_files: &[DiagnosticSourceFile],
     err: impl std::fmt::Display + std::fmt::Debug,
 ) -> CompileError {
-    if std::env::var_os("LANIUS_DEBUG_STAGE_ERRORS").is_some() {
+    if crate::options::get().trace.stage_errors {
         eprintln!("GPU type-check detail: {err:?}");
     }
     stage_execution_failed_for_source_pack(type_check_execution_failure(), diagnostic_files, err)

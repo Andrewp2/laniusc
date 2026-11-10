@@ -219,6 +219,7 @@ impl GpuX86FileObject {
         Ok(Some(start..end))
     }
 
+    #[cfg(test)]
     pub(crate) fn copy_text_to<W: Write>(&self, output: &mut W) -> Result<u64, String> {
         self.copy_range(0, self.payload.text_len, output)
     }

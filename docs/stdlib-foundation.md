@@ -2635,7 +2635,7 @@ also fixes the imported struct-return relocation path described below.
     The smaller `repro_method_signed_width_collision.lani` declares only
     `Small<i8>::get` and `Small<i32>::get`; `laniusc check` rejects the second
     with `LNC0016` and a misleading “expected function name” label. With
-    `LANIUS_DEBUG_STAGE_ERRORS=1`, the underlying GPU type checker reports
+    `LANIUS_TRACE=stage-errors`, the underlying GPU type checker reports
     `BadHir detail=1`, its duplicate method-key status. The older
     `repro_third_concrete_method.lani` declares `Small<i32>`, `Small<u32>`,
     then `Small<i8>`; it rejects the third method because `i8` collides with

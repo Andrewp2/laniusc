@@ -425,13 +425,6 @@ impl ScalarRows {
         }
         let base = batch.len();
         let mut groups = Vec::with_capacity(by_table.len());
-        if !super::generic_calls::unit_facts_row_reads() {
-            for (position, &(name, row)) in requests.iter().enumerate() {
-                groups.push((batch.push(inputs.buffer(name), u64::from(row), 1, name)? - base,
-                    vec![position]));
-            }
-            return Ok(Self { groups, count: requests.len() });
-        }
         for (name, (rows, positions)) in by_table {
             groups.push((batch.rows(inputs.buffer(name), &rows, 1, 1, name)? - base, positions));
         }

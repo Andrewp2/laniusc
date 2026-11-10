@@ -127,7 +127,7 @@ impl Gate {
 
     fn compiled(&self, label: &str, source: &Path, output: &Path, native: bool) {
         let mut args = vec![
-            "LANIUS_GPU_COMPILE_HOST_TIMING=1".into(), self.bin("laniusc").into_os_string(),
+            "LANIUS_REPORT=host-timing".into(), self.bin("laniusc").into_os_string(),
             source.as_os_str().to_owned(), "--stdlib-root".into(),
             self.share("stdlib").into_os_string(), "--source-root".into(),
             self.share("extended").into_os_string(), "-o".into(), output.as_os_str().to_owned(),

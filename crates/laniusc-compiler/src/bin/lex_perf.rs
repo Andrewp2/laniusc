@@ -1,9 +1,6 @@
 use std::{env, fs, path::PathBuf, time::Instant};
 
-use laniusc_compiler::{
-    dev::generator::gen_valid_source,
-    lexer::{GpuLexer, util::readback_enabled},
-};
+use laniusc_compiler::{dev::generator::gen_valid_source, lexer::GpuLexer};
 use log::warn;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -184,8 +181,6 @@ fn main() {
         println!("GPU:  init={gpu_init_ms:.3} ms");
 
         let mut gpu_runs = Vec::with_capacity(reps);
-        let rb_enabled = readback_enabled();
-        let mut first_tokens_len: Option<usize> = None;
         for i in 0..(warmup + reps) {
             let t0 = Instant::now();
             let gpu_tokens = match gpu.lex(&text).await {
@@ -197,12 +192,7 @@ fn main() {
             };
             let ms = t0.elapsed().as_secs_f64() * 1e3;
             if i == warmup {
-                if rb_enabled {
-                    first_tokens_len = Some(gpu_tokens.len());
-                    println!("GPU:  first-lex={:.3} ms | tokens={}", ms, gpu_tokens.len());
-                } else {
-                    println!("GPU:  first-lex={:.3} ms | tokens=disabled", ms);
-                }
+                println!("GPU:  first-lex={:.3} ms | tokens={}", ms, gpu_tokens.len());
             }
             if i >= warmup {
                 gpu_runs.push(ms);
@@ -218,7 +208,5 @@ fn main() {
                 throughput_mibs(bytes, best_total)
             );
         }
-
-        let _ = first_tokens_len;
     });
 }

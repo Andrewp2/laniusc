@@ -227,7 +227,7 @@ fn flatten<const N: usize>(rows: &[[u32; N]]) -> Vec<u32> {
 
 #[test]
 fn physical_gpu_parameter_scoped_type_graph_preserves_identity_and_capacity() {
-    assert!(!crate::gpu::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    assert!(!crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU");
     let f = fixture();
     let gpu = device::global(); // Device initialization rejects CPU adapters.

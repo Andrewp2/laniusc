@@ -70,9 +70,6 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     /// Admitted origins of each unit's instance closure (D1), by unit:
     /// (instantiation depth, origin call).
     closure_origins: BTreeMap<[u32; 2], Vec<(u32, AdmittedCall)>>,
-    /// Closure instances decoded, closed, appended as calls, and admitted
-    /// concrete, summed over units (trace only).
-    closure_stats: [usize; 4],
     /// Each exact admitted origin projects its implementation applications at
     /// most once. These owning capabilities never enter the cross-job cache.
     impl_applications: BTreeMap<u32, Arc<ReplayImplApplications>>,
@@ -143,65 +140,58 @@ impl NativeProgramSession {
         // instance is one call of its own; a bounded callee's predicates
         // are soft obligations, so a refuted bound demotes only that call.
         let mut closure_calls = Vec::new();
-        let mut closure_stats = [0usize; 4];
-        if instance_closure_enabled() {
-            // A dependent's instances of a library body (D1b) are that
-            // library snapshot's closure calls, after its own, merged over
-            // the dependents in snapshot order without repeats.
-            let mut dependency_calls = BTreeMap::<[u32; 2], Vec<(CheckedGenericCall, u32)>>::new();
-            let mut dependency_seen = BTreeSet::<([u32; 2], u32, String)>::new();
-            for snapshot in &catalog.snapshots {
-                let Some(closure) = snapshot.original_facts.instance_closure() else {
+        // A dependent's instances of a library body (D1b) are that
+        // library snapshot's closure calls, after its own, merged over
+        // the dependents in snapshot order without repeats.
+        let mut dependency_calls = BTreeMap::<[u32; 2], Vec<(CheckedGenericCall, u32)>>::new();
+        let mut dependency_seen = BTreeSet::<([u32; 2], u32, String)>::new();
+        for snapshot in &catalog.snapshots {
+            let Some(closure) = snapshot.original_facts.instance_closure() else {
+                continue;
+            };
+            for instance in &closure.dependency_instances {
+                if instance.unit == snapshot.unit
+                    || !dependency_seen.insert((
+                        instance.unit,
+                        instance.call.call_hir,
+                        format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
+                    ))
+                {
                     continue;
-                };
-                closure_stats[0] += closure.dependency_instances.len();
-                for instance in &closure.dependency_instances {
-                    if instance.unit == snapshot.unit
-                        || !dependency_seen.insert((
-                            instance.unit,
-                            instance.call.call_hir,
-                            format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
-                        ))
-                    {
-                        continue;
-                    }
+                }
+                dependency_calls
+                    .entry(instance.unit)
+                    .or_default()
+                    .push((instance.call.clone(), instance.depth));
+            }
+        }
+        for (index, snapshot) in catalog.snapshots.iter().enumerate() {
+            let local = snapshot
+                .original_facts
+                .instance_closure()
+                .map_or(&[][..], |closure| closure.instances.as_slice());
+            let (calls, depths): (Vec<_>, Vec<_>) = local
+                .iter()
+                .map(|instance| (&instance.call, instance.depth))
+                .chain(
                     dependency_calls
-                        .entry(instance.unit)
-                        .or_default()
-                        .push((instance.call.clone(), instance.depth));
-                }
+                        .get(&snapshot.unit)
+                        .into_iter()
+                        .flatten()
+                        .map(|(call, depth)| (call, *depth)),
+                )
+                .filter(|(call, _)| call.has_closed_arguments())
+                .map(|(call, depth)| (call.clone(), depth))
+                .unzip();
+            if calls.is_empty() {
+                continue;
             }
-            for (index, snapshot) in catalog.snapshots.iter().enumerate() {
-                let local = snapshot
-                    .original_facts
-                    .instance_closure()
-                    .map_or(&[][..], |closure| closure.instances.as_slice());
-                closure_stats[0] += local.len();
-                let (calls, depths): (Vec<_>, Vec<_>) = local
-                    .iter()
-                    .map(|instance| (&instance.call, instance.depth))
-                    .chain(
-                        dependency_calls
-                            .get(&snapshot.unit)
-                            .into_iter()
-                            .flatten()
-                            .map(|(call, depth)| (call, *depth)),
-                    )
-                    .filter(|(call, _)| call.has_closed_arguments())
-                    .map(|(call, depth)| (call.clone(), depth))
-                    .unzip();
-                if calls.is_empty() {
-                    continue;
-                }
-                closure_stats[1] += calls.len();
-                let calls: Arc<[CheckedGenericCall]> = calls.into();
-                let snapshot_index = u32::try_from(index)?;
-                let appended = packet
-                    .packet_mut()?
-                    .append_closure_calls(snapshot_index, calls.clone())?;
-                closure_stats[2] += appended.len();
-                closure_calls.push((snapshot_index, snapshot.unit, calls, depths, appended));
-            }
+            let calls: Arc<[CheckedGenericCall]> = calls.into();
+            let snapshot_index = u32::try_from(index)?;
+            let appended = packet
+                .packet_mut()?
+                .append_closure_calls(snapshot_index, calls.clone())?;
+            closure_calls.push((snapshot_index, snapshot.unit, calls, depths, appended));
         }
         unit_span(
             "trait_solver.append_closure_calls",
@@ -215,7 +205,6 @@ impl NativeProgramSession {
             evidence: Vec::new(),
             poisoned: false,
             closure_origins: BTreeMap::new(),
-            closure_stats,
             impl_applications: BTreeMap::new(),
         };
         // An empty call inventory still requires catalog and batch admission.
@@ -237,7 +226,6 @@ impl NativeProgramSession {
                 .into_iter()
                 .filter(|(_, call)| call.is_concrete())
                 .collect::<Vec<_>>();
-            result.closure_stats[3] += origins.len();
             result.closure_origins.insert(unit, origins);
         }
         Ok(result)
@@ -247,11 +235,6 @@ impl NativeProgramSession {
     /// (instantiation depth, origin call), in closure order.
     pub fn instance_closure_origins(&self, unit: [u32; 2]) -> &[(u32, AdmittedCall)] {
         self.closure_origins.get(&unit).map_or(&[], Vec::as_slice)
-    }
-
-    /// Closure instances decoded, closed, appended and admitted concrete.
-    pub fn instance_closure_stats(&self) -> [usize; 4] {
-        self.closure_stats
     }
 
     fn ready(&self) -> Result<()> {
@@ -601,50 +584,6 @@ impl NativeProgramSession {
             .and_then(|span| InstanceSources::copy_rank(facts.template_sources(), span)))
     }
 
-    /// Why `instance_copy_rank` is None for an origin, for the
-    /// specialization trace. A body without a retained span is a trait
-    /// member or a trait-impl method with no inherent rendering, named by
-    /// its implementation's self type when it has one.
-    pub fn instance_copy_miss(&mut self, origin: &AdmittedCall) -> Result<String> {
-        use crate::type_checker::CheckedGenericType as Type;
-        self.ready()?;
-        let (_, snapshot, owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
-        let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
-        let Some(spans) = facts.owner_spans() else {
-            return Ok("the unit kept no owner spans".into());
-        };
-        if let Some(span) = spans.get(owner_hir) {
-            return Ok(InstanceSources::copy_miss(facts.template_sources(), span)
-                .unwrap_or("copyable")
-                .into());
-        }
-        let unit = [facts.interface().library_id, facts.interface().unit_id];
-        let subject = facts
-            .checked_contracts()
-            .implementations
-            .iter()
-            .find(|implementation| {
-                implementation
-                    .method_bindings
-                    .iter()
-                    .any(|binding| binding.method_hir == owner_hir)
-            })
-            .map(|implementation| match &implementation.subject {
-                Type::Scalar(_) => "scalar",
-                Type::Parameter(_) => "type parameter",
-                Type::Slice(_) => "slice",
-                Type::Reference(_) => "reference",
-                Type::Array { .. } => "array",
-                Type::Nominal { identity, .. } if identity.unit() == unit => "local nominal",
-                Type::Nominal { .. } => "foreign nominal",
-                Type::Unresolved { .. } => "unresolved",
-            });
-        Ok(match subject {
-            Some(kind) => format!("no span: trait-impl method, {kind} self type"),
-            None => "no span: not a trait-impl method".into(),
-        })
-    }
-
     /// Like `prepare_replay_batch`, but every origin replays a renamed copy of
     /// its body appended after the template text, so origins may share one
     /// lexical scope. Each copy is checked under its origin's own context.
@@ -933,26 +872,18 @@ impl NativeProgramSession {
                 .set_continuation_files(template_files, instance.sources.continuations.clone())?;
         }
         specialization.set_impl_bindings(bindings)?;
-        if let Some(instance) = instance.as_mut()
-            && (declarations_only_templates_enabled() || declarations_only_templates_checked())
-        {
+        if let Some(instance) = instance.as_mut() {
             let unit = self.catalog.snapshots[target_snapshot as usize].unit;
-            match DeclarationsOnlyTemplate::build(
+            // A template that cannot be reduced to its declarations is
+            // replayed in full.
+            if let Ok(template) = DeclarationsOnlyTemplate::build(
                 &template,
                 unit,
                 instance,
                 &specialization,
                 resolved[0].2,
             ) {
-                Ok(template) => instance.declarations_only = template.map(Arc::new),
-                Err(error) => {
-                    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
-                        eprintln!(
-                            "[decl-only] unit {}:{} keeps its full template: {error:#}",
-                            unit[0], unit[1]
-                        );
-                    }
-                }
+                instance.declarations_only = template.map(Arc::new);
             }
         }
         // GPU checks each new context against the exact origin environment and
@@ -1199,18 +1130,6 @@ impl DeclarationsOnlyTemplate {
             selected_function_hir,
         }))
     }
-}
-
-/// `LANIUS_DECL_ONLY_TEMPLATES=0` replays instance copies against the full
-/// template text (the kill switch).
-pub(in crate::compiler::gpu_compiler) fn declarations_only_templates_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_DECL_ONLY_TEMPLATES", true)
-}
-
-/// `LANIUS_CHECK_DECL_ONLY_TEMPLATES=1` compiles every copy replay against
-/// both templates and fails on any difference, then keeps the full one.
-pub(in crate::compiler::gpu_compiler) fn declarations_only_templates_checked() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_CHECK_DECL_ONLY_TEMPLATES", false)
 }
 
 /// The calls a replay admitted and where its published bodies are.
@@ -1685,7 +1604,7 @@ fn lengths_as_counts(
     }
 }
 
-/// The instance table's validation (D2, `LANIUS_CHECK_INSTANCE_TABLE=1`):
+/// The instance table's validation (D2, `LANIUS_CHECK=instance-table`):
 /// each copy of this run against the original job's table entry for the
 /// same template function and arguments, row by row, as decoded types.
 /// It only reports, on stderr; nothing depends on the table yet.
@@ -1902,7 +1821,7 @@ fn report_instance_table(
                             "{label} copy {index} function {function} row +{row} kind {kind:?}: \
                             table {expected:?}; copy {actual:?}"
                         );
-                        if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false) {
+                        if crate::options::get().trace.instance_table {
                             eprintln!(
                                 "{label} copy {index} constants: table {:?}; copy {:?}",
                                 found.constants, entry.constants
@@ -2138,12 +2057,6 @@ pub(super) fn normalize_omitted_batch_template_calls(
 
 /// Missing implementations remain a source diagnostic. Invalid input, resource
 /// exhaustion, unsupported graphs and ambiguity keep their distinct GPU cause.
-/// `LANIUS_INSTANCE_CLOSURE=0` leaves the instance closure's origins out of
-/// program admission, so every deeper body waits for a later replay round.
-pub(in crate::compiler::gpu_compiler) fn instance_closure_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_CLOSURE", true)
-}
-
 pub(in crate::compiler::gpu_compiler) fn native_program_error(
     error: anyhow::Error,
 ) -> CompileError {

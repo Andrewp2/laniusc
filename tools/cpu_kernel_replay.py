@@ -9,7 +9,7 @@ usage:
   tools/cpu_kernel_replay.py gdb     CAPTURE [--source SRC] [--break-dtid X[,Y,Z]] [-- GDB ARGS...]
   tools/cpu_kernel_replay.py build   KERNEL  [--source SRC]          only compile for the CPU
 
-CAPTURE is a `LANIUS_DEBUG_CAPTURE_PASS` capture directory (see
+CAPTURE is a `LANIUS_CAPTURE` capture directory (see
 docs/cpu-kernel-replay.md). The kernel comes from the capture's manifest unless
 `--kernel KEY` (an artifact key such as type_checker/calls/03d_...) is given.
 SRC selects the shader sources: `worktree` (default, this checkout's shaders/),
@@ -484,7 +484,7 @@ def command_check(args):
     capture, manifest = load_capture(args.capture)
     if not manifest.get("post"):
         fail("this capture has no GPU outputs (post/); it was captured with "
-             "LANIUS_DEBUG_OPERATION_LIMIT or by an older compiler")
+             "LANIUS_OPERATION_LIMIT or by an older compiler")
     info, out_dir, stats = replay(args, args.source, "check")
     print_stats("cpu", stats)
     print(f"cpu vs gpu ({capture / 'post'}):")
@@ -493,7 +493,7 @@ def command_check(args):
     changed = gpu_changed_words(capture, manifest)
     print(f"the GPU dispatch changed {sum(changed.values())} words in {len(changed)} buffer(s)"
           + ("" if changed else " (it did no work or rewrote the values already there; a dispatch that "
-                                "changes data, see LANIUS_DEBUG_CAPTURE_INDEX, makes a stronger check)"))
+                                "changes data, see the `index=` word of LANIUS_CAPTURE, makes a stronger check)"))
     print("MATCH" if not differing else f"MISMATCH in {differing} buffer(s)")
     return 1 if differing else 0
 

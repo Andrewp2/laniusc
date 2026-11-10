@@ -660,18 +660,14 @@ fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
 
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     let startup = Instant::now();
-    let prepare_all_kernels =
-        crate::gpu::env::env_bool_strict("LANIUS_DAEMON_PREPARE_ALL_KERNELS", true);
     let backends = options.backend.compiler_backends();
-    if prepare_all_kernels {
-        // Before any other pipeline: see `prepare_largest_local_memory_kernels`.
-        let gpu = device::global_result()
-            .map_err(|err| CliError::from(format!("initialize GPU device: {err}")))?;
-        crate::gpu::kernels::prepare_largest_local_memory_kernels(&gpu.device, |key| {
-            daemon_loads_kernel(backends, key)
-        })
-        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
-    }
+    // Before any other pipeline: see `prepare_largest_local_memory_kernels`.
+    let gpu = device::global_result()
+        .map_err(|err| CliError::from(format!("initialize GPU device: {err}")))?;
+    crate::gpu::kernels::prepare_largest_local_memory_kernels(&gpu.device, |key| {
+        daemon_loads_kernel(backends, key)
+    })
+    .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     let compiler: Arc<GpuCompiler<'static>> = Arc::new(
         GpuCompiler::new_with_backends(options.backend.compiler_backends())
             .await
@@ -680,12 +676,10 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     // Create every pipeline the selected backends can load before the first
     // job, so the driver's local-memory reservation is placed in device memory
     // ahead of any buffer (see `prepare_remaining_kernels`).
-    if prepare_all_kernels {
-        crate::gpu::kernels::prepare_remaining_kernels(&compiler.gpu().device, |key| {
-            daemon_loads_kernel(backends, key)
-        })
-        .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
-    }
+    crate::gpu::kernels::prepare_remaining_kernels(&compiler.gpu().device, |key| {
+        daemon_loads_kernel(backends, key)
+    })
+    .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     // Compare the cache with its file off the startup path: reading the data
     // back costs ~90 ms even when every pipeline above was a hit.
     device::persist_created_pipelines_in_background();
@@ -740,7 +734,7 @@ async fn run_session(
     let warmup = run_warmups(&compiler, options, &mut source_pack_cache).await?;
     let driver_cache = device::driver_shader_cache_status();
     crate::gpu::passes_core::seal_pipeline_creation();
-    if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+    if crate::options::get().report.host_timing {
         eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
     }
     write_response(
@@ -753,7 +747,6 @@ async fn run_session(
             "resident_set_bytes": resident_set_bytes(),
             "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
             "wgpu_resources": wgpu_resource_metrics(),
-            "gpu_allocator": gpu_allocator_metrics(),
             "compute_pipelines_created": pipeline_creation_count(),
             "driver_shader_cache": {
                 "result": driver_cache.result(),
@@ -907,8 +900,6 @@ async fn run_session(
         let operation_timestamps_before = crate::gpu::timer::operation_timestamp_count();
         let operation_timestamps_dropped_before = crate::gpu::timer::operation_timestamps_dropped();
         let readbacks_before = crate::gpu::passes_core::readback_round_trips();
-        let readback_breakdown_before = crate::gpu::passes_core::readback_breakdown_enabled()
-            .then(crate::gpu::passes_core::readback_round_trips_by_label);
         let compute_schedule_job = begin_compute_schedule_job();
         let compute_pass_breakdown_before =
             compute_pass_breakdown_enabled().then(recorded_compute_pass_counts_by_label);
@@ -916,12 +907,9 @@ async fn run_session(
         let bind_group_timing_before = bind_group_timing_counters();
         let bind_group_job = crate::gpu::passes_core::begin_reflected_bind_group_job();
         let resource_breakdown_enabled =
-            crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false)
+            crate::options::get().report.buffers
                 || (resources_before.bind_groups > 0
-                    && crate::gpu::env::env_bool_strict(
-                        "LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN",
-                        false,
-                    ));
+                    && crate::options::get().report.resources.is_some());
         let breakdown_before = resource_breakdown_enabled.then(job_resource_creation_breakdown);
         let job_trace_name = request.id.as_str().map_or_else(
             || format!("daemon.job.{}", request.id),
@@ -965,7 +953,7 @@ async fn run_session(
                 });
             }
         }
-        // No-op unless LANIUS_DEBUG_DUMP_BUFFERS is set, as in the CLI.
+        // No-op unless `LANIUS_DUMP` is set, as in the CLI.
         crate::gpu::passes_core::debug_dump_buffers(
             &compiler.gpu().device,
             &compiler.gpu().queue,
@@ -1064,15 +1052,6 @@ async fn run_session(
                 "readback_wait_ms_during_job".into(),
                 json!(readbacks_after.1.saturating_sub(readbacks_before.1) as f64 / 1e6),
             );
-            if let Some(before) = &readback_breakdown_before {
-                response.insert(
-                    "readback_breakdown".into(),
-                    readback_delta_rows(
-                        &crate::gpu::passes_core::readback_round_trips_by_label(),
-                        before,
-                    ),
-                );
-            }
             if let (Some(before), Some(after)) = (
                 &compute_pass_breakdown_before,
                 &compute_pass_breakdown_after,
@@ -1116,9 +1095,12 @@ async fn run_session(
             // the test harness starts reading it. The focused diagnostic is for
             // small unexpected deltas on otherwise resident jobs; a client that
             // reads every response raises the limit with
-            // LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT.
+            // `LANIUS_REPORT=resources=N`.
             if created.buffers.saturating_add(created.bind_groups)
-                <= crate::gpu::env::env_u64("LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT", 32)
+                <= crate::options::get()
+                    .report
+                    .resources
+                    .unwrap_or(crate::options::Report::DEFAULT_RESOURCES_LIMIT)
                 && let (Some(before), Some(after)) = (&breakdown_before, &breakdown_after)
             {
                 response.insert(
@@ -1170,29 +1152,6 @@ fn job_resource_creation_counts() -> JobResourceCreationCounts {
         bind_groups: bind_group_creation_count(),
         compute_pipelines: pipeline_creation_count(),
     }
-}
-
-/// Readback round trips per label during a job, most waiting first.
-fn readback_delta_rows(
-    after: &HashMap<String, (u64, u64)>,
-    before: &HashMap<String, (u64, u64)>,
-) -> Value {
-    let mut rows = after
-        .iter()
-        .filter_map(|(label, &(count, wait_ns))| {
-            let (count_before, wait_before) = before.get(label).copied().unwrap_or((0, 0));
-            let count = count.saturating_sub(count_before);
-            (count > 0).then(|| (label, count, wait_ns.saturating_sub(wait_before)))
-        })
-        .collect::<Vec<_>>();
-    rows.sort_unstable_by(|left, right| right.2.cmp(&left.2).then_with(|| left.0.cmp(right.0)));
-    Value::Array(
-        rows.into_iter()
-            .map(|(label, count, wait_ns)| {
-                json!({"label": label, "round_trips": count, "wait_ms": wait_ns as f64 / 1e6})
-            })
-            .collect(),
-    )
 }
 
 fn compute_pass_delta_rows(after: &HashMap<String, u64>, before: &HashMap<String, u64>) -> Value {
@@ -1433,10 +1392,7 @@ async fn compile_request(
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
-    crate::gpu::buffers::begin_tracked_buffer_residency_timeline(crate::gpu::env::env_bool_strict(
-        "LANIUS_GPU_MEMORY_TIMELINE",
-        false,
-    ));
+    crate::gpu::buffers::begin_tracked_buffer_residency_timeline(crate::options::get().report.memory);
     let unit_cache_before = compiler.compiled_unit_cache_stats();
     let instance_cache_before = compiler.library_instance_cache_stats();
     let compile_started = Instant::now();
@@ -1465,9 +1421,9 @@ async fn compile_request(
         _ => unreachable!("backend support check accepted an unknown target"),
     };
     let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
-    // A dispatch selected by `LANIUS_DEBUG_CAPTURE_PASS` and
-    // `LANIUS_DEBUG_CAPTURE_INDEX` counts dispatches across jobs, so a resident
-    // job's dispatch can be captured; it is written after the job recording it.
+    // A dispatch selected by `LANIUS_CAPTURE` counts dispatches across jobs,
+    // so a resident job's dispatch can be captured; it is written after the
+    // job recording it.
     if crate::gpu::dispatch_capture::capture_pass().is_some()
         && let Ok(gpu) = device::global_result()
     {
@@ -1522,7 +1478,6 @@ async fn compile_request(
         "resident_set_bytes": resident_set_bytes(),
         "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
         "wgpu_resources": wgpu_resource_metrics(),
-        "gpu_allocator": gpu_allocator_metrics(),
     })
 }
 
@@ -1570,21 +1525,14 @@ fn tracked_gpu_buffer_metrics() -> Value {
             }),
         );
     }
-    if crate::gpu::env::env_bool_strict("LANIUS_GPU_BUFFER_BREAKDOWN", false) {
+    if crate::options::get().report.buffers {
         for snapshot in crate::gpu::buffers::tracked_buffer_phase_snapshots() {
             eprintln!(
                 "gpu_buffer_phase phase=\"{}\" allocations={} bytes={}",
                 snapshot.phase, snapshot.stats.allocations, snapshot.stats.bytes,
             );
         }
-        const DEFAULT_MAX_LABEL_ROWS: usize = 64;
-        const MAX_CONFIGURED_LABEL_ROWS: usize = 16_384;
-        let max_label_rows = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|&value| value > 0)
-            .unwrap_or(DEFAULT_MAX_LABEL_ROWS)
-            .min(MAX_CONFIGURED_LABEL_ROWS);
+        let max_label_rows = crate::gpu::buffers::BUFFER_BREAKDOWN_ROWS;
         let rows = crate::gpu::buffers::tracked_buffer_allocation_stats_by_label();
         let listed_bytes = rows
             .iter()
@@ -1627,39 +1575,6 @@ fn wgpu_resource_metrics() -> Value {
         "command_buffers": registry(stats.command_buffers),
         "compute_pipelines": registry(stats.compute_pipelines),
         "query_sets": registry(stats.query_sets),
-    })
-}
-
-/// With `LANIUS_GPU_ALLOCATOR_REPORT=1`, wgpu's device-memory allocator report:
-/// bytes allocated and reserved in blocks, and the largest allocations summed
-/// by label. It covers every wgpu buffer, including those that are not
-/// `LaniusBuffer`s, but not driver-internal memory such as the local-memory
-/// reservation.
-fn gpu_allocator_metrics() -> Value {
-    if !crate::gpu::env::env_bool_strict("LANIUS_GPU_ALLOCATOR_REPORT", false) {
-        return Value::Null;
-    }
-    let Some(report) = device::global().device.generate_allocator_report() else {
-        return Value::Null;
-    };
-    let mut by_label = std::collections::HashMap::<&str, (u64, u64)>::new();
-    for allocation in &report.allocations {
-        let entry = by_label.entry(allocation.name.as_str()).or_default();
-        entry.0 += 1;
-        entry.1 += allocation.size;
-    }
-    let mut by_label = by_label.into_iter().collect::<Vec<_>>();
-    by_label.sort_by_key(|(_, (_, bytes))| std::cmp::Reverse(*bytes));
-    json!({
-        "allocated_bytes": report.total_allocated_bytes,
-        "reserved_bytes": report.total_reserved_bytes,
-        "blocks": report.blocks.len(),
-        "allocations": report.allocations.len(),
-        "largest_by_label": by_label
-            .iter()
-            .take(60)
-            .map(|(label, (count, bytes))| json!({"label": label, "allocations": count, "bytes": bytes}))
-            .collect::<Vec<_>>(),
     })
 }
 

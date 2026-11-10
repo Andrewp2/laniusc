@@ -341,13 +341,6 @@ pub(super) fn register_solver_demand_pass(
     graph.add_indirect_dispatch(SOLVER_DEMAND_PASS, "hir_active_dispatch_args")
 }
 
-/// `LANIUS_INPLACE_INSTANCES=0` (A/B runs) leaves every generic body to the
-/// replays.
-pub(in crate::type_checker) fn inplace_instances_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_INPLACE_INSTANCES", true))
-}
-
 /// Virtual rows one job's instance table holds: half its HIR rows. A full
 /// row table flags the table, and the host ignores it.
 pub(super) fn instance_table_row_capacity(hir_rows: u64) -> u64 {
@@ -439,19 +432,19 @@ pub(super) fn register_instance_table_passes(
     Ok(())
 }
 
-/// `LANIUS_INSTANCE_TABLE=1` builds the instance table in original jobs
-/// that run the closure (D2, behind its flag);
-/// `LANIUS_CHECK_INSTANCE_TABLE=1` also reads it back and checks it against
+/// `LANIUS_EXPERIMENT=instance-table` builds the instance table in original
+/// jobs that run the closure (D2, behind its flag);
+/// `LANIUS_CHECK=instance-table` also reads it back and checks it against
 /// every copy run's own types.
 pub(in crate::type_checker) fn instance_table_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| instance_table_checked()
-        || crate::gpu::env::env_bool_truthy("LANIUS_INSTANCE_TABLE", false))
+        || crate::options::get().experiment.instance_table)
 }
 
 pub(crate) fn instance_table_checked() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INSTANCE_TABLE", false))
+    *ENABLED.get_or_init(|| crate::options::get().check.instance_table)
 }
 
 /// The instance table of one original job: clear, keys, ranks, the row
@@ -520,13 +513,6 @@ impl InstanceTableOperations {
         self.rows_final.record(encoder)?;
         self.calls.record(encoder)
     }
-}
-
-/// `LANIUS_CLOSURE_BOUND_MEMBERS=0` leaves bound-member calls to the replay
-/// rounds (D3's kill switch): their edges are linked but never routed.
-pub(in crate::type_checker) fn closure_bound_members_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_CLOSURE_BOUND_MEMBERS", true))
 }
 
 /// The closure of one original job: clear, mark the edges and roots, the
@@ -685,9 +671,7 @@ impl InstanceClosureOperations {
         for _ in 0..INSTANCE_CLOSURE_LEVELS {
             self.advance.record(encoder)?;
             self.expand.record(encoder)?;
-            if closure_bound_members_enabled() {
-                self.expand_bound.record(encoder)?;
-            }
+            self.expand_bound.record(encoder)?;
             if import_rounds != 0 {
                 self.expand_dependency.record(encoder)?;
             }

@@ -221,7 +221,7 @@ fn group(device: &wgpu::Device, pass: &PassData, resources: &Resources,
 }
 
 fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
-    assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    assert!(!crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU");
     let f = fixture();
     let gpu = device::global();

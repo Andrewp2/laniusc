@@ -190,7 +190,7 @@ by copying from offsets to keep bindings low.
   bind groups and must stay within the active device limits instead of the old
   fixed 10-buffer budget.
 * **No push constants:** Uniforms are small constant buffers (via `encase`).
-* **Resource count:** We reuse buffers across passes; staging/readback is gated by `LANIUS_READBACK`.
+* **Resource count:** We reuse buffers across passes. The one-shot `parse` entry point always reads its results back.
 
 ---
 
@@ -397,9 +397,8 @@ We keep the single-thread kernels to cross-check during bring-up and tests.
 
 ## Testing & debugging
 
-* `parse_demo` prints bracket validity and a tree header.
-* Set `LANIUS_READBACK=1` (default) to pull buffers back for inspection.
-* Timing: `LANIUS_GPU_TIMING=1` prints pass-level timings (hidden on tiny passes).
+* `parse_demo` prints bracket validity and a tree header. `--tokens` prints the tokens, `--resident` parses the lexer's resident buffers and `--full` prints every node.
+* Timing: `LANIUS_REPORT=gpu-timing` prints pass-level timings (hidden on tiny passes).
 * We snapshot key buffers to a debug struct when `gpu-debug` is enabled.
 
 Recommended unit cases:

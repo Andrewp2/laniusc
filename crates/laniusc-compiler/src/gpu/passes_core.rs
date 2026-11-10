@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    env,
     sync::{
         Arc,
         Weak,
@@ -417,11 +416,9 @@ pub(crate) fn record_indirect_compute_dispatch() {
     RECORDED_INDIRECT_DISPATCH_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Whether `LANIUS_GPU_COMPILE_HOST_TIMING` asks for host timing lines.
+/// Whether the `host-timing` report asks for host timing lines.
 pub(crate) fn host_timing_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED
-        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false))
+    crate::options::get().report.host_timing
 }
 
 /// What was recorded since the previous call, process-wide: dispatches,
@@ -445,14 +442,6 @@ fn recorded_since_last_submission() -> [u64; 4] {
 
 static READBACK_ROUND_TRIPS: AtomicU64 = AtomicU64::new(0);
 static READBACK_WAIT_NS: AtomicU64 = AtomicU64::new(0);
-static READBACKS_BY_LABEL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (u64, u64)>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
-
-/// Whether `LANIUS_READBACK_BREAKDOWN` asks for per-label readback counts.
-pub(crate) fn readback_breakdown_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_READBACK_BREAKDOWN", false))
-}
 
 /// Process-wide completed readback maps and the host time spent waiting for
 /// them, in nanoseconds. Each one is a host round trip that drains the queue.
@@ -463,39 +452,18 @@ pub(crate) fn readback_round_trips() -> (u64, u64) {
     )
 }
 
-/// Per-label `(round trips, wait ns)`, filled only when the breakdown is enabled.
-pub(crate) fn readback_round_trips_by_label() -> HashMap<String, (u64, u64)> {
-    READBACKS_BY_LABEL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-}
-
-fn record_readback_round_trip(label: &str, waited: Duration) {
+fn record_readback_round_trip(waited: Duration) {
     let waited = waited.as_nanos() as u64;
     READBACK_ROUND_TRIPS.fetch_add(1, Ordering::Relaxed);
     READBACK_WAIT_NS.fetch_add(waited, Ordering::Relaxed);
-    if readback_breakdown_enabled() {
-        let mut labels = READBACKS_BY_LABEL
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let entry = labels.entry(label.to_owned()).or_default();
-        entry.0 += 1;
-        entry.1 += waited;
-    }
 }
 
 pub(crate) fn compute_pass_breakdown_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        crate::gpu::env::env_bool_strict("LANIUS_GPU_COMPUTE_PASS_BREAKDOWN", false)
-    })
+    crate::options::get().report.passes
 }
 
 fn compute_schedule_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED
-        .get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_COMPILER_GRAPH_BREAKDOWN", false))
+    crate::options::get().report.graph
 }
 
 pub(crate) fn begin_compute_schedule_job() -> u64 {
@@ -539,37 +507,22 @@ pub(crate) fn record_compiler_operation(label: &str) {
     }
 }
 
-struct DebugOperationConfig {
-    log: bool,
-    limit: Option<u64>,
-}
-
-fn debug_operation_config() -> &'static DebugOperationConfig {
-    static CONFIG: std::sync::OnceLock<DebugOperationConfig> = std::sync::OnceLock::new();
-    CONFIG.get_or_init(|| DebugOperationConfig {
-        log: crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_OPERATION_LOG", false),
-        limit: std::env::var("LANIUS_DEBUG_OPERATION_LIMIT")
-            .ok()
-            .and_then(|value| value.trim().parse::<u64>().ok()),
-    })
-}
-
-/// Debug bisection for GPU hangs: `LANIUS_DEBUG_OPERATION_LOG=1` prints each
-/// logical operation in recording order, and `LANIUS_DEBUG_OPERATION_LIMIT=N`
+/// Debug bisection for GPU hangs: `LANIUS_TRACE=operations` prints each
+/// logical operation in recording order, and `LANIUS_OPERATION_LIMIT=N`
 /// drops every dispatch from operation N onward (results are then garbage,
 /// but a hang that disappears identifies the first hanging operation).
 /// Operations labelled `*.readback` are never dropped.
 fn debug_operation_boundary(label: &str) {
-    let config = debug_operation_config();
-    if !config.log && config.limit.is_none() {
+    let options = crate::options::get();
+    let (log, limit) = (options.trace.operations, options.operation_limit);
+    if !log && limit.is_none() {
         return;
     }
     let index = DEBUG_OPERATION_INDEX.fetch_add(1, Ordering::Relaxed);
     // Readbacks still run so the final map waits on every earlier dispatch.
-    let skipping =
-        config.limit.is_some_and(|limit| index >= limit) && !label.ends_with(".readback");
+    let skipping = limit.is_some_and(|limit| index >= limit) && !label.ends_with(".readback");
     DEBUG_OPERATION_SKIPPING.store(skipping, Ordering::Relaxed);
-    if config.log {
+    if log {
         eprintln!(
             "[lanius-op] {index}{} {label}",
             if skipping { " (skipped)" } else { "" }
@@ -578,14 +531,14 @@ fn debug_operation_boundary(label: &str) {
 }
 
 /// Whether the current operation's dispatches are dropped by
-/// `LANIUS_DEBUG_OPERATION_LIMIT`.
+/// `LANIUS_OPERATION_LIMIT`.
 pub(crate) fn debug_operation_skipped() -> bool {
     DEBUG_OPERATION_SKIPPING.load(Ordering::Relaxed)
 }
 
-/// Whether `LANIUS_DEBUG_OPERATION_LIMIT` is set.
+/// Whether `LANIUS_OPERATION_LIMIT` is set.
 pub(crate) fn debug_operation_limited() -> bool {
-    debug_operation_config().limit.is_some()
+    crate::options::get().operation_limit.is_some()
 }
 
 /// Starts a compute pass and accounts for it at the only boundary that creates
@@ -620,11 +573,10 @@ mod compute_schedule_tests {
 
     #[test]
     fn profiling_batches_only_when_timestamps_can_be_written_inside_passes() {
-        assert!(compute_pass_batching_allowed_for(true, true, true, false));
-        assert!(!compute_pass_batching_allowed_for(true, false, true, false));
-        assert!(compute_pass_batching_allowed_for(false, false, true, false));
-        assert!(!compute_pass_batching_allowed_for(true, true, false, false));
-        assert!(!compute_pass_batching_allowed_for(true, true, true, true));
+        assert!(compute_pass_batching_allowed_for(true, true, false));
+        assert!(!compute_pass_batching_allowed_for(true, false, false));
+        assert!(compute_pass_batching_allowed_for(false, false, false));
+        assert!(!compute_pass_batching_allowed_for(true, true, true));
     }
 
     #[test]
@@ -836,6 +788,7 @@ impl ThreadGpuActivity {
     };
 
     /// The activity between `earlier` and `self`.
+    #[cfg(test)]
     pub(crate) fn since(self, earlier: Self) -> Self {
         Self {
             pipelines: self.pipelines - earlier.pipelines,
@@ -853,6 +806,7 @@ thread_local! {
 }
 
 /// This thread's GPU object counts so far.
+#[cfg(test)]
 pub(crate) fn this_thread_gpu_activity() -> ThreadGpuActivity {
     THREAD_GPU_ACTIVITY
         .try_with(std::cell::Cell::get)
@@ -917,11 +871,7 @@ fn record_bind_group_creation(label: Option<&str>) {
 }
 
 pub(crate) fn bind_group_timing_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        crate::gpu::env::env_bool_truthy("LANIUS_GPU_BIND_GROUP_TIMING", false)
-            || crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false)
-    })
+    crate::options::get().report.host_timing
 }
 
 fn add_timing(counter: &AtomicU64, start: Option<Instant>) {
@@ -962,15 +912,7 @@ pub(crate) fn bind_group_timing_counters() -> BindGroupTimingCounters {
 
 /// Returns whether selected GPU operations should use wgpu validation scopes.
 pub fn validation_scopes_enabled() -> bool {
-    crate::gpu::env::env_bool_truthy("LANIUS_VALIDATION_SCOPES", false)
-}
-
-/// Returns whether compatible compute passes may share one `wgpu::ComputePass`.
-pub fn compute_pass_batching_enabled() -> bool {
-    match std::env::var("LANIUS_BATCH_COMPUTE_PASSES") {
-        Ok(value) => !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false"),
-        Err(_) => true,
-    }
+    crate::options::get().check.validation_scopes
 }
 
 /// Returns whether a compiler phase may defer its dispatches into shared
@@ -984,7 +926,6 @@ pub(crate) fn compute_pass_batching_allowed(gpu_timing_enabled: bool) -> bool {
     compute_pass_batching_allowed_for(
         gpu_timing_enabled,
         crate::gpu::timer::operation_capture_supports_in_pass_timestamps(),
-        compute_pass_batching_enabled(),
         validation_scopes_enabled(),
     )
 }
@@ -992,12 +933,9 @@ pub(crate) fn compute_pass_batching_allowed(gpu_timing_enabled: bool) -> bool {
 fn compute_pass_batching_allowed_for(
     gpu_timing_enabled: bool,
     in_pass_timestamps_supported: bool,
-    batching_enabled: bool,
     validation_scopes_enabled: bool,
 ) -> bool {
-    (!gpu_timing_enabled || in_pass_timestamps_supported)
-        && batching_enabled
-        && !validation_scopes_enabled
+    (!gpu_timing_enabled || in_pass_timestamps_supported) && !validation_scopes_enabled
 }
 
 enum DeferredComputeCommand {
@@ -1008,7 +946,7 @@ enum DeferredComputeCommand {
         bind_groups: Vec<wgpu::BindGroup>,
         groups: (u32, u32, u32),
         dynamic_offsets: Vec<u32>,
-        /// The `LANIUS_DEBUG_CAPTURE_PASS` dispatch: recorded in a pass of its own.
+        /// The `LANIUS_CAPTURE` dispatch: recorded in a pass of its own.
         capture: bool,
     },
     Indirect {
@@ -1032,8 +970,7 @@ impl DeferredComputeCommand {
 }
 
 fn deferred_compute_debug_labels_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_GPU_DEBUG_LABELS", false))
+    crate::options::get().trace.gpu_labels
 }
 
 fn deferred_compute_debug_label(pass: &PassData) -> Option<String> {
@@ -1345,7 +1282,7 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
 }
 
 /// Flushes all deferred dispatches as one ordered compute pass (two more
-/// when the `LANIUS_DEBUG_CAPTURE_PASS` dispatch is among them: it gets a pass
+/// when the `LANIUS_CAPTURE` dispatch is among them: it gets a pass
 /// of its own between its input and output copies).
 pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
     let (label, commands) = DEFERRED_COMPUTE.with(|state| {
@@ -1509,21 +1446,13 @@ pub(crate) fn submit_with_optional_validation(
 /// `Queue::write_buffer` issued after the split reaches only commands
 /// recorded after it, so callers split where no earlier command reads a
 /// buffer the rest of the recording writes that way.
-/// `LANIUS_SPLIT_SUBMISSIONS=0` keeps every recording in one submission (for
-/// timing comparisons).
 pub(crate) fn submit_recorded_prefix(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     label: &'static str,
 ) {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     flush_deferred_compute(encoder);
-    if !*ENABLED
-        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_SUBMISSIONS", true))
-    {
-        return;
-    }
     let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
     let recorded = std::mem::replace(encoder, next);
     crate::gpu::timer::stamp_active_submission_begin(encoder, label);
@@ -1944,9 +1873,6 @@ pub fn pipeline_from_spirv_and_bgls(
     spirv: &[u8],
     bgls: &[&wgpu::BindGroupLayout],
 ) -> wgpu::ComputePipeline {
-    let total_start = Instant::now();
-    let shader_module_start = total_start;
-    trace_pipeline(label, "shader_module.start");
     // SAFETY: Slang produced this SPIR-V module for the selected backend;
     // Lanius intentionally bypasses Naga translation for shader modules.
     let module = unsafe {
@@ -1956,10 +1882,6 @@ pub fn pipeline_from_spirv_and_bgls(
             ..Default::default()
         })
     };
-    let shader_module_end = Instant::now();
-    trace_pipeline(label, "shader_module.done");
-    let pipeline_layout_start = shader_module_end;
-    trace_pipeline(label, "pipeline_layout.start");
     // let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
     //     label: Some(label),
     //     source: wgpu::util::make_spirv(spirv),
@@ -1970,10 +1892,7 @@ pub fn pipeline_from_spirv_and_bgls(
         bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     });
-    let pipeline_layout_end = Instant::now();
-    trace_pipeline(label, "pipeline_layout.done");
-    let compute_pipeline_start = pipeline_layout_end;
-    trace_pipeline(label, "compute_pipeline.start");
+    let compute_pipeline_start = Instant::now();
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
         layout: Some(&pl),
@@ -1982,8 +1901,7 @@ pub fn pipeline_from_spirv_and_bgls(
         compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: crate::gpu::device::pipeline_cache_for(device).as_deref(),
     });
-    let compute_pipeline_end = Instant::now();
-    let creation = compute_pipeline_end.duration_since(compute_pipeline_start);
+    let creation = compute_pipeline_start.elapsed();
     PIPELINE_CREATION_COUNT.fetch_add(1, Ordering::Relaxed);
     note_thread_gpu_activity(|activity| activity.pipelines += 1);
     if PIPELINES_SEALED.load(Ordering::Relaxed) {
@@ -1991,60 +1909,11 @@ pub fn pipeline_from_spirv_and_bgls(
     }
     PIPELINE_CREATION_NANOS.fetch_add(creation.as_nanos() as u64, Ordering::Relaxed);
     crate::gpu::device::note_pipeline_creation(device, creation);
-    trace_pipeline(label, "compute_pipeline.done");
-    trace_pipeline_timing(
-        label,
-        shader_module_end.duration_since(shader_module_start),
-        pipeline_layout_end.duration_since(pipeline_layout_start),
-        compute_pipeline_end.duration_since(compute_pipeline_start),
-        compute_pipeline_end.duration_since(total_start),
-    );
     pipeline
 }
 
-fn trace_pipeline(label: &str, stage: &str) {
-    if crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_TRACE", false) {
-        eprintln!("[laniusc][pipeline][{label}] {stage}");
-    }
-}
-
-fn trace_pipeline_timing(
-    label: &str,
-    shader_module: Duration,
-    pipeline_layout: Duration,
-    compute_pipeline: Duration,
-    total: Duration,
-) {
-    if !crate::gpu::env::env_bool_strict("LANIUS_PIPELINE_TIMING", false) {
-        return;
-    }
-    let minimum_ms = env::var("LANIUS_PIPELINE_TIMING_MIN_MS")
-        .ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(100.0);
-    let total_ms = total.as_secs_f64() * 1000.0;
-    if total_ms < minimum_ms {
-        return;
-    }
-    eprintln!(
-        "[laniusc][pipeline-timing] label={label} total_ms={total_ms:.3} shader_module_ms={:.3} pipeline_layout_ms={:.3} compute_pipeline_ms={:.3}",
-        shader_module.as_secs_f64() * 1000.0,
-        pipeline_layout.as_secs_f64() * 1000.0,
-        compute_pipeline.as_secs_f64() * 1000.0,
-    );
-}
-
 fn gpu_pipeline_progress_enabled() -> bool {
-    is_env_truthy("LANIUS_GPU_PIPELINE_PROGRESS")
-        || is_env_truthy("LANIUS_PIPELINE_TRACE")
-        || is_env_truthy("LANIUS_WASM_TRACE")
-        || is_env_truthy("LANIUS_X86_TRACE")
-}
-
-fn is_env_truthy(name: &str) -> bool {
-    env::var_os(name)
-        .and_then(|value| value.into_string().ok())
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "True" | "on" | "ON"))
+    crate::options::get().trace.wasm
 }
 
 /// Emits coarse GPU progress logging when progress tracing is enabled.
@@ -2103,7 +1972,7 @@ pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_typ
     trace_gpu_progress(&format!("poll.start :: {label}"));
     let started = Instant::now();
     let _ = device.poll(poll_type);
-    record_readback_round_trip(label, started.elapsed());
+    record_readback_round_trip(started.elapsed());
     trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
@@ -2117,10 +1986,7 @@ pub fn map_readback_blocking(
 }
 
 fn readback_timeout() -> Duration {
-    Duration::from_millis(crate::gpu::env::env_u64(
-        "LANIUS_READBACK_TIMEOUT_MS",
-        120_000,
-    ))
+    crate::options::get().readback_timeout
 }
 
 /// Waits for a readback map callback with explicit timeout and progress output.
@@ -2187,7 +2053,7 @@ pub(crate) fn finish_readback_map(
         match receiver.try_recv() {
             Ok(Ok(())) => {
                 let done = Instant::now();
-                record_readback_round_trip(&label, done.duration_since(started));
+                record_readback_round_trip(done.duration_since(started));
                 crate::gpu::trace::record_host_span("host.readback", &label, started, done);
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
@@ -2649,23 +2515,11 @@ static DEBUG_DUMP_BUFFERS: std::sync::LazyLock<
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::BTreeMap::new()));
 
 fn debug_dump_names() -> &'static [String] {
-    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| {
-        std::env::var("LANIUS_DEBUG_DUMP_BUFFERS")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default()
-    })
+    crate::options::get().dump.as_ref().map_or(&[], |dump| &dump.buffers)
 }
 
 /// Remembers a bound buffer whose reflected name is listed in
-/// `LANIUS_DEBUG_DUMP_BUFFERS` so `debug_dump_buffers` can print it.
+/// `LANIUS_DUMP` so `debug_dump_buffers` can print it.
 pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offset: u64, end: u64) {
     // `*` registers every reflected binding (determinism diffs).
     if !debug_dump_names().iter().any(|wanted| wanted == name || wanted == "*") {
@@ -2677,16 +2531,14 @@ pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offs
         .insert(name.to_owned(), (buffer.clone(), offset, end));
 }
 
-/// Debug aid: prints `LANIUS_DEBUG_DUMP_WORDS` (default 64) u32 words from
-/// word `LANIUS_DEBUG_DUMP_START` (default 0) of every buffer named in `LANIUS_DEBUG_DUMP_BUFFERS`, as last bound.
-/// The printed start is relative to the binding unless `LANIUS_DEBUG_DUMP_TAIL` is set.
+/// Debug aid: prints the first words of every buffer named in `LANIUS_DUMP`,
+/// as last bound (`words=N` sets how many, 64 by default).
 /// A no-op unless that variable is set.
 pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, stage: &str) {
-    if debug_dump_names().is_empty() {
+    let Some(dump) = crate::options::get().dump.as_ref() else {
         return;
-    }
-    let words = crate::gpu::env::env_u64("LANIUS_DEBUG_DUMP_WORDS", 64).max(1);
-    let start = crate::gpu::env::env_u64("LANIUS_DEBUG_DUMP_START", 0);
+    };
+    let words = dump.words;
     let entries = DEBUG_DUMP_BUFFERS
         .lock()
         .expect("debug dump registry poisoned")
@@ -2701,12 +2553,7 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
             eprintln!("[lanius-dump] {stage} {wanted}: never bound");
             continue;
         };
-        // `LANIUS_DEBUG_DUMP_TAIL=1` dumps the last words instead.
-        let offset = if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DUMP_TAIL", false) {
-            end.saturating_sub(words * 4).max(*offset)
-        } else {
-            offset.saturating_add(start * 4).min(*end)
-        };
+        let offset = *offset;
         let bytes = (end.saturating_sub(offset)).min(words * 4) & !3;
         if bytes == 0 {
             continue;
@@ -2728,10 +2575,10 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
             continue;
         }
         let mapped = slice.get_mapped_range();
-        // `LANIUS_DEBUG_DUMP_DIR=dir` writes the words to `dir/<stage>.<name>.bin`
-        // instead of printing them.
-        if let Some(dir) = std::env::var_os("LANIUS_DEBUG_DUMP_DIR") {
-            let path = std::path::Path::new(&dir).join(format!("{stage}.{wanted}.bin"));
+        // `dir=PATH` writes the words to `PATH/<stage>.<name>.bin` instead of
+        // printing them.
+        if let Some(dir) = &dump.dir {
+            let path = dir.join(format!("{stage}.{wanted}.bin"));
             if let Err(err) = std::fs::write(&path, &mapped[..]) {
                 eprintln!("[lanius-dump] {stage} {wanted}: write {}: {err}", path.display());
             }
@@ -2749,7 +2596,7 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
             })
             .collect::<Vec<_>>();
         eprintln!(
-            "[lanius-dump] {stage} {wanted}@{start}: {}",
+            "[lanius-dump] {stage} {wanted}@0: {}",
             values.join(" ")
         );
     }
@@ -2922,7 +2769,6 @@ pub mod bind_group {
         }
 
         let mut buffers = Vec::<BoundBuffer<'_>>::new();
-        let trace_bindings = crate::gpu::env::env_bool_strict("LANIUS_GPU_BINDING_LIVENESS", false);
         for parameter in reflected_parameters_for_set(reflection, set_index) {
             let Some(binding_type) = slang_category_and_type_to_wgpu(parameter, &parameter.ty)
             else {
@@ -2944,40 +2790,17 @@ pub mod bind_group {
                 || binding.buffer.size().saturating_sub(offset),
                 |size| size.get(),
             ));
-            if trace_bindings
-                && let Some((allocation, allocation_label, allocation_bytes)) =
-                    crate::gpu::buffers::tracked_buffer_identity(binding.buffer)
-            {
-                eprintln!(
-                    "gpu_binding_liveness pass={label:?} set={set_index} binding={:?} access={} allocation={} allocation_label={:?} allocation_bytes={} offset={} bytes={}",
-                    parameter.name,
-                    if logical_writable {
-                        "read_write"
-                    } else {
-                        "read"
-                    },
-                    allocation,
-                    allocation_label,
-                    allocation_bytes,
-                    offset,
-                    end.saturating_sub(offset),
-                );
-            }
             for prior in &buffers {
                 if binding.buffer != prior.buffer {
                     continue;
                 }
                 let overlaps = offset < prior.end && prior.offset < end;
                 if overlaps && (logical_writable || prior.logical_writable) {
-                    let error = anyhow!(
+                    return Err(anyhow!(
                         "bind group `{label}` has overlapping physical ranges for `{}` and `{}` where at least one binding is writable",
                         prior.name,
                         parameter.name,
-                    );
-                    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
-                        eprintln!("{error:#}");
-                    }
-                    return Err(error);
+                    ));
                 }
                 if logical_writable != prior.logical_writable {
                     let (read_only_name, writable_name) = if prior.logical_writable {
@@ -2985,15 +2808,11 @@ pub mod bind_group {
                     } else {
                         (prior.name, parameter.name.as_str())
                     };
-                    let error = anyhow!(
+                    return Err(anyhow!(
                         "bind group `{label}` binds one physical buffer as read-only `{}` and writable `{}`",
                         read_only_name,
                         writable_name,
-                    );
-                    if std::env::var_os("LANIUS_COMPILER_GRAPH_DUMP_SLOTS").is_some() {
-                        eprintln!("{error:#}");
-                    }
-                    return Err(error);
+                    ));
                 }
             }
             debug_register_dump_buffer(&parameter.name, binding.buffer, offset, end);
@@ -3617,7 +3436,7 @@ pub struct ComputePassBatch<'encoder> {
     encoder: &'encoder mut wgpu::CommandEncoder,
     label: &'static str,
     /// The open pass. It does not borrow `encoder`, so the batch can end it
-    /// and copy around the `LANIUS_DEBUG_CAPTURE_PASS` dispatch.
+    /// and copy around the `LANIUS_CAPTURE` dispatch.
     pass: Option<wgpu::ComputePass<'static>>,
     retained_bind_groups: Vec<Vec<Arc<wgpu::BindGroup>>>,
     current_operation: Option<&'static str>,

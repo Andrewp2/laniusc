@@ -898,7 +898,7 @@ impl GpuTypeChecker {
             name_byte_capacity,
         )
         .map(retained_artifact_capacity)?;
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             eprintln!(
                 "[gpu_compile_host_timer] semantic_interface.capacity: tokens={token_capacity} modules={module_capacity} module_segments={module_segment_capacity} declarations={declaration_capacity} types={} edges={} members={} names={} artifact_bytes={artifact_capacity}",
                 type_topology.type_capacity,
@@ -2085,7 +2085,7 @@ impl GpuTypeChecker {
                 recorded.artifact_capacity
             ));
         }
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             eprintln!(
                 "[gpu_compile_host_timer] semantic_interface.artifact: bytes={byte_len} capacity_bytes={} amplification={:.3}",
                 recorded.artifact_capacity,

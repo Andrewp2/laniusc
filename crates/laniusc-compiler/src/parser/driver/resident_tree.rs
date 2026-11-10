@@ -4,7 +4,7 @@ use super::{
     GpuParser,
     Ll1AcceptResult,
     ResidentParseResult,
-    support::{bool_from_env, read_u32_words},
+    support::read_u32_words,
 };
 use crate::{
     gpu::buffers::LaniusBuffer,
@@ -2466,7 +2466,7 @@ impl GpuParser {
         let readbacks = ResidentTreeReadbacks::create(&self.device, bufs);
         readbacks.encode_copies(&mut encoder, bufs);
 
-        let use_scopes = bool_from_env("LANIUS_VALIDATION_SCOPES", false);
+        let use_scopes = crate::options::get().check.validation_scopes;
         crate::gpu::passes_core::submit_with_optional_validation(
             &self.device,
             &self.queue,

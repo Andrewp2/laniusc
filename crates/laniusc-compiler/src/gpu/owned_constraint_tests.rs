@@ -357,7 +357,7 @@ const FAMILIES: [(&str, &[u32]); 4] = [
 #[test]
 fn physical_gpu_owned_constraints_preserve_matching_overlap_and_fixed_contracts() {
     assert!(
-        !super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        !crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU"
     );
     let mut covered = [false; CASES.len()];

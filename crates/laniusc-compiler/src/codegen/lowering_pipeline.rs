@@ -3,7 +3,7 @@
 
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
@@ -206,8 +206,8 @@ pub(crate) struct GpuLoweringPipeline {
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
-    /// Words written over the tails a job's phase reset leaves, when
-    /// `LANIUS_LOWERING_PHASE_RESET_POISON` is set.
+    /// Words written over the tails a job's phase reset leaves, when a test
+    /// sets `TEST_PHASE_RESET_POISON`.
     phase_reset_poison: Mutex<Option<LaniusBuffer<u8>>>,
     /// The capacities the last recorded job could address. Its artifact must
     /// fit them, as it would in a fresh workspace for the job.
@@ -341,52 +341,40 @@ const PHASE_RESET_PLAN_CACHE: usize = 8;
 /// The largest copy source the phase-reset poison allocates.
 const PHASE_RESET_POISON_BYTES: u64 = 16 << 20;
 
-/// `LANIUS_LOWERING_FULL_CLEARS=1` resets and clears every job over this
-/// workspace's whole capacities, as before job-bounded resets, for A/B runs.
-fn full_clears() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_FULL_CLEARS", false))
-}
-
-/// Whether the job-sized direct lowering operations (`JobSized`) record the
-/// job's grid; `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps every workspace's built
-/// grid, for A/B runs.
 fn validate_copy_replays() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_LIR_VALIDATE_REPLAYS", false))
+    crate::options::get().check.lir_replays
 }
 
 /// Whether the optimizer records its validation-only dispatches for a job.
 /// An instance-copy replay (`ReplaySelection::CopiesFrom`) recompiles copies
 /// of bodies the original compile already validated, so it leaves them out
-/// unless `LANIUS_LIR_VALIDATE_REPLAYS=1`; every other job validates. The
+/// unless `LANIUS_CHECK=lir-replays` is set; every other job validates. The
 /// choice depends only on the job's selection, never on earlier jobs.
 fn validates_structure(selection: super::lowering::ReplaySelection<'_>) -> bool {
     !matches!(selection, super::lowering::ReplaySelection::CopiesFrom(_)) || validate_copy_replays()
 }
 
+/// Whether the job-sized direct lowering operations (`JobSized`) record the
+/// job's grid. A test can keep every workspace's built grid with
+/// `TEST_JOB_SIZED_DIRECT_OPS`.
 fn job_sized_direct_ops() -> bool {
     #[cfg(test)]
     {
-        match TEST_JOB_SIZED_DIRECT_OPS.load(std::sync::atomic::Ordering::Relaxed) {
-            0 => return false,
-            1 => return true,
-            _ => {}
+        if TEST_JOB_SIZED_DIRECT_OPS.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            return false;
         }
     }
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_JOB_SIZED_DIRECT_OPS", true))
+    true
 }
 
-/// Test override of `LANIUS_JOB_SIZED_DIRECT_OPS`: 0 off, 1 on, anything
-/// else follows the environment.
+/// Test override of `job_sized_direct_ops`: 0 turns the job grids off,
+/// anything else leaves them on.
 #[cfg(test)]
 pub(crate) static TEST_JOB_SIZED_DIRECT_OPS: std::sync::atomic::AtomicU8 =
     std::sync::atomic::AtomicU8::new(u8::MAX);
 
-/// `LANIUS_LOWERING_PHASE_RESET_POISON=<word>` (decimal or 0x hex) fills the
-/// imported bytes a job's phase reset leaves with that word, so a reader that
-/// looks past the job's rows changes the output. For validation only.
+/// The word a test fills the imported bytes a job's phase reset leaves with,
+/// so a reader that looks past the job's rows changes the output.
 fn phase_reset_poison_word() -> Option<u32> {
     #[cfg(test)]
     {
@@ -395,19 +383,11 @@ fn phase_reset_poison_word() -> Option<u32> {
             return Some(word as u32);
         }
     }
-    static WORD: OnceLock<Option<u32>> = OnceLock::new();
-    *WORD.get_or_init(|| {
-        let value = std::env::var("LANIUS_LOWERING_PHASE_RESET_POISON").ok()?;
-        let value = value.trim();
-        match value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
-            Some(hex) => u32::from_str_radix(hex, 16).ok(),
-            None => value.parse().ok(),
-        }
-    })
+    None
 }
 
-/// A poison word tests set in place of `LANIUS_LOWERING_PHASE_RESET_POISON`
-/// (`u64::MAX` for none), and the bytes poisoned so far.
+/// The poison word a test sets (`u64::MAX` for none), and the bytes poisoned
+/// so far.
 #[cfg(test)]
 pub(crate) static TEST_PHASE_RESET_POISON: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(u64::MAX);
@@ -434,14 +414,6 @@ fn job_bounds(bounds: super::lowering::LoweringJobBounds) -> super::lowering::Lo
     bounds
 }
 
-/// `LANIUS_LOWERING_PHASE_RESET_TRACE=1` prints each job's phase reset.
-fn phase_reset_trace() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_PHASE_RESET_TRACE", false)
-    })
-}
-
 /// Lazily materialized, capacity-covering workspace for one target.
 ///
 /// Shader pipelines are prepared before the daemon reports ready. This cache
@@ -457,17 +429,6 @@ pub(crate) struct GpuLoweringWorkspaceCache {
     /// different shapes (a template replay is a few tokens beside a 1.4 MB
     /// original) reallocates the multi-gigabyte workspace on the next job.
     floor: Mutex<Option<LoweringCapacities>>,
-}
-
-/// The split the lowering submits its semantic stage and optimizer with,
-/// unless `LANIUS_SPLIT_LOWERING=0` keeps the whole lowering in its caller's
-/// submission (for timing comparisons). `LANIUS_SPLIT_SUBMISSIONS=0` turns
-/// off every split, this one included.
-fn lowering_split<'a>(device: &'a wgpu::Device, queue: &'a wgpu::Queue) -> Option<SubmissionSplit<'a>> {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    ENABLED
-        .get_or_init(|| crate::gpu::env::env_bool_truthy("LANIUS_SPLIT_LOWERING", true))
-        .then_some(SubmissionSplit { device, queue })
 }
 
 fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
@@ -545,21 +506,6 @@ impl GpuLoweringWorkspaceCache {
         let floor = *self.floor.lock().expect("lowering workspace floor poisoned");
         let capacities = current.as_ref().map(|pipeline| pipeline.capacities).or(floor)
             .map_or(required, |previous| previous.grow_to_cover(required));
-        if crate::gpu::env::env_bool_truthy("LANIUS_LOWERING_CACHE_TRACE", false) {
-            let reason = current.as_ref().map_or("empty".to_string(), |pipeline| {
-                format!(
-                    "covers={} kind_same={} upstream_same={} semantic_same={}",
-                    pipeline.capacities.covers(required),
-                    pipeline.artifact_kind == artifact_kind,
-                    pipeline.upstream_signature == upstream_signature,
-                    pipeline.semantic_input_signature == semantic_input_signature,
-                )
-            });
-            eprintln!(
-                "[lowering.cache] rebuild {reason} source={source_bytes} tokens={tokens} hir={hir_nodes} required={required:?} previous={:?}",
-                current.as_ref().map(|pipeline| pipeline.capacities)
-            );
-        }
         // Reflected bind groups in the old pipeline own every lowering arena.
         // Destroy that complete identity graph before allocating its
         // replacement; otherwise a small capacity increase transiently makes
@@ -844,12 +790,8 @@ impl GpuLoweringPipeline {
     }
 
     /// The capacities bounding what the job can address in this workspace
-    /// (`LoweringCapacities::for_job`), or this workspace's under
-    /// `LANIUS_LOWERING_FULL_CLEARS=1`.
+    /// (`LoweringCapacities::for_job`).
     fn job_capacities(&self, bounds: super::lowering::LoweringJobBounds) -> LoweringCapacities {
-        if full_clears() {
-            return self.capacities;
-        }
         let job = self.capacities.for_job(
             bounds.source_bytes,
             bounds.hir_rows,
@@ -865,8 +807,7 @@ impl GpuLoweringPipeline {
     }
 
     /// The job's capacities when they are below this workspace's, for the
-    /// direct operations whose grids they bound (`JobSized`), unless
-    /// `LANIUS_JOB_SIZED_DIRECT_OPS=0` keeps the built grids.
+    /// direct operations whose grids they bound (`JobSized`).
     fn sized_job(&self, job: LoweringCapacities) -> Option<LoweringCapacities> {
         self.smaller_job(job).filter(|_| job_sized_direct_ops())
     }
@@ -888,8 +829,7 @@ impl GpuLoweringPipeline {
             self.workspace.record_phase_reset(encoder);
             return;
         }
-        let started = std::time::Instant::now();
-        let (plan, cached) = match self.phase_reset_plan(job) {
+        let plan = match self.phase_reset_plan(job) {
             Ok(planned) => planned,
             Err(error) => {
                 eprintln!("[lowering.phase_reset] job plan failed, clearing whole slots: {error}");
@@ -901,31 +841,18 @@ impl GpuLoweringPipeline {
         if let Some(word) = phase_reset_poison_word() {
             self.poison_phase_reset_tails(device, encoder, &plan, word);
         }
-        if phase_reset_trace() {
-            eprintln!(
-                "lowering_phase_reset hir={}/{} semantic={}/{} cleared_bytes={} imported_bytes={} tails={} cached={cached} plan_us={}",
-                job.hir_nodes,
-                self.capacities.hir_nodes,
-                job.semantic_instructions,
-                self.capacities.semantic_instructions,
-                plan.cleared_bytes(),
-                plan.imported_bytes(),
-                plan.tails().len(),
-                started.elapsed().as_micros(),
-            );
-        }
     }
 
     fn phase_reset_plan(
         &self,
         job: LoweringCapacities,
-    ) -> Result<(Arc<PhaseResetPlan>, bool), String> {
+    ) -> Result<Arc<PhaseResetPlan>, String> {
         let mut plans = self
             .phase_reset_plans
             .lock()
             .expect("lowering phase-reset plans poisoned");
         if let Some((_, plan)) = plans.iter().find(|(capacities, _)| *capacities == job) {
-            return Ok((Arc::clone(plan), true));
+            return Ok(Arc::clone(plan));
         }
         let bytes =
             lowering_resource_bytes_for_artifact(job, self.target.lowering_target(), self.artifact_kind)?;
@@ -934,7 +861,7 @@ impl GpuLoweringPipeline {
             plans.remove(0);
         }
         plans.push((job, Arc::clone(&plan)));
-        Ok((plan, false))
+        Ok(plan)
     }
 
     fn poison_phase_reset_tails(
@@ -1094,7 +1021,7 @@ impl GpuLoweringPipeline {
         bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
         let bounds = job_bounds(bounds);
-        let split = lowering_split(device, queue);
+        let split = SubmissionSplit { device, queue };
         let _operation_capture = timer.as_deref().map(GpuTimer::capture_operations);
         if let Some(timer) = timer.as_deref_mut() {
             timer.set_phase(crate::gpu::timer::GpuCompilerPhase::Lowering);
@@ -1117,28 +1044,24 @@ impl GpuLoweringPipeline {
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
-            split,
+            Some(split),
             jump_pairs.execution_rank,
             self.sized_job(job),
         )?;
-        if let Some(split) = split {
-            split.submit_prefix(
-                encoder,
-                "compile.lowering.semantic",
-                "lowering.optimizer.submission.begin",
-                timer.as_deref_mut(),
-            );
-        }
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.semantic",
+            "lowering.optimizer.submission.begin",
+            timer.as_deref_mut(),
+        );
         self.optimizer
             .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job), true)?;
-        if let Some(split) = split {
-            split.submit_prefix(
-                encoder,
-                "compile.lowering.optimizer",
-                "lowering.target.submission.begin",
-                timer.as_deref_mut(),
-            );
-        }
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.optimizer",
+            "lowering.target.submission.begin",
+            timer.as_deref_mut(),
+        );
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
@@ -1175,7 +1098,7 @@ impl GpuLoweringPipeline {
         bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
         let bounds = job_bounds(bounds);
-        let split = lowering_split(device, queue);
+        let split = SubmissionSplit { device, queue };
         // Like `record`, time every lowering operation; without this scope
         // the semantic, optimizer and count-page kernels have no timestamps
         // and their time shows up under the first stamped target pass.
@@ -1209,18 +1132,16 @@ impl GpuLoweringPipeline {
         self.semantic.record_timed(
             encoder,
             timer.as_deref_mut(),
-            split,
+            Some(split),
             jump_pairs.execution_rank,
             self.sized_job(job),
         )?;
-        if let Some(split) = split {
-            split.submit_prefix(
-                encoder,
-                "compile.lowering.semantic",
-                "lowering.optimizer.submission.begin",
-                timer.as_deref_mut(),
-            );
-        }
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.semantic",
+            "lowering.optimizer.submission.begin",
+            timer.as_deref_mut(),
+        );
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
@@ -1228,14 +1149,12 @@ impl GpuLoweringPipeline {
             self.sized_job(job),
             validates_structure(selection),
         )?;
-        if let Some(split) = split {
-            split.submit_prefix(
-                encoder,
-                "compile.lowering.optimizer",
-                "lowering.target.submission.begin",
-                timer.as_deref_mut(),
-            );
-        }
+        split.submit_prefix(
+            encoder,
+            "compile.lowering.optimizer",
+            "lowering.target.submission.begin",
+            timer.as_deref_mut(),
+        );
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.optimization.identity.done");
             timer.set_phase(self.target.compiler_phase());
@@ -1331,11 +1250,6 @@ impl GpuLoweringPipeline {
         drop(mapped);
         self.status_readback.unmap();
         self.check_job_totals(device, &mut status)?;
-        if status.flags != 0 {
-            if let Err(error) = self.optimizer.report_failure_trace(device) {
-                eprintln!("[optimization.failure.trace] readback failed: {error:#}");
-            }
-        }
         Ok(status)
     }
 

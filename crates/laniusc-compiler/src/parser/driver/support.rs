@@ -1,15 +1,6 @@
 use super::*;
 use crate::gpu::buffers::LaniusBuffer;
 
-/// Reads a parser boolean environment flag with either truthy or strict semantics.
-pub(super) fn bool_from_env(name: &str, default_true: bool) -> bool {
-    if default_true {
-        crate::gpu::env::env_bool_truthy(name, true)
-    } else {
-        crate::gpu::env::env_bool_strict(name, false)
-    }
-}
-
 /// Emits a parser GPU timer stamp when timing is enabled.
 pub(super) fn stamp_timer(
     timer_ref: &mut Option<&mut GpuTimer>,
@@ -19,11 +10,6 @@ pub(super) fn stamp_timer(
     if let Some(timer) = timer_ref.as_deref_mut() {
         timer.stamp(encoder, label);
     }
-}
-
-/// Mirrors the lexer: allow disabling readback with `LANIUS_READBACK=0`.
-pub(super) fn readback_enabled() -> bool {
-    bool_from_env("LANIUS_READBACK", true)
 }
 
 /// Hashes parse-table contents that affect resident parser buffer reuse.

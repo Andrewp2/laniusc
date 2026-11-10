@@ -1418,10 +1418,7 @@ def profile_daemon_job(
     env.update(
         {
             "LANIUS_PERFETTO_TRACE": str(trace_path),
-            "LANIUS_GPU_COMPUTE_PASS_BREAKDOWN": "1",
-            "LANIUS_GPU_BUFFER_BREAKDOWN": "1",
-            "LANIUS_GPU_MEMORY_TIMELINE": "1",
-            "LANIUS_COMPILER_GRAPH_BREAKDOWN": "1",
+            "LANIUS_REPORT": "passes,buffers,memory,graph",
         }
     )
     daemon = Daemon(

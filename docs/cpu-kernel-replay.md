@@ -24,21 +24,21 @@ builds.
 Run the one-shot CLI, not the daemon, through `heavy`:
 
 ```sh
-heavy env LANIUS_DEBUG_CAPTURE_PASS=type_checker/calls/03d_bind_method_receiver_environment \
-          LANIUS_DEBUG_CAPTURE_DIR=$SCRATCH/cap-03d \
+heavy env LANIUS_CAPTURE=type_checker/calls/03d_bind_method_receiver_environment,dir=$SCRATCH/cap-03d \
           target/release/laniusc --emit x86_64 --stdlib-root stdlib -o $SCRATCH/p10.elf \
           tests/fixtures/generics_matrix/p10_generic_method.lani
 ```
 
-These variables control the capture:
+`LANIUS_CAPTURE` is a comma-separated list. Its words control the capture:
 
-- `LANIUS_DEBUG_CAPTURE_PASS` names what to capture. It can be either of these:
+- The first word names what to capture. It can be either of these:
   - a kernel's artifact key: `type_checker/calls/03d_...`, `parser/tokens/to/kinds`.
-  - an operation label, as `LANIUS_DEBUG_OPERATION_LOG=1` prints it.
-- `LANIUS_DEBUG_CAPTURE_INDEX=k` (default 0) picks the k-th matching dispatch.
+  - an operation label, as `LANIUS_TRACE=operations` prints it.
+- `index=k` (default 0) picks the k-th matching dispatch.
   Use it for a later call-inference round or a later scan level.
-- `LANIUS_DEBUG_CAPTURE_DIR` (default `lanius-capture`) is where the capture
-  goes. Use your own scratch directory.
+- `dir=PATH` (default `lanius-capture`) is where the capture goes. Use your
+  own scratch directory.
+- `per-job` makes the daemon capture once per job, not once per process.
 
 The selected dispatch is recorded in a compute pass of its own. Every buffer
 range it binds is copied twice: right before the dispatch (the inputs) and
@@ -60,7 +60,7 @@ kernels are under 2 MB. Keep them in your scratch directory and reuse them
 across rewrites. To capture several kernels in one `heavy` hold, run one
 compile per kernel; each takes 1–4 s with a warm pipeline cache.
 
-`LANIUS_DEBUG_OPERATION_LIMIT=N` works together with the capture, for hang
+`LANIUS_OPERATION_LIMIT=N` works together with the capture, for hang
 debugging. The first matching dispatch that the limit drops is captured with
 its inputs only, `"post": false`.
 
@@ -105,7 +105,7 @@ Both commands also print how many words the dispatch changed:
 On small probes, many type-checker dispatches change nothing, because they
 only rewrite values an earlier round already published. A match on such a
 capture proves less, so pick a dispatch that changes data
-(`LANIUS_DEBUG_CAPTURE_INDEX`, another probe). Another option is to clear the
+(`index=k`, another probe). Another option is to clear the
 kernel's outputs in a copy of the capture (see Validation).
 
 ### How to verify a kernel rewrite without the GPU
@@ -215,7 +215,7 @@ on the main stack.
 - The daemon does not write captures; use the one-shot CLI. Tests can call
   `laniusc_compiler::compiler::write_debug_dispatch_capture()` after the
   compile they want; `tests/common` does so after each dependency-interface
-  type check, so `LANIUS_DEBUG_CAPTURE_PASS` works on `type_checker_modules`
+  type check, so `LANIUS_CAPTURE` works on `type_checker_modules`
   tests. The index counts dispatches over the whole test process.
 - slangc 2026.2 (`~/.local/bin/slangc`) is used; override it with
   `LANIUS_CPU_REPLAY_SLANGC`. Its C++ backend lacks atomics other than add, and

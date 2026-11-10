@@ -82,7 +82,7 @@ cp extended/ext/regex.lani "$regex_repro_root/ext/regex.lani"
 printf '%s  %s\n' 4520d1fc663432af975dd774d07da0f3b747f2164c2465b8e62ff4b6b08e1659 "$regex_repro_root/ext/regex.lani" | sha256sum --check
 patch --fuzz=0 --directory="$regex_repro_root" -p1 < "$regex_fixture_root/try-syntax.patch"
 printf '%s  %s\n' cd7e82c74c9498d945e3bc5789cd624810219d7687062341e1f7f514cc64be76 "$regex_repro_root/ext/regex.lani" | sha256sum --check
-LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc \
+LANIUS_TRACE=stage-errors timeout --kill-after=2s 60s target/stdlib-build/debug/laniusc \
   --stdlib-root stdlib --source-root "$regex_repro_root" --emit x86_64 \
   "$regex_fixture_root/unused_import.lani" -o "$regex_repro_root/repro.elf"
 ```

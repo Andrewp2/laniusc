@@ -7,18 +7,17 @@ use std::{
 const UNKNOWN: &str = "unknown";
 /// Where this build wrote its kernels.
 const BUILD_ARTIFACT_ROOT: &str = env!("LANIUS_SHADER_ARTIFACT_ROOT");
-/// Names another directory of kernels for this binary to load at run time.
+/// The kernel directory: `LANIUS_SHADER_ARTIFACT_ROOT` when set and non-empty,
+/// else the build's own directory.
 ///
 /// Kernels are read from disk, so a copied binary still runs whatever kernels the
-/// build directory holds now. Pointing this at a snapshot of the kernels the binary
-/// was built with (see tools/pin_laniusc.py) pins the pair.
-pub(crate) const ARTIFACT_ROOT_ENV: &str = "LANIUS_SHADER_ARTIFACT_ROOT";
-
-/// The kernel directory: `LANIUS_SHADER_ARTIFACT_ROOT` when set and non-empty,
-/// read once per process, else the build's own directory.
+/// build directory holds now. Pointing the variable at a snapshot of the kernels
+/// the binary was built with (see tools/pin_laniusc.py) pins the pair.
 pub(crate) fn artifact_root() -> &'static Path {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
-    ROOT.get_or_init(|| resolve_artifact_root(std::env::var_os(ARTIFACT_ROOT_ENV)))
+    ROOT.get_or_init(|| {
+        resolve_artifact_root(crate::options::get().shader_artifact_root.clone().map(Into::into))
+    })
 }
 
 fn resolve_artifact_root(override_root: Option<OsString>) -> PathBuf {

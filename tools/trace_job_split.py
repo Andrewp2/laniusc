@@ -10,7 +10,7 @@ hir_* for HIR passes, parser.tree for tree/bracket/pack scans, else the first do
 
 The trace comes from a daemon run with per-operation GPU spans, for example
   python3 tools/workload_bench.py --laniusc PIN --out OUT --repeat 2 \\
-    --env LANIUS_GPU_COMPUTE_PASS_BREAKDOWN=1 --env LANIUS_COMPILER_GRAPH_BREAKDOWN=1 \\
+    --env LANIUS_REPORT=passes,graph \\
     --env LANIUS_PERFETTO_TRACE=OUT/trace.json W30K
 Per-operation stamps split compute passes and inflate GPU time, so use these numbers to rank
 and compare passes, not as compile times; untimed clears and resets are charged to the next

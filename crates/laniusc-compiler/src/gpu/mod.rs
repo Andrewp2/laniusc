@@ -10,8 +10,6 @@ pub mod debug;
 pub mod device;
 /// Debug capture of one dispatch's inputs and outputs for offline replay.
 pub(crate) mod dispatch_capture;
-/// Environment flag parsing helpers for GPU infrastructure.
-pub mod env;
 /// Compiler-wide registry of reflected pipelines prepared before job timing.
 pub(crate) mod kernels;
 /// Reusable data-parallel operations assembled from reflected kernels.

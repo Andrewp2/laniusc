@@ -77,7 +77,7 @@ impl GpuWasmLinkInput {
             checked_u32("data byte", result.data_byte_len())?;
         }
         result.finish_validation()?;
-        if crate::gpu::env::env_bool_strict("LANIUS_WASM_TRACE", false) {
+        if crate::options::get().trace.wasm {
             eprintln!(
                 "[laniusc][wasm-link] objects={} functions={} body_bytes={} relocations={}",
                 objects.len(),

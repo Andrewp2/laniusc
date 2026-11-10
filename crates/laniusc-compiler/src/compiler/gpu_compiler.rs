@@ -245,7 +245,7 @@ fn initialize_pipeline_families(
                 err,
             )
         })?;
-        if crate::gpu::env::env_bool_truthy("LANIUS_GPU_COMPILE_HOST_TIMING", false) {
+        if crate::options::get().report.host_timing {
             eprintln!(
                 "[gpu_compile_host_timer] compiler.init.parallel.type_checker: {:.3}ms",
                 type_checker_elapsed.as_secs_f64() * 1000.0
@@ -377,7 +377,6 @@ impl<'gpu> GpuCompiler<'gpu> {
     {
         Box::pin(async move {
             let mut host_timer = CompilerHostTimer::new("compiler.init");
-            host_timer.pipeline_cache_size(gpu, "start");
             let lexer = GpuLexer::new_with_device(gpu).await.map_err(|err| {
                 compiler_initialization_failed_error(
                     "the compiler stopped while initializing GPU frontend pipelines",
@@ -386,7 +385,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
             host_timer.stamp("lexer");
-            host_timer.pipeline_cache_size(gpu, "after_lexer");
             let parse_tables = PrecomputedParseTables::load_bin_bytes(include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../tables/parse_tables.bin"
@@ -407,7 +405,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
             host_timer.stamp("parser");
-            host_timer.pipeline_cache_size(gpu, "after_parser");
             // These eager pipeline families have no construction-time data
             // dependencies. Build them concurrently in every profile so debug
             // daemon jobs exercise the same readiness contract as release jobs.
@@ -436,7 +433,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                     crate::gpu::device::driver_shader_cache_status().summary()
                 );
             }
-            host_timer.pipeline_cache_size(gpu, "after_parallel_pipeline_families");
             Ok(Self {
                 gpu,
                 lexer,
@@ -977,12 +973,9 @@ mod tests {
             // replaces the frontend workspace releases every lowering
             // workspace, the x86 one included.
             //
-            // All feature bits set: the bound comes from the text alone. A
-            // token takes at least one byte, besides the file's EOF token.
-            let bounds = LoweringJobBounds::from_lexed_bytes(
-                crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
-                u32::try_from(source.len()).unwrap(),
-            )
+            // The bound comes from the text alone. A token takes at least
+            // one byte, besides the file's EOF token.
+            let bounds = LoweringJobBounds::from_lexed_bytes(u32::try_from(source.len()).unwrap())
             .with_token_capacity(u32::try_from(source.len() + 1).unwrap());
             let retained = compiler
                 .x86_lowering
@@ -1295,14 +1288,7 @@ mod tests {
             ),
         ];
 
-        let selected_case = std::env::var("LANIUS_CHECKED_HIR_TEST_CASE").ok();
         for (case, source, expected) in cases {
-            if selected_case
-                .as_deref()
-                .is_some_and(|selected| selected != case)
-            {
-                continue;
-            }
             pollster::block_on(compiler.type_check_source(source)).unwrap_or_else(|error| {
                 panic!("produce checked frontend artifacts for {case}: {error}")
             });

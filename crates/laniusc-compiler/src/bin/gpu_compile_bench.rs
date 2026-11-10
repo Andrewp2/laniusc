@@ -407,7 +407,7 @@ async fn run() -> Result<(), String> {
 }
 
 fn print_gpu_buffer_breakdown() {
-    if std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN").as_deref() != Ok("1") {
+    if !laniusc_compiler::options::get().report.buffers {
         return;
     }
     let totals = buffers::tracked_buffer_allocation_stats();
@@ -422,12 +422,7 @@ fn print_gpu_buffer_breakdown() {
             snapshot.phase, snapshot.stats.allocations, snapshot.stats.bytes
         );
     }
-    let limit = std::env::var("LANIUS_GPU_BUFFER_BREAKDOWN_LIMIT")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|&value| value != 0)
-        .unwrap_or(64)
-        .min(16_384);
+    let limit = buffers::BUFFER_BREAKDOWN_ROWS;
     for row in buffers::tracked_buffer_allocation_stats_by_label()
         .into_iter()
         .take(limit)

@@ -8,6 +8,11 @@
 //   cargo run --bin parse_fuzz
 //   cargo run --bin parse_fuzz -- parser_tests/tricky_combo.lani
 //   cargo run --bin parse_fuzz -- --iters=10 --len=2000000 --seed=123
+//   cargo run --bin parse_fuzz -- --check-tree --residency
+//
+// `--check-tree` also checks the production-tree arity of accepted streams.
+// `--residency` prints, after each input, the live tracked GPU bytes and the
+// cached bind groups, which must stay bounded.
 
 use std::{
     path::{Path, PathBuf},
@@ -55,25 +60,6 @@ fn load_tables() -> Result<PrecomputedParseTables> {
         .context("read generated GPU parser tables from tables/parse_tables.bin")?;
     PrecomputedParseTables::load_bin_bytes(&bytes)
         .map_err(|err| anyhow::anyhow!("load generated GPU parser tables: {err}"))
-}
-
-fn env_truthy(name: &str) -> bool {
-    match std::env::var(name) {
-        Ok(v) => {
-            if v == "1" || v.eq_ignore_ascii_case("true") {
-                true
-            } else if v == "0" || v.eq_ignore_ascii_case("false") {
-                false
-            } else {
-                warn!("{name} has unrecognized value '{v}'; using default false");
-                false
-            }
-        }
-        Err(_) => {
-            warn!("{name} is unset; using default false");
-            false
-        }
-    }
 }
 
 // ------------------------ helpers: test CPU bracket oracle ------------------------
@@ -502,6 +488,7 @@ async fn run_source(
     label: &str,
     src: &str,
     validate_resident: bool,
+    check_tree: bool,
     lexer: &GpuLexer,
     parser: &GpuParser,
     tables: &PrecomputedParseTables,
@@ -612,7 +599,7 @@ async fn run_source(
     assert_stream_lengths_from_headers(&res.headers, res.sc_stream.len(), res.emit_stream.len())?;
     // Random token fuzz usually rejects partway through the grammar, so only
     // run full production-tree arity checks for accepted streams.
-    if env_truthy("LANIUS_PARSE_FUZZ_CHECK_TREE") && res.ll1.accepted {
+    if check_tree && res.ll1.accepted {
         assert_tree_forest_shape(&res.node_kind, &res.parent, &tables.prod_arity)?;
     }
 
@@ -640,6 +627,8 @@ struct FuzzCfg {
     iters: usize,
     len: usize,
     seed: u64,
+    check_tree: bool,
+    residency: bool,
 }
 
 fn parse_cli_args(args: &[String]) -> (Vec<PathBuf>, FuzzCfg) {
@@ -647,9 +636,15 @@ fn parse_cli_args(args: &[String]) -> (Vec<PathBuf>, FuzzCfg) {
     let mut iters = 3usize;
     let mut len = 1_000_000usize;
     let mut seed = 42u64;
+    let mut check_tree = false;
+    let mut residency = false;
 
     for a in args {
-        if let Some(v) = a.strip_prefix("--iters=") {
+        if a == "--check-tree" {
+            check_tree = true;
+        } else if a == "--residency" {
+            residency = true;
+        } else if let Some(v) = a.strip_prefix("--iters=") {
             if let Ok(n) = v.parse() {
                 iters = n;
             } else {
@@ -673,7 +668,16 @@ fn parse_cli_args(args: &[String]) -> (Vec<PathBuf>, FuzzCfg) {
             paths.push(PathBuf::from(a));
         }
     }
-    (paths, FuzzCfg { iters, len, seed })
+    (
+        paths,
+        FuzzCfg {
+            iters,
+            len,
+            seed,
+            check_tree,
+            residency,
+        },
+    )
 }
 
 // --------------------------------- main ---------------------------------
@@ -699,11 +703,8 @@ async fn main() -> Result<()> {
 
     let mut passed = 0usize;
     let mut failed = 0usize;
-    // `LANIUS_PARSE_FUZZ_RESIDENCY=1` prints, after each input, the live
-    // tracked GPU bytes and the cached bind groups, which must stay bounded.
-    let residency = env_truthy("LANIUS_PARSE_FUZZ_RESIDENCY");
     let report_residency = |label: &str| {
-        if residency {
+        if fuzz.residency {
             let stats = laniusc_compiler::gpu::buffers::tracked_buffer_allocation_stats();
             println!(
                 "[residency] {label} live_buffers={} live_bytes={} cached_bind_groups={}",
@@ -719,7 +720,17 @@ async fn main() -> Result<()> {
         let label = path.display().to_string();
         let src =
             std::fs::read_to_string(&path).with_context(|| format!("read input {}", label))?;
-        let result = run_source(Some(&path), &label, &src, true, &lexer, &parser, &tables).await;
+        let result = run_source(
+            Some(&path),
+            &label,
+            &src,
+            true,
+            fuzz.check_tree,
+            &lexer,
+            &parser,
+            &tables,
+        )
+        .await;
         report_residency(&label);
         match result {
             Ok(()) => passed += 1,
@@ -742,7 +753,17 @@ async fn main() -> Result<()> {
         // Use the repo's grammar-oriented generator to make parser-valid programs.
         let src = laniusc_compiler::dev::generator::gen_valid_program(&mut rng, fuzz.len);
         let label = format!("fuzz_iter_{}_bytes_{}", i, src.len());
-        let result = run_source(None, &label, &src, true, &lexer, &parser, &tables).await;
+        let result = run_source(
+            None,
+            &label,
+            &src,
+            true,
+            fuzz.check_tree,
+            &lexer,
+            &parser,
+            &tables,
+        )
+        .await;
         report_residency(&label);
         match result {
             Ok(()) => passed += 1,

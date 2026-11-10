@@ -14,7 +14,7 @@ pub(super) fn thread_scratch_words(slots: usize) -> usize {
 }
 
 fn run_rows(key: &str, binding: &str, rows: usize, threads: u32) -> Vec<[u32; 4]> {
-    assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    assert!(!crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU");
     let gpu = device::global();
     let word_count = rows * 4;
@@ -126,7 +126,7 @@ const CHECKED_IDENTITY_CHECKS: usize = 50;
 /// its own constants through the production key builders.
 #[test]
 fn physical_gpu_checked_type_identity_by_canonical_id() {
-    assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    assert!(!crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU");
     let gpu = device::global();
     let (device, queue) = (&gpu.device, &gpu.queue);
@@ -207,16 +207,4 @@ fn physical_gpu_typed_owned_constant_overlap() {
 #[test]
 fn physical_gpu_typed_owned_constant_parameter_coverage() {
     assert_owned("tests/owned_typed_constants_coverage", &[1, 3, 1, 3], 4);
-}
-#[test]
-fn physical_gpu_proof_span_exact_coverage() {
-    let expected = [1, 1, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1, 1, 2, 3, 1, 3, 1, 2, 3, 2];
-    for (id, (row, state)) in run_rows("tests/proof_span_coverage_probe", "coverage_results", 24, 24)
-        .iter().zip(expected).enumerate()
-    {
-        assert_eq!(row[0], state, "coverage case {id}: {row:?}");
-        assert_eq!(row[1], state, "coverage case {id}: shader/host expected state differs");
-        assert_eq!(row[2], 1, "coverage case {id}: {row:?}");
-        assert!(row[3] <= 65_536, "coverage case {id}: charged beyond budget");
-    }
 }

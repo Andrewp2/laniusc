@@ -1,6 +1,6 @@
 // A Work owns one complete normalization allocation. Counting, emission,
 // exact source replay, candidate validation, and publication are separated by
-// dispatch barriers. Only serial commit stages publish admitted prefixes.
+// dispatch barriers. Only the committing threads publish admitted prefixes.
 import type_checker.trait_solver.abi;
 import type_checker.trait_solver.admitted_rows;
 import type_checker.trait_solver.batch_io;
@@ -14,7 +14,6 @@ import type_checker.trait_solver.proof_term_normalization;
 import type_checker.trait_solver.proof_term_candidate;
 import type_checker.trait_solver.proof_normalization_sources;
 import type_checker.trait_solver.proof_goal_admission;
-import type_checker.trait_solver.proof_span_coverage;
 import type_checker.trait_solver.proof_commit_audit;
 import type_checker.scoped_type_hash;
 import type_checker.scoped_type_scratch;
@@ -288,127 +287,68 @@ public SolverStatus pps_validate_original_work(uint work)
 public SolverStatus pps_validate_prerequisite_work(uint work)
 { return pps_validate_normalization<PrerequisiteWorkNormalizationSource>(work); }
 
-struct PendingNormalizationRequestSpans : IProofSpanSource
-{
-    static bool span(uint row, uint table, out uint first, out uint count)
-    {
-        first = 0u; count = 0u;
-        uint4 request; uint4 counts; uint4 key; uint4 selected; uint4 completion; uint4 source;
-        uint4 goal; uint4 extra;
-        // Reverse ownership makes every scanned request accountable to an
-        // exact validated Work/ordinal, including otherwise orphaned rows.
-        if (!pps_read_pending8(PPS_NORMALIZATION_REQUESTS, row, request, counts) ||
-            !pps_work_read(request.x, key, selected, completion, source) ||
-            key.z != PPS_WORK_NORMALIZATION_VALIDATED || row < source.w ||
-            row - source.w != request.y || !pps_read_pending8(PPS_GOALS, key.y, goal, extra) ||
-            extra.x > 32u || request.y > extra.x) return false;
-        if (table == PPS_TERM_NODES) { first = request.w; count = counts.x; }
-        else if (table == PPS_TERM_EDGES) { first = counts.y; count = counts.z; }
-        else if (table == PPS_TERM_ROOTS) { first = request.z; count = 1u; }
-        else return false;
-        return true;
-    }
-}
-struct PendingNormalizationWorkSpans : IProofSpanSource
-{
-    static bool span(uint work, uint table, out uint first, out uint count)
-    {
-        first = 0u; count = 0u;
-        uint4 key; uint4 selected; uint4 completion; uint4 source; uint4 goal; uint4 extra;
-        if (!pps_work_read(work, key, selected, completion, source)) return false;
-        if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return true;
-        if (!pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u) return false;
-        if (table == PPS_NORMALIZATION_REQUESTS) { first = source.w; count = extra.x + 1u; }
-        else if (table == PPS_GOALS) { first = key.y; count = 1u; }
-        else return false;
-        return true;
-    }
-}
-
-public SolverStatus pps_commit_normalized_terms()
-{
-    if (!pps_building() || !ts_batch_is_building()) return ts_invalid(66u, PPS_TERM_NODES, TS_INVALID);
-    uint4 spans[5]; uint tables[5] = {PPS_TERM_NODES, PPS_TERM_EDGES, PPS_TERM_ROOTS,
-        PPS_NORMALIZATION_REQUESTS, PPS_GOALS};
-    uint totals[5] = {0u, 0u, 0u, 0u, 0u}; uint accepted; uint works;
-    for (uint t = 0u; t < 5u; t++)
-        if (!pps_descriptor(tables[t], spans[t], accepted)) return ts_invalid(1u, tables[t], TS_INVALID);
-    if (!pps_count(PPS_WORK, works)) return ts_invalid(1u, PPS_WORK, TS_INVALID);
-    [loop]
-    for (uint work = 0u; work < works; work++)
-    {
-        uint4 key; uint4 selected; uint4 completion; uint4 source;
-        if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
-        if (key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
-            key.z == PPS_WORK_GOAL_VALIDATED) return ts_invalid(65u, work, key.z);
-        if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) continue;
-        uint4 goal; uint4 extra;
-        if (!pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
-            !pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u ||
-            !pps_normalization_pending_span(PPS_NORMALIZATION_REQUESTS, source.w, extra.x + 1u))
-            return ts_invalid(65u, work, key.y);
-        for (uint ordinal = 0u; ordinal <= extra.x; ordinal++)
-        {
-            uint4 request; uint4 counts;
-            if (!pps_read_pending8(PPS_NORMALIZATION_REQUESTS, source.w + ordinal, request, counts) ||
-                request.x != work || request.y != ordinal ||
-                !pps_normalization_add(totals[0], counts.x) || !pps_normalization_add(totals[1], counts.z))
-                return ts_invalid(65u, work, ordinal);
-        }
-        if (!pps_normalization_add(totals[2], extra.x + 1u) ||
-            !pps_normalization_add(totals[3], extra.x + 1u) || !pps_normalization_add(totals[4], 1u))
-            return ts_limit(64u, work, TS_INVALID, TS_INVALID - 1u);
-    }
-    // Totals cheaply reject size mismatches; they do not prove disjointness.
-    for (uint t = 0u; t < 5u; t++)
-        if (totals[t] != spans[t].y - spans[t].w) return ts_invalid(65u, tables[t], totals[t]);
-    // Independently cover all five suffixes before publishing any of them.
-    // Folded child rows may be unreachable, but they still have exactly one
-    // checked request owner. Share a bounded budget across the entire audit.
-    uint visits = 0u;
-    for (uint t = 0u; t < 3u; t++)
-    {
-        SolverStatus status = pps_check_span_cover<PendingNormalizationRequestSpans>(tables[t],
-            spans[t].w, spans[t].y, spans[3].w, spans[3].y, visits);
-        if (status.state != TS_VALID) return status;
-    }
-    for (uint t = 3u; t < 5u; t++)
-    {
-        SolverStatus status = pps_check_span_cover<PendingNormalizationWorkSpans>(tables[t],
-            spans[t].w, spans[t].y, 0u, works, visits);
-        if (status.state != TS_VALID) return status;
-    }
-    // Preflight every publication before changing any prefix. Goal rows remain
-    // private until hash/admission completes in the following dispatch.
-    for (uint t = 0u; t < 4u; t++)
-    {
-        SolverStatus status = pps_check_validated_prefix(tables[t], spans[t].w, spans[t].y);
-        if (status.state != TS_VALID) return status;
-    }
-    for (uint t = 0u; t < 4u; t++)
-    {
-        SolverStatus status = pps_publish_validated_prefix(tables[t], spans[t].w, spans[t].y);
-        if (status.state != TS_VALID) return status;
-    }
-    return ts_ok();
-}
-
 // Phase 45 over the whole grid: one audit lane per Work, then one committing
-// thread (proof_commit_audit.slang). The lanes prove what
-// pps_commit_normalized_terms audits serially, everything before its
-// preflight. A Work's lane makes the serial audit's checks of that Work and
-// claims the rows the Work owns: its goal and requests, and through each of
-// its requests the request's nodes, edges and root.
-//
-// The serial audit covers the term rows from the pending requests instead of
-// from the Works. The two agree once the Works' request spans cover the
-// pending requests exactly, which the same audit proves: then the requests
-// reached through the Works are every pending request, each once, and each
-// one already passed the checks PendingNormalizationRequestSpans makes of it.
+// thread (proof_commit_audit.slang). A validated Work owns its goal and its
+// requests, and through each request the request's nodes, edges and root.
+// Folded child rows may be unreachable, but they still have exactly one
+// checked request owner.
 uint pps_normalization_commit_table(uint t)
 {
     return t == 0u ? PPS_TERM_NODES : t == 1u ? PPS_TERM_EDGES : t == 2u ? PPS_TERM_ROOTS :
         t == 3u ? PPS_NORMALIZATION_REQUESTS : PPS_GOALS;
+}
+// The audit of one Work: the checks of the rows it owns and, when `claim` is
+// set, a claim on each of them and their counts. The Work's lane claims. The
+// committing thread repeats the checks of the lowest invalid Work for its
+// status.
+//
+// Reverse ownership makes every request accountable to an exact validated
+// Work and ordinal: the Works' request spans cover the pending requests
+// exactly, so the requests reached here are every pending request, each once.
+SolverStatus pps_audit_normalized_terms_work(uint work, bool claim)
+{
+    uint4 key; uint4 selected; uint4 completion; uint4 source;
+    if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
+    if (key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
+        key.z == PPS_WORK_GOAL_VALIDATED) return ts_invalid(65u, work, key.z);
+    if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return ts_ok();
+    uint4 nodes; uint4 edges; uint4 roots; uint4 requests; uint4 goals; uint accepted;
+    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
+        !pps_descriptor(PPS_TERM_EDGES, edges, accepted) ||
+        !pps_descriptor(PPS_TERM_ROOTS, roots, accepted) ||
+        !pps_descriptor(PPS_NORMALIZATION_REQUESTS, requests, accepted) ||
+        !pps_descriptor(PPS_GOALS, goals, accepted)) return ts_invalid(1u, PPS_TERM_NODES, TS_INVALID);
+    uint4 goal; uint4 extra;
+    if (key.y < goals.w || key.y >= goals.y ||
+        !pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u ||
+        !pca_pending_span(requests, source.w, extra.x + 1u)) return ts_invalid(65u, work, key.y);
+    uint tag = pca_tag();
+    uint node_total = 0u; uint edge_total = 0u;
+    [loop]
+    for (uint ordinal = 0u; ordinal <= extra.x; ordinal++)
+    {
+        uint row = source.w + ordinal; uint4 request; uint4 counts;
+        if (!pps_read_pending8(PPS_NORMALIZATION_REQUESTS, row, request, counts) ||
+            request.x != work || request.y != ordinal ||
+            !pps_normalization_add(node_total, counts.x) || !pps_normalization_add(edge_total, counts.z))
+            return ts_invalid(65u, work, ordinal);
+        if (!pca_pending_span(nodes, request.w, counts.x)) return ts_invalid(66u, PPS_TERM_NODES, row);
+        if (!pca_pending_span(edges, counts.y, counts.z)) return ts_invalid(66u, PPS_TERM_EDGES, row);
+        if (!pca_pending_span(roots, request.z, 1u)) return ts_invalid(66u, PPS_TERM_ROOTS, row);
+        if (!claim) continue;
+        pca_claim(0u, PPS_TERM_NODES, nodes, request.w, counts.x, tag);
+        pca_claim(1u, PPS_TERM_EDGES, edges, counts.y, counts.z, tag);
+        pca_claim(2u, PPS_TERM_ROOTS, roots, request.z, 1u, tag);
+    }
+    if (!claim) return ts_ok();
+    pca_claim(3u, PPS_NORMALIZATION_REQUESTS, requests, source.w, extra.x + 1u, tag);
+    pca_claim(4u, PPS_GOALS, goals, key.y, 1u, tag);
+    pca_add(PCA_TOTALS, node_total);
+    pca_add(PCA_TOTALS + 1u, edge_total);
+    pca_add(PCA_TOTALS + 2u, extra.x + 1u);
+    pca_add(PCA_TOTALS + 3u, extra.x + 1u);
+    pca_add(PCA_TOTALS + 4u, 1u);
+    return ts_ok();
 }
 public void pps_stage_audit_normalized_terms(uint local)
 {
@@ -416,54 +356,31 @@ public void pps_stage_audit_normalized_terms(uint local)
     if (!pps_building() || !ts_batch_is_building() || !pps_count(PPS_WORK, works) ||
         !ts_dispatch_row(local, works, work)) return;
     pca_add(PCA_AUDITED, 1u);
-    uint4 key; uint4 selected; uint4 completion; uint4 source;
-    if (!pps_work_read(work, key, selected, completion, source) ||
-        key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
-        key.z == PPS_WORK_GOAL_VALIDATED) { pca_fail(); return; }
-    if (key.z != PPS_WORK_NORMALIZATION_VALIDATED) return;
-    uint4 nodes; uint4 edges; uint4 roots; uint4 requests; uint4 goals; uint accepted;
-    uint4 goal; uint4 extra;
-    if (!pps_descriptor(PPS_TERM_NODES, nodes, accepted) ||
-        !pps_descriptor(PPS_TERM_EDGES, edges, accepted) ||
-        !pps_descriptor(PPS_TERM_ROOTS, roots, accepted) ||
-        !pps_descriptor(PPS_NORMALIZATION_REQUESTS, requests, accepted) ||
-        !pps_descriptor(PPS_GOALS, goals, accepted) ||
-        !pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
-        !pps_read_pending8(PPS_GOALS, key.y, goal, extra) || extra.x > 32u ||
-        !pps_normalization_pending_span(PPS_NORMALIZATION_REQUESTS, source.w, extra.x + 1u))
-    { pca_fail(); return; }
-    uint tag = pca_tag();
-    uint node_total = 0u; uint edge_total = 0u;
-    bool valid = true;
-    [loop]
-    for (uint ordinal = 0u; ordinal <= extra.x && valid; ordinal++)
-    {
-        uint4 request; uint4 counts;
-        valid = pps_read_pending8(PPS_NORMALIZATION_REQUESTS, source.w + ordinal, request, counts) &&
-            request.x == work && request.y == ordinal &&
-            pps_normalization_add(node_total, counts.x) && pps_normalization_add(edge_total, counts.z);
-        if (!valid) break;
-        // The request's spans, as PendingNormalizationRequestSpans gives them.
-        [loop]
-        for (uint t = 0u; t < 3u; t++)
-            pca_cover(pps_normalization_commit_table(t),
-                t == 0u ? nodes : t == 1u ? edges : roots,
-                t == 0u ? request.w : t == 1u ? counts.y : request.z,
-                t == 0u ? counts.x : t == 1u ? counts.z : 1u, tag);
-    }
-    if (!valid) { pca_fail(); return; }
-    // The Work's spans, as PendingNormalizationWorkSpans gives them.
-    [loop]
-    for (uint t = 3u; t < 5u; t++)
-        pca_cover(pps_normalization_commit_table(t), t == 3u ? requests : goals,
-            t == 3u ? source.w : key.y, t == 3u ? extra.x + 1u : 1u, tag);
-    pca_add(PCA_TOTALS, node_total);
-    pca_add(PCA_TOTALS + 1u, edge_total);
-    pca_add(PCA_TOTALS + 2u, extra.x + 1u);
-    pca_add(PCA_TOTALS + 3u, extra.x + 1u);
-    pca_add(PCA_TOTALS + 4u, 1u);
+    if (pps_audit_normalized_terms_work(work, true).state != TS_VALID) pca_fail_owner(work);
 }
-// pps_commit_normalized_terms after its audit.
+// The lanes' verdict, in the order a walk over the Works and then the tables
+// meets the failures.
+SolverStatus pps_normalized_terms_verdict()
+{
+    uint works; uint failed = pca_word(PCA_FAILED);
+    if (!pps_count(PPS_WORK, works)) return ts_invalid(1u, PPS_WORK, TS_INVALID);
+    if (failed != 0u)
+    {
+        SolverStatus invalid = pps_audit_normalized_terms_work(~failed, false);
+        return invalid.state != TS_VALID ? invalid : ts_invalid(65u, ~failed, PPS_WORK);
+    }
+    SolverStatus status = pca_audit_verdict(works);
+    [loop]
+    for (uint t = 0u; t < 5u && status.state == TS_VALID; t++)
+    {
+        uint4 span; uint accepted; uint table = pps_normalization_commit_table(t);
+        status = pps_descriptor(table, span, accepted) ?
+            pca_cover_verdict(t, table, span.y - span.w, 65u) : ts_invalid(1u, table, TS_INVALID);
+    }
+    return status;
+}
+// Preflight every publication before changing any prefix. Goal rows remain
+// private until hash/admission completes in the following dispatch.
 SolverStatus pps_publish_normalized_terms()
 {
     SolverStatus status = ts_ok();
@@ -483,36 +400,17 @@ SolverStatus pps_publish_normalized_terms()
     }
     return status;
 }
-// The committing thread of phase 45. The lanes proved the serial audit when
-// none failed, every Work was audited, each table's claimed rows number its
-// pending rows (disjoint claims inside a suffix that add up to it cover it
-// exactly), and the serial audit's visits stay within its budget. Anything
-// else is the serial stage's to report.
+// The committing thread of phase 45: it publishes when the lanes proved an
+// exact cover of all five suffixes and otherwise reports their verdict.
 public void pps_stage_commit_normalized_terms()
 {
     bool building = pps_building() && ts_batch_is_building();
-    uint works = 0u;
-    bool proven = building && pps_count(PPS_WORK, works) && pca_word(PCA_FAILED) == 0u &&
-        pca_word(PCA_AUDITED) == works;
-    uint charges = pps_cover_charge_add(0u, pca_word(PCA_TOUCHED));
-    // Requests first: they are the owners the serial audit charges for the
-    // term tables. Works own the requests and the goals.
-    uint request_rows = 0u;
-    [loop]
-    for (uint index = 0u; index < 5u && proven; index++)
-    {
-        uint t = index < 2u ? index + 3u : index - 2u;
-        uint4 span; uint accepted;
-        proven = pps_descriptor(pps_normalization_commit_table(t), span, accepted) &&
-            pca_word(PCA_TOTALS + t) == span.y - span.w;
-        if (t == 3u) request_rows = span.y - span.w;
-        charges = pps_cover_charge(charges, span.y - span.w, t < 3u ? request_rows : works);
-    }
-    proven = proven && charges <= TS_VISIT_LIMIT;
+    SolverStatus status = ts_ok();
+    if (building) status = pps_normalized_terms_verdict();
     pca_reset();
     if (!building) return;
-    pca_count(proven);
-    ts_batch_failure(proven ? pps_publish_normalized_terms() : pps_commit_normalized_terms());
+    if (status.state == TS_VALID) status = pps_publish_normalized_terms();
+    ts_batch_failure(status);
 }
 
 public SolverStatus pps_hash_normalized_goal(uint work)
@@ -547,59 +445,26 @@ public SolverStatus pps_hash_normalized_goal(uint work)
         ts_ok() : ts_invalid(1u, work, PPS_WORK);
 }
 
-public SolverStatus pps_commit_normalized_goals()
-{
-    if (!pps_building() || !ts_batch_is_building()) return ts_invalid(66u, PPS_GOALS, TS_INVALID);
-    uint4 goals; uint accepted; uint works; uint validated = 0u;
-    if (!pps_descriptor(PPS_GOALS, goals, accepted) || !pps_count(PPS_WORK, works))
-        return ts_invalid(1u, PPS_GOALS, TS_INVALID);
-    [loop]
-    for (uint work = 0u; work < works; work++)
-    {
-        uint4 key; uint4 selected; uint4 completion; uint4 source;
-        if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
-        if (key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
-            key.z == PPS_WORK_NORMALIZATION_VALIDATED) return ts_invalid(65u, work, key.z);
-        if (key.z != PPS_WORK_GOAL_VALIDATED) continue;
-        if (!pps_normalization_pending_span(PPS_GOALS, key.y, 1u) ||
-            !pps_normalization_add(validated, 1u)) return ts_invalid(65u, work, key.y);
-    }
-    if (validated != goals.y - goals.w) return ts_invalid(65u, PPS_GOALS, validated);
-    SolverStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
-    if (status.state != TS_VALID) return status;
-    // This serial dispatch completes before indexing can consume NORMALIZED.
-    [loop]
-    for (uint work = 0u; work < works; work++)
-    {
-        uint4 key;
-        if (!pps_read4(PPS_WORK, work, 0u, key)) return ts_invalid(1u, work, PPS_WORK);
-        if (key.z == PPS_WORK_GOAL_VALIDATED &&
-            !pps_transient_word(PPS_WORK, work, 2u, PPS_WORK_NORMALIZED))
-            return ts_invalid(1u, work, PPS_WORK);
-    }
-    return ts_ok();
-}
+// Phase 47 over the whole grid: one audit lane per Work, one committing
+// thread, then one lane per Work again. When the audit lanes prove that the
+// goal-validated Works number the pending goals and that each one's state
+// word is writable, the thread publishes the goal prefix and the last lanes
+// mark their Works normalized. Otherwise the thread reports the lanes'
+// verdict and the last lanes do nothing.
 
-// Phase 47 over the whole grid, matching pps_commit_normalized_goals: one
-// audit lane per Work, one committing thread, then one lane per Work again.
-// The audit lanes make the serial audit's checks, including that each
-// goal-validated Work's state word is writable. When they prove the serial
-// audit, the thread publishes the goal prefix and the last lanes mark their
-// Works normalized, the writes the serial stage makes in order. Otherwise the
-// thread runs the serial stage for its exact result, and the last lanes do
-// nothing.
-
-// The serial audit's checks of one Work; counts a goal-validated Work.
-bool pps_audit_normalized_goal(uint work, inout uint validated)
+// The checks of one Work; `validated` counts a goal-validated Work.
+SolverStatus pps_audit_normalized_goal(uint work, out uint validated)
 {
+    validated = 0u;
     uint4 key; uint4 selected; uint4 completion; uint4 source; uint address;
-    if (!pps_work_read(work, key, selected, completion, source) ||
-        key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
-        key.z == PPS_WORK_NORMALIZATION_VALIDATED) return false;
-    if (key.z != PPS_WORK_GOAL_VALIDATED) return true;
-    validated++;
-    return pps_normalization_pending_span(PPS_GOALS, key.y, 1u) &&
-        pps_address(PPS_WORK, work, 2u, 1u, true, address);
+    if (!pps_work_read(work, key, selected, completion, source)) return ts_invalid(1u, work, PPS_WORK);
+    if (key.z == PPS_WORK_REQUEST || key.z == PPS_WORK_NORMALIZATION_EMITTED ||
+        key.z == PPS_WORK_NORMALIZATION_VALIDATED) return ts_invalid(65u, work, key.z);
+    if (key.z != PPS_WORK_GOAL_VALIDATED) return ts_ok();
+    if (!pps_normalization_pending_span(PPS_GOALS, key.y, 1u)) return ts_invalid(65u, work, key.y);
+    if (!pps_address(PPS_WORK, work, 2u, 1u, true, address)) return ts_invalid(1u, work, PPS_WORK);
+    validated = 1u;
+    return ts_ok();
 }
 public void pps_stage_audit_normalized_goals(uint local)
 {
@@ -607,22 +472,35 @@ public void pps_stage_audit_normalized_goals(uint local)
     if (!pps_building() || !ts_batch_is_building() || !pps_count(PPS_WORK, works) ||
         !ts_dispatch_row(local, works, work)) return;
     pca_add(PCA_AUDITED, 1u);
-    uint validated = 0u;
-    if (!pps_audit_normalized_goal(work, validated)) { pca_fail(); return; }
-    pca_add(PCA_TOTALS, validated);
+    uint validated;
+    if (pps_audit_normalized_goal(work, validated).state != TS_VALID) pca_fail_owner(work);
+    else pca_add(PCA_TOTALS, validated);
+}
+SolverStatus pps_normalized_goals_verdict(out uint4 goals)
+{
+    goals = uint4(0u, 0u, 0u, 0u);
+    uint accepted; uint works; uint failed = pca_word(PCA_FAILED); uint validated = pca_word(PCA_TOTALS);
+    if (!pps_descriptor(PPS_GOALS, goals, accepted) || !pps_count(PPS_WORK, works))
+        return ts_invalid(1u, PPS_GOALS, TS_INVALID);
+    if (failed != 0u)
+    {
+        uint unused;
+        SolverStatus invalid = pps_audit_normalized_goal(~failed, unused);
+        return invalid.state != TS_VALID ? invalid : ts_invalid(65u, ~failed, PPS_WORK);
+    }
+    SolverStatus status = pca_audit_verdict(works);
+    if (status.state != TS_VALID) return status;
+    return validated == goals.y - goals.w ? ts_ok() : ts_invalid(65u, PPS_GOALS, validated);
 }
 public void pps_stage_commit_normalized_goals()
 {
     bool building = pps_building() && ts_batch_is_building();
-    uint4 goals = uint4(0u, 0u, 0u, 0u); uint accepted; uint works = 0u;
-    bool proven = building && pps_descriptor(PPS_GOALS, goals, accepted) && pps_count(PPS_WORK, works) &&
-        pca_word(PCA_FAILED) == 0u && pca_word(PCA_AUDITED) == works &&
-        pca_word(PCA_TOTALS) == goals.y - goals.w;
+    uint4 goals = uint4(0u, 0u, 0u, 0u);
+    SolverStatus status = ts_ok();
+    if (building) status = pps_normalized_goals_verdict(goals);
     pca_reset();
     if (!building) return;
-    pca_count(proven);
-    if (!proven) { ts_batch_failure(pps_commit_normalized_goals()); return; }
-    SolverStatus status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
+    if (status.state == TS_VALID) status = pps_publish_validated_prefix(PPS_GOALS, goals.w, goals.y);
     // The marking lanes complete before indexing can consume NORMALIZED.
     if (status.state == TS_VALID) trait_solver_commit_audit[PCA_PUBLISHED] = 47u;
     ts_batch_failure(status);

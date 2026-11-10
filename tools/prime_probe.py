@@ -11,7 +11,7 @@ lanius_perf: seeds 20..39 then 19, each primed until a job creates no buffer, bi
 pipeline (at most 6 jobs), then seeds 20, 21 and 22 measured once each. Each job clears the
 compiled-unit cache first. Each job prints its compile time and created buffers and bind groups,
 grouped by the first three parts of their labels, which shows which owner keeps allocating after
-priming. The daemon runs with LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN=1 so the responses carry labels.
+priming. The daemon runs with LANIUS_REPORT=resources=5000 so the responses carry labels.
 Responses go to DIR/jobs.jsonl and the daemon's stderr to DIR/daemon.stderr.
 """
 from __future__ import annotations
@@ -101,8 +101,7 @@ def main(argv) -> int:
     a = ap.parse_args(argv)
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN="1",
-               LANIUS_GPU_RESOURCE_CREATION_BREAKDOWN_LIMIT="5000")
+    env = dict(os.environ, LANIUS_REPORT="resources=5000")
     for kv in a.env:
         k, v = kv.split("=", 1)
         env[k] = v

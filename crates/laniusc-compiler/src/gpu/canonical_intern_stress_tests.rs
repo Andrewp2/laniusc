@@ -142,7 +142,7 @@ fn env_u32(name: &str, default: u32) -> u32 {
 
 #[test]
 fn physical_gpu_single_dispatch_interning_is_unique_under_contention() {
-    assert!(!super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+    assert!(!crate::options::get().allow_software_adapter,
         "this gate requires a physical GPU");
     let runs = env_u32("LANIUS_CANONICAL_STRESS_RUNS", 16);
     let base = env_u32("LANIUS_CANONICAL_STRESS_BASE", 0);

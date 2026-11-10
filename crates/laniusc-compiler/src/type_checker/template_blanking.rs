@@ -128,14 +128,6 @@ impl TemplateBlanking {
         Ok((!blanked.is_empty()).then_some(Self { unit, bodies: blanked }))
     }
 
-    pub(crate) fn unit(&self) -> [u32; 2] {
-        self.unit
-    }
-
-    pub(crate) fn body_count(&self) -> usize {
-        self.bodies.len()
-    }
-
     /// Tokens and rows the blanked template leaves out.
     pub(crate) fn removed(&self) -> (u32, u32) {
         self.bodies.last().map_or((0, 0), |body| (body.tokens_through(), body.rows_through()))
@@ -515,7 +507,7 @@ mod tests {
         });
         let blanking = TemplateBlanking::new([0, 1], &[body(5, 12, 10, 20, 100, 200), body(20, 24, 30, 33, 300, 340)],
             &contracts).unwrap().unwrap();
-        assert_eq!(blanking.body_count(), 1);
+        assert_eq!(blanking.bodies.len(), 1);
         assert_eq!(blanking.removed(), (2, 3));
     }
 }

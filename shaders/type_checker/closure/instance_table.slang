@@ -1,5 +1,5 @@
 // The instance table of an original job (docs: D_PLAN D2), built from the
-// instance closure (instance_closure.slang) behind LANIUS_INSTANCE_TABLE.
+// instance closure (instance_closure.slang) behind LANIUS_EXPERIMENT=instance-table.
 // Every exported closure instance of a local function body becomes one entry
 // (template function row F, row count, tagged environment E, virtual row
 // base), in (F, ct_shash(E)) order, never by raw CT ID or discovery order.
@@ -14,7 +14,7 @@
 // lane per virtual row: the callee instance of each call row, D3).
 //
 // The table is an observation for now: the host reads it only in validation
-// mode (LANIUS_CHECK_INSTANCE_TABLE), against the copy run's own types.
+// mode (LANIUS_CHECK=instance-table), against the copy run's own types.
 import type_checker.canonical.canonical_api;
 import type_checker.closure.instance_closure;
 

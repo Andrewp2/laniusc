@@ -612,7 +612,7 @@ fn assert_observation(case: &Case, words: &[u32], context: Option<[u32; 3]>, pha
 #[test]
 fn physical_gpu_constant_claim_publication_preserves_precedence_replay_and_explicit_mirror() {
     assert!(
-        !super::env::env_bool_truthy("LANIUS_ALLOW_SOFTWARE_ADAPTER", false),
+        !crate::options::get().allow_software_adapter,
         "this regression requires a physical GPU",
     );
     let gpu = device::global();

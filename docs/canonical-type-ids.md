@@ -378,7 +378,7 @@ result.
     (a body replay of a deep program), and otherwise switches back to
     deferred.
   - **Synchronous** (after a deferred retry, and with
-    `LANIUS_TRACE_CANONICAL` or `LANIUS_DEBUG_VALIDATE_CANONICAL`). The host
+    `LANIUS_TRACE=canonical` or `LANIUS_CHECK=canonical`). The host
     reads one done flag per batch, the pending count and the overflow bits,
     and records another batch only while candidates are pending. So the
     number of rounds is the maximum candidate height, and the round limit
@@ -523,15 +523,14 @@ that recording.
 
 Debug variables:
 
-- `LANIUS_DEBUG_CANONICAL_SHRINK=n` divides the records, the argument words
+- `LANIUS_CHECK=canonical-retry=n` divides the records, the argument words
   and the frontier lists by 2^n to exercise the retry. It divides the whole
   bound, so a large `n` can fail at scale 64 on a valid job. On generics
   matrix probe p04, `n` = 12 passes after 4 retries and `n` = 14 fails.
-- `LANIUS_TRACE_CANONICAL=1` prints the use per batch. Its `records=` count
-  excludes the 32 preseeded records. It records every job synchronously.
-- `LANIUS_CANONICAL_SYNCHRONOUS=1` records every job synchronously.
-- `LANIUS_TRACE_CANONICAL_RETRY=1` prints each deferred job that is recorded
-  again synchronously, with the reason.
+- `LANIUS_TRACE=canonical` prints the use per batch. Its `records=` count
+  excludes the 32 preseeded records. It records every job synchronously. It
+  also prints each deferred job that is recorded again synchronously, with
+  the reason.
 
 What stays capacity-sized:
 
@@ -584,7 +583,7 @@ which are ID-free, and finds them equal.
 
 ### Validation
 
-Validation is enabled with `LANIUS_DEBUG_VALIDATE_CANONICAL=1`. It prints a
+Validation is enabled with `LANIUS_CHECK=canonical`. It prints a
 `[canonical_validate]` line per job, using the counter names in
 `canonical_passes.rs`.
 

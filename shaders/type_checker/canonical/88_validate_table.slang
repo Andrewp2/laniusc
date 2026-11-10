@@ -1,4 +1,4 @@
-// Debug validation of the canonical table (LANIUS_DEBUG_VALIDATE_CANONICAL=1),
+// Debug validation of the canonical table (LANIUS_CHECK=canonical),
 // step 1 of 3: uniqueness and facts, without the previous graph walker.
 // Per slot: the published record's facts recompute from its key and its
 // children, its probe chain is unbroken, and no equal record precedes it.
