@@ -55,7 +55,16 @@ struct CallInferenceMemory {
     /// The inference before it converged in the same number of rounds, and
     /// the last one recorded no error.
     repeated: bool,
+    /// Checks in a row that refused a final pass recorded in place of the
+    /// round that changes nothing.
+    final_pass_refusals: u8,
 }
+
+/// After this many refusals in a row, an unwaited inference of the shape
+/// records the round that changes nothing again. A program with a type error
+/// is refused once and then waits, so only a shape whose final pass changes
+/// facts or records an error on converged, accepted programs gets here.
+const FINAL_PASS_REFUSAL_LIMIT: u8 = 2;
 
 static CALL_INFERENCE_ROUNDS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<(u32, u32), CallInferenceMemory>>,
@@ -77,13 +86,21 @@ fn call_inference_batch(key: (u32, u32)) -> u32 {
 /// the last two inferences of this workspace shape both converged in, when
 /// one batch holds it. The job's check reads the counts
 /// (`deferred_call_inference_rounds`).
-fn call_inference_unwaited_rounds(key: (u32, u32)) -> Option<u32> {
+///
+/// The flag tells whether the job's final pass may stand for the round that
+/// changes nothing. One expected round is recorded as it is: the host resets
+/// the change count for the final pass at the next submission, so the pass
+/// needs a submission of rounds before it.
+fn call_inference_unwaited_rounds(key: (u32, u32)) -> Option<(u32, bool)> {
     CALL_INFERENCE_ROUNDS
         .lock()
         .expect("call inference round memory poisoned")
         .get(&key)
         .filter(|memory| memory.repeated && memory.rounds <= CALL_INFERENCE_MAX_BATCH)
-        .map(|memory| memory.rounds.max(1))
+        .map(|memory| {
+            let rounds = memory.rounds.max(1);
+            (rounds, rounds >= 2 && memory.final_pass_refusals < FINAL_PASS_REFUSAL_LIMIT)
+        })
 }
 
 /// Records a converged inference. `clean` is false when a round recorded an
@@ -92,8 +109,23 @@ fn remember_call_inference_rounds(key: (u32, u32), rounds: u32, clean: bool) {
     let mut memory = CALL_INFERENCE_ROUNDS
         .lock()
         .expect("call inference round memory poisoned");
-    let repeated = clean && memory.get(&key).is_some_and(|last| last.rounds == rounds);
-    memory.insert(key, CallInferenceMemory { rounds, repeated });
+    let last = memory.get(&key);
+    let repeated = clean && last.is_some_and(|last| last.rounds == rounds);
+    let final_pass_refusals = last.map_or(0, |last| last.final_pass_refusals);
+    memory.insert(key, CallInferenceMemory { rounds, repeated, final_pass_refusals });
+}
+
+/// Records whether a check accepted a final pass that stood for the round
+/// that changes nothing.
+fn note_final_pass_confirmation(key: (u32, u32), confirmed: bool) {
+    if let Some(memory) = CALL_INFERENCE_ROUNDS
+        .lock()
+        .expect("call inference round memory poisoned")
+        .get_mut(&key)
+    {
+        memory.final_pass_refusals =
+            if confirmed { 0 } else { memory.final_pass_refusals.saturating_add(1) };
+    }
 }
 
 /// Makes the next inference of the shape wait for its counts.
@@ -107,26 +139,47 @@ fn forget_call_inference_repeat(key: (u32, u32)) {
     }
 }
 
-/// An inference batch recorded without a wait, for the job's check.
+/// An inference recorded without a wait, for the job's check.
 pub(super) struct UnwaitedCallInference {
     key: (u32, u32),
-    rounds: u32,
+    /// History slots the job wrote: one per recorded round, and one more
+    /// for the final pass when `final_pass_confirms`.
+    slots: u32,
+    /// The job recorded only the rounds expected to change facts, and its
+    /// final pass stands for the round that changes nothing.
+    final_pass_confirms: bool,
     change_limit: u64,
 }
 
-/// The rounds an unwaited batch converged in, from its history words. `None`
-/// when the job has to be recorded again with waits: no round of the batch
-/// changed nothing, a round that changed facts recorded an error, or the
-/// rounds changed more than `change_limit` facts. The waiting loop settles
-/// each of those cases with further rounds or a rejection.
-fn deferred_call_inference_rounds(history: &[u32], change_limit: u64) -> Option<u32> {
+/// The rounds an unwaited inference converged in, the round that changed
+/// nothing included, from its history words. `None` when the job has to be
+/// recorded again with waits: no slot changed nothing, a round that changed
+/// facts recorded an error, or the rounds changed more than `change_limit`
+/// facts. The waiting loop settles each of those cases with further rounds
+/// or a rejection.
+///
+/// With `final_pass_confirms` the last slot holds the final pass. That pass
+/// derives the same facts as a round, and reports a missing fact as an error
+/// where a round defers it. So it shows a converged state only when it
+/// changed nothing and recorded no error; a job with an error is recorded
+/// again with waits, which separates a missing fact from a real error.
+fn deferred_call_inference_rounds(
+    history: &[u32],
+    change_limit: u64,
+    final_pass_confirms: bool,
+) -> Option<u32> {
+    let slots = history.len() / CALL_INFERENCE_HISTORY_WORDS;
     let mut total_changed = 0u64;
     for (round, words) in history.chunks_exact(CALL_INFERENCE_HISTORY_WORDS).enumerate() {
         let changed = words[1];
+        let rejected = status_rejection([words[2], words[3], words[4], words[5]]).is_some();
+        if final_pass_confirms && round + 1 == slots {
+            return (changed == 0 && !rejected).then_some(round as u32 + 1);
+        }
         if changed == 0 {
             return Some(round as u32 + 1);
         }
-        if status_rejection([words[2], words[3], words[4], words[5]]).is_some() {
+        if rejected {
             return None;
         }
         total_changed = total_changed.saturating_add(u64::from(changed));
@@ -914,6 +967,7 @@ impl GpuTypeChecker {
         let mut inference_error = None;
         // The inference batch this recording did not wait for.
         let mut unwaited_inference = None;
+        let mut inference_key = None;
         // An original unit with an interface records the instance closure
         // when it has generic syntax, or when a dependency has a closure
         // summary (D1b): an app that only calls library generics, with no
@@ -2031,6 +2085,7 @@ impl GpuTypeChecker {
                 // that keeps inference from converging still stops it at
                 // the same round.
                 let batch_key = (hir_node_capacity, token_capacity);
+                inference_key = Some(batch_key);
                 // A shape whose last two inferences converged in the same
                 // number of rounds records that many rounds and does not
                 // wait: the GPU has earlier work queued, and a wait here
@@ -2040,14 +2095,24 @@ impl GpuTypeChecker {
                 // (`finish_recorded_check`). Synchronous canonical stages
                 // decide capacities from what inference left, so they keep
                 // the wait.
+                //
+                // Of those rounds the last is expected to change nothing.
+                // The final pass below runs the same passes, so such a job
+                // leaves that round out and copies the final pass's change
+                // count and status into the round's history slot instead.
                 let unwaited_rounds = (!trace_inference && !canonical_synchronous)
                     .then(|| call_inference_unwaited_rounds(batch_key))
                     .flatten();
+                let unwaited = unwaited_rounds.filter(|&(rounds, _)| rounds <= round_limit);
+                let unwaited_rounds = unwaited.map(|(rounds, _)| rounds);
+                let final_pass_confirms = unwaited.is_some_and(|(_, confirms)| confirms);
                 let mut round = 0u32;
                 let mut converged_rounds = None;
                 'rounds: while round < round_limit {
                     let batch = if let Some(rounds) = unwaited_rounds {
-                        rounds
+                        // The final pass stands for the round expected to
+                        // change nothing.
+                        if final_pass_confirms { rounds - 1 } else { rounds }
                     } else if first_error_round.is_some() {
                         1
                     } else {
@@ -2080,7 +2145,8 @@ impl GpuTypeChecker {
                     if unwaited_rounds.is_some() {
                         unwaited_inference = Some(UnwaitedCallInference {
                             key: batch_key,
-                            rounds: batch,
+                            slots: batch + u32::from(final_pass_confirms),
+                            final_pass_confirms,
                             change_limit,
                         });
                         break 'rounds;
@@ -2193,6 +2259,16 @@ impl GpuTypeChecker {
                     )?;
                 }
                 record_returns(encoder)?;
+                if let Some(unwaited) = unwaited_inference
+                    .as_ref()
+                    .filter(|unwaited| unwaited.final_pass_confirms)
+                {
+                    // The final pass's change count and status, for the
+                    // job's check (`deferred_call_inference_rounds`).
+                    let slot = unwaited.slots as usize - 1;
+                    bind_groups.calls.inference_readback[slot].record(encoder);
+                    bind_groups.calls.inference_status_readback[slot].record(encoder);
+                }
             } else {
                 self.call_inference_state.write(queue, 0, &[0; 8]);
                 // Even jobs with no materializer require current argument
@@ -2600,6 +2676,7 @@ impl GpuTypeChecker {
         Ok(RecordedTypeCheck {
             inference_error,
             unwaited_inference,
+            inference_key,
             canonical_deferred: !canonical_synchronous,
         })
     }
@@ -2651,9 +2728,26 @@ impl GpuTypeChecker {
         device: &wgpu::Device,
         recorded: &RecordedTypeCheck,
     ) -> Result<(), GpuTypeCheckError> {
+        let result = self.finish_recorded_check_status(device, recorded);
+        if let (Err(GpuTypeCheckError::Rejected { .. }), Some(key)) =
+            (&result, recorded.inference_key)
+        {
+            // An unwaited inference whose final pass records an error is
+            // recorded again with waits. A rejected program keeps its error
+            // until it is edited, so its next job waits from the start.
+            forget_call_inference_repeat(key);
+        }
+        result
+    }
+
+    fn finish_recorded_check_status(
+        &self,
+        device: &wgpu::Device,
+        recorded: &RecordedTypeCheck,
+    ) -> Result<(), GpuTypeCheckError> {
         if let Some(unwaited) = &recorded.unwaited_inference {
             let history_bytes =
-                u64::from(unwaited.rounds) * (CALL_INFERENCE_HISTORY_WORDS as u64 * 4);
+                u64::from(unwaited.slots) * (CALL_INFERENCE_HISTORY_WORDS as u64 * 4);
             let history_slice = self.call_inference_readback.slice(..history_bytes);
             crate::gpu::passes_core::map_readback_blocking(
                 device,
@@ -2662,12 +2756,24 @@ impl GpuTypeChecker {
             )?;
             let history = read_u32_words_mapped(&history_slice);
             self.call_inference_readback.unmap();
-            match deferred_call_inference_rounds(&history, unwaited.change_limit) {
-                Some(rounds) => remember_call_inference_rounds(unwaited.key, rounds, true),
+            match deferred_call_inference_rounds(
+                &history,
+                unwaited.change_limit,
+                unwaited.final_pass_confirms,
+            ) {
+                Some(rounds) => {
+                    remember_call_inference_rounds(unwaited.key, rounds, true);
+                    if unwaited.final_pass_confirms && rounds == unwaited.slots {
+                        note_final_pass_confirmation(unwaited.key, true);
+                    }
+                }
                 None => {
                     forget_call_inference_repeat(unwaited.key);
+                    if unwaited.final_pass_confirms {
+                        note_final_pass_confirmation(unwaited.key, false);
+                    }
                     return Err(GpuTypeCheckError::Gpu(anyhow::Error::new(
-                        CallInferenceWaitRetry { rounds: unwaited.rounds },
+                        CallInferenceWaitRetry { rounds: unwaited.slots },
                     )));
                 }
             }
@@ -3118,30 +3224,58 @@ mod unwaited_call_inference_tests {
     #[test]
     fn the_first_round_that_changes_nothing_ends_inference() {
         let words = history(&[(5, OK), (2, OK), (0, OK), (0, OK)]);
-        assert_eq!(deferred_call_inference_rounds(&words, 100), Some(3));
+        assert_eq!(deferred_call_inference_rounds(&words, 100, false), Some(3));
     }
 
     #[test]
     fn a_batch_that_still_changes_facts_needs_a_waiting_recording() {
         let words = history(&[(5, OK), (2, OK), (1, OK)]);
-        assert_eq!(deferred_call_inference_rounds(&words, 100), None);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, false), None);
     }
 
     #[test]
     fn an_error_in_a_round_that_changed_facts_needs_a_waiting_recording() {
         let words = history(&[(5, OK), (2, REJECTED), (0, REJECTED)]);
-        assert_eq!(deferred_call_inference_rounds(&words, 100), None);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, false), None);
     }
 
     #[test]
     fn an_error_in_the_round_that_changes_nothing_is_left_to_the_status() {
         let words = history(&[(5, OK), (0, REJECTED)]);
-        assert_eq!(deferred_call_inference_rounds(&words, 100), Some(2));
+        assert_eq!(deferred_call_inference_rounds(&words, 100, false), Some(2));
     }
 
     #[test]
     fn rounds_past_the_change_limit_need_a_waiting_recording() {
         let words = history(&[(60, OK), (50, OK), (0, OK)]);
-        assert_eq!(deferred_call_inference_rounds(&words, 100), None);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, false), None);
+    }
+
+    #[test]
+    fn a_final_pass_that_changes_nothing_confirms_the_rounds_before_it() {
+        let words = history(&[(5, OK), (2, OK), (0, OK)]);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, true), Some(3));
+    }
+
+    #[test]
+    fn a_final_pass_that_changes_facts_needs_a_waiting_recording() {
+        let words = history(&[(5, OK), (2, OK), (1, OK)]);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, true), None);
+    }
+
+    #[test]
+    fn a_final_pass_with_an_error_needs_a_waiting_recording() {
+        // The pass reports a missing fact as an error, so an error does not
+        // show whether the rounds converged.
+        let words = history(&[(5, OK), (2, OK), (0, REJECTED)]);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, true), None);
+    }
+
+    #[test]
+    fn a_round_that_changes_nothing_before_the_final_pass_ends_inference() {
+        // The rounds converged one round early; the final pass then ran on
+        // converged facts, and its error is left to the status.
+        let words = history(&[(5, OK), (0, OK), (0, REJECTED)]);
+        assert_eq!(deferred_call_inference_rounds(&words, 100, true), Some(2));
     }
 }

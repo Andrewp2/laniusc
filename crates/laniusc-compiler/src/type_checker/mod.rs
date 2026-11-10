@@ -439,6 +439,8 @@ pub struct RecordedTypeCheck {
     /// The inference batch recorded without a wait; the check reads its
     /// history before the status.
     unwaited_inference: Option<resident::UnwaitedCallInference>,
+    /// The workspace shape whose call inference this job ran, if it ran one.
+    inference_key: Option<(u32, u32)>,
     /// The canonical stages were recorded without counter readbacks, so the
     /// check reads the job's counters before its status.
     canonical_deferred: bool,
