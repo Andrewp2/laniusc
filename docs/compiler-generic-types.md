@@ -3687,7 +3687,8 @@ after string, record, string-array, and slice fields. The larger
 reads, chained fields, replacements, independent copies, aliases, and exact
 Unicode/empty-string output. Nine invalid programs report the expected source
 location and diagnostic for unknown fields or wrong field/result types.
-Six invalid runtime array/slice indexes exit with status 101 and no output.
+Six invalid runtime array/slice indexes exit with status 101. They write
+nothing to standard output and the trap message to standard error.
 These checks pass in `generic-imported-fields-runtime.log` and the combined
 checkpoint. Statically invalid array indexes can be rejected before emission.
 
@@ -3725,7 +3726,8 @@ output, complete descriptor words, empty views, aliasing, and descriptor
 replacement are checked in `generic-slice-of-slices-runtime.log`, together
 with five bounds traps and nested nominal element mismatches.
 
-Seven compound-slice bounds programs exit with native status 101 and no output.
+Seven compound-slice bounds programs exit with native status 101. They write
+nothing to standard output and the trap message to standard error.
 They cover upper and negative record-slice indexes, empty views, Option/Result
 extraction, and outer/inner nested-array bounds. Wrong nominal identities,
 element types, result types, and nested array lengths are rejected with

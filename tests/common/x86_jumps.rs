@@ -34,9 +34,9 @@
 //! Each of its arrays is decoded from its own start, since an array can end
 //! in data (the allocator's environment key string) that would otherwise
 //! swallow the next array's first instruction. The out-of-line safety traps
-//! at its end (`X86_RUNTIME_TRAP_BOUNDS_OFFSET` and
-//! `X86_RUNTIME_TRAP_SHIFT_OFFSET`) are shared targets: a guard in any
-//! function may branch to them.
+//! at its end (`X86_RUNTIME_TRAP_BOUNDS_OFFSET`,
+//! `X86_RUNTIME_TRAP_SHIFT_OFFSET` and `X86_RUNTIME_TRAP_DIVIDE_OFFSET`) are
+//! shared targets: a guard in any function may branch to them.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -101,7 +101,11 @@ fn runtime_block() -> &'static RuntimeBlock {
             rest = &rest[body_end..];
         }
         assert!(!block.is_empty(), "no runtime arrays in {RUNTIME_SOURCE}");
-        let traps = ["X86_RUNTIME_TRAP_BOUNDS_OFFSET", "X86_RUNTIME_TRAP_SHIFT_OFFSET"]
+        let traps = [
+            "X86_RUNTIME_TRAP_BOUNDS_OFFSET",
+            "X86_RUNTIME_TRAP_SHIFT_OFFSET",
+            "X86_RUNTIME_TRAP_DIVIDE_OFFSET",
+        ]
             .iter()
             .filter_map(|name| {
                 let at = source.find(&format!("static const uint {name} = "))?;

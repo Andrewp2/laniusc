@@ -1,0 +1,9 @@
+// An index outside a slice ends the program with a message and exit 101.
+fn at(values: [i32], index: i32) -> i32 { return values[index]; }
+
+fn main() -> i32 {
+    let values: [i32; 3] = [1, 2, 3];
+    print(at(values, 1));
+    print(at(values, 5));
+    return 0;
+}

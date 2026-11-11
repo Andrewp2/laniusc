@@ -67,9 +67,7 @@ fn native_endian_valid_logical_extents_over_short_physical_backing_trap() {
             Some(101),
             "native bounds trap in {name}: {output:?}"
         );
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{name}: {output:?}"
-        );
+        assert!(output.stdout.is_empty(), "{name}: {output:?}");
+        assert_eq!(output.stderr, b"lanius: index out of range\n", "{name}: {output:?}");
     }
 }

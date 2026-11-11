@@ -257,8 +257,10 @@ fn assert_native_exit(label: &str, bytes: &[u8], expected: i32) {
     {
         let output = common::run_x86_64_elf_output(label, "slice_generic", bytes);
         assert_eq!(output.status.code(), Some(expected), "{label}: {output:?}");
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
+        assert!(output.stdout.is_empty(), "{label}: {output:?}");
+        assert_eq!(
+            output.stderr,
+            common::trap_stderr(expected),
             "{label}: {output:?}"
         );
     }

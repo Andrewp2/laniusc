@@ -324,7 +324,8 @@ fn overstated_physical_backing_traps_at_the_native_slice_boundary() {
         &mut Command::new(exe.path()),
     );
     assert_eq!(output.status.code(), Some(101), "{output:?}");
-    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert_eq!(output.stderr, b"lanius: index out of range\n", "{output:?}");
 }
 #[test]
 fn million_bit_dense_and_sparse_workloads_execute_without_leaks() {

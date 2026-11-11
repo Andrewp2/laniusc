@@ -33,7 +33,11 @@ fn utf16_byte_views_execute_on_x86() {
                 "{name}: {output:?}"
             );
             assert!(output.stdout.is_empty(), "{name}: {output:?}");
-            assert!(output.stderr.is_empty(), "{name}: {output:?}");
+            assert_eq!(
+                output.stderr,
+                common::trap_stderr(expected_exit),
+                "{name}: {output:?}"
+            );
         }
         #[cfg(not(all(unix, target_arch = "x86_64")))]
         let _ = (bytes, expected_exit);

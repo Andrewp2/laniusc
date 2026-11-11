@@ -257,6 +257,40 @@ fn else_takes_a_block_or_an_if_statement() {
     assert_rejected("else_if_arm_scope.lani", &["LNC0005", "not found in this scope"]);
 }
 
+/// Runs a fixture that ends in a trap and returns its output.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn trap_output(fixture: &str) -> std::process::Output {
+    let bytes = compile(fixture).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    common::run_x86_64_elf_output_expecting_signal("language ergonomics", fixture, &bytes)
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_trap_writes_its_reason_to_standard_error() {
+    use std::os::unix::process::ExitStatusExt;
+
+    for (fixture, stdout, stderr, code) in [
+        ("trap_index.lani", "2\n", "lanius: index out of range\n", 101),
+        ("trap_shift.lani", "8\n", "lanius: shift amount out of range\n", 102),
+        ("trap_divide_by_zero.lani", "-4\n3\n", "lanius: division by zero\n", 103),
+        ("trap_divide_overflow.lani", "2147483647\n", "lanius: division overflow\n", 104),
+    ] {
+        let output = trap_output(fixture);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), stdout, "{fixture}: {output:?}");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), stderr, "{fixture}: {output:?}");
+        assert_eq!(output.status.code(), Some(code), "{fixture}: {output:?}");
+    }
+
+    let output = trap_output("trap_assert.lani");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "3\n", "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "lanius: assertion failed\n",
+        "{output:?}"
+    );
+    assert_eq!(output.status.signal(), Some(4), "{output:?}");
+}
+
 #[test]
 fn text_helpers_convert_literals_and_write_whole_values() {
     let fixture = "text_helpers.lani";

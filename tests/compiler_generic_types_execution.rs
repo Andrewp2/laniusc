@@ -346,7 +346,11 @@ fn execute_with_stdlib(
     let output = common::run_x86_64_elf_output(label, "generic_types", &bytes);
     assert_eq!(output.status.code(), Some(status), "{label}: {output:?}");
     assert_eq!(output.stdout, expected, "{label}: {output:?}");
-    assert!(output.stderr.is_empty(), "{label}: {output:?}");
+    assert_eq!(
+        output.stderr,
+        common::trap_stderr(status),
+        "{label}: {output:?}"
+    );
 }
 
 #[test]
@@ -1555,10 +1559,8 @@ fn direct_record_literal_arguments_preserve_generic_body_failure() {
         !output.status.success(),
         "the empty result cannot erase the body: {output:?}"
     );
-    assert!(
-        output.stdout.is_empty() && output.stderr.is_empty(),
-        "{output:?}"
-    );
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert_eq!(output.stderr, common::ASSERT_TRAP_STDERR, "{output:?}");
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
@@ -1798,10 +1800,8 @@ fn main() -> i32 {
             !output.status.success(),
             "the empty result cannot skip assert: {output:?}"
         );
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{output:?}"
-        );
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert_eq!(output.stderr, common::ASSERT_TRAP_STDERR, "{output:?}");
         #[cfg(unix)]
         {
             use std::os::unix::process::ExitStatusExt;
@@ -3446,10 +3446,8 @@ fn main() -> i32 {{
         .unwrap_or_else(|error| panic!("{label}: {error:?}"));
         let output = common::run_x86_64_elf_output(label, "imported_fields", &bytes);
         assert_eq!(output.status.code(), Some(101), "{label}: {output:?}");
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{label}: {output:?}"
-        );
+        assert!(output.stdout.is_empty(), "{label}: {output:?}");
+        assert_eq!(output.stderr, b"lanius: index out of range\n", "{label}: {output:?}");
     }
     for index in [-1, 2] {
         let source = format!(
@@ -3483,10 +3481,8 @@ fn main() -> i32 {{ return at({index}); }}
             &bytes,
         );
         assert_eq!(output.status.code(), Some(101), "{index}: {output:?}");
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{index}: {output:?}"
-        );
+        assert!(output.stdout.is_empty(), "{index}: {output:?}");
+        assert_eq!(output.stderr, b"lanius: index out of range\n", "{index}: {output:?}");
     }
 }
 

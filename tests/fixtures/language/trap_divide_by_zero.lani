@@ -1,0 +1,12 @@
+// Dividing by zero ends the program with exit 103. The guard covers `/` and
+// `%`, signed and unsigned, 32-bit and 64-bit.
+fn quotient(a: i64, b: i64) -> i64 { return a / b; }
+fn remainder(a: u32, b: u32) -> u32 { return a % b; }
+
+fn main() -> i32 {
+    print(quotient(-9, 2) as i32);
+    print(remainder(7, 4) as i32);
+    print(quotient(9, 0) as i32);
+    print(remainder(7, 0) as i32);
+    return 0;
+}

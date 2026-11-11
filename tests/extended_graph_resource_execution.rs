@@ -442,9 +442,7 @@ fn graph_logical_views_retain_the_actual_backing_precondition() {
             Some(101),
             "physical caller-precondition trap {name}: {output:?}"
         );
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{name}: {output:?}"
-        );
+        assert!(output.stdout.is_empty(), "{name}: {output:?}");
+        assert_eq!(output.stderr, b"lanius: index out of range\n", "{name}: {output:?}");
     }
 }

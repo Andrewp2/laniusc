@@ -46,7 +46,8 @@ fn panic_and_unreachable_trap_instead_of_returning() {
 
             let output = common::run_x86_64_elf_output_expecting_signal(name, name, &bytes);
             assert_eq!(output.status.signal(), Some(4), "{name}: {output:?}");
-            assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            assert!(output.stdout.is_empty(), "{output:?}");
+            assert_eq!(output.stderr, b"lanius: assertion failed\n", "{output:?}");
         }
         #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
         let _ = bytes;

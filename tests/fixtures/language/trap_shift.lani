@@ -1,0 +1,8 @@
+// A shift by the operand's bit width or more ends the program with exit 102.
+fn shifted(value: i32, amount: i32) -> i32 { return value << amount; }
+
+fn main() -> i32 {
+    print(shifted(1, 3));
+    print(shifted(1, 40));
+    return 0;
+}

@@ -62,7 +62,12 @@ fn generic_slice_constructor_rejects_invalid_lengths_and_indices() {
                 expected_signal,
                 "{name}: {output:?}"
             );
-            assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            assert!(output.stdout.is_empty(), "{name}: {output:?}");
+            let stderr = match expected_code {
+                Some(code) => common::trap_stderr(code),
+                None => common::ASSERT_TRAP_STDERR,
+            };
+            assert_eq!(output.stderr, stderr, "{name}: {output:?}");
         }
         #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
         let _ = (bytes, expected_code, expected_signal);

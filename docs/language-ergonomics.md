@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks, `else if`
+# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks, `else if`, trap messages
 
-Seven features shorten ordinary Lanius code without adding hidden behavior.
+Eight features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -207,6 +207,32 @@ closes the statement that starts later first
 
 Decision: `if` is still a statement. There is no `if` expression, and `match`
 remains the way to compute a value from alternatives.
+
+## Trap messages
+
+A trap ends the program. On x86_64 Linux the program first writes one line to
+standard error that names the reason:
+
+| Cause | Line on standard error | How the process ends |
+| --- | --- | --- |
+| Array or slice index outside the length | `lanius: index out of range` | exit status 101 |
+| Shift amount negative or not less than the bit width | `lanius: shift amount out of range` | exit status 102 |
+| Integer division or remainder by zero | `lanius: division by zero` | exit status 103 |
+| Signed division of the minimum value by -1 | `lanius: division overflow` | exit status 104 |
+| `assert(false)`, `core::panic::panic()`, `unreachable()` | `lanius: assertion failed` | signal SIGILL |
+
+- Output written before the trap stays on standard output. The exit statuses
+  and the signal are the ones these traps had before they wrote a message.
+- The line does not name a source file or line number.
+- The write is one `write(2)` system call to descriptor 2. A closed or full
+  descriptor does not change how the process ends.
+- Wasm modules trap without a message.
+
+The stubs follow the print helpers in the runtime block
+(`shaders/codegen/lir/x86/runtime_abi.slang`, `trap_bytes`). Their assembly
+source is `shaders/codegen/lir/x86/runtime_traps.s`. Each guard jumps to its
+stub, so a guard is no longer than before. Fixtures:
+`tests/fixtures/language/trap_*.lani`.
 
 ## C callbacks
 

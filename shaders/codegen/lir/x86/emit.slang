@@ -26,13 +26,14 @@ static const uint X86_RUNTIME_REFERENCE_REL32 = 1u;
 static const uint X86_RUNTIME_REFERENCE_CALL_REL32 = 2u;
 
 // The runtime trap a row's guard branches to, or 0xffffffff. Every trap guard
-// ends in its jcc rel32 (safety_emit.emit_guards).
+// ends in its jcc or jmp rel32 (safety_emit.emit_guards).
 uint x86_guard_trap_offset(X86LirCore core, X86LirOperands operands)
 {
     if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
          core.op == X86_LIR_OP_INDEX_ADDRESS) && core.local_ordinal != 0xffffffffu)
         return X86_RUNTIME_TRAP_BOUNDS_OFFSET;
     if (x86_safety_shift(core, operands)) return X86_RUNTIME_TRAP_SHIFT_OFFSET;
+    if (x86_safety_integer_division(core, operands)) return X86_RUNTIME_TRAP_DIVIDE_OFFSET;
     return 0xffffffffu;
 }
 

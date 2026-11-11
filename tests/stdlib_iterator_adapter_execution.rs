@@ -269,7 +269,7 @@ fn enumerate_consumes_the_unindexable_item_before_checked_panic() {
         output.stdout, b"a!b",
         "source witnessed the extra Some; no next result was returned"
     );
-    assert!(output.stderr.is_empty(), "{output:?}");
+    assert_eq!(output.stderr, common::ASSERT_TRAP_STDERR, "{output:?}");
 }
 
 #[test]

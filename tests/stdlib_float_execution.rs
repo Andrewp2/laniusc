@@ -526,7 +526,12 @@ fn strict_clamp_panics_for_reversed_or_nan_bounds_on_both_widths() {
                 Some(4),
                 "{width} {mode}: {output:?}"
             );
-            assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            assert!(output.stdout.is_empty(), "{width} {mode}: {output:?}");
+            assert_eq!(
+                output.stderr,
+                common::ASSERT_TRAP_STDERR,
+                "{width} {mode}: {output:?}"
+            );
         }
     }
 }

@@ -424,8 +424,10 @@ fn explicit_strict_preconditions_trap_in_all_six_modules() {
                 Some(4),
                 "kind={kind} op={op}: {output:?}"
             );
-            assert!(
-                output.stdout.is_empty() && output.stderr.is_empty(),
+            assert!(output.stdout.is_empty(), "kind={kind} op={op}: {output:?}");
+            assert_eq!(
+                output.stderr,
+                common::ASSERT_TRAP_STDERR,
                 "kind={kind} op={op}: {output:?}"
             );
             count += 1;

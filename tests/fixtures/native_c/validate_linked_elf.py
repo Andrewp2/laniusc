@@ -19,11 +19,18 @@ def check(condition, message):
         raise ValueError(message)
 
 
-# The native runtime's out-of-line safety traps (X86_RUNTIME_TRAP_BOUNDS_OFFSET
-# and X86_RUNTIME_TRAP_SHIFT_OFFSET in shaders/codegen/lir/x86/runtime_abi.slang):
-# `mov $101|$102,%edi; mov $231,%eax; syscall` (exit_group). A guard in any
-# function branches to them, as tests/common/x86_jumps.rs allows.
-RUNTIME_TRAPS = {bytes([0xbf, code, 0, 0, 0, 0xb8, 0xe7, 0, 0, 0, 0x0f, 0x05]) for code in (101, 102)}
+# The first 12 bytes of the native runtime's out-of-line safety traps
+# (X86_RUNTIME_TRAP_BOUNDS_OFFSET, X86_RUNTIME_TRAP_SHIFT_OFFSET and
+# X86_RUNTIME_TRAP_DIVIDE_OFFSET in shaders/codegen/lir/x86/runtime_abi.slang;
+# source in runtime_traps.s). The bounds and shift traps start with
+# `mov $101|$102,%edi; lea message(%rip),%rsi` and the divide trap with
+# `lea message(%rip),%rsi; mov $length,%edx`. A guard in any function
+# branches to them, as tests/common/x86_jumps.rs allows.
+RUNTIME_TRAPS = {
+    bytes([0xbf, 0x65, 0, 0, 0, 0x48, 0x8d, 0x35, 0x68, 0, 0, 0]),
+    bytes([0xbf, 0x66, 0, 0, 0, 0x48, 0x8d, 0x35, 0x70, 0, 0, 0]),
+    bytes([0x48, 0x8d, 0x35, 0x84, 0, 0, 0, 0xba, 0x19, 0, 0, 0]),
+}
 
 
 def validate_function_instructions(functions, instructions, executable_range, read=None):

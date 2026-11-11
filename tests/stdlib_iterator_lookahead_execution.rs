@@ -312,7 +312,7 @@ fn position_overflow_consumes_extra_item_then_panics_before_predicate() {
     );
     assert_eq!(output.status.signal(), Some(4), "{output:?}");
     assert_eq!(output.stdout, b"aPb");
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr, b"lanius: assertion failed\n", "{output:?}");
 }
 fn app_run(
     exe: &common::TempArtifact,

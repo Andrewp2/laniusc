@@ -1,0 +1,9 @@
+// The smallest signed value divided by -1 has no result of its type. The
+// program ends with exit 104.
+fn quotient(a: i32, b: i32) -> i32 { return a / b; }
+
+fn main() -> i32 {
+    print(quotient(-2147483647, -1));
+    print(quotient(-2147483647 - 1, -1));
+    return 0;
+}

@@ -146,11 +146,15 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
     }
 }
 
-void emit_exit(inout uint cursor, uint code)
+// The 12 bytes of a failed division check: mov edi, code; a two-byte nop;
+// jmp rel32 to the runtime's divide trap. The rel32 ends the guard.
+void emit_divide_trap(inout uint cursor, uint code, uint target)
 {
     emit_u8(cursor, 0xbfu); emit_u32(cursor, code);
-    emit_u8(cursor, 0xb8u); emit_u32(cursor, 231u); // exit_group: a trap on any thread ends the process
-    emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
+    emit_u8(cursor, 0x66u); emit_u8(cursor, 0x90u);
+    uint next = cursor + 5u;
+    emit_u8(cursor, 0xe9u);
+    emit_u32(cursor, target - next);
 }
 
 // jcc rel32 to an out-of-line runtime trap (X86_RUNTIME_TRAP_*): the
@@ -168,6 +172,7 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
 {
     uint bounds_trap = runtime_offset + X86_RUNTIME_TRAP_BOUNDS_OFFSET;
     uint shift_trap = runtime_offset + X86_RUNTIME_TRAP_SHIFT_OFFSET;
+    uint divide_trap = runtime_offset + X86_RUNTIME_TRAP_DIVIDE_OFFSET;
     bool rhs_wide = (operands.metadata & X86_LIR_METADATA_RHS_NARROW) == 0u;
     uint type = operands.metadata & 0xffu;
     if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
@@ -256,10 +261,20 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
     if (wide) emit_u8(cursor, 0x48u);
     emit_u8(cursor, 0x85u); emit_u8(cursor, 0xc9u);
     emit_u8(cursor, 0x75u); emit_u8(cursor, 12u);
-    emit_exit(cursor, 103u);
-    if (!scalar_is_signed_integer(type)) return;
+    // A failed check loads the exit code and jumps to the runtime's divide
+    // trap, which reports it. The guard holds one jmp rel32 to the runtime,
+    // at its end, so a signed division's zero check reaches the trap through
+    // the overflow check's jump.
+    if (!scalar_is_signed_integer(type))
+    {
+        emit_divide_trap(cursor, 103u, divide_trap);
+        return;
+    }
     uint lhs_load_bytes = wide ? x86_move64_to_fixed_bytes(locations.b, 0u)
         : x86_move32_to_fixed_bytes(locations.b, 0u);
+    emit_u8(cursor, 0xbfu); emit_u32(cursor, 103u);
+    emit_u8(cursor, 0xebu); emit_u8(cursor, lhs_load_bytes + (wide ? 33u : 24u));
+    for (uint pad = 0u; pad < 5u; pad += 1u) emit_u8(cursor, 0xccu);
     if (wide) emit_u8(cursor, 0x48u);
     emit_u8(cursor, 0x83u); emit_u8(cursor, 0xf9u); emit_u8(cursor, 0xffu);
     emit_u8(cursor, 0x75u); emit_u8(cursor, lhs_load_bytes + (wide ? 27u : 19u));
@@ -277,7 +292,7 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
         emit_u32(cursor, 0u - (1u << (scalar_integer_bits(type) - 1u)));
     }
     emit_u8(cursor, 0x75u); emit_u8(cursor, 12u);
-    emit_exit(cursor, 104u);
+    emit_divide_trap(cursor, 104u, divide_trap);
 }
 
 [shader("compute")]

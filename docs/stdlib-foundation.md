@@ -3938,7 +3938,8 @@ components to change and the reproductions above to pass.
      The minimal reproduction and mixed-type program check both variants,
      integer extrema, false values, Unicode/empty-string descriptors, and
      independent returned record/array copies. Negative and upper-bound
-     string payload indexes trap with status 101 and no output. Wrong array
+     string payload indexes trap with status 101 and write only the trap
+     message, to standard error. Wrong array
      lengths, element types, and record identities report `LNC0006` at the
      argument while preserving the constructor's successful name resolution.
 
@@ -3966,7 +3967,8 @@ components to change and the reproductions above to pass.
      A larger program checks both descriptor words, populated and empty views,
      unequal inner lengths, composed calls, descriptor replacement, Unicode,
      empty strings, and aliasing. Invalid logical stores preserve storage;
-     five invalid outer/inner indexes trap with status 101 and no output.
+     five invalid outer/inner indexes trap with status 101 and write only the
+     trap message, to standard error.
      Incompatible nominal element types report `LNC0006` at the call.
 
      Imported `[T]` parameters bind full element types with variable-size
@@ -4061,7 +4063,8 @@ components to change and the reproductions above to pass.
      aliases, and exact Unicode/empty-string output. Nine invalid programs
      report `LNC0042` for unknown fields or `LNC0006` for incompatible field and
      result types at the offending source line. Six runtime array/slice bounds
-     programs exit with status 101 and no output. Statically invalid array
+     programs exit with status 101 and write only the trap message, to standard
+     error. Statically invalid array
      indexes can be rejected before executable emission.
 
      All 98 fresh focused checks pass: 57 compiler/template/Result checks,

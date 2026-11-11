@@ -108,7 +108,8 @@ fn checked_indexing_panics_for_empty_negative_and_past_end_indices() {
             Command::new(exe.path()).args(arguments),
         );
         assert_eq!(output.status.signal(), Some(4), "{output:?}");
-        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert_eq!(output.stderr, b"lanius: assertion failed\n", "{output:?}");
     }
 }
 

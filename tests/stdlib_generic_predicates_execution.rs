@@ -256,7 +256,11 @@ fn imported_option_payload_boundaries_and_summary_execute() {
                 expected_stdout.as_bytes(),
                 "{name}: {output:?}"
             );
-            assert!(output.stderr.is_empty(), "{name}: {output:?}");
+            assert_eq!(
+                output.stderr,
+                common::trap_stderr(expected_code),
+                "{name}: {output:?}"
+            );
         }
         #[cfg(not(all(unix, target_arch = "x86_64")))]
         let _ = (bytes, expected_code, expected_stdout);

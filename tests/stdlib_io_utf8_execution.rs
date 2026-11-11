@@ -90,7 +90,7 @@ fn utf8_byte_view_length_overclaim_traps_before_output() {
         let output = run_with_input(&executable, b"");
         assert_eq!(output.status.code(), Some(101), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
-        assert!(output.stderr.is_empty(), "{output:?}");
+        assert_eq!(output.stderr, b"lanius: index out of range\n", "{output:?}");
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;

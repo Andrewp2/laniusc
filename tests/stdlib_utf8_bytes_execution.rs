@@ -76,7 +76,11 @@ fn byte_backed_utf8_operations_execute_on_x86() {
             let output = common::run_x86_64_elf_output(name, name, &bytes);
             assert_eq!(output.status.code(), Some(exit_code), "{name}: {output:?}");
             assert_eq!(output.stdout, stdout, "{name}: stdout");
-            assert!(output.stderr.is_empty(), "{name}: unexpected stderr");
+            assert_eq!(
+                output.stderr,
+                common::trap_stderr(exit_code),
+                "{name}: unexpected stderr"
+            );
         }
         #[cfg(not(all(unix, target_arch = "x86_64")))]
         let _ = (bytes, exit_code);

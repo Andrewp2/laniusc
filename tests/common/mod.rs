@@ -1780,6 +1780,22 @@ pub fn run_x86_64_elf_output(
     run_x86_64_elf_output_with_args(context, artifact_stem, elf, &[])
 }
 
+/// The line a failed `assert` or a `core::panic` call writes to standard
+/// error before the SIGILL.
+pub const ASSERT_TRAP_STDERR: &[u8] = b"lanius: assertion failed\n";
+
+/// What an x86_64 program writes to standard error when it exits with
+/// `status`: the trap line for the four trap statuses, nothing otherwise.
+pub fn trap_stderr(status: i32) -> &'static [u8] {
+    match status {
+        101 => b"lanius: index out of range\n",
+        102 => b"lanius: shift amount out of range\n",
+        103 => b"lanius: division by zero\n",
+        104 => b"lanius: division overflow\n",
+        _ => b"",
+    }
+}
+
 /// Runs an ELF the test expects to end by a signal (assert's or panic's
 /// SIGILL), with the longer signal timeout.
 #[cfg(all(unix, target_arch = "x86_64"))]

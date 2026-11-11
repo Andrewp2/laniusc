@@ -348,7 +348,8 @@ fn small_real_operations_and_allocator_rejections_preserve_owners_and_runtime_ne
     );
     use std::os::unix::process::ExitStatusExt;
     assert_eq!(trapped.status.signal(), Some(4), "{trapped:?}");
-    assert!(trapped.stdout.is_empty() && trapped.stderr.is_empty());
+    assert!(trapped.stdout.is_empty(), "{trapped:?}");
+    assert_eq!(trapped.stderr, b"lanius: assertion failed\n", "{trapped:?}");
 }
 #[test]
 fn raw_allocation_high_word_is_transported_without_modulo_reduction() {
