@@ -42,9 +42,9 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
                 "create the source file or pass a readable .lani input path",
             )
         })?;
-        sources.push(crate::compiler::machine_elaboration::elaborate_source(path, source)?);
+        sources.push((path.to_path_buf(), source));
     }
-    Ok(sources)
+    crate::compiler::machine_elaboration::elaborate_sources(sources)
 }
 
 /// Reads file metadata for one explicit source path.
@@ -204,9 +204,9 @@ pub(super) fn read_explicit_source_path_files(
                 "restore the source file or regenerate the source-pack manifest",
             )
         })?;
-        sources.push(crate::compiler::machine_elaboration::elaborate_source(&file.path, source)?);
+        sources.push((file.path.clone(), source));
     }
-    Ok(sources)
+    crate::compiler::machine_elaboration::elaborate_sources(sources)
 }
 
 /// Initializes or returns a process-global GPU compiler for one backend set.

@@ -1,0 +1,7 @@
+module app::main;
+fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+fn main() -> i32 {
+    return twice(|x: i32| -> i32 x + 1, 0);
+}

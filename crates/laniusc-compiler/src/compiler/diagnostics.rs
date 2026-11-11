@@ -568,6 +568,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0078",
+        "invalid closure",
+        "parsing",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -4909,6 +4915,7 @@ mod tests {
             ),
             ("LNC0076", "invalid machine", "parsing"),
             ("LNC0077", "match is not exhaustive", "type checking"),
+            ("LNC0078", "invalid closure", "parsing"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());

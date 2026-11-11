@@ -3258,7 +3258,9 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, the module, and `core::function`: discovery loads it with a
+    // file that contains a `|`, where a closure can stand.
+    assert_eq!(manifest.files.len(), 3);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::runtime import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -3302,7 +3304,9 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/target.lani"))
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, the module, and `core::function`: discovery loads it with a
+    // file that contains a `|`, where a closure can stand.
+    assert_eq!(manifest.files.len(), 3);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::target import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -3369,7 +3373,9 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/bool.lani"))
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, the module, and `core::function`: discovery loads it with a
+    // file that contains a `|`, where a closure can stand.
+    assert_eq!(manifest.files.len(), 3);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::bool import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -3411,7 +3417,9 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/mem.lani"))
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, the module, and `core::function`: discovery loads it with a
+    // file that contains a `|`, where a closure can stand.
+    assert_eq!(manifest.files.len(), 3);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::mem import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),

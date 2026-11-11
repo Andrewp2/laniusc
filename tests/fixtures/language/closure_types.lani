@@ -1,0 +1,31 @@
+// Captured and parameter types with brackets, commas and paths.
+module app::main;
+
+import core::option::Option;
+import core::option::Some;
+
+struct Pair<A, B> { first: A, second: B }
+
+fn sum<M>(mapper: &M, values: [i32; 3]) -> i32 where M: core::function::Mapper<[i32; 3], i32> {
+    return mapper.apply(values);
+}
+
+fn pick<P>(producer: &P) -> i32 where P: core::function::Producer<i32> {
+    return producer.produce();
+}
+
+fn main() -> i32 {
+    let weights: [i32; 3] = [1, 2, 3];
+    let pair: Pair<i32, i32> = Pair { first: 10, second: 20 };
+    let some: Option<i32> = Some(5);
+
+    // 1*4 + 2*5 + 3*6 = 32.
+    let dot: i32 = sum(|values: [i32; 3]| {
+        return weights[0] * values[0] + weights[1] * values[1] + weights[2] * values[2];
+    }, [4, 5, 6]);
+
+    // 10 + 20 + 5 = 35.
+    let total: i32 = pick(|| pair.first + pair.second + some.unwrap());
+
+    return dot + total;
+}

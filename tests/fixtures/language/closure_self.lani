@@ -1,0 +1,14 @@
+module app::main;
+struct Counter { step: i32 }
+fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+impl Counter {
+    fn run(&self) -> i32 {
+        return twice(|x: i32| x + self.step, 0);
+    }
+}
+fn main() -> i32 {
+    let counter: Counter = Counter { step: 1 };
+    return counter.run();
+}

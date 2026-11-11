@@ -17,12 +17,13 @@
 
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
 
 use super::{CompileError, Diagnostic, diagnostic_label_from_source_span};
 
+mod closures;
 mod generators;
 
 /// Identifiers starting with this prefix are reserved for elaborated code.
@@ -30,6 +31,8 @@ pub(crate) const RESERVED_PREFIX: &str = "__lanius_";
 
 const MACHINE_CODE: &str = "LNC0076";
 const MACHINE_TITLE: &str = "invalid machine";
+const CLOSURE_CODE: &str = "LNC0078";
+const CLOSURE_TITLE: &str = "invalid closure";
 const MAX_STATES: usize = 256;
 
 /// Elaborated bytes `[out_start, out_start + out_len)` came from source bytes
@@ -107,37 +110,117 @@ impl Elaborated {
 }
 
 /// The text the GPU frontend reads for `source`: `source` itself unless it
-/// declares a machine.
+/// declares a machine or a generator, or contains a closure.
 pub(crate) fn elaborate_source(path: &Path, source: String) -> Result<String, CompileError> {
-    // Elaborated text names reserved identifiers; reading it again is a no-op.
-    if source.contains(RESERVED_PREFIX)
-        && registry().lock().is_ok_and(|registry| registry.contains_key(&blake3::hash(source.as_bytes())))
-    {
-        return Ok(source);
+    let mut texts = elaborate_sources(vec![(path.to_path_buf(), source)])?;
+    Ok(texts.pop().expect("one text per source"))
+}
+
+/// `elaborate_source` for the files of one load. Their closures are rewritten
+/// in one GPU run.
+pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<String>, CompileError> {
+    // Machines and generators, per file. `None` marks text that is already
+    // elaborated: it names reserved identifiers and reading it again is a
+    // no-op.
+    let mut files = Vec::with_capacity(sources.len());
+    for (path, source) in sources {
+        let known = source.contains(RESERVED_PREFIX)
+            && registry().lock().is_ok_and(|registry| registry.contains_key(&blake3::hash(source.as_bytes())));
+        let machines = if known { None } else { Some(elaborate_machines(&path, &source)?) };
+        files.push((path, source, machines));
     }
+
+    // Closures, for the files that can hold one.
+    let candidates: Vec<usize> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, source, machines))| {
+            let text = machines.as_ref().and_then(|machines| machines.as_ref()).map_or(source.as_str(), |m| &m.text);
+            machines.is_some() && text.contains('|')
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let mut rewritten: Vec<Option<closures::Rewritten>> = files.iter().map(|_| None).collect();
+    if !candidates.is_empty() {
+        let texts: Vec<&str> = candidates
+            .iter()
+            .map(|&index| {
+                let (_, source, machines) = &files[index];
+                machines.as_ref().and_then(|machines| machines.as_ref()).map_or(source.as_str(), |m| m.text.as_str())
+            })
+            .collect();
+        let outcome = closures::rewrite(&texts).map_err(|err| {
+            super::compiler_execution_failed_error(
+                "the compiler stopped while rewriting closures",
+                "rewrite closures",
+                err,
+            )
+        })?;
+        match outcome {
+            None => {}
+            Some(closures::Outcome::Invalid(invalid)) => {
+                let (path, source, machines) = &files[candidates[invalid.file]];
+                let (text, start, len) = match machines.as_ref().and_then(|machines| machines.as_ref()) {
+                    Some(machines) => {
+                        let (start, len) = machines.original_span(invalid.start, invalid.len);
+                        (machines.original(), start, len)
+                    }
+                    None => (source.as_str(), invalid.start, invalid.len),
+                };
+                return Err(CompileError::Diagnostic(
+                    Diagnostic::error(CLOSURE_CODE, CLOSURE_TITLE)
+                        .with_primary_label(diagnostic_label_from_source_span(path, text, start, len, invalid.message)),
+                ));
+            }
+            Some(closures::Outcome::Rewritten(outputs)) => {
+                for (index, output) in candidates.iter().zip(outputs) {
+                    rewritten[*index] = output;
+                }
+            }
+        }
+    }
+
+    let mut texts = Vec::with_capacity(files.len());
+    for ((_, source, machines), closures) in files.into_iter().zip(rewritten) {
+        let machines = machines.flatten();
+        let elaborated = match closures {
+            Some(closures) => Some(Elaborated {
+                text: closures.text,
+                original: machines.as_ref().map_or_else(|| source.clone(), |machines| machines.text.clone()),
+                segments: closures.segments,
+                inner: machines.map(Box::new),
+            }),
+            None => machines,
+        };
+        texts.push(match elaborated {
+            None => source,
+            Some(elaborated) => {
+                let text = elaborated.text.clone();
+                if let Ok(mut registry) = registry().lock() {
+                    registry.insert(blake3::hash(text.as_bytes()), Arc::new(elaborated));
+                }
+                text
+            }
+        });
+    }
+    Ok(texts)
+}
+
+/// The machines and generators of `source` elaborated, if it has any.
+fn elaborate_machines(path: &Path, source: &str) -> Result<Option<Elaborated>, CompileError> {
     // Generators elaborate into machines first.
-    let generated = generators::elaborate(path, &source)?;
+    let generated = generators::elaborate(path, source)?;
     let machines = match &generated {
         Some(inner) => elaborate(path, &inner.text, true)?,
-        None => elaborate(path, &source, false)?,
+        None => elaborate(path, source, false)?,
     };
-    let elaborated = match (machines, generated) {
+    Ok(match (machines, generated) {
         (Some(mut outer), inner) => {
             outer.inner = inner.map(Box::new);
             Some(outer)
         }
         (None, inner) => inner,
-    };
-    match elaborated {
-        None => Ok(source),
-        Some(elaborated) => {
-            let text = elaborated.text.clone();
-            if let Ok(mut registry) = registry().lock() {
-                registry.insert(blake3::hash(text.as_bytes()), Arc::new(elaborated));
-            }
-            Ok(text)
-        }
-    }
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1271,6 +1354,57 @@ machine Pair on Op {
         assert!(text.contains("fn step(&mut self, __lanius_event: u8) {"), "{text}");
         assert!(text.contains("_ -> { return; },"), "{text}");
         assert!(text.contains("_ -> { let c: u8 = __lanius_event; if (c == 48u8) { self.__lanius_state = SumState::Zero; return; } return; },"), "{text}");
+    }
+
+    fn lani_files(dir: &Path, files: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                lani_files(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "lani") {
+                files.push(path);
+            }
+        }
+    }
+
+    /// The library was written before closures existed, so no `|` or `||`
+    /// in it starts a closure. The last source holds one closure: it shows
+    /// that the pass read the whole pack.
+    #[test]
+    fn the_closure_pass_leaves_library_sources_unchanged() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        lani_files(&root.join("stdlib"), &mut files);
+        lani_files(&root.join("extended"), &mut files);
+        files.sort();
+        let mut sources = Vec::new();
+        let mut paths = Vec::new();
+        for path in files {
+            let source = std::fs::read_to_string(&path).unwrap();
+            if source.contains('|') {
+                sources.push(source);
+                paths.push(path);
+            }
+        }
+        assert!(paths.len() > 100, "found {} library files with a `|`", paths.len());
+        sources.push("fn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n".to_string());
+
+        let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
+        let outputs = match closures::rewrite(&texts).unwrap() {
+            Some(closures::Outcome::Rewritten(outputs)) => outputs,
+            Some(closures::Outcome::Invalid(invalid)) => panic!(
+                "{}: {} at byte {}",
+                paths.get(invalid.file).map_or("the control source".into(), |path| path.display().to_string()),
+                invalid.message,
+                invalid.start
+            ),
+            None => panic!("the pass found no closure in the control source"),
+        };
+        assert_eq!(outputs.len(), sources.len());
+        let changed: Vec<&PathBuf> =
+            paths.iter().zip(&outputs).filter(|(_, output)| output.is_some()).map(|(path, _)| path).collect();
+        assert!(changed.is_empty(), "the closure pass rewrote {changed:?}");
+        assert!(outputs[paths.len()].as_ref().is_some_and(|output| output.text.contains("__lanius_closure_")));
     }
 
     #[test]

@@ -441,6 +441,76 @@ fn an_arm_pattern_must_be_a_variant_a_literal_or_a_wildcard() {
     assert_rejected("match_pattern_unknown_variant.lani", expected);
 }
 
+#[test]
+fn closures_capture_locals_and_implement_the_callback_traits() {
+    assert_exit("closure.lani", 77);
+}
+
+#[test]
+fn closures_copy_bracketed_and_generic_types() {
+    assert_exit("closure_types.lani", 67);
+}
+
+#[test]
+fn a_closure_does_not_capture_a_local_of_another_function() {
+    assert_rejected("closure_scope.lani", &["LNC0005", "unresolved identifier", "closure_scope.lani:11:31"]);
+}
+
+#[test]
+fn closures_in_two_files_of_a_program_are_rewritten_together() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let fixture = root.join("tests/fixtures/language/closure_modules");
+    let entry = fixture.join("app/main.lani");
+    let roots = laniusc_compiler::compiler::EntrySourceRoots {
+        stdlib_root: Some(root.join("stdlib")),
+        user_roots: vec![fixture],
+    };
+    let bytes = common::run_gpu_codegen_with_timeout("closure_modules", move || {
+        pollster::block_on(
+            laniusc_compiler::compiler::compile_entry_to_x86_64_with_source_roots(&entry, &roots),
+        )
+    })
+    .unwrap_or_else(|error| panic!("closure_modules: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", "closure_modules", &bytes);
+        assert_eq!(output.status.code(), Some(35), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn a_closure_needs_one_typed_parameter_or_none() {
+    assert_rejected(
+        "closure_untyped_parameter.lani",
+        &["LNC0078", "invalid closure", "a closure parameter needs a type", "closure_untyped_parameter.lani:6:18"],
+    );
+    assert_rejected("closure_two_parameters.lani", &["LNC0078", "a closure takes one parameter with a type"]);
+    assert_rejected(
+        "closure_result_type_without_block.lani",
+        &["LNC0078", "a closure with a result type needs a body in braces"],
+    );
+}
+
+#[test]
+fn a_closure_captures_only_locals_with_a_declared_type() {
+    assert_rejected(
+        "closure_untyped_capture.lani",
+        &["LNC0078", "which has no declared type", "closure_untyped_capture.lani:7:31"],
+    );
+    assert_rejected("closure_self.lani", &["LNC0078", "a closure cannot use `self`", "closure_self.lani:8:35"]);
+    assert_rejected("closure_nested.lani", &["LNC0078", "a closure cannot contain another closure"]);
+}
+
+#[test]
+fn an_error_in_a_closure_body_points_at_the_body() {
+    assert_rejected(
+        "closure_body_error.lani",
+        &["LNC0005", "unresolved identifier", "closure_body_error.lani:7:40"],
+    );
+}
+
 // The resident workspace is sized by the largest unit checked so far; this
 // preserved program's imports are larger than it. Name lookup must use the
 // scope tree's published layout, not one derived from this unit's tokens.

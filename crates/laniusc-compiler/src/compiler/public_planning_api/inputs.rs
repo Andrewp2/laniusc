@@ -360,7 +360,15 @@ struct SourceRootImport {
     column: usize,
     source_line: String,
     label_len: usize,
+    /// Not written in the file: the closure rewrite may add it. A missing
+    /// module is then not an error here.
+    implicit: bool,
 }
+
+/// The module of the traits a closure implements. The closure rewrite
+/// imports it into a file with a closure, so discovery loads it for every
+/// file that can hold one: a file with a `|`.
+const CLOSURE_TRAIT_MODULE: &str = "core::function";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourceRootLibrary {
@@ -508,7 +516,11 @@ fn load_source_root_imports(
                 SourceRootLibrary::User => user_paths.push(resolved.path),
             },
             SourceRootLoadAction::Discover(import, importer_library) => {
-                let resolved = resolve_source_root_module_or_item(&import, roots, importer_library)?;
+                let resolved = match resolve_source_root_module_or_item(&import, roots, importer_library) {
+                    Ok(resolved) => resolved,
+                    Err(_) if import.implicit => continue,
+                    Err(error) => return Err(error),
+                };
                 if !loaded_source_paths.insert(resolved.path.clone()) {
                     continue;
                 }
@@ -974,11 +986,23 @@ fn leading_path_imports(
                 column,
                 source_line,
                 label_len,
+                implicit: false,
             });
             offset = import_end;
             continue;
         }
         reject_non_leading_source_root_imports(source, offset, source_path)?;
+        if source.contains('|') && imports.iter().all(|import| import.path != CLOSURE_TRAIT_MODULE) {
+            imports.push(SourceRootImport {
+                path: CLOSURE_TRAIT_MODULE.to_string(),
+                source_path: source_path.to_path_buf(),
+                line: 1,
+                column: 1,
+                source_line: String::new(),
+                label_len: 0,
+                implicit: true,
+            });
+        }
         return Ok(imports);
     }
 }

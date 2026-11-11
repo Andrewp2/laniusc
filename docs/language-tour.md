@@ -453,6 +453,49 @@ fn main() -> i32 {
   the trait.
 - Type arguments are inferred from the call's arguments.
 
+## Closures
+
+```lanius
+import core::option::Option;
+import core::option::Some;
+
+fn twice<M>(mapper: &M, value: i32) -> i32
+where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+
+fn main() -> i32 {
+    let step: i32 = 3;
+    print(twice(|x: i32| x + step, 1));
+
+    let some: Option<i32> = Some(4);
+    let doubled: Option<i32> = some.map(|x: i32| x * 2);
+    print(doubled.unwrap());
+
+    print(twice(|x: i32| {
+        let squared: i32 = x * x;
+        return squared + step;
+    }, 2));
+    return 0;
+}
+```
+
+```output
+7
+8
+52
+```
+
+- `|x: T| expr` is a callback with one parameter. `|| expr` takes none. The
+  parameter needs its type.
+- A body in braces is a block of statements and ends with `return`.
+- A closure reads the locals of its function. It copies each one when the
+  closure is created. Such a local needs a declared type: `let step: i32`.
+- A closure is passed where a function asks for a callback:
+  `core::function::Mapper<T, U>` for one parameter and
+  `core::function::Producer<T>` for none. The library's `map`, `and_then`
+  and `unwrap_or_else` take these.
+
 ## Collections
 
 ```lanius
@@ -623,8 +666,11 @@ today.
 - **`for` forms.** `for` takes a named array or slice, or a range that starts
   at an integer literal and ends at a literal or a name. Other ranges and
   method calls need a `while` loop.
-- **No function values.** There are no closures and no function-typed
-  parameters. Use a trait bound.
+- **Closure limits.** A closure takes one parameter or none. It cannot use
+  `self` or contain another closure, and a local it reads needs a declared
+  type. There are no function-typed parameters: a function takes a closure
+  through a `Mapper` or `Producer` bound. On Wasm a closure that reads a
+  local fails with LNC0036.
 - **No `if` expression.** `if` is a statement. Use `match` for a value.
 - **Exhaustiveness follows one payload column.** The arms
   `Some(Shape::Circle(r))`, `Some(Shape::Empty)` and `None` cover every value

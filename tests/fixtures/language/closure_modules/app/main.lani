@@ -1,0 +1,14 @@
+// Closures in two files of one program.
+module app::main;
+
+import app::pricing;
+
+fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+
+fn main() -> i32 {
+    let step: i32 = 2;
+    // (1 + 2) + 2 = 5, and 10 * 3 = 30.
+    return twice(|x: i32| x + step, 1) + app::pricing::scaled(10, 3);
+}

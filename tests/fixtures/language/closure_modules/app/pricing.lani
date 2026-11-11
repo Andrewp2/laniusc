@@ -1,0 +1,10 @@
+module app::pricing;
+
+import core::option::Option;
+import core::option::Some;
+
+pub fn scaled(value: i32, factor: i32) -> i32 {
+    let some: Option<i32> = Some(value);
+    let mapped: Option<i32> = some.map(|x: i32| x * factor);
+    return mapped.unwrap();
+}

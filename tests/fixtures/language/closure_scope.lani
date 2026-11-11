@@ -1,0 +1,12 @@
+// A closure sees the locals of its own function only.
+module app::main;
+fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+fn other(offset: i32) -> i32 {
+    let step: i32 = offset;
+    return step;
+}
+fn main() -> i32 {
+    return twice(|x: i32| x + step, other(0));
+}

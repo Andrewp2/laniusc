@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms, match exhaustiveness, path calls, C callbacks, `else if`, trap messages
+# Language ergonomics: item imports, `?`, local inference, block arms, match exhaustiveness, path calls, C callbacks, `else if`, trap messages, closures
 
-Nine features shorten ordinary Lanius code without adding hidden behavior.
+Ten features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -312,6 +312,91 @@ The stubs follow the print helpers in the runtime block
 source is `shaders/codegen/lir/x86/runtime_traps.s`. Each guard jumps to its
 stub, so a guard is no longer than before. Fixtures:
 `tests/fixtures/language/trap_*.lani`.
+
+## Closures
+
+A closure is a callback written where it is used:
+
+```lanius
+let step: i32 = 3;
+let mapped: Option<i32> = some.map(|x: i32| x + step);
+let total: i32 = twice(|x: i32| { let y: i32 = x * x; return y + step; }, 2);
+let made: i32 = make(|| -> i32 { return step * 2; });
+```
+
+- `|name: Type| body` takes one parameter and implements
+  `core::function::Mapper<Type, R>`. `|| body` takes none and implements
+  `core::function::Producer<R>`. The value is a borrowed callback, the form
+  the library's `mapper: &M` parameters take.
+- The body is an expression, or a block in braces that ends with `return`.
+  An expression body ends at the first `,` or `;` outside its own brackets,
+  or at the bracket that closes around the closure. An expression with a
+  comma between explicit type arguments needs braces.
+- `-> Type` before a block body gives the result type. Without it the place
+  that receives the closure fixes the result type: a bound such as
+  `Mapper<i32, i32>`, or the declared type of the `let` that takes the
+  call's result.
+- A closure captures by value. Each local or parameter of the enclosing
+  function that the body names is copied when the closure is created. A
+  later assignment to the local does not change the closure.
+- A captured local needs a declared type, `let step: i32 = 3;` or a
+  parameter. The closure's own parameter and the locals its body declares
+  shadow outer names.
+
+Rejected with `LNC0078` (invalid closure):
+
+| Source | Message |
+| --- | --- |
+| `\|x\| x + 1` | a closure parameter needs a type |
+| `\|x: i32, y: i32\| x + y` | a closure takes one parameter with a type, or none |
+| `\|x: i32\| -> i32 x + 1` | a closure with a result type needs a body in braces |
+| `\|x: i32\| x + offset` with `let offset = 3;` | a closure captures this local, which has no declared type |
+| `\|x: i32\| x + self.step` | a closure cannot use `self` |
+| `\|x: i32\| twice(\|y: i32\| y, x)` | a closure cannot contain another closure |
+
+Other limits:
+
+- A closure has no type a program can name, so it cannot be a field or a
+  declared parameter type. A function takes one through a bound.
+- A name bound by a `match` arm or a `for` loop is not captured. The body
+  then reports an unresolved identifier (`LNC0005`) for a `match` binding,
+  or `LNC0078` for a `for` variable. Copy the value to a `let` with a
+  declared type first.
+- A closure in a generic function cannot capture a value whose type names
+  the function's type parameters. The generated struct does not have them,
+  so the compiler reports an unknown type.
+- On Wasm a closure that captures fails with `LNC0036`. The Wasm backend
+  does not yet lower a borrowed struct whose field comes from a local. The
+  same program without a closure fails the same way.
+
+Decision: a closure is rewritten to ordinary Lanius before the frontend
+reads the file. `|x: T| body` with captures `a` and `b` becomes the site
+`__lanius_closure_N{a:a,b:b,}.borrow()` and, at the end of the file, a
+struct with one field per capture, a `borrow` method and an impl of the
+trait whose method starts with `let a: A = self.a;` and then holds the body
+unchanged. `N` is the byte offset of the closure in its file. The site
+evaluates each captured name where the closure stands, and the type checker
+checks the generated struct, so the rewrite can produce a type error and
+never a wrong value. Parameter and capture types are written out because a
+generic impl body cannot call methods or read fields of a generic value;
+that is why the parameter type is required.
+
+Implementation: the rewrite runs on the GPU over the raw lexer tokens of
+all files of one load (`shaders/closures/`). `mark` flags closure starts
+and binder roles; `scan` computes bracket depth and closure counts by a
+doubling prefix sum; `records` finds each closure's parameter, result type
+and body; `captures` resolves each name in a body to the nearest typed
+binder before the closure; `layout`, `files` and `pieces` compute the list
+of output pieces, where each piece is a span of source bytes, a constant
+string or a closure number; `emit` writes each output byte from the piece
+that covers it. The host (`compiler/machine_elaboration/closures.rs`)
+records the commands and sizes buffers from the counts the kernels publish:
+four submissions when a file has a closure and one when none has. The piece
+table becomes the segment map, so a diagnostic in a closure body points at
+the source (`closure_body_error.lani`). Import discovery loads
+`core::function` for every file that contains a `|`, because the rewrite
+adds that import to a file with a closure. Fixtures:
+`tests/fixtures/language/closure*.lani` and `closure_modules/`.
 
 ## C callbacks
 
