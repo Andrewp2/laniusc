@@ -197,6 +197,7 @@ static const uint TK_RETURN_SEMICOLON = 168u;
 static const uint TK_EXPR_SEMICOLON = 169u;
 static const uint TK_BREAK_SEMICOLON = 170u;
 static const uint TK_CONTINUE_SEMICOLON = 171u;
+static const uint TK_MACHINE = 205u;
 
 static const uint STATEMENT_CONTEXT_CONST_RHS = 250u;
 static const uint STATEMENT_CONTEXT_ASSIGN_RHS = 251u;
@@ -1407,7 +1408,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (kind == TK_PUB && token_kind(i + 1u) != TK_FN && token_kind(i + 1u) != TK_CONST &&
         token_kind(i + 1u) != TK_ENUM && token_kind(i + 1u) != TK_STRUCT &&
         token_kind(i + 1u) != TK_IMPL && token_kind(i + 1u) != TK_TRAIT &&
-        token_kind(i + 1u) != TK_EXTERN && token_kind(i + 1u) != TK_TYPE)
+        token_kind(i + 1u) != TK_EXTERN && token_kind(i + 1u) != TK_TYPE &&
+        token_kind(i + 1u) != TK_MACHINE)
         record_error(i, ERR_EXPECTED_TOKEN, TK_FN);
     else if (kind == TK_FN)
         check_fn(i);

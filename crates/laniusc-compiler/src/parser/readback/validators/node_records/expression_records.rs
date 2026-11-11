@@ -440,7 +440,8 @@ pub fn validate_hir_expression_result_root_records(
                 "parser HIR expression-result row {row} published result root {root}, outside {row_count} readback rows"
             ));
         }
-        if !is_hir_expression_kind(kinds[root]) {
+        // A block arm of a match publishes its block as the arm's value.
+        if !is_hir_expression_kind(kinds[root]) && kinds[root] != HIR_NODE_BLOCK {
             return Err(anyhow!(
                 "parser HIR expression-result row {row} published non-expression result root {root} with HIR kind {}",
                 kinds[root]

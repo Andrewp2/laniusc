@@ -836,6 +836,31 @@ their locals move through those slots. Matching a fused loop needs the
 backend to keep locals in registers, and then inlining `step` and the
 handlers. Both belong to the backend's optimizer, not to machines.
 
+## M6: `machine` in the grammar
+
+A `machine` item is part of `grammar/lanius.bnf`. The one GPU lexer and
+parser accept it, so a later stage can read a machine from the parse tree.
+
+- **Keywords.** `machine`, `on`, `start`, `state`, `final`, `goto`, `stay`
+  and `with` are keywords only in a machine position. The lexer decides from
+  the neighbouring tokens, for example `state` directly before a name. Two
+  adjacent names occur nowhere else in Lanius, so the words stay usable as
+  names (`shaders/lexer/tokens_build.slang`, `machine_keyword_kind`).
+- **Reused productions.** The machine body uses the struct field list, a
+  state block uses the match arm list and state data uses the parameter
+  list. The parser's token kernels give those tokens the same kinds as in a
+  struct, a `match` and a function header.
+- **Transitions.** `goto S(args) with value` and `stay with value` are
+  expression productions, so they are valid as an arm value and as a
+  statement in a block arm.
+- **Evidence.** `tests/machine_syntax.rs` sends every machine fixture through
+  the lexer and parser, checks that the eight words still work as names, and
+  checks that malformed machines are syntax errors.
+- **Not done.** The host elaboration in [M1 decisions](#m1-decisions) still
+  runs before the frontend, so a compiled program contains no machine tokens
+  yet. The next step is a GPU stage after the parser that expands a machine
+  from the parse tree, and the removal of the host elaborator.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.

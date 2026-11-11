@@ -94,6 +94,8 @@ static const uint TK_STRUCT_LIT_LBRACE = 125u;
 static const uint TK_STRUCT_DECL_LBRACE = 127u;
 static const uint TK_ENUM_LBRACE = 129u;
 static const uint TK_FN_BLOCK_LBRACE = 149u;
+static const uint TK_MACHINE = 205u;
+static const uint TK_STATE = 208u;
 static const uint TK_DEFERRED_FN_BLOCK_LBRACE = 0x80000000u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
@@ -183,6 +185,13 @@ uint owner_header_event_for(
         return encode_owner_event(token_i, TK_STRUCT_DECL_LBRACE);
     if (item_header_context && kind == TK_ENUM)
         return encode_owner_event(token_i, TK_ENUM_LBRACE);
+    // A machine's body lists its data as a struct's fields, and a state's
+    // block lists its arms as a match's. `state` records itself as the owner:
+    // the apply pass turns it into the match brace kind.
+    if (item_header_context && kind == TK_MACHINE)
+        return encode_owner_event(token_i, TK_STRUCT_DECL_LBRACE);
+    if (kind == TK_STATE)
+        return encode_owner_event(token_i, TK_STATE);
     if (kind == TK_MATCH)
         return encode_owner_event(token_i, TK_MATCH_LBRACE);
     if (kind == TK_FOR)
@@ -284,6 +293,9 @@ uint brace_open_kind_for(
     // `if` block's kinds, so its statements parse as an `if` body's do.
     if (prev_raw == TK_ARROW)
         return TK_IF_LBRACE;
+    // The `{` after `state Name` or `state Name(data)` holds the state's arms.
+    if (owner == TK_STATE)
+        return TK_MATCH_LBRACE;
     // Raw `<`/`>` depth is ambiguous until generic delimiters have been
     // semantically retagged: an earlier comparison such as `a < b` can leave
     // the raw angle depth open across later statements. Parenthesis and bracket
@@ -352,7 +364,8 @@ bool is_statement_starter(uint kind)
            kind == TK_ENUM ||
            kind == TK_STRUCT ||
            kind == TK_IMPL ||
-           kind == TK_TRAIT;
+           kind == TK_TRAIT ||
+           kind == TK_MACHINE;
 }
 
 uint statement_event_for(

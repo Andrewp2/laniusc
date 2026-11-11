@@ -161,7 +161,8 @@ bool fn_param_lparen_context(uint parser_i, uint count)
 {
     uint prev = raw_kind_at(parser_i - 1u, count);
     uint prev2 = raw_kind_at(parser_i - 2u, count);
-    if (prev2 == TK_FN && prev == TK_IDENT)
+    // A state's data is declared like a function's parameters.
+    if ((prev2 == TK_FN || prev2 == TK_STATE) && prev == TK_IDENT)
         return true;
 
     if (prev != TK_GT)
@@ -181,6 +182,9 @@ uint semantic_paren_open_kind_for(uint parser_i, uint count)
     uint prev = raw_kind_at(parser_i - 1u, count);
     if (in_pattern_context(parser_i, count))
         return TK_PATTERN_LPAREN;
+    // `goto Name(args)`: the target's arguments, not a call.
+    if (prev == TK_IDENT && raw_kind_at(parser_i - 2u, count) == TK_GOTO)
+        return TK_GOTO_LPAREN;
     if (in_enum_variant_context(parser_i, count) && prev == TK_IDENT)
         return TK_ENUM_PAYLOAD_LPAREN;
     if (fn_param_lparen_context(parser_i, count))
@@ -201,6 +205,8 @@ uint semantic_rparen_kind_for(uint open_kind)
         return TK_PATTERN_RPAREN;
     if (open_kind == TK_ENUM_PAYLOAD_LPAREN)
         return TK_ENUM_PAYLOAD_RPAREN;
+    if (open_kind == TK_GOTO_LPAREN)
+        return TK_GOTO_RPAREN;
     return TK_RPAREN;
 }
 
@@ -273,7 +279,7 @@ uint semantic_comma_kind_for(
         uint paren_comma = 0u;
         if (paren_open == TK_PARAM_LPAREN)
             paren_comma = TK_PARAM_COMMA;
-        else if (paren_open == TK_CALL_LPAREN)
+        else if (paren_open == TK_CALL_LPAREN || paren_open == TK_GOTO_LPAREN)
             paren_comma = TK_ARG_COMMA;
         else if (paren_open == TK_PATTERN_LPAREN)
             paren_comma = TK_PATTERN_COMMA;
@@ -349,6 +355,9 @@ uint semantic_arrow_kind_for(uint parser_i, uint count)
 {
     if (enclosing_semantic_brace_open_before(parser_i, count) == TK_MATCH_LBRACE)
         return TK_MATCH_ARROW;
+    // `machine Name on Event -> Output {`: the arrow before the output type.
+    if (parser_i != 0u && statement_context_token_kind(parser_i - 1u) == TK_MACHINE)
+        return TK_RETURN_ARROW;
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
     if (prev_raw == TK_RPAREN || prev_raw == TK_GT)
         return TK_RETURN_ARROW;
@@ -482,6 +491,38 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
     return TK_EXPR_SEMICOLON;
 }
 
+// Whether the raw `{` at open_i holds a state's arms: it follows `state Name`
+// or `state Name(data)`.
+bool brace_opens_state_block(uint open_i, uint count)
+{
+    if (open_i < 2u)
+        return false;
+    uint name_i = open_i - 1u;
+    if (token_words[name_i].kind == TK_RPAREN)
+    {
+        // A `)` records the `(` it closes as its enclosing opener.
+        uint paren_open;
+        if (!matching_raw_paren_open_before(open_i, count, paren_open) || paren_open < 2u)
+            return false;
+        name_i = paren_open - 1u;
+    }
+    return token_words[name_i].kind == TK_IDENT && token_words[name_i - 1u].kind == TK_STATE;
+}
+
+// The lexer marks a bare `stay` after any arm's arrow. It is a transition
+// only in a state's own arms; in a match expression's arm it is a value.
+uint semantic_stay_kind_for(uint parser_i, uint count)
+{
+    if (raw_kind_at(parser_i - 1u, count) != TK_ARROW)
+        return TK_STAY;
+    uint open_i;
+    uint open_kind;
+    if (enclosing_semantic_brace_open_before_with_index(parser_i, count, open_i, open_kind) &&
+        open_kind == TK_MATCH_LBRACE && brace_opens_state_block(open_i, count))
+        return TK_STAY;
+    return TK_IDENT;
+}
+
 uint semantic_impl_kind_for(uint parser_i, uint count)
 {
     uint token_i = parser_i - 1u;
@@ -499,6 +540,8 @@ uint semantic_kind_for(uint parser_i, uint count, uint raw_kind)
 
     if (raw_kind == TK_SELF_VALUE)
         return TK_SELF_VALUE;
+    if (raw_kind == TK_STAY)
+        return semantic_stay_kind_for(parser_i, count);
     if (raw_kind == TK_IMPL)
         return semantic_impl_kind_for(parser_i, count);
     if (raw_kind == TK_FOR && impl_type_context_before(parser_i, count))

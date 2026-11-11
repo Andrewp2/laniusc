@@ -72,6 +72,12 @@ static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
 static const uint TK_PATH_GENERIC_IDENT = 187u;
 static const uint TK_AS = 195u;
 static const uint TK_CAST_TYPE_IDENT = 196u;
+static const uint TK_ON = 206u;
+static const uint TK_START = 207u;
+static const uint TK_STATE = 208u;
+static const uint TK_GOTO = 210u;
+static const uint TK_STATE_IDENT = 213u;
+static const uint TK_GOTO_IDENT = 214u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
 uint raw_kind_at(uint parser_i, uint count)
@@ -120,6 +126,7 @@ uint type_context_identifier_kind(uint prev, bool impl_context)
     if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
         prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
         prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_DISTINCT || prev == TK_TYPE_AMPERSAND || prev == TK_MUT ||
+        prev == TK_ON ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
         prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
         prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA ||
@@ -139,6 +146,12 @@ uint identifier_kind_for(uint parser_i, uint count)
         return TK_RANGE_END_IDENT;
     if (prev_raw == TK_LET)
         return TK_LET_IDENT;
+    // A state's name where it is declared (`state Name`, `start Name`) and
+    // where it is a transition's target (`goto Name`).
+    if (prev_raw == TK_STATE || prev_raw == TK_START)
+        return TK_STATE_IDENT;
+    if (prev_raw == TK_GOTO)
+        return TK_GOTO_IDENT;
     // `const` owns the following identifier as a declaration name. This must
     // outrank broad enclosing contexts such as an impl header; the type
     // context begins only after the declaration's colon.

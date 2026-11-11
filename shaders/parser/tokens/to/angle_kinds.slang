@@ -211,7 +211,7 @@ uint direct_semantic_lt_kind_for(uint parser_i, uint count)
     }
     if (prev_raw == TK_IDENT &&
         (prev2_raw == TK_COLON || prev2_raw == TK_ARROW || prev2_raw == TK_AMPERSAND ||
-         prev2_raw == TK_LT || prev2_raw == TK_COMMA ||
+         prev2_raw == TK_LT || prev2_raw == TK_COMMA || prev2_raw == TK_ON ||
          (prev2_raw == TK_LBRACKET && parser_i >= 3u &&
           bracket_semantic_kind[parser_i - 3u] == TK_TYPE_ARRAY_LBRACKET) ||
          prev2_raw == TK_PATH_COLON || impl_type_context_before(parser_i, count)))

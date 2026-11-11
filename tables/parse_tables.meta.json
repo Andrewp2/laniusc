@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2696,
+    "cells": 2897,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2696,
+    "cells": 2897,
     "conflicts": []
   },
   "ll1_runtime": {
-    "nonterminals": 154,
+    "nonterminals": 162,
     "start_nonterminal": "file",
-    "predict_cells": 31570,
-    "rhs_symbols": 607
+    "predict_cells": 35154,
+    "rhs_symbols": 649
   },
   "ll1_predictions": [
     {
@@ -369,6 +369,12 @@
       "production": 152
     },
     {
+      "nonterminal": "add_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 152
+    },
+    {
       "nonterminal": "andexpr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -633,6 +639,12 @@
       "production": 125
     },
     {
+      "nonterminal": "andexpr_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 125
+    },
+    {
       "nonterminal": "arg_list_opt",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -735,6 +747,24 @@
       "production": 168
     },
     {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 168
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
+      "production": 168
+    },
+    {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 167
+    },
+    {
       "nonterminal": "arg_tail",
       "lookahead": "CallRParen",
       "lookahead_id": 63,
@@ -745,6 +775,12 @@
       "lookahead": "ArgComma",
       "lookahead_id": 82,
       "production": 169
+    },
+    {
+      "nonterminal": "arg_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 170
     },
     {
       "nonterminal": "arg_tail_after_comma",
@@ -849,6 +885,24 @@
       "production": 171
     },
     {
+      "nonterminal": "arg_tail_after_comma",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 171
+    },
+    {
+      "nonterminal": "arg_tail_after_comma",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
+      "production": 171
+    },
+    {
+      "nonterminal": "arg_tail_after_comma",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 172
+    },
+    {
       "nonterminal": "array_elems_opt",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -948,6 +1002,18 @@
       "nonterminal": "array_elems_opt",
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
+      "production": 182
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 182
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
       "production": 182
     },
     {
@@ -1068,6 +1134,18 @@
       "nonterminal": "array_elems_tail_after_comma",
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
+      "production": 185
+    },
+    {
+      "nonterminal": "array_elems_tail_after_comma",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 185
+    },
+    {
+      "nonterminal": "array_elems_tail_after_comma",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
       "production": 185
     },
     {
@@ -1353,6 +1431,12 @@
       "production": 119
     },
     {
+      "nonterminal": "assign_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 119
+    },
+    {
       "nonterminal": "bit_and",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -1635,6 +1719,12 @@
       "production": 134
     },
     {
+      "nonterminal": "bit_and_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 134
+    },
+    {
       "nonterminal": "bit_or",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -1902,6 +1992,12 @@
       "nonterminal": "bit_or_tail",
       "lookahead": "ArraySemicolon",
       "lookahead_id": 198,
+      "production": 128
+    },
+    {
+      "nonterminal": "bit_or_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
       "production": 128
     },
     {
@@ -2178,6 +2274,12 @@
       "nonterminal": "bit_xor_tail",
       "lookahead": "ArraySemicolon",
       "lookahead_id": 198,
+      "production": 131
+    },
+    {
+      "nonterminal": "bit_xor_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
       "production": 131
     },
     {
@@ -2853,6 +2955,12 @@
       "production": 311
     },
     {
+      "nonterminal": "cast_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 311
+    },
+    {
       "nonterminal": "cast_type",
       "lookahead": "CastTypeIdent",
       "lookahead_id": 196,
@@ -3144,6 +3252,12 @@
       "nonterminal": "cast_type_path_tail",
       "lookahead": "ArraySemicolon",
       "lookahead_id": 198,
+      "production": 316
+    },
+    {
+      "nonterminal": "cast_type_path_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
       "production": 316
     },
     {
@@ -3465,6 +3579,12 @@
       "production": 144
     },
     {
+      "nonterminal": "compare_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 144
+    },
+    {
       "nonterminal": "const_item",
       "lookahead": "Const",
       "lookahead_id": 92,
@@ -3714,6 +3834,18 @@
       "nonterminal": "else_tail",
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
+      "production": 79
+    },
+    {
+      "nonterminal": "else_tail",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 79
+    },
+    {
+      "nonterminal": "else_tail",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
       "production": 79
     },
     {
@@ -4275,6 +4407,12 @@
       "production": 138
     },
     {
+      "nonterminal": "equality_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 138
+    },
+    {
       "nonterminal": "expr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -4371,6 +4509,18 @@
       "production": 106
     },
     {
+      "nonterminal": "expr",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 341
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
+      "production": 342
+    },
+    {
       "nonterminal": "extern_abi_opt",
       "lookahead": "Fn",
       "lookahead_id": 67,
@@ -4464,6 +4614,12 @@
       "nonterminal": "file",
       "lookahead": "TraitImpl",
       "lookahead_id": 181,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Machine",
+      "lookahead_id": 205,
       "production": 0
     },
     {
@@ -4591,6 +4747,114 @@
       "lookahead": "Float",
       "lookahead_id": 33,
       "production": 304
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ArgComma",
+      "lookahead_id": 82,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ArrayComma",
+      "lookahead_id": 83,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "MatchRBrace",
+      "lookahead_id": 120,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "StructLitRBrace",
+      "lookahead_id": 126,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "MatchArmComma",
+      "lookahead_id": 138,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "StructLitComma",
+      "lookahead_id": 160,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ConstSemicolon",
+      "lookahead_id": 166,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "LetSemicolon",
+      "lookahead_id": 167,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ReturnSemicolon",
+      "lookahead_id": 168,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ExprSemicolon",
+      "lookahead_id": 169,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "With",
+      "lookahead_id": 212,
+      "production": 344
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "GotoLParen",
+      "lookahead_id": 215,
+      "production": 343
+    },
+    {
+      "nonterminal": "goto_args",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 344
     },
     {
       "nonterminal": "if_block",
@@ -4767,6 +5031,12 @@
       "production": 9
     },
     {
+      "nonterminal": "item",
+      "lookahead": "Machine",
+      "lookahead_id": 205,
+      "production": 329
+    },
+    {
       "nonterminal": "item_list",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -4845,6 +5115,12 @@
       "production": 1
     },
     {
+      "nonterminal": "item_list",
+      "lookahead": "Machine",
+      "lookahead_id": 205,
+      "production": 1
+    },
+    {
       "nonterminal": "let_init_opt",
       "lookahead": "LetAssign",
       "lookahead_id": 81,
@@ -4873,6 +5149,72 @@
       "lookahead": "LetSemicolon",
       "lookahead_id": 167,
       "production": 89
+    },
+    {
+      "nonterminal": "machine_item",
+      "lookahead": "Machine",
+      "lookahead_id": 205,
+      "production": 331
+    },
+    {
+      "nonterminal": "machine_output",
+      "lookahead": "ReturnArrow",
+      "lookahead_id": 112,
+      "production": 332
+    },
+    {
+      "nonterminal": "machine_output",
+      "lookahead": "StructDeclLBrace",
+      "lookahead_id": 127,
+      "production": 333
+    },
+    {
+      "nonterminal": "machine_state",
+      "lookahead": "State",
+      "lookahead_id": 208,
+      "production": 337
+    },
+    {
+      "nonterminal": "machine_state",
+      "lookahead": "Final",
+      "lookahead_id": 209,
+      "production": 336
+    },
+    {
+      "nonterminal": "machine_state_data",
+      "lookahead": "ParamLParen",
+      "lookahead_id": 76,
+      "production": 339
+    },
+    {
+      "nonterminal": "machine_state_data",
+      "lookahead": "MatchLBrace",
+      "lookahead_id": 119,
+      "production": 340
+    },
+    {
+      "nonterminal": "machine_state_decl",
+      "lookahead": "State",
+      "lookahead_id": 208,
+      "production": 338
+    },
+    {
+      "nonterminal": "machine_state_list",
+      "lookahead": "StructDeclRBrace",
+      "lookahead_id": 128,
+      "production": 335
+    },
+    {
+      "nonterminal": "machine_state_list",
+      "lookahead": "State",
+      "lookahead_id": 208,
+      "production": 334
+    },
+    {
+      "nonterminal": "machine_state_list",
+      "lookahead": "Final",
+      "lookahead_id": 209,
+      "production": 334
     },
     {
       "nonterminal": "match_arm",
@@ -5295,6 +5637,12 @@
       "production": 299
     },
     {
+      "nonterminal": "member_type_args_opt",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 299
+    },
+    {
       "nonterminal": "module_item",
       "lookahead": "Module",
       "lookahead_id": 97,
@@ -5661,6 +6009,12 @@
       "production": 157
     },
     {
+      "nonterminal": "mul_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 157
+    },
+    {
       "nonterminal": "orexpr",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -5916,6 +6270,12 @@
       "nonterminal": "orexpr_tail",
       "lookahead": "ArraySemicolon",
       "lookahead_id": 198,
+      "production": 122
+    },
+    {
+      "nonterminal": "orexpr_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
       "production": 122
     },
     {
@@ -6384,6 +6744,12 @@
       "nonterminal": "path_tail",
       "lookahead": "ArraySemicolon",
       "lookahead_id": 198,
+      "production": 51
+    },
+    {
+      "nonterminal": "path_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
       "production": 51
     },
     {
@@ -7005,6 +7371,12 @@
       "production": 166
     },
     {
+      "nonterminal": "postfix_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 166
+    },
+    {
       "nonterminal": "primary",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -7383,6 +7755,12 @@
       "production": 276
     },
     {
+      "nonterminal": "primary_ident_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 276
+    },
+    {
       "nonterminal": "pub_item",
       "lookahead": "Fn",
       "lookahead_id": 67,
@@ -7435,6 +7813,12 @@
       "lookahead": "TraitImpl",
       "lookahead_id": 181,
       "production": 274
+    },
+    {
+      "nonterminal": "pub_item",
+      "lookahead": "Machine",
+      "lookahead_id": 205,
+      "production": 330
     },
     {
       "nonterminal": "range_bound",
@@ -7632,6 +8016,18 @@
       "nonterminal": "return_value_opt",
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
+      "production": 92
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 92
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
       "production": 92
     },
     {
@@ -8025,6 +8421,12 @@
       "production": 148
     },
     {
+      "nonterminal": "shift_tail",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 148
+    },
+    {
       "nonterminal": "stmt",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8166,6 +8568,18 @@
       "nonterminal": "stmt",
       "lookahead": "PathGenericIdent",
       "lookahead_id": 187,
+      "production": 87
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 87
+    },
+    {
+      "nonterminal": "stmt",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
       "production": 87
     },
     {
@@ -8337,6 +8751,18 @@
       "production": 73
     },
     {
+      "nonterminal": "stmt_list",
+      "lookahead": "Goto",
+      "lookahead_id": 210,
+      "production": 73
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Stay",
+      "lookahead_id": 211,
+      "production": 73
+    },
+    {
       "nonterminal": "struct_field",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8355,6 +8781,12 @@
       "production": 261
     },
     {
+      "nonterminal": "struct_field_list_opt",
+      "lookahead": "Start",
+      "lookahead_id": 207,
+      "production": 261
+    },
+    {
       "nonterminal": "struct_field_tail",
       "lookahead": "StructDeclRBrace",
       "lookahead_id": 128,
@@ -8367,6 +8799,12 @@
       "production": 264
     },
     {
+      "nonterminal": "struct_field_tail",
+      "lookahead": "Start",
+      "lookahead_id": 207,
+      "production": 265
+    },
+    {
       "nonterminal": "struct_field_tail_after_comma",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8376,6 +8814,12 @@
       "nonterminal": "struct_field_tail_after_comma",
       "lookahead": "StructDeclRBrace",
       "lookahead_id": 128,
+      "production": 267
+    },
+    {
+      "nonterminal": "struct_field_tail_after_comma",
+      "lookahead": "Start",
+      "lookahead_id": 207,
       "production": 267
     },
     {
@@ -8479,6 +8923,108 @@
       "lookahead": "TraitPub",
       "lookahead_id": 148,
       "production": 30
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "GroupRParen",
+      "lookahead_id": 62,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "CallRParen",
+      "lookahead_id": 63,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ArrayRBracket",
+      "lookahead_id": 64,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "IndexRBracket",
+      "lookahead_id": 65,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ArgComma",
+      "lookahead_id": 82,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ArrayComma",
+      "lookahead_id": 83,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "MatchRBrace",
+      "lookahead_id": 120,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "StructLitRBrace",
+      "lookahead_id": 126,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "MatchArmComma",
+      "lookahead_id": 138,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "StructLitComma",
+      "lookahead_id": 160,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ConstSemicolon",
+      "lookahead_id": 166,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "LetSemicolon",
+      "lookahead_id": 167,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ReturnSemicolon",
+      "lookahead_id": 168,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ExprSemicolon",
+      "lookahead_id": 169,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "ArraySemicolon",
+      "lookahead_id": 198,
+      "production": 346
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "With",
+      "lookahead_id": 212,
+      "production": 345
+    },
+    {
+      "nonterminal": "transition_output",
+      "lookahead": "GotoRParen",
+      "lookahead_id": 216,
+      "production": 346
     },
     {
       "nonterminal": "type_alias_item",
@@ -8620,8 +9166,20 @@
     },
     {
       "nonterminal": "type_args_opt",
+      "lookahead": "ReturnArrow",
+      "lookahead_id": 112,
+      "production": 228
+    },
+    {
+      "nonterminal": "type_args_opt",
       "lookahead": "ImplLBrace",
       "lookahead_id": 121,
+      "production": 228
+    },
+    {
+      "nonterminal": "type_args_opt",
+      "lookahead": "StructDeclLBrace",
+      "lookahead_id": 127,
       "production": 228
     },
     {
@@ -8754,6 +9312,12 @@
       "nonterminal": "type_args_opt",
       "lookahead": "Requires",
       "lookahead_id": 201,
+      "production": 228
+    },
+    {
+      "nonterminal": "type_args_opt",
+      "lookahead": "Start",
+      "lookahead_id": 207,
       "production": 228
     },
     {
@@ -9016,6 +9580,12 @@
     },
     {
       "nonterminal": "type_path_tail",
+      "lookahead": "ReturnArrow",
+      "lookahead_id": 112,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
       "lookahead": "PathColon",
       "lookahead_id": 114,
       "production": 58
@@ -9024,6 +9594,12 @@
       "nonterminal": "type_path_tail",
       "lookahead": "ImplLBrace",
       "lookahead_id": 121,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
+      "lookahead": "StructDeclLBrace",
+      "lookahead_id": 127,
       "production": 59
     },
     {
@@ -9156,6 +9732,12 @@
       "nonterminal": "type_path_tail",
       "lookahead": "Requires",
       "lookahead_id": 201,
+      "production": 59
+    },
+    {
+      "nonterminal": "type_path_tail",
+      "lookahead": "Start",
+      "lookahead_id": 207,
       "production": 59
     },
     {
@@ -12946,6 +13528,205 @@
       "rhs": [
         "if_block"
       ]
+    },
+    {
+      "id": 329,
+      "line": 467,
+      "lhs": "item",
+      "tag": "item_machine",
+      "arity": 1,
+      "rhs": [
+        "machine_item"
+      ]
+    },
+    {
+      "id": 330,
+      "line": 468,
+      "lhs": "pub_item",
+      "tag": "pub_machine",
+      "arity": 1,
+      "rhs": [
+        "machine_item"
+      ]
+    },
+    {
+      "id": 331,
+      "line": 469,
+      "lhs": "machine_item",
+      "tag": "machine",
+      "arity": 4,
+      "rhs": [
+        "'Machine'",
+        "'Ident'",
+        "'On'",
+        "type_expr",
+        "machine_output",
+        "'StructDeclLBrace'",
+        "struct_field_list_opt",
+        "'Start'",
+        "'StateIdent'",
+        "'ExprSemicolon'",
+        "machine_state_list",
+        "'StructDeclRBrace'"
+      ]
+    },
+    {
+      "id": 332,
+      "line": 470,
+      "lhs": "machine_output",
+      "tag": "machine_output_some",
+      "arity": 2,
+      "rhs": [
+        "'ReturnArrow'",
+        "type_expr",
+        "machine_output"
+      ]
+    },
+    {
+      "id": 333,
+      "line": 471,
+      "lhs": "machine_output",
+      "tag": "machine_output_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 334,
+      "line": 472,
+      "lhs": "machine_state_list",
+      "tag": "machine_states_more",
+      "arity": 2,
+      "rhs": [
+        "machine_state",
+        "machine_state_list"
+      ]
+    },
+    {
+      "id": 335,
+      "line": 473,
+      "lhs": "machine_state_list",
+      "tag": "machine_states_end",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 336,
+      "line": 474,
+      "lhs": "machine_state",
+      "tag": "machine_state_final",
+      "arity": 1,
+      "rhs": [
+        "'Final'",
+        "machine_state_decl"
+      ]
+    },
+    {
+      "id": 337,
+      "line": 475,
+      "lhs": "machine_state",
+      "tag": "machine_state_plain",
+      "arity": 1,
+      "rhs": [
+        "machine_state_decl"
+      ]
+    },
+    {
+      "id": 338,
+      "line": 476,
+      "lhs": "machine_state_decl",
+      "tag": "machine_state",
+      "arity": 2,
+      "rhs": [
+        "'State'",
+        "'StateIdent'",
+        "machine_state_data",
+        "'MatchLBrace'",
+        "match_arm_list_opt",
+        "'MatchRBrace'"
+      ]
+    },
+    {
+      "id": 339,
+      "line": 477,
+      "lhs": "machine_state_data",
+      "tag": "machine_state_data_some",
+      "arity": 1,
+      "rhs": [
+        "'ParamLParen'",
+        "param_list_opt",
+        "'ParamRParen'"
+      ]
+    },
+    {
+      "id": 340,
+      "line": 478,
+      "lhs": "machine_state_data",
+      "tag": "machine_state_data_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 341,
+      "line": 479,
+      "lhs": "expr",
+      "tag": "goto",
+      "arity": 2,
+      "rhs": [
+        "'Goto'",
+        "'GotoIdent'",
+        "goto_args",
+        "transition_output"
+      ]
+    },
+    {
+      "id": 342,
+      "line": 480,
+      "lhs": "expr",
+      "tag": "stay",
+      "arity": 1,
+      "rhs": [
+        "'Stay'",
+        "transition_output"
+      ]
+    },
+    {
+      "id": 343,
+      "line": 481,
+      "lhs": "goto_args",
+      "tag": "goto_args_some",
+      "arity": 1,
+      "rhs": [
+        "'GotoLParen'",
+        "arg_list_opt",
+        "'GotoRParen'"
+      ]
+    },
+    {
+      "id": 344,
+      "line": 482,
+      "lhs": "goto_args",
+      "tag": "goto_args_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 345,
+      "line": 483,
+      "lhs": "transition_output",
+      "tag": "transition_output_some",
+      "arity": 1,
+      "rhs": [
+        "'With'",
+        "expr"
+      ]
+    },
+    {
+      "id": 346,
+      "line": 484,
+      "lhs": "transition_output",
+      "tag": "transition_output_none",
+      "arity": 0,
+      "rhs": []
     }
   ]
 }

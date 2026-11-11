@@ -56,6 +56,7 @@ static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
 static const uint TK_PATH_TYPE_ARG_COMMA = 186u;
+static const uint TK_ON = 206u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
 uint linear_group_id(uint3 gid)
@@ -121,6 +122,7 @@ uint direct_type_path_context_kind(uint parser_i, uint count)
     if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
         prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
         prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_DISTINCT || prev == TK_TYPE_AMPERSAND || prev == TK_MUT ||
+        prev == TK_ON ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
         prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
         prev == TK_ENUM_PAYLOAD_LPAREN || prev == TK_ENUM_FIELD_COMMA ||

@@ -448,3 +448,37 @@ param [param_self_ref_mut] -> 'TypeAmpersandMut' 'Mut' 'ParamSelfRefValue';
 # `if_block` and its statements need no new tokens. The production sits at
 # the end of the file to keep earlier production IDs.
 primary [arm_block] -> if_block;
+
+# ----- Machines -----
+# `machine Door on Input -> Reply { turns: i32, start Closed; state Closed {
+# arms } final state Gone { arms } }` declares a state machine. Its words are
+# contextual keywords the lexer retags. The body reuses the struct field list
+# for the machine's data and the match arm list for each state's arms, so the
+# tokens inside need no new kinds. A state name has its own identifier kinds
+# and a `goto` target's arguments their own parentheses: the tokens after
+# them then name unique stack changes, as LLP(1,1) parsing requires.
+# The output list is right-recursive for the same reason: the `{` after an
+# event type and after an output type takes the same stack change. A later
+# stage rejects a second output.
+# `goto` and `stay` are expressions, so a transition is an arm body or an
+# expression statement like any other. A later stage rejects one outside a
+# state's arms. The productions sit at the end of the file to keep earlier
+# production IDs.
+item [item_machine] -> machine_item;
+pub_item [pub_machine] -> machine_item;
+machine_item [machine] -> 'Machine' 'Ident' 'On' type_expr machine_output 'StructDeclLBrace' struct_field_list_opt 'Start' 'StateIdent' 'ExprSemicolon' machine_state_list 'StructDeclRBrace';
+machine_output [machine_output_some] -> 'ReturnArrow' type_expr machine_output;
+machine_output [machine_output_end] -> ;
+machine_state_list [machine_states_more] -> machine_state machine_state_list;
+machine_state_list [machine_states_end] -> ;
+machine_state [machine_state_final] -> 'Final' machine_state_decl;
+machine_state [machine_state_plain] -> machine_state_decl;
+machine_state_decl [machine_state] -> 'State' 'StateIdent' machine_state_data 'MatchLBrace' match_arm_list_opt 'MatchRBrace';
+machine_state_data [machine_state_data_some] -> 'ParamLParen' param_list_opt 'ParamRParen';
+machine_state_data [machine_state_data_none] -> ;
+expr [goto] -> 'Goto' 'GotoIdent' goto_args transition_output;
+expr [stay] -> 'Stay' transition_output;
+goto_args [goto_args_some] -> 'GotoLParen' arg_list_opt 'GotoRParen';
+goto_args [goto_args_none] -> ;
+transition_output [transition_output_some] -> 'With' expr;
+transition_output [transition_output_none] -> ;

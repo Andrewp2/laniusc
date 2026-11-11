@@ -62,6 +62,28 @@ static const uint TK_DISTINCT = 200;
 static const uint TK_REQUIRES = 201;
 static const uint TK_ENSURES = 202;
 static const uint TK_MUT = 203;
+static const uint TK_COMMA = 36;
+static const uint TK_SEMICOLON = 37;
+static const uint TK_LBRACE = 22;
+static const uint TK_RBRACE = 23;
+static const uint TK_ARROW = 75;
+static const uint TK_MACHINE = 205;
+static const uint TK_ON = 206;
+static const uint TK_START = 207;
+static const uint TK_STATE = 208;
+static const uint TK_FINAL = 209;
+static const uint TK_GOTO = 210;
+static const uint TK_STAY = 211;
+static const uint TK_WITH = 212;
+// A word of up to eight bytes, packed low byte first into two words.
+static const uint2 WORD_MACHINE = uint2(0x6863616du, 0x00656e69u);
+static const uint2 WORD_ON = uint2(0x00006e6fu, 0x00000000u);
+static const uint2 WORD_START = uint2(0x72617473u, 0x00000074u);
+static const uint2 WORD_STATE = uint2(0x74617473u, 0x00000065u);
+static const uint2 WORD_FINAL = uint2(0x616e6966u, 0x0000006cu);
+static const uint2 WORD_GOTO = uint2(0x6f746f67u, 0x00000000u);
+static const uint2 WORD_STAY = uint2(0x79617473u, 0x00000000u);
+static const uint2 WORD_WITH = uint2(0x68746977u, 0x00000000u);
 static const uint TK_SELF_VALUE = 105;
 static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
@@ -418,6 +440,95 @@ bool token_is_distinct_keyword(uint token_index, uint start, uint end_excl, uint
            retag_compact_kind(next_index, next_start, next_end) == TK_IDENT;
 }
 
+// The first eight bytes of a lexeme, packed low byte first into two words.
+uint2 packed_lexeme(uint start, uint len)
+{
+    uint2 packed = uint2(0u, 0u);
+    for (uint i = 0u; i < min(len, 8u); i += 1u)
+    {
+        uint byte = load_byte_at(in_bytes, start + i);
+        if (i < 4u)
+            packed.x |= byte << (8u * i);
+        else
+            packed.y |= byte << (8u * (i - 4u));
+    }
+    return packed;
+}
+
+// The token at `index` when it lies in file `file_id`: its kind after keyword
+// retags, its start and its end. The kind is INVALID when there is no such
+// token.
+uint3 token_in_file(uint index, uint file_id, uint total)
+{
+    if (index >= total)
+        return uint3(INVALID, 0u, 0u);
+    uint end = end_positions[index];
+    uint2 file_info = file_start_and_id_for_token_end(end);
+    if (file_info.y != file_id)
+        return uint3(INVALID, 0u, 0u);
+    uint start = max(compact_token_start(index), file_info.x);
+    return uint3(retag_compact_kind(index, start, end), start, end);
+}
+
+bool token_spells(uint3 token, uint len, uint2 word)
+{
+    return token.x == TK_IDENT && token.z - token.y == len &&
+           all(packed_lexeme(token.y, len) == word);
+}
+
+// The words of a `machine` item are contextual keywords. No expression has
+// two identifiers in a row, so each rule below names a position no value can
+// take, and a value, field or function with one of these names keeps the
+// identifier kind:
+//   `machine`, `start`, `state`, `goto`: directly before an identifier;
+//   `final`: directly before the word `state`;
+//   `on`: directly after `machine Name`;
+//   `with`: directly after an identifier or a `)`;
+//   `stay`: directly before `with`, or a whole statement (`stay;`), or a
+//   whole arm body (`-> stay,`). The parser returns the last form to an
+//   identifier when the arm is not in a state block.
+uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file_id, uint total)
+{
+    uint len = end_excl - start;
+    if (len != 2u && len != 4u && len != 5u && len != 7u)
+        return TK_IDENT;
+    uint2 word = packed_lexeme(start, len);
+    uint candidate = TK_IDENT;
+    if (len == 7u && all(word == WORD_MACHINE)) candidate = TK_MACHINE;
+    else if (len == 2u && all(word == WORD_ON)) candidate = TK_ON;
+    else if (len == 5u && all(word == WORD_START)) candidate = TK_START;
+    else if (len == 5u && all(word == WORD_STATE)) candidate = TK_STATE;
+    else if (len == 5u && all(word == WORD_FINAL)) candidate = TK_FINAL;
+    else if (len == 4u && all(word == WORD_GOTO)) candidate = TK_GOTO;
+    else if (len == 4u && all(word == WORD_STAY)) candidate = TK_STAY;
+    else if (len == 4u && all(word == WORD_WITH)) candidate = TK_WITH;
+    if (candidate == TK_IDENT)
+        return TK_IDENT;
+
+    uint3 none = uint3(INVALID, 0u, 0u);
+    uint3 previous = token_index == 0u ? none : token_in_file(token_index - 1u, file_id, total);
+    uint3 next = token_in_file(token_index + 1u, file_id, total);
+    bool keyword = false;
+    if (candidate == TK_MACHINE || candidate == TK_START || candidate == TK_STATE ||
+        candidate == TK_GOTO)
+        keyword = next.x == TK_IDENT;
+    else if (candidate == TK_FINAL)
+        keyword = token_spells(next, 5u, WORD_STATE);
+    else if (candidate == TK_ON)
+        keyword = previous.x == TK_IDENT && token_index >= 2u &&
+            token_spells(token_in_file(token_index - 2u, file_id, total), 7u, WORD_MACHINE);
+    else if (candidate == TK_WITH)
+        keyword = previous.x == TK_IDENT || previous.x == TK_RPAREN;
+    else if (token_spells(next, 4u, WORD_WITH))
+        keyword = true;
+    else if (previous.x == TK_ARROW)
+        keyword = next.x == TK_COMMA || next.x == TK_RBRACE;
+    else
+        keyword = next.x == TK_SEMICOLON &&
+            (previous.x == TK_SEMICOLON || previous.x == TK_LBRACE || previous.x == TK_RBRACE);
+    return keyword ? candidate : TK_IDENT;
+}
+
 bool string_may_be_expression(uint token_index, uint kind, uint file_id)
 {
     if (kind != TK_STRING)
@@ -486,6 +597,8 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
 
     if (kind == TK_IDENT && token_is_distinct_keyword(k, start, end_excl, file_info.y, total))
         kind = TK_DISTINCT;
+    if (kind == TK_IDENT)
+        kind = machine_keyword_kind(k, start, end_excl, file_info.y, total);
 
     // Write final token
     TokenOut t;

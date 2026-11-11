@@ -87,6 +87,62 @@ fn retag_distinct_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
     }
 }
 
+/// The words of a `machine` item are contextual keywords, each in a position
+/// no value can take; see `machine_keyword_kind` in
+/// `shaders/lexer/tokens_build.slang`. Runs after keyword retags, as the GPU
+/// lexer does, and reads only the kinds those retags produced.
+fn retag_machine_words_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
+    let before: Vec<TestCpuToken> = tokens.to_vec();
+    let word = |token: Option<&TestCpuToken>| {
+        token
+            .filter(|token| token.kind == TokenKind::Ident)
+            .and_then(|token| src.get(token.start..token.start + token.len))
+    };
+    let kind = |token: Option<&TestCpuToken>| token.map(|token| token.kind);
+    for i in 0..before.len() {
+        let previous = i.checked_sub(1).and_then(|at| before.get(at));
+        let next = before.get(i + 1);
+        let next_is_ident = kind(next) == Some(TokenKind::Ident);
+        let retagged = match word(before.get(i)) {
+            Some(b"machine") if next_is_ident => TokenKind::Machine,
+            Some(b"start") if next_is_ident => TokenKind::Start,
+            Some(b"state") if next_is_ident => TokenKind::State,
+            Some(b"goto") if next_is_ident => TokenKind::Goto,
+            Some(b"final") if word(next) == Some(b"state") => TokenKind::Final,
+            Some(b"on")
+                if kind(previous) == Some(TokenKind::Ident)
+                    && word(i.checked_sub(2).and_then(|at| before.get(at)))
+                        == Some(b"machine") =>
+            {
+                TokenKind::On
+            }
+            Some(b"with")
+                if matches!(kind(previous), Some(TokenKind::Ident | TokenKind::RParen)) =>
+            {
+                TokenKind::With
+            }
+            Some(b"stay") if word(next) == Some(b"with") => TokenKind::Stay,
+            Some(b"stay")
+                if kind(previous) == Some(TokenKind::Arrow)
+                    && matches!(kind(next), Some(TokenKind::Comma | TokenKind::RBrace)) =>
+            {
+                TokenKind::Stay
+            }
+            Some(b"stay")
+                if kind(next) == Some(TokenKind::Semicolon)
+                    && matches!(
+                        kind(previous),
+                        Some(TokenKind::Semicolon | TokenKind::LBrace | TokenKind::RBrace)
+                    ) =>
+            {
+                TokenKind::Stay
+            }
+            _ => continue,
+        };
+        tokens[i].kind = retagged;
+    }
+}
+
 fn repair_numeric_dotdot_ranges(tokens: &mut Vec<TestCpuToken>, src: &[u8]) {
     let mut i = 0;
     while i + 1 < tokens.len() {
@@ -278,6 +334,7 @@ pub fn lex_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
     retag_inclusive_dotdot_ranges(&mut out);
     retag_keywords_in_place(&mut out, bytes);
     retag_distinct_in_place(&mut out, bytes);
+    retag_machine_words_in_place(&mut out, bytes);
     Ok(out)
 }
 
@@ -360,6 +417,36 @@ mod tests {
             vec![
                 Type, Ident, Assign, Distinct, Ident, Semicolon, Let, Ident, Assign, Int,
                 Semicolon, Ident, Assign, Ident, Plus, Ident, Semicolon
+            ]
+        );
+    }
+
+    #[test]
+    fn machine_words_are_keywords_only_in_machine_positions() {
+        use TokenKind::*;
+
+        assert_eq!(
+            kinds("machine Door on Input { start Closed; final state Closed { A -> goto B with c, D -> stay, } }"),
+            vec![
+                Machine, Ident, On, Ident, LBrace, Start, Ident, Semicolon, Final, State, Ident,
+                LBrace, Ident, Arrow, Goto, Ident, With, Ident, Comma, Ident, Arrow, Stay, Comma,
+                RBrace, RBrace
+            ]
+        );
+        assert_eq!(
+            kinds("{ stay; goto B(1) with c; stay with d; }"),
+            vec![
+                LBrace, Stay, Semicolon, Goto, Ident, LParen, Int, RParen, With, Ident, Semicolon,
+                Stay, With, Ident, Semicolon, RBrace
+            ]
+        );
+        // The same words as values, fields and functions stay identifiers.
+        assert_eq!(
+            kinds("let state = start + final; x.with(on); stay(machine); A -> stay(1), goto = stay;"),
+            vec![
+                Let, Ident, Assign, Ident, Plus, Ident, Semicolon, Ident, Dot, Ident, LParen,
+                Ident, RParen, Semicolon, Ident, LParen, Ident, RParen, Semicolon, Ident, Arrow,
+                Ident, LParen, Int, RParen, Comma, Ident, Assign, Ident, Semicolon
             ]
         );
     }

@@ -25,6 +25,7 @@ use super::{CompileError, Diagnostic, diagnostic_label_from_source_span};
 
 mod closures;
 mod generators;
+mod machines;
 
 /// Identifiers starting with this prefix are reserved for elaborated code.
 pub(crate) const RESERVED_PREFIX: &str = "__lanius_";
