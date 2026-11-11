@@ -1,0 +1,9 @@
+// A constant is not a pattern.
+const LIMIT: i32 = 3;
+fn word(value: i32) -> i32 {
+    return match (value) {
+        LIMIT -> 1,
+        _ -> 2,
+    };
+}
+fn main() -> i32 { return word(3); }

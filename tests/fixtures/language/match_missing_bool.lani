@@ -1,0 +1,7 @@
+// `false` has no arm.
+fn flag(on: bool) -> i32 {
+    return match (on) {
+        true -> 1,
+    };
+}
+fn main() -> i32 { return flag(false); }

@@ -141,7 +141,7 @@ fn text_cause(value: alloc::string::Error) -> Cause {
         alloc::string::Error::InvalidUtf8(index) -> 1,
         alloc::string::Error::InvalidScalar -> 2, alloc::string::Error::Bounds -> 3,
         alloc::string::Error::NotCharBoundary -> 4, alloc::string::Error::CapacityOverflow -> 5,
-        alloc::string::Error::AllocationFailed -> 6,
+        alloc::string::Error::AllocationFailed -> 6, alloc::string::Error::OutputLimit -> 7,
     };
     let payload: i32 = match (value) { alloc::string::Error::InvalidUtf8(index) -> index, _ -> 0 };
     return Cause { kind: 6, detail: detail, payload: payload };

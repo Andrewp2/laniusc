@@ -1,0 +1,10 @@
+// Three arms and three variants, but `Color::Blue` has no arm.
+enum Color { Red, Green, Blue }
+fn rank(color: Color) -> i32 {
+    return match (color) {
+        Color::Red -> 1,
+        Color::Green -> 2,
+        Color::Green -> 3,
+    };
+}
+fn main() -> i32 { return rank(Color::Blue); }

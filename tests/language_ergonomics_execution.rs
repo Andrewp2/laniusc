@@ -396,6 +396,51 @@ fn a_block_arm_can_end_in_break_or_continue() {
     assert_rejected("block_arm_loop_exit_not_return.lani", &["LNC0006", "block_arm_loop_exit_not_return.lani:2"]);
 }
 
+#[test]
+fn a_match_that_covers_every_value_compiles() {
+    assert_exit("match_exhaustive.lani", 78);
+}
+
+#[test]
+fn a_match_must_have_an_arm_for_every_variant() {
+    let missing = &["LNC0077", "match is not exhaustive", "at least one value has no arm"];
+    assert_rejected("match_missing_variant.lani", missing);
+    assert_rejected("match_missing_variant.lani", &["match_missing_variant.lani:4"]);
+    assert_rejected("match_repeated_variant.lani", missing);
+    assert_rejected("match_missing_imported_variant.lani", missing);
+    assert_rejected("match_missing_bool.lani", missing);
+}
+
+#[test]
+fn a_match_must_cover_the_variants_inside_a_payload() {
+    let missing = &["LNC0077", "match is not exhaustive", "at least one value has no arm"];
+    assert_rejected("match_missing_nested_variant.lani", missing);
+    assert_rejected("match_missing_nested_variant.lani", &["match_missing_nested_variant.lani:5"]);
+    assert_rejected("match_missing_deep_variant.lani", missing);
+    assert_rejected("match_literal_payload_without_wildcard.lani", missing);
+}
+
+#[test]
+fn an_arm_that_splits_two_payload_columns_covers_nothing() {
+    assert_rejected(
+        "match_two_refutable_columns.lani",
+        &["LNC0077", "at least one value has no arm", "together cover one payload"],
+    );
+}
+
+#[test]
+fn a_match_on_literals_needs_a_wildcard_arm() {
+    assert_rejected("match_literals_without_wildcard.lani", &["LNC0077", "has no `_` arm"]);
+}
+
+#[test]
+fn an_arm_pattern_must_be_a_variant_a_literal_or_a_wildcard() {
+    let expected = &["LNC0077", "invalid match pattern", "this is not an enum variant"];
+    assert_rejected("match_pattern_not_a_variant.lani", expected);
+    assert_rejected("match_pattern_not_a_variant.lani", &["match_pattern_not_a_variant.lani:5"]);
+    assert_rejected("match_pattern_unknown_variant.lani", expected);
+}
+
 // The resident workspace is sized by the largest unit checked so far; this
 // preserved program's imports are larger than it. Name lookup must use the
 // scope tree's published layout, not one derived from this unit's tokens.

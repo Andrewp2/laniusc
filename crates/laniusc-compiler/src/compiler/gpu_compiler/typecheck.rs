@@ -4184,6 +4184,9 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 .with_note("extern \"C\" accepts up to 32 i32, u32, i64, u64, isize, usize, ptr, f32 or f64 parameters and one of those result types or void")
                 .with_note("C declarations must be monomorphic; narrow integers, bool, aggregates, references and variadic calls are not supported"),
         ),
+        GpuTypeCheckCode::MatchNotExhaustive => {
+            match_not_exhaustive_diagnostic(path, source, start, len, detail)
+        }
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(
@@ -4298,6 +4301,43 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
             unclassified_type_check_diagnostic(path, source, start, len, status_code, detail)
         }
     }
+}
+
+/// Text for the three reports of the match exhaustiveness pass
+/// (`10o_validate_match_exhaustive.slang`).
+fn match_not_exhaustive_diagnostic(
+    path: &Path,
+    source: &str,
+    start: usize,
+    len: usize,
+    detail: u32,
+) -> CompileError {
+    let (title, label, note, help) = match detail {
+        1 => (
+            "match is not exhaustive",
+            "this `match` has no `_` arm",
+            "no list of literal patterns covers every value of this type",
+            "add a `_` arm",
+        ),
+        2 => (
+            "invalid match pattern",
+            "this is not an enum variant",
+            "an arm pattern is an enum variant, an integer literal, `true`, `false` or `_`",
+            "name a variant, or use `_` to match every other value",
+        ),
+        _ => (
+            "match is not exhaustive",
+            "at least one value has no arm",
+            "an arm covers its variant when its payload patterns are names or `_`, or when the arms of that variant together cover one payload",
+            "add an arm for each missing variant, or add a `_` arm",
+        ),
+    };
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0077", title)
+            .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+            .with_note(note)
+            .with_help(help),
+    )
 }
 
 fn assign_mismatch_looks_like_invalid_member_access(

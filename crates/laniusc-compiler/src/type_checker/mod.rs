@@ -164,6 +164,7 @@ pub enum GpuTypeCheckCode {
     GenericInstantiationBoundary,
     RecursiveType,
     InvalidNativeCSignature,
+    MatchNotExhaustive,
     Unknown(u32),
 }
 
@@ -198,6 +199,7 @@ impl GpuTypeCheckCode {
             27 => Self::InvalidCast,
             28 => Self::RecursiveType,
             29 => Self::InvalidNativeCSignature,
+            30 => Self::MatchNotExhaustive,
             other => Self::Unknown(other),
         }
     }
@@ -232,6 +234,7 @@ impl GpuTypeCheckCode {
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
             Self::RecursiveType => "recursive type has infinite size".to_string(),
             Self::InvalidNativeCSignature => "unsupported native C signature".to_string(),
+            Self::MatchNotExhaustive => "match is not exhaustive".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()
             }

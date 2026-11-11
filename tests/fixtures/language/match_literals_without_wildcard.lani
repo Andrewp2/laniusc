@@ -1,0 +1,8 @@
+// Integer literals never cover every integer.
+fn word(value: i32) -> i32 {
+    return match (value) {
+        1 -> 10,
+        2 -> 20,
+    };
+}
+fn main() -> i32 { return word(3); }

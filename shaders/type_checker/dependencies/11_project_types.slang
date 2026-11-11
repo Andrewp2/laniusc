@@ -129,12 +129,14 @@ bool same_variant_name(uint declaration_base, uint member_base)
 
 bool variant_metadata(uint declaration_base, uint signature_root,
                       out uint enum_root, out uint ordinal,
-                      out uint payload_count, out bool generic_parent)
+                      out uint payload_count, out bool generic_parent,
+                      out uint variant_count)
 {
     enum_root = 0xffffffffu;
     ordinal = 0xffffffffu;
     payload_count = 0xffffffffu;
     generic_parent = false;
+    variant_count = 0u;
     if (dependency_type_word(signature_root * TYPE_WORDS) != INTERFACE_TYPE_FUNCTION)
         return false;
     uint signature_base = signature_root * TYPE_WORDS;
@@ -179,22 +181,24 @@ bool variant_metadata(uint declaration_base, uint signature_root,
                 generic_parent = true;
         }
     }
-    uint variant_ordinal = 0u;
+    // The scan runs to the end: the exhaustiveness check of a match needs
+    // the number of variants of the enum.
+    bool found = false;
     for (uint offset = 0u; offset < count; offset += 1u)
     {
         uint member_base = (start + offset) * MEMBER_WORDS;
         if (dependency_member_word(member_base + 1u) != MEMBER_ENUM_VARIANT)
             continue;
-        if (same_variant_name(declaration_base, member_base))
+        if (!found && same_variant_name(declaration_base, member_base))
         {
             // Member ordinals include generic parameters and methods. The
             // runtime tag counts only enum variants, just like local HIR.
-            ordinal = variant_ordinal;
-            return true;
+            ordinal = variant_count;
+            found = true;
         }
-        variant_ordinal += 1u;
+        variant_count += 1u;
     }
-    return false;
+    return found;
 }
 
 // A path may have valid bindings in both namespaces. Project each retained
@@ -233,8 +237,9 @@ void project_dependency_value(uint path_i, uint owner_token)
         uint ordinal;
         uint payload_count;
         bool generic_parent;
+        uint variant_count;
         if (variant_metadata(declaration_base, root, enum_root, ordinal,
-                             payload_count, generic_parent))
+                             payload_count, generic_parent, variant_count))
         {
             resolved_dependency_value_metadata[value_base] =
                 payload_count != 0u ? IMPORTED_PAYLOAD_VARIANT
@@ -242,7 +247,7 @@ void project_dependency_value(uint path_i, uint owner_token)
                                  : HIR_ITEM_KIND_ENUM_VARIANT;
             resolved_dependency_value_metadata[value_base + 1u] = enum_root;
             resolved_dependency_value_metadata[value_base + 2u] = ordinal;
-            resolved_dependency_value_metadata[value_base + 3u] = 0u;
+            resolved_dependency_value_metadata[value_base + 3u] = variant_count;
             // The dependency page is reused before match binding runs.
             // Retain only direct scalar and generic-slot payload types;
             // other payload shapes remain unresolved at that boundary.

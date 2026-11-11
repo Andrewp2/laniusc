@@ -101,6 +101,7 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) finalize_value_enum_calls: ComputeOperation,
     pub(in crate::type_checker) bind_match_patterns: ComputeOperation,
     pub(in crate::type_checker) validate_imported_unit_patterns: ComputeOperation,
+    pub(in crate::type_checker) validate_match_exhaustive: ComputeOperation,
     pub(in crate::type_checker) type_match_payloads: ComputeOperation,
     pub(in crate::type_checker) type_match_exprs: ComputeOperation,
 }

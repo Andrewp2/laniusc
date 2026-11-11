@@ -1,0 +1,14 @@
+// These arms list every value, but the check follows one payload column of
+// a variant. An arm that splits two columns covers nothing, so this match
+// needs a `_` arm.
+enum Bit { Zero, One }
+enum Pair { Both(Bit, Bit), Neither }
+fn value(pair: Pair) -> i32 {
+    return match (pair) {
+        Pair::Both(Bit::Zero, Bit::Zero) -> 0,
+        Pair::Both(Bit::Zero, Bit::One) -> 1,
+        Pair::Both(Bit::One, _) -> 2,
+        Pair::Neither -> 3,
+    };
+}
+fn main() -> i32 { return value(Pair::Neither); }

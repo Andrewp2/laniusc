@@ -1,0 +1,8 @@
+// `None` has no arm.
+import core::option;
+fn value(option: Option<i32>) -> i32 {
+    return match (option) {
+        Some(inner) -> inner,
+    };
+}
+fn main() -> i32 { return value(None); }

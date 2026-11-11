@@ -562,6 +562,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "parsing",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0077",
+        "match is not exhaustive",
+        "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -4902,6 +4908,7 @@ mod tests {
                 "name resolution",
             ),
             ("LNC0076", "invalid machine", "parsing"),
+            ("LNC0077", "match is not exhaustive", "type checking"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());

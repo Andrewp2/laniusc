@@ -1,0 +1,113 @@
+// Each match here covers every value of its scrutinee, so each compiles.
+import core::option;
+import core::result;
+
+enum Color { Red, Green, Blue }
+enum Shape { Circle(i32), Square(i32), Empty }
+enum Pair { Both(Color, i32), Neither }
+
+// One arm for each variant.
+fn rank(color: Color) -> i32 {
+    return match (color) {
+        Color::Blue -> 3,
+        Color::Red -> 1,
+        Color::Green -> 2,
+    };
+}
+
+// A name or `_` in a payload keeps the arm a cover of its variant.
+fn area(shape: Shape) -> i32 {
+    return match (shape) {
+        Shape::Circle(radius) -> radius * radius * 3,
+        Shape::Square(_) -> 4,
+        Shape::Empty -> 0,
+    };
+}
+
+// A `_` arm covers the variants that no arm names.
+fn is_red(color: Color) -> i32 {
+    return match (color) {
+        Color::Red -> 1,
+        _ -> 0,
+    };
+}
+
+// `true` and `false` are every value of a bool.
+fn flag(on: bool) -> i32 {
+    return match (on) {
+        false -> 0,
+        true -> 1,
+    };
+}
+
+// Integer literals need a `_` arm.
+fn word(value: i32) -> i32 {
+    return match (value) {
+        1 -> 10,
+        2 -> 20,
+        _ -> 0,
+    };
+}
+
+// Variants of an imported enum.
+fn value_or_zero(value: Option<i32>) -> i32 {
+    return match (value) {
+        None -> 0,
+        Some(inner) -> inner,
+    };
+}
+
+fn value_or_code(value: Result<i32, i32>) -> i32 {
+    return match (value) {
+        Ok(inner) -> inner,
+        Err(code) -> code,
+    };
+}
+
+// Nested variants: the arms for `Some` together cover its payload.
+fn nested(shape: Option<Shape>) -> i32 {
+    return match (shape) {
+        Some(Shape::Circle(radius)) -> radius,
+        Some(Shape::Square(side)) -> side,
+        Some(Shape::Empty) -> 1,
+        None -> 0,
+    };
+}
+
+// A simple arm for `Some` covers it whatever the nested arms list.
+fn circle_radius(shape: Option<Shape>) -> i32 {
+    return match (shape) {
+        Some(Shape::Circle(radius)) -> radius,
+        Some(other) -> 0,
+        None -> 0,
+    };
+}
+
+// Three levels. The arm with the name `slot` covers `Ok`.
+fn deep(value: Result<Option<Option<i32>>, i32>) -> i32 {
+    return match (value) {
+        Ok(Some(Some(inner))) -> inner,
+        Ok(Some(None)) -> 1,
+        Ok(None) -> 2,
+        Err(code) -> code,
+    };
+}
+
+// Two payload columns: only the first is split, the second is a name.
+fn pair(value: Pair) -> i32 {
+    return match (value) {
+        Pair::Both(Color::Red, count) -> count,
+        Pair::Both(Color::Green, count) -> count + 1,
+        Pair::Both(Color::Blue, count) -> count + 2,
+        Pair::Neither -> 0,
+    };
+}
+
+fn main() -> i32 {
+    let total: i32 = rank(Color::Blue) + area(Shape::Circle(2)) + is_red(Color::Red)
+        + flag(true) + word(2) + value_or_zero(Some(4)) + value_or_code(Err(5))
+        + nested(Some(Shape::Square(6))) + circle_radius(Some(Shape::Circle(7)))
+        + deep(Ok(Some(Some(8)))) + deep(Ok(Some(None))) + pair(Pair::Both(Color::Green, 9));
+    // 3 + 12 + 1 + 1 + 20 + 4 + 5 + 6 + 7 + 8 + 1 + 10
+    return total;
+}

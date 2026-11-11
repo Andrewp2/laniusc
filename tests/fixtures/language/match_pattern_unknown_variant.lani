@@ -1,0 +1,9 @@
+// `Color::Rde` names no variant.
+enum Color { Red, Green }
+fn rank(color: Color) -> i32 {
+    return match (color) {
+        Color::Rde -> 1,
+        Color::Green -> 2,
+    };
+}
+fn main() -> i32 { return rank(Color::Green); }

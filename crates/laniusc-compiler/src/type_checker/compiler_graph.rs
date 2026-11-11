@@ -6097,6 +6097,7 @@ fn build_graph(
     TYPE_INSTANCES_ARRAY_RETURN_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_ARRAY_LITERAL_RETURN_REFS.register_kernel(&mut graph, kernels)?;
     MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE.register_kernel(&mut graph, kernels)?;
+    MATCH_EXHAUSTIVE_VALIDATE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_AGGREGATE_VALIDATION.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         TYPE_INSTANCES_VALIDATE_AGGREGATE_ACCESS_PASS,
@@ -7066,6 +7067,7 @@ mod tests {
             MATCH_PATTERNS_BIND,
             MATCH_PAYLOADS_TYPE,
             MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE,
+            MATCH_EXHAUSTIVE_VALIDATE,
             VALUE_ENUM_CALLS_CONSUME,
             VALUE_ENUM_CALLS_FINALIZE,
             MATCH_EXPRS_TYPE,

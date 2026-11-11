@@ -2388,6 +2388,10 @@ impl GpuTypeChecker {
                     .bind_groups
                     .validate_imported_unit_patterns
                     .record(encoder)?;
+                module_path
+                    .bind_groups
+                    .validate_match_exhaustive
+                    .record(encoder)?;
             }
             if methods_required {
                 bind_groups

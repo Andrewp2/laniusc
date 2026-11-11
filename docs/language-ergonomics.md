@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks, `else if`, trap messages
+# Language ergonomics: item imports, `?`, local inference, block arms, match exhaustiveness, path calls, C callbacks, `else if`, trap messages
 
-Eight features shorten ordinary Lanius code without adding hidden behavior.
+Nine features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -137,6 +137,85 @@ Implementation:
   rejects a block arm whose flag is unset.
 - Codegen needs no change: rows are scheduled by token position, so the
   block's statements fall between the arm's test and its end.
+
+## Match exhaustiveness
+
+A `match` must cover every value of its scrutinee. A match that leaves a
+value without an arm is rejected with `LNC0077`. Before this check such a
+match compiled, and the program ended with SIGILL when the value arrived.
+
+```lanius
+enum Color { Red, Green, Blue }
+
+fn rank(color: Color) -> i32 {
+    return match (color) {
+        Color::Red -> 1,
+        Color::Green -> 2,
+    };
+}
+```
+
+```text
+error[LNC0077]: match is not exhaustive
+  |     return match (color) {
+  |            ^^^^^ at least one value has no arm
+```
+
+The rules:
+
+- A pattern is a name or `_`, a variant, or an integer literal. A name and
+  `_` match every value. `true` and `false` are the two variants of bool.
+- A variant pattern is simple when each payload pattern is a name or `_`. It
+  is single when exactly one payload pattern is a variant or a literal.
+- A set of patterns at one position is covered when one of them is `_`, or
+  when every variant of the enum has a simple pattern, or has single
+  patterns whose payload patterns in that one column are covered in turn.
+- The match is exhaustive when its arm patterns are covered. This holds for
+  local enums and for imported ones such as `Option` and `Result`.
+- An integer literal covers nothing. A match on literals needs a `_` arm.
+- An arm pattern that is none of an enum variant, a literal or `_` is
+  rejected: "this is not an enum variant". Before, a constant or a
+  misspelled variant in that position failed in code generation (`LNC0057`).
+
+So these arms are exhaustive, and removing any one of them is an error:
+
+```lanius
+fn total(value: Result<Option<Option<i32>>, i32>) -> i32 {
+    return match (value) {
+        Ok(Some(Some(inner))) -> inner,
+        Ok(Some(None)) -> 1,
+        Ok(None) -> 2,
+        Err(code) -> code,
+    };
+}
+```
+
+Decision: the check follows one payload column of a variant. The arms
+`Pair(Bit::Zero, Bit::Zero)`, `Pair(Bit::Zero, Bit::One)` and
+`Pair(Bit::One, _)` list every pair, but the first two split both payloads,
+so they cover nothing and the match needs a `_` arm. For one variant only
+the column of its first single arm counts. Patterns nested more than six
+levels deep cover nothing. The rule never accepts a match that misses a
+value. The general check compares whole pattern trees across arms; it can
+replace this rule later without rejecting any program the rule accepts.
+
+Implementation:
+- `type_checker/modules/10o_validate_match_exhaustive` runs one thread for
+  each pattern: an arm row or a payload row. A group is the set of patterns
+  at one position below the same variants. A group fails at a leaf when a
+  variant of its enum has no simple and no single member.
+- A thread looks for that in its own group, for the variant after its own.
+  The members of a group together visit every variant, so no thread loops
+  over the variants of the enum.
+- The thread then walks to the arm group. At each level the walk stops when
+  another member covers the variant above the failing group. A walk that
+  reaches the arm group reports the `match` token.
+- The variants of a local enum are consecutive rows of the variant family in
+  ordinal order, so the thread tests whether an ordinal exists without a
+  count. For an imported enum, `dependencies/11_project_types` stores the
+  variant count in word 3 of the resolved value metadata.
+- Every report for one match carries the `match` token and the same detail,
+  so the result does not depend on thread order.
 
 
 ## Methods called through a type's path

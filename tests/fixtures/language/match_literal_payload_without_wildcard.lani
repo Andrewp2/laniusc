@@ -1,0 +1,9 @@
+// `Slot::Held(2)` has no arm: an integer literal covers one value.
+enum Slot { Held(i32), Empty }
+fn first(slot: Slot) -> i32 {
+    return match (slot) {
+        Slot::Held(1) -> 1,
+        Slot::Empty -> 0,
+    };
+}
+fn main() -> i32 { return first(Slot::Held(2)); }

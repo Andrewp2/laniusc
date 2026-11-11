@@ -350,6 +350,11 @@ fn main() -> i32 {
 - An arm can also be a block, `pattern -> { statements }`. Every path through
   a block arm must end with `return`.
 - `_` matches every value that the arms above it do not.
+- A `match` must cover every value. On an enum that means an arm for each
+  variant or a `_` arm, and on a bool both `true` and `false`. A variant
+  inside a payload needs its own arms too: `Some(Shape::Circle(r))` covers
+  one shape, not `Some`. A `match` on integer literals always needs a `_`
+  arm. The compiler reports LNC0077 otherwise.
 
 ## `Option`, `Result` and `?`
 
@@ -621,9 +626,14 @@ today.
 - **No function values.** There are no closures and no function-typed
   parameters. Use a trait bound.
 - **No `if` expression.** `if` is a statement. Use `match` for a value.
-- **No exhaustiveness check.** A `match` that misses an enum variant
-  compiles. When that variant arrives, the program ends with SIGILL and no
-  message. Add a `_` arm.
+- **Exhaustiveness follows one payload column.** The arms
+  `Some(Shape::Circle(r))`, `Some(Shape::Empty)` and `None` cover every value
+  when `Shape` has those two variants. A set of arms that splits two payloads
+  of one variant at once, such as `Pair(Bit::Zero, Bit::One)`, counts as
+  covering nothing. Add a `_` arm to such a match.
+- **Literal payload patterns.** An arm such as `Some(1)` or `Some(true)`
+  passes the type check and then fails in code generation (LNC0057). Bind the
+  payload to a name and compare it in the arm.
 - **Associated constructors of library types.** `Vec::new()` and
   `String::from(...)` do not resolve. Call the module function:
   `alloc::vec::new()`, `alloc::string::from_str(...)`.

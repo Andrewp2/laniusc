@@ -843,6 +843,14 @@ pub(in crate::type_checker) const MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE: Reflect
     )
     .with_indirect_dispatch("match_hir_dispatch_args");
 
+pub(in crate::type_checker) const MATCH_EXHAUSTIVE_VALIDATE: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.modules.validate_match_exhaustive",
+        HirNodes,
+        "type_checker/modules/10o_validate_match_exhaustive"
+    )
+    .with_indirect_dispatch("match_hir_dispatch_args");
+
 pub(in crate::type_checker) const MATCH_PAYLOADS_TYPE: ReflectedComputeSpec = typecheck_pass!(
     "type_check.modules.type_match_payloads",
     HirNodes,

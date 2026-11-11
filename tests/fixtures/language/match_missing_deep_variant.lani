@@ -1,0 +1,10 @@
+// `Some(Some(None))` has no arm.
+import core::option;
+fn depth(value: Option<Option<Option<i32>>>) -> i32 {
+    return match (value) {
+        Some(Some(Some(inner))) -> inner,
+        Some(None) -> 2,
+        None -> 1,
+    };
+}
+fn main() -> i32 { return depth(Some(Some(None))); }

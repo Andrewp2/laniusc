@@ -1,0 +1,11 @@
+// `Some(Shape::Empty)` has no arm.
+import core::option;
+enum Shape { Circle(i32), Square(i32), Empty }
+fn area(shape: Option<Shape>) -> i32 {
+    return match (shape) {
+        Some(Shape::Circle(radius)) -> radius,
+        Some(Shape::Square(side)) -> side,
+        None -> 1,
+    };
+}
+fn main() -> i32 { return area(Some(Shape::Empty)); }

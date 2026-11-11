@@ -352,10 +352,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                       valid_token(core.token_start) &&
                       visible_decl[core.token_start] == core.token_start))
             {
-                const_value = uint2(resolved_dependency_value_metadata[value_base + 2u],
-                    resolved_dependency_value_metadata[value_base + 3u]);
                 // Unit values and imported patterns carry the resolver's
                 // checked ordinal. Payload calls use their call artifact.
+                // Word 3 is the variant count of the enum, not a value word.
+                const_value = uint2(resolved_dependency_value_metadata[value_base + 2u], 0u);
                 const_present = IMPORTED_UNIT_VARIANT_PRESENT;
             }
         }
