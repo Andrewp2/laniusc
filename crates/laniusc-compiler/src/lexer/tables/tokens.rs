@@ -279,6 +279,27 @@ define_token_kinds! {
     Mut,
     // the `&` of `&mut T` and `&mut self`: its own kind keeps the grammar LL(1)
     TypeAmpersandMut,
+    // lexer retags of the `machine` item's words. Each is a contextual
+    // keyword: `machine`, `start`, `state`, `final` and `goto` only directly
+    // before an identifier, `on` only after `machine Name`, `with` only
+    // after an identifier or `)`, and `stay` only as a whole arm body or
+    // statement. Elsewhere the lexeme stays an identifier.
+    Machine,
+    On,
+    Start,
+    State,
+    Final,
+    Goto,
+    Stay,
+    With,
+    // parser retags of the identifier after `state` or `start`, and after
+    // `goto`: their own kinds give the tokens that follow a state name
+    // unique pair-table entries
+    StateIdent,
+    GotoIdent,
+    // parser retags of the parentheses around a `goto` target's arguments
+    GotoLParen,
+    GotoRParen,
 }
 
 impl TokenKind {
@@ -299,18 +320,22 @@ impl TokenKind {
             | Self::RangeEndIdent
             | Self::PathGenericIdent
             | Self::ArrayLengthIdent
-            | Self::CastTypeIdent => Self::Ident,
+            | Self::CastTypeIdent
+            | Self::StateIdent
+            | Self::GotoIdent => Self::Ident,
             Self::ArrayRepeatCount => Self::Int,
             Self::CallLParen
             | Self::GroupLParen
             | Self::ParamLParen
             | Self::PatternLParen
-            | Self::EnumPayloadLParen => Self::LParen,
+            | Self::EnumPayloadLParen
+            | Self::GotoLParen => Self::LParen,
             Self::CallRParen
             | Self::GroupRParen
             | Self::ParamRParen
             | Self::PatternRParen
-            | Self::EnumPayloadRParen => Self::RParen,
+            | Self::EnumPayloadRParen
+            | Self::GotoRParen => Self::RParen,
             Self::IndexLBracket | Self::ArrayLBracket | Self::TypeArrayLBracket => Self::LBracket,
             Self::IndexRBracket | Self::ArrayRBracket | Self::TypeArrayRBracket => Self::RBracket,
             Self::IfLBrace
@@ -447,7 +472,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203 | 205..=212
             )
         };
 

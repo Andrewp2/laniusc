@@ -75,6 +75,7 @@ static const uint TK_FN_BLOCK_LBRACE = 149u;
 static const uint TK_FN_BLOCK_RBRACE = 150u;
 static const uint TK_IMPL_FN_BLOCK_LBRACE = 151u;
 static const uint TK_IMPL_FN_BLOCK_RBRACE = 152u;
+static const uint TK_MACHINE = 205u;
 static const uint TK_DEFERRED_FN_BLOCK_LBRACE = 0x80000000u;
 
 uint linear_group_id(uint3 gid)
@@ -138,7 +139,8 @@ bool is_statement_starter(uint kind)
            kind == TK_ENUM ||
            kind == TK_STRUCT ||
            kind == TK_IMPL ||
-           kind == TK_TRAIT;
+           kind == TK_TRAIT ||
+           kind == TK_MACHINE;
 }
 
 uint statement_event_for(

@@ -86,6 +86,8 @@ mod library_distribution_execution;
 mod library_sdk_execution;
 #[path = "../library_window_report_execution.rs"]
 mod library_window_report_execution;
+#[path = "../machine_syntax.rs"]
+mod machine_syntax;
 #[path = "../machines_execution.rs"]
 mod machines_execution;
 #[path = "../module_visibility.rs"]

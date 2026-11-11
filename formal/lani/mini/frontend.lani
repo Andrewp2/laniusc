@@ -15387,42 +15387,45 @@ pub fn front_end_words(g: List<Rule>, words: List<i32>) -> core::option::Option<
 // 29 path_type_arg_tail, 30 path_type_arg_tail_after_comma, 31 type_path,
 // 32 type_path_segment, 33 type_path_tail, 34 param_list_opt, 35 param,
 // 36 self_param_tail, 37 param_tail, 38 type_expr, 39 block, 40 if_block,
-// 41 stmt_list, 42 stmt, 43 else_tail, 44 let_type_opt, 45 let_init_opt,
-// 46 return_value_opt, 47 for_iterable, 48 range_start, 49 range_start_tail,
-// 50 range_bound, 51 range_bound_ident, 52 range_bound_opt, 53 expr, 54 assign,
-// 55 assign_tail, 56 orexpr, 57 orexpr_tail, 58 andexpr, 59 andexpr_tail,
-// 60 bit_or, 61 bit_or_tail, 62 bit_xor, 63 bit_xor_tail, 64 bit_and,
-// 65 bit_and_tail, 66 equality, 67 equality_tail, 68 compare, 69 compare_tail,
-// 70 shift, 71 shift_tail, 72 add, 73 add_tail, 74 mul, 75 mul_tail, 76 unary,
-// 77 postfix, 78 postfix_tail, 79 arg_list_opt, 80 arg_tail,
-// 81 arg_tail_after_comma, 82 primary, 83 array_elems_opt, 84 array_elems_tail,
-// 85 array_elems_tail_after_comma, 86 match_arm_list_opt, 87 match_arm,
-// 88 match_arm_tail, 89 match_arm_tail_after_comma, 90 pattern,
-// 91 pattern_ident_tail, 92 pattern_list_opt, 93 pattern_tail,
-// 94 pattern_tail_after_comma, 95 const_item, 96 enum_item,
-// 97 enum_variant_list_opt, 98 enum_variant, 99 enum_variant_payload_opt,
-// 100 enum_variant_fields_opt, 101 enum_variant_fields_tail,
-// 102 enum_variant_fields_tail_after_comma, 103 enum_variant_tail,
-// 104 enum_variant_tail_after_comma, 105 type_args_opt, 106 type_arg_tail,
-// 107 type_arg_tail_after_comma, 108 enum_type_params_opt, 109 enum_type_param,
-// 110 type_param_bound_opt, 111 type_param_bound_list,
-// 112 type_param_bound_tail, 113 bound_type_expr, 114 bound_type_path,
-// 115 bound_type_path_segment, 116 bound_type_path_tail,
-// 117 bound_type_args_opt, 118 bound_type_arg_tail,
-// 119 bound_type_arg_tail_after_comma, 120 enum_type_param_tail,
-// 121 enum_type_param_tail_after_comma, 122 struct_item,
-// 123 struct_field_list_opt, 124 struct_field, 125 struct_field_tail,
-// 126 struct_field_tail_after_comma, 127 pub_item, 128 primary_ident_tail,
-// 129 struct_lit_field_list_opt, 130 struct_lit_field,
-// 131 struct_lit_field_tail, 132 struct_lit_field_tail_after_comma,
-// 133 type_bracket_tail, 134 type_array_len, 135 array_length_path,
-// 136 array_length_path_segment, 137 array_length_path_tail,
-// 138 param_tail_after_comma, 139 generic_argument,
-// 140 scalar_constant_argument, 141 member_type_args_opt,
-// 142 generic_argument_magnitude, 143 cast, 144 cast_tail, 145 cast_type,
-// 146 cast_type_path, 147 cast_type_path_segment, 148 cast_type_path_tail,
-// 149 array_repeat_count, 150 distinct_opt, 151 contract_list_opt,
-// 152 contract.
+// 41 stmt_list, 42 stmt, 43 else_tail, 44 else_arm, 45 let_type_opt,
+// 46 let_init_opt, 47 return_value_opt, 48 for_iterable, 49 range_start,
+// 50 range_start_tail, 51 range_bound, 52 range_bound_ident,
+// 53 range_bound_opt, 54 expr, 55 assign, 56 assign_tail, 57 orexpr,
+// 58 orexpr_tail, 59 andexpr, 60 andexpr_tail, 61 bit_or, 62 bit_or_tail,
+// 63 bit_xor, 64 bit_xor_tail, 65 bit_and, 66 bit_and_tail, 67 equality,
+// 68 equality_tail, 69 compare, 70 compare_tail, 71 shift, 72 shift_tail,
+// 73 add, 74 add_tail, 75 mul, 76 mul_tail, 77 unary, 78 postfix,
+// 79 postfix_tail, 80 arg_list_opt, 81 arg_tail, 82 arg_tail_after_comma,
+// 83 primary, 84 array_elems_opt, 85 array_elems_tail,
+// 86 array_elems_tail_after_comma, 87 match_arm_list_opt, 88 match_arm,
+// 89 match_arm_tail, 90 match_arm_tail_after_comma, 91 pattern,
+// 92 pattern_ident_tail, 93 pattern_list_opt, 94 pattern_tail,
+// 95 pattern_tail_after_comma, 96 const_item, 97 enum_item,
+// 98 enum_variant_list_opt, 99 enum_variant, 100 enum_variant_payload_opt,
+// 101 enum_variant_fields_opt, 102 enum_variant_fields_tail,
+// 103 enum_variant_fields_tail_after_comma, 104 enum_variant_tail,
+// 105 enum_variant_tail_after_comma, 106 type_args_opt, 107 type_arg_tail,
+// 108 type_arg_tail_after_comma, 109 enum_type_params_opt, 110 enum_type_param,
+// 111 type_param_bound_opt, 112 type_param_bound_list,
+// 113 type_param_bound_tail, 114 bound_type_expr, 115 bound_type_path,
+// 116 bound_type_path_segment, 117 bound_type_path_tail,
+// 118 bound_type_args_opt, 119 bound_type_arg_tail,
+// 120 bound_type_arg_tail_after_comma, 121 enum_type_param_tail,
+// 122 enum_type_param_tail_after_comma, 123 struct_item,
+// 124 struct_field_list_opt, 125 struct_field, 126 struct_field_tail,
+// 127 struct_field_tail_after_comma, 128 pub_item, 129 primary_ident_tail,
+// 130 struct_lit_field_list_opt, 131 struct_lit_field,
+// 132 struct_lit_field_tail, 133 struct_lit_field_tail_after_comma,
+// 134 type_bracket_tail, 135 type_array_len, 136 array_length_path,
+// 137 array_length_path_segment, 138 array_length_path_tail,
+// 139 param_tail_after_comma, 140 generic_argument,
+// 141 scalar_constant_argument, 142 member_type_args_opt,
+// 143 generic_argument_magnitude, 144 cast, 145 cast_tail, 146 cast_type,
+// 147 cast_type_path, 148 cast_type_path_segment, 149 cast_type_path_tail,
+// 150 array_repeat_count, 151 distinct_opt, 152 contract_list_opt,
+// 153 contract, 154 machine_item, 155 machine_output, 156 machine_state_list,
+// 157 machine_state, 158 machine_state_decl, 159 machine_state_data,
+// 160 goto_args, 161 transition_output.
 
 // Productions 0 to 19:
 // 0 file, 1 items_more, 2 items_end, 3 item_pub, 4 item_fn, 5 item_extern_fn,
@@ -15433,7 +15436,7 @@ pub fn grammar_part_0() -> List<Rule> {
     return cons(Rule { lhs: 0, rhs: cons(Nonterm(1), empty()) },
         cons(Rule { lhs: 1, rhs: cons(Nonterm(2), cons(Nonterm(1), empty())) },
         cons(Rule { lhs: 1, rhs: empty() },
-        cons(Rule { lhs: 2, rhs: cons(Term(66), cons(Nonterm(127), empty())) },
+        cons(Rule { lhs: 2, rhs: cons(Term(66), cons(Nonterm(128), empty())) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(3), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(7), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(23), empty()) },
@@ -15441,14 +15444,14 @@ pub fn grammar_part_0() -> List<Rule> {
         cons(Rule { lhs: 2, rhs: cons(Nonterm(8), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(9), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(13), empty()) },
-        cons(Rule { lhs: 3, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(151), cons(Nonterm(4), empty())))))))))) },
+        cons(Rule { lhs: 3, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(109), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(152), cons(Nonterm(4), empty())))))))))) },
         cons(Rule { lhs: 4, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
-        cons(Rule { lhs: 5, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(151), cons(Nonterm(6), empty())))))))))) },
+        cons(Rule { lhs: 5, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(109), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(152), cons(Nonterm(6), empty())))))))))) },
         cons(Rule { lhs: 6, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
-        cons(Rule { lhs: 7, rhs: cons(Term(102), cons(Nonterm(17), cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))))) },
-        cons(Rule { lhs: 8, rhs: cons(Term(103), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(8), cons(Nonterm(150), cons(Nonterm(38), cons(Term(37), empty())))))))) },
-        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))) },
-        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Term(100), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))))) },
+        cons(Rule { lhs: 7, rhs: cons(Term(102), cons(Nonterm(17), cons(Term(67), cons(Term(1), cons(Nonterm(109), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))))) },
+        cons(Rule { lhs: 8, rhs: cons(Term(103), cons(Term(1), cons(Nonterm(109), cons(Nonterm(19), cons(Term(8), cons(Nonterm(151), cons(Nonterm(38), cons(Term(37), empty())))))))) },
+        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(109), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(109), cons(Nonterm(38), cons(Term(100), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))))) },
         cons(Rule { lhs: 10, rhs: empty() },
         empty()))))))))))))))))))));
 }
@@ -15466,11 +15469,11 @@ pub fn grammar_part_1() -> List<Rule> {
         cons(Rule { lhs: 11, rhs: cons(Term(66), cons(Nonterm(5), empty())) },
         cons(Rule { lhs: 12, rhs: cons(Nonterm(11), cons(Nonterm(12), empty())) },
         cons(Rule { lhs: 12, rhs: empty() },
-        cons(Rule { lhs: 13, rhs: cons(Term(99), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(14), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 13, rhs: cons(Term(99), cons(Term(1), cons(Nonterm(109), cons(Nonterm(19), cons(Term(22), cons(Nonterm(14), cons(Term(23), empty()))))))) },
         cons(Rule { lhs: 14, rhs: empty() },
         cons(Rule { lhs: 14, rhs: cons(Nonterm(15), cons(Nonterm(16), empty())) },
-        cons(Rule { lhs: 15, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))) },
-        cons(Rule { lhs: 15, rhs: cons(Term(66), cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty())))))))))) },
+        cons(Rule { lhs: 15, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(109), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))) },
+        cons(Rule { lhs: 15, rhs: cons(Term(66), cons(Term(67), cons(Term(1), cons(Nonterm(109), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty())))))))))) },
         cons(Rule { lhs: 16, rhs: cons(Nonterm(15), cons(Nonterm(16), empty())) },
         cons(Rule { lhs: 16, rhs: empty() },
         cons(Rule { lhs: 17, rhs: cons(Term(32), empty()) },
@@ -15479,7 +15482,7 @@ pub fn grammar_part_1() -> List<Rule> {
         cons(Rule { lhs: 18, rhs: empty() },
         cons(Rule { lhs: 19, rhs: empty() },
         cons(Rule { lhs: 19, rhs: cons(Term(104), cons(Nonterm(20), cons(Nonterm(21), empty()))) },
-        cons(Rule { lhs: 20, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(111), empty()))) },
+        cons(Rule { lhs: 20, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(112), empty()))) },
         cons(Rule { lhs: 21, rhs: cons(Term(36), cons(Nonterm(22), empty())) },
         empty()))))))))))))))))))));
 }
@@ -15501,12 +15504,12 @@ pub fn grammar_part_2() -> List<Rule> {
         cons(Rule { lhs: 25, rhs: cons(Term(97), cons(Nonterm(26), cons(Term(37), empty()))) },
         cons(Rule { lhs: 26, rhs: cons(Nonterm(27), cons(Nonterm(28), empty())) },
         cons(Rule { lhs: 27, rhs: cons(Term(1), empty()) },
-        cons(Rule { lhs: 27, rhs: cons(Term(1), cons(Term(12), cons(Nonterm(139), cons(Nonterm(29), cons(Term(13), empty()))))) },
+        cons(Rule { lhs: 27, rhs: cons(Term(1), cons(Term(12), cons(Nonterm(140), cons(Nonterm(29), cons(Term(13), empty()))))) },
         cons(Rule { lhs: 28, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(27), cons(Nonterm(28), empty())))) },
         cons(Rule { lhs: 28, rhs: empty() },
         cons(Rule { lhs: 29, rhs: cons(Term(36), cons(Nonterm(30), empty())) },
         cons(Rule { lhs: 29, rhs: empty() },
-        cons(Rule { lhs: 30, rhs: cons(Nonterm(139), cons(Nonterm(29), empty())) },
+        cons(Rule { lhs: 30, rhs: cons(Nonterm(140), cons(Nonterm(29), empty())) },
         cons(Rule { lhs: 30, rhs: empty() },
         cons(Rule { lhs: 31, rhs: cons(Nonterm(32), cons(Nonterm(33), empty())) },
         cons(Rule { lhs: 32, rhs: cons(Term(1), empty()) },
@@ -15529,678 +15532,733 @@ pub fn grammar_part_3() -> List<Rule> {
         cons(Rule { lhs: 35, rhs: cons(Term(25), cons(Term(105), empty())) },
         cons(Rule { lhs: 36, rhs: cons(Term(38), cons(Nonterm(38), empty())) },
         cons(Rule { lhs: 36, rhs: empty() },
-        cons(Rule { lhs: 37, rhs: cons(Term(36), cons(Nonterm(138), empty())) },
+        cons(Rule { lhs: 37, rhs: cons(Term(36), cons(Nonterm(139), empty())) },
         cons(Rule { lhs: 37, rhs: empty() },
-        cons(Rule { lhs: 38, rhs: cons(Nonterm(31), cons(Nonterm(105), empty())) },
-        cons(Rule { lhs: 38, rhs: cons(Term(20), cons(Nonterm(38), cons(Nonterm(133), empty()))) },
+        cons(Rule { lhs: 38, rhs: cons(Nonterm(31), cons(Nonterm(106), empty())) },
+        cons(Rule { lhs: 38, rhs: cons(Term(20), cons(Nonterm(38), cons(Nonterm(134), empty()))) },
         cons(Rule { lhs: 39, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
         cons(Rule { lhs: 40, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
         cons(Rule { lhs: 41, rhs: cons(Nonterm(42), cons(Nonterm(41), empty())) },
         cons(Rule { lhs: 41, rhs: empty() },
-        cons(Rule { lhs: 42, rhs: cons(Term(68), cons(Term(1), cons(Nonterm(44), cons(Nonterm(45), cons(Term(37), empty()))))) },
-        cons(Rule { lhs: 42, rhs: cons(Term(69), cons(Nonterm(46), cons(Term(37), empty()))) },
-        cons(Rule { lhs: 42, rhs: cons(Term(70), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Nonterm(40), cons(Nonterm(43), empty())))))) },
-        cons(Rule { lhs: 43, rhs: cons(Term(71), cons(Nonterm(39), empty())) },
+        cons(Rule { lhs: 42, rhs: cons(Term(68), cons(Term(1), cons(Nonterm(45), cons(Nonterm(46), cons(Term(37), empty()))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(69), cons(Nonterm(47), cons(Term(37), empty()))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(70), cons(Term(4), cons(Nonterm(54), cons(Term(5), cons(Nonterm(40), cons(Nonterm(43), empty())))))) },
+        cons(Rule { lhs: 43, rhs: cons(Term(71), cons(Nonterm(44), empty())) },
         cons(Rule { lhs: 43, rhs: empty() },
         empty()))))))))))))))))))));
 }
 
 // Productions 80 to 99:
-// 80 while_stmt, 81 for_stmt, 82 break_stmt, 83 continue_stmt, 84 block_stmt,
-// 85 expr_stmt, 86 let_type, 87 let_type_none, 88 let_init, 89 let_init_none,
-// 90 return_value, 91 return_void, 92 for_iter_path,
-// 93 for_iter_range_from_start, 94 for_iter_range_to,
-// 95 for_iter_range_to_inclusive, 96 range_start_int, 97 range_exclusive,
-// 98 range_inclusive, 99 range_bound_name.
+// 80 else_block, 81 else_if, 82 while_stmt, 83 for_stmt, 84 break_stmt,
+// 85 continue_stmt, 86 block_stmt, 87 expr_stmt, 88 let_type, 89 let_type_none,
+// 90 let_init, 91 let_init_none, 92 return_value, 93 return_void,
+// 94 for_iter_path, 95 for_iter_range_from_start, 96 for_iter_range_to,
+// 97 for_iter_range_to_inclusive, 98 range_start_int, 99 range_exclusive.
 pub fn grammar_part_4() -> List<Rule> {
-    return cons(Rule { lhs: 42, rhs: cons(Term(72), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Nonterm(39), empty()))))) },
-        cons(Rule { lhs: 42, rhs: cons(Term(100), cons(Term(1), cons(Term(101), cons(Nonterm(47), cons(Nonterm(39), empty()))))) },
+    return cons(Rule { lhs: 44, rhs: cons(Nonterm(39), empty()) },
+        cons(Rule { lhs: 44, rhs: cons(Term(70), cons(Term(4), cons(Nonterm(54), cons(Term(5), cons(Nonterm(40), cons(Nonterm(43), empty())))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(72), cons(Term(4), cons(Nonterm(54), cons(Term(5), cons(Nonterm(39), empty()))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(100), cons(Term(1), cons(Term(101), cons(Nonterm(48), cons(Nonterm(39), empty()))))) },
         cons(Rule { lhs: 42, rhs: cons(Term(73), cons(Term(37), empty())) },
         cons(Rule { lhs: 42, rhs: cons(Term(74), cons(Term(37), empty())) },
         cons(Rule { lhs: 42, rhs: cons(Nonterm(39), empty()) },
-        cons(Rule { lhs: 42, rhs: cons(Nonterm(53), cons(Term(37), empty())) },
-        cons(Rule { lhs: 44, rhs: cons(Term(38), cons(Nonterm(38), empty())) },
-        cons(Rule { lhs: 44, rhs: empty() },
-        cons(Rule { lhs: 45, rhs: cons(Term(8), cons(Nonterm(53), empty())) },
+        cons(Rule { lhs: 42, rhs: cons(Nonterm(54), cons(Term(37), empty())) },
+        cons(Rule { lhs: 45, rhs: cons(Term(38), cons(Nonterm(38), empty())) },
         cons(Rule { lhs: 45, rhs: empty() },
-        cons(Rule { lhs: 46, rhs: cons(Nonterm(53), empty()) },
+        cons(Rule { lhs: 46, rhs: cons(Term(8), cons(Nonterm(54), empty())) },
         cons(Rule { lhs: 46, rhs: empty() },
-        cons(Rule { lhs: 47, rhs: cons(Nonterm(26), empty()) },
-        cons(Rule { lhs: 47, rhs: cons(Nonterm(48), cons(Nonterm(49), empty())) },
-        cons(Rule { lhs: 47, rhs: cons(Term(182), cons(Nonterm(52), empty())) },
-        cons(Rule { lhs: 47, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(50), empty()))) },
-        cons(Rule { lhs: 48, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 49, rhs: cons(Term(182), cons(Nonterm(52), empty())) },
-        cons(Rule { lhs: 49, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(50), empty()))) },
-        cons(Rule { lhs: 50, rhs: cons(Nonterm(51), cons(Nonterm(78), empty())) },
+        cons(Rule { lhs: 47, rhs: cons(Nonterm(54), empty()) },
+        cons(Rule { lhs: 47, rhs: empty() },
+        cons(Rule { lhs: 48, rhs: cons(Nonterm(26), empty()) },
+        cons(Rule { lhs: 48, rhs: cons(Nonterm(49), cons(Nonterm(50), empty())) },
+        cons(Rule { lhs: 48, rhs: cons(Term(182), cons(Nonterm(53), empty())) },
+        cons(Rule { lhs: 48, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(51), empty()))) },
+        cons(Rule { lhs: 49, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 50, rhs: cons(Term(182), cons(Nonterm(53), empty())) },
         empty()))))))))))))))))))));
 }
 
 // Productions 100 to 119:
-// 100 range_bound_int, 101 range_bound_ident, 102 range_bound,
-// 103 range_unbounded, 104 expr, 105 assign, 106 assign_set, 107 assign_add,
-// 108 assign_sub, 109 assign_mul, 110 assign_div, 111 assign_mod,
-// 112 assign_xor, 113 assign_shl, 114 assign_shr, 115 assign_band,
-// 116 assign_bor, 117 assign_end, 118 orexpr, 119 or_tail.
+// 100 range_inclusive, 101 range_bound_name, 102 range_bound_int,
+// 103 range_bound_ident, 104 range_bound, 105 range_unbounded, 106 expr,
+// 107 assign, 108 assign_set, 109 assign_add, 110 assign_sub, 111 assign_mul,
+// 112 assign_div, 113 assign_mod, 114 assign_xor, 115 assign_shl,
+// 116 assign_shr, 117 assign_band, 118 assign_bor, 119 assign_end.
 pub fn grammar_part_5() -> List<Rule> {
-    return cons(Rule { lhs: 50, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 51, rhs: cons(Term(1), empty()) },
-        cons(Rule { lhs: 52, rhs: cons(Nonterm(50), empty()) },
-        cons(Rule { lhs: 52, rhs: empty() },
-        cons(Rule { lhs: 53, rhs: cons(Nonterm(54), empty()) },
-        cons(Rule { lhs: 54, rhs: cons(Nonterm(56), cons(Nonterm(55), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(8), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(46), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(47), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(48), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(49), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(50), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(51), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(52), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(53), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(54), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: cons(Term(55), cons(Nonterm(54), empty())) },
-        cons(Rule { lhs: 55, rhs: empty() },
-        cons(Rule { lhs: 56, rhs: cons(Nonterm(58), cons(Nonterm(57), empty())) },
-        cons(Rule { lhs: 57, rhs: cons(Term(18), cons(Nonterm(58), cons(Nonterm(57), empty()))) },
+    return cons(Rule { lhs: 50, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(51), empty()))) },
+        cons(Rule { lhs: 51, rhs: cons(Nonterm(52), cons(Nonterm(79), empty())) },
+        cons(Rule { lhs: 51, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 52, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 53, rhs: cons(Nonterm(51), empty()) },
+        cons(Rule { lhs: 53, rhs: empty() },
+        cons(Rule { lhs: 54, rhs: cons(Nonterm(55), empty()) },
+        cons(Rule { lhs: 55, rhs: cons(Nonterm(57), cons(Nonterm(56), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(8), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(46), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(47), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(48), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(49), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(50), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(51), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(52), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(53), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(54), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: cons(Term(55), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 56, rhs: empty() },
         empty()))))))))))))))))))));
 }
 
 // Productions 120 to 139:
-// 120 or_end, 121 andexpr, 122 and_tail, 123 and_end, 124 bit_or, 125 bor_tail,
-// 126 bor_end, 127 bit_xor, 128 xor_tail, 129 xor_end, 130 bit_and,
-// 131 band_tail, 132 band_end, 133 equality, 134 eq_tail, 135 ne_tail,
-// 136 eq_end, 137 compare, 138 lt_tail, 139 gt_tail.
+// 120 orexpr, 121 or_tail, 122 or_end, 123 andexpr, 124 and_tail, 125 and_end,
+// 126 bit_or, 127 bor_tail, 128 bor_end, 129 bit_xor, 130 xor_tail,
+// 131 xor_end, 132 bit_and, 133 band_tail, 134 band_end, 135 equality,
+// 136 eq_tail, 137 ne_tail, 138 eq_end, 139 compare.
 pub fn grammar_part_6() -> List<Rule> {
-    return cons(Rule { lhs: 57, rhs: empty() },
-        cons(Rule { lhs: 58, rhs: cons(Nonterm(60), cons(Nonterm(59), empty())) },
-        cons(Rule { lhs: 59, rhs: cons(Term(17), cons(Nonterm(60), cons(Nonterm(59), empty()))) },
-        cons(Rule { lhs: 59, rhs: empty() },
-        cons(Rule { lhs: 60, rhs: cons(Nonterm(62), cons(Nonterm(61), empty())) },
-        cons(Rule { lhs: 61, rhs: cons(Term(26), cons(Nonterm(62), cons(Nonterm(61), empty()))) },
-        cons(Rule { lhs: 61, rhs: empty() },
-        cons(Rule { lhs: 62, rhs: cons(Nonterm(64), cons(Nonterm(63), empty())) },
-        cons(Rule { lhs: 63, rhs: cons(Term(42), cons(Nonterm(64), cons(Nonterm(63), empty()))) },
-        cons(Rule { lhs: 63, rhs: empty() },
-        cons(Rule { lhs: 64, rhs: cons(Nonterm(66), cons(Nonterm(65), empty())) },
-        cons(Rule { lhs: 65, rhs: cons(Term(25), cons(Nonterm(66), cons(Nonterm(65), empty()))) },
-        cons(Rule { lhs: 65, rhs: empty() },
-        cons(Rule { lhs: 66, rhs: cons(Nonterm(68), cons(Nonterm(67), empty())) },
-        cons(Rule { lhs: 67, rhs: cons(Term(16), cons(Nonterm(68), cons(Nonterm(67), empty()))) },
-        cons(Rule { lhs: 67, rhs: cons(Term(40), cons(Nonterm(68), cons(Nonterm(67), empty()))) },
-        cons(Rule { lhs: 67, rhs: empty() },
-        cons(Rule { lhs: 68, rhs: cons(Nonterm(70), cons(Nonterm(69), empty())) },
-        cons(Rule { lhs: 69, rhs: cons(Term(12), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
-        cons(Rule { lhs: 69, rhs: cons(Term(13), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
+    return cons(Rule { lhs: 57, rhs: cons(Nonterm(59), cons(Nonterm(58), empty())) },
+        cons(Rule { lhs: 58, rhs: cons(Term(18), cons(Nonterm(59), cons(Nonterm(58), empty()))) },
+        cons(Rule { lhs: 58, rhs: empty() },
+        cons(Rule { lhs: 59, rhs: cons(Nonterm(61), cons(Nonterm(60), empty())) },
+        cons(Rule { lhs: 60, rhs: cons(Term(17), cons(Nonterm(61), cons(Nonterm(60), empty()))) },
+        cons(Rule { lhs: 60, rhs: empty() },
+        cons(Rule { lhs: 61, rhs: cons(Nonterm(63), cons(Nonterm(62), empty())) },
+        cons(Rule { lhs: 62, rhs: cons(Term(26), cons(Nonterm(63), cons(Nonterm(62), empty()))) },
+        cons(Rule { lhs: 62, rhs: empty() },
+        cons(Rule { lhs: 63, rhs: cons(Nonterm(65), cons(Nonterm(64), empty())) },
+        cons(Rule { lhs: 64, rhs: cons(Term(42), cons(Nonterm(65), cons(Nonterm(64), empty()))) },
+        cons(Rule { lhs: 64, rhs: empty() },
+        cons(Rule { lhs: 65, rhs: cons(Nonterm(67), cons(Nonterm(66), empty())) },
+        cons(Rule { lhs: 66, rhs: cons(Term(25), cons(Nonterm(67), cons(Nonterm(66), empty()))) },
+        cons(Rule { lhs: 66, rhs: empty() },
+        cons(Rule { lhs: 67, rhs: cons(Nonterm(69), cons(Nonterm(68), empty())) },
+        cons(Rule { lhs: 68, rhs: cons(Term(16), cons(Nonterm(69), cons(Nonterm(68), empty()))) },
+        cons(Rule { lhs: 68, rhs: cons(Term(40), cons(Nonterm(69), cons(Nonterm(68), empty()))) },
+        cons(Rule { lhs: 68, rhs: empty() },
+        cons(Rule { lhs: 69, rhs: cons(Nonterm(71), cons(Nonterm(70), empty())) },
         empty()))))))))))))))))))));
 }
 
 // Productions 140 to 159:
-// 140 le_tail, 141 ge_tail, 142 compare_end, 143 shift, 144 shl_tail,
-// 145 shr_tail, 146 shift_end, 147 add, 148 add_tail, 149 sub_tail,
-// 150 add_end, 151 mul, 152 mul_tail, 153 div_tail, 154 mod_tail, 155 mul_end,
-// 156 pos, 157 neg, 158 not, 159 base.
+// 140 lt_tail, 141 gt_tail, 142 le_tail, 143 ge_tail, 144 compare_end,
+// 145 shift, 146 shl_tail, 147 shr_tail, 148 shift_end, 149 add, 150 add_tail,
+// 151 sub_tail, 152 add_end, 153 mul, 154 mul_tail, 155 div_tail, 156 mod_tail,
+// 157 mul_end, 158 pos, 159 neg.
 pub fn grammar_part_7() -> List<Rule> {
-    return cons(Rule { lhs: 69, rhs: cons(Term(14), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
-        cons(Rule { lhs: 69, rhs: cons(Term(15), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
-        cons(Rule { lhs: 69, rhs: empty() },
-        cons(Rule { lhs: 70, rhs: cons(Nonterm(72), cons(Nonterm(71), empty())) },
-        cons(Rule { lhs: 71, rhs: cons(Term(43), cons(Nonterm(72), cons(Nonterm(71), empty()))) },
-        cons(Rule { lhs: 71, rhs: cons(Term(44), cons(Nonterm(72), cons(Nonterm(71), empty()))) },
-        cons(Rule { lhs: 71, rhs: empty() },
-        cons(Rule { lhs: 72, rhs: cons(Nonterm(74), cons(Nonterm(73), empty())) },
-        cons(Rule { lhs: 73, rhs: cons(Term(6), cons(Nonterm(74), cons(Nonterm(73), empty()))) },
-        cons(Rule { lhs: 73, rhs: cons(Term(27), cons(Nonterm(74), cons(Nonterm(73), empty()))) },
-        cons(Rule { lhs: 73, rhs: empty() },
-        cons(Rule { lhs: 74, rhs: cons(Nonterm(143), cons(Nonterm(75), empty())) },
-        cons(Rule { lhs: 75, rhs: cons(Term(7), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
-        cons(Rule { lhs: 75, rhs: cons(Term(9), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
-        cons(Rule { lhs: 75, rhs: cons(Term(41), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
-        cons(Rule { lhs: 75, rhs: empty() },
-        cons(Rule { lhs: 76, rhs: cons(Term(6), cons(Nonterm(76), empty())) },
-        cons(Rule { lhs: 76, rhs: cons(Term(27), cons(Nonterm(76), empty())) },
-        cons(Rule { lhs: 76, rhs: cons(Term(19), cons(Nonterm(76), empty())) },
-        cons(Rule { lhs: 76, rhs: cons(Nonterm(77), empty()) },
+    return cons(Rule { lhs: 70, rhs: cons(Term(12), cons(Nonterm(71), cons(Nonterm(70), empty()))) },
+        cons(Rule { lhs: 70, rhs: cons(Term(13), cons(Nonterm(71), cons(Nonterm(70), empty()))) },
+        cons(Rule { lhs: 70, rhs: cons(Term(14), cons(Nonterm(71), cons(Nonterm(70), empty()))) },
+        cons(Rule { lhs: 70, rhs: cons(Term(15), cons(Nonterm(71), cons(Nonterm(70), empty()))) },
+        cons(Rule { lhs: 70, rhs: empty() },
+        cons(Rule { lhs: 71, rhs: cons(Nonterm(73), cons(Nonterm(72), empty())) },
+        cons(Rule { lhs: 72, rhs: cons(Term(43), cons(Nonterm(73), cons(Nonterm(72), empty()))) },
+        cons(Rule { lhs: 72, rhs: cons(Term(44), cons(Nonterm(73), cons(Nonterm(72), empty()))) },
+        cons(Rule { lhs: 72, rhs: empty() },
+        cons(Rule { lhs: 73, rhs: cons(Nonterm(75), cons(Nonterm(74), empty())) },
+        cons(Rule { lhs: 74, rhs: cons(Term(6), cons(Nonterm(75), cons(Nonterm(74), empty()))) },
+        cons(Rule { lhs: 74, rhs: cons(Term(27), cons(Nonterm(75), cons(Nonterm(74), empty()))) },
+        cons(Rule { lhs: 74, rhs: empty() },
+        cons(Rule { lhs: 75, rhs: cons(Nonterm(144), cons(Nonterm(76), empty())) },
+        cons(Rule { lhs: 76, rhs: cons(Term(7), cons(Nonterm(144), cons(Nonterm(76), empty()))) },
+        cons(Rule { lhs: 76, rhs: cons(Term(9), cons(Nonterm(144), cons(Nonterm(76), empty()))) },
+        cons(Rule { lhs: 76, rhs: cons(Term(41), cons(Nonterm(144), cons(Nonterm(76), empty()))) },
+        cons(Rule { lhs: 76, rhs: empty() },
+        cons(Rule { lhs: 77, rhs: cons(Term(6), cons(Nonterm(77), empty())) },
+        cons(Rule { lhs: 77, rhs: cons(Term(27), cons(Nonterm(77), empty())) },
         empty()))))))))))))))))))));
 }
 
 // Productions 160 to 179:
-// 160 postfix, 161 postfix_call, 162 postfix_index, 163 postfix_member,
-// 164 postfix_end, 165 args_none, 166 args_some, 167 args_more, 168 args_end,
-// 169 args_after_comma_more, 170 args_after_comma_trailing, 171 array_lit,
-// 172 group, 173 ident, 174 self_value, 175 int, 176 float, 177 string,
-// 178 char, 179 array_none.
+// 160 not, 161 base, 162 postfix, 163 postfix_call, 164 postfix_index,
+// 165 postfix_member, 166 postfix_end, 167 args_none, 168 args_some,
+// 169 args_more, 170 args_end, 171 args_after_comma_more,
+// 172 args_after_comma_trailing, 173 array_lit, 174 group, 175 ident,
+// 176 self_value, 177 int, 178 float, 179 string.
 pub fn grammar_part_8() -> List<Rule> {
-    return cons(Rule { lhs: 77, rhs: cons(Nonterm(82), cons(Nonterm(78), empty())) },
-        cons(Rule { lhs: 78, rhs: cons(Term(4), cons(Nonterm(79), cons(Term(5), cons(Nonterm(78), empty())))) },
-        cons(Rule { lhs: 78, rhs: cons(Term(20), cons(Nonterm(53), cons(Term(21), cons(Nonterm(78), empty())))) },
-        cons(Rule { lhs: 78, rhs: cons(Term(35), cons(Term(1), cons(Nonterm(141), cons(Nonterm(78), empty())))) },
-        cons(Rule { lhs: 78, rhs: empty() },
+    return cons(Rule { lhs: 77, rhs: cons(Term(19), cons(Nonterm(77), empty())) },
+        cons(Rule { lhs: 77, rhs: cons(Nonterm(78), empty()) },
+        cons(Rule { lhs: 78, rhs: cons(Nonterm(83), cons(Nonterm(79), empty())) },
+        cons(Rule { lhs: 79, rhs: cons(Term(4), cons(Nonterm(80), cons(Term(5), cons(Nonterm(79), empty())))) },
+        cons(Rule { lhs: 79, rhs: cons(Term(20), cons(Nonterm(54), cons(Term(21), cons(Nonterm(79), empty())))) },
+        cons(Rule { lhs: 79, rhs: cons(Term(35), cons(Term(1), cons(Nonterm(142), cons(Nonterm(79), empty())))) },
         cons(Rule { lhs: 79, rhs: empty() },
-        cons(Rule { lhs: 79, rhs: cons(Nonterm(53), cons(Nonterm(80), empty())) },
-        cons(Rule { lhs: 80, rhs: cons(Term(36), cons(Nonterm(81), empty())) },
         cons(Rule { lhs: 80, rhs: empty() },
-        cons(Rule { lhs: 81, rhs: cons(Nonterm(53), cons(Nonterm(80), empty())) },
+        cons(Rule { lhs: 80, rhs: cons(Nonterm(54), cons(Nonterm(81), empty())) },
+        cons(Rule { lhs: 81, rhs: cons(Term(36), cons(Nonterm(82), empty())) },
         cons(Rule { lhs: 81, rhs: empty() },
-        cons(Rule { lhs: 82, rhs: cons(Term(20), cons(Nonterm(83), cons(Term(21), empty()))) },
-        cons(Rule { lhs: 82, rhs: cons(Term(4), cons(Nonterm(53), cons(Term(5), empty()))) },
-        cons(Rule { lhs: 82, rhs: cons(Nonterm(26), cons(Nonterm(128), empty())) },
-        cons(Rule { lhs: 82, rhs: cons(Term(105), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(33), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(32), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(34), empty()) },
-        cons(Rule { lhs: 83, rhs: empty() },
+        cons(Rule { lhs: 82, rhs: cons(Nonterm(54), cons(Nonterm(81), empty())) },
+        cons(Rule { lhs: 82, rhs: empty() },
+        cons(Rule { lhs: 83, rhs: cons(Term(20), cons(Nonterm(84), cons(Term(21), empty()))) },
+        cons(Rule { lhs: 83, rhs: cons(Term(4), cons(Nonterm(54), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 83, rhs: cons(Nonterm(26), cons(Nonterm(129), empty())) },
+        cons(Rule { lhs: 83, rhs: cons(Term(105), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Term(32), empty()) },
         empty()))))))))))))))))))));
 }
 
 // Productions 180 to 199:
-// 180 array_some, 181 array_more, 182 array_end, 183 array_after_comma_more,
-// 184 array_after_comma_trailing, 185 true, 186 false, 187 match_expr,
-// 188 match_arms_none, 189 match_arms_some, 190 match_arm, 191 match_arms_more,
-// 192 match_arms_end, 193 match_arms_after_comma_more,
-// 194 match_arms_after_comma_trailing, 195 pattern_ident, 196 pattern_int,
-// 197 pattern_true, 198 pattern_false, 199 pattern_plain.
+// 180 char, 181 array_none, 182 array_some, 183 array_more, 184 array_end,
+// 185 array_after_comma_more, 186 array_after_comma_trailing, 187 true,
+// 188 false, 189 match_expr, 190 match_arms_none, 191 match_arms_some,
+// 192 match_arm, 193 match_arms_more, 194 match_arms_end,
+// 195 match_arms_after_comma_more, 196 match_arms_after_comma_trailing,
+// 197 pattern_ident, 198 pattern_int, 199 pattern_true.
 pub fn grammar_part_9() -> List<Rule> {
-    return cons(Rule { lhs: 83, rhs: cons(Nonterm(53), cons(Nonterm(84), empty())) },
-        cons(Rule { lhs: 84, rhs: cons(Term(36), cons(Nonterm(85), empty())) },
+    return cons(Rule { lhs: 83, rhs: cons(Term(34), empty()) },
         cons(Rule { lhs: 84, rhs: empty() },
-        cons(Rule { lhs: 85, rhs: cons(Nonterm(53), cons(Nonterm(84), empty())) },
+        cons(Rule { lhs: 84, rhs: cons(Nonterm(54), cons(Nonterm(85), empty())) },
+        cons(Rule { lhs: 85, rhs: cons(Term(36), cons(Nonterm(86), empty())) },
         cons(Rule { lhs: 85, rhs: empty() },
-        cons(Rule { lhs: 82, rhs: cons(Term(90), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(91), empty()) },
-        cons(Rule { lhs: 82, rhs: cons(Term(95), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Term(22), cons(Nonterm(86), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 86, rhs: cons(Nonterm(54), cons(Nonterm(85), empty())) },
         cons(Rule { lhs: 86, rhs: empty() },
-        cons(Rule { lhs: 86, rhs: cons(Nonterm(87), cons(Nonterm(88), empty())) },
-        cons(Rule { lhs: 87, rhs: cons(Nonterm(90), cons(Term(75), cons(Nonterm(53), empty()))) },
-        cons(Rule { lhs: 88, rhs: cons(Term(36), cons(Nonterm(89), empty())) },
-        cons(Rule { lhs: 88, rhs: empty() },
-        cons(Rule { lhs: 89, rhs: cons(Nonterm(87), cons(Nonterm(88), empty())) },
+        cons(Rule { lhs: 83, rhs: cons(Term(90), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Term(91), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Term(95), cons(Term(4), cons(Nonterm(54), cons(Term(5), cons(Term(22), cons(Nonterm(87), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 87, rhs: empty() },
+        cons(Rule { lhs: 87, rhs: cons(Nonterm(88), cons(Nonterm(89), empty())) },
+        cons(Rule { lhs: 88, rhs: cons(Nonterm(91), cons(Term(75), cons(Nonterm(54), empty()))) },
+        cons(Rule { lhs: 89, rhs: cons(Term(36), cons(Nonterm(90), empty())) },
         cons(Rule { lhs: 89, rhs: empty() },
-        cons(Rule { lhs: 90, rhs: cons(Nonterm(26), cons(Nonterm(91), empty())) },
-        cons(Rule { lhs: 90, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 90, rhs: cons(Term(90), empty()) },
-        cons(Rule { lhs: 90, rhs: cons(Term(91), empty()) },
-        cons(Rule { lhs: 91, rhs: empty() },
+        cons(Rule { lhs: 90, rhs: cons(Nonterm(88), cons(Nonterm(89), empty())) },
+        cons(Rule { lhs: 90, rhs: empty() },
+        cons(Rule { lhs: 91, rhs: cons(Nonterm(26), cons(Nonterm(92), empty())) },
+        cons(Rule { lhs: 91, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 91, rhs: cons(Term(90), empty()) },
         empty()))))))))))))))))))));
 }
 
 // Productions 200 to 219:
-// 200 pattern_tuple, 201 patterns_none, 202 patterns_some, 203 patterns_more,
-// 204 patterns_end, 205 patterns_after_comma_more,
-// 206 patterns_after_comma_trailing, 207 item_const, 208 const, 209 item_enum,
-// 210 enum, 211 enum_variants_none, 212 enum_variants_some, 213 enum_variant,
-// 214 enum_variant_unit, 215 enum_variant_tuple, 216 enum_variant_fields_none,
-// 217 enum_variant_fields_some, 218 enum_variant_fields_more,
-// 219 enum_variant_fields_end.
+// 200 pattern_false, 201 pattern_plain, 202 pattern_tuple, 203 patterns_none,
+// 204 patterns_some, 205 patterns_more, 206 patterns_end,
+// 207 patterns_after_comma_more, 208 patterns_after_comma_trailing,
+// 209 item_const, 210 const, 211 item_enum, 212 enum, 213 enum_variants_none,
+// 214 enum_variants_some, 215 enum_variant, 216 enum_variant_unit,
+// 217 enum_variant_tuple, 218 enum_variant_fields_none,
+// 219 enum_variant_fields_some.
 pub fn grammar_part_10() -> List<Rule> {
-    return cons(Rule { lhs: 91, rhs: cons(Term(4), cons(Nonterm(92), cons(Term(5), empty()))) },
+    return cons(Rule { lhs: 91, rhs: cons(Term(91), empty()) },
         cons(Rule { lhs: 92, rhs: empty() },
-        cons(Rule { lhs: 92, rhs: cons(Nonterm(90), cons(Nonterm(93), empty())) },
-        cons(Rule { lhs: 93, rhs: cons(Term(36), cons(Nonterm(94), empty())) },
+        cons(Rule { lhs: 92, rhs: cons(Term(4), cons(Nonterm(93), cons(Term(5), empty()))) },
         cons(Rule { lhs: 93, rhs: empty() },
-        cons(Rule { lhs: 94, rhs: cons(Nonterm(90), cons(Nonterm(93), empty())) },
+        cons(Rule { lhs: 93, rhs: cons(Nonterm(91), cons(Nonterm(94), empty())) },
+        cons(Rule { lhs: 94, rhs: cons(Term(36), cons(Nonterm(95), empty())) },
         cons(Rule { lhs: 94, rhs: empty() },
-        cons(Rule { lhs: 2, rhs: cons(Nonterm(95), empty()) },
-        cons(Rule { lhs: 95, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), cons(Term(8), cons(Nonterm(53), cons(Term(37), empty()))))))) },
+        cons(Rule { lhs: 95, rhs: cons(Nonterm(91), cons(Nonterm(94), empty())) },
+        cons(Rule { lhs: 95, rhs: empty() },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(96), empty()) },
-        cons(Rule { lhs: 96, rhs: cons(Term(93), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(97), cons(Term(23), empty()))))))) },
-        cons(Rule { lhs: 97, rhs: empty() },
-        cons(Rule { lhs: 97, rhs: cons(Nonterm(98), cons(Nonterm(103), empty())) },
-        cons(Rule { lhs: 98, rhs: cons(Term(1), cons(Nonterm(99), empty())) },
-        cons(Rule { lhs: 99, rhs: empty() },
-        cons(Rule { lhs: 99, rhs: cons(Term(4), cons(Nonterm(100), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 96, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), cons(Term(8), cons(Nonterm(54), cons(Term(37), empty()))))))) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(97), empty()) },
+        cons(Rule { lhs: 97, rhs: cons(Term(93), cons(Term(1), cons(Nonterm(109), cons(Nonterm(19), cons(Term(22), cons(Nonterm(98), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 98, rhs: empty() },
+        cons(Rule { lhs: 98, rhs: cons(Nonterm(99), cons(Nonterm(104), empty())) },
+        cons(Rule { lhs: 99, rhs: cons(Term(1), cons(Nonterm(100), empty())) },
         cons(Rule { lhs: 100, rhs: empty() },
-        cons(Rule { lhs: 100, rhs: cons(Nonterm(38), cons(Nonterm(101), empty())) },
-        cons(Rule { lhs: 101, rhs: cons(Term(36), cons(Nonterm(102), empty())) },
+        cons(Rule { lhs: 100, rhs: cons(Term(4), cons(Nonterm(101), cons(Term(5), empty()))) },
         cons(Rule { lhs: 101, rhs: empty() },
+        cons(Rule { lhs: 101, rhs: cons(Nonterm(38), cons(Nonterm(102), empty())) },
         empty()))))))))))))))))))));
 }
 
 // Productions 220 to 239:
-// 220 enum_variant_fields_after_comma_more,
-// 221 enum_variant_fields_after_comma_trailing, 222 enum_variants_more,
-// 223 enum_variants_end, 224 enum_variants_after_comma_more,
-// 225 enum_variants_after_comma_trailing, 226 type_args_none,
-// 227 type_args_some, 228 type_args_more, 229 type_args_end,
-// 230 type_args_after_comma_more, 231 type_args_after_comma_trailing,
-// 232 enum_type_params_none, 233 enum_type_params_some, 234 enum_type_param,
-// 235 enum_const_param, 236 type_param_bound, 237 type_param_bound_none,
-// 238 type_param_bound_list, 239 type_param_bound_more.
+// 220 enum_variant_fields_more, 221 enum_variant_fields_end,
+// 222 enum_variant_fields_after_comma_more,
+// 223 enum_variant_fields_after_comma_trailing, 224 enum_variants_more,
+// 225 enum_variants_end, 226 enum_variants_after_comma_more,
+// 227 enum_variants_after_comma_trailing, 228 type_args_none,
+// 229 type_args_some, 230 type_args_more, 231 type_args_end,
+// 232 type_args_after_comma_more, 233 type_args_after_comma_trailing,
+// 234 enum_type_params_none, 235 enum_type_params_some, 236 enum_type_param,
+// 237 enum_const_param, 238 type_param_bound, 239 type_param_bound_none.
 pub fn grammar_part_11() -> List<Rule> {
-    return cons(Rule { lhs: 102, rhs: cons(Nonterm(38), cons(Nonterm(101), empty())) },
+    return cons(Rule { lhs: 102, rhs: cons(Term(36), cons(Nonterm(103), empty())) },
         cons(Rule { lhs: 102, rhs: empty() },
-        cons(Rule { lhs: 103, rhs: cons(Term(36), cons(Nonterm(104), empty())) },
+        cons(Rule { lhs: 103, rhs: cons(Nonterm(38), cons(Nonterm(102), empty())) },
         cons(Rule { lhs: 103, rhs: empty() },
-        cons(Rule { lhs: 104, rhs: cons(Nonterm(98), cons(Nonterm(103), empty())) },
+        cons(Rule { lhs: 104, rhs: cons(Term(36), cons(Nonterm(105), empty())) },
         cons(Rule { lhs: 104, rhs: empty() },
+        cons(Rule { lhs: 105, rhs: cons(Nonterm(99), cons(Nonterm(104), empty())) },
         cons(Rule { lhs: 105, rhs: empty() },
-        cons(Rule { lhs: 105, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(106), cons(Term(13), empty())))) },
-        cons(Rule { lhs: 106, rhs: cons(Term(36), cons(Nonterm(107), empty())) },
         cons(Rule { lhs: 106, rhs: empty() },
-        cons(Rule { lhs: 107, rhs: cons(Nonterm(139), cons(Nonterm(106), empty())) },
+        cons(Rule { lhs: 106, rhs: cons(Term(12), cons(Nonterm(140), cons(Nonterm(107), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 107, rhs: cons(Term(36), cons(Nonterm(108), empty())) },
         cons(Rule { lhs: 107, rhs: empty() },
+        cons(Rule { lhs: 108, rhs: cons(Nonterm(140), cons(Nonterm(107), empty())) },
         cons(Rule { lhs: 108, rhs: empty() },
-        cons(Rule { lhs: 108, rhs: cons(Term(12), cons(Nonterm(109), cons(Nonterm(120), cons(Term(13), empty())))) },
-        cons(Rule { lhs: 109, rhs: cons(Term(1), cons(Nonterm(110), empty())) },
-        cons(Rule { lhs: 109, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), empty())))) },
-        cons(Rule { lhs: 110, rhs: cons(Term(38), cons(Nonterm(111), empty())) },
-        cons(Rule { lhs: 110, rhs: empty() },
-        cons(Rule { lhs: 111, rhs: cons(Nonterm(113), cons(Nonterm(112), empty())) },
-        cons(Rule { lhs: 112, rhs: cons(Term(6), cons(Nonterm(113), cons(Nonterm(112), empty()))) },
+        cons(Rule { lhs: 109, rhs: empty() },
+        cons(Rule { lhs: 109, rhs: cons(Term(12), cons(Nonterm(110), cons(Nonterm(121), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 110, rhs: cons(Term(1), cons(Nonterm(111), empty())) },
+        cons(Rule { lhs: 110, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), empty())))) },
+        cons(Rule { lhs: 111, rhs: cons(Term(38), cons(Nonterm(112), empty())) },
+        cons(Rule { lhs: 111, rhs: empty() },
         empty()))))))))))))))))))));
 }
 
 // Productions 240 to 259:
-// 240 type_param_bound_end, 241 bound_type_ident, 242 bound_type_ref,
-// 243 bound_type_path, 244 bound_type_path_ident, 245 bound_type_path_more,
-// 246 bound_type_path_end, 247 bound_type_args_none, 248 bound_type_args_some,
-// 249 bound_type_args_more, 250 bound_type_args_end,
-// 251 bound_type_args_after_comma_more,
-// 252 bound_type_args_after_comma_trailing, 253 enum_type_params_more,
-// 254 enum_type_params_end, 255 enum_type_params_after_comma_more,
-// 256 enum_type_params_after_comma_trailing, 257 item_struct, 258 struct,
-// 259 struct_fields_none.
+// 240 type_param_bound_list, 241 type_param_bound_more,
+// 242 type_param_bound_end, 243 bound_type_ident, 244 bound_type_ref,
+// 245 bound_type_path, 246 bound_type_path_ident, 247 bound_type_path_more,
+// 248 bound_type_path_end, 249 bound_type_args_none, 250 bound_type_args_some,
+// 251 bound_type_args_more, 252 bound_type_args_end,
+// 253 bound_type_args_after_comma_more,
+// 254 bound_type_args_after_comma_trailing, 255 enum_type_params_more,
+// 256 enum_type_params_end, 257 enum_type_params_after_comma_more,
+// 258 enum_type_params_after_comma_trailing, 259 item_struct.
 pub fn grammar_part_12() -> List<Rule> {
-    return cons(Rule { lhs: 112, rhs: empty() },
-        cons(Rule { lhs: 113, rhs: cons(Nonterm(114), cons(Nonterm(117), empty())) },
-        cons(Rule { lhs: 113, rhs: cons(Term(25), cons(Nonterm(113), empty())) },
-        cons(Rule { lhs: 114, rhs: cons(Nonterm(115), cons(Nonterm(116), empty())) },
-        cons(Rule { lhs: 115, rhs: cons(Term(1), empty()) },
-        cons(Rule { lhs: 116, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(115), cons(Nonterm(116), empty())))) },
-        cons(Rule { lhs: 116, rhs: empty() },
+    return cons(Rule { lhs: 112, rhs: cons(Nonterm(114), cons(Nonterm(113), empty())) },
+        cons(Rule { lhs: 113, rhs: cons(Term(6), cons(Nonterm(114), cons(Nonterm(113), empty()))) },
+        cons(Rule { lhs: 113, rhs: empty() },
+        cons(Rule { lhs: 114, rhs: cons(Nonterm(115), cons(Nonterm(118), empty())) },
+        cons(Rule { lhs: 114, rhs: cons(Term(25), cons(Nonterm(114), empty())) },
+        cons(Rule { lhs: 115, rhs: cons(Nonterm(116), cons(Nonterm(117), empty())) },
+        cons(Rule { lhs: 116, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 117, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(116), cons(Nonterm(117), empty())))) },
         cons(Rule { lhs: 117, rhs: empty() },
-        cons(Rule { lhs: 117, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(118), cons(Term(13), empty())))) },
-        cons(Rule { lhs: 118, rhs: cons(Term(36), cons(Nonterm(119), empty())) },
         cons(Rule { lhs: 118, rhs: empty() },
-        cons(Rule { lhs: 119, rhs: cons(Nonterm(139), cons(Nonterm(118), empty())) },
+        cons(Rule { lhs: 118, rhs: cons(Term(12), cons(Nonterm(140), cons(Nonterm(119), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 119, rhs: cons(Term(36), cons(Nonterm(120), empty())) },
         cons(Rule { lhs: 119, rhs: empty() },
-        cons(Rule { lhs: 120, rhs: cons(Term(36), cons(Nonterm(121), empty())) },
+        cons(Rule { lhs: 120, rhs: cons(Nonterm(140), cons(Nonterm(119), empty())) },
         cons(Rule { lhs: 120, rhs: empty() },
-        cons(Rule { lhs: 121, rhs: cons(Nonterm(109), cons(Nonterm(120), empty())) },
+        cons(Rule { lhs: 121, rhs: cons(Term(36), cons(Nonterm(122), empty())) },
         cons(Rule { lhs: 121, rhs: empty() },
-        cons(Rule { lhs: 2, rhs: cons(Nonterm(122), empty()) },
-        cons(Rule { lhs: 122, rhs: cons(Term(94), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(123), cons(Term(23), empty()))))))) },
-        cons(Rule { lhs: 123, rhs: empty() },
+        cons(Rule { lhs: 122, rhs: cons(Nonterm(110), cons(Nonterm(121), empty())) },
+        cons(Rule { lhs: 122, rhs: empty() },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(123), empty()) },
         empty()))))))))))))))))))));
 }
 
 // Productions 260 to 279:
-// 260 struct_fields_some, 261 struct_field, 262 struct_fields_more,
-// 263 struct_fields_end, 264 struct_fields_after_comma_more,
-// 265 struct_fields_after_comma_trailing, 266 pub_fn, 267 pub_extern_fn,
-// 268 pub_const, 269 pub_type_alias, 270 pub_enum, 271 pub_struct,
-// 272 pub_impl, 273 pub_trait, 274 ident_plain, 275 struct_lit,
-// 276 struct_lit_fields_none, 277 struct_lit_fields_some, 278 struct_lit_field,
-// 279 struct_lit_fields_more.
+// 260 struct, 261 struct_fields_none, 262 struct_fields_some, 263 struct_field,
+// 264 struct_fields_more, 265 struct_fields_end,
+// 266 struct_fields_after_comma_more, 267 struct_fields_after_comma_trailing,
+// 268 pub_fn, 269 pub_extern_fn, 270 pub_const, 271 pub_type_alias,
+// 272 pub_enum, 273 pub_struct, 274 pub_impl, 275 pub_trait, 276 ident_plain,
+// 277 struct_lit, 278 struct_lit_fields_none, 279 struct_lit_fields_some.
 pub fn grammar_part_13() -> List<Rule> {
-    return cons(Rule { lhs: 123, rhs: cons(Nonterm(124), cons(Nonterm(125), empty())) },
-        cons(Rule { lhs: 124, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(38), empty()))) },
-        cons(Rule { lhs: 125, rhs: cons(Term(36), cons(Nonterm(126), empty())) },
-        cons(Rule { lhs: 125, rhs: empty() },
-        cons(Rule { lhs: 126, rhs: cons(Nonterm(124), cons(Nonterm(125), empty())) },
+    return cons(Rule { lhs: 123, rhs: cons(Term(94), cons(Term(1), cons(Nonterm(109), cons(Nonterm(19), cons(Term(22), cons(Nonterm(124), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 124, rhs: empty() },
+        cons(Rule { lhs: 124, rhs: cons(Nonterm(125), cons(Nonterm(126), empty())) },
+        cons(Rule { lhs: 125, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(38), empty()))) },
+        cons(Rule { lhs: 126, rhs: cons(Term(36), cons(Nonterm(127), empty())) },
         cons(Rule { lhs: 126, rhs: empty() },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(3), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(7), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(95), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(8), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(96), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(122), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(9), empty()) },
-        cons(Rule { lhs: 127, rhs: cons(Nonterm(13), empty()) },
-        cons(Rule { lhs: 128, rhs: empty() },
-        cons(Rule { lhs: 128, rhs: cons(Term(22), cons(Nonterm(129), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(125), cons(Nonterm(126), empty())) },
+        cons(Rule { lhs: 127, rhs: empty() },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(3), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(7), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(96), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(8), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(97), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(123), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(9), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(13), empty()) },
         cons(Rule { lhs: 129, rhs: empty() },
-        cons(Rule { lhs: 129, rhs: cons(Nonterm(130), cons(Nonterm(131), empty())) },
-        cons(Rule { lhs: 130, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(53), empty()))) },
-        cons(Rule { lhs: 131, rhs: cons(Term(36), cons(Nonterm(132), empty())) },
+        cons(Rule { lhs: 129, rhs: cons(Term(22), cons(Nonterm(130), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 130, rhs: empty() },
+        cons(Rule { lhs: 130, rhs: cons(Nonterm(131), cons(Nonterm(132), empty())) },
         empty()))))))))))))))))))));
 }
 
 // Productions 280 to 299:
-// 280 struct_lit_fields_end, 281 struct_lit_fields_after_comma_more,
-// 282 struct_lit_fields_after_comma_trailing, 283 type_array_tail,
-// 284 type_slice_tail, 285 type_ref, 286 type_array_len_name,
-// 287 array_length_path, 288 array_length_path_ident,
-// 289 array_length_path_more, 290 array_length_path_end,
-// 291 type_array_len_constant, 292 params_after_comma_more,
-// 293 params_after_comma_trailing, 294 generic_argument_type,
-// 295 generic_argument_constant, 296 generic_argument_integer,
-// 297 member_type_args_none, 298 member_type_args_some,
-// 299 generic_argument_negative.
+// 280 struct_lit_field, 281 struct_lit_fields_more, 282 struct_lit_fields_end,
+// 283 struct_lit_fields_after_comma_more,
+// 284 struct_lit_fields_after_comma_trailing, 285 type_array_tail,
+// 286 type_slice_tail, 287 type_ref, 288 type_array_len_name,
+// 289 array_length_path, 290 array_length_path_ident,
+// 291 array_length_path_more, 292 array_length_path_end,
+// 293 type_array_len_constant, 294 params_after_comma_more,
+// 295 params_after_comma_trailing, 296 generic_argument_type,
+// 297 generic_argument_constant, 298 generic_argument_integer,
+// 299 member_type_args_none.
 pub fn grammar_part_14() -> List<Rule> {
-    return cons(Rule { lhs: 131, rhs: empty() },
-        cons(Rule { lhs: 132, rhs: cons(Nonterm(130), cons(Nonterm(131), empty())) },
+    return cons(Rule { lhs: 131, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(54), empty()))) },
+        cons(Rule { lhs: 132, rhs: cons(Term(36), cons(Nonterm(133), empty())) },
         cons(Rule { lhs: 132, rhs: empty() },
-        cons(Rule { lhs: 133, rhs: cons(Term(37), cons(Nonterm(134), cons(Term(21), empty()))) },
-        cons(Rule { lhs: 133, rhs: cons(Term(21), empty()) },
+        cons(Rule { lhs: 133, rhs: cons(Nonterm(131), cons(Nonterm(132), empty())) },
+        cons(Rule { lhs: 133, rhs: empty() },
+        cons(Rule { lhs: 134, rhs: cons(Term(37), cons(Nonterm(135), cons(Term(21), empty()))) },
+        cons(Rule { lhs: 134, rhs: cons(Term(21), empty()) },
         cons(Rule { lhs: 38, rhs: cons(Term(25), cons(Nonterm(38), empty())) },
-        cons(Rule { lhs: 134, rhs: cons(Nonterm(135), empty()) },
-        cons(Rule { lhs: 135, rhs: cons(Nonterm(136), cons(Nonterm(137), empty())) },
-        cons(Rule { lhs: 136, rhs: cons(Term(1), empty()) },
-        cons(Rule { lhs: 137, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(136), cons(Nonterm(137), empty())))) },
-        cons(Rule { lhs: 137, rhs: empty() },
-        cons(Rule { lhs: 134, rhs: cons(Nonterm(140), empty()) },
-        cons(Rule { lhs: 138, rhs: cons(Nonterm(35), cons(Nonterm(37), empty())) },
+        cons(Rule { lhs: 135, rhs: cons(Nonterm(136), empty()) },
+        cons(Rule { lhs: 136, rhs: cons(Nonterm(137), cons(Nonterm(138), empty())) },
+        cons(Rule { lhs: 137, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 138, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(137), cons(Nonterm(138), empty())))) },
         cons(Rule { lhs: 138, rhs: empty() },
-        cons(Rule { lhs: 139, rhs: cons(Nonterm(38), empty()) },
-        cons(Rule { lhs: 139, rhs: cons(Nonterm(140), empty()) },
-        cons(Rule { lhs: 140, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 141, rhs: empty() },
-        cons(Rule { lhs: 141, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(29), cons(Term(13), empty())))) },
-        cons(Rule { lhs: 140, rhs: cons(Term(27), cons(Nonterm(142), empty())) },
+        cons(Rule { lhs: 135, rhs: cons(Nonterm(141), empty()) },
+        cons(Rule { lhs: 139, rhs: cons(Nonterm(35), cons(Nonterm(37), empty())) },
+        cons(Rule { lhs: 139, rhs: empty() },
+        cons(Rule { lhs: 140, rhs: cons(Nonterm(38), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Nonterm(141), empty()) },
+        cons(Rule { lhs: 141, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 142, rhs: empty() },
         empty()))))))))))))))))))));
 }
 
 // Productions 300 to 319:
-// 300 generic_argument_positive, 301 generic_argument_magnitude_integer,
-// 302 generic_argument_magnitude_float, 303 generic_argument_true,
-// 304 generic_argument_false, 305 generic_argument_char,
-// 306 generic_argument_float, 307 cast, 308 cast_tail, 309 cast_end,
-// 310 cast_type_name, 311 cast_type_path, 312 cast_type_path_ident,
-// 313 cast_type_path_more, 314 cast_type_path_end, 315 type_never,
-// 316 array_repeat, 317 array_repeat_count, 318 postfix_try, 319 distinct_none.
+// 300 member_type_args_some, 301 generic_argument_negative,
+// 302 generic_argument_positive, 303 generic_argument_magnitude_integer,
+// 304 generic_argument_magnitude_float, 305 generic_argument_true,
+// 306 generic_argument_false, 307 generic_argument_char,
+// 308 generic_argument_float, 309 cast, 310 cast_tail, 311 cast_end,
+// 312 cast_type_name, 313 cast_type_path, 314 cast_type_path_ident,
+// 315 cast_type_path_more, 316 cast_type_path_end, 317 type_never,
+// 318 array_repeat, 319 array_repeat_count.
 pub fn grammar_part_15() -> List<Rule> {
-    return cons(Rule { lhs: 140, rhs: cons(Term(6), cons(Nonterm(142), empty())) },
-        cons(Rule { lhs: 142, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 142, rhs: cons(Term(33), empty()) },
-        cons(Rule { lhs: 140, rhs: cons(Term(90), empty()) },
-        cons(Rule { lhs: 140, rhs: cons(Term(91), empty()) },
-        cons(Rule { lhs: 140, rhs: cons(Term(34), empty()) },
-        cons(Rule { lhs: 140, rhs: cons(Term(33), empty()) },
-        cons(Rule { lhs: 143, rhs: cons(Nonterm(76), cons(Nonterm(144), empty())) },
-        cons(Rule { lhs: 144, rhs: cons(Term(195), cons(Nonterm(145), cons(Nonterm(144), empty()))) },
-        cons(Rule { lhs: 144, rhs: empty() },
-        cons(Rule { lhs: 145, rhs: cons(Nonterm(146), empty()) },
-        cons(Rule { lhs: 146, rhs: cons(Nonterm(147), cons(Nonterm(148), empty())) },
-        cons(Rule { lhs: 147, rhs: cons(Term(1), empty()) },
-        cons(Rule { lhs: 148, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(147), cons(Nonterm(148), empty())))) },
-        cons(Rule { lhs: 148, rhs: empty() },
+    return cons(Rule { lhs: 142, rhs: cons(Term(12), cons(Nonterm(140), cons(Nonterm(29), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 141, rhs: cons(Term(27), cons(Nonterm(143), empty())) },
+        cons(Rule { lhs: 141, rhs: cons(Term(6), cons(Nonterm(143), empty())) },
+        cons(Rule { lhs: 143, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 143, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 141, rhs: cons(Term(90), empty()) },
+        cons(Rule { lhs: 141, rhs: cons(Term(91), empty()) },
+        cons(Rule { lhs: 141, rhs: cons(Term(34), empty()) },
+        cons(Rule { lhs: 141, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 144, rhs: cons(Nonterm(77), cons(Nonterm(145), empty())) },
+        cons(Rule { lhs: 145, rhs: cons(Term(195), cons(Nonterm(146), cons(Nonterm(145), empty()))) },
+        cons(Rule { lhs: 145, rhs: empty() },
+        cons(Rule { lhs: 146, rhs: cons(Nonterm(147), empty()) },
+        cons(Rule { lhs: 147, rhs: cons(Nonterm(148), cons(Nonterm(149), empty())) },
+        cons(Rule { lhs: 148, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 149, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(148), cons(Nonterm(149), empty())))) },
+        cons(Rule { lhs: 149, rhs: empty() },
         cons(Rule { lhs: 38, rhs: cons(Term(19), empty()) },
-        cons(Rule { lhs: 84, rhs: cons(Term(37), cons(Nonterm(149), empty())) },
-        cons(Rule { lhs: 149, rhs: cons(Term(2), empty()) },
-        cons(Rule { lhs: 78, rhs: cons(Term(39), cons(Nonterm(78), empty())) },
-        cons(Rule { lhs: 150, rhs: empty() },
+        cons(Rule { lhs: 85, rhs: cons(Term(37), cons(Nonterm(150), empty())) },
+        cons(Rule { lhs: 150, rhs: cons(Term(2), empty()) },
         empty()))))))))))))))))))));
 }
 
-// Productions 320 to 326:
-// 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires,
-// 324 type_ref_mut, 325 param_self_ref_mut, 326 arm_block.
+// Productions 320 to 339:
+// 320 postfix_try, 321 distinct_none, 322 distinct_some, 323 contracts_none,
+// 324 contracts_more, 325 requires, 326 type_ref_mut, 327 param_self_ref_mut,
+// 328 arm_block, 329 item_machine, 330 pub_machine, 331 machine,
+// 332 machine_output_some, 333 machine_output_end, 334 machine_states_more,
+// 335 machine_states_end, 336 machine_state_final, 337 machine_state_plain,
+// 338 machine_state, 339 machine_state_data_some.
 pub fn grammar_part_16() -> List<Rule> {
-    return cons(Rule { lhs: 150, rhs: cons(Term(200), empty()) },
+    return cons(Rule { lhs: 79, rhs: cons(Term(39), cons(Nonterm(79), empty())) },
         cons(Rule { lhs: 151, rhs: empty() },
-        cons(Rule { lhs: 151, rhs: cons(Nonterm(152), cons(Nonterm(151), empty())) },
-        cons(Rule { lhs: 152, rhs: cons(Term(201), cons(Term(4), cons(Nonterm(53), cons(Term(5), empty())))) },
+        cons(Rule { lhs: 151, rhs: cons(Term(200), empty()) },
+        cons(Rule { lhs: 152, rhs: empty() },
+        cons(Rule { lhs: 152, rhs: cons(Nonterm(153), cons(Nonterm(152), empty())) },
+        cons(Rule { lhs: 153, rhs: cons(Term(201), cons(Term(4), cons(Nonterm(54), cons(Term(5), empty())))) },
         cons(Rule { lhs: 38, rhs: cons(Term(25), cons(Term(203), cons(Nonterm(38), empty()))) },
         cons(Rule { lhs: 35, rhs: cons(Term(25), cons(Term(203), cons(Term(105), empty()))) },
-        cons(Rule { lhs: 82, rhs: cons(Nonterm(40), empty()) },
+        cons(Rule { lhs: 83, rhs: cons(Nonterm(40), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(154), empty()) },
+        cons(Rule { lhs: 128, rhs: cons(Nonterm(154), empty()) },
+        cons(Rule { lhs: 154, rhs: cons(Term(205), cons(Term(1), cons(Term(206), cons(Nonterm(38), cons(Nonterm(155), cons(Term(22), cons(Nonterm(124), cons(Term(207), cons(Term(1), cons(Term(37), cons(Nonterm(156), cons(Term(23), empty())))))))))))) },
+        cons(Rule { lhs: 155, rhs: cons(Term(75), cons(Nonterm(38), cons(Nonterm(155), empty()))) },
+        cons(Rule { lhs: 155, rhs: empty() },
+        cons(Rule { lhs: 156, rhs: cons(Nonterm(157), cons(Nonterm(156), empty())) },
+        cons(Rule { lhs: 156, rhs: empty() },
+        cons(Rule { lhs: 157, rhs: cons(Term(209), cons(Nonterm(158), empty())) },
+        cons(Rule { lhs: 157, rhs: cons(Nonterm(158), empty()) },
+        cons(Rule { lhs: 158, rhs: cons(Term(208), cons(Term(1), cons(Nonterm(159), cons(Term(22), cons(Nonterm(87), cons(Term(23), empty())))))) },
+        cons(Rule { lhs: 159, rhs: cons(Term(4), cons(Nonterm(34), cons(Term(5), empty()))) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 340 to 346:
+// 340 machine_state_data_none, 341 goto, 342 stay, 343 goto_args_some,
+// 344 goto_args_none, 345 transition_output_some, 346 transition_output_none.
+pub fn grammar_part_17() -> List<Rule> {
+    return cons(Rule { lhs: 159, rhs: empty() },
+        cons(Rule { lhs: 54, rhs: cons(Term(210), cons(Term(1), cons(Nonterm(160), cons(Nonterm(161), empty())))) },
+        cons(Rule { lhs: 54, rhs: cons(Term(211), cons(Nonterm(161), empty())) },
+        cons(Rule { lhs: 160, rhs: cons(Term(4), cons(Nonterm(80), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 160, rhs: empty() },
+        cons(Rule { lhs: 161, rhs: cons(Term(212), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 161, rhs: empty() },
         empty())))))));
 }
 
 // The productions of grammar/lanius.bnf, by production id.
 pub fn grammar() -> List<Rule> {
-    return concat(grammar_part_0(), concat(grammar_part_1(), concat(grammar_part_2(), concat(grammar_part_3(), concat(grammar_part_4(), concat(grammar_part_5(), concat(grammar_part_6(), concat(grammar_part_7(), concat(grammar_part_8(), concat(grammar_part_9(), concat(grammar_part_10(), concat(grammar_part_11(), concat(grammar_part_12(), concat(grammar_part_13(), concat(grammar_part_14(), concat(grammar_part_15(), grammar_part_16()))))))))))))))));
+    return concat(grammar_part_0(), concat(grammar_part_1(), concat(grammar_part_2(), concat(grammar_part_3(), concat(grammar_part_4(), concat(grammar_part_5(), concat(grammar_part_6(), concat(grammar_part_7(), concat(grammar_part_8(), concat(grammar_part_9(), concat(grammar_part_10(), concat(grammar_part_11(), concat(grammar_part_12(), concat(grammar_part_13(), concat(grammar_part_14(), concat(grammar_part_15(), concat(grammar_part_16(), grammar_part_17())))))))))))))))));
 }
 
 // extract: inline
 fn p_add() -> usize {
-    return 147;
+    return 149;
 }
 
 // extract: inline
 fn p_add_tail() -> usize {
-    return 148;
+    return 150;
 }
 
 // extract: inline
 fn p_and_tail() -> usize {
-    return 122;
-}
-
-// extract: inline
-fn p_andexpr() -> usize {
-    return 121;
-}
-
-// extract: inline
-fn p_args_after_comma_more() -> usize {
-    return 169;
-}
-
-// extract: inline
-fn p_args_after_comma_trailing() -> usize {
-    return 170;
-}
-
-// extract: inline
-fn p_args_end() -> usize {
-    return 168;
-}
-
-// extract: inline
-fn p_args_more() -> usize {
-    return 167;
-}
-
-// extract: inline
-fn p_args_none() -> usize {
-    return 165;
-}
-
-// extract: inline
-fn p_args_some() -> usize {
-    return 166;
-}
-
-// extract: inline
-fn p_arm_block() -> usize {
-    return 326;
-}
-
-// extract: inline
-fn p_array_after_comma_more() -> usize {
-    return 183;
-}
-
-// extract: inline
-fn p_array_after_comma_trailing() -> usize {
-    return 184;
-}
-
-// extract: inline
-fn p_array_end() -> usize {
-    return 182;
-}
-
-// extract: inline
-fn p_array_lit() -> usize {
-    return 171;
-}
-
-// extract: inline
-fn p_array_more() -> usize {
-    return 181;
-}
-
-// extract: inline
-fn p_array_repeat() -> usize {
-    return 316;
-}
-
-// extract: inline
-fn p_array_some() -> usize {
-    return 180;
-}
-
-// extract: inline
-fn p_assign() -> usize {
-    return 105;
-}
-
-// extract: inline
-fn p_assign_add() -> usize {
-    return 107;
-}
-
-// extract: inline
-fn p_assign_band() -> usize {
-    return 115;
-}
-
-// extract: inline
-fn p_assign_bor() -> usize {
-    return 116;
-}
-
-// extract: inline
-fn p_assign_div() -> usize {
-    return 110;
-}
-
-// extract: inline
-fn p_assign_end() -> usize {
-    return 117;
-}
-
-// extract: inline
-fn p_assign_mod() -> usize {
-    return 111;
-}
-
-// extract: inline
-fn p_assign_mul() -> usize {
-    return 109;
-}
-
-// extract: inline
-fn p_assign_set() -> usize {
-    return 106;
-}
-
-// extract: inline
-fn p_assign_shl() -> usize {
-    return 113;
-}
-
-// extract: inline
-fn p_assign_shr() -> usize {
-    return 114;
-}
-
-// extract: inline
-fn p_assign_sub() -> usize {
-    return 108;
-}
-
-// extract: inline
-fn p_assign_xor() -> usize {
-    return 112;
-}
-
-// extract: inline
-fn p_band_tail() -> usize {
-    return 131;
-}
-
-// extract: inline
-fn p_base() -> usize {
-    return 159;
-}
-
-// extract: inline
-fn p_bit_and() -> usize {
-    return 130;
-}
-
-// extract: inline
-fn p_bit_or() -> usize {
     return 124;
 }
 
 // extract: inline
+fn p_andexpr() -> usize {
+    return 123;
+}
+
+// extract: inline
+fn p_args_after_comma_more() -> usize {
+    return 171;
+}
+
+// extract: inline
+fn p_args_after_comma_trailing() -> usize {
+    return 172;
+}
+
+// extract: inline
+fn p_args_end() -> usize {
+    return 170;
+}
+
+// extract: inline
+fn p_args_more() -> usize {
+    return 169;
+}
+
+// extract: inline
+fn p_args_none() -> usize {
+    return 167;
+}
+
+// extract: inline
+fn p_args_some() -> usize {
+    return 168;
+}
+
+// extract: inline
+fn p_arm_block() -> usize {
+    return 328;
+}
+
+// extract: inline
+fn p_array_after_comma_more() -> usize {
+    return 185;
+}
+
+// extract: inline
+fn p_array_after_comma_trailing() -> usize {
+    return 186;
+}
+
+// extract: inline
+fn p_array_end() -> usize {
+    return 184;
+}
+
+// extract: inline
+fn p_array_lit() -> usize {
+    return 173;
+}
+
+// extract: inline
+fn p_array_more() -> usize {
+    return 183;
+}
+
+// extract: inline
+fn p_array_repeat() -> usize {
+    return 318;
+}
+
+// extract: inline
+fn p_array_some() -> usize {
+    return 182;
+}
+
+// extract: inline
+fn p_assign() -> usize {
+    return 107;
+}
+
+// extract: inline
+fn p_assign_add() -> usize {
+    return 109;
+}
+
+// extract: inline
+fn p_assign_band() -> usize {
+    return 117;
+}
+
+// extract: inline
+fn p_assign_bor() -> usize {
+    return 118;
+}
+
+// extract: inline
+fn p_assign_div() -> usize {
+    return 112;
+}
+
+// extract: inline
+fn p_assign_end() -> usize {
+    return 119;
+}
+
+// extract: inline
+fn p_assign_mod() -> usize {
+    return 113;
+}
+
+// extract: inline
+fn p_assign_mul() -> usize {
+    return 111;
+}
+
+// extract: inline
+fn p_assign_set() -> usize {
+    return 108;
+}
+
+// extract: inline
+fn p_assign_shl() -> usize {
+    return 115;
+}
+
+// extract: inline
+fn p_assign_shr() -> usize {
+    return 116;
+}
+
+// extract: inline
+fn p_assign_sub() -> usize {
+    return 110;
+}
+
+// extract: inline
+fn p_assign_xor() -> usize {
+    return 114;
+}
+
+// extract: inline
+fn p_band_tail() -> usize {
+    return 133;
+}
+
+// extract: inline
+fn p_base() -> usize {
+    return 161;
+}
+
+// extract: inline
+fn p_bit_and() -> usize {
+    return 132;
+}
+
+// extract: inline
+fn p_bit_or() -> usize {
+    return 126;
+}
+
+// extract: inline
 fn p_bit_xor() -> usize {
-    return 127;
+    return 129;
 }
 
 // extract: inline
 fn p_block_stmt() -> usize {
-    return 84;
+    return 86;
 }
 
 // extract: inline
 fn p_bor_tail() -> usize {
-    return 125;
+    return 127;
+}
+
+// extract: inline
+fn p_bound_type_args_after_comma_more() -> usize {
+    return 253;
+}
+
+// extract: inline
+fn p_bound_type_args_more() -> usize {
+    return 251;
+}
+
+// extract: inline
+fn p_bound_type_ident() -> usize {
+    return 243;
+}
+
+// extract: inline
+fn p_bound_type_path_end() -> usize {
+    return 248;
+}
+
+// extract: inline
+fn p_bound_type_path_ident() -> usize {
+    return 246;
+}
+
+// extract: inline
+fn p_bound_type_path_more() -> usize {
+    return 247;
 }
 
 // extract: inline
 fn p_break_stmt() -> usize {
-    return 82;
+    return 84;
 }
 
 // extract: inline
 fn p_cast() -> usize {
-    return 307;
+    return 309;
 }
 
 // extract: inline
 fn p_cast_type_name() -> usize {
-    return 310;
-}
-
-// extract: inline
-fn p_cast_type_path() -> usize {
-    return 311;
-}
-
-// extract: inline
-fn p_cast_type_path_end() -> usize {
-    return 314;
-}
-
-// extract: inline
-fn p_cast_type_path_ident() -> usize {
     return 312;
 }
 
 // extract: inline
+fn p_cast_type_path() -> usize {
+    return 313;
+}
+
+// extract: inline
+fn p_cast_type_path_end() -> usize {
+    return 316;
+}
+
+// extract: inline
+fn p_cast_type_path_ident() -> usize {
+    return 314;
+}
+
+// extract: inline
 fn p_char() -> usize {
-    return 178;
+    return 180;
 }
 
 // extract: inline
 fn p_compare() -> usize {
-    return 137;
+    return 139;
 }
 
 // extract: inline
 fn p_const() -> usize {
-    return 208;
+    return 210;
 }
 
 // extract: inline
 fn p_continue_stmt() -> usize {
-    return 83;
-}
-
-// extract: inline
-fn p_contracts_none() -> usize {
-    return 321;
+    return 85;
 }
 
 // extract: inline
 fn p_contracts_more() -> usize {
-    return 322;
+    return 324;
 }
 
 // extract: inline
-fn p_requires() -> usize {
+fn p_contracts_none() -> usize {
     return 323;
 }
 
 // extract: inline
 fn p_div_tail() -> usize {
-    return 153;
+    return 155;
 }
 
 // extract: inline
@@ -16215,112 +16273,112 @@ fn p_else_stmt() -> usize {
 
 // extract: inline
 fn p_enum() -> usize {
-    return 210;
-}
-
-// extract: inline
-fn p_enum_type_param() -> usize {
-    return 234;
-}
-
-// extract: inline
-fn p_enum_type_params_after_comma_more() -> usize {
-    return 255;
-}
-
-// extract: inline
-fn p_enum_type_params_more() -> usize {
-    return 253;
-}
-
-// extract: inline
-fn p_enum_type_params_some() -> usize {
-    return 233;
-}
-
-// extract: inline
-fn p_enum_variant_fields_after_comma_more() -> usize {
-    return 220;
-}
-
-// extract: inline
-fn p_enum_variant_fields_after_comma_trailing() -> usize {
-    return 221;
-}
-
-// extract: inline
-fn p_enum_variant_fields_end() -> usize {
-    return 219;
-}
-
-// extract: inline
-fn p_enum_variant_fields_more() -> usize {
-    return 218;
-}
-
-// extract: inline
-fn p_enum_variant_fields_none() -> usize {
-    return 216;
-}
-
-// extract: inline
-fn p_enum_variant_fields_some() -> usize {
-    return 217;
-}
-
-// extract: inline
-fn p_enum_variant_unit() -> usize {
-    return 214;
-}
-
-// extract: inline
-fn p_enum_variants_after_comma_more() -> usize {
-    return 224;
-}
-
-// extract: inline
-fn p_enum_variants_after_comma_trailing() -> usize {
-    return 225;
-}
-
-// extract: inline
-fn p_enum_variants_end() -> usize {
-    return 223;
-}
-
-// extract: inline
-fn p_enum_variants_more() -> usize {
-    return 222;
-}
-
-// extract: inline
-fn p_enum_variants_none() -> usize {
-    return 211;
-}
-
-// extract: inline
-fn p_enum_variants_some() -> usize {
     return 212;
 }
 
 // extract: inline
+fn p_enum_type_param() -> usize {
+    return 236;
+}
+
+// extract: inline
+fn p_enum_type_params_after_comma_more() -> usize {
+    return 257;
+}
+
+// extract: inline
+fn p_enum_type_params_more() -> usize {
+    return 255;
+}
+
+// extract: inline
+fn p_enum_type_params_some() -> usize {
+    return 235;
+}
+
+// extract: inline
+fn p_enum_variant_fields_after_comma_more() -> usize {
+    return 222;
+}
+
+// extract: inline
+fn p_enum_variant_fields_after_comma_trailing() -> usize {
+    return 223;
+}
+
+// extract: inline
+fn p_enum_variant_fields_end() -> usize {
+    return 221;
+}
+
+// extract: inline
+fn p_enum_variant_fields_more() -> usize {
+    return 220;
+}
+
+// extract: inline
+fn p_enum_variant_fields_none() -> usize {
+    return 218;
+}
+
+// extract: inline
+fn p_enum_variant_fields_some() -> usize {
+    return 219;
+}
+
+// extract: inline
+fn p_enum_variant_unit() -> usize {
+    return 216;
+}
+
+// extract: inline
+fn p_enum_variants_after_comma_more() -> usize {
+    return 226;
+}
+
+// extract: inline
+fn p_enum_variants_after_comma_trailing() -> usize {
+    return 227;
+}
+
+// extract: inline
+fn p_enum_variants_end() -> usize {
+    return 225;
+}
+
+// extract: inline
+fn p_enum_variants_more() -> usize {
+    return 224;
+}
+
+// extract: inline
+fn p_enum_variants_none() -> usize {
+    return 213;
+}
+
+// extract: inline
+fn p_enum_variants_some() -> usize {
+    return 214;
+}
+
+// extract: inline
 fn p_eq_tail() -> usize {
-    return 134;
+    return 136;
 }
 
 // extract: inline
 fn p_equality() -> usize {
-    return 133;
+    return 135;
 }
 
 // extract: inline
 fn p_expr() -> usize {
-    return 104;
+    return 106;
 }
 
 // extract: inline
 fn p_expr_stmt() -> usize {
-    return 85;
+    return 87;
 }
 
 // extract: inline
@@ -16335,7 +16393,7 @@ fn p_extern_fn() -> usize {
 
 // extract: inline
 fn p_false() -> usize {
-    return 186;
+    return 188;
 }
 
 // extract: inline
@@ -16345,7 +16403,7 @@ fn p_file() -> usize {
 
 // extract: inline
 fn p_float() -> usize {
-    return 176;
+    return 178;
 }
 
 // extract: inline
@@ -16355,52 +16413,52 @@ fn p_fn() -> usize {
 
 // extract: inline
 fn p_for_iter_path() -> usize {
-    return 92;
+    return 94;
 }
 
 // extract: inline
 fn p_for_iter_range_from_start() -> usize {
-    return 93;
+    return 95;
 }
 
 // extract: inline
 fn p_for_stmt() -> usize {
-    return 81;
+    return 83;
 }
 
 // extract: inline
 fn p_ge_tail() -> usize {
-    return 141;
+    return 143;
 }
 
 // extract: inline
 fn p_generic_argument_integer() -> usize {
-    return 296;
+    return 298;
 }
 
 // extract: inline
 fn p_generic_argument_type() -> usize {
-    return 294;
+    return 296;
 }
 
 // extract: inline
 fn p_group() -> usize {
-    return 172;
+    return 174;
 }
 
 // extract: inline
 fn p_gt_tail() -> usize {
-    return 139;
+    return 141;
 }
 
 // extract: inline
 fn p_ident() -> usize {
-    return 173;
+    return 175;
 }
 
 // extract: inline
 fn p_ident_plain() -> usize {
-    return 274;
+    return 276;
 }
 
 // extract: inline
@@ -16455,7 +16513,7 @@ fn p_import_path() -> usize {
 
 // extract: inline
 fn p_int() -> usize {
-    return 175;
+    return 177;
 }
 
 // extract: inline
@@ -16475,12 +16533,12 @@ fn p_items_more() -> usize {
 
 // extract: inline
 fn p_le_tail() -> usize {
-    return 140;
+    return 142;
 }
 
 // extract: inline
 fn p_let_init() -> usize {
-    return 88;
+    return 90;
 }
 
 // extract: inline
@@ -16490,67 +16548,67 @@ fn p_let_stmt() -> usize {
 
 // extract: inline
 fn p_let_type() -> usize {
-    return 86;
+    return 88;
 }
 
 // extract: inline
 fn p_let_type_none() -> usize {
-    return 87;
+    return 89;
 }
 
 // extract: inline
 fn p_lt_tail() -> usize {
-    return 138;
+    return 140;
 }
 
 // extract: inline
 fn p_match_arms_after_comma_more() -> usize {
-    return 193;
+    return 195;
 }
 
 // extract: inline
 fn p_match_arms_after_comma_trailing() -> usize {
-    return 194;
+    return 196;
 }
 
 // extract: inline
 fn p_match_arms_end() -> usize {
-    return 192;
+    return 194;
 }
 
 // extract: inline
 fn p_match_arms_more() -> usize {
-    return 191;
+    return 193;
 }
 
 // extract: inline
 fn p_match_arms_none() -> usize {
-    return 188;
+    return 190;
 }
 
 // extract: inline
 fn p_match_arms_some() -> usize {
-    return 189;
+    return 191;
 }
 
 // extract: inline
 fn p_match_expr() -> usize {
-    return 187;
+    return 189;
 }
 
 // extract: inline
 fn p_member_type_args_none() -> usize {
-    return 297;
+    return 299;
 }
 
 // extract: inline
 fn p_member_type_args_some() -> usize {
-    return 298;
+    return 300;
 }
 
 // extract: inline
 fn p_mod_tail() -> usize {
-    return 154;
+    return 156;
 }
 
 // extract: inline
@@ -16560,47 +16618,37 @@ fn p_module() -> usize {
 
 // extract: inline
 fn p_mul() -> usize {
-    return 151;
+    return 153;
 }
 
 // extract: inline
 fn p_mul_tail() -> usize {
-    return 152;
+    return 154;
 }
 
 // extract: inline
 fn p_ne_tail() -> usize {
-    return 135;
+    return 137;
 }
 
 // extract: inline
 fn p_neg() -> usize {
-    return 157;
+    return 159;
 }
 
 // extract: inline
 fn p_not() -> usize {
-    return 158;
+    return 160;
 }
 
 // extract: inline
 fn p_or_tail() -> usize {
-    return 119;
+    return 121;
 }
 
 // extract: inline
 fn p_orexpr() -> usize {
-    return 118;
-}
-
-// extract: inline
-fn p_type_ref() -> usize {
-    return 285;
-}
-
-// extract: inline
-fn p_type_ref_mut() -> usize {
-    return 324;
+    return 120;
 }
 
 // extract: inline
@@ -16620,12 +16668,12 @@ fn p_param_self_ref() -> usize {
 
 // extract: inline
 fn p_params_after_comma_more() -> usize {
-    return 292;
+    return 294;
 }
 
 // extract: inline
 fn p_params_after_comma_trailing() -> usize {
-    return 293;
+    return 295;
 }
 
 // extract: inline
@@ -16684,113 +16732,118 @@ fn p_path_type_args_more() -> usize {
 }
 
 // extract: inline
+fn p_pattern_false() -> usize {
+    return 200;
+}
+
+// extract: inline
 fn p_pattern_ident() -> usize {
-    return 195;
-}
-
-// extract: inline
-fn p_pattern_int() -> usize {
-    return 196;
-}
-
-// extract: inline
-fn p_pattern_true() -> usize {
     return 197;
 }
 
 // extract: inline
-fn p_pattern_false() -> usize {
+fn p_pattern_int() -> usize {
     return 198;
 }
 
 // extract: inline
 fn p_pattern_plain() -> usize {
+    return 201;
+}
+
+// extract: inline
+fn p_pattern_true() -> usize {
     return 199;
 }
 
 // extract: inline
 fn p_pattern_tuple() -> usize {
-    return 200;
-}
-
-// extract: inline
-fn p_patterns_after_comma_more() -> usize {
-    return 205;
-}
-
-// extract: inline
-fn p_patterns_after_comma_trailing() -> usize {
-    return 206;
-}
-
-// extract: inline
-fn p_patterns_end() -> usize {
-    return 204;
-}
-
-// extract: inline
-fn p_patterns_more() -> usize {
-    return 203;
-}
-
-// extract: inline
-fn p_patterns_none() -> usize {
-    return 201;
-}
-
-// extract: inline
-fn p_patterns_some() -> usize {
     return 202;
 }
 
 // extract: inline
+fn p_patterns_after_comma_more() -> usize {
+    return 207;
+}
+
+// extract: inline
+fn p_patterns_after_comma_trailing() -> usize {
+    return 208;
+}
+
+// extract: inline
+fn p_patterns_end() -> usize {
+    return 206;
+}
+
+// extract: inline
+fn p_patterns_more() -> usize {
+    return 205;
+}
+
+// extract: inline
+fn p_patterns_none() -> usize {
+    return 203;
+}
+
+// extract: inline
+fn p_patterns_some() -> usize {
+    return 204;
+}
+
+// extract: inline
 fn p_postfix() -> usize {
-    return 160;
-}
-
-// extract: inline
-fn p_postfix_call() -> usize {
-    return 161;
-}
-
-// extract: inline
-fn p_postfix_end() -> usize {
-    return 164;
-}
-
-// extract: inline
-fn p_postfix_index() -> usize {
     return 162;
 }
 
 // extract: inline
-fn p_postfix_member() -> usize {
+fn p_postfix_call() -> usize {
     return 163;
 }
 
 // extract: inline
+fn p_postfix_end() -> usize {
+    return 166;
+}
+
+// extract: inline
+fn p_postfix_index() -> usize {
+    return 164;
+}
+
+// extract: inline
+fn p_postfix_member() -> usize {
+    return 165;
+}
+
+// extract: inline
 fn p_postfix_try() -> usize {
-    return 318;
+    return 320;
 }
 
 // extract: inline
 fn p_range_bound() -> usize {
-    return 102;
+    return 104;
 }
 
 // extract: inline
 fn p_range_bound_name() -> usize {
-    return 99;
+    return 101;
 }
 
 // extract: inline
 fn p_range_exclusive() -> usize {
-    return 97;
+    return 99;
 }
 
 // extract: inline
 fn p_range_start_int() -> usize {
-    return 96;
+    return 98;
+}
+
+// extract: inline
+fn p_requires() -> usize {
+    return 325;
 }
 
 // extract: inline
@@ -16810,12 +16863,12 @@ fn p_return_stmt() -> usize {
 
 // extract: inline
 fn p_return_value() -> usize {
-    return 90;
+    return 92;
 }
 
 // extract: inline
 fn p_return_void() -> usize {
-    return 91;
+    return 93;
 }
 
 // extract: inline
@@ -16830,22 +16883,22 @@ fn p_self_param_typed() -> usize {
 
 // extract: inline
 fn p_self_value() -> usize {
-    return 174;
+    return 176;
 }
 
 // extract: inline
 fn p_shift() -> usize {
-    return 143;
+    return 145;
 }
 
 // extract: inline
 fn p_shl_tail() -> usize {
-    return 144;
+    return 146;
 }
 
 // extract: inline
 fn p_shr_tail() -> usize {
-    return 145;
+    return 147;
 }
 
 // extract: inline
@@ -16860,82 +16913,82 @@ fn p_stmts_more() -> usize {
 
 // extract: inline
 fn p_string() -> usize {
-    return 177;
+    return 179;
 }
 
 // extract: inline
 fn p_struct() -> usize {
-    return 258;
-}
-
-// extract: inline
-fn p_struct_fields_after_comma_more() -> usize {
-    return 264;
-}
-
-// extract: inline
-fn p_struct_fields_after_comma_trailing() -> usize {
-    return 265;
-}
-
-// extract: inline
-fn p_struct_fields_end() -> usize {
-    return 263;
-}
-
-// extract: inline
-fn p_struct_fields_more() -> usize {
-    return 262;
-}
-
-// extract: inline
-fn p_struct_fields_none() -> usize {
-    return 259;
-}
-
-// extract: inline
-fn p_struct_fields_some() -> usize {
     return 260;
 }
 
 // extract: inline
+fn p_struct_fields_after_comma_more() -> usize {
+    return 266;
+}
+
+// extract: inline
+fn p_struct_fields_after_comma_trailing() -> usize {
+    return 267;
+}
+
+// extract: inline
+fn p_struct_fields_end() -> usize {
+    return 265;
+}
+
+// extract: inline
+fn p_struct_fields_more() -> usize {
+    return 264;
+}
+
+// extract: inline
+fn p_struct_fields_none() -> usize {
+    return 261;
+}
+
+// extract: inline
+fn p_struct_fields_some() -> usize {
+    return 262;
+}
+
+// extract: inline
 fn p_struct_lit() -> usize {
-    return 275;
-}
-
-// extract: inline
-fn p_struct_lit_fields_after_comma_more() -> usize {
-    return 281;
-}
-
-// extract: inline
-fn p_struct_lit_fields_after_comma_trailing() -> usize {
-    return 282;
-}
-
-// extract: inline
-fn p_struct_lit_fields_end() -> usize {
-    return 280;
-}
-
-// extract: inline
-fn p_struct_lit_fields_more() -> usize {
-    return 279;
-}
-
-// extract: inline
-fn p_struct_lit_fields_none() -> usize {
-    return 276;
-}
-
-// extract: inline
-fn p_struct_lit_fields_some() -> usize {
     return 277;
 }
 
 // extract: inline
+fn p_struct_lit_fields_after_comma_more() -> usize {
+    return 283;
+}
+
+// extract: inline
+fn p_struct_lit_fields_after_comma_trailing() -> usize {
+    return 284;
+}
+
+// extract: inline
+fn p_struct_lit_fields_end() -> usize {
+    return 282;
+}
+
+// extract: inline
+fn p_struct_lit_fields_more() -> usize {
+    return 281;
+}
+
+// extract: inline
+fn p_struct_lit_fields_none() -> usize {
+    return 278;
+}
+
+// extract: inline
+fn p_struct_lit_fields_some() -> usize {
+    return 279;
+}
+
+// extract: inline
 fn p_sub_tail() -> usize {
-    return 149;
+    return 151;
 }
 
 // extract: inline
@@ -16945,7 +16998,7 @@ fn p_trait() -> usize {
 
 // extract: inline
 fn p_true() -> usize {
-    return 185;
+    return 187;
 }
 
 // extract: inline
@@ -16955,22 +17008,22 @@ fn p_type_alias() -> usize {
 
 // extract: inline
 fn p_type_args_after_comma_more() -> usize {
-    return 230;
+    return 232;
 }
 
 // extract: inline
 fn p_type_args_more() -> usize {
-    return 228;
+    return 230;
 }
 
 // extract: inline
 fn p_type_args_none() -> usize {
-    return 226;
+    return 228;
 }
 
 // extract: inline
 fn p_type_args_some() -> usize {
-    return 227;
+    return 229;
 }
 
 // extract: inline
@@ -16980,12 +17033,12 @@ fn p_type_array() -> usize {
 
 // extract: inline
 fn p_type_array_len_constant() -> usize {
-    return 291;
+    return 293;
 }
 
 // extract: inline
 fn p_type_array_tail() -> usize {
-    return 283;
+    return 285;
 }
 
 // extract: inline
@@ -16995,7 +17048,22 @@ fn p_type_ident() -> usize {
 
 // extract: inline
 fn p_type_never() -> usize {
-    return 315;
+    return 317;
+}
+
+// extract: inline
+fn p_type_param_bound() -> usize {
+    return 238;
+}
+
+// extract: inline
+fn p_type_param_bound_more() -> usize {
+    return 241;
+}
+
+// extract: inline
+fn p_type_param_bound_none() -> usize {
+    return 239;
 }
 
 // extract: inline
@@ -17014,58 +17082,23 @@ fn p_type_path_more() -> usize {
 }
 
 // extract: inline
+fn p_type_ref() -> usize {
+    return 287;
+}
+
+// extract: inline
+fn p_type_ref_mut() -> usize {
+    return 326;
+}
+
+// extract: inline
 fn p_type_slice_tail() -> usize {
-    return 284;
+    return 286;
 }
 
 // extract: inline
 fn p_where_none() -> usize {
     return 36;
-}
-
-// extract: inline
-fn p_bound_type_args_after_comma_more() -> usize {
-    return 251;
-}
-
-// extract: inline
-fn p_bound_type_args_more() -> usize {
-    return 249;
-}
-
-// extract: inline
-fn p_bound_type_ident() -> usize {
-    return 241;
-}
-
-// extract: inline
-fn p_bound_type_path_end() -> usize {
-    return 246;
-}
-
-// extract: inline
-fn p_bound_type_path_ident() -> usize {
-    return 244;
-}
-
-// extract: inline
-fn p_bound_type_path_more() -> usize {
-    return 245;
-}
-
-// extract: inline
-fn p_type_param_bound() -> usize {
-    return 236;
-}
-
-// extract: inline
-fn p_type_param_bound_more() -> usize {
-    return 239;
-}
-
-// extract: inline
-fn p_type_param_bound_none() -> usize {
-    return 237;
 }
 
 // extract: inline
@@ -17085,12 +17118,12 @@ fn p_where_some() -> usize {
 
 // extract: inline
 fn p_while_stmt() -> usize {
-    return 80;
+    return 82;
 }
 
 // extract: inline
 fn p_xor_tail() -> usize {
-    return 128;
+    return 130;
 }
 
 // extract: inline

@@ -59,6 +59,8 @@ static const uint TK_TRAIT_LBRACE = 123u;
 static const uint TK_STRUCT_DECL_LBRACE = 127u;
 static const uint TK_ENUM_LBRACE = 129u;
 static const uint TK_FN_BLOCK_LBRACE = 149u;
+static const uint TK_MACHINE = 205u;
+static const uint TK_STATE = 208u;
 static const uint IMPL_HEADER_CONTEXT = 1u;
 
 uint linear_group_id(uint3 gid)
@@ -121,6 +123,13 @@ uint owner_header_event_for(
         return encode_owner_event(token_i, TK_STRUCT_DECL_LBRACE);
     if (item_header_context && kind == TK_ENUM)
         return encode_owner_event(token_i, TK_ENUM_LBRACE);
+    // A machine's body lists its data as a struct's fields, and a state's
+    // block lists its arms as a match's. `state` records itself as the owner:
+    // the apply pass turns it into the match brace kind.
+    if (item_header_context && kind == TK_MACHINE)
+        return encode_owner_event(token_i, TK_STRUCT_DECL_LBRACE);
+    if (kind == TK_STATE)
+        return encode_owner_event(token_i, TK_STATE);
     if (kind == TK_MATCH)
         return encode_owner_event(token_i, TK_MATCH_LBRACE);
     if (kind == TK_FOR)

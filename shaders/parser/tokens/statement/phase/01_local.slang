@@ -102,6 +102,7 @@ static const uint TK_EXPR_SEMICOLON = 169u;
 static const uint TK_BREAK_SEMICOLON = 170u;
 static const uint TK_CONTINUE_SEMICOLON = 171u;
 static const uint TK_CONST = 92u;
+static const uint TK_MACHINE = 205u;
 
 static const uint STATEMENT_CONTEXT_CONST_RHS = 250u;
 static const uint STATEMENT_CONTEXT_ASSIGN_RHS = 251u;
@@ -139,7 +140,8 @@ bool is_statement_starter(uint kind)
            kind == TK_ENUM ||
            kind == TK_STRUCT ||
            kind == TK_IMPL ||
-           kind == TK_TRAIT;
+           kind == TK_TRAIT ||
+           kind == TK_MACHINE;
 }
 
 bool is_assignment_operator(uint kind)
