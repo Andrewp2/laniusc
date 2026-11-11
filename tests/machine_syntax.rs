@@ -158,3 +158,45 @@ fn the_parser_rejects_malformed_machines() {
         assert!(verdict.is_err(), "{name}: the parser accepted it");
     }
 }
+
+fn machine_files(dir: &std::path::Path, files: &mut Vec<(String, String)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut paths: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            machine_files(&path, files);
+        } else if path.extension().is_some_and(|extension| extension == "lani") {
+            let Ok(source) = std::fs::read_to_string(&path) else { continue };
+            let declares = source.lines().any(|line| {
+                let line = line.trim_start();
+                let line = line.strip_prefix("pub ").unwrap_or(line);
+                line.strip_prefix("machine ").is_some_and(|rest| rest.contains(" on "))
+            });
+            // Generators are not grammar yet: a pass in front of the parser
+            // rewrites them.
+            if declares && !source.contains("gen fn") {
+                files.push((path.display().to_string(), source));
+            }
+        }
+    }
+}
+
+// Every machine in the libraries. `LANIUS_MACHINE_SYNTAX_ROOT` names another
+// checkout to read the libraries from.
+#[test]
+fn the_parser_accepts_the_library_machines() {
+    let root = std::env::var("LANIUS_MACHINE_SYNTAX_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    let mut files = Vec::new();
+    machine_files(&root.join("stdlib"), &mut files);
+    machine_files(&root.join("extended"), &mut files);
+    assert!(!files.is_empty(), "no library file declares a machine");
+    let count = files.len();
+    let rejected: Vec<String> = parse_all(files)
+        .into_iter()
+        .filter_map(|(name, verdict)| verdict.err().map(|error| format!("{name}: {error}")))
+        .collect();
+    assert!(rejected.is_empty(), "{} of {count} files rejected:\n{}", rejected.len(), rejected.join("\n"));
+}
