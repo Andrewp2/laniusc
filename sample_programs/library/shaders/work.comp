@@ -1,0 +1,13 @@
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0) uniform Params { uint width; uint height; uint bias; uint padding; } params;
+layout(set=0,binding=1,std430) buffer Values { uint values[]; } output_values;
+layout(set=0,binding=2,rgba8) uniform writeonly image2D output_image;
+void main() {
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if(p.x>=params.width || p.y>=params.height) return;
+    uint i=p.y*params.width+p.x;
+    output_values.values[i]=i*3+params.bias;
+    uvec4 color=uvec4((p.x*17+p.y*3+params.bias)%256,(p.x*7+p.y*13)%256,p.x^p.y,255);
+    imageStore(output_image,ivec2(p),vec4(color)/255.0);
+}

@@ -11,6 +11,46 @@ import std::process;
 import test::check;
 import test::property;
 
+pub enum RunLifecycleEvent { Selected, Recorded, Finished, Failed }
+pub machine RunLifecycle on RunLifecycleEvent {
+    start Idle;
+
+    state Idle {
+        RunLifecycleEvent::Selected -> goto Selected,
+        RunLifecycleEvent::Recorded -> stay,
+        RunLifecycleEvent::Finished -> goto Finished,
+        RunLifecycleEvent::Failed -> goto Failed,
+    }
+
+    state Selected {
+        RunLifecycleEvent::Selected -> stay,
+        RunLifecycleEvent::Recorded -> goto Idle,
+        RunLifecycleEvent::Finished -> stay,
+        RunLifecycleEvent::Failed -> goto Failed,
+    }
+
+    state Finished {
+        RunLifecycleEvent::Selected -> stay,
+        RunLifecycleEvent::Recorded -> stay,
+        RunLifecycleEvent::Finished -> stay,
+        RunLifecycleEvent::Failed -> goto Failed,
+    }
+
+    final state Failed {
+        RunLifecycleEvent::Selected -> stay,
+        RunLifecycleEvent::Recorded -> stay,
+        RunLifecycleEvent::Finished -> stay,
+        RunLifecycleEvent::Failed -> stay,
+    }
+}
+pub impl RunLifecycle {
+    pub fn is_idle(&self) -> bool { return match (self.state()) { RunLifecycleState::Idle -> true, _ -> false }; }
+    pub fn is_selected(&self) -> bool { return match (self.state()) { RunLifecycleState::Selected -> true, _ -> false }; }
+    pub fn is_finished(&self) -> bool { return match (self.state()) { RunLifecycleState::Finished -> true, _ -> false }; }
+    pub fn is_failed(&self) -> bool { return match (self.state()) { RunLifecycleState::Failed -> true, _ -> false }; }
+}
+
+
 pub trait Cases {
     pub fn count(&self) -> i32;
     pub fn name(&self, index: i32) -> test::check::Label;
@@ -101,13 +141,13 @@ fn label(value: test::check::Label) -> bool {
 pub struct Runner {
     seed: u32, cases: u32, list: bool, filter_arg: i32, filter: test::check::Label,
     selected: u32, passed: u32, failed: u32, skipped: u32, filtered: u32,
-    pending: test::check::Label, active: bool, error: bool
+    pending: test::check::Label, lifecycle: RunLifecycle
 }
 pub fn begin(filter: test::check::Label, seed: u32, cases: u32, list: bool) -> Runner {
     let runner: Runner = Runner { seed: seed, cases: cases, list: list, filter_arg: -1, filter: filter,
-        selected: 0, passed: 0, failed: 0, skipped: 0, filtered: 0, pending: test::check::literal("",0), active: false, error: false };
-    if (cases == 0 || cases > test::property::MAX_CASES || filter.length < 0 || filter.length > 256) { runner.error = true; return runner; }
-    if (!text("lanius-test 1\nseed=",19) || !number(seed) || !text(" cases=",7) || !number(cases) || !byte(10)) { runner.error = true; }
+        selected: 0, passed: 0, failed: 0, skipped: 0, filtered: 0, pending: test::check::literal("",0), lifecycle: run_lifecycle_start() };
+    if (cases == 0 || cases > test::property::MAX_CASES || filter.length < 0 || filter.length > 256) { runner.lifecycle.step(RunLifecycleEvent::Failed); return runner; }
+    if (!text("lanius-test 1\nseed=",19) || !number(seed) || !text(" cases=",7) || !number(cases) || !byte(10)) { runner.lifecycle.step(RunLifecycleEvent::Failed); }
     return runner;
 }
 pub fn begin_args() -> Runner {
@@ -123,44 +163,44 @@ pub fn begin_args() -> Runner {
 pub impl Runner {
     pub fn borrow(&self) -> &Runner { return self; }
     pub fn select(&self, name: test::check::Label) -> bool {
-        if (self.error) { return false; }
-        if (self.active || name.length < 1 || name.length > 4096 || self.selected + self.filtered >= 100000) { self.error = true; return false; }
+        if ((self.lifecycle.is_failed() || self.lifecycle.is_finished())) { return false; }
+        if (self.lifecycle.is_selected() || name.length < 1 || name.length > 4096 || self.selected + self.filtered >= 100000) { self.lifecycle.step(RunLifecycleEvent::Failed); return false; }
         let filter: test::check::Label = self.filter;
         let storage: [i32;64] = [0;64]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
         if (self.filter_arg >= 0) {
             let length: i32 = read_argument(self.filter_arg,pointer);
-            if (length < 0) { self.error = true; return false; }
+            if (length < 0) { self.lifecycle.step(RunLifecycleEvent::Failed); return false; }
             filter = test::check::Label { bytes: core::mem::typed_slice_from_raw_parts(pointer,length), length: length };
         }
         if (!contains(name,filter)) { self.filtered += 1; return false; }
         self.selected += 1;
         if (self.list) {
-            if (!text("LIST ",5) || !label(name) || !byte(10)) { self.error = true; } return false;
+            if (!text("LIST ",5) || !label(name) || !byte(10)) { self.lifecycle.step(RunLifecycleEvent::Failed); } return false;
         }
-        self.pending = name; self.active = true; return true;
+        self.pending = name; self.lifecycle.step(RunLifecycleEvent::Selected); return true;
     }
     pub fn record(&self, result: test::check::Outcome) {
-        if (self.error) { return; }
-        if (!self.active) { self.error = true; return; } self.active = false;
+        if ((self.lifecycle.is_failed() || self.lifecycle.is_finished())) { return; }
+        if (!self.lifecycle.is_selected()) { self.lifecycle.step(RunLifecycleEvent::Failed); return; } self.lifecycle.step(RunLifecycleEvent::Recorded);
         let written: bool = false;
         if (result.status == 0) { self.passed += 1; written = text("PASS ",5); }
         else { if (result.status == 1) { self.failed += 1; written = text("FAIL ",5); }
-        else { if (result.status == 2) { self.skipped += 1; written = text("SKIP ",5); } else { self.error = true; return; } } }
-        if (!written || !label(self.pending) || !byte(10)) { self.error = true; return; }
+        else { if (result.status == 2) { self.skipped += 1; written = text("SKIP ",5); } else { self.lifecycle.step(RunLifecycleEvent::Failed); return; } } }
+        if (!written || !label(self.pending) || !byte(10)) { self.lifecycle.step(RunLifecycleEvent::Failed); return; }
         if (result.status != 0) {
-            if (!text("  detail: ",10) || !label(result.detail) || !byte(10)) { self.error = true; return; }
+            if (!text("  detail: ",10) || !label(result.detail) || !byte(10)) { self.lifecycle.step(RunLifecycleEvent::Failed); return; }
             if (result.has_values) {
-                if (!text("  expected=",11) || !signed(result.expected) || !text(" actual=",8) || !signed(result.actual) || !byte(10)) { self.error = true; return; }
+                if (!text("  expected=",11) || !signed(result.expected) || !text(" actual=",8) || !signed(result.actual) || !byte(10)) { self.lifecycle.step(RunLifecycleEvent::Failed); return; }
             }
             if (result.case_id >= 0) {
-                if (!text("  counterexample seed=",22) || !number(result.seed) || !text(" case=",6) || !number(result.case_id as u32) || !text(" input=",7) || !number(result.input) || !text(" executed=",10) || !number(result.executed) || !byte(10)) { self.error = true; return; }
+                if (!text("  counterexample seed=",22) || !number(result.seed) || !text(" case=",6) || !number(result.case_id as u32) || !text(" input=",7) || !number(result.input) || !text(" executed=",10) || !number(result.executed) || !byte(10)) { self.lifecycle.step(RunLifecycleEvent::Failed); return; }
             }
         }
     }
     pub fn finish(&self) -> i32 {
-        if (self.error || self.active) { self.error = true; return 2; }
+        if ((self.lifecycle.is_failed() || self.lifecycle.is_finished()) || self.lifecycle.is_selected()) { self.lifecycle.step(RunLifecycleEvent::Failed); return 2; }
         // Finish exactly once. Any later operation is an invalid transition.
-        self.error = true;
+        self.lifecycle.step(RunLifecycleEvent::Finished);
         if (!text("summary selected=",17) || !number(self.selected) || !text(" passed=",8) || !number(self.passed) || !text(" failed=",8) || !number(self.failed) || !text(" skipped=",9) || !number(self.skipped) || !text(" filtered=",10) || !number(self.filtered) || !byte(10)) { return 2; }
         if (self.selected == 0) { return 3; } if (self.failed > 0) { return 1; } return 0;
     }

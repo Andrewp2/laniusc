@@ -2,6 +2,7 @@
 // Keep the backing storage alive and unchanged while a Text or iterator exists.
 // Lanius does not yet enforce immutable borrows or these lifetime rules.
 module core::text;
+import core::iter_state;
 import core::u8;
 import core::cmp;
 import core::decimal;
@@ -19,10 +20,34 @@ pub enum Error { Bounds, NotCharBoundary, InvalidUtf8(i32) }
 pub struct Text { bytes: [u8], start: i32, length: i32 }
 pub struct Scalar { byte_index: i32, value: u32 }
 pub struct Scalars { text: Text, position: i32, back: i32 }
-pub struct MatchIndices { text: Text, needle: Text, position: i32, done: bool }
-pub struct RMatchIndices { text: Text, needle: Text, position: i32, done: bool }
-pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
-pub struct RSplit { text: Text, separator: Text, position: i32, empty_tail: bool, done: bool }
+pub enum SplitEvent { LeadingEmpty, Exhausted }
+pub machine SplitPhase on SplitEvent {
+    start Leading;
+
+    state Leading {
+        SplitEvent::LeadingEmpty -> goto Body,
+        SplitEvent::Exhausted -> goto Done,
+    }
+
+    state Body {
+        SplitEvent::LeadingEmpty -> stay,
+        SplitEvent::Exhausted -> goto Done,
+    }
+
+    final state Done {
+        SplitEvent::LeadingEmpty -> stay,
+        SplitEvent::Exhausted -> stay,
+    }
+}
+pub impl SplitPhase {
+    pub fn is_done(&self) -> bool { return match (self.state()) { SplitPhaseState::Done -> true, _ -> false }; }
+    pub fn is_leading(&self) -> bool { return match (self.state()) { SplitPhaseState::Leading -> true, _ -> false }; }
+}
+
+pub struct MatchIndices { text: Text, needle: Text, position: i32, completion: core::iter_state::Completion }
+pub struct RMatchIndices { text: Text, needle: Text, position: i32, completion: core::iter_state::Completion }
+pub struct Split { text: Text, separator: Text, position: i32, phase: SplitPhase }
+pub struct RSplit { text: Text, separator: Text, position: i32, phase: SplitPhase }
 pub struct SplitN { inner: Split, remaining: u64 }
 pub struct RSplitN { inner: RSplit, remaining: u64 }
 pub struct SplitAsciiWhitespace { text: Text, position: i32, back: i32 }
@@ -197,13 +222,13 @@ pub impl Text {
     // Leftmost nonoverlapping matches borrow the source, with relative byte
     // indices. Empty needles match every scalar boundary, including both ends.
     pub fn match_indices(&self, needle: Text) -> MatchIndices {
-        return MatchIndices { text: self.part(0, self.length), needle: needle, position: 0, done: false };
+        return MatchIndices { text: self.part(0, self.length), needle: needle, position: 0, completion: core::iter_state::completion_start() };
     }
     // Rightmost nonoverlapping matches, with indices relative to this Text.
     // This sequence can differ from reversed match_indices on overlapping
     // needles, so it supplies Iterator only, not DoubleEndedIterator.
     pub fn rmatch_indices(&self, needle: Text) -> RMatchIndices {
-        return RMatchIndices { text: self.part(0, self.length), needle: needle, position: self.length, done: false };
+        return RMatchIndices { text: self.part(0, self.length), needle: needle, position: self.length, completion: core::iter_state::completion_start() };
     }
     // The pair remains in source order and excludes the selected separator.
     // Empty separators split at the initial/final scalar boundary respectively.
@@ -240,12 +265,12 @@ pub impl Text {
     // Nonoverlapping separators; retain leading, interior and trailing empty
     // fields. Empty separator yields empty, each scalar, then empty.
     pub fn split(&self, separator: Text) -> Split {
-        return Split { text: self.part(0, self.length), separator: separator, position: 0, empty_head: true, done: false };
+        return Split { text: self.part(0, self.length), separator: separator, position: 0, phase: split_phase_start() };
     }
     // Rightmost nonoverlapping partition, returned from right to left. An
     // empty separator yields trailing empty, scalars backward, then leading empty.
     pub fn rsplit(&self, separator: Text) -> RSplit {
-        return RSplit { text: self.part(0, self.length), separator: separator, position: self.length, empty_tail: true, done: false };
+        return RSplit { text: self.part(0, self.length), separator: separator, position: self.length, phase: split_phase_start() };
     }
     // At most max_fields items. Zero never reads backing; one returns the
     // whole Text. The last allowed item retains the unsplit remainder.
@@ -394,10 +419,10 @@ pub impl MatchIndices {
 
 pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for MatchIndices {
     pub fn next(&self) -> core::option::Option<core::pair::Pair<i32,Text>> {
-        if (self.done) { return core::option::None(); }
+        if (self.completion.is_done()) { return core::option::None(); }
         if (self.needle.is_empty()) {
             let index: i32 = self.position;
-            if (index == self.text.length) { self.done = true; }
+            if (index == self.text.length) { self.completion.finish(); }
             else {
                 let first: u8 = self.text.bytes[self.text.start+index];
                 self.position += core::utf8::sequence_len_or(first, 0) as i32;
@@ -406,7 +431,7 @@ pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for MatchIndices {
             return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index) });
         }
         let found: core::option::Option<i32> = self.text.find_from(self.needle, self.position);
-        if (core::option::is_none(found)) { self.done = true; return core::option::None(); }
+        if (core::option::is_none(found)) { self.completion.finish(); return core::option::None(); }
         let index: i32 = core::option::unwrap(found);
         let end: i32 = index+self.needle.length;
         self.position = end;
@@ -420,15 +445,15 @@ pub impl RMatchIndices {
 
 pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for RMatchIndices {
     pub fn next(&self) -> core::option::Option<core::pair::Pair<i32,Text>> {
-        if (self.done) { return core::option::None(); }
+        if (self.completion.is_done()) { return core::option::None(); }
         if (self.needle.is_empty()) {
             let index: i32 = self.position;
-            if (index == 0) { self.done = true; }
+            if (index == 0) { self.completion.finish(); }
             else { self.position = self.text.previous_boundary(index); }
             return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index) });
         }
         let found: core::option::Option<i32> = self.text.rfind_before(self.needle, self.position);
-        if (found.is_none()) { self.done = true; return core::option::None(); }
+        if (found.is_none()) { self.completion.finish(); return core::option::None(); }
         let index: i32 = found.unwrap();
         self.position = index;
         return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index + self.needle.length) });
@@ -441,11 +466,11 @@ pub impl Split {
 
 pub impl core::iter::Iterator<Text> for Split {
     pub fn next(&self) -> core::option::Option<Text> {
-        if (self.done) { return core::option::None(); }
+        if (self.phase.is_done()) { return core::option::None(); }
         let length: i32 = self.text.byte_len();
         if (self.separator.is_empty()) {
-            if (self.empty_head) {
-                self.empty_head = false;
+            if (self.phase.is_leading()) {
+                self.phase.step(SplitEvent::LeadingEmpty);
                 return core::option::Some(self.text.part(0, 0));
             }
             if (self.position < length) {
@@ -454,14 +479,14 @@ pub impl core::iter::Iterator<Text> for Split {
                 self.position += core::utf8::encoded_len_or(scalar, 0) as i32;
                 return core::option::Some(self.text.part(start, self.position));
             }
-            self.done = true;
+            self.phase.step(SplitEvent::Exhausted);
             return core::option::Some(self.text.part(length, length));
         }
         let found: core::option::Option<i32> = self.text.find_from(self.separator, self.position);
         let end: i32 = core::option::unwrap_or(found, length);
         let value: Text = self.text.part(self.position, end);
         if (core::option::is_some(found)) { self.position = end + self.separator.byte_len(); }
-        else { self.done = true; }
+        else { self.phase.step(SplitEvent::Exhausted); }
         return core::option::Some(value);
     }
 }
@@ -472,23 +497,23 @@ pub impl RSplit {
 
 pub impl core::iter::Iterator<Text> for RSplit {
     pub fn next(&self) -> core::option::Option<Text> {
-        if (self.done) { return core::option::None(); }
+        if (self.phase.is_done()) { return core::option::None(); }
         let end: i32 = self.position;
         if (self.separator.is_empty()) {
-            if (self.empty_tail) {
-                self.empty_tail = false;
+            if (self.phase.is_leading()) {
+                self.phase.step(SplitEvent::LeadingEmpty);
                 return core::option::Some(self.text.part(end, end));
             }
             if (end > 0) {
                 self.position = self.text.previous_boundary(end);
                 return core::option::Some(self.text.part(self.position, end));
             }
-            self.done = true;
+            self.phase.step(SplitEvent::Exhausted);
             return core::option::Some(self.text.part(0, 0));
         }
         let found: core::option::Option<i32> = self.text.rfind_before(self.separator, end);
         if (found.is_none()) {
-            self.done = true;
+            self.phase.step(SplitEvent::Exhausted);
             return core::option::Some(self.text.part(0, end));
         }
         let index: i32 = found.unwrap();
@@ -503,10 +528,10 @@ pub impl SplitN {
 
 pub impl core::iter::Iterator<Text> for SplitN {
     pub fn next(&self) -> core::option::Option<Text> {
-        if (self.remaining == 0 || self.inner.done) { return core::option::None(); }
+        if (self.remaining == 0 || self.inner.phase.is_done()) { return core::option::None(); }
         if (self.remaining == 1) {
             self.remaining = 0;
-            self.inner.done = true;
+            self.inner.phase.step(SplitEvent::Exhausted);
             return core::option::Some(self.inner.text.part(self.inner.position, self.inner.text.length));
         }
         let value: core::option::Option<Text> = self.inner.next();
@@ -522,10 +547,10 @@ pub impl RSplitN {
 
 pub impl core::iter::Iterator<Text> for RSplitN {
     pub fn next(&self) -> core::option::Option<Text> {
-        if (self.remaining == 0 || self.inner.done) { return core::option::None(); }
+        if (self.remaining == 0 || self.inner.phase.is_done()) { return core::option::None(); }
         if (self.remaining == 1) {
             self.remaining = 0;
-            self.inner.done = true;
+            self.inner.phase.step(SplitEvent::Exhausted);
             return core::option::Some(self.inner.text.part(0, self.inner.position));
         }
         let value: core::option::Option<Text> = self.inner.next();

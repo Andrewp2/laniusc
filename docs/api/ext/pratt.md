@@ -33,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 21](../../../extended/ext/pratt.lani#L21)
+[Source line 29](../../../extended/ext/pratt.lani#L29)
 
 ```lanius
 pub enum Error
@@ -41,7 +41,7 @@ pub enum Error
 
 #### variant: InvalidKind
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 InvalidKind(i32)
@@ -49,7 +49,7 @@ InvalidKind(i32)
 
 #### variant: InvalidPower
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 InvalidPower(i32)
@@ -57,7 +57,7 @@ InvalidPower(i32)
 
 #### variant: Conflict
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 Conflict(i32)
@@ -65,7 +65,7 @@ Conflict(i32)
 
 #### variant: AllocationFailed
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 AllocationFailed
@@ -73,7 +73,7 @@ AllocationFailed
 
 #### variant: Bounds
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 Bounds
@@ -81,7 +81,7 @@ Bounds
 
 #### variant: WorkspaceTooSmall
 
-[Source line 22](../../../extended/ext/pratt.lani#L22)
+[Source line 30](../../../extended/ext/pratt.lani#L30)
 
 ```lanius
 WorkspaceTooSmall
@@ -89,7 +89,7 @@ WorkspaceTooSmall
 
 #### variant: UnknownToken
 
-[Source line 23](../../../extended/ext/pratt.lani#L23)
+[Source line 31](../../../extended/ext/pratt.lani#L31)
 
 ```lanius
 UnknownToken(i32)
@@ -97,7 +97,7 @@ UnknownToken(i32)
 
 #### variant: ExpectedOperand
 
-[Source line 23](../../../extended/ext/pratt.lani#L23)
+[Source line 31](../../../extended/ext/pratt.lani#L31)
 
 ```lanius
 ExpectedOperand(i32)
@@ -105,7 +105,7 @@ ExpectedOperand(i32)
 
 #### variant: ExpectedOperator
 
-[Source line 23](../../../extended/ext/pratt.lani#L23)
+[Source line 31](../../../extended/ext/pratt.lani#L31)
 
 ```lanius
 ExpectedOperator(i32)
@@ -113,7 +113,7 @@ ExpectedOperator(i32)
 
 #### variant: UnexpectedEnd
 
-[Source line 23](../../../extended/ext/pratt.lani#L23)
+[Source line 31](../../../extended/ext/pratt.lani#L31)
 
 ```lanius
 UnexpectedEnd(i32)
@@ -121,7 +121,7 @@ UnexpectedEnd(i32)
 
 #### variant: Unmatched
 
-[Source line 24](../../../extended/ext/pratt.lani#L24)
+[Source line 32](../../../extended/ext/pratt.lani#L32)
 
 ```lanius
 Unmatched(i32)
@@ -129,7 +129,7 @@ Unmatched(i32)
 
 #### variant: Unclosed
 
-[Source line 24](../../../extended/ext/pratt.lani#L24)
+[Source line 32](../../../extended/ext/pratt.lani#L32)
 
 ```lanius
 Unclosed(i32)
@@ -137,7 +137,7 @@ Unclosed(i32)
 
 #### variant: MisplacedSeparator
 
-[Source line 24](../../../extended/ext/pratt.lani#L24)
+[Source line 32](../../../extended/ext/pratt.lani#L32)
 
 ```lanius
 MisplacedSeparator(i32)
@@ -145,7 +145,7 @@ MisplacedSeparator(i32)
 
 ### struct: Token
 
-[Source line 27](../../../extended/ext/pratt.lani#L27)
+[Source line 35](../../../extended/ext/pratt.lani#L35)
 
 ```lanius
 pub struct Token
@@ -153,7 +153,7 @@ pub struct Token
 
 #### field: kind
 
-[Source line 27](../../../extended/ext/pratt.lani#L27)
+[Source line 35](../../../extended/ext/pratt.lani#L35)
 
 ```lanius
 kind: i32
@@ -161,7 +161,7 @@ kind: i32
 
 #### field: start
 
-[Source line 27](../../../extended/ext/pratt.lani#L27)
+[Source line 35](../../../extended/ext/pratt.lani#L35)
 
 ```lanius
 start: i32
@@ -169,7 +169,7 @@ start: i32
 
 #### field: end
 
-[Source line 27](../../../extended/ext/pratt.lani#L27)
+[Source line 35](../../../extended/ext/pratt.lani#L35)
 
 ```lanius
 end: i32
@@ -177,7 +177,7 @@ end: i32
 
 ### struct: Event
 
-[Source line 30](../../../extended/ext/pratt.lani#L30)
+[Source line 38](../../../extended/ext/pratt.lani#L38)
 
 ```lanius
 pub struct Event
@@ -185,7 +185,7 @@ pub struct Event
 
 #### field: role
 
-[Source line 30](../../../extended/ext/pratt.lani#L30)
+[Source line 38](../../../extended/ext/pratt.lani#L38)
 
 ```lanius
 role: i32
@@ -193,7 +193,7 @@ role: i32
 
 #### field: kind
 
-[Source line 30](../../../extended/ext/pratt.lani#L30)
+[Source line 38](../../../extended/ext/pratt.lani#L38)
 
 ```lanius
 kind: i32
@@ -201,7 +201,7 @@ kind: i32
 
 #### field: token
 
-[Source line 30](../../../extended/ext/pratt.lani#L30)
+[Source line 38](../../../extended/ext/pratt.lani#L38)
 
 ```lanius
 token: i32
@@ -209,7 +209,7 @@ token: i32
 
 #### field: arity
 
-[Source line 30](../../../extended/ext/pratt.lani#L30)
+[Source line 38](../../../extended/ext/pratt.lani#L38)
 
 ```lanius
 arity: i32
@@ -217,7 +217,7 @@ arity: i32
 
 ### struct: Spec
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 pub struct Spec
@@ -225,7 +225,7 @@ pub struct Spec
 
 #### field: atom
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 atom: bool
@@ -233,7 +233,7 @@ atom: bool
 
 #### field: prefix
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 prefix: i32
@@ -241,7 +241,7 @@ prefix: i32
 
 #### field: left
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 left: i32
@@ -249,7 +249,7 @@ left: i32
 
 #### field: right
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 right: i32
@@ -257,7 +257,7 @@ right: i32
 
 #### field: postfix
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 postfix: i32
@@ -265,7 +265,7 @@ postfix: i32
 
 #### field: group_close
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 group_close: i32
@@ -273,7 +273,7 @@ group_close: i32
 
 #### field: call_close
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 call_close: i32
@@ -281,7 +281,7 @@ call_close: i32
 
 #### field: call_power
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 call_power: i32
@@ -289,7 +289,7 @@ call_power: i32
 
 #### field: close
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 close: bool
@@ -297,7 +297,7 @@ close: bool
 
 #### field: separator
 
-[Source line 31](../../../extended/ext/pratt.lani#L31)
+[Source line 39](../../../extended/ext/pratt.lani#L39)
 
 ```lanius
 separator: bool
@@ -305,7 +305,7 @@ separator: bool
 
 ### struct: Table
 
-[Source line 32](../../../extended/ext/pratt.lani#L32)
+[Source line 40](../../../extended/ext/pratt.lani#L40)
 
 ```lanius
 pub struct Table
@@ -313,7 +313,7 @@ pub struct Table
 
 #### field: specs
 
-[Source line 32](../../../extended/ext/pratt.lani#L32)
+[Source line 40](../../../extended/ext/pratt.lani#L40)
 
 ```lanius
 specs: alloc::vec::Vec<Spec>
@@ -321,7 +321,7 @@ specs: alloc::vec::Vec<Spec>
 
 ### struct: Parser
 
-[Source line 34](../../../extended/ext/pratt.lani#L34)
+[Source line 42](../../../extended/ext/pratt.lani#L42)
 
 ```lanius
 pub struct Parser
@@ -329,7 +329,7 @@ pub struct Parser
 
 #### field: events
 
-[Source line 34](../../../extended/ext/pratt.lani#L34)
+[Source line 42](../../../extended/ext/pratt.lani#L42)
 
 ```lanius
 events: alloc::vec::Vec<Event>
@@ -337,7 +337,7 @@ events: alloc::vec::Vec<Event>
 
 #### field: stack
 
-[Source line 34](../../../extended/ext/pratt.lani#L34)
+[Source line 42](../../../extended/ext/pratt.lani#L42)
 
 ```lanius
 stack: alloc::vec::Vec<Frame>
@@ -345,7 +345,7 @@ stack: alloc::vec::Vec<Frame>
 
 #### field: capacity
 
-[Source line 34](../../../extended/ext/pratt.lani#L34)
+[Source line 42](../../../extended/ext/pratt.lani#L42)
 
 ```lanius
 capacity: i32
@@ -355,7 +355,7 @@ capacity: i32
 
 ### constant: ATOM
 
-[Source line 13](../../../extended/ext/pratt.lani#L13)
+[Source line 21](../../../extended/ext/pratt.lani#L21)
 
 ```lanius
 pub const ATOM: i32 = 0;
@@ -363,7 +363,7 @@ pub const ATOM: i32 = 0;
 
 ### constant: PREFIX
 
-[Source line 14](../../../extended/ext/pratt.lani#L14)
+[Source line 22](../../../extended/ext/pratt.lani#L22)
 
 ```lanius
 pub const PREFIX: i32 = 1;
@@ -371,7 +371,7 @@ pub const PREFIX: i32 = 1;
 
 ### constant: INFIX
 
-[Source line 15](../../../extended/ext/pratt.lani#L15)
+[Source line 23](../../../extended/ext/pratt.lani#L23)
 
 ```lanius
 pub const INFIX: i32 = 2;
@@ -379,7 +379,7 @@ pub const INFIX: i32 = 2;
 
 ### constant: POSTFIX
 
-[Source line 16](../../../extended/ext/pratt.lani#L16)
+[Source line 24](../../../extended/ext/pratt.lani#L24)
 
 ```lanius
 pub const POSTFIX: i32 = 3;
@@ -387,7 +387,7 @@ pub const POSTFIX: i32 = 3;
 
 ### constant: CALL
 
-[Source line 17](../../../extended/ext/pratt.lani#L17)
+[Source line 25](../../../extended/ext/pratt.lani#L25)
 
 ```lanius
 pub const CALL: i32 = 4;
@@ -395,7 +395,7 @@ pub const CALL: i32 = 4;
 
 ### constant: MAX_KINDS
 
-[Source line 18](../../../extended/ext/pratt.lani#L18)
+[Source line 26](../../../extended/ext/pratt.lani#L26)
 
 ```lanius
 pub const MAX_KINDS: i32 = 65536;
@@ -403,7 +403,7 @@ pub const MAX_KINDS: i32 = 65536;
 
 ### constant: MAX_POWER
 
-[Source line 19](../../../extended/ext/pratt.lani#L19)
+[Source line 27](../../../extended/ext/pratt.lani#L27)
 
 ```lanius
 pub const MAX_POWER: i32 = 1000000;
@@ -413,7 +413,7 @@ pub const MAX_POWER: i32 = 1000000;
 
 ### function: table
 
-[Source line 43](../../../extended/ext/pratt.lani#L43)
+[Source line 51](../../../extended/ext/pratt.lani#L51)
 
 ```lanius
 pub fn table(kinds: i32) -> Result<Table, Error>
@@ -421,7 +421,7 @@ pub fn table(kinds: i32) -> Result<Table, Error>
 
 ### function: parser
 
-[Source line 124](../../../extended/ext/pratt.lani#L124)
+[Source line 132](../../../extended/ext/pratt.lani#L132)
 
 ```lanius
 pub fn parser(capacity: i32) -> Result<Parser, Error>
@@ -429,9 +429,9 @@ pub fn parser(capacity: i32) -> Result<Parser, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 55
+### impl at line 63
 
-[Source line 55](../../../extended/ext/pratt.lani#L55)
+[Source line 63](../../../extended/ext/pratt.lani#L63)
 
 ```lanius
 pub impl Table
@@ -439,7 +439,7 @@ pub impl Table
 
 #### method: borrow
 
-[Source line 56](../../../extended/ext/pratt.lani#L56)
+[Source line 64](../../../extended/ext/pratt.lani#L64)
 
 ```lanius
 pub fn borrow(&self) -> &Table
@@ -447,7 +447,7 @@ pub fn borrow(&self) -> &Table
 
 #### method: kind_count
 
-[Source line 57](../../../extended/ext/pratt.lani#L57)
+[Source line 65](../../../extended/ext/pratt.lani#L65)
 
 ```lanius
 pub fn kind_count(&self) -> i32
@@ -455,7 +455,7 @@ pub fn kind_count(&self) -> i32
 
 #### method: destroy
 
-[Source line 58](../../../extended/ext/pratt.lani#L58)
+[Source line 66](../../../extended/ext/pratt.lani#L66)
 
 ```lanius
 pub fn destroy(&self)
@@ -463,7 +463,7 @@ pub fn destroy(&self)
 
 #### method: atom
 
-[Source line 68](../../../extended/ext/pratt.lani#L68)
+[Source line 76](../../../extended/ext/pratt.lani#L76)
 
 ```lanius
 pub fn atom(&self, kind: i32) -> Result<i32, Error>
@@ -471,7 +471,7 @@ pub fn atom(&self, kind: i32) -> Result<i32, Error>
 
 #### method: prefix
 
-[Source line 74](../../../extended/ext/pratt.lani#L74)
+[Source line 82](../../../extended/ext/pratt.lani#L82)
 
 ```lanius
 pub fn prefix(&self, kind: i32, right: i32) -> Result<i32, Error>
@@ -479,7 +479,7 @@ pub fn prefix(&self, kind: i32, right: i32) -> Result<i32, Error>
 
 #### method: infix
 
-[Source line 81](../../../extended/ext/pratt.lani#L81)
+[Source line 89](../../../extended/ext/pratt.lani#L89)
 
 ```lanius
 pub fn infix(&self, kind: i32, left: i32, right: i32) -> Result<i32, Error>
@@ -487,7 +487,7 @@ pub fn infix(&self, kind: i32, left: i32, right: i32) -> Result<i32, Error>
 
 #### method: postfix
 
-[Source line 88](../../../extended/ext/pratt.lani#L88)
+[Source line 96](../../../extended/ext/pratt.lani#L96)
 
 ```lanius
 pub fn postfix(&self, kind: i32, left: i32) -> Result<i32, Error>
@@ -495,7 +495,7 @@ pub fn postfix(&self, kind: i32, left: i32) -> Result<i32, Error>
 
 #### method: group
 
-[Source line 102](../../../extended/ext/pratt.lani#L102)
+[Source line 110](../../../extended/ext/pratt.lani#L110)
 
 ```lanius
 pub fn group(&self, open: i32, close: i32) -> Result<i32, Error>
@@ -503,15 +503,15 @@ pub fn group(&self, open: i32, close: i32) -> Result<i32, Error>
 
 #### method: call
 
-[Source line 109](../../../extended/ext/pratt.lani#L109)
+[Source line 117](../../../extended/ext/pratt.lani#L117)
 
 ```lanius
 pub fn call(&self, open: i32, close: i32, separator: i32, left: i32) -> Result<i32, Error>
 ```
 
-### impl at line 132
+### impl at line 140
 
-[Source line 132](../../../extended/ext/pratt.lani#L132)
+[Source line 140](../../../extended/ext/pratt.lani#L140)
 
 ```lanius
 pub impl Parser
@@ -519,7 +519,7 @@ pub impl Parser
 
 #### method: borrow
 
-[Source line 133](../../../extended/ext/pratt.lani#L133)
+[Source line 141](../../../extended/ext/pratt.lani#L141)
 
 ```lanius
 pub fn borrow(&self) -> &Parser
@@ -527,7 +527,7 @@ pub fn borrow(&self) -> &Parser
 
 #### method: capacity
 
-[Source line 134](../../../extended/ext/pratt.lani#L134)
+[Source line 142](../../../extended/ext/pratt.lani#L142)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -535,7 +535,7 @@ pub fn capacity(&self) -> i32
 
 #### method: event_count
 
-[Source line 135](../../../extended/ext/pratt.lani#L135)
+[Source line 143](../../../extended/ext/pratt.lani#L143)
 
 ```lanius
 pub fn event_count(&self) -> i32
@@ -543,7 +543,7 @@ pub fn event_count(&self) -> i32
 
 #### method: event
 
-[Source line 136](../../../extended/ext/pratt.lani#L136)
+[Source line 144](../../../extended/ext/pratt.lani#L144)
 
 ```lanius
 pub fn event(&self, index: i32) -> Option<Event>
@@ -551,7 +551,7 @@ pub fn event(&self, index: i32) -> Option<Event>
 
 #### method: events
 
-[Source line 137](../../../extended/ext/pratt.lani#L137)
+[Source line 145](../../../extended/ext/pratt.lani#L145)
 
 ```lanius
 pub fn events(&self) -> core::slice::View<Event>
@@ -559,7 +559,7 @@ pub fn events(&self) -> core::slice::View<Event>
 
 #### method: destroy
 
-[Source line 138](../../../extended/ext/pratt.lani#L138)
+[Source line 146](../../../extended/ext/pratt.lani#L146)
 
 ```lanius
 pub fn destroy(&self)
@@ -567,7 +567,7 @@ pub fn destroy(&self)
 
 #### method: parse
 
-[Source line 156](../../../extended/ext/pratt.lani#L156)
+[Source line 164](../../../extended/ext/pratt.lani#L164)
 
 ```lanius
 pub fn parse(&self, table: &Table, tokens: core::slice::View<Token>) -> Result<i32, Error>

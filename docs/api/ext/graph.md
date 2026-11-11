@@ -22,12 +22,13 @@ Declaration counts: enum: 1; field: 15; function: 6; impl: 2; method: 10; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/graph.lani#L4)
-- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/graph.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/graph.lani#L6)
-- [core::option](../core/option.md) · [source](../../../extended/ext/graph.lani#L7)
-- [core::result](../core/result.md) · [source](../../../extended/ext/graph.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph.lani#L9)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/graph.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/graph.lani#L5)
+- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/graph.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/graph.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/graph.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/graph.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph.lani#L10)
 
 ## Types, fields and variants
 
@@ -35,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Edge
 
-[Source line 11](../../../extended/ext/graph.lani#L11)
+[Source line 12](../../../extended/ext/graph.lani#L12)
 
 ```lanius
 pub struct Edge
@@ -43,7 +44,7 @@ pub struct Edge
 
 #### field: source
 
-[Source line 11](../../../extended/ext/graph.lani#L11)
+[Source line 12](../../../extended/ext/graph.lani#L12)
 
 ```lanius
 source: i32
@@ -51,7 +52,7 @@ source: i32
 
 #### field: target
 
-[Source line 11](../../../extended/ext/graph.lani#L11)
+[Source line 12](../../../extended/ext/graph.lani#L12)
 
 ```lanius
 target: i32
@@ -59,7 +60,7 @@ target: i32
 
 ### struct: View
 
-[Source line 12](../../../extended/ext/graph.lani#L12)
+[Source line 13](../../../extended/ext/graph.lani#L13)
 
 ```lanius
 pub struct View
@@ -67,7 +68,7 @@ pub struct View
 
 #### field: nodes
 
-[Source line 13](../../../extended/ext/graph.lani#L13)
+[Source line 14](../../../extended/ext/graph.lani#L14)
 
 ```lanius
 nodes: i32
@@ -75,7 +76,7 @@ nodes: i32
 
 #### field: offsets
 
-[Source line 13](../../../extended/ext/graph.lani#L13)
+[Source line 14](../../../extended/ext/graph.lani#L14)
 
 ```lanius
 offsets: core::slice::View<i32>
@@ -83,7 +84,7 @@ offsets: core::slice::View<i32>
 
 #### field: targets
 
-[Source line 13](../../../extended/ext/graph.lani#L13)
+[Source line 14](../../../extended/ext/graph.lani#L14)
 
 ```lanius
 targets: core::slice::View<i32>
@@ -91,7 +92,7 @@ targets: core::slice::View<i32>
 
 ### struct: Limits
 
-[Source line 15](../../../extended/ext/graph.lani#L15)
+[Source line 16](../../../extended/ext/graph.lani#L16)
 
 ```lanius
 pub struct Limits
@@ -99,7 +100,7 @@ pub struct Limits
 
 #### field: max_nodes
 
-[Source line 15](../../../extended/ext/graph.lani#L15)
+[Source line 16](../../../extended/ext/graph.lani#L16)
 
 ```lanius
 max_nodes: i32
@@ -107,7 +108,7 @@ max_nodes: i32
 
 #### field: max_edges
 
-[Source line 15](../../../extended/ext/graph.lani#L15)
+[Source line 16](../../../extended/ext/graph.lani#L16)
 
 ```lanius
 max_edges: i32
@@ -115,7 +116,7 @@ max_edges: i32
 
 #### field: max_work
 
-[Source line 15](../../../extended/ext/graph.lani#L15)
+[Source line 16](../../../extended/ext/graph.lani#L16)
 
 ```lanius
 max_work: u64
@@ -123,7 +124,7 @@ max_work: u64
 
 ### enum: ErrorKind
 
-[Source line 16](../../../extended/ext/graph.lani#L16)
+[Source line 17](../../../extended/ext/graph.lani#L17)
 
 ```lanius
 pub enum ErrorKind
@@ -131,7 +132,7 @@ pub enum ErrorKind
 
 #### variant: InvalidLimits
 
-[Source line 17](../../../extended/ext/graph.lani#L17)
+[Source line 18](../../../extended/ext/graph.lani#L18)
 
 ```lanius
 InvalidLimits
@@ -139,7 +140,7 @@ InvalidLimits
 
 #### variant: Bounds
 
-[Source line 17](../../../extended/ext/graph.lani#L17)
+[Source line 18](../../../extended/ext/graph.lani#L18)
 
 ```lanius
 Bounds
@@ -147,7 +148,7 @@ Bounds
 
 #### variant: NodeLimit
 
-[Source line 17](../../../extended/ext/graph.lani#L17)
+[Source line 18](../../../extended/ext/graph.lani#L18)
 
 ```lanius
 NodeLimit
@@ -155,7 +156,7 @@ NodeLimit
 
 #### variant: EdgeLimit
 
-[Source line 17](../../../extended/ext/graph.lani#L17)
+[Source line 18](../../../extended/ext/graph.lani#L18)
 
 ```lanius
 EdgeLimit
@@ -163,7 +164,7 @@ EdgeLimit
 
 #### variant: WorkLimit
 
-[Source line 17](../../../extended/ext/graph.lani#L17)
+[Source line 18](../../../extended/ext/graph.lani#L18)
 
 ```lanius
 WorkLimit
@@ -171,7 +172,7 @@ WorkLimit
 
 #### variant: Offset
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Offset
@@ -179,7 +180,7 @@ Offset
 
 #### variant: Source
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Source
@@ -187,7 +188,7 @@ Source
 
 #### variant: Target
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Target
@@ -195,7 +196,7 @@ Target
 
 #### variant: Order
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Order
@@ -203,7 +204,7 @@ Order
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 AllocationFailed
@@ -211,7 +212,7 @@ AllocationFailed
 
 #### variant: Cycle
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Cycle
@@ -219,7 +220,7 @@ Cycle
 
 #### variant: Closed
 
-[Source line 18](../../../extended/ext/graph.lani#L18)
+[Source line 19](../../../extended/ext/graph.lani#L19)
 
 ```lanius
 Closed
@@ -227,7 +228,7 @@ Closed
 
 ### struct: Error
 
-[Source line 20](../../../extended/ext/graph.lani#L20)
+[Source line 21](../../../extended/ext/graph.lani#L21)
 
 ```lanius
 pub struct Error
@@ -235,7 +236,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 20](../../../extended/ext/graph.lani#L20)
+[Source line 21](../../../extended/ext/graph.lani#L21)
 
 ```lanius
 kind: ErrorKind
@@ -243,7 +244,7 @@ kind: ErrorKind
 
 #### field: node
 
-[Source line 20](../../../extended/ext/graph.lani#L20)
+[Source line 21](../../../extended/ext/graph.lani#L21)
 
 ```lanius
 node: i32
@@ -251,7 +252,7 @@ node: i32
 
 #### field: edge
 
-[Source line 20](../../../extended/ext/graph.lani#L20)
+[Source line 21](../../../extended/ext/graph.lani#L21)
 
 ```lanius
 edge: i32
@@ -259,7 +260,7 @@ edge: i32
 
 ### struct: Graph
 
-[Source line 21](../../../extended/ext/graph.lani#L21)
+[Source line 22](../../../extended/ext/graph.lani#L22)
 
 ```lanius
 pub struct Graph
@@ -267,7 +268,7 @@ pub struct Graph
 
 #### field: offsets
 
-[Source line 22](../../../extended/ext/graph.lani#L22)
+[Source line 23](../../../extended/ext/graph.lani#L23)
 
 ```lanius
 offsets: alloc::vec::Vec<i32>
@@ -275,7 +276,7 @@ offsets: alloc::vec::Vec<i32>
 
 #### field: targets
 
-[Source line 22](../../../extended/ext/graph.lani#L22)
+[Source line 23](../../../extended/ext/graph.lani#L23)
 
 ```lanius
 targets: alloc::vec::Vec<i32>
@@ -283,25 +284,25 @@ targets: alloc::vec::Vec<i32>
 
 #### field: count
 
-[Source line 23](../../../extended/ext/graph.lani#L23)
+[Source line 24](../../../extended/ext/graph.lani#L24)
 
 ```lanius
 count: i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 23](../../../extended/ext/graph.lani#L23)
+[Source line 24](../../../extended/ext/graph.lani#L24)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 26](../../../extended/ext/graph.lani#L26)
+[Source line 27](../../../extended/ext/graph.lani#L27)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -311,7 +312,7 @@ Returns 1,048,576 nodes, 1,048,576 raw/stored edges and 100,000,000 weighted wor
 
 ### function: validate
 
-[Source line 121](../../../extended/ext/graph.lani#L121)
+[Source line 122](../../../extended/ext/graph.lani#L122)
 
 ```lanius
 pub fn validate(value: View, limits: Limits) -> core::result::Result<i32,Error>
@@ -321,7 +322,7 @@ Admits limits, all View metadata, node/edge sizes, exact offsets length and V=n+
 
 ### function: view
 
-[Source line 126](../../../extended/ext/graph.lani#L126)
+[Source line 127](../../../extended/ext/graph.lani#L127)
 
 ```lanius
 pub fn view(nodes: i32, offsets: core::slice::View<i32>, targets: core::slice::View<i32>, limits: Limits)
@@ -332,7 +333,7 @@ Constructs a borrowed graph View only after complete canonical validation. Does 
 
 ### function: neighbors
 
-[Source line 132](../../../extended/ext/graph.lani#L132)
+[Source line 133](../../../extended/ext/graph.lani#L133)
 
 ```lanius
 pub fn neighbors(value: View, node: i32, limits: Limits)
@@ -343,7 +344,7 @@ Validates the complete graph before requested-node Bounds. Returns a read-only l
 
 ### function: from_view
 
-[Source line 193](../../../extended/ext/graph.lani#L193)
+[Source line 194](../../../extended/ext/graph.lani#L194)
 
 ```lanius
 pub fn from_view(input: View, limits: Limits) -> core::result::Result<Graph,Error>
@@ -353,7 +354,7 @@ Admits metadata and 2V work before adjacency payload reads, validates, then copi
 
 ### function: from_edges
 
-[Source line 221](../../../extended/ext/graph.lani#L221)
+[Source line 222](../../../extended/ext/graph.lani#L222)
 
 ```lanius
 pub fn from_edges(nodes: i32, edges: core::slice::View<Edge>, limits: Limits)
@@ -364,9 +365,9 @@ Admits raw-edge count and native Edge staging capacity before work, then full wo
 
 ## Implementation blocks and public methods
 
-### impl at line 143
+### impl at line 144
 
-[Source line 143](../../../extended/ext/graph.lani#L143)
+[Source line 144](../../../extended/ext/graph.lani#L144)
 
 ```lanius
 pub impl Graph
@@ -374,7 +375,7 @@ pub impl Graph
 
 #### method: borrow
 
-[Source line 144](../../../extended/ext/graph.lani#L144)
+[Source line 145](../../../extended/ext/graph.lani#L145)
 
 ```lanius
 pub fn borrow(&self) -> &Graph
@@ -382,7 +383,7 @@ pub fn borrow(&self) -> &Graph
 
 #### method: is_open
 
-[Source line 145](../../../extended/ext/graph.lani#L145)
+[Source line 146](../../../extended/ext/graph.lani#L146)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -390,7 +391,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 146](../../../extended/ext/graph.lani#L146)
+[Source line 147](../../../extended/ext/graph.lani#L147)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -398,7 +399,7 @@ pub fn node_count(&self) -> i32
 
 #### method: edge_count
 
-[Source line 147](../../../extended/ext/graph.lani#L147)
+[Source line 148](../../../extended/ext/graph.lani#L148)
 
 ```lanius
 pub fn edge_count(&self) -> i32
@@ -406,7 +407,7 @@ pub fn edge_count(&self) -> i32
 
 #### method: view
 
-[Source line 149](../../../extended/ext/graph.lani#L149)
+[Source line 150](../../../extended/ext/graph.lani#L150)
 
 ```lanius
 pub fn view(&self) -> core::option::Option<View>
@@ -414,15 +415,15 @@ pub fn view(&self) -> core::option::Option<View>
 
 #### method: destroy
 
-[Source line 155](../../../extended/ext/graph.lani#L155)
+[Source line 156](../../../extended/ext/graph.lani#L156)
 
 ```lanius
 pub fn destroy(&self) -> bool
 ```
 
-### impl at line 207
+### impl at line 208
 
-[Source line 207](../../../extended/ext/graph.lani#L207)
+[Source line 208](../../../extended/ext/graph.lani#L208)
 
 ```lanius
 pub impl core::cmp::Ord<Edge> for Edge
@@ -430,7 +431,7 @@ pub impl core::cmp::Ord<Edge> for Edge
 
 #### method: lt
 
-[Source line 208](../../../extended/ext/graph.lani#L208)
+[Source line 209](../../../extended/ext/graph.lani#L209)
 
 ```lanius
 pub fn lt(left: Edge, right: Edge) -> bool
@@ -438,7 +439,7 @@ pub fn lt(left: Edge, right: Edge) -> bool
 
 #### method: le
 
-[Source line 209](../../../extended/ext/graph.lani#L209)
+[Source line 210](../../../extended/ext/graph.lani#L210)
 
 ```lanius
 pub fn le(left: Edge, right: Edge) -> bool
@@ -446,7 +447,7 @@ pub fn le(left: Edge, right: Edge) -> bool
 
 #### method: gt
 
-[Source line 210](../../../extended/ext/graph.lani#L210)
+[Source line 211](../../../extended/ext/graph.lani#L211)
 
 ```lanius
 pub fn gt(left: Edge, right: Edge) -> bool
@@ -454,7 +455,7 @@ pub fn gt(left: Edge, right: Edge) -> bool
 
 #### method: ge
 
-[Source line 211](../../../extended/ext/graph.lani#L211)
+[Source line 212](../../../extended/ext/graph.lani#L212)
 
 ```lanius
 pub fn ge(left: Edge, right: Edge) -> bool

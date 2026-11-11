@@ -2,6 +2,8 @@
 // Valid Decimal values come from parse; keep their bytes alive and unchanged.
 // See docs/stdlib-decimal-number.md for scratch and work contracts.
 module core::decimal_number;
+import core::iter_state;
+import core::lifecycle;
 import core::decimal::len_u64;
 import core::option::unwrap;
 import core::result::Result;
@@ -17,7 +19,7 @@ pub struct Decimal {
     exponent_start: i32, exponent_length: i32, exponent_negative: bool,
 }
 pub struct Multiple { value: bool, work: u64 }
-struct Work { remaining: u64, used: u64, failed: bool }
+struct Work { remaining: u64, used: u64, health: core::lifecycle::Health }
 struct Adjusted {
     source: Decimal, negative: bool, length: i32, small: bool, magnitude: u64,
     prefix_length: i32, original_prefix: i32, carry: i32, pivot: i32, tail: u64,
@@ -41,9 +43,9 @@ pub fn parse(raw: View<u8>) -> Result<Decimal, Error> {
     if (position >= count || !digit(byte(raw,position))) { return Err(error(ErrorKind::Syntax,position)); }
     if (byte(raw,position) == 48) { position += 1; }
     else { while (position < count && digit(byte(raw,position))) { position += 1; } }
-    let integer_digits: i32 = position - start; let dot: bool = false; let fractional: i32 = 0;
+    let integer_digits: i32 = position - start; let dot_phase = core::iter_state::completion_start(); let fractional: i32 = 0;
     if (position < count && byte(raw,position) == 46) {
-        dot = true; position += 1; let fraction_start: i32 = position;
+        dot_phase.finish(); position += 1; let fraction_start: i32 = position;
         while (position < count && digit(byte(raw,position))) { position += 1; }
         fractional = position - fraction_start;
         if (fractional == 0) { return Err(error(ErrorKind::Syntax,position)); }
@@ -65,12 +67,12 @@ pub fn parse(raw: View<u8>) -> Result<Decimal, Error> {
     if (exponent_length == 0) { exponent_negative = false; }
     let total: i32 = integer_digits + fractional; let index: i32 = 0; let first: i32 = -1; let last: i32 = -1;
     while (index < total) {
-        let offset: i32 = start + index; if (dot && index >= integer_digits) { offset += 1; }
+        let offset: i32 = start + index; if (dot_phase.is_done() && index >= integer_digits) { offset += 1; }
         if (byte(raw,offset) != 48) { if (first < 0) { first = index; } last = index; }
         index += 1;
     }
     return Ok(Decimal { raw:raw, negative:negative, mantissa_start:start,
-        integer_digits:integer_digits, total_digits:total, first:first, last:last, dot:dot,
+        integer_digits:integer_digits, total_digits:total, first:first, last:last, dot:dot_phase.is_done(),
         exponent_start:exponent_start, exponent_length:exponent_length, exponent_negative:exponent_negative });
 }
 
@@ -87,11 +89,11 @@ fn order_offset(value: Decimal) -> i64 { return (value.integer_digits as i64) - 
 impl Work {
     fn borrow(&self) -> &Work { return self; }
     fn step(&self) -> bool {
-        if (self.remaining == 0) { self.failed = true; return false; }
+        if (self.remaining == 0) { self.health.fail(); return false; }
         self.remaining -= 1; self.used += 1; return true;
     }
 }
-fn unlimited() -> Work { return Work { remaining:18446744073709551615,used:0,failed:false }; }
+fn unlimited() -> Work { return Work { remaining:18446744073709551615,used:0,health: core::lifecycle::health_start() }; }
 fn small_adjusted(value: Decimal, signed: i64) -> Adjusted {
     let magnitude: u64 = signed as u64; if (signed < 0) { magnitude = (0 - signed) as u64; }
     return Adjusted { source:value, negative:signed < 0, length:len_u64(magnitude) as i32,
@@ -162,8 +164,8 @@ fn compare_adjusted(a: Adjusted, b: Adjusted, work: &Work) -> i32 {
     return 0;
 }
 fn compare_scales(a: Decimal, b: Decimal, additional_b: i64, work: &Work) -> i32 {
-    let left: Adjusted = adjusted(a,scale_offset(a),work); if (work.failed) { return 0; }
-    let right: Adjusted = adjusted(b,scale_offset(b) + additional_b,work); if (work.failed) { return 0; }
+    let left: Adjusted = adjusted(a,scale_offset(a),work); if (work.health.is_failed()) { return 0; }
+    let right: Adjusted = adjusted(b,scale_offset(b) + additional_b,work); if (work.health.is_failed()) { return 0; }
     return compare_adjusted(left,right,work);
 }
 
@@ -232,7 +234,7 @@ fn remainder_step(scratch: View<u8>, width: i32, divisor: Decimal, next: u8, wor
     if (!work.step()) { return false; } set(scratch,width - 1,next);
     while (true) {
         let comparison: i32 = remainder_compare(scratch,width,divisor,work);
-        if (work.failed) { return false; } if (comparison < 0) { return true; }
+        if (work.health.is_failed()) { return false; } if (comparison < 0) { return true; }
         let borrow: i32 = 0; index = width - 1;
         while (index >= 0) {
             if (!work.step()) { return false; }
@@ -252,11 +254,11 @@ pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: View
     let width = scratch_len(divisor)?;
     if (!valid(scratch)) { return Err(error(ErrorKind::Bounds,-1)); }
     if (scratch.len() < width) { return Err(error(ErrorKind::ScratchTooSmall,-1)); }
-    let work: Work = Work { remaining:max_work,used:0,failed:false };
+    let work: Work = Work { remaining:max_work,used:0,health: core::lifecycle::health_start() };
     if (!work.step()) { return Err(error(ErrorKind::WorkLimit,-1)); }
     if (dividend.is_zero()) { return Ok(Multiple {value:true,work:work.used}); }
     let order: i32 = compare_scales(dividend,divisor,0,work.borrow());
-    if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+    if (work.health.is_failed()) { return Err(error(ErrorKind::WorkLimit,-1)); }
     if (order < 0) { return Ok(Multiple {value:false,work:work.used}); }
     let index: i32 = 0;
     while (index < width) {
@@ -269,7 +271,7 @@ pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: View
         index += 1;
     }
     let zero: bool = remainder_zero(scratch,width,work.borrow());
-    if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+    if (work.health.is_failed()) { return Err(error(ErrorKind::WorkLimit,-1)); }
     if (zero) { return Ok(Multiple {value:true,work:work.used}); }
     // B < 10^digits. v2(B) < 4*digits and v5(B) < 4*digits; every
     // repairable factor is exhausted by this cap, regardless of exponent size.
@@ -278,14 +280,14 @@ pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: View
     while (low < high) {
         let middle: i64 = low + (high - low + 1) / 2;
         let comparison: i32 = compare_scales(dividend,divisor,middle,work.borrow());
-        if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+        if (work.health.is_failed()) { return Err(error(ErrorKind::WorkLimit,-1)); }
         if (comparison >= 0) { low = middle; } else { high = middle - 1; }
     }
     let step: i64 = 0;
     while (step < low) {
         if (!remainder_step(scratch,width,divisor,0,work.borrow())) { return Err(error(ErrorKind::WorkLimit,-1)); }
         zero = remainder_zero(scratch,width,work.borrow());
-        if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+        if (work.health.is_failed()) { return Err(error(ErrorKind::WorkLimit,-1)); }
         if (zero) { return Ok(Multiple {value:true,work:work.used}); } step += 1;
     }
     return Ok(Multiple {value:false,work:work.used});

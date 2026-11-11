@@ -1,5 +1,6 @@
 // Portable bounded DNS QUERY wire messages. No resolver, sockets or host I/O.
 module ext::dns;
+import core::iter_state;
 import alloc::vec;
 import core::option;
 import core::result;
@@ -9,7 +10,7 @@ pub enum Error { Bounds, Truncated(i32), Malformed(i32), Unsupported(i32), Point
 pub struct Limits { message_bytes: i32, records: i32, name_bytes: i32, pointer_hops: i32, options: i32, work: i32, output_bytes: i32 }
 pub struct Header { id: i32, flags: i32, questions: i32, answers: i32, authorities: i32, additionals: i32 }
 pub struct Name { packet: core::slice::View<u8>, offset: i32, end: i32 }
-pub struct Labels { packet: core::slice::View<u8>, position: i32, done: bool }
+pub struct Labels { packet: core::slice::View<u8>, position: i32, completion: core::iter_state::Completion }
 pub struct Question { name: Name, qtype: i32, qclass: i32 }
 pub struct Record { name: Name, rrtype: i32, rrclass: i32, ttl: u32, data: core::slice::View<u8>, offset: i32, section: i32 }
 pub struct Message { raw: core::slice::View<u8>, header: Header, answer_start: i32, authority_start: i32, additional_start: i32, opt: core::option::Option<Record> }
@@ -71,14 +72,14 @@ pub fn parse_name(bytes: core::slice::View<u8>, limits: Limits) -> core::result:
     let parsed: core::result::Result<Name,Error> = name(state.borrow(),0,bytes.len()); if (core::result::is_err(parsed)) { return parsed; } if (core::result::unwrap(parsed).end != bytes.len()) { return core::result::Err(Error::Malformed(core::result::unwrap(parsed).end)); } return parsed;
 }
 pub impl Name {
-    pub fn labels(&self) -> Labels { return Labels { packet: self.packet, position: self.offset, done: false }; }
+    pub fn labels(&self) -> Labels { return Labels { packet: self.packet, position: self.offset, completion: core::iter_state::completion_start() }; }
     pub fn encoded(&self) -> core::slice::View<u8> { return sub(self.packet,self.offset,self.end); }
     pub fn wire_len(&self) -> i32 { let cursor: Labels = self.labels(); let length: i32 = 1; while (true) { let next = cursor.next(); if (core::option::is_none(next)) { break; } length += core::option::unwrap(next).len()+1; } return length; }
     pub fn is_root(&self) -> bool { return self.wire_len() == 1; }
 }
 pub impl Labels {
     // Source must remain unchanged; construct only from a validated Name.
-    pub fn next(&self) -> core::option::Option<core::slice::View<u8>> { if (self.done) { return core::option::None(); } while (true) { let c: i32 = b(self.packet,self.position) as i32; if (c == 0) { self.done = true; return core::option::None(); } if (c >= 192) { self.position = (c-192)*256+(b(self.packet,self.position+1) as i32); } else { let start: i32 = self.position+1; self.position += c+1; return core::option::Some(sub(self.packet,start,self.position)); } } return core::option::None(); }
+    pub fn next(&self) -> core::option::Option<core::slice::View<u8>> { if (self.completion.is_done()) { return core::option::None(); } while (true) { let c: i32 = b(self.packet,self.position) as i32; if (c == 0) { self.completion.finish(); return core::option::None(); } if (c >= 192) { self.position = (c-192)*256+(b(self.packet,self.position+1) as i32); } else { let start: i32 = self.position+1; self.position += c+1; return core::option::Some(sub(self.packet,start,self.position)); } } return core::option::None(); }
 }
 fn fold(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c+32; } return c; }
 pub fn equal_dns(left: Name, right: Name) -> bool { let a: Labels = left.labels(); let z: Labels = right.labels(); while (true) { let x = a.next(); let y = z.next(); if (core::option::is_none(x) || core::option::is_none(y)) { return core::option::is_none(x) && core::option::is_none(y); } let p: core::slice::View<u8> = core::option::unwrap(x); let q: core::slice::View<u8> = core::option::unwrap(y); if (p.len() != q.len()) { return false; } let i: i32 = 0; while (i < p.len()) { if (fold(b(p,i)) != fold(b(q,i))) { return false; } i += 1; } } return false; }

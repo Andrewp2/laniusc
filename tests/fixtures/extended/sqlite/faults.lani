@@ -5,11 +5,12 @@ import core::mem;
 import core::result;
 import core::slice;
 import ext::sqlite;
+import ext::sqlite_statement;
 import std::stream;
 
 fn bytes(text: str, count: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count), start: 0, length: count }; }
 fn phase(value: ext::sqlite::Phase) -> u64 { return match (value) { ext::sqlite::Phase::Open -> 1, ext::sqlite::Phase::Configure -> 2, ext::sqlite::Phase::Prepare -> 3, ext::sqlite::Phase::Bind -> 4, ext::sqlite::Phase::Step -> 5, ext::sqlite::Phase::Reset -> 6, ext::sqlite::Phase::ClearBindings -> 7, ext::sqlite::Phase::Column -> 8, ext::sqlite::Phase::Finalize -> 9, ext::sqlite::Phase::Close -> 10, ext::sqlite::Phase::Transaction -> 11 }; }
-fn state(value: ext::sqlite::State) -> i32 { return match (value) { ext::sqlite::State::Ready -> 0, ext::sqlite::State::Row -> 1, ext::sqlite::State::Done -> 2, ext::sqlite::State::Failed -> 3, ext::sqlite::State::Finalized -> 4 }; }
+fn state(value: ext::sqlite_statement::StatementState) -> i32 { return match (value) { ext::sqlite_statement::StatementState::Ready -> 0, ext::sqlite_statement::StatementState::Row -> 1, ext::sqlite_statement::StatementState::Done -> 2, ext::sqlite_statement::StatementState::Failed -> 3, ext::sqlite_statement::StatementState::Finalized -> 4 }; }
 fn row(value: ext::sqlite::Step) -> bool { return match (value) { ext::sqlite::Step::Row -> true, _ -> false }; }
 fn invalid(error: ext::sqlite::Error, expected_phase: u64) {
     let invalid_state: bool = match (error.cause) { ext::sqlite::Cause::InvalidState -> true, _ -> false };

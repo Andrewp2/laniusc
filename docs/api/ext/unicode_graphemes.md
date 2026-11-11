@@ -12,25 +12,42 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-unicode-graphemes](../../extended-unicode-graphemes.md)
 
-Declaration counts: enum: 1; field: 9; function: 3; impl: 1; method: 1; struct: 2; variant: 1.
+Declaration counts: enum: 1; field: 9; function: 3; impl: 3; machine: 2; method: 3; struct: 2; variant: 1.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_graphemes.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_graphemes.lani#L5)
-- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_graphemes.lani#L6)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_graphemes.lani#L7)
-- [ext::unicode_graphemes_data](unicode_graphemes_data.md) · [source](../../../extended/ext/unicode_graphemes.lani#L8)
+- [ext::unicode_break_state](unicode_break_state.md) · [source](../../../extended/ext/unicode_graphemes.lani#L4)
+- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_graphemes.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_graphemes.lani#L6)
+- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_graphemes.lani#L7)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_graphemes.lani#L8)
+- [ext::unicode_graphemes_data](unicode_graphemes_data.md) · [source](../../../extended/ext/unicode_graphemes.lani#L9)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### machine: EmojiSuffix
+
+[Source line 11](../../../extended/ext/unicode_graphemes.lani#L11)
+
+```lanius
+pub machine EmojiSuffix on u32
+```
+
+### machine: IndicSuffix
+
+[Source line 18](../../../extended/ext/unicode_graphemes.lani#L18)
+
+```lanius
+pub machine IndicSuffix on u32
+```
+
 ### enum: Error
 
-[Source line 10](../../../extended/ext/unicode_graphemes.lani#L10)
+[Source line 27](../../../extended/ext/unicode_graphemes.lani#L27)
 
 ```lanius
 pub enum Error
@@ -38,7 +55,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 10](../../../extended/ext/unicode_graphemes.lani#L10)
+[Source line 27](../../../extended/ext/unicode_graphemes.lani#L27)
 
 ```lanius
 Bounds
@@ -46,7 +63,7 @@ Bounds
 
 ### struct: Cluster
 
-[Source line 11](../../../extended/ext/unicode_graphemes.lani#L11)
+[Source line 28](../../../extended/ext/unicode_graphemes.lani#L28)
 
 ```lanius
 pub struct Cluster
@@ -54,7 +71,7 @@ pub struct Cluster
 
 #### field: start
 
-[Source line 11](../../../extended/ext/unicode_graphemes.lani#L11)
+[Source line 28](../../../extended/ext/unicode_graphemes.lani#L28)
 
 ```lanius
 start: i32
@@ -62,7 +79,7 @@ start: i32
 
 #### field: end
 
-[Source line 11](../../../extended/ext/unicode_graphemes.lani#L11)
+[Source line 28](../../../extended/ext/unicode_graphemes.lani#L28)
 
 ```lanius
 end: i32
@@ -70,7 +87,7 @@ end: i32
 
 #### field: text
 
-[Source line 11](../../../extended/ext/unicode_graphemes.lani#L11)
+[Source line 28](../../../extended/ext/unicode_graphemes.lani#L28)
 
 ```lanius
 text: core::text::Text
@@ -78,7 +95,7 @@ text: core::text::Text
 
 ### struct: Cursor
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
 pub struct Cursor
@@ -86,7 +103,7 @@ pub struct Cursor
 
 #### field: text
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
 text: core::text::Text
@@ -94,7 +111,7 @@ text: core::text::Text
 
 #### field: position
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
 position: i32
@@ -102,41 +119,41 @@ position: i32
 
 #### field: previous
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
 previous: u32
 ```
 
-#### field: ri_odd
+#### field: regional
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
-ri_odd: bool
+regional: ext::unicode_break_state::RegionalRun
 ```
 
 #### field: emoji
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
-emoji: u32
+emoji: EmojiSuffix
 ```
 
 #### field: indic
 
-[Source line 14](../../../extended/ext/unicode_graphemes.lani#L14)
+[Source line 31](../../../extended/ext/unicode_graphemes.lani#L31)
 
 ```lanius
-indic: u32
+indic: IndicSuffix
 ```
 
 ## Free functions and extern declarations
 
 ### function: cursor
 
-[Source line 19](../../../extended/ext/unicode_graphemes.lani#L19)
+[Source line 36](../../../extended/ext/unicode_graphemes.lani#L36)
 
 ```lanius
 pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error>
@@ -144,7 +161,7 @@ pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error>
 
 ### function: count
 
-[Source line 84](../../../extended/ext/unicode_graphemes.lani#L84)
+[Source line 90](../../../extended/ext/unicode_graphemes.lani#L90)
 
 ```lanius
 pub fn count(text: core::text::Text) -> core::result::Result<i32, Error>
@@ -152,7 +169,7 @@ pub fn count(text: core::text::Text) -> core::result::Result<i32, Error>
 
 ### function: is_boundary
 
-[Source line 96](../../../extended/ext/unicode_graphemes.lani#L96)
+[Source line 102](../../../extended/ext/unicode_graphemes.lani#L102)
 
 ```lanius
 pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<bool, Error>
@@ -160,9 +177,41 @@ pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<b
 
 ## Implementation blocks and public methods
 
-### impl at line 26
+### impl at line 17
 
-[Source line 26](../../../extended/ext/unicode_graphemes.lani#L26)
+[Source line 17](../../../extended/ext/unicode_graphemes.lani#L17)
+
+```lanius
+pub impl EmojiSuffix
+```
+
+#### method: joined
+
+[Source line 17](../../../extended/ext/unicode_graphemes.lani#L17)
+
+```lanius
+pub fn joined(&self) -> bool
+```
+
+### impl at line 24
+
+[Source line 24](../../../extended/ext/unicode_graphemes.lani#L24)
+
+```lanius
+pub impl IndicSuffix
+```
+
+#### method: linked
+
+[Source line 24](../../../extended/ext/unicode_graphemes.lani#L24)
+
+```lanius
+pub fn linked(&self) -> bool
+```
+
+### impl at line 43
+
+[Source line 43](../../../extended/ext/unicode_graphemes.lani#L43)
 
 ```lanius
 pub impl Cursor
@@ -170,7 +219,7 @@ pub impl Cursor
 
 #### method: next
 
-[Source line 68](../../../extended/ext/unicode_graphemes.lani#L68)
+[Source line 74](../../../extended/ext/unicode_graphemes.lani#L74)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Cluster>

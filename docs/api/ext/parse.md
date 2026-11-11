@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-parse](../../extended-parse.md)
 
-Declaration counts: enum: 1; field: 21; function: 6; impl: 2; method: 23; struct: 6; variant: 9.
+Declaration counts: enum: 1; field: 21; function: 6; impl: 4; machine: 2; method: 25; struct: 6; variant: 9.
 
 ## Declared imports
 
@@ -30,9 +30,25 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: ErrorKind
+### machine: LinePosition
 
 [Source line 12](../../../extended/ext/parse.lani#L12)
+
+```lanius
+pub machine LinePosition on u32
+```
+
+### machine: Numeric
+
+[Source line 20](../../../extended/ext/parse.lani#L20)
+
+```lanius
+pub machine Numeric on u32 -> bool
+```
+
+### enum: ErrorKind
+
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 pub enum ErrorKind
@@ -40,7 +56,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 Bounds
@@ -48,7 +64,7 @@ Bounds
 
 #### variant: InvalidUtf8
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 InvalidUtf8
@@ -56,7 +72,7 @@ InvalidUtf8
 
 #### variant: UnexpectedEnd
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 UnexpectedEnd
@@ -64,7 +80,7 @@ UnexpectedEnd
 
 #### variant: Expected
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 Expected
@@ -72,7 +88,7 @@ Expected
 
 #### variant: InvalidNumber
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 InvalidNumber
@@ -80,7 +96,7 @@ InvalidNumber
 
 #### variant: Overflow
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 Overflow
@@ -88,7 +104,7 @@ Overflow
 
 #### variant: ScanLimit
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 ScanLimit
@@ -96,7 +112,7 @@ ScanLimit
 
 #### variant: WorkLimit
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 WorkLimit
@@ -104,7 +120,7 @@ WorkLimit
 
 #### variant: ForeignCheckpoint
 
-[Source line 12](../../../extended/ext/parse.lani#L12)
+[Source line 37](../../../extended/ext/parse.lani#L37)
 
 ```lanius
 ForeignCheckpoint
@@ -112,7 +128,7 @@ ForeignCheckpoint
 
 ### struct: Location
 
-[Source line 13](../../../extended/ext/parse.lani#L13)
+[Source line 38](../../../extended/ext/parse.lani#L38)
 
 ```lanius
 pub struct Location
@@ -120,7 +136,7 @@ pub struct Location
 
 #### field: offset
 
-[Source line 13](../../../extended/ext/parse.lani#L13)
+[Source line 38](../../../extended/ext/parse.lani#L38)
 
 ```lanius
 offset: i32
@@ -128,7 +144,7 @@ offset: i32
 
 #### field: line
 
-[Source line 13](../../../extended/ext/parse.lani#L13)
+[Source line 38](../../../extended/ext/parse.lani#L38)
 
 ```lanius
 line: i32
@@ -136,7 +152,7 @@ line: i32
 
 #### field: column
 
-[Source line 13](../../../extended/ext/parse.lani#L13)
+[Source line 38](../../../extended/ext/parse.lani#L38)
 
 ```lanius
 column: i32
@@ -144,7 +160,7 @@ column: i32
 
 ### struct: Error
 
-[Source line 14](../../../extended/ext/parse.lani#L14)
+[Source line 39](../../../extended/ext/parse.lani#L39)
 
 ```lanius
 pub struct Error
@@ -152,7 +168,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 14](../../../extended/ext/parse.lani#L14)
+[Source line 39](../../../extended/ext/parse.lani#L39)
 
 ```lanius
 kind: ErrorKind
@@ -160,7 +176,7 @@ kind: ErrorKind
 
 #### field: location
 
-[Source line 14](../../../extended/ext/parse.lani#L14)
+[Source line 39](../../../extended/ext/parse.lani#L39)
 
 ```lanius
 location: Location
@@ -168,7 +184,7 @@ location: Location
 
 ### struct: Limits
 
-[Source line 15](../../../extended/ext/parse.lani#L15)
+[Source line 40](../../../extended/ext/parse.lani#L40)
 
 ```lanius
 pub struct Limits
@@ -176,7 +192,7 @@ pub struct Limits
 
 #### field: max_scan_bytes
 
-[Source line 15](../../../extended/ext/parse.lani#L15)
+[Source line 40](../../../extended/ext/parse.lani#L40)
 
 ```lanius
 max_scan_bytes: i32
@@ -184,7 +200,7 @@ max_scan_bytes: i32
 
 #### field: max_work
 
-[Source line 15](../../../extended/ext/parse.lani#L15)
+[Source line 40](../../../extended/ext/parse.lani#L40)
 
 ```lanius
 max_work: u64
@@ -192,7 +208,7 @@ max_work: u64
 
 ### struct: Span
 
-[Source line 16](../../../extended/ext/parse.lani#L16)
+[Source line 41](../../../extended/ext/parse.lani#L41)
 
 ```lanius
 pub struct Span
@@ -200,7 +216,7 @@ pub struct Span
 
 #### field: start
 
-[Source line 16](../../../extended/ext/parse.lani#L16)
+[Source line 41](../../../extended/ext/parse.lani#L41)
 
 ```lanius
 start: Location
@@ -208,7 +224,7 @@ start: Location
 
 #### field: end
 
-[Source line 16](../../../extended/ext/parse.lani#L16)
+[Source line 41](../../../extended/ext/parse.lani#L41)
 
 ```lanius
 end: Location
@@ -216,7 +232,7 @@ end: Location
 
 #### field: text
 
-[Source line 16](../../../extended/ext/parse.lani#L16)
+[Source line 41](../../../extended/ext/parse.lani#L41)
 
 ```lanius
 text: core::text::Text
@@ -224,7 +240,7 @@ text: core::text::Text
 
 ### struct: Checkpoint
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 pub struct Checkpoint
@@ -232,7 +248,7 @@ pub struct Checkpoint
 
 #### field: data
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 data: ptr
@@ -240,7 +256,7 @@ data: ptr
 
 #### field: stride
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 stride: isize
@@ -248,7 +264,7 @@ stride: isize
 
 #### field: source_start
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 source_start: i32
@@ -256,7 +272,7 @@ source_start: i32
 
 #### field: source_length
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 source_length: i32
@@ -264,23 +280,23 @@ source_length: i32
 
 #### field: at
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
 at: Location
 ```
 
-#### field: after_cr
+#### field: line_position
 
-[Source line 17](../../../extended/ext/parse.lani#L17)
+[Source line 42](../../../extended/ext/parse.lani#L42)
 
 ```lanius
-after_cr: bool
+line_position: LinePosition
 ```
 
 ### struct: Cursor
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
 pub struct Cursor
@@ -288,7 +304,7 @@ pub struct Cursor
 
 #### field: source
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
 source: core::text::Text
@@ -296,23 +312,23 @@ source: core::text::Text
 
 #### field: at
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
 at: Location
 ```
 
-#### field: after_cr
+#### field: line_position
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
-after_cr: bool
+line_position: LinePosition
 ```
 
 #### field: limits
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
 limits: Limits
@@ -320,7 +336,7 @@ limits: Limits
 
 #### field: work_left
 
-[Source line 18](../../../extended/ext/parse.lani#L18)
+[Source line 43](../../../extended/ext/parse.lani#L43)
 
 ```lanius
 work_left: u64
@@ -330,7 +346,7 @@ work_left: u64
 
 ### function: default_limits
 
-[Source line 20](../../../extended/ext/parse.lani#L20)
+[Source line 45](../../../extended/ext/parse.lani#L45)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -338,7 +354,7 @@ pub fn default_limits() -> Limits
 
 ### function: is_identifier_start
 
-[Source line 25](../../../extended/ext/parse.lani#L25)
+[Source line 50](../../../extended/ext/parse.lani#L50)
 
 ```lanius
 pub fn is_identifier_start(value: u32) -> bool
@@ -346,7 +362,7 @@ pub fn is_identifier_start(value: u32) -> bool
 
 ### function: is_identifier_continue
 
-[Source line 26](../../../extended/ext/parse.lani#L26)
+[Source line 51](../../../extended/ext/parse.lani#L51)
 
 ```lanius
 pub fn is_identifier_continue(value: u32) -> bool
@@ -354,7 +370,7 @@ pub fn is_identifier_continue(value: u32) -> bool
 
 ### function: is_whitespace
 
-[Source line 27](../../../extended/ext/parse.lani#L27)
+[Source line 52](../../../extended/ext/parse.lani#L52)
 
 ```lanius
 pub fn is_whitespace(value: u32) -> bool
@@ -362,7 +378,7 @@ pub fn is_whitespace(value: u32) -> bool
 
 ### function: new
 
-[Source line 29](../../../extended/ext/parse.lani#L29)
+[Source line 54](../../../extended/ext/parse.lani#L54)
 
 ```lanius
 pub fn new(input: core::text::Text, limits: Limits) -> core::result::Result<Cursor, Error>
@@ -370,7 +386,7 @@ pub fn new(input: core::text::Text, limits: Limits) -> core::result::Result<Curs
 
 ### function: from_utf8_range
 
-[Source line 43](../../../extended/ext/parse.lani#L43)
+[Source line 68](../../../extended/ext/parse.lani#L68)
 
 ```lanius
 pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32, limits: Limits) -> core::result::Result<Cursor,Error>
@@ -378,9 +394,41 @@ pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32, limits: Limits) -> 
 
 ## Implementation blocks and public methods
 
-### impl at line 47
+### impl at line 17
 
-[Source line 47](../../../extended/ext/parse.lani#L47)
+[Source line 17](../../../extended/ext/parse.lani#L17)
+
+```lanius
+pub impl LinePosition
+```
+
+#### method: after_cr
+
+[Source line 17](../../../extended/ext/parse.lani#L17)
+
+```lanius
+pub fn after_cr(&self) -> bool
+```
+
+### impl at line 32
+
+[Source line 32](../../../extended/ext/parse.lani#L32)
+
+```lanius
+pub impl Numeric
+```
+
+#### method: complete
+
+[Source line 33](../../../extended/ext/parse.lani#L33)
+
+```lanius
+pub fn complete(&self) -> bool
+```
+
+### impl at line 72
+
+[Source line 72](../../../extended/ext/parse.lani#L72)
 
 ```lanius
 pub impl Span
@@ -388,7 +436,7 @@ pub impl Span
 
 #### method: byte_len
 
-[Source line 48](../../../extended/ext/parse.lani#L48)
+[Source line 73](../../../extended/ext/parse.lani#L73)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -396,15 +444,15 @@ pub fn byte_len(&self) -> i32
 
 #### method: bytes
 
-[Source line 49](../../../extended/ext/parse.lani#L49)
+[Source line 74](../../../extended/ext/parse.lani#L74)
 
 ```lanius
 pub fn bytes(&self) -> core::slice::View<u8>
 ```
 
-### impl at line 52
+### impl at line 77
 
-[Source line 52](../../../extended/ext/parse.lani#L52)
+[Source line 77](../../../extended/ext/parse.lani#L77)
 
 ```lanius
 pub impl Cursor
@@ -412,7 +460,7 @@ pub impl Cursor
 
 #### method: borrow
 
-[Source line 53](../../../extended/ext/parse.lani#L53)
+[Source line 78](../../../extended/ext/parse.lani#L78)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor
@@ -420,7 +468,7 @@ pub fn borrow(&self) -> &Cursor
 
 #### method: location
 
-[Source line 54](../../../extended/ext/parse.lani#L54)
+[Source line 79](../../../extended/ext/parse.lani#L79)
 
 ```lanius
 pub fn location(&self) -> Location
@@ -428,7 +476,7 @@ pub fn location(&self) -> Location
 
 #### method: position
 
-[Source line 55](../../../extended/ext/parse.lani#L55)
+[Source line 80](../../../extended/ext/parse.lani#L80)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -436,7 +484,7 @@ pub fn position(&self) -> i32
 
 #### method: is_eof
 
-[Source line 56](../../../extended/ext/parse.lani#L56)
+[Source line 81](../../../extended/ext/parse.lani#L81)
 
 ```lanius
 pub fn is_eof(&self) -> bool
@@ -444,7 +492,7 @@ pub fn is_eof(&self) -> bool
 
 #### method: remaining
 
-[Source line 57](../../../extended/ext/parse.lani#L57)
+[Source line 82](../../../extended/ext/parse.lani#L82)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -452,7 +500,7 @@ pub fn remaining(&self) -> i32
 
 #### method: remaining_work
 
-[Source line 58](../../../extended/ext/parse.lani#L58)
+[Source line 83](../../../extended/ext/parse.lani#L83)
 
 ```lanius
 pub fn remaining_work(&self) -> u64
@@ -460,7 +508,7 @@ pub fn remaining_work(&self) -> u64
 
 #### method: checkpoint
 
-[Source line 95](../../../extended/ext/parse.lani#L95)
+[Source line 120](../../../extended/ext/parse.lani#L120)
 
 ```lanius
 pub fn checkpoint(&self) -> Checkpoint
@@ -468,7 +516,7 @@ pub fn checkpoint(&self) -> Checkpoint
 
 #### method: restore
 
-[Source line 98](../../../extended/ext/parse.lani#L98)
+[Source line 123](../../../extended/ext/parse.lani#L123)
 
 ```lanius
 pub fn restore(&self, mark: Checkpoint) -> core::result::Result<i32,Error>
@@ -476,7 +524,7 @@ pub fn restore(&self, mark: Checkpoint) -> core::result::Result<i32,Error>
 
 #### method: peek_byte
 
-[Source line 107](../../../extended/ext/parse.lani#L107)
+[Source line 132](../../../extended/ext/parse.lani#L132)
 
 ```lanius
 pub fn peek_byte(&self) -> core::option::Option<u8>
@@ -484,7 +532,7 @@ pub fn peek_byte(&self) -> core::option::Option<u8>
 
 #### method: peek_scalar
 
-[Source line 108](../../../extended/ext/parse.lani#L108)
+[Source line 133](../../../extended/ext/parse.lani#L133)
 
 ```lanius
 pub fn peek_scalar(&self) -> core::result::Result<core::option::Option<u32>,Error>
@@ -492,7 +540,7 @@ pub fn peek_scalar(&self) -> core::result::Result<core::option::Option<u32>,Erro
 
 #### method: take_scalar
 
-[Source line 109](../../../extended/ext/parse.lani#L109)
+[Source line 134](../../../extended/ext/parse.lani#L134)
 
 ```lanius
 pub fn take_scalar(&self) -> core::result::Result<core::option::Option<u32>,Error>
@@ -500,7 +548,7 @@ pub fn take_scalar(&self) -> core::result::Result<core::option::Option<u32>,Erro
 
 #### method: take_byte
 
-[Source line 120](../../../extended/ext/parse.lani#L120)
+[Source line 145](../../../extended/ext/parse.lani#L145)
 
 ```lanius
 pub fn take_byte(&self, expected: u8) -> core::result::Result<Span,Error>
@@ -508,7 +556,7 @@ pub fn take_byte(&self, expected: u8) -> core::result::Result<Span,Error>
 
 #### method: tag
 
-[Source line 133](../../../extended/ext/parse.lani#L133)
+[Source line 158](../../../extended/ext/parse.lani#L158)
 
 ```lanius
 pub fn tag(&self, expected: core::text::Text) -> core::result::Result<Span,Error>
@@ -516,7 +564,7 @@ pub fn tag(&self, expected: core::text::Text) -> core::result::Result<Span,Error
 
 #### method: take_text
 
-[Source line 157](../../../extended/ext/parse.lani#L157)
+[Source line 182](../../../extended/ext/parse.lani#L182)
 
 ```lanius
 pub fn take_text(&self, count: i32) -> core::result::Result<Span,Error>
@@ -524,7 +572,7 @@ pub fn take_text(&self, count: i32) -> core::result::Result<Span,Error>
 
 #### method: whitespace
 
-[Source line 193](../../../extended/ext/parse.lani#L193)
+[Source line 218](../../../extended/ext/parse.lani#L218)
 
 ```lanius
 pub fn whitespace(&self) -> core::result::Result<Span,Error>
@@ -532,7 +580,7 @@ pub fn whitespace(&self) -> core::result::Result<Span,Error>
 
 #### method: identifier
 
-[Source line 194](../../../extended/ext/parse.lani#L194)
+[Source line 219](../../../extended/ext/parse.lani#L219)
 
 ```lanius
 pub fn identifier(&self) -> core::result::Result<Span,Error>
@@ -540,7 +588,7 @@ pub fn identifier(&self) -> core::result::Result<Span,Error>
 
 #### method: digits
 
-[Source line 195](../../../extended/ext/parse.lani#L195)
+[Source line 220](../../../extended/ext/parse.lani#L220)
 
 ```lanius
 pub fn digits(&self) -> core::result::Result<Span,Error>
@@ -548,7 +596,7 @@ pub fn digits(&self) -> core::result::Result<Span,Error>
 
 #### method: scan_until
 
-[Source line 197](../../../extended/ext/parse.lani#L197)
+[Source line 222](../../../extended/ext/parse.lani#L222)
 
 ```lanius
 pub fn scan_until(&self, delimiter: u32) -> core::result::Result<Span,Error>
@@ -556,7 +604,7 @@ pub fn scan_until(&self, delimiter: u32) -> core::result::Result<Span,Error>
 
 #### method: integer
 
-[Source line 201](../../../extended/ext/parse.lani#L201)
+[Source line 226](../../../extended/ext/parse.lani#L226)
 
 ```lanius
 pub fn integer(&self) -> core::result::Result<Span,Error>
@@ -564,7 +612,7 @@ pub fn integer(&self) -> core::result::Result<Span,Error>
 
 #### method: decimal
 
-[Source line 202](../../../extended/ext/parse.lani#L202)
+[Source line 227](../../../extended/ext/parse.lani#L227)
 
 ```lanius
 pub fn decimal(&self) -> core::result::Result<Span,Error>
@@ -572,7 +620,7 @@ pub fn decimal(&self) -> core::result::Result<Span,Error>
 
 #### method: integer_i64
 
-[Source line 228](../../../extended/ext/parse.lani#L228)
+[Source line 246](../../../extended/ext/parse.lani#L246)
 
 ```lanius
 pub fn integer_i64(&self) -> core::result::Result<i64,Error>

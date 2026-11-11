@@ -4,6 +4,7 @@ module app::main;
 import core::result;
 import core::slice;
 import ext::sqlite;
+import ext::sqlite_statement;
 
 fn phase(value: ext::sqlite::Phase) -> i32 {
     return match (value) {
@@ -18,7 +19,7 @@ fn allocation(error: ext::sqlite::Error, expected: i32) {
     assert(failed && phase(error.phase) == expected && error.code == 0);
 }
 fn ready(statement: &ext::sqlite::Statement) -> bool {
-    let is_ready: bool = match (statement.state()) { ext::sqlite::State::Ready -> true, _ -> false };
+    let is_ready: bool = match (statement.state()) { ext::sqlite_statement::StatementState::Ready -> true, _ -> false };
     return statement.is_open() && is_ready;
 }
 fn row(statement: &ext::sqlite::Statement) {
@@ -122,7 +123,7 @@ fn main() -> i32 {
     copied(statement.borrow(), 0, text_view, true);
     copied(statement.borrow(), 1, blob_view, false);
     assert(statement.finalize().is_ok() && statement.finalize().is_ok() && !statement.is_open());
-    assert(match (statement.state()) { ext::sqlite::State::Finalized -> true, _ -> false });
+    assert(match (statement.state()) { ext::sqlite_statement::StatementState::Finalized -> true, _ -> false });
     assert(database.close().is_ok() && database.close().is_ok() && !database.is_open());
     assert(text[6] == 241 && text[319] == 241 && blob[10] == 242 && blob[531] == 242);
     return failed;

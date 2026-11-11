@@ -1,0 +1,110 @@
+// Delimited container grammar shared by tree parsers.
+module core::parse_state;
+pub enum SequenceEvent { ValueRead, CommaRead }
+pub machine Sequence on SequenceEvent {
+    start First;
+    state First { SequenceEvent::ValueRead -> goto Separator, SequenceEvent::CommaRead -> stay, }
+    state Separator { SequenceEvent::ValueRead -> stay, SequenceEvent::CommaRead -> goto Required, }
+    state Required { SequenceEvent::ValueRead -> goto Separator, SequenceEvent::CommaRead -> stay, }
+}
+pub impl Sequence {
+    pub fn needs_separator(&self) -> bool { return match (self.state()) { SequenceState::Separator -> true, _ -> false }; }
+    pub fn needs_value(&self) -> bool { return match (self.state()) { SequenceState::Required -> true, _ -> false }; }
+}
+
+// A map/form entry alternates its key and value components.
+pub enum PairEvent { ComponentRead }
+pub machine PairPhase on PairEvent {
+    start Key;
+    state Key { PairEvent::ComponentRead -> goto Value, }
+    state Value { PairEvent::ComponentRead -> goto Key, }
+}
+pub impl PairPhase {
+    pub fn needs_value(&self) -> bool { return match (self.state()) { PairPhaseState::Value -> true, _ -> false }; }
+    pub fn advance(&self) { self.step(PairEvent::ComponentRead); }
+}
+
+// Quote delimiters after the caller has handled its grammar's escapes.
+pub machine Quoting on u8 {
+    start Unquoted;
+    state Unquoted { byte -> { if (byte == 39) { goto Single; } if (byte == 34) { goto Double; } stay; }, }
+    state Single { byte -> { if (byte == 39) { goto Unquoted; } stay; }, }
+    state Double { byte -> { if (byte == 34) { goto Unquoted; } stay; }, }
+}
+pub impl Quoting {
+    pub fn unquoted(&self) -> bool { return match (self.state()) { QuotingState::Unquoted -> true, _ -> false }; }
+    pub fn single(&self) -> bool { return match (self.state()) { QuotingState::Single -> true, _ -> false }; }
+    pub fn double(&self) -> bool { return match (self.state()) { QuotingState::Double -> true, _ -> false }; }
+    pub fn delimiter(&self) -> u8 { return match (self.state()) { QuotingState::Single -> 39, QuotingState::Double -> 34, _ -> 0 }; }
+}
+
+pub fn pair_phase(needs_value: bool) -> PairPhase { let pair = pair_phase_start(); if (needs_value) { pair.advance(); } return pair; }
+
+// Progress of a whitespace-delimited integer, independent of its magnitude.
+pub enum IntegerEvent { Started, Digit, LeadingZero, Prefix, OrdinaryByte, Whitespace }
+pub machine IntegerProgress on IntegerEvent {
+    start Leading;
+    state Leading {
+        IntegerEvent::Started -> goto Started,
+        IntegerEvent::Digit -> goto Digits,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state Started {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> goto Digits,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state Zero {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> goto Digits,
+        IntegerEvent::LeadingZero -> stay,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> goto Digits,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state Digits {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> stay,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state Prefix {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> goto PrefixedDigits,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> stay,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state PrefixedDigits {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> stay,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> goto Trailing,
+    }
+    state Trailing {
+        IntegerEvent::Started -> stay,
+        IntegerEvent::Digit -> goto Digits,
+        IntegerEvent::LeadingZero -> goto Zero,
+        IntegerEvent::Prefix -> goto Prefix,
+        IntegerEvent::OrdinaryByte -> stay,
+        IntegerEvent::Whitespace -> stay,
+    }
+}
+pub impl IntegerProgress {
+    pub fn started(&self) -> bool { return match (self.state()) { IntegerProgressState::Started -> true, IntegerProgressState::Zero -> true, IntegerProgressState::Digits -> true, IntegerProgressState::Prefix -> true, IntegerProgressState::PrefixedDigits -> true, IntegerProgressState::Trailing -> true, _ -> false }; }
+    pub fn has_digits(&self) -> bool { return match (self.state()) { IntegerProgressState::Zero -> true, IntegerProgressState::Digits -> true, IntegerProgressState::PrefixedDigits -> true, IntegerProgressState::Trailing -> true, _ -> false }; }
+    pub fn leading_zero(&self) -> bool { return match (self.state()) { IntegerProgressState::Zero -> true, _ -> false }; }
+    pub fn prefix_seen(&self) -> bool { return match (self.state()) { IntegerProgressState::Prefix -> true, IntegerProgressState::PrefixedDigits -> true, _ -> false }; }
+    pub fn trailing(&self) -> bool { return match (self.state()) { IntegerProgressState::Trailing -> true, _ -> false }; }
+}

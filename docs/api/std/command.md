@@ -18,23 +18,24 @@ Process-group creation is explicit. Group signaling requires the confirmed origi
 - [stdlib-host-clocks](../../stdlib-host-clocks.md)
 - [stdlib-child-usage](../../stdlib-child-usage.md)
 
-Declaration counts: enum: 10; field: 50; function: 5; impl: 3; method: 24; struct: 10; variant: 48.
+Declaration counts: enum: 11; field: 49; function: 5; impl: 4; machine: 1; method: 26; struct: 10; variant: 51.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/command.lani#L4)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/command.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/command.lani#L6)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/command.lani#L7)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/command.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/command.lani#L9)
-- [core::time](../core/time.md) · [source](../../../stdlib/std/command.lani#L10)
-- [std::command_raw](command_raw.md) · [source](../../../stdlib/std/command.lani#L11)
-- [std::env](env.md) · [source](../../../stdlib/std/command.lani#L12)
-- [std::file](file.md) · [source](../../../stdlib/std/command.lani#L13)
-- [std::signal](signal.md) · [source](../../../stdlib/std/command.lani#L14)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/command.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/command.lani#L5)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/command.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/command.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/command.lani#L8)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/command.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/command.lani#L10)
+- [core::time](../core/time.md) · [source](../../../stdlib/std/command.lani#L11)
+- [std::command_raw](command_raw.md) · [source](../../../stdlib/std/command.lani#L12)
+- [std::env](env.md) · [source](../../../stdlib/std/command.lani#L13)
+- [std::file](file.md) · [source](../../../stdlib/std/command.lani#L14)
+- [std::signal](signal.md) · [source](../../../stdlib/std/command.lani#L15)
 
 ## Types, fields and variants
 
@@ -42,7 +43,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 pub enum Error
@@ -50,7 +51,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 Bounds
@@ -58,7 +59,7 @@ Bounds
 
 #### variant: Nul
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 Nul
@@ -66,7 +67,7 @@ Nul
 
 #### variant: InvalidInput
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 InvalidInput
@@ -74,7 +75,7 @@ InvalidInput
 
 #### variant: MissingPath
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 MissingPath
@@ -82,7 +83,7 @@ MissingPath
 
 #### variant: Limit
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 Limit
@@ -90,7 +91,7 @@ Limit
 
 #### variant: AllocationFailed
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 AllocationFailed
@@ -98,7 +99,7 @@ AllocationFailed
 
 #### variant: Host
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 Host
@@ -106,7 +107,7 @@ Host
 
 #### variant: StartupUnknown
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 StartupUnknown
@@ -114,7 +115,7 @@ StartupUnknown
 
 #### variant: LostChild
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 LostChild
@@ -122,7 +123,7 @@ LostChild
 
 #### variant: AlreadyReaped
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 AlreadyReaped
@@ -130,7 +131,7 @@ AlreadyReaped
 
 #### variant: EnvironmentChanged
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 EnvironmentChanged
@@ -138,7 +139,7 @@ EnvironmentChanged
 
 #### variant: GroupUnconfirmed
 
-[Source line 16](../../../stdlib/std/command.lani#L16)
+[Source line 17](../../../stdlib/std/command.lani#L17)
 
 ```lanius
 GroupUnconfirmed
@@ -146,7 +147,7 @@ GroupUnconfirmed
 
 ### enum: Stage
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 pub enum Stage
@@ -154,7 +155,7 @@ pub enum Stage
 
 #### variant: Validate
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Validate
@@ -162,7 +163,7 @@ Validate
 
 #### variant: Allocate
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Allocate
@@ -170,7 +171,7 @@ Allocate
 
 #### variant: Descriptors
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Descriptors
@@ -178,7 +179,7 @@ Descriptors
 
 #### variant: Fork
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Fork
@@ -186,7 +187,7 @@ Fork
 
 #### variant: CloseRange
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 CloseRange
@@ -194,7 +195,7 @@ CloseRange
 
 #### variant: Redirect
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Redirect
@@ -202,7 +203,7 @@ Redirect
 
 #### variant: Directory
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Directory
@@ -210,7 +211,7 @@ Directory
 
 #### variant: Exec
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Exec
@@ -218,7 +219,7 @@ Exec
 
 #### variant: StartupRead
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 StartupRead
@@ -226,7 +227,7 @@ StartupRead
 
 #### variant: StartupProtocol
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 StartupProtocol
@@ -234,7 +235,7 @@ StartupProtocol
 
 #### variant: Wait
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Wait
@@ -242,7 +243,7 @@ Wait
 
 #### variant: Signal
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Signal
@@ -250,7 +251,7 @@ Signal
 
 #### variant: Close
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Close
@@ -258,7 +259,7 @@ Close
 
 #### variant: Environment
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 Environment
@@ -266,7 +267,7 @@ Environment
 
 #### variant: ProcessGroup
 
-[Source line 17](../../../stdlib/std/command.lani#L17)
+[Source line 18](../../../stdlib/std/command.lani#L18)
 
 ```lanius
 ProcessGroup
@@ -274,7 +275,7 @@ ProcessGroup
 
 ### struct: Failure
 
-[Source line 18](../../../stdlib/std/command.lani#L18)
+[Source line 19](../../../stdlib/std/command.lani#L19)
 
 ```lanius
 pub struct Failure
@@ -282,7 +283,7 @@ pub struct Failure
 
 #### field: kind
 
-[Source line 18](../../../stdlib/std/command.lani#L18)
+[Source line 19](../../../stdlib/std/command.lani#L19)
 
 ```lanius
 kind: Error
@@ -290,7 +291,7 @@ kind: Error
 
 #### field: stage
 
-[Source line 18](../../../stdlib/std/command.lani#L18)
+[Source line 19](../../../stdlib/std/command.lani#L19)
 
 ```lanius
 stage: Stage
@@ -298,7 +299,7 @@ stage: Stage
 
 #### field: errno
 
-[Source line 18](../../../stdlib/std/command.lani#L18)
+[Source line 19](../../../stdlib/std/command.lani#L19)
 
 ```lanius
 errno: i32
@@ -306,7 +307,7 @@ errno: i32
 
 ### struct: Limits
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 pub struct Limits
@@ -314,7 +315,7 @@ pub struct Limits
 
 #### field: max_args
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 max_args: i32
@@ -322,7 +323,7 @@ max_args: i32
 
 #### field: max_env
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 max_env: i32
@@ -330,7 +331,7 @@ max_env: i32
 
 #### field: max_string
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 max_string: i32
@@ -338,7 +339,7 @@ max_string: i32
 
 #### field: max_bytes
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 max_bytes: i32
@@ -346,7 +347,7 @@ max_bytes: i32
 
 #### field: max_paths
 
-[Source line 19](../../../stdlib/std/command.lani#L19)
+[Source line 20](../../../stdlib/std/command.lani#L20)
 
 ```lanius
 max_paths: i32
@@ -354,7 +355,7 @@ max_paths: i32
 
 ### enum: Search
 
-[Source line 20](../../../stdlib/std/command.lani#L20)
+[Source line 21](../../../stdlib/std/command.lani#L21)
 
 ```lanius
 pub enum Search
@@ -362,7 +363,7 @@ pub enum Search
 
 #### variant: Exact
 
-[Source line 20](../../../stdlib/std/command.lani#L20)
+[Source line 21](../../../stdlib/std/command.lani#L21)
 
 ```lanius
 Exact
@@ -370,7 +371,7 @@ Exact
 
 #### variant: EnvironmentPath
 
-[Source line 20](../../../stdlib/std/command.lani#L20)
+[Source line 21](../../../stdlib/std/command.lani#L21)
 
 ```lanius
 EnvironmentPath
@@ -378,7 +379,7 @@ EnvironmentPath
 
 ### enum: ChildSigpipe
 
-[Source line 21](../../../stdlib/std/command.lani#L21)
+[Source line 22](../../../stdlib/std/command.lani#L22)
 
 ```lanius
 pub enum ChildSigpipe
@@ -386,7 +387,7 @@ pub enum ChildSigpipe
 
 #### variant: Default
 
-[Source line 21](../../../stdlib/std/command.lani#L21)
+[Source line 22](../../../stdlib/std/command.lani#L22)
 
 ```lanius
 Default
@@ -394,7 +395,7 @@ Default
 
 #### variant: Inherit
 
-[Source line 21](../../../stdlib/std/command.lani#L21)
+[Source line 22](../../../stdlib/std/command.lani#L22)
 
 ```lanius
 Inherit
@@ -402,7 +403,7 @@ Inherit
 
 ### enum: ChildMask
 
-[Source line 25](../../../stdlib/std/command.lani#L25)
+[Source line 26](../../../stdlib/std/command.lani#L26)
 
 ```lanius
 pub enum ChildMask
@@ -410,7 +411,7 @@ pub enum ChildMask
 
 #### variant: Clear
 
-[Source line 25](../../../stdlib/std/command.lani#L25)
+[Source line 26](../../../stdlib/std/command.lani#L26)
 
 ```lanius
 Clear
@@ -418,7 +419,7 @@ Clear
 
 #### variant: Inherit
 
-[Source line 25](../../../stdlib/std/command.lani#L25)
+[Source line 26](../../../stdlib/std/command.lani#L26)
 
 ```lanius
 Inherit
@@ -426,7 +427,7 @@ Inherit
 
 ### enum: Group
 
-[Source line 26](../../../stdlib/std/command.lani#L26)
+[Source line 27](../../../stdlib/std/command.lani#L27)
 
 ```lanius
 pub enum Group
@@ -434,7 +435,7 @@ pub enum Group
 
 #### variant: Inherit
 
-[Source line 26](../../../stdlib/std/command.lani#L26)
+[Source line 27](../../../stdlib/std/command.lani#L27)
 
 ```lanius
 Inherit
@@ -442,7 +443,7 @@ Inherit
 
 #### variant: New
 
-[Source line 26](../../../stdlib/std/command.lani#L26)
+[Source line 27](../../../stdlib/std/command.lani#L27)
 
 ```lanius
 New
@@ -450,7 +451,7 @@ New
 
 ### enum: Stdio
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 pub enum Stdio
@@ -458,7 +459,7 @@ pub enum Stdio
 
 #### variant: Inherit
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 Inherit
@@ -466,7 +467,7 @@ Inherit
 
 #### variant: Closed
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 Closed
@@ -474,7 +475,7 @@ Closed
 
 #### variant: Null
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 Null
@@ -482,7 +483,7 @@ Null
 
 #### variant: Pipe
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 Pipe
@@ -490,7 +491,7 @@ Pipe
 
 #### variant: Borrowed
 
-[Source line 27](../../../stdlib/std/command.lani#L27)
+[Source line 28](../../../stdlib/std/command.lani#L28)
 
 ```lanius
 Borrowed(i32)
@@ -498,7 +499,7 @@ Borrowed(i32)
 
 ### struct: Request
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 pub struct Request
@@ -506,7 +507,7 @@ pub struct Request
 
 #### field: program
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 program: core::slice::View<u8>
@@ -514,7 +515,7 @@ program: core::slice::View<u8>
 
 #### field: arguments
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 arguments: core::slice::View<core::slice::View<u8>>
@@ -522,7 +523,7 @@ arguments: core::slice::View<core::slice::View<u8>>
 
 #### field: environment
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 environment: core::slice::View<core::slice::View<u8>>
@@ -530,7 +531,7 @@ environment: core::slice::View<core::slice::View<u8>>
 
 #### field: cwd
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 cwd: core::option::Option<core::slice::View<u8>>
@@ -538,7 +539,7 @@ cwd: core::option::Option<core::slice::View<u8>>
 
 #### field: search
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 search: Search
@@ -546,7 +547,7 @@ search: Search
 
 #### field: sigpipe
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 sigpipe: ChildSigpipe
@@ -554,7 +555,7 @@ sigpipe: ChildSigpipe
 
 #### field: signal_mask
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 signal_mask: ChildMask
@@ -562,7 +563,7 @@ signal_mask: ChildMask
 
 #### field: group
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 group: Group
@@ -570,7 +571,7 @@ group: Group
 
 #### field: stdin
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 stdin: Stdio
@@ -578,7 +579,7 @@ stdin: Stdio
 
 #### field: stdout
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 stdout: Stdio
@@ -586,7 +587,7 @@ stdout: Stdio
 
 #### field: stderr
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 stderr: Stdio
@@ -594,7 +595,7 @@ stderr: Stdio
 
 #### field: limits
 
-[Source line 28](../../../stdlib/std/command.lani#L28)
+[Source line 29](../../../stdlib/std/command.lani#L29)
 
 ```lanius
 limits: Limits
@@ -602,7 +603,7 @@ limits: Limits
 
 ### enum: Startup
 
-[Source line 29](../../../stdlib/std/command.lani#L29)
+[Source line 30](../../../stdlib/std/command.lani#L30)
 
 ```lanius
 pub enum Startup
@@ -610,7 +611,7 @@ pub enum Startup
 
 #### variant: Unconfirmed
 
-[Source line 29](../../../stdlib/std/command.lani#L29)
+[Source line 30](../../../stdlib/std/command.lani#L30)
 
 ```lanius
 Unconfirmed
@@ -618,7 +619,7 @@ Unconfirmed
 
 #### variant: Unknown
 
-[Source line 29](../../../stdlib/std/command.lani#L29)
+[Source line 30](../../../stdlib/std/command.lani#L30)
 
 ```lanius
 Unknown
@@ -626,7 +627,7 @@ Unknown
 
 ### struct: ExitStatus
 
-[Source line 30](../../../stdlib/std/command.lani#L30)
+[Source line 31](../../../stdlib/std/command.lani#L31)
 
 ```lanius
 pub struct ExitStatus
@@ -634,7 +635,7 @@ pub struct ExitStatus
 
 #### field: raw
 
-[Source line 30](../../../stdlib/std/command.lani#L30)
+[Source line 31](../../../stdlib/std/command.lani#L31)
 
 ```lanius
 raw: i32
@@ -642,7 +643,7 @@ raw: i32
 
 #### field: code
 
-[Source line 30](../../../stdlib/std/command.lani#L30)
+[Source line 31](../../../stdlib/std/command.lani#L31)
 
 ```lanius
 code: core::option::Option<i32>
@@ -650,7 +651,7 @@ code: core::option::Option<i32>
 
 #### field: signal
 
-[Source line 30](../../../stdlib/std/command.lani#L30)
+[Source line 31](../../../stdlib/std/command.lani#L31)
 
 ```lanius
 signal: core::option::Option<i32>
@@ -658,7 +659,7 @@ signal: core::option::Option<i32>
 
 #### field: core_dumped
 
-[Source line 30](../../../stdlib/std/command.lani#L30)
+[Source line 31](../../../stdlib/std/command.lani#L31)
 
 ```lanius
 core_dumped: bool
@@ -666,7 +667,7 @@ core_dumped: bool
 
 ### struct: Usage
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 pub struct Usage
@@ -674,7 +675,7 @@ pub struct Usage
 
 #### field: user
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 user: core::time::Duration
@@ -682,7 +683,7 @@ user: core::time::Duration
 
 #### field: system
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 system: core::time::Duration
@@ -690,7 +691,7 @@ system: core::time::Duration
 
 #### field: max_rss_kib
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 max_rss_kib: u64
@@ -698,7 +699,7 @@ max_rss_kib: u64
 
 #### field: minor_faults
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 minor_faults: u64
@@ -706,7 +707,7 @@ minor_faults: u64
 
 #### field: major_faults
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 major_faults: u64
@@ -714,7 +715,7 @@ major_faults: u64
 
 #### field: block_input
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 block_input: u64
@@ -722,7 +723,7 @@ block_input: u64
 
 #### field: block_output
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 block_output: u64
@@ -730,7 +731,7 @@ block_output: u64
 
 #### field: voluntary_switches
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 voluntary_switches: u64
@@ -738,7 +739,7 @@ voluntary_switches: u64
 
 #### field: involuntary_switches
 
-[Source line 35](../../../stdlib/std/command.lani#L35)
+[Source line 36](../../../stdlib/std/command.lani#L36)
 
 ```lanius
 involuntary_switches: u64
@@ -746,7 +747,7 @@ involuntary_switches: u64
 
 ### struct: Reaped
 
-[Source line 38](../../../stdlib/std/command.lani#L38)
+[Source line 39](../../../stdlib/std/command.lani#L39)
 
 ```lanius
 pub struct Reaped
@@ -754,7 +755,7 @@ pub struct Reaped
 
 #### field: status
 
-[Source line 38](../../../stdlib/std/command.lani#L38)
+[Source line 39](../../../stdlib/std/command.lani#L39)
 
 ```lanius
 status: ExitStatus
@@ -762,7 +763,7 @@ status: ExitStatus
 
 #### field: usage
 
-[Source line 38](../../../stdlib/std/command.lani#L38)
+[Source line 39](../../../stdlib/std/command.lani#L39)
 
 ```lanius
 usage: Usage
@@ -770,7 +771,7 @@ usage: Usage
 
 ### enum: UsageTarget
 
-[Source line 39](../../../stdlib/std/command.lani#L39)
+[Source line 40](../../../stdlib/std/command.lani#L40)
 
 ```lanius
 pub enum UsageTarget
@@ -778,7 +779,7 @@ pub enum UsageTarget
 
 #### variant: Process
 
-[Source line 39](../../../stdlib/std/command.lani#L39)
+[Source line 40](../../../stdlib/std/command.lani#L40)
 
 ```lanius
 Process
@@ -786,7 +787,7 @@ Process
 
 #### variant: Children
 
-[Source line 39](../../../stdlib/std/command.lani#L39)
+[Source line 40](../../../stdlib/std/command.lani#L40)
 
 ```lanius
 Children
@@ -794,15 +795,55 @@ Children
 
 #### variant: Thread
 
-[Source line 39](../../../stdlib/std/command.lani#L39)
+[Source line 40](../../../stdlib/std/command.lani#L40)
 
 ```lanius
 Thread
 ```
 
+### enum: ProcessEvent
+
+[Source line 41](../../../stdlib/std/command.lani#L41)
+
+```lanius
+pub enum ProcessEvent
+```
+
+#### variant: Observed
+
+[Source line 41](../../../stdlib/std/command.lani#L41)
+
+```lanius
+Observed(ExitStatus)
+```
+
+#### variant: Reaped
+
+[Source line 41](../../../stdlib/std/command.lani#L41)
+
+```lanius
+Reaped(ExitStatus)
+```
+
+#### variant: Lost
+
+[Source line 41](../../../stdlib/std/command.lani#L41)
+
+```lanius
+Lost
+```
+
+### machine: ProcessLifecycle
+
+[Source line 42](../../../stdlib/std/command.lani#L42)
+
+```lanius
+pub machine ProcessLifecycle on ProcessEvent
+```
+
 ### struct: Child
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 pub struct Child
@@ -810,7 +851,7 @@ pub struct Child
 
 #### field: pid
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 pid: i32
@@ -818,7 +859,7 @@ pid: i32
 
 #### field: input
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 input: core::option::Option<std::file::File>
@@ -826,7 +867,7 @@ input: core::option::Option<std::file::File>
 
 #### field: output
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 output: core::option::Option<std::file::File>
@@ -834,7 +875,7 @@ output: core::option::Option<std::file::File>
 
 #### field: error
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 error: core::option::Option<std::file::File>
@@ -842,47 +883,39 @@ error: core::option::Option<std::file::File>
 
 #### field: startup_state
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 startup_state: Startup
 ```
 
-#### field: cached
+#### field: lifecycle
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
-cached: core::option::Option<ExitStatus>
+lifecycle: ProcessLifecycle
 ```
 
 #### field: group_policy
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
 group_policy: Group
 ```
 
-#### field: group_confirmed
+#### field: group_confirmation
 
-[Source line 40](../../../stdlib/std/command.lani#L40)
-
-```lanius
-group_confirmed: bool
-```
-
-#### field: observed
-
-[Source line 40](../../../stdlib/std/command.lani#L40)
+[Source line 61](../../../stdlib/std/command.lani#L61)
 
 ```lanius
-observed: core::option::Option<ExitStatus>
+group_confirmation: core::iter_state::Completion
 ```
 
 ### struct: FailedStart
 
-[Source line 41](../../../stdlib/std/command.lani#L41)
+[Source line 62](../../../stdlib/std/command.lani#L62)
 
 ```lanius
 pub struct FailedStart
@@ -890,7 +923,7 @@ pub struct FailedStart
 
 #### field: failure
 
-[Source line 41](../../../stdlib/std/command.lani#L41)
+[Source line 62](../../../stdlib/std/command.lani#L62)
 
 ```lanius
 failure: Failure
@@ -898,7 +931,7 @@ failure: Failure
 
 #### field: status
 
-[Source line 41](../../../stdlib/std/command.lani#L41)
+[Source line 62](../../../stdlib/std/command.lani#L62)
 
 ```lanius
 status: ExitStatus
@@ -906,7 +939,7 @@ status: ExitStatus
 
 ### struct: UnknownStart
 
-[Source line 42](../../../stdlib/std/command.lani#L42)
+[Source line 63](../../../stdlib/std/command.lani#L63)
 
 ```lanius
 pub struct UnknownStart
@@ -914,7 +947,7 @@ pub struct UnknownStart
 
 #### field: child
 
-[Source line 42](../../../stdlib/std/command.lani#L42)
+[Source line 63](../../../stdlib/std/command.lani#L63)
 
 ```lanius
 child: Child
@@ -922,7 +955,7 @@ child: Child
 
 #### field: failure
 
-[Source line 42](../../../stdlib/std/command.lani#L42)
+[Source line 63](../../../stdlib/std/command.lani#L63)
 
 ```lanius
 failure: Failure
@@ -930,7 +963,7 @@ failure: Failure
 
 ### enum: Spawn
 
-[Source line 43](../../../stdlib/std/command.lani#L43)
+[Source line 64](../../../stdlib/std/command.lani#L64)
 
 ```lanius
 pub enum Spawn
@@ -938,7 +971,7 @@ pub enum Spawn
 
 #### variant: Child
 
-[Source line 43](../../../stdlib/std/command.lani#L43)
+[Source line 64](../../../stdlib/std/command.lani#L64)
 
 ```lanius
 Child(Child)
@@ -946,7 +979,7 @@ Child(Child)
 
 #### variant: Failed
 
-[Source line 43](../../../stdlib/std/command.lani#L43)
+[Source line 64](../../../stdlib/std/command.lani#L64)
 
 ```lanius
 Failed(FailedStart)
@@ -954,7 +987,7 @@ Failed(FailedStart)
 
 #### variant: Unknown
 
-[Source line 43](../../../stdlib/std/command.lani#L43)
+[Source line 64](../../../stdlib/std/command.lani#L64)
 
 ```lanius
 Unknown(UnknownStart)
@@ -962,7 +995,7 @@ Unknown(UnknownStart)
 
 ### struct: Environment
 
-[Source line 359](../../../stdlib/std/command.lani#L359)
+[Source line 380](../../../stdlib/std/command.lani#L380)
 
 ```lanius
 pub struct Environment
@@ -970,7 +1003,7 @@ pub struct Environment
 
 #### field: bytes
 
-[Source line 359](../../../stdlib/std/command.lani#L359)
+[Source line 380](../../../stdlib/std/command.lani#L380)
 
 ```lanius
 bytes: alloc::vec::Vec<i32>
@@ -978,7 +1011,7 @@ bytes: alloc::vec::Vec<i32>
 
 #### field: values
 
-[Source line 359](../../../stdlib/std/command.lani#L359)
+[Source line 380](../../../stdlib/std/command.lani#L380)
 
 ```lanius
 values: alloc::vec::Vec<core::slice::View<u8>>
@@ -988,7 +1021,7 @@ values: alloc::vec::Vec<core::slice::View<u8>>
 
 ### function: default_limits
 
-[Source line 46](../../../stdlib/std/command.lani#L46)
+[Source line 67](../../../stdlib/std/command.lani#L67)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -996,7 +1029,7 @@ pub fn default_limits() -> Limits
 
 ### function: spawn
 
-[Source line 123](../../../stdlib/std/command.lani#L123)
+[Source line 144](../../../stdlib/std/command.lani#L144)
 
 ```lanius
 pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure>
@@ -1004,7 +1037,7 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure>
 
 ### function: resource_usage
 
-[Source line 344](../../../stdlib/std/command.lani#L344)
+[Source line 365](../../../stdlib/std/command.lani#L365)
 
 ```lanius
 pub fn resource_usage(target: UsageTarget) -> core::result::Result<Usage,Failure>
@@ -1012,7 +1045,7 @@ pub fn resource_usage(target: UsageTarget) -> core::result::Result<Usage,Failure
 
 ### function: request
 
-[Source line 356](../../../stdlib/std/command.lani#L356)
+[Source line 377](../../../stdlib/std/command.lani#L377)
 
 ```lanius
 pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request
@@ -1020,7 +1053,7 @@ pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core
 
 ### function: snapshot_environment
 
-[Source line 370](../../../stdlib/std/command.lani#L370)
+[Source line 391](../../../stdlib/std/command.lani#L391)
 
 ```lanius
 pub fn snapshot_environment(limits: Limits) -> core::result::Result<Environment,Failure>
@@ -1028,9 +1061,33 @@ pub fn snapshot_environment(limits: Limits) -> core::result::Result<Environment,
 
 ## Implementation blocks and public methods
 
-### impl at line 179
+### impl at line 57
 
-[Source line 179](../../../stdlib/std/command.lani#L179)
+[Source line 57](../../../stdlib/std/command.lani#L57)
+
+```lanius
+pub impl ProcessLifecycle
+```
+
+#### method: cached
+
+[Source line 58](../../../stdlib/std/command.lani#L58)
+
+```lanius
+pub fn cached(&self) -> core::option::Option<ExitStatus>
+```
+
+#### method: observed
+
+[Source line 59](../../../stdlib/std/command.lani#L59)
+
+```lanius
+pub fn observed(&self) -> core::option::Option<ExitStatus>
+```
+
+### impl at line 200
+
+[Source line 200](../../../stdlib/std/command.lani#L200)
 
 ```lanius
 pub impl Child
@@ -1038,7 +1095,7 @@ pub impl Child
 
 #### method: borrow
 
-[Source line 180](../../../stdlib/std/command.lani#L180)
+[Source line 201](../../../stdlib/std/command.lani#L201)
 
 ```lanius
 pub fn borrow(&self) -> &Child
@@ -1046,7 +1103,7 @@ pub fn borrow(&self) -> &Child
 
 #### method: id
 
-[Source line 181](../../../stdlib/std/command.lani#L181)
+[Source line 202](../../../stdlib/std/command.lani#L202)
 
 ```lanius
 pub fn id(&self) -> core::option::Option<i32>
@@ -1054,7 +1111,7 @@ pub fn id(&self) -> core::option::Option<i32>
 
 #### method: startup
 
-[Source line 182](../../../stdlib/std/command.lani#L182)
+[Source line 203](../../../stdlib/std/command.lani#L203)
 
 ```lanius
 pub fn startup(&self) -> Startup
@@ -1062,7 +1119,7 @@ pub fn startup(&self) -> Startup
 
 #### method: group
 
-[Source line 184](../../../stdlib/std/command.lani#L184)
+[Source line 205](../../../stdlib/std/command.lani#L205)
 
 ```lanius
 pub fn group(&self) -> Group
@@ -1070,7 +1127,7 @@ pub fn group(&self) -> Group
 
 #### method: group_id
 
-[Source line 185](../../../stdlib/std/command.lani#L185)
+[Source line 206](../../../stdlib/std/command.lani#L206)
 
 ```lanius
 pub fn group_id(&self) -> core::option::Option<i32>
@@ -1078,7 +1135,7 @@ pub fn group_id(&self) -> core::option::Option<i32>
 
 #### method: confirm_group
 
-[Source line 191](../../../stdlib/std/command.lani#L191)
+[Source line 212](../../../stdlib/std/command.lani#L212)
 
 ```lanius
 pub fn confirm_group(&self) -> core::result::Result<i32,Failure>
@@ -1086,7 +1143,7 @@ pub fn confirm_group(&self) -> core::result::Result<i32,Failure>
 
 #### method: take_stdin
 
-[Source line 201](../../../stdlib/std/command.lani#L201)
+[Source line 222](../../../stdlib/std/command.lani#L222)
 
 ```lanius
 pub fn take_stdin(&self) -> core::option::Option<std::file::File>
@@ -1094,7 +1151,7 @@ pub fn take_stdin(&self) -> core::option::Option<std::file::File>
 
 #### method: take_stdout
 
-[Source line 202](../../../stdlib/std/command.lani#L202)
+[Source line 223](../../../stdlib/std/command.lani#L223)
 
 ```lanius
 pub fn take_stdout(&self) -> core::option::Option<std::file::File>
@@ -1102,7 +1159,7 @@ pub fn take_stdout(&self) -> core::option::Option<std::file::File>
 
 #### method: take_stderr
 
-[Source line 203](../../../stdlib/std/command.lani#L203)
+[Source line 224](../../../stdlib/std/command.lani#L224)
 
 ```lanius
 pub fn take_stderr(&self) -> core::option::Option<std::file::File>
@@ -1110,7 +1167,7 @@ pub fn take_stderr(&self) -> core::option::Option<std::file::File>
 
 #### method: close_pipes
 
-[Source line 204](../../../stdlib/std/command.lani#L204)
+[Source line 225](../../../stdlib/std/command.lani#L225)
 
 ```lanius
 pub fn close_pipes(&self) -> core::result::Result<i32,Failure>
@@ -1118,7 +1175,7 @@ pub fn close_pipes(&self) -> core::result::Result<i32,Failure>
 
 #### method: try_wait
 
-[Source line 211](../../../stdlib/std/command.lani#L211)
+[Source line 232](../../../stdlib/std/command.lani#L232)
 
 ```lanius
 pub fn try_wait(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure>
@@ -1126,7 +1183,7 @@ pub fn try_wait(&self) -> core::result::Result<core::option::Option<ExitStatus>,
 
 #### method: try_observe_exit
 
-[Source line 219](../../../stdlib/std/command.lani#L219)
+[Source line 240](../../../stdlib/std/command.lani#L240)
 
 ```lanius
 pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure>
@@ -1134,7 +1191,7 @@ pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<Exit
 
 #### method: observe_exit
 
-[Source line 223](../../../stdlib/std/command.lani#L223)
+[Source line 244](../../../stdlib/std/command.lani#L244)
 
 ```lanius
 pub fn observe_exit(&self) -> core::result::Result<ExitStatus,Failure>
@@ -1142,7 +1199,7 @@ pub fn observe_exit(&self) -> core::result::Result<ExitStatus,Failure>
 
 #### method: wait
 
-[Source line 264](../../../stdlib/std/command.lani#L264)
+[Source line 285](../../../stdlib/std/command.lani#L285)
 
 ```lanius
 pub fn wait(&self) -> core::result::Result<ExitStatus,Failure>
@@ -1150,7 +1207,7 @@ pub fn wait(&self) -> core::result::Result<ExitStatus,Failure>
 
 #### method: wait_with_usage
 
-[Source line 273](../../../stdlib/std/command.lani#L273)
+[Source line 294](../../../stdlib/std/command.lani#L294)
 
 ```lanius
 pub fn wait_with_usage(&self) -> core::result::Result<Reaped,Failure>
@@ -1158,7 +1215,7 @@ pub fn wait_with_usage(&self) -> core::result::Result<Reaped,Failure>
 
 #### method: try_wait_with_usage
 
-[Source line 281](../../../stdlib/std/command.lani#L281)
+[Source line 302](../../../stdlib/std/command.lani#L302)
 
 ```lanius
 pub fn try_wait_with_usage(&self) -> core::result::Result<core::option::Option<Reaped>,Failure>
@@ -1166,7 +1223,7 @@ pub fn try_wait_with_usage(&self) -> core::result::Result<core::option::Option<R
 
 #### method: signal
 
-[Source line 294](../../../stdlib/std/command.lani#L294)
+[Source line 315](../../../stdlib/std/command.lani#L315)
 
 ```lanius
 pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure>
@@ -1174,7 +1231,7 @@ pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure>
 
 #### method: signal_group
 
-[Source line 300](../../../stdlib/std/command.lani#L300)
+[Source line 321](../../../stdlib/std/command.lani#L321)
 
 ```lanius
 pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure>
@@ -1182,7 +1239,7 @@ pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure>
 
 #### method: cancel_group_and_wait
 
-[Source line 313](../../../stdlib/std/command.lani#L313)
+[Source line 334](../../../stdlib/std/command.lani#L334)
 
 ```lanius
 pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
@@ -1190,15 +1247,15 @@ pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
 
 #### method: cancel_and_wait
 
-[Source line 325](../../../stdlib/std/command.lani#L325)
+[Source line 346](../../../stdlib/std/command.lani#L346)
 
 ```lanius
 pub fn cancel_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
 ```
 
-### impl at line 351
+### impl at line 372
 
-[Source line 351](../../../stdlib/std/command.lani#L351)
+[Source line 372](../../../stdlib/std/command.lani#L372)
 
 ```lanius
 pub impl Usage
@@ -1206,7 +1263,7 @@ pub impl Usage
 
 #### method: borrow
 
-[Source line 352](../../../stdlib/std/command.lani#L352)
+[Source line 373](../../../stdlib/std/command.lani#L373)
 
 ```lanius
 pub fn borrow(&self) -> &Usage
@@ -1214,15 +1271,15 @@ pub fn borrow(&self) -> &Usage
 
 #### method: cpu
 
-[Source line 354](../../../stdlib/std/command.lani#L354)
+[Source line 375](../../../stdlib/std/command.lani#L375)
 
 ```lanius
 pub fn cpu(&self) -> core::time::Duration
 ```
 
-### impl at line 360
+### impl at line 381
 
-[Source line 360](../../../stdlib/std/command.lani#L360)
+[Source line 381](../../../stdlib/std/command.lani#L381)
 
 ```lanius
 pub impl Environment
@@ -1230,7 +1287,7 @@ pub impl Environment
 
 #### method: as_view
 
-[Source line 361](../../../stdlib/std/command.lani#L361)
+[Source line 382](../../../stdlib/std/command.lani#L382)
 
 ```lanius
 pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>>
@@ -1238,7 +1295,7 @@ pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>>
 
 #### method: destroy
 
-[Source line 362](../../../stdlib/std/command.lani#L362)
+[Source line 383](../../../stdlib/std/command.lani#L383)
 
 ```lanius
 pub fn destroy(&self)

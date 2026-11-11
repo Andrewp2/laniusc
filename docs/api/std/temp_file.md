@@ -15,21 +15,22 @@ Named temporary-file ownership implemented in Lanius over bounded OS entropy and
 - [stdlib-temp-files](../../stdlib-temp-files.md)
 - [stdlib-file-operations](../../stdlib-file-operations.md)
 
-Declaration counts: constant: 4; enum: 4; field: 29; function: 2; impl: 1; method: 15; struct: 5; variant: 30.
+Declaration counts: constant: 4; enum: 3; field: 27; function: 2; impl: 1; method: 15; struct: 5; variant: 24.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/temp_file.lani#L5)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/temp_file.lani#L6)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/temp_file.lani#L7)
-- [core::path](../core/path.md) · [source](../../../stdlib/std/temp_file.lani#L8)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/temp_file.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/temp_file.lani#L10)
-- [std::entropy](entropy.md) · [source](../../../stdlib/std/temp_file.lani#L11)
-- [std::file](file.md) · [source](../../../stdlib/std/temp_file.lani#L12)
-- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/temp_file.lani#L13)
+- [std::temp_lifecycle](temp_lifecycle.md) · [source](../../../stdlib/std/temp_file.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/temp_file.lani#L6)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/temp_file.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/temp_file.lani#L8)
+- [core::path](../core/path.md) · [source](../../../stdlib/std/temp_file.lani#L9)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/temp_file.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/temp_file.lani#L11)
+- [std::entropy](entropy.md) · [source](../../../stdlib/std/temp_file.lani#L12)
+- [std::file](file.md) · [source](../../../stdlib/std/temp_file.lani#L13)
+- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/temp_file.lani#L14)
 
 ## Types, fields and variants
 
@@ -37,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Limits
 
-[Source line 19](../../../stdlib/std/temp_file.lani#L19)
+[Source line 20](../../../stdlib/std/temp_file.lani#L20)
 
 ```lanius
 pub struct Limits
@@ -45,7 +46,7 @@ pub struct Limits
 
 #### field: name_attempts
 
-[Source line 19](../../../stdlib/std/temp_file.lani#L19)
+[Source line 20](../../../stdlib/std/temp_file.lani#L20)
 
 ```lanius
 name_attempts:u32
@@ -53,66 +54,10 @@ name_attempts:u32
 
 #### field: entropy_calls
 
-[Source line 19](../../../stdlib/std/temp_file.lani#L19)
+[Source line 20](../../../stdlib/std/temp_file.lani#L20)
 
 ```lanius
 entropy_calls:u64
-```
-
-### enum: State
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-pub enum State
-```
-
-#### variant: Inactive
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-Inactive
-```
-
-#### variant: Open
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-Open
-```
-
-#### variant: ClosedNamed
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-ClosedNamed
-```
-
-#### variant: Kept
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-Kept
-```
-
-#### variant: CleanupPending
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-CleanupPending
-```
-
-#### variant: Released
-
-[Source line 20](../../../stdlib/std/temp_file.lani#L20)
-
-```lanius
-Released
 ```
 
 ### enum: Stage
@@ -480,7 +425,7 @@ cause:Error
 [Source line 31](../../../stdlib/std/temp_file.lani#L31)
 
 ```lanius
-state:State
+state:std::temp_lifecycle::LifecycleState
 ```
 
 #### field: stats
@@ -531,28 +476,12 @@ directory_owner:std::file::File
 name_bytes:alloc::vec::Vec<u8>
 ```
 
-#### field: owns_name
+#### field: lifecycle
 
 [Source line 35](../../../stdlib/std/temp_file.lani#L35)
 
 ```lanius
-owns_name:bool
-```
-
-#### field: kept
-
-[Source line 35](../../../stdlib/std/temp_file.lani#L35)
-
-```lanius
-kept:bool
-```
-
-#### field: current
-
-[Source line 35](../../../stdlib/std/temp_file.lani#L35)
-
-```lanius
-current:State
+lifecycle:std::temp_lifecycle::Lifecycle
 ```
 
 #### field: counters
@@ -583,7 +512,7 @@ primary:core::option::Option<Diagnostic>
 
 ### constant: NAME_BYTES
 
-[Source line 15](../../../stdlib/std/temp_file.lani#L15)
+[Source line 16](../../../stdlib/std/temp_file.lani#L16)
 
 ```lanius
 pub const NAME_BYTES:i32=37;
@@ -591,7 +520,7 @@ pub const NAME_BYTES:i32=37;
 
 ### constant: MAX_COMPONENT_BYTES
 
-[Source line 16](../../../stdlib/std/temp_file.lani#L16)
+[Source line 17](../../../stdlib/std/temp_file.lani#L17)
 
 ```lanius
 pub const MAX_COMPONENT_BYTES:i32=255;
@@ -599,7 +528,7 @@ pub const MAX_COMPONENT_BYTES:i32=255;
 
 ### constant: MAX_NAME_ATTEMPTS
 
-[Source line 17](../../../stdlib/std/temp_file.lani#L17)
+[Source line 18](../../../stdlib/std/temp_file.lani#L18)
 
 ```lanius
 pub const MAX_NAME_ATTEMPTS:u32=1024;
@@ -607,7 +536,7 @@ pub const MAX_NAME_ATTEMPTS:u32=1024;
 
 ### constant: MAX_ENTROPY_CALLS
 
-[Source line 18](../../../stdlib/std/temp_file.lani#L18)
+[Source line 19](../../../stdlib/std/temp_file.lani#L19)
 
 ```lanius
 pub const MAX_ENTROPY_CALLS:u64=1048576;
@@ -654,7 +583,7 @@ pub fn borrow(&self) -> &TempFile
 [Source line 61](../../../stdlib/std/temp_file.lani#L61)
 
 ```lanius
-pub fn state(&self) -> State
+pub fn state(&self) -> std::temp_lifecycle::LifecycleState
 ```
 
 #### method: stats

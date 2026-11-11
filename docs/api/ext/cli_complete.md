@@ -21,15 +21,16 @@ Declaration counts: enum: 2; field: 27; function: 1; impl: 2; method: 11; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_complete.lani#L5)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/cli_complete.lani#L6)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/cli_complete.lani#L7)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_complete.lani#L8)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_complete.lani#L9)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_complete.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/cli_complete.lani#L11)
-- [ext::cli](cli.md) · [source](../../../extended/ext/cli_complete.lani#L12)
-- [ext::cli_commands](cli_commands.md) · [source](../../../extended/ext/cli_complete.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/cli_complete.lani#L5)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_complete.lani#L6)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/cli_complete.lani#L7)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/cli_complete.lani#L8)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_complete.lani#L9)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_complete.lani#L10)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_complete.lani#L11)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/cli_complete.lani#L12)
+- [ext::cli](cli.md) · [source](../../../extended/ext/cli_complete.lani#L13)
+- [ext::cli_commands](cli_commands.md) · [source](../../../extended/ext/cli_complete.lani#L14)
 
 ## Types, fields and variants
 
@@ -37,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Kind
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 pub enum Kind
@@ -45,7 +46,7 @@ pub enum Kind
 
 #### variant: Command
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 Command
@@ -53,7 +54,7 @@ Command
 
 #### variant: Operand
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 Operand
@@ -61,7 +62,7 @@ Operand
 
 #### variant: LongOption
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 LongOption
@@ -69,7 +70,7 @@ LongOption
 
 #### variant: ShortOption
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 ShortOption
@@ -77,7 +78,7 @@ ShortOption
 
 #### variant: OptionValue
 
-[Source line 15](../../../extended/ext/cli_complete.lani#L15)
+[Source line 16](../../../extended/ext/cli_complete.lani#L16)
 
 ```lanius
 OptionValue
@@ -85,7 +86,7 @@ OptionValue
 
 ### struct: Replacement
 
-[Source line 16](../../../extended/ext/cli_complete.lani#L16)
+[Source line 17](../../../extended/ext/cli_complete.lani#L17)
 
 ```lanius
 pub struct Replacement
@@ -93,7 +94,7 @@ pub struct Replacement
 
 #### field: at
 
-[Source line 16](../../../extended/ext/cli_complete.lani#L16)
+[Source line 17](../../../extended/ext/cli_complete.lani#L17)
 
 ```lanius
 at: ext::cli::Location
@@ -101,7 +102,7 @@ at: ext::cli::Location
 
 #### field: length
 
-[Source line 16](../../../extended/ext/cli_complete.lani#L16)
+[Source line 17](../../../extended/ext/cli_complete.lani#L17)
 
 ```lanius
 length: i32
@@ -109,7 +110,7 @@ length: i32
 
 ### struct: OptionIdentity
 
-[Source line 17](../../../extended/ext/cli_complete.lani#L17)
+[Source line 18](../../../extended/ext/cli_complete.lani#L18)
 
 ```lanius
 pub struct OptionIdentity
@@ -117,7 +118,7 @@ pub struct OptionIdentity
 
 #### field: command
 
-[Source line 17](../../../extended/ext/cli_complete.lani#L17)
+[Source line 18](../../../extended/ext/cli_complete.lani#L18)
 
 ```lanius
 command: i32
@@ -125,7 +126,7 @@ command: i32
 
 #### field: option
 
-[Source line 17](../../../extended/ext/cli_complete.lani#L17)
+[Source line 18](../../../extended/ext/cli_complete.lani#L18)
 
 ```lanius
 option: i32
@@ -133,7 +134,7 @@ option: i32
 
 ### struct: Value
 
-[Source line 18](../../../extended/ext/cli_complete.lani#L18)
+[Source line 19](../../../extended/ext/cli_complete.lani#L19)
 
 ```lanius
 pub struct Value
@@ -141,7 +142,7 @@ pub struct Value
 
 #### field: bytes
 
-[Source line 18](../../../extended/ext/cli_complete.lani#L18)
+[Source line 19](../../../extended/ext/cli_complete.lani#L19)
 
 ```lanius
 bytes: View<u8>
@@ -149,7 +150,7 @@ bytes: View<u8>
 
 #### field: append_space
 
-[Source line 18](../../../extended/ext/cli_complete.lani#L18)
+[Source line 19](../../../extended/ext/cli_complete.lani#L19)
 
 ```lanius
 append_space: bool
@@ -157,7 +158,7 @@ append_space: bool
 
 ### struct: Suggestion
 
-[Source line 19](../../../extended/ext/cli_complete.lani#L19)
+[Source line 20](../../../extended/ext/cli_complete.lani#L20)
 
 ```lanius
 pub struct Suggestion
@@ -165,7 +166,7 @@ pub struct Suggestion
 
 #### field: bytes
 
-[Source line 20](../../../extended/ext/cli_complete.lani#L20)
+[Source line 21](../../../extended/ext/cli_complete.lani#L21)
 
 ```lanius
 bytes: i32
@@ -173,7 +174,7 @@ bytes: i32
 
 #### field: command
 
-[Source line 20](../../../extended/ext/cli_complete.lani#L20)
+[Source line 21](../../../extended/ext/cli_complete.lani#L21)
 
 ```lanius
 command: i32
@@ -181,7 +182,7 @@ command: i32
 
 #### field: option
 
-[Source line 20](../../../extended/ext/cli_complete.lani#L20)
+[Source line 21](../../../extended/ext/cli_complete.lani#L21)
 
 ```lanius
 option: i32
@@ -189,7 +190,7 @@ option: i32
 
 #### field: kind
 
-[Source line 20](../../../extended/ext/cli_complete.lani#L20)
+[Source line 21](../../../extended/ext/cli_complete.lani#L21)
 
 ```lanius
 kind: Kind
@@ -197,7 +198,7 @@ kind: Kind
 
 #### field: append_space
 
-[Source line 21](../../../extended/ext/cli_complete.lani#L21)
+[Source line 22](../../../extended/ext/cli_complete.lani#L22)
 
 ```lanius
 append_space: bool
@@ -205,7 +206,7 @@ append_space: bool
 
 #### field: replacement
 
-[Source line 21](../../../extended/ext/cli_complete.lani#L21)
+[Source line 22](../../../extended/ext/cli_complete.lani#L22)
 
 ```lanius
 replacement: Replacement
@@ -213,7 +214,7 @@ replacement: Replacement
 
 ### enum: Error
 
-[Source line 23](../../../extended/ext/cli_complete.lani#L23)
+[Source line 24](../../../extended/ext/cli_complete.lani#L24)
 
 ```lanius
 pub enum Error
@@ -221,7 +222,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 24](../../../extended/ext/cli_complete.lani#L24)
+[Source line 25](../../../extended/ext/cli_complete.lani#L25)
 
 ```lanius
 Bounds
@@ -229,7 +230,7 @@ Bounds
 
 #### variant: Nul
 
-[Source line 24](../../../extended/ext/cli_complete.lani#L24)
+[Source line 25](../../../extended/ext/cli_complete.lani#L25)
 
 ```lanius
 Nul(ext::cli::Location)
@@ -237,7 +238,7 @@ Nul(ext::cli::Location)
 
 #### variant: ValueNul
 
-[Source line 24](../../../extended/ext/cli_complete.lani#L24)
+[Source line 25](../../../extended/ext/cli_complete.lani#L25)
 
 ```lanius
 ValueNul(i32,i32)
@@ -245,7 +246,7 @@ ValueNul(i32,i32)
 
 #### variant: Commands
 
-[Source line 25](../../../extended/ext/cli_complete.lani#L25)
+[Source line 26](../../../extended/ext/cli_complete.lani#L26)
 
 ```lanius
 Commands(ext::cli_commands::Error)
@@ -253,7 +254,7 @@ Commands(ext::cli_commands::Error)
 
 #### variant: OutputTooSmall
 
-[Source line 25](../../../extended/ext/cli_complete.lani#L25)
+[Source line 26](../../../extended/ext/cli_complete.lani#L26)
 
 ```lanius
 OutputTooSmall(u64)
@@ -261,7 +262,7 @@ OutputTooSmall(u64)
 
 ### struct: Context
 
-[Source line 27](../../../extended/ext/cli_complete.lani#L27)
+[Source line 28](../../../extended/ext/cli_complete.lani#L28)
 
 ```lanius
 pub struct Context
@@ -269,7 +270,7 @@ pub struct Context
 
 #### field: commands
 
-[Source line 28](../../../extended/ext/cli_complete.lani#L28)
+[Source line 29](../../../extended/ext/cli_complete.lani#L29)
 
 ```lanius
 commands: View<ext::cli_commands::Command>
@@ -277,7 +278,7 @@ commands: View<ext::cli_commands::Command>
 
 #### field: selected
 
-[Source line 28](../../../extended/ext/cli_complete.lani#L28)
+[Source line 29](../../../extended/ext/cli_complete.lani#L29)
 
 ```lanius
 selected: i32
@@ -285,7 +286,7 @@ selected: i32
 
 #### field: operands
 
-[Source line 28](../../../extended/ext/cli_complete.lani#L28)
+[Source line 29](../../../extended/ext/cli_complete.lani#L29)
 
 ```lanius
 operands: i32
@@ -293,7 +294,7 @@ operands: i32
 
 #### field: category
 
-[Source line 29](../../../extended/ext/cli_complete.lani#L29)
+[Source line 30](../../../extended/ext/cli_complete.lani#L30)
 
 ```lanius
 category: Kind
@@ -301,7 +302,7 @@ category: Kind
 
 #### field: active_prefix
 
-[Source line 29](../../../extended/ext/cli_complete.lani#L29)
+[Source line 30](../../../extended/ext/cli_complete.lani#L30)
 
 ```lanius
 active_prefix: View<u8>
@@ -309,7 +310,7 @@ active_prefix: View<u8>
 
 #### field: active_stem
 
-[Source line 29](../../../extended/ext/cli_complete.lani#L29)
+[Source line 30](../../../extended/ext/cli_complete.lani#L30)
 
 ```lanius
 active_stem: View<u8>
@@ -317,7 +318,7 @@ active_stem: View<u8>
 
 #### field: range
 
-[Source line 30](../../../extended/ext/cli_complete.lani#L30)
+[Source line 31](../../../extended/ext/cli_complete.lani#L31)
 
 ```lanius
 range: Replacement
@@ -325,7 +326,7 @@ range: Replacement
 
 #### field: identity
 
-[Source line 30](../../../extended/ext/cli_complete.lani#L30)
+[Source line 31](../../../extended/ext/cli_complete.lani#L31)
 
 ```lanius
 identity: Option<OptionIdentity>
@@ -333,7 +334,7 @@ identity: Option<OptionIdentity>
 
 #### field: cluster
 
-[Source line 30](../../../extended/ext/cli_complete.lani#L30)
+[Source line 31](../../../extended/ext/cli_complete.lani#L31)
 
 ```lanius
 cluster: Option<ext::cli::Spec>
@@ -341,7 +342,7 @@ cluster: Option<ext::cli::Spec>
 
 #### field: options
 
-[Source line 31](../../../extended/ext/cli_complete.lani#L31)
+[Source line 32](../../../extended/ext/cli_complete.lani#L32)
 
 ```lanius
 options: bool
@@ -349,7 +350,7 @@ options: bool
 
 #### field: inside
 
-[Source line 31](../../../extended/ext/cli_complete.lani#L31)
+[Source line 32](../../../extended/ext/cli_complete.lani#L32)
 
 ```lanius
 inside: bool
@@ -357,7 +358,7 @@ inside: bool
 
 ### struct: Suggestions
 
-[Source line 33](../../../extended/ext/cli_complete.lani#L33)
+[Source line 34](../../../extended/ext/cli_complete.lani#L34)
 
 ```lanius
 pub struct Suggestions
@@ -365,7 +366,7 @@ pub struct Suggestions
 
 #### field: context
 
-[Source line 33](../../../extended/ext/cli_complete.lani#L33)
+[Source line 34](../../../extended/ext/cli_complete.lani#L34)
 
 ```lanius
 context: Context
@@ -373,7 +374,7 @@ context: Context
 
 #### field: values
 
-[Source line 33](../../../extended/ext/cli_complete.lani#L33)
+[Source line 34](../../../extended/ext/cli_complete.lani#L34)
 
 ```lanius
 values: View<Value>
@@ -381,25 +382,25 @@ values: View<Value>
 
 #### field: position
 
-[Source line 33](../../../extended/ext/cli_complete.lani#L33)
+[Source line 34](../../../extended/ext/cli_complete.lani#L34)
 
 ```lanius
 position: u64
 ```
 
-#### field: done
+#### field: completion
 
-[Source line 33](../../../extended/ext/cli_complete.lani#L33)
+[Source line 34](../../../extended/ext/cli_complete.lani#L34)
 
 ```lanius
-done: bool
+completion: core::iter_state::Completion
 ```
 
 ## Free functions and extern declarations
 
 ### function: context
 
-[Source line 79](../../../extended/ext/cli_complete.lani#L79)
+[Source line 80](../../../extended/ext/cli_complete.lani#L80)
 
 ```lanius
 pub fn context(arguments: View<View<u8>>, at: ext::cli::Location,
@@ -408,9 +409,9 @@ pub fn context(arguments: View<View<u8>>, at: ext::cli::Location,
 
 ## Implementation blocks and public methods
 
-### impl at line 136
+### impl at line 137
 
-[Source line 136](../../../extended/ext/cli_complete.lani#L136)
+[Source line 137](../../../extended/ext/cli_complete.lani#L137)
 
 ```lanius
 pub impl Context
@@ -418,7 +419,7 @@ pub impl Context
 
 #### method: borrow
 
-[Source line 137](../../../extended/ext/cli_complete.lani#L137)
+[Source line 138](../../../extended/ext/cli_complete.lani#L138)
 
 ```lanius
 pub fn borrow(&self) -> &Context
@@ -426,7 +427,7 @@ pub fn borrow(&self) -> &Context
 
 #### method: command
 
-[Source line 138](../../../extended/ext/cli_complete.lani#L138)
+[Source line 139](../../../extended/ext/cli_complete.lani#L139)
 
 ```lanius
 pub fn command(&self) -> i32
@@ -434,7 +435,7 @@ pub fn command(&self) -> i32
 
 #### method: operand_index
 
-[Source line 139](../../../extended/ext/cli_complete.lani#L139)
+[Source line 140](../../../extended/ext/cli_complete.lani#L140)
 
 ```lanius
 pub fn operand_index(&self) -> i32
@@ -442,7 +443,7 @@ pub fn operand_index(&self) -> i32
 
 #### method: kind
 
-[Source line 140](../../../extended/ext/cli_complete.lani#L140)
+[Source line 141](../../../extended/ext/cli_complete.lani#L141)
 
 ```lanius
 pub fn kind(&self) -> Kind
@@ -450,7 +451,7 @@ pub fn kind(&self) -> Kind
 
 #### method: prefix
 
-[Source line 141](../../../extended/ext/cli_complete.lani#L141)
+[Source line 142](../../../extended/ext/cli_complete.lani#L142)
 
 ```lanius
 pub fn prefix(&self) -> View<u8>
@@ -458,7 +459,7 @@ pub fn prefix(&self) -> View<u8>
 
 #### method: stem
 
-[Source line 142](../../../extended/ext/cli_complete.lani#L142)
+[Source line 143](../../../extended/ext/cli_complete.lani#L143)
 
 ```lanius
 pub fn stem(&self) -> View<u8>
@@ -466,7 +467,7 @@ pub fn stem(&self) -> View<u8>
 
 #### method: replacement
 
-[Source line 143](../../../extended/ext/cli_complete.lani#L143)
+[Source line 144](../../../extended/ext/cli_complete.lani#L144)
 
 ```lanius
 pub fn replacement(&self) -> Replacement
@@ -474,7 +475,7 @@ pub fn replacement(&self) -> Replacement
 
 #### method: option
 
-[Source line 144](../../../extended/ext/cli_complete.lani#L144)
+[Source line 145](../../../extended/ext/cli_complete.lani#L145)
 
 ```lanius
 pub fn option(&self) -> Option<OptionIdentity>
@@ -482,15 +483,15 @@ pub fn option(&self) -> Option<OptionIdentity>
 
 #### method: suggestions
 
-[Source line 147](../../../extended/ext/cli_complete.lani#L147)
+[Source line 148](../../../extended/ext/cli_complete.lani#L148)
 
 ```lanius
 pub fn suggestions(&self, values: View<Value>) -> Result<Suggestions,Error>
 ```
 
-### impl at line 290
+### impl at line 291
 
-[Source line 290](../../../extended/ext/cli_complete.lani#L290)
+[Source line 291](../../../extended/ext/cli_complete.lani#L291)
 
 ```lanius
 pub impl Suggestions
@@ -498,7 +499,7 @@ pub impl Suggestions
 
 #### method: borrow
 
-[Source line 291](../../../extended/ext/cli_complete.lani#L291)
+[Source line 292](../../../extended/ext/cli_complete.lani#L292)
 
 ```lanius
 pub fn borrow(&self) -> &Suggestions
@@ -506,7 +507,7 @@ pub fn borrow(&self) -> &Suggestions
 
 #### method: next
 
-[Source line 292](../../../extended/ext/cli_complete.lani#L292)
+[Source line 293](../../../extended/ext/cli_complete.lani#L293)
 
 ```lanius
 pub fn next(&self, output: View<u8>) -> Result<Option<Suggestion>,Error>

@@ -1,6 +1,7 @@
 // Diffstat in git's --stat form, from scripts or from unified diffs.
 // See docs/extended-wordiff.md.
 module ext::diffstat;
+import core::lifecycle;
 import alloc::vec;
 import core::slice;
 import core::option;
@@ -273,14 +274,14 @@ fn ds_same_stripped(a: core::slice::View<u8>, b: core::slice::View<u8>, strip: i
     let i: i32 = 0; while (i < a.length - ca) { if (ds_at(a, ca + i) != ds_at(b, cb + i)) { return false; } i += 1; } return true;
 }
 fn ds_is_null(p: core::slice::View<u8>) -> bool { return p.length == 9 && ds_starts(p, 0, "/dev/null", 9); }
-struct Section { open: bool, git: bool, diff_from: i32, diff_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, added: i32, deleted: i32, hunks: i32 }
+struct Section { lifetime: core::lifecycle::Lifetime, git: bool, diff_from: i32, diff_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, added: i32, deleted: i32, hunks: i32 }
 impl Section { fn borrow(&self) -> &Section { return self; } }
 fn ds_open(s: &Section, git: bool) {
-    s.open = true; s.git = git; s.diff_from = -1; s.old_from = -1; s.new_from = -1; s.ren_from = -1; s.ren_to = -1; s.added = 0; s.deleted = 0; s.hunks = 0;
+    s.lifetime = core::lifecycle::lifetime_start(); s.git = git; s.diff_from = -1; s.old_from = -1; s.new_from = -1; s.ren_from = -1; s.ren_to = -1; s.added = 0; s.deleted = 0; s.hunks = 0;
 }
 // Name a section: rename lines, else the new path (old for deletions), else the diff --git line.
 fn ds_close(stats: &Stats, text: core::slice::View<u8>, s: &Section, strip: i32) -> core::result::Result<i32, Error> {
-    s.open = false;
+    s.lifetime.release();
     let k: i32 = strip; if (k < 0) { k = 0; if (s.git) { k = 1; } }
     let start: i32 = stats.names.len();
     if (s.ren_from >= 0 && s.ren_to >= 0) {
@@ -329,7 +330,7 @@ fn ds_count(v: core::slice::View<u8>, c: &Cursor, end: i32) -> i32 {
 pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> core::result::Result<Stats, Error> {
     if (text.start < 0 || text.length < 0 || max_files < 0) { return core::result::Err(Error::InvalidInput); }
     let stats: Stats = new_stats();
-    let s: Section = Section { open: false, git: false, diff_from: -1, diff_end: 0, old_from: -1, old_end: 0, new_from: -1, new_end: 0, ren_from: -1, ren_from_end: 0, ren_to: -1, ren_to_end: 0, added: 0, deleted: 0, hunks: 0 };
+    let s: Section = Section { lifetime: core::lifecycle::released_lifetime(), git: false, diff_from: -1, diff_end: 0, old_from: -1, old_end: 0, new_from: -1, new_end: 0, ren_from: -1, ren_from_end: 0, ren_to: -1, ren_to_end: 0, added: 0, deleted: 0, hunks: 0 };
     let pos: i32 = 0; let old_left: i32 = 0; let new_left: i32 = 0; let failure: i32 = 0; let closing: Error = Error::InvalidInput;
     while (pos < text.length && failure == 0) {
         let end: i32 = pos; while (end < text.length && ds_at(text, end) != 10) { end += 1; } if (end < text.length) { end += 1; }
@@ -344,15 +345,15 @@ pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> c
         else {
             let starts_section: bool = ds_starts(text, pos, "diff ", 5);
             let old_header: bool = ds_starts(text, pos, "--- ", 4);
-            if (starts_section || (old_header && s.open && (s.hunks > 0 || s.new_from >= 0))) {
-                if (s.open) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
+            if (starts_section || (old_header && s.lifetime.is_active() && (s.hunks > 0 || s.new_from >= 0))) {
+                if (s.lifetime.is_active()) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
             }
-            if (failure == 0 && (starts_section || ((old_header || ds_starts(text, pos, "+++ ", 4)) && !s.open))) {
+            if (failure == 0 && (starts_section || ((old_header || ds_starts(text, pos, "+++ ", 4)) && !s.lifetime.is_active()))) {
                 if (stats.files.len() >= max_files) { failure = 3; }
                 ds_open(s.borrow(), ds_starts(text, pos, "diff --git ", 11));
                 if (s.git) { s.diff_from = pos + 11; s.diff_end = end; }
             }
-            if (failure == 0 && s.open) {
+            if (failure == 0 && s.lifetime.is_active()) {
                 if (old_header) { s.old_from = pos + 4; s.old_end = end; }
                 if (ds_starts(text, pos, "+++ ", 4)) { s.new_from = pos + 4; s.new_end = end; }
                 if (s.git && ds_starts(text, pos, "rename from ", 12)) { s.ren_from = pos + 12; s.ren_from_end = end; }
@@ -372,7 +373,7 @@ pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> c
         pos = end;
     }
     if (failure == 0 && (old_left > 0 || new_left > 0)) { failure = 1; }
-    if (failure == 0 && s.open) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
+    if (failure == 0 && s.lifetime.is_active()) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
     if (failure != 0) {
         stats.destroy();
         if (failure == 3) { return core::result::Err(Error::FileLimit); }

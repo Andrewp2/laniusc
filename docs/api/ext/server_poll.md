@@ -16,33 +16,68 @@ One shared typed, caller-driven server scheduler and synchronous facade own boun
 - [library-server-contract](../../library-server-contract.md)
 - [library-server-concurrency-plan](../../library-server-concurrency-plan.md)
 
-Declaration counts: constant: 2; enum: 4; field: 84; function: 7; impl: 5; method: 28; struct: 14; trait: 3; trait member: 19; variant: 33.
+Declaration counts: constant: 2; enum: 5; field: 83; function: 7; impl: 6; machine: 1; method: 31; struct: 14; trait: 3; trait member: 19; variant: 35.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/server_poll.lani#L3)
-- [core::clone](../core/clone.md) · [source](../../../extended/ext/server_poll.lani#L4)
-- [core::io](../core/io.md) · [source](../../../extended/ext/server_poll.lani#L5)
-- [core::net](../core/net.md) · [source](../../../extended/ext/server_poll.lani#L6)
-- [core::option](../core/option.md) · [source](../../../extended/ext/server_poll.lani#L7)
-- [core::result](../core/result.md) · [source](../../../extended/ext/server_poll.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/server_poll.lani#L9)
-- [core::time](../core/time.md) · [source](../../../extended/ext/server_poll.lani#L10)
-- [ext::http_client](http_client.md) · [source](../../../extended/ext/server_poll.lani#L11)
-- [ext::http_server](http_server.md) · [source](../../../extended/ext/server_poll.lani#L12)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/server_poll.lani#L13)
-- [std::poll](../std/poll.md) · [source](../../../extended/ext/server_poll.lani#L14)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/server_poll.lani#L15)
+- [core::io_state](../core/io_state.md) · [source](../../../extended/ext/server_poll.lani#L3)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/server_poll.lani#L4)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/server_poll.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/server_poll.lani#L6)
+- [core::clone](../core/clone.md) · [source](../../../extended/ext/server_poll.lani#L7)
+- [core::io](../core/io.md) · [source](../../../extended/ext/server_poll.lani#L8)
+- [core::net](../core/net.md) · [source](../../../extended/ext/server_poll.lani#L9)
+- [core::option](../core/option.md) · [source](../../../extended/ext/server_poll.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/server_poll.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/server_poll.lani#L12)
+- [core::time](../core/time.md) · [source](../../../extended/ext/server_poll.lani#L13)
+- [ext::http_client](http_client.md) · [source](../../../extended/ext/server_poll.lani#L14)
+- [ext::http_server](http_server.md) · [source](../../../extended/ext/server_poll.lani#L15)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/server_poll.lani#L16)
+- [std::poll](../std/poll.md) · [source](../../../extended/ext/server_poll.lani#L17)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/server_poll.lani#L18)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: ServerLifecycleEvent
+
+[Source line 20](../../../extended/ext/server_poll.lani#L20)
+
+```lanius
+pub enum ServerLifecycleEvent
+```
+
+#### variant: ReportTaken
+
+[Source line 20](../../../extended/ext/server_poll.lani#L20)
+
+```lanius
+ReportTaken
+```
+
+#### variant: Released
+
+[Source line 20](../../../extended/ext/server_poll.lani#L20)
+
+```lanius
+Released
+```
+
+### machine: ServerLifecycle
+
+[Source line 21](../../../extended/ext/server_poll.lani#L21)
+
+```lanius
+pub machine ServerLifecycle on ServerLifecycleEvent
+```
+
 ### struct: Reservation
 
-[Source line 34](../../../extended/ext/server_poll.lani#L34)
+[Source line 63](../../../extended/ext/server_poll.lani#L63)
 
 ```lanius
 pub struct Reservation
@@ -50,7 +85,7 @@ pub struct Reservation
 
 #### field: work
 
-[Source line 34](../../../extended/ext/server_poll.lani#L34)
+[Source line 63](../../../extended/ext/server_poll.lani#L63)
 
 ```lanius
 work: u64
@@ -58,7 +93,7 @@ work: u64
 
 #### field: bytes
 
-[Source line 34](../../../extended/ext/server_poll.lani#L34)
+[Source line 63](../../../extended/ext/server_poll.lani#L63)
 
 ```lanius
 bytes: u64
@@ -66,7 +101,7 @@ bytes: u64
 
 ### enum: Decision
 
-[Source line 46](../../../extended/ext/server_poll.lani#L46)
+[Source line 75](../../../extended/ext/server_poll.lani#L75)
 
 ```lanius
 pub enum Decision
@@ -74,7 +109,7 @@ pub enum Decision
 
 #### variant: Read
 
-[Source line 46](../../../extended/ext/server_poll.lani#L46)
+[Source line 75](../../../extended/ext/server_poll.lani#L75)
 
 ```lanius
 Read(ext::http_server::BodyDecision)
@@ -82,7 +117,7 @@ Read(ext::http_server::BodyDecision)
 
 #### variant: Responded
 
-[Source line 46](../../../extended/ext/server_poll.lani#L46)
+[Source line 75](../../../extended/ext/server_poll.lani#L75)
 
 ```lanius
 Responded
@@ -90,7 +125,7 @@ Responded
 
 #### variant: Abort
 
-[Source line 46](../../../extended/ext/server_poll.lani#L46)
+[Source line 75](../../../extended/ext/server_poll.lani#L75)
 
 ```lanius
 Abort
@@ -98,7 +133,7 @@ Abort
 
 ### struct: Reply
 
-[Source line 54](../../../extended/ext/server_poll.lani#L54)
+[Source line 83](../../../extended/ext/server_poll.lani#L83)
 
 ```lanius
 pub struct Reply
@@ -106,23 +141,23 @@ pub struct Reply
 
 #### field: owner
 
-[Source line 54](../../../extended/ext/server_poll.lani#L54)
+[Source line 83](../../../extended/ext/server_poll.lani#L83)
 
 ```lanius
 owner: &ext::http_server::Protocol
 ```
 
-#### field: staged
+#### field: staged_completion
 
-[Source line 54](../../../extended/ext/server_poll.lani#L54)
+[Source line 83](../../../extended/ext/server_poll.lani#L83)
 
 ```lanius
-staged: bool
+staged_completion: core::iter_state::Completion
 ```
 
 #### field: failure
 
-[Source line 54](../../../extended/ext/server_poll.lani#L54)
+[Source line 83](../../../extended/ext/server_poll.lani#L83)
 
 ```lanius
 failure: core::option::Option<ext::http_server::Failure>
@@ -130,7 +165,7 @@ failure: core::option::Option<ext::http_server::Failure>
 
 ### struct: ServerLimits
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 pub struct ServerLimits
@@ -138,7 +173,7 @@ pub struct ServerLimits
 
 #### field: max_accepted
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 max_accepted: i32
@@ -146,7 +181,7 @@ max_accepted: i32
 
 #### field: concurrency
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 concurrency: i32
@@ -154,7 +189,7 @@ concurrency: i32
 
 #### field: accept_calls
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 accept_calls: u64
@@ -162,7 +197,7 @@ accept_calls: u64
 
 #### field: polls
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 polls: u64
@@ -170,7 +205,7 @@ polls: u64
 
 #### field: operations
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 operations: u64
@@ -178,7 +213,7 @@ operations: u64
 
 #### field: handler_calls
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 handler_calls: u64
@@ -186,7 +221,7 @@ handler_calls: u64
 
 #### field: work
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 work: u64
@@ -194,7 +229,7 @@ work: u64
 
 #### field: live_bytes
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 live_bytes: u64
@@ -202,7 +237,7 @@ live_bytes: u64
 
 #### field: connection_timeout
 
-[Source line 68](../../../extended/ext/server_poll.lani#L68)
+[Source line 97](../../../extended/ext/server_poll.lani#L97)
 
 ```lanius
 connection_timeout: core::time::Duration
@@ -210,7 +245,7 @@ connection_timeout: core::time::Duration
 
 ### enum: Cause
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 pub enum Cause
@@ -218,7 +253,7 @@ pub enum Cause
 
 #### variant: InvalidLimits
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 InvalidLimits
@@ -226,7 +261,7 @@ InvalidLimits
 
 #### variant: AllocationFailed
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 AllocationFailed
@@ -234,7 +269,7 @@ AllocationFailed
 
 #### variant: Io
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Io(core::io::Error)
@@ -242,7 +277,7 @@ Io(core::io::Error)
 
 #### variant: Clock
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Clock(std::clock::Error)
@@ -250,7 +285,7 @@ Clock(std::clock::Error)
 
 #### variant: Timeout
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Timeout
@@ -258,7 +293,7 @@ Timeout
 
 #### variant: AcceptLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 AcceptLimit
@@ -266,7 +301,7 @@ AcceptLimit
 
 #### variant: PollLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 PollLimit
@@ -274,7 +309,7 @@ PollLimit
 
 #### variant: OperationLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 OperationLimit
@@ -282,7 +317,7 @@ OperationLimit
 
 #### variant: HandlerLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 HandlerLimit
@@ -290,7 +325,7 @@ HandlerLimit
 
 #### variant: WorkLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 WorkLimit
@@ -298,7 +333,7 @@ WorkLimit
 
 #### variant: ByteLimit
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 ByteLimit
@@ -306,7 +341,7 @@ ByteLimit
 
 #### variant: Poll
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Poll(std::poll::Error)
@@ -314,7 +349,7 @@ Poll(std::poll::Error)
 
 #### variant: Protocol
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Protocol(ext::http_server::Cause)
@@ -322,7 +357,7 @@ Protocol(ext::http_server::Cause)
 
 #### variant: Time
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Time(core::time::Error)
@@ -330,7 +365,7 @@ Time(core::time::Error)
 
 #### variant: InvalidDriver
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 InvalidDriver
@@ -338,7 +373,7 @@ InvalidDriver
 
 #### variant: InvalidPublication
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 InvalidPublication
@@ -346,7 +381,7 @@ InvalidPublication
 
 #### variant: Inactive
 
-[Source line 72](../../../extended/ext/server_poll.lani#L72)
+[Source line 101](../../../extended/ext/server_poll.lani#L101)
 
 ```lanius
 Inactive
@@ -354,7 +389,7 @@ Inactive
 
 ### enum: DecisionCause
 
-[Source line 73](../../../extended/ext/server_poll.lani#L73)
+[Source line 102](../../../extended/ext/server_poll.lani#L102)
 
 ```lanius
 pub enum DecisionCause
@@ -362,7 +397,7 @@ pub enum DecisionCause
 
 #### variant: WrongEvent
 
-[Source line 73](../../../extended/ext/server_poll.lani#L73)
+[Source line 102](../../../extended/ext/server_poll.lani#L102)
 
 ```lanius
 WrongEvent
@@ -370,7 +405,7 @@ WrongEvent
 
 #### variant: MissingResponse
 
-[Source line 73](../../../extended/ext/server_poll.lani#L73)
+[Source line 102](../../../extended/ext/server_poll.lani#L102)
 
 ```lanius
 MissingResponse
@@ -378,7 +413,7 @@ MissingResponse
 
 #### variant: UnexpectedResponse
 
-[Source line 73](../../../extended/ext/server_poll.lani#L73)
+[Source line 102](../../../extended/ext/server_poll.lani#L102)
 
 ```lanius
 UnexpectedResponse
@@ -386,7 +421,7 @@ UnexpectedResponse
 
 #### variant: ResponseFailure
 
-[Source line 73](../../../extended/ext/server_poll.lani#L73)
+[Source line 102](../../../extended/ext/server_poll.lani#L102)
 
 ```lanius
 ResponseFailure
@@ -394,7 +429,7 @@ ResponseFailure
 
 ### struct: ConnectionInfo
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 pub struct ConnectionInfo
@@ -402,7 +437,7 @@ pub struct ConnectionInfo
 
 #### field: id
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 id: u64
@@ -410,7 +445,7 @@ id: u64
 
 #### field: peer
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 peer: core::option::Option<core::net::SocketAddr>
@@ -418,7 +453,7 @@ peer: core::option::Option<core::net::SocketAddr>
 
 #### field: stats
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 stats: ext::http_server::Stats
@@ -426,7 +461,7 @@ stats: ext::http_server::Stats
 
 #### field: transport_calls
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 transport_calls: core::option::Option<u64>
@@ -434,7 +469,7 @@ transport_calls: core::option::Option<u64>
 
 #### field: rejection
 
-[Source line 74](../../../extended/ext/server_poll.lani#L74)
+[Source line 103](../../../extended/ext/server_poll.lani#L103)
 
 ```lanius
 rejection: core::option::Option<ext::http_server::Rejection>
@@ -442,7 +477,7 @@ rejection: core::option::Option<ext::http_server::Rejection>
 
 ### struct: TransportFailure
 
-[Source line 75](../../../extended/ext/server_poll.lani#L75)
+[Source line 104](../../../extended/ext/server_poll.lani#L104)
 
 ```lanius
 pub struct TransportFailure<E>
@@ -450,7 +485,7 @@ pub struct TransportFailure<E>
 
 #### field: info
 
-[Source line 75](../../../extended/ext/server_poll.lani#L75)
+[Source line 104](../../../extended/ext/server_poll.lani#L104)
 
 ```lanius
 info: ConnectionInfo
@@ -458,7 +493,7 @@ info: ConnectionInfo
 
 #### field: error
 
-[Source line 75](../../../extended/ext/server_poll.lani#L75)
+[Source line 104](../../../extended/ext/server_poll.lani#L104)
 
 ```lanius
 error: E
@@ -466,7 +501,7 @@ error: E
 
 #### field: cleanup
 
-[Source line 75](../../../extended/ext/server_poll.lani#L75)
+[Source line 104](../../../extended/ext/server_poll.lani#L104)
 
 ```lanius
 cleanup: core::option::Option<E>
@@ -474,7 +509,7 @@ cleanup: core::option::Option<E>
 
 ### struct: ApplicationFailure
 
-[Source line 76](../../../extended/ext/server_poll.lani#L76)
+[Source line 105](../../../extended/ext/server_poll.lani#L105)
 
 ```lanius
 pub struct ApplicationFailure<E,A>
@@ -482,7 +517,7 @@ pub struct ApplicationFailure<E,A>
 
 #### field: info
 
-[Source line 76](../../../extended/ext/server_poll.lani#L76)
+[Source line 105](../../../extended/ext/server_poll.lani#L105)
 
 ```lanius
 info: ConnectionInfo
@@ -490,7 +525,7 @@ info: ConnectionInfo
 
 #### field: error
 
-[Source line 76](../../../extended/ext/server_poll.lani#L76)
+[Source line 105](../../../extended/ext/server_poll.lani#L105)
 
 ```lanius
 error: A
@@ -498,7 +533,7 @@ error: A
 
 #### field: preparation
 
-[Source line 76](../../../extended/ext/server_poll.lani#L76)
+[Source line 105](../../../extended/ext/server_poll.lani#L105)
 
 ```lanius
 preparation: core::option::Option<ext::http_server::Failure>
@@ -506,7 +541,7 @@ preparation: core::option::Option<ext::http_server::Failure>
 
 #### field: cleanup
 
-[Source line 76](../../../extended/ext/server_poll.lani#L76)
+[Source line 105](../../../extended/ext/server_poll.lani#L105)
 
 ```lanius
 cleanup: core::option::Option<E>
@@ -514,7 +549,7 @@ cleanup: core::option::Option<E>
 
 ### struct: DecisionFailure
 
-[Source line 77](../../../extended/ext/server_poll.lani#L77)
+[Source line 106](../../../extended/ext/server_poll.lani#L106)
 
 ```lanius
 pub struct DecisionFailure<E>
@@ -522,7 +557,7 @@ pub struct DecisionFailure<E>
 
 #### field: info
 
-[Source line 77](../../../extended/ext/server_poll.lani#L77)
+[Source line 106](../../../extended/ext/server_poll.lani#L106)
 
 ```lanius
 info: ConnectionInfo
@@ -530,7 +565,7 @@ info: ConnectionInfo
 
 #### field: cause
 
-[Source line 77](../../../extended/ext/server_poll.lani#L77)
+[Source line 106](../../../extended/ext/server_poll.lani#L106)
 
 ```lanius
 cause: DecisionCause
@@ -538,7 +573,7 @@ cause: DecisionCause
 
 #### field: preparation
 
-[Source line 77](../../../extended/ext/server_poll.lani#L77)
+[Source line 106](../../../extended/ext/server_poll.lani#L106)
 
 ```lanius
 preparation: core::option::Option<ext::http_server::Failure>
@@ -546,7 +581,7 @@ preparation: core::option::Option<ext::http_server::Failure>
 
 #### field: cleanup
 
-[Source line 77](../../../extended/ext/server_poll.lani#L77)
+[Source line 106](../../../extended/ext/server_poll.lani#L106)
 
 ```lanius
 cleanup: core::option::Option<E>
@@ -554,7 +589,7 @@ cleanup: core::option::Option<E>
 
 ### struct: Abort
 
-[Source line 78](../../../extended/ext/server_poll.lani#L78)
+[Source line 107](../../../extended/ext/server_poll.lani#L107)
 
 ```lanius
 pub struct Abort<E>
@@ -562,7 +597,7 @@ pub struct Abort<E>
 
 #### field: info
 
-[Source line 78](../../../extended/ext/server_poll.lani#L78)
+[Source line 107](../../../extended/ext/server_poll.lani#L107)
 
 ```lanius
 info: ConnectionInfo
@@ -570,7 +605,7 @@ info: ConnectionInfo
 
 #### field: cleanup
 
-[Source line 78](../../../extended/ext/server_poll.lani#L78)
+[Source line 107](../../../extended/ext/server_poll.lani#L107)
 
 ```lanius
 cleanup: core::option::Option<E>
@@ -578,7 +613,7 @@ cleanup: core::option::Option<E>
 
 ### struct: AcceptedFailure
 
-[Source line 79](../../../extended/ext/server_poll.lani#L79)
+[Source line 108](../../../extended/ext/server_poll.lani#L108)
 
 ```lanius
 pub struct AcceptedFailure
@@ -586,7 +621,7 @@ pub struct AcceptedFailure
 
 #### field: info
 
-[Source line 79](../../../extended/ext/server_poll.lani#L79)
+[Source line 108](../../../extended/ext/server_poll.lani#L108)
 
 ```lanius
 info: ConnectionInfo
@@ -594,7 +629,7 @@ info: ConnectionInfo
 
 #### field: error
 
-[Source line 79](../../../extended/ext/server_poll.lani#L79)
+[Source line 108](../../../extended/ext/server_poll.lani#L108)
 
 ```lanius
 error: std::socket::AcceptFailure
@@ -602,7 +637,7 @@ error: std::socket::AcceptFailure
 
 ### enum: Outcome
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 pub enum Outcome<E,A>
@@ -610,7 +645,7 @@ pub enum Outcome<E,A>
 
 #### variant: Pending
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Pending(ConnectionInfo)
@@ -618,7 +653,7 @@ Pending(ConnectionInfo)
 
 #### variant: Complete
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Complete(ConnectionInfo)
@@ -626,7 +661,7 @@ Complete(ConnectionInfo)
 
 #### variant: Empty
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Empty(ConnectionInfo)
@@ -634,7 +669,7 @@ Empty(ConnectionInfo)
 
 #### variant: Failed
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Failed(TransportFailure<E>)
@@ -642,7 +677,7 @@ Failed(TransportFailure<E>)
 
 #### variant: HandlerFailed
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 HandlerFailed(ApplicationFailure<E,A>)
@@ -650,7 +685,7 @@ HandlerFailed(ApplicationFailure<E,A>)
 
 #### variant: InvalidDecision
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 InvalidDecision(DecisionFailure<E>)
@@ -658,7 +693,7 @@ InvalidDecision(DecisionFailure<E>)
 
 #### variant: Aborted
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Aborted(Abort<E>)
@@ -666,7 +701,7 @@ Aborted(Abort<E>)
 
 #### variant: AcceptFailed
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 AcceptFailed(AcceptedFailure)
@@ -674,7 +709,7 @@ AcceptFailed(AcceptedFailure)
 
 #### variant: Taken
 
-[Source line 80](../../../extended/ext/server_poll.lani#L80)
+[Source line 109](../../../extended/ext/server_poll.lani#L109)
 
 ```lanius
 Taken
@@ -682,7 +717,7 @@ Taken
 
 ### struct: Stats
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 pub struct Stats
@@ -690,7 +725,7 @@ pub struct Stats
 
 #### field: accepted
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 accepted: i32
@@ -698,7 +733,7 @@ accepted: i32
 
 #### field: active
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 active: i32
@@ -706,7 +741,7 @@ active: i32
 
 #### field: peak_active
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 peak_active: i32
@@ -714,7 +749,7 @@ peak_active: i32
 
 #### field: complete
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 complete: i32
@@ -722,7 +757,7 @@ complete: i32
 
 #### field: empty
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 empty: i32
@@ -730,7 +765,7 @@ empty: i32
 
 #### field: failed
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 failed: i32
@@ -738,7 +773,7 @@ failed: i32
 
 #### field: handler_failed
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 handler_failed: i32
@@ -746,7 +781,7 @@ handler_failed: i32
 
 #### field: invalid_decisions
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 invalid_decisions: i32
@@ -754,7 +789,7 @@ invalid_decisions: i32
 
 #### field: aborted
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 aborted: i32
@@ -762,7 +797,7 @@ aborted: i32
 
 #### field: accept_failures
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 accept_failures: i32
@@ -770,7 +805,7 @@ accept_failures: i32
 
 #### field: accept_calls
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 accept_calls: u64
@@ -778,7 +813,7 @@ accept_calls: u64
 
 #### field: waits
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 waits: u64
@@ -786,7 +821,7 @@ waits: u64
 
 #### field: polls
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 polls: u64
@@ -794,7 +829,7 @@ polls: u64
 
 #### field: operations
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 operations: u64
@@ -802,7 +837,7 @@ operations: u64
 
 #### field: handler_calls
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 handler_calls: u64
@@ -810,7 +845,7 @@ handler_calls: u64
 
 #### field: work
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 work: u64
@@ -818,7 +853,7 @@ work: u64
 
 #### field: reserved_work
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 reserved_work: u64
@@ -826,7 +861,7 @@ reserved_work: u64
 
 #### field: reserved_bytes
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 reserved_bytes: u64
@@ -834,7 +869,7 @@ reserved_bytes: u64
 
 #### field: peak_reserved_bytes
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 peak_reserved_bytes: u64
@@ -842,7 +877,7 @@ peak_reserved_bytes: u64
 
 #### field: io_calls
 
-[Source line 81](../../../extended/ext/server_poll.lani#L81)
+[Source line 110](../../../extended/ext/server_poll.lani#L110)
 
 ```lanius
 io_calls: u64
@@ -850,7 +885,7 @@ io_calls: u64
 
 ### struct: Report
 
-[Source line 85](../../../extended/ext/server_poll.lani#L85)
+[Source line 114](../../../extended/ext/server_poll.lani#L114)
 
 ```lanius
 pub struct Report<E,A>
@@ -858,7 +893,7 @@ pub struct Report<E,A>
 
 #### field: outcomes
 
-[Source line 85](../../../extended/ext/server_poll.lani#L85)
+[Source line 114](../../../extended/ext/server_poll.lani#L114)
 
 ```lanius
 outcomes: alloc::vec::Vec<Outcome<E,A>>
@@ -866,7 +901,7 @@ outcomes: alloc::vec::Vec<Outcome<E,A>>
 
 #### field: stats
 
-[Source line 85](../../../extended/ext/server_poll.lani#L85)
+[Source line 114](../../../extended/ext/server_poll.lani#L114)
 
 ```lanius
 stats: Stats
@@ -874,7 +909,7 @@ stats: Stats
 
 ### struct: ServiceFailure
 
-[Source line 86](../../../extended/ext/server_poll.lani#L86)
+[Source line 115](../../../extended/ext/server_poll.lani#L115)
 
 ```lanius
 pub struct ServiceFailure<E,A>
@@ -882,7 +917,7 @@ pub struct ServiceFailure<E,A>
 
 #### field: cause
 
-[Source line 86](../../../extended/ext/server_poll.lani#L86)
+[Source line 115](../../../extended/ext/server_poll.lani#L115)
 
 ```lanius
 cause: Cause
@@ -890,7 +925,7 @@ cause: Cause
 
 #### field: report
 
-[Source line 86](../../../extended/ext/server_poll.lani#L86)
+[Source line 115](../../../extended/ext/server_poll.lani#L115)
 
 ```lanius
 report: Report<E,A>
@@ -898,7 +933,7 @@ report: Report<E,A>
 
 ### struct: PollInterest
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 pub struct PollInterest
@@ -906,7 +941,7 @@ pub struct PollInterest
 
 #### field: epoch
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 epoch: u64
@@ -914,7 +949,7 @@ epoch: u64
 
 #### field: requests
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 requests: core::slice::View<std::poll::Request>
@@ -922,7 +957,7 @@ requests: core::slice::View<std::poll::Request>
 
 #### field: timeout_ms
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 timeout_ms: i32
@@ -930,7 +965,7 @@ timeout_ms: i32
 
 #### field: immediate
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 immediate: bool
@@ -938,7 +973,7 @@ immediate: bool
 
 #### field: complete
 
-[Source line 115](../../../extended/ext/server_poll.lani#L115)
+[Source line 144](../../../extended/ext/server_poll.lani#L144)
 
 ```lanius
 complete: bool
@@ -946,7 +981,7 @@ complete: bool
 
 ### struct: Server
 
-[Source line 119](../../../extended/ext/server_poll.lani#L119)
+[Source line 148](../../../extended/ext/server_poll.lani#L148)
 
 ```lanius
 pub struct Server<D,E,F,H,A>
@@ -954,7 +989,7 @@ pub struct Server<D,E,F,H,A>
 
 #### field: listener
 
-[Source line 120](../../../extended/ext/server_poll.lani#L120)
+[Source line 149](../../../extended/ext/server_poll.lani#L149)
 
 ```lanius
 listener: &std::socket::Socket
@@ -962,7 +997,7 @@ listener: &std::socket::Socket
 
 #### field: listener_handle
 
-[Source line 120](../../../extended/ext/server_poll.lani#L120)
+[Source line 149](../../../extended/ext/server_poll.lani#L149)
 
 ```lanius
 listener_handle: i32
@@ -970,7 +1005,7 @@ listener_handle: i32
 
 #### field: factory
 
-[Source line 120](../../../extended/ext/server_poll.lani#L120)
+[Source line 149](../../../extended/ext/server_poll.lani#L149)
 
 ```lanius
 factory: &F
@@ -978,7 +1013,7 @@ factory: &F
 
 #### field: handler
 
-[Source line 120](../../../extended/ext/server_poll.lani#L120)
+[Source line 149](../../../extended/ext/server_poll.lani#L149)
 
 ```lanius
 handler: &H
@@ -986,7 +1021,7 @@ handler: &H
 
 #### field: limits
 
-[Source line 121](../../../extended/ext/server_poll.lani#L121)
+[Source line 150](../../../extended/ext/server_poll.lani#L150)
 
 ```lanius
 limits: ServerLimits
@@ -994,7 +1029,7 @@ limits: ServerLimits
 
 #### field: reservation
 
-[Source line 121](../../../extended/ext/server_poll.lani#L121)
+[Source line 150](../../../extended/ext/server_poll.lani#L150)
 
 ```lanius
 reservation: Reservation
@@ -1002,7 +1037,7 @@ reservation: Reservation
 
 #### field: deadline
 
-[Source line 121](../../../extended/ext/server_poll.lani#L121)
+[Source line 150](../../../extended/ext/server_poll.lani#L150)
 
 ```lanius
 deadline: core::time::Deadline
@@ -1010,7 +1045,7 @@ deadline: core::time::Deadline
 
 #### field: last
 
-[Source line 121](../../../extended/ext/server_poll.lani#L121)
+[Source line 150](../../../extended/ext/server_poll.lani#L150)
 
 ```lanius
 last: core::time::Instant
@@ -1018,7 +1053,7 @@ last: core::time::Instant
 
 #### field: report
 
-[Source line 122](../../../extended/ext/server_poll.lani#L122)
+[Source line 151](../../../extended/ext/server_poll.lani#L151)
 
 ```lanius
 report: Report<E,A>
@@ -1026,7 +1061,7 @@ report: Report<E,A>
 
 #### field: slots
 
-[Source line 122](../../../extended/ext/server_poll.lani#L122)
+[Source line 151](../../../extended/ext/server_poll.lani#L151)
 
 ```lanius
 slots: alloc::vec::Vec<Slot<D>>
@@ -1034,7 +1069,7 @@ slots: alloc::vec::Vec<Slot<D>>
 
 #### field: requests
 
-[Source line 122](../../../extended/ext/server_poll.lani#L122)
+[Source line 151](../../../extended/ext/server_poll.lani#L151)
 
 ```lanius
 requests: alloc::vec::Vec<std::poll::Request>
@@ -1042,7 +1077,7 @@ requests: alloc::vec::Vec<std::poll::Request>
 
 #### field: bindings
 
-[Source line 122](../../../extended/ext/server_poll.lani#L122)
+[Source line 151](../../../extended/ext/server_poll.lani#L151)
 
 ```lanius
 bindings: alloc::vec::Vec<Binding>
@@ -1050,7 +1085,7 @@ bindings: alloc::vec::Vec<Binding>
 
 #### field: poller
 
-[Source line 122](../../../extended/ext/server_poll.lani#L122)
+[Source line 151](../../../extended/ext/server_poll.lani#L151)
 
 ```lanius
 poller: std::poll::PollSet
@@ -1058,47 +1093,39 @@ poller: std::poll::PollSet
 
 #### field: turn
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
 turn: i32
 ```
 
-#### field: accepting
+#### field: acceptance
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
-accepting: bool
+acceptance: core::lifecycle::Lifetime
 ```
 
-#### field: listener_ready
+#### field: listener_readiness
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
-listener_ready: bool
+listener_readiness: core::io_state::Readiness
 ```
 
-#### field: alive
+#### field: lifecycle
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
-
-```lanius
-alive: bool
-```
-
-#### field: transferred
-
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
-transferred: bool
+lifecycle: ServerLifecycle
 ```
 
 #### field: failure
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
 failure: core::option::Option<Cause>
@@ -1106,25 +1133,25 @@ failure: core::option::Option<Cause>
 
 #### field: epoch
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
 epoch: u64
 ```
 
-#### field: published
+#### field: publication
 
-[Source line 123](../../../extended/ext/server_poll.lani#L123)
+[Source line 152](../../../extended/ext/server_poll.lani#L152)
 
 ```lanius
-published: bool
+publication: core::io_state::PendingWork
 ```
 
 ## Constants
 
 ### constant: MAX_ACCEPTED
 
-[Source line 69](../../../extended/ext/server_poll.lani#L69)
+[Source line 98](../../../extended/ext/server_poll.lani#L98)
 
 ```lanius
 pub const MAX_ACCEPTED: i32 = 4096;
@@ -1132,7 +1159,7 @@ pub const MAX_ACCEPTED: i32 = 4096;
 
 ### constant: MAX_CONCURRENCY
 
-[Source line 70](../../../extended/ext/server_poll.lani#L70)
+[Source line 99](../../../extended/ext/server_poll.lani#L99)
 
 ```lanius
 pub const MAX_CONCURRENCY: i32 = 64;
@@ -1142,7 +1169,7 @@ pub const MAX_CONCURRENCY: i32 = 64;
 
 ### function: reply
 
-[Source line 55](../../../extended/ext/server_poll.lani#L55)
+[Source line 84](../../../extended/ext/server_poll.lani#L84)
 
 ```lanius
 pub fn reply(protocol: &ext::http_server::Protocol) -> Reply
@@ -1150,7 +1177,7 @@ pub fn reply(protocol: &ext::http_server::Protocol) -> Reply
 
 ### function: default_limits
 
-[Source line 71](../../../extended/ext/server_poll.lani#L71)
+[Source line 100](../../../extended/ext/server_poll.lani#L100)
 
 ```lanius
 pub fn default_limits() -> ServerLimits
@@ -1158,7 +1185,7 @@ pub fn default_limits() -> ServerLimits
 
 ### function: empty_stats
 
-[Source line 82](../../../extended/ext/server_poll.lani#L82)
+[Source line 111](../../../extended/ext/server_poll.lani#L111)
 
 ```lanius
 pub fn empty_stats() -> Stats
@@ -1166,7 +1193,7 @@ pub fn empty_stats() -> Stats
 
 ### function: empty_report
 
-[Source line 87](../../../extended/ext/server_poll.lani#L87)
+[Source line 116](../../../extended/ext/server_poll.lani#L116)
 
 ```lanius
 pub fn empty_report<E,A>() -> Report<E,A>
@@ -1174,7 +1201,7 @@ pub fn empty_report<E,A>() -> Report<E,A>
 
 ### function: destroy_outcome
 
-[Source line 88](../../../extended/ext/server_poll.lani#L88)
+[Source line 117](../../../extended/ext/server_poll.lani#L117)
 
 ```lanius
 pub fn destroy_outcome<E,A>(owned: Outcome<E,A>) where E: core::clone::Destroy<E>, A: core::clone::Destroy<A>
@@ -1182,7 +1209,7 @@ pub fn destroy_outcome<E,A>(owned: Outcome<E,A>) where E: core::clone::Destroy<E
 
 ### function: new
 
-[Source line 340](../../../extended/ext/server_poll.lani#L340)
+[Source line 369](../../../extended/ext/server_poll.lani#L369)
 
 ```lanius
 pub fn new<D,E,F,H,A>(listener: &std::socket::Socket, factory: &F, handler: &H, limits: ServerLimits, deadline: core::time::Deadline) -> core::result::Result<Server<D,E,F,H,A>,Cause> where D: Driver<E>, F: Factory<D,E>, H: Handler<A>
@@ -1190,7 +1217,7 @@ pub fn new<D,E,F,H,A>(listener: &std::socket::Socket, factory: &F, handler: &H, 
 
 ### function: serve_until
 
-[Source line 502](../../../extended/ext/server_poll.lani#L502)
+[Source line 531](../../../extended/ext/server_poll.lani#L531)
 
 ```lanius
 pub fn serve_until<D,E,F,H,A>(listener: &std::socket::Socket, factory: &F, handler: &H, limits: ServerLimits, deadline: core::time::Deadline) -> core::result::Result<Report<E,A>,ServiceFailure<E,A>> where D: Driver<E>, F: Factory<D,E>, H: Handler<A>
@@ -1200,7 +1227,7 @@ pub fn serve_until<D,E,F,H,A>(listener: &std::socket::Socket, factory: &F, handl
 
 ### trait: Driver
 
-[Source line 21](../../../extended/ext/server_poll.lani#L21)
+[Source line 50](../../../extended/ext/server_poll.lani#L50)
 
 ```lanius
 pub trait Driver<E>
@@ -1208,7 +1235,7 @@ pub trait Driver<E>
 
 #### trait member: protocol
 
-[Source line 22](../../../extended/ext/server_poll.lani#L22)
+[Source line 51](../../../extended/ext/server_poll.lani#L51)
 
 ```lanius
 pub fn protocol(&self) -> &ext::http_server::Protocol;
@@ -1216,7 +1243,7 @@ pub fn protocol(&self) -> &ext::http_server::Protocol;
 
 #### trait member: stats
 
-[Source line 23](../../../extended/ext/server_poll.lani#L23)
+[Source line 52](../../../extended/ext/server_poll.lani#L52)
 
 ```lanius
 pub fn stats(&self) -> ext::http_server::Stats;
@@ -1224,7 +1251,7 @@ pub fn stats(&self) -> ext::http_server::Stats;
 
 #### trait member: transport_calls
 
-[Source line 24](../../../extended/ext/server_poll.lani#L24)
+[Source line 53](../../../extended/ext/server_poll.lani#L53)
 
 ```lanius
 pub fn transport_calls(&self) -> core::option::Option<u64>;
@@ -1232,7 +1259,7 @@ pub fn transport_calls(&self) -> core::option::Option<u64>;
 
 #### trait member: rejection
 
-[Source line 25](../../../extended/ext/server_poll.lani#L25)
+[Source line 54](../../../extended/ext/server_poll.lani#L54)
 
 ```lanius
 pub fn rejection(&self) -> core::option::Option<ext::http_server::Rejection>;
@@ -1240,7 +1267,7 @@ pub fn rejection(&self) -> core::option::Option<ext::http_server::Rejection>;
 
 #### trait member: interest
 
-[Source line 26](../../../extended/ext/server_poll.lani#L26)
+[Source line 55](../../../extended/ext/server_poll.lani#L55)
 
 ```lanius
 pub fn interest(&self) -> ext::http_client::Interest;
@@ -1248,7 +1275,7 @@ pub fn interest(&self) -> ext::http_client::Interest;
 
 #### trait member: raw_handle
 
-[Source line 27](../../../extended/ext/server_poll.lani#L27)
+[Source line 56](../../../extended/ext/server_poll.lani#L56)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>;
@@ -1256,7 +1283,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>;
 
 #### trait member: before_wait
 
-[Source line 28](../../../extended/ext/server_poll.lani#L28)
+[Source line 57](../../../extended/ext/server_poll.lani#L57)
 
 ```lanius
 pub fn before_wait(&self) -> core::result::Result<bool,E>;
@@ -1264,7 +1291,7 @@ pub fn before_wait(&self) -> core::result::Result<bool,E>;
 
 #### trait member: step
 
-[Source line 29](../../../extended/ext/server_poll.lani#L29)
+[Source line 58](../../../extended/ext/server_poll.lani#L58)
 
 ```lanius
 pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,E>;
@@ -1272,7 +1299,7 @@ pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<c
 
 #### trait member: read_body
 
-[Source line 30](../../../extended/ext/server_poll.lani#L30)
+[Source line 59](../../../extended/ext/server_poll.lani#L59)
 
 ```lanius
 pub fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,E>;
@@ -1280,7 +1307,7 @@ pub fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::resul
 
 #### trait member: abort
 
-[Source line 31](../../../extended/ext/server_poll.lani#L31)
+[Source line 60](../../../extended/ext/server_poll.lani#L60)
 
 ```lanius
 pub fn abort(&self) -> core::result::Result<bool,E>;
@@ -1288,7 +1315,7 @@ pub fn abort(&self) -> core::result::Result<bool,E>;
 
 #### trait member: destroy
 
-[Source line 32](../../../extended/ext/server_poll.lani#L32)
+[Source line 61](../../../extended/ext/server_poll.lani#L61)
 
 ```lanius
 pub fn destroy(&self);
@@ -1296,7 +1323,7 @@ pub fn destroy(&self);
 
 ### trait: Factory
 
-[Source line 39](../../../extended/ext/server_poll.lani#L39)
+[Source line 68](../../../extended/ext/server_poll.lani#L68)
 
 ```lanius
 pub trait Factory<D,E>
@@ -1304,7 +1331,7 @@ pub trait Factory<D,E>
 
 #### trait member: reservation
 
-[Source line 40](../../../extended/ext/server_poll.lani#L40)
+[Source line 69](../../../extended/ext/server_poll.lani#L69)
 
 ```lanius
 pub fn reservation(&self) -> core::result::Result<Reservation,Cause>;
@@ -1312,7 +1339,7 @@ pub fn reservation(&self) -> core::result::Result<Reservation,Cause>;
 
 #### trait member: begin
 
-[Source line 41](../../../extended/ext/server_poll.lani#L41)
+[Source line 70](../../../extended/ext/server_poll.lani#L70)
 
 ```lanius
 pub fn begin(&self, accepted: std::socket::Accepted, deadline: core::time::Deadline) -> core::result::Result<D,E>;
@@ -1320,7 +1347,7 @@ pub fn begin(&self, accepted: std::socket::Accepted, deadline: core::time::Deadl
 
 #### trait member: failure_stats
 
-[Source line 42](../../../extended/ext/server_poll.lani#L42)
+[Source line 71](../../../extended/ext/server_poll.lani#L71)
 
 ```lanius
 pub fn failure_stats(&self, error: E) -> ext::http_server::Stats;
@@ -1328,7 +1355,7 @@ pub fn failure_stats(&self, error: E) -> ext::http_server::Stats;
 
 #### trait member: failure_transport_calls
 
-[Source line 43](../../../extended/ext/server_poll.lani#L43)
+[Source line 72](../../../extended/ext/server_poll.lani#L72)
 
 ```lanius
 pub fn failure_transport_calls(&self, error: E) -> core::option::Option<u64>;
@@ -1336,7 +1363,7 @@ pub fn failure_transport_calls(&self, error: E) -> core::option::Option<u64>;
 
 #### trait member: shared_failure
 
-[Source line 44](../../../extended/ext/server_poll.lani#L44)
+[Source line 73](../../../extended/ext/server_poll.lani#L73)
 
 ```lanius
 pub fn shared_failure(&self, error: E) -> core::option::Option<Cause>;
@@ -1344,7 +1371,7 @@ pub fn shared_failure(&self, error: E) -> core::option::Option<Cause>;
 
 ### trait: Handler
 
-[Source line 47](../../../extended/ext/server_poll.lani#L47)
+[Source line 76](../../../extended/ext/server_poll.lani#L76)
 
 ```lanius
 pub trait Handler<A>
@@ -1352,7 +1379,7 @@ pub trait Handler<A>
 
 #### trait member: head
 
-[Source line 48](../../../extended/ext/server_poll.lani#L48)
+[Source line 77](../../../extended/ext/server_poll.lani#L77)
 
 ```lanius
 pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &Reply) -> core::result::Result<Decision,A>;
@@ -1360,7 +1387,7 @@ pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server:
 
 #### trait member: request
 
-[Source line 49](../../../extended/ext/server_poll.lani#L49)
+[Source line 78](../../../extended/ext/server_poll.lani#L78)
 
 ```lanius
 pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &Reply) -> core::result::Result<Decision,A>;
@@ -1368,7 +1395,7 @@ pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &Reply
 
 #### trait member: rejected
 
-[Source line 50](../../../extended/ext/server_poll.lani#L50)
+[Source line 79](../../../extended/ext/server_poll.lani#L79)
 
 ```lanius
 pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &Reply) -> core::result::Result<Decision,A>;
@@ -1376,9 +1403,41 @@ pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &
 
 ## Implementation blocks and public methods
 
-### impl at line 56
+### impl at line 39
 
-[Source line 56](../../../extended/ext/server_poll.lani#L56)
+[Source line 39](../../../extended/ext/server_poll.lani#L39)
+
+```lanius
+pub impl ServerLifecycle
+```
+
+#### method: is_active
+
+[Source line 40](../../../extended/ext/server_poll.lani#L40)
+
+```lanius
+pub fn is_active(&self) -> bool
+```
+
+#### method: is_transferred
+
+[Source line 41](../../../extended/ext/server_poll.lani#L41)
+
+```lanius
+pub fn is_transferred(&self) -> bool
+```
+
+#### method: is_released
+
+[Source line 42](../../../extended/ext/server_poll.lani#L42)
+
+```lanius
+pub fn is_released(&self) -> bool
+```
+
+### impl at line 85
+
+[Source line 85](../../../extended/ext/server_poll.lani#L85)
 
 ```lanius
 pub impl Reply
@@ -1386,7 +1445,7 @@ pub impl Reply
 
 #### method: borrow
 
-[Source line 57](../../../extended/ext/server_poll.lani#L57)
+[Source line 86](../../../extended/ext/server_poll.lani#L86)
 
 ```lanius
 pub fn borrow(&self) -> &Reply
@@ -1394,7 +1453,7 @@ pub fn borrow(&self) -> &Reply
 
 #### method: head
 
-[Source line 58](../../../extended/ext/server_poll.lani#L58)
+[Source line 87](../../../extended/ext/server_poll.lani#L87)
 
 ```lanius
 pub fn head(&self) -> core::option::Option<ext::http_server::RequestHead>
@@ -1402,7 +1461,7 @@ pub fn head(&self) -> core::option::Option<ext::http_server::RequestHead>
 
 #### method: is_staged
 
-[Source line 59](../../../extended/ext/server_poll.lani#L59)
+[Source line 88](../../../extended/ext/server_poll.lani#L88)
 
 ```lanius
 pub fn is_staged(&self) -> bool
@@ -1410,7 +1469,7 @@ pub fn is_staged(&self) -> bool
 
 #### method: last_failure
 
-[Source line 60](../../../extended/ext/server_poll.lani#L60)
+[Source line 89](../../../extended/ext/server_poll.lani#L89)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<ext::http_server::Failure>
@@ -1418,15 +1477,15 @@ pub fn last_failure(&self) -> core::option::Option<ext::http_server::Failure>
 
 #### method: stage
 
-[Source line 61](../../../extended/ext/server_poll.lani#L61)
+[Source line 90](../../../extended/ext/server_poll.lani#L90)
 
 ```lanius
 pub fn stage(&self, response: ext::http_server::Response) -> core::result::Result<bool,ext::http_server::Failure>
 ```
 
-### impl at line 96
+### impl at line 125
 
-[Source line 96](../../../extended/ext/server_poll.lani#L96)
+[Source line 125](../../../extended/ext/server_poll.lani#L125)
 
 ```lanius
 pub impl<E,A> Report<E,A>
@@ -1434,7 +1493,7 @@ pub impl<E,A> Report<E,A>
 
 #### method: borrow
 
-[Source line 97](../../../extended/ext/server_poll.lani#L97)
+[Source line 126](../../../extended/ext/server_poll.lani#L126)
 
 ```lanius
 pub fn borrow(&self) -> &Report<E,A>
@@ -1442,7 +1501,7 @@ pub fn borrow(&self) -> &Report<E,A>
 
 #### method: len
 
-[Source line 98](../../../extended/ext/server_poll.lani#L98)
+[Source line 127](../../../extended/ext/server_poll.lani#L127)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -1450,7 +1509,7 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 99](../../../extended/ext/server_poll.lani#L99)
+[Source line 128](../../../extended/ext/server_poll.lani#L128)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<Outcome<E,A>>
@@ -1458,7 +1517,7 @@ pub fn get(&self, index: i32) -> core::option::Option<Outcome<E,A>>
 
 #### method: take
 
-[Source line 100](../../../extended/ext/server_poll.lani#L100)
+[Source line 129](../../../extended/ext/server_poll.lani#L129)
 
 ```lanius
 pub fn take(&self, index: i32) -> core::option::Option<Outcome<E,A>>
@@ -1466,15 +1525,15 @@ pub fn take(&self, index: i32) -> core::option::Option<Outcome<E,A>>
 
 #### method: destroy
 
-[Source line 107](../../../extended/ext/server_poll.lani#L107)
+[Source line 136](../../../extended/ext/server_poll.lani#L136)
 
 ```lanius
 pub fn destroy(&self) where E: core::clone::Destroy<E>, A: core::clone::Destroy<A>
 ```
 
-### impl at line 113
+### impl at line 142
 
-[Source line 113](../../../extended/ext/server_poll.lani#L113)
+[Source line 142](../../../extended/ext/server_poll.lani#L142)
 
 ```lanius
 pub impl<E,A> ServiceFailure<E,A>
@@ -1482,7 +1541,7 @@ pub impl<E,A> ServiceFailure<E,A>
 
 #### method: borrow
 
-[Source line 113](../../../extended/ext/server_poll.lani#L113)
+[Source line 142](../../../extended/ext/server_poll.lani#L142)
 
 ```lanius
 pub fn borrow(&self) -> &ServiceFailure<E,A>
@@ -1490,15 +1549,15 @@ pub fn borrow(&self) -> &ServiceFailure<E,A>
 
 #### method: destroy
 
-[Source line 113](../../../extended/ext/server_poll.lani#L113)
+[Source line 142](../../../extended/ext/server_poll.lani#L142)
 
 ```lanius
 pub fn destroy(&self) where E: core::clone::Destroy<E>, A: core::clone::Destroy<A>
 ```
 
-### impl at line 356
+### impl at line 385
 
-[Source line 356](../../../extended/ext/server_poll.lani#L356)
+[Source line 385](../../../extended/ext/server_poll.lani#L385)
 
 ```lanius
 pub impl<D,E,F,H,A> Server<D,E,F,H,A>
@@ -1506,7 +1565,7 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A>
 
 #### method: borrow
 
-[Source line 357](../../../extended/ext/server_poll.lani#L357)
+[Source line 386](../../../extended/ext/server_poll.lani#L386)
 
 ```lanius
 pub fn borrow(&self) -> &Server<D,E,F,H,A>
@@ -1514,7 +1573,7 @@ pub fn borrow(&self) -> &Server<D,E,F,H,A>
 
 #### method: stats
 
-[Source line 358](../../../extended/ext/server_poll.lani#L358)
+[Source line 387](../../../extended/ext/server_poll.lani#L387)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -1522,7 +1581,7 @@ pub fn stats(&self) -> Stats
 
 #### method: last_failure
 
-[Source line 359](../../../extended/ext/server_poll.lani#L359)
+[Source line 388](../../../extended/ext/server_poll.lani#L388)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Cause>
@@ -1530,7 +1589,7 @@ pub fn last_failure(&self) -> core::option::Option<Cause>
 
 #### method: is_complete
 
-[Source line 360](../../../extended/ext/server_poll.lani#L360)
+[Source line 389](../../../extended/ext/server_poll.lani#L389)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -1538,7 +1597,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: is_accepting
 
-[Source line 361](../../../extended/ext/server_poll.lani#L361)
+[Source line 390](../../../extended/ext/server_poll.lani#L390)
 
 ```lanius
 pub fn is_accepting(&self) -> bool
@@ -1546,7 +1605,7 @@ pub fn is_accepting(&self) -> bool
 
 #### method: len
 
-[Source line 362](../../../extended/ext/server_poll.lani#L362)
+[Source line 391](../../../extended/ext/server_poll.lani#L391)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -1554,7 +1613,7 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 363](../../../extended/ext/server_poll.lani#L363)
+[Source line 392](../../../extended/ext/server_poll.lani#L392)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<Outcome<E,A>>
@@ -1562,7 +1621,7 @@ pub fn get(&self, index: i32) -> core::option::Option<Outcome<E,A>>
 
 #### method: take
 
-[Source line 364](../../../extended/ext/server_poll.lani#L364)
+[Source line 393](../../../extended/ext/server_poll.lani#L393)
 
 ```lanius
 pub fn take(&self, index: i32) -> core::option::Option<Outcome<E,A>>
@@ -1570,7 +1629,7 @@ pub fn take(&self, index: i32) -> core::option::Option<Outcome<E,A>>
 
 #### method: take_report
 
-[Source line 369](../../../extended/ext/server_poll.lani#L369)
+[Source line 398](../../../extended/ext/server_poll.lani#L398)
 
 ```lanius
 pub fn take_report(&self) -> core::result::Result<Report<E,A>,Cause>
@@ -1578,7 +1637,7 @@ pub fn take_report(&self) -> core::result::Result<Report<E,A>,Cause>
 
 #### method: stop_accepting
 
-[Source line 373](../../../extended/ext/server_poll.lani#L373)
+[Source line 402](../../../extended/ext/server_poll.lani#L402)
 
 ```lanius
 pub fn stop_accepting(&self) -> bool
@@ -1586,7 +1645,7 @@ pub fn stop_accepting(&self) -> bool
 
 #### method: abort_all
 
-[Source line 374](../../../extended/ext/server_poll.lani#L374)
+[Source line 403](../../../extended/ext/server_poll.lani#L403)
 
 ```lanius
 pub fn abort_all(&self) -> bool where D: Driver<E>
@@ -1594,7 +1653,7 @@ pub fn abort_all(&self) -> bool where D: Driver<E>
 
 #### method: destroy
 
-[Source line 377](../../../extended/ext/server_poll.lani#L377)
+[Source line 406](../../../extended/ext/server_poll.lani#L406)
 
 ```lanius
 pub fn destroy(&self) -> bool where D: Driver<E>, E: core::clone::Destroy<E>, A: core::clone::Destroy<A>
@@ -1602,15 +1661,15 @@ pub fn destroy(&self) -> bool where D: Driver<E>, E: core::clone::Destroy<E>, A:
 
 #### method: step
 
-[Source line 381](../../../extended/ext/server_poll.lani#L381)
+[Source line 410](../../../extended/ext/server_poll.lani#L410)
 
 ```lanius
 pub fn step(&self) -> core::result::Result<bool,Cause> where D: Driver<E>, F: Factory<D,E>, H: Handler<A>
 ```
 
-### impl at line 397
+### impl at line 426
 
-[Source line 397](../../../extended/ext/server_poll.lani#L397)
+[Source line 426](../../../extended/ext/server_poll.lani#L426)
 
 ```lanius
 pub impl<D,E,F,H,A> Server<D,E,F,H,A>
@@ -1618,7 +1677,7 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A>
 
 #### method: prepare_wait
 
-[Source line 400](../../../extended/ext/server_poll.lani#L400)
+[Source line 429](../../../extended/ext/server_poll.lani#L429)
 
 ```lanius
 pub fn prepare_wait(&self) -> core::result::Result<PollInterest,Cause> where D: Driver<E>, F: Factory<D,E>
@@ -1626,7 +1685,7 @@ pub fn prepare_wait(&self) -> core::result::Result<PollInterest,Cause> where D: 
 
 #### method: resume
 
-[Source line 452](../../../extended/ext/server_poll.lani#L452)
+[Source line 481](../../../extended/ext/server_poll.lani#L481)
 
 ```lanius
 pub fn resume(&self, epoch: u64, ready: core::slice::View<std::poll::Readiness>) -> core::result::Result<bool,Cause> where D: Driver<E>
@@ -1634,7 +1693,7 @@ pub fn resume(&self, epoch: u64, ready: core::slice::View<std::poll::Readiness>)
 
 #### method: poll_once
 
-[Source line 485](../../../extended/ext/server_poll.lani#L485)
+[Source line 514](../../../extended/ext/server_poll.lani#L514)
 
 ```lanius
 pub fn poll_once(&self) -> core::result::Result<bool,Cause> where D: Driver<E>, F: Factory<D,E>

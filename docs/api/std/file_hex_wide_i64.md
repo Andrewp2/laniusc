@@ -16,18 +16,19 @@ Declaration counts: function: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L4)
-- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L5)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L6)
-- [std::fs](fs.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L7)
-- [std::io_hex_wide_i64](io_hex_wide_i64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L8)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L3)
+- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L5)
+- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L6)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L7)
+- [std::fs](fs.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L8)
+- [std::io_hex_wide_i64](io_hex_wide_i64.md) · [source](../../../stdlib/std/file_hex_wide_i64.lani#L9)
 
 ## Free functions and extern declarations
 
 ### function: write_lower
 
-[Source line 26](../../../stdlib/std/file_hex_wide_i64.lani#L26)
+[Source line 27](../../../stdlib/std/file_hex_wide_i64.lani#L27)
 
 ```lanius
 pub fn write_lower(path: str, value: core::wide_i64::WideI64) -> bool
@@ -35,7 +36,7 @@ pub fn write_lower(path: str, value: core::wide_i64::WideI64) -> bool
 
 ### function: write_upper
 
-[Source line 29](../../../stdlib/std/file_hex_wide_i64.lani#L29)
+[Source line 30](../../../stdlib/std/file_hex_wide_i64.lani#L30)
 
 ```lanius
 pub fn write_upper(path: str, value: core::wide_i64::WideI64) -> bool
@@ -43,7 +44,7 @@ pub fn write_upper(path: str, value: core::wide_i64::WideI64) -> bool
 
 ### function: read_or
 
-[Source line 37](../../../stdlib/std/file_hex_wide_i64.lani#L37)
+[Source line 38](../../../stdlib/std/file_hex_wide_i64.lani#L38)
 
 ```lanius
 pub fn read_or(path: str, max_bytes: u32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64

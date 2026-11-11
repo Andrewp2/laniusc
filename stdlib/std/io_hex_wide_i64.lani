@@ -1,5 +1,6 @@
 // Signed full-width hexadecimal stream I/O over the bound one-byte host service.
 module std::io_hex_wide_i64;
+import core::parse_state;
 import core::hex_wide_i64;
 import core::hex_wide_u64;
 import core::mem;
@@ -50,12 +51,10 @@ pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_i64::WideI64) -> core:
     let consumed: u32 = 0;
     let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
     let limit: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483647, 4294967295);
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     let negative: bool = false;
-    let leading_zero: bool = false;
-    let prefix_seen: bool = false;
+
     while (true) {
         cell[0] = 0;
         let received: i32 = std::io::read_stdin(data, 1);
@@ -68,43 +67,41 @@ pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_i64::WideI64) -> core:
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) {
+            if (progress.started() && !progress.has_digits()) {
                 return fallback;
             }
-            if (digits) {
-                trailing = true;
+            if (progress.has_digits()) {
+                progress.step(core::parse_state::IntegerEvent::Whitespace);
             }
             continue;
         }
-        if (trailing) {
+        if (progress.trailing()) {
             return fallback;
         }
         if (byte == 43 || byte == 45) {
-            if (started) {
+            if (progress.started()) {
                 return fallback;
             }
-            started = true;
+            progress.step(core::parse_state::IntegerEvent::Started);
             negative = byte == 45;
             if (negative) {
                 limit = core::wide_u64::from_words(2147483648, 0);
             }
             continue;
         }
-        if (!started) {
-            started = true;
+        if (!progress.started()) {
+            progress.step(core::parse_state::IntegerEvent::Started);
         }
-        if (byte == 48 && !digits && !prefix_seen) {
-            digits = true;
-            leading_zero = true;
+        if (byte == 48 && !progress.has_digits() && !progress.prefix_seen()) {
+            progress.step(core::parse_state::IntegerEvent::Digit);
+            progress.step(core::parse_state::IntegerEvent::LeadingZero);
             continue;
         }
-        if (leading_zero && !prefix_seen &&(byte == 120 || byte == 88)) {
-            digits = false;
-            leading_zero = false;
-            prefix_seen = true;
+        if (progress.leading_zero() && !progress.prefix_seen() &&(byte == 120 || byte == 88)) {
+            progress.step(core::parse_state::IntegerEvent::Prefix);
             continue;
         }
-        leading_zero = false;
+        progress.step(core::parse_state::IntegerEvent::OrdinaryByte);
         if (byte<0 || byte>255) {
             return fallback;
         }
@@ -113,9 +110,9 @@ pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_i64::WideI64) -> core:
             return fallback;
         }
         magnitude = core::hex_wide_u64::append_ascii_digit_or(magnitude, ascii, limit, magnitude);
-        digits = true;
+        progress.step(core::parse_state::IntegerEvent::Digit);
     }
-    if (!digits) {
+    if (!progress.has_digits()) {
         return fallback;
     }
     let value: core::wide_i64::WideI64 = core::wide_i64::from_words(core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));

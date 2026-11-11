@@ -18,20 +18,21 @@ Declaration counts: enum: 1; field: 1; function: 27; impl: 3; method: 9; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::decimal](../core/decimal.md) · [source](../../../stdlib/std/file.lani#L8)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/file.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file.lani#L10)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/file.lani#L11)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/file.lani#L12)
-- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/file.lani#L13)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file.lani#L14)
-- [std::fs](fs.md) · [source](../../../stdlib/std/file.lani#L15)
-- [std::io](io.md) · [source](../../../stdlib/std/file.lani#L16)
-- [std::io_checked](io_checked.md) · [source](../../../stdlib/std/file.lani#L17)
-- [std::io_decimal](io_decimal.md) · [source](../../../stdlib/std/file.lani#L18)
-- [core::path](../core/path.md) · [source](../../../stdlib/std/file.lani#L19)
-- [std::stream](stream.md) · [source](../../../stdlib/std/file.lani#L20)
-- [alloc::io](../alloc/io.md) · [source](../../../stdlib/std/file.lani#L21)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/file.lani#L8)
+- [core::decimal](../core/decimal.md) · [source](../../../stdlib/std/file.lani#L9)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/file.lani#L10)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file.lani#L11)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/file.lani#L12)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/file.lani#L13)
+- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/file.lani#L14)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file.lani#L15)
+- [std::fs](fs.md) · [source](../../../stdlib/std/file.lani#L16)
+- [std::io](io.md) · [source](../../../stdlib/std/file.lani#L17)
+- [std::io_checked](io_checked.md) · [source](../../../stdlib/std/file.lani#L18)
+- [std::io_decimal](io_decimal.md) · [source](../../../stdlib/std/file.lani#L19)
+- [core::path](../core/path.md) · [source](../../../stdlib/std/file.lani#L20)
+- [std::stream](stream.md) · [source](../../../stdlib/std/file.lani#L21)
+- [alloc::io](../alloc/io.md) · [source](../../../stdlib/std/file.lani#L22)
 
 ## Types, fields and variants
 
@@ -39,7 +40,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: File
 
-[Source line 26](../../../stdlib/std/file.lani#L26)
+[Source line 27](../../../stdlib/std/file.lani#L27)
 
 ```lanius
 pub struct File
@@ -47,7 +48,7 @@ pub struct File
 
 #### field: handle
 
-[Source line 26](../../../stdlib/std/file.lani#L26)
+[Source line 27](../../../stdlib/std/file.lani#L27)
 
 ```lanius
 handle: i32
@@ -55,7 +56,7 @@ handle: i32
 
 ### enum: OpenMode
 
-[Source line 27](../../../stdlib/std/file.lani#L27)
+[Source line 28](../../../stdlib/std/file.lani#L28)
 
 ```lanius
 pub enum OpenMode
@@ -63,7 +64,7 @@ pub enum OpenMode
 
 #### variant: Read
 
-[Source line 27](../../../stdlib/std/file.lani#L27)
+[Source line 28](../../../stdlib/std/file.lani#L28)
 
 ```lanius
 Read
@@ -71,7 +72,7 @@ Read
 
 #### variant: Create
 
-[Source line 27](../../../stdlib/std/file.lani#L27)
+[Source line 28](../../../stdlib/std/file.lani#L28)
 
 ```lanius
 Create
@@ -79,7 +80,7 @@ Create
 
 #### variant: Append
 
-[Source line 27](../../../stdlib/std/file.lani#L27)
+[Source line 28](../../../stdlib/std/file.lani#L28)
 
 ```lanius
 Append
@@ -89,7 +90,7 @@ Append
 
 ### function: open
 
-[Source line 38](../../../stdlib/std/file.lani#L38)
+[Source line 39](../../../stdlib/std/file.lani#L39)
 
 ```lanius
 pub fn open(path: core::path::Path, mode: OpenMode) -> core::result::Result<File, core::io::Error>
@@ -97,7 +98,7 @@ pub fn open(path: core::path::Path, mode: OpenMode) -> core::result::Result<File
 
 ### function: from_owned_handle
 
-[Source line 63](../../../stdlib/std/file.lani#L63)
+[Source line 64](../../../stdlib/std/file.lani#L64)
 
 ```lanius
 pub fn from_owned_handle(handle: i32) -> core::result::Result<File, core::io::Error>
@@ -105,7 +106,7 @@ pub fn from_owned_handle(handle: i32) -> core::result::Result<File, core::io::Er
 
 ### function: write_text_once
 
-[Source line 122](../../../stdlib/std/file.lani#L122)
+[Source line 123](../../../stdlib/std/file.lani#L123)
 
 ```lanius
 pub fn write_text_once(path: str, text: str) -> i32
@@ -113,7 +114,7 @@ pub fn write_text_once(path: str, text: str) -> i32
 
 ### function: read_once_into_buffer
 
-[Source line 141](../../../stdlib/std/file.lani#L141)
+[Source line 142](../../../stdlib/std/file.lani#L142)
 
 ```lanius
 pub fn read_once_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32
@@ -121,7 +122,7 @@ pub fn read_once_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32
 
 ### function: read_exact_into_buffer
 
-[Source line 163](../../../stdlib/std/file.lani#L163)
+[Source line 164](../../../stdlib/std/file.lani#L164)
 
 ```lanius
 pub fn read_exact_into_buffer(path: str, buffer: ptr, len: usize) -> bool
@@ -129,7 +130,7 @@ pub fn read_exact_into_buffer(path: str, buffer: ptr, len: usize) -> bool
 
 ### function: read_to_end_into_buffer
 
-[Source line 197](../../../stdlib/std/file.lani#L197)
+[Source line 198](../../../stdlib/std/file.lani#L198)
 
 ```lanius
 pub fn read_to_end_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32
@@ -137,7 +138,7 @@ pub fn read_to_end_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32
 
 ### function: write_all_bytes
 
-[Source line 243](../../../stdlib/std/file.lani#L243)
+[Source line 244](../../../stdlib/std/file.lani#L244)
 
 ```lanius
 pub fn write_all_bytes(handle: i32, buffer: ptr, len: usize) -> bool
@@ -145,7 +146,7 @@ pub fn write_all_bytes(handle: i32, buffer: ptr, len: usize) -> bool
 
 ### function: write_all_bytes_to_path
 
-[Source line 268](../../../stdlib/std/file.lani#L268)
+[Source line 269](../../../stdlib/std/file.lani#L269)
 
 ```lanius
 pub fn write_all_bytes_to_path(path: str, buffer: ptr, len: usize) -> bool
@@ -153,7 +154,7 @@ pub fn write_all_bytes_to_path(path: str, buffer: ptr, len: usize) -> bool
 
 ### function: copy_distinct_with_buffer
 
-[Source line 302](../../../stdlib/std/file.lani#L302)
+[Source line 303](../../../stdlib/std/file.lani#L303)
 
 ```lanius
 pub fn copy_distinct_with_buffer(input_path: str, output_path: str, buffer: ptr, capacity: usize) -> bool
@@ -161,7 +162,7 @@ pub fn copy_distinct_with_buffer(input_path: str, output_path: str, buffer: ptr,
 
 ### function: copy_file_to_stdout_with_buffer
 
-[Source line 325](../../../stdlib/std/file.lani#L325)
+[Source line 326](../../../stdlib/std/file.lani#L326)
 
 ```lanius
 pub fn copy_file_to_stdout_with_buffer(path: str, buffer: ptr, capacity: usize) -> bool
@@ -169,7 +170,7 @@ pub fn copy_file_to_stdout_with_buffer(path: str, buffer: ptr, capacity: usize) 
 
 ### function: copy_stdin_to_file_with_buffer
 
-[Source line 357](../../../stdlib/std/file.lani#L357)
+[Source line 358](../../../stdlib/std/file.lani#L358)
 
 ```lanius
 pub fn copy_stdin_to_file_with_buffer(path: str, buffer: ptr, capacity: usize) -> bool
@@ -177,7 +178,7 @@ pub fn copy_stdin_to_file_with_buffer(path: str, buffer: ptr, capacity: usize) -
 
 ### function: read_i32_decimal_or
 
-[Source line 391](../../../stdlib/std/file.lani#L391)
+[Source line 392](../../../stdlib/std/file.lani#L392)
 
 ```lanius
 pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32
@@ -185,7 +186,7 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32
 
 ### function: read_u32_decimal_or
 
-[Source line 481](../../../stdlib/std/file.lani#L481)
+[Source line 480](../../../stdlib/std/file.lani#L480)
 
 ```lanius
 pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32
@@ -193,7 +194,7 @@ pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32
 
 ### function: read_wide_u64_decimal_or
 
-[Source line 564](../../../stdlib/std/file.lani#L564)
+[Source line 561](../../../stdlib/std/file.lani#L561)
 
 ```lanius
 pub fn read_wide_u64_decimal_or(
@@ -203,7 +204,7 @@ pub fn read_wide_u64_decimal_or(
 
 ### function: read_wide_i64_decimal_or
 
-[Source line 625](../../../stdlib/std/file.lani#L625)
+[Source line 620](../../../stdlib/std/file.lani#L620)
 
 ```lanius
 pub fn read_wide_i64_decimal_or(
@@ -213,7 +214,7 @@ pub fn read_wide_i64_decimal_or(
 
 ### function: write_i32_decimal
 
-[Source line 694](../../../stdlib/std/file.lani#L694)
+[Source line 687](../../../stdlib/std/file.lani#L687)
 
 ```lanius
 pub fn write_i32_decimal(path: str, value: i32) -> bool
@@ -221,7 +222,7 @@ pub fn write_i32_decimal(path: str, value: i32) -> bool
 
 ### function: write_u32_decimal
 
-[Source line 707](../../../stdlib/std/file.lani#L707)
+[Source line 700](../../../stdlib/std/file.lani#L700)
 
 ```lanius
 pub fn write_u32_decimal(path: str, value: u32) -> bool
@@ -229,7 +230,7 @@ pub fn write_u32_decimal(path: str, value: u32) -> bool
 
 ### function: write_wide_u64_decimal
 
-[Source line 719](../../../stdlib/std/file.lani#L719)
+[Source line 712](../../../stdlib/std/file.lani#L712)
 
 ```lanius
 pub fn write_wide_u64_decimal(path: str, value: core::wide_u64::WideU64) -> bool
@@ -237,7 +238,7 @@ pub fn write_wide_u64_decimal(path: str, value: core::wide_u64::WideU64) -> bool
 
 ### function: write_wide_i64_decimal
 
-[Source line 729](../../../stdlib/std/file.lani#L729)
+[Source line 722](../../../stdlib/std/file.lani#L722)
 
 ```lanius
 pub fn write_wide_i64_decimal(path: str, value: core::wide_i64::WideI64) -> bool
@@ -245,7 +246,7 @@ pub fn write_wide_i64_decimal(path: str, value: core::wide_i64::WideI64) -> bool
 
 ### function: read_u8_decimal_or
 
-[Source line 740](../../../stdlib/std/file.lani#L740)
+[Source line 733](../../../stdlib/std/file.lani#L733)
 
 ```lanius
 pub fn read_u8_decimal_or(path: str, max_bytes: u32, fallback: u8) -> u8
@@ -253,7 +254,7 @@ pub fn read_u8_decimal_or(path: str, max_bytes: u32, fallback: u8) -> u8
 
 ### function: read_u16_decimal_or
 
-[Source line 749](../../../stdlib/std/file.lani#L749)
+[Source line 742](../../../stdlib/std/file.lani#L742)
 
 ```lanius
 pub fn read_u16_decimal_or(path: str, max_bytes: u32, fallback: u16) -> u16
@@ -261,7 +262,7 @@ pub fn read_u16_decimal_or(path: str, max_bytes: u32, fallback: u16) -> u16
 
 ### function: read_i8_decimal_or
 
-[Source line 758](../../../stdlib/std/file.lani#L758)
+[Source line 751](../../../stdlib/std/file.lani#L751)
 
 ```lanius
 pub fn read_i8_decimal_or(path: str, max_bytes: u32, fallback: i8) -> i8
@@ -269,7 +270,7 @@ pub fn read_i8_decimal_or(path: str, max_bytes: u32, fallback: i8) -> i8
 
 ### function: read_i16_decimal_or
 
-[Source line 767](../../../stdlib/std/file.lani#L767)
+[Source line 760](../../../stdlib/std/file.lani#L760)
 
 ```lanius
 pub fn read_i16_decimal_or(path: str, max_bytes: u32, fallback: i16) -> i16
@@ -277,7 +278,7 @@ pub fn read_i16_decimal_or(path: str, max_bytes: u32, fallback: i16) -> i16
 
 ### function: write_u8_decimal
 
-[Source line 779](../../../stdlib/std/file.lani#L779)
+[Source line 772](../../../stdlib/std/file.lani#L772)
 
 ```lanius
 pub fn write_u8_decimal(path: str, value: u8) -> bool
@@ -285,7 +286,7 @@ pub fn write_u8_decimal(path: str, value: u8) -> bool
 
 ### function: write_u16_decimal
 
-[Source line 784](../../../stdlib/std/file.lani#L784)
+[Source line 777](../../../stdlib/std/file.lani#L777)
 
 ```lanius
 pub fn write_u16_decimal(path: str, value: u16) -> bool
@@ -293,7 +294,7 @@ pub fn write_u16_decimal(path: str, value: u16) -> bool
 
 ### function: write_i8_decimal
 
-[Source line 789](../../../stdlib/std/file.lani#L789)
+[Source line 782](../../../stdlib/std/file.lani#L782)
 
 ```lanius
 pub fn write_i8_decimal(path: str, value: i8) -> bool
@@ -301,7 +302,7 @@ pub fn write_i8_decimal(path: str, value: i8) -> bool
 
 ### function: write_i16_decimal
 
-[Source line 794](../../../stdlib/std/file.lani#L794)
+[Source line 787](../../../stdlib/std/file.lani#L787)
 
 ```lanius
 pub fn write_i16_decimal(path: str, value: i16) -> bool
@@ -309,9 +310,9 @@ pub fn write_i16_decimal(path: str, value: i16) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 68
+### impl at line 69
 
-[Source line 68](../../../stdlib/std/file.lani#L68)
+[Source line 69](../../../stdlib/std/file.lani#L69)
 
 ```lanius
 pub impl File
@@ -319,7 +320,7 @@ pub impl File
 
 #### method: borrow
 
-[Source line 69](../../../stdlib/std/file.lani#L69)
+[Source line 70](../../../stdlib/std/file.lani#L70)
 
 ```lanius
 pub fn borrow(&self) -> &File
@@ -327,7 +328,7 @@ pub fn borrow(&self) -> &File
 
 #### method: is_open
 
-[Source line 70](../../../stdlib/std/file.lani#L70)
+[Source line 71](../../../stdlib/std/file.lani#L71)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -335,7 +336,7 @@ pub fn is_open(&self) -> bool
 
 #### method: read_to_end
 
-[Source line 73](../../../stdlib/std/file.lani#L73)
+[Source line 74](../../../stdlib/std/file.lani#L74)
 
 ```lanius
 pub fn read_to_end(&self, output: &alloc::io::Buffer) -> core::result::Result<u64, core::io::Error>
@@ -343,7 +344,7 @@ pub fn read_to_end(&self, output: &alloc::io::Buffer) -> core::result::Result<u6
 
 #### method: raw_handle
 
-[Source line 79](../../../stdlib/std/file.lani#L79)
+[Source line 80](../../../stdlib/std/file.lani#L80)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -351,7 +352,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: take_handle
 
-[Source line 84](../../../stdlib/std/file.lani#L84)
+[Source line 85](../../../stdlib/std/file.lani#L85)
 
 ```lanius
 pub fn take_handle(&self) -> core::option::Option<i32>
@@ -359,15 +360,15 @@ pub fn take_handle(&self) -> core::option::Option<i32>
 
 #### method: close
 
-[Source line 93](../../../stdlib/std/file.lani#L93)
+[Source line 94](../../../stdlib/std/file.lani#L94)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 103
+### impl at line 104
 
-[Source line 103](../../../stdlib/std/file.lani#L103)
+[Source line 104](../../../stdlib/std/file.lani#L104)
 
 ```lanius
 pub impl core::io::Read for File
@@ -375,15 +376,15 @@ pub impl core::io::Read for File
 
 #### method: read
 
-[Source line 104](../../../stdlib/std/file.lani#L104)
+[Source line 105](../../../stdlib/std/file.lani#L105)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 110
+### impl at line 111
 
-[Source line 110](../../../stdlib/std/file.lani#L110)
+[Source line 111](../../../stdlib/std/file.lani#L111)
 
 ```lanius
 pub impl core::io::Write for File
@@ -391,7 +392,7 @@ pub impl core::io::Write for File
 
 #### method: write
 
-[Source line 111](../../../stdlib/std/file.lani#L111)
+[Source line 112](../../../stdlib/std/file.lani#L112)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
@@ -399,7 +400,7 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 115](../../../stdlib/std/file.lani#L115)
+[Source line 116](../../../stdlib/std/file.lani#L116)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>

@@ -1,11 +1,21 @@
 // Unicode 17.0.0 UAX #14 revision 55 default line break opportunities.
 // Line fitting, glyph widths, hyphen insertion and shaping are separate.
 module ext::unicode_lines;
+import core::iter_state;
+import ext::unicode_break_state;
 import core::option;
 import core::result;
 import core::text;
 import core::utf8;
 import ext::unicode_lines_data;
+
+pub machine NumericSuffix on u32 {
+    start Empty;
+    state Empty { property -> { if (property == NU) { goto Number; } stay; }, }
+    state Number { property -> { if (property == NU || property == IS || property == SY) { stay; } goto Empty; }, }
+}
+pub impl NumericSuffix { pub fn number(&self) -> bool { return match (self.state()) { NumericSuffixState::Number -> true, _ -> false }; } }
+
 
 pub enum Kind { Allowed, Mandatory }
 pub struct Opportunity { offset: i32, kind: Kind }
@@ -16,7 +26,7 @@ pub fn default_limits() -> Limits { return Limits { max_bytes: 4194304, max_scal
 pub fn work(bytes: i32) -> core::result::Result<u64,Error> { if (bytes < 0 || bytes > MAX_BYTES) { return core::result::Err(Error::Bounds); } return core::result::Ok((bytes as u64)*32+1); }
 // Implementation state. Construct with cursor(); copying forks the position.
 // Never modify fields or mutate/expire the physically backed borrowed Text.
-pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, nonspace: u32, initial_quote: bool, numeric: bool, before_numeric: bool, ri_odd: bool, ended: bool }
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, nonspace: u32, initial_quote: bool, numeric: NumericSuffix, before_numeric: NumericSuffix, regional: ext::unicode_break_state::RegionalRun, completion: core::iter_state::Completion }
 const AL: u32 = 1; const BK: u32 = 2; const CR: u32 = 3; const LF: u32 = 4; const NL: u32 = 5; const SP: u32 = 6; const ZW: u32 = 7; const ZWJ: u32 = 8; const CM: u32 = 9; const WJ: u32 = 10; const GL: u32 = 11; const BA: u32 = 12; const HY: u32 = 13; const HH: u32 = 14; const CL: u32 = 15; const CP: u32 = 16; const EX: u32 = 17; const SY: u32 = 18; const OP: u32 = 19; const QU: u32 = 20; const IS: u32 = 21; const NS: u32 = 22; const B2: u32 = 23; const CB: u32 = 24; const BB: u32 = 25; const HL: u32 = 26; const IN: u32 = 27; const NU: u32 = 28; const PR: u32 = 29; const PO: u32 = 30; const ID: u32 = 31; const EB: u32 = 32; const EM: u32 = 33; const JL: u32 = 34; const JV: u32 = 35; const JT: u32 = 36; const H2: u32 = 37; const H3: u32 = 38; const AP: u32 = 39; const AK: u32 = 40; const AS: u32 = 41; const VF: u32 = 42; const VI: u32 = 43;
 fn hard(value: u32) -> bool { return value >= BK && value <= NL; }
 fn excluded(value: u32) -> bool { return value == 0 || hard(value) || value == SP || value == ZW; }
@@ -34,7 +44,7 @@ pub fn cursor(text: core::text::Text, limits: Limits) -> core::result::Result<Cu
     if (checked.is_err()) { return core::result::Err(match (checked.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at), _ -> Error::Bounds }); }
     let position: i32 = 0; let count: i32 = 0;
     while (position < text.length) { if (count == limits.max_scalars) { return core::result::Err(Error::ScalarLimit); } let scalar: u32 = core::option::unwrap(text.scalar_at_byte(position)); position += core::utf8::encoded_len_or(scalar,0) as i32; count += 1; }
-    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, nonspace: 0, initial_quote: false, numeric: false, before_numeric: false, ri_odd: false, ended: false });
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, nonspace: 0, initial_quote: false, numeric: numeric_suffix_start(), before_numeric: numeric_suffix_start(), regional: ext::unicode_break_state::regional_run_start(), completion: core::iter_state::completion_start() });
 }
 pub impl Cursor {
     pub fn borrow(&self) -> &Cursor { return self; }
@@ -82,9 +92,9 @@ pub impl Cursor {
         if ((letter(a) && b == NU) || (a == NU && letter(b))) { return 0; } // LB23
         if ((a == PR && (b == ID || b == EB || b == EM)) || ((a == ID || a == EB || a == EM) && b == PO)) { return 0; } // LB23a
         if (((a == PR || a == PO) && letter(b)) || (letter(a) && (b == PR || b == PO))) { return 0; } // LB24
-        if ((b == PO || b == PR) && (self.numeric || ((a == CL || a == CP) && self.before_numeric))) { return 0; }
+        if ((b == PO || b == PR) && (self.numeric.number() || ((a == CL || a == CP) && self.before_numeric.number()))) { return 0; }
         if (a == PO || a == PR) { if (b == NU) { return 0; } if (b == OP) { let next: u32 = self.following(after,1) & 63; if (next == NU || (next == IS && (self.following(after,2) & 63) == NU)) { return 0; } } }
-        if (b == NU && (a == HY || a == IS || self.numeric)) { return 0; } // LB25
+        if (b == NU && (a == HY || a == IS || self.numeric.number())) { return 0; } // LB25
         if (a == JL && (b == JL || b == JV || b == H2 || b == H3)) { return 0; }
         if ((a == JV || a == H2) && (b == JV || b == JT)) { return 0; } if ((a == JT || a == H3) && b == JT) { return 0; } // LB26
         if ((hangul(a) && b == PO) || (a == PR && hangul(b))) { return 0; } // LB27
@@ -94,7 +104,7 @@ pub impl Cursor {
         if (aksara(self.previous) && aksara(flags) && (self.following(after,1) & 63) == VF) { return 0; } // LB28a
         if (a == IS && letter(b)) { return 0; } // LB29
         if (((letter(a) || a == NU) && b == OP && !east(flags)) || (a == CP && !east(self.previous) && (letter(b) || b == NU))) { return 0; } // LB30
-        if (a == RI && b == RI && self.ri_odd) { return 0; } // LB30a
+        if (a == RI && b == RI && self.regional.odd()) { return 0; } // LB30a
         if ((a == EB || (self.previous & 512) != 0) && b == EM) { return 0; } // LB30b
         return 1; // LB31
     }
@@ -102,21 +112,21 @@ pub impl Cursor {
         let raw: u32 = flags & 63; let a: u32 = self.previous & 63;
         if (!mark(raw) || excluded(a)) {
             if (mark(raw)) { flags = AL; } let current: u32 = flags & 63;
-            self.before_numeric = self.numeric; self.numeric = current == NU || ((current == IS || current == SY) && self.numeric);
-            if (current == RI) { if (a == RI) { self.ri_odd = !self.ri_odd; } else { self.ri_odd = true; } } else { self.ri_odd = false; }
+            self.before_numeric = self.numeric; self.numeric.step(current);
+            self.regional.classify(current == RI);
             if (current != SP) { self.initial_quote = current == QU && (flags & 128) != 0 && quote_context(a); self.nonspace = flags; }
             self.before = self.previous; self.previous = flags;
         }
         self.raw = raw; self.position = after;
     }
     pub fn next(&self) -> core::option::Option<Opportunity> {
-        if (self.ended) { return core::option::None(); }
+        if (self.completion.is_done()) { return core::option::None(); }
         while (self.position < self.text.length) {
             let offset: i32 = self.position; let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(offset)); let flags: u32 = ext::unicode_lines_data::flags(scalar); let after: i32 = offset+core::utf8::encoded_len_or(scalar,0) as i32;
             let decision: i32 = 0; if (offset != 0) { decision = self.decision(flags,after); } self.consume(flags,after);
             if (decision != 0) { let kind: Kind = Kind::Allowed; if (decision == 2) { kind = Kind::Mandatory; } return core::option::Some(Opportunity { offset: offset, kind: kind }); }
         }
-        self.ended = true; return core::option::Some(Opportunity { offset: self.text.length, kind: Kind::Mandatory }); // LB3, also empty text
+        self.completion.finish(); return core::option::Some(Opportunity { offset: self.text.length, kind: Kind::Mandatory }); // LB3, also empty text
     }
 }
 const RI: u32 = 44;

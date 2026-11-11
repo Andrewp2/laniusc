@@ -1,6 +1,7 @@
 // Finite, owned arbitrary precision decimal values. Value = coefficient * 10^exponent.
 // One active owner; record copies alias storage. Inputs survive all failures.
 module ext::decimal;
+import core::iter_state;
 import alloc::vec;
 import core::cmp;
 import core::hash;
@@ -101,15 +102,15 @@ fn parse_with(input: core::slice::View<u8>, work: &Budget) -> core::result::Resu
     if (position == input.length) { return core::result::Err(Error::InvalidSyntax); }
     let first: u8 = input.values[input.start + position];
     if (first == 73 || first == 105 || first == 78 || first == 110 || first == 83 || first == 115) { if (special(input, position)) { return core::result::Err(Error::NonFinite); } return core::result::Err(Error::InvalidSyntax); }
-    let start: i32 = position; let dot: bool = false; let count: i32 = 0; let fractional: i32 = 0; let leading: i32 = 0; let significant: bool = false;
+    let start: i32 = position; let dot_phase = core::iter_state::completion_start(); let count: i32 = 0; let fractional: i32 = 0; let leading: i32 = 0; let significant_phase = core::iter_state::completion_start();
     while (position < input.length) {
         let byte: u8 = input.values[input.start + position];
         if (byte == 101 || byte == 69) { break; }
-        if (byte == 46) { if (dot) { return core::result::Err(Error::InvalidSyntax); } dot = true; }
+        if (byte == 46) { if (dot_phase.is_done()) { return core::result::Err(Error::InvalidSyntax); } dot_phase.finish(); }
         else {
             if (byte < 48 || byte > 57) { return core::result::Err(Error::InvalidSyntax); }
-            count += 1; if (dot) { fractional += 1; }
-            if (!significant && byte == 48) { leading += 1; } else { significant = true; }
+            count += 1; if (dot_phase.is_done()) { fractional += 1; }
+            if (!significant_phase.is_done() && byte == 48) { leading += 1; } else { significant_phase.finish(); }
         }
         position += 1;
     }

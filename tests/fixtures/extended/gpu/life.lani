@@ -1,0 +1,36 @@
+module app::main;
+import ext::gpu;
+import core::result;
+import core::slice;
+import core::mem;
+import shaders::life_shaders;
+extern "C" fn probe_life_seed(bytes:ptr,width:i32,height:i32,scenario:i32);
+extern "C" fn probe_life_compare(bytes:ptr,generation:i32);
+extern "C" fn probe_empty();
+fn verify(d:&ext::gpu::Device,layout:&ext::gpu::BindingLayout,pipeline:&ext::gpu::ComputePipeline,width:i32,height:i32,scenario:i32,batch:i32) {
+    let a=d.create_texture(width,height).unwrap(); let b=d.create_texture(width,height).unwrap(); let upload=d.create_buffer(width*height*4).unwrap(); let readback=d.create_buffer(width*height*4).unwrap();
+    let ab:[ext::gpu::Binding;2]=[ext::gpu::Binding::StorageTexture(a.borrow()),ext::gpu::Binding::StorageTexture(b.borrow())];
+    let ba:[ext::gpu::Binding;2]=[ext::gpu::Binding::StorageTexture(b.borrow()),ext::gpu::Binding::StorageTexture(a.borrow())];
+    let forwards=d.create_bind_group(layout,core::slice::whole(ab)).unwrap(); let backwards=d.create_bind_group(layout,core::slice::whole(ba)).unwrap();
+    let packed:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(packed); let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,width*height*4);
+    probe_life_seed(pointer,width,height,scenario); upload.write(0,core::slice::whole(bytes)).unwrap();
+    let initial=d.create_encoder().unwrap(); initial.upload_texture(a.borrow(),upload.borrow(),0).unwrap(); initial.clear_texture(b.borrow()).unwrap(); let seeded=initial.submit().unwrap();
+    // Keep initialization pending while recording the first simulation submission.
+    let generation:i32=0; let front_b:bool=false;
+    while(generation<12) {
+        let encoder=d.create_encoder().unwrap(); let steps:i32=0;
+        while(steps<batch) { let group=forwards; if(front_b) { group=backwards; } encoder.dispatch(pipeline,group.borrow(),(width+7)/8,(height+7)/8,1).unwrap(); front_b=!front_b; generation+=1; steps+=1; }
+        let latest=a; if(front_b) { latest=b; } encoder.download_texture(latest.borrow(),readback.borrow(),0).unwrap(); let work=encoder.submit().unwrap(); assert(work.wait(10000000000).unwrap()); work.close().unwrap();
+        readback.read(0,core::slice::whole(bytes)).unwrap(); probe_life_compare(pointer,generation);
+    }
+    assert(seeded.wait(10000000000).unwrap()); seeded.close().unwrap(); forwards.close().unwrap(); backwards.close().unwrap(); a.close().unwrap(); b.close().unwrap(); upload.close().unwrap(); readback.close().unwrap();
+}
+fn main() -> i32 {
+    let d=ext::gpu::open(0).unwrap(); let kinds:[ext::gpu::BindingKind;2]=[ext::gpu::BindingKind::StorageTexture,ext::gpu::BindingKind::StorageTexture]; let layout=d.create_binding_layout(core::slice::whole(kinds)).unwrap(); let shader=shaders::life_shaders::comp(); let pipeline=d.create_compute_pipeline(core::slice::whole(shader),layout.borrow()).unwrap();
+    verify(d.borrow(),layout.borrow(),pipeline.borrow(),37,23,0,1);
+    verify(d.borrow(),layout.borrow(),pipeline.borrow(),37,23,0,3);
+    let scenario:i32=1; while(scenario<=6) { verify(d.borrow(),layout.borrow(),pipeline.borrow(),11,9,scenario,1); scenario+=1; }
+    verify(d.borrow(),layout.borrow(),pipeline.borrow(),1,1,4,1);
+    verify(d.borrow(),layout.borrow(),pipeline.borrow(),2,3,0,1);
+    pipeline.close().unwrap(); layout.close().unwrap(); d.close().unwrap(); probe_empty(); return 0;
+}

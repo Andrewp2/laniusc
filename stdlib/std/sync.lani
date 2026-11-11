@@ -5,12 +5,14 @@
 // worker process. There is no poisoning: failures are explicit Error values.
 // See docs/stdlib-concurrency.md.
 module std::sync;
+import core::lifecycle;
 import core::mem;
 import core::option;
 import core::result;
 import core::slice;
 import std::linux;
 import std::atomic;
+import std::sync_state;
 
 pub enum Error { Host(i32), InvalidSize, Exhausted, Unmapped, NotLocked, InvalidState, TimedOut, Overflow }
 pub enum Wait { Woken, Changed, Interrupted, TimedOut }
@@ -140,7 +142,7 @@ pub fn futex_wait_either_until_private(first: ptr, first_seen: u32, second: ptr,
 // zeroed, 64-byte aligned (one cache line) and live until unmap. Map and
 // allocate every primitive before spawning the workers that share it; only
 // the creating process allocates or unmaps.
-pub struct Region { base: ptr, bytes: usize, used: usize, live: bool }
+pub struct Region { base: ptr, bytes: usize, used: usize, lifetime: core::lifecycle::Lifetime }
 pub fn map_shared(bytes: usize) -> core::result::Result<Region, Error> {
     if (bytes == 0 || bytes > MAX_REGION_BYTES) { return core::result::Err(Error::InvalidSize); }
     let rounded: usize = (bytes + 4095) / 4096 * 4096;
@@ -149,15 +151,15 @@ pub fn map_shared(bytes: usize) -> core::result::Result<Region, Error> {
     let done: core::result::Result<i64, std::linux::Error> = std::linux::call(9, core::slice::view(args, 6).unwrap());
     if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
     let base: ptr = nowhere + (done.unwrap() as usize);
-    return core::result::Ok(Region { base: base, bytes: rounded, used: 0, live: true });
+    return core::result::Ok(Region { base: base, bytes: rounded, used: 0, lifetime: core::lifecycle::lifetime_start() });
 }
 pub impl Region {
     pub fn borrow(&self) -> &Region { return self; }
     pub fn capacity(&self) -> usize { return self.bytes; }
     pub fn used(&self) -> usize { return self.used; }
-    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn is_live(&self) -> bool { return self.lifetime.is_active(); }
     pub fn allocate(&self, bytes: usize) -> core::result::Result<ptr, Error> {
-        if (!self.live) { return core::result::Err(Error::Unmapped); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Unmapped); }
         if (bytes == 0 || bytes > self.bytes) { return core::result::Err(Error::InvalidSize); }
         let rounded: usize = (bytes + LINE_BYTES - 1) / LINE_BYTES * LINE_BYTES;
         if (rounded > self.bytes - self.used) { return core::result::Err(Error::Exhausted); }
@@ -167,11 +169,11 @@ pub impl Region {
     }
     // Every worker using the region must have been joined first.
     pub fn unmap(&self) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Unmapped); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Unmapped); }
         let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(self.base), word_arg(self.bytes as i64)];
         let done: core::result::Result<i64, std::linux::Error> = std::linux::call(11, core::slice::view(args, 2).unwrap());
         if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
-        self.live = false;
+        self.lifetime.release();
         return core::result::Ok(0);
     }
 }
@@ -191,31 +193,45 @@ pub fn mutex_at(state: ptr) -> Mutex { return Mutex { state: state }; }
 pub impl Mutex {
     pub fn borrow(&self) -> &Mutex { return self; }
     fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }
+    // Re-observe after a failed CAS; the language machine never substitutes
+    // an ordinary enum store for the shared atomic word.
+    fn change(&self, event: std::sync_state::MutexEvent, order: std::atomic::Ordering) -> std::sync_state::MutexChange {
+        while (true) {
+            let transition = std::sync_state::mutex_transition_start();
+            transition.step(std::sync_state::MutexEvent::Observe(self.word().load(std::atomic::Load::Relaxed)));
+            let change = transition.step(event);
+            if (std::atomic::swapped(self.word().compare_exchange(change.expected,change.desired,order,std::atomic::Load::Relaxed))) { return change; }
+        }
+        return std::sync_state::MutexChange { expected:0,desired:0,acquired:false,wake:false };
+    }
     pub fn try_lock(&self) -> bool {
-        return std::atomic::swapped(self.word().compare_exchange(0, 1, std::atomic::Ordering::Acquire, std::atomic::Load::Relaxed));
+        let transition = std::sync_state::mutex_transition_start();
+        transition.step(std::sync_state::MutexEvent::Observe(0));
+        let change = transition.step(std::sync_state::MutexEvent::Try);
+        return std::atomic::swapped(self.word().compare_exchange(change.expected,change.desired,std::atomic::Ordering::Acquire,std::atomic::Load::Relaxed));
     }
     pub fn lock(&self) -> core::result::Result<i32, Error> {
-        if (self.word().swap(1, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
+        if (self.change(std::sync_state::MutexEvent::Lock,std::atomic::Ordering::Acquire).acquired) { return core::result::Ok(0); }
         return self.lock_contended();
     }
     // Acquire in state 2, so the eventual unlock wakes a remaining sleeper.
     fn lock_contended(&self) -> core::result::Result<i32, Error> {
-        while (self.word().swap(2, std::atomic::Ordering::Acquire) != 0) {
-            let slept: core::result::Result<Wait, Error> = futex_wait(self.state, 2);
+        while (!self.change(std::sync_state::MutexEvent::Contend,std::atomic::Ordering::Acquire).acquired) {
+            let slept: core::result::Result<Wait, Error> = futex_wait(self.state, std::sync_state::MUTEX_WAITING);
             if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
         }
         return core::result::Ok(0);
     }
     // Err(TimedOut) leaves the mutex unowned by the caller.
     pub fn lock_until(&self, deadline: Deadline) -> core::result::Result<i32, Error> {
-        if (self.word().swap(1, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
-        while (self.word().swap(2, std::atomic::Ordering::Acquire) != 0) {
-            let slept: core::result::Result<Wait, Error> = futex_wait_until(self.state, 2, deadline);
+        if (self.change(std::sync_state::MutexEvent::Lock,std::atomic::Ordering::Acquire).acquired) { return core::result::Ok(0); }
+        while (!self.change(std::sync_state::MutexEvent::Contend,std::atomic::Ordering::Acquire).acquired) {
+            let slept: core::result::Result<Wait, Error> = futex_wait_until(self.state, std::sync_state::MUTEX_WAITING, deadline);
             if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
             let outcome: Wait = slept.unwrap();
             let expired: bool = match (outcome) { Wait::TimedOut -> true, _ -> false };
             if (expired) {
-                if (self.word().swap(2, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
+                if (self.change(std::sync_state::MutexEvent::Contend,std::atomic::Ordering::Acquire).acquired) { return core::result::Ok(0); }
                 return core::result::Err(Error::TimedOut);
             }
         }
@@ -223,9 +239,9 @@ pub impl Mutex {
     }
     // Err(NotLocked) when the mutex was not locked; its state is unchanged.
     pub fn unlock(&self) -> core::result::Result<i32, Error> {
-        let previous: u32 = self.word().swap(0, std::atomic::Ordering::Release);
-        if (previous == 0) { return core::result::Err(Error::NotLocked); }
-        if (previous == 2) {
+        let change = self.change(std::sync_state::MutexEvent::Unlock,std::atomic::Ordering::Release);
+        if (!change.acquired) { return core::result::Err(Error::NotLocked); }
+        if (change.wake) {
             let woke: core::result::Result<i32, Error> = futex_wake(self.state, 1);
             if (woke.is_err()) { return woke; }
         }
@@ -304,29 +320,49 @@ pub fn once(region: &Region) -> core::result::Result<Once, Error> {
 pub impl Once {
     pub fn borrow(&self) -> &Once { return self; }
     fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }
-    pub fn is_complete(&self) -> bool { return self.word().load(std::atomic::Load::Acquire) == 2; }
+    pub fn is_complete(&self) -> bool { return self.word().load(std::atomic::Load::Acquire) == std::sync_state::ONCE_COMPLETE; }
     pub fn begin(&self) -> core::result::Result<Step, Error> {
         while (true) {
-            let seen: std::atomic::Exchange = self.word().compare_exchange(0, 1, std::atomic::Ordering::Acquire, std::atomic::Load::Acquire);
-            if (std::atomic::swapped(seen)) { return core::result::Ok(Step::Run); }
-            let state: u64 = std::atomic::observed(seen);
-            if (state == 2) { return core::result::Ok(Step::Done); }
-            if (state == 1) { self.word().compare_exchange(1, 3, std::atomic::Ordering::Relaxed, std::atomic::Load::Relaxed); }
-            let slept: core::result::Result<Wait, Error> = futex_wait(self.state, 3);
+            let transition = std::sync_state::once_transition_start();
+            transition.step(std::sync_state::OnceEvent::Observe(self.word().load(std::atomic::Load::Acquire)));
+            let action = transition.step(std::sync_state::OnceEvent::Begin);
+            if (match (action) { std::sync_state::OnceAction::Done -> true, _ -> false }) { return core::result::Ok(Step::Done); }
+            let run: core::option::Option<std::sync_state::OnceChange> = match (action) { std::sync_state::OnceAction::Run(change) -> core::option::Some(change), _ -> core::option::None() };
+            if (run.is_some()) {
+                let change = run.unwrap();
+                if (std::atomic::swapped(self.word().compare_exchange(change.expected,change.desired,std::atomic::Ordering::Acquire,std::atomic::Load::Acquire))) { return core::result::Ok(Step::Run); }
+                continue;
+            }
+            let mark: core::option::Option<std::sync_state::OnceChange> = match (action) { std::sync_state::OnceAction::MarkWaiting(change) -> core::option::Some(change), _ -> core::option::None() };
+            if (mark.is_some()) {
+                let change = mark.unwrap();
+                self.word().compare_exchange(change.expected,change.desired,std::atomic::Ordering::Relaxed,std::atomic::Load::Relaxed);
+            }
+            let wait: u32 = match (action) { std::sync_state::OnceAction::MarkWaiting(change) -> change.desired, std::sync_state::OnceAction::Wait(word) -> word, _ -> 0 };
+            if (wait == 0) { return core::result::Err(Error::InvalidState); }
+            let slept = futex_wait(self.state,wait);
             if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
         }
         return core::result::Err(Error::InvalidState);
     }
-    fn finish(&self, target: u32) -> core::result::Result<i32, Error> {
-        if (std::atomic::swapped(self.word().compare_exchange(1, target, std::atomic::Ordering::Release, std::atomic::Load::Relaxed))) { return core::result::Ok(0); }
-        if (std::atomic::swapped(self.word().compare_exchange(3, target, std::atomic::Ordering::Release, std::atomic::Load::Relaxed))) {
-            return futex_wake(self.state, 2147483647);
+    fn finish(&self, event: std::sync_state::OnceEvent) -> core::result::Result<i32, Error> {
+        while (true) {
+            let transition = std::sync_state::once_transition_start();
+            transition.step(std::sync_state::OnceEvent::Observe(self.word().load(std::atomic::Load::Relaxed)));
+            let action = transition.step(event);
+            let pending: core::option::Option<std::sync_state::OnceChange> = match (action) { std::sync_state::OnceAction::Finish(change) -> core::option::Some(change), _ -> core::option::None() };
+            if (pending.is_none()) { return core::result::Err(Error::InvalidState); }
+            let change = pending.unwrap();
+            if (std::atomic::swapped(self.word().compare_exchange(change.expected,change.desired,std::atomic::Ordering::Release,std::atomic::Load::Relaxed))) {
+                if (change.wake) { return futex_wake(self.state,2147483647); }
+                return core::result::Ok(0);
+            }
         }
         return core::result::Err(Error::InvalidState);
     }
-    // Err(InvalidState) when no initialization is running.
-    pub fn complete(&self) -> core::result::Result<i32, Error> { return self.finish(2); }
-    pub fn abandon(&self) -> core::result::Result<i32, Error> { return self.finish(0); }
+    pub fn complete(&self) -> core::result::Result<i32, Error> { return self.finish(std::sync_state::OnceEvent::Complete); }
+    pub fn abandon(&self) -> core::result::Result<i32, Error> { return self.finish(std::sync_state::OnceEvent::Abandon); }
+
 }
 
 // A lazily initialized shared 64-bit value.
@@ -405,24 +441,25 @@ pub impl Token {
     fn armed(&self) -> std::atomic::Atomic64 { return std::atomic::at64(self.state + 24); }
     // Wakes every wait_until sleeper. Returns whether this call cancelled it.
     pub fn cancel(&self) -> core::result::Result<bool, Error> {
-        let before: u32 = self.flag().swap(1, std::atomic::Ordering::SeqCst);
+        let before: u32 = self.flag().swap(std::sync_state::signaled_flag().word() as u32, std::atomic::Ordering::SeqCst);
         let woke: core::result::Result<i32, Error> = futex_wake(self.state, 2147483647);
         if (woke.is_err()) { return core::result::Err(woke.unwrap_err()); }
-        return core::result::Ok(before == 0);
+        let transition = std::sync_state::observed_flag(before as u64);
+        return core::result::Ok(transition.step(std::sync_state::FlagEvent::Signal));
     }
     // Set the deadline before sharing the token with running workers.
     pub fn cancel_at(&self, deadline: Deadline) {
         std::atomic::at64(self.state + 8).store(deadline.seconds as u64, std::atomic::Store::Relaxed);
         std::atomic::at64(self.state + 16).store(deadline.nanos as u64, std::atomic::Store::Relaxed);
-        self.armed().store(1, std::atomic::Store::Release);
+        self.armed().store(std::sync_state::signaled_flag().word(), std::atomic::Store::Release);
     }
     pub fn deadline(&self) -> core::option::Option<Deadline> {
-        if (self.armed().load(std::atomic::Load::Acquire) == 0) { return core::option::None(); }
+        if (!std::sync_state::observed_flag(self.armed().load(std::atomic::Load::Acquire)).is_signaled()) { return core::option::None(); }
         return core::option::Some(Deadline { seconds: std::atomic::at64(self.state + 8).load(std::atomic::Load::Relaxed) as i64,
             nanos: std::atomic::at64(self.state + 16).load(std::atomic::Load::Relaxed) as i64 });
     }
     pub fn is_cancelled(&self) -> bool {
-        if (self.flag().load(std::atomic::Load::Acquire) != 0) { return true; }
+        if (std::sync_state::observed_flag(self.flag().load(std::atomic::Load::Acquire) as u64).is_signaled()) { return true; }
         let limit: core::option::Option<Deadline> = self.deadline();
         if (limit.is_none()) { return false; }
         let past: core::result::Result<bool, Error> = is_past(limit.unwrap());

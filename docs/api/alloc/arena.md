@@ -19,11 +19,12 @@ Declaration counts: constant: 2; enum: 1; field: 20; function: 5; impl: 1; metho
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::allocator](allocator.md) · [source](../../../stdlib/alloc/arena.lani#L4)
-- [core::layout](../core/layout.md) · [source](../../../stdlib/alloc/arena.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/alloc/arena.lani#L6)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/arena.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/arena.lani#L8)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/alloc/arena.lani#L4)
+- [alloc::allocator](allocator.md) · [source](../../../stdlib/alloc/arena.lani#L5)
+- [core::layout](../core/layout.md) · [source](../../../stdlib/alloc/arena.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/alloc/arena.lani#L7)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/arena.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/arena.lani#L9)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Config
 
-[Source line 13](../../../stdlib/alloc/arena.lani#L13)
+[Source line 14](../../../stdlib/alloc/arena.lani#L14)
 
 ```lanius
 pub struct Config
@@ -39,7 +40,7 @@ pub struct Config
 
 #### field: chunk_size
 
-[Source line 13](../../../stdlib/alloc/arena.lani#L13)
+[Source line 14](../../../stdlib/alloc/arena.lani#L14)
 
 ```lanius
 chunk_size: usize
@@ -47,7 +48,7 @@ chunk_size: usize
 
 #### field: max_retained
 
-[Source line 13](../../../stdlib/alloc/arena.lani#L13)
+[Source line 14](../../../stdlib/alloc/arena.lani#L14)
 
 ```lanius
 max_retained: usize
@@ -55,7 +56,7 @@ max_retained: usize
 
 #### field: max_chunks
 
-[Source line 13](../../../stdlib/alloc/arena.lani#L13)
+[Source line 14](../../../stdlib/alloc/arena.lani#L14)
 
 ```lanius
 max_chunks: i32
@@ -63,7 +64,7 @@ max_chunks: i32
 
 ### struct: Stats
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 pub struct Stats
@@ -71,7 +72,7 @@ pub struct Stats
 
 #### field: retained
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 retained: usize
@@ -79,7 +80,7 @@ retained: usize
 
 #### field: chunks
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 chunks: i32
@@ -87,7 +88,7 @@ chunks: i32
 
 #### field: used
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 used: usize
@@ -95,7 +96,7 @@ used: usize
 
 #### field: requested
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 requested: usize
@@ -103,7 +104,7 @@ requested: usize
 
 #### field: allocations
 
-[Source line 14](../../../stdlib/alloc/arena.lani#L14)
+[Source line 15](../../../stdlib/alloc/arena.lani#L15)
 
 ```lanius
 allocations: usize
@@ -111,7 +112,7 @@ allocations: usize
 
 ### struct: Block
 
-[Source line 15](../../../stdlib/alloc/arena.lani#L15)
+[Source line 16](../../../stdlib/alloc/arena.lani#L16)
 
 ```lanius
 pub struct Block
@@ -119,7 +120,7 @@ pub struct Block
 
 #### field: data
 
-[Source line 15](../../../stdlib/alloc/arena.lani#L15)
+[Source line 16](../../../stdlib/alloc/arena.lani#L16)
 
 ```lanius
 data: ptr
@@ -127,7 +128,7 @@ data: ptr
 
 #### field: length
 
-[Source line 15](../../../stdlib/alloc/arena.lani#L15)
+[Source line 16](../../../stdlib/alloc/arena.lani#L16)
 
 ```lanius
 length: usize
@@ -135,7 +136,7 @@ length: usize
 
 ### enum: Error
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 pub enum Error
@@ -143,7 +144,7 @@ pub enum Error
 
 #### variant: InvalidConfig
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 InvalidConfig
@@ -151,7 +152,7 @@ InvalidConfig
 
 #### variant: InvalidAlignment
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 InvalidAlignment
@@ -159,7 +160,7 @@ InvalidAlignment
 
 #### variant: UnsupportedAlignment
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 UnsupportedAlignment
@@ -167,7 +168,7 @@ UnsupportedAlignment
 
 #### variant: Bounds
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 Bounds
@@ -175,7 +176,7 @@ Bounds
 
 #### variant: SizeOverflow
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 SizeOverflow
@@ -183,7 +184,7 @@ SizeOverflow
 
 #### variant: RetainedLimit
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 RetainedLimit
@@ -191,7 +192,7 @@ RetainedLimit
 
 #### variant: ChunkLimit
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 ChunkLimit
@@ -199,7 +200,7 @@ ChunkLimit
 
 #### variant: AllocationFailed
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 AllocationFailed
@@ -207,7 +208,7 @@ AllocationFailed
 
 #### variant: Destroyed
 
-[Source line 16](../../../stdlib/alloc/arena.lani#L16)
+[Source line 17](../../../stdlib/alloc/arena.lani#L17)
 
 ```lanius
 Destroyed
@@ -215,7 +216,7 @@ Destroyed
 
 ### struct: Arena
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 pub struct Arena
@@ -223,7 +224,7 @@ pub struct Arena
 
 #### field: config
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 config: Config
@@ -231,7 +232,7 @@ config: Config
 
 #### field: head
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 head: ptr
@@ -239,7 +240,7 @@ head: ptr
 
 #### field: tail
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 tail: ptr
@@ -247,7 +248,7 @@ tail: ptr
 
 #### field: current
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 current: ptr
@@ -255,7 +256,7 @@ current: ptr
 
 #### field: retained
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 retained: usize
@@ -263,7 +264,7 @@ retained: usize
 
 #### field: chunks
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 chunks: i32
@@ -271,7 +272,7 @@ chunks: i32
 
 #### field: used
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 used: usize
@@ -279,7 +280,7 @@ used: usize
 
 #### field: requested
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 requested: usize
@@ -287,25 +288,25 @@ requested: usize
 
 #### field: allocations
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
 allocations: usize
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 18](../../../stdlib/alloc/arena.lani#L18)
+[Source line 19](../../../stdlib/alloc/arena.lani#L19)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Constants
 
 ### constant: MAX_CHUNK_BYTES
 
-[Source line 10](../../../stdlib/alloc/arena.lani#L10)
+[Source line 11](../../../stdlib/alloc/arena.lani#L11)
 
 ```lanius
 pub const MAX_CHUNK_BYTES: usize = 2147483647;
@@ -313,7 +314,7 @@ pub const MAX_CHUNK_BYTES: usize = 2147483647;
 
 ### constant: MAX_ALIGNMENT
 
-[Source line 11](../../../stdlib/alloc/arena.lani#L11)
+[Source line 12](../../../stdlib/alloc/arena.lani#L12)
 
 ```lanius
 pub const MAX_ALIGNMENT: usize = 8;
@@ -323,7 +324,7 @@ pub const MAX_ALIGNMENT: usize = 8;
 
 ### function: default_config
 
-[Source line 20](../../../stdlib/alloc/arena.lani#L20)
+[Source line 21](../../../stdlib/alloc/arena.lani#L21)
 
 ```lanius
 pub fn default_config() -> Config
@@ -331,7 +332,7 @@ pub fn default_config() -> Config
 
 ### function: new
 
-[Source line 33](../../../stdlib/alloc/arena.lani#L33)
+[Source line 34](../../../stdlib/alloc/arena.lani#L34)
 
 ```lanius
 pub fn new(config: Config) -> core::result::Result<Arena,Error>
@@ -339,7 +340,7 @@ pub fn new(config: Config) -> core::result::Result<Arena,Error>
 
 ### function: alloc_slice
 
-[Source line 108](../../../stdlib/alloc/arena.lani#L108)
+[Source line 109](../../../stdlib/alloc/arena.lani#L109)
 
 ```lanius
 pub fn alloc_slice<T>(arena: &Arena, count: i32, fill: T) -> core::result::Result<core::slice::View<T>,Error>
@@ -347,7 +348,7 @@ pub fn alloc_slice<T>(arena: &Arena, count: i32, fill: T) -> core::result::Resul
 
 ### function: alloc
 
-[Source line 119](../../../stdlib/alloc/arena.lani#L119)
+[Source line 120](../../../stdlib/alloc/arena.lani#L120)
 
 ```lanius
 pub fn alloc<T>(arena: &Arena, value: T) -> core::result::Result<core::slice::View<T>,Error>
@@ -355,7 +356,7 @@ pub fn alloc<T>(arena: &Arena, value: T) -> core::result::Result<core::slice::Vi
 
 ### function: copy_slice
 
-[Source line 120](../../../stdlib/alloc/arena.lani#L120)
+[Source line 121](../../../stdlib/alloc/arena.lani#L121)
 
 ```lanius
 pub fn copy_slice<T>(arena: &Arena, input: core::slice::View<T>) -> core::result::Result<core::slice::View<T>,Error>
@@ -363,9 +364,9 @@ pub fn copy_slice<T>(arena: &Arena, input: core::slice::View<T>) -> core::result
 
 ## Implementation blocks and public methods
 
-### impl at line 38
+### impl at line 39
 
-[Source line 38](../../../stdlib/alloc/arena.lani#L38)
+[Source line 39](../../../stdlib/alloc/arena.lani#L39)
 
 ```lanius
 pub impl Arena
@@ -373,7 +374,7 @@ pub impl Arena
 
 #### method: borrow
 
-[Source line 39](../../../stdlib/alloc/arena.lani#L39)
+[Source line 40](../../../stdlib/alloc/arena.lani#L40)
 
 ```lanius
 pub fn borrow(&self) -> &Arena
@@ -381,7 +382,7 @@ pub fn borrow(&self) -> &Arena
 
 #### method: is_live
 
-[Source line 40](../../../stdlib/alloc/arena.lani#L40)
+[Source line 41](../../../stdlib/alloc/arena.lani#L41)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -389,7 +390,7 @@ pub fn is_live(&self) -> bool
 
 #### method: stats
 
-[Source line 41](../../../stdlib/alloc/arena.lani#L41)
+[Source line 42](../../../stdlib/alloc/arena.lani#L42)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -397,7 +398,7 @@ pub fn stats(&self) -> Stats
 
 #### method: allocate
 
-[Source line 42](../../../stdlib/alloc/arena.lani#L42)
+[Source line 43](../../../stdlib/alloc/arena.lani#L43)
 
 ```lanius
 pub fn allocate(&self, size: usize, alignment: usize) -> core::result::Result<Block,Error>
@@ -405,7 +406,7 @@ pub fn allocate(&self, size: usize, alignment: usize) -> core::result::Result<Bl
 
 #### method: reset
 
-[Source line 88](../../../stdlib/alloc/arena.lani#L88)
+[Source line 89](../../../stdlib/alloc/arena.lani#L89)
 
 ```lanius
 pub fn reset(&self) -> core::result::Result<bool,Error>
@@ -413,7 +414,7 @@ pub fn reset(&self) -> core::result::Result<bool,Error>
 
 #### method: clear
 
-[Source line 96](../../../stdlib/alloc/arena.lani#L96)
+[Source line 97](../../../stdlib/alloc/arena.lani#L97)
 
 ```lanius
 pub fn clear(&self) -> core::result::Result<bool,Error>
@@ -421,7 +422,7 @@ pub fn clear(&self) -> core::result::Result<bool,Error>
 
 #### method: destroy
 
-[Source line 103](../../../stdlib/alloc/arena.lani#L103)
+[Source line 104](../../../stdlib/alloc/arena.lani#L104)
 
 ```lanius
 pub fn destroy(&self)

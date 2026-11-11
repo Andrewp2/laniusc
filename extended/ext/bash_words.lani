@@ -2,6 +2,8 @@
 // or host calls. Keep input immutable/live and decode output disjoint from it.
 // Logical starts/counts are checked; physical backing remains a precondition.
 module ext::bash_words;
+import core::iter_state;
+import core::parse_state;
 import core::result::Result;
 import core::result::Ok;
 import core::result::Err;
@@ -32,10 +34,10 @@ fn expansion(value:u8) -> bool {
 fn operator(value:u8) -> bool {
     return value==124 || value==38 || value==59 || value==40 || value==41 || value==60 || value==62;
 }
-fn shape(count:i32,quote:i32,incomplete:bool) -> Shape {
+fn shape(count:i32,quoting:core::parse_state::Quoting,incomplete:bool) -> Shape {
     let state:Quote=Quote::Unquoted;
-    if(quote==1) { state=Quote::Single; }
-    if(quote==2) { state=Quote::Double; }
+    if(quoting.single()) { state=Quote::Single; }
+    if(quoting.double()) { state=Quote::Double; }
     return Shape { bytes:count,quote:state,incomplete_escape:incomplete };
 }
 
@@ -45,33 +47,33 @@ fn walk(word:View<u8>,mode:Mode,output:View<u8>,writing:bool) -> Result<Shape,Er
     if(!valid(word)) { return Err(Error::Bounds); }
     let prefix:bool=match(mode) { Mode::Complete->false,Mode::Prefix->true };
     let sink:Sink=Sink { output:output,writing:writing,count:0 };
-    let at:i32=0; let quote:i32=0; let opening:i32=0; let started:bool=false;
+    let at:i32=0; let quoting=core::parse_state::quoting_start(); let opening:i32=0; let started=core::iter_state::completion_start();
     while(at<word.length) {
         let current:u8=byte(word,at);
         if(current==0) { return Err(Error::Nul(at)); }
-        if(quote==1) {
-            if(current==39) { quote=0; }
+        if(quoting.single()) {
+            if(current==39) { quoting.step(current); }
             else { sink.emit(current); }
             at+=1; continue;
         }
         if(current==92) {
             if(at+1==word.length) {
-                if(prefix) { return Ok(shape(sink.count,quote,true)); }
+                if(prefix) { return Ok(shape(sink.count,quoting,true)); }
                 return Err(Error::TrailingEscape(at));
             }
             let next:u8=byte(word,at+1);
             if(next==0) { return Err(Error::Nul(at+1)); }
             if(next==10) { at+=2; continue; }
-            if(quote==2) {
+            if(quoting.double()) {
                 // Bash removes a double-quoted backslash only before these
                 // four bytes or LF. In particular \q and \! retain it;
                 // consuming \! together suppresses the history-syntax gate.
                 if(next!=36 && next!=96 && next!=34 && next!=92) { sink.emit(92); }
             }
-            sink.emit(next); started=true; at+=2; continue;
+            sink.emit(next); started.finish(); at+=2; continue;
         }
-        if(quote==2) {
-            if(current==34) { quote=0; }
+        if(quoting.double()) {
+            if(current==34) { quoting.step(current); }
             else {
                 if(current==36 || current==96 || current==33) { return Err(Error::Expansion(at)); }
                 sink.emit(current);
@@ -79,19 +81,19 @@ fn walk(word:View<u8>,mode:Mode,output:View<u8>,writing:bool) -> Result<Shape,Er
             at+=1; continue;
         }
         if(current==39 || current==34) {
-            quote=1; if(current==34) { quote=2; }
-            opening=at; started=true; at+=1; continue;
+            quoting.step(current);
+            opening=at; started.finish(); at+=1; continue;
         }
         if(current==32 || current==9 || current==10) { return Err(Error::Whitespace(at)); }
         if(operator(current)) { return Err(Error::Operator(at)); }
         // An initial unquoted # starts a shell comment. An empty quoted piece
         // already starts a word, so ''# and a# remain literal spellings.
-        if(current==35 && !started) { return Err(Error::Operator(at)); }
+        if(current==35 && !started.is_done()) { return Err(Error::Operator(at)); }
         if(expansion(current)) { return Err(Error::Expansion(at)); }
-        sink.emit(current); started=true; at+=1;
+        sink.emit(current); started.finish(); at+=1;
     }
-    if(quote!=0 && !prefix) { return Err(Error::UnclosedQuote(opening)); }
-    return Ok(shape(sink.count,quote,false));
+    if(!quoting.unquoted() && !prefix) { return Err(Error::UnclosedQuote(opening)); }
+    return Ok(shape(sink.count,quoting,false));
 }
 
 // Errors carry logical raw-byte offsets, except Bounds and OutputTooSmall:

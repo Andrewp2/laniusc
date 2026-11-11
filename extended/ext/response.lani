@@ -3,6 +3,7 @@
 // must be mutually disjoint; logical views cannot establish physical backing
 // or enforce aliasing. Spans and offsets are relative to their logical views.
 module ext::response;
+import core::parse_state;
 import core::result::Result;
 import core::result::Ok;
 import core::result::Err;
@@ -61,7 +62,7 @@ fn walk(input: View<u8>, bytes: View<u8>, spans: View<Span>, writing: bool, map_
         if (position == input.length) { break; }
         let raw_start: i32 = position;
         let decoded_start: i32 = sink.total;
-        let quote: u8 = 0;
+        let quoting = core::parse_state::quoting_start();
         let quote_start: i32 = 0;
         while (position < input.length) {
             let current: u8 = byte(input,position);
@@ -75,18 +76,18 @@ fn walk(input: View<u8>, bytes: View<u8>, spans: View<Span>, writing: bool, map_
                 if (escaped == 0) { return Err(Error::Nul(position)); }
                 sink.emit(escaped,position); position += 1; continue;
             }
-            if (quote != 0) {
-                if (current == quote) { quote = 0; }
+            if (!quoting.unquoted()) {
+                if (current == quoting.delimiter()) { quoting.step(current); }
                 else { sink.emit(current,position); }
                 position += 1; continue;
             }
             if (current == 39 || current == 34) {
-                quote = current; quote_start = position; position += 1; continue;
+                quoting.step(current); quote_start = position; position += 1; continue;
             }
             if (separator(current)) { break; }
             sink.emit(current,position); position += 1;
         }
-        if (quote != 0) { return Err(Error::UnclosedQuote(quote_start)); }
+        if (!quoting.unquoted()) { return Err(Error::UnclosedQuote(quote_start)); }
         sink.finish(raw_start,position,decoded_start);
     }
     return Ok(Walk {

@@ -21,11 +21,13 @@ Declaration counts: enum: 2; field: 27; function: 3; impl: 1; method: 13; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_plan.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_plan.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/archive_plan.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/archive_plan.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/archive_plan.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/archive_plan.lani#L3)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/archive_plan.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_plan.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_plan.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/archive_plan.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/archive_plan.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/archive_plan.lani#L9)
 
 ## Types, fields and variants
 
@@ -33,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Kind
 
-[Source line 9](../../../extended/ext/archive_plan.lani#L9)
+[Source line 11](../../../extended/ext/archive_plan.lani#L11)
 
 ```lanius
 pub enum Kind
@@ -41,7 +43,7 @@ pub enum Kind
 
 #### variant: File
 
-[Source line 9](../../../extended/ext/archive_plan.lani#L9)
+[Source line 11](../../../extended/ext/archive_plan.lani#L11)
 
 ```lanius
 File
@@ -49,7 +51,7 @@ File
 
 #### variant: Directory
 
-[Source line 9](../../../extended/ext/archive_plan.lani#L9)
+[Source line 11](../../../extended/ext/archive_plan.lani#L11)
 
 ```lanius
 Directory
@@ -57,7 +59,7 @@ Directory
 
 ### enum: ErrorKind
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 pub enum ErrorKind
@@ -65,7 +67,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Bounds
@@ -73,7 +75,7 @@ Bounds
 
 #### variant: Limits
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Limits
@@ -81,7 +83,7 @@ Limits
 
 #### variant: Path
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Path
@@ -89,7 +91,7 @@ Path
 
 #### variant: Component
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Component
@@ -97,7 +99,7 @@ Component
 
 #### variant: Depth
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Depth
@@ -105,7 +107,7 @@ Depth
 
 #### variant: Entries
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Entries
@@ -113,7 +115,7 @@ Entries
 
 #### variant: Nodes
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Nodes
@@ -121,7 +123,7 @@ Nodes
 
 #### variant: Paths
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Paths
@@ -129,7 +131,7 @@ Paths
 
 #### variant: Work
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Work
@@ -137,7 +139,7 @@ Work
 
 #### variant: Duplicate
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Duplicate
@@ -145,7 +147,7 @@ Duplicate
 
 #### variant: Conflict
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Conflict
@@ -153,7 +155,7 @@ Conflict
 
 #### variant: Allocation
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 Allocation
@@ -161,7 +163,7 @@ Allocation
 
 #### variant: InvalidState
 
-[Source line 10](../../../extended/ext/archive_plan.lani#L10)
+[Source line 12](../../../extended/ext/archive_plan.lani#L12)
 
 ```lanius
 InvalidState
@@ -169,7 +171,7 @@ InvalidState
 
 ### struct: Error
 
-[Source line 11](../../../extended/ext/archive_plan.lani#L11)
+[Source line 13](../../../extended/ext/archive_plan.lani#L13)
 
 ```lanius
 pub struct Error
@@ -177,7 +179,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 11](../../../extended/ext/archive_plan.lani#L11)
+[Source line 13](../../../extended/ext/archive_plan.lani#L13)
 
 ```lanius
 kind: ErrorKind
@@ -185,7 +187,7 @@ kind: ErrorKind
 
 #### field: ordinal
 
-[Source line 11](../../../extended/ext/archive_plan.lani#L11)
+[Source line 13](../../../extended/ext/archive_plan.lani#L13)
 
 ```lanius
 ordinal: i32
@@ -193,7 +195,7 @@ ordinal: i32
 
 #### field: offset
 
-[Source line 11](../../../extended/ext/archive_plan.lani#L11)
+[Source line 13](../../../extended/ext/archive_plan.lani#L13)
 
 ```lanius
 offset: i32
@@ -201,7 +203,7 @@ offset: i32
 
 ### struct: Limits
 
-[Source line 12](../../../extended/ext/archive_plan.lani#L12)
+[Source line 14](../../../extended/ext/archive_plan.lani#L14)
 
 ```lanius
 pub struct Limits
@@ -209,7 +211,7 @@ pub struct Limits
 
 #### field: max_entries
 
-[Source line 13](../../../extended/ext/archive_plan.lani#L13)
+[Source line 15](../../../extended/ext/archive_plan.lani#L15)
 
 ```lanius
 max_entries: i32
@@ -217,7 +219,7 @@ max_entries: i32
 
 #### field: max_nodes
 
-[Source line 13](../../../extended/ext/archive_plan.lani#L13)
+[Source line 15](../../../extended/ext/archive_plan.lani#L15)
 
 ```lanius
 max_nodes: i32
@@ -225,7 +227,7 @@ max_nodes: i32
 
 #### field: max_path_bytes
 
-[Source line 13](../../../extended/ext/archive_plan.lani#L13)
+[Source line 15](../../../extended/ext/archive_plan.lani#L15)
 
 ```lanius
 max_path_bytes: i32
@@ -233,7 +235,7 @@ max_path_bytes: i32
 
 #### field: max_component_bytes
 
-[Source line 13](../../../extended/ext/archive_plan.lani#L13)
+[Source line 15](../../../extended/ext/archive_plan.lani#L15)
 
 ```lanius
 max_component_bytes: i32
@@ -241,7 +243,7 @@ max_component_bytes: i32
 
 #### field: max_depth
 
-[Source line 14](../../../extended/ext/archive_plan.lani#L14)
+[Source line 16](../../../extended/ext/archive_plan.lani#L16)
 
 ```lanius
 max_depth: i32
@@ -249,7 +251,7 @@ max_depth: i32
 
 #### field: max_stored_path_bytes
 
-[Source line 14](../../../extended/ext/archive_plan.lani#L14)
+[Source line 16](../../../extended/ext/archive_plan.lani#L16)
 
 ```lanius
 max_stored_path_bytes: i32
@@ -257,7 +259,7 @@ max_stored_path_bytes: i32
 
 #### field: max_work
 
-[Source line 14](../../../extended/ext/archive_plan.lani#L14)
+[Source line 16](../../../extended/ext/archive_plan.lani#L16)
 
 ```lanius
 max_work: u64
@@ -265,7 +267,7 @@ max_work: u64
 
 ### struct: Node
 
-[Source line 16](../../../extended/ext/archive_plan.lani#L16)
+[Source line 18](../../../extended/ext/archive_plan.lani#L18)
 
 ```lanius
 pub struct Node
@@ -273,7 +275,7 @@ pub struct Node
 
 #### field: parent
 
-[Source line 17](../../../extended/ext/archive_plan.lani#L17)
+[Source line 19](../../../extended/ext/archive_plan.lani#L19)
 
 ```lanius
 parent: i32
@@ -281,7 +283,7 @@ parent: i32
 
 #### field: kind
 
-[Source line 17](../../../extended/ext/archive_plan.lani#L17)
+[Source line 19](../../../extended/ext/archive_plan.lani#L19)
 
 ```lanius
 kind: Kind
@@ -289,7 +291,7 @@ kind: Kind
 
 #### field: explicit
 
-[Source line 17](../../../extended/ext/archive_plan.lani#L17)
+[Source line 19](../../../extended/ext/archive_plan.lani#L19)
 
 ```lanius
 explicit: bool
@@ -297,7 +299,7 @@ explicit: bool
 
 #### field: ordinal
 
-[Source line 17](../../../extended/ext/archive_plan.lani#L17)
+[Source line 19](../../../extended/ext/archive_plan.lani#L19)
 
 ```lanius
 ordinal: i32
@@ -305,7 +307,7 @@ ordinal: i32
 
 #### field: path_start
 
-[Source line 18](../../../extended/ext/archive_plan.lani#L18)
+[Source line 20](../../../extended/ext/archive_plan.lani#L20)
 
 ```lanius
 path_start: i32
@@ -313,7 +315,7 @@ path_start: i32
 
 #### field: path_length
 
-[Source line 18](../../../extended/ext/archive_plan.lani#L18)
+[Source line 20](../../../extended/ext/archive_plan.lani#L20)
 
 ```lanius
 path_length: i32
@@ -321,7 +323,7 @@ path_length: i32
 
 #### field: component_start
 
-[Source line 18](../../../extended/ext/archive_plan.lani#L18)
+[Source line 20](../../../extended/ext/archive_plan.lani#L20)
 
 ```lanius
 component_start: i32
@@ -329,7 +331,7 @@ component_start: i32
 
 #### field: component_length
 
-[Source line 18](../../../extended/ext/archive_plan.lani#L18)
+[Source line 20](../../../extended/ext/archive_plan.lani#L20)
 
 ```lanius
 component_length: i32
@@ -337,7 +339,7 @@ component_length: i32
 
 #### field: depth
 
-[Source line 18](../../../extended/ext/archive_plan.lani#L18)
+[Source line 20](../../../extended/ext/archive_plan.lani#L20)
 
 ```lanius
 depth: i32
@@ -345,7 +347,7 @@ depth: i32
 
 ### struct: Plan
 
-[Source line 20](../../../extended/ext/archive_plan.lani#L20)
+[Source line 22](../../../extended/ext/archive_plan.lani#L22)
 
 ```lanius
 pub struct Plan
@@ -353,7 +355,7 @@ pub struct Plan
 
 #### field: nodes
 
-[Source line 21](../../../extended/ext/archive_plan.lani#L21)
+[Source line 23](../../../extended/ext/archive_plan.lani#L23)
 
 ```lanius
 nodes: alloc::vec::Vec<Node>
@@ -361,7 +363,7 @@ nodes: alloc::vec::Vec<Node>
 
 #### field: paths
 
-[Source line 21](../../../extended/ext/archive_plan.lani#L21)
+[Source line 23](../../../extended/ext/archive_plan.lani#L23)
 
 ```lanius
 paths: alloc::vec::Vec<u8>
@@ -369,7 +371,7 @@ paths: alloc::vec::Vec<u8>
 
 #### field: entries
 
-[Source line 21](../../../extended/ext/archive_plan.lani#L21)
+[Source line 23](../../../extended/ext/archive_plan.lani#L23)
 
 ```lanius
 entries: alloc::vec::Vec<i32>
@@ -377,7 +379,7 @@ entries: alloc::vec::Vec<i32>
 
 #### field: limits
 
-[Source line 22](../../../extended/ext/archive_plan.lani#L22)
+[Source line 24](../../../extended/ext/archive_plan.lani#L24)
 
 ```lanius
 limits: Limits
@@ -385,31 +387,31 @@ limits: Limits
 
 #### field: work
 
-[Source line 22](../../../extended/ext/archive_plan.lani#L22)
+[Source line 24](../../../extended/ext/archive_plan.lani#L24)
 
 ```lanius
 work: u64
 ```
 
-#### field: sealed
+#### field: sealed_completion
 
-[Source line 22](../../../extended/ext/archive_plan.lani#L22)
+[Source line 24](../../../extended/ext/archive_plan.lani#L24)
 
 ```lanius
-sealed: bool
+sealed_completion: core::iter_state::Completion
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 22](../../../extended/ext/archive_plan.lani#L22)
+[Source line 24](../../../extended/ext/archive_plan.lani#L24)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: failure
 
-[Source line 22](../../../extended/ext/archive_plan.lani#L22)
+[Source line 24](../../../extended/ext/archive_plan.lani#L24)
 
 ```lanius
 failure: core::option::Option<Error>
@@ -419,7 +421,7 @@ failure: core::option::Option<Error>
 
 ### function: default_limits
 
-[Source line 26](../../../extended/ext/archive_plan.lani#L26)
+[Source line 28](../../../extended/ext/archive_plan.lani#L28)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -427,7 +429,7 @@ pub fn default_limits() -> Limits
 
 ### function: reservation_bytes
 
-[Source line 31](../../../extended/ext/archive_plan.lani#L31)
+[Source line 33](../../../extended/ext/archive_plan.lani#L33)
 
 ```lanius
 pub fn reservation_bytes(limits: Limits) -> core::result::Result<u64,Error>
@@ -435,7 +437,7 @@ pub fn reservation_bytes(limits: Limits) -> core::result::Result<u64,Error>
 
 ### function: new
 
-[Source line 44](../../../extended/ext/archive_plan.lani#L44)
+[Source line 46](../../../extended/ext/archive_plan.lani#L46)
 
 ```lanius
 pub fn new(limits: Limits) -> core::result::Result<Plan,Error>
@@ -443,9 +445,9 @@ pub fn new(limits: Limits) -> core::result::Result<Plan,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 63
+### impl at line 65
 
-[Source line 63](../../../extended/ext/archive_plan.lani#L63)
+[Source line 65](../../../extended/ext/archive_plan.lani#L65)
 
 ```lanius
 pub impl Plan
@@ -453,7 +455,7 @@ pub impl Plan
 
 #### method: borrow
 
-[Source line 64](../../../extended/ext/archive_plan.lani#L64)
+[Source line 66](../../../extended/ext/archive_plan.lani#L66)
 
 ```lanius
 pub fn borrow(&self) -> &Plan
@@ -461,7 +463,7 @@ pub fn borrow(&self) -> &Plan
 
 #### method: node_count
 
-[Source line 65](../../../extended/ext/archive_plan.lani#L65)
+[Source line 67](../../../extended/ext/archive_plan.lani#L67)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -469,7 +471,7 @@ pub fn node_count(&self) -> i32
 
 #### method: entry_count
 
-[Source line 66](../../../extended/ext/archive_plan.lani#L66)
+[Source line 68](../../../extended/ext/archive_plan.lani#L68)
 
 ```lanius
 pub fn entry_count(&self) -> i32
@@ -477,7 +479,7 @@ pub fn entry_count(&self) -> i32
 
 #### method: work_used
 
-[Source line 67](../../../extended/ext/archive_plan.lani#L67)
+[Source line 69](../../../extended/ext/archive_plan.lani#L69)
 
 ```lanius
 pub fn work_used(&self) -> u64
@@ -485,7 +487,7 @@ pub fn work_used(&self) -> u64
 
 #### method: is_sealed
 
-[Source line 68](../../../extended/ext/archive_plan.lani#L68)
+[Source line 70](../../../extended/ext/archive_plan.lani#L70)
 
 ```lanius
 pub fn is_sealed(&self) -> bool
@@ -493,7 +495,7 @@ pub fn is_sealed(&self) -> bool
 
 #### method: reserved_bytes
 
-[Source line 69](../../../extended/ext/archive_plan.lani#L69)
+[Source line 71](../../../extended/ext/archive_plan.lani#L71)
 
 ```lanius
 pub fn reserved_bytes(&self) -> u64
@@ -501,7 +503,7 @@ pub fn reserved_bytes(&self) -> u64
 
 #### method: node
 
-[Source line 73](../../../extended/ext/archive_plan.lani#L73)
+[Source line 75](../../../extended/ext/archive_plan.lani#L75)
 
 ```lanius
 pub fn node(&self, index: i32) -> core::option::Option<Node>
@@ -509,7 +511,7 @@ pub fn node(&self, index: i32) -> core::option::Option<Node>
 
 #### method: entry
 
-[Source line 76](../../../extended/ext/archive_plan.lani#L76)
+[Source line 78](../../../extended/ext/archive_plan.lani#L78)
 
 ```lanius
 pub fn entry(&self, index: i32) -> core::option::Option<i32>
@@ -517,7 +519,7 @@ pub fn entry(&self, index: i32) -> core::option::Option<i32>
 
 #### method: path
 
-[Source line 79](../../../extended/ext/archive_plan.lani#L79)
+[Source line 81](../../../extended/ext/archive_plan.lani#L81)
 
 ```lanius
 pub fn path(&self, index: i32) -> core::option::Option<core::slice::View<u8>>
@@ -525,7 +527,7 @@ pub fn path(&self, index: i32) -> core::option::Option<core::slice::View<u8>>
 
 #### method: component
 
-[Source line 83](../../../extended/ext/archive_plan.lani#L83)
+[Source line 85](../../../extended/ext/archive_plan.lani#L85)
 
 ```lanius
 pub fn component(&self, index: i32) -> core::option::Option<core::slice::View<u8>>
@@ -533,7 +535,7 @@ pub fn component(&self, index: i32) -> core::option::Option<core::slice::View<u8
 
 #### method: add
 
-[Source line 179](../../../extended/ext/archive_plan.lani#L179)
+[Source line 181](../../../extended/ext/archive_plan.lani#L181)
 
 ```lanius
 pub fn add(&self, path: core::slice::View<u8>, kind: Kind, ordinal: i32) -> core::result::Result<i32,Error>
@@ -541,7 +543,7 @@ pub fn add(&self, path: core::slice::View<u8>, kind: Kind, ordinal: i32) -> core
 
 #### method: seal
 
-[Source line 205](../../../extended/ext/archive_plan.lani#L205)
+[Source line 207](../../../extended/ext/archive_plan.lani#L207)
 
 ```lanius
 pub fn seal(&self) -> core::result::Result<i32,Error>
@@ -549,7 +551,7 @@ pub fn seal(&self) -> core::result::Result<i32,Error>
 
 #### method: destroy
 
-[Source line 211](../../../extended/ext/archive_plan.lani#L211)
+[Source line 213](../../../extended/ext/archive_plan.lani#L213)
 
 ```lanius
 pub fn destroy(&self)

@@ -18,12 +18,13 @@ Declaration counts: field: 5; function: 2; impl: 1; method: 1; struct: 1.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_tail.lani#L8)
-- [core::io](../core/io.md) · [source](../../../extended/ext/text_tail.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_tail.lani#L10)
-- [core::result](../core/result.md) · [source](../../../extended/ext/text_tail.lani#L11)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_tail.lani#L12)
-- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_tail.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/text_tail.lani#L8)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_tail.lani#L9)
+- [core::io](../core/io.md) · [source](../../../extended/ext/text_tail.lani#L10)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_tail.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/text_tail.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_tail.lani#L13)
+- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_tail.lani#L14)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Options
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 pub struct Options
@@ -39,7 +40,7 @@ pub struct Options
 
 #### field: lines
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 lines: bool
@@ -47,7 +48,7 @@ lines: bool
 
 #### field: count
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 count: u64
@@ -55,7 +56,7 @@ count: u64
 
 #### field: from_start
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 from_start: bool
@@ -63,7 +64,7 @@ from_start: bool
 
 #### field: eol
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 eol: u8
@@ -71,7 +72,7 @@ eol: u8
 
 #### field: pipe
 
-[Source line 17](../../../extended/ext/text_tail.lani#L17)
+[Source line 18](../../../extended/ext/text_tail.lani#L18)
 
 ```lanius
 pipe: bool
@@ -81,7 +82,7 @@ pipe: bool
 
 ### function: default_options
 
-[Source line 19](../../../extended/ext/text_tail.lani#L19)
+[Source line 20](../../../extended/ext/text_tail.lani#L20)
 
 ```lanius
 pub fn default_options() -> Options
@@ -89,7 +90,7 @@ pub fn default_options() -> Options
 
 ### function: copy
 
-[Source line 27](../../../extended/ext/text_tail.lani#L27)
+[Source line 28](../../../extended/ext/text_tail.lani#L28)
 
 ```lanius
 pub fn copy(fd: i32, o: Options) -> i32
@@ -97,9 +98,9 @@ pub fn copy(fd: i32, o: Options) -> i32
 
 ## Implementation blocks and public methods
 
-### impl at line 18
+### impl at line 19
 
-[Source line 18](../../../extended/ext/text_tail.lani#L18)
+[Source line 19](../../../extended/ext/text_tail.lani#L19)
 
 ```lanius
 pub impl Options
@@ -107,7 +108,7 @@ pub impl Options
 
 #### method: borrow
 
-[Source line 18](../../../extended/ext/text_tail.lani#L18)
+[Source line 19](../../../extended/ext/text_tail.lani#L19)
 
 ```lanius
 pub fn borrow(&self) -> &Options

@@ -14,19 +14,21 @@ Streaming MessagePack: a chunk-fed Decoder (sticky typed errors with u64 offsets
 
 - [extended-msgpack](../../extended-msgpack.md)
 
-Declaration counts: enum: 3; field: 41; function: 7; impl: 4; method: 44; struct: 7; variant: 33.
+Declaration counts: enum: 3; field: 40; function: 7; impl: 4; method: 44; struct: 7; variant: 33.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/msgpack.lani#L8)
-- [core::io](../core/io.md) · [source](../../../extended/ext/msgpack.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/msgpack.lani#L10)
-- [core::option](../core/option.md) · [source](../../../extended/ext/msgpack.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/msgpack.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/msgpack.lani#L13)
-- [core::text](../core/text.md) · [source](../../../extended/ext/msgpack.lani#L14)
+- [core::stream_state](../core/stream_state.md) · [source](../../../extended/ext/msgpack.lani#L8)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/msgpack.lani#L9)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/msgpack.lani#L10)
+- [core::io](../core/io.md) · [source](../../../extended/ext/msgpack.lani#L11)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/msgpack.lani#L12)
+- [core::option](../core/option.md) · [source](../../../extended/ext/msgpack.lani#L13)
+- [core::result](../core/result.md) · [source](../../../extended/ext/msgpack.lani#L14)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/msgpack.lani#L15)
+- [core::text](../core/text.md) · [source](../../../extended/ext/msgpack.lani#L16)
 
 ## Types, fields and variants
 
@@ -34,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Event
 
-[Source line 16](../../../extended/ext/msgpack.lani#L16)
+[Source line 18](../../../extended/ext/msgpack.lani#L18)
 
 ```lanius
 pub enum Event
@@ -42,7 +44,7 @@ pub enum Event
 
 #### variant: Nil
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Nil
@@ -50,7 +52,7 @@ Nil
 
 #### variant: Boolean
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Boolean(bool)
@@ -58,7 +60,7 @@ Boolean(bool)
 
 #### variant: Unsigned
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Unsigned(u64)
@@ -66,7 +68,7 @@ Unsigned(u64)
 
 #### variant: Integer
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Integer(i64)
@@ -74,7 +76,7 @@ Integer(i64)
 
 #### variant: Float32
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Float32(u32)
@@ -82,7 +84,7 @@ Float32(u32)
 
 #### variant: Float64
 
-[Source line 17](../../../extended/ext/msgpack.lani#L17)
+[Source line 19](../../../extended/ext/msgpack.lani#L19)
 
 ```lanius
 Float64(u64)
@@ -90,7 +92,7 @@ Float64(u64)
 
 #### variant: Str
 
-[Source line 18](../../../extended/ext/msgpack.lani#L18)
+[Source line 20](../../../extended/ext/msgpack.lani#L20)
 
 ```lanius
 Str(core::slice::View<u8>)
@@ -98,7 +100,7 @@ Str(core::slice::View<u8>)
 
 #### variant: Bin
 
-[Source line 18](../../../extended/ext/msgpack.lani#L18)
+[Source line 20](../../../extended/ext/msgpack.lani#L20)
 
 ```lanius
 Bin(core::slice::View<u8>)
@@ -106,7 +108,7 @@ Bin(core::slice::View<u8>)
 
 #### variant: Ext
 
-[Source line 18](../../../extended/ext/msgpack.lani#L18)
+[Source line 20](../../../extended/ext/msgpack.lani#L20)
 
 ```lanius
 Ext(i8, core::slice::View<u8>)
@@ -114,7 +116,7 @@ Ext(i8, core::slice::View<u8>)
 
 #### variant: Array
 
-[Source line 19](../../../extended/ext/msgpack.lani#L19)
+[Source line 21](../../../extended/ext/msgpack.lani#L21)
 
 ```lanius
 Array(u32)
@@ -122,7 +124,7 @@ Array(u32)
 
 #### variant: Map
 
-[Source line 19](../../../extended/ext/msgpack.lani#L19)
+[Source line 21](../../../extended/ext/msgpack.lani#L21)
 
 ```lanius
 Map(u32)
@@ -130,7 +132,7 @@ Map(u32)
 
 #### variant: End
 
-[Source line 19](../../../extended/ext/msgpack.lani#L19)
+[Source line 21](../../../extended/ext/msgpack.lani#L21)
 
 ```lanius
 End
@@ -138,7 +140,7 @@ End
 
 ### enum: ErrorKind
 
-[Source line 21](../../../extended/ext/msgpack.lani#L21)
+[Source line 23](../../../extended/ext/msgpack.lani#L23)
 
 ```lanius
 pub enum ErrorKind
@@ -146,7 +148,7 @@ pub enum ErrorKind
 
 #### variant: InvalidOptions
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 InvalidOptions
@@ -154,7 +156,7 @@ InvalidOptions
 
 #### variant: AllocationFailed
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 AllocationFailed
@@ -162,7 +164,7 @@ AllocationFailed
 
 #### variant: Bounds
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 Bounds
@@ -170,7 +172,7 @@ Bounds
 
 #### variant: Finished
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 Finished
@@ -178,7 +180,7 @@ Finished
 
 #### variant: InputLimit
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 InputLimit
@@ -186,7 +188,7 @@ InputLimit
 
 #### variant: OutputLimit
 
-[Source line 22](../../../extended/ext/msgpack.lani#L22)
+[Source line 24](../../../extended/ext/msgpack.lani#L24)
 
 ```lanius
 OutputLimit
@@ -194,7 +196,7 @@ OutputLimit
 
 #### variant: DepthLimit
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 DepthLimit
@@ -202,7 +204,7 @@ DepthLimit
 
 #### variant: ItemLimit
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 ItemLimit
@@ -210,7 +212,7 @@ ItemLimit
 
 #### variant: StringLimit
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 StringLimit
@@ -218,7 +220,7 @@ StringLimit
 
 #### variant: UnexpectedEnd
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 UnexpectedEnd
@@ -226,7 +228,7 @@ UnexpectedEnd
 
 #### variant: InvalidByte
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 InvalidByte
@@ -234,7 +236,7 @@ InvalidByte
 
 #### variant: InvalidUtf8
 
-[Source line 23](../../../extended/ext/msgpack.lani#L23)
+[Source line 25](../../../extended/ext/msgpack.lani#L25)
 
 ```lanius
 InvalidUtf8
@@ -242,7 +244,7 @@ InvalidUtf8
 
 #### variant: InvalidTimestamp
 
-[Source line 24](../../../extended/ext/msgpack.lani#L24)
+[Source line 26](../../../extended/ext/msgpack.lani#L26)
 
 ```lanius
 InvalidTimestamp
@@ -250,7 +252,7 @@ InvalidTimestamp
 
 #### variant: NotCanonical
 
-[Source line 24](../../../extended/ext/msgpack.lani#L24)
+[Source line 26](../../../extended/ext/msgpack.lani#L26)
 
 ```lanius
 NotCanonical
@@ -258,7 +260,7 @@ NotCanonical
 
 #### variant: TrailingData
 
-[Source line 24](../../../extended/ext/msgpack.lani#L24)
+[Source line 26](../../../extended/ext/msgpack.lani#L26)
 
 ```lanius
 TrailingData
@@ -266,7 +268,7 @@ TrailingData
 
 #### variant: InvalidPlacement
 
-[Source line 24](../../../extended/ext/msgpack.lani#L24)
+[Source line 26](../../../extended/ext/msgpack.lani#L26)
 
 ```lanius
 InvalidPlacement
@@ -274,7 +276,7 @@ InvalidPlacement
 
 #### variant: CountMismatch
 
-[Source line 24](../../../extended/ext/msgpack.lani#L24)
+[Source line 26](../../../extended/ext/msgpack.lani#L26)
 
 ```lanius
 CountMismatch
@@ -282,7 +284,7 @@ CountMismatch
 
 #### variant: OddMap
 
-[Source line 25](../../../extended/ext/msgpack.lani#L25)
+[Source line 27](../../../extended/ext/msgpack.lani#L27)
 
 ```lanius
 OddMap
@@ -290,7 +292,7 @@ OddMap
 
 #### variant: InvalidValue
 
-[Source line 25](../../../extended/ext/msgpack.lani#L25)
+[Source line 27](../../../extended/ext/msgpack.lani#L27)
 
 ```lanius
 InvalidValue
@@ -298,7 +300,7 @@ InvalidValue
 
 ### struct: Error
 
-[Source line 27](../../../extended/ext/msgpack.lani#L27)
+[Source line 29](../../../extended/ext/msgpack.lani#L29)
 
 ```lanius
 pub struct Error
@@ -306,7 +308,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 27](../../../extended/ext/msgpack.lani#L27)
+[Source line 29](../../../extended/ext/msgpack.lani#L29)
 
 ```lanius
 kind: ErrorKind
@@ -314,7 +316,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 27](../../../extended/ext/msgpack.lani#L27)
+[Source line 29](../../../extended/ext/msgpack.lani#L29)
 
 ```lanius
 offset: u64
@@ -322,7 +324,7 @@ offset: u64
 
 ### struct: Timestamp
 
-[Source line 28](../../../extended/ext/msgpack.lani#L28)
+[Source line 30](../../../extended/ext/msgpack.lani#L30)
 
 ```lanius
 pub struct Timestamp
@@ -330,7 +332,7 @@ pub struct Timestamp
 
 #### field: seconds
 
-[Source line 28](../../../extended/ext/msgpack.lani#L28)
+[Source line 30](../../../extended/ext/msgpack.lani#L30)
 
 ```lanius
 seconds: i64
@@ -338,7 +340,7 @@ seconds: i64
 
 #### field: nanoseconds
 
-[Source line 28](../../../extended/ext/msgpack.lani#L28)
+[Source line 30](../../../extended/ext/msgpack.lani#L30)
 
 ```lanius
 nanoseconds: u32
@@ -346,7 +348,7 @@ nanoseconds: u32
 
 ### struct: Options
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 pub struct Options
@@ -354,7 +356,7 @@ pub struct Options
 
 #### field: max_depth
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 max_depth: i32
@@ -362,7 +364,7 @@ max_depth: i32
 
 #### field: max_items
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 max_items: u64
@@ -370,7 +372,7 @@ max_items: u64
 
 #### field: max_string_bytes
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 max_string_bytes: i32
@@ -378,7 +380,7 @@ max_string_bytes: i32
 
 #### field: max_input
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 max_input: u64
@@ -386,7 +388,7 @@ max_input: u64
 
 #### field: sequence
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 sequence: bool
@@ -394,7 +396,7 @@ sequence: bool
 
 #### field: canonical
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 canonical: bool
@@ -402,7 +404,7 @@ canonical: bool
 
 #### field: timestamps
 
-[Source line 32](../../../extended/ext/msgpack.lani#L32)
+[Source line 34](../../../extended/ext/msgpack.lani#L34)
 
 ```lanius
 timestamps: bool
@@ -410,7 +412,7 @@ timestamps: bool
 
 ### struct: WriterOptions
 
-[Source line 33](../../../extended/ext/msgpack.lani#L33)
+[Source line 35](../../../extended/ext/msgpack.lani#L35)
 
 ```lanius
 pub struct WriterOptions
@@ -418,7 +420,7 @@ pub struct WriterOptions
 
 #### field: max_depth
 
-[Source line 33](../../../extended/ext/msgpack.lani#L33)
+[Source line 35](../../../extended/ext/msgpack.lani#L35)
 
 ```lanius
 max_depth: i32
@@ -426,7 +428,7 @@ max_depth: i32
 
 #### field: max_output_bytes
 
-[Source line 33](../../../extended/ext/msgpack.lani#L33)
+[Source line 35](../../../extended/ext/msgpack.lani#L35)
 
 ```lanius
 max_output_bytes: i32
@@ -434,7 +436,7 @@ max_output_bytes: i32
 
 ### struct: Decoder
 
-[Source line 109](../../../extended/ext/msgpack.lani#L109)
+[Source line 111](../../../extended/ext/msgpack.lani#L111)
 
 ```lanius
 pub struct Decoder
@@ -442,7 +444,7 @@ pub struct Decoder
 
 #### field: options
 
-[Source line 110](../../../extended/ext/msgpack.lani#L110)
+[Source line 112](../../../extended/ext/msgpack.lani#L112)
 
 ```lanius
 options: Options
@@ -450,7 +452,7 @@ options: Options
 
 #### field: buf
 
-[Source line 110](../../../extended/ext/msgpack.lani#L110)
+[Source line 112](../../../extended/ext/msgpack.lani#L112)
 
 ```lanius
 buf: alloc::vec::Vec<u8>
@@ -458,7 +460,7 @@ buf: alloc::vec::Vec<u8>
 
 #### field: begin
 
-[Source line 110](../../../extended/ext/msgpack.lani#L110)
+[Source line 112](../../../extended/ext/msgpack.lani#L112)
 
 ```lanius
 begin: i32
@@ -466,7 +468,7 @@ begin: i32
 
 #### field: base
 
-[Source line 110](../../../extended/ext/msgpack.lani#L110)
+[Source line 112](../../../extended/ext/msgpack.lani#L112)
 
 ```lanius
 base: u64
@@ -474,7 +476,7 @@ base: u64
 
 #### field: remaining
 
-[Source line 111](../../../extended/ext/msgpack.lani#L111)
+[Source line 113](../../../extended/ext/msgpack.lani#L113)
 
 ```lanius
 remaining: alloc::vec::Vec<u64>
@@ -482,7 +484,7 @@ remaining: alloc::vec::Vec<u64>
 
 #### field: items
 
-[Source line 112](../../../extended/ext/msgpack.lani#L112)
+[Source line 114](../../../extended/ext/msgpack.lani#L114)
 
 ```lanius
 items: u64
@@ -490,31 +492,23 @@ items: u64
 
 #### field: roots
 
-[Source line 112](../../../extended/ext/msgpack.lani#L112)
+[Source line 114](../../../extended/ext/msgpack.lani#L114)
 
 ```lanius
 roots: u64
 ```
 
-#### field: root_done
+#### field: root
 
-[Source line 112](../../../extended/ext/msgpack.lani#L112)
-
-```lanius
-root_done: bool
-```
-
-#### field: finished
-
-[Source line 112](../../../extended/ext/msgpack.lani#L112)
+[Source line 114](../../../extended/ext/msgpack.lani#L114)
 
 ```lanius
-finished: bool
+root: core::iter_state::Completion
 ```
 
 #### field: failure
 
-[Source line 112](../../../extended/ext/msgpack.lani#L112)
+[Source line 114](../../../extended/ext/msgpack.lani#L114)
 
 ```lanius
 failure: core::option::Option<Error>
@@ -522,7 +516,7 @@ failure: core::option::Option<Error>
 
 #### field: current
 
-[Source line 113](../../../extended/ext/msgpack.lani#L113)
+[Source line 115](../../../extended/ext/msgpack.lani#L115)
 
 ```lanius
 current: Event
@@ -530,23 +524,23 @@ current: Event
 
 #### field: current_at
 
-[Source line 113](../../../extended/ext/msgpack.lani#L113)
+[Source line 115](../../../extended/ext/msgpack.lani#L115)
 
 ```lanius
 current_at: u64
 ```
 
-#### field: ready
+#### field: delivery
 
-[Source line 113](../../../extended/ext/msgpack.lani#L113)
+[Source line 115](../../../extended/ext/msgpack.lani#L115)
 
 ```lanius
-ready: bool
+delivery: core::stream_state::Delivery
 ```
 
 ### enum: StreamError
 
-[Source line 285](../../../extended/ext/msgpack.lani#L285)
+[Source line 287](../../../extended/ext/msgpack.lani#L287)
 
 ```lanius
 pub enum StreamError
@@ -554,7 +548,7 @@ pub enum StreamError
 
 #### variant: Pack
 
-[Source line 285](../../../extended/ext/msgpack.lani#L285)
+[Source line 287](../../../extended/ext/msgpack.lani#L287)
 
 ```lanius
 Pack(Error)
@@ -562,7 +556,7 @@ Pack(Error)
 
 #### variant: Io
 
-[Source line 285](../../../extended/ext/msgpack.lani#L285)
+[Source line 287](../../../extended/ext/msgpack.lani#L287)
 
 ```lanius
 Io(core::io::Error)
@@ -570,7 +564,7 @@ Io(core::io::Error)
 
 ### struct: EventReader
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
 pub struct EventReader<R>
@@ -578,7 +572,7 @@ pub struct EventReader<R>
 
 #### field: reader
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
 reader: &R
@@ -586,7 +580,7 @@ reader: &R
 
 #### field: decoder
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
 decoder: &Decoder
@@ -594,23 +588,23 @@ decoder: &Decoder
 
 #### field: scratch
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
 scratch: core::slice::View<u8>
 ```
 
-#### field: eof
+#### field: eof_completion
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
-eof: bool
+eof_completion: core::iter_state::Completion
 ```
 
 #### field: reads
 
-[Source line 286](../../../extended/ext/msgpack.lani#L286)
+[Source line 288](../../../extended/ext/msgpack.lani#L288)
 
 ```lanius
 reads: u64
@@ -618,7 +612,7 @@ reads: u64
 
 ### struct: Writer
 
-[Source line 320](../../../extended/ext/msgpack.lani#L320)
+[Source line 322](../../../extended/ext/msgpack.lani#L322)
 
 ```lanius
 pub struct Writer
@@ -626,7 +620,7 @@ pub struct Writer
 
 #### field: options
 
-[Source line 321](../../../extended/ext/msgpack.lani#L321)
+[Source line 323](../../../extended/ext/msgpack.lani#L323)
 
 ```lanius
 options: WriterOptions
@@ -634,7 +628,7 @@ options: WriterOptions
 
 #### field: out
 
-[Source line 321](../../../extended/ext/msgpack.lani#L321)
+[Source line 323](../../../extended/ext/msgpack.lani#L323)
 
 ```lanius
 out: alloc::vec::Vec<u8>
@@ -642,7 +636,7 @@ out: alloc::vec::Vec<u8>
 
 #### field: kinds
 
-[Source line 322](../../../extended/ext/msgpack.lani#L322)
+[Source line 324](../../../extended/ext/msgpack.lani#L324)
 
 ```lanius
 kinds: alloc::vec::Vec<u8>
@@ -650,7 +644,7 @@ kinds: alloc::vec::Vec<u8>
 
 #### field: known
 
-[Source line 322](../../../extended/ext/msgpack.lani#L322)
+[Source line 324](../../../extended/ext/msgpack.lani#L324)
 
 ```lanius
 known: alloc::vec::Vec<u8>
@@ -658,7 +652,7 @@ known: alloc::vec::Vec<u8>
 
 #### field: declared
 
-[Source line 322](../../../extended/ext/msgpack.lani#L322)
+[Source line 324](../../../extended/ext/msgpack.lani#L324)
 
 ```lanius
 declared: alloc::vec::Vec<u64>
@@ -666,7 +660,7 @@ declared: alloc::vec::Vec<u64>
 
 #### field: count
 
-[Source line 322](../../../extended/ext/msgpack.lani#L322)
+[Source line 324](../../../extended/ext/msgpack.lani#L324)
 
 ```lanius
 count: alloc::vec::Vec<u64>
@@ -674,7 +668,7 @@ count: alloc::vec::Vec<u64>
 
 #### field: start
 
-[Source line 322](../../../extended/ext/msgpack.lani#L322)
+[Source line 324](../../../extended/ext/msgpack.lani#L324)
 
 ```lanius
 start: alloc::vec::Vec<i32>
@@ -682,7 +676,7 @@ start: alloc::vec::Vec<i32>
 
 #### field: roots
 
-[Source line 323](../../../extended/ext/msgpack.lani#L323)
+[Source line 325](../../../extended/ext/msgpack.lani#L325)
 
 ```lanius
 roots: u64
@@ -690,7 +684,7 @@ roots: u64
 
 #### field: flushed
 
-[Source line 323](../../../extended/ext/msgpack.lani#L323)
+[Source line 325](../../../extended/ext/msgpack.lani#L325)
 
 ```lanius
 flushed: u64
@@ -698,7 +692,7 @@ flushed: u64
 
 #### field: head
 
-[Source line 323](../../../extended/ext/msgpack.lani#L323)
+[Source line 325](../../../extended/ext/msgpack.lani#L325)
 
 ```lanius
 head: [u8; 10]
@@ -708,7 +702,7 @@ head: [u8; 10]
 
 ### function: default_options
 
-[Source line 35](../../../extended/ext/msgpack.lani#L35)
+[Source line 37](../../../extended/ext/msgpack.lani#L37)
 
 ```lanius
 pub fn default_options() -> Options
@@ -716,7 +710,7 @@ pub fn default_options() -> Options
 
 ### function: default_writer_options
 
-[Source line 38](../../../extended/ext/msgpack.lani#L38)
+[Source line 40](../../../extended/ext/msgpack.lani#L40)
 
 ```lanius
 pub fn default_writer_options() -> WriterOptions
@@ -724,7 +718,7 @@ pub fn default_writer_options() -> WriterOptions
 
 ### function: kind_name
 
-[Source line 45](../../../extended/ext/msgpack.lani#L45)
+[Source line 47](../../../extended/ext/msgpack.lani#L47)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -732,7 +726,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: timestamp
 
-[Source line 79](../../../extended/ext/msgpack.lani#L79)
+[Source line 81](../../../extended/ext/msgpack.lani#L81)
 
 ```lanius
 pub fn timestamp(payload: core::slice::View<u8>) -> core::result::Result<Timestamp, ErrorKind>
@@ -740,7 +734,7 @@ pub fn timestamp(payload: core::slice::View<u8>) -> core::result::Result<Timesta
 
 ### function: decoder
 
-[Source line 115](../../../extended/ext/msgpack.lani#L115)
+[Source line 117](../../../extended/ext/msgpack.lani#L117)
 
 ```lanius
 pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
@@ -748,7 +742,7 @@ pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
 
 ### function: event_reader
 
-[Source line 287](../../../extended/ext/msgpack.lani#L287)
+[Source line 289](../../../extended/ext/msgpack.lani#L289)
 
 ```lanius
 pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>)
@@ -757,7 +751,7 @@ pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View
 
 ### function: writer
 
-[Source line 325](../../../extended/ext/msgpack.lani#L325)
+[Source line 327](../../../extended/ext/msgpack.lani#L327)
 
 ```lanius
 pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error>
@@ -765,9 +759,9 @@ pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 122
+### impl at line 124
 
-[Source line 122](../../../extended/ext/msgpack.lani#L122)
+[Source line 124](../../../extended/ext/msgpack.lani#L124)
 
 ```lanius
 pub impl Decoder
@@ -775,7 +769,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 123](../../../extended/ext/msgpack.lani#L123)
+[Source line 125](../../../extended/ext/msgpack.lani#L125)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -783,7 +777,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: depth
 
-[Source line 124](../../../extended/ext/msgpack.lani#L124)
+[Source line 126](../../../extended/ext/msgpack.lani#L126)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -791,7 +785,7 @@ pub fn depth(&self) -> i32
 
 #### method: byte_offset
 
-[Source line 125](../../../extended/ext/msgpack.lani#L125)
+[Source line 127](../../../extended/ext/msgpack.lani#L127)
 
 ```lanius
 pub fn byte_offset(&self) -> u64
@@ -799,7 +793,7 @@ pub fn byte_offset(&self) -> u64
 
 #### method: bytes_received
 
-[Source line 126](../../../extended/ext/msgpack.lani#L126)
+[Source line 128](../../../extended/ext/msgpack.lani#L128)
 
 ```lanius
 pub fn bytes_received(&self) -> u64
@@ -807,7 +801,7 @@ pub fn bytes_received(&self) -> u64
 
 #### method: items_read
 
-[Source line 127](../../../extended/ext/msgpack.lani#L127)
+[Source line 129](../../../extended/ext/msgpack.lani#L129)
 
 ```lanius
 pub fn items_read(&self) -> u64
@@ -815,7 +809,7 @@ pub fn items_read(&self) -> u64
 
 #### method: roots_read
 
-[Source line 128](../../../extended/ext/msgpack.lani#L128)
+[Source line 130](../../../extended/ext/msgpack.lani#L130)
 
 ```lanius
 pub fn roots_read(&self) -> u64
@@ -823,7 +817,7 @@ pub fn roots_read(&self) -> u64
 
 #### method: has_event
 
-[Source line 129](../../../extended/ext/msgpack.lani#L129)
+[Source line 131](../../../extended/ext/msgpack.lani#L131)
 
 ```lanius
 pub fn has_event(&self) -> bool
@@ -831,7 +825,7 @@ pub fn has_event(&self) -> bool
 
 #### method: event
 
-[Source line 131](../../../extended/ext/msgpack.lani#L131)
+[Source line 133](../../../extended/ext/msgpack.lani#L133)
 
 ```lanius
 pub fn event(&self) -> Event
@@ -839,7 +833,7 @@ pub fn event(&self) -> Event
 
 #### method: event_offset
 
-[Source line 132](../../../extended/ext/msgpack.lani#L132)
+[Source line 134](../../../extended/ext/msgpack.lani#L134)
 
 ```lanius
 pub fn event_offset(&self) -> u64
@@ -847,7 +841,7 @@ pub fn event_offset(&self) -> u64
 
 #### method: is_complete
 
-[Source line 133](../../../extended/ext/msgpack.lani#L133)
+[Source line 135](../../../extended/ext/msgpack.lani#L135)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -855,7 +849,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: feed
 
-[Source line 141](../../../extended/ext/msgpack.lani#L141)
+[Source line 143](../../../extended/ext/msgpack.lani#L143)
 
 ```lanius
 pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error>
@@ -863,7 +857,7 @@ pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result
 
 #### method: finish
 
-[Source line 161](../../../extended/ext/msgpack.lani#L161)
+[Source line 163](../../../extended/ext/msgpack.lani#L163)
 
 ```lanius
 pub fn finish(&self)
@@ -871,7 +865,7 @@ pub fn finish(&self)
 
 #### method: reset
 
-[Source line 162](../../../extended/ext/msgpack.lani#L162)
+[Source line 164](../../../extended/ext/msgpack.lani#L164)
 
 ```lanius
 pub fn reset(&self)
@@ -879,7 +873,7 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 167](../../../extended/ext/msgpack.lani#L167)
+[Source line 169](../../../extended/ext/msgpack.lani#L169)
 
 ```lanius
 pub fn destroy(&self)
@@ -887,15 +881,15 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 182](../../../extended/ext/msgpack.lani#L182)
+[Source line 184](../../../extended/ext/msgpack.lani#L184)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<bool, Error>
 ```
 
-### impl at line 293
+### impl at line 295
 
-[Source line 293](../../../extended/ext/msgpack.lani#L293)
+[Source line 295](../../../extended/ext/msgpack.lani#L295)
 
 ```lanius
 pub impl<R> EventReader<R>
@@ -903,7 +897,7 @@ pub impl<R> EventReader<R>
 
 #### method: borrow
 
-[Source line 294](../../../extended/ext/msgpack.lani#L294)
+[Source line 296](../../../extended/ext/msgpack.lani#L296)
 
 ```lanius
 pub fn borrow(&self) -> &EventReader<R>
@@ -911,7 +905,7 @@ pub fn borrow(&self) -> &EventReader<R>
 
 #### method: read_calls
 
-[Source line 295](../../../extended/ext/msgpack.lani#L295)
+[Source line 297](../../../extended/ext/msgpack.lani#L297)
 
 ```lanius
 pub fn read_calls(&self) -> u64
@@ -919,15 +913,15 @@ pub fn read_calls(&self) -> u64
 
 #### method: next
 
-[Source line 296](../../../extended/ext/msgpack.lani#L296)
+[Source line 298](../../../extended/ext/msgpack.lani#L298)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read
 ```
 
-### impl at line 361
+### impl at line 363
 
-[Source line 361](../../../extended/ext/msgpack.lani#L361)
+[Source line 363](../../../extended/ext/msgpack.lani#L363)
 
 ```lanius
 pub impl Writer
@@ -935,7 +929,7 @@ pub impl Writer
 
 #### method: borrow
 
-[Source line 362](../../../extended/ext/msgpack.lani#L362)
+[Source line 364](../../../extended/ext/msgpack.lani#L364)
 
 ```lanius
 pub fn borrow(&self) -> &Writer
@@ -943,7 +937,7 @@ pub fn borrow(&self) -> &Writer
 
 #### method: len
 
-[Source line 363](../../../extended/ext/msgpack.lani#L363)
+[Source line 365](../../../extended/ext/msgpack.lani#L365)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -951,7 +945,7 @@ pub fn len(&self) -> i32
 
 #### method: depth
 
-[Source line 364](../../../extended/ext/msgpack.lani#L364)
+[Source line 366](../../../extended/ext/msgpack.lani#L366)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -959,7 +953,7 @@ pub fn depth(&self) -> i32
 
 #### method: roots_written
 
-[Source line 365](../../../extended/ext/msgpack.lani#L365)
+[Source line 367](../../../extended/ext/msgpack.lani#L367)
 
 ```lanius
 pub fn roots_written(&self) -> u64
@@ -967,7 +961,7 @@ pub fn roots_written(&self) -> u64
 
 #### method: output
 
-[Source line 366](../../../extended/ext/msgpack.lani#L366)
+[Source line 368](../../../extended/ext/msgpack.lani#L368)
 
 ```lanius
 pub fn output(&self) -> core::slice::View<u8>
@@ -975,7 +969,7 @@ pub fn output(&self) -> core::slice::View<u8>
 
 #### method: nil
 
-[Source line 397](../../../extended/ext/msgpack.lani#L397)
+[Source line 399](../../../extended/ext/msgpack.lani#L399)
 
 ```lanius
 pub fn nil(&self) -> core::result::Result<i32, Error>
@@ -983,7 +977,7 @@ pub fn nil(&self) -> core::result::Result<i32, Error>
 
 #### method: boolean
 
-[Source line 398](../../../extended/ext/msgpack.lani#L398)
+[Source line 400](../../../extended/ext/msgpack.lani#L400)
 
 ```lanius
 pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
@@ -991,7 +985,7 @@ pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
 
 #### method: unsigned
 
-[Source line 399](../../../extended/ext/msgpack.lani#L399)
+[Source line 401](../../../extended/ext/msgpack.lani#L401)
 
 ```lanius
 pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error>
@@ -999,7 +993,7 @@ pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error>
 
 #### method: integer
 
-[Source line 400](../../../extended/ext/msgpack.lani#L400)
+[Source line 402](../../../extended/ext/msgpack.lani#L402)
 
 ```lanius
 pub fn integer(&self, value: i64) -> core::result::Result<i32, Error>
@@ -1007,7 +1001,7 @@ pub fn integer(&self, value: i64) -> core::result::Result<i32, Error>
 
 #### method: float32
 
-[Source line 404](../../../extended/ext/msgpack.lani#L404)
+[Source line 406](../../../extended/ext/msgpack.lani#L406)
 
 ```lanius
 pub fn float32(&self, bits: u32) -> core::result::Result<i32, Error>
@@ -1015,7 +1009,7 @@ pub fn float32(&self, bits: u32) -> core::result::Result<i32, Error>
 
 #### method: float64
 
-[Source line 405](../../../extended/ext/msgpack.lani#L405)
+[Source line 407](../../../extended/ext/msgpack.lani#L407)
 
 ```lanius
 pub fn float64(&self, bits: u64) -> core::result::Result<i32, Error>
@@ -1023,7 +1017,7 @@ pub fn float64(&self, bits: u64) -> core::result::Result<i32, Error>
 
 #### method: text
 
-[Source line 411](../../../extended/ext/msgpack.lani#L411)
+[Source line 413](../../../extended/ext/msgpack.lani#L413)
 
 ```lanius
 pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error>
@@ -1031,7 +1025,7 @@ pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error>
 
 #### method: str_bytes
 
-[Source line 412](../../../extended/ext/msgpack.lani#L412)
+[Source line 414](../../../extended/ext/msgpack.lani#L414)
 
 ```lanius
 pub fn str_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1039,7 +1033,7 @@ pub fn str_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i3
 
 #### method: bin
 
-[Source line 413](../../../extended/ext/msgpack.lani#L413)
+[Source line 415](../../../extended/ext/msgpack.lani#L415)
 
 ```lanius
 pub fn bin(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1047,7 +1041,7 @@ pub fn bin(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Err
 
 #### method: ext
 
-[Source line 414](../../../extended/ext/msgpack.lani#L414)
+[Source line 416](../../../extended/ext/msgpack.lani#L416)
 
 ```lanius
 pub fn ext(&self, kind: i8, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1055,7 +1049,7 @@ pub fn ext(&self, kind: i8, value: core::slice::View<u8>) -> core::result::Resul
 
 #### method: timestamp
 
-[Source line 430](../../../extended/ext/msgpack.lani#L430)
+[Source line 432](../../../extended/ext/msgpack.lani#L432)
 
 ```lanius
 pub fn timestamp(&self, seconds: i64, nanoseconds: u32) -> core::result::Result<i32, Error>
@@ -1063,7 +1057,7 @@ pub fn timestamp(&self, seconds: i64, nanoseconds: u32) -> core::result::Result<
 
 #### method: begin_array_len
 
-[Source line 464](../../../extended/ext/msgpack.lani#L464)
+[Source line 466](../../../extended/ext/msgpack.lani#L466)
 
 ```lanius
 pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error>
@@ -1071,7 +1065,7 @@ pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error>
 
 #### method: begin_map_len
 
-[Source line 465](../../../extended/ext/msgpack.lani#L465)
+[Source line 467](../../../extended/ext/msgpack.lani#L467)
 
 ```lanius
 pub fn begin_map_len(&self, pairs: u64) -> core::result::Result<i32, Error>
@@ -1079,7 +1073,7 @@ pub fn begin_map_len(&self, pairs: u64) -> core::result::Result<i32, Error>
 
 #### method: begin_array
 
-[Source line 467](../../../extended/ext/msgpack.lani#L467)
+[Source line 469](../../../extended/ext/msgpack.lani#L469)
 
 ```lanius
 pub fn begin_array(&self) -> core::result::Result<i32, Error>
@@ -1087,7 +1081,7 @@ pub fn begin_array(&self) -> core::result::Result<i32, Error>
 
 #### method: begin_map
 
-[Source line 468](../../../extended/ext/msgpack.lani#L468)
+[Source line 470](../../../extended/ext/msgpack.lani#L470)
 
 ```lanius
 pub fn begin_map(&self) -> core::result::Result<i32, Error>
@@ -1095,7 +1089,7 @@ pub fn begin_map(&self) -> core::result::Result<i32, Error>
 
 #### method: end
 
-[Source line 469](../../../extended/ext/msgpack.lani#L469)
+[Source line 471](../../../extended/ext/msgpack.lani#L471)
 
 ```lanius
 pub fn end(&self) -> core::result::Result<i32, Error>
@@ -1103,7 +1097,7 @@ pub fn end(&self) -> core::result::Result<i32, Error>
 
 #### method: event
 
-[Source line 492](../../../extended/ext/msgpack.lani#L492)
+[Source line 494](../../../extended/ext/msgpack.lani#L494)
 
 ```lanius
 pub fn event(&self, value: Event) -> core::result::Result<i32, Error>
@@ -1111,7 +1105,7 @@ pub fn event(&self, value: Event) -> core::result::Result<i32, Error>
 
 #### method: stable_len
 
-[Source line 510](../../../extended/ext/msgpack.lani#L510)
+[Source line 512](../../../extended/ext/msgpack.lani#L512)
 
 ```lanius
 pub fn stable_len(&self) -> i32
@@ -1119,7 +1113,7 @@ pub fn stable_len(&self) -> i32
 
 #### method: clear
 
-[Source line 515](../../../extended/ext/msgpack.lani#L515)
+[Source line 517](../../../extended/ext/msgpack.lani#L517)
 
 ```lanius
 pub fn clear(&self)
@@ -1127,15 +1121,15 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 519](../../../extended/ext/msgpack.lani#L519)
+[Source line 521](../../../extended/ext/msgpack.lani#L521)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 526
+### impl at line 528
 
-[Source line 526](../../../extended/ext/msgpack.lani#L526)
+[Source line 528](../../../extended/ext/msgpack.lani#L528)
 
 ```lanius
 pub impl Writer
@@ -1143,7 +1137,7 @@ pub impl Writer
 
 #### method: flush_to
 
-[Source line 529](../../../extended/ext/msgpack.lani#L529)
+[Source line 531](../../../extended/ext/msgpack.lani#L531)
 
 ```lanius
 pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write

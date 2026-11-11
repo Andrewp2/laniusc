@@ -9,6 +9,9 @@
 // Connection errors send GOAWAY and fail every stream; stream errors send
 // RST_STREAM and fail that stream only. Server push is never used.
 module ext::http2_server;
+import core::iter_state;
+import core::lifecycle;
+import ext::http2_lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -33,15 +36,56 @@ pub fn default_options() -> Options {
 }
 
 const LARGEST_WINDOW: i64 = 2147483647;
-// Stream states: receiving the request, request complete, finished both
-// ways, failed (reset by either side).
-const RECEIVING: i32 = 0;
-const READY: i32 = 1;
-const DONE: i32 = 2;
-const FAILED: i32 = 3;
+pub enum RequestEvent { Accepted, RequestRead, Finished, Failed }
+pub machine RequestPhase on RequestEvent {
+    start Allocated;
+
+    state Allocated {
+        RequestEvent::Accepted -> goto Receiving,
+        RequestEvent::RequestRead -> stay,
+        RequestEvent::Finished -> stay,
+        RequestEvent::Failed -> stay,
+    }
+
+    state Receiving {
+        RequestEvent::Accepted -> stay,
+        RequestEvent::RequestRead -> goto Ready,
+        RequestEvent::Finished -> goto Done,
+        RequestEvent::Failed -> goto Failed,
+    }
+
+    state Ready {
+        RequestEvent::Accepted -> stay,
+        RequestEvent::RequestRead -> stay,
+        RequestEvent::Finished -> goto Done,
+        RequestEvent::Failed -> goto Failed,
+    }
+
+    state Done {
+        RequestEvent::Accepted -> stay,
+        RequestEvent::RequestRead -> stay,
+        RequestEvent::Finished -> stay,
+        RequestEvent::Failed -> goto Failed,
+    }
+
+    final state Failed {
+        RequestEvent::Accepted -> stay,
+        RequestEvent::RequestRead -> stay,
+        RequestEvent::Finished -> stay,
+        RequestEvent::Failed -> stay,
+    }
+}
+
+pub impl RequestPhase {
+    pub fn open(&self) -> bool { return match (self.state()) { RequestPhaseState::Receiving -> true, RequestPhaseState::Ready -> true, _ -> false }; }
+    pub fn ready(&self) -> bool { return match (self.state()) { RequestPhaseState::Ready -> true, _ -> false }; }
+    pub fn receiving(&self) -> bool { return match (self.state()) { RequestPhaseState::Receiving -> true, _ -> false }; }
+    pub fn done(&self) -> bool { return match (self.state()) { RequestPhaseState::Done -> true, _ -> false }; }
+    pub fn failed(&self) -> bool { return match (self.state()) { RequestPhaseState::Failed -> true, _ -> false }; }
+}
 
 struct Stream {
-    id: i32, error: ext::http2::Error, remote_closed: bool, local_closed: bool, responded: bool,
+    id: i32, error: ext::http2::Error, lifecycle: ext::http2_lifecycle::Lifecycle, responded_completion: core::iter_state::Completion,
     send_window: i64, receive_window: i64, unacknowledged: i64,
     content_length: i64, received: i64, pseudo: i32, trailers_from: i32,
     method: i32, scheme: i32, authority: i32, path: i32,
@@ -55,15 +99,15 @@ pub struct Connection {
     // states and taken marks at the same index, an open-addressing table
     // from identifier to index+1, the count of open streams, the ready
     // requests in arrival order, and the streams with response bytes queued.
-    streams: alloc::vec::Vec<Stream>, ids: alloc::vec::Vec<i32>, states: alloc::vec::Vec<i32>, taken: alloc::vec::Vec<bool>,
+    streams: alloc::vec::Vec<Stream>, ids: alloc::vec::Vec<i32>, states: alloc::vec::Vec<RequestPhase>, taken: alloc::vec::Vec<core::iter_state::Completion>,
     table: alloc::vec::Vec<i32>, open_count: i32, queue: alloc::vec::Vec<i32>, senders: alloc::vec::Vec<i32>,
     // Reused per response (the header list and its encoded block) and the
     // buffers of freed streams, so steady traffic allocates little.
-    head_fields: alloc::vec::Vec<ext::hpack::Header>, head_block: alloc::vec::Vec<u8>, spare: alloc::vec::Vec<Stream>, last_peer: i32, accepted: i32, preface_seen: bool, settings_seen: bool, settings_pending: i32,
+    head_fields: alloc::vec::Vec<ext::hpack::Header>, head_block: alloc::vec::Vec<u8>, spare: alloc::vec::Vec<Stream>, last_peer: i32, accepted: i32, preface_seen_completion: core::iter_state::Completion, settings_seen_completion: core::iter_state::Completion, settings_pending: i32,
     peer_max_frame: i32, peer_window: i64, peer_list: i64, peer_table: i64,
     send_window: i64, receive_window: i64, unacknowledged: i64,
-    goaway_received: bool, goaway_code: i32, goaway_sent: bool, goaway_last: i32,
-    failed: bool, failure: ext::http2::Error, pings_sent: i32, pings_acked: i32, frames: i64, refused: i32, active: bool
+    goaway: ext::http2_lifecycle::Goaway, goaway_code: i32,  goaway_last: i32,
+    health: core::lifecycle::Health, failure: ext::http2::Error, pings_sent: i32, pings_acked: i32, frames: i64, refused: i32, lifetime: core::lifecycle::Lifetime
 }
 
 fn error(cause: ext::http2::Cause, code: i32, stream: i32) -> ext::http2::Error { return ext::http2::Error { cause: cause, code: code, stream: stream }; }
@@ -107,13 +151,13 @@ pub fn server(options: Options) -> core::result::Result<Connection,ext::http2::E
     let c: Connection = Connection {
         options: options, encoder: made_encoder.unwrap(), decoder: made_decoder.unwrap(),
         out: alloc::vec::new<u8>(), input: alloc::vec::new<u8>(), block: alloc::vec::new<u8>(), block_stream: 0, block_end_stream: false, block_self_dependent: false,
-        streams: alloc::vec::new<Stream>(), ids: alloc::vec::new<i32>(), states: alloc::vec::new<i32>(), taken: alloc::vec::new<bool>(),
+        streams: alloc::vec::new<Stream>(), ids: alloc::vec::new<i32>(), states: alloc::vec::new<RequestPhase>(), taken: alloc::vec::new<core::iter_state::Completion>(),
         table: alloc::vec::new<i32>(), open_count: 0, queue: alloc::vec::new<i32>(), senders: alloc::vec::new<i32>(),
-        head_fields: alloc::vec::new<ext::hpack::Header>(), head_block: alloc::vec::new<u8>(), spare: alloc::vec::new<Stream>(), last_peer: 0, accepted: 0, preface_seen: false, settings_seen: false, settings_pending: 1,
+        head_fields: alloc::vec::new<ext::hpack::Header>(), head_block: alloc::vec::new<u8>(), spare: alloc::vec::new<Stream>(), last_peer: 0, accepted: 0, preface_seen_completion: core::iter_state::completion_start(), settings_seen_completion: core::iter_state::completion_start(), settings_pending: 1,
         peer_max_frame: 16384, peer_window: 65535, peer_list: -1, peer_table: 4096,
         send_window: 65535, receive_window: 65535, unacknowledged: 0,
-        goaway_received: false, goaway_code: 0, goaway_sent: false, goaway_last: 2147483647,
-        failed: false, failure: no_error(), pings_sent: 0, pings_acked: 0, frames: 0, refused: 0, active: true };
+        goaway: ext::http2_lifecycle::goaway_start(), goaway_code: 0,  goaway_last: 2147483647,
+        health: core::lifecycle::health_start(), failure: no_error(), pings_sent: 0, pings_acked: 0, frames: 0, refused: 0, lifetime: core::lifecycle::lifetime_start() };
     let settings: alloc::vec::Vec<ext::http2_frame::Setting> = alloc::vec::new<ext::http2_frame::Setting>();
     let ok: bool = settings.try_push(setting(ext::http2_frame::MAX_CONCURRENT_STREAMS, options.max_streams as i64)).is_ok();
     if (options.hpack.table_bytes != 4096) { ok = ok && settings.try_push(setting(ext::http2_frame::HEADER_TABLE_SIZE, options.hpack.table_bytes as i64)).is_ok(); }
@@ -133,11 +177,11 @@ pub impl Connection {
     // Bytes to send, in order. Report what was sent with sent().
     pub fn output(&self) -> core::slice::View<u8> { return self.out.as_view(); }
     pub fn sent(&self, count: i32) { shift(self.out.borrow(), count); }
-    pub fn is_open(&self) -> bool { return self.active && !self.failed; }
-    pub fn failure(&self) -> core::option::Option<ext::http2::Error> { if (self.failed) { return core::option::Some(self.failure); } return core::option::None(); }
-    pub fn goaway_received(&self) -> bool { return self.goaway_received; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active() && !self.health.is_failed(); }
+    pub fn failure(&self) -> core::option::Option<ext::http2::Error> { if (self.health.is_failed()) { return core::option::Some(self.failure); } return core::option::None(); }
+    pub fn goaway_received(&self) -> bool { return self.goaway.received(); }
     pub fn goaway_code(&self) -> i32 { return self.goaway_code; }
-    pub fn goaway_sent(&self) -> bool { return self.goaway_sent; }
+    pub fn goaway_sent(&self) -> bool { return self.goaway.sent(); }
     // The highest client stream identifier opened so far.
     pub fn last_stream(&self) -> i32 { return self.last_peer; }
     pub fn requests_accepted(&self) -> i32 { return self.accepted; }
@@ -154,8 +198,8 @@ pub impl Connection {
     // True once nothing more will happen: the connection failed, or a
     // GOAWAY went either way and every stream finished. Send output() first.
     pub fn finished(&self) -> bool {
-        if (!self.active || self.failed) { return true; }
-        return (self.goaway_sent || self.goaway_received) && self.active_streams() == 0;
+        if (!self.lifetime.is_active() || self.health.is_failed()) { return true; }
+        return (self.goaway.sent() || self.goaway.received()) && self.active_streams() == 0;
     }
 
     // ---- Stream table ----
@@ -197,19 +241,19 @@ pub impl Connection {
             if (!between) { self.table.set(j, entry); self.table.set(k, 0); j = k; }
         }
     }
-    fn set_state(&self, index: i32, state: i32) {
-        let was: i32 = self.states.at(index);
-        let open_before: bool = was == RECEIVING || was == READY; let open_after: bool = state == RECEIVING || state == READY;
+    fn advance_state(&self, index: i32, event: RequestEvent) {
+        let phase = self.states.at(index); let open_before: bool = phase.open();
+        phase.step(event); let open_after: bool = phase.open();
         if (open_before && !open_after) { self.open_count -= 1; }
         if (!open_before && open_after) { self.open_count += 1; }
-        self.states.set(index, state);
-        if (state == READY && !self.options.stream_bodies) { self.queue.try_push(self.ids.at(index)); }
+        self.states.set(index,phase);
+        if (phase.ready() && !self.options.stream_bodies) { self.queue.try_push(self.ids.at(index)); }
     }
-    fn is_open_at(&self, index: i32) -> bool { let st: i32 = self.states.at(index); return st == RECEIVING || st == READY; }
+    fn is_open_at(&self, index: i32) -> bool { return self.states.at(index).open(); }
     // Keep a freed stream's buffers (up to 32 sets of at most 16 KiB each)
     // for the next stream.
     fn recycle(&self, s: Stream) {
-        let keep: bool = self.active && self.spare.len() < 32 && s.fields.capacity() <= 16384 && s.slots.capacity() <= 4096
+        let keep: bool = self.lifetime.is_active() && self.spare.len() < 32 && s.fields.capacity() <= 16384 && s.slots.capacity() <= 4096
             && s.body.capacity() <= 16384 && s.pending.capacity() <= 16384;
         if (keep) { s.fields.clear(); s.slots.clear(); s.body.clear(); s.pending.clear(); keep = self.spare.try_push(s).is_ok(); }
         if (!keep) { s.fields.destroy(); s.slots.destroy(); s.body.destroy(); s.pending.destroy(); }
@@ -226,7 +270,7 @@ pub impl Connection {
         if (!self.is_open_at(index)) { return; }
         let s: Stream = self.streams.at(index);
         s.error = e; s.pending.clear(); s.pending_sent = 0; s.pending_end = false;
-        self.streams.set(index, s); self.set_state(index, FAILED);
+        self.streams.set(index, s); self.advance_state(index, RequestEvent::Failed);
     }
     // A stream error we detected: RST_STREAM and fail the stream.
     fn reset(&self, index: i32, cause: ext::http2::Cause, code: i32) {
@@ -236,10 +280,10 @@ pub impl Connection {
     }
     // A connection error: GOAWAY(last stream, code), then every stream fails.
     fn fail(&self, cause: ext::http2::Cause, code: i32) -> ext::http2::Error {
-        if (self.failed) { return self.failure; }
+        if (self.health.is_failed()) { return self.failure; }
         let e: ext::http2::Error = error(cause, code, 0);
-        if (!self.goaway_sent) { ext::http2_frame::write_goaway(self.out.borrow(), self.last_peer, code, text("", 0)); self.goaway_sent = true; self.goaway_last = self.last_peer; }
-        self.failed = true; self.failure = e;
+        if (!self.goaway.sent()) { ext::http2_frame::write_goaway(self.out.borrow(), self.last_peer, code, text("", 0)); self.goaway.step(ext::http2_lifecycle::GoawayEvent::Sent); self.goaway_last = self.last_peer; }
+        self.health.fail(); self.failure = e;
         let i: i32 = 0; while (i < self.streams.len()) { self.fail_stream(i, e); i += 1; }
         return e;
     }
@@ -247,7 +291,7 @@ pub impl Connection {
     fn sweep(&self) {
         let i: i32 = self.streams.len() - 1;
         while (i >= 0) {
-            if (!self.taken.at(i) && !self.is_open_at(i)) { self.free_stream(i); }
+            if (!self.taken.at(i).is_done() && !self.is_open_at(i)) { self.free_stream(i); }
             i -= 1;
         }
     }
@@ -255,19 +299,19 @@ pub impl Connection {
     // Process received bytes. Returns the number of frames handled; a
     // connection error returns Err after queueing GOAWAY (send output()).
     pub fn feed(&self, data: core::slice::View<u8>) -> core::result::Result<i32,ext::http2::Error> {
-        if (!self.active) { return core::result::Err(error(ext::http2::Cause::Closed, 0, 0)); }
-        if (self.failed) { return core::result::Err(self.failure); }
+        if (!self.lifetime.is_active()) { return core::result::Err(error(ext::http2::Cause::Closed, 0, 0)); }
+        if (self.health.is_failed()) { return core::result::Err(self.failure); }
         if (self.input.try_extend(data).is_err()) { return core::result::Err(self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR)); }
         let used: i32 = 0; let handled: i32 = 0;
-        if (!self.preface_seen) {
+        if (!self.preface_seen_completion.is_done()) {
             // The client connection preface (3.4), compared as it arrives.
             let preface: core::slice::View<u8> = ext::http2_frame::preface();
             let have: i32 = self.input.len(); if (have > preface.length) { have = preface.length; }
             if (!same(part(self.input.as_slice(), 0, have), part(preface.values, preface.start, have))) { return core::result::Err(self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR)); }
             if (have < preface.length) { return core::result::Ok(0); }
-            self.preface_seen = true; used = preface.length;
+            self.preface_seen_completion.finish(); used = preface.length;
         }
-        while (!self.failed) {
+        while (!self.health.is_failed()) {
             let rest: core::slice::View<u8> = part(self.input.as_slice(), used, self.input.len() - used);
             let parsed = ext::http2_frame::next(rest, self.options.max_frame);
             if (parsed.is_err()) {
@@ -284,7 +328,7 @@ pub impl Connection {
             self.process(frame);
         }
         shift(self.input.borrow(), used);
-        if (self.failed) { return core::result::Err(self.failure); }
+        if (self.health.is_failed()) { return core::result::Err(self.failure); }
         self.flush(); self.sweep();
         return core::result::Ok(handled);
     }
@@ -300,7 +344,7 @@ pub impl Connection {
         let k: i32 = frame.kind;
         if (self.block_stream != 0 && (k != ext::http2_frame::CONTINUATION || frame.stream != self.block_stream)) { self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
         // The preface continues with a SETTINGS frame (3.4).
-        if (!self.settings_seen && (k != ext::http2_frame::SETTINGS || ext::http2_frame::has(frame, ext::http2_frame::ACK))) { self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
+        if (!self.settings_seen_completion.is_done() && (k != ext::http2_frame::SETTINGS || ext::http2_frame::has(frame, ext::http2_frame::ACK))) { self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
         if (k == ext::http2_frame::DATA) { self.on_data(frame); return; }
         if (k == ext::http2_frame::HEADERS) { self.on_headers(frame); return; }
         if (k == ext::http2_frame::CONTINUATION) { self.on_continuation(frame); return; }
@@ -310,7 +354,7 @@ pub impl Connection {
             if (!ext::http2_frame::write_ping(self.out.borrow(), true, ext::http2_frame::ping(frame))) { self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); }
             return;
         }
-        if (k == ext::http2_frame::GOAWAY) { let g: ext::http2_frame::Goaway = ext::http2_frame::goaway(frame); self.goaway_received = true; self.goaway_code = g.code; return; }
+        if (k == ext::http2_frame::GOAWAY) { let g: ext::http2_frame::Goaway = ext::http2_frame::goaway(frame); self.goaway.step(ext::http2_lifecycle::GoawayEvent::Received); self.goaway_code = g.code; return; }
         if (k == ext::http2_frame::WINDOW_UPDATE) { self.on_window_update(frame); return; }
         if (k == ext::http2_frame::RST_STREAM) {
             if (self.idle(frame.stream)) { self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
@@ -336,7 +380,7 @@ pub impl Connection {
             }
             return;
         }
-        self.settings_seen = true;
+        self.settings_seen_completion.finish();
         let n: i32 = ext::http2_frame::setting_count(frame); let i: i32 = 0;
         while (i < n) {
             let s: ext::http2_frame::Setting = ext::http2_frame::setting(frame, i);
@@ -388,7 +432,7 @@ pub impl Connection {
         let index: i32 = self.find(frame.stream); if (index < 0) { return; }
         if (!self.is_open_at(index)) { return; }
         let s: Stream = self.streams.at(index);
-        if (s.remote_closed) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::STREAM_CLOSED); return; }
+        if (s.lifecycle.remote_closed()) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::STREAM_CLOSED); return; }
         s.receive_window -= length;
         if (s.receive_window < 0) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::FLOW_CONTROL_ERROR); return; }
         let d: ext::http2_frame::Data = ext::http2_frame::data(frame);
@@ -410,8 +454,8 @@ pub impl Connection {
     fn end_remote(&self, index: i32) {
         let s: Stream = self.streams.at(index);
         if (s.content_length >= 0 && s.received != s.content_length) { self.reset(index, ext::http2::Cause::Malformed, ext::http2_frame::PROTOCOL_ERROR); return; }
-        s.remote_closed = true; self.streams.set(index, s);
-        if (s.local_closed) { self.set_state(index, DONE); } else { self.set_state(index, READY); }
+        s.lifecycle.step(ext::http2_lifecycle::Event::RemoteEnd); self.streams.set(index, s);
+        if (s.lifecycle.local_closed()) { self.advance_state(index, RequestEvent::Finished); } else { self.advance_state(index, RequestEvent::RequestRead); }
     }
     fn on_headers(&self, frame: ext::http2_frame::Frame) {
         if ((frame.stream % 2) == 0) { self.fail(ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
@@ -445,7 +489,7 @@ pub impl Connection {
         if (!self.is_open_at(index)) { return; }
         let s: Stream = self.streams.at(index);
         if (self.block_self_dependent) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
-        if (s.remote_closed) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::STREAM_CLOSED); return; }
+        if (s.lifecycle.remote_closed()) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::STREAM_CLOSED); return; }
         if (limited) { self.auto_reply(index, 431); return; }
         // Trailers: END_STREAM and no pseudo-fields (8.1).
         if (!self.block_end_stream) { self.reset(index, ext::http2::Cause::Malformed, ext::http2_frame::PROTOCOL_ERROR); return; }
@@ -456,11 +500,11 @@ pub impl Connection {
     fn open_stream(&self, id: i32, limited: bool) {
         self.last_peer = id;
         // Above our GOAWAY's last stream: the client will retry elsewhere.
-        if (self.goaway_sent && id > self.goaway_last) { return; }
+        if (self.goaway.sent() && id > self.goaway_last) { return; }
         if (self.active_streams() >= self.options.max_streams) { ext::http2_frame::write_rst_stream(self.out.borrow(), id, ext::http2_frame::REFUSED_STREAM); self.refused += 1; return; }
         let window: i64 = self.options.stream_window as i64;
         if (self.settings_pending > 0 && window < 65535) { window = 65535; }
-        let s: Stream = Stream { id: id, error: no_error(), remote_closed: false, local_closed: false, responded: false,
+        let s: Stream = Stream { id: id, error: no_error(), lifecycle: ext::http2_lifecycle::lifecycle_start(), responded_completion: core::iter_state::completion_start(),
             send_window: self.peer_window, receive_window: window, unacknowledged: 0,
             content_length: -1, received: 0, pseudo: 0, trailers_from: -1,
             method: -1, scheme: -1, authority: -1, path: -1,
@@ -473,8 +517,8 @@ pub impl Connection {
         let room: bool = self.reserve_slot() && reserve_more(self.streams.borrow(), 1) && reserve_more(self.ids.borrow(), 1)
             && reserve_more(self.states.borrow(), 1) && reserve_more(self.taken.borrow(), 1) && reserve_more(self.queue.borrow(), 1);
         if (!room) { s.fields.destroy(); s.slots.destroy(); s.body.destroy(); s.pending.destroy(); self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return; }
-        self.streams.try_push(s); self.ids.try_push(id); self.states.try_push(FAILED); self.taken.try_push(false);
-        self.place(id, self.streams.len() - 1); self.set_state(self.streams.len() - 1, RECEIVING);
+        self.streams.try_push(s); self.ids.try_push(id); self.states.try_push(request_phase_start()); self.taken.try_push(core::iter_state::completion_start());
+        self.place(id, self.streams.len() - 1); self.advance_state(self.streams.len() - 1, RequestEvent::Accepted);
         self.accepted += 1;
         if (self.accepted >= self.options.max_requests) { self.goaway(ext::http2_frame::NO_ERROR); }
         let index: i32 = self.streams.len() - 1;
@@ -490,7 +534,7 @@ pub impl Connection {
     // malformed request (RST_STREAM PROTOCOL_ERROR).
     fn store_fields(&self, index: i32, request: bool) -> bool {
         let s: Stream = self.streams.at(index);
-        let n: i32 = self.decoder.count(); let i: i32 = 0; let regular: bool = false; let bad: bool = false;
+        let n: i32 = self.decoder.count(); let i: i32 = 0; let regular_phase = core::iter_state::completion_start(); let bad: bool = false;
         // One reservation for the whole section instead of growing per field.
         let bytes: i32 = 0; while (i < n) { let h: ext::hpack::Header = self.decoder.header(i); bytes += h.name.length + h.value.length; i += 1; }
         i = 0;
@@ -505,9 +549,9 @@ pub impl Connection {
                 if (same(f.name, text(":scheme", 7)) && s.scheme < 0) { s.scheme = slot; known = true; }
                 if (same(f.name, text(":authority", 10)) && s.authority < 0) { s.authority = slot; known = true; }
                 if (same(f.name, text(":path", 5)) && s.path < 0) { s.path = slot; known = true; }
-                if (!request || regular || !known) { bad = true; } else { s.pseudo += 1; }
+                if (!request || regular_phase.is_done() || !known) { bad = true; } else { s.pseudo += 1; }
             } else {
-                regular = true;
+                regular_phase.finish();
                 if (!ext::http2::valid_name(f.name) || !ext::http2::valid_value(f.value) || ext::http2::connection_specific(f.name)) { bad = true; }
                 if (same(f.name, text("te", 2)) && !same(f.value, text("trailers", 8))) { bad = true; }
                 if (request && same(f.name, text("content-length", 14))) {
@@ -544,9 +588,9 @@ pub impl Connection {
     fn settle(&self, index: i32) {
         if (!self.is_open_at(index)) { return; }
         let s: Stream = self.streams.at(index);
-        if (!s.local_closed) { return; }
-        if (!s.remote_closed) { ext::http2_frame::write_rst_stream(self.out.borrow(), s.id, ext::http2_frame::NO_ERROR); }
-        self.set_state(index, DONE);
+        if (!s.lifecycle.local_closed()) { return; }
+        if (!s.lifecycle.remote_closed()) { ext::http2_frame::write_rst_stream(self.out.borrow(), s.id, ext::http2_frame::NO_ERROR); }
+        self.advance_state(index, RequestEvent::Finished);
     }
     // Encode and queue a response header section: :status, then fields.
     fn send_head(&self, index: i32, status: i32, fields: core::slice::View<ext::hpack::Header>, end_stream: bool) -> core::result::Result<i32,ext::http2::Error> {
@@ -563,7 +607,7 @@ pub impl Connection {
         ok = ok && ext::http2_frame::write_headers(self.out.borrow(), s.id, block.as_view(), end_stream, self.peer_max_frame);
         all.clear(); block.clear(); self.head_fields = all; self.head_block = block;
         if (!ok) { return core::result::Err(self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR)); }
-        s.responded = true; if (end_stream) { s.local_closed = true; }
+        s.responded_completion.finish(); if (end_stream) { s.lifecycle.step(ext::http2_lifecycle::Event::LocalEnd); }
         self.streams.set(index, s);
         if (end_stream) { self.settle(index); }
         return core::result::Ok(s.id);
@@ -572,8 +616,8 @@ pub impl Connection {
     fn auto_reply(&self, index: i32, status: i32) {
         if (!self.is_open_at(index)) { return; }
         let s: Stream = self.streams.at(index);
-        if (s.responded) { return; }
-        s.pending.clear(); s.pending_sent = 0; s.pending_end = false; self.streams.set(index, s); self.taken.set(index, false);
+        if (s.responded_completion.is_done()) { return; }
+        s.pending.clear(); s.pending_sent = 0; s.pending_end = false; self.streams.set(index, s); self.taken.set(index,core::iter_state::completion_start());
         let length: ext::hpack::Header = ext::hpack::Header { name: text("content-length", 14), value: text("0", 1), never_indexed: false };
         let one: [ext::hpack::Header;1] = [length;1];
         let sent = self.send_head(index, status, core::slice::view<ext::hpack::Header>(one, 1).unwrap(), true);
@@ -584,8 +628,8 @@ pub impl Connection {
         if (!self.is_open()) { return core::result::Err(self.closed_error()); }
         let index: i32 = self.find(id); if (index < 0) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
         let s: Stream = self.streams.at(index);
-        if (self.states.at(index) == FAILED) { return core::result::Err(s.error); }
-        if (s.responded || status < 200 || status > 599) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
+        if (self.states.at(index).failed()) { return core::result::Err(s.error); }
+        if (s.responded_completion.is_done() || status < 200 || status > 599) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
         let list: i64 = 42; let i: i32 = 0;
         while (i < fields.length) {
             let f: ext::hpack::Header = fields.values[fields.start + i];
@@ -595,14 +639,14 @@ pub impl Connection {
         if (self.peer_list >= 0 && list > self.peer_list) { return core::result::Err(error(ext::http2::Cause::Limit, 0, id)); }
         return self.send_head(index, status, fields, end_stream);
     }
-    fn closed_error(&self) -> ext::http2::Error { if (self.failed) { return self.failure; } return error(ext::http2::Cause::Closed, 0, 0); }
+    fn closed_error(&self) -> ext::http2::Error { if (self.health.is_failed()) { return self.failure; } return error(ext::http2::Cause::Closed, 0, 0); }
     // Queue response content for stream id after respond; END_STREAM
     // follows the last byte when end. DATA goes out as windows allow.
     pub fn send_data(&self, id: i32, data: core::slice::View<u8>, end: bool) -> core::result::Result<i32,ext::http2::Error> {
         let index: i32 = self.find(id); if (index < 0) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
         let s: Stream = self.streams.at(index);
-        if (self.states.at(index) == FAILED) { return core::result::Err(s.error); }
-        if (!s.responded || s.local_closed || s.pending_end) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
+        if (self.states.at(index).failed()) { return core::result::Err(s.error); }
+        if (!s.responded_completion.is_done() || s.lifecycle.local_closed() || s.pending_end) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
         // Nothing queued and the windows allow it all: frame it straight
         // into the output instead of copying it into the stream first.
         let n: i64 = data.length as i64;
@@ -610,7 +654,7 @@ pub impl Connection {
             let flags: i32 = 0; if (end) { flags = ext::http2_frame::END_STREAM; }
             if (!ext::http2_frame::write_frame(self.out.borrow(), ext::http2_frame::DATA, flags, s.id, data)) { return core::result::Err(self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR)); }
             s.send_window -= n; self.send_window -= n;
-            if (end) { s.local_closed = true; s.pending.clear(); s.pending_sent = 0; }
+            if (end) { s.lifecycle.step(ext::http2_lifecycle::Event::LocalEnd); s.pending.clear(); s.pending_sent = 0; }
             self.streams.set(index, s);
             if (end) { self.settle(index); }
             return core::result::Ok(data.length);
@@ -626,14 +670,14 @@ pub impl Connection {
     // the connection window, each stream's window and the peer frame size.
     fn flush(&self) {
         let progress: bool = true;
-        while (progress && !self.failed) {
+        while (progress && !self.health.is_failed()) {
             progress = false; let k: i32 = 0;
             while (k < self.senders.len()) {
                 let index: i32 = self.find(self.senders.at(k));
                 if (index < 0 || !self.is_open_at(index)) { self.senders.remove(k); continue; }
                 let s: Stream = self.streams.at(index);
                 let left: i32 = s.pending.len() - s.pending_sent;
-                if (s.local_closed || (left == 0 && !s.pending_end)) { self.senders.remove(k); continue; }
+                if (s.lifecycle.local_closed() || (left == 0 && !s.pending_end)) { self.senders.remove(k); continue; }
                 let count: i64 = left as i64;
                 if (count > s.send_window) { count = s.send_window; }
                 if (count > self.send_window) { count = self.send_window; }
@@ -646,7 +690,7 @@ pub impl Connection {
                     let chunk: core::slice::View<u8> = part(s.pending.as_slice(), s.pending_sent, n);
                     if (!ext::http2_frame::write_frame(self.out.borrow(), ext::http2_frame::DATA, flags, s.id, chunk)) { self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return; }
                     s.pending_sent += n; s.send_window -= n as i64; self.send_window -= n as i64;
-                    if (finishing) { s.local_closed = true; s.pending.clear(); s.pending_sent = 0; s.pending_end = false; }
+                    if (finishing) { s.lifecycle.step(ext::http2_lifecycle::Event::LocalEnd); s.pending.clear(); s.pending_sent = 0; s.pending_end = false; }
                     if (s.pending_sent > 65536 && s.pending_sent * 2 > s.pending.len()) { shift(s.pending.borrow(), s.pending_sent); s.pending_sent = 0; }
                     self.streams.set(index, s); if (n > 0) { progress = true; }
                     if (finishing) { self.settle(index); self.senders.remove(k); continue; }
@@ -662,11 +706,11 @@ pub impl Connection {
         while (self.queue.len() > 0) {
             let id: i32 = self.queue.at(0); self.queue.remove(0);
             let index: i32 = self.find(id);
-            if (index < 0 || self.taken.at(index)) { continue; }
-            let st: i32 = self.states.at(index);
-            if (st != READY && !(self.options.stream_bodies && st == RECEIVING)) { continue; }
-            let s: Stream = self.streams.at(index); if (s.responded) { continue; }
-            self.taken.set(index, true);
+            if (index < 0 || self.taken.at(index).is_done()) { continue; }
+            let st: RequestPhase = self.states.at(index);
+            if (!st.ready() && !(self.options.stream_bodies && st.receiving())) { continue; }
+            let s: Stream = self.streams.at(index); if (s.responded_completion.is_done()) { continue; }
+            self.taken.set(index,core::iter_state::finished_completion());
             return core::option::Some(id);
         }
         return core::option::None();
@@ -699,7 +743,7 @@ pub impl Connection {
     // The request body received so far, less what consume dropped.
     pub fn body(&self, id: i32) -> core::slice::View<u8> { let index: i32 = self.find(id); if (index < 0) { return text("", 0); } let s: Stream = self.streams.at(index); return part(s.body.as_slice(), s.body_taken, s.body.len() - s.body_taken); }
     // True once the client ended the request (END_STREAM).
-    pub fn body_finished(&self, id: i32) -> bool { let index: i32 = self.find(id); if (index < 0) { return false; } let s: Stream = self.streams.at(index); return s.remote_closed; }
+    pub fn body_finished(&self, id: i32) -> bool { let index: i32 = self.find(id); if (index < 0) { return false; } let s: Stream = self.streams.at(index); return s.lifecycle.remote_closed(); }
     // With stream_bodies: drop the first count body bytes and credit them
     // to the stream's window (WINDOW_UPDATE once half the window is due).
     pub fn consume(&self, id: i32, count: i32) -> bool {
@@ -709,7 +753,7 @@ pub impl Connection {
         s.body_taken += count;
         if (s.body_taken == s.body.len()) { s.body.clear(); s.body_taken = 0; }
         if (s.body_taken > 65536 && s.body_taken * 2 > s.body.len()) { shift(s.body.borrow(), s.body_taken); s.body_taken = 0; }
-        if (self.options.stream_bodies && !s.remote_closed && self.is_open_at(index)) {
+        if (self.options.stream_bodies && !s.lifecycle.remote_closed() && self.is_open_at(index)) {
             s.unacknowledged += count as i64;
             if (s.unacknowledged * 2 >= self.options.stream_window as i64) { ext::http2_frame::write_window_update(self.out.borrow(), s.id, s.unacknowledged as i32); s.receive_window += s.unacknowledged; s.unacknowledged = 0; }
         }
@@ -717,8 +761,8 @@ pub impl Connection {
     }
     pub fn state(&self, id: i32) -> ext::http2::State {
         let index: i32 = self.find(id); if (index < 0) { return ext::http2::State::Failed; }
-        let st: i32 = self.states.at(index);
-        if (st == DONE) { return ext::http2::State::Done; } if (st == FAILED) { return ext::http2::State::Failed; } return ext::http2::State::Open;
+        let st: RequestPhase = self.states.at(index);
+        if (st.done()) { return ext::http2::State::Done; } if (st.failed()) { return ext::http2::State::Failed; } return ext::http2::State::Open;
     }
     pub fn stream_error(&self, id: i32) -> ext::http2::Error { let index: i32 = self.find(id); if (index < 0) { return error(ext::http2::Cause::InvalidRequest, 0, id); } let s: Stream = self.streams.at(index); return s.error; }
     // Forget a taken stream and free its storage; an unfinished one is
@@ -732,7 +776,7 @@ pub impl Connection {
     // how many were freed.
     pub fn collect(&self) -> i32 {
         let n: i32 = 0; let i: i32 = self.streams.len() - 1;
-        while (i >= 0) { if (self.taken.at(i) && !self.is_open_at(i)) { self.free_stream(i); n += 1; } i -= 1; }
+        while (i >= 0) { if (self.taken.at(i).is_done() && !self.is_open_at(i)) { self.free_stream(i); n += 1; } i -= 1; }
         return n;
     }
     pub fn cancel(&self, id: i32) -> bool {
@@ -749,13 +793,13 @@ pub impl Connection {
     // Graceful shutdown: GOAWAY(last stream, code). Streams already opened
     // finish; later ones are ignored, and the client may retry them.
     pub fn goaway(&self, code: i32) -> bool {
-        if (!self.active || self.goaway_sent) { return false; }
-        self.goaway_sent = true; self.goaway_last = self.last_peer;
+        if (!self.lifetime.is_active() || self.goaway.sent()) { return false; }
+        self.goaway.step(ext::http2_lifecycle::GoawayEvent::Sent); self.goaway_last = self.last_peer;
         return ext::http2_frame::write_goaway(self.out.borrow(), self.last_peer, code, text("", 0));
     }
 
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; } self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.lifetime.release();
         while (self.streams.len() > 0) { self.free_stream(self.streams.len() - 1); }
         self.streams.destroy(); self.ids.destroy(); self.states.destroy(); self.taken.destroy(); self.table.destroy(); self.queue.destroy(); self.senders.destroy();
         while (self.spare.len() > 0) { let r: Stream = self.spare.pop().unwrap(); r.fields.destroy(); r.slots.destroy(); r.body.destroy(); r.pending.destroy(); }

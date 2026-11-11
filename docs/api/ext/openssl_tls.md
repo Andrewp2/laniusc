@@ -20,7 +20,7 @@ Client, server and mutual TLS delegate to OpenSSL 3 libssl/libcrypto on Linux x8
 - [extended-https-client](../../extended-https-client.md)
 - [extended-https-batch-testing](../../extended-https-batch-testing.md)
 
-Declaration counts: constant: 1; enum: 12; extern function: 44; field: 32; function: 4; impl: 3; method: 32; struct: 5; variant: 60.
+Declaration counts: constant: 1; enum: 13; extern function: 44; field: 31; function: 4; impl: 4; machine: 1; method: 35; struct: 5; variant: 63.
 
 ## Declared imports
 
@@ -38,9 +38,49 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: Trust
+### enum: ShutdownPhaseEvent
 
 [Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+
+```lanius
+pub enum ShutdownPhaseEvent
+```
+
+#### variant: Begin
+
+[Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+
+```lanius
+Begin
+```
+
+#### variant: NotifySent
+
+[Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+
+```lanius
+NotifySent
+```
+
+#### variant: Reset
+
+[Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+
+```lanius
+Reset
+```
+
+### machine: ShutdownPhase
+
+[Source line 13](../../../extended/ext/openssl_tls.lani#L13)
+
+```lanius
+pub machine ShutdownPhase on ShutdownPhaseEvent
+```
+
+### enum: Trust
+
+[Source line 41](../../../extended/ext/openssl_tls.lani#L41)
 
 ```lanius
 pub enum Trust
@@ -48,7 +88,7 @@ pub enum Trust
 
 #### variant: DefaultPaths
 
-[Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+[Source line 41](../../../extended/ext/openssl_tls.lani#L41)
 
 ```lanius
 DefaultPaths
@@ -56,7 +96,7 @@ DefaultPaths
 
 #### variant: CaFile
 
-[Source line 12](../../../extended/ext/openssl_tls.lani#L12)
+[Source line 41](../../../extended/ext/openssl_tls.lani#L41)
 
 ```lanius
 CaFile(core::slice::View<u8>)
@@ -64,7 +104,7 @@ CaFile(core::slice::View<u8>)
 
 ### enum: Identity
 
-[Source line 13](../../../extended/ext/openssl_tls.lani#L13)
+[Source line 42](../../../extended/ext/openssl_tls.lani#L42)
 
 ```lanius
 pub enum Identity
@@ -72,7 +112,7 @@ pub enum Identity
 
 #### variant: Dns
 
-[Source line 13](../../../extended/ext/openssl_tls.lani#L13)
+[Source line 42](../../../extended/ext/openssl_tls.lani#L42)
 
 ```lanius
 Dns(core::slice::View<u8>)
@@ -80,7 +120,7 @@ Dns(core::slice::View<u8>)
 
 #### variant: Ip
 
-[Source line 13](../../../extended/ext/openssl_tls.lani#L13)
+[Source line 42](../../../extended/ext/openssl_tls.lani#L42)
 
 ```lanius
 Ip(core::slice::View<u8>)
@@ -88,7 +128,7 @@ Ip(core::slice::View<u8>)
 
 ### enum: Role
 
-[Source line 14](../../../extended/ext/openssl_tls.lani#L14)
+[Source line 43](../../../extended/ext/openssl_tls.lani#L43)
 
 ```lanius
 pub enum Role
@@ -96,7 +136,7 @@ pub enum Role
 
 #### variant: Client
 
-[Source line 14](../../../extended/ext/openssl_tls.lani#L14)
+[Source line 43](../../../extended/ext/openssl_tls.lani#L43)
 
 ```lanius
 Client
@@ -104,7 +144,7 @@ Client
 
 #### variant: Server
 
-[Source line 14](../../../extended/ext/openssl_tls.lani#L14)
+[Source line 43](../../../extended/ext/openssl_tls.lani#L43)
 
 ```lanius
 Server
@@ -112,7 +152,7 @@ Server
 
 ### enum: ClientAuthentication
 
-[Source line 15](../../../extended/ext/openssl_tls.lani#L15)
+[Source line 44](../../../extended/ext/openssl_tls.lani#L44)
 
 ```lanius
 pub enum ClientAuthentication
@@ -120,7 +160,7 @@ pub enum ClientAuthentication
 
 #### variant: Unauthenticated
 
-[Source line 15](../../../extended/ext/openssl_tls.lani#L15)
+[Source line 44](../../../extended/ext/openssl_tls.lani#L44)
 
 ```lanius
 Unauthenticated
@@ -128,7 +168,7 @@ Unauthenticated
 
 #### variant: Required
 
-[Source line 15](../../../extended/ext/openssl_tls.lani#L15)
+[Source line 44](../../../extended/ext/openssl_tls.lani#L44)
 
 ```lanius
 Required(Trust)
@@ -136,7 +176,7 @@ Required(Trust)
 
 ### enum: State
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 pub enum State
@@ -144,7 +184,7 @@ pub enum State
 
 #### variant: Handshake
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 Handshake
@@ -152,7 +192,7 @@ Handshake
 
 #### variant: Open
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 Open
@@ -160,7 +200,7 @@ Open
 
 #### variant: PeerClosed
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 PeerClosed
@@ -168,7 +208,7 @@ PeerClosed
 
 #### variant: Closing
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 Closing
@@ -176,7 +216,7 @@ Closing
 
 #### variant: Closed
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 Closed
@@ -184,7 +224,7 @@ Closed
 
 #### variant: Failed
 
-[Source line 16](../../../extended/ext/openssl_tls.lani#L16)
+[Source line 45](../../../extended/ext/openssl_tls.lani#L45)
 
 ```lanius
 Failed
@@ -192,7 +232,7 @@ Failed
 
 ### enum: Need
 
-[Source line 17](../../../extended/ext/openssl_tls.lani#L17)
+[Source line 46](../../../extended/ext/openssl_tls.lani#L46)
 
 ```lanius
 pub enum Need
@@ -200,7 +240,7 @@ pub enum Need
 
 #### variant: None
 
-[Source line 17](../../../extended/ext/openssl_tls.lani#L17)
+[Source line 46](../../../extended/ext/openssl_tls.lani#L46)
 
 ```lanius
 None
@@ -208,7 +248,7 @@ None
 
 #### variant: Read
 
-[Source line 17](../../../extended/ext/openssl_tls.lani#L17)
+[Source line 46](../../../extended/ext/openssl_tls.lani#L46)
 
 ```lanius
 Read
@@ -216,7 +256,7 @@ Read
 
 #### variant: Write
 
-[Source line 17](../../../extended/ext/openssl_tls.lani#L17)
+[Source line 46](../../../extended/ext/openssl_tls.lani#L46)
 
 ```lanius
 Write
@@ -224,7 +264,7 @@ Write
 
 ### enum: Handshake
 
-[Source line 18](../../../extended/ext/openssl_tls.lani#L18)
+[Source line 47](../../../extended/ext/openssl_tls.lani#L47)
 
 ```lanius
 pub enum Handshake
@@ -232,7 +272,7 @@ pub enum Handshake
 
 #### variant: Complete
 
-[Source line 18](../../../extended/ext/openssl_tls.lani#L18)
+[Source line 47](../../../extended/ext/openssl_tls.lani#L47)
 
 ```lanius
 Complete
@@ -240,7 +280,7 @@ Complete
 
 #### variant: WantRead
 
-[Source line 18](../../../extended/ext/openssl_tls.lani#L18)
+[Source line 47](../../../extended/ext/openssl_tls.lani#L47)
 
 ```lanius
 WantRead
@@ -248,7 +288,7 @@ WantRead
 
 #### variant: WantWrite
 
-[Source line 18](../../../extended/ext/openssl_tls.lani#L18)
+[Source line 47](../../../extended/ext/openssl_tls.lani#L47)
 
 ```lanius
 WantWrite
@@ -256,7 +296,7 @@ WantWrite
 
 ### enum: Read
 
-[Source line 19](../../../extended/ext/openssl_tls.lani#L19)
+[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
 
 ```lanius
 pub enum Read
@@ -264,7 +304,7 @@ pub enum Read
 
 #### variant: Data
 
-[Source line 19](../../../extended/ext/openssl_tls.lani#L19)
+[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
 
 ```lanius
 Data(i32)
@@ -272,7 +312,7 @@ Data(i32)
 
 #### variant: Closed
 
-[Source line 19](../../../extended/ext/openssl_tls.lani#L19)
+[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
 
 ```lanius
 Closed
@@ -280,7 +320,7 @@ Closed
 
 #### variant: WantRead
 
-[Source line 19](../../../extended/ext/openssl_tls.lani#L19)
+[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
 
 ```lanius
 WantRead
@@ -288,7 +328,7 @@ WantRead
 
 #### variant: WantWrite
 
-[Source line 19](../../../extended/ext/openssl_tls.lani#L19)
+[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
 
 ```lanius
 WantWrite
@@ -296,7 +336,7 @@ WantWrite
 
 ### enum: Write
 
-[Source line 20](../../../extended/ext/openssl_tls.lani#L20)
+[Source line 49](../../../extended/ext/openssl_tls.lani#L49)
 
 ```lanius
 pub enum Write
@@ -304,7 +344,7 @@ pub enum Write
 
 #### variant: Complete
 
-[Source line 20](../../../extended/ext/openssl_tls.lani#L20)
+[Source line 49](../../../extended/ext/openssl_tls.lani#L49)
 
 ```lanius
 Complete(i32)
@@ -312,7 +352,7 @@ Complete(i32)
 
 #### variant: WantRead
 
-[Source line 20](../../../extended/ext/openssl_tls.lani#L20)
+[Source line 49](../../../extended/ext/openssl_tls.lani#L49)
 
 ```lanius
 WantRead
@@ -320,7 +360,7 @@ WantRead
 
 #### variant: WantWrite
 
-[Source line 20](../../../extended/ext/openssl_tls.lani#L20)
+[Source line 49](../../../extended/ext/openssl_tls.lani#L49)
 
 ```lanius
 WantWrite
@@ -328,7 +368,7 @@ WantWrite
 
 ### enum: Shutdown
 
-[Source line 21](../../../extended/ext/openssl_tls.lani#L21)
+[Source line 50](../../../extended/ext/openssl_tls.lani#L50)
 
 ```lanius
 pub enum Shutdown
@@ -336,7 +376,7 @@ pub enum Shutdown
 
 #### variant: Complete
 
-[Source line 21](../../../extended/ext/openssl_tls.lani#L21)
+[Source line 50](../../../extended/ext/openssl_tls.lani#L50)
 
 ```lanius
 Complete
@@ -344,7 +384,7 @@ Complete
 
 #### variant: Sent
 
-[Source line 21](../../../extended/ext/openssl_tls.lani#L21)
+[Source line 50](../../../extended/ext/openssl_tls.lani#L50)
 
 ```lanius
 Sent
@@ -352,7 +392,7 @@ Sent
 
 #### variant: WantRead
 
-[Source line 21](../../../extended/ext/openssl_tls.lani#L21)
+[Source line 50](../../../extended/ext/openssl_tls.lani#L50)
 
 ```lanius
 WantRead
@@ -360,7 +400,7 @@ WantRead
 
 #### variant: WantWrite
 
-[Source line 21](../../../extended/ext/openssl_tls.lani#L21)
+[Source line 50](../../../extended/ext/openssl_tls.lani#L50)
 
 ```lanius
 WantWrite
@@ -368,7 +408,7 @@ WantWrite
 
 ### enum: Phase
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 pub enum Phase
@@ -376,7 +416,7 @@ pub enum Phase
 
 #### variant: Context
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Context
@@ -384,7 +424,7 @@ Context
 
 #### variant: Trust
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Trust
@@ -392,7 +432,7 @@ Trust
 
 #### variant: Policy
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Policy
@@ -400,7 +440,7 @@ Policy
 
 #### variant: Session
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Session
@@ -408,7 +448,7 @@ Session
 
 #### variant: Identity
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Identity
@@ -416,7 +456,7 @@ Identity
 
 #### variant: Attach
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Attach
@@ -424,7 +464,7 @@ Attach
 
 #### variant: Handshake
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Handshake
@@ -432,7 +472,7 @@ Handshake
 
 #### variant: Read
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Read
@@ -440,7 +480,7 @@ Read
 
 #### variant: Write
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Write
@@ -448,7 +488,7 @@ Write
 
 #### variant: Shutdown
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Shutdown
@@ -456,7 +496,7 @@ Shutdown
 
 #### variant: Certificate
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Certificate
@@ -464,7 +504,7 @@ Certificate
 
 #### variant: PrivateKey
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 PrivateKey
@@ -472,7 +512,7 @@ PrivateKey
 
 #### variant: Passphrase
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 Passphrase
@@ -480,7 +520,7 @@ Passphrase
 
 #### variant: KeyMatch
 
-[Source line 22](../../../extended/ext/openssl_tls.lani#L22)
+[Source line 51](../../../extended/ext/openssl_tls.lani#L51)
 
 ```lanius
 KeyMatch
@@ -488,7 +528,7 @@ KeyMatch
 
 ### enum: Cause
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 pub enum Cause
@@ -496,7 +536,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Bounds
@@ -504,7 +544,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 InvalidLimits
@@ -512,7 +552,7 @@ InvalidLimits
 
 #### variant: Limit
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Limit
@@ -520,7 +560,7 @@ Limit
 
 #### variant: Closed
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Closed
@@ -528,7 +568,7 @@ Closed
 
 #### variant: InvalidState
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 InvalidState
@@ -536,7 +576,7 @@ InvalidState
 
 #### variant: Identity
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Identity
@@ -544,7 +584,7 @@ Identity
 
 #### variant: Utf8
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Utf8
@@ -552,7 +592,7 @@ Utf8
 
 #### variant: Nul
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Nul
@@ -560,7 +600,7 @@ Nul
 
 #### variant: AllocationFailed
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 AllocationFailed
@@ -568,7 +608,7 @@ AllocationFailed
 
 #### variant: Native
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Native
@@ -576,7 +616,7 @@ Native
 
 #### variant: Verification
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Verification
@@ -584,7 +624,7 @@ Verification
 
 #### variant: PeerCertificate
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 PeerCertificate
@@ -592,7 +632,7 @@ PeerCertificate
 
 #### variant: PeerClosed
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 PeerClosed
@@ -600,7 +640,7 @@ PeerClosed
 
 #### variant: Truncated
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 Truncated
@@ -608,7 +648,7 @@ Truncated
 
 #### variant: UnexpectedNative
 
-[Source line 23](../../../extended/ext/openssl_tls.lani#L23)
+[Source line 52](../../../extended/ext/openssl_tls.lani#L52)
 
 ```lanius
 UnexpectedNative
@@ -616,7 +656,7 @@ UnexpectedNative
 
 ### struct: Limits
 
-[Source line 24](../../../extended/ext/openssl_tls.lani#L24)
+[Source line 53](../../../extended/ext/openssl_tls.lani#L53)
 
 ```lanius
 pub struct Limits
@@ -624,7 +664,7 @@ pub struct Limits
 
 #### field: path_bytes
 
-[Source line 24](../../../extended/ext/openssl_tls.lani#L24)
+[Source line 53](../../../extended/ext/openssl_tls.lani#L53)
 
 ```lanius
 path_bytes: i32
@@ -632,7 +672,7 @@ path_bytes: i32
 
 #### field: identity_bytes
 
-[Source line 24](../../../extended/ext/openssl_tls.lani#L24)
+[Source line 53](../../../extended/ext/openssl_tls.lani#L53)
 
 ```lanius
 identity_bytes: i32
@@ -640,7 +680,7 @@ identity_bytes: i32
 
 #### field: io_bytes
 
-[Source line 24](../../../extended/ext/openssl_tls.lani#L24)
+[Source line 53](../../../extended/ext/openssl_tls.lani#L53)
 
 ```lanius
 io_bytes: i32
@@ -648,7 +688,7 @@ io_bytes: i32
 
 #### field: verify_depth
 
-[Source line 24](../../../extended/ext/openssl_tls.lani#L24)
+[Source line 53](../../../extended/ext/openssl_tls.lani#L53)
 
 ```lanius
 verify_depth: i32
@@ -656,7 +696,7 @@ verify_depth: i32
 
 ### struct: Error
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 pub struct Error
@@ -664,7 +704,7 @@ pub struct Error
 
 #### field: cause
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 cause: Cause
@@ -672,7 +712,7 @@ cause: Cause
 
 #### field: phase
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 phase: Phase
@@ -680,7 +720,7 @@ phase: Phase
 
 #### field: ssl_error
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 ssl_error: i32
@@ -688,7 +728,7 @@ ssl_error: i32
 
 #### field: code
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 code: u64
@@ -696,7 +736,7 @@ code: u64
 
 #### field: verify_code
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 verify_code: i64
@@ -704,7 +744,7 @@ verify_code: i64
 
 #### field: system
 
-[Source line 25](../../../extended/ext/openssl_tls.lani#L25)
+[Source line 54](../../../extended/ext/openssl_tls.lani#L54)
 
 ```lanius
 system: i32
@@ -712,7 +752,7 @@ system: i32
 
 ### struct: Context
 
-[Source line 28](../../../extended/ext/openssl_tls.lani#L28)
+[Source line 57](../../../extended/ext/openssl_tls.lani#L57)
 
 ```lanius
 pub struct Context
@@ -720,7 +760,7 @@ pub struct Context
 
 #### field: handle
 
-[Source line 28](../../../extended/ext/openssl_tls.lani#L28)
+[Source line 57](../../../extended/ext/openssl_tls.lani#L57)
 
 ```lanius
 handle: ptr
@@ -728,7 +768,7 @@ handle: ptr
 
 #### field: limits
 
-[Source line 28](../../../extended/ext/openssl_tls.lani#L28)
+[Source line 57](../../../extended/ext/openssl_tls.lani#L57)
 
 ```lanius
 limits: Limits
@@ -736,7 +776,7 @@ limits: Limits
 
 ### struct: ServerContext
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 pub struct ServerContext
@@ -744,7 +784,7 @@ pub struct ServerContext
 
 #### field: handle
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 handle: ptr
@@ -752,7 +792,7 @@ handle: ptr
 
 #### field: limits
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 limits: Limits
@@ -760,7 +800,7 @@ limits: Limits
 
 #### field: peer_required
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 peer_required: bool
@@ -768,7 +808,7 @@ peer_required: bool
 
 #### field: alpn
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 alpn: ptr
@@ -776,7 +816,7 @@ alpn: ptr
 
 #### field: alpn_bytes
 
-[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+[Source line 58](../../../extended/ext/openssl_tls.lani#L58)
 
 ```lanius
 alpn_bytes: i32
@@ -784,7 +824,7 @@ alpn_bytes: i32
 
 ### struct: Session
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 pub struct Session
@@ -792,7 +832,7 @@ pub struct Session
 
 #### field: handle
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 handle: ptr
@@ -800,7 +840,7 @@ handle: ptr
 
 #### field: reader
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 reader: ptr
@@ -808,7 +848,7 @@ reader: ptr
 
 #### field: writer
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 writer: ptr
@@ -816,7 +856,7 @@ writer: ptr
 
 #### field: counts
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 counts: ptr
@@ -824,7 +864,7 @@ counts: ptr
 
 #### field: limits
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 limits: Limits
@@ -832,7 +872,7 @@ limits: Limits
 
 #### field: lifecycle
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 lifecycle: Lifecycle
@@ -840,7 +880,7 @@ lifecycle: Lifecycle
 
 #### field: reading
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 reading: i32
@@ -848,7 +888,7 @@ reading: i32
 
 #### field: writing
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 writing: i32
@@ -856,7 +896,7 @@ writing: i32
 
 #### field: read_requirement
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 read_requirement: Need
@@ -864,7 +904,7 @@ read_requirement: Need
 
 #### field: write_requirement
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 write_requirement: Need
@@ -872,31 +912,23 @@ write_requirement: Need
 
 #### field: shutdown_requirement
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 shutdown_requirement: Need
 ```
 
-#### field: shutdown_started
+#### field: shutdown_phase
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
-
-```lanius
-shutdown_started: bool
-```
-
-#### field: local_notify_sent
-
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
-local_notify_sent: bool
+shutdown_phase: ShutdownPhase
 ```
 
 #### field: endpoint_role
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 endpoint_role: Role
@@ -904,7 +936,7 @@ endpoint_role: Role
 
 #### field: peer_required
 
-[Source line 32](../../../extended/ext/openssl_tls.lani#L32)
+[Source line 61](../../../extended/ext/openssl_tls.lani#L61)
 
 ```lanius
 peer_required: bool
@@ -914,7 +946,7 @@ peer_required: bool
 
 ### constant: MAX_PASSPHRASE_BYTES
 
-[Source line 47](../../../extended/ext/openssl_tls.lani#L47)
+[Source line 76](../../../extended/ext/openssl_tls.lani#L76)
 
 ```lanius
 pub const MAX_PASSPHRASE_BYTES: i32 = 1023;
@@ -924,7 +956,7 @@ pub const MAX_PASSPHRASE_BYTES: i32 = 1023;
 
 ### function: default_limits
 
-[Source line 48](../../../extended/ext/openssl_tls.lani#L48)
+[Source line 77](../../../extended/ext/openssl_tls.lani#L77)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -932,7 +964,7 @@ pub fn default_limits() -> Limits
 
 ### function: new
 
-[Source line 130](../../../extended/ext/openssl_tls.lani#L130)
+[Source line 159](../../../extended/ext/openssl_tls.lani#L159)
 
 ```lanius
 pub fn new(trust: Trust, limits: Limits) -> core::result::Result<Context, Error>
@@ -940,7 +972,7 @@ pub fn new(trust: Trust, limits: Limits) -> core::result::Result<Context, Error>
 
 ### function: new_with_credentials
 
-[Source line 190](../../../extended/ext/openssl_tls.lani#L190)
+[Source line 219](../../../extended/ext/openssl_tls.lani#L219)
 
 ```lanius
 pub fn new_with_credentials(trust: Trust, certificate_chain: core::slice::View<u8>, private_key: core::slice::View<u8>, passphrase: core::slice::View<u8>, limits: Limits) -> core::result::Result<Context,Error>
@@ -948,7 +980,7 @@ pub fn new_with_credentials(trust: Trust, certificate_chain: core::slice::View<u
 
 ### function: new_server
 
-[Source line 221](../../../extended/ext/openssl_tls.lani#L221)
+[Source line 250](../../../extended/ext/openssl_tls.lani#L250)
 
 ```lanius
 pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::slice::View<u8>, passphrase: core::slice::View<u8>, client_authentication: ClientAuthentication, limits: Limits) -> core::result::Result<ServerContext, Error>
@@ -956,7 +988,7 @@ pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::s
 
 ### extern function: TLS_client_method
 
-[Source line 697](../../../extended/ext/openssl_tls.lani#L697)
+[Source line 726](../../../extended/ext/openssl_tls.lani#L726)
 
 ```lanius
 pub extern "C" fn TLS_client_method() -> ptr;
@@ -966,7 +998,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: TLS_server_method
 
-[Source line 698](../../../extended/ext/openssl_tls.lani#L698)
+[Source line 727](../../../extended/ext/openssl_tls.lani#L727)
 
 ```lanius
 pub extern "C" fn TLS_server_method() -> ptr;
@@ -976,7 +1008,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_new
 
-[Source line 699](../../../extended/ext/openssl_tls.lani#L699)
+[Source line 728](../../../extended/ext/openssl_tls.lani#L728)
 
 ```lanius
 pub extern "C" fn SSL_CTX_new(method: ptr) -> ptr;
@@ -986,7 +1018,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_up_ref
 
-[Source line 700](../../../extended/ext/openssl_tls.lani#L700)
+[Source line 729](../../../extended/ext/openssl_tls.lani#L729)
 
 ```lanius
 pub extern "C" fn SSL_CTX_up_ref(context: ptr) -> i32;
@@ -996,7 +1028,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_free
 
-[Source line 701](../../../extended/ext/openssl_tls.lani#L701)
+[Source line 730](../../../extended/ext/openssl_tls.lani#L730)
 
 ```lanius
 pub extern "C" fn SSL_CTX_free(context: ptr);
@@ -1006,7 +1038,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_verify
 
-[Source line 702](../../../extended/ext/openssl_tls.lani#L702)
+[Source line 731](../../../extended/ext/openssl_tls.lani#L731)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_verify(context: ptr, mode: i32, callback: ptr);
@@ -1016,7 +1048,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_verify_depth
 
-[Source line 703](../../../extended/ext/openssl_tls.lani#L703)
+[Source line 732](../../../extended/ext/openssl_tls.lani#L732)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_verify_depth(context: ptr, depth: i32);
@@ -1026,7 +1058,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_purpose
 
-[Source line 704](../../../extended/ext/openssl_tls.lani#L704)
+[Source line 733](../../../extended/ext/openssl_tls.lani#L733)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_purpose(context: ptr, purpose: i32) -> i32;
@@ -1036,7 +1068,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_num_tickets
 
-[Source line 705](../../../extended/ext/openssl_tls.lani#L705)
+[Source line 734](../../../extended/ext/openssl_tls.lani#L734)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_num_tickets(context: ptr, tickets: usize) -> i32;
@@ -1046,7 +1078,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_ctrl
 
-[Source line 706](../../../extended/ext/openssl_tls.lani#L706)
+[Source line 735](../../../extended/ext/openssl_tls.lani#L735)
 
 ```lanius
 pub extern "C" fn SSL_CTX_ctrl(context: ptr, command: i32, argument: i64, pointer: ptr) -> i64;
@@ -1056,7 +1088,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_options
 
-[Source line 707](../../../extended/ext/openssl_tls.lani#L707)
+[Source line 736](../../../extended/ext/openssl_tls.lani#L736)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_options(context: ptr, options: u64) -> u64;
@@ -1066,7 +1098,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_clear_options
 
-[Source line 708](../../../extended/ext/openssl_tls.lani#L708)
+[Source line 737](../../../extended/ext/openssl_tls.lani#L737)
 
 ```lanius
 pub extern "C" fn SSL_CTX_clear_options(context: ptr, options: u64) -> u64;
@@ -1076,7 +1108,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_verify_paths
 
-[Source line 709](../../../extended/ext/openssl_tls.lani#L709)
+[Source line 738](../../../extended/ext/openssl_tls.lani#L738)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_verify_paths(context: ptr) -> i32;
@@ -1086,7 +1118,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_load_verify_locations
 
-[Source line 710](../../../extended/ext/openssl_tls.lani#L710)
+[Source line 739](../../../extended/ext/openssl_tls.lani#L739)
 
 ```lanius
 pub extern "C" fn SSL_CTX_load_verify_locations(context: ptr, file: ptr, directory: ptr) -> i32;
@@ -1096,7 +1128,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_passwd_cb
 
-[Source line 711](../../../extended/ext/openssl_tls.lani#L711)
+[Source line 740](../../../extended/ext/openssl_tls.lani#L740)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_passwd_cb(context: ptr, callback: ptr);
@@ -1106,7 +1138,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_passwd_cb_userdata
 
-[Source line 712](../../../extended/ext/openssl_tls.lani#L712)
+[Source line 741](../../../extended/ext/openssl_tls.lani#L741)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_passwd_cb_userdata(context: ptr, userdata: ptr);
@@ -1116,7 +1148,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_use_certificate_chain_file
 
-[Source line 713](../../../extended/ext/openssl_tls.lani#L713)
+[Source line 742](../../../extended/ext/openssl_tls.lani#L742)
 
 ```lanius
 pub extern "C" fn SSL_CTX_use_certificate_chain_file(context: ptr, file: ptr) -> i32;
@@ -1126,7 +1158,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_use_PrivateKey_file
 
-[Source line 714](../../../extended/ext/openssl_tls.lani#L714)
+[Source line 743](../../../extended/ext/openssl_tls.lani#L743)
 
 ```lanius
 pub extern "C" fn SSL_CTX_use_PrivateKey_file(context: ptr, file: ptr, format: i32) -> i32;
@@ -1136,7 +1168,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_check_private_key
 
-[Source line 715](../../../extended/ext/openssl_tls.lani#L715)
+[Source line 744](../../../extended/ext/openssl_tls.lani#L744)
 
 ```lanius
 pub extern "C" fn SSL_CTX_check_private_key(context: ptr) -> i32;
@@ -1146,7 +1178,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_new
 
-[Source line 716](../../../extended/ext/openssl_tls.lani#L716)
+[Source line 745](../../../extended/ext/openssl_tls.lani#L745)
 
 ```lanius
 pub extern "C" fn SSL_new(context: ptr) -> ptr;
@@ -1156,7 +1188,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_free
 
-[Source line 717](../../../extended/ext/openssl_tls.lani#L717)
+[Source line 746](../../../extended/ext/openssl_tls.lani#L746)
 
 ```lanius
 pub extern "C" fn SSL_free(session: ptr);
@@ -1166,7 +1198,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_hostflags
 
-[Source line 718](../../../extended/ext/openssl_tls.lani#L718)
+[Source line 747](../../../extended/ext/openssl_tls.lani#L747)
 
 ```lanius
 pub extern "C" fn SSL_set_hostflags(session: ptr, flags: u32);
@@ -1176,7 +1208,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set1_host
 
-[Source line 719](../../../extended/ext/openssl_tls.lani#L719)
+[Source line 748](../../../extended/ext/openssl_tls.lani#L748)
 
 ```lanius
 pub extern "C" fn SSL_set1_host(session: ptr, host: ptr) -> i32;
@@ -1186,7 +1218,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_ctrl
 
-[Source line 720](../../../extended/ext/openssl_tls.lani#L720)
+[Source line 749](../../../extended/ext/openssl_tls.lani#L749)
 
 ```lanius
 pub extern "C" fn SSL_ctrl(session: ptr, command: i32, argument: i64, pointer: ptr) -> i64;
@@ -1196,7 +1228,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_param
 
-[Source line 721](../../../extended/ext/openssl_tls.lani#L721)
+[Source line 750](../../../extended/ext/openssl_tls.lani#L750)
 
 ```lanius
 pub extern "C" fn SSL_get0_param(session: ptr) -> ptr;
@@ -1206,7 +1238,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: X509_VERIFY_PARAM_set1_ip_asc
 
-[Source line 722](../../../extended/ext/openssl_tls.lani#L722)
+[Source line 751](../../../extended/ext/openssl_tls.lani#L751)
 
 ```lanius
 pub extern "C" fn X509_VERIFY_PARAM_set1_ip_asc(parameters: ptr, ip: ptr) -> i32;
@@ -1216,7 +1248,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_fd
 
-[Source line 723](../../../extended/ext/openssl_tls.lani#L723)
+[Source line 752](../../../extended/ext/openssl_tls.lani#L752)
 
 ```lanius
 pub extern "C" fn SSL_set_fd(session: ptr, fd: i32) -> i32;
@@ -1226,7 +1258,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_connect_state
 
-[Source line 724](../../../extended/ext/openssl_tls.lani#L724)
+[Source line 753](../../../extended/ext/openssl_tls.lani#L753)
 
 ```lanius
 pub extern "C" fn SSL_set_connect_state(session: ptr);
@@ -1236,7 +1268,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_accept_state
 
-[Source line 725](../../../extended/ext/openssl_tls.lani#L725)
+[Source line 754](../../../extended/ext/openssl_tls.lani#L754)
 
 ```lanius
 pub extern "C" fn SSL_set_accept_state(session: ptr);
@@ -1246,7 +1278,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_do_handshake
 
-[Source line 726](../../../extended/ext/openssl_tls.lani#L726)
+[Source line 755](../../../extended/ext/openssl_tls.lani#L755)
 
 ```lanius
 pub extern "C" fn SSL_do_handshake(session: ptr) -> i32;
@@ -1256,7 +1288,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_version
 
-[Source line 727](../../../extended/ext/openssl_tls.lani#L727)
+[Source line 756](../../../extended/ext/openssl_tls.lani#L756)
 
 ```lanius
 pub extern "C" fn SSL_version(session: ptr) -> i32;
@@ -1266,7 +1298,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_alpn_select_cb
 
-[Source line 728](../../../extended/ext/openssl_tls.lani#L728)
+[Source line 757](../../../extended/ext/openssl_tls.lani#L757)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_alpn_select_cb(context: ptr, callback: ptr, arg: ptr);
@@ -1276,7 +1308,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_alpn_protos
 
-[Source line 729](../../../extended/ext/openssl_tls.lani#L729)
+[Source line 758](../../../extended/ext/openssl_tls.lani#L758)
 
 ```lanius
 pub extern "C" fn SSL_set_alpn_protos(session: ptr, protocols: ptr, length: u32) -> i32;
@@ -1286,7 +1318,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_alpn_selected
 
-[Source line 730](../../../extended/ext/openssl_tls.lani#L730)
+[Source line 759](../../../extended/ext/openssl_tls.lani#L759)
 
 ```lanius
 pub extern "C" fn SSL_get0_alpn_selected(session: ptr, data: ptr, length: ptr);
@@ -1296,7 +1328,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get_error
 
-[Source line 731](../../../extended/ext/openssl_tls.lani#L731)
+[Source line 760](../../../extended/ext/openssl_tls.lani#L760)
 
 ```lanius
 pub extern "C" fn SSL_get_error(session: ptr, result: i32) -> i32;
@@ -1306,7 +1338,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get_verify_result
 
-[Source line 732](../../../extended/ext/openssl_tls.lani#L732)
+[Source line 761](../../../extended/ext/openssl_tls.lani#L761)
 
 ```lanius
 pub extern "C" fn SSL_get_verify_result(session: ptr) -> i64;
@@ -1316,7 +1348,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_peer_certificate
 
-[Source line 733](../../../extended/ext/openssl_tls.lani#L733)
+[Source line 762](../../../extended/ext/openssl_tls.lani#L762)
 
 ```lanius
 pub extern "C" fn SSL_get0_peer_certificate(session: ptr) -> ptr;
@@ -1326,7 +1358,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_read_ex
 
-[Source line 734](../../../extended/ext/openssl_tls.lani#L734)
+[Source line 763](../../../extended/ext/openssl_tls.lani#L763)
 
 ```lanius
 pub extern "C" fn SSL_read_ex(session: ptr, output: ptr, length: usize, count: ptr) -> i32;
@@ -1336,7 +1368,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_write_ex
 
-[Source line 735](../../../extended/ext/openssl_tls.lani#L735)
+[Source line 764](../../../extended/ext/openssl_tls.lani#L764)
 
 ```lanius
 pub extern "C" fn SSL_write_ex(session: ptr, input: ptr, length: usize, count: ptr) -> i32;
@@ -1346,7 +1378,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_shutdown
 
-[Source line 736](../../../extended/ext/openssl_tls.lani#L736)
+[Source line 765](../../../extended/ext/openssl_tls.lani#L765)
 
 ```lanius
 pub extern "C" fn SSL_shutdown(session: ptr) -> i32;
@@ -1356,7 +1388,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_clear_error
 
-[Source line 737](../../../extended/ext/openssl_tls.lani#L737)
+[Source line 766](../../../extended/ext/openssl_tls.lani#L766)
 
 ```lanius
 pub extern "C" fn ERR_clear_error();
@@ -1366,7 +1398,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_get_error
 
-[Source line 738](../../../extended/ext/openssl_tls.lani#L738)
+[Source line 767](../../../extended/ext/openssl_tls.lani#L767)
 
 ```lanius
 pub extern "C" fn ERR_get_error() -> u64;
@@ -1376,7 +1408,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: OPENSSL_cleanse
 
-[Source line 739](../../../extended/ext/openssl_tls.lani#L739)
+[Source line 768](../../../extended/ext/openssl_tls.lani#L768)
 
 ```lanius
 pub extern "C" fn OPENSSL_cleanse(storage: ptr, length: usize);
@@ -1386,7 +1418,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: __errno_location
 
-[Source line 742](../../../extended/ext/openssl_tls.lani#L742)
+[Source line 771](../../../extended/ext/openssl_tls.lani#L771)
 
 ```lanius
 pub extern "C" fn __errno_location() -> ptr;
@@ -1396,9 +1428,41 @@ Extern declaration; binding availability is not inferred.
 
 ## Implementation blocks and public methods
 
-### impl at line 344
+### impl at line 34
 
-[Source line 344](../../../extended/ext/openssl_tls.lani#L344)
+[Source line 34](../../../extended/ext/openssl_tls.lani#L34)
+
+```lanius
+pub impl ShutdownPhase
+```
+
+#### method: is_idle
+
+[Source line 35](../../../extended/ext/openssl_tls.lani#L35)
+
+```lanius
+pub fn is_idle(&self) -> bool
+```
+
+#### method: is_started
+
+[Source line 36](../../../extended/ext/openssl_tls.lani#L36)
+
+```lanius
+pub fn is_started(&self) -> bool
+```
+
+#### method: is_sent
+
+[Source line 37](../../../extended/ext/openssl_tls.lani#L37)
+
+```lanius
+pub fn is_sent(&self) -> bool
+```
+
+### impl at line 373
+
+[Source line 373](../../../extended/ext/openssl_tls.lani#L373)
 
 ```lanius
 pub impl Context
@@ -1406,7 +1470,7 @@ pub impl Context
 
 #### method: io_bytes
 
-[Source line 345](../../../extended/ext/openssl_tls.lani#L345)
+[Source line 374](../../../extended/ext/openssl_tls.lani#L374)
 
 ```lanius
 pub fn io_bytes(&self) -> i32
@@ -1414,7 +1478,7 @@ pub fn io_bytes(&self) -> i32
 
 #### method: borrow
 
-[Source line 346](../../../extended/ext/openssl_tls.lani#L346)
+[Source line 375](../../../extended/ext/openssl_tls.lani#L375)
 
 ```lanius
 pub fn borrow(&self) -> &Context
@@ -1422,7 +1486,7 @@ pub fn borrow(&self) -> &Context
 
 #### method: is_open
 
-[Source line 347](../../../extended/ext/openssl_tls.lani#L347)
+[Source line 376](../../../extended/ext/openssl_tls.lani#L376)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1430,7 +1494,7 @@ pub fn is_open(&self) -> bool
 
 #### method: validate_identity
 
-[Source line 349](../../../extended/ext/openssl_tls.lani#L349)
+[Source line 378](../../../extended/ext/openssl_tls.lani#L378)
 
 ```lanius
 pub fn validate_identity(&self, identity: Identity) -> core::result::Result<i32, Error>
@@ -1438,7 +1502,7 @@ pub fn validate_identity(&self, identity: Identity) -> core::result::Result<i32,
 
 #### method: retain
 
-[Source line 355](../../../extended/ext/openssl_tls.lani#L355)
+[Source line 384](../../../extended/ext/openssl_tls.lani#L384)
 
 ```lanius
 pub fn retain(&self) -> core::result::Result<Context, Error>
@@ -1446,7 +1510,7 @@ pub fn retain(&self) -> core::result::Result<Context, Error>
 
 #### method: destroy
 
-[Source line 362](../../../extended/ext/openssl_tls.lani#L362)
+[Source line 391](../../../extended/ext/openssl_tls.lani#L391)
 
 ```lanius
 pub fn destroy(&self)
@@ -1454,15 +1518,15 @@ pub fn destroy(&self)
 
 #### method: session
 
-[Source line 369](../../../extended/ext/openssl_tls.lani#L369)
+[Source line 398](../../../extended/ext/openssl_tls.lani#L398)
 
 ```lanius
 pub fn session(&self, fd: i32, identity: Identity) -> core::result::Result<Session, Error>
 ```
 
-### impl at line 406
+### impl at line 435
 
-[Source line 406](../../../extended/ext/openssl_tls.lani#L406)
+[Source line 435](../../../extended/ext/openssl_tls.lani#L435)
 
 ```lanius
 pub impl ServerContext
@@ -1470,7 +1534,7 @@ pub impl ServerContext
 
 #### method: borrow
 
-[Source line 407](../../../extended/ext/openssl_tls.lani#L407)
+[Source line 436](../../../extended/ext/openssl_tls.lani#L436)
 
 ```lanius
 pub fn borrow(&self) -> &ServerContext
@@ -1478,7 +1542,7 @@ pub fn borrow(&self) -> &ServerContext
 
 #### method: is_open
 
-[Source line 408](../../../extended/ext/openssl_tls.lani#L408)
+[Source line 437](../../../extended/ext/openssl_tls.lani#L437)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1486,7 +1550,7 @@ pub fn is_open(&self) -> bool
 
 #### method: io_bytes
 
-[Source line 409](../../../extended/ext/openssl_tls.lani#L409)
+[Source line 438](../../../extended/ext/openssl_tls.lani#L438)
 
 ```lanius
 pub fn io_bytes(&self) -> i32
@@ -1494,7 +1558,7 @@ pub fn io_bytes(&self) -> i32
 
 #### method: destroy
 
-[Source line 413](../../../extended/ext/openssl_tls.lani#L413)
+[Source line 442](../../../extended/ext/openssl_tls.lani#L442)
 
 ```lanius
 pub fn destroy(&self)
@@ -1502,7 +1566,7 @@ pub fn destroy(&self)
 
 #### method: set_alpn
 
-[Source line 425](../../../extended/ext/openssl_tls.lani#L425)
+[Source line 454](../../../extended/ext/openssl_tls.lani#L454)
 
 ```lanius
 pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1510,15 +1574,15 @@ pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result
 
 #### method: session
 
-[Source line 440](../../../extended/ext/openssl_tls.lani#L440)
+[Source line 469](../../../extended/ext/openssl_tls.lani#L469)
 
 ```lanius
 pub fn session(&self, fd: i32) -> core::result::Result<Session, Error>
 ```
 
-### impl at line 490
+### impl at line 519
 
-[Source line 490](../../../extended/ext/openssl_tls.lani#L490)
+[Source line 519](../../../extended/ext/openssl_tls.lani#L519)
 
 ```lanius
 pub impl Session
@@ -1526,7 +1590,7 @@ pub impl Session
 
 #### method: borrow
 
-[Source line 491](../../../extended/ext/openssl_tls.lani#L491)
+[Source line 520](../../../extended/ext/openssl_tls.lani#L520)
 
 ```lanius
 pub fn borrow(&self) -> &Session
@@ -1534,7 +1598,7 @@ pub fn borrow(&self) -> &Session
 
 #### method: is_open
 
-[Source line 492](../../../extended/ext/openssl_tls.lani#L492)
+[Source line 521](../../../extended/ext/openssl_tls.lani#L521)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1542,7 +1606,7 @@ pub fn is_open(&self) -> bool
 
 #### method: state
 
-[Source line 493](../../../extended/ext/openssl_tls.lani#L493)
+[Source line 522](../../../extended/ext/openssl_tls.lani#L522)
 
 ```lanius
 pub fn state(&self) -> State
@@ -1550,7 +1614,7 @@ pub fn state(&self) -> State
 
 #### method: role
 
-[Source line 494](../../../extended/ext/openssl_tls.lani#L494)
+[Source line 523](../../../extended/ext/openssl_tls.lani#L523)
 
 ```lanius
 pub fn role(&self) -> Role
@@ -1558,7 +1622,7 @@ pub fn role(&self) -> Role
 
 #### method: pending_read_bytes
 
-[Source line 495](../../../extended/ext/openssl_tls.lani#L495)
+[Source line 524](../../../extended/ext/openssl_tls.lani#L524)
 
 ```lanius
 pub fn pending_read_bytes(&self) -> i32
@@ -1566,7 +1630,7 @@ pub fn pending_read_bytes(&self) -> i32
 
 #### method: pending_write_bytes
 
-[Source line 496](../../../extended/ext/openssl_tls.lani#L496)
+[Source line 525](../../../extended/ext/openssl_tls.lani#L525)
 
 ```lanius
 pub fn pending_write_bytes(&self) -> i32
@@ -1574,7 +1638,7 @@ pub fn pending_write_bytes(&self) -> i32
 
 #### method: read_need
 
-[Source line 497](../../../extended/ext/openssl_tls.lani#L497)
+[Source line 526](../../../extended/ext/openssl_tls.lani#L526)
 
 ```lanius
 pub fn read_need(&self) -> Need
@@ -1582,7 +1646,7 @@ pub fn read_need(&self) -> Need
 
 #### method: write_need
 
-[Source line 498](../../../extended/ext/openssl_tls.lani#L498)
+[Source line 527](../../../extended/ext/openssl_tls.lani#L527)
 
 ```lanius
 pub fn write_need(&self) -> Need
@@ -1590,7 +1654,7 @@ pub fn write_need(&self) -> Need
 
 #### method: negotiated_version
 
-[Source line 501](../../../extended/ext/openssl_tls.lani#L501)
+[Source line 530](../../../extended/ext/openssl_tls.lani#L530)
 
 ```lanius
 pub fn negotiated_version(&self) -> i32
@@ -1598,7 +1662,7 @@ pub fn negotiated_version(&self) -> i32
 
 #### method: set_alpn
 
-[Source line 510](../../../extended/ext/openssl_tls.lani#L510)
+[Source line 539](../../../extended/ext/openssl_tls.lani#L539)
 
 ```lanius
 pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1606,7 +1670,7 @@ pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result
 
 #### method: selected_protocol
 
-[Source line 529](../../../extended/ext/openssl_tls.lani#L529)
+[Source line 558](../../../extended/ext/openssl_tls.lani#L558)
 
 ```lanius
 pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32
@@ -1614,7 +1678,7 @@ pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32
 
 #### method: quiesce_read
 
-[Source line 544](../../../extended/ext/openssl_tls.lani#L544)
+[Source line 573](../../../extended/ext/openssl_tls.lani#L573)
 
 ```lanius
 pub fn quiesce_read(&self) -> core::result::Result<bool, Error>
@@ -1622,7 +1686,7 @@ pub fn quiesce_read(&self) -> core::result::Result<bool, Error>
 
 #### method: destroy
 
-[Source line 554](../../../extended/ext/openssl_tls.lani#L554)
+[Source line 583](../../../extended/ext/openssl_tls.lani#L583)
 
 ```lanius
 pub fn destroy(&self)
@@ -1630,7 +1694,7 @@ pub fn destroy(&self)
 
 #### method: handshake
 
-[Source line 568](../../../extended/ext/openssl_tls.lani#L568)
+[Source line 597](../../../extended/ext/openssl_tls.lani#L597)
 
 ```lanius
 pub fn handshake(&self) -> core::result::Result<Handshake, Error>
@@ -1638,7 +1702,7 @@ pub fn handshake(&self) -> core::result::Result<Handshake, Error>
 
 #### method: read_into
 
-[Source line 603](../../../extended/ext/openssl_tls.lani#L603)
+[Source line 632](../../../extended/ext/openssl_tls.lani#L632)
 
 ```lanius
 pub fn read_into(&self, output: core::slice::View<u8>) -> core::result::Result<Read, Error>
@@ -1646,7 +1710,7 @@ pub fn read_into(&self, output: core::slice::View<u8>) -> core::result::Result<R
 
 #### method: write
 
-[Source line 644](../../../extended/ext/openssl_tls.lani#L644)
+[Source line 673](../../../extended/ext/openssl_tls.lani#L673)
 
 ```lanius
 pub fn write(&self, input: core::slice::View<u8>) -> core::result::Result<Write, Error>
@@ -1654,7 +1718,7 @@ pub fn write(&self, input: core::slice::View<u8>) -> core::result::Result<Write,
 
 #### method: retry_write
 
-[Source line 657](../../../extended/ext/openssl_tls.lani#L657)
+[Source line 686](../../../extended/ext/openssl_tls.lani#L686)
 
 ```lanius
 pub fn retry_write(&self) -> core::result::Result<Write, Error>
@@ -1662,7 +1726,7 @@ pub fn retry_write(&self) -> core::result::Result<Write, Error>
 
 #### method: shutdown
 
-[Source line 683](../../../extended/ext/openssl_tls.lani#L683)
+[Source line 712](../../../extended/ext/openssl_tls.lani#L712)
 
 ```lanius
 pub fn shutdown(&self) -> core::result::Result<Shutdown, Error>
@@ -1670,7 +1734,7 @@ pub fn shutdown(&self) -> core::result::Result<Shutdown, Error>
 
 #### method: shutdown_write
 
-[Source line 688](../../../extended/ext/openssl_tls.lani#L688)
+[Source line 717](../../../extended/ext/openssl_tls.lani#L717)
 
 ```lanius
 pub fn shutdown_write(&self) -> core::result::Result<Shutdown, Error>

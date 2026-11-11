@@ -18,16 +18,18 @@ Declaration counts: enum: 3; field: 17; function: 7; impl: 2; method: 7; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/merge3.lani#L4)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/merge3.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/merge3.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/merge3.lani#L7)
-- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/merge3.lani#L8)
-- [core::hash](../core/hash.md) · [source](../../../extended/ext/merge3.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/merge3.lani#L10)
-- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/merge3.lani#L11)
-- [core::io](../core/io.md) · [source](../../../extended/ext/merge3.lani#L12)
-- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/merge3.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/merge3.lani#L4)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/merge3.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/merge3.lani#L6)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/merge3.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/merge3.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/merge3.lani#L9)
+- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/merge3.lani#L10)
+- [core::hash](../core/hash.md) · [source](../../../extended/ext/merge3.lani#L11)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/merge3.lani#L12)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/merge3.lani#L13)
+- [core::io](../core/io.md) · [source](../../../extended/ext/merge3.lani#L14)
+- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/merge3.lani#L15)
 
 ## Types, fields and variants
 
@@ -35,7 +37,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 pub enum Error
@@ -43,7 +45,7 @@ pub enum Error
 
 #### variant: InvalidOptions
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 InvalidOptions
@@ -51,7 +53,7 @@ InvalidOptions
 
 #### variant: Bounds
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 Bounds
@@ -59,7 +61,7 @@ Bounds
 
 #### variant: ItemLimit
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 ItemLimit
@@ -67,7 +69,7 @@ ItemLimit
 
 #### variant: WorkLimit
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 WorkLimit
@@ -75,7 +77,7 @@ WorkLimit
 
 #### variant: OutputLimit
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 OutputLimit
@@ -83,7 +85,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 15](../../../extended/ext/merge3.lani#L15)
+[Source line 17](../../../extended/ext/merge3.lani#L17)
 
 ```lanius
 AllocationFailed
@@ -91,7 +93,7 @@ AllocationFailed
 
 ### enum: Style
 
-[Source line 16](../../../extended/ext/merge3.lani#L16)
+[Source line 18](../../../extended/ext/merge3.lani#L18)
 
 ```lanius
 pub enum Style
@@ -99,7 +101,7 @@ pub enum Style
 
 #### variant: Merge
 
-[Source line 16](../../../extended/ext/merge3.lani#L16)
+[Source line 18](../../../extended/ext/merge3.lani#L18)
 
 ```lanius
 Merge
@@ -107,7 +109,7 @@ Merge
 
 #### variant: Diff3
 
-[Source line 16](../../../extended/ext/merge3.lani#L16)
+[Source line 18](../../../extended/ext/merge3.lani#L18)
 
 ```lanius
 Diff3
@@ -115,7 +117,7 @@ Diff3
 
 ### enum: Level
 
-[Source line 20](../../../extended/ext/merge3.lani#L20)
+[Source line 22](../../../extended/ext/merge3.lani#L22)
 
 ```lanius
 pub enum Level
@@ -123,7 +125,7 @@ pub enum Level
 
 #### variant: Eager
 
-[Source line 20](../../../extended/ext/merge3.lani#L20)
+[Source line 22](../../../extended/ext/merge3.lani#L22)
 
 ```lanius
 Eager
@@ -131,7 +133,7 @@ Eager
 
 #### variant: Zealous
 
-[Source line 20](../../../extended/ext/merge3.lani#L20)
+[Source line 22](../../../extended/ext/merge3.lani#L22)
 
 ```lanius
 Zealous
@@ -139,7 +141,7 @@ Zealous
 
 #### variant: ZealousAlnum
 
-[Source line 20](../../../extended/ext/merge3.lani#L20)
+[Source line 22](../../../extended/ext/merge3.lani#L22)
 
 ```lanius
 ZealousAlnum
@@ -147,7 +149,7 @@ ZealousAlnum
 
 ### struct: Chunk
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 pub struct Chunk
@@ -155,7 +157,7 @@ pub struct Chunk
 
 #### field: kind
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 kind: i32
@@ -163,7 +165,7 @@ kind: i32
 
 #### field: o0
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 o0: i32
@@ -171,7 +173,7 @@ o0: i32
 
 #### field: o1
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 o1: i32
@@ -179,7 +181,7 @@ o1: i32
 
 #### field: a0
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 a0: i32
@@ -187,7 +189,7 @@ a0: i32
 
 #### field: a1
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 a1: i32
@@ -195,7 +197,7 @@ a1: i32
 
 #### field: b0
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 b0: i32
@@ -203,7 +205,7 @@ b0: i32
 
 #### field: b1
 
-[Source line 23](../../../extended/ext/merge3.lani#L23)
+[Source line 25](../../../extended/ext/merge3.lani#L25)
 
 ```lanius
 b1: i32
@@ -211,7 +213,7 @@ b1: i32
 
 ### struct: Merge
 
-[Source line 24](../../../extended/ext/merge3.lani#L24)
+[Source line 26](../../../extended/ext/merge3.lani#L26)
 
 ```lanius
 pub struct Merge
@@ -219,7 +221,7 @@ pub struct Merge
 
 #### field: chunks
 
-[Source line 24](../../../extended/ext/merge3.lani#L24)
+[Source line 26](../../../extended/ext/merge3.lani#L26)
 
 ```lanius
 chunks: alloc::vec::Vec<Chunk>
@@ -227,7 +229,7 @@ chunks: alloc::vec::Vec<Chunk>
 
 #### field: conflicts
 
-[Source line 24](../../../extended/ext/merge3.lani#L24)
+[Source line 26](../../../extended/ext/merge3.lani#L26)
 
 ```lanius
 conflicts: i32
@@ -235,7 +237,7 @@ conflicts: i32
 
 ### struct: Labels
 
-[Source line 25](../../../extended/ext/merge3.lani#L25)
+[Source line 27](../../../extended/ext/merge3.lani#L27)
 
 ```lanius
 pub struct Labels
@@ -243,7 +245,7 @@ pub struct Labels
 
 #### field: ours
 
-[Source line 25](../../../extended/ext/merge3.lani#L25)
+[Source line 27](../../../extended/ext/merge3.lani#L27)
 
 ```lanius
 ours: core::slice::View<u8>
@@ -251,7 +253,7 @@ ours: core::slice::View<u8>
 
 #### field: base
 
-[Source line 25](../../../extended/ext/merge3.lani#L25)
+[Source line 27](../../../extended/ext/merge3.lani#L27)
 
 ```lanius
 base: core::slice::View<u8>
@@ -259,7 +261,7 @@ base: core::slice::View<u8>
 
 #### field: theirs
 
-[Source line 25](../../../extended/ext/merge3.lani#L25)
+[Source line 27](../../../extended/ext/merge3.lani#L27)
 
 ```lanius
 theirs: core::slice::View<u8>
@@ -267,7 +269,7 @@ theirs: core::slice::View<u8>
 
 ### struct: Format
 
-[Source line 28](../../../extended/ext/merge3.lani#L28)
+[Source line 30](../../../extended/ext/merge3.lani#L30)
 
 ```lanius
 pub struct Format
@@ -275,7 +277,7 @@ pub struct Format
 
 #### field: style
 
-[Source line 28](../../../extended/ext/merge3.lani#L28)
+[Source line 30](../../../extended/ext/merge3.lani#L30)
 
 ```lanius
 style: Style
@@ -283,7 +285,7 @@ style: Style
 
 #### field: gnu_identical
 
-[Source line 28](../../../extended/ext/merge3.lani#L28)
+[Source line 30](../../../extended/ext/merge3.lani#L30)
 
 ```lanius
 gnu_identical: bool
@@ -291,7 +293,7 @@ gnu_identical: bool
 
 #### field: max_output
 
-[Source line 28](../../../extended/ext/merge3.lani#L28)
+[Source line 30](../../../extended/ext/merge3.lani#L30)
 
 ```lanius
 max_output: i32
@@ -299,7 +301,7 @@ max_output: i32
 
 ### struct: TextMerge
 
-[Source line 283](../../../extended/ext/merge3.lani#L283)
+[Source line 285](../../../extended/ext/merge3.lani#L285)
 
 ```lanius
 pub struct TextMerge
@@ -307,7 +309,7 @@ pub struct TextMerge
 
 #### field: lines
 
-[Source line 283](../../../extended/ext/merge3.lani#L283)
+[Source line 285](../../../extended/ext/merge3.lani#L285)
 
 ```lanius
 lines: ext::seqdiff::Split3
@@ -315,7 +317,7 @@ lines: ext::seqdiff::Split3
 
 #### field: merge
 
-[Source line 283](../../../extended/ext/merge3.lani#L283)
+[Source line 285](../../../extended/ext/merge3.lani#L285)
 
 ```lanius
 merge: Merge
@@ -325,7 +327,7 @@ merge: Merge
 
 ### function: merge3
 
-[Source line 157](../../../extended/ext/merge3.lani#L157)
+[Source line 159](../../../extended/ext/merge3.lani#L159)
 
 ```lanius
 pub fn merge3<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slice::View<T>, level: Level, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T>
@@ -333,7 +335,7 @@ pub fn merge3<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slic
 
 ### function: merge3_with
 
-[Source line 161](../../../extended/ext/merge3.lani#L161)
+[Source line 163](../../../extended/ext/merge3.lani#L163)
 
 ```lanius
 pub fn merge3_with<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slice::View<T>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T>
@@ -341,7 +343,7 @@ pub fn merge3_with<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core:
 
 ### function: merge_lines
 
-[Source line 259](../../../extended/ext/merge3.lani#L259)
+[Source line 261](../../../extended/ext/merge3.lani#L261)
 
 ```lanius
 pub fn merge_lines(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, level: Level, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error>
@@ -349,7 +351,7 @@ pub fn merge_lines(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::Vie
 
 ### function: merge_lines_with
 
-[Source line 262](../../../extended/ext/merge3.lani#L262)
+[Source line 264](../../../extended/ext/merge3.lani#L264)
 
 ```lanius
 pub fn merge_lines_with(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error>
@@ -357,7 +359,7 @@ pub fn merge_lines_with(o: core::slice::View<ext::seqdiff::Line>, a: core::slice
 
 ### function: merge_text
 
-[Source line 290](../../../extended/ext/merge3.lani#L290)
+[Source line 292](../../../extended/ext/merge3.lani#L292)
 
 ```lanius
 pub fn merge_text(o: core::slice::View<u8>, a: core::slice::View<u8>, b: core::slice::View<u8>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<TextMerge, Error>
@@ -365,7 +367,7 @@ pub fn merge_text(o: core::slice::View<u8>, a: core::slice::View<u8>, b: core::s
 
 ### function: write_merge
 
-[Source line 333](../../../extended/ext/merge3.lani#L333)
+[Source line 335](../../../extended/ext/merge3.lani#L335)
 
 ```lanius
 pub fn write_merge(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, m: &Merge, labels: Labels, format: Format) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -373,7 +375,7 @@ pub fn write_merge(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::Vie
 
 ### function: write_text_merge
 
-[Source line 385](../../../extended/ext/merge3.lani#L385)
+[Source line 387](../../../extended/ext/merge3.lani#L387)
 
 ```lanius
 pub fn write_text_merge(t: &TextMerge, labels: Labels, format: Format) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -381,9 +383,9 @@ pub fn write_text_merge(t: &TextMerge, labels: Labels, format: Format) -> core::
 
 ## Implementation blocks and public methods
 
-### impl at line 284
+### impl at line 286
 
-[Source line 284](../../../extended/ext/merge3.lani#L284)
+[Source line 286](../../../extended/ext/merge3.lani#L286)
 
 ```lanius
 pub impl TextMerge
@@ -391,7 +393,7 @@ pub impl TextMerge
 
 #### method: borrow
 
-[Source line 285](../../../extended/ext/merge3.lani#L285)
+[Source line 287](../../../extended/ext/merge3.lani#L287)
 
 ```lanius
 pub fn borrow(&self) -> &TextMerge
@@ -399,15 +401,15 @@ pub fn borrow(&self) -> &TextMerge
 
 #### method: destroy
 
-[Source line 286](../../../extended/ext/merge3.lani#L286)
+[Source line 288](../../../extended/ext/merge3.lani#L288)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 301
+### impl at line 303
 
-[Source line 301](../../../extended/ext/merge3.lani#L301)
+[Source line 303](../../../extended/ext/merge3.lani#L303)
 
 ```lanius
 pub impl Merge
@@ -415,7 +417,7 @@ pub impl Merge
 
 #### method: borrow
 
-[Source line 302](../../../extended/ext/merge3.lani#L302)
+[Source line 304](../../../extended/ext/merge3.lani#L304)
 
 ```lanius
 pub fn borrow(&self) -> &Merge
@@ -423,7 +425,7 @@ pub fn borrow(&self) -> &Merge
 
 #### method: len
 
-[Source line 303](../../../extended/ext/merge3.lani#L303)
+[Source line 305](../../../extended/ext/merge3.lani#L305)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -431,7 +433,7 @@ pub fn len(&self) -> i32
 
 #### method: chunk
 
-[Source line 304](../../../extended/ext/merge3.lani#L304)
+[Source line 306](../../../extended/ext/merge3.lani#L306)
 
 ```lanius
 pub fn chunk(&self, index: i32) -> core::option::Option<Chunk>
@@ -439,7 +441,7 @@ pub fn chunk(&self, index: i32) -> core::option::Option<Chunk>
 
 #### method: conflict_count
 
-[Source line 305](../../../extended/ext/merge3.lani#L305)
+[Source line 307](../../../extended/ext/merge3.lani#L307)
 
 ```lanius
 pub fn conflict_count(&self) -> i32
@@ -447,7 +449,7 @@ pub fn conflict_count(&self) -> i32
 
 #### method: destroy
 
-[Source line 306](../../../extended/ext/merge3.lani#L306)
+[Source line 308](../../../extended/ext/merge3.lani#L308)
 
 ```lanius
 pub fn destroy(&self)

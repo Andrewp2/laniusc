@@ -21,10 +21,11 @@ Declaration counts: enum: 1; field: 6; function: 3; struct: 2; variant: 8.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/response.lani#L6)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/response.lani#L7)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/response.lani#L8)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/response.lani#L9)
+- [core::parse_state](../core/parse_state.md) · [source](../../../extended/ext/response.lani#L6)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/response.lani#L7)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/response.lani#L8)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/response.lani#L9)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/response.lani#L10)
 
 ## Types, fields and variants
 
@@ -32,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Shape
 
-[Source line 11](../../../extended/ext/response.lani#L11)
+[Source line 12](../../../extended/ext/response.lani#L12)
 
 ```lanius
 pub struct Shape
@@ -40,7 +41,7 @@ pub struct Shape
 
 #### field: tokens
 
-[Source line 11](../../../extended/ext/response.lani#L11)
+[Source line 12](../../../extended/ext/response.lani#L12)
 
 ```lanius
 tokens: i32
@@ -48,7 +49,7 @@ tokens: i32
 
 #### field: bytes
 
-[Source line 11](../../../extended/ext/response.lani#L11)
+[Source line 12](../../../extended/ext/response.lani#L12)
 
 ```lanius
 bytes: i32
@@ -56,7 +57,7 @@ bytes: i32
 
 ### struct: Span
 
-[Source line 12](../../../extended/ext/response.lani#L12)
+[Source line 13](../../../extended/ext/response.lani#L13)
 
 ```lanius
 pub struct Span
@@ -64,7 +65,7 @@ pub struct Span
 
 #### field: raw_start
 
-[Source line 12](../../../extended/ext/response.lani#L12)
+[Source line 13](../../../extended/ext/response.lani#L13)
 
 ```lanius
 raw_start: i32
@@ -72,7 +73,7 @@ raw_start: i32
 
 #### field: raw_length
 
-[Source line 12](../../../extended/ext/response.lani#L12)
+[Source line 13](../../../extended/ext/response.lani#L13)
 
 ```lanius
 raw_length: i32
@@ -80,7 +81,7 @@ raw_length: i32
 
 #### field: start
 
-[Source line 12](../../../extended/ext/response.lani#L12)
+[Source line 13](../../../extended/ext/response.lani#L13)
 
 ```lanius
 start: i32
@@ -88,7 +89,7 @@ start: i32
 
 #### field: length
 
-[Source line 12](../../../extended/ext/response.lani#L12)
+[Source line 13](../../../extended/ext/response.lani#L13)
 
 ```lanius
 length: i32
@@ -96,7 +97,7 @@ length: i32
 
 ### enum: Error
 
-[Source line 13](../../../extended/ext/response.lani#L13)
+[Source line 14](../../../extended/ext/response.lani#L14)
 
 ```lanius
 pub enum Error
@@ -104,7 +105,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 14](../../../extended/ext/response.lani#L14)
+[Source line 15](../../../extended/ext/response.lani#L15)
 
 ```lanius
 Bounds
@@ -112,7 +113,7 @@ Bounds
 
 #### variant: Nul
 
-[Source line 14](../../../extended/ext/response.lani#L14)
+[Source line 15](../../../extended/ext/response.lani#L15)
 
 ```lanius
 Nul(i32)
@@ -120,7 +121,7 @@ Nul(i32)
 
 #### variant: TrailingEscape
 
-[Source line 14](../../../extended/ext/response.lani#L14)
+[Source line 15](../../../extended/ext/response.lani#L15)
 
 ```lanius
 TrailingEscape(i32)
@@ -128,7 +129,7 @@ TrailingEscape(i32)
 
 #### variant: UnclosedQuote
 
-[Source line 14](../../../extended/ext/response.lani#L14)
+[Source line 15](../../../extended/ext/response.lani#L15)
 
 ```lanius
 UnclosedQuote(i32)
@@ -136,7 +137,7 @@ UnclosedQuote(i32)
 
 #### variant: BytesTooSmall
 
-[Source line 15](../../../extended/ext/response.lani#L15)
+[Source line 16](../../../extended/ext/response.lani#L16)
 
 ```lanius
 BytesTooSmall(i32)
@@ -144,7 +145,7 @@ BytesTooSmall(i32)
 
 #### variant: TokensTooSmall
 
-[Source line 15](../../../extended/ext/response.lani#L15)
+[Source line 16](../../../extended/ext/response.lani#L16)
 
 ```lanius
 TokensTooSmall(i32)
@@ -152,7 +153,7 @@ TokensTooSmall(i32)
 
 #### variant: NotSingleToken
 
-[Source line 15](../../../extended/ext/response.lani#L15)
+[Source line 16](../../../extended/ext/response.lani#L16)
 
 ```lanius
 NotSingleToken
@@ -160,7 +161,7 @@ NotSingleToken
 
 #### variant: DecodedBounds
 
-[Source line 15](../../../extended/ext/response.lani#L15)
+[Source line 16](../../../extended/ext/response.lani#L16)
 
 ```lanius
 DecodedBounds
@@ -170,7 +171,7 @@ DecodedBounds
 
 ### function: measure
 
-[Source line 105](../../../extended/ext/response.lani#L105)
+[Source line 106](../../../extended/ext/response.lani#L106)
 
 ```lanius
 pub fn measure(input: View<u8>) -> Result<Shape,Error>
@@ -178,7 +179,7 @@ pub fn measure(input: View<u8>) -> Result<Shape,Error>
 
 ### function: tokenize_into
 
-[Source line 113](../../../extended/ext/response.lani#L113)
+[Source line 114](../../../extended/ext/response.lani#L114)
 
 ```lanius
 pub fn tokenize_into(input: View<u8>, bytes: View<u8>, spans: View<Span>) -> Result<Shape,Error>
@@ -186,7 +187,7 @@ pub fn tokenize_into(input: View<u8>, bytes: View<u8>, spans: View<Span>) -> Res
 
 ### function: raw_offset
 
-[Source line 129](../../../extended/ext/response.lani#L129)
+[Source line 130](../../../extended/ext/response.lani#L130)
 
 ```lanius
 pub fn raw_offset(token: View<u8>, decoded_byte: i32) -> Result<i32,Error>

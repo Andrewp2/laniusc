@@ -2,6 +2,8 @@
 // records from this same decoder. See docs/extended-csv.md for the dialect,
 // ownership, chunk/EOF behavior, limits and failure contracts.
 module ext::csv;
+import core::utf8_state;
+import core::stream_state;
 import alloc::string;
 import core::io;
 import core::mem;
@@ -38,7 +40,142 @@ pub struct Record { bytes: alloc::vec::Vec<u8>, fields: alloc::vec::Vec<Span> }
 // Borrowed canonical bytes; never destroy row through this inactive descriptor.
 // Keep the Record live and unchanged until this cursor and its copies end.
 // row may be a Table's packed storage: spans base..base+fields are its fields.
-pub struct Encoding { row: Record, base: i32, fields: i32, column: i32, offset: i32, phase: i32, remaining_bytes: u64 }
+pub enum EncodingEvent { NextField, QuoteWritten, QuoteFound, FieldEnded, FieldClosed, RecordEnded, LineEnded }
+pub machine EncodingPhase on EncodingEvent {
+    start Start;
+
+    state Start {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> goto Field,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> stay,
+    }
+
+    state Field {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> stay,
+        EncodingEvent::QuoteFound -> goto Escape,
+        EncodingEvent::FieldEnded -> goto EndQuote,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> stay,
+    }
+
+    state Escape {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> goto Field,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> stay,
+    }
+
+    state EndQuote {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> stay,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> goto Separator,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> stay,
+    }
+
+    state Separator {
+        EncodingEvent::NextField -> goto Start,
+        EncodingEvent::QuoteWritten -> stay,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> goto LineFeed,
+        EncodingEvent::LineEnded -> stay,
+    }
+
+    state LineFeed {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> stay,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> goto Done,
+    }
+
+    final state Done {
+        EncodingEvent::NextField -> stay,
+        EncodingEvent::QuoteWritten -> stay,
+        EncodingEvent::QuoteFound -> stay,
+        EncodingEvent::FieldEnded -> stay,
+        EncodingEvent::FieldClosed -> stay,
+        EncodingEvent::RecordEnded -> stay,
+        EncodingEvent::LineEnded -> stay,
+    }
+}
+
+pub enum FieldEvent { Reset, Text, Quote, CloseQuote, CarriageReturn }
+pub machine FieldPhase on FieldEvent {
+    start Start;
+
+    state Start {
+        FieldEvent::Reset -> goto Start,
+        FieldEvent::Text -> goto Unquoted,
+        FieldEvent::Quote -> goto Quoted,
+        FieldEvent::CloseQuote -> stay,
+        FieldEvent::CarriageReturn -> goto AfterCr,
+    }
+
+    state Unquoted {
+        FieldEvent::Reset -> goto Start,
+        FieldEvent::Text -> stay,
+        FieldEvent::Quote -> stay,
+        FieldEvent::CloseQuote -> stay,
+        FieldEvent::CarriageReturn -> goto AfterCr,
+    }
+
+    state Quoted {
+        FieldEvent::Reset -> goto Start,
+        FieldEvent::Text -> stay,
+        FieldEvent::Quote -> stay,
+        FieldEvent::CloseQuote -> goto AfterQuote,
+        FieldEvent::CarriageReturn -> stay,
+    }
+
+    state AfterQuote {
+        FieldEvent::Reset -> goto Start,
+        FieldEvent::Text -> stay,
+        FieldEvent::Quote -> goto Quoted,
+        FieldEvent::CloseQuote -> stay,
+        FieldEvent::CarriageReturn -> goto AfterCr,
+    }
+
+    state AfterCr {
+        FieldEvent::Reset -> goto Start,
+        FieldEvent::Text -> stay,
+        FieldEvent::Quote -> stay,
+        FieldEvent::CloseQuote -> stay,
+        FieldEvent::CarriageReturn -> goto AfterCr,
+    }
+}
+
+pub enum RecordEvent { Started, Ended }
+pub machine RecordProgress on RecordEvent {
+    start Empty;
+
+    state Empty {
+        RecordEvent::Started -> goto Partial,
+        RecordEvent::Ended -> stay,
+    }
+
+    state Partial {
+        RecordEvent::Started -> stay,
+        RecordEvent::Ended -> goto Empty,
+    }
+}
+
+pub struct Encoding { row: Record, base: i32, fields: i32, column: i32, offset: i32, phase: EncodingPhase, remaining_bytes: u64 }
 // Rows are packed: bytes holds every field's bytes, spans their absolute
 // ranges, and each TableRow its first span and field count.
 struct TableRow { first: i32, count: i32 }
@@ -47,10 +184,9 @@ pub struct Progress { consumed: i32, record: bool }
 pub struct Decoder {
     current: Record, options: Options, failure: core::option::Option<Error>,
     offset: u64, records: i32, width: i32,
-    mode: i32, quote_start: u64, field_start: i32, pending: bool,
-    cr_pending: bool, cr_start: u64, ready: bool, finished: bool,
-    utf8_width: u32, utf8_used: u32, utf8_start: u64,
-    first: u8, second: u8, third: u8,
+    mode: FieldPhase, quote_start: u64, field_start: i32, record_progress: RecordProgress,
+     cr_start: u64, delivery: core::stream_state::Delivery,
+    utf8_sequence: core::utf8_state::Sequence, utf8_start: u64,
 }
 fn empty_record() -> Record {
     let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
@@ -175,7 +311,7 @@ pub impl Record {
         let length = self.encoded_len();
         if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
         let borrowed: Record = Record { bytes: self.bytes, fields: self.fields };
-        return core::result::Ok(Encoding { row: borrowed, base: 0, fields: self.fields.len(), column: 0, offset: 0, phase: 0, remaining_bytes: length.unwrap() });
+        return core::result::Ok(Encoding { row: borrowed, base: 0, fields: self.fields.len(), column: 0, offset: 0, phase: encoding_phase_start(), remaining_bytes: length.unwrap() });
     }
     pub fn field_count(&self) -> i32 { return self.fields.len(); }
     pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
@@ -221,33 +357,33 @@ pub impl Encoding {
         if (want <= 0 || self.remaining_bytes == 0) { return 0; }
         if ((want as u64) > self.remaining_bytes) { want = self.remaining_bytes as i32; }
         let bytes: [u8] = self.row.bytes.as_slice(); let fields: i32 = self.fields; let base: i32 = self.base;
-        let phase: i32 = self.phase; let column: i32 = self.column; let offset: i32 = self.offset;
+        let phase: EncodingPhase = self.phase; let column: i32 = self.column; let offset: i32 = self.offset;
         let first: i32 = 0; let length: i32 = 0;
         if (column < fields) { let span: Span = self.row.fields.at(base + column); first = span.start; length = span.length; }
         let to: i32 = at; let stop: i32 = at + want;
         while (to < stop) {
-            if (phase == 1) {
+            if (match (phase.state()) { EncodingPhaseState::Field -> true, _ -> false }) {
                 if (offset < length) {
                     let from: i32 = first + offset; let end: i32 = first + length;
                     while (to < stop && from < end) {
                         let byte: u8 = bytes[from]; target[to] = byte; to += 1; from += 1;
-                        if (byte == 34) { phase = 2; break; }
+                        if (byte == 34) { phase.step(EncodingEvent::QuoteFound); break; }
                     }
                     offset = from - first;
-                } else { phase = 3; }
+                } else { phase.step(EncodingEvent::FieldEnded); }
                 continue;
             }
-            if (phase == 0) { target[to] = 34; phase = 1; }
-            else { if (phase == 2) { target[to] = 34; phase = 1; }
-            else { if (phase == 3) { target[to] = 34; phase = 4; }
-            else { if (phase == 4) {
+            if (match (phase.state()) { EncodingPhaseState::Start -> true, _ -> false }) { target[to] = 34; phase.step(EncodingEvent::QuoteWritten); }
+            else { if (match (phase.state()) { EncodingPhaseState::Escape -> true, _ -> false }) { target[to] = 34; phase.step(EncodingEvent::QuoteWritten); }
+            else { if (match (phase.state()) { EncodingPhaseState::EndQuote -> true, _ -> false }) { target[to] = 34; phase.step(EncodingEvent::FieldClosed); }
+            else { if (match (phase.state()) { EncodingPhaseState::Separator -> true, _ -> false }) {
                 column += 1; offset = 0;
                 if (column < fields) {
                     let span: Span = self.row.fields.at(base + column); first = span.start; length = span.length;
-                    target[to] = 44; phase = 0;
-                } else { target[to] = 13; phase = 5; }
+                    target[to] = 44; phase.step(EncodingEvent::NextField);
+                } else { target[to] = 13; phase.step(EncodingEvent::RecordEnded); }
             }
-            else { target[to] = 10; phase = 6; } } } }
+            else { target[to] = 10; phase.step(EncodingEvent::LineEnded); } } } }
             to += 1;
         }
         self.phase = phase; self.column = column; self.offset = offset;
@@ -262,36 +398,36 @@ pub fn decoder(options: Options) -> core::result::Result<Decoder, Error> {
     }
     return core::result::Ok(Decoder { current: empty_record(), options: options,
         failure: core::option::None(), offset: 0, records: 0, width: 0,
-        mode: 0, quote_start: 0, field_start: 0, pending: false,
-        cr_pending: false, cr_start: 0, ready: false, finished: false,
-        utf8_width: 0, utf8_used: 0, utf8_start: 0, first: 0, second: 0, third: 0 });
+        mode: field_phase_start(), quote_start: 0, field_start: 0, record_progress: record_progress_start(),
+         cr_start: 0, delivery: core::stream_state::delivery_start(),
+        utf8_sequence: core::utf8_state::sequence_start(false), utf8_start: 0 });
 }
 
 pub impl Decoder {
     pub fn borrow(&self) -> &Decoder { return self; }
     pub fn byte_offset(&self) -> u64 { return self.offset; }
     pub fn records_read(&self) -> i32 { return self.records; }
-    pub fn has_record(&self) -> bool { return self.ready; }
+    pub fn has_record(&self) -> bool { return self.delivery.ready(); }
     pub fn byte_capacity(&self) -> i32 { return self.current.byte_capacity(); }
     pub fn field_capacity(&self) -> i32 { return self.current.field_capacity(); }
     pub fn field_count(&self) -> core::option::Option<i32> {
-        if (!self.ready) { return core::option::None(); }
+        if (!self.delivery.ready()) { return core::option::None(); }
         return core::option::Some(self.current.field_count());
     }
     pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error> {
-        if (!self.ready) { return core::result::Err(Error::NoRecord); }
+        if (!self.delivery.ready()) { return core::result::Err(Error::NoRecord); }
         return self.current.field(index);
     }
     // Transfer ownership, leaving this decoder with empty buffers. Ordinary
     // streaming callers should use field() to retain and reuse the buffers.
     pub fn take_record(&self) -> core::option::Option<Record> {
-        if (!self.ready) { return core::option::None(); }
+        if (!self.delivery.ready()) { return core::option::None(); }
         let record: Record = self.current;
-        self.current = empty_record(); self.ready = false;
+        self.current = empty_record(); self.delivery.taken();
         return core::option::Some(record);
     }
     fn fail(&self, error: Error) -> bool {
-        self.failure = core::option::Some(error); self.ready = false;
+        self.failure = core::option::Some(error); self.delivery.fail();
         return false;
     }
     fn push_byte(&self, byte: u8) -> bool {
@@ -318,30 +454,14 @@ pub impl Decoder {
             return self.fail(Error::UnequalFields(self.records));
         }
         self.width = count; self.records += 1;
-        self.mode = 0; self.pending = false; self.ready = true; self.field_start = 0;
+        self.mode.step(FieldEvent::Reset); self.record_progress.step(RecordEvent::Ended); self.delivery.produced(); self.field_start = 0;
         return true;
     }
     // Validate input across arbitrary chunk boundaries before interpreting CSV
     // punctuation. A record can only become visible at a complete UTF-8 boundary.
     fn accept_utf8(&self, byte: u8) -> bool {
-        if (self.utf8_used == 0) {
-            let width: u32 = core::utf8::sequence_len_or(byte, 0);
-            if (width == 0) { return self.fail(Error::InvalidUtf8(self.offset)); }
-            if (width > 1) {
-                self.utf8_width = width; self.utf8_used = 1;
-                self.utf8_start = self.offset; self.first = byte; self.second = 0; self.third = 0;
-            }
-            return true;
-        }
-        if (!core::utf8::is_continuation_byte(byte)) { return self.fail(Error::InvalidUtf8(self.utf8_start)); }
-        if (self.utf8_used == 1) { self.second = byte; }
-        if (self.utf8_used == 2) { self.third = byte; }
-        self.utf8_used += 1;
-        if (self.utf8_used == self.utf8_width) {
-            let scalar: u32 = core::utf8::decode_or(self.first, self.second, self.third, byte, self.utf8_width, 4294967295);
-            if (scalar == 4294967295) { return self.fail(Error::InvalidUtf8(self.utf8_start)); }
-            self.utf8_used = 0;
-        }
+        if (self.utf8_sequence.complete()) { self.utf8_start = self.offset; }
+        if (!self.utf8_sequence.step(byte)) { return self.fail(Error::InvalidUtf8(self.utf8_start)); }
         return true;
     }
     // Field bytes from source[from, from + available) that step() would push
@@ -358,7 +478,7 @@ pub impl Decoder {
         if (limit <= 0) { return 0; }
         let left: u64 = 18446744073709551615 - self.offset;
         if ((limit as u64) > left) { limit = left as i32; }
-        let quoted: bool = self.mode == 2;
+        let quoted: bool = (match (self.mode.state()) { FieldPhaseState::Quoted -> true, _ -> false });
         let index: i32 = from; let stop: i32 = from + limit;
         while (index < stop) {
             let byte: u8 = source[index];
@@ -396,38 +516,38 @@ pub impl Decoder {
     }
     // Modes: 0 field start, 1 unquoted, 2 quoted, 3 after closing quote.
     fn step(&self, byte: u8) -> bool {
-        if (self.cr_pending) {
+        if ((match (self.mode.state()) { FieldPhaseState::AfterCr -> true, _ -> false })) {
             if (byte != 10) { return self.fail(Error::InvalidLineEnding(self.cr_start)); }
-            self.cr_pending = false;
+            self.mode.step(FieldEvent::Reset);
             return self.finish_field(self.cr_start) && self.finish_row(self.cr_start);
         }
         if (!self.accept_utf8(byte)) { return false; }
-        if (self.mode == 2) {
-            if (byte == 34) { self.mode = 3; return true; }
+        if ((match (self.mode.state()) { FieldPhaseState::Quoted -> true, _ -> false })) {
+            if (byte == 34) { self.mode.step(FieldEvent::CloseQuote); return true; }
             if ((byte < 32 && byte != 13 && byte != 10) || byte == 127) { return self.fail(Error::InvalidCharacter(self.offset)); }
             return self.push_byte(byte);
         }
-        if (self.mode == 3 && byte == 34) {
+        if ((match (self.mode.state()) { FieldPhaseState::AfterQuote -> true, _ -> false }) && byte == 34) {
             if (!self.push_byte(byte)) { return false; }
-            self.mode = 2; return true;
+            self.mode.step(FieldEvent::Quote); return true;
         }
         if (byte == 44) {
             if (!self.finish_field(self.offset)) { return false; }
-            self.mode = 0; self.pending = true; return true;
+            self.mode.step(FieldEvent::Reset); self.record_progress.step(RecordEvent::Started); return true;
         }
-        if (byte == 13) { self.cr_pending = true; self.cr_start = self.offset; return true; }
+        if (byte == 13) { self.mode.step(FieldEvent::CarriageReturn); self.cr_start = self.offset; return true; }
         if (byte == 10) {
             if (!self.options.allow_lf) { return self.fail(Error::InvalidLineEnding(self.offset)); }
             return self.finish_field(self.offset) && self.finish_row(self.offset);
         }
-        if (self.mode == 3) { return self.fail(Error::TrailingText(self.offset)); }
+        if ((match (self.mode.state()) { FieldPhaseState::AfterQuote -> true, _ -> false })) { return self.fail(Error::TrailingText(self.offset)); }
         if (byte == 34) {
-            if (self.mode != 0) { return self.fail(Error::UnexpectedQuote(self.offset)); }
-            self.mode = 2; self.quote_start = self.offset; self.pending = true; return true;
+            if ((!(match (self.mode.state()) { FieldPhaseState::Start -> true, _ -> false }))) { return self.fail(Error::UnexpectedQuote(self.offset)); }
+            self.mode.step(FieldEvent::Quote); self.quote_start = self.offset; self.record_progress.step(RecordEvent::Started); return true;
         }
         if (byte < 32 || byte == 127) { return self.fail(Error::InvalidCharacter(self.offset)); }
         if (!self.push_byte(byte)) { return false; }
-        self.mode = 1; self.pending = true; return true;
+        self.mode.step(FieldEvent::Text); self.record_progress.step(RecordEvent::Started); return true;
     }
     // Empty input is not EOF and preserves the current record. A valid
     // nonempty attempt on an unfinished decoder invalidates the previous
@@ -437,8 +557,8 @@ pub impl Decoder {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
         if (!core::io::valid_range(start, count)) { return core::result::Err(Error::Bounds); }
         if (count == 0) { return core::result::Ok(Progress { consumed: 0, record: false }); }
-        if (self.finished) { return core::result::Err(Error::Finished); }
-        if (self.ready) { self.current.clear(); self.ready = false; }
+        if (self.delivery.finished()) { return core::result::Err(Error::Finished); }
+        if (self.delivery.ready()) { self.current.clear(); self.delivery.taken(); }
         let consumed: i32 = 0;
         while (consumed < count) {
             if (self.offset == 18446744073709551615) {
@@ -449,14 +569,14 @@ pub impl Decoder {
                 self.fail(Error::LimitExceeded(self.offset));
                 return core::result::Err(core::option::unwrap(self.failure));
             }
-            if ((self.mode == 1 || self.mode == 2) && !self.cr_pending && self.utf8_used == 0) {
+            if (((match (self.mode.state()) { FieldPhaseState::Unquoted -> true, _ -> false }) || (match (self.mode.state()) { FieldPhaseState::Quoted -> true, _ -> false })) && !(match (self.mode.state()) { FieldPhaseState::AfterCr -> true, _ -> false }) && self.utf8_sequence.complete()) {
                 let run: i32 = self.plain_run(source, start + consumed, count - consumed);
                 if (run < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
                 if (run > 0) { consumed += run; self.offset += run as u64; continue; }
             }
             if (!self.step(source[start + consumed])) { return core::result::Err(core::option::unwrap(self.failure)); }
             consumed += 1; self.offset += 1;
-            if (self.ready) { return core::result::Ok(Progress { consumed: consumed, record: true }); }
+            if (self.delivery.ready()) { return core::result::Ok(Progress { consumed: consumed, record: true }); }
         }
         return core::result::Ok(Progress { consumed: consumed, record: false });
     }
@@ -464,27 +584,27 @@ pub impl Decoder {
     // Repeated EOF is harmless, preserves the last record and returns false.
     pub fn finish(&self) -> core::result::Result<bool, Error> {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
-        if (self.finished) { return core::result::Ok(false); }
-        if (self.cr_pending) { self.fail(Error::InvalidLineEnding(self.cr_start)); }
+        if (self.delivery.finished()) { return core::result::Ok(false); }
+        if ((match (self.mode.state()) { FieldPhaseState::AfterCr -> true, _ -> false })) { self.fail(Error::InvalidLineEnding(self.cr_start)); }
         else {
-            if (self.utf8_used != 0) { self.fail(Error::InvalidUtf8(self.utf8_start)); }
-            else { if (self.mode == 2) { self.fail(Error::UnclosedQuote(self.quote_start)); } }
+            if (!self.utf8_sequence.complete()) { self.fail(Error::InvalidUtf8(self.utf8_start)); }
+            else { if ((match (self.mode.state()) { FieldPhaseState::Quoted -> true, _ -> false })) { self.fail(Error::UnclosedQuote(self.quote_start)); } }
         }
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
-        if (self.pending) {
+        if ((match (self.record_progress.state()) { RecordProgressState::Partial -> true, _ -> false })) {
             if (!self.finish_field(self.offset) || !self.finish_row(self.offset)) { return core::result::Err(core::option::unwrap(self.failure)); }
-            self.finished = true; return core::result::Ok(true);
+            self.delivery.finish(); return core::result::Ok(true);
         }
-        self.finished = true; return core::result::Ok(false);
+        self.delivery.finish(); return core::result::Ok(false);
     }
     // Retain capacities; clear counters, error, EOF and all borrowed records.
     pub fn reset(&self) {
         self.current.clear(); self.failure = core::option::None();
         self.offset = 0; self.records = 0; self.width = 0;
-        self.mode = 0; self.quote_start = 0; self.field_start = 0; self.pending = false;
-        self.cr_pending = false; self.cr_start = 0; self.ready = false; self.finished = false;
-        self.utf8_width = 0; self.utf8_used = 0; self.utf8_start = 0;
-        self.first = 0; self.second = 0; self.third = 0;
+        self.mode.step(FieldEvent::Reset); self.quote_start = 0; self.field_start = 0; self.record_progress.step(RecordEvent::Ended);
+        self.mode.step(FieldEvent::Reset); self.cr_start = 0; self.delivery.taken(); self.delivery.reset();
+        self.utf8_sequence = core::utf8_state::sequence_start(false); self.utf8_start = 0;
+
     }
     pub fn destroy(&self) { self.current.destroy(); self.reset(); }
 }
@@ -540,7 +660,7 @@ pub impl Table {
         }
         if (row.count > 0) { total += 1; }
         let borrowed: Record = Record { bytes: self.bytes, fields: self.spans };
-        return Encoding { row: borrowed, base: row.first, fields: row.count, column: 0, offset: 0, phase: 0, remaining_bytes: total };
+        return Encoding { row: borrowed, base: row.first, fields: row.count, column: 0, offset: 0, phase: encoding_phase_start(), remaining_bytes: total };
     }
     pub fn destroy(&self) {
         self.bytes.destroy(); self.spans.destroy(); self.rows.destroy();

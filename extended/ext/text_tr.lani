@@ -15,6 +15,20 @@ import core::result;
 import core::slice;
 import ext::text_lines;
 
+pub enum ElementEvent { Begin, Position(i64), Advance, Next }
+pub machine ElementPhase on ElementEvent {
+    start Start;
+    state Start { ElementEvent::Begin -> goto New, ElementEvent::Position(value) -> goto Progress(value), ElementEvent::Advance -> stay, ElementEvent::Next -> goto New, }
+    state New { ElementEvent::Begin -> stay, ElementEvent::Position(value) -> goto Progress(value), ElementEvent::Advance -> stay, ElementEvent::Next -> stay, }
+    state Progress(value: i64) { ElementEvent::Begin -> stay, ElementEvent::Position(next) -> goto Progress(next), ElementEvent::Advance -> goto Progress(value+1), ElementEvent::Next -> goto New, }
+}
+pub impl ElementPhase {
+    pub fn initial(&self) -> bool { return match(self.state()) { ElementPhaseState::Start -> true, _ -> false }; }
+    pub fn fresh(&self) -> bool { return match(self.state()) { ElementPhaseState::New -> true, _ -> false }; }
+    pub fn position(&self) -> i64 { return match(self.state()) { ElementPhaseState::Progress(value) -> value, _ -> 0 }; }
+}
+
+
 pub enum Error {
     MissingOperand, ExtraOperand, MissingClassName, MissingEquivChar, InvalidClass, EquivNotSingle,
     InvalidRepeat, ReverseRange, RepeatInSet1, TwoRepeats, RepeatNotTranslating, EquivInSet2,
@@ -27,10 +41,11 @@ pub fn default_options() -> Options { return Options { complement: false, delete
 struct Elem { kind: i32, a: i32, b: i32, count: i64 }
 struct Spec { elems: alloc::vec::Vec<Elem>, length: i64, indefinite: i32, indefinite_at: i32, has_class: bool, restricted: bool, has_equiv: bool }
 impl Spec { fn borrow(&self) -> &Spec { return self; } fn destroy(&self) { self.elems.destroy(); } }
-// get_next state: element index, position (-1 new element, -2 not started), last case class (0 none, 1 lower, 2 upper).
-struct Cursor { at: i32, state: i64, cls: i32 }
+// Element lifecycle carries the current range/repetition position; cls
+// records the last case class (0 none, 1 lower, 2 upper).
+struct Cursor { at: i32, phase: ElementPhase, cls: i32 }
 impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
-fn tr_cursor() -> Cursor { return Cursor { at: 0, state: -2, cls: 0 }; }
+fn tr_cursor() -> Cursor { return Cursor { at: 0, phase: element_phase_start(), cls: 0 }; }
 
 // Class ids: alnum alpha blank cntrl digit graph lower print punct space upper xdigit.
 const LOWER: i32 = 6;
@@ -54,30 +69,30 @@ fn tr_class_size(cls: i32) -> i64 { let n: i64 = 0; let c: i32 = 0; while (c < 2
 
 fn tr_next(s: &Spec, c: &Cursor) -> i32 {
     c.cls = 0;
-    if (c.state == -2) { c.at = 0; c.state = -1; }
+    if (c.phase.initial()) { c.at = 0; c.phase.step(ElementEvent::Next); }
     while (true) {
         if (c.at >= s.elems.len()) { return -1; }
         let e: Elem = core::option::unwrap(s.elems.get(c.at));
-        if (e.kind == 0 || e.kind == 3) { c.at += 1; c.state = -1; return e.a; }
+        if (e.kind == 0 || e.kind == 3) { c.at += 1; c.phase.step(ElementEvent::Next); return e.a; }
         if (e.kind == 1) {
-            if (c.state == -1) { c.state = e.a as i64; } else { c.state += 1; }
-            let r: i32 = c.state as i32; if (r == e.b) { c.at += 1; c.state = -1; } return r;
+            if (c.phase.fresh()) { c.phase.step(ElementEvent::Position(e.a as i64)); } else { c.phase.step(ElementEvent::Advance); }
+            let r: i32 = c.phase.position() as i32; if (r == e.b) { c.at += 1; c.phase.step(ElementEvent::Next); } return r;
         }
         if (e.kind == 2) {
             if (e.a == LOWER) { c.cls = 1; } if (e.a == UPPER) { c.cls = 2; }
-            if (c.state == -1) { let k: i32 = 0; while (k < 256 && !tr_member(e.a, k)) { k += 1; } c.state = k as i64; }
-            let r: i32 = c.state as i32; let k: i32 = r + 1; while (k < 256 && !tr_member(e.a, k)) { k += 1; }
-            if (k < 256) { c.state = k as i64; } else { c.at += 1; c.state = -1; }
+            if (c.phase.fresh()) { let k: i32 = 0; while (k < 256 && !tr_member(e.a, k)) { k += 1; } c.phase.step(ElementEvent::Position(k as i64)); }
+            let r: i32 = c.phase.position() as i32; let k: i32 = r + 1; while (k < 256 && !tr_member(e.a, k)) { k += 1; }
+            if (k < 256) { c.phase.step(ElementEvent::Position(k as i64)); } else { c.at += 1; c.phase.step(ElementEvent::Next); }
             return r;
         }
-        if (e.count == 0) { c.at += 1; c.state = -1; continue; }
-        if (c.state == -1) { c.state = 0; }
-        c.state += 1; if (c.state == e.count) { c.at += 1; c.state = -1; }
+        if (e.count == 0) { c.at += 1; c.phase.step(ElementEvent::Next); continue; }
+        if (c.phase.fresh()) { c.phase.step(ElementEvent::Position(0)); }
+        c.phase.step(ElementEvent::Advance); if (c.phase.position() == e.count) { c.at += 1; c.phase.step(ElementEvent::Next); }
         return e.a;
     }
     return -1;
 }
-fn tr_skip(c: &Cursor) { c.at += 1; c.state = -1; }
+fn tr_skip(c: &Cursor) { c.at += 1; c.phase.step(ElementEvent::Next); }
 
 // ------------------------------------------------------------------ parsing
 struct Quoted { ch: alloc::vec::Vec<i32>, esc: alloc::vec::Vec<i32> }
@@ -256,7 +271,7 @@ fn tr_case_classes(s1: &Spec, s2: &Spec, complement: bool) -> bool {
             if (k1 == 2) { s1.length -= n_upper - 1; } else { s1.length -= n_lower - 1; }
             if (k2 == 2) { s2.length -= n_upper - 1; } else { s2.length -= n_lower - 1; }
         }
-        new1 = a.state == -1; new2 = b.state == -1;
+        new1 = a.phase.fresh(); new2 = b.phase.fresh();
     }
     return true;
 }

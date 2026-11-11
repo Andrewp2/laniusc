@@ -1,0 +1,101 @@
+module app::main;
+import core::mem;
+import core::text;
+import core::slice;
+import core::result;
+import core::option;
+import ext::window;
+extern "C" fn probe_fault(stage:i32);
+extern "C" fn probe_hits() -> i32;
+extern "C" fn probe_frames() -> i32;
+extern "C" fn probe_freed() -> i32;
+extern "C" fn probe_empty();
+extern "C" fn probe_pixels(id:u64,width:i32,height:i32);
+extern "C" fn probe_metadata(id:u64,resizable:i32);
+extern "C" fn probe_events(one:u64,two:u64);
+extern "C" fn probe_resize(id:u64,width:i32,height:i32);
+extern "C" fn probe_close(id:u64);
+extern "C" fn probe_drain();
+extern "C" fn probe_thread(entry:ptr,argument:ptr) -> i32;
+fn foreign(argument:ptr) -> ptr {
+    let context=ext::window::Context { storage:argument };
+    assert(match(context.poll().unwrap_err().cause) { ext::window::Cause::WrongThread -> true, _ -> false });
+    assert(match(context.close().unwrap_err().cause) { ext::window::Cause::WrongThread -> true, _ -> false });
+    let nowhere:ptr=0; return nowhere;
+}
+fn next(context:&ext::window::Context) -> ext::window::Event { return context.poll().unwrap().unwrap(); }
+fn main() -> i32 {
+    probe_fault(1); assert(match(ext::window::init().unwrap_err().cause) { ext::window::Cause::NoDisplay -> true, _ -> false }); probe_empty();
+    probe_fault(2); assert(match(ext::window::init().unwrap_err().cause) { ext::window::Cause::UnsupportedDisplay -> true, _ -> false }); probe_empty();
+    probe_fault(3); assert(match(ext::window::init().unwrap_err().cause) { ext::window::Cause::Native -> true, _ -> false }); probe_empty();
+    let context=ext::window::init().unwrap();
+    let independent=ext::window::init().unwrap(); assert(independent.close().unwrap());
+    // Restore the probe's observer connection to the one exercised below.
+    assert(context.close().unwrap());
+    context=ext::window::init().unwrap();
+    assert(context.is_open()); assert(probe_thread(foreign,context.storage)==0);
+    let title=core::text::from_str("café!");
+    assert(match(context.create(title,0,8,true).unwrap_err().cause) { ext::window::Cause::InvalidSize -> true, _ -> false });
+    assert(context.create(title,8,16385,true).is_err());
+    let bad:[u8;3]=[65,0,66]; assert(context.create(core::text::from_utf8(bad,3).unwrap(),8,8,true).is_err());
+    let invalid:[u8;1]=[255]; assert(context.create(core::text::Text { bytes:invalid,start:0,length:1 },8,8,true).is_err());
+    let metadata=core::text::Text { bytes:bad,start:-1,length:1 }; assert(context.create(metadata,8,8,true).is_err());
+    assert(context.create(core::text::Text { bytes:bad,start:2,length:2 },8,8,true).is_err());
+    let long:[u8;4096]=[65;4096]; assert(context.create(core::text::from_utf8(long,4096).unwrap(),8,8,true).is_err());
+    let stage:i32=4;
+    while(stage<=8) {
+        probe_fault(stage); let error=context.create(title,8,8,true).unwrap_err();
+        assert(match(error.cause) { ext::window::Cause::AllocationFailed -> stage==4 || stage==7, ext::window::Cause::UnsupportedDisplay -> stage==5, ext::window::Cause::Native -> stage==6 || stage==8, _ -> false });
+        // Partial creation must not leave the context busy or leak native owners.
+        assert(context.close().unwrap()); probe_empty(); context=ext::window::init().unwrap(); stage+=1;
+    }
+    let one=context.create(title,8,8,true).unwrap();
+    let two=context.create(title,8,8,false).unwrap();
+    assert(one.is_open() && one.id()!=0 && two.id()!=one.id());
+    probe_metadata(one.id(),1); probe_metadata(two.id(),0);
+    assert(match(context.close().unwrap_err().cause) { ext::window::Cause::Busy -> true, _ -> false });
+    assert(match(context.wait(-1).unwrap_err().cause) { ext::window::Cause::InvalidTimeout -> true, _ -> false });
+    let pixels:[u32;66]=[0;66]; let i:i32=0;
+    while(i<66) { pixels[i]=ext::window::rgb(((i*17)%256) as u8,((i*7)%256) as u8,((i*3)%256) as u8)|855638016; i+=1; }
+    let view=core::slice::View<u32> { values:pixels,start:1,length:64 };
+    let short=core::slice::View<u32> { values:pixels,start:0,length:63 };
+    assert(match(one.present(short).unwrap_err().cause) { ext::window::Cause::InvalidPixels -> true, _ -> false });
+    assert(one.present(core::slice::View<u32> { values:pixels,start:-1,length:64 }).is_err());
+    assert(one.present(core::slice::View<u32> { values:pixels,start:3,length:64 }).is_err());
+    assert(one.canvas_size().width==8 && one.canvas_size().height==8);
+    assert(one.present(view).unwrap()==64); probe_pixels(one.id(),8,8);
+    probe_fault(9); assert(match(one.size().unwrap_err().cause) { ext::window::Cause::Native -> true, _ -> false });
+    probe_resize(one.id(),13,11);
+    probe_fault(4); assert(match(one.present(view).unwrap_err().cause) { ext::window::Cause::AllocationFailed -> true, _ -> false });
+    assert(one.is_open() && one.canvas_size().width==8);
+    assert(one.present(view).unwrap()==64); probe_pixels(one.id(),13,11);
+    let size=one.size().unwrap(); assert(size.width==13 && size.height==11);
+    probe_events(one.id(),two.id());
+    assert(match(next(context.borrow())) { ext::window::Event::Exposed(id) -> id==one.id(), _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Resized(e) -> e.window==one.id() && e.width==27 && e.height==19, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Key(e) -> e.window==two.id() && e.down && e.scan>0 && e.modifiers==1 && match(e.key) { ext::window::Key::Escape -> true, _ -> false }, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Key(e) -> e.window==two.id() && !e.down, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Motion(e) -> e.window==one.id() && e.x== -4 && e.y==23 && e.buttons==256, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Button(e) -> e.window==two.id() && e.button==3 && e.down && e.x==7 && e.y== -2, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Button(e) -> e.window==two.id() && !e.down, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Focus(e) -> e.window==one.id() && e.gained, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Focus(e) -> e.window==one.id() && !e.gained, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Other(kind) -> kind==33, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Other(kind) -> kind==33, _ -> false });
+    assert(match(next(context.borrow())) { ext::window::Event::Other(kind) -> kind==34, _ -> false });
+    probe_close(two.id()); let closed:bool=false; i=0;
+    while(i<256 && !closed) { let event=context.wait(10).unwrap(); if(event.is_some()) { closed=match(event.unwrap()) { ext::window::Event::Close(id) -> id==two.id(), _ -> false }; } i+=1; }
+    assert(closed && two.is_open());
+    // A quiescent connection exercises the actual poll timeout and injected errno.
+    assert(one.close().unwrap()); assert(two.close().unwrap()); probe_drain();
+    assert(context.wait(0).unwrap().is_none()); assert(context.wait(1).unwrap().is_none());
+    probe_fault(10); assert(match(context.wait(1).unwrap_err().cause) { ext::window::Cause::System(code) -> code==5, _ -> false });
+    probe_fault(11); assert(match(context.wait(1).unwrap_err().cause) { ext::window::Cause::Disconnected -> true, _ -> false });
+    assert(!one.is_open() && one.id()==0 && !one.close().unwrap());
+    assert(match(one.size().unwrap_err().cause) { ext::window::Cause::Closed -> true, _ -> false });
+    assert(one.present(view).is_err()); assert(context.close().unwrap());
+    assert(!context.is_open() && !context.close().unwrap() && context.poll().is_err() && context.wait(0).is_err());
+    assert(context.create(title,8,8,true).is_err());
+    assert(probe_hits()==12 && probe_freed()==2 && probe_frames()==2); probe_empty();
+    return 0;
+}

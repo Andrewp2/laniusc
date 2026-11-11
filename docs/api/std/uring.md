@@ -12,26 +12,85 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-uring](../../stdlib-uring.md)
 
-Declaration counts: constant: 16; enum: 1; field: 31; function: 9; impl: 2; method: 36; struct: 2; variant: 8.
+Declaration counts: constant: 16; enum: 2; field: 31; function: 9; impl: 3; machine: 1; method: 40; struct: 2; variant: 13.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/uring.lani#L11)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/uring.lani#L12)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/uring.lani#L13)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/uring.lani#L14)
-- [std::linux](linux.md) · [source](../../../stdlib/std/uring.lani#L15)
-- [std::atomic](atomic.md) · [source](../../../stdlib/std/uring.lani#L16)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/uring.lani#L11)
+- [core::io_state](../core/io_state.md) · [source](../../../stdlib/std/uring.lani#L12)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/std/uring.lani#L13)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/uring.lani#L14)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/uring.lani#L15)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/uring.lani#L16)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/uring.lani#L17)
+- [std::linux](linux.md) · [source](../../../stdlib/std/uring.lani#L18)
+- [std::atomic](atomic.md) · [source](../../../stdlib/std/uring.lani#L19)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: TransferPhaseEvent
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+pub enum TransferPhaseEvent
+```
+
+#### variant: Begin
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+Begin
+```
+
+#### variant: ReadReady
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+ReadReady
+```
+
+#### variant: ReadEmpty
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+ReadEmpty
+```
+
+#### variant: WriteStarted
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+WriteStarted
+```
+
+#### variant: Complete
+
+[Source line 21](../../../stdlib/std/uring.lani#L21)
+
+```lanius
+Complete
+```
+
+### machine: TransferPhase
+
+[Source line 22](../../../stdlib/std/uring.lani#L22)
+
+```lanius
+pub machine TransferPhase on TransferPhaseEvent
+```
+
 ### enum: Error
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 pub enum Error
@@ -39,7 +98,7 @@ pub enum Error
 
 #### variant: Host
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Host(i32)
@@ -47,7 +106,7 @@ Host(i32)
 
 #### variant: InvalidEntries
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 InvalidEntries
@@ -55,7 +114,7 @@ InvalidEntries
 
 #### variant: InvalidInput
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 InvalidInput
@@ -63,7 +122,7 @@ InvalidInput
 
 #### variant: Full
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Full
@@ -71,7 +130,7 @@ Full
 
 #### variant: Busy
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Busy
@@ -79,7 +138,7 @@ Busy
 
 #### variant: Closed
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Closed
@@ -87,7 +146,7 @@ Closed
 
 #### variant: Read
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Read(i32)
@@ -95,7 +154,7 @@ Read(i32)
 
 #### variant: Write
 
-[Source line 24](../../../stdlib/std/uring.lani#L24)
+[Source line 71](../../../stdlib/std/uring.lani#L71)
 
 ```lanius
 Write(i32)
@@ -103,7 +162,7 @@ Write(i32)
 
 ### struct: Completion
 
-[Source line 58](../../../stdlib/std/uring.lani#L58)
+[Source line 105](../../../stdlib/std/uring.lani#L105)
 
 ```lanius
 pub struct Completion
@@ -111,7 +170,7 @@ pub struct Completion
 
 #### field: user_data
 
-[Source line 58](../../../stdlib/std/uring.lani#L58)
+[Source line 105](../../../stdlib/std/uring.lani#L105)
 
 ```lanius
 user_data: u64
@@ -119,7 +178,7 @@ user_data: u64
 
 #### field: result
 
-[Source line 58](../../../stdlib/std/uring.lani#L58)
+[Source line 105](../../../stdlib/std/uring.lani#L105)
 
 ```lanius
 result: i32
@@ -127,7 +186,7 @@ result: i32
 
 #### field: flags
 
-[Source line 58](../../../stdlib/std/uring.lani#L58)
+[Source line 105](../../../stdlib/std/uring.lani#L105)
 
 ```lanius
 flags: u32
@@ -135,7 +194,7 @@ flags: u32
 
 ### struct: Ring
 
-[Source line 69](../../../stdlib/std/uring.lani#L69)
+[Source line 116](../../../stdlib/std/uring.lani#L116)
 
 ```lanius
 pub struct Ring
@@ -143,7 +202,7 @@ pub struct Ring
 
 #### field: fd
 
-[Source line 70](../../../stdlib/std/uring.lani#L70)
+[Source line 117](../../../stdlib/std/uring.lani#L117)
 
 ```lanius
 fd: i32
@@ -151,23 +210,23 @@ fd: i32
 
 #### field: features
 
-[Source line 70](../../../stdlib/std/uring.lani#L70)
+[Source line 117](../../../stdlib/std/uring.lani#L117)
 
 ```lanius
 features: i64
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 70](../../../stdlib/std/uring.lani#L70)
+[Source line 117](../../../stdlib/std/uring.lani#L117)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: sq_map
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 sq_map: ptr
@@ -175,7 +234,7 @@ sq_map: ptr
 
 #### field: sq_bytes
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 sq_bytes: i64
@@ -183,7 +242,7 @@ sq_bytes: i64
 
 #### field: cq_map
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 cq_map: ptr
@@ -191,7 +250,7 @@ cq_map: ptr
 
 #### field: cq_bytes
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 cq_bytes: i64
@@ -199,7 +258,7 @@ cq_bytes: i64
 
 #### field: sqes
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 sqes: ptr
@@ -207,7 +266,7 @@ sqes: ptr
 
 #### field: sqe_bytes
 
-[Source line 71](../../../stdlib/std/uring.lani#L71)
+[Source line 118](../../../stdlib/std/uring.lani#L118)
 
 ```lanius
 sqe_bytes: i64
@@ -215,7 +274,7 @@ sqe_bytes: i64
 
 #### field: sq_head
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_head: ptr
@@ -223,7 +282,7 @@ sq_head: ptr
 
 #### field: sq_tail
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_tail: ptr
@@ -231,7 +290,7 @@ sq_tail: ptr
 
 #### field: sq_flags
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_flags: ptr
@@ -239,7 +298,7 @@ sq_flags: ptr
 
 #### field: sq_dropped
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_dropped: ptr
@@ -247,7 +306,7 @@ sq_dropped: ptr
 
 #### field: sq_mask
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_mask: i64
@@ -255,7 +314,7 @@ sq_mask: i64
 
 #### field: sq_entries
 
-[Source line 72](../../../stdlib/std/uring.lani#L72)
+[Source line 119](../../../stdlib/std/uring.lani#L119)
 
 ```lanius
 sq_entries: i64
@@ -263,7 +322,7 @@ sq_entries: i64
 
 #### field: cq_head
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cq_head: ptr
@@ -271,7 +330,7 @@ cq_head: ptr
 
 #### field: cq_tail
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cq_tail: ptr
@@ -279,7 +338,7 @@ cq_tail: ptr
 
 #### field: cq_overflow
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cq_overflow: ptr
@@ -287,7 +346,7 @@ cq_overflow: ptr
 
 #### field: cqes
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cqes: ptr
@@ -295,7 +354,7 @@ cqes: ptr
 
 #### field: cq_mask
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cq_mask: i64
@@ -303,7 +362,7 @@ cq_mask: i64
 
 #### field: cq_entries
 
-[Source line 73](../../../stdlib/std/uring.lani#L73)
+[Source line 120](../../../stdlib/std/uring.lani#L120)
 
 ```lanius
 cq_entries: i64
@@ -311,7 +370,7 @@ cq_entries: i64
 
 #### field: tail
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 tail: i64
@@ -319,7 +378,7 @@ tail: i64
 
 #### field: head
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 head: i64
@@ -327,7 +386,7 @@ head: i64
 
 #### field: pending
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 pending: i64
@@ -335,7 +394,7 @@ pending: i64
 
 #### field: owed
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 owed: i64
@@ -343,7 +402,7 @@ owed: i64
 
 #### field: last
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 last: ptr
@@ -351,7 +410,7 @@ last: ptr
 
 #### field: moved
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 moved: i64
@@ -359,7 +418,7 @@ moved: i64
 
 #### field: scratch
 
-[Source line 74](../../../stdlib/std/uring.lani#L74)
+[Source line 121](../../../stdlib/std/uring.lani#L121)
 
 ```lanius
 scratch: ptr
@@ -369,7 +428,7 @@ scratch: ptr
 
 ### constant: OP_NOP
 
-[Source line 26](../../../stdlib/std/uring.lani#L26)
+[Source line 73](../../../stdlib/std/uring.lani#L73)
 
 ```lanius
 pub const OP_NOP: i64 = 0;
@@ -377,7 +436,7 @@ pub const OP_NOP: i64 = 0;
 
 ### constant: OP_READV
 
-[Source line 27](../../../stdlib/std/uring.lani#L27)
+[Source line 74](../../../stdlib/std/uring.lani#L74)
 
 ```lanius
 pub const OP_READV: i64 = 1;
@@ -385,7 +444,7 @@ pub const OP_READV: i64 = 1;
 
 ### constant: OP_WRITEV
 
-[Source line 28](../../../stdlib/std/uring.lani#L28)
+[Source line 75](../../../stdlib/std/uring.lani#L75)
 
 ```lanius
 pub const OP_WRITEV: i64 = 2;
@@ -393,7 +452,7 @@ pub const OP_WRITEV: i64 = 2;
 
 ### constant: OP_ACCEPT
 
-[Source line 29](../../../stdlib/std/uring.lani#L29)
+[Source line 76](../../../stdlib/std/uring.lani#L76)
 
 ```lanius
 pub const OP_ACCEPT: i64 = 13;
@@ -401,7 +460,7 @@ pub const OP_ACCEPT: i64 = 13;
 
 ### constant: OP_OPENAT
 
-[Source line 30](../../../stdlib/std/uring.lani#L30)
+[Source line 77](../../../stdlib/std/uring.lani#L77)
 
 ```lanius
 pub const OP_OPENAT: i64 = 18;
@@ -409,7 +468,7 @@ pub const OP_OPENAT: i64 = 18;
 
 ### constant: OP_CLOSE
 
-[Source line 31](../../../stdlib/std/uring.lani#L31)
+[Source line 78](../../../stdlib/std/uring.lani#L78)
 
 ```lanius
 pub const OP_CLOSE: i64 = 19;
@@ -417,7 +476,7 @@ pub const OP_CLOSE: i64 = 19;
 
 ### constant: OP_READ
 
-[Source line 32](../../../stdlib/std/uring.lani#L32)
+[Source line 79](../../../stdlib/std/uring.lani#L79)
 
 ```lanius
 pub const OP_READ: i64 = 22;
@@ -425,7 +484,7 @@ pub const OP_READ: i64 = 22;
 
 ### constant: OP_WRITE
 
-[Source line 33](../../../stdlib/std/uring.lani#L33)
+[Source line 80](../../../stdlib/std/uring.lani#L80)
 
 ```lanius
 pub const OP_WRITE: i64 = 23;
@@ -433,7 +492,7 @@ pub const OP_WRITE: i64 = 23;
 
 ### constant: OP_SEND
 
-[Source line 34](../../../stdlib/std/uring.lani#L34)
+[Source line 81](../../../stdlib/std/uring.lani#L81)
 
 ```lanius
 pub const OP_SEND: i64 = 26;
@@ -441,7 +500,7 @@ pub const OP_SEND: i64 = 26;
 
 ### constant: OP_RECV
 
-[Source line 35](../../../stdlib/std/uring.lani#L35)
+[Source line 82](../../../stdlib/std/uring.lani#L82)
 
 ```lanius
 pub const OP_RECV: i64 = 27;
@@ -449,7 +508,7 @@ pub const OP_RECV: i64 = 27;
 
 ### constant: LINK
 
-[Source line 38](../../../stdlib/std/uring.lani#L38)
+[Source line 85](../../../stdlib/std/uring.lani#L85)
 
 ```lanius
 pub const LINK: i64 = 4;
@@ -457,7 +516,7 @@ pub const LINK: i64 = 4;
 
 ### constant: SETUP_SUBMIT_ALL
 
-[Source line 40](../../../stdlib/std/uring.lani#L40)
+[Source line 87](../../../stdlib/std/uring.lani#L87)
 
 ```lanius
 pub const SETUP_SUBMIT_ALL: u32 = 128;
@@ -465,7 +524,7 @@ pub const SETUP_SUBMIT_ALL: u32 = 128;
 
 ### constant: SETUP_DEFER_TASKRUN
 
-[Source line 43](../../../stdlib/std/uring.lani#L43)
+[Source line 90](../../../stdlib/std/uring.lani#L90)
 
 ```lanius
 pub const SETUP_DEFER_TASKRUN: u32 = 12288;
@@ -473,7 +532,7 @@ pub const SETUP_DEFER_TASKRUN: u32 = 12288;
 
 ### constant: MAX_ENTRIES
 
-[Source line 44](../../../stdlib/std/uring.lani#L44)
+[Source line 91](../../../stdlib/std/uring.lani#L91)
 
 ```lanius
 pub const MAX_ENTRIES: u32 = 4096;
@@ -481,7 +540,7 @@ pub const MAX_ENTRIES: u32 = 4096;
 
 ### constant: CURRENT
 
-[Source line 46](../../../stdlib/std/uring.lani#L46)
+[Source line 93](../../../stdlib/std/uring.lani#L93)
 
 ```lanius
 pub const CURRENT: i64 = -1;
@@ -489,7 +548,7 @@ pub const CURRENT: i64 = -1;
 
 ### constant: AT_FDCWD
 
-[Source line 47](../../../stdlib/std/uring.lani#L47)
+[Source line 94](../../../stdlib/std/uring.lani#L94)
 
 ```lanius
 pub const AT_FDCWD: i32 = -100;
@@ -499,7 +558,7 @@ pub const AT_FDCWD: i32 = -100;
 
 ### function: map_buffers
 
-[Source line 111](../../../stdlib/std/uring.lani#L111)
+[Source line 158](../../../stdlib/std/uring.lani#L158)
 
 ```lanius
 pub fn map_buffers(bytes: usize) -> core::result::Result<ptr, Error>
@@ -507,7 +566,7 @@ pub fn map_buffers(bytes: usize) -> core::result::Result<ptr, Error>
 
 ### function: unmap_buffers
 
-[Source line 116](../../../stdlib/std/uring.lani#L116)
+[Source line 163](../../../stdlib/std/uring.lani#L163)
 
 ```lanius
 pub fn unmap_buffers(at: ptr, bytes: usize) -> core::result::Result<i32, Error>
@@ -515,7 +574,7 @@ pub fn unmap_buffers(at: ptr, bytes: usize) -> core::result::Result<i32, Error>
 
 ### function: stage_path
 
-[Source line 123](../../../stdlib/std/uring.lani#L123)
+[Source line 170](../../../stdlib/std/uring.lani#L170)
 
 ```lanius
 pub fn stage_path(bytes: core::slice::View<u8>, slot: ptr, capacity: i32) -> core::result::Result<i32, Error>
@@ -523,7 +582,7 @@ pub fn stage_path(bytes: core::slice::View<u8>, slot: ptr, capacity: i32) -> cor
 
 ### function: iovec
 
-[Source line 136](../../../stdlib/std/uring.lani#L136)
+[Source line 183](../../../stdlib/std/uring.lani#L183)
 
 ```lanius
 pub fn iovec(table: ptr, index: i32, base: ptr, length: usize)
@@ -531,7 +590,7 @@ pub fn iovec(table: ptr, index: i32, base: ptr, length: usize)
 
 ### function: seekable
 
-[Source line 141](../../../stdlib/std/uring.lani#L141)
+[Source line 188](../../../stdlib/std/uring.lani#L188)
 
 ```lanius
 pub fn seekable(fd: i32) -> bool
@@ -539,7 +598,7 @@ pub fn seekable(fd: i32) -> bool
 
 ### function: cat_output
 
-[Source line 151](../../../stdlib/std/uring.lani#L151)
+[Source line 198](../../../stdlib/std/uring.lani#L198)
 
 ```lanius
 pub fn cat_output(fd: i32) -> i64
@@ -547,7 +606,7 @@ pub fn cat_output(fd: i32) -> i64
 
 ### function: finish_output
 
-[Source line 160](../../../stdlib/std/uring.lani#L160)
+[Source line 207](../../../stdlib/std/uring.lani#L207)
 
 ```lanius
 pub fn finish_output(fd: i32, output_at: i64, written: i64) -> bool
@@ -555,7 +614,7 @@ pub fn finish_output(fd: i32, output_at: i64, written: i64) -> bool
 
 ### function: setup
 
-[Source line 167](../../../stdlib/std/uring.lani#L167)
+[Source line 214](../../../stdlib/std/uring.lani#L214)
 
 ```lanius
 pub fn setup(entries: u32) -> core::result::Result<Ring, Error>
@@ -563,7 +622,7 @@ pub fn setup(entries: u32) -> core::result::Result<Ring, Error>
 
 ### function: setup_with
 
-[Source line 171](../../../stdlib/std/uring.lani#L171)
+[Source line 218](../../../stdlib/std/uring.lani#L218)
 
 ```lanius
 pub fn setup_with(entries: u32, flags: u32) -> core::result::Result<Ring, Error>
@@ -571,9 +630,49 @@ pub fn setup_with(entries: u32, flags: u32) -> core::result::Result<Ring, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 59
+### impl at line 57
+
+[Source line 57](../../../stdlib/std/uring.lani#L57)
+
+```lanius
+pub impl TransferPhase
+```
+
+#### method: is_free
+
+[Source line 58](../../../stdlib/std/uring.lani#L58)
+
+```lanius
+pub fn is_free(&self) -> bool
+```
+
+#### method: is_active
 
 [Source line 59](../../../stdlib/std/uring.lani#L59)
+
+```lanius
+pub fn is_active(&self) -> bool
+```
+
+#### method: is_waiting
+
+[Source line 60](../../../stdlib/std/uring.lani#L60)
+
+```lanius
+pub fn is_waiting(&self) -> bool
+```
+
+#### method: is_empty
+
+[Source line 61](../../../stdlib/std/uring.lani#L61)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+### impl at line 106
+
+[Source line 106](../../../stdlib/std/uring.lani#L106)
 
 ```lanius
 pub impl Completion
@@ -581,7 +680,7 @@ pub impl Completion
 
 #### method: user_data
 
-[Source line 60](../../../stdlib/std/uring.lani#L60)
+[Source line 107](../../../stdlib/std/uring.lani#L107)
 
 ```lanius
 pub fn user_data(&self) -> u64
@@ -589,7 +688,7 @@ pub fn user_data(&self) -> u64
 
 #### method: result
 
-[Source line 62](../../../stdlib/std/uring.lani#L62)
+[Source line 109](../../../stdlib/std/uring.lani#L109)
 
 ```lanius
 pub fn result(&self) -> i32
@@ -597,7 +696,7 @@ pub fn result(&self) -> i32
 
 #### method: flags
 
-[Source line 63](../../../stdlib/std/uring.lani#L63)
+[Source line 110](../../../stdlib/std/uring.lani#L110)
 
 ```lanius
 pub fn flags(&self) -> u32
@@ -605,7 +704,7 @@ pub fn flags(&self) -> u32
 
 #### method: failed
 
-[Source line 64](../../../stdlib/std/uring.lani#L64)
+[Source line 111](../../../stdlib/std/uring.lani#L111)
 
 ```lanius
 pub fn failed(&self) -> bool
@@ -613,15 +712,15 @@ pub fn failed(&self) -> bool
 
 #### method: errno
 
-[Source line 65](../../../stdlib/std/uring.lani#L65)
+[Source line 112](../../../stdlib/std/uring.lani#L112)
 
 ```lanius
 pub fn errno(&self) -> i32
 ```
 
-### impl at line 234
+### impl at line 281
 
-[Source line 234](../../../stdlib/std/uring.lani#L234)
+[Source line 281](../../../stdlib/std/uring.lani#L281)
 
 ```lanius
 pub impl Ring
@@ -629,7 +728,7 @@ pub impl Ring
 
 #### method: borrow
 
-[Source line 235](../../../stdlib/std/uring.lani#L235)
+[Source line 282](../../../stdlib/std/uring.lani#L282)
 
 ```lanius
 pub fn borrow(&self) -> &Ring
@@ -637,7 +736,7 @@ pub fn borrow(&self) -> &Ring
 
 #### method: fd
 
-[Source line 236](../../../stdlib/std/uring.lani#L236)
+[Source line 283](../../../stdlib/std/uring.lani#L283)
 
 ```lanius
 pub fn fd(&self) -> i32
@@ -645,7 +744,7 @@ pub fn fd(&self) -> i32
 
 #### method: features
 
-[Source line 237](../../../stdlib/std/uring.lani#L237)
+[Source line 284](../../../stdlib/std/uring.lani#L284)
 
 ```lanius
 pub fn features(&self) -> u32
@@ -653,7 +752,7 @@ pub fn features(&self) -> u32
 
 #### method: submission_entries
 
-[Source line 238](../../../stdlib/std/uring.lani#L238)
+[Source line 285](../../../stdlib/std/uring.lani#L285)
 
 ```lanius
 pub fn submission_entries(&self) -> i32
@@ -661,7 +760,7 @@ pub fn submission_entries(&self) -> i32
 
 #### method: completion_entries
 
-[Source line 239](../../../stdlib/std/uring.lani#L239)
+[Source line 286](../../../stdlib/std/uring.lani#L286)
 
 ```lanius
 pub fn completion_entries(&self) -> i32
@@ -669,7 +768,7 @@ pub fn completion_entries(&self) -> i32
 
 #### method: pending
 
-[Source line 241](../../../stdlib/std/uring.lani#L241)
+[Source line 288](../../../stdlib/std/uring.lani#L288)
 
 ```lanius
 pub fn pending(&self) -> i32
@@ -677,7 +776,7 @@ pub fn pending(&self) -> i32
 
 #### method: owed
 
-[Source line 243](../../../stdlib/std/uring.lani#L243)
+[Source line 290](../../../stdlib/std/uring.lani#L290)
 
 ```lanius
 pub fn owed(&self) -> i32
@@ -685,7 +784,7 @@ pub fn owed(&self) -> i32
 
 #### method: space
 
-[Source line 245](../../../stdlib/std/uring.lani#L245)
+[Source line 292](../../../stdlib/std/uring.lani#L292)
 
 ```lanius
 pub fn space(&self) -> i32
@@ -693,7 +792,7 @@ pub fn space(&self) -> i32
 
 #### method: dropped
 
-[Source line 254](../../../stdlib/std/uring.lani#L254)
+[Source line 301](../../../stdlib/std/uring.lani#L301)
 
 ```lanius
 pub fn dropped(&self) -> i32
@@ -701,7 +800,7 @@ pub fn dropped(&self) -> i32
 
 #### method: overflowed
 
-[Source line 255](../../../stdlib/std/uring.lani#L255)
+[Source line 302](../../../stdlib/std/uring.lani#L302)
 
 ```lanius
 pub fn overflowed(&self) -> i32
@@ -709,7 +808,7 @@ pub fn overflowed(&self) -> i32
 
 #### method: is_live
 
-[Source line 256](../../../stdlib/std/uring.lani#L256)
+[Source line 303](../../../stdlib/std/uring.lani#L303)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -717,7 +816,7 @@ pub fn is_live(&self) -> bool
 
 #### method: transferred
 
-[Source line 258](../../../stdlib/std/uring.lani#L258)
+[Source line 305](../../../stdlib/std/uring.lani#L305)
 
 ```lanius
 pub fn transferred(&self) -> i64
@@ -725,7 +824,7 @@ pub fn transferred(&self) -> i64
 
 #### method: push
 
-[Source line 263](../../../stdlib/std/uring.lani#L263)
+[Source line 310](../../../stdlib/std/uring.lani#L310)
 
 ```lanius
 pub fn push(&self, opcode: i64, fd: i32, offset: i64, address: ptr, length: i64, op_flags: i64, user_data: u64, flags: i64) -> core::result::Result<i32, Error>
@@ -733,7 +832,7 @@ pub fn push(&self, opcode: i64, fd: i32, offset: i64, address: ptr, length: i64,
 
 #### method: link_last
 
-[Source line 283](../../../stdlib/std/uring.lani#L283)
+[Source line 330](../../../stdlib/std/uring.lani#L330)
 
 ```lanius
 pub fn link_last(&self) -> core::result::Result<i32, Error>
@@ -741,7 +840,7 @@ pub fn link_last(&self) -> core::result::Result<i32, Error>
 
 #### method: nop
 
-[Source line 290](../../../stdlib/std/uring.lani#L290)
+[Source line 337](../../../stdlib/std/uring.lani#L337)
 
 ```lanius
 pub fn nop(&self, user_data: u64) -> core::result::Result<i32, Error>
@@ -749,7 +848,7 @@ pub fn nop(&self, user_data: u64) -> core::result::Result<i32, Error>
 
 #### method: read
 
-[Source line 294](../../../stdlib/std/uring.lani#L294)
+[Source line 341](../../../stdlib/std/uring.lani#L341)
 
 ```lanius
 pub fn read(&self, fd: i32, buffer: ptr, length: i32, offset: i64, user_data: u64) -> core::result::Result<i32, Error>
@@ -757,7 +856,7 @@ pub fn read(&self, fd: i32, buffer: ptr, length: i32, offset: i64, user_data: u6
 
 #### method: write
 
-[Source line 298](../../../stdlib/std/uring.lani#L298)
+[Source line 345](../../../stdlib/std/uring.lani#L345)
 
 ```lanius
 pub fn write(&self, fd: i32, buffer: ptr, length: i32, offset: i64, user_data: u64) -> core::result::Result<i32, Error>
@@ -765,7 +864,7 @@ pub fn write(&self, fd: i32, buffer: ptr, length: i32, offset: i64, user_data: u
 
 #### method: readv
 
-[Source line 303](../../../stdlib/std/uring.lani#L303)
+[Source line 350](../../../stdlib/std/uring.lani#L350)
 
 ```lanius
 pub fn readv(&self, fd: i32, iovecs: ptr, count: i32, offset: i64, user_data: u64) -> core::result::Result<i32, Error>
@@ -773,7 +872,7 @@ pub fn readv(&self, fd: i32, iovecs: ptr, count: i32, offset: i64, user_data: u6
 
 #### method: writev
 
-[Source line 307](../../../stdlib/std/uring.lani#L307)
+[Source line 354](../../../stdlib/std/uring.lani#L354)
 
 ```lanius
 pub fn writev(&self, fd: i32, iovecs: ptr, count: i32, offset: i64, user_data: u64) -> core::result::Result<i32, Error>
@@ -781,7 +880,7 @@ pub fn writev(&self, fd: i32, iovecs: ptr, count: i32, offset: i64, user_data: u
 
 #### method: openat
 
-[Source line 312](../../../stdlib/std/uring.lani#L312)
+[Source line 359](../../../stdlib/std/uring.lani#L359)
 
 ```lanius
 pub fn openat(&self, directory: i32, path: ptr, flags: i32, mode: u32, user_data: u64) -> core::result::Result<i32, Error>
@@ -789,7 +888,7 @@ pub fn openat(&self, directory: i32, path: ptr, flags: i32, mode: u32, user_data
 
 #### method: close
 
-[Source line 315](../../../stdlib/std/uring.lani#L315)
+[Source line 362](../../../stdlib/std/uring.lani#L362)
 
 ```lanius
 pub fn close(&self, fd: i32, user_data: u64) -> core::result::Result<i32, Error>
@@ -797,7 +896,7 @@ pub fn close(&self, fd: i32, user_data: u64) -> core::result::Result<i32, Error>
 
 #### method: accept
 
-[Source line 320](../../../stdlib/std/uring.lani#L320)
+[Source line 367](../../../stdlib/std/uring.lani#L367)
 
 ```lanius
 pub fn accept(&self, fd: i32, address: ptr, address_length: ptr, flags: i32, user_data: u64) -> core::result::Result<i32, Error>
@@ -805,7 +904,7 @@ pub fn accept(&self, fd: i32, address: ptr, address_length: ptr, flags: i32, use
 
 #### method: recv
 
-[Source line 327](../../../stdlib/std/uring.lani#L327)
+[Source line 374](../../../stdlib/std/uring.lani#L374)
 
 ```lanius
 pub fn recv(&self, fd: i32, buffer: ptr, length: i32, flags: i32, user_data: u64) -> core::result::Result<i32, Error>
@@ -813,7 +912,7 @@ pub fn recv(&self, fd: i32, buffer: ptr, length: i32, flags: i32, user_data: u64
 
 #### method: send
 
-[Source line 331](../../../stdlib/std/uring.lani#L331)
+[Source line 378](../../../stdlib/std/uring.lani#L378)
 
 ```lanius
 pub fn send(&self, fd: i32, buffer: ptr, length: i32, flags: i32, user_data: u64) -> core::result::Result<i32, Error>
@@ -821,7 +920,7 @@ pub fn send(&self, fd: i32, buffer: ptr, length: i32, flags: i32, user_data: u64
 
 #### method: submit
 
-[Source line 357](../../../stdlib/std/uring.lani#L357)
+[Source line 404](../../../stdlib/std/uring.lani#L404)
 
 ```lanius
 pub fn submit(&self) -> core::result::Result<i32, Error>
@@ -829,7 +928,7 @@ pub fn submit(&self) -> core::result::Result<i32, Error>
 
 #### method: submit_and_wait
 
-[Source line 366](../../../stdlib/std/uring.lani#L366)
+[Source line 413](../../../stdlib/std/uring.lani#L413)
 
 ```lanius
 pub fn submit_and_wait(&self, count: i32) -> core::result::Result<i32, Error>
@@ -837,7 +936,7 @@ pub fn submit_and_wait(&self, count: i32) -> core::result::Result<i32, Error>
 
 #### method: ready
 
-[Source line 375](../../../stdlib/std/uring.lani#L375)
+[Source line 422](../../../stdlib/std/uring.lani#L422)
 
 ```lanius
 pub fn ready(&self) -> i32
@@ -845,7 +944,7 @@ pub fn ready(&self) -> i32
 
 #### method: peek
 
-[Source line 377](../../../stdlib/std/uring.lani#L377)
+[Source line 424](../../../stdlib/std/uring.lani#L424)
 
 ```lanius
 pub fn peek(&self) -> core::option::Option<Completion>
@@ -853,7 +952,7 @@ pub fn peek(&self) -> core::option::Option<Completion>
 
 #### method: wait
 
-[Source line 391](../../../stdlib/std/uring.lani#L391)
+[Source line 438](../../../stdlib/std/uring.lani#L438)
 
 ```lanius
 pub fn wait(&self) -> core::result::Result<Completion, Error>
@@ -861,7 +960,7 @@ pub fn wait(&self) -> core::result::Result<Completion, Error>
 
 #### method: destroy
 
-[Source line 403](../../../stdlib/std/uring.lani#L403)
+[Source line 450](../../../stdlib/std/uring.lani#L450)
 
 ```lanius
 pub fn destroy(&self) -> core::result::Result<i32, Error>
@@ -869,7 +968,7 @@ pub fn destroy(&self) -> core::result::Result<i32, Error>
 
 #### method: transfer
 
-[Source line 430](../../../stdlib/std/uring.lani#L430)
+[Source line 477](../../../stdlib/std/uring.lani#L477)
 
 ```lanius
 pub fn transfer(&self, input: i32, output: i32, buffers: ptr, block: i32, depth: i32, stream: bool, output_at: i64) -> core::result::Result<i64, Error>

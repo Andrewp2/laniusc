@@ -1,0 +1,24 @@
+module app::main;
+import ext::gpu;
+import core::result;
+import core::slice;
+extern "C" fn probe_hold(value:i32);
+extern "C" fn probe_waits() -> i32;
+extern "C" fn probe_fault(value:i32);
+extern "C" fn probe_hits() -> i32;
+extern "C" fn probe_empty();
+fn main() -> i32 {
+    let d=ext::gpu::open(0).unwrap(); let a=d.create_buffer(64).unwrap(); let b=d.create_buffer(64).unwrap(); let c=d.create_buffer(64).unwrap();
+    let bytes:[u8;64]=[17;64]; let out:[u8;64]=[0;64]; a.write(0,core::slice::whole(bytes)).unwrap();
+    let e=d.create_encoder().unwrap(); e.copy_buffer(a.borrow(),0,b.borrow(),0,64).unwrap();
+    assert(a.close().is_err()); assert(a.write(0,core::slice::whole(bytes)).is_err());
+    probe_hold(1); let waits=probe_waits(); let first=e.submit().unwrap(); assert(probe_waits()==waits);
+    assert(!first.poll().unwrap()); assert(!first.wait(0).unwrap()); assert(first.close().is_err()); assert(b.read(0,core::slice::whole(out)).is_err());
+    probe_hold(0); probe_fault(31); assert(first.poll().is_err()); assert(a.close().is_err()); assert(probe_hits()==1); assert(!e.close().unwrap());
+    let second_encoder=d.create_encoder().unwrap(); second_encoder.copy_buffer(b.borrow(),0,c.borrow(),0,64).unwrap(); let second=second_encoder.submit().unwrap();
+    assert(second.wait(10000000000).unwrap()); assert(c.read(0,core::slice::whole(out)).unwrap()==64); assert(b.read(0,core::slice::whole(out)).is_err());
+    assert(first.wait(10000000000).unwrap()); assert(first.poll().unwrap()); assert(first.close().unwrap()); assert(second.close().unwrap());
+    let i:i32=0; while(i<64) { assert(out[i]==17); i+=1; }
+    let discarded=d.create_encoder().unwrap(); discarded.copy_buffer(a.borrow(),0,b.borrow(),0,64).unwrap(); discarded.close().unwrap(); a.write(0,core::slice::whole(bytes)).unwrap();
+    a.close().unwrap(); b.close().unwrap(); c.close().unwrap(); d.close().unwrap(); probe_empty(); return 0;
+}

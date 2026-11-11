@@ -1,6 +1,8 @@
 // Compiled byte globs. No filesystem lookup or implicit path normalization.
 // Pattern owns its tokens; matching uses caller scratch and allocates nothing.
 module ext::glob;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::option;
 import core::mem;
@@ -14,7 +16,7 @@ pub enum Error { Bounds, PatternLimit, TokenLimit, Nul(i32), InvalidEscape(i32),
 struct Token { kind: i32, a: u64, b: u64, c: u64, d: u64 }
 struct Class { token: Token, end: i32 }
 struct Atom { value: u8, end: i32 }
-pub struct Pattern { tokens: alloc::vec::Vec<Token>, options: Options, live: bool }
+pub struct Pattern { tokens: alloc::vec::Vec<Token>, options: Options, lifetime: core::lifecycle::Lifetime }
 pub const DEFAULT_WORK_LIMIT: u64 = 67108864;
 const LITERAL: i32 = 0;
 const ANY: i32 = 1;
@@ -86,10 +88,10 @@ fn class_member(kind: i32, value: u8) -> bool {
     return digit || (value >= 65 && value <= 70) || (value >= 97 && value <= 102);
 }
 fn bracket(pattern: core::slice::View<u8>, start: i32, options: Options) -> core::result::Result<Class, Error> {
-    let selected: Token = token(CLASS); let index: i32 = start+1; let negate: bool = false; let first: bool = true;
+    let selected: Token = token(CLASS); let index: i32 = start+1; let negate: bool = false; let first_phase = core::iter_state::finished_completion();
     if (index < pattern.len() && (byte(pattern,index) == 33 || byte(pattern,index) == 94)) { negate = true; index += 1; }
     while (index < pattern.len()) {
-        if (byte(pattern,index) == 93 && !first) { if (negate) { selected.invert(); } return core::result::Ok(Class { token: selected, end: index+1 }); }
+        if (byte(pattern,index) == 93 && !first_phase.is_done()) { if (negate) { selected.invert(); } return core::result::Ok(Class { token: selected, end: index+1 }); }
         if (byte(pattern,index) == 91 && index+1 < pattern.len()) {
             let marker: u8 = byte(pattern,index+1);
             if (marker == 46 || marker == 61) { return core::result::Err(Error::UnsupportedClass(index)); }
@@ -99,7 +101,7 @@ fn bracket(pattern: core::slice::View<u8>, start: i32, options: Options) -> core
                 if (end+1 >= pattern.len()) { return core::result::Err(Error::UnclosedClass(start)); }
                 let kind: i32 = named_class(pattern,index+2,end); if (kind == 0) { return core::result::Err(Error::UnknownClass(index)); }
                 let value: i32 = 0; while (value < 256) { if (class_member(kind,value as u8)) { selected.add(value as u8); } value += 1; }
-                index = end+2; first = false;
+                index = end+2; first_phase = core::iter_state::completion_start();
                 if (index+1 < pattern.len() && byte(pattern,index) == 45 && byte(pattern,index+1) != 93) { return core::result::Err(Error::InvalidRange(index)); }
                 continue;
             }
@@ -116,7 +118,7 @@ fn bracket(pattern: core::slice::View<u8>, start: i32, options: Options) -> core
         let value: i32 = fold(begin.value,options.ascii_case_insensitive) as i32;
         let end_value: i32 = fold(last,options.ascii_case_insensitive) as i32;
         while (value <= end_value) { selected.add_case(value as u8,options.ascii_case_insensitive); value += 1; }
-        first = false;
+        first_phase = core::iter_state::completion_start();
     }
     return core::result::Err(Error::UnclosedClass(start));
 }
@@ -128,7 +130,7 @@ pub fn compile(bytes: core::slice::View<u8>, options: Options, limits: Limits) -
     let capacity: i32 = bytes.len(); if (capacity > limits.max_tokens) { capacity = limits.max_tokens; }
     let allocated: core::result::Result<alloc::vec::Vec<Token>, alloc::vec::Error> = alloc::vec::with_capacity<Token>(capacity);
     if (core::result::is_err(allocated)) { return core::result::Err(allocation_error(core::result::unwrap_err(allocated))); }
-    let output: Pattern = Pattern { tokens: core::result::unwrap(allocated), options: options, live: true };
+    let output: Pattern = Pattern { tokens: core::result::unwrap(allocated), options: options, lifetime: core::lifecycle::lifetime_start() };
     index = 0; let boundary: bool = true;
     while (index < bytes.len()) {
         if (output.tokens.len() == limits.max_tokens) { output.destroy(); return core::result::Err(Error::TokenLimit); }
@@ -169,18 +171,18 @@ pub fn compile(bytes: core::slice::View<u8>, options: Options, limits: Limits) -
 
 pub impl Pattern {
     pub fn borrow(&self) -> &Pattern { return self; }
-    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn is_live(&self) -> bool { return self.lifetime.is_active(); }
     pub fn token_count(&self) -> i32 { return self.tokens.len(); }
     pub fn scratch_len(&self) -> i32 { return (self.tokens.len()+1)*2; }
-    pub fn destroy(&self) { self.tokens.destroy(); self.live = false; }
+    pub fn destroy(&self) { self.tokens.destroy(); self.lifetime.release(); }
     pub fn try_clone(&self) -> core::result::Result<Pattern, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         let copied: core::result::Result<alloc::vec::Vec<Token>, alloc::vec::Error> = self.tokens.try_clone();
         if (core::result::is_err(copied)) { return core::result::Err(allocation_error(core::result::unwrap_err(copied))); }
-        return core::result::Ok(Pattern { tokens: core::result::unwrap(copied), options: self.options, live: true });
+        return core::result::Ok(Pattern { tokens: core::result::unwrap(copied), options: self.options, lifetime: core::lifecycle::lifetime_start() });
     }
     pub fn new_scratch(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         let storage: alloc::vec::Vec<u8> = alloc::vec::new(); let resized: core::result::Result<i32, alloc::vec::Error> = storage.try_resize(self.scratch_len(),0);
         if (core::result::is_err(resized)) { return core::result::Err(allocation_error(core::result::unwrap_err(resized))); }
         return core::result::Ok(storage);
@@ -188,12 +190,12 @@ pub impl Pattern {
     // Bound on loop slots: initial clear, epsilon scans, destination clears and
     // transitions. All i32 input/token counts fit these products in u64.
     pub fn work_bound(&self, input_bytes: i32) -> core::result::Result<u64, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); } if (input_bytes < 0) { return core::result::Err(Error::Bounds); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); } if (input_bytes < 0) { return core::result::Err(Error::Bounds); }
         let m: u64 = self.tokens.len() as u64; let n: u64 = input_bytes as u64; let width: u64 = m+1;
         return core::result::Ok(2*width + (2*n+1)*m + n*width);
     }
     pub fn matches(&self, path: core::path::Path, scratch: core::slice::View<u8>, max_work: u64) -> core::result::Result<bool, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         let input: core::slice::View<u8> = path.as_bytes(); if (!valid(input) || !valid(scratch)) { return core::result::Err(Error::Bounds); }
         if (scratch.len() < self.scratch_len()) { return core::result::Err(Error::ScratchTooSmall(self.scratch_len())); }
         let bound: u64 = core::result::unwrap(self.work_bound(input.len())); if (bound > max_work) { return core::result::Err(Error::WorkLimit); }

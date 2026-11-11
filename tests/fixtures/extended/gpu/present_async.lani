@@ -1,0 +1,64 @@
+module app::main;
+import ext::gpu;
+import ext::window;
+import core::result;
+import core::slice;
+import core::text;
+import shaders::work_shaders;
+extern "C" fn probe_hold(value:i32);
+extern "C" fn probe_waits() -> i32;
+extern "C" fn probe_fault(value:i32);
+extern "C" fn probe_hits() -> i32;
+extern "C" fn probe_empty();
+extern "C" fn probe_resize(width:i32,height:i32);
+fn pixels(surface:&ext::gpu::Surface,b:&ext::gpu::Buffer,width:i32,height:i32) {
+    let out:[u8;120000]=[0;120000]; b.read(0,core::slice::view(out,width*height*4).unwrap()).unwrap();
+    let red=match(surface.format().unwrap()) { ext::gpu::Format::Bgra8 -> 2, _ -> 0 }; let blue=2-red; let i:i32=0;
+    while(i<width*height) { let x=(i%width)%13; let y=(i/width)%9; assert(out[i*4+red]==((x*17+y*3+23)%256) as u8); assert(out[i*4+1]==((x*7+y*13)%256) as u8); assert(out[i*4+blue]==(x^y) as u8); assert(out[i*4+3]==255); i+=1; }
+}
+fn check_frame(frame:ext::gpu::FrameSubmission,surface:&ext::gpu::Surface,pipeline:&ext::gpu::Pipeline,group:&ext::gpu::BindGroup,b:&ext::gpu::Buffer,expected:i32) -> bool {
+    return match(frame) {
+        ext::gpu::FrameSubmission::Submitted(ticket) -> {
+            assert(!ticket.poll().unwrap()); assert(!ticket.wait(0).unwrap()); assert(ticket.frame().is_err()); assert(ticket.close().is_err()); assert(surface.close().is_err()); assert(pipeline.close().is_err()); assert(group.close().is_err()); assert(surface.submit_bound(pipeline,group,3).is_err());
+            probe_hold(0); assert(ticket.wait(10000000000).unwrap());
+            if(expected==0) { assert(match(ticket.frame().unwrap()) { ext::gpu::Frame::Presented(size) -> true, _ -> false }); }
+            if(expected==21) { assert(match(ticket.frame().unwrap()) { ext::gpu::Frame::Retry -> true, _ -> false }); }
+            if(expected==33) { assert(ticket.frame().is_err()); }
+            assert(ticket.close().unwrap()); return true;
+        },
+        _ -> false
+    };
+}
+fn main() -> i32 {
+    let d=ext::gpu::open(0).unwrap(); let context=ext::window::init().unwrap(); let window=context.create(core::text::from_str("Texture tests"),160,120,true).unwrap();
+    let t=d.create_texture(13,9).unwrap(); let params=d.create_buffer(16).unwrap(); let values=d.create_buffer(468).unwrap(); let readback=d.create_buffer(120000).unwrap();
+    let bytes:[u8;16]=[13,0,0,0,9,0,0,0,23,0,0,0,0,0,0,0]; params.write(0,core::slice::whole(bytes)).unwrap();
+    let kinds:[ext::gpu::BindingKind;3]=[ext::gpu::BindingKind::UniformBuffer,ext::gpu::BindingKind::StorageBuffer,ext::gpu::BindingKind::StorageTexture]; let layout=d.create_binding_layout(core::slice::whole(kinds)).unwrap();
+    let bindings:[ext::gpu::Binding;3]=[ext::gpu::Binding::UniformBuffer(params.borrow()),ext::gpu::Binding::StorageBuffer(values.borrow()),ext::gpu::Binding::StorageTexture(t.borrow())]; let compute_group=d.create_bind_group(layout.borrow(),core::slice::whole(bindings)).unwrap(); let code=shaders::work_shaders::comp(); let compute=d.create_compute_pipeline(core::slice::whole(code),layout.borrow()).unwrap();
+    let sampling:[ext::gpu::BindingKind;1]=[ext::gpu::BindingKind::SampledTexture]; let sample_layout=d.create_binding_layout(core::slice::whole(sampling)).unwrap(); let sampled:[ext::gpu::Binding;1]=[ext::gpu::Binding::SampledTexture(t.borrow())]; let group=d.create_bind_group(sample_layout.borrow(),core::slice::whole(sampled)).unwrap();
+    let surface=d.create_surface(window.borrow()).unwrap(); let vertex=shaders::work_shaders::vert(); let fragment=shaders::work_shaders::frag(); let pipeline=d.create_bound_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format().unwrap(),sample_layout.borrow()).unwrap();
+    assert(surface.render(pipeline.borrow(),3).is_err()); assert(surface.render_bound(pipeline.borrow(),group.borrow(),3).is_err());
+    let e=d.create_encoder().unwrap(); e.clear_texture(t.borrow()).unwrap(); e.dispatch(compute.borrow(),compute_group.borrow(),2,2,1).unwrap(); let work=e.submit().unwrap();
+    // The graphics submission consumes the compute result without a CPU wait.
+    let tries:i32=0; let done:bool=false;
+    while(tries<100 && !done) { probe_hold(1); let waits=probe_waits(); let submitted=surface.submit_bound_readback(pipeline.borrow(),group.borrow(),3,readback.borrow()).unwrap(); assert(probe_waits()==waits); done=check_frame(submitted,surface.borrow(),pipeline.borrow(),group.borrow(),readback.borrow(),0); probe_hold(0); if(!done) { context.wait(1).unwrap(); } tries+=1; }
+    assert(done); pixels(surface.borrow(),readback.borrow(),160,120); assert(work.wait(10000000000).unwrap()); work.close().unwrap();
+    probe_resize(193,137); surface.render_bound_readback(pipeline.borrow(),group.borrow(),3,readback.borrow()).unwrap(); pixels(surface.borrow(),readback.borrow(),193,137);
+    // The readback buffer is also a fragment-stage storage input: render reads
+    // must finish before the transfer overwrites it.
+    let zeros:[u8;4]=[0;4]; readback.write(0,core::slice::whole(zeros)).unwrap();
+    let alias_kinds:[ext::gpu::BindingKind;2]=[ext::gpu::BindingKind::SampledTexture,ext::gpu::BindingKind::StorageBuffer]; let alias_layout=d.create_binding_layout(core::slice::whole(alias_kinds)).unwrap();
+    let alias_bindings:[ext::gpu::Binding;2]=[ext::gpu::Binding::SampledTexture(t.borrow()),ext::gpu::Binding::StorageBuffer(readback.borrow())]; let alias_group=d.create_bind_group(alias_layout.borrow(),core::slice::whole(alias_bindings)).unwrap();
+    let alias_shader=shaders::work_shaders::alias(); let alias_pipeline=d.create_bound_pipeline(core::slice::whole(vertex),core::slice::whole(alias_shader),surface.format().unwrap(),alias_layout.borrow()).unwrap();
+    surface.render_bound_readback(alias_pipeline.borrow(),alias_group.borrow(),3,readback.borrow()).unwrap(); pixels(surface.borrow(),readback.borrow(),193,137); alias_pipeline.close().unwrap(); alias_group.close().unwrap(); alias_layout.close().unwrap();
+    let ids:[i32;2]=[21,33]; let i:i32=0; while(i<2) {
+        probe_fault(ids[i]); tries=0; done=false;
+        while(tries<100 && !done) { probe_hold(1); let submitted=surface.submit_bound_readback(pipeline.borrow(),group.borrow(),3,readback.borrow()).unwrap(); done=check_frame(submitted,surface.borrow(),pipeline.borrow(),group.borrow(),readback.borrow(),ids[i]); probe_hold(0); if(!done) { context.wait(1).unwrap(); } tries+=1; }
+        assert(done); surface.close().unwrap(); if(i==0) { surface=d.create_surface(window.borrow()).unwrap(); } i+=1;
+    }
+    assert(probe_hits()==2);
+    surface=d.create_surface(window.borrow()).unwrap(); probe_fault(34); let attempts:i32=0; let failed:bool=false;
+    while(attempts<100 && !failed) { let pending=surface.submit_bound(pipeline.borrow(),group.borrow(),3); failed=pending.is_err(); if(!failed) { context.wait(1).unwrap(); } attempts+=1; }
+    assert(failed); assert(probe_hits()==4); assert(pipeline.close().is_err()); surface.close().unwrap();
+    pipeline.close().unwrap(); group.close().unwrap(); sample_layout.close().unwrap(); compute.close().unwrap(); compute_group.close().unwrap(); layout.close().unwrap(); t.close().unwrap(); params.close().unwrap(); values.close().unwrap(); readback.close().unwrap(); d.close().unwrap(); window.close().unwrap(); context.close().unwrap(); probe_empty(); return 0;
+}

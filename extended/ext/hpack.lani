@@ -3,6 +3,9 @@
 // eviction, and an encoder and decoder that each own one table.
 // One Decoder and one Encoder belong to one connection direction each.
 module ext::hpack;
+import core::iter_state;
+import core::io_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -226,14 +229,14 @@ impl Table {
 }
 
 struct Slot { name: i32, name_length: i32, value: i32, value_length: i32, never: bool }
-pub struct Decoder { table: Table, limits: Limits, maximum: i32, out: alloc::vec::Vec<u8>, slots: alloc::vec::Vec<Slot>, failed: bool, active: bool }
+pub struct Decoder { table: Table, limits: Limits, maximum: i32, out: alloc::vec::Vec<u8>, slots: alloc::vec::Vec<Slot>, health: core::lifecycle::Health, lifetime: core::lifecycle::Lifetime }
 pub fn decoder(limits: Limits) -> core::result::Result<Decoder,Error> {
     if (!valid_limits(limits)) { return core::result::Err(Error::InvalidLimits); }
     // The peer's encoder starts at the protocol default of 4096 bytes and may
     // use it until our SETTINGS arrive, so a smaller table_bytes applies only
     // after set_maximum (call it when the peer acknowledges SETTINGS).
     let maximum: i32 = DEFAULT_TABLE_BYTES; if (limits.table_bytes > maximum) { maximum = limits.table_bytes; }
-    return core::result::Ok(Decoder { table: table(DEFAULT_TABLE_BYTES), limits: limits, maximum: maximum, out: alloc::vec::new<u8>(), slots: alloc::vec::new<Slot>(), failed: false, active: true });
+    return core::result::Ok(Decoder { table: table(DEFAULT_TABLE_BYTES), limits: limits, maximum: maximum, out: alloc::vec::new<u8>(), slots: alloc::vec::new<Slot>(), health: core::lifecycle::health_start(), lifetime: core::lifecycle::lifetime_start() });
 }
 pub impl Decoder {
     pub fn borrow(&self) -> &Decoder { return self; }
@@ -283,27 +286,27 @@ pub impl Decoder {
     // the whole block was still processed, so the table stays in step, and
     // the fields that fit are kept.
     pub fn decode(&self, block: core::slice::View<u8>) -> core::result::Result<i32,Error> {
-        if (!self.active || self.failed) { return core::result::Err(Error::Failed); }
+        if (!self.lifetime.is_active() || self.health.is_failed()) { return core::result::Err(Error::Failed); }
         if (!valid(block)) { return core::result::Err(Error::Bounds); }
         let result: core::result::Result<i32,Error> = self.decode_block(block);
-        if (result.is_err()) { let e: Error = result.unwrap_err(); let limited: bool = match (e) { Error::Limit -> true, _ -> false }; if (!limited) { self.failed = true; self.out.clear(); self.slots.clear(); } }
+        if (result.is_err()) { let e: Error = result.unwrap_err(); let limited: bool = match (e) { Error::Limit -> true, _ -> false }; if (!limited) { self.health.fail(); self.out.clear(); self.slots.clear(); } }
         return result;
     }
     fn decode_block(&self, block: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         self.out.clear(); self.slots.clear();
-        let at: i32 = 0; let fields_seen: bool = false; let list: i64 = 0; let over: bool = false;
+        let at: i32 = 0; let fields_seen_phase = core::iter_state::completion_start(); let list: i64 = 0; let over: bool = false;
         while (at < block.length) {
             let rest: core::slice::View<u8> = part(block.values, block.start + at, block.length - at);
             let byte: i32 = rest.values[rest.start] as i32;
             if ((byte & 224) == 32) {
                 // Dynamic table size update: only before the first field.
-                if (fields_seen) { return core::result::Err(Error::SizeUpdate); }
+                if (fields_seen_phase.is_done()) { return core::result::Err(Error::SizeUpdate); }
                 let size = decode_integer(rest, 5); if (size.is_err()) { return core::result::Err(size.unwrap_err()); }
                 let s: Integer = size.unwrap();
                 if (s.value > self.maximum) { return core::result::Err(Error::TableSize); }
                 self.table.resize(s.value); at += s.used; continue;
             }
-            fields_seen = true;
+            fields_seen_phase.finish();
             let mark: i32 = self.out.len();
             let name_start: i32 = mark; let name_length: i32 = 0; let value_start: i32 = 0; let value_length: i32 = 0;
             let never: bool = false; let index_it: bool = false;
@@ -346,17 +349,17 @@ pub impl Decoder {
         if (over) { return core::result::Err(Error::Limit); }
         return core::result::Ok(self.slots.len());
     }
-    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.table.destroy(); self.out.destroy(); self.slots.destroy(); return true; }
+    pub fn destroy(&self) -> bool { if (!self.lifetime.is_active()) { return false; } self.lifetime.release(); self.table.destroy(); self.out.destroy(); self.slots.destroy(); return true; }
 }
 
 // The encoder's table capacity is min(peer SETTINGS_HEADER_TABLE_SIZE, own
 // cap). A capacity change is signalled at the start of the next block: the
 // smallest capacity reached since the last block, then the final one.
-pub struct Encoder { table: Table, own: i32, smallest: i32, pending: bool, mode: Huffman, active: bool }
+pub struct Encoder { table: Table, own: i32, smallest: i32, pending_work: core::io_state::PendingWork, mode: Huffman, lifetime: core::lifecycle::Lifetime }
 pub fn encoder(table_bytes: i32) -> core::result::Result<Encoder,Error> {
     if (table_bytes < 0 || table_bytes > 16777216) { return core::result::Err(Error::InvalidLimits); }
     let capacity: i32 = DEFAULT_TABLE_BYTES; if (table_bytes < capacity) { capacity = table_bytes; }
-    return core::result::Ok(Encoder { table: table(capacity), own: table_bytes, smallest: capacity, pending: capacity != DEFAULT_TABLE_BYTES, mode: Huffman::Shortest, active: true });
+    return core::result::Ok(Encoder { table: table(capacity), own: table_bytes, smallest: capacity, pending_work: core::io_state::pending_work(capacity != DEFAULT_TABLE_BYTES), mode: Huffman::Shortest, lifetime: core::lifecycle::lifetime_start() });
 }
 fn sensitive(name: core::slice::View<u8>, value: core::slice::View<u8>) -> bool {
     if (same(name, part(text("authorization", 13), 0, 13)) || same(name, part(text("proxy-authorization", 19), 0, 19))) { return true; }
@@ -373,19 +376,19 @@ pub impl Encoder {
     pub fn set_peer_maximum(&self, bytes: i32) -> core::result::Result<i32,Error> {
         if (bytes < 0) { return core::result::Err(Error::Bounds); }
         let capacity: i32 = bytes; if (self.own < capacity) { capacity = self.own; }
-        if (capacity == self.table.capacity && !self.pending) { return core::result::Ok(capacity); }
-        if (!self.pending) { self.smallest = capacity; } else { if (capacity < self.smallest) { self.smallest = capacity; } }
-        self.pending = true; self.table.resize(capacity);
+        if (capacity == self.table.capacity && !self.pending_work.pending()) { return core::result::Ok(capacity); }
+        if (!self.pending_work.pending()) { self.smallest = capacity; } else { if (capacity < self.smallest) { self.smallest = capacity; } }
+        self.pending_work.update( true); self.table.resize(capacity);
         return core::result::Ok(capacity);
     }
     // Start a header block: emit any pending table size updates.
     pub fn start_block(&self, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
-        if (!self.active) { return core::result::Err(Error::Failed); }
-        if (!self.pending) { return core::result::Ok(0); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Failed); }
+        if (!self.pending_work.pending()) { return core::result::Ok(0); }
         let written: i32 = 0;
         if (self.smallest < self.table.capacity) { let w = encode_integer(self.smallest, 5, 32, out); if (w.is_err()) { return w; } written += w.unwrap(); }
         let w = encode_integer(self.table.capacity, 5, 32, out); if (w.is_err()) { return w; } written += w.unwrap();
-        self.pending = false; self.smallest = self.table.capacity;
+        self.pending_work.update( false); self.smallest = self.table.capacity;
         return core::result::Ok(written);
     }
     fn exact(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) -> i32 {
@@ -401,7 +404,7 @@ pub impl Encoder {
     // Append one field. Incremental indexing uses an exact table match when
     // there is one; Without and Never always send a literal value.
     pub fn encode_field(&self, name: core::slice::View<u8>, value: core::slice::View<u8>, indexing: Indexing, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
-        if (!self.active) { return core::result::Err(Error::Failed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Failed); }
         if (!valid(name) || !valid(value)) { return core::result::Err(Error::Bounds); }
         let incremental: bool = match (indexing) { Indexing::Incremental -> true, _ -> false };
         let start: i32 = out.len();
@@ -442,5 +445,5 @@ pub impl Encoder {
         }
         return core::result::Ok(out.len() - start);
     }
-    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.table.destroy(); return true; }
+    pub fn destroy(&self) -> bool { if (!self.lifetime.is_active()) { return false; } self.lifetime.release(); self.table.destroy(); return true; }
 }

@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: enum: 1; field: 10; function: 6; impl: 2; method: 6; struct: 3; variant: 19.
+Declaration counts: enum: 2; field: 10; function: 6; impl: 3; machine: 1; method: 9; struct: 3; variant: 23.
 
 ## Declared imports
 
@@ -31,9 +31,57 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: Error
+### enum: ElementEvent
 
 [Source line 18](../../../extended/ext/text_tr.lani#L18)
+
+```lanius
+pub enum ElementEvent
+```
+
+#### variant: Begin
+
+[Source line 18](../../../extended/ext/text_tr.lani#L18)
+
+```lanius
+Begin
+```
+
+#### variant: Position
+
+[Source line 18](../../../extended/ext/text_tr.lani#L18)
+
+```lanius
+Position(i64)
+```
+
+#### variant: Advance
+
+[Source line 18](../../../extended/ext/text_tr.lani#L18)
+
+```lanius
+Advance
+```
+
+#### variant: Next
+
+[Source line 18](../../../extended/ext/text_tr.lani#L18)
+
+```lanius
+Next
+```
+
+### machine: ElementPhase
+
+[Source line 19](../../../extended/ext/text_tr.lani#L19)
+
+```lanius
+pub machine ElementPhase on ElementEvent
+```
+
+### enum: Error
+
+[Source line 32](../../../extended/ext/text_tr.lani#L32)
 
 ```lanius
 pub enum Error
@@ -41,7 +89,7 @@ pub enum Error
 
 #### variant: MissingOperand
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 MissingOperand
@@ -49,7 +97,7 @@ MissingOperand
 
 #### variant: ExtraOperand
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 ExtraOperand
@@ -57,7 +105,7 @@ ExtraOperand
 
 #### variant: MissingClassName
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 MissingClassName
@@ -65,7 +113,7 @@ MissingClassName
 
 #### variant: MissingEquivChar
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 MissingEquivChar
@@ -73,7 +121,7 @@ MissingEquivChar
 
 #### variant: InvalidClass
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 InvalidClass
@@ -81,7 +129,7 @@ InvalidClass
 
 #### variant: EquivNotSingle
 
-[Source line 19](../../../extended/ext/text_tr.lani#L19)
+[Source line 33](../../../extended/ext/text_tr.lani#L33)
 
 ```lanius
 EquivNotSingle
@@ -89,7 +137,7 @@ EquivNotSingle
 
 #### variant: InvalidRepeat
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 InvalidRepeat
@@ -97,7 +145,7 @@ InvalidRepeat
 
 #### variant: ReverseRange
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 ReverseRange
@@ -105,7 +153,7 @@ ReverseRange
 
 #### variant: RepeatInSet1
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 RepeatInSet1
@@ -113,7 +161,7 @@ RepeatInSet1
 
 #### variant: TwoRepeats
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 TwoRepeats
@@ -121,7 +169,7 @@ TwoRepeats
 
 #### variant: RepeatNotTranslating
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 RepeatNotTranslating
@@ -129,7 +177,7 @@ RepeatNotTranslating
 
 #### variant: EquivInSet2
 
-[Source line 20](../../../extended/ext/text_tr.lani#L20)
+[Source line 34](../../../extended/ext/text_tr.lani#L34)
 
 ```lanius
 EquivInSet2
@@ -137,7 +185,7 @@ EquivInSet2
 
 #### variant: ClassInSet2
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 ClassInSet2
@@ -145,7 +193,7 @@ ClassInSet2
 
 #### variant: Misaligned
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 Misaligned
@@ -153,7 +201,7 @@ Misaligned
 
 #### variant: EmptySet2
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 EmptySet2
@@ -161,7 +209,7 @@ EmptySet2
 
 #### variant: Set2EndsWithClass
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 Set2EndsWithClass
@@ -169,7 +217,7 @@ Set2EndsWithClass
 
 #### variant: ComplementClass
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 ComplementClass
@@ -177,7 +225,7 @@ ComplementClass
 
 #### variant: LimitExceeded
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 LimitExceeded
@@ -185,7 +233,7 @@ LimitExceeded
 
 #### variant: AllocationFailed
 
-[Source line 21](../../../extended/ext/text_tr.lani#L21)
+[Source line 35](../../../extended/ext/text_tr.lani#L35)
 
 ```lanius
 AllocationFailed
@@ -193,7 +241,7 @@ AllocationFailed
 
 ### struct: Options
 
-[Source line 23](../../../extended/ext/text_tr.lani#L23)
+[Source line 37](../../../extended/ext/text_tr.lani#L37)
 
 ```lanius
 pub struct Options
@@ -201,7 +249,7 @@ pub struct Options
 
 #### field: complement
 
-[Source line 23](../../../extended/ext/text_tr.lani#L23)
+[Source line 37](../../../extended/ext/text_tr.lani#L37)
 
 ```lanius
 complement: bool
@@ -209,7 +257,7 @@ complement: bool
 
 #### field: delete
 
-[Source line 23](../../../extended/ext/text_tr.lani#L23)
+[Source line 37](../../../extended/ext/text_tr.lani#L37)
 
 ```lanius
 delete: bool
@@ -217,7 +265,7 @@ delete: bool
 
 #### field: squeeze
 
-[Source line 23](../../../extended/ext/text_tr.lani#L23)
+[Source line 37](../../../extended/ext/text_tr.lani#L37)
 
 ```lanius
 squeeze: bool
@@ -225,7 +273,7 @@ squeeze: bool
 
 #### field: truncate
 
-[Source line 23](../../../extended/ext/text_tr.lani#L23)
+[Source line 37](../../../extended/ext/text_tr.lani#L37)
 
 ```lanius
 truncate: bool
@@ -233,7 +281,7 @@ truncate: bool
 
 ### struct: Plan
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 pub struct Plan
@@ -241,7 +289,7 @@ pub struct Plan
 
 #### field: mem
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -249,7 +297,7 @@ mem: alloc::io::Buffer
 
 #### field: t
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 t: [i32]
@@ -257,7 +305,7 @@ t: [i32]
 
 #### field: translate
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 translate: bool
@@ -265,7 +313,7 @@ translate: bool
 
 #### field: delete
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 delete: bool
@@ -273,7 +321,7 @@ delete: bool
 
 #### field: squeeze
 
-[Source line 265](../../../extended/ext/text_tr.lani#L265)
+[Source line 280](../../../extended/ext/text_tr.lani#L280)
 
 ```lanius
 squeeze: bool
@@ -281,7 +329,7 @@ squeeze: bool
 
 ### struct: State
 
-[Source line 357](../../../extended/ext/text_tr.lani#L357)
+[Source line 372](../../../extended/ext/text_tr.lani#L372)
 
 ```lanius
 pub struct State
@@ -289,7 +337,7 @@ pub struct State
 
 #### field: last
 
-[Source line 357](../../../extended/ext/text_tr.lani#L357)
+[Source line 372](../../../extended/ext/text_tr.lani#L372)
 
 ```lanius
 last: i32
@@ -299,7 +347,7 @@ last: i32
 
 ### function: default_options
 
-[Source line 24](../../../extended/ext/text_tr.lani#L24)
+[Source line 38](../../../extended/ext/text_tr.lani#L38)
 
 ```lanius
 pub fn default_options() -> Options
@@ -307,7 +355,7 @@ pub fn default_options() -> Options
 
 ### function: plan
 
-[Source line 276](../../../extended/ext/text_tr.lani#L276)
+[Source line 291](../../../extended/ext/text_tr.lani#L291)
 
 ```lanius
 pub fn plan(set1: core::slice::View<u8>, set2: core::slice::View<u8>, count: i32, o: Options) -> core::result::Result<Plan, Error>
@@ -315,7 +363,7 @@ pub fn plan(set1: core::slice::View<u8>, set2: core::slice::View<u8>, count: i32
 
 ### function: state
 
-[Source line 359](../../../extended/ext/text_tr.lani#L359)
+[Source line 374](../../../extended/ext/text_tr.lani#L374)
 
 ```lanius
 pub fn state() -> State
@@ -323,7 +371,7 @@ pub fn state() -> State
 
 ### function: translate
 
-[Source line 450](../../../extended/ext/text_tr.lani#L450)
+[Source line 465](../../../extended/ext/text_tr.lani#L465)
 
 ```lanius
 pub fn translate(p: &Plan, v: core::slice::View<u8>) -> core::result::Result<i32, ext::text_lines::Error>
@@ -331,7 +379,7 @@ pub fn translate(p: &Plan, v: core::slice::View<u8>) -> core::result::Result<i32
 
 ### function: filter
 
-[Source line 576](../../../extended/ext/text_tr.lani#L576)
+[Source line 591](../../../extended/ext/text_tr.lani#L591)
 
 ```lanius
 pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_lines::Out) -> core::result::Result<i32, ext::text_lines::Error>
@@ -339,7 +387,7 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
 
 ### function: message
 
-[Source line 780](../../../extended/ext/text_tr.lani#L780)
+[Source line 795](../../../extended/ext/text_tr.lani#L795)
 
 ```lanius
 pub fn message(e: Error) -> core::slice::View<u8>
@@ -347,9 +395,41 @@ pub fn message(e: Error) -> core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 266
+### impl at line 25
 
-[Source line 266](../../../extended/ext/text_tr.lani#L266)
+[Source line 25](../../../extended/ext/text_tr.lani#L25)
+
+```lanius
+pub impl ElementPhase
+```
+
+#### method: initial
+
+[Source line 26](../../../extended/ext/text_tr.lani#L26)
+
+```lanius
+pub fn initial(&self) -> bool
+```
+
+#### method: fresh
+
+[Source line 27](../../../extended/ext/text_tr.lani#L27)
+
+```lanius
+pub fn fresh(&self) -> bool
+```
+
+#### method: position
+
+[Source line 28](../../../extended/ext/text_tr.lani#L28)
+
+```lanius
+pub fn position(&self) -> i64
+```
+
+### impl at line 281
+
+[Source line 281](../../../extended/ext/text_tr.lani#L281)
 
 ```lanius
 pub impl Plan
@@ -357,7 +437,7 @@ pub impl Plan
 
 #### method: borrow
 
-[Source line 267](../../../extended/ext/text_tr.lani#L267)
+[Source line 282](../../../extended/ext/text_tr.lani#L282)
 
 ```lanius
 pub fn borrow(&self) -> &Plan
@@ -365,7 +445,7 @@ pub fn borrow(&self) -> &Plan
 
 #### method: destroy
 
-[Source line 268](../../../extended/ext/text_tr.lani#L268)
+[Source line 283](../../../extended/ext/text_tr.lani#L283)
 
 ```lanius
 pub fn destroy(&self)
@@ -373,7 +453,7 @@ pub fn destroy(&self)
 
 #### method: map
 
-[Source line 269](../../../extended/ext/text_tr.lani#L269)
+[Source line 284](../../../extended/ext/text_tr.lani#L284)
 
 ```lanius
 pub fn map(&self, c: i32) -> i32
@@ -381,7 +461,7 @@ pub fn map(&self, c: i32) -> i32
 
 #### method: deletes
 
-[Source line 270](../../../extended/ext/text_tr.lani#L270)
+[Source line 285](../../../extended/ext/text_tr.lani#L285)
 
 ```lanius
 pub fn deletes(&self, c: i32) -> bool
@@ -389,15 +469,15 @@ pub fn deletes(&self, c: i32) -> bool
 
 #### method: squeezes
 
-[Source line 271](../../../extended/ext/text_tr.lani#L271)
+[Source line 286](../../../extended/ext/text_tr.lani#L286)
 
 ```lanius
 pub fn squeezes(&self, c: i32) -> bool
 ```
 
-### impl at line 358
+### impl at line 373
 
-[Source line 358](../../../extended/ext/text_tr.lani#L358)
+[Source line 373](../../../extended/ext/text_tr.lani#L373)
 
 ```lanius
 pub impl State
@@ -405,7 +485,7 @@ pub impl State
 
 #### method: borrow
 
-[Source line 358](../../../extended/ext/text_tr.lani#L358)
+[Source line 373](../../../extended/ext/text_tr.lani#L373)
 
 ```lanius
 pub fn borrow(&self) -> &State

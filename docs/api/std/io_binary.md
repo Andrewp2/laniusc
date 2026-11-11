@@ -16,15 +16,16 @@ Declaration counts: function: 6.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::binary](../core/binary.md) · [source](../../../stdlib/std/io_binary.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_binary.lani#L4)
-- [std::io](io.md) · [source](../../../stdlib/std/io_binary.lani#L5)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_binary.lani#L3)
+- [core::binary](../core/binary.md) · [source](../../../stdlib/std/io_binary.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_binary.lani#L5)
+- [std::io](io.md) · [source](../../../stdlib/std/io_binary.lani#L6)
 
 ## Free functions and extern declarations
 
 ### function: write_u32
 
-[Source line 10](../../../stdlib/std/io_binary.lani#L10)
+[Source line 11](../../../stdlib/std/io_binary.lani#L11)
 
 ```lanius
 pub fn write_u32(handle: i32, value: u32) -> i32
@@ -32,7 +33,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32
 
 ### function: write_u16
 
-[Source line 28](../../../stdlib/std/io_binary.lani#L28)
+[Source line 29](../../../stdlib/std/io_binary.lani#L29)
 
 ```lanius
 pub fn write_u16(handle: i32, value: u16) -> i32
@@ -40,7 +41,7 @@ pub fn write_u16(handle: i32, value: u16) -> i32
 
 ### function: write_u8
 
-[Source line 33](../../../stdlib/std/io_binary.lani#L33)
+[Source line 34](../../../stdlib/std/io_binary.lani#L34)
 
 ```lanius
 pub fn write_u8(handle: i32, value: u8) -> i32
@@ -48,7 +49,7 @@ pub fn write_u8(handle: i32, value: u8) -> i32
 
 ### function: read_u32_stdin_or
 
-[Source line 42](../../../stdlib/std/io_binary.lani#L42)
+[Source line 43](../../../stdlib/std/io_binary.lani#L43)
 
 ```lanius
 pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
@@ -56,7 +57,7 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
 
 ### function: read_u16_stdin_or
 
-[Source line 111](../../../stdlib/std/io_binary.lani#L111)
+[Source line 110](../../../stdlib/std/io_binary.lani#L110)
 
 ```lanius
 pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16
@@ -64,7 +65,7 @@ pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16
 
 ### function: read_u8_stdin_or
 
-[Source line 120](../../../stdlib/std/io_binary.lani#L120)
+[Source line 119](../../../stdlib/std/io_binary.lani#L119)
 
 ```lanius
 pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8

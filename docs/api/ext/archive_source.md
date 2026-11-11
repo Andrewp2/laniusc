@@ -21,20 +21,21 @@ Declaration counts: enum: 2; field: 18; function: 4; impl: 1; method: 9; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/archive_source.lani#L4)
-- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L28) · [source](../../../extended/ext/archive_source.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_source.lani#L6)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_source.lani#L7)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_source.lani#L8)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/archive_source.lani#L9)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_source.lani#L10)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_source.lani#L11)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_source.lani#L12)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/archive_source.lani#L13)
-- [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_source.lani#L14)
-- [ext::archive_profile](archive_profile.md) · [source](../../../extended/ext/archive_source.lani#L15)
-- [ext::tar](tar.md) · [source](../../../extended/ext/archive_source.lani#L16)
-- [ext::zip](zip.md) · [source](../../../extended/ext/archive_source.lani#L17)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/archive_source.lani#L4)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/archive_source.lani#L5)
+- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L28) · [source](../../../extended/ext/archive_source.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_source.lani#L7)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_source.lani#L8)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_source.lani#L9)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/archive_source.lani#L10)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_source.lani#L11)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_source.lani#L12)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_source.lani#L13)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/archive_source.lani#L14)
+- [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_source.lani#L15)
+- [ext::archive_profile](archive_profile.md) · [source](../../../extended/ext/archive_source.lani#L16)
+- [ext::tar](tar.md) · [source](../../../extended/ext/archive_source.lani#L17)
+- [ext::zip](zip.md) · [source](../../../extended/ext/archive_source.lani#L18)
 
 ## Types, fields and variants
 
@@ -42,7 +43,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Limits
 
-[Source line 19](../../../extended/ext/archive_source.lani#L19)
+[Source line 20](../../../extended/ext/archive_source.lani#L20)
 
 ```lanius
 pub struct Limits
@@ -50,7 +51,7 @@ pub struct Limits
 
 #### field: plan
 
-[Source line 20](../../../extended/ext/archive_source.lani#L20)
+[Source line 21](../../../extended/ext/archive_source.lani#L21)
 
 ```lanius
 plan:ext::archive_plan::Limits
@@ -58,7 +59,7 @@ plan:ext::archive_plan::Limits
 
 #### field: max_archive
 
-[Source line 20](../../../extended/ext/archive_source.lani#L20)
+[Source line 21](../../../extended/ext/archive_source.lani#L21)
 
 ```lanius
 max_archive:i32
@@ -66,7 +67,7 @@ max_archive:i32
 
 #### field: max_entry
 
-[Source line 20](../../../extended/ext/archive_source.lani#L20)
+[Source line 21](../../../extended/ext/archive_source.lani#L21)
 
 ```lanius
 max_entry:i32
@@ -74,7 +75,7 @@ max_entry:i32
 
 #### field: max_total
 
-[Source line 21](../../../extended/ext/archive_source.lani#L21)
+[Source line 22](../../../extended/ext/archive_source.lani#L22)
 
 ```lanius
 max_total:u64
@@ -82,7 +83,7 @@ max_total:u64
 
 #### field: zip_work
 
-[Source line 21](../../../extended/ext/archive_source.lani#L21)
+[Source line 22](../../../extended/ext/archive_source.lani#L22)
 
 ```lanius
 zip_work:u64
@@ -90,7 +91,7 @@ zip_work:u64
 
 #### field: metadata_work
 
-[Source line 21](../../../extended/ext/archive_source.lani#L21)
+[Source line 22](../../../extended/ext/archive_source.lani#L22)
 
 ```lanius
 metadata_work:u64
@@ -98,7 +99,7 @@ metadata_work:u64
 
 #### field: max_owned_bytes
 
-[Source line 21](../../../extended/ext/archive_source.lani#L21)
+[Source line 22](../../../extended/ext/archive_source.lani#L22)
 
 ```lanius
 max_owned_bytes:u64
@@ -106,7 +107,7 @@ max_owned_bytes:u64
 
 ### enum: Cause
 
-[Source line 23](../../../extended/ext/archive_source.lani#L23)
+[Source line 24](../../../extended/ext/archive_source.lani#L24)
 
 ```lanius
 pub enum Cause
@@ -114,7 +115,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 Bounds
@@ -122,7 +123,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 InvalidLimits
@@ -130,7 +131,7 @@ InvalidLimits
 
 #### variant: ArchiveLimit
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 ArchiveLimit
@@ -138,7 +139,7 @@ ArchiveLimit
 
 #### variant: EntryLimit
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 EntryLimit
@@ -146,7 +147,7 @@ EntryLimit
 
 #### variant: TotalLimit
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 TotalLimit
@@ -154,7 +155,7 @@ TotalLimit
 
 #### variant: MetadataLimit
 
-[Source line 24](../../../extended/ext/archive_source.lani#L24)
+[Source line 25](../../../extended/ext/archive_source.lani#L25)
 
 ```lanius
 MetadataLimit
@@ -162,7 +163,7 @@ MetadataLimit
 
 #### variant: OwnedLimit
 
-[Source line 25](../../../extended/ext/archive_source.lani#L25)
+[Source line 26](../../../extended/ext/archive_source.lani#L26)
 
 ```lanius
 OwnedLimit
@@ -170,7 +171,7 @@ OwnedLimit
 
 #### variant: AllocationFailed
 
-[Source line 25](../../../extended/ext/archive_source.lani#L25)
+[Source line 26](../../../extended/ext/archive_source.lani#L26)
 
 ```lanius
 AllocationFailed
@@ -178,7 +179,7 @@ AllocationFailed
 
 #### variant: Plan
 
-[Source line 25](../../../extended/ext/archive_source.lani#L25)
+[Source line 26](../../../extended/ext/archive_source.lani#L26)
 
 ```lanius
 Plan(ext::archive_plan::Error)
@@ -186,7 +187,7 @@ Plan(ext::archive_plan::Error)
 
 #### variant: Profile
 
-[Source line 26](../../../extended/ext/archive_source.lani#L26)
+[Source line 27](../../../extended/ext/archive_source.lani#L27)
 
 ```lanius
 Profile(ext::archive_profile::Error)
@@ -194,7 +195,7 @@ Profile(ext::archive_profile::Error)
 
 #### variant: Tar
 
-[Source line 26](../../../extended/ext/archive_source.lani#L26)
+[Source line 27](../../../extended/ext/archive_source.lani#L27)
 
 ```lanius
 Tar(ext::tar::Error)
@@ -202,7 +203,7 @@ Tar(ext::tar::Error)
 
 #### variant: Zip
 
-[Source line 26](../../../extended/ext/archive_source.lani#L26)
+[Source line 27](../../../extended/ext/archive_source.lani#L27)
 
 ```lanius
 Zip(ext::zip::Error)
@@ -210,7 +211,7 @@ Zip(ext::zip::Error)
 
 ### struct: Error
 
-[Source line 28](../../../extended/ext/archive_source.lani#L28)
+[Source line 29](../../../extended/ext/archive_source.lani#L29)
 
 ```lanius
 pub struct Error
@@ -218,7 +219,7 @@ pub struct Error
 
 #### field: cause
 
-[Source line 28](../../../extended/ext/archive_source.lani#L28)
+[Source line 29](../../../extended/ext/archive_source.lani#L29)
 
 ```lanius
 cause:Cause
@@ -226,7 +227,7 @@ cause:Cause
 
 #### field: ordinal
 
-[Source line 28](../../../extended/ext/archive_source.lani#L28)
+[Source line 29](../../../extended/ext/archive_source.lani#L29)
 
 ```lanius
 ordinal:i32
@@ -234,7 +235,7 @@ ordinal:i32
 
 ### enum: Payload
 
-[Source line 29](../../../extended/ext/archive_source.lani#L29)
+[Source line 30](../../../extended/ext/archive_source.lani#L30)
 
 ```lanius
 pub enum Payload
@@ -242,7 +243,7 @@ pub enum Payload
 
 #### variant: Tar
 
-[Source line 29](../../../extended/ext/archive_source.lani#L29)
+[Source line 30](../../../extended/ext/archive_source.lani#L30)
 
 ```lanius
 Tar(View<u8>)
@@ -250,7 +251,7 @@ Tar(View<u8>)
 
 #### variant: Zip
 
-[Source line 29](../../../extended/ext/archive_source.lani#L29)
+[Source line 30](../../../extended/ext/archive_source.lani#L30)
 
 ```lanius
 Zip(ext::zip::Entry)
@@ -258,7 +259,7 @@ Zip(ext::zip::Entry)
 
 ### struct: Member
 
-[Source line 30](../../../extended/ext/archive_source.lani#L30)
+[Source line 31](../../../extended/ext/archive_source.lani#L31)
 
 ```lanius
 pub struct Member
@@ -266,7 +267,7 @@ pub struct Member
 
 #### field: node
 
-[Source line 30](../../../extended/ext/archive_source.lani#L30)
+[Source line 31](../../../extended/ext/archive_source.lani#L31)
 
 ```lanius
 node:i32
@@ -274,7 +275,7 @@ node:i32
 
 #### field: kind
 
-[Source line 30](../../../extended/ext/archive_source.lani#L30)
+[Source line 31](../../../extended/ext/archive_source.lani#L31)
 
 ```lanius
 kind:ext::archive_plan::Kind
@@ -282,7 +283,7 @@ kind:ext::archive_plan::Kind
 
 #### field: payload
 
-[Source line 30](../../../extended/ext/archive_source.lani#L30)
+[Source line 31](../../../extended/ext/archive_source.lani#L31)
 
 ```lanius
 payload:Payload
@@ -290,7 +291,7 @@ payload:Payload
 
 ### struct: Prepared
 
-[Source line 31](../../../extended/ext/archive_source.lani#L31)
+[Source line 32](../../../extended/ext/archive_source.lani#L32)
 
 ```lanius
 pub struct Prepared
@@ -298,7 +299,7 @@ pub struct Prepared
 
 #### field: namespace
 
-[Source line 32](../../../extended/ext/archive_source.lani#L32)
+[Source line 33](../../../extended/ext/archive_source.lani#L33)
 
 ```lanius
 namespace:ext::archive_plan::Plan
@@ -306,7 +307,7 @@ namespace:ext::archive_plan::Plan
 
 #### field: members
 
-[Source line 32](../../../extended/ext/archive_source.lani#L32)
+[Source line 33](../../../extended/ext/archive_source.lani#L33)
 
 ```lanius
 members:Vec<Member>
@@ -314,7 +315,7 @@ members:Vec<Member>
 
 #### field: limits
 
-[Source line 32](../../../extended/ext/archive_source.lani#L32)
+[Source line 33](../../../extended/ext/archive_source.lani#L33)
 
 ```lanius
 limits:Limits
@@ -322,7 +323,7 @@ limits:Limits
 
 #### field: total
 
-[Source line 33](../../../extended/ext/archive_source.lani#L33)
+[Source line 34](../../../extended/ext/archive_source.lani#L34)
 
 ```lanius
 total:u64
@@ -330,25 +331,25 @@ total:u64
 
 #### field: metadata_charged
 
-[Source line 33](../../../extended/ext/archive_source.lani#L33)
+[Source line 34](../../../extended/ext/archive_source.lani#L34)
 
 ```lanius
 metadata_charged:u64
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 33](../../../extended/ext/archive_source.lani#L33)
+[Source line 34](../../../extended/ext/archive_source.lani#L34)
 
 ```lanius
-live:bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 36](../../../extended/ext/archive_source.lani#L36)
+[Source line 37](../../../extended/ext/archive_source.lani#L37)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -356,7 +357,7 @@ pub fn default_limits() -> Limits
 
 ### function: reservation_bytes
 
-[Source line 45](../../../extended/ext/archive_source.lani#L45)
+[Source line 46](../../../extended/ext/archive_source.lani#L46)
 
 ```lanius
 pub fn reservation_bytes(limits:Limits) -> Result<u64,Error>
@@ -364,7 +365,7 @@ pub fn reservation_bytes(limits:Limits) -> Result<u64,Error>
 
 ### function: from_tar
 
-[Source line 125](../../../extended/ext/archive_source.lani#L125)
+[Source line 126](../../../extended/ext/archive_source.lani#L126)
 
 ```lanius
 pub fn from_tar(input:View<u8>,limits:Limits) -> Result<Prepared,Error>
@@ -372,7 +373,7 @@ pub fn from_tar(input:View<u8>,limits:Limits) -> Result<Prepared,Error>
 
 ### function: from_zip
 
-[Source line 152](../../../extended/ext/archive_source.lani#L152)
+[Source line 153](../../../extended/ext/archive_source.lani#L153)
 
 ```lanius
 pub fn from_zip(input:View<u8>,limits:Limits) -> Result<Prepared,Error>
@@ -380,9 +381,9 @@ pub fn from_zip(input:View<u8>,limits:Limits) -> Result<Prepared,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 86
+### impl at line 87
 
-[Source line 86](../../../extended/ext/archive_source.lani#L86)
+[Source line 87](../../../extended/ext/archive_source.lani#L87)
 
 ```lanius
 pub impl Prepared
@@ -390,7 +391,7 @@ pub impl Prepared
 
 #### method: borrow
 
-[Source line 87](../../../extended/ext/archive_source.lani#L87)
+[Source line 88](../../../extended/ext/archive_source.lani#L88)
 
 ```lanius
 pub fn borrow(&self) -> &Prepared
@@ -398,7 +399,7 @@ pub fn borrow(&self) -> &Prepared
 
 #### method: is_live
 
-[Source line 88](../../../extended/ext/archive_source.lani#L88)
+[Source line 89](../../../extended/ext/archive_source.lani#L89)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -406,7 +407,7 @@ pub fn is_live(&self) -> bool
 
 #### method: plan
 
-[Source line 89](../../../extended/ext/archive_source.lani#L89)
+[Source line 90](../../../extended/ext/archive_source.lani#L90)
 
 ```lanius
 pub fn plan(&self) -> &ext::archive_plan::Plan
@@ -414,7 +415,7 @@ pub fn plan(&self) -> &ext::archive_plan::Plan
 
 #### method: len
 
-[Source line 90](../../../extended/ext/archive_source.lani#L90)
+[Source line 91](../../../extended/ext/archive_source.lani#L91)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -422,7 +423,7 @@ pub fn len(&self) -> i32
 
 #### method: decoded_total
 
-[Source line 91](../../../extended/ext/archive_source.lani#L91)
+[Source line 92](../../../extended/ext/archive_source.lani#L92)
 
 ```lanius
 pub fn decoded_total(&self) -> u64
@@ -430,7 +431,7 @@ pub fn decoded_total(&self) -> u64
 
 #### method: metadata_units
 
-[Source line 92](../../../extended/ext/archive_source.lani#L92)
+[Source line 93](../../../extended/ext/archive_source.lani#L93)
 
 ```lanius
 pub fn metadata_units(&self) -> u64
@@ -438,7 +439,7 @@ pub fn metadata_units(&self) -> u64
 
 #### method: reserved_bytes
 
-[Source line 93](../../../extended/ext/archive_source.lani#L93)
+[Source line 94](../../../extended/ext/archive_source.lani#L94)
 
 ```lanius
 pub fn reserved_bytes(&self) -> u64
@@ -446,7 +447,7 @@ pub fn reserved_bytes(&self) -> u64
 
 #### method: member
 
-[Source line 98](../../../extended/ext/archive_source.lani#L98)
+[Source line 99](../../../extended/ext/archive_source.lani#L99)
 
 ```lanius
 pub fn member(&self,index:i32) -> Option<Member>
@@ -454,7 +455,7 @@ pub fn member(&self,index:i32) -> Option<Member>
 
 #### method: destroy
 
-[Source line 119](../../../extended/ext/archive_source.lani#L119)
+[Source line 120](../../../extended/ext/archive_source.lani#L120)
 
 ```lanius
 pub fn destroy(&self)

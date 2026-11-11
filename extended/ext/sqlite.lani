@@ -12,7 +12,6 @@ import ext::sqlite_statement;
 pub enum Mode { ReadOnly, ReadWrite, Create }
 pub enum Transaction { Deferred, Immediate, Exclusive }
 pub enum Step { Row, Done }
-pub enum State { Ready, Row, Done, Failed, Finalized }
 pub enum ColumnType { Null, Integer, Real, Text, Blob }
 pub enum Phase { Open, Configure, Prepare, Bind, Step, Reset, ClearBindings, Column, Finalize, Close, Transaction }
 pub enum Cause { Bounds, InvalidLimits, Limit, Closed, InvalidState, Parameter, Column, Type, Utf8, Nul, EmptySql, TrailingSql, OutputTooSmall, AllocationFailed, UnexpectedNative, ReadOnly, NotANumber, Native }
@@ -27,7 +26,7 @@ pub struct Database { handle: ptr, limits: Limits }
 // inside each copying/accessor call; no native row pointer escapes this API.
 // `current` changes only through `advance`: ext::sqlite_statement decides every
 // (state, operation) pair, and formal/Lanius/Machines proves its invariants.
-pub struct Statement { handle: ptr, database: ptr, limits: Limits, current: ext::sqlite_statement::State, parameters: i32, columns: i32 }
+pub struct Statement { handle: ptr, database: ptr, limits: Limits, current: ext::sqlite_statement::Statement, parameters: i32, columns: i32 }
 struct Packed { storage: ptr, length: i32 }
 struct NativeBytes { storage: ptr, length: i32 }
 
@@ -205,7 +204,7 @@ pub impl Database {
         let columns: i32 = sqlite3_column_count(handle);
         if (parameters < 0 || columns < 0) { sqlite3_finalize(handle); return core::result::Err(error(Cause::UnexpectedNative, Phase::Prepare)); }
         if (parameters > self.limits.variables || columns > self.limits.columns) { sqlite3_finalize(handle); return core::result::Err(error(Cause::Limit, Phase::Prepare)); }
-        return core::result::Ok(Statement { handle: handle, database: self.handle, limits: self.limits, current: ext::sqlite_statement::start(), parameters: parameters, columns: columns });
+        return core::result::Ok(Statement { handle: handle, database: self.handle, limits: self.limits, current: ext::sqlite_statement::statement_start(), parameters: parameters, columns: columns });
     }
     pub fn begin(&self, mode: Transaction) -> core::result::Result<i32, Error> {
         let sql: core::slice::View<u8> = match (mode) { Transaction::Deferred -> literal("BEGIN DEFERRED", 14), Transaction::Immediate -> literal("BEGIN IMMEDIATE", 15), Transaction::Exclusive -> literal("BEGIN EXCLUSIVE", 15) };
@@ -226,21 +225,9 @@ fn transaction_sql(database: &Database, sql: core::slice::View<u8>) -> core::res
     return statement.finalize();
 }
 
-// Feeds one event to the statement machine and stores the state it returns:
-// whether the operation may go ahead.
+// The machine decides whether the operation may go ahead.
 fn advance(statement: &mut Statement, event: ext::sqlite_statement::Event) -> bool {
-    let decided: ext::sqlite_statement::Move = ext::sqlite_statement::transition(statement.current, event);
-    statement.current = decided.next;
-    return decided.allowed;
-}
-fn public_state(state: ext::sqlite_statement::State) -> State {
-    return match (state) {
-        ext::sqlite_statement::State::Ready -> State::Ready,
-        ext::sqlite_statement::State::Row -> State::Row,
-        ext::sqlite_statement::State::Done -> State::Done,
-        ext::sqlite_statement::State::Failed -> State::Failed,
-        ext::sqlite_statement::State::Finalized -> State::Finalized,
-    };
+    return statement.current.step(event);
 }
 
 fn bind_ready(statement: &Statement, index: i32) -> core::result::Result<i32, Error> {
@@ -270,7 +257,7 @@ fn bind_bytes(statement: &Statement, index: i32, bytes: core::slice::View<u8>, t
 pub impl Statement {
     pub fn borrow(&self) -> &Statement { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
-    pub fn state(&self) -> State { return public_state(self.current); }
+    pub fn state(&self) -> ext::sqlite_statement::StatementState { return self.current.state(); }
     pub fn parameter_count(&self) -> i32 { return self.parameters; }
     pub fn column_count(&self) -> i32 { return self.columns; }
     pub fn bind_null(&self, index: i32) -> core::result::Result<i32, Error> {

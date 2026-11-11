@@ -20,12 +20,14 @@ Declaration counts: enum: 1; function: 1; variant: 1.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/yaml_writer.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/yaml_writer.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/yaml_writer.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/yaml_writer.lani#L10)
-- [core::text](../core/text.md) · [source](../../../extended/ext/yaml_writer.lani#L11)
-- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/yaml_writer.lani#L12)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/yaml_writer.lani#L7)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/yaml_writer.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/yaml_writer.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/yaml_writer.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/yaml_writer.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/yaml_writer.lani#L12)
+- [core::text](../core/text.md) · [source](../../../extended/ext/yaml_writer.lani#L13)
+- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/yaml_writer.lani#L14)
 
 ## Types, fields and variants
 
@@ -33,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 14](../../../extended/ext/yaml_writer.lani#L14)
+[Source line 16](../../../extended/ext/yaml_writer.lani#L16)
 
 ```lanius
 pub enum ErrorKind
@@ -41,7 +43,7 @@ pub enum ErrorKind
 
 #### variant: AllocationFailed
 
-[Source line 14](../../../extended/ext/yaml_writer.lani#L14)
+[Source line 16](../../../extended/ext/yaml_writer.lani#L16)
 
 ```lanius
 AllocationFailed
@@ -51,7 +53,7 @@ AllocationFailed
 
 ### function: write
 
-[Source line 245](../../../extended/ext/yaml_writer.lani#L245)
+[Source line 247](../../../extended/ext/yaml_writer.lani#L247)
 
 ```lanius
 pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, ErrorKind>

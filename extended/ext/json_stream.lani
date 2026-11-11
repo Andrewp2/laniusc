@@ -3,6 +3,9 @@
 // exact number spelling and reports typed errors with u64 byte offsets. The
 // writer emits the compact ext::json byte policy. See docs/extended-json-stream.md.
 module ext::json_stream;
+import core::utf8_state;
+import core::iter_state;
+import core::stream_state;
 import alloc::vec;
 import core::f64;
 import core::float_decimal;
@@ -78,38 +81,219 @@ fn hex(byte: u8) -> i32 {
     if (byte >= 97 && byte <= 102) { return (byte as i32) - 87; }
     return -1;
 }
-// Number phases: 1 after '-', 2 leading zero, 3 integer digits, 4 after '.',
-// 5 fraction digits, 6 after 'e', 7 after exponent sign, 8 exponent digits.
-// Returns the next phase, or 0 when byte cannot extend the number.
-fn number_next(phase: i32, byte: u8) -> i32 {
-    if (phase == 0) { if (byte == 45) { return 1; } if (byte == 48) { return 2; } if (digit(byte)) { return 3; } return 0; }
-    if (phase == 1) { if (byte == 48) { return 2; } if (digit(byte)) { return 3; } return 0; }
-    if (phase == 2 || phase == 3 || phase == 5) {
-        if (phase == 3 && digit(byte)) { return 3; }
-        if (phase == 5 && digit(byte)) { return 5; }
-        if (byte == 46 && phase != 5) { return 4; }
-        if (byte == 101 || byte == 69) { return 6; }
-        return 0;
-    }
-    if (phase == 4) { if (digit(byte)) { return 5; } return 0; }
-    if (phase == 6) { if (byte == 43 || byte == 45) { return 7; } if (digit(byte)) { return 8; } return 0; }
-    if (phase == 7 || phase == 8) { if (digit(byte)) { return 8; } return 0; }
-    return 0;
+// A rejected byte is not consumed and preserves the last accepted state;
+// the tokenizer can then distinguish a delimiter from an incomplete number.
+pub machine Number on u8 -> bool {
+    start Start;
+    state Start { byte -> { if (byte == 45) { goto Sign with true; } if (byte == 48) { goto Zero with true; } if (digit(byte)) { goto Integer with true; } stay with false; }, }
+    state Sign { byte -> { if (byte == 48) { goto Zero with true; } if (digit(byte)) { goto Integer with true; } stay with false; }, }
+    state Zero { byte -> { if (byte == 46) { goto FractionStart with true; } if (byte == 101 || byte == 69) { goto ExponentStart with true; } stay with false; }, }
+    state Integer { byte -> { if (digit(byte)) { stay with true; } if (byte == 46) { goto FractionStart with true; } if (byte == 101 || byte == 69) { goto ExponentStart with true; } stay with false; }, }
+    state FractionStart { byte -> { if (digit(byte)) { goto Fraction with true; } stay with false; }, }
+    state Fraction { byte -> { if (digit(byte)) { stay with true; } if (byte == 101 || byte == 69) { goto ExponentStart with true; } stay with false; }, }
+    state ExponentStart { byte -> { if (byte == 43 || byte == 45) { goto ExponentSign with true; } if (digit(byte)) { goto Exponent with true; } stay with false; }, }
+    state ExponentSign { byte -> { if (digit(byte)) { goto Exponent with true; } stay with false; }, }
+    final state Exponent { byte -> { if (digit(byte)) { stay with true; } stay with false; }, }
 }
-fn number_terminal(phase: i32) -> bool { return phase == 2 || phase == 3 || phase == 5 || phase == 8; }
+pub impl Number {
+    pub fn terminal(&self) -> bool { return match (self.state()) { NumberState::Zero -> true, NumberState::Integer -> true, NumberState::Fraction -> true, NumberState::Exponent -> true, _ -> false }; }
+    pub fn digits(&self) -> bool { return match (self.state()) { NumberState::Integer -> true, NumberState::Fraction -> true, NumberState::Exponent -> true, _ -> false }; }
+}
 
-// Grammar expectations between tokens.
-// 0 root value, 1 value, 2 value or ']', 3 key or '}', 4 key, 5 ':',
-// 6 ',' or close, 7 complete root.
-// Lexical states: 0 between tokens, 1 string body, 2 after '\', 3 \u digits,
-// 4 '\' of a low surrogate, 5 'u' of a low surrogate, 6 number, 7 literal.
+pub enum LexicalEvent { TokenEnded, StringBody, EscapeStarted, HexStarted, LowSlashExpected, LowUExpected, NumberStarted, LiteralStarted, Reset }
+pub machine Lexical on LexicalEvent {
+    start Between;
+
+    state Between {
+        LexicalEvent::TokenEnded -> stay,
+        LexicalEvent::StringBody -> goto String,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> goto Number,
+        LexicalEvent::LiteralStarted -> goto Literal,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state String {
+        LexicalEvent::TokenEnded -> goto Between,
+        LexicalEvent::StringBody -> stay,
+        LexicalEvent::EscapeStarted -> goto Escape,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state Escape {
+        LexicalEvent::TokenEnded -> stay,
+        LexicalEvent::StringBody -> goto String,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> goto Hex,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state Hex {
+        LexicalEvent::TokenEnded -> stay,
+        LexicalEvent::StringBody -> goto String,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> goto LowSlash,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state LowSlash {
+        LexicalEvent::TokenEnded -> stay,
+        LexicalEvent::StringBody -> stay,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> goto LowU,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state LowU {
+        LexicalEvent::TokenEnded -> stay,
+        LexicalEvent::StringBody -> stay,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> goto Hex,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state Number {
+        LexicalEvent::TokenEnded -> goto Between,
+        LexicalEvent::StringBody -> stay,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+
+    state Literal {
+        LexicalEvent::TokenEnded -> goto Between,
+        LexicalEvent::StringBody -> stay,
+        LexicalEvent::EscapeStarted -> stay,
+        LexicalEvent::HexStarted -> stay,
+        LexicalEvent::LowSlashExpected -> stay,
+        LexicalEvent::LowUExpected -> stay,
+        LexicalEvent::NumberStarted -> stay,
+        LexicalEvent::LiteralStarted -> stay,
+        LexicalEvent::Reset -> goto Between,
+    }
+}
+
+pub enum GrammarEvent { ArrayStarted, ObjectStarted, ValueEnded(bool), KeyEnded, ValueReady, KeyReady, Reset }
+pub machine Grammar on GrammarEvent {
+    start Root;
+
+    state Root {
+        GrammarEvent::ArrayStarted -> goto ArrayValue,
+        GrammarEvent::ObjectStarted -> goto KeyOrClose,
+        GrammarEvent::ValueEnded(root) -> { if (root) { goto Complete; } goto Delimiter; },
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state Value {
+        GrammarEvent::ArrayStarted -> goto ArrayValue,
+        GrammarEvent::ObjectStarted -> goto KeyOrClose,
+        GrammarEvent::ValueEnded(root) -> { if (root) { goto Complete; } goto Delimiter; },
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state ArrayValue {
+        GrammarEvent::ArrayStarted -> goto ArrayValue,
+        GrammarEvent::ObjectStarted -> goto KeyOrClose,
+        GrammarEvent::ValueEnded(root) -> { if (root) { goto Complete; } goto Delimiter; },
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state KeyOrClose {
+        GrammarEvent::ArrayStarted -> stay,
+        GrammarEvent::ObjectStarted -> stay,
+        GrammarEvent::ValueEnded(root) -> { if (root) { goto Complete; } goto Delimiter; },
+        GrammarEvent::KeyEnded -> goto Colon,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state Key {
+        GrammarEvent::ArrayStarted -> stay,
+        GrammarEvent::ObjectStarted -> stay,
+        GrammarEvent::ValueEnded(root) -> stay,
+        GrammarEvent::KeyEnded -> goto Colon,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state Colon {
+        GrammarEvent::ArrayStarted -> stay,
+        GrammarEvent::ObjectStarted -> stay,
+        GrammarEvent::ValueEnded(root) -> stay,
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> goto Value,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state Delimiter {
+        GrammarEvent::ArrayStarted -> stay,
+        GrammarEvent::ObjectStarted -> stay,
+        GrammarEvent::ValueEnded(root) -> { if (root) { goto Complete; } goto Delimiter; },
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> goto Value,
+        GrammarEvent::KeyReady -> goto Key,
+        GrammarEvent::Reset -> goto Root,
+    }
+
+    state Complete {
+        GrammarEvent::ArrayStarted -> stay,
+        GrammarEvent::ObjectStarted -> stay,
+        GrammarEvent::ValueEnded(root) -> stay,
+        GrammarEvent::KeyEnded -> stay,
+        GrammarEvent::ValueReady -> stay,
+        GrammarEvent::KeyReady -> stay,
+        GrammarEvent::Reset -> goto Root,
+    }
+}
+
+// Lexical and grammar machines share the same checked container stack.
 pub struct Tokenizer {
     options: Options, text: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>,
     failure: core::option::Option<Error>, offset: u64, tokens: u64,
-    expect: i32, lex: i32, tag: i32, ready: bool, finished: bool, flag: bool,
+    expect: Grammar, lex: Lexical, tag: i32, delivery: core::stream_state::Delivery,  flag: bool,
     start: u64, is_key: bool, escape_start: u64, hex_count: i32, hex_value: i32,
-    high: i32, high_start: u64, phase: i32, literal: i32, literal_index: i32,
-    utf8_width: u32, utf8_used: u32, utf8_start: u64, first: u8, second: u8, third: u8,
+    high: i32, high_start: u64, number: Number, literal: i32, literal_index: i32,
+    utf8_sequence: core::utf8_state::Sequence, utf8_start: u64,
     // Token text: text holds chars_cap bytes, chars caches its as_slice(),
     // and the first chars_used are the text. Open containers: stack holds
     // levels_cap bytes, levels caches its as_slice(), the first count are the
@@ -127,10 +311,10 @@ pub fn tokenizer(options: Options) -> core::result::Result<Tokenizer, Error> {
     return core::result::Ok(Tokenizer { options: options, text: text, stack: stack,
         chars: text.as_slice(), chars_used: 0, chars_cap: 0, levels: stack.as_slice(), count: 0, levels_cap: 0, top: 0, last: error(ErrorKind::Bounds, 0),
         failure: core::option::None(), offset: 0, tokens: 0,
-        expect: 0, lex: 0, tag: 0, ready: false, finished: false, flag: false,
+        expect: grammar_start(), lex: lexical_start(), tag: 0, delivery: core::stream_state::delivery_start(),  flag: false,
         start: 0, is_key: false, escape_start: 0, hex_count: 0, hex_value: 0,
-        high: -1, high_start: 0, phase: 0, literal: 0, literal_index: 0,
-        utf8_width: 0, utf8_used: 0, utf8_start: 0, first: 0, second: 0, third: 0 });
+        high: -1, high_start: 0, number: number_start(), literal: 0, literal_index: 0,
+        utf8_sequence: core::utf8_state::sequence_start(false), utf8_start: 0 });
 }
 
 fn literal_byte(which: i32, index: i32) -> u8 {
@@ -144,34 +328,34 @@ pub impl Tokenizer {
     pub fn borrow(&self) -> &Tokenizer { return self; }
     pub fn byte_offset(&self) -> u64 { return self.offset; }
     pub fn tokens_read(&self) -> u64 { return self.tokens; }
-    pub fn has_token(&self) -> bool { return self.ready; }
+    pub fn has_token(&self) -> bool { return self.delivery.ready(); }
     // Container depth after the ready token; a root scalar has depth zero.
     pub fn depth(&self) -> i32 { return self.count; }
-    pub fn is_complete(&self) -> bool { return self.finished; }
+    pub fn is_complete(&self) -> bool { return self.delivery.finished(); }
     pub fn token(&self) -> core::option::Option<Token> {
-        if (!self.ready) { return core::option::None(); }
+        if (!self.delivery.ready()) { return core::option::None(); }
         return core::option::Some(token_of(self.tag));
     }
     // Byte offset of the ready token's first byte (its opening quote, sign,
     // digit, letter or bracket).
     pub fn token_offset(&self) -> u64 { return self.start; }
     pub fn boolean(&self) -> core::result::Result<bool, Error> {
-        if (!self.ready || self.tag != 7) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
+        if (!self.delivery.ready() || self.tag != 7) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
         return core::result::Ok(self.flag);
     }
     // Decoded key/string UTF-8 or exact number spelling. Borrowed: valid until
     // the next nonempty feed, reset or destroy.
     pub fn text(&self) -> core::result::Result<core::text::Text, Error> {
-        if (!self.ready || self.tag < 4 || self.tag > 6) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
+        if (!self.delivery.ready() || self.tag < 4 || self.tag > 6) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
         return core::result::Ok(core::text::from_utf8_unchecked(self.chars, 0, self.chars_used));
     }
     fn fail(&self, kind: ErrorKind, at: u64) -> i32 {
-        self.failure = core::option::Some(error(kind, at)); self.ready = false;
+        self.failure = core::option::Some(error(kind, at)); self.delivery.fail();
         return -1;
     }
-    fn emit(&self, tag: i32) { self.tag = tag; self.ready = true; self.tokens += 1; }
+    fn emit(&self, tag: i32) { self.tag = tag; self.delivery.produced(); self.tokens += 1; }
     fn after_value(&self) {
-        if (self.count == 0) { self.expect = 7; } else { self.expect = 6; }
+        self.expect.step(GrammarEvent::ValueEnded(self.count == 0));
     }
     // Room for need text bytes in total; grows geometrically, at least 64.
     fn reserve_text(&self, need: i32) -> bool {
@@ -201,7 +385,7 @@ pub impl Tokenizer {
         }
         return 0;
     }
-    fn open(&self, kind: u8, tag: i32, next: i32) -> i32 {
+    fn open(&self, kind: u8, tag: i32, next: GrammarEvent) -> i32 {
         let count: i32 = self.count;
         if (count >= self.options.max_depth) { return self.fail(ErrorKind::DepthLimit, self.offset); }
         if (count == self.levels_cap) {
@@ -210,7 +394,7 @@ pub impl Tokenizer {
             self.levels = self.stack.as_slice(); self.levels_cap = grown;
         }
         self.levels[count] = kind; self.count = count + 1; self.top = kind;
-        self.start = self.offset; self.expect = next; self.emit(tag);
+        self.start = self.offset; self.expect.step(next); self.emit(tag);
         return 1;
     }
     fn close(&self, tag: i32) -> i32 {
@@ -221,11 +405,11 @@ pub impl Tokenizer {
     }
     fn begin_value(&self, byte: u8) -> i32 {
         self.chars_used = 0; self.start = self.offset;
-        if (byte == 123) { return self.open(2, 0, 3); }
-        if (byte == 91) { return self.open(1, 2, 2); }
-        if (byte == 34) { self.lex = 1; self.is_key = false; return 0; }
+        if (byte == 123) { return self.open(2, 0, GrammarEvent::ObjectStarted); }
+        if (byte == 91) { return self.open(1, 2, GrammarEvent::ArrayStarted); }
+        if (byte == 34) { self.lex.step(LexicalEvent::StringBody); self.is_key = false; return 0; }
         if (byte == 45 || digit(byte)) {
-            self.lex = 6; self.phase = number_next(0, byte);
+            self.lex.step(LexicalEvent::NumberStarted); self.number = number_start(); self.number.step(byte);
             return self.push_text(byte, self.options.max_number_bytes, ErrorKind::NumberLimit);
         }
         let which: i32 = -1;
@@ -233,46 +417,30 @@ pub impl Tokenizer {
         if (byte == 102) { which = 1; }
         if (byte == 110) { which = 2; }
         if (which < 0) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
-        self.lex = 7; self.literal = which; self.literal_index = 1;
+        self.lex.step(LexicalEvent::LiteralStarted); self.literal = which; self.literal_index = 1;
         return 0;
     }
     fn accept_utf8(&self, byte: u8) -> i32 {
-        if (self.utf8_used == 0) {
-            let width: u32 = core::utf8::sequence_len_or(byte, 0);
-            if (width == 0) { return self.fail(ErrorKind::InvalidUtf8, self.offset); }
-            if (width > 1) {
-                self.utf8_width = width; self.utf8_used = 1;
-                self.utf8_start = self.offset; self.first = byte; self.second = 0; self.third = 0;
-            }
-            return 0;
-        }
-        if (!core::utf8::is_continuation_byte(byte)) { return self.fail(ErrorKind::InvalidUtf8, self.utf8_start); }
-        if (self.utf8_used == 1) { self.second = byte; }
-        if (self.utf8_used == 2) { self.third = byte; }
-        self.utf8_used += 1;
-        if (self.utf8_used == self.utf8_width) {
-            let scalar: u32 = core::utf8::decode_or(self.first, self.second, self.third, byte, self.utf8_width, 4294967295);
-            if (scalar == 4294967295) { return self.fail(ErrorKind::InvalidUtf8, self.utf8_start); }
-            self.utf8_used = 0;
-        }
+        if (self.utf8_sequence.complete()) { self.utf8_start = self.offset; }
+        if (!self.utf8_sequence.step(byte)) { return self.fail(ErrorKind::InvalidUtf8, self.utf8_start); }
         return 0;
     }
     fn string_byte(&self, byte: u8) -> i32 {
-        if (self.lex == 1) {
-            if (self.utf8_used == 0) {
+        if ((match (self.lex.state()) { LexicalState::String -> true, _ -> false })) {
+            if (self.utf8_sequence.complete()) {
                 if (byte == 34) {
-                    self.lex = 0;
-                    if (self.is_key) { self.expect = 5; self.emit(4); } else { self.after_value(); self.emit(5); }
+                    self.lex.step(LexicalEvent::TokenEnded);
+                    if (self.is_key) { self.expect.step(GrammarEvent::KeyEnded); self.emit(4); } else { self.after_value(); self.emit(5); }
                     return 1;
                 }
-                if (byte == 92) { self.escape_start = self.offset; self.lex = 2; return 0; }
+                if (byte == 92) { self.escape_start = self.offset; self.lex.step(LexicalEvent::EscapeStarted); return 0; }
                 if (byte < 32) { return self.fail(ErrorKind::ControlCharacter, self.offset); }
             }
-            if (byte >= 128 || self.utf8_used != 0) { if (self.accept_utf8(byte) < 0) { return -1; } }
+            if (byte >= 128 || !self.utf8_sequence.complete()) { if (self.accept_utf8(byte) < 0) { return -1; } }
             return self.push_text(byte, self.options.max_string_bytes, ErrorKind::StringLimit);
         }
-        if (self.lex == 2) {
-            if (byte == 117) { self.lex = 3; self.hex_count = 0; self.hex_value = 0; return 0; }
+        if ((match (self.lex.state()) { LexicalState::Escape -> true, _ -> false })) {
+            if (byte == 117) { self.lex.step(LexicalEvent::HexStarted); self.hex_count = 0; self.hex_value = 0; return 0; }
             let decoded: i32 = -1;
             if (byte == 34 || byte == 92 || byte == 47) { decoded = byte as i32; }
             if (byte == 98) { decoded = 8; }
@@ -281,10 +449,10 @@ pub impl Tokenizer {
             if (byte == 114) { decoded = 13; }
             if (byte == 116) { decoded = 9; }
             if (decoded < 0) { return self.fail(ErrorKind::InvalidEscape, self.offset); }
-            self.lex = 1;
+            self.lex.step(LexicalEvent::StringBody);
             return self.push_text(decoded as u8, self.options.max_string_bytes, ErrorKind::StringLimit);
         }
-        if (self.lex == 3) {
+        if ((match (self.lex.state()) { LexicalState::Hex -> true, _ -> false })) {
             let value: i32 = hex(byte);
             if (value < 0) { return self.fail(ErrorKind::InvalidEscape, self.offset); }
             self.hex_value = self.hex_value * 16 + value; self.hex_count += 1;
@@ -293,20 +461,20 @@ pub impl Tokenizer {
             if (self.high >= 0) {
                 if (unit < 56320 || unit > 57343) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
                 let scalar: u32 = (65536 + (self.high - 55296) * 1024 + unit - 56320) as u32;
-                self.high = -1; self.lex = 1;
+                self.high = -1; self.lex.step(LexicalEvent::StringBody);
                 return self.push_scalar(scalar);
             }
-            if (unit >= 55296 && unit <= 56319) { self.high = unit; self.high_start = self.escape_start; self.lex = 4; return 0; }
+            if (unit >= 55296 && unit <= 56319) { self.high = unit; self.high_start = self.escape_start; self.lex.step(LexicalEvent::LowSlashExpected); return 0; }
             if (unit >= 56320 && unit <= 57343) { return self.fail(ErrorKind::InvalidSurrogate, self.escape_start); }
-            self.lex = 1;
+            self.lex.step(LexicalEvent::StringBody);
             return self.push_scalar(unit as u32);
         }
-        if (self.lex == 4) {
+        if ((match (self.lex.state()) { LexicalState::LowSlash -> true, _ -> false })) {
             if (byte != 92) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
-            self.lex = 5; return 0;
+            self.lex.step(LexicalEvent::LowUExpected); return 0;
         }
         if (byte != 117) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
-        self.lex = 3; self.hex_count = 0; self.hex_value = 0;
+        self.lex.step(LexicalEvent::HexStarted); self.hex_count = 0; self.hex_value = 0;
         return 0;
     }
     // Appends source[from, from + run) to the token text; false (nothing
@@ -328,7 +496,7 @@ pub impl Tokenizer {
         let left: u64 = 18446744073709551615 - self.offset;
         if ((most as u64) > left) { most = left as i32; }
         let index: i32 = from; let stop: i32 = from + most;
-        if (self.lex == 6) {
+        if ((match (self.lex.state()) { LexicalState::Number -> true, _ -> false })) {
             while (index < stop) { let byte: u8 = source[index]; if (byte < 48 || byte > 57) { break; } index += 1; }
             return index - from;
         }
@@ -351,8 +519,8 @@ pub impl Tokenizer {
     // Bytes the fast paths took from source[from, ...): whitespace between
     // tokens, string body runs and number digit runs. 0 leaves the byte to step().
     fn fast(&self, source: [u8], from: i32, available: i32) -> i32 {
-        let lex: i32 = self.lex;
-        if (lex == 0) {
+        let lex: LexicalState = self.lex.state();
+        if ((match (lex) { LexicalState::Between -> true, _ -> false })) {
             let index: i32 = from; let stop: i32 = from + available;
             let left: u64 = 18446744073709551615 - self.offset;
             if ((available as u64) > left) { stop = from + (left as i32); }
@@ -360,10 +528,10 @@ pub impl Tokenizer {
             return index - from;
         }
         let run: i32 = 0;
-        if (lex == 1 && self.utf8_used == 0) {
+        if ((match (lex) { LexicalState::String -> true, _ -> false }) && self.utf8_sequence.complete()) {
             run = self.plain_run(source, from, available, self.options.max_string_bytes - self.chars_used);
         } else {
-            if (lex == 6 && (self.phase == 3 || self.phase == 5 || self.phase == 8)) {
+            if ((match (lex) { LexicalState::Number -> true, _ -> false }) && self.number.digits()) {
                 run = self.plain_run(source, from, available, self.options.max_number_bytes - self.chars_used);
             }
         }
@@ -373,42 +541,42 @@ pub impl Tokenizer {
     // 0 consumed, 1 consumed and token ready, 2 token ready without consuming
     // byte (a number delimiter), -1 failed.
     fn step(&self, byte: u8) -> i32 {
-        if (self.lex == 6) {
-            let next: i32 = number_next(self.phase, byte);
-            if (next != 0) { self.phase = next; return self.push_text(byte, self.options.max_number_bytes, ErrorKind::NumberLimit); }
-            if (!number_terminal(self.phase) || digit(byte)) { return self.fail(ErrorKind::InvalidNumber, self.start); }
-            self.lex = 0; self.after_value(); self.emit(6);
+        if ((match (self.lex.state()) { LexicalState::Number -> true, _ -> false })) {
+            let accepted: bool = self.number.step(byte);
+            if (accepted) { return self.push_text(byte, self.options.max_number_bytes, ErrorKind::NumberLimit); }
+            if (!self.number.terminal() || digit(byte)) { return self.fail(ErrorKind::InvalidNumber, self.start); }
+            self.lex.step(LexicalEvent::TokenEnded); self.after_value(); self.emit(6);
             return 2;
         }
-        if (self.lex == 7) {
+        if ((match (self.lex.state()) { LexicalState::Literal -> true, _ -> false })) {
             if (byte != literal_byte(self.literal, self.literal_index)) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
             self.literal_index += 1;
             if (self.literal_index < literal_len(self.literal)) { return 0; }
-            self.lex = 0; self.after_value();
+            self.lex.step(LexicalEvent::TokenEnded); self.after_value();
             if (self.literal == 2) { self.emit(8); } else { self.flag = self.literal == 0; self.emit(7); }
             return 1;
         }
-        if (self.lex != 0) { return self.string_byte(byte); }
+        if ((match (self.lex.state()) { LexicalState::Between -> false, _ -> true })) { return self.string_byte(byte); }
         if (space(byte)) { return 0; }
-        if (self.expect == 7) { return self.fail(ErrorKind::TrailingInput, self.offset); }
-        if (self.expect == 5) {
+        if ((match (self.expect.state()) { GrammarState::Complete -> true, _ -> false })) { return self.fail(ErrorKind::TrailingInput, self.offset); }
+        if ((match (self.expect.state()) { GrammarState::Colon -> true, _ -> false })) {
             if (byte != 58) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
-            self.expect = 1; return 0;
+            self.expect.step(GrammarEvent::ValueReady); return 0;
         }
         let top: u8 = self.top;
-        if (self.expect == 6) {
-            if (byte == 44) { if (top == 2) { self.expect = 4; } else { self.expect = 1; } return 0; }
+        if ((match (self.expect.state()) { GrammarState::Delimiter -> true, _ -> false })) {
+            if (byte == 44) { if (top == 2) { self.expect.step(GrammarEvent::KeyReady); } else { self.expect.step(GrammarEvent::ValueReady); } return 0; }
             if (byte == 93 && top == 1) { return self.close(3); }
             if (byte == 125 && top == 2) { return self.close(1); }
             return self.fail(ErrorKind::UnexpectedByte, self.offset);
         }
-        if (self.expect == 3 || self.expect == 4) {
-            if (byte == 125 && self.expect == 3) { return self.close(1); }
+        if ((match (self.expect.state()) { GrammarState::KeyOrClose -> true, _ -> false }) || (match (self.expect.state()) { GrammarState::Key -> true, _ -> false })) {
+            if (byte == 125 && (match (self.expect.state()) { GrammarState::KeyOrClose -> true, _ -> false })) { return self.close(1); }
             if (byte != 34) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
-            self.chars_used = 0; self.start = self.offset; self.lex = 1; self.is_key = true;
+            self.chars_used = 0; self.start = self.offset; self.lex.step(LexicalEvent::StringBody); self.is_key = true;
             return 0;
         }
-        if (self.expect == 2 && byte == 93) { return self.close(3); }
+        if ((match (self.expect.state()) { GrammarState::ArrayValue -> true, _ -> false }) && byte == 93) { return self.close(3); }
         return self.begin_value(byte);
     }
     // Stops after at most one token. A number ends at the following byte,
@@ -417,10 +585,10 @@ pub impl Tokenizer {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
         if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
         if (count == 0) { return core::result::Ok(Progress { consumed: 0, token: false }); }
-        if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.offset)); }
+        if (self.delivery.finished()) { return core::result::Err(error(ErrorKind::Finished, self.offset)); }
         let consumed: i32 = self.drive(source, start, count);
         if (consumed < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
-        return core::result::Ok(Progress { consumed: consumed, token: self.ready });
+        return core::result::Ok(Progress { consumed: consumed, token: self.delivery.ready() });
     }
     // feed() without the Result: the bytes consumed, with has_token() telling
     // whether a token is ready, or -1 where feed() returns Err (that error is
@@ -429,7 +597,7 @@ pub impl Tokenizer {
         if (core::option::is_some(self.failure)) { self.last = core::option::unwrap(self.failure); return -1; }
         if (!core::io::valid_range(start, count)) { self.last = error(ErrorKind::Bounds, self.offset); return -1; }
         if (count == 0) { return 0; }
-        if (self.finished) { self.last = error(ErrorKind::Finished, self.offset); return -1; }
+        if (self.delivery.finished()) { self.last = error(ErrorKind::Finished, self.offset); return -1; }
         let consumed: i32 = self.drive(source, start, count);
         if (consumed < 0) { self.last = core::option::unwrap(self.failure); }
         return consumed;
@@ -437,14 +605,14 @@ pub impl Tokenizer {
     pub fn last_error(&self) -> Error { return self.last; }
     // The byte loop of feed(): bytes consumed, or -1 with failure set.
     fn drive(&self, source: [u8], start: i32, count: i32) -> i32 {
-        self.ready = false;
+        self.delivery.taken();
         let consumed: i32 = 0;
         while (consumed < count) {
             if (self.offset == 18446744073709551615) {
                 self.fail(ErrorKind::OffsetOverflow, self.offset); return -1;
             }
-            let byte: u8 = source[start + consumed]; let lex: i32 = self.lex;
-            if ((lex == 0 && space(byte)) || (lex == 1 && byte >= 32 && byte != 34 && byte != 92) || (lex == 6 && byte >= 48 && byte <= 57)) {
+            let byte: u8 = source[start + consumed]; let lex: LexicalState = self.lex.state();
+            if (((match (lex) { LexicalState::Between -> true, _ -> false }) && space(byte)) || ((match (lex) { LexicalState::String -> true, _ -> false }) && byte >= 32 && byte != 34 && byte != 92) || ((match (lex) { LexicalState::Number -> true, _ -> false }) && byte >= 48 && byte <= 57)) {
                 let run: i32 = self.fast(source, start + consumed, count - consumed);
                 if (run > 0) { consumed += run; self.offset += run as u64; continue; }
             }
@@ -459,27 +627,27 @@ pub impl Tokenizer {
     // Explicit EOF. Returns true only when EOF completes a root number token.
     pub fn finish(&self) -> core::result::Result<bool, Error> {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
-        if (self.finished) { return core::result::Ok(false); }
-        if (self.lex == 6) {
-            if (!number_terminal(self.phase)) { self.fail(ErrorKind::InvalidNumber, self.start); return core::result::Err(core::option::unwrap(self.failure)); }
-            self.lex = 0; self.after_value();
-            if (self.expect != 7) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
-            self.emit(6); self.finished = true;
+        if (self.delivery.finished()) { return core::result::Ok(false); }
+        if ((match (self.lex.state()) { LexicalState::Number -> true, _ -> false })) {
+            if (!self.number.terminal()) { self.fail(ErrorKind::InvalidNumber, self.start); return core::result::Err(core::option::unwrap(self.failure)); }
+            self.lex.step(LexicalEvent::TokenEnded); self.after_value();
+            if ((match (self.expect.state()) { GrammarState::Complete -> false, _ -> true })) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
+            self.emit(6); self.delivery.finish();
             return core::result::Ok(true);
         }
-        if (self.lex == 1 && self.utf8_used != 0) { self.fail(ErrorKind::InvalidUtf8, self.utf8_start); return core::result::Err(core::option::unwrap(self.failure)); }
-        if (self.lex != 0 || self.expect != 7) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
-        self.finished = true; self.ready = false;
+        if ((match (self.lex.state()) { LexicalState::String -> true, _ -> false }) && !self.utf8_sequence.complete()) { self.fail(ErrorKind::InvalidUtf8, self.utf8_start); return core::result::Err(core::option::unwrap(self.failure)); }
+        if ((match (self.lex.state()) { LexicalState::Between -> false, _ -> true }) || (match (self.expect.state()) { GrammarState::Complete -> false, _ -> true })) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
+        self.delivery.finish(); self.delivery.taken();
         return core::result::Ok(false);
     }
     // Retain buffer capacities; clear state, counters, error and EOF.
     pub fn reset(&self) {
         self.chars_used = 0; self.count = 0; self.top = 0; self.failure = core::option::None();
-        self.offset = 0; self.tokens = 0; self.expect = 0; self.lex = 0; self.tag = 0;
-        self.ready = false; self.finished = false; self.flag = false; self.start = 0;
+        self.offset = 0; self.tokens = 0; self.expect.step(GrammarEvent::Reset); self.lex.step(LexicalEvent::Reset); self.tag = 0;
+        self.delivery.taken(); self.delivery.reset(); self.flag = false; self.start = 0;
         self.is_key = false; self.escape_start = 0; self.hex_count = 0; self.hex_value = 0;
-        self.high = -1; self.high_start = 0; self.phase = 0; self.literal = 0; self.literal_index = 0;
-        self.utf8_width = 0; self.utf8_used = 0; self.utf8_start = 0; self.first = 0; self.second = 0; self.third = 0;
+        self.high = -1; self.high_start = 0; self.number = number_start(); self.literal = 0; self.literal_index = 0;
+        self.utf8_sequence = core::utf8_state::sequence_start(false); self.utf8_start = 0;
     }
     pub fn destroy(&self) {
         self.text.destroy(); self.stack.destroy();
@@ -489,10 +657,80 @@ pub impl Tokenizer {
     }
 }
 
-// Writer expectations: 0 root value, 1 member value, 2 first element or ']',
-// 3 later element or ']', 4 first key or '}', 5 later key or '}', 6 complete.
+pub enum WritingEvent { ArrayStarted, ObjectStarted, KeyWritten, ValueWritten(u8), Reset }
+
+pub machine Writing on WritingEvent {
+    start Root;
+
+    state Root {
+        WritingEvent::ArrayStarted -> goto ArrayFirst,
+        WritingEvent::ObjectStarted -> goto ObjectFirst,
+        WritingEvent::KeyWritten -> stay,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state Member {
+        WritingEvent::ArrayStarted -> goto ArrayFirst,
+        WritingEvent::ObjectStarted -> goto ObjectFirst,
+        WritingEvent::KeyWritten -> stay,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state ArrayFirst {
+        WritingEvent::ArrayStarted -> goto ArrayFirst,
+        WritingEvent::ObjectStarted -> goto ObjectFirst,
+        WritingEvent::KeyWritten -> stay,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state ArrayNext {
+        WritingEvent::ArrayStarted -> goto ArrayFirst,
+        WritingEvent::ObjectStarted -> goto ObjectFirst,
+        WritingEvent::KeyWritten -> stay,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state ObjectFirst {
+        WritingEvent::ArrayStarted -> stay,
+        WritingEvent::ObjectStarted -> stay,
+        WritingEvent::KeyWritten -> goto Member,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state ObjectNext {
+        WritingEvent::ArrayStarted -> stay,
+        WritingEvent::ObjectStarted -> stay,
+        WritingEvent::KeyWritten -> goto Member,
+        WritingEvent::ValueWritten(parent) -> { if (parent == 0) { goto Complete; } if (parent == 1) { goto ArrayNext; } goto ObjectNext; },
+        WritingEvent::Reset -> goto Root,
+    }
+
+    state Complete {
+        WritingEvent::ArrayStarted -> stay,
+        WritingEvent::ObjectStarted -> stay,
+        WritingEvent::KeyWritten -> stay,
+        WritingEvent::ValueWritten(parent) -> stay,
+        WritingEvent::Reset -> goto Root,
+    }
+}
+
+pub impl Writing {
+    pub fn value_comma(&self) -> i32 {
+        return match (self.state()) { WritingState::Root -> 0, WritingState::Member -> 0, WritingState::ArrayFirst -> 0, WritingState::ArrayNext -> 1, _ -> -1 };
+    }
+    pub fn key_comma(&self) -> i32 {
+        return match (self.state()) { WritingState::ObjectFirst -> 0, WritingState::ObjectNext -> 1, _ -> -1 };
+    }
+    pub fn complete(&self) -> bool { return match (self.state()) { WritingState::Complete -> true, _ -> false }; }
+}
+
 pub struct Writer {
-    out: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>, expect: i32,
+    out: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>, expect: Writing,
     max_depth: i32, max_output_bytes: i32, top: u8,
     // Output storage: out holds cap bytes, data caches out.as_slice(), and
     // the first used bytes are the output. top caches the innermost kind.
@@ -504,24 +742,24 @@ pub struct Writer {
 pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Writer, Error> {
     if (max_depth < 0 || max_output_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
     let out: alloc::vec::Vec<u8> = alloc::vec::new();
-    return core::result::Ok(Writer { out: out, stack: alloc::vec::new(), expect: 0,
+    return core::result::Ok(Writer { out: out, stack: alloc::vec::new(), expect: writing_start(),
         max_depth: max_depth, max_output_bytes: max_output_bytes, top: 0, data: out.as_slice(), used: 0, cap: 0,
         levels: out.as_slice(), levels_cap: 0, count: 0 });
 }
 // Offset of the first invalid byte of a complete JSON number, or -1.
 pub fn number_error(text: core::text::Text) -> i32 {
     if (text.length == 0) { return 0; }
-    let phase: i32 = 0; let index: i32 = 0;
+    let number: Number = number_start(); let index: i32 = 0;
     let bytes: [u8] = text.bytes; let start: i32 = text.start;
     while (index < text.length) {
         let byte: u8 = bytes[start + index];
         // Digits keep phases 3, 5 and 8; skip the call for them.
-        if (byte >= 48 && byte <= 57 && (phase == 3 || phase == 5 || phase == 8)) { index += 1; continue; }
-        phase = number_next(phase, byte);
-        if (phase == 0) { return index; }
+        if (byte >= 48 && byte <= 57 && number.digits()) { index += 1; continue; }
+        let accepted: bool = number.step(byte);
+        if (!accepted) { return index; }
         index += 1;
     }
-    if (!number_terminal(phase)) { return text.length; }
+    if (!number.terminal()) { return text.length; }
     return -1;
 }
 fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
@@ -531,7 +769,7 @@ pub impl Writer {
     pub fn borrow(&self) -> &Writer { return self; }
     pub fn len(&self) -> i32 { return self.used; }
     pub fn depth(&self) -> i32 { return self.count; }
-    pub fn is_complete(&self) -> bool { return self.expect == 6; }
+    pub fn is_complete(&self) -> bool { return self.expect.complete(); }
     // Borrowed output bytes; valid until the next writer mutation.
     pub fn output(&self) -> core::slice::View<u8> { return core::slice::View { values: self.data, start: 0, length: self.used }; }
     pub fn output_text(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.data, 0, self.used); }
@@ -574,26 +812,14 @@ pub impl Writer {
     }
     // Writes a separator if needed. Returns false for an invalid placement.
     fn place(&self, value: bool, key: bool) -> i32 {
-        if (key) {
-            if (self.expect == 4) { return 0; }
-            if (self.expect == 5) { if (!self.byte(44)) { return 1; } return 0; }
-            return 2;
-        }
-        if (!value) { return 2; }
-        if (self.expect == 0 || self.expect == 1 || self.expect == 2) { return 0; }
-        if (self.expect == 3) { if (!self.byte(44)) { return 1; } return 0; }
-        return 2;
+        let comma: i32 = -1;
+        if (key) { comma = self.expect.key_comma(); }
+        else { if (value) { comma = self.expect.value_comma(); } }
+        if (comma < 0) { return 2; }
+        if (comma == 1 && !self.byte(44)) { return 1; }
+        return 0;
     }
-    // Fast paths: when a token is valid, placed without error and fits, write
-    // it in one step; otherwise the general path below runs from the same
-    // state and produces the same output or error.
-    // Separator a value needs here: 0 none, 1 comma, -1 not a value position.
-    fn value_comma(&self) -> i32 {
-        let expect: i32 = self.expect;
-        if (expect <= 2) { return 0; }
-        if (expect == 3) { return 1; }
-        return -1;
-    }
+    fn value_comma(&self) -> i32 { return self.expect.value_comma(); }
     // Writes [comma] [quote] text [quote] [colon]; false (nothing committed)
     // when it does not fit or, for quoted text, a byte is not plain ASCII
     // (needs an escape or UTF-8 validation).
@@ -646,13 +872,10 @@ pub impl Writer {
         self.used = at;
         return true;
     }
-    fn placed(&self) {
-        if (self.top == 0) { self.expect = 6; return; }
-        if (self.top == 1) { self.expect = 3; } else { self.expect = 5; }
-    }
+    fn placed(&self) { self.expect.step(WritingEvent::ValueWritten(self.top)); }
     // begin()'s common case: a value position, depth and stack room, and
     // the bytes fit. False writes nothing.
-    fn fast_begin(&self, kind: u8, opening: u8, next: i32) -> bool {
+    fn fast_begin(&self, kind: u8, opening: u8, next: WritingEvent) -> bool {
         let comma: i32 = self.value_comma(); let count: i32 = self.count;
         if (comma < 0 || count >= self.max_depth || count == self.levels_cap) { return false; }
         let used: i32 = self.used;
@@ -661,10 +884,10 @@ pub impl Writer {
         if (comma == 1) { data[used] = 44; used += 1; }
         data[used] = opening; self.used = used + 1;
         self.levels[count] = kind; self.count = count + 1;
-        self.expect = next; self.top = kind;
+        self.expect.step(next); self.top = kind;
         return true;
     }
-    fn begin(&self, kind: u8, opening: u8, next: i32) -> core::result::Result<i32, Error> {
+    fn begin(&self, kind: u8, opening: u8, next: WritingEvent) -> core::result::Result<i32, Error> {
         if (self.fast_begin(kind, opening, next)) { return core::result::Ok(self.used); }
         let before: i32 = self.used;
         let placed: i32 = self.place(true, false);
@@ -678,13 +901,12 @@ pub impl Writer {
             self.levels = self.stack.as_slice(); self.levels_cap = grown;
         }
         self.levels[self.count] = kind; self.count += 1;
-        self.expect = next; self.top = kind;
+        self.expect.step(next); self.top = kind;
         return core::result::Ok(self.used);
     }
     fn open_kind(&self, kind: u8) -> bool {
-        let expect: i32 = self.expect;
-        if (kind == 1) { return expect == 2 || expect == 3; }
-        return expect == 4 || expect == 5;
+        if (kind == 1) { return match (self.expect.state()) { WritingState::ArrayFirst -> true, WritingState::ArrayNext -> true, _ -> false }; }
+        return self.expect.key_comma() >= 0;
     }
     // end() when it succeeds; false writes nothing.
     fn fast_end(&self, kind: u8, closing: u8) -> bool {
@@ -700,8 +922,8 @@ pub impl Writer {
         if (!self.open_kind(kind)) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         return self.rollback(before);
     }
-    pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.begin(1, 91, 2); }
-    pub fn begin_object(&self) -> core::result::Result<i32, Error> { return self.begin(2, 123, 4); }
+    pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.begin(1, 91, WritingEvent::ArrayStarted); }
+    pub fn begin_object(&self) -> core::result::Result<i32, Error> { return self.begin(2, 123, WritingEvent::ObjectStarted); }
     pub fn end_array(&self) -> core::result::Result<i32, Error> { return self.end(1, 93); }
     pub fn end_object(&self) -> core::result::Result<i32, Error> { return self.end(2, 125); }
     // Fast forms of the token methods, for hot loops: true when the token
@@ -709,15 +931,15 @@ pub impl Writer {
     // nothing was written, and the Result form then gives the outcome (it
     // may still succeed through the general path, or report the error).
     // They skip only the Result plumbing and the Text value.
-    pub fn fast_begin_array(&self) -> bool { return self.fast_begin(1, 91, 2); }
-    pub fn fast_begin_object(&self) -> bool { return self.fast_begin(2, 123, 4); }
+    pub fn fast_begin_array(&self) -> bool { return self.fast_begin(1, 91, WritingEvent::ArrayStarted); }
+    pub fn fast_begin_object(&self) -> bool { return self.fast_begin(2, 123, WritingEvent::ObjectStarted); }
     pub fn fast_end_array(&self) -> bool { return self.fast_end(1, 93); }
     pub fn fast_end_object(&self) -> bool { return self.fast_end(2, 125); }
     // key(), string() and number_unchecked() over bytes[start, start+length).
     pub fn fast_key(&self, bytes: [u8], start: i32, length: i32) -> bool {
-        let expect: i32 = self.expect;
-        if ((expect != 4 && expect != 5) || !text_range(start, length) || !self.put_fast(expect - 4, true, bytes, start, length, true)) { return false; }
-        self.expect = 1; return true;
+        let comma: i32 = self.expect.key_comma();
+        if ((comma < 0) || !text_range(start, length) || !self.put_fast(comma, true, bytes, start, length, true)) { return false; }
+        self.expect.step(WritingEvent::KeyWritten); return true;
     }
     pub fn fast_string(&self, bytes: [u8], start: i32, length: i32) -> bool {
         let comma: i32 = self.value_comma();
@@ -810,13 +1032,13 @@ pub impl Writer {
         if (self.fast_key(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         let valid = self.checked(text);
         if (valid.is_err()) { return valid; }
-        let expect: i32 = self.expect;
-        if ((expect == 4 || expect == 5) && self.put_escaped(expect - 4, text.bytes, text.start, text.length, true)) { self.expect = 1; return core::result::Ok(self.used); }
+        let comma: i32 = self.expect.key_comma();
+        if ((comma >= 0) && self.put_escaped(comma, text.bytes, text.start, text.length, true)) { self.expect.step(WritingEvent::KeyWritten); return core::result::Ok(self.used); }
         let before: i32 = self.used;
         let placed: i32 = self.place(false, true);
         if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (placed == 1 || !self.quoted(text) || !self.byte(58)) { return self.rollback(before); }
-        self.expect = 1;
+        self.expect.step(WritingEvent::KeyWritten);
         return core::result::Ok(self.used);
     }
     fn scalar(&self, text: core::text::Text, kind: i32) -> core::result::Result<i32, Error> {
@@ -869,7 +1091,7 @@ pub impl Writer {
     }
     // Copy the tokenizer's ready token.
     pub fn token(&self, source: &Tokenizer) -> core::result::Result<i32, Error> {
-        if (!source.ready) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (!source.delivery.ready()) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
         let tag: i32 = source.tag;
         if (tag == 0) { return self.begin_object(); }
         if (tag == 1) { return self.end_object(); }
@@ -885,16 +1107,16 @@ pub impl Writer {
     // JSON Lines: after a complete root value, append LF and accept another root.
     pub fn next_document(&self) -> core::result::Result<i32, Error> {
         let before: i32 = self.used;
-        if (self.expect != 6) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (!self.expect.complete()) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (!self.byte(10)) { return self.rollback(before); }
-        self.expect = 0;
+        self.expect.step(WritingEvent::Reset);
         return core::result::Ok(self.used);
     }
     // Retain capacity; forget output and structure.
-    pub fn clear(&self) { self.used = 0; self.count = 0; self.expect = 0; self.top = 0; }
+    pub fn clear(&self) { self.used = 0; self.count = 0; self.expect.step(WritingEvent::Reset); self.top = 0; }
     pub fn destroy(&self) {
         self.out.destroy(); self.stack.destroy();
-        self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect = 0; self.top = 0;
+        self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect.step(WritingEvent::Reset); self.top = 0;
         self.data = self.out.as_slice(); self.used = 0; self.cap = 0;
         self.levels = self.stack.as_slice(); self.levels_cap = 0; self.count = 0;
     }
@@ -928,13 +1150,13 @@ pub enum StreamError { Json(Error), Io(core::io::Error) }
 // Pull tokens from a core::io::Read source through caller scratch. Borrows the
 // reader, tokenizer and scratch; keep them alive and unshared while driving it.
 pub struct TokenReader<R> {
-    reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>, begin: i32, end: i32, eof: bool, reads: u64,
+    reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>, begin: i32, end: i32, eof_completion: core::iter_state::Completion, reads: u64,
     failure: StreamError,
 }
 pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
     -> core::result::Result<TokenReader<R>, Error> where R: core::io::Read {
     if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
-    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof: false, reads: 0, failure: StreamError::Json(error(ErrorKind::Bounds, 0)) };
+    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof_completion: core::iter_state::completion_start(), reads: 0, failure: StreamError::Json(error(ErrorKind::Bounds, 0)) };
     return core::result::Ok(value);
 }
 pub impl<R> TokenReader<R> {
@@ -955,7 +1177,7 @@ pub impl<R> TokenReader<R> {
                 if (progress.token) { return core::result::Ok(true); }
                 continue;
             }
-            if (self.eof) { return core::result::Ok(false); }
+            if (self.eof_completion.is_done()) { return core::result::Ok(false); }
             let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
             if (received.is_err()) {
                 let cause: core::io::Error = received.unwrap_err();
@@ -966,7 +1188,7 @@ pub impl<R> TokenReader<R> {
             if (count < 0 || count > self.scratch.length) { return core::result::Err(StreamError::Io(core::io::Error::InvalidCount)); }
             self.reads += 1;
             if (count == 0) {
-                self.eof = true;
+                self.eof_completion.finish();
                 let ended = self.tokens.finish();
                 if (ended.is_err()) { return core::result::Err(StreamError::Json(ended.unwrap_err())); }
                 return core::result::Ok(ended.unwrap());

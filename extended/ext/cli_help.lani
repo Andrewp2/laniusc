@@ -3,6 +3,8 @@
 // a live command parser's scratch. Logical views are checked, physical backing
 // and exclusive access remain caller obligations.
 module ext::cli_help;
+import core::iter_state;
+import core::lifecycle;
 import core::mem;
 import core::result;
 import core::slice;
@@ -10,14 +12,14 @@ import ext::cli;
 import ext::cli_commands;
 
 struct Render {
-    output: core::slice::View<u8>, writing: bool, total: u64, overflow: bool
+    output: core::slice::View<u8>, writing: bool, total: u64, health: core::lifecycle::Health
 }
 
 impl Render {
     fn add(&self, count: u64) -> bool {
-        if (self.overflow) { return false; }
+        if (self.health.is_failed()) { return false; }
         if (self.total > 18446744073709551615-count) {
-            self.overflow = true; return false;
+            self.health.fail(); return false;
         }
         self.total += count; return true;
     }
@@ -118,17 +120,17 @@ fn has_children(commands: core::slice::View<ext::cli_commands::Command>, selecte
 // made only after this exact layout has measured successfully and fits output.
 // Measurement reads metadata/lengths only and never touches output storage.
 fn render(commands: core::slice::View<ext::cli_commands::Command>, selected: i32, output: core::slice::View<u8>, writing: bool) -> Render {
-    let result: Render = Render { output: output, writing: writing, total: 0, overflow: false };
+    let result: Render = Render { output: output, writing: writing, total: 0, health: core::lifecycle::health_start() };
     let command: ext::cli_commands::Command = commands.values[commands.start+selected];
     let options_present: bool = has_options(commands,selected);
     let children_present: bool = has_children(commands,selected);
     result.text("Usage: ",7);
     let index: i32 = 0;
-    let first: bool = true;
+    let first_phase = core::iter_state::finished_completion();
     while (index <= selected) {
         if (ancestor(commands,index,selected)) {
-            if (!first) { result.byte(32); }
-            result.bytes(commands.values[commands.start+index].name); first = false;
+            if (!first_phase.is_done()) { result.byte(32); }
+            result.bytes(commands.values[commands.start+index].name); first_phase = core::iter_state::completion_start();
         }
         index += 1;
     }
@@ -178,7 +180,7 @@ fn measured(commands: core::slice::View<ext::cli_commands::Command>, selected: i
     // This valid schema view supplies a descriptor, never a write destination.
     let unused: core::slice::View<u8> = commands.values[commands.start+selected].name;
     let result: Render = render(commands,selected,unused,false);
-    if (result.overflow) { return core::result::Err(ext::cli_commands::Error::SizeOverflow); }
+    if (result.health.is_failed()) { return core::result::Err(ext::cli_commands::Error::SizeOverflow); }
     return core::result::Ok(result.total);
 }
 
@@ -208,6 +210,6 @@ pub fn help_into(commands: core::slice::View<ext::cli_commands::Command>, comman
     let required: u64 = core::result::unwrap(size);
     if (required > output.length as u64) { return core::result::Err(ext::cli_commands::Error::OutputTooSmall(required)); }
     let written: Render = render(commands,selected,output,true);
-    assert(!written.overflow && written.total == required);
+    assert(!written.health.is_failed() && written.total == required);
     return core::result::Ok(required as i32);
 }

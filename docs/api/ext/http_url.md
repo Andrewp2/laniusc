@@ -22,19 +22,20 @@ Declaration counts: enum: 3; field: 16; function: 2; impl: 1; method: 10; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_url.lani#L4)
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/http_url.lani#L5)
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_url.lani#L6)
-- [core::net::IpAddr](../core/net.md) (item: enum) · [declaration](../../../stdlib/core/net.lani#L12) · [source](../../../extended/ext/http_url.lani#L7)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/http_url.lani#L8)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/http_url.lani#L9)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/http_url.lani#L10)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/http_url.lani#L11)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/http_url.lani#L12)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/http_url.lani#L13)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/http_url.lani#L14)
-- [ext::host_name](host_name.md) · [source](../../../extended/ext/http_url.lani#L15)
-- [ext::uri](uri.md) · [source](../../../extended/ext/http_url.lani#L16)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/http_url.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_url.lani#L5)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/http_url.lani#L6)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_url.lani#L7)
+- [core::net::IpAddr](../core/net.md) (item: enum) · [declaration](../../../stdlib/core/net.lani#L12) · [source](../../../extended/ext/http_url.lani#L8)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/http_url.lani#L9)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/http_url.lani#L10)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/http_url.lani#L11)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/http_url.lani#L12)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/http_url.lani#L13)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/http_url.lani#L14)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/http_url.lani#L15)
+- [ext::host_name](host_name.md) · [source](../../../extended/ext/http_url.lani#L16)
+- [ext::uri](uri.md) · [source](../../../extended/ext/http_url.lani#L17)
 
 ## Types, fields and variants
 
@@ -42,7 +43,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Scheme
 
-[Source line 18](../../../extended/ext/http_url.lani#L18)
+[Source line 19](../../../extended/ext/http_url.lani#L19)
 
 ```lanius
 pub enum Scheme
@@ -50,7 +51,7 @@ pub enum Scheme
 
 #### variant: Http
 
-[Source line 18](../../../extended/ext/http_url.lani#L18)
+[Source line 19](../../../extended/ext/http_url.lani#L19)
 
 ```lanius
 Http
@@ -58,7 +59,7 @@ Http
 
 #### variant: Https
 
-[Source line 18](../../../extended/ext/http_url.lani#L18)
+[Source line 19](../../../extended/ext/http_url.lani#L19)
 
 ```lanius
 Https
@@ -66,7 +67,7 @@ Https
 
 ### enum: HostKind
 
-[Source line 19](../../../extended/ext/http_url.lani#L19)
+[Source line 20](../../../extended/ext/http_url.lani#L20)
 
 ```lanius
 pub enum HostKind
@@ -74,7 +75,7 @@ pub enum HostKind
 
 #### variant: Dns
 
-[Source line 19](../../../extended/ext/http_url.lani#L19)
+[Source line 20](../../../extended/ext/http_url.lani#L20)
 
 ```lanius
 Dns
@@ -82,7 +83,7 @@ Dns
 
 #### variant: Ipv4
 
-[Source line 19](../../../extended/ext/http_url.lani#L19)
+[Source line 20](../../../extended/ext/http_url.lani#L20)
 
 ```lanius
 Ipv4
@@ -90,7 +91,7 @@ Ipv4
 
 #### variant: Ipv6
 
-[Source line 19](../../../extended/ext/http_url.lani#L19)
+[Source line 20](../../../extended/ext/http_url.lani#L20)
 
 ```lanius
 Ipv6
@@ -98,7 +99,7 @@ Ipv6
 
 ### struct: Limits
 
-[Source line 20](../../../extended/ext/http_url.lani#L20)
+[Source line 21](../../../extended/ext/http_url.lani#L21)
 
 ```lanius
 pub struct Limits
@@ -106,7 +107,7 @@ pub struct Limits
 
 #### field: url_bytes
 
-[Source line 20](../../../extended/ext/http_url.lani#L20)
+[Source line 21](../../../extended/ext/http_url.lani#L21)
 
 ```lanius
 url_bytes:i32
@@ -114,7 +115,7 @@ url_bytes:i32
 
 #### field: target_bytes
 
-[Source line 20](../../../extended/ext/http_url.lani#L20)
+[Source line 21](../../../extended/ext/http_url.lani#L21)
 
 ```lanius
 target_bytes:i32
@@ -122,7 +123,7 @@ target_bytes:i32
 
 ### enum: ErrorKind
 
-[Source line 21](../../../extended/ext/http_url.lani#L21)
+[Source line 22](../../../extended/ext/http_url.lani#L22)
 
 ```lanius
 pub enum ErrorKind
@@ -130,7 +131,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Bounds
@@ -138,7 +139,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 InvalidLimits
@@ -146,7 +147,7 @@ InvalidLimits
 
 #### variant: Uri
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Uri
@@ -154,7 +155,7 @@ Uri
 
 #### variant: Scheme
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Scheme
@@ -162,7 +163,7 @@ Scheme
 
 #### variant: Authority
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Authority
@@ -170,7 +171,7 @@ Authority
 
 #### variant: Userinfo
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Userinfo
@@ -178,7 +179,7 @@ Userinfo
 
 #### variant: Host
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Host
@@ -186,7 +187,7 @@ Host
 
 #### variant: Port
 
-[Source line 22](../../../extended/ext/http_url.lani#L22)
+[Source line 23](../../../extended/ext/http_url.lani#L23)
 
 ```lanius
 Port
@@ -194,7 +195,7 @@ Port
 
 #### variant: TargetLimit
 
-[Source line 23](../../../extended/ext/http_url.lani#L23)
+[Source line 24](../../../extended/ext/http_url.lani#L24)
 
 ```lanius
 TargetLimit
@@ -202,7 +203,7 @@ TargetLimit
 
 #### variant: AllocationFailed
 
-[Source line 23](../../../extended/ext/http_url.lani#L23)
+[Source line 24](../../../extended/ext/http_url.lani#L24)
 
 ```lanius
 AllocationFailed
@@ -210,7 +211,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 25](../../../extended/ext/http_url.lani#L25)
+[Source line 26](../../../extended/ext/http_url.lani#L26)
 
 ```lanius
 pub struct Error
@@ -218,7 +219,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 25](../../../extended/ext/http_url.lani#L25)
+[Source line 26](../../../extended/ext/http_url.lani#L26)
 
 ```lanius
 kind:ErrorKind
@@ -226,7 +227,7 @@ kind:ErrorKind
 
 #### field: offset
 
-[Source line 25](../../../extended/ext/http_url.lani#L25)
+[Source line 26](../../../extended/ext/http_url.lani#L26)
 
 ```lanius
 offset:i32
@@ -234,7 +235,7 @@ offset:i32
 
 #### field: syntax
 
-[Source line 25](../../../extended/ext/http_url.lani#L25)
+[Source line 26](../../../extended/ext/http_url.lani#L26)
 
 ```lanius
 syntax:Option<ext::uri::Error>
@@ -242,7 +243,7 @@ syntax:Option<ext::uri::Error>
 
 ### struct: Url
 
-[Source line 26](../../../extended/ext/http_url.lani#L26)
+[Source line 27](../../../extended/ext/http_url.lani#L27)
 
 ```lanius
 pub struct Url
@@ -250,7 +251,7 @@ pub struct Url
 
 #### field: storage
 
-[Source line 27](../../../extended/ext/http_url.lani#L27)
+[Source line 28](../../../extended/ext/http_url.lani#L28)
 
 ```lanius
 storage:Vec<u8>
@@ -258,7 +259,7 @@ storage:Vec<u8>
 
 #### field: request_target
 
-[Source line 27](../../../extended/ext/http_url.lani#L27)
+[Source line 28](../../../extended/ext/http_url.lani#L28)
 
 ```lanius
 request_target:Vec<u8>
@@ -266,7 +267,7 @@ request_target:Vec<u8>
 
 #### field: selected_scheme
 
-[Source line 27](../../../extended/ext/http_url.lani#L27)
+[Source line 28](../../../extended/ext/http_url.lani#L28)
 
 ```lanius
 selected_scheme:Scheme
@@ -274,7 +275,7 @@ selected_scheme:Scheme
 
 #### field: selected_kind
 
-[Source line 28](../../../extended/ext/http_url.lani#L28)
+[Source line 29](../../../extended/ext/http_url.lani#L29)
 
 ```lanius
 selected_kind:HostKind
@@ -282,7 +283,7 @@ selected_kind:HostKind
 
 #### field: address
 
-[Source line 28](../../../extended/ext/http_url.lani#L28)
+[Source line 29](../../../extended/ext/http_url.lani#L29)
 
 ```lanius
 address:Option<IpAddr>
@@ -290,7 +291,7 @@ address:Option<IpAddr>
 
 #### field: selected_port
 
-[Source line 28](../../../extended/ext/http_url.lani#L28)
+[Source line 29](../../../extended/ext/http_url.lani#L29)
 
 ```lanius
 selected_port:u16
@@ -298,7 +299,7 @@ selected_port:u16
 
 #### field: host_start
 
-[Source line 29](../../../extended/ext/http_url.lani#L29)
+[Source line 30](../../../extended/ext/http_url.lani#L30)
 
 ```lanius
 host_start:i32
@@ -306,7 +307,7 @@ host_start:i32
 
 #### field: host_length
 
-[Source line 29](../../../extended/ext/http_url.lani#L29)
+[Source line 30](../../../extended/ext/http_url.lani#L30)
 
 ```lanius
 host_length:i32
@@ -314,7 +315,7 @@ host_length:i32
 
 #### field: authority_start
 
-[Source line 29](../../../extended/ext/http_url.lani#L29)
+[Source line 30](../../../extended/ext/http_url.lani#L30)
 
 ```lanius
 authority_start:i32
@@ -322,25 +323,25 @@ authority_start:i32
 
 #### field: authority_length
 
-[Source line 30](../../../extended/ext/http_url.lani#L30)
+[Source line 31](../../../extended/ext/http_url.lani#L31)
 
 ```lanius
 authority_length:i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 30](../../../extended/ext/http_url.lani#L30)
+[Source line 31](../../../extended/ext/http_url.lani#L31)
 
 ```lanius
-active:bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 38](../../../extended/ext/http_url.lani#L38)
+[Source line 39](../../../extended/ext/http_url.lani#L39)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -350,7 +351,7 @@ Defaults: 16384 URL bytes and 8192 generated target bytes; both configured limit
 
 ### function: parse
 
-[Source line 200](../../../extended/ext/http_url.lani#L200)
+[Source line 201](../../../extended/ext/http_url.lani#L201)
 
 ```lanius
 pub fn parse(input:View<u8>, limits:Limits) -> Result<Url,Error>
@@ -360,9 +361,9 @@ Checks logical bounds, complete URI syntax and the HTTP URL profile before alloc
 
 ## Implementation blocks and public methods
 
-### impl at line 221
+### impl at line 222
 
-[Source line 221](../../../extended/ext/http_url.lani#L221)
+[Source line 222](../../../extended/ext/http_url.lani#L222)
 
 ```lanius
 pub impl Url
@@ -370,7 +371,7 @@ pub impl Url
 
 #### method: borrow
 
-[Source line 222](../../../extended/ext/http_url.lani#L222)
+[Source line 223](../../../extended/ext/http_url.lani#L223)
 
 ```lanius
 pub fn borrow(&self) -> &Url
@@ -378,7 +379,7 @@ pub fn borrow(&self) -> &Url
 
 #### method: is_open
 
-[Source line 223](../../../extended/ext/http_url.lani#L223)
+[Source line 224](../../../extended/ext/http_url.lani#L224)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -386,7 +387,7 @@ pub fn is_open(&self) -> bool
 
 #### method: scheme
 
-[Source line 224](../../../extended/ext/http_url.lani#L224)
+[Source line 225](../../../extended/ext/http_url.lani#L225)
 
 ```lanius
 pub fn scheme(&self) -> Option<Scheme>
@@ -394,7 +395,7 @@ pub fn scheme(&self) -> Option<Scheme>
 
 #### method: host_kind
 
-[Source line 225](../../../extended/ext/http_url.lani#L225)
+[Source line 226](../../../extended/ext/http_url.lani#L226)
 
 ```lanius
 pub fn host_kind(&self) -> Option<HostKind>
@@ -402,7 +403,7 @@ pub fn host_kind(&self) -> Option<HostKind>
 
 #### method: host
 
-[Source line 226](../../../extended/ext/http_url.lani#L226)
+[Source line 227](../../../extended/ext/http_url.lani#L227)
 
 ```lanius
 pub fn host(&self) -> Option<View<u8>>
@@ -410,7 +411,7 @@ pub fn host(&self) -> Option<View<u8>>
 
 #### method: ip
 
-[Source line 230](../../../extended/ext/http_url.lani#L230)
+[Source line 231](../../../extended/ext/http_url.lani#L231)
 
 ```lanius
 pub fn ip(&self) -> Option<IpAddr>
@@ -418,7 +419,7 @@ pub fn ip(&self) -> Option<IpAddr>
 
 #### method: port
 
-[Source line 231](../../../extended/ext/http_url.lani#L231)
+[Source line 232](../../../extended/ext/http_url.lani#L232)
 
 ```lanius
 pub fn port(&self) -> Option<u16>
@@ -426,7 +427,7 @@ pub fn port(&self) -> Option<u16>
 
 #### method: authority
 
-[Source line 232](../../../extended/ext/http_url.lani#L232)
+[Source line 233](../../../extended/ext/http_url.lani#L233)
 
 ```lanius
 pub fn authority(&self) -> Option<View<u8>>
@@ -434,7 +435,7 @@ pub fn authority(&self) -> Option<View<u8>>
 
 #### method: target
 
-[Source line 236](../../../extended/ext/http_url.lani#L236)
+[Source line 237](../../../extended/ext/http_url.lani#L237)
 
 ```lanius
 pub fn target(&self) -> Option<View<u8>>
@@ -442,7 +443,7 @@ pub fn target(&self) -> Option<View<u8>>
 
 #### method: destroy
 
-[Source line 237](../../../extended/ext/http_url.lani#L237)
+[Source line 238](../../../extended/ext/http_url.lani#L238)
 
 ```lanius
 pub fn destroy(&self) -> bool

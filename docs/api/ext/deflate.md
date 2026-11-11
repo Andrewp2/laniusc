@@ -15,15 +15,16 @@ Borrowed Encoder retains 32768 input bytes, 32773 pending bytes and 32768 i32 ha
 - [extended-deflate](../../extended-deflate.md)
 - [extended-streaming-deflate](../../extended-streaming-deflate.md)
 
-Declaration counts: enum: 2; field: 28; function: 10; impl: 1; method: 6; struct: 3; variant: 7.
+Declaration counts: enum: 3; field: 26; function: 10; impl: 2; machine: 1; method: 9; struct: 3; variant: 11.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/deflate.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/deflate.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/deflate.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/deflate.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/deflate.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/deflate.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/deflate.lani#L8)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 9](../../../extended/ext/deflate.lani#L9)
+[Source line 10](../../../extended/ext/deflate.lani#L10)
 
 ```lanius
 pub enum Error
@@ -39,7 +40,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 9](../../../extended/ext/deflate.lani#L9)
+[Source line 10](../../../extended/ext/deflate.lani#L10)
 
 ```lanius
 Bounds
@@ -47,7 +48,7 @@ Bounds
 
 #### variant: ScratchTooSmall
 
-[Source line 9](../../../extended/ext/deflate.lani#L9)
+[Source line 10](../../../extended/ext/deflate.lani#L10)
 
 ```lanius
 ScratchTooSmall(i32)
@@ -55,7 +56,7 @@ ScratchTooSmall(i32)
 
 #### variant: Capacity
 
-[Source line 9](../../../extended/ext/deflate.lani#L9)
+[Source line 10](../../../extended/ext/deflate.lani#L10)
 
 ```lanius
 Capacity(i32)
@@ -63,7 +64,7 @@ Capacity(i32)
 
 #### variant: SizeOverflow
 
-[Source line 9](../../../extended/ext/deflate.lani#L9)
+[Source line 10](../../../extended/ext/deflate.lani#L10)
 
 ```lanius
 SizeOverflow
@@ -71,7 +72,7 @@ SizeOverflow
 
 ### enum: Status
 
-[Source line 10](../../../extended/ext/deflate.lani#L10)
+[Source line 11](../../../extended/ext/deflate.lani#L11)
 
 ```lanius
 pub enum Status
@@ -79,7 +80,7 @@ pub enum Status
 
 #### variant: NeedInput
 
-[Source line 10](../../../extended/ext/deflate.lani#L10)
+[Source line 11](../../../extended/ext/deflate.lani#L11)
 
 ```lanius
 NeedInput
@@ -87,7 +88,7 @@ NeedInput
 
 #### variant: NeedOutput
 
-[Source line 10](../../../extended/ext/deflate.lani#L10)
+[Source line 11](../../../extended/ext/deflate.lani#L11)
 
 ```lanius
 NeedOutput
@@ -95,7 +96,7 @@ NeedOutput
 
 #### variant: Done
 
-[Source line 10](../../../extended/ext/deflate.lani#L10)
+[Source line 11](../../../extended/ext/deflate.lani#L11)
 
 ```lanius
 Done
@@ -103,7 +104,7 @@ Done
 
 ### struct: Step
 
-[Source line 11](../../../extended/ext/deflate.lani#L11)
+[Source line 12](../../../extended/ext/deflate.lani#L12)
 
 ```lanius
 pub struct Step
@@ -111,7 +112,7 @@ pub struct Step
 
 #### field: read
 
-[Source line 11](../../../extended/ext/deflate.lani#L11)
+[Source line 12](../../../extended/ext/deflate.lani#L12)
 
 ```lanius
 read: i32
@@ -119,7 +120,7 @@ read: i32
 
 #### field: written
 
-[Source line 11](../../../extended/ext/deflate.lani#L11)
+[Source line 12](../../../extended/ext/deflate.lani#L12)
 
 ```lanius
 written: i32
@@ -127,7 +128,7 @@ written: i32
 
 #### field: status
 
-[Source line 11](../../../extended/ext/deflate.lani#L11)
+[Source line 12](../../../extended/ext/deflate.lani#L12)
 
 ```lanius
 status: Status
@@ -135,7 +136,7 @@ status: Status
 
 ### struct: Failure
 
-[Source line 12](../../../extended/ext/deflate.lani#L12)
+[Source line 13](../../../extended/ext/deflate.lani#L13)
 
 ```lanius
 pub struct Failure
@@ -143,7 +144,7 @@ pub struct Failure
 
 #### field: error
 
-[Source line 12](../../../extended/ext/deflate.lani#L12)
+[Source line 13](../../../extended/ext/deflate.lani#L13)
 
 ```lanius
 error: Error
@@ -151,7 +152,7 @@ error: Error
 
 #### field: read
 
-[Source line 12](../../../extended/ext/deflate.lani#L12)
+[Source line 13](../../../extended/ext/deflate.lani#L13)
 
 ```lanius
 read: i32
@@ -159,15 +160,63 @@ read: i32
 
 #### field: written
 
-[Source line 12](../../../extended/ext/deflate.lani#L12)
+[Source line 13](../../../extended/ext/deflate.lani#L13)
 
 ```lanius
 written: i32
 ```
 
+### enum: EncodingEvent
+
+[Source line 17](../../../extended/ext/deflate.lani#L17)
+
+```lanius
+pub enum EncodingEvent
+```
+
+#### variant: Block
+
+[Source line 17](../../../extended/ext/deflate.lani#L17)
+
+```lanius
+Block(bool)
+```
+
+#### variant: Flushed
+
+[Source line 17](../../../extended/ext/deflate.lani#L17)
+
+```lanius
+Flushed
+```
+
+#### variant: Drained
+
+[Source line 17](../../../extended/ext/deflate.lani#L17)
+
+```lanius
+Drained
+```
+
+#### variant: Reset
+
+[Source line 17](../../../extended/ext/deflate.lani#L17)
+
+```lanius
+Reset
+```
+
+### machine: EncodingPhase
+
+[Source line 18](../../../extended/ext/deflate.lani#L18)
+
+```lanius
+pub machine EncodingPhase on EncodingEvent
+```
+
 ### struct: Encoder
 
-[Source line 16](../../../extended/ext/deflate.lani#L16)
+[Source line 56](../../../extended/ext/deflate.lani#L56)
 
 ```lanius
 pub struct Encoder
@@ -175,7 +224,7 @@ pub struct Encoder
 
 #### field: block
 
-[Source line 17](../../../extended/ext/deflate.lani#L17)
+[Source line 57](../../../extended/ext/deflate.lani#L57)
 
 ```lanius
 block: core::slice::View<u8>
@@ -183,7 +232,7 @@ block: core::slice::View<u8>
 
 #### field: pending
 
-[Source line 17](../../../extended/ext/deflate.lani#L17)
+[Source line 57](../../../extended/ext/deflate.lani#L57)
 
 ```lanius
 pending: core::slice::View<u8>
@@ -191,7 +240,7 @@ pending: core::slice::View<u8>
 
 #### field: scratch
 
-[Source line 17](../../../extended/ext/deflate.lani#L17)
+[Source line 57](../../../extended/ext/deflate.lani#L57)
 
 ```lanius
 scratch: core::slice::View<i32>
@@ -199,7 +248,7 @@ scratch: core::slice::View<i32>
 
 #### field: buffered
 
-[Source line 18](../../../extended/ext/deflate.lani#L18)
+[Source line 58](../../../extended/ext/deflate.lani#L58)
 
 ```lanius
 buffered: i32
@@ -207,7 +256,7 @@ buffered: i32
 
 #### field: front
 
-[Source line 18](../../../extended/ext/deflate.lani#L18)
+[Source line 58](../../../extended/ext/deflate.lani#L58)
 
 ```lanius
 front: i32
@@ -215,31 +264,23 @@ front: i32
 
 #### field: back
 
-[Source line 18](../../../extended/ext/deflate.lani#L18)
+[Source line 58](../../../extended/ext/deflate.lani#L58)
 
 ```lanius
 back: i32
 ```
 
-#### field: final_block
+#### field: phase
 
-[Source line 18](../../../extended/ext/deflate.lani#L18)
-
-```lanius
-final_block: bool
-```
-
-#### field: done
-
-[Source line 18](../../../extended/ext/deflate.lani#L18)
+[Source line 58](../../../extended/ext/deflate.lani#L58)
 
 ```lanius
-done: bool
+phase: EncodingPhase
 ```
 
 #### field: level
 
-[Source line 22](../../../extended/ext/deflate.lani#L22)
+[Source line 62](../../../extended/ext/deflate.lani#L62)
 
 ```lanius
 level: i32
@@ -247,7 +288,7 @@ level: i32
 
 #### field: chain
 
-[Source line 22](../../../extended/ext/deflate.lani#L22)
+[Source line 62](../../../extended/ext/deflate.lani#L62)
 
 ```lanius
 chain: i32
@@ -255,7 +296,7 @@ chain: i32
 
 #### field: lazy
 
-[Source line 22](../../../extended/ext/deflate.lani#L22)
+[Source line 62](../../../extended/ext/deflate.lani#L62)
 
 ```lanius
 lazy: i32
@@ -263,7 +304,7 @@ lazy: i32
 
 #### field: nice
 
-[Source line 22](../../../extended/ext/deflate.lani#L22)
+[Source line 62](../../../extended/ext/deflate.lani#L62)
 
 ```lanius
 nice: i32
@@ -271,7 +312,7 @@ nice: i32
 
 #### field: good
 
-[Source line 22](../../../extended/ext/deflate.lani#L22)
+[Source line 62](../../../extended/ext/deflate.lani#L62)
 
 ```lanius
 good: i32
@@ -279,7 +320,7 @@ good: i32
 
 #### field: filled
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 filled: i32
@@ -287,7 +328,7 @@ filled: i32
 
 #### field: start
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 start: i32
@@ -295,7 +336,7 @@ start: i32
 
 #### field: origin
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 origin: i32
@@ -303,7 +344,7 @@ origin: i32
 
 #### field: hashed
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 hashed: i32
@@ -311,7 +352,7 @@ hashed: i32
 
 #### field: carry
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 carry: u64
@@ -319,31 +360,23 @@ carry: u64
 
 #### field: carry_bits
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
 carry_bits: i32
 ```
 
-#### field: cleared
+#### field: initialized
 
-[Source line 23](../../../extended/ext/deflate.lani#L23)
-
-```lanius
-cleared: bool
-```
-
-#### field: synced
-
-[Source line 26](../../../extended/ext/deflate.lani#L26)
+[Source line 63](../../../extended/ext/deflate.lani#L63)
 
 ```lanius
-synced: bool
+initialized: core::iter_state::Completion
 ```
 
 #### field: reach
 
-[Source line 26](../../../extended/ext/deflate.lani#L26)
+[Source line 66](../../../extended/ext/deflate.lani#L66)
 
 ```lanius
 reach: i32
@@ -353,7 +386,7 @@ reach: i32
 
 ### function: input_buffer_len
 
-[Source line 29](../../../extended/ext/deflate.lani#L29)
+[Source line 69](../../../extended/ext/deflate.lani#L69)
 
 ```lanius
 pub fn input_buffer_len() -> i32
@@ -363,7 +396,7 @@ Required borrowed streaming block prefix: 32768 byte elements.
 
 ### function: output_buffer_len
 
-[Source line 30](../../../extended/ext/deflate.lani#L30)
+[Source line 70](../../../extended/ext/deflate.lani#L70)
 
 ```lanius
 pub fn output_buffer_len() -> i32
@@ -373,7 +406,7 @@ Required borrowed streaming pending-output prefix: 32773 byte elements.
 
 ### function: scratch_len
 
-[Source line 31](../../../extended/ext/deflate.lani#L31)
+[Source line 71](../../../extended/ext/deflate.lani#L71)
 
 ```lanius
 pub fn scratch_len() -> i32
@@ -381,7 +414,7 @@ pub fn scratch_len() -> i32
 
 ### function: encoded_len
 
-[Source line 444](../../../extended/ext/deflate.lani#L444)
+[Source line 484](../../../extended/ext/deflate.lani#L484)
 
 ```lanius
 pub fn encoded_len(input: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error>
@@ -389,7 +422,7 @@ pub fn encoded_len(input: core::slice::View<u8>, scratch: core::slice::View<i32>
 
 ### function: encode_into
 
-[Source line 469](../../../extended/ext/deflate.lani#L469)
+[Source line 509](../../../extended/ext/deflate.lani#L509)
 
 ```lanius
 pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error>
@@ -397,7 +430,7 @@ pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>, 
 
 ### function: encoder
 
-[Source line 484](../../../extended/ext/deflate.lani#L484)
+[Source line 524](../../../extended/ext/deflate.lani#L524)
 
 ```lanius
 pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<Encoder,Error>
@@ -407,7 +440,7 @@ Checks all workspace metadata before block, pending and scratch capacities. Cons
 
 ### function: level_window_len
 
-[Source line 591](../../../extended/ext/deflate.lani#L591)
+[Source line 631](../../../extended/ext/deflate.lani#L631)
 
 ```lanius
 pub fn level_window_len() -> i32
@@ -415,7 +448,7 @@ pub fn level_window_len() -> i32
 
 ### function: level_pending_len
 
-[Source line 592](../../../extended/ext/deflate.lani#L592)
+[Source line 632](../../../extended/ext/deflate.lani#L632)
 
 ```lanius
 pub fn level_pending_len() -> i32
@@ -423,7 +456,7 @@ pub fn level_pending_len() -> i32
 
 ### function: level_scratch_len
 
-[Source line 593](../../../extended/ext/deflate.lani#L593)
+[Source line 633](../../../extended/ext/deflate.lani#L633)
 
 ```lanius
 pub fn level_scratch_len() -> i32
@@ -431,7 +464,7 @@ pub fn level_scratch_len() -> i32
 
 ### function: level_encoder
 
-[Source line 614](../../../extended/ext/deflate.lani#L614)
+[Source line 654](../../../extended/ext/deflate.lani#L654)
 
 ```lanius
 pub fn level_encoder(window: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, level: i32) -> core::result::Result<Encoder,Error>
@@ -439,9 +472,41 @@ pub fn level_encoder(window: core::slice::View<u8>, pending: core::slice::View<u
 
 ## Implementation blocks and public methods
 
-### impl at line 499
+### impl at line 50
 
-[Source line 499](../../../extended/ext/deflate.lani#L499)
+[Source line 50](../../../extended/ext/deflate.lani#L50)
+
+```lanius
+pub impl EncodingPhase
+```
+
+#### method: done
+
+[Source line 51](../../../extended/ext/deflate.lani#L51)
+
+```lanius
+pub fn done(&self) -> bool
+```
+
+#### method: final_pending
+
+[Source line 52](../../../extended/ext/deflate.lani#L52)
+
+```lanius
+pub fn final_pending(&self) -> bool
+```
+
+#### method: flush_pending
+
+[Source line 53](../../../extended/ext/deflate.lani#L53)
+
+```lanius
+pub fn flush_pending(&self) -> bool
+```
+
+### impl at line 539
+
+[Source line 539](../../../extended/ext/deflate.lani#L539)
 
 ```lanius
 pub impl Encoder
@@ -449,7 +514,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 500](../../../extended/ext/deflate.lani#L500)
+[Source line 540](../../../extended/ext/deflate.lani#L540)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -457,7 +522,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: is_done
 
-[Source line 501](../../../extended/ext/deflate.lani#L501)
+[Source line 541](../../../extended/ext/deflate.lani#L541)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -465,7 +530,7 @@ pub fn is_done(&self) -> bool
 
 #### method: reset
 
-[Source line 503](../../../extended/ext/deflate.lani#L503)
+[Source line 543](../../../extended/ext/deflate.lani#L543)
 
 ```lanius
 pub fn reset(&self)
@@ -473,7 +538,7 @@ pub fn reset(&self)
 
 #### method: step
 
-[Source line 526](../../../extended/ext/deflate.lani#L526)
+[Source line 566](../../../extended/ext/deflate.lani#L566)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure>
@@ -481,7 +546,7 @@ pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, 
 
 #### method: limit_window
 
-[Source line 572](../../../extended/ext/deflate.lani#L572)
+[Source line 612](../../../extended/ext/deflate.lani#L612)
 
 ```lanius
 pub fn limit_window(&self, bits: i32) -> bool
@@ -489,7 +554,7 @@ pub fn limit_window(&self, bits: i32) -> bool
 
 #### method: sync
 
-[Source line 577](../../../extended/ext/deflate.lani#L577)
+[Source line 617](../../../extended/ext/deflate.lani#L617)
 
 ```lanius
 pub fn sync(&self, input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Step,Failure>

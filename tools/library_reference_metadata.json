@@ -1,5 +1,59 @@
 {
   "modules": {
+    "core::iter_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native completion state for iterator exhaustion and one-way operation milestones."
+    },
+    "core::lifecycle": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native active/released ownership and healthy/failed/reset lifecycles."
+    },
+    "core::parse_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native container, key/value, quoting and integer lexical phases shared by scanners."
+    },
+    "core::stream_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native producer lifecycle, including a final retained borrowed item."
+    },
+    "core::io_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native duplex turn, readiness, queued work and listener registration states."
+    },
+    "core::utf8_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native incremental UTF-8 sequence validation with byte payloads and explicit rejection timing."
+    },
+    "std::sync_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Local machine snapshots and transition plans; callers commit through native atomics and retain futex synchronization."
+    },
+    "std::temp_lifecycle": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native temporary-resource lifecycle with named cleanup duty represented in a state payload."
+    },
+    "ext::http2_lifecycle": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native local/remote stream closure and sent/received GOAWAY product states."
+    },
+    "ext::unicode_break_state": {
+      "role": "support",
+      "guides": ["docs/library-state-machines.md"],
+      "note": "Native regional-indicator parity shared by Unicode boundary scanners."
+    },
+    "alloc::callback": {
+      "guides": ["docs/language-ergonomics.md"],
+      "note": "Stored move closures with uniform Callback<T,U>, Source<U>, Handler<T> and Action signatures. Native x86_64 invocation through compiler-generated three-pointer entries; Wasm rejects the indirect call. Manual destroy frees the callback block, not resources owned by captures. Copies alias the block and must not be called concurrently. Allocation failure traps. Closure results must be explicit block types, or void blocks. The focused language fixture executes returned callbacks, heterogeneous closure types, struct arguments, trait forwarding and explicit destruction. UI scope ownership is a separate integration task."
+    },
     "alloc::allocator": {
       "guides": [
         "docs/stdlib-raw-host-width.md",
@@ -446,13 +500,14 @@
     },
     "core::function": {
       "guides": [
+        "docs/language-ergonomics.md",
         "docs/stdlib-lazy-outcomes.md",
         "docs/stdlib-iterator-adapters.md",
         "docs/stdlib-map-updates.md",
         "docs/stdlib-vec-edit.md",
         "docs/stdlib-slice-segmentation.md"
       ],
-      "note": "Canonical import-free home of Mapper<T,U>::apply(&self,value:T)->U and Producer<T>::produce(&self)->T. These are borrowed nominal values with static dispatch, not closures or dynamic trait objects. Mapper transports ordinary shallow values; each consumer defines its callback timing, ownership and observation restrictions. Producers run only when invoked, while their construction remains eager. Keep callback/context and returned borrowed backing live, with explicit sole cleanup authority. The lazy-outcome increment adds nineteen free-function/method pairs: ten Option operations and nine Result operations. Callbacks use canonical core::function::Mapper<T,U>; argument-free Option fallbacks use Producer<T>. Selected callbacks run once, skipped callbacks never run; argument/callback construction remains eager and all static bounds apply. Library selection adds no allocation, clone, destruction, host call or panic. Transformation callbacks have their own effects and explicit sole-owner transfer policy; filter and Boolean-query payloads are call-scoped read-only observations that must not escape. Discarded payloads and eager fallbacks retain manual cleanup obligations; no rollback or unwind guarantee is supplied. All eight new library groups pass on native Linux x86_64 CPU output: six native-positive tests and two bound-rejection groups covering fourteen invalid calls. The independent model checks sixteen cases/1536 actions/1044 API calls across all 76 branch routes; nested-owner tests observe selected callback cleanup and one reached callback allocation denial with same-process recovery. Four migrated optional-sum groups pass 98 cases with unchanged output; six selected existing family regressions pass separately. No GPU-device execution, automatic ownership, general generic completeness or formal proof is claimed."
+      "note": "Canonical callback traits: Mapper<T,U>, Producer<T>, Consumer<T> and Runnable use static dispatch and are implemented by closures. Stored and the four enter_* entry helpers support alloc::callback uniform invocation on native x86_64. Hand-written Stored implementations must provide an entry matching their callback types; this contract is unchecked. No automatic destruction or dynamic trait objects are supplied. Mapper transports ordinary shallow values; each consumer defines its callback timing, ownership and observation restrictions. Producers run only when invoked, while their construction remains eager. Keep callback/context and returned borrowed backing live, with explicit sole cleanup authority. The lazy-outcome increment adds nineteen free-function/method pairs: ten Option operations and nine Result operations. Callbacks use canonical core::function::Mapper<T,U>; argument-free Option fallbacks use Producer<T>. Selected callbacks run once, skipped callbacks never run; argument/callback construction remains eager and all static bounds apply. Library selection adds no allocation, clone, destruction, host call or panic. Transformation callbacks have their own effects and explicit sole-owner transfer policy; filter and Boolean-query payloads are call-scoped read-only observations that must not escape. Discarded payloads and eager fallbacks retain manual cleanup obligations; no rollback or unwind guarantee is supplied. All eight new library groups pass on native Linux x86_64 CPU output: six native-positive tests and two bound-rejection groups covering fourteen invalid calls. The independent model checks sixteen cases/1536 actions/1044 API calls across all 76 branch routes; nested-owner tests observe selected callback cleanup and one reached callback allocation denial with same-process recovery. Four migrated optional-sum groups pass 98 cases with unchanged output; six selected existing family regressions pass separately. No GPU-device execution, automatic ownership, general generic completeness or formal proof is claimed."
     },
     "core::hash": {
       "guides": [
@@ -1632,9 +1687,10 @@
     },
     "ext::sqlite_statement": {
       "guides": [
+        "docs/library-state-machines.md",
         "docs/state-machines-design.md"
       ],
-      "note": "The pure transition function of an ext::sqlite prepared statement: every (state, event) pair in one place, with no wildcard. ext::sqlite changes a statement's state only through it. formal/tools/extract.py translates it to Lean (formal/Lanius/Machines/SqliteStatement.lean), where SqliteStatementCorrect.lean proves that columns are read only on a row and that nothing but another finalize is allowed after finalize."
+      "note": "Native prepared-statement machine: Statement.step returns whether an operation is permitted and updates generated StatementState. ext::sqlite owns and steps that machine. formal/tools/lani_extract.py extracts it for SqliteStatementCorrect.lean, which proves row-only column access and finalized-state trace properties. See the library migration guide for current verification and API changes."
     },
     "ext::statistics": {
       "guides": [
@@ -1929,6 +1985,24 @@
         "default_options": "Composes plain URL request/connector defaults with canonical HTTPS TLS-call defaults.",
         "exchange_until": "Accepts Https only and validates live Context, original URL identity and TLS/request options before selection. Borrows caller inputs through the synchronous call and returns one manually destroyed Response with actual TLS statistics, or typed stage/HTTP/HTTPS/connection/cleanup diagnostics."
       }
+    },
+    "ext::reactive_graph": {
+      "role": "support",
+      "guides": ["docs/extended-reactive-graph.md", "docs/extended-ui-plan.md"],
+      "note": "Executable graph kernel on native Linux x86_64 CPU output from the GPU compiler. Dynamic dependency replacement, equality-aware memo scheduling, batched effects, fixed arena budgets and scope disposal. A single manual Graph owner; IDs may not outlive its close. Does not own user values or captured callbacks and is not yet a Signal<T>/Memo<T> API or a UI toolkit. Focused tests include 1000 full-evaluator model batches and sparse work with 10000 source/effect pairs. Other targets, allocation-failure injection, typed destruction and formal verification remain open."
+    },
+    "ext::gpu": {
+      "guides": ["docs/extended-gpu.md"],
+      "note": "Native Linux x86_64 Vulkan 1.1 profile: buffers, RGBA8 textures, uniform/storage/image bindings, graphics and compute pipelines, retained command encoders, asynchronous submissions and X11/XWayland presentation. Explicit manual owners and creating-thread access. CPU access/destruction is Busy while commands retain resources; frame tickets include presentation completion and preserve ownership after presentation errors. Requires swapchain maintenance and trusted prevalidated SPIR-V. Eight native tests pass on RTX 3090 with required Khronos synchronization validation, exact shader/pixel readback and reached failures. Not a portable WebGPU implementation, performance result or untrusted shader safety layer."
+    },
+    "ext::gpu_native": {
+      "role": "support",
+      "guides": ["docs/extended-gpu.md"],
+      "note": "Generated Linux LP64 Vulkan C declarations and layout constants. Raw unsafe backend support; no resource ownership or shader validation. Regenerate/check with tools/generate_gpu_native.py against Khronos headers."
+    },
+    "ext::window": {
+      "guides": ["docs/extended-window.md"],
+      "note": "Lanius-owned windows, event translation and RGB scaling through direct libX11 calls. Native Linux x86_64/glibc, depth-24 TrueColor X11/XWayland only. Explicit manual owners and same-thread access; close windows before their context. Local failure Results do not replace Xlib's process-fatal protocol/I/O handlers. Native pixels, events, reached failure cleanup and an interactive application have executable tests. No SDL or production C shim. Native Wayland is unimplemented; ext::gpu uses the native-window lease for Vulkan presentation."
     },
     "ext::wave": {
       "guides": [

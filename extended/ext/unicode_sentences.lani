@@ -7,12 +7,27 @@ import core::text;
 import core::utf8;
 import ext::unicode_sentences_data;
 
+pub machine TerminatorSuffix on u32 {
+    start Empty;
+    state Empty { current -> { if (current == 11) { goto Abbreviation; } if (current == 12) { goto Terminator; } goto Empty; }, }
+    state Abbreviation { current -> { if (current == 11) { goto Abbreviation; } if (current == 12) { goto Terminator; } if (current == 6) { goto AbbreviationSpace; } if (current == 13) { stay; } goto Empty; }, }
+    state Terminator { current -> { if (current == 11) { goto Abbreviation; } if (current == 12) { goto Terminator; } if (current == 6) { goto TerminatorSpace; } if (current == 13) { stay; } goto Empty; }, }
+    state AbbreviationSpace { current -> { if (current == 11) { goto Abbreviation; } if (current == 12) { goto Terminator; } if (current == 6) { goto AbbreviationSpace; } goto Empty; }, }
+    state TerminatorSpace { current -> { if (current == 11) { goto Abbreviation; } if (current == 12) { goto Terminator; } if (current == 6) { goto TerminatorSpace; } goto Empty; }, }
+}
+pub impl TerminatorSuffix {
+    pub fn active(&self) -> bool { return match (self.state()) { TerminatorSuffixState::Empty -> false, _ -> true }; }
+    pub fn abbreviation(&self) -> bool { return match (self.state()) { TerminatorSuffixState::Abbreviation -> true, TerminatorSuffixState::AbbreviationSpace -> true, _ -> false }; }
+    pub fn spaces(&self) -> bool { return match (self.state()) { TerminatorSuffixState::AbbreviationSpace -> true, TerminatorSuffixState::TerminatorSpace -> true, _ -> false }; }
+}
+
+
 pub enum Error { Bounds, InputLimit, WorkLimit }
 pub struct Limits { max_bytes: i32, max_work: u64 }
 pub struct Segment { start: i32, end: i32, text: core::text::Text }
 // Obtain through cursor[_with_limits]. Fields are implementation state.
 // Copies fork both the consumed position and the retained lookahead cache.
-pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, term: u32, spaces: bool, look_end: i32, look_lower: bool }
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, terminator: TerminatorSuffix, look_end: i32, look_lower: bool }
 
 pub fn default_limits() -> Limits { return Limits { max_bytes: 2147483647, max_work: 6442450941 }; }
 pub fn cursor_with_limits(text: core::text::Text, limits: Limits) -> core::result::Result<Cursor,Error> {
@@ -21,7 +36,7 @@ pub fn cursor_with_limits(text: core::text::Text, limits: Limits) -> core::resul
     // Conservative preflight units: one UTF-8 scalar classification, including
     // its property lookup. This is not a count of machine reads/instructions.
     if ((text.length as u64)*3 > limits.max_work) { return core::result::Err(Error::WorkLimit); }
-    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, term: 0, spaces: false, look_end: -1, look_lower: false });
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, terminator: terminator_suffix_start(), look_end: -1, look_lower: false });
 }
 pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor,Error> { return cursor_with_limits(text,default_limits()); }
 // Other=0 CR=1 LF=2 Extend=3 Format=4 Sep=5 Sp=6 Lower=7 Upper=8
@@ -55,20 +70,17 @@ pub impl Cursor {
         if (ignored(current)) { return false; } // SB5
         if (self.previous == 11 && current == 10) { return false; } // SB6
         if (letter(self.before) && self.previous == 11 && current == 8) { return false; } // SB7
-        if (self.term == 1 && self.lower_ahead()) { return false; } // SB8
-        if (self.term != 0 && (current == 14 || current == 11 || current == 12)) { return false; } // SB8a
-        if (self.term != 0 && !self.spaces && (current == 13 || current == 6 || paragraph(current))) { return false; } // SB9
-        if (self.term != 0 && (current == 6 || paragraph(current))) { return false; } // SB10
-        if (self.term != 0) { return true; } // SB11; ParaSep suffix is SB4
+        if (self.terminator.abbreviation() && self.lower_ahead()) { return false; } // SB8
+        if (self.terminator.active() && (current == 14 || current == 11 || current == 12)) { return false; } // SB8a
+        if (self.terminator.active() && !self.terminator.spaces() && (current == 13 || current == 6 || paragraph(current))) { return false; } // SB9
+        if (self.terminator.active() && (current == 6 || paragraph(current))) { return false; } // SB10
+        if (self.terminator.active()) { return true; } // SB11; ParaSep suffix is SB4
         return false; // SB998
     }
     fn consume(&self, current: u32, width: i32) {
         if (!ignored(current)) {
             self.before = self.previous; self.previous = current;
-            if (current == 11 || current == 12) { self.term = 2; if (current == 11) { self.term = 1; } self.spaces = false; }
-            else { if (self.term != 0 && current == 6) { self.spaces = true; }
-                else { if (!(self.term != 0 && !self.spaces && current == 13)) { self.term = 0; self.spaces = false; } }
-            }
+            self.terminator.step(current);
         }
         self.raw = current; self.position += width;
     }

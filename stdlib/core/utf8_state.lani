@@ -1,0 +1,52 @@
+// Incremental UTF-8 validation. Parsers can defer scalar-range rejection to
+// the final byte; wire protocols can reject an impossible prefix immediately.
+module core::utf8_state;
+import core::utf8;
+fn second_valid(first: u8, second: u8) -> bool {
+    if (!core::utf8::is_continuation_byte(second)) { return false; }
+    if (first == 224 && second < 160) { return false; }
+    if (first == 237 && second > 159) { return false; }
+    if (first == 240 && second < 144) { return false; }
+    if (first == 244 && second > 143) { return false; }
+    return true;
+}
+pub machine Sequence on u8 -> bool {
+    eager: bool,
+    start Ready;
+    state Ready { byte -> {
+        let width = core::utf8::sequence_len_or(byte,0);
+        if (width == 1) { stay with true; }
+        if (width == 2) { goto Two(byte) with true; }
+        if (width == 3) { goto Three(byte) with true; }
+        if (width == 4) { goto Four(byte) with true; }
+        goto Invalid with false;
+    }, }
+    state Two(first: u8) { byte -> {
+        if (core::utf8::decode_or(first,byte,0,0,2,4294967295) == 4294967295) { goto Invalid with false; }
+        goto Ready with true;
+    }, }
+    state Three(first: u8) { byte -> {
+        if (!core::utf8::is_continuation_byte(byte) || (self.eager && !second_valid(first,byte))) { goto Invalid with false; }
+        goto ThreeLast(first,byte) with true;
+    }, }
+    state Four(first: u8) { byte -> {
+        if (!core::utf8::is_continuation_byte(byte) || (self.eager && !second_valid(first,byte))) { goto Invalid with false; }
+        goto FourMiddle(first,byte) with true;
+    }, }
+    state ThreeLast(first: u8, second: u8) { byte -> {
+        if (core::utf8::decode_or(first,second,byte,0,3,4294967295) == 4294967295) { goto Invalid with false; }
+        goto Ready with true;
+    }, }
+    state FourMiddle(first: u8, second: u8) { byte -> {
+        if (!core::utf8::is_continuation_byte(byte)) { goto Invalid with false; }
+        goto FourLast(first,second,byte) with true;
+    }, }
+    state FourLast(first: u8, second: u8, third: u8) { byte -> {
+        if (core::utf8::decode_or(first,second,third,byte,4,4294967295) == 4294967295) { goto Invalid with false; }
+        goto Ready with true;
+    }, }
+    final state Invalid { byte -> stay with false, }
+}
+pub impl Sequence {
+    pub fn complete(&self) -> bool { return match(self.state()) { SequenceState::Ready -> true, _ -> false }; }
+}

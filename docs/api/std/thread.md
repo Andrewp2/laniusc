@@ -15,7 +15,7 @@ Canonical Lanius native-thread implementation over glibc pthread functions and s
 - [stdlib-threads](../../stdlib-threads.md)
 - [stdlib-thread-lifecycle](../../stdlib-thread-lifecycle.md)
 
-Declaration counts: constant: 1; enum: 1; field: 5; function: 5; impl: 1; method: 4; struct: 2; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 5; function: 5; impl: 2; machine: 1; method: 5; struct: 2; variant: 6.
 
 ## Declared imports
 
@@ -79,9 +79,33 @@ Joined
 UnexpectedResult
 ```
 
-### struct: Thread
+### enum: JoinEvent
+
+[Source line 23](../../../stdlib/std/thread.lani#L23)
+
+```lanius
+pub enum JoinEvent
+```
+
+#### variant: Joined
+
+[Source line 23](../../../stdlib/std/thread.lani#L23)
+
+```lanius
+Joined
+```
+
+### machine: Join
 
 [Source line 24](../../../stdlib/std/thread.lani#L24)
+
+```lanius
+pub machine Join on JoinEvent
+```
+
+### struct: Thread
+
+[Source line 34](../../../stdlib/std/thread.lani#L34)
 
 ```lanius
 pub struct Thread
@@ -89,23 +113,23 @@ pub struct Thread
 
 #### field: id
 
-[Source line 24](../../../stdlib/std/thread.lani#L24)
+[Source line 34](../../../stdlib/std/thread.lani#L34)
 
 ```lanius
 id:u64
 ```
 
-#### field: joined
+#### field: join
 
-[Source line 24](../../../stdlib/std/thread.lani#L24)
+[Source line 34](../../../stdlib/std/thread.lani#L34)
 
 ```lanius
-joined:bool
+join:Join
 ```
 
 ### struct: SpawnFailure
 
-[Source line 27](../../../stdlib/std/thread.lani#L27)
+[Source line 37](../../../stdlib/std/thread.lani#L37)
 
 ```lanius
 pub struct SpawnFailure
@@ -113,7 +137,7 @@ pub struct SpawnFailure
 
 #### field: cause
 
-[Source line 28](../../../stdlib/std/thread.lani#L28)
+[Source line 38](../../../stdlib/std/thread.lani#L38)
 
 ```lanius
 cause:Error
@@ -121,7 +145,7 @@ cause:Error
 
 #### field: cleanup_error
 
-[Source line 29](../../../stdlib/std/thread.lani#L29)
+[Source line 39](../../../stdlib/std/thread.lani#L39)
 
 ```lanius
 cleanup_error:core::option::Option<i32>
@@ -129,7 +153,7 @@ cleanup_error:core::option::Option<i32>
 
 #### field: started
 
-[Source line 30](../../../stdlib/std/thread.lani#L30)
+[Source line 40](../../../stdlib/std/thread.lani#L40)
 
 ```lanius
 started:core::option::Option<Thread>
@@ -149,7 +173,7 @@ pub const MIN_STACK_BYTES:usize = 16384;
 
 ### function: spawn
 
-[Source line 43](../../../stdlib/std/thread.lani#L43)
+[Source line 53](../../../stdlib/std/thread.lani#L53)
 
 ```lanius
 pub fn spawn(entry:ptr, arg:ptr) -> core::result::Result<Thread,Error>
@@ -157,7 +181,7 @@ pub fn spawn(entry:ptr, arg:ptr) -> core::result::Result<Thread,Error>
 
 ### function: spawn_with_stack
 
-[Source line 55](../../../stdlib/std/thread.lani#L55)
+[Source line 65](../../../stdlib/std/thread.lani#L65)
 
 ```lanius
 pub fn spawn_with_stack(entry:ptr, arg:ptr, stack_bytes:usize) -> core::result::Result<Thread,SpawnFailure>
@@ -165,7 +189,7 @@ pub fn spawn_with_stack(entry:ptr, arg:ptr, stack_bytes:usize) -> core::result::
 
 ### function: current
 
-[Source line 110](../../../stdlib/std/thread.lani#L110)
+[Source line 120](../../../stdlib/std/thread.lani#L120)
 
 ```lanius
 pub fn current() -> u64
@@ -173,7 +197,7 @@ pub fn current() -> u64
 
 ### function: yield_now
 
-[Source line 111](../../../stdlib/std/thread.lani#L111)
+[Source line 121](../../../stdlib/std/thread.lani#L121)
 
 ```lanius
 pub fn yield_now() -> core::result::Result<i32,Error>
@@ -181,7 +205,7 @@ pub fn yield_now() -> core::result::Result<i32,Error>
 
 ### function: available_parallelism
 
-[Source line 122](../../../stdlib/std/thread.lani#L122)
+[Source line 132](../../../stdlib/std/thread.lani#L132)
 
 ```lanius
 pub fn available_parallelism() -> core::result::Result<i32,Error>
@@ -189,9 +213,25 @@ pub fn available_parallelism() -> core::result::Result<i32,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 89
+### impl at line 29
 
-[Source line 89](../../../stdlib/std/thread.lani#L89)
+[Source line 29](../../../stdlib/std/thread.lani#L29)
+
+```lanius
+pub impl Join
+```
+
+#### method: is_joined
+
+[Source line 30](../../../stdlib/std/thread.lani#L30)
+
+```lanius
+pub fn is_joined(&self) -> bool
+```
+
+### impl at line 99
+
+[Source line 99](../../../stdlib/std/thread.lani#L99)
 
 ```lanius
 pub impl Thread
@@ -199,7 +239,7 @@ pub impl Thread
 
 #### method: borrow
 
-[Source line 90](../../../stdlib/std/thread.lani#L90)
+[Source line 100](../../../stdlib/std/thread.lani#L100)
 
 ```lanius
 pub fn borrow(&self) -> &Thread
@@ -207,7 +247,7 @@ pub fn borrow(&self) -> &Thread
 
 #### method: id
 
-[Source line 92](../../../stdlib/std/thread.lani#L92)
+[Source line 102](../../../stdlib/std/thread.lani#L102)
 
 ```lanius
 pub fn id(&self) -> u64
@@ -215,7 +255,7 @@ pub fn id(&self) -> u64
 
 #### method: is_joined
 
-[Source line 93](../../../stdlib/std/thread.lani#L93)
+[Source line 103](../../../stdlib/std/thread.lani#L103)
 
 ```lanius
 pub fn is_joined(&self) -> bool
@@ -223,7 +263,7 @@ pub fn is_joined(&self) -> bool
 
 #### method: join
 
-[Source line 97](../../../stdlib/std/thread.lani#L97)
+[Source line 107](../../../stdlib/std/thread.lani#L107)
 
 ```lanius
 pub fn join(&self) -> core::result::Result<ptr,Error>

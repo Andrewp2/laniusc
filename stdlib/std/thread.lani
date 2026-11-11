@@ -20,8 +20,18 @@ extern "C" fn pthread_self() -> u64;
 pub enum Error { Host(i32), System(std::linux::Error), InvalidInput, Joined, UnexpectedResult }
 pub const MIN_STACK_BYTES:usize = 16384;
 
+pub enum JoinEvent { Joined }
+pub machine Join on JoinEvent {
+    start Joinable;
+    state Joinable { JoinEvent::Joined -> goto Joined, }
+    final state Joined { JoinEvent::Joined -> stay, }
+}
+pub impl Join {
+    pub fn is_joined(&self) -> bool { return match (self.state()) { JoinState::Joined -> true, _ -> false }; }
+}
+
 // Copies alias one logical join authority. Keep and mutate one active owner.
-pub struct Thread { id:u64, joined:bool }
+pub struct Thread { id:u64, join:Join }
 // A post-create attribute failure must not hide the running thread. A caller
 // must recover and join started before releasing its argument backing.
 pub struct SpawnFailure {
@@ -35,7 +45,7 @@ fn spawn_failure(cause:Error) -> SpawnFailure {
 }
 fn created_thread(slot:ptr) -> Thread {
     let id:[u64] = core::mem::typed_slice_from_raw_parts<u64>(slot,1);
-    return Thread { id:id[0],joined:false };
+    return Thread { id:id[0],join:join_start() };
 }
 
 // Default attributes require no local attribute object. Stack size follows
@@ -90,17 +100,17 @@ pub impl Thread {
     pub fn borrow(&self) -> &Thread { return self; }
     // Identity only: an id does not authorize another join owner.
     pub fn id(&self) -> u64 { return self.id; }
-    pub fn is_joined(&self) -> bool { return self.joined; }
+    pub fn is_joined(&self) -> bool { return self.join.is_joined(); }
     // Successful join retires the authority; a host failure leaves it intact.
     // Concurrent joins, owner copies and externally joined ids violate the
     // caller's single-owner obligation.
     pub fn join(&self) -> core::result::Result<ptr,Error> {
-        if(self.joined) { return core::result::Err(Error::Joined); }
+        if(self.join.is_joined()) { return core::result::Err(Error::Joined); }
         let words:[i32;2] = [0;2];
         let slot:ptr = core::mem::i32_array_data_ptr(words);
         let code:i32 = pthread_join(self.id,slot);
         if(code!=0) { return core::result::Err(Error::Host(code)); }
-        self.joined=true;
+        self.join.step(JoinEvent::Joined);
         let result:[ptr] = core::mem::typed_slice_from_raw_parts<ptr>(slot,1);
         return core::result::Ok(result[0]);
     }

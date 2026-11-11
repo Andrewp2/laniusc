@@ -2,6 +2,7 @@
 // borrowed. Context drops the parser/scratch lease before returning; schema,
 // arguments and caller values remain immutable and backed until final use.
 module ext::cli_complete;
+import core::iter_state;
 import core::option::Option;
 import core::option::Some;
 import core::option::None;
@@ -30,7 +31,7 @@ pub struct Context {
     range: Replacement, identity: Option<OptionIdentity>, cluster: Option<ext::cli::Spec>,
     options: bool, inside: bool
 }
-pub struct Suggestions { context: Context, values: View<Value>, position: u64, done: bool }
+pub struct Suggestions { context: Context, values: View<Value>, position: u64, completion: core::iter_state::Completion }
 // Rendering is head + dashes + (short or tail) + optional '='. These borrowed
 // pieces never point into a temporary option record or parser scope scratch.
 struct Candidate {
@@ -160,7 +161,7 @@ pub impl Context {
             range: self.range, identity: self.identity, cluster: self.cluster,
             options: self.options, inside: self.inside
         };
-        return Ok(Suggestions { context: copy, values: values, position: 0, done: false });
+        return Ok(Suggestions { context: copy, values: values, position: 0, completion: core::iter_state::completion_start() });
     }
 }
 
@@ -291,9 +292,9 @@ pub impl Suggestions {
     pub fn borrow(&self) -> &Suggestions { return self; }
     pub fn next(&self, output: View<u8>) -> Result<Option<Suggestion>,Error> {
         if (!valid(output)) { return Err(Error::Bounds); }
-        if (self.done) { return Ok(None()); }
+        if (self.completion.is_done()) { return Ok(None()); }
         let next: Option<Candidate> = candidate_at(self.context,self.values,self.position);
-        if (next.is_none()) { self.done = true; return Ok(None()); }
+        if (next.is_none()) { self.completion.finish(); return Ok(None()); }
         let candidate: Candidate = next.unwrap(); let size: u64 = required(candidate);
         if (size > output.length as u64) { return Err(Error::OutputTooSmall(size)); }
         let written: i32 = write_candidate(candidate,output);

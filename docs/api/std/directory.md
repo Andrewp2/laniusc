@@ -21,16 +21,18 @@ Declaration counts: enum: 1; field: 24; function: 9; impl: 3; method: 12; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/directory.lani#L3)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/directory.lani#L4)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/directory.lani#L5)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/directory.lani#L6)
-- [core::path](../core/path.md) · [source](../../../stdlib/std/directory.lani#L7)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/directory.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/directory.lani#L9)
-- [std::file](file.md) · [source](../../../stdlib/std/directory.lani#L10)
-- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/directory.lani#L11)
-- [std::linux](linux.md) · [source](../../../stdlib/std/directory.lani#L12)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/std/directory.lani#L3)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/directory.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/directory.lani#L5)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/directory.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/directory.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/directory.lani#L8)
+- [core::path](../core/path.md) · [source](../../../stdlib/std/directory.lani#L9)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/directory.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/directory.lani#L11)
+- [std::file](file.md) · [source](../../../stdlib/std/directory.lani#L12)
+- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/directory.lani#L13)
+- [std::linux](linux.md) · [source](../../../stdlib/std/directory.lani#L14)
 
 ## Types, fields and variants
 
@@ -38,7 +40,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 pub enum Error
@@ -46,7 +48,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Bounds
@@ -54,7 +56,7 @@ Bounds
 
 #### variant: Limit
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Limit
@@ -62,7 +64,7 @@ Limit
 
 #### variant: Malformed
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Malformed(i32)
@@ -70,7 +72,7 @@ Malformed(i32)
 
 #### variant: Closed
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Closed
@@ -78,7 +80,7 @@ Closed
 
 #### variant: Failed
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Failed
@@ -86,7 +88,7 @@ Failed
 
 #### variant: Changed
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Changed
@@ -94,7 +96,7 @@ Changed
 
 #### variant: UnavailableMetadata
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 UnavailableMetadata
@@ -102,7 +104,7 @@ UnavailableMetadata
 
 #### variant: AllocationFailed
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 AllocationFailed
@@ -110,7 +112,7 @@ AllocationFailed
 
 #### variant: Io
 
-[Source line 13](../../../stdlib/std/directory.lani#L13)
+[Source line 15](../../../stdlib/std/directory.lani#L15)
 
 ```lanius
 Io(core::io::Error)
@@ -118,7 +120,7 @@ Io(core::io::Error)
 
 ### struct: Entry
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 pub struct Entry
@@ -126,7 +128,7 @@ pub struct Entry
 
 #### field: name
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 name:core::slice::View<u8>
@@ -134,7 +136,7 @@ name:core::slice::View<u8>
 
 #### field: inode
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 inode:u64
@@ -142,7 +144,7 @@ inode:u64
 
 #### field: cookie
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 cookie:i64
@@ -150,7 +152,7 @@ cookie:i64
 
 #### field: kind
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 kind:std::file_ops::Kind
@@ -158,7 +160,7 @@ kind:std::file_ops::Kind
 
 #### field: consumed
 
-[Source line 14](../../../stdlib/std/directory.lani#L14)
+[Source line 16](../../../stdlib/std/directory.lani#L16)
 
 ```lanius
 consumed:i32
@@ -166,7 +168,7 @@ consumed:i32
 
 ### struct: Reader
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 pub struct Reader
@@ -174,7 +176,7 @@ pub struct Reader
 
 #### field: file
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 file:std::file::File
@@ -182,7 +184,7 @@ file:std::file::File
 
 #### field: buffer
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 buffer:alloc::vec::Vec<u8>
@@ -190,7 +192,7 @@ buffer:alloc::vec::Vec<u8>
 
 #### field: position
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 position:i32
@@ -198,31 +200,31 @@ position:i32
 
 #### field: filled
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 filled:i32
 ```
 
-#### field: eof
+#### field: completion
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
-eof:bool
+completion: core::iter_state::Completion
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
-failed:bool
+health: core::lifecycle::Health
 ```
 
 #### field: work
 
-[Source line 15](../../../stdlib/std/directory.lani#L15)
+[Source line 17](../../../stdlib/std/directory.lani#L17)
 
 ```lanius
 work:u64
@@ -230,7 +232,7 @@ work:u64
 
 ### struct: Limits
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 pub struct Limits
@@ -238,7 +240,7 @@ pub struct Limits
 
 #### field: max_depth
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 max_depth:i32
@@ -246,7 +248,7 @@ max_depth:i32
 
 #### field: max_entries
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 max_entries:i32
@@ -254,7 +256,7 @@ max_entries:i32
 
 #### field: max_path_bytes
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 max_path_bytes:i32
@@ -262,7 +264,7 @@ max_path_bytes:i32
 
 #### field: max_bytes
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 max_bytes:i32
@@ -270,7 +272,7 @@ max_bytes:i32
 
 #### field: max_work
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 max_work:u64
@@ -278,7 +280,7 @@ max_work:u64
 
 #### field: buffer_bytes
 
-[Source line 16](../../../stdlib/std/directory.lani#L16)
+[Source line 18](../../../stdlib/std/directory.lani#L18)
 
 ```lanius
 buffer_bytes:i32
@@ -286,7 +288,7 @@ buffer_bytes:i32
 
 ### struct: Snapshot
 
-[Source line 20](../../../stdlib/std/directory.lani#L20)
+[Source line 22](../../../stdlib/std/directory.lani#L22)
 
 ```lanius
 pub struct Snapshot
@@ -294,7 +296,7 @@ pub struct Snapshot
 
 #### field: paths
 
-[Source line 20](../../../stdlib/std/directory.lani#L20)
+[Source line 22](../../../stdlib/std/directory.lani#L22)
 
 ```lanius
 paths:alloc::vec::Vec<u8>
@@ -302,7 +304,7 @@ paths:alloc::vec::Vec<u8>
 
 #### field: rows
 
-[Source line 20](../../../stdlib/std/directory.lani#L20)
+[Source line 22](../../../stdlib/std/directory.lani#L22)
 
 ```lanius
 rows:alloc::vec::Vec<Row>
@@ -310,7 +312,7 @@ rows:alloc::vec::Vec<Row>
 
 #### field: work
 
-[Source line 20](../../../stdlib/std/directory.lani#L20)
+[Source line 22](../../../stdlib/std/directory.lani#L22)
 
 ```lanius
 work:u64
@@ -318,7 +320,7 @@ work:u64
 
 ### struct: WalkEntry
 
-[Source line 21](../../../stdlib/std/directory.lani#L21)
+[Source line 23](../../../stdlib/std/directory.lani#L23)
 
 ```lanius
 pub struct WalkEntry
@@ -326,7 +328,7 @@ pub struct WalkEntry
 
 #### field: path
 
-[Source line 21](../../../stdlib/std/directory.lani#L21)
+[Source line 23](../../../stdlib/std/directory.lani#L23)
 
 ```lanius
 path:core::slice::View<u8>
@@ -334,7 +336,7 @@ path:core::slice::View<u8>
 
 #### field: depth
 
-[Source line 21](../../../stdlib/std/directory.lani#L21)
+[Source line 23](../../../stdlib/std/directory.lani#L23)
 
 ```lanius
 depth:i32
@@ -342,7 +344,7 @@ depth:i32
 
 #### field: metadata
 
-[Source line 21](../../../stdlib/std/directory.lani#L21)
+[Source line 23](../../../stdlib/std/directory.lani#L23)
 
 ```lanius
 metadata:std::file_ops::Metadata
@@ -352,7 +354,7 @@ metadata:std::file_ops::Metadata
 
 ### function: default_limits
 
-[Source line 22](../../../stdlib/std/directory.lani#L22)
+[Source line 24](../../../stdlib/std/directory.lani#L24)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -360,7 +362,7 @@ pub fn default_limits() -> Limits
 
 ### function: decode_entry
 
-[Source line 27](../../../stdlib/std/directory.lani#L27)
+[Source line 29](../../../stdlib/std/directory.lani#L29)
 
 ```lanius
 pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Result<Entry,Error>
@@ -368,7 +370,7 @@ pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Res
 
 ### function: empty_directory
 
-[Source line 41](../../../stdlib/std/directory.lani#L41)
+[Source line 43](../../../stdlib/std/directory.lani#L43)
 
 ```lanius
 pub fn empty_directory() -> Reader
@@ -376,7 +378,7 @@ pub fn empty_directory() -> Reader
 
 ### function: open
 
-[Source line 42](../../../stdlib/std/directory.lani#L42)
+[Source line 44](../../../stdlib/std/directory.lani#L44)
 
 ```lanius
 pub fn open(path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error>
@@ -384,7 +386,7 @@ pub fn open(path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Read
 
 ### function: open_at
 
-[Source line 43](../../../stdlib/std/directory.lani#L43)
+[Source line 45](../../../stdlib/std/directory.lani#L45)
 
 ```lanius
 pub fn open_at(directory_fd:i32,path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error>
@@ -392,7 +394,7 @@ pub fn open_at(directory_fd:i32,path:core::path::Path,buffer_bytes:i32) -> core:
 
 ### function: open_into
 
-[Source line 44](../../../stdlib/std/directory.lani#L44)
+[Source line 46](../../../stdlib/std/directory.lani#L46)
 
 ```lanius
 pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error>
@@ -400,7 +402,7 @@ pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core:
 
 ### function: open_at_into
 
-[Source line 45](../../../stdlib/std/directory.lani#L45)
+[Source line 47](../../../stdlib/std/directory.lani#L47)
 
 ```lanius
 pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error>
@@ -408,7 +410,7 @@ pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,outp
 
 ### function: empty_entry
 
-[Source line 85](../../../stdlib/std/directory.lani#L85)
+[Source line 87](../../../stdlib/std/directory.lani#L87)
 
 ```lanius
 pub fn empty_entry() -> WalkEntry
@@ -416,7 +418,7 @@ pub fn empty_entry() -> WalkEntry
 
 ### function: walk
 
-[Source line 99](../../../stdlib/std/directory.lani#L99)
+[Source line 101](../../../stdlib/std/directory.lani#L101)
 
 ```lanius
 pub fn walk(root:core::path::Path,depth:i32,limits:Limits) -> core::result::Result<Snapshot,Error>
@@ -424,9 +426,9 @@ pub fn walk(root:core::path::Path,depth:i32,limits:Limits) -> core::result::Resu
 
 ## Implementation blocks and public methods
 
-### impl at line 55
+### impl at line 57
 
-[Source line 55](../../../stdlib/std/directory.lani#L55)
+[Source line 57](../../../stdlib/std/directory.lani#L57)
 
 ```lanius
 pub impl Reader
@@ -434,7 +436,7 @@ pub impl Reader
 
 #### method: borrow
 
-[Source line 56](../../../stdlib/std/directory.lani#L56)
+[Source line 58](../../../stdlib/std/directory.lani#L58)
 
 ```lanius
 pub fn borrow(&self) -> &Reader
@@ -442,7 +444,7 @@ pub fn borrow(&self) -> &Reader
 
 #### method: raw_handle
 
-[Source line 57](../../../stdlib/std/directory.lani#L57)
+[Source line 59](../../../stdlib/std/directory.lani#L59)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -450,7 +452,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: work_done
 
-[Source line 58](../../../stdlib/std/directory.lani#L58)
+[Source line 60](../../../stdlib/std/directory.lani#L60)
 
 ```lanius
 pub fn work_done(&self) -> u64
@@ -458,7 +460,7 @@ pub fn work_done(&self) -> u64
 
 #### method: next
 
-[Source line 60](../../../stdlib/std/directory.lani#L60)
+[Source line 62](../../../stdlib/std/directory.lani#L62)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
@@ -466,15 +468,15 @@ pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
 
 #### method: close
 
-[Source line 83](../../../stdlib/std/directory.lani#L83)
+[Source line 85](../../../stdlib/std/directory.lani#L85)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 86
+### impl at line 88
 
-[Source line 86](../../../stdlib/std/directory.lani#L86)
+[Source line 88](../../../stdlib/std/directory.lani#L88)
 
 ```lanius
 pub impl WalkEntry
@@ -482,15 +484,15 @@ pub impl WalkEntry
 
 #### method: borrow
 
-[Source line 86](../../../stdlib/std/directory.lani#L86)
+[Source line 88](../../../stdlib/std/directory.lani#L88)
 
 ```lanius
 pub fn borrow(&self) -> &WalkEntry
 ```
 
-### impl at line 87
+### impl at line 89
 
-[Source line 87](../../../stdlib/std/directory.lani#L87)
+[Source line 89](../../../stdlib/std/directory.lani#L89)
 
 ```lanius
 pub impl Snapshot
@@ -498,7 +500,7 @@ pub impl Snapshot
 
 #### method: borrow
 
-[Source line 88](../../../stdlib/std/directory.lani#L88)
+[Source line 90](../../../stdlib/std/directory.lani#L90)
 
 ```lanius
 pub fn borrow(&self) -> &Snapshot
@@ -506,7 +508,7 @@ pub fn borrow(&self) -> &Snapshot
 
 #### method: len
 
-[Source line 89](../../../stdlib/std/directory.lani#L89)
+[Source line 91](../../../stdlib/std/directory.lani#L91)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -514,7 +516,7 @@ pub fn len(&self) -> i32
 
 #### method: byte_len
 
-[Source line 90](../../../stdlib/std/directory.lani#L90)
+[Source line 92](../../../stdlib/std/directory.lani#L92)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -522,7 +524,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: work_done
 
-[Source line 91](../../../stdlib/std/directory.lani#L91)
+[Source line 93](../../../stdlib/std/directory.lani#L93)
 
 ```lanius
 pub fn work_done(&self) -> u64
@@ -530,7 +532,7 @@ pub fn work_done(&self) -> u64
 
 #### method: entry_into
 
-[Source line 92](../../../stdlib/std/directory.lani#L92)
+[Source line 94](../../../stdlib/std/directory.lani#L94)
 
 ```lanius
 pub fn entry_into(&self,index:i32,output:&WalkEntry) -> core::result::Result<i32,Error>
@@ -538,7 +540,7 @@ pub fn entry_into(&self,index:i32,output:&WalkEntry) -> core::result::Result<i32
 
 #### method: destroy
 
-[Source line 93](../../../stdlib/std/directory.lani#L93)
+[Source line 95](../../../stdlib/std/directory.lani#L95)
 
 ```lanius
 pub fn destroy(&self)

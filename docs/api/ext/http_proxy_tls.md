@@ -16,16 +16,17 @@ Declaration counts: enum: 1; field: 3; function: 1; impl: 1; method: 8; struct: 
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_proxy_tls.lani#L8)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_proxy_tls.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_proxy_tls.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_proxy_tls.lani#L11)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_proxy_tls.lani#L12)
-- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_proxy_tls.lani#L13)
-- [ext::http_proxy](http_proxy.md) · [source](../../../extended/ext/http_proxy_tls.lani#L14)
-- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_proxy_tls.lani#L15)
-- [ext::tls_clients](tls_clients.md) · [source](../../../extended/ext/http_proxy_tls.lani#L16)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_proxy_tls.lani#L17)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/http_proxy_tls.lani#L8)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_proxy_tls.lani#L9)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_proxy_tls.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_proxy_tls.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_proxy_tls.lani#L12)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_proxy_tls.lani#L13)
+- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_proxy_tls.lani#L14)
+- [ext::http_proxy](http_proxy.md) · [source](../../../extended/ext/http_proxy_tls.lani#L15)
+- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_proxy_tls.lani#L16)
+- [ext::tls_clients](tls_clients.md) · [source](../../../extended/ext/http_proxy_tls.lani#L17)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_proxy_tls.lani#L18)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 19](../../../extended/ext/http_proxy_tls.lani#L19)
+[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
 
 ```lanius
 pub enum Error
@@ -41,7 +42,7 @@ pub enum Error
 
 #### variant: Proxy
 
-[Source line 19](../../../extended/ext/http_proxy_tls.lani#L19)
+[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
 
 ```lanius
 Proxy(ext::http_proxy::Error)
@@ -49,7 +50,7 @@ Proxy(ext::http_proxy::Error)
 
 #### variant: AllocationFailed
 
-[Source line 19](../../../extended/ext/http_proxy_tls.lani#L19)
+[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
 
 ```lanius
 AllocationFailed
@@ -57,7 +58,7 @@ AllocationFailed
 
 #### variant: InvalidState
 
-[Source line 19](../../../extended/ext/http_proxy_tls.lani#L19)
+[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
 
 ```lanius
 InvalidState
@@ -65,7 +66,7 @@ InvalidState
 
 ### struct: TlsProxy
 
-[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_proxy_tls.lani#L21)
 
 ```lanius
 pub struct TlsProxy
@@ -73,7 +74,7 @@ pub struct TlsProxy
 
 #### field: proxy
 
-[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_proxy_tls.lani#L21)
 
 ```lanius
 proxy: ext::http_proxy::Proxy
@@ -81,25 +82,25 @@ proxy: ext::http_proxy::Proxy
 
 #### field: tls
 
-[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_proxy_tls.lani#L21)
 
 ```lanius
 tls: ext::tls_clients::TlsClients
 ```
 
-#### field: closed
+#### field: lifetime
 
-[Source line 20](../../../extended/ext/http_proxy_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_proxy_tls.lani#L21)
 
 ```lanius
-closed: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: proxy
 
-[Source line 25](../../../extended/ext/http_proxy_tls.lani#L25)
+[Source line 26](../../../extended/ext/http_proxy_tls.lani#L26)
 
 ```lanius
 pub fn proxy(listener: &std::socket::Socket, options: ext::http_proxy::Options, max_clients: i32, context: ext::openssl_tls::ServerContext) -> core::result::Result<TlsProxy,Error>
@@ -107,9 +108,9 @@ pub fn proxy(listener: &std::socket::Socket, options: ext::http_proxy::Options, 
 
 ## Implementation blocks and public methods
 
-### impl at line 35
+### impl at line 36
 
-[Source line 35](../../../extended/ext/http_proxy_tls.lani#L35)
+[Source line 36](../../../extended/ext/http_proxy_tls.lani#L36)
 
 ```lanius
 pub impl TlsProxy
@@ -117,7 +118,7 @@ pub impl TlsProxy
 
 #### method: borrow
 
-[Source line 36](../../../extended/ext/http_proxy_tls.lani#L36)
+[Source line 37](../../../extended/ext/http_proxy_tls.lani#L37)
 
 ```lanius
 pub fn borrow(&self) -> &TlsProxy
@@ -125,7 +126,7 @@ pub fn borrow(&self) -> &TlsProxy
 
 #### method: stats
 
-[Source line 37](../../../extended/ext/http_proxy_tls.lani#L37)
+[Source line 38](../../../extended/ext/http_proxy_tls.lani#L38)
 
 ```lanius
 pub fn stats(&self) -> ext::http_proxy::Stats
@@ -133,7 +134,7 @@ pub fn stats(&self) -> ext::http_proxy::Stats
 
 #### method: tls_stats
 
-[Source line 38](../../../extended/ext/http_proxy_tls.lani#L38)
+[Source line 39](../../../extended/ext/http_proxy_tls.lani#L39)
 
 ```lanius
 pub fn tls_stats(&self) -> ext::tls_clients::Stats
@@ -141,7 +142,7 @@ pub fn tls_stats(&self) -> ext::tls_clients::Stats
 
 #### method: active
 
-[Source line 39](../../../extended/ext/http_proxy_tls.lani#L39)
+[Source line 40](../../../extended/ext/http_proxy_tls.lani#L40)
 
 ```lanius
 pub fn active(&self) -> i32
@@ -149,7 +150,7 @@ pub fn active(&self) -> i32
 
 #### method: add_upstream
 
-[Source line 40](../../../extended/ext/http_proxy_tls.lani#L40)
+[Source line 41](../../../extended/ext/http_proxy_tls.lani#L41)
 
 ```lanius
 pub fn add_upstream(&self, address: core::net::SocketAddr) -> core::result::Result<i32,ext::http_proxy::Error>
@@ -157,7 +158,7 @@ pub fn add_upstream(&self, address: core::net::SocketAddr) -> core::result::Resu
 
 #### method: route
 
-[Source line 41](../../../extended/ext/http_proxy_tls.lani#L41)
+[Source line 42](../../../extended/ext/http_proxy_tls.lani#L42)
 
 ```lanius
 pub fn route(&self, prefix: core::slice::View<u8>, upstream: i32) -> core::result::Result<i32,ext::http_proxy::Error>
@@ -165,7 +166,7 @@ pub fn route(&self, prefix: core::slice::View<u8>, upstream: i32) -> core::resul
 
 #### method: poll
 
-[Source line 43](../../../extended/ext/http_proxy_tls.lani#L43)
+[Source line 44](../../../extended/ext/http_proxy_tls.lani#L44)
 
 ```lanius
 pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
@@ -173,7 +174,7 @@ pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,E
 
 #### method: close
 
-[Source line 52](../../../extended/ext/http_proxy_tls.lani#L52)
+[Source line 53](../../../extended/ext/http_proxy_tls.lani#L53)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>

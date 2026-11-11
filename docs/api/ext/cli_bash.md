@@ -21,12 +21,13 @@ Declaration counts: enum: 2; field: 8; function: 2; struct: 1; variant: 11.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/cli_bash.lani#L5)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_bash.lani#L6)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_bash.lani#L7)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_bash.lani#L8)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/cli_bash.lani#L9)
-- [ext::bash_words](bash_words.md) · [source](../../../extended/ext/cli_bash.lani#L10)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/cli_bash.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/cli_bash.lani#L6)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_bash.lani#L7)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_bash.lani#L8)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_bash.lani#L9)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/cli_bash.lani#L10)
+- [ext::bash_words](bash_words.md) · [source](../../../extended/ext/cli_bash.lani#L11)
 
 ## Types, fields and variants
 
@@ -34,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Mode
 
-[Source line 12](../../../extended/ext/cli_bash.lani#L12)
+[Source line 13](../../../extended/ext/cli_bash.lani#L13)
 
 ```lanius
 pub enum Mode
@@ -42,7 +43,7 @@ pub enum Mode
 
 #### variant: Candidates
 
-[Source line 12](../../../extended/ext/cli_bash.lani#L12)
+[Source line 13](../../../extended/ext/cli_bash.lani#L13)
 
 ```lanius
 Candidates
@@ -50,7 +51,7 @@ Candidates
 
 #### variant: Files
 
-[Source line 12](../../../extended/ext/cli_bash.lani#L12)
+[Source line 13](../../../extended/ext/cli_bash.lani#L13)
 
 ```lanius
 Files
@@ -58,7 +59,7 @@ Files
 
 #### variant: None
 
-[Source line 12](../../../extended/ext/cli_bash.lani#L12)
+[Source line 13](../../../extended/ext/cli_bash.lani#L13)
 
 ```lanius
 None
@@ -66,7 +67,7 @@ None
 
 ### struct: Reply
 
-[Source line 13](../../../extended/ext/cli_bash.lani#L13)
+[Source line 14](../../../extended/ext/cli_bash.lani#L14)
 
 ```lanius
 pub struct Reply
@@ -74,7 +75,7 @@ pub struct Reply
 
 #### field: mode
 
-[Source line 14](../../../extended/ext/cli_bash.lani#L14)
+[Source line 15](../../../extended/ext/cli_bash.lani#L15)
 
 ```lanius
 mode:Mode
@@ -82,7 +83,7 @@ mode:Mode
 
 #### field: append_space
 
-[Source line 14](../../../extended/ext/cli_bash.lani#L14)
+[Source line 15](../../../extended/ext/cli_bash.lani#L15)
 
 ```lanius
 append_space:bool
@@ -90,7 +91,7 @@ append_space:bool
 
 #### field: quote
 
-[Source line 14](../../../extended/ext/cli_bash.lani#L14)
+[Source line 15](../../../extended/ext/cli_bash.lani#L15)
 
 ```lanius
 quote:ext::bash_words::Quote
@@ -98,7 +99,7 @@ quote:ext::bash_words::Quote
 
 #### field: continuation
 
-[Source line 15](../../../extended/ext/cli_bash.lani#L15)
+[Source line 16](../../../extended/ext/cli_bash.lani#L16)
 
 ```lanius
 continuation:ext::bash_words::Quote
@@ -106,7 +107,7 @@ continuation:ext::bash_words::Quote
 
 #### field: trim
 
-[Source line 15](../../../extended/ext/cli_bash.lani#L15)
+[Source line 16](../../../extended/ext/cli_bash.lani#L16)
 
 ```lanius
 trim:View<u8>
@@ -114,7 +115,7 @@ trim:View<u8>
 
 #### field: stem
 
-[Source line 15](../../../extended/ext/cli_bash.lani#L15)
+[Source line 16](../../../extended/ext/cli_bash.lani#L16)
 
 ```lanius
 stem:View<u8>
@@ -122,7 +123,7 @@ stem:View<u8>
 
 #### field: prefix
 
-[Source line 15](../../../extended/ext/cli_bash.lani#L15)
+[Source line 16](../../../extended/ext/cli_bash.lani#L16)
 
 ```lanius
 prefix:View<u8>
@@ -130,7 +131,7 @@ prefix:View<u8>
 
 #### field: candidates
 
-[Source line 16](../../../extended/ext/cli_bash.lani#L16)
+[Source line 17](../../../extended/ext/cli_bash.lani#L17)
 
 ```lanius
 candidates:View<View<u8>>
@@ -138,7 +139,7 @@ candidates:View<View<u8>>
 
 ### enum: Error
 
-[Source line 18](../../../extended/ext/cli_bash.lani#L18)
+[Source line 19](../../../extended/ext/cli_bash.lani#L19)
 
 ```lanius
 pub enum Error
@@ -146,7 +147,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 Bounds
@@ -154,7 +155,7 @@ Bounds
 
 #### variant: InvalidReply
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 InvalidReply
@@ -162,7 +163,7 @@ InvalidReply
 
 #### variant: NulTrim
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 NulTrim(i32)
@@ -170,7 +171,7 @@ NulTrim(i32)
 
 #### variant: NulStem
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 NulStem(i32)
@@ -178,7 +179,7 @@ NulStem(i32)
 
 #### variant: NulPrefix
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 NulPrefix(i32)
@@ -186,7 +187,7 @@ NulPrefix(i32)
 
 #### variant: NulCandidate
 
-[Source line 19](../../../extended/ext/cli_bash.lani#L19)
+[Source line 20](../../../extended/ext/cli_bash.lani#L20)
 
 ```lanius
 NulCandidate(i32,i32)
@@ -194,7 +195,7 @@ NulCandidate(i32,i32)
 
 #### variant: OutputTooSmall
 
-[Source line 20](../../../extended/ext/cli_bash.lani#L20)
+[Source line 21](../../../extended/ext/cli_bash.lani#L21)
 
 ```lanius
 OutputTooSmall(u64)
@@ -202,7 +203,7 @@ OutputTooSmall(u64)
 
 #### variant: SizeOverflow
 
-[Source line 20](../../../extended/ext/cli_bash.lani#L20)
+[Source line 21](../../../extended/ext/cli_bash.lani#L21)
 
 ```lanius
 SizeOverflow
@@ -212,7 +213,7 @@ SizeOverflow
 
 ### function: measure
 
-[Source line 121](../../../extended/ext/cli_bash.lani#L121)
+[Source line 122](../../../extended/ext/cli_bash.lani#L122)
 
 ```lanius
 pub fn measure(reply:Reply) -> Result<u64,Error>
@@ -220,7 +221,7 @@ pub fn measure(reply:Reply) -> Result<u64,Error>
 
 ### function: encode_into
 
-[Source line 130](../../../extended/ext/cli_bash.lani#L130)
+[Source line 131](../../../extended/ext/cli_bash.lani#L131)
 
 ```lanius
 pub fn encode_into(reply:Reply,output:View<u8>) -> Result<i32,Error>

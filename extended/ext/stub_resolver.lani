@@ -3,6 +3,7 @@
 // UDP with TCP fallback on truncation) across the search list and
 // nameservers. See docs/extended-stub-resolver.md.
 module ext::stub_resolver;
+import core::iter_state;
 import alloc::vec;
 import core::net;
 import core::option;
@@ -60,10 +61,10 @@ fn to_wire(text: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
     out.set(mark,(out.len()-mark-1) as u8); return out.try_push(0 as u8).is_ok();
 }
 fn name_text(name: ext::dns::Name, out: &alloc::vec::Vec<u8>) -> bool {
-    out.clear(); let cursor: ext::dns::Labels = name.labels(); let first: bool = true;
+    out.clear(); let cursor: ext::dns::Labels = name.labels(); let first_phase = core::iter_state::finished_completion();
     while (true) {
         let next = cursor.next(); if (next.is_none()) { break; }
-        if (!first && out.try_push(46 as u8).is_err()) { return false; } first = false;
+        if (!first_phase.is_done() && out.try_push(46 as u8).is_err()) { return false; } first_phase = core::iter_state::completion_start();
         if (out.try_extend(next.unwrap()).is_err()) { return false; }
     }
     return true;

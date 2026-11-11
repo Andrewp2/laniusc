@@ -1,0 +1,96 @@
+module app::main;
+import ext::gpu;
+import ext::window;
+import core::result;
+import core::mem;
+import core::slice;
+import core::text;
+import shaders::triangle_shaders;
+extern "C" fn probe_fault(id:i32);
+extern "C" fn probe_hits() -> i32;
+extern "C" fn probe_live() -> i32;
+extern "C" fn probe_empty();
+extern "C" fn probe_resize(width:i32,height:i32);
+extern "C" fn probe_pixels(bytes:ptr,width:i32,height:i32,bgra:i32);
+extern "C" fn probe_thread(entry:ptr,argument:ptr) -> i32;
+fn foreign(argument:ptr) -> ptr {
+    let device=ext::gpu::Device { storage:argument };
+    assert(match(device.create_buffer(4).unwrap_err().cause) { ext::gpu::Cause::WrongThread -> true, _ -> false });
+    assert(match(device.close().unwrap_err().cause) { ext::gpu::Cause::WrongThread -> true, _ -> false });
+    let empty:ptr=0; return empty;
+}
+fn readback(surface:&ext::gpu::Surface,pipeline:&ext::gpu::Pipeline,target:&ext::gpu::Buffer,width:i32,height:i32) {
+    let tries:i32=0; let done:bool=false;
+    while(tries<10 && !done) {
+        let frame=surface.render_readback(pipeline,3,target).unwrap();
+        done=match(frame) { ext::gpu::Frame::Presented(size) -> size.width==width && size.height==height, _ -> false }; tries+=1;
+    }
+    assert(done);
+    let packed:[i32;65536]=[0;65536]; let pointer=core::mem::i32_array_data_ptr(packed);
+    let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,width*height*4);
+    target.read(0,core::slice::whole(bytes)).unwrap();
+    let bgra=match(surface.format().unwrap()) { ext::gpu::Format::Bgra8 -> 1, _ -> 0 };
+    probe_pixels(pointer,width,height,bgra);
+}
+fn main() -> i32 {
+    assert(ext::gpu::open(-1).is_err()); probe_fault(14); assert(ext::gpu::open(0).is_err()); probe_empty();
+    probe_fault(12); assert(ext::gpu::open(0).is_err()); probe_empty();
+    let device=ext::gpu::open(0).unwrap(); assert(probe_thread(foreign,device.storage)==0);
+    let base=probe_live(); let id:i32=1;
+    while(id<=4) { probe_fault(id); assert(device.create_buffer(64).is_err()); assert(probe_live()==base); id+=1; }
+    assert(device.create_buffer(0).is_err() && device.create_buffer(67108865).is_err());
+    let source=device.create_buffer(1024).unwrap(); let target=device.create_buffer(1024).unwrap();
+    let bytes:[u8;1040]=[0;1040]; let output:[u8;1040]=[255;1040]; let i:i32=0;
+    while(i<1040) { bytes[i]=((i*17+9)%256) as u8; i+=1; }
+    let input=core::slice::View<u8> { values:bytes,start:8,length:1024 };
+    assert(source.write(0,input).unwrap()==1024);
+    assert(source.write(1,input).is_err()); assert(source.write(0,core::slice::View<u8> { values:bytes,start:20,length:1024 }).is_err());
+    target.read(0,core::slice::view(output,1024).unwrap()).unwrap(); i=0; while(i<1024) { assert(output[i]==0); i+=1; }
+    assert(device.copy_buffer(source.borrow(),1,target.borrow(),0,4).is_err());
+    assert(device.copy_buffer(source.borrow(),0,source.borrow(),4,4).is_err());
+    assert(device.copy_buffer(source.borrow(),0,target.borrow(),0,0).unwrap()==0);
+    assert(device.copy_buffer(source.borrow(),0,target.borrow(),0,1028).is_err());
+    let count:i32=4;
+    while(count<=1024) {
+        assert(device.copy_buffer(source.borrow(),1024-count,target.borrow(),0,count).unwrap()==count);
+        target.read(0,core::slice::View<u8> { values:output,start:8,length:1024 }).unwrap(); i=0;
+        while(i<count) { assert(output[8+i]==bytes[8+1024-count+i]); i+=1; } count*=2;
+    }
+    assert(source.close().unwrap() && !source.close().unwrap()); assert(source.write(0,input).is_err()); target.close().unwrap(); assert(probe_live()==base);
+    let context=ext::window::init().unwrap(); let window=context.create(core::text::from_str("GPU tests"),160,120,true).unwrap();
+    let failures:[i32;7]=[15,11,12,13,8,9,10]; i=0;
+    while(i<7) {
+        probe_fault(failures[i]); assert(device.create_surface(window.borrow()).is_err()); assert(probe_live()==base);
+        // Every failed constructor must release its window lease.
+        window.acquire_gpu().unwrap(); assert(window.release_gpu().unwrap()); i+=1;
+    }
+    let surface=device.create_surface(window.borrow()).unwrap(); let live=probe_live();
+    assert(window.close().is_err() && context.close().is_err() && window.acquire_gpu().is_err());
+    let one:[u32;1]=[0]; assert(match(window.present(core::slice::whole(one)).unwrap_err().cause) { ext::window::Cause::Busy -> true, _ -> false });
+    let vertex=shaders::triangle_shaders::vert(); let fragment=shaders::triangle_shaders::frag();
+    let invalid:[i32;5]=[0;5]; assert(device.create_pipeline(core::slice::whole(invalid),core::slice::whole(fragment),surface.format().unwrap()).is_err()); assert(probe_live()==live);
+    let stages:[i32;6]=[5,18,6,7,17,11]; i=0;
+    while(i<6) { probe_fault(stages[i]); assert(device.create_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format().unwrap()).is_err()); assert(probe_live()==live); i+=1; }
+    let pipeline=device.create_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format().unwrap()).unwrap();
+    let read=device.create_buffer(262144).unwrap();
+    assert(surface.render(pipeline.borrow(),0).is_err()); assert(device.close().is_err());
+    readback(surface.borrow(),pipeline.borrow(),read.borrow(),160,120);
+    probe_fault(16); assert(match(surface.render(pipeline.borrow(),3).unwrap()) { ext::gpu::Frame::Retry -> true, _ -> false });
+    readback(surface.borrow(),pipeline.borrow(),read.borrow(),160,120);
+    probe_fault(21); assert(match(surface.render(pipeline.borrow(),3).unwrap()) { ext::gpu::Frame::Retry -> true, _ -> false });
+    probe_resize(211,137); probe_fault(8); assert(surface.render(pipeline.borrow(),3).is_err());
+    readback(surface.borrow(),pipeline.borrow(),read.borrow(),211,137);
+    probe_resize(96,72); readback(surface.borrow(),pipeline.borrow(),read.borrow(),96,72);
+    probe_fault(20); assert(surface.render(pipeline.borrow(),3).is_err());
+    assert(match(surface.render(pipeline.borrow(),3).unwrap_err().cause) { ext::gpu::Cause::Poisoned -> true, _ -> false });
+    assert(surface.close().unwrap() && !surface.close().unwrap()); assert(surface.render(pipeline.borrow(),3).is_err());
+    pipeline.close().unwrap(); read.close().unwrap(); assert(probe_live()==base);
+    assert(window.close().unwrap()); assert(context.close().unwrap());
+    assert(device.close().unwrap() && !device.close().unwrap()); assert(device.create_buffer(4).is_err());
+    probe_empty();
+    let uncertain=ext::gpu::open(0).unwrap(); let first=uncertain.create_buffer(16).unwrap(); let second=uncertain.create_buffer(16).unwrap();
+    probe_fault(19); assert(uncertain.copy_buffer(first.borrow(),0,second.borrow(),0,16).is_err());
+    assert(match(second.read(0,core::slice::view(output,16).unwrap()).unwrap_err().cause) { ext::gpu::Cause::Poisoned -> true, _ -> false });
+    first.close().unwrap(); second.close().unwrap(); uncertain.close().unwrap();
+    assert(probe_hits()==24); probe_empty(); return 0;
+}

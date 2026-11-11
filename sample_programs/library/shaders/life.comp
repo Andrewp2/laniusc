@@ -1,0 +1,19 @@
+#version 450
+// Conway B3/S23 on a torus. Input and output MUST be distinct RGBA8 textures.
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0,rgba8) uniform readonly image2D previous_cells;
+layout(set=0,binding=1,rgba8) uniform writeonly image2D next_cells;
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size=imageSize(previous_cells);
+    if(any(greaterThanEqual(p,size))) return;
+    int neighbors=0;
+    for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
+        if(x==0 && y==0) continue;
+        ivec2 q=(p+ivec2(x,y)+size)%size;
+        neighbors+=imageLoad(previous_cells,q).r>0.5 ? 1 : 0;
+    }
+    bool alive=imageLoad(previous_cells,p).r>0.5;
+    bool born_or_survives=neighbors==3 || (alive && neighbors==2);
+    imageStore(next_cells,p,vec4(born_or_survives ? 1.0 : 0.0,0.0,0.0,1.0));
+}

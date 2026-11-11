@@ -20,16 +20,17 @@ Declaration counts: constant: 1; enum: 5; field: 21; function: 2; impl: 1; metho
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/stub_resolver.lani#L6)
-- [core::net](../core/net.md) · [source](../../../extended/ext/stub_resolver.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/stub_resolver.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/stub_resolver.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/stub_resolver.lani#L10)
-- [core::time](../core/time.md) · [source](../../../extended/ext/stub_resolver.lani#L11)
-- [ext::dns](dns.md) · [source](../../../extended/ext/stub_resolver.lani#L12)
-- [ext::dns_client](dns_client.md) · [source](../../../extended/ext/stub_resolver.lani#L13)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/stub_resolver.lani#L14)
-- [std::resolver_config](../std/resolver_config.md) · [source](../../../extended/ext/stub_resolver.lani#L15)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/stub_resolver.lani#L6)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/stub_resolver.lani#L7)
+- [core::net](../core/net.md) · [source](../../../extended/ext/stub_resolver.lani#L8)
+- [core::option](../core/option.md) · [source](../../../extended/ext/stub_resolver.lani#L9)
+- [core::result](../core/result.md) · [source](../../../extended/ext/stub_resolver.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/stub_resolver.lani#L11)
+- [core::time](../core/time.md) · [source](../../../extended/ext/stub_resolver.lani#L12)
+- [ext::dns](dns.md) · [source](../../../extended/ext/stub_resolver.lani#L13)
+- [ext::dns_client](dns_client.md) · [source](../../../extended/ext/stub_resolver.lani#L14)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/stub_resolver.lani#L15)
+- [std::resolver_config](../std/resolver_config.md) · [source](../../../extended/ext/stub_resolver.lani#L16)
 
 ## Types, fields and variants
 
@@ -37,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Family
 
-[Source line 17](../../../extended/ext/stub_resolver.lani#L17)
+[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
 
 ```lanius
 pub enum Family
@@ -45,7 +46,7 @@ pub enum Family
 
 #### variant: Any
 
-[Source line 17](../../../extended/ext/stub_resolver.lani#L17)
+[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
 
 ```lanius
 Any
@@ -53,7 +54,7 @@ Any
 
 #### variant: Ipv4
 
-[Source line 17](../../../extended/ext/stub_resolver.lani#L17)
+[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
 
 ```lanius
 Ipv4
@@ -61,7 +62,7 @@ Ipv4
 
 #### variant: Ipv6
 
-[Source line 17](../../../extended/ext/stub_resolver.lani#L17)
+[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
 
 ```lanius
 Ipv6
@@ -69,7 +70,7 @@ Ipv6
 
 ### enum: Source
 
-[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
+[Source line 19](../../../extended/ext/stub_resolver.lani#L19)
 
 ```lanius
 pub enum Source
@@ -77,7 +78,7 @@ pub enum Source
 
 #### variant: None
 
-[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
+[Source line 19](../../../extended/ext/stub_resolver.lani#L19)
 
 ```lanius
 None
@@ -85,7 +86,7 @@ None
 
 #### variant: Numeric
 
-[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
+[Source line 19](../../../extended/ext/stub_resolver.lani#L19)
 
 ```lanius
 Numeric
@@ -93,7 +94,7 @@ Numeric
 
 #### variant: Hosts
 
-[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
+[Source line 19](../../../extended/ext/stub_resolver.lani#L19)
 
 ```lanius
 Hosts
@@ -101,7 +102,7 @@ Hosts
 
 #### variant: Dns
 
-[Source line 18](../../../extended/ext/stub_resolver.lani#L18)
+[Source line 19](../../../extended/ext/stub_resolver.lani#L19)
 
 ```lanius
 Dns
@@ -109,7 +110,7 @@ Dns
 
 ### enum: Status
 
-[Source line 22](../../../extended/ext/stub_resolver.lani#L22)
+[Source line 23](../../../extended/ext/stub_resolver.lani#L23)
 
 ```lanius
 pub enum Status
@@ -117,7 +118,7 @@ pub enum Status
 
 #### variant: Found
 
-[Source line 22](../../../extended/ext/stub_resolver.lani#L22)
+[Source line 23](../../../extended/ext/stub_resolver.lani#L23)
 
 ```lanius
 Found
@@ -125,7 +126,7 @@ Found
 
 #### variant: NoSuchName
 
-[Source line 22](../../../extended/ext/stub_resolver.lani#L22)
+[Source line 23](../../../extended/ext/stub_resolver.lani#L23)
 
 ```lanius
 NoSuchName
@@ -133,7 +134,7 @@ NoSuchName
 
 #### variant: NoData
 
-[Source line 22](../../../extended/ext/stub_resolver.lani#L22)
+[Source line 23](../../../extended/ext/stub_resolver.lani#L23)
 
 ```lanius
 NoData
@@ -141,7 +142,7 @@ NoData
 
 #### variant: Failed
 
-[Source line 22](../../../extended/ext/stub_resolver.lani#L22)
+[Source line 23](../../../extended/ext/stub_resolver.lani#L23)
 
 ```lanius
 Failed
@@ -149,7 +150,7 @@ Failed
 
 ### enum: Outcome
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 pub enum Outcome
@@ -157,7 +158,7 @@ pub enum Outcome
 
 #### variant: Records
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 Records(i32)
@@ -165,7 +166,7 @@ Records(i32)
 
 #### variant: NoData
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 NoData
@@ -173,7 +174,7 @@ NoData
 
 #### variant: NoSuchName
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 NoSuchName
@@ -181,7 +182,7 @@ NoSuchName
 
 #### variant: Rcode
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 Rcode(i32)
@@ -189,7 +190,7 @@ Rcode(i32)
 
 #### variant: Transport
 
-[Source line 24](../../../extended/ext/stub_resolver.lani#L24)
+[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
 
 ```lanius
 Transport(ext::dns_client::Cause)
@@ -197,7 +198,7 @@ Transport(ext::dns_client::Cause)
 
 ### struct: Exchange
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 pub struct Exchange
@@ -205,7 +206,7 @@ pub struct Exchange
 
 #### field: candidate
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 candidate: i32
@@ -213,7 +214,7 @@ candidate: i32
 
 #### field: server
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 server: core::net::SocketAddr
@@ -221,7 +222,7 @@ server: core::net::SocketAddr
 
 #### field: qtype
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 qtype: i32
@@ -229,7 +230,7 @@ qtype: i32
 
 #### field: tcp
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 tcp: bool
@@ -237,7 +238,7 @@ tcp: bool
 
 #### field: outcome
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 outcome: Outcome
@@ -245,7 +246,7 @@ outcome: Outcome
 
 #### field: discarded
 
-[Source line 25](../../../extended/ext/stub_resolver.lani#L25)
+[Source line 26](../../../extended/ext/stub_resolver.lani#L26)
 
 ```lanius
 discarded: i32
@@ -253,7 +254,7 @@ discarded: i32
 
 ### struct: Options
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 pub struct Options
@@ -261,7 +262,7 @@ pub struct Options
 
 #### field: family
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 family: Family
@@ -269,7 +270,7 @@ family: Family
 
 #### field: port
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 port: u16
@@ -277,7 +278,7 @@ port: u16
 
 #### field: hosts
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 hosts: bool
@@ -285,7 +286,7 @@ hosts: bool
 
 #### field: timeout_ms
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 timeout_ms: i32
@@ -293,7 +294,7 @@ timeout_ms: i32
 
 #### field: attempts
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 attempts: i32
@@ -301,7 +302,7 @@ attempts: i32
 
 #### field: max_exchanges
 
-[Source line 28](../../../extended/ext/stub_resolver.lani#L28)
+[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
 
 ```lanius
 max_exchanges: i32
@@ -309,7 +310,7 @@ max_exchanges: i32
 
 ### enum: Error
 
-[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
+[Source line 30](../../../extended/ext/stub_resolver.lani#L30)
 
 ```lanius
 pub enum Error
@@ -317,7 +318,7 @@ pub enum Error
 
 #### variant: InvalidName
 
-[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
+[Source line 30](../../../extended/ext/stub_resolver.lani#L30)
 
 ```lanius
 InvalidName
@@ -325,7 +326,7 @@ InvalidName
 
 #### variant: InvalidOptions
 
-[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
+[Source line 30](../../../extended/ext/stub_resolver.lani#L30)
 
 ```lanius
 InvalidOptions
@@ -333,7 +334,7 @@ InvalidOptions
 
 #### variant: AllocationFailed
 
-[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
+[Source line 30](../../../extended/ext/stub_resolver.lani#L30)
 
 ```lanius
 AllocationFailed
@@ -341,7 +342,7 @@ AllocationFailed
 
 #### variant: Clock
 
-[Source line 29](../../../extended/ext/stub_resolver.lani#L29)
+[Source line 30](../../../extended/ext/stub_resolver.lani#L30)
 
 ```lanius
 Clock(std::clock::Error)
@@ -349,7 +350,7 @@ Clock(std::clock::Error)
 
 ### struct: Answer
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 pub struct Answer
@@ -357,7 +358,7 @@ pub struct Answer
 
 #### field: status
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 status: Status
@@ -365,7 +366,7 @@ status: Status
 
 #### field: source
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 source: Source
@@ -373,7 +374,7 @@ source: Source
 
 #### field: addresses
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 addresses: alloc::vec::Vec<core::net::IpAddr>
@@ -381,7 +382,7 @@ addresses: alloc::vec::Vec<core::net::IpAddr>
 
 #### field: ttl
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 ttl: u32
@@ -389,7 +390,7 @@ ttl: u32
 
 #### field: name
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 name: alloc::vec::Vec<u8>
@@ -397,7 +398,7 @@ name: alloc::vec::Vec<u8>
 
 #### field: canonical
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 canonical: alloc::vec::Vec<u8>
@@ -405,7 +406,7 @@ canonical: alloc::vec::Vec<u8>
 
 #### field: candidates
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 candidates: alloc::vec::Vec<u8>
@@ -413,7 +414,7 @@ candidates: alloc::vec::Vec<u8>
 
 #### field: spans
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 spans: alloc::vec::Vec<i32>
@@ -421,7 +422,7 @@ spans: alloc::vec::Vec<i32>
 
 #### field: exchanges
 
-[Source line 32](../../../extended/ext/stub_resolver.lani#L32)
+[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
 
 ```lanius
 exchanges: alloc::vec::Vec<Exchange>
@@ -431,7 +432,7 @@ exchanges: alloc::vec::Vec<Exchange>
 
 ### constant: MAX_CNAME
 
-[Source line 33](../../../extended/ext/stub_resolver.lani#L33)
+[Source line 34](../../../extended/ext/stub_resolver.lani#L34)
 
 ```lanius
 pub const MAX_CNAME: i32 = 16;
@@ -441,7 +442,7 @@ pub const MAX_CNAME: i32 = 16;
 
 ### function: default_options
 
-[Source line 35](../../../extended/ext/stub_resolver.lani#L35)
+[Source line 36](../../../extended/ext/stub_resolver.lani#L36)
 
 ```lanius
 pub fn default_options() -> Options
@@ -449,7 +450,7 @@ pub fn default_options() -> Options
 
 ### function: lookup
 
-[Source line 196](../../../extended/ext/stub_resolver.lani#L196)
+[Source line 197](../../../extended/ext/stub_resolver.lani#L197)
 
 ```lanius
 pub fn lookup(name: core::slice::View<u8>, config: &std::resolver_config::Config, hosts: core::slice::View<u8>, options: Options, deadline: core::time::Deadline) -> core::result::Result<Answer, Error>
@@ -457,9 +458,9 @@ pub fn lookup(name: core::slice::View<u8>, config: &std::resolver_config::Config
 
 ## Implementation blocks and public methods
 
-### impl at line 80
+### impl at line 81
 
-[Source line 80](../../../extended/ext/stub_resolver.lani#L80)
+[Source line 81](../../../extended/ext/stub_resolver.lani#L81)
 
 ```lanius
 pub impl Answer
@@ -467,7 +468,7 @@ pub impl Answer
 
 #### method: borrow
 
-[Source line 81](../../../extended/ext/stub_resolver.lani#L81)
+[Source line 82](../../../extended/ext/stub_resolver.lani#L82)
 
 ```lanius
 pub fn borrow(&self) -> &Answer
@@ -475,7 +476,7 @@ pub fn borrow(&self) -> &Answer
 
 #### method: candidate_count
 
-[Source line 82](../../../extended/ext/stub_resolver.lani#L82)
+[Source line 83](../../../extended/ext/stub_resolver.lani#L83)
 
 ```lanius
 pub fn candidate_count(&self) -> i32
@@ -483,7 +484,7 @@ pub fn candidate_count(&self) -> i32
 
 #### method: candidate
 
-[Source line 84](../../../extended/ext/stub_resolver.lani#L84)
+[Source line 85](../../../extended/ext/stub_resolver.lani#L85)
 
 ```lanius
 pub fn candidate(&self, index: i32) -> core::slice::View<u8>
@@ -491,7 +492,7 @@ pub fn candidate(&self, index: i32) -> core::slice::View<u8>
 
 #### method: destroy
 
-[Source line 88](../../../extended/ext/stub_resolver.lani#L88)
+[Source line 89](../../../extended/ext/stub_resolver.lani#L89)
 
 ```lanius
 pub fn destroy(&self)

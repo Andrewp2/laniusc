@@ -6,6 +6,8 @@
 // no allocation and no host services. Dictionaries are not supported.
 // See docs/extended-zstd.md.
 module ext::zstd;
+import core::iter_state;
+import core::lifecycle;
 import core::mem;
 import core::result;
 import core::slice;
@@ -53,32 +55,231 @@ const E_CHECK: i32 = -11;
 const E_DICT: i32 = -12;
 const E_WINDOW: i32 = -13;
 const E_MAGIC: i32 = -14;
-// Phases.
-const P_MAGIC: i32 = 0;
-const P_SKIP_SIZE: i32 = 1;
-const P_SKIP: i32 = 2;
-const P_FHD: i32 = 3;
-const P_HEADER: i32 = 4;
-const P_WINDOW: i32 = 5;
-const P_BLOCK_HEADER: i32 = 6;
-const P_BLOCK: i32 = 7;
-const P_DRAIN: i32 = 8;
-const P_CHECKSUM: i32 = 9;
-const P_FRAME_END: i32 = 10;
-const P_DONE: i32 = 11;
-const P_FAILED: i32 = 12;
+pub enum DecodeEvent { NextFrame, SkippableFound, SkipSized, MagicRead, HeaderSized, HeaderRead, NextBlock, BlockSized, BlockDecoded, LastBlockDecoded, FrameRead, Finished, Failed }
+
+pub machine Decoding on DecodeEvent {
+    start Magic;
+
+    state Magic {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> goto SkipSize,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> goto Fhd,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> goto Done,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state SkipSize {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> goto Skip,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Skip {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> goto FrameEnd,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Fhd {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> goto Header,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Header {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> goto Window,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Window {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> goto BlockHeader,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state BlockHeader {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> goto Block,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Block {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> goto Drain,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Drain {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> goto BlockHeader,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> goto Checksum,
+        DecodeEvent::FrameRead -> goto FrameEnd,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Checksum {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> goto FrameEnd,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state FrameEnd {
+        DecodeEvent::NextFrame -> goto Magic,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> goto Done,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    state Done {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+
+    final state Failed {
+        DecodeEvent::NextFrame -> stay,
+        DecodeEvent::SkippableFound -> stay,
+        DecodeEvent::SkipSized -> stay,
+        DecodeEvent::MagicRead -> stay,
+        DecodeEvent::HeaderSized -> stay,
+        DecodeEvent::HeaderRead -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockSized -> stay,
+        DecodeEvent::BlockDecoded -> stay,
+        DecodeEvent::LastBlockDecoded -> stay,
+        DecodeEvent::FrameRead -> stay,
+        DecodeEvent::Finished -> stay,
+        DecodeEvent::Failed -> goto Failed,
+    }
+}
 
 pub struct Decoder {
     ws: core::slice::View<i32>, stage: [u8], stage_ptr: ptr, lit: [u8], lit_ptr: ptr, win: [u8], win_ptr: ptr, win_len: i32, limits: Limits,
-    phase: i32, need: i32, have: i32, failure: i32, frames: u64,
+    phase: Decoding, need: i32, have: i32, failure: i32, frames: u64,
     // Frame.
     fhd: i32, window_size: u64, want_window: i32, has_size: bool, content_size: u64, checksum: bool, produced: u64, block_max: i32,
     last_block: bool, block_type: i32, block_size: i32, skip_left: u64, hash: ext::xxhash::State,
     // Window: head is the next write position, out the next byte to deliver.
     head: i32, out: i32, pending: i32,
-    rep0: u64, rep1: u64, rep2: u64, ll_al: i32, of_al: i32, ml_al: i32, ll_ok: bool, of_ok: bool, ml_ok: bool, huf_bits: i32, huf_ok: bool,
+    rep0: u64, rep1: u64, rep2: u64, ll_al: i32, of_al: i32, ml_al: i32, ll_ok_completion: core::iter_state::Completion, of_ok_completion: core::iter_state::Completion, ml_ok_completion: core::iter_state::Completion, huf_bits: i32, huf_ok_completion: core::iter_state::Completion,
     // Backward bit reader over stage bytes [br_start, br_pos).
-    br_acc: u64, br_bits: i32, br_pos: i32, br_start: i32, br_over: bool,
+    br_acc: u64, br_bits: i32, br_pos: i32, br_start: i32, bit_health: core::lifecycle::Health,
     // Forward bit position for table descriptions; scratch results.
     fw: i32, n_al: i32, n_sym: i32, lit_size: i32 }
 
@@ -129,11 +330,11 @@ pub fn decoder(workspace: core::slice::View<i32>, stage: core::slice::View<u8>, 
     let sp: ptr = data_ptr(stage); let lp: ptr = data_ptr(literals);
     let d: Decoder = Decoder { ws: workspace, stage: core::mem::typed_slice_from_raw_parts<u8>(sp,stage_len()), stage_ptr: sp, lit: core::mem::typed_slice_from_raw_parts<u8>(lp,literals_len()), lit_ptr: lp,
         win: core::mem::typed_slice_from_raw_parts<u8>(lp,0), win_ptr: lp, win_len: 0, limits: limits,
-        phase: P_MAGIC, need: 4, have: 0, failure: 0, frames: 0,
+        phase: decoding_start(), need: 4, have: 0, failure: 0, frames: 0,
         fhd: 0, window_size: 0, want_window: 0, has_size: false, content_size: 0, checksum: false, produced: 0, block_max: BLOCK_MAX,
         last_block: false, block_type: 0, block_size: 0, skip_left: 0, hash: ext::xxhash::state(0),
-        head: 0, out: 0, pending: 0, rep0: 1, rep1: 4, rep2: 8, ll_al: 0, of_al: 0, ml_al: 0, ll_ok: false, of_ok: false, ml_ok: false, huf_bits: 0, huf_ok: false,
-        br_acc: 0, br_bits: 0, br_pos: 0, br_start: 0, br_over: false, fw: 0, n_al: 0, n_sym: 0, lit_size: 0 };
+        head: 0, out: 0, pending: 0, rep0: 1, rep1: 4, rep2: 8, ll_al: 0, of_al: 0, ml_al: 0, ll_ok_completion: core::iter_state::completion_start(), of_ok_completion: core::iter_state::completion_start(), ml_ok_completion: core::iter_state::completion_start(), huf_bits: 0, huf_ok_completion: core::iter_state::completion_start(),
+        br_acc: 0, br_bits: 0, br_pos: 0, br_start: 0, bit_health: core::lifecycle::health_start(), fw: 0, n_al: 0, n_sym: 0, lit_size: 0 };
     d.borrow().init_tables();
     return core::result::Ok(d);
 }
@@ -147,7 +348,7 @@ fn failure(code: i32) -> Error {
 
 pub impl Decoder {
     pub fn borrow(&self) -> &Decoder { return self; }
-    pub fn is_done(&self) -> bool { return self.phase == P_DONE; }
+    pub fn is_done(&self) -> bool { return ((match (self.phase.state()) { DecodingState::Done -> true, _ -> false })); }
     // Frames finished so far, skippable frames included.
     pub fn frames(&self) -> u64 { return self.frames; }
     // After Status::NeedWindow: the window bytes the current frame needs.
@@ -191,7 +392,7 @@ pub impl Decoder {
     fn begin(&self, start: i32, end: i32) -> i32 {
         if (end <= start) { return E_SEQ; }
         let last: i32 = self.stage[8+end-1] as i32; if (last == 0) { return E_SEQ; }
-        self.br_start = 8+start; self.br_over = false;
+        self.br_start = 8+start; self.bit_health.reset();
         if (end-start >= 8) { self.br_pos = 8+end-8; self.br_bits = 8-highbit(last); }
         else { self.br_pos = 8+start; self.br_bits = 8*(8-(end-start))+8-highbit(last); }
         self.br_acc = self.load64(self.br_pos); return 0;
@@ -199,10 +400,10 @@ pub impl Decoder {
     // The next n (0-56) bits; reading past the start gives zeros and sets br_over.
     fn read(&self, n: i32) -> i32 {
         if (n == 0) { return 0; }
-        if (self.br_bits+n > 64) { self.reload(); if (self.br_bits+n > 64) { self.br_over = true; self.br_bits = 64; return 0; } }
+        if (self.br_bits+n > 64) { self.reload(); if (self.br_bits+n > 64) { self.bit_health.fail(); self.br_bits = 64; return 0; } }
         let value: u64 = (self.br_acc >> ((64-self.br_bits-n) as u64)) & ((1 << (n as u64))-1); self.br_bits += n; return value as i32;
     }
-    fn finished(&self) -> bool { return !self.br_over && self.br_bits == 64 && self.br_pos == self.br_start; }
+    fn finished(&self) -> bool { return !self.bit_health.is_failed() && self.br_bits == 64 && self.br_pos == self.br_start; }
     // Forward bits (LSB first) at bit position self.fw within the stage.
     fn forward(&self, n: i32) -> i32 { let word: u64 = self.load64(8+(self.fw >> 3)); return ((word >> ((self.fw & 7) as u64)) & ((1 << (n as u64))-1)) as i32; }
 
@@ -284,10 +485,10 @@ pub impl Decoder {
             log = self.n_al; let built: i32 = self.build(base,self.n_sym,log); if (built < 0) { return built; }
         }
         if (mode == 3) {
-            let ready: bool = self.ll_ok; if (kind == 1) { ready = self.of_ok; } if (kind == 2) { ready = self.ml_ok; }
+            let ready: bool = self.ll_ok_completion.is_done(); if (kind == 1) { ready = self.of_ok_completion.is_done(); } if (kind == 2) { ready = self.ml_ok_completion.is_done(); }
             if (!ready) { return E_SEQ; } return 0;
         }
-        if (kind == 0) { self.ll_al = log; self.ll_ok = true; } if (kind == 1) { self.of_al = log; self.of_ok = true; } if (kind == 2) { self.ml_al = log; self.ml_ok = true; }
+        if (kind == 0) { self.ll_al = log; self.ll_ok_completion.finish(); } if (kind == 1) { self.of_al = log; self.of_ok_completion.finish(); } if (kind == 2) { self.ml_al = log; self.ml_ok_completion.finish(); }
         return used;
     }
 
@@ -307,16 +508,16 @@ pub impl Decoder {
             let log: i32 = self.n_al; let built: i32 = self.build(WT_T,self.n_sym,log); if (built < 0) { return E_HUF; }
             if (self.begin(at+1+counts,at+used) < 0) { return E_HUF; }
             let s1: i32 = self.read(log); let s2: i32 = self.read(log);
-            if (self.br_over) { return E_HUF; }
+            if (self.bit_health.is_failed()) { return E_HUF; }
             while (true) {
                 if (count >= 255) { return E_HUF; }
                 let e1: i32 = self.w(WT_T+s1); self.set(WEIGHT+count,e1 & 255); count += 1;
                 let low: i32 = self.read((e1 >> 8) & 255); s1 = (e1 >> 16)+low;
-                if (self.br_over) { let f2: i32 = self.w(WT_T+s2); self.set(WEIGHT+count,f2 & 255); count += 1; break; }
+                if (self.bit_health.is_failed()) { let f2: i32 = self.w(WT_T+s2); self.set(WEIGHT+count,f2 & 255); count += 1; break; }
                 if (count >= 255) { return E_HUF; }
                 let e2: i32 = self.w(WT_T+s2); self.set(WEIGHT+count,e2 & 255); count += 1;
                 let low2: i32 = self.read((e2 >> 8) & 255); s2 = (e2 >> 16)+low2;
-                if (self.br_over) { let f1: i32 = self.w(WT_T+s1); self.set(WEIGHT+count,f1 & 255); count += 1; break; }
+                if (self.bit_health.is_failed()) { let f1: i32 = self.w(WT_T+s1); self.set(WEIGHT+count,f1 & 255); count += 1; break; }
             }
         }
         // The last weight completes a power of two.
@@ -344,7 +545,7 @@ pub impl Decoder {
             }
             i += 1;
         }
-        self.huf_bits = bits; self.huf_ok = true; return used;
+        self.huf_bits = bits; self.huf_ok_completion.finish(); return used;
     }
     // Decode `count` literals from the stream stage[start, end) into lit[at..].
     fn huffman_stream(&self, start: i32, end: i32, at: i32, count: i32) -> i32 {
@@ -399,7 +600,7 @@ pub impl Decoder {
         if (regen > self.block_max || header+compressed > size) { return E_LIT; }
         let at: i32 = header; let end: i32 = header+compressed;
         if (kind == 2) { let tree: i32 = self.huffman_tree(at,end); if (tree < 0) { return tree; } at += tree; }
-        if (kind == 3 && !self.huf_ok) { return E_HUF; }
+        if (kind == 3 && !self.huf_ok_completion.is_done()) { return E_HUF; }
         if (streams == 1) {
             let done: i32 = self.huffman_stream(at,end,0,regen); if (done < 0) { return done; }
         } else {
@@ -459,7 +660,7 @@ pub impl Decoder {
             // with 16 extra bits each would exceed a block), so running out
             // of container bits always means corrupt input.
             let c: u64 = self.br_acc; let used: i32 = self.br_bits; let pos: i32 = self.br_pos; let first: i32 = self.br_start;
-            if (self.br_over) { return E_SEQ; }
+            if (self.bit_health.is_failed()) { return E_SEQ; }
             while (index < count) {
                 if (pos >= first+8) { pos -= used >> 3; used = used & 7; c = self.load64(pos); }
                 else { if (pos > first) { let back: i32 = used >> 3; if (back > pos-first) { back = pos-first; } pos -= back; used -= back << 3; c = self.load64(pos); } }
@@ -557,19 +758,19 @@ pub impl Decoder {
     }
     fn start_frame(&self) {
         self.produced = 0; self.head = 0; self.out = 0; self.pending = 0; self.rep0 = 1; self.rep1 = 4; self.rep2 = 8;
-        self.ll_ok = false; self.of_ok = false; self.ml_ok = false; self.huf_ok = false; self.hash = ext::xxhash::state(0);
+        self.ll_ok_completion = core::iter_state::completion_start(); self.of_ok_completion = core::iter_state::completion_start(); self.ml_ok_completion = core::iter_state::completion_start(); self.huf_ok_completion = core::iter_state::completion_start(); self.hash = ext::xxhash::state(0);
     }
-    fn fail(&self, code: i32) -> i32 { self.phase = P_FAILED; self.failure = code; return code; }
+    fn fail(&self, code: i32) -> i32 { self.phase.step(DecodeEvent::Failed); self.failure = code; return code; }
     fn le32_stage(&self) -> u64 { return (self.stage[8] as u64) | ((self.stage[9] as u64) << 8) | ((self.stage[10] as u64) << 16) | ((self.stage[11] as u64) << 24); }
 
     // Decode from input into output. final_input says no input follows.
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
         if (input.start < 0 || input.length < 0 || output.start < 0 || output.length < 0) { return core::result::Err(Error::Bounds); }
-        if (self.phase == P_FAILED) { return core::result::Err(failure(self.failure)); }
+        if (((match (self.phase.state()) { DecodingState::Failed -> true, _ -> false }))) { return core::result::Err(failure(self.failure)); }
         let read: i32 = 0; let written: i32 = 0;
         while (true) {
-            if (self.phase == P_DONE) { return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
-            if (self.phase == P_DRAIN) {
+            if (((match (self.phase.state()) { DecodingState::Done -> true, _ -> false }))) { return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+            if (((match (self.phase.state()) { DecodingState::Drain -> true, _ -> false }))) {
                 while (self.pending > 0 && written < output.length) {
                     let chunk: i32 = self.pending; if (chunk > output.length-written) { chunk = output.length-written; }
                     if (chunk > self.win_len-self.out) { chunk = self.win_len-self.out; }
@@ -582,28 +783,28 @@ pub impl Decoder {
                 if (self.pending > 0) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
                 if (self.last_block) {
                     if (self.has_size && self.produced != self.content_size) { self.fail(E_CONTENT); return core::result::Err(Error::ContentSize); }
-                    if (self.checksum) { self.phase = P_CHECKSUM; self.need = 4; self.have = 0; } else { self.phase = P_FRAME_END; }
-                } else { self.phase = P_BLOCK_HEADER; self.need = 3; self.have = 0; }
+                    if (self.checksum) { self.phase.step(DecodeEvent::LastBlockDecoded); self.need = 4; self.have = 0; } else { self.phase.step(DecodeEvent::FrameRead); }
+                } else { self.phase.step(DecodeEvent::NextBlock); self.need = 3; self.have = 0; }
                 continue;
             }
-            if (self.phase == P_FRAME_END) {
+            if (((match (self.phase.state()) { DecodingState::FrameEnd -> true, _ -> false }))) {
                 self.frames += 1;
-                if (read == input.length && final_input) { self.phase = P_DONE; continue; }
-                self.phase = P_MAGIC; self.need = 4; self.have = 0; continue;
+                if (read == input.length && final_input) { self.phase.step(DecodeEvent::Finished); continue; }
+                self.phase.step(DecodeEvent::NextFrame); self.need = 4; self.have = 0; continue;
             }
-            if (self.phase == P_WINDOW) {
+            if (((match (self.phase.state()) { DecodingState::Window -> true, _ -> false }))) {
                 if (self.win_len < self.want_window) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedWindow }); }
-                self.start_frame(); self.phase = P_BLOCK_HEADER; self.need = 3; self.have = 0; continue;
+                self.start_frame(); self.phase.step(DecodeEvent::NextBlock); self.need = 3; self.have = 0; continue;
             }
             // Collect `need` bytes into the stage (skipping discards them).
-            if (self.phase == P_SKIP) {
+            if (((match (self.phase.state()) { DecodingState::Skip -> true, _ -> false }))) {
                 let left: u64 = (input.length-read) as u64; if (left > self.skip_left) { left = self.skip_left; }
                 read += left as i32; self.skip_left -= left;
                 if (self.skip_left > 0) {
                     if (final_input) { self.fail(E_TRUNC); return core::result::Err(Error::Truncated); }
                     return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
                 }
-                self.phase = P_FRAME_END; continue;
+                self.phase.step(DecodeEvent::FrameRead); continue;
             }
             let take: i32 = self.need-self.have; if (take > input.length-read) { take = input.length-read; }
             if (packed(input)) { copy_disjoint(self.stage_ptr,8+self.have,data_ptr(input),read,take); }
@@ -612,54 +813,54 @@ pub impl Decoder {
             if (self.have < self.need) {
                 if (final_input) {
                     // No frame at all, or input ending inside one.
-                    if (self.phase == P_MAGIC && self.have == 0 && self.frames > 0) { self.phase = P_DONE; continue; }
+                    if (((match (self.phase.state()) { DecodingState::Magic -> true, _ -> false })) && self.have == 0 && self.frames > 0) { self.phase.step(DecodeEvent::Finished); continue; }
                     self.fail(E_TRUNC); return core::result::Err(Error::Truncated);
                 }
-               
+
                 return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
             }
-            if (self.phase == P_MAGIC) {
+            if (((match (self.phase.state()) { DecodingState::Magic -> true, _ -> false }))) {
                 let magic: u64 = self.le32_stage();
-                if (magic == 4247762216) { self.phase = P_FHD; self.need = 1; self.have = 0; continue; }
-                if ((magic >> 4) == 25481893) { self.phase = P_SKIP_SIZE; self.need = 4; self.have = 0; continue; }
+                if (magic == 4247762216) { self.phase.step(DecodeEvent::MagicRead); self.need = 1; self.have = 0; continue; }
+                if ((magic >> 4) == 25481893) { self.phase.step(DecodeEvent::SkippableFound); self.need = 4; self.have = 0; continue; }
                 self.fail(E_MAGIC); return core::result::Err(Error::Magic);
             }
-            if (self.phase == P_SKIP_SIZE) { self.skip_left = self.le32_stage(); self.phase = P_SKIP; continue; }
-            if (self.phase == P_FHD) {
+            if (((match (self.phase.state()) { DecodingState::SkipSize -> true, _ -> false }))) { self.skip_left = self.le32_stage(); self.phase.step(DecodeEvent::SkipSized); continue; }
+            if (((match (self.phase.state()) { DecodingState::Fhd -> true, _ -> false }))) {
                 let fhd: i32 = self.stage[8] as i32; self.fhd = fhd;
                 if (((fhd >> 3) & 1) == 1) { self.fail(E_HEADER); return core::result::Err(Error::FrameHeader); }
                 let length: i32 = 1; let single: bool = ((fhd >> 5) & 1) == 1; if (!single) { length += 1; }
                 let did: i32 = fhd & 3; if (did == 1) { length += 1; } if (did == 2) { length += 2; } if (did == 3) { length += 4; }
                 let fcs: i32 = fhd >> 6; if (fcs == 0 && single) { length += 1; } if (fcs == 1) { length += 2; } if (fcs == 2) { length += 4; } if (fcs == 3) { length += 8; }
-                self.phase = P_HEADER; self.need = length; self.have = 1; continue;
+                self.phase.step(DecodeEvent::HeaderSized); self.need = length; self.have = 1; continue;
             }
-            if (self.phase == P_HEADER) {
+            if (((match (self.phase.state()) { DecodingState::Header -> true, _ -> false }))) {
                 let parsed: i32 = self.frame_header(); if (parsed < 0) { self.fail(parsed); return core::result::Err(failure(parsed)); }
-                self.phase = P_WINDOW; continue;
+                self.phase.step(DecodeEvent::HeaderRead); continue;
             }
-            if (self.phase == P_BLOCK_HEADER) {
+            if (((match (self.phase.state()) { DecodingState::BlockHeader -> true, _ -> false }))) {
                 let header: i32 = (self.stage[8] as i32) | ((self.stage[9] as i32) << 8) | ((self.stage[10] as i32) << 16);
                 self.last_block = (header & 1) == 1; self.block_type = (header >> 1) & 3; self.block_size = header >> 3;
                 if (self.block_type == 3) { self.fail(E_BLOCK); return core::result::Err(Error::BlockType); }
                 if (self.block_size > self.block_max) { self.fail(E_SIZE); return core::result::Err(Error::BlockSize); }
                 self.need = self.block_size; if (self.block_type == 1) { self.need = 1; }
-                self.have = 0; self.phase = P_BLOCK;
+                self.have = 0; self.phase.step(DecodeEvent::BlockSized);
                 // Zero bytes to stage zero padding after the block for 8-byte loads.
                 continue;
             }
-            if (self.phase == P_BLOCK) {
+            if (((match (self.phase.state()) { DecodingState::Block -> true, _ -> false }))) {
                 let k: i32 = 0; while (k < 16) { self.stage[8+self.need+k] = 0; k += 1; }
                 let start: i32 = self.head; let made: i32 = self.block();
                 if (made < 0) { self.fail(made); return core::result::Err(failure(made)); }
                 if (made > self.block_max) { self.fail(E_SIZE); return core::result::Err(Error::BlockSize); }
                 self.produced += made as u64;
                 if (self.has_size && self.produced > self.content_size) { self.fail(E_CONTENT); return core::result::Err(Error::ContentSize); }
-                self.out = start; self.pending = made; self.phase = P_DRAIN; continue;
+                self.out = start; self.pending = made; self.phase.step(DecodeEvent::BlockDecoded); continue;
             }
-            if (self.phase == P_CHECKSUM) {
+            if (((match (self.phase.state()) { DecodingState::Checksum -> true, _ -> false }))) {
                 let expected: u64 = self.le32_stage(); let actual: u64 = self.hash.borrow().digest() & 4294967295;
                 if (expected != actual) { self.fail(E_CHECK); return core::result::Err(Error::Checksum); }
-                self.phase = P_FRAME_END; continue;
+                self.phase.step(DecodeEvent::FrameRead); continue;
             }
             self.fail(-99); return core::result::Err(Error::Failed);
         }

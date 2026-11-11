@@ -1,0 +1,41 @@
+// Orthogonal scheduling state for resumable duplex I/O.
+module core::io_state;
+pub enum TransferEvent { Read, Written }
+pub machine DuplexTurn on TransferEvent {
+    start Receive;
+    state Receive { TransferEvent::Read -> goto Send, TransferEvent::Written -> stay, }
+    state Send { TransferEvent::Read -> stay, TransferEvent::Written -> goto Receive, }
+}
+pub impl DuplexTurn {
+    pub fn send(&self) -> bool { return match (self.state()) { DuplexTurnState::Send -> true, _ -> false }; }
+    pub fn receive(&self) -> bool { return !self.send(); }
+}
+pub fn sending_turn() -> DuplexTurn { let turn = duplex_turn_start(); turn.step(TransferEvent::Read); return turn; }
+pub enum ReadinessEvent { Ready, WouldBlock }
+pub machine Readiness on ReadinessEvent {
+    start Ready;
+    state Ready { ReadinessEvent::Ready -> stay, ReadinessEvent::WouldBlock -> goto Blocked, }
+    state Blocked { ReadinessEvent::Ready -> goto Ready, ReadinessEvent::WouldBlock -> stay, }
+}
+pub impl Readiness { pub fn blocked(&self) -> bool { return match (self.state()) { ReadinessState::Blocked -> true, _ -> false }; } }
+
+pub enum PendingEvent { Queued, Consumed }
+pub machine PendingWork on PendingEvent {
+    start Idle;
+    state Idle { PendingEvent::Queued -> goto Pending, PendingEvent::Consumed -> stay, }
+    state Pending { PendingEvent::Queued -> stay, PendingEvent::Consumed -> goto Idle, }
+}
+pub impl PendingWork {
+    pub fn pending(&self) -> bool { return match (self.state()) { PendingWorkState::Pending -> true, _ -> false }; }
+    pub fn update(&self, pending: bool) { if (pending) { self.step(PendingEvent::Queued); } else { self.step(PendingEvent::Consumed); } }
+}
+pub fn pending_work(pending: bool) -> PendingWork { let work = pending_work_start(); work.update(pending); return work; }
+
+pub fn readiness(ready: bool) -> Readiness { let state = readiness_start(); if (!ready) { state.step(ReadinessEvent::WouldBlock); } return state; }
+pub enum RegistrationEvent { Registered, Removed }
+pub machine Registration on RegistrationEvent {
+    start Registered;
+    state Registered { RegistrationEvent::Registered -> stay, RegistrationEvent::Removed -> goto Removed, }
+    state Removed { RegistrationEvent::Registered -> goto Registered, RegistrationEvent::Removed -> stay, }
+}
+pub impl Registration { pub fn registered(&self) -> bool { return match(self.state()) { RegistrationState::Registered -> true, _ -> false }; } }

@@ -1,6 +1,8 @@
 // RFC 6455 opening-handshake syntax and extension-free frames/messages.
 // Portable wire processing only. No sockets, TLS, clocks or random generator.
 module ext::websocket;
+import core::utf8_state;
+import core::lifecycle;
 import alloc::vec;
 import core::base64;
 import core::mem;
@@ -8,6 +10,22 @@ import core::option;
 import core::result;
 import core::slice;
 import ext::http;
+
+pub enum FragmentEvent { Start(i32), Finished }
+pub machine Fragmentation on FragmentEvent {
+    start Idle;
+    state Idle {
+        FragmentEvent::Start(opcode) -> { if (opcode == 1) { goto TextMessage; } goto BinaryMessage; },
+        FragmentEvent::Finished -> stay,
+    }
+    state TextMessage { FragmentEvent::Start(_) -> stay, FragmentEvent::Finished -> goto Idle, }
+    state BinaryMessage { FragmentEvent::Start(_) -> stay, FragmentEvent::Finished -> goto Idle, }
+}
+pub impl Fragmentation {
+    pub fn idle(&self) -> bool { return match (self.state()) { FragmentationState::Idle -> true, _ -> false }; }
+    pub fn text(&self) -> bool { return match (self.state()) { FragmentationState::TextMessage -> true, _ -> false }; }
+}
+
 
 pub enum Error { Bounds, Incomplete(i32), Protocol(i32), InvalidUtf8(i32), InvalidClose(i32), Limit(i32), Unsupported, Handshake, Capacity, AllocationFailed, Closed, Failed, UncleanEof, FragmentedEof }
 pub enum Role { Client, Server }
@@ -18,8 +36,66 @@ pub struct Step { consumed: i32, event: Event, payload: core::slice::View<u8>, c
 pub struct Request { head: ext::http::Head, key: core::slice::View<u8>, protocol_count: i32 }
 // The response head and any already-received frame bytes borrow the input.
 pub struct Response { head: ext::http::Head, protocol: core::option::Option<core::slice::View<u8>>, remaining: core::slice::View<u8> }
-struct Flow { opcode: i32, length: i32, fragments: i32, need: i32, low: u8, high: u8, compressed: bool }
-pub struct Connection { role: Role, limits: Limits, incoming: Flow, outgoing: Flow, message: alloc::vec::Vec<u8>, control: alloc::vec::Vec<u8>, received_close: bool, sent_close: bool, failed: bool, deflate: bool, last_compressed: bool }
+struct Flow { fragmentation: Fragmentation, length: i32, fragments: i32, utf8_sequence: core::utf8_state::Sequence, compressed: bool }
+pub enum CloseEvent { CloseSent, CloseReceived, Failed }
+pub machine Closing on CloseEvent {
+    start Open;
+
+    state Open {
+        CloseEvent::CloseSent -> goto Sent,
+        CloseEvent::CloseReceived -> goto Received,
+        CloseEvent::Failed -> goto FailedOpen,
+    }
+
+    state Sent {
+        CloseEvent::CloseSent -> stay,
+        CloseEvent::CloseReceived -> goto Closed,
+        CloseEvent::Failed -> goto FailedSent,
+    }
+
+    state Received {
+        CloseEvent::CloseSent -> goto Closed,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> goto FailedReceived,
+    }
+
+    state Closed {
+        CloseEvent::CloseSent -> stay,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> goto FailedClosed,
+    }
+
+    state FailedOpen {
+        CloseEvent::CloseSent -> goto FailedSent,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> stay,
+    }
+
+    final state FailedSent {
+        CloseEvent::CloseSent -> stay,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> stay,
+    }
+
+    state FailedReceived {
+        CloseEvent::CloseSent -> goto FailedClosed,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> stay,
+    }
+
+    final state FailedClosed {
+        CloseEvent::CloseSent -> stay,
+        CloseEvent::CloseReceived -> stay,
+        CloseEvent::Failed -> stay,
+    }
+}
+pub impl Closing {
+    pub fn sent(&self) -> bool { return match (self.state()) { ClosingState::Open -> false, ClosingState::Sent -> true, ClosingState::Received -> false, ClosingState::Closed -> true, ClosingState::FailedOpen -> false, ClosingState::FailedSent -> true, ClosingState::FailedReceived -> false, ClosingState::FailedClosed -> true }; }
+    pub fn received(&self) -> bool { return match (self.state()) { ClosingState::Open -> false, ClosingState::Sent -> false, ClosingState::Received -> true, ClosingState::Closed -> true, ClosingState::FailedOpen -> false, ClosingState::FailedSent -> false, ClosingState::FailedReceived -> true, ClosingState::FailedClosed -> true }; }
+    pub fn failed(&self) -> bool { return match (self.state()) { ClosingState::Open -> false, ClosingState::Sent -> false, ClosingState::Received -> false, ClosingState::Closed -> false, ClosingState::FailedOpen -> true, ClosingState::FailedSent -> true, ClosingState::FailedReceived -> true, ClosingState::FailedClosed -> true }; }
+}
+
+pub struct Connection { role: Role, limits: Limits, incoming: Flow, outgoing: Flow, message: alloc::vec::Vec<u8>, control: alloc::vec::Vec<u8>, closing: Closing, deflate: bool, last_compressed: bool }
 pub fn default_limits() -> Limits { return Limits { frame_bytes: 16777216, message_bytes: 16777216, fragments: 65536, protocols: 32, http: ext::http::default_limits() }; }
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
 fn valid_limits(value: Limits) -> bool { return value.frame_bytes >= 0 && value.message_bytes >= 0 && value.fragments >= 0 && value.protocols >= 0 && value.http.head_bytes >= 0 && value.http.line_bytes >= 0 && value.http.headers >= 0 && value.http.body_bytes >= 0 && value.http.trailer_bytes >= 0 && value.http.trailers >= 0 && value.http.chunks >= 0; }
@@ -30,7 +106,7 @@ fn exact(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if
 fn named(value: core::slice::View<u8>, name: str, count: i32) -> bool { return ext::http::equal_name(value,literal(name,count)); }
 fn client(role: Role) -> bool { return match (role) { Role::Client -> true, Role::Server -> false }; }
 fn opcode_valid(opcode: i32) -> bool { return opcode == 0 || opcode == 1 || opcode == 2 || opcode == 8 || opcode == 9 || opcode == 10; }
-fn empty_flow() -> Flow { return Flow { opcode: 0, length: 0, fragments: 0, need: 0, low: 128, high: 191, compressed: false }; }
+fn empty_flow() -> Flow { return Flow { fragmentation: fragmentation_start(), length: 0, fragments: 0, utf8_sequence: core::utf8_state::sequence_start(true), compressed: false }; }
 
 // A complete single frame; trailing bytes belong to following frames.
 // For a receiver role, a server expects masked and a client unmasked frames.
@@ -64,13 +140,7 @@ fn utf8_from(flow: Flow, frame: Frame, start: i32) -> core::result::Result<Flow,
     let next: Flow=flow; let i:i32=start;
     while (i<frame.payload.len()) {
         let c:u8=decoded(frame,i);
-        if (next.need>0) { if (c<next.low || c>next.high) { return core::result::Err(Error::InvalidUtf8(i)); } next.need-=1; next.low=128; next.high=191; }
-        else { if (c<128) {} else { next.low=128; next.high=191;
-            if (c>=194 && c<=223) { next.need=1; }
-            else { if (c>=224 && c<=239) { next.need=2; if (c==224) { next.low=160; } if (c==237) { next.high=159; } }
-            else { if (c>=240 && c<=244) { next.need=3; if (c==240) { next.low=144; } if (c==244) { next.high=143; } }
-            else { return core::result::Err(Error::InvalidUtf8(i)); } } }
-        } }
+        if (!next.utf8_sequence.step(c)) { return core::result::Err(Error::InvalidUtf8(i)); }
         i+=1;
     }
     return core::result::Ok(next);
@@ -80,40 +150,40 @@ fn utf8_from(flow: Flow, frame: Frame, start: i32) -> core::result::Result<Flow,
 pub fn valid_text(data:core::slice::View<u8>) -> bool {
     if (!valid(data)) { return false; }
     let zero:[u8;4]=[0;4]; let frame:Frame=Frame { fin:true, opcode:1, masked:false, mask:zero, payload:data, consumed:0 };
-    let checked=utf8_from(empty_flow(),frame,0); return core::result::is_ok(checked) && core::result::unwrap(checked).need==0;
+    let checked=utf8_from(empty_flow(),frame,0); return core::result::is_ok(checked) && core::result::unwrap(checked).utf8_sequence.complete();
 }
 // Incremental UTF-8 for text sent or received in pieces (for example a
 // compressed text message checked before compression): feed each piece in
 // order; complete once the last piece ends a code point.
-pub struct TextCheck { need: i32, low: u8, high: u8, bad: bool }
-pub fn text_check() -> TextCheck { return TextCheck { need: 0, low: 128, high: 191, bad: false }; }
+pub struct TextCheck { utf8_sequence: core::utf8_state::Sequence, text_health: core::lifecycle::Health }
+pub fn text_check() -> TextCheck { return TextCheck { utf8_sequence: core::utf8_state::sequence_start(true), text_health: core::lifecycle::health_start() }; }
 pub impl TextCheck {
     pub fn borrow(&self) -> &TextCheck { return self; }
     // False once any piece was invalid.
     pub fn feed(&self, data:core::slice::View<u8>) -> bool {
-        if (self.bad || !valid(data)) { self.bad = true; return false; }
-        let flow:Flow=empty_flow(); flow.need=self.need; flow.low=self.low; flow.high=self.high;
+        if (self.text_health.is_failed() || !valid(data)) { self.text_health.fail(); return false; }
+        let flow:Flow=empty_flow(); flow.utf8_sequence=self.utf8_sequence;
         let zero:[u8;4]=[0;4]; let frame:Frame=Frame { fin:false, opcode:1, masked:false, mask:zero, payload:data, consumed:0 };
-        let checked=utf8_from(flow,frame,0); if (core::result::is_err(checked)) { self.bad = true; return false; }
-        let next:Flow=core::result::unwrap(checked); self.need=next.need; self.low=next.low; self.high=next.high; return true;
+        let checked=utf8_from(flow,frame,0); if (core::result::is_err(checked)) { self.text_health.fail(); return false; }
+        let next:Flow=core::result::unwrap(checked); self.utf8_sequence=next.utf8_sequence; return true;
     }
-    pub fn complete(&self) -> bool { return !self.bad && self.need == 0; }
+    pub fn complete(&self) -> bool { return !self.text_health.is_failed() && self.utf8_sequence.complete(); }
 }
 pub fn valid_close_code(code:i32) -> bool { return (code>=1000 && code<=1014 && code!=1004 && code!=1005 && code!=1006) || (code>=3000 && code<=4999); }
 fn close_code(frame:Frame) -> core::result::Result<i32,Error> {
     if (frame.payload.len()==0) { return core::result::Ok(-1); } if (frame.payload.len()==1) { return core::result::Err(Error::InvalidClose(0)); }
     let code:i32=((decoded(frame,0) as i32)<<8)|(decoded(frame,1) as i32); if (!valid_close_code(code)) { return core::result::Err(Error::InvalidClose(0)); }
-    let checked=utf8_from(empty_flow(),frame,2); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } if (core::result::unwrap(checked).need!=0) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); }
+    let checked=utf8_from(empty_flow(),frame,2); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } if (!core::result::unwrap(checked).utf8_sequence.complete()) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); }
     return core::result::Ok(code);
 }
 fn advance(flow:Flow, frame:Frame, limits:Limits, compressed:bool) -> core::result::Result<Flow,Error> {
     let next:Flow=flow;
     if (frame.opcode>=8) { if (frame.opcode==8) { let checked=close_code(frame); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } } return core::result::Ok(next); }
-    if (frame.opcode==0) { if (next.opcode==0) { return core::result::Err(Error::Protocol(0)); } }
-    else { if (next.opcode!=0) { return core::result::Err(Error::Protocol(0)); } next=empty_flow(); next.opcode=frame.opcode; next.compressed=compressed; }
+    if (frame.opcode==0) { if (next.fragmentation.idle()) { return core::result::Err(Error::Protocol(0)); } }
+    else { if (!next.fragmentation.idle()) { return core::result::Err(Error::Protocol(0)); } next=empty_flow(); next.fragmentation.step(FragmentEvent::Start(frame.opcode)); next.compressed=compressed; }
     if (next.fragments==limits.fragments || frame.payload.len()>limits.message_bytes-next.length) { return core::result::Err(Error::Limit(0)); }
     next.length+=frame.payload.len(); next.fragments+=1;
-    if (next.opcode==1 && !next.compressed) { let checked=utf8_from(next,frame,0); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } next=core::result::unwrap(checked); if (frame.fin && next.need!=0) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); } }
+    if (next.fragmentation.text() && !next.compressed) { let checked=utf8_from(next,frame,0); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } next=core::result::unwrap(checked); if (frame.fin && !next.utf8_sequence.complete()) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); } }
     return core::result::Ok(next);
 }
 fn reserve(buffer:&alloc::vec::Vec<u8>, required:i32, maximum:i32) -> bool {
@@ -125,13 +195,13 @@ fn reserve(buffer:&alloc::vec::Vec<u8>, required:i32, maximum:i32) -> bool {
 pub fn connection(role:Role, limits:Limits) -> core::result::Result<Connection,Error> {
     if (!valid_limits(limits)) { return core::result::Err(Error::Bounds); }
     let message:alloc::vec::Vec<u8> =alloc::vec::new(); let control:alloc::vec::Vec<u8> =alloc::vec::new();
-    return core::result::Ok(Connection { role:role, limits:limits, incoming:empty_flow(), outgoing:empty_flow(), message:message, control:control, received_close:false, sent_close:false, failed:false, deflate:false, last_compressed:false });
+    return core::result::Ok(Connection { role:role, limits:limits, incoming:empty_flow(), outgoing:empty_flow(), message:message, control:control, closing:closing_start(), deflate:false, last_compressed:false });
 }
 pub impl Connection {
-    pub fn is_failed(&self) -> bool { return self.failed; }
-    pub fn close_received(&self) -> bool { return self.received_close; }
-    pub fn close_sent(&self) -> bool { return self.sent_close; }
-    pub fn is_closed(&self) -> bool { return self.received_close && self.sent_close; }
+    pub fn is_failed(&self) -> bool { return self.closing.failed(); }
+    pub fn close_received(&self) -> bool { return self.closing.received(); }
+    pub fn close_sent(&self) -> bool { return self.closing.sent(); }
+    pub fn is_closed(&self) -> bool { return self.closing.received() && self.closing.sent(); }
     // permessage-deflate (RFC 7692) was negotiated: RSV1 may mark a
     // compressed message. ext::ws_deflate compresses and inflates; this
     // connection only frames. A compressed text message is checked as UTF-8
@@ -143,22 +213,22 @@ pub impl Connection {
     // errors poison it. Complete payload borrows storage until next receive.
     // Wire input must be disjoint from all views returned by this connection.
     pub fn receive(&self, input:core::slice::View<u8>) -> core::result::Result<Step,Error> {
-        if (self.failed) { return core::result::Err(Error::Failed); } if (self.received_close) { return core::result::Err(Error::Closed); }
-        let parsed=parse_bits(input,self.role,self.limits,self.deflate); if (core::result::is_err(parsed)) { let error:Error=core::result::unwrap_err(parsed); let fatal:bool=match(error) { Error::Incomplete(at)->false, Error::Bounds->false, _->true }; if (fatal) { self.failed=true; } return core::result::Err(error); }
+        if (self.closing.failed()) { return core::result::Err(Error::Failed); } if (self.closing.received()) { return core::result::Err(Error::Closed); }
+        let parsed=parse_bits(input,self.role,self.limits,self.deflate); if (core::result::is_err(parsed)) { let error:Error=core::result::unwrap_err(parsed); let fatal:bool=match(error) { Error::Incomplete(at)->false, Error::Bounds->false, _->true }; if (fatal) { self.closing.step(CloseEvent::Failed); } return core::result::Err(error); }
         let frame:Frame=core::result::unwrap(parsed); let checked=advance(self.incoming,frame,self.limits,(byte(input,0)&64)!=0);
-        if (core::result::is_err(checked)) { self.failed=true; let original:Error=core::result::unwrap_err(checked); let header:i32=frame.consumed-frame.payload.len(); let error:Error=match(original) { Error::InvalidUtf8(at)->Error::InvalidUtf8(header+at), Error::InvalidClose(at)->Error::InvalidClose(header+at), _->original }; return core::result::Err(error); } let next:Flow=core::result::unwrap(checked);
+        if (core::result::is_err(checked)) { self.closing.step(CloseEvent::Failed); let original:Error=core::result::unwrap_err(checked); let header:i32=frame.consumed-frame.payload.len(); let error:Error=match(original) { Error::InvalidUtf8(at)->Error::InvalidUtf8(header+at), Error::InvalidClose(at)->Error::InvalidClose(header+at), _->original }; return core::result::Err(error); } let next:Flow=core::result::unwrap(checked);
         let event:Event=Event::Pending; let payload:core::slice::View<u8> =part(input,0,0); let code:i32=-1;
         if (frame.opcode>=8) {
             if (!reserve(self.control.borrow(),frame.payload.len(),125)) { return core::result::Err(Error::AllocationFailed); }
             self.control.clear(); let i:i32=0; while (i<frame.payload.len()) { core::result::unwrap(self.control.try_push(decoded(frame,i))); i+=1; }
-            event=Event::Pong; if (frame.opcode==9) { event=Event::Ping; } if (frame.opcode==8) { event=Event::Close; code=core::result::unwrap(close_code(frame)); self.received_close=true; }
+            event=Event::Pong; if (frame.opcode==9) { event=Event::Ping; } if (frame.opcode==8) { event=Event::Close; code=core::result::unwrap(close_code(frame)); self.closing.step(CloseEvent::CloseReceived); }
             payload=self.control.as_view();
         } else {
             if (!reserve(self.message.borrow(),next.length,self.limits.message_bytes)) { return core::result::Err(Error::AllocationFailed); }
             if (frame.opcode!=0) { self.message.clear(); }
             let i:i32=0; while (i<frame.payload.len()) { core::result::unwrap(self.message.try_push(decoded(frame,i))); i+=1; }
             self.incoming=next;
-            if (frame.fin) { event=Event::Binary; if (next.opcode==1) { event=Event::Text; } payload=self.message.as_view(); self.last_compressed=next.compressed; self.incoming=empty_flow(); }
+            if (frame.fin) { event=Event::Binary; if (next.fragmentation.text()) { event=Event::Text; } payload=self.message.as_view(); self.last_compressed=next.compressed; self.incoming=empty_flow(); }
         }
         return core::result::Ok(Step { consumed:frame.consumed, event:event, payload:payload, close_code:code });
     }
@@ -172,7 +242,7 @@ pub impl Connection {
         return self.encode(fin,opcode,payload,mask,true);
     }
     fn encode(&self, fin:bool, opcode:i32, payload:core::slice::View<u8>, mask:[u8;4], compressed:bool) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
-        if (self.failed && (opcode!=8 || self.sent_close)) { return core::result::Err(Error::Failed); } if ((self.sent_close && (opcode!=10 || self.received_close)) || (self.received_close && opcode!=8 && opcode!=10 && !(opcode==0 && self.outgoing.opcode!=0))) { return core::result::Err(Error::Closed); }
+        if (self.closing.failed() && (opcode!=8 || self.closing.sent())) { return core::result::Err(Error::Failed); } if ((self.closing.sent() && (opcode!=10 || self.closing.received())) || (self.closing.received() && opcode!=8 && opcode!=10 && !(opcode==0 && !self.outgoing.fragmentation.idle()))) { return core::result::Err(Error::Closed); }
         if (!valid(payload)) { return core::result::Err(Error::Bounds); } if (!opcode_valid(opcode) || (opcode>=8 && (!fin || payload.len()>125))) { return core::result::Err(Error::Protocol(0)); }
         if (payload.len()>self.limits.frame_bytes) { return core::result::Err(Error::Limit(0)); }
         let zero:[u8;4]=[0;4]; let logical:Frame=Frame { fin:fin,opcode:opcode,masked:false,mask:zero,payload:payload,consumed:0 };
@@ -185,13 +255,13 @@ pub impl Connection {
         else { if (payload.len()>=126) { core::result::unwrap(out.try_push(((payload.len()>>8)&255) as u8)); core::result::unwrap(out.try_push((payload.len()&255) as u8)); } }
         let i:i32=0; if (client(self.role)) { while (i<4) { core::result::unwrap(out.try_push(mask[i])); i+=1; } } i=0;
         while (i<payload.len()) { let value:u8=byte(payload,i); if (client(self.role)) { value=value^mask[i%4]; } core::result::unwrap(out.try_push(value)); i+=1; }
-        if (opcode<8) { self.outgoing=core::result::unwrap(checked); if (fin) { self.outgoing=empty_flow(); } } if (opcode==8) { self.sent_close=true; }
+        if (opcode<8) { self.outgoing=core::result::unwrap(checked); if (fin) { self.outgoing=empty_flow(); } } if (opcode==8) { self.closing.step(CloseEvent::CloseSent); }
         return core::result::Ok(out);
     }
     // EOF is explicit. Receiving Close alone does not prove a clean transport
     // handshake; is_closed also requires a successfully encoded local Close.
-    pub fn finish_receive(&self) -> core::result::Result<i32,Error> { if (self.failed) { return core::result::Err(Error::Failed); } if (self.received_close) { return core::result::Ok(0); } if (self.incoming.opcode!=0) { return core::result::Err(Error::FragmentedEof); } return core::result::Err(Error::UncleanEof); }
-    pub fn destroy(&self) { self.message.destroy(); self.control.destroy(); self.failed=true; }
+    pub fn finish_receive(&self) -> core::result::Result<i32,Error> { if (self.closing.failed()) { return core::result::Err(Error::Failed); } if (self.closing.received()) { return core::result::Ok(0); } if (!self.incoming.fragmentation.idle()) { return core::result::Err(Error::FragmentedEof); } return core::result::Err(Error::UncleanEof); }
+    pub fn destroy(&self) { self.message.destroy(); self.control.destroy(); self.closing.step(CloseEvent::Failed); }
 }
 
 fn token(c:u8) -> bool { return (c>=65 && c<=90) || (c>=97 && c<=122) || (c>=48 && c<=57) || c==33 || c==35 || c==36 || c==37 || c==38 || c==39 || c==42 || c==43 || c==45 || c==46 || c==94 || c==95 || c==96 || c==124 || c==126; }

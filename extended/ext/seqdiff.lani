@@ -1,5 +1,6 @@
 // Generic sequence diff: linear-space Myers, patience, hunks. See docs/extended-seqdiff.md.
 module ext::seqdiff;
+import core::lifecycle;
 import alloc::vec;
 import alloc::io;
 import core::io;
@@ -539,7 +540,7 @@ pub impl Classes {
 // Myers state: pair[i] is the matched b index of a[i] or -1; v1/v2 are the
 // forward and reverse frontier rows (offset off), initialized lazily by
 // each bisection. All three live in one unfilled raw buffer.
-struct Engine { pair: [i32], v1: [i32], v2: [i32], mem: alloc::io::Buffer, off: i32, stack: alloc::vec::Vec<i32>, work: u64, max_work: u64, sx: i32, sy: i32, failed: bool, error: Error }
+struct Engine { pair: [i32], v1: [i32], v2: [i32], mem: alloc::io::Buffer, off: i32, stack: alloc::vec::Vec<i32>, work: u64, max_work: u64, sx: i32, sy: i32, health: core::lifecycle::Health, error: Error }
 impl Engine { fn borrow(&self) -> &Engine { return self; } }
 fn sd_engine_destroy(e: &Engine) { e.mem.destroy(); e.stack.destroy(); }
 // Set count i32 slots at p to value, two per 8-byte store.
@@ -563,15 +564,15 @@ fn sd_engine(n: i32, m: i32, limits: Limits) -> core::result::Result<Engine, Err
     let pair: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base, n);
     let v1: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + ((n as usize) * 4), row);
     let v2: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + (((n + row) as usize) * 4), row);
-    return core::result::Ok(Engine { pair: pair, v1: v1, v2: v2, mem: mem, off: maxd + 1, stack: alloc::vec::new(), work: 0, max_work: limits.max_work, sx: 0, sy: 0, failed: false, error: Error::AllocationFailed });
+    return core::result::Ok(Engine { pair: pair, v1: v1, v2: v2, mem: mem, off: maxd + 1, stack: alloc::vec::new(), work: 0, max_work: limits.max_work, sx: 0, sy: 0, health: core::lifecycle::health_start(), error: Error::AllocationFailed });
 }
 fn sd_push(e: &Engine, x0: i32, x1: i32, y0: i32, y1: i32, mode: i32) {
-    if (e.failed) { return; }
-    if (core::result::is_err(e.stack.try_push(x0)) || core::result::is_err(e.stack.try_push(x1)) || core::result::is_err(e.stack.try_push(y0)) || core::result::is_err(e.stack.try_push(y1)) || core::result::is_err(e.stack.try_push(mode))) { e.failed = true; e.error = Error::AllocationFailed; }
+    if (e.health.is_failed()) { return; }
+    if (core::result::is_err(e.stack.try_push(x0)) || core::result::is_err(e.stack.try_push(x1)) || core::result::is_err(e.stack.try_push(y0)) || core::result::is_err(e.stack.try_push(y1)) || core::result::is_err(e.stack.try_push(mode))) { e.health.fail(); e.error = Error::AllocationFailed; }
 }
 fn sd_charge(e: &Engine, amount: i32) -> bool {
     let cost: u64 = amount as u64;
-    if (cost > e.max_work - e.work) { e.work = e.max_work; e.failed = true; e.error = Error::WorkLimit; return false; }
+    if (cost > e.max_work - e.work) { e.work = e.max_work; e.health.fail(); e.error = Error::WorkLimit; return false; }
     e.work += cost; return true;
 }
 
@@ -645,13 +646,13 @@ fn sd_trim<T>(a: core::slice::View<T>, b: core::slice::View<T>, r: Range, e: &En
 }
 fn sd_myers_step<T>(a: core::slice::View<T>, b: core::slice::View<T>, r: Range, e: &Engine) where T: core::cmp::Eq<T> {
     let t: Range = sd_trim(a, b, r, e);
-    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    if (e.health.is_failed() || t.x0 == t.x1 || t.y0 == t.y1) { return; }
     if (!sd_bisect(a, b, t.x0, t.x1, t.y0, t.y1, e)) { return; }
     let sx: i32 = e.sx; let sy: i32 = e.sy; if (sx < 0) { return; }
     sd_push(e, sx, t.x1, sy, t.y1, 0); sd_push(e, t.x0, sx, t.y0, sy, 0);
 }
 fn sd_run<T>(a: core::slice::View<T>, b: core::slice::View<T>, e: &Engine) where T: core::cmp::Eq<T> {
-    while (!e.failed && e.stack.len() > 0) {
+    while (!e.health.is_failed() && e.stack.len() > 0) {
         let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
         let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] };
         e.stack.truncate(top);
@@ -689,7 +690,7 @@ fn sd_bisect_c(a: core::slice::View<i32>, b: core::slice::View<i32>, x0: i32, x1
             let q: i32 = fb - k1;
             while (x < lim && av[fa+x] == bv[q+x]) { x += 1; }
             let cost: u64 = (x - sx + 1) as u64;
-            if (cost > maxw - work) { e.work = maxw; e.failed = true; e.error = Error::WorkLimit; return false; }
+            if (cost > maxw - work) { e.work = maxw; e.health.fail(); e.error = Error::WorkLimit; return false; }
             work += cost;
             v1[off+k1] = x; let y: i32 = x - k1;
             if (x > n) { k1end += 2; }
@@ -711,7 +712,7 @@ fn sd_bisect_c(a: core::slice::View<i32>, b: core::slice::View<i32>, x0: i32, x1
             let q: i32 = rb + k2;
             while (x < lim && av[ra-x] == bv[q-x]) { x += 1; }
             let cost: u64 = (x - sx + 1) as u64;
-            if (cost > maxw - work) { e.work = maxw; e.failed = true; e.error = Error::WorkLimit; return false; }
+            if (cost > maxw - work) { e.work = maxw; e.health.fail(); e.error = Error::WorkLimit; return false; }
             work += cost;
             v2[off+k2] = x; let y: i32 = x - k2;
             if (x > n) { k2end += 2; }
@@ -745,13 +746,13 @@ fn sd_trim_c(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: 
 }
 fn sd_myers_step_c(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine) {
     let t: Range = sd_trim_c(a, b, r, e);
-    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    if (e.health.is_failed() || t.x0 == t.x1 || t.y0 == t.y1) { return; }
     if (!sd_bisect_c(a, b, t.x0, t.x1, t.y0, t.y1, e)) { return; }
     let sx: i32 = e.sx; let sy: i32 = e.sy; if (sx < 0) { return; }
     sd_push(e, sx, t.x1, sy, t.y1, 0); sd_push(e, t.x0, sx, t.y0, sy, 0);
 }
 fn sd_run_c(a: core::slice::View<i32>, b: core::slice::View<i32>, e: &Engine) {
-    while (!e.failed && e.stack.len() > 0) {
+    while (!e.health.is_failed() && e.stack.len() > 0) {
         let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
         let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] };
         e.stack.truncate(top);
@@ -777,7 +778,7 @@ fn sd_script(e: &Engine, n: i32, m: i32, limits: Limits) -> core::result::Result
     return core::result::Ok(Script { steps: steps, cost: cost, before_len: n, after_len: m });
 }
 fn sd_finish(e: &Engine, n: i32, m: i32, limits: Limits) -> core::result::Result<Script, Error> {
-    if (e.failed) { let error: Error = e.error; sd_engine_destroy(e); return core::result::Err(error); }
+    if (e.health.is_failed()) { let error: Error = e.error; sd_engine_destroy(e); return core::result::Err(error); }
     let s: core::result::Result<Script, Error> = sd_script(e, n, m, limits); sd_engine_destroy(e); return s;
 }
 
@@ -812,29 +813,29 @@ struct Patience { ca: alloc::vec::Vec<i32>, cb: alloc::vec::Vec<i32>, pb: alloc:
 fn sd_patience_destroy(p: &Patience) { p.ca.destroy(); p.cb.destroy(); p.pb.destroy(); p.pi.destroy(); p.pj.destroy(); p.tails.destroy(); p.prev.destroy(); }
 fn sd_patience_step(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine, p: &Patience) {
     let t: Range = sd_trim_c(a, b, r, e);
-    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    if (e.health.is_failed() || t.x0 == t.x1 || t.y0 == t.y1) { return; }
     let ca: [i32] = p.ca.as_slice(); let cb: [i32] = p.cb.as_slice(); let pb: [i32] = p.pb.as_slice();
     let i: i32 = t.x0; while (i < t.x1) { ca[a.values[a.start+i]] += 1; i += 1; }
     let j: i32 = t.y0; while (j < t.y1) { let c: i32 = b.values[b.start+j]; cb[c] += 1; pb[c] = j; j += 1; }
     p.pi.clear(); p.pj.clear();
     i = t.x0;
-    while (i < t.x1) { let c: i32 = a.values[a.start+i]; if (ca[c] == 1 && cb[c] == 1) { if (core::result::is_err(p.pi.try_push(i)) || core::result::is_err(p.pj.try_push(pb[c]))) { e.failed = true; e.error = Error::AllocationFailed; } } i += 1; }
+    while (i < t.x1) { let c: i32 = a.values[a.start+i]; if (ca[c] == 1 && cb[c] == 1) { if (core::result::is_err(p.pi.try_push(i)) || core::result::is_err(p.pj.try_push(pb[c]))) { e.health.fail(); e.error = Error::AllocationFailed; } } i += 1; }
     i = t.x0; while (i < t.x1) { ca[a.values[a.start+i]] = 0; i += 1; }
     j = t.y0; while (j < t.y1) { cb[b.values[b.start+j]] = 0; j += 1; }
     if (!sd_charge(e, 2 * (t.x1 - t.x0 + t.y1 - t.y0))) { return; }
     let count: i32 = p.pi.len();
-    if (e.failed) { return; }
+    if (e.health.is_failed()) { return; }
     if (count == 0) { sd_push(e, t.x0, t.x1, t.y0, t.y1, 0); return; }
     // Longest increasing subsequence of pj by patience sorting.
     p.tails.clear(); p.prev.clear();
-    if (core::result::is_err(p.prev.try_resize(count, -1))) { e.failed = true; e.error = Error::AllocationFailed; return; }
+    if (core::result::is_err(p.prev.try_resize(count, -1))) { e.health.fail(); e.error = Error::AllocationFailed; return; }
     let pj: [i32] = p.pj.as_slice(); let prev: [i32] = p.prev.as_slice();
     let q: i32 = 0;
     while (q < count) {
         let lo: i32 = 0; let hi: i32 = p.tails.len();
         while (lo < hi) { let mid: i32 = (lo + hi) / 2; if (pj[p.tails.as_slice()[mid]] < pj[q]) { lo = mid + 1; } else { hi = mid; } }
         if (lo > 0) { let stored: i32 = p.tails.as_slice()[lo-1]; prev[q] = stored; }
-        if (lo == p.tails.len()) { if (core::result::is_err(p.tails.try_push(q))) { e.failed = true; e.error = Error::AllocationFailed; return; } }
+        if (lo == p.tails.len()) { if (core::result::is_err(p.tails.try_push(q))) { e.health.fail(); e.error = Error::AllocationFailed; return; } }
         else { p.tails.as_slice()[lo] = q; }
         q += 1;
     }
@@ -849,7 +850,7 @@ fn sd_patience_step(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Ran
     sd_push(e, t.x0, hx, t.y0, hy, 1);
 }
 fn sd_patience_run(a: core::slice::View<i32>, b: core::slice::View<i32>, e: &Engine, p: &Patience) {
-    while (!e.failed && e.stack.len() > 0) {
+    while (!e.health.is_failed() && e.stack.len() > 0) {
         let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
         let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] }; let mode: i32 = s[top+4];
         e.stack.truncate(top);
@@ -867,7 +868,7 @@ pub fn patience_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, cl
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     let e: Engine = core::result::unwrap(made);
     let p: Patience = Patience { ca: alloc::vec::new(), cb: alloc::vec::new(), pb: alloc::vec::new(), pi: alloc::vec::new(), pj: alloc::vec::new(), tails: alloc::vec::new(), prev: alloc::vec::new() };
-    if (core::result::is_err(p.ca.try_resize(classes, 0)) || core::result::is_err(p.cb.try_resize(classes, 0)) || core::result::is_err(p.pb.try_resize(classes, 0))) { e.failed = true; e.error = Error::AllocationFailed; }
+    if (core::result::is_err(p.ca.try_resize(classes, 0)) || core::result::is_err(p.cb.try_resize(classes, 0)) || core::result::is_err(p.pb.try_resize(classes, 0))) { e.health.fail(); e.error = Error::AllocationFailed; }
     sd_push(e.borrow(), 0, a.length, 0, b.length, 1); sd_patience_run(a, b, e.borrow(), p.borrow());
     sd_patience_destroy(p.borrow());
     return sd_finish(e.borrow(), a.length, b.length, limits);
@@ -880,7 +881,7 @@ impl Patience { fn borrow(&self) -> &Patience { return self; } }
 // above 256 steps), then slide each change group up and down and leave it
 // aligned with the other side's last reachable change group, else at its
 // lowest position. The indent heuristic is not included.
-struct Xd { kf: [i32], kb: [i32], koff: i32, h1: [i32], h2: [i32], mxcost: i32, si1: i32, si2: i32, min_lo: bool, min_hi: bool, work: u64, max_work: u64, failed: bool }
+struct Xd { kf: [i32], kb: [i32], koff: i32, h1: [i32], h2: [i32], mxcost: i32, si1: i32, si2: i32, min_lo: bool, min_hi: bool, work: u64, max_work: u64, health: core::lifecycle::Health }
 impl Xd { fn borrow(&self) -> &Xd { return self; } }
 struct Grp { s: i32, e: i32 }
 impl Grp { fn borrow(&self) -> &Grp { return self; } }
@@ -935,7 +936,7 @@ fn xd_split(x: &Xd, off1: i32, lim1: i32, off2: i32, lim2: i32, need_min: bool) 
             if (!odd && fmin <= d && d <= fmax && i1 <= kf[o+d]) { x.si1 = i1; x.si2 = i2; x.min_lo = true; x.min_hi = true; return; }
             d -= 2;
         }
-        if (x.work > x.max_work) { x.failed = true; return; }
+        if (x.work > x.max_work) { x.health.fail(); return; }
         if (!need_min) {
             if (got_snake && ec > 256) {
                 let best: i32 = 0; d = fmax;
@@ -987,8 +988,8 @@ fn xd_split(x: &Xd, off1: i32, lim1: i32, off2: i32, lim2: i32, need_min: bool) 
 // xdl_recs_cmp with an explicit stack; marks changed reduced items in r1/r2 (index + 1).
 fn xd_recs(x: &Xd, n1: i32, n2: i32, ix1: [i32], ix2: [i32], r1: [i32], r2: [i32], stack: &alloc::vec::Vec<i32>) {
     let h1: [i32] = x.h1; let h2: [i32] = x.h2;
-    if (core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n2)) || core::result::is_err(stack.try_push(0))) { x.failed = true; return; }
-    while (stack.len() > 0 && !x.failed) {
+    if (core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n2)) || core::result::is_err(stack.try_push(0))) { x.health.fail(); return; }
+    while (stack.len() > 0 && !x.health.is_failed()) {
         let s: [i32] = stack.as_slice(); let top: i32 = stack.len() - 5;
         let off1: i32 = s[top]; let lim1: i32 = s[top+1]; let off2: i32 = s[top+2]; let lim2: i32 = s[top+3]; let need_min: bool = s[top+4] != 0;
         stack.truncate(top);
@@ -999,11 +1000,11 @@ fn xd_recs(x: &Xd, n1: i32, n2: i32, ix1: [i32], ix2: [i32], r1: [i32], r2: [i32
         else { if (off2 == lim2) { while (off1 < lim1) { r1[ix1[off1]+1] = 1; off1 += 1; } }
         else {
             xd_split(x, off1, lim1, off2, lim2, need_min);
-            if (x.failed) { return; }
+            if (x.health.is_failed()) { return; }
             let i1: i32 = x.si1; let i2: i32 = x.si2; let lo: i32 = 0; if (x.min_lo) { lo = 1; } let hi: i32 = 0; if (x.min_hi) { hi = 1; }
             let pushed: bool = core::result::is_ok(stack.try_push(i1)) && core::result::is_ok(stack.try_push(lim1)) && core::result::is_ok(stack.try_push(i2)) && core::result::is_ok(stack.try_push(lim2)) && core::result::is_ok(stack.try_push(hi))
                 && core::result::is_ok(stack.try_push(off1)) && core::result::is_ok(stack.try_push(i1)) && core::result::is_ok(stack.try_push(off2)) && core::result::is_ok(stack.try_push(i2)) && core::result::is_ok(stack.try_push(lo));
-            if (!pushed) { x.failed = true; return; }
+            if (!pushed) { x.health.fail(); return; }
         } }
     }
 }
@@ -1128,7 +1129,7 @@ fn xd_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits,
     let ws: ptr = core::mem::i32_slice_data_ptr(wsv.as_slice());
     let k1: [i32] = xd_part(ws, 0, classes); let k2: [i32] = xd_part(ws, o_c2, classes); let r1: [i32] = xd_part(ws, o_r1, w1); let r2: [i32] = xd_part(ws, o_r2, w2);
     let dis1: [i32] = xd_part(ws, o_d1, w1); let dis2: [i32] = xd_part(ws, o_d2, w2); let ix1: [i32] = xd_part(ws, o_ix1, w1); let ix2: [i32] = xd_part(ws, o_ix2, w2);
-    let x: Xd = Xd { kf: xd_part(ws, o_kf, kw), kb: xd_part(ws, o_kb, kw), koff: 0, h1: xd_part(ws, o_h1, w1), h2: xd_part(ws, o_h2, w2), mxcost: 256, si1: 0, si2: 0, min_lo: false, min_hi: false, work: 0, max_work: limits.max_work, failed: false };
+    let x: Xd = Xd { kf: xd_part(ws, o_kf, kw), kb: xd_part(ws, o_kb, kw), koff: 0, h1: xd_part(ws, o_h1, w1), h2: xd_part(ws, o_h2, w2), mxcost: 256, si1: 0, si2: 0, min_lo: false, min_hi: false, work: 0, max_work: limits.max_work, health: core::lifecycle::health_start() };
     let out: core::result::Result<Script, Error> = core::result::Err(Error::AllocationFailed);
     i = 0; while (i < n1) { k1[av[ab+i]] += 1; i += 1; }
     i = 0; while (i < n2) { k2[bv[bb+i]] += 1; i += 1; }
@@ -1159,7 +1160,7 @@ fn xd_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits,
     }
     x.koff = m2 + 1; x.mxcost = xd_bogosqrt(m1 + m2 + 3); if (x.mxcost < 256) { x.mxcost = 256; }
     xd_recs(x.borrow(), m1, m2, ix1, ix2, r1, r2, stack.borrow());
-    if (!x.failed) {
+    if (!x.health.is_failed()) {
         if (compact) { xd_compact(r1, a, r2, n2, ia); xd_compact(r2, b, r1, n1, ib); }
         out = sd_rchg_script(r1, r2, n1, n2);
     }
@@ -1176,7 +1177,7 @@ fn xd_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits,
 // ids (first-occurrence order over a then b, as split_classify assigns them)
 // with XDL_HASHLONG, so chain order and ties match git.
 struct Hg { av: [i32], ab: i32, bv: [i32], bb: i32, heads: [i32], lmap: [i32], nxt: [i32], rptr: [i32], rcnt: [i32], rnext: [i32],
-    r1: [i32], r2: [i32], remap: alloc::vec::Vec<i32>, classes: i32, work: u64, max_work: u64, failed: bool, error: Error, limits: Limits,
+    r1: [i32], r2: [i32], remap: alloc::vec::Vec<i32>, classes: i32, work: u64, max_work: u64, health: core::lifecycle::Health, error: Error, limits: Limits,
     cnt: i32, common: bool, b1: i32, e1: i32, b2: i32, e2: i32 }
 impl Hg { fn borrow(&self) -> &Hg { return self; } }
 fn hg_bits(size: i32) -> i32 { let val: i64 = 1; let bits: i32 = 0; while (val < (size as i64) && bits < 32) { val = val * 2; bits += 1; } if (bits == 0) { return 1; } return bits; }
@@ -1184,7 +1185,7 @@ fn hg_bits(size: i32) -> i32 { let val: i64 = 1; let bits: i32 = 0; while (val <
 fn hg_hash(c: i32, bits: i32) -> i32 { let x: u64 = c as u64; let one: u64 = 1; return ((x + (x >> (bits as u64))) & ((one << (bits as u64)) - one)) as i32; }
 fn hg_charge(h: &Hg, amount: i32) -> bool {
     let cost: u64 = amount as u64;
-    if (cost > h.max_work - h.work) { h.work = h.max_work; h.failed = true; h.error = Error::WorkLimit; return false; }
+    if (cost > h.max_work - h.work) { h.work = h.max_work; h.health.fail(); h.error = Error::WorkLimit; return false; }
     h.work += cost; return true;
 }
 // find_lcs: -1 when a bucket chain reaches 64 classes (git gives up on the
@@ -1244,9 +1245,9 @@ fn hg_find(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) -> i32 {
 }
 // xdl_fall_back_diff: xdiff (no compaction) on the two ranges, renumbered.
 fn hg_fallback(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) {
-    if (h.remap.len() == 0) { if (core::result::is_err(h.remap.try_resize(h.classes + 1, -1))) { h.failed = true; h.error = Error::AllocationFailed; return; } }
+    if (h.remap.len() == 0) { if (core::result::is_err(h.remap.try_resize(h.classes + 1, -1))) { h.health.fail(); h.error = Error::AllocationFailed; return; } }
     let local: alloc::vec::Vec<i32> = alloc::vec::new();
-    if (core::result::is_err(local.try_resize(count1 + count2, 0))) { local.destroy(); h.failed = true; h.error = Error::AllocationFailed; return; }
+    if (core::result::is_err(local.try_resize(count1 + count2, 0))) { local.destroy(); h.health.fail(); h.error = Error::AllocationFailed; return; }
     let lv: [i32] = local.as_slice(); let remap: [i32] = h.remap.as_slice(); let next: i32 = 0; let i: i32 = 0;
     let fa: i32 = h.ab + line1 - 1; let fb: i32 = h.bb + line2 - 1; let av: [i32] = h.av; let bv: [i32] = h.bv;
     while (i < count1) { let g: i32 = av[fa+i]; let id: i32 = remap[g]; if (id < 0) { id = next; remap[g] = id; next += 1; } lv[i] = id; i += 1; }
@@ -1256,7 +1257,7 @@ fn hg_fallback(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) {
     let left: Limits = Limits { max_items: h.limits.max_items, max_work: h.max_work - h.work };
     let made: core::result::Result<Script, Error> = xd_diff(core::slice::View { values: lv, start: 0, length: count1 }, core::slice::View { values: lv, start: count1, length: count2 }, left, false, xd_no_ind(), xd_no_ind());
     local.destroy();
-    if (core::result::is_err(made)) { h.failed = true; h.error = core::result::unwrap_err(made); return; }
+    if (core::result::is_err(made)) { h.health.fail(); h.error = core::result::unwrap_err(made); return; }
     let sc: Script = core::result::unwrap(made); let steps: [Edit] = sc.steps.as_slice(); let total: i32 = sc.steps.len(); let r1: [i32] = h.r1; let r2: [i32] = h.r2;
     i = 0;
     while (i < total) { let e: Edit = steps[i]; if (e.kind == 1) { r1[line1+e.before] = 1; } if (e.kind == 2) { r2[line2+e.after] = 1; } i += 1; }
@@ -1266,28 +1267,28 @@ fn hg_fallback(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) {
 // histogram_diff over a[1..n1] x b[1..n2]: marks r1/r2 (line l at index l).
 fn hg_run(h: &Hg, n1: i32, n2: i32) {
     let stack: alloc::vec::Vec<i32> = alloc::vec::new();
-    if (core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n2))) { stack.destroy(); h.failed = true; h.error = Error::AllocationFailed; return; }
+    if (core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n2))) { stack.destroy(); h.health.fail(); h.error = Error::AllocationFailed; return; }
     let r1: [i32] = h.r1; let r2: [i32] = h.r2;
-    while (!h.failed && stack.len() > 0) {
+    while (!h.health.is_failed() && stack.len() > 0) {
         let top: i32 = stack.len() - 4; let sv: [i32] = stack.as_slice();
         let line1: i32 = sv[top]; let count1: i32 = sv[top+1]; let line2: i32 = sv[top+2]; let count2: i32 = sv[top+3];
         let cut: core::result::Result<i32, alloc::vec::Error> = stack.truncate(top);
         let more: bool = true;
-        while (more && !h.failed) {
+        while (more && !h.health.is_failed()) {
             more = false;
             if (count1 <= 0 && count2 <= 0) { }
             else { if (count1 == 0) { let q: i32 = 0; while (q < count2) { r2[line2+q] = 1; q += 1; } }
             else { if (count2 == 0) { let q: i32 = 0; while (q < count1) { r1[line1+q] = 1; q += 1; } }
             else {
                 let found: i32 = hg_find(h, line1, count1, line2, count2);
-                if (!h.failed) {
+                if (!h.health.is_failed()) {
                     if (found != 0) { hg_fallback(h, line1, count1, line2, count2); }
                     else { if (h.b1 == 0 && h.b2 == 0) {
                         let q: i32 = 0; while (q < count1) { r1[line1+q] = 1; q += 1; }
                         q = 0; while (q < count2) { r2[line2+q] = 1; q += 1; }
                     } else {
                         let b1: i32 = h.b1; let e1: i32 = h.e1; let b2: i32 = h.b2; let e2: i32 = h.e2;
-                        if (core::result::is_err(stack.try_push(line1)) || core::result::is_err(stack.try_push(b1 - line1)) || core::result::is_err(stack.try_push(line2)) || core::result::is_err(stack.try_push(b2 - line2))) { h.failed = true; h.error = Error::AllocationFailed; }
+                        if (core::result::is_err(stack.try_push(line1)) || core::result::is_err(stack.try_push(b1 - line1)) || core::result::is_err(stack.try_push(line2)) || core::result::is_err(stack.try_push(b2 - line2))) { h.health.fail(); h.error = Error::AllocationFailed; }
                         count1 = line1 + count1 - 1 - e1; line1 = e1 + 1; count2 = line2 + count2 - 1 - e2; line2 = e2 + 1; more = true;
                     } }
                 }
@@ -1324,12 +1325,12 @@ fn hg_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits,
     let rcnt: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap); at += row;
     let rnext: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap);
     let h: Hg = Hg { av: a.values, ab: a.start, bv: b.values, bb: b.start, heads: heads, lmap: lmap, nxt: nxt, rptr: rptr, rcnt: rcnt, rnext: rnext,
-        r1: r1, r2: r2, remap: alloc::vec::new(), classes: classes, work: 0, max_work: limits.max_work, failed: false, error: Error::AllocationFailed, limits: limits,
+        r1: r1, r2: r2, remap: alloc::vec::new(), classes: classes, work: 0, max_work: limits.max_work, health: core::lifecycle::health_start(), error: Error::AllocationFailed, limits: limits,
         cnt: 0, common: false, b1: 0, e1: 0, b2: 0, e2: 0 };
     hg_run(h.borrow(), n1, n2);
     h.remap.destroy();
     let out: core::result::Result<Script, Error> = core::result::Err(h.error);
-    if (!h.failed) {
+    if (!h.health.is_failed()) {
         xd_compact(r1, a, r2, n2, ia); xd_compact(r2, b, r1, n1, ib);
         out = sd_rchg_script(r1, r2, n1, n2);
     }

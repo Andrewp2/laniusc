@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: constant: 1; enum: 2; field: 16; function: 9; impl: 1; method: 1; struct: 3; variant: 10.
+Declaration counts: constant: 1; enum: 3; field: 16; function: 9; impl: 2; machine: 1; method: 4; struct: 3; variant: 12.
 
 ## Declared imports
 
@@ -32,9 +32,41 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: Error
+### enum: SortPassEvent
 
 [Source line 30](../../../extended/ext/text_sort.lani#L30)
+
+```lanius
+pub enum SortPassEvent
+```
+
+#### variant: Repair
+
+[Source line 30](../../../extended/ext/text_sort.lani#L30)
+
+```lanius
+Repair
+```
+
+#### variant: Output
+
+[Source line 30](../../../extended/ext/text_sort.lani#L30)
+
+```lanius
+Output
+```
+
+### machine: SortPass
+
+[Source line 31](../../../extended/ext/text_sort.lani#L31)
+
+```lanius
+pub machine SortPass on SortPassEvent
+```
+
+### enum: Error
+
+[Source line 56](../../../extended/ext/text_sort.lani#L56)
 
 ```lanius
 pub enum Error
@@ -42,7 +74,7 @@ pub enum Error
 
 #### variant: AllocationFailed
 
-[Source line 30](../../../extended/ext/text_sort.lani#L30)
+[Source line 56](../../../extended/ext/text_sort.lani#L56)
 
 ```lanius
 AllocationFailed
@@ -50,7 +82,7 @@ AllocationFailed
 
 #### variant: LimitExceeded
 
-[Source line 30](../../../extended/ext/text_sort.lani#L30)
+[Source line 56](../../../extended/ext/text_sort.lani#L56)
 
 ```lanius
 LimitExceeded
@@ -58,7 +90,7 @@ LimitExceeded
 
 #### variant: WorkerFailed
 
-[Source line 30](../../../extended/ext/text_sort.lani#L30)
+[Source line 56](../../../extended/ext/text_sort.lani#L56)
 
 ```lanius
 WorkerFailed
@@ -66,7 +98,7 @@ WorkerFailed
 
 ### struct: Key
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 pub struct Key
@@ -74,7 +106,7 @@ pub struct Key
 
 #### field: sword
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 sword: u64
@@ -82,7 +114,7 @@ sword: u64
 
 #### field: schar
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 schar: u64
@@ -90,7 +122,7 @@ schar: u64
 
 #### field: eword
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 eword: u64
@@ -98,7 +130,7 @@ eword: u64
 
 #### field: echar
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 echar: u64
@@ -106,7 +138,7 @@ echar: u64
 
 #### field: skipsblanks
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 skipsblanks: bool
@@ -114,7 +146,7 @@ skipsblanks: bool
 
 #### field: skipeblanks
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 skipeblanks: bool
@@ -122,7 +154,7 @@ skipeblanks: bool
 
 #### field: fold
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 fold: bool
@@ -130,7 +162,7 @@ fold: bool
 
 #### field: numeric
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 numeric: bool
@@ -138,7 +170,7 @@ numeric: bool
 
 #### field: reverse
 
-[Source line 35](../../../extended/ext/text_sort.lani#L35)
+[Source line 61](../../../extended/ext/text_sort.lani#L61)
 
 ```lanius
 reverse: bool
@@ -146,7 +178,7 @@ reverse: bool
 
 ### struct: Options
 
-[Source line 46](../../../extended/ext/text_sort.lani#L46)
+[Source line 72](../../../extended/ext/text_sort.lani#L72)
 
 ```lanius
 pub struct Options
@@ -154,7 +186,7 @@ pub struct Options
 
 #### field: tab
 
-[Source line 46](../../../extended/ext/text_sort.lani#L46)
+[Source line 72](../../../extended/ext/text_sort.lani#L72)
 
 ```lanius
 tab: i32
@@ -162,7 +194,7 @@ tab: i32
 
 #### field: unique
 
-[Source line 46](../../../extended/ext/text_sort.lani#L46)
+[Source line 72](../../../extended/ext/text_sort.lani#L72)
 
 ```lanius
 unique: bool
@@ -170,7 +202,7 @@ unique: bool
 
 #### field: stable
 
-[Source line 46](../../../extended/ext/text_sort.lani#L46)
+[Source line 72](../../../extended/ext/text_sort.lani#L72)
 
 ```lanius
 stable: bool
@@ -178,7 +210,7 @@ stable: bool
 
 #### field: eol
 
-[Source line 46](../../../extended/ext/text_sort.lani#L46)
+[Source line 72](../../../extended/ext/text_sort.lani#L72)
 
 ```lanius
 eol: u8
@@ -186,7 +218,7 @@ eol: u8
 
 ### enum: KeyError
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 pub enum KeyError
@@ -194,7 +226,7 @@ pub enum KeyError
 
 #### variant: InvalidStart
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 InvalidStart
@@ -202,7 +234,7 @@ InvalidStart
 
 #### variant: FieldZero
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 FieldZero
@@ -210,7 +242,7 @@ FieldZero
 
 #### variant: CharZero
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 CharZero
@@ -218,7 +250,7 @@ CharZero
 
 #### variant: InvalidAfterDot
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 InvalidAfterDot
@@ -226,7 +258,7 @@ InvalidAfterDot
 
 #### variant: InvalidAfterComma
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 InvalidAfterComma
@@ -234,7 +266,7 @@ InvalidAfterComma
 
 #### variant: Stray
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 Stray
@@ -242,7 +274,7 @@ Stray
 
 #### variant: Unsupported
 
-[Source line 50](../../../extended/ext/text_sort.lani#L50)
+[Source line 76](../../../extended/ext/text_sort.lani#L76)
 
 ```lanius
 Unsupported
@@ -250,7 +282,7 @@ Unsupported
 
 ### struct: ParsedKey
 
-[Source line 95](../../../extended/ext/text_sort.lani#L95)
+[Source line 121](../../../extended/ext/text_sort.lani#L121)
 
 ```lanius
 pub struct ParsedKey
@@ -258,7 +290,7 @@ pub struct ParsedKey
 
 #### field: ok
 
-[Source line 95](../../../extended/ext/text_sort.lani#L95)
+[Source line 121](../../../extended/ext/text_sort.lani#L121)
 
 ```lanius
 ok: bool
@@ -266,7 +298,7 @@ ok: bool
 
 #### field: k
 
-[Source line 95](../../../extended/ext/text_sort.lani#L95)
+[Source line 121](../../../extended/ext/text_sort.lani#L121)
 
 ```lanius
 k: Key
@@ -274,7 +306,7 @@ k: Key
 
 #### field: error
 
-[Source line 95](../../../extended/ext/text_sort.lani#L95)
+[Source line 121](../../../extended/ext/text_sort.lani#L121)
 
 ```lanius
 error: KeyError
@@ -284,7 +316,7 @@ error: KeyError
 
 ### constant: MAX
 
-[Source line 31](../../../extended/ext/text_sort.lani#L31)
+[Source line 57](../../../extended/ext/text_sort.lani#L57)
 
 ```lanius
 pub const MAX: u64 = 18446744073709551615;
@@ -294,7 +326,7 @@ pub const MAX: u64 = 18446744073709551615;
 
 ### function: key
 
-[Source line 36](../../../extended/ext/text_sort.lani#L36)
+[Source line 62](../../../extended/ext/text_sort.lani#L62)
 
 ```lanius
 pub fn key() -> Key
@@ -302,7 +334,7 @@ pub fn key() -> Key
 
 ### function: whole_line
 
-[Source line 40](../../../extended/ext/text_sort.lani#L40)
+[Source line 66](../../../extended/ext/text_sort.lani#L66)
 
 ```lanius
 pub fn whole_line(reverse: bool) -> Key
@@ -310,7 +342,7 @@ pub fn whole_line(reverse: bool) -> Key
 
 ### function: default_compare
 
-[Source line 43](../../../extended/ext/text_sort.lani#L43)
+[Source line 69](../../../extended/ext/text_sort.lani#L69)
 
 ```lanius
 pub fn default_compare(k: Key) -> bool
@@ -318,7 +350,7 @@ pub fn default_compare(k: Key) -> bool
 
 ### function: default_options
 
-[Source line 47](../../../extended/ext/text_sort.lani#L47)
+[Source line 73](../../../extended/ext/text_sort.lani#L73)
 
 ```lanius
 pub fn default_options() -> Options
@@ -326,7 +358,7 @@ pub fn default_options() -> Options
 
 ### function: global_ordering
 
-[Source line 87](../../../extended/ext/text_sort.lani#L87)
+[Source line 113](../../../extended/ext/text_sort.lani#L113)
 
 ```lanius
 pub fn global_ordering(letter: u8, k: &Key) -> bool
@@ -334,7 +366,7 @@ pub fn global_ordering(letter: u8, k: &Key) -> bool
 
 ### function: parse_key
 
-[Source line 97](../../../extended/ext/text_sort.lani#L97)
+[Source line 123](../../../extended/ext/text_sort.lani#L123)
 
 ```lanius
 pub fn parse_key(spec: core::slice::View<u8>) -> ParsedKey
@@ -342,7 +374,7 @@ pub fn parse_key(spec: core::slice::View<u8>) -> ParsedKey
 
 ### function: levels
 
-[Source line 136](../../../extended/ext/text_sort.lani#L136)
+[Source line 162](../../../extended/ext/text_sort.lani#L162)
 
 ```lanius
 pub fn levels(keys: &alloc::vec::Vec<Key>, g: Key, o: Options) -> alloc::vec::Vec<Key>
@@ -350,7 +382,7 @@ pub fn levels(keys: &alloc::vec::Vec<Key>, g: Key, o: Options) -> alloc::vec::Ve
 
 ### function: sort
 
-[Source line 1033](../../../extended/ext/text_sort.lani#L1033)
+[Source line 1059](../../../extended/ext/text_sort.lani#L1059)
 
 ```lanius
 pub fn sort(text: core::slice::View<u8>, levels: &alloc::vec::Vec<Key>, o: Options, out: &ext::text_lines::Out) -> core::result::Result<i32, Error>
@@ -358,7 +390,7 @@ pub fn sort(text: core::slice::View<u8>, levels: &alloc::vec::Vec<Key>, o: Optio
 
 ### function: key_message
 
-[Source line 1074](../../../extended/ext/text_sort.lani#L1074)
+[Source line 1100](../../../extended/ext/text_sort.lani#L1100)
 
 ```lanius
 pub fn key_message(e: KeyError) -> core::slice::View<u8>
@@ -366,9 +398,41 @@ pub fn key_message(e: KeyError) -> core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 130
+### impl at line 49
 
-[Source line 130](../../../extended/ext/text_sort.lani#L130)
+[Source line 49](../../../extended/ext/text_sort.lani#L49)
+
+```lanius
+pub impl SortPass
+```
+
+#### method: is_keys
+
+[Source line 50](../../../extended/ext/text_sort.lani#L50)
+
+```lanius
+pub fn is_keys(&self) -> bool
+```
+
+#### method: is_repair
+
+[Source line 51](../../../extended/ext/text_sort.lani#L51)
+
+```lanius
+pub fn is_repair(&self) -> bool
+```
+
+#### method: is_output
+
+[Source line 52](../../../extended/ext/text_sort.lani#L52)
+
+```lanius
+pub fn is_output(&self) -> bool
+```
+
+### impl at line 156
+
+[Source line 156](../../../extended/ext/text_sort.lani#L156)
 
 ```lanius
 pub impl Key
@@ -376,7 +440,7 @@ pub impl Key
 
 #### method: borrow
 
-[Source line 130](../../../extended/ext/text_sort.lani#L130)
+[Source line 156](../../../extended/ext/text_sort.lani#L156)
 
 ```lanius
 pub fn borrow(&self) -> &Key

@@ -16,16 +16,17 @@ Declaration counts: function: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L4)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L5)
-- [std::io](io.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L6)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L3)
+- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L5)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L6)
+- [std::io](io.md) · [source](../../../stdlib/std/io_hex_wide_u64.lani#L7)
 
 ## Free functions and extern declarations
 
 ### function: write_lower
 
-[Source line 31](../../../stdlib/std/io_hex_wide_u64.lani#L31)
+[Source line 32](../../../stdlib/std/io_hex_wide_u64.lani#L32)
 
 ```lanius
 pub fn write_lower(handle: i32, value: core::wide_u64::WideU64) -> i32
@@ -33,7 +34,7 @@ pub fn write_lower(handle: i32, value: core::wide_u64::WideU64) -> i32
 
 ### function: write_upper
 
-[Source line 34](../../../stdlib/std/io_hex_wide_u64.lani#L34)
+[Source line 35](../../../stdlib/std/io_hex_wide_u64.lani#L35)
 
 ```lanius
 pub fn write_upper(handle: i32, value: core::wide_u64::WideU64) -> i32
@@ -41,7 +42,7 @@ pub fn write_upper(handle: i32, value: core::wide_u64::WideU64) -> i32
 
 ### function: read_stdin_or
 
-[Source line 40](../../../stdlib/std/io_hex_wide_u64.lani#L40)
+[Source line 41](../../../stdlib/std/io_hex_wide_u64.lani#L41)
 
 ```lanius
 pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64

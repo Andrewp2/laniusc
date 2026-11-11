@@ -2,6 +2,7 @@
 // vocabularies) over ext::json_tree trees, with `pattern` and
 // `patternProperties` through ext::regex. See docs/extended-json-schema.md.
 module ext::json_schema;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::result;
@@ -136,14 +137,14 @@ pub struct Schema {
     // dfa_of[i] indexes dfas for regexes[i], or is -1 (lookbehind: the VM alone).
     regexes: alloc::vec::Vec<ext::regex::Regex>, dfas: alloc::vec::Vec<ext::regex::Dfa>, dfa_of: alloc::vec::Vec<i32>,
     workspace: ext::regex::Workspace, max_states: i32,
-    limits: Limits, depth: i32, work: u64, failed: bool, fault: ErrorKind, fault_node: i32,
+    limits: Limits, depth: i32, work: u64, health: core::lifecycle::Health, fault: ErrorKind, fault_node: i32,
     scratch: alloc::vec::Vec<u8>,
 }
 
 pub impl Schema {
     pub fn borrow(&self) -> &Schema { return self; }
     fn fail(&self, kind: ErrorKind, node: i32) -> bool {
-        if (!self.failed) { self.failed = true; self.fault = kind; self.fault_node = node; }
+        if (!self.health.is_failed()) { self.health.fail(); self.fault = kind; self.fault_node = node; }
         return false;
     }
     fn word(&self, base: i32, index: i32) -> i32 { return self.records[base + index]; }
@@ -350,7 +351,7 @@ pub impl Schema {
         return self.validate_node(instance, instance.root());
     }
     pub fn validate_node(&self, instance: &ext::json_tree::Tree, node: i32) -> core::result::Result<bool, Error> {
-        self.depth = 0; self.work = 0; self.failed = false;
+        self.depth = 0; self.work = 0; self.health.reset();
         let result: i32 = self.check(self.tree.root(), instance, node, false);
         if (result < 0) { return core::result::Err(Error { kind: self.fault, schema_node: self.fault_node }); }
         return core::result::Ok(result == 1);
@@ -608,7 +609,7 @@ pub fn compile(tree: &ext::json_tree::Tree, limits: Limits) -> core::result::Res
     let schema: Schema = Schema { tree: tree, slot_store: slot_store, slots: slot_store.as_slice(), link_store: link_store, links: link_store.as_slice(),
         record_store: record_store, records: record_store.as_slice(), record_used: 0, record_cap: 0,
         regexes: alloc::vec::new(), dfas: alloc::vec::new(), dfa_of: alloc::vec::new(), workspace: ws.unwrap(), max_states: 1,
-        limits: limits, depth: 0, work: 0, failed: false, fault: ErrorKind::InvalidSchema, fault_node: -1, scratch: alloc::vec::new() };
+        limits: limits, depth: 0, work: 0, health: core::lifecycle::health_start(), fault: ErrorKind::InvalidSchema, fault_node: -1, scratch: alloc::vec::new() };
     let nodes: i32 = tree.node_count();
     if (schema.slot_store.try_resize(nodes, -1).is_err() || schema.link_store.try_resize(nodes, -1).is_err()) {
         schema.destroy(); return core::result::Err(Error { kind: ErrorKind::AllocationFailed, schema_node: -1 });

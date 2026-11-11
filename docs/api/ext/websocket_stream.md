@@ -18,26 +18,67 @@ Bounded frame/message I/O adapter over the canonical WebSocket wire engine and a
 - [extended-websocket](../../extended-websocket.md)
 - [extended-websocket-echo](../../extended-websocket-echo.md)
 
-Declaration counts: enum: 1; field: 27; function: 2; impl: 1; method: 12; struct: 4; variant: 12.
+Declaration counts: enum: 2; field: 25; function: 2; impl: 2; machine: 1; method: 14; struct: 4; variant: 15.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/websocket_stream.lani#L4)
-- [core::io](../core/io.md) · [source](../../../extended/ext/websocket_stream.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/websocket_stream.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/websocket_stream.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/websocket_stream.lani#L8)
-- [ext::websocket](websocket.md) · [source](../../../extended/ext/websocket_stream.lani#L9)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/websocket_stream.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/websocket_stream.lani#L5)
+- [core::io](../core/io.md) · [source](../../../extended/ext/websocket_stream.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/websocket_stream.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/websocket_stream.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/websocket_stream.lani#L9)
+- [ext::websocket](websocket.md) · [source](../../../extended/ext/websocket_stream.lani#L10)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: WriteEvent
+
+[Source line 12](../../../extended/ext/websocket_stream.lani#L12)
+
+```lanius
+pub enum WriteEvent
+```
+
+#### variant: Queued
+
+[Source line 12](../../../extended/ext/websocket_stream.lani#L12)
+
+```lanius
+Queued(bool)
+```
+
+#### variant: Flushed
+
+[Source line 12](../../../extended/ext/websocket_stream.lani#L12)
+
+```lanius
+Flushed
+```
+
+#### variant: Discarded
+
+[Source line 12](../../../extended/ext/websocket_stream.lani#L12)
+
+```lanius
+Discarded
+```
+
+### machine: WritePhase
+
+[Source line 13](../../../extended/ext/websocket_stream.lani#L13)
+
+```lanius
+pub machine WritePhase on WriteEvent
+```
+
 ### struct: Limits
 
-[Source line 11](../../../extended/ext/websocket_stream.lani#L11)
+[Source line 27](../../../extended/ext/websocket_stream.lani#L27)
 
 ```lanius
 pub struct Limits
@@ -45,7 +86,7 @@ pub struct Limits
 
 #### field: wire
 
-[Source line 12](../../../extended/ext/websocket_stream.lani#L12)
+[Source line 28](../../../extended/ext/websocket_stream.lani#L28)
 
 ```lanius
 wire: ext::websocket::Limits
@@ -53,7 +94,7 @@ wire: ext::websocket::Limits
 
 #### field: buffer_bytes
 
-[Source line 13](../../../extended/ext/websocket_stream.lani#L13)
+[Source line 29](../../../extended/ext/websocket_stream.lani#L29)
 
 ```lanius
 buffer_bytes: i32
@@ -61,7 +102,7 @@ buffer_bytes: i32
 
 #### field: io_calls
 
-[Source line 14](../../../extended/ext/websocket_stream.lani#L14)
+[Source line 30](../../../extended/ext/websocket_stream.lani#L30)
 
 ```lanius
 io_calls: u64
@@ -69,7 +110,7 @@ io_calls: u64
 
 #### field: read_bytes
 
-[Source line 15](../../../extended/ext/websocket_stream.lani#L15)
+[Source line 31](../../../extended/ext/websocket_stream.lani#L31)
 
 ```lanius
 read_bytes: u64
@@ -77,7 +118,7 @@ read_bytes: u64
 
 #### field: written_bytes
 
-[Source line 16](../../../extended/ext/websocket_stream.lani#L16)
+[Source line 32](../../../extended/ext/websocket_stream.lani#L32)
 
 ```lanius
 written_bytes: u64
@@ -85,7 +126,7 @@ written_bytes: u64
 
 ### struct: Stats
 
-[Source line 18](../../../extended/ext/websocket_stream.lani#L18)
+[Source line 34](../../../extended/ext/websocket_stream.lani#L34)
 
 ```lanius
 pub struct Stats
@@ -93,7 +134,7 @@ pub struct Stats
 
 #### field: io_calls
 
-[Source line 19](../../../extended/ext/websocket_stream.lani#L19)
+[Source line 35](../../../extended/ext/websocket_stream.lani#L35)
 
 ```lanius
 io_calls: u64
@@ -101,7 +142,7 @@ io_calls: u64
 
 #### field: read_bytes
 
-[Source line 20](../../../extended/ext/websocket_stream.lani#L20)
+[Source line 36](../../../extended/ext/websocket_stream.lani#L36)
 
 ```lanius
 read_bytes: u64
@@ -109,7 +150,7 @@ read_bytes: u64
 
 #### field: accepted_bytes
 
-[Source line 21](../../../extended/ext/websocket_stream.lani#L21)
+[Source line 37](../../../extended/ext/websocket_stream.lani#L37)
 
 ```lanius
 accepted_bytes: u64
@@ -117,7 +158,7 @@ accepted_bytes: u64
 
 #### field: frames_received
 
-[Source line 22](../../../extended/ext/websocket_stream.lani#L22)
+[Source line 38](../../../extended/ext/websocket_stream.lani#L38)
 
 ```lanius
 frames_received: u64
@@ -125,7 +166,7 @@ frames_received: u64
 
 #### field: frames_sent
 
-[Source line 23](../../../extended/ext/websocket_stream.lani#L23)
+[Source line 39](../../../extended/ext/websocket_stream.lani#L39)
 
 ```lanius
 frames_sent: u64
@@ -133,7 +174,7 @@ frames_sent: u64
 
 ### enum: Cause
 
-[Source line 25](../../../extended/ext/websocket_stream.lani#L25)
+[Source line 41](../../../extended/ext/websocket_stream.lani#L41)
 
 ```lanius
 pub enum Cause
@@ -141,7 +182,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 Bounds
@@ -149,7 +190,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 InvalidLimits
@@ -157,7 +198,7 @@ InvalidLimits
 
 #### variant: Inactive
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 Inactive
@@ -165,7 +206,7 @@ Inactive
 
 #### variant: PendingWrite
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 PendingWrite
@@ -173,7 +214,7 @@ PendingWrite
 
 #### variant: BufferLimit
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 BufferLimit
@@ -181,7 +222,7 @@ BufferLimit
 
 #### variant: ReadLimit
 
-[Source line 26](../../../extended/ext/websocket_stream.lani#L26)
+[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
 
 ```lanius
 ReadLimit
@@ -189,7 +230,7 @@ ReadLimit
 
 #### variant: WriteLimit
 
-[Source line 27](../../../extended/ext/websocket_stream.lani#L27)
+[Source line 43](../../../extended/ext/websocket_stream.lani#L43)
 
 ```lanius
 WriteLimit
@@ -197,7 +238,7 @@ WriteLimit
 
 #### variant: IoLimit
 
-[Source line 27](../../../extended/ext/websocket_stream.lani#L27)
+[Source line 43](../../../extended/ext/websocket_stream.lani#L43)
 
 ```lanius
 IoLimit
@@ -205,7 +246,7 @@ IoLimit
 
 #### variant: Io
 
-[Source line 27](../../../extended/ext/websocket_stream.lani#L27)
+[Source line 43](../../../extended/ext/websocket_stream.lani#L43)
 
 ```lanius
 Io(core::io::Error)
@@ -213,7 +254,7 @@ Io(core::io::Error)
 
 #### variant: Wire
 
-[Source line 27](../../../extended/ext/websocket_stream.lani#L27)
+[Source line 43](../../../extended/ext/websocket_stream.lani#L43)
 
 ```lanius
 Wire(ext::websocket::Error)
@@ -221,7 +262,7 @@ Wire(ext::websocket::Error)
 
 #### variant: AllocationFailed
 
-[Source line 28](../../../extended/ext/websocket_stream.lani#L28)
+[Source line 44](../../../extended/ext/websocket_stream.lani#L44)
 
 ```lanius
 AllocationFailed
@@ -229,7 +270,7 @@ AllocationFailed
 
 #### variant: UnexpectedEof
 
-[Source line 28](../../../extended/ext/websocket_stream.lani#L28)
+[Source line 44](../../../extended/ext/websocket_stream.lani#L44)
 
 ```lanius
 UnexpectedEof
@@ -237,7 +278,7 @@ UnexpectedEof
 
 ### struct: Failure
 
-[Source line 30](../../../extended/ext/websocket_stream.lani#L30)
+[Source line 46](../../../extended/ext/websocket_stream.lani#L46)
 
 ```lanius
 pub struct Failure
@@ -245,7 +286,7 @@ pub struct Failure
 
 #### field: cause
 
-[Source line 30](../../../extended/ext/websocket_stream.lani#L30)
+[Source line 46](../../../extended/ext/websocket_stream.lani#L46)
 
 ```lanius
 cause: Cause
@@ -253,7 +294,7 @@ cause: Cause
 
 #### field: stats
 
-[Source line 30](../../../extended/ext/websocket_stream.lani#L30)
+[Source line 46](../../../extended/ext/websocket_stream.lani#L46)
 
 ```lanius
 stats: Stats
@@ -261,7 +302,7 @@ stats: Stats
 
 #### field: completed
 
-[Source line 30](../../../extended/ext/websocket_stream.lani#L30)
+[Source line 46](../../../extended/ext/websocket_stream.lani#L46)
 
 ```lanius
 completed: i32
@@ -269,7 +310,7 @@ completed: i32
 
 ### struct: Stream
 
-[Source line 33](../../../extended/ext/websocket_stream.lani#L33)
+[Source line 49](../../../extended/ext/websocket_stream.lani#L49)
 
 ```lanius
 pub struct Stream<T>
@@ -277,7 +318,7 @@ pub struct Stream<T>
 
 #### field: inner
 
-[Source line 34](../../../extended/ext/websocket_stream.lani#L34)
+[Source line 50](../../../extended/ext/websocket_stream.lani#L50)
 
 ```lanius
 inner: &T
@@ -285,7 +326,7 @@ inner: &T
 
 #### field: wire
 
-[Source line 35](../../../extended/ext/websocket_stream.lani#L35)
+[Source line 51](../../../extended/ext/websocket_stream.lani#L51)
 
 ```lanius
 wire: ext::websocket::Connection
@@ -293,7 +334,7 @@ wire: ext::websocket::Connection
 
 #### field: role
 
-[Source line 36](../../../extended/ext/websocket_stream.lani#L36)
+[Source line 52](../../../extended/ext/websocket_stream.lani#L52)
 
 ```lanius
 role: ext::websocket::Role
@@ -301,7 +342,7 @@ role: ext::websocket::Role
 
 #### field: limits
 
-[Source line 37](../../../extended/ext/websocket_stream.lani#L37)
+[Source line 53](../../../extended/ext/websocket_stream.lani#L53)
 
 ```lanius
 limits: Limits
@@ -309,7 +350,7 @@ limits: Limits
 
 #### field: progress
 
-[Source line 38](../../../extended/ext/websocket_stream.lani#L38)
+[Source line 54](../../../extended/ext/websocket_stream.lani#L54)
 
 ```lanius
 progress: Stats
@@ -317,7 +358,7 @@ progress: Stats
 
 #### field: input
 
-[Source line 39](../../../extended/ext/websocket_stream.lani#L39)
+[Source line 55](../../../extended/ext/websocket_stream.lani#L55)
 
 ```lanius
 input: alloc::vec::Vec<u8>
@@ -325,7 +366,7 @@ input: alloc::vec::Vec<u8>
 
 #### field: input_start
 
-[Source line 40](../../../extended/ext/websocket_stream.lani#L40)
+[Source line 56](../../../extended/ext/websocket_stream.lani#L56)
 
 ```lanius
 input_start: i32
@@ -333,7 +374,7 @@ input_start: i32
 
 #### field: output
 
-[Source line 41](../../../extended/ext/websocket_stream.lani#L41)
+[Source line 57](../../../extended/ext/websocket_stream.lani#L57)
 
 ```lanius
 output: alloc::vec::Vec<u8>
@@ -341,47 +382,31 @@ output: alloc::vec::Vec<u8>
 
 #### field: output_start
 
-[Source line 42](../../../extended/ext/websocket_stream.lani#L42)
+[Source line 58](../../../extended/ext/websocket_stream.lani#L58)
 
 ```lanius
 output_start: i32
 ```
 
-#### field: flush_pending
+#### field: write_phase
 
-[Source line 43](../../../extended/ext/websocket_stream.lani#L43)
+[Source line 59](../../../extended/ext/websocket_stream.lani#L59)
 
 ```lanius
-flush_pending: bool
+write_phase: WritePhase
 ```
 
-#### field: queued_close
+#### field: lifetime
 
-[Source line 44](../../../extended/ext/websocket_stream.lani#L44)
-
-```lanius
-queued_close: bool
-```
-
-#### field: flushed_close
-
-[Source line 45](../../../extended/ext/websocket_stream.lani#L45)
+[Source line 60](../../../extended/ext/websocket_stream.lani#L60)
 
 ```lanius
-flushed_close: bool
-```
-
-#### field: active
-
-[Source line 46](../../../extended/ext/websocket_stream.lani#L46)
-
-```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: fault
 
-[Source line 47](../../../extended/ext/websocket_stream.lani#L47)
+[Source line 61](../../../extended/ext/websocket_stream.lani#L61)
 
 ```lanius
 fault: core::option::Option<Failure>
@@ -391,7 +416,7 @@ fault: core::option::Option<Failure>
 
 ### function: default_limits
 
-[Source line 50](../../../extended/ext/websocket_stream.lani#L50)
+[Source line 64](../../../extended/ext/websocket_stream.lani#L64)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -401,7 +426,7 @@ Wire defaults, 16777230 unread-buffer bytes, 65536 inner I/O calls and 67108864 
 
 ### function: new
 
-[Source line 76](../../../extended/ext/websocket_stream.lani#L76)
+[Source line 90](../../../extended/ext/websocket_stream.lani#L90)
 
 ```lanius
 pub fn new<T>(inner: &T, role: ext::websocket::Role,
@@ -413,9 +438,33 @@ No I/O trait is required to construct or destroy this memory owner. Validates me
 
 ## Implementation blocks and public methods
 
-### impl at line 108
+### impl at line 21
 
-[Source line 108](../../../extended/ext/websocket_stream.lani#L108)
+[Source line 21](../../../extended/ext/websocket_stream.lani#L21)
+
+```lanius
+pub impl WritePhase
+```
+
+#### method: pending
+
+[Source line 22](../../../extended/ext/websocket_stream.lani#L22)
+
+```lanius
+pub fn pending(&self) -> bool
+```
+
+#### method: close_sent
+
+[Source line 23](../../../extended/ext/websocket_stream.lani#L23)
+
+```lanius
+pub fn close_sent(&self) -> bool
+```
+
+### impl at line 121
+
+[Source line 121](../../../extended/ext/websocket_stream.lani#L121)
 
 ```lanius
 pub impl<T> Stream<T>
@@ -423,7 +472,7 @@ pub impl<T> Stream<T>
 
 #### method: borrow
 
-[Source line 109](../../../extended/ext/websocket_stream.lani#L109)
+[Source line 122](../../../extended/ext/websocket_stream.lani#L122)
 
 ```lanius
 pub fn borrow(&self) -> &Stream<T>
@@ -431,7 +480,7 @@ pub fn borrow(&self) -> &Stream<T>
 
 #### method: stats
 
-[Source line 110](../../../extended/ext/websocket_stream.lani#L110)
+[Source line 123](../../../extended/ext/websocket_stream.lani#L123)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -439,7 +488,7 @@ pub fn stats(&self) -> Stats
 
 #### method: is_active
 
-[Source line 111](../../../extended/ext/websocket_stream.lani#L111)
+[Source line 124](../../../extended/ext/websocket_stream.lani#L124)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -447,7 +496,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_failed
 
-[Source line 112](../../../extended/ext/websocket_stream.lani#L112)
+[Source line 125](../../../extended/ext/websocket_stream.lani#L125)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -455,7 +504,7 @@ pub fn is_failed(&self) -> bool
 
 #### method: close_received
 
-[Source line 115](../../../extended/ext/websocket_stream.lani#L115)
+[Source line 128](../../../extended/ext/websocket_stream.lani#L128)
 
 ```lanius
 pub fn close_received(&self) -> bool
@@ -463,7 +512,7 @@ pub fn close_received(&self) -> bool
 
 #### method: close_sent
 
-[Source line 117](../../../extended/ext/websocket_stream.lani#L117)
+[Source line 130](../../../extended/ext/websocket_stream.lani#L130)
 
 ```lanius
 pub fn close_sent(&self) -> bool
@@ -471,7 +520,7 @@ pub fn close_sent(&self) -> bool
 
 #### method: is_closed
 
-[Source line 118](../../../extended/ext/websocket_stream.lani#L118)
+[Source line 131](../../../extended/ext/websocket_stream.lani#L131)
 
 ```lanius
 pub fn is_closed(&self) -> bool
@@ -479,7 +528,7 @@ pub fn is_closed(&self) -> bool
 
 #### method: pending
 
-[Source line 119](../../../extended/ext/websocket_stream.lani#L119)
+[Source line 132](../../../extended/ext/websocket_stream.lani#L132)
 
 ```lanius
 pub fn pending(&self) -> core::slice::View<u8>
@@ -487,7 +536,7 @@ pub fn pending(&self) -> core::slice::View<u8>
 
 #### method: receive
 
-[Source line 167](../../../extended/ext/websocket_stream.lani#L167)
+[Source line 180](../../../extended/ext/websocket_stream.lani#L180)
 
 ```lanius
 pub fn receive(&self) -> core::result::Result<core::option::Option<ext::websocket::Step>,Failure>
@@ -496,7 +545,7 @@ pub fn receive(&self) -> core::result::Result<core::option::Option<ext::websocke
 
 #### method: send
 
-[Source line 229](../../../extended/ext/websocket_stream.lani#L229)
+[Source line 242](../../../extended/ext/websocket_stream.lani#L242)
 
 ```lanius
 pub fn send(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, mask: [u8;4])
@@ -505,7 +554,7 @@ pub fn send(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, mask:
 
 #### method: flush
 
-[Source line 252](../../../extended/ext/websocket_stream.lani#L252)
+[Source line 265](../../../extended/ext/websocket_stream.lani#L265)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<bool,Failure> where T: core::io::Write
@@ -513,7 +562,7 @@ pub fn flush(&self) -> core::result::Result<bool,Failure> where T: core::io::Wri
 
 #### method: destroy
 
-[Source line 295](../../../extended/ext/websocket_stream.lani#L295)
+[Source line 308](../../../extended/ext/websocket_stream.lani#L308)
 
 ```lanius
 pub fn destroy(&self) -> bool

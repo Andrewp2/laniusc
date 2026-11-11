@@ -6,6 +6,7 @@
 // it link OpenSSL (--native-link --native-library ssl --native-library
 // crypto).
 module ext::http_service_tls;
+import core::lifecycle;
 import core::option;
 import core::result;
 import core::slice;
@@ -17,7 +18,7 @@ import ext::tls_clients;
 import std::clock;
 import std::socket;
 
-pub struct TlsServer { server: ext::http_service::Server, tls: ext::tls_clients::TlsClients, closed: bool }
+pub struct TlsServer { server: ext::http_service::Server, tls: ext::tls_clients::TlsClients, lifetime: core::lifecycle::Lifetime }
 
 // Like ext::http_service::server, with connections served over TLS by
 // context, which the caller keeps (and destroys after close). With h2,
@@ -30,7 +31,7 @@ pub fn server(listener: &std::socket::Socket, options: ext::http_service::Option
     let s: ext::http_service::Server = made.unwrap(); s.wrap_clients(); if (h2) { s.enable_h2(); }
     let tls: core::option::Option<ext::tls_clients::TlsClients> = ext::tls_clients::clients(context, max_connections);
     if (tls.is_none()) { s.close(); return core::result::Err(ext::http_service::Error::AllocationFailed); }
-    return core::result::Ok(TlsServer { server: s, tls: tls.unwrap(), closed: false });
+    return core::result::Ok(TlsServer { server: s, tls: tls.unwrap(), lifetime: core::lifecycle::lifetime_start() });
 }
 
 pub impl TlsServer {
@@ -46,7 +47,7 @@ pub impl TlsServer {
     pub fn h2_respond(&self, ready: ext::http_service::Ready, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,ext::http_service::Error> { return self.server.h2_respond(ready, status, content_type, body); }
     // Drive TLS and HTTP until a request is ready or the deadline passes.
     pub fn next_ready(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<ext::http_service::Ready>,ext::http_service::Error> {
-        if (self.closed) { return core::result::Err(ext::http_service::Error::InvalidState); }
+        if (self.lifetime.is_released()) { return core::result::Err(ext::http_service::Error::InvalidState); }
         while (true) {
             // Responses staged since the last round go out first.
             self.tls.serve(self.server.borrow());
@@ -63,8 +64,8 @@ pub impl TlsServer {
     }
     // Free the sessions, then close the server (and the sockets).
     pub fn close(&self) -> core::result::Result<i32,ext::http_service::Error> {
-        if (self.closed) { return core::result::Ok(0); }
-        self.closed = true; self.tls.close();
+        if (self.lifetime.is_released()) { return core::result::Ok(0); }
+        self.lifetime.release(); self.tls.close();
         return self.server.close();
     }
 }

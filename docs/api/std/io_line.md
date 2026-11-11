@@ -16,13 +16,14 @@ Declaration counts: constant: 4; function: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [std::io_byte](io_byte.md) · [source](../../../stdlib/std/io_line.lani#L4)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/io_line.lani#L4)
+- [std::io_byte](io_byte.md) · [source](../../../stdlib/std/io_line.lani#L5)
 
 ## Constants
 
 ### constant: LINE_EOF
 
-[Source line 6](../../../stdlib/std/io_line.lani#L6)
+[Source line 7](../../../stdlib/std/io_line.lani#L7)
 
 ```lanius
 pub const LINE_EOF: i32 = -1;
@@ -30,7 +31,7 @@ pub const LINE_EOF: i32 = -1;
 
 ### constant: LINE_HOST_ERROR
 
-[Source line 7](../../../stdlib/std/io_line.lani#L7)
+[Source line 8](../../../stdlib/std/io_line.lani#L8)
 
 ```lanius
 pub const LINE_HOST_ERROR: i32 = -2;
@@ -38,7 +39,7 @@ pub const LINE_HOST_ERROR: i32 = -2;
 
 ### constant: LINE_INVALID_CAPACITY
 
-[Source line 8](../../../stdlib/std/io_line.lani#L8)
+[Source line 9](../../../stdlib/std/io_line.lani#L9)
 
 ```lanius
 pub const LINE_INVALID_CAPACITY: i32 = -3;
@@ -46,7 +47,7 @@ pub const LINE_INVALID_CAPACITY: i32 = -3;
 
 ### constant: LINE_TOO_LONG
 
-[Source line 9](../../../stdlib/std/io_line.lani#L9)
+[Source line 10](../../../stdlib/std/io_line.lani#L10)
 
 ```lanius
 pub const LINE_TOO_LONG: i32 = -4;
@@ -56,7 +57,7 @@ pub const LINE_TOO_LONG: i32 = -4;
 
 ### function: read_stdin_lf_line_into_i32
 
-[Source line 19](../../../stdlib/std/io_line.lani#L19)
+[Source line 20](../../../stdlib/std/io_line.lani#L20)
 
 ```lanius
 pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32
@@ -64,7 +65,7 @@ pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32
 
 ### function: write_stdout_lf_line_from_i32
 
-[Source line 73](../../../stdlib/std/io_line.lani#L73)
+[Source line 74](../../../stdlib/std/io_line.lani#L74)
 
 ```lanius
 pub fn write_stdout_lf_line_from_i32(values: [i32], len: i32) -> bool
@@ -72,7 +73,7 @@ pub fn write_stdout_lf_line_from_i32(values: [i32], len: i32) -> bool
 
 ### function: write_stderr_lf_line_from_i32
 
-[Source line 83](../../../stdlib/std/io_line.lani#L83)
+[Source line 84](../../../stdlib/std/io_line.lani#L84)
 
 ```lanius
 pub fn write_stderr_lf_line_from_i32(values: [i32], len: i32) -> bool

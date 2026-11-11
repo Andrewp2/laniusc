@@ -20,17 +20,19 @@ Declaration counts: function: 2.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/cli_help.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/cli_help.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/cli_help.lani#L8)
-- [ext::cli](cli.md) · [source](../../../extended/ext/cli_help.lani#L9)
-- [ext::cli_commands](cli_commands.md) · [source](../../../extended/ext/cli_help.lani#L10)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/cli_help.lani#L6)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/cli_help.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/cli_help.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/cli_help.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/cli_help.lani#L10)
+- [ext::cli](cli.md) · [source](../../../extended/ext/cli_help.lani#L11)
+- [ext::cli_commands](cli_commands.md) · [source](../../../extended/ext/cli_help.lani#L12)
 
 ## Free functions and extern declarations
 
 ### function: help_len
 
-[Source line 187](../../../extended/ext/cli_help.lani#L187)
+[Source line 189](../../../extended/ext/cli_help.lani#L189)
 
 ```lanius
 pub fn help_len(commands: core::slice::View<ext::cli_commands::Command>, command_id: i32) -> core::result::Result<u64,ext::cli_commands::Error>
@@ -38,7 +40,7 @@ pub fn help_len(commands: core::slice::View<ext::cli_commands::Command>, command
 
 ### function: help_into
 
-[Source line 198](../../../extended/ext/cli_help.lani#L198)
+[Source line 200](../../../extended/ext/cli_help.lani#L200)
 
 ```lanius
 pub fn help_into(commands: core::slice::View<ext::cli_commands::Command>, command_id: i32, output: core::slice::View<u8>) -> core::result::Result<i32,ext::cli_commands::Error>

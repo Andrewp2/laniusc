@@ -8,6 +8,8 @@
 // connection that every later request to it shares as streams, and
 // fetch_all runs requests to such an origin concurrently.
 module ext::http_agent;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -27,6 +29,19 @@ import ext::uri;
 import ext::url_connect;
 import std::clock;
 import std::socket;
+
+pub enum DeliveryEvent { Decided(bool) }
+pub machine DeliveryPhase on DeliveryEvent {
+    start Undecided;
+    state Undecided { DeliveryEvent::Decided(streaming) -> { if (streaming) { goto Streaming; } goto Buffered; }, }
+    final state Streaming { DeliveryEvent::Decided(_) -> stay, }
+    final state Buffered { DeliveryEvent::Decided(_) -> stay, }
+}
+pub impl DeliveryPhase {
+    pub fn decided(&self) -> bool { return match (self.state()) { DeliveryPhaseState::Undecided -> false, _ -> true }; }
+    pub fn streaming(&self) -> bool { return match (self.state()) { DeliveryPhaseState::Streaming -> true, _ -> false }; }
+}
+
 
 // Truncated(n): the peer closed after n response bytes (0 = empty reply).
 // UnreplayableBody(status): a redirect needs the streamed body again.
@@ -63,14 +78,24 @@ struct Failure { error: Error, retryable: bool }
 // One HTTP/2 connection (ALPN h2) to an https origin, shared by every request
 // to that origin while it stays open.
 struct H2 { conn: Conn, engine: ext::http2::Connection, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32 }
-struct Member { index: i32, url: ext::http_url::Url, id: i32 }
-pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, sessions: alloc::vec::Vec<H2>, stats: Stats, stamp: u64, active: bool, context: core::option::Option<ext::openssl_tls::Context> }
+enum MemberEvent { Started(i32), Finished }
+machine MemberPhase on MemberEvent {
+    start New;
+    state New { MemberEvent::Started(id) -> goto Active(id), MemberEvent::Finished -> goto Finished, }
+    state Active(id: i32) { MemberEvent::Started(_) -> stay, MemberEvent::Finished -> goto Finished, }
+    final state Finished { MemberEvent::Started(_) -> stay, MemberEvent::Finished -> stay, }
+}
+impl MemberPhase {
+    fn id(&self) -> i32 { return match(self.state()) { MemberPhaseState::Active(id) -> id, _ -> -1 }; }
+}
+struct Member { index: i32, url: ext::http_url::Url, phase: MemberPhase }
+pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, sessions: alloc::vec::Vec<H2>, stats: Stats, stamp: u64, lifetime: core::lifecycle::Lifetime, context: core::option::Option<ext::openssl_tls::Context> }
 // One manual owner. wire holds the received bytes: the raw final head, then a
 // fixed or close-delimited body in place; a chunked body is decoded apart.
 // version is 10 or 11, or 20 for HTTP/2, whose wire holds the response fields
 // as "name: value" CRLF lines (lowercase names, no status line) and then the
 // body.
-pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool, streamed: i64 }
+pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, lifetime: core::lifecycle::Lifetime, streamed: i64 }
 // The body source of a request without a streamed body.
 struct NoBody { unused: i32 }
 impl NoBody { fn borrow(&self) -> &NoBody { return self; } }
@@ -97,7 +122,7 @@ fn options_valid(o: Options) -> bool {
 pub fn agent(options: Options) -> core::result::Result<Agent,Error> {
     if (!options_valid(options)) { return core::result::Err(Error::InvalidRequest); }
     let stats: Stats = Stats { connections: 0, reused: 0, requests: 0, redirects: 0, retries: 0, stale: 0, evicted: 0, expired: 0, early: 0, http2: 0 };
-    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), sessions: alloc::vec::new<H2>(), stats: stats, stamp: 0, active: true, context: core::option::None() });
+    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), sessions: alloc::vec::new<H2>(), stats: stats, stamp: 0, lifetime: core::lifecycle::lifetime_start(), context: core::option::None() });
 }
 
 fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
@@ -377,7 +402,7 @@ fn stream_body<W>(o: Options, conn: &Conn, input: alloc::vec::Vec<u8>, filled: i
     input.length = head_end;
     return core::result::Ok(Response { status: status, version: version, wire: input, head_length: head_end, body_start: head_end, body_length: 0,
         decoded: alloc::vec::new<u8>(), chunked: false, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
-        redirects: 0, reused: false, kept: kept, hint_ms: hint, active: true, streamed: streamed });
+        redirects: 0, reused: false, kept: kept, hint_ms: hint, lifetime: core::lifecycle::lifetime_start(), streamed: streamed });
 }
 
 // Read one final response, skipping informational ones. Framing comes from
@@ -389,12 +414,12 @@ fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, dead
     let made: core::result::Result<ext::http::Cursor,ext::http::Error> = ext::http::cursor(ext::http::CursorMode::Response,o.limits,cap as i32,4611686018427387904);
     if (made.is_err()) { return failed(Error::Parse(made.unwrap_err()),0); }
     let cur: ext::http::Cursor = made.unwrap();
-    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let filled: i32 = 0; let received: i32 = 0; let eof: bool = false; let informational: i32 = 0;
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let filled: i32 = 0; let received: i32 = 0; let eof_phase = core::iter_state::completion_start(); let informational: i32 = 0;
     // TLS EOF without close_notify: framing may finish, but nothing may be
     // delimited by it.
     let unauthenticated: bool = false;
     while (true) {
-        let scanned: core::result::Result<ext::http::Scan,ext::http::Error> = cur.advance(part(input.as_view(),0,filled),method,eof);
+        let scanned: core::result::Result<ext::http::Scan,ext::http::Error> = cur.advance(part(input.as_view(),0,filled),method,eof_phase.is_done());
         if (scanned.is_err()) { input.destroy(); return parse_failure(scanned.unwrap_err(),received); }
         let s: ext::http::Scan = scanned.unwrap();
         let kind: i32 = match(s) { ext::http::Scan::NeedMore -> 0, ext::http::Scan::HeadReady(h) -> 1, ext::http::Scan::Boundary(b) -> 2 };
@@ -406,7 +431,7 @@ fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, dead
                 let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_response_head(part(input.as_view(),0,info.head_end),method,o.limits);
                 if (parsed.is_err()) { input.destroy(); return parse_failure(parsed.unwrap_err(),received); }
                 let h: ext::http::Head = parsed.unwrap();
-                if (streams_to_sink(o,status,h.lookup(literal("Location",8)).is_some())) { return stream_body<W>(o,conn,input,filled,received,eof,unauthenticated,info,h,method,sink,deadline); }
+                if (streams_to_sink(o,status,h.lookup(literal("Location",8)).is_some())) { return stream_body<W>(o,conn,input,filled,received,eof_phase.is_done(),unauthenticated,info,h,method,sink,deadline); }
             }
             let fixed: bool = match(info.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
             let total: i64 = 0; if (fixed) { total = (info.head_end as i64) + (info.content_length as i64); }
@@ -414,18 +439,18 @@ fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, dead
             continue;
         }
         if (kind == 0) {
-            if (eof) { input.destroy(); return failed(Error::Truncated(received),received); }
+            if (eof_phase.is_done()) { input.destroy(); return failed(Error::Truncated(received),received); }
             if (!room(input.borrow(),filled,cap as i32)) { input.destroy(); return failed(Error::TooLarge,received); }
             let space: core::slice::View<u8> = part(input.as_view(),filled,input.len());
             let got: core::result::Result<i32,core::io::Error> = receive(conn,space,deadline);
-            if (got.is_err() && conn.secure && unclean(got.unwrap_err())) { eof = true; unauthenticated = true; continue; }
+            if (got.is_err() && conn.secure && unclean(got.unwrap_err())) { eof_phase.finish(); unauthenticated = true; continue; }
             if (got.is_err()) { input.destroy(); let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return failed(Error::Timeout,received); } return failed(Error::Io(e),received); }
             let n: i32 = got.unwrap(); if (n < 0 || n > space.len()) { input.destroy(); return failed(Error::Io(core::io::Error::InvalidCount),received); }
-            if (n == 0) { eof = true; } filled += n; received += n;
+            if (n == 0) { eof_phase.finish(); } filled += n; received += n;
             continue;
         }
         let consumed: i32 = match(s) { ext::http::Scan::Boundary(b) -> b.consumed, _ -> 0 };
-        let parsed: core::result::Result<ext::http::Message,ext::http::Error> = ext::http::parse_response(part(input.as_view(),0,consumed),method,eof,o.limits);
+        let parsed: core::result::Result<ext::http::Message,ext::http::Error> = ext::http::parse_response(part(input.as_view(),0,consumed),method,eof_phase.is_done(),o.limits);
         if (parsed.is_err()) { input.destroy(); return parse_failure(parsed.unwrap_err(),received); }
         let m: ext::http::Message = parsed.unwrap();
         if (m.head.status < 200) {
@@ -446,10 +471,10 @@ fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, dead
         if (chunked) { ext::http::decode_into(m,decoded.as_view()); }
         let close: bool = match(m.head.kind) { ext::http::BodyKind::Close -> true, ext::http::BodyKind::Tunnel -> true, _ -> false };
         if (close && unauthenticated) { copy.destroy(); decoded.destroy(); input.destroy(); return failed(Error::Truncated(received),received); }
-        let kept: bool = !eof && !close && filled == consumed && reusable(m.head);
+        let kept: bool = !eof_phase.is_done() && !close && filled == consumed && reusable(m.head);
         let r: Response = Response { status: m.head.status, version: m.head.version, wire: input, head_length: m.head.raw.len(), body_start: m.encoded_body.start - window.start,
             body_length: m.decoded_length, decoded: decoded, chunked: chunked, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
-            redirects: 0, reused: false, kept: kept, hint_ms: keep_alive_hint(m.head), active: true, streamed: -1 };
+            redirects: 0, reused: false, kept: kept, hint_ms: keep_alive_hint(m.head), lifetime: core::lifecycle::lifetime_start(), streamed: -1 };
         return core::result::Ok(r);
     }
     input.destroy(); return failed(Error::Parse(ext::http::Error::Bounds),received);
@@ -460,7 +485,7 @@ fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, dead
 fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline, sink: &W, deliver: bool) -> core::result::Result<Response,Failure> where R: core::io::Read, W: core::io::Write {
     let o: Options = agent.options;
     let sent: core::result::Result<i32,core::io::Error> = send_all(conn,head,deadline);
-    let early: bool = false; let used: bool = false;
+    let early_phase = core::iter_state::completion_start(); let used: bool = false;
     if (sent.is_err()) {
         let e: core::io::Error = sent.unwrap_err();
         if (timed_out(e)) { return failed(Error::Timeout,1); }
@@ -468,9 +493,9 @@ fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source
         // a reset before anything was answered stays retryable.
         if (conn.secure && reset(e)) { return failed(Error::Io(e),0); }
         if (!reset(e)) { return failed(Error::Io(e),1); }
-        early = true;
+        early_phase.finish();
     }
-    if (streaming && !early) {
+    if (streaming && !early_phase.is_done()) {
         let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(o.chunk_bytes + 12);
         if (made.is_err()) { return failed(Error::AllocationFailed,1); }
         let chunk: alloc::vec::Vec<u8> = made.unwrap(); let all: core::slice::View<u8> = chunk.as_view();
@@ -479,7 +504,7 @@ fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source
             // early responses are detected by cleartext connections only.
             if (!conn.secure) {
                 let ready: core::result::Result<std::socket::Ready,core::io::Error> = conn.socket.wait_ms(true,false,0);
-                if (ready.is_ok() && !ready.unwrap().timed_out) { early = true; agent.stats.early += 1; break; }
+                if (ready.is_ok() && !ready.unwrap().timed_out) { early_phase.finish(); agent.stats.early += 1; break; }
             }
             let got: core::result::Result<i32,core::io::Error> = fill<R>(source,all,10,o.chunk_bytes);
             if (got.is_err()) { chunk.destroy(); return failed(Error::Source(got.unwrap_err()),1); }
@@ -496,7 +521,7 @@ fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source
             if (out.is_err()) {
                 let e: core::io::Error = out.unwrap_err(); if (timed_out(e)) { chunk.destroy(); return failed(Error::Timeout,1); }
                 if (!reset(e) || conn.secure) { chunk.destroy(); return failed(Error::Io(e),1); }
-                early = true; agent.stats.early += 1; break;
+                early_phase.finish(); agent.stats.early += 1; break;
             }
             if (n == 0) { break; }
         }
@@ -504,7 +529,7 @@ fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source
     }
     let got: core::result::Result<Response,Failure> = read_response<W>(o,conn,method,deadline,sink,deliver);
     if (got.is_err()) { let f: Failure = got.unwrap_err(); return core::result::Err(Failure { error: f.error, retryable: f.retryable && !used }); }
-    let r: Response = got.unwrap(); if (early) { r.kept = false; }
+    let r: Response = got.unwrap(); if (early_phase.is_done()) { r.kept = false; }
     return core::result::Ok(r);
 }
 
@@ -616,12 +641,12 @@ fn h2_response(engine: &ext::http2::Connection, id: i32, method: core::slice::Vi
     if (!ok) { wire.destroy(); copy.destroy(); return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(Response { status: engine.status(id), version: 20, wire: wire, head_length: head_length, body_start: head_length, body_length: body.len(),
         decoded: alloc::vec::new<u8>(), chunked: false, method: copy, url: alloc::vec::new<u8>(), limits: limits,
-        redirects: 0, reused: reused, kept: true, hint_ms: -1, active: true, streamed: -1 });
+        redirects: 0, reused: reused, kept: true, hint_ms: -1, lifetime: core::lifecycle::lifetime_start(), streamed: -1 });
 }
 // A streamed HTTP/2 response: decided once the final status is known;
 // failure holds a sink error (the stream is then cancelled, the connection
 // kept).
-struct Delivery { decided: bool, streaming: bool, written: i64, failure: core::option::Option<Error> }
+struct Delivery { phase: DeliveryPhase, written: i64, failure: core::option::Option<Error> }
 impl Delivery { fn borrow(&self) -> &Delivery { return self; } }
 fn h2_location(engine: &ext::http2::Connection, id: i32) -> bool {
     let i: i32 = 0; let n: i32 = engine.field_count(id);
@@ -632,11 +657,11 @@ fn h2_location(engine: &ext::http2::Connection, id: i32) -> bool {
 // not a redirect the agent will follow.
 fn h2_deliver<W>(h: &H2, id: i32, o: Options, sink: &W, d: &Delivery) where W: core::io::Write {
     if (d.failure.is_some()) { return; }
-    if (!d.decided) {
+    if (!d.phase.decided()) {
         let status: i32 = h.engine.status(id); if (status < 200) { return; }
-        d.decided = true; d.streaming = streams_to_sink(o,status,h2_location(h.engine.borrow(),id));
+        d.phase.step(DeliveryEvent::Decided(streams_to_sink(o,status,h2_location(h.engine.borrow(),id))));
     }
-    if (!d.streaming) { return; }
+    if (!d.phase.streaming()) { return; }
     let body: core::slice::View<u8> = h.engine.body(id);
     let wrote: core::result::Result<i32,Error> = write_sink<W>(sink,body);
     if (wrote.is_err()) { d.failure = core::option::Some(wrote.unwrap_err()); return; }
@@ -713,7 +738,7 @@ fn over_h2<R,W>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: cor
             chunk.destroy();
         }
     }
-    let d: Delivery = Delivery { decided: false, streaming: false, written: 0, failure: core::option::None() };
+    let d: Delivery = Delivery { phase: delivery_phase_start(), written: 0, failure: core::option::None() };
     if (failure.is_none()) {
         let pumped: core::result::Result<i32,Error> = core::result::Ok(0);
         if (deliver) { pumped = h2_pump_into<W>(h.borrow(),id,scratch.as_view(),deadline,o,sink,d.borrow()); } else { pumped = h.pump(id,0,false,scratch.as_view(),deadline); }
@@ -731,7 +756,7 @@ fn over_h2<R,W>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: cor
         if (done) {
             let r: core::result::Result<Response,Error> = h2_response(h.engine.borrow(),id,method,o.limits,reused);
             if (r.is_err()) { result = core::result::Err(Failure { error: r.unwrap_err(), retryable: false }); }
-            else { let ok: Response = r.unwrap(); if (d.streaming) { ok.streamed = d.written; } result = core::result::Ok(ok); }
+            else { let ok: Response = r.unwrap(); if (d.phase.streaming()) { ok.streamed = d.written; } result = core::result::Ok(ok); }
         } else {
             let e: ext::http2::Error = h.engine.stream_error(id);
             let refused: bool = match (e.cause) { ext::http2::Cause::Refused -> true, _ -> false };
@@ -800,20 +825,20 @@ fn exchange<R,W>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::V
 // RFC 3986 5.2.4 for an absolute or empty path, appended to out.
 fn remove_dots(path: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
     if (path.len() == 0) { return true; }
-    let base: i32 = out.len(); let i: i32 = 0; if (byte(path,0) == 47) { i = 1; } let trailing: bool = false;
+    let base: i32 = out.len(); let i: i32 = 0; if (byte(path,0) == 47) { i = 1; } let trailing_phase = core::iter_state::completion_start();
     while (true) {
         let start: i32 = i; while (i < path.len() && byte(path,i) != 47) { i += 1; }
         let seg: core::slice::View<u8> = part(path,start,i); let last: bool = i >= path.len();
-        if (is(seg,".",1)) { trailing = last; }
+        if (is(seg,".",1)) { trailing_phase = core::iter_state::completed_if(last); }
         else {
             if (is(seg,"..",2)) {
                 let k: i32 = out.len() - 1; while (k >= base && out.at(k) != 47) { k -= 1; }
-                if (k >= base) { out.truncate(k); } trailing = last;
-            } else { if (!put(out,"/",1) || !push(out,seg)) { return false; } trailing = false; }
+                if (k >= base) { out.truncate(k); } trailing_phase = core::iter_state::completed_if(last);
+            } else { if (!put(out,"/",1) || !push(out,seg)) { return false; } trailing_phase = core::iter_state::completion_start(); }
         }
         i += 1; if (last) { break; }
     }
-    if (trailing || out.len() == base) { return put(out,"/",1); }
+    if (trailing_phase.is_done() || out.len() == base) { return put(out,"/",1); }
     return true;
 }
 // Resolve a Location reference against the absolute base URL into out.
@@ -855,7 +880,7 @@ fn https(url: &ext::http_url::Url) -> bool { return match(url.scheme().unwrap())
 // which a streamed body cannot do. A hop to another host or port drops
 // Authorization and Cookie. Body headers go with the body.
 fn run<R,W>(agent: &Agent, request: Request, source: &R, streaming: bool, sink: &W, deliver: bool) -> core::result::Result<Response,Error> where R: core::io::Read, W: core::io::Write {
-    if (!agent.active) { return core::result::Err(Error::InvalidRequest); }
+    if (!agent.lifetime.is_active()) { return core::result::Err(Error::InvalidRequest); }
     let checked: core::result::Result<bool,Error> = check_request(request); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
     let o: Options = agent.options;
     let current: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
@@ -961,11 +986,11 @@ pub impl Agent {
     // as responses, not followed. Each origin's streams share one timeout.
     pub fn fetch_all(&self, requests: core::slice::View<Request>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>) -> i32 {
         let base: i32 = results.len(); let n: i32 = requests.len(); let i: i32 = 0;
-        let done: alloc::vec::Vec<bool> = alloc::vec::new<bool>();
-        while (i < n) { if (results.try_push(core::result::Err(Error::InvalidRequest)).is_err() || done.try_push(false).is_err()) { done.destroy(); return -1; } i += 1; }
+        let done: alloc::vec::Vec<core::iter_state::Completion> = alloc::vec::new<core::iter_state::Completion>();
+        while (i < n) { if (results.try_push(core::result::Err(Error::InvalidRequest)).is_err() || done.try_push(core::iter_state::completion_start()).is_err()) { done.destroy(); return -1; } i += 1; }
         let follow: bool = self.options.follow_redirects; self.options.follow_redirects = false;
-        if (self.active && self.options.http2 && self.options.https) { i = 0; while (i < n) { if (!done.at(i)) { self.multiplex(requests,i,done.borrow(),results,base); } i += 1; } }
-        i = 0; while (i < n) { if (!done.at(i)) { results.set(base + i,self.fetch(requests.get(i).unwrap())); } i += 1; }
+        if (self.lifetime.is_active() && self.options.http2 && self.options.https) { i = 0; while (i < n) { if (!done.at(i).is_done()) { self.multiplex(requests,i,done.borrow(),results,base); } i += 1; } }
+        i = 0; while (i < n) { if (!done.at(i).is_done()) { results.set(base + i,self.fetch(requests.get(i).unwrap())); } i += 1; }
         self.options.follow_redirects = follow; done.destroy();
         let ok: i32 = 0; i = 0; while (i < n) { if (results.at(base + i).is_ok()) { ok += 1; } i += 1; }
         return ok;
@@ -974,7 +999,7 @@ pub impl Agent {
     // concurrent streams, when that origin speaks HTTP/2. Requests it cannot
     // finish (not HTTP/2, refused, connection lost before starting) stay
     // undone for fetch.
-    fn multiplex(&self, requests: core::slice::View<Request>, first: i32, done: &alloc::vec::Vec<bool>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>, base: i32) {
+    fn multiplex(&self, requests: core::slice::View<Request>, first: i32, done: &alloc::vec::Vec<core::iter_state::Completion>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>, base: i32) {
         let o: Options = self.options; let r0: Request = requests.get(first).unwrap();
         if (check_request(r0).is_err()) { return; }
         let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(r0.url,o.url); if (parsed.is_err()) { return; }
@@ -993,16 +1018,16 @@ pub impl Agent {
         // The batch: request indexes, parsed URLs and stream ids (-1 until
         // started, -2 once finished).
         let members: alloc::vec::Vec<Member> = alloc::vec::new<Member>();
-        if (members.try_push(Member { index: first, url: u0, id: -1 }).is_err()) { u0.destroy(); members.destroy(); return; }
+        if (members.try_push(Member { index: first, url: u0, phase: member_phase_start() }).is_err()) { u0.destroy(); members.destroy(); return; }
         let j: i32 = first + 1;
         while (j < requests.len()) {
             let rj: Request = requests.get(j).unwrap();
-            if (!done.at(j) && check_request(rj).is_ok()) {
+            if (!done.at(j).is_done() && check_request(rj).is_ok()) {
                 let pj: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(rj.url,o.url);
                 if (pj.is_ok()) {
                     let uj: ext::http_url::Url = pj.unwrap();
                     let mine: bool = https(uj.borrow()) && uj.port().unwrap() == u0.port().unwrap() && same_case(uj.host().unwrap(),u0.host().unwrap());
-                    if (!mine || members.try_push(Member { index: j, url: uj, id: -1 }).is_err()) { uj.destroy(); }
+                    if (!mine || members.try_push(Member { index: j, url: uj, phase: member_phase_start() }).is_err()) { uj.destroy(); }
                 }
             }
             j += 1;
@@ -1021,29 +1046,29 @@ pub impl Agent {
                 if (started.is_err()) {
                     let e: ext::http2::Error = started.unwrap_err(); let error: Error = h2_error(e);
                     let limit: bool = match (e.cause) { ext::http2::Cause::Limit -> true, _ -> false }; if (limit) { error = Error::InvalidHeader; }
-                    results.set(base + k,core::result::Err(error)); done.set(k,true); mb.id = -2; members.set(next,mb); next += 1; continue;
+                    results.set(base + k,core::result::Err(error)); done.set(k,core::iter_state::finished_completion()); mb.phase.step(MemberEvent::Finished); members.set(next,mb); next += 1; continue;
                 }
-                let id: i32 = started.unwrap(); mb.id = id; members.set(next,mb); self.stats.requests += 1; h.uses += 1;
+                let id: i32 = started.unwrap(); mb.phase.step(MemberEvent::Started(id)); members.set(next,mb); self.stats.requests += 1; h.uses += 1;
                 if (reused || next > 0) { self.stats.reused += 1; }
                 if (rq.body.len() > 0) { let queued: core::result::Result<i32,ext::http2::Error> = h.engine.send_data(id,rq.body,true); }
                 next += 1;
             }
             let k: i32 = 0;
             while (k < next) {
-                let mb: Member = members.at(k); let id: i32 = mb.id;
+                let mb: Member = members.at(k); let id: i32 = mb.phase.id();
                 if (id >= 0 && !h2_open(h.engine.state(id))) {
                     let m: i32 = mb.index; let rq: Request = requests.get(m).unwrap();
                     let finished: bool = match (h.engine.state(id)) { ext::http2::State::Done -> true, _ -> false };
                     if (finished) {
                         let r: core::result::Result<Response,Error> = h2_response(h.engine.borrow(),id,rq.method,o.limits,reused || k > 0);
                         if (r.is_ok()) { let resp: Response = r.unwrap(); if (!push(resp.url.borrow(),rq.url)) { resp.destroy(); r = core::result::Err(Error::AllocationFailed); } else { r = core::result::Ok(resp); } }
-                        results.set(base + m,r); done.set(m,true);
+                        results.set(base + m,r); done.set(m,core::iter_state::finished_completion());
                     } else {
                         let e: ext::http2::Error = h.engine.stream_error(id);
                         let refused: bool = match (e.cause) { ext::http2::Cause::Refused -> true, _ -> false };
-                        if (!refused) { results.set(base + m,core::result::Err(h2_error(e))); done.set(m,true); }
+                        if (!refused) { results.set(base + m,core::result::Err(h2_error(e))); done.set(m,core::iter_state::finished_completion()); }
                     }
-                    h.engine.release(id); mb.id = -2; members.set(k,mb);
+                    h.engine.release(id); mb.phase.step(MemberEvent::Finished); members.set(k,mb);
                 }
                 k += 1;
             }
@@ -1057,7 +1082,7 @@ pub impl Agent {
         }
         // Streams cut off by a lost connection fail with its error.
         let k: i32 = 0;
-        while (k < next) { let mb: Member = members.at(k); if (mb.id >= 0) { results.set(base + mb.index,core::result::Err(failure)); done.set(mb.index,true); h.engine.release(mb.id); } k += 1; }
+        while (k < next) { let mb: Member = members.at(k); if (mb.phase.id() >= 0) { results.set(base + mb.index,core::result::Err(failure)); done.set(mb.index,core::iter_state::finished_completion()); h.engine.release(mb.phase.id()); } k += 1; }
         scratch.destroy();
         settle(self,index,h,!broken);
         k = 0; while (k < members.len()) { let mb: Member = members.at(k); mb.url.destroy(); k += 1; }
@@ -1170,7 +1195,7 @@ pub impl Agent {
     // the idle limits; an origin that negotiates HTTP/2 gets one connection.
     // Returns the number of pooled and HTTP/2 connections afterwards.
     pub fn preconnect(&self, url: core::slice::View<u8>, count: i32) -> core::result::Result<i32,Error> {
-        if (!self.active || count < 0) { return core::result::Err(Error::InvalidRequest); }
+        if (!self.lifetime.is_active() || count < 0) { return core::result::Err(Error::InvalidRequest); }
         let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(url,self.options.url);
         if (parsed.is_err()) { return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
         let u: ext::http_url::Url = parsed.unwrap(); if (https(u.borrow()) && !self.options.https) { u.destroy(); return core::result::Err(Error::UnsupportedScheme); }
@@ -1194,11 +1219,11 @@ pub impl Agent {
     }
     // A fresh connection to url's origin, outside the pool (see Connection).
     pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error> {
-        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::InvalidRequest); }
         if (https(url) && !self.options.https) { return core::result::Err(Error::UnsupportedScheme); }
         let lease: core::result::Result<Lease,Error> = self.acquire(url,true,deadline,false);
         if (lease.is_err()) { return core::result::Err(lease.unwrap_err()); }
-        return core::result::Ok(Connection { conn: lease.unwrap().conn, active: true });
+        return core::result::Ok(Connection { conn: lease.unwrap().conn, lifetime: core::lifecycle::lifetime_start() });
     }
     // Close every pooled and HTTP/2 connection (HTTP/2 with GOAWAY); the agent
     // stays usable unless finished.
@@ -1209,7 +1234,7 @@ pub impl Agent {
         return n;
     }
     pub fn close(&self) -> bool {
-        if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.sessions.destroy(); self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.clear(); self.pool.destroy(); self.sessions.destroy(); self.lifetime.release();
         if (self.context.is_some()) { let context: ext::openssl_tls::Context = self.context.unwrap(); context.destroy(); self.context = core::option::None(); }
         return true;
     }
@@ -1220,13 +1245,13 @@ pub impl Agent {
 // agent's trust options) but outside the pool, for protocols that take over
 // the connection after an HTTP/1.1 upgrade, such as WebSocket. One owner;
 // close it once. Each call has its own absolute deadline.
-pub struct Connection { conn: Conn, active: bool }
+pub struct Connection { conn: Conn, lifetime: core::lifecycle::Lifetime }
 pub impl Connection {
     pub fn borrow(&self) -> &Connection { return self; }
     pub fn is_secure(&self) -> bool { return self.conn.secure; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     fn renewed(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
-        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::InvalidRequest); }
         if (!self.conn.secure) { return core::result::Ok(0); }
         let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); let renewed: core::result::Result<i32,ext::tls_stream::Failure> = s.renew(stream_limits(),deadline);
         self.conn.tls = core::option::Some(s);
@@ -1254,7 +1279,7 @@ pub impl Connection {
     }
     // Close the transport; graceful sends TLS close_notify first.
     pub fn close(&self, graceful: bool) -> bool {
-        if (!self.active) { return false; } self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.lifetime.release();
         if (graceful) { close_conn(self.conn.borrow()); return true; }
         if (self.conn.secure) { let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); s.close(); self.conn.tls = core::option::Some(s); } else { self.conn.socket.close(); }
         return true;
@@ -1278,7 +1303,7 @@ pub impl Response {
         return core::option::Some(found.unwrap().value);
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; } self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.lifetime.release();
         self.wire.destroy(); self.method.destroy(); self.decoded.destroy(); self.url.destroy(); return true;
     }
 }
