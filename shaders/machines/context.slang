@@ -1,5 +1,5 @@
-// Per token: whether an arm of a state, a field or an argument of a `goto`
-// starts here. A `match` inside a block arm has arms of its own, and a call
+// Per token: whether an arm of a state, a field, an argument of a `goto` or
+// a variant of an enum starts here. A `match` inside a block arm has arms of its own, and a call
 // inside an argument has arguments of its own: the bracket depth tells them
 // from the state's arms and the transition's arguments.
 import gpu_index;
@@ -55,5 +55,5 @@ void main(uint3 tid: SV_DispatchThreadID)
         argument = close != 0u && token > open && token < close && depth_before == scan_a[open].w;
     }
     bool field = role == ROLE_FIELD || role == ROLE_DATA;
-    marks[token] = uint4(arm ? 1u : 0u, field ? 1u : 0u, argument ? 1u : 0u, 0u);
+    marks[token] = uint4(arm ? 1u : 0u, field ? 1u : 0u, argument ? 1u : 0u, role == ROLE_VARIANT ? 1u : 0u);
 }

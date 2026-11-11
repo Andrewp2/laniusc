@@ -153,6 +153,17 @@ void main(uint3 tid: SV_DispatchThreadID)
         store(hir_token_pos[up], REC_WITH, pos);
         return;
     }
+    if (kind == PROD_ENUM)
+    {
+        store(pos + 1u, REC_ROLE, ROLE_ENUM);
+        store(pos + 1u, REC_END, hir_token_end[node]);
+        return;
+    }
+    if (kind == PROD_ENUM_VARIANT)
+    {
+        store(pos, REC_ROLE, ROLE_VARIANT);
+        return;
+    }
     uint up_kind = kind_of(up);
     if (up_kind == PROD_ARGS_SOME || up_kind == PROD_ARGS_AFTER_COMMA_MORE)
     {

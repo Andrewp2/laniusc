@@ -1,0 +1,84 @@
+// before
+pub enum CounterState { Idle, Counting(i32, i32), Done(i32) }
+pub struct Counter { limit: i32, scale: i64, __lanius_state: CounterState }
+pub fn counter_start(limit: i32, scale: i64) -> Counter { return Counter { limit: limit, scale: scale, __lanius_state: CounterState::Idle }; }
+pub impl Counter {
+    pub fn step(&mut self, __lanius_event: i32) {
+        match (self.__lanius_state) {
+            CounterState::Idle -> { self.__lanius_in_Idle(__lanius_event); return; },
+            CounterState::Counting(total, seen) -> { self.__lanius_in_Counting(total, seen, __lanius_event); return; },
+            CounterState::Done(total) -> { self.__lanius_in_Done(total, __lanius_event); return; },
+        };
+    }
+    pub fn state(&self) -> CounterState { return self.__lanius_state; }
+    fn __lanius_in_Idle(&mut self, __lanius_event: i32) {
+        match (__lanius_event) {
+            0 -> { return; },
+            _ -> { let n: i32 = __lanius_event; self.__lanius_state = CounterState::Counting(n, 0); return; },
+        };
+    }
+    fn __lanius_in_Counting(&mut self, total: i32, seen: i32, __lanius_event: i32) {
+        match (__lanius_event) {
+            0 -> { self.__lanius_state = CounterState::Done(total); return; },
+            _ -> { let n: i32 = __lanius_event; if (n > self.limit) { self.__lanius_state = CounterState::Done(total); return; } self.__lanius_state = CounterState::Counting(total + n, seen + 1); return; },
+        };
+    }
+    fn __lanius_in_Done(&mut self, total: i32, __lanius_event: i32) {
+        match (__lanius_event) {
+            _ -> { return; },
+        };
+    }
+    pub fn run(&mut self, __lanius_events: [i32], __lanius_count: i32) {
+        let __lanius_at: i32 = 0;
+        while (__lanius_at < __lanius_count) {
+            __lanius_at = match (self.__lanius_state) {
+                CounterState::Idle -> self.__lanius_run_Idle(__lanius_events, __lanius_at, __lanius_count),
+                CounterState::Counting(total, seen) -> self.__lanius_run_Counting(total, seen, __lanius_events, __lanius_at, __lanius_count),
+                CounterState::Done(total) -> self.__lanius_run_Done(total, __lanius_events, __lanius_at, __lanius_count),
+            };
+        }
+    }
+    fn __lanius_run_Idle(&mut self, __lanius_events: [i32], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: i32 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            0 -> { continue; },
+            _ -> { let n: i32 = __lanius_event; self.__lanius_state = CounterState::Counting(n, 0); return __lanius_at; },
+        };
+        }
+        self.__lanius_state = CounterState::Idle;
+        return __lanius_at;
+    }
+    fn __lanius_run_Counting(&mut self, __lanius_data_0: i32, __lanius_data_1: i32, __lanius_events: [i32], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let total: i32 = __lanius_data_0;
+        let seen: i32 = __lanius_data_1;
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: i32 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            0 -> { self.__lanius_state = CounterState::Done(total); return __lanius_at; },
+            _ -> { let n: i32 = __lanius_event; if (n > self.limit) { self.__lanius_state = CounterState::Done(total); return __lanius_at; } let __lanius_next_0: i32 = total + n; let __lanius_next_1: i32 = seen + 1; total = __lanius_next_0; seen = __lanius_next_1; continue; },
+        };
+        }
+        self.__lanius_state = CounterState::Counting(total, seen);
+        return __lanius_at;
+    }
+    fn __lanius_run_Done(&mut self, __lanius_data_0: i32, __lanius_events: [i32], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let total: i32 = __lanius_data_0;
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: i32 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            _ -> { continue; },
+        };
+        }
+        self.__lanius_state = CounterState::Done(total);
+        return __lanius_at;
+    }
+}
+
+// after

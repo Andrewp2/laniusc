@@ -4,6 +4,8 @@
 // text it stands for.
 module machine_common;
 
+import byte_packing;
+
 public static const uint MC_NONE = 0xffffffffu;
 
 // Words of one token record. Word 0 is the role; the rest depend on it.
@@ -36,6 +38,9 @@ public static const uint ROLE_DATA = 4u;
 public static const uint ROLE_ARM = 5u;
 public static const uint ROLE_TRANSITION = 6u;
 public static const uint ROLE_ARGUMENT = 7u;
+// The name of an enum declaration and the name of one of its variants.
+public static const uint ROLE_ENUM = 8u;
+public static const uint ROLE_VARIANT = 9u;
 
 public static const uint FLAG_PUBLIC = 1u;
 public static const uint FLAG_OUTPUT = 2u;
@@ -147,6 +152,156 @@ public static const uint C_RUN_LEAVE = 73u;
 public static const uint C_ASSIGN = 74u;
 public static const uint C_LET_NEXT = 75u;
 public static const uint C_NEXT = 76u;
+
+// A machine has at most this many states: a row of the transition graph is
+// this many bits.
+public static const uint MAX_STATES = 256u;
+public static const uint STATE_ROW_WORDS = 8u;
+
+// Per machine: the name of the enum its events are (0 when no enum of the
+// file has the event type's name), the first token of its start state (0
+// when no state has that name), and whether its events are integers.
+public static const uint INFO_WORDS = 3u;
+public static const uint INFO_ENUM = 0u;
+public static const uint INFO_START = 1u;
+public static const uint INFO_INTEGER = 2u;
+
+// The status words. Each holds the least `token << 5 | code` of one group of
+// rules, and the host reports the first group that has an error: reserved
+// names, the rules a token checks, the events a state handles, the graph.
+public static const uint STATUS_RESERVED = 0u;
+public static const uint STATUS_TOKENS = 1u;
+public static const uint STATUS_EVENTS = 2u;
+public static const uint STATUS_GRAPH = 3u;
+
+public static const uint E_RESERVED = 1u;
+
+public static const uint E_TOO_MANY_STATES = 1u;
+public static const uint E_SECOND_OUTPUT = 2u;
+public static const uint E_DUPLICATE_STATE = 3u;
+public static const uint E_NO_STATE = 4u;
+public static const uint E_START_DATA = 5u;
+public static const uint E_EVENT_TYPE = 6u;
+public static const uint E_WILDCARD = 7u;
+public static const uint E_ARM_BODY = 8u;
+public static const uint E_BLOCK_ARM_END = 9u;
+public static const uint E_RETURN = 10u;
+public static const uint E_TRANSITION_SEMICOLON = 11u;
+public static const uint E_WITH_NO_OUTPUT = 12u;
+public static const uint E_NEEDS_WITH = 13u;
+public static const uint E_ARGUMENT_COUNT = 14u;
+public static const uint E_TRANSITION_OUTSIDE = 15u;
+public static const uint E_TRANSITION_VALUE = 16u;
+public static const uint E_STATE_DATA = 17u;
+
+public static const uint E_MISSING_EVENT = 1u;
+public static const uint E_MISSING_EVENT_OUTPUT = 2u;
+public static const uint E_CATCH_ALL = 3u;
+
+public static const uint E_UNREACHABLE = 1u;
+public static const uint E_DEAD_END = 2u;
+public static const uint E_FINAL_LEAVES = 3u;
+
+// A token row is `(kind, start, length)`.
+public uint token_kind(StructuredBuffer<uint> tokens, uint token)
+{
+    return tokens[token * 3u];
+}
+
+public uint token_start(StructuredBuffer<uint> tokens, uint token)
+{
+    return tokens[token * 3u + 1u];
+}
+
+public uint token_len(StructuredBuffer<uint> tokens, uint token)
+{
+    return tokens[token * 3u + 2u];
+}
+
+public uint token_byte(StructuredBuffer<uint> tokens, ByteAddressBuffer bytes, uint token, uint offset)
+{
+    return byte_address_load_u8(bytes, token_start(tokens, token) + offset);
+}
+
+public bool same_token_text(StructuredBuffer<uint> tokens, ByteAddressBuffer bytes, uint a, uint b)
+{
+    uint len = token_len(tokens, a);
+    if (len != token_len(tokens, b))
+        return false;
+    uint left = token_start(tokens, a);
+    uint right = token_start(tokens, b);
+    len = min(len, MAX_NAME);
+    for (uint i = 0u; i < len; i += 1u)
+    {
+        if (byte_address_load_u8(bytes, left + i) != byte_address_load_u8(bytes, right + i))
+            return false;
+    }
+    return true;
+}
+
+// The machine, state and arm a token is inside, each by its first token.
+public struct MachinePlace
+{
+    public uint machine;
+    public uint state;
+    public uint arm;
+};
+
+// `scan_a` holds the inclusive prefix sums of machines, states, transitions
+// and bracket depth; `scan_b` those of the arms of states.
+public MachinePlace machine_place(StructuredBuffer<uint> records, StructuredBuffer<uint4> scan_a,
+                                  StructuredBuffer<uint4> scan_b, StructuredBuffer<uint> machines,
+                                  StructuredBuffer<uint> states, StructuredBuffer<uint> arms, uint token)
+{
+    MachinePlace place;
+    place.machine = MC_NONE;
+    place.state = MC_NONE;
+    place.arm = MC_NONE;
+    uint4 sums = scan_a[token];
+    if (sums.x == 0u)
+        return place;
+    uint machine = machines[sums.x - 1u];
+    if (token >= records[machine * REC_WORDS + REC_END])
+        return place;
+    place.machine = machine;
+    if (sums.y == 0u)
+        return place;
+    uint state = states[sums.y - 1u];
+    if (state < machine || token >= records[state * REC_WORDS + REC_END])
+        return place;
+    place.state = state;
+    uint ordinal = scan_b[token].x;
+    if (ordinal == 0u)
+        return place;
+    uint arm = arms[ordinal - 1u];
+    if (arm <= records[state * REC_WORDS + REC_BLOCK] || token >= records[arm * REC_WORDS + REC_END])
+        return place;
+    place.arm = arm;
+    return place;
+}
+
+// Reports a broken rule at `token`. The status word keeps the least key. In
+// the run that explains the error the host read, the thread that found it
+// writes the spans the message names: the token, tokens `a` and `b`, and a
+// number.
+public void machine_error(RWStructuredBuffer<uint> status, RWStructuredBuffer<uint> detail,
+                          StructuredBuffer<uint> tokens, uint explain_word, uint explain_key, uint word, uint token,
+                          uint code, uint a, uint b, uint number)
+{
+    uint key = (token << 5u) | code;
+    if (explain_word == word && explain_key == key)
+    {
+        detail[0u] = token_start(tokens, token);
+        detail[1u] = token_len(tokens, token);
+        detail[2u] = token_start(tokens, a);
+        detail[3u] = token_len(tokens, a);
+        detail[4u] = token_start(tokens, b);
+        detail[5u] = token_len(tokens, b);
+        detail[6u] = number;
+    }
+    uint prior;
+    InterlockedMin(status[word], key, prior);
+}
 
 public bool ascii_upper(uint c)
 {

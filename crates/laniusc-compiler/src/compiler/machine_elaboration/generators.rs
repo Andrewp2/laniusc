@@ -476,7 +476,6 @@ pub(super) fn elaborate(path: &Path, source: &str) -> Result<Option<Elaborated>,
         partner: Vec::new(),
         out: String::new(),
         segments: Vec::new(),
-        enums: HashMap::new(),
     };
     let e = &mut elaborator;
     let mut generators = Vec::new();
@@ -553,7 +552,8 @@ gen fn evens(limit: i32) -> i32 {
         assert!(text.contains("fn evens(limit: i32) -> Evens { return evens_start(limit); }"), "{text}");
         assert!(text.contains("fn next(&mut self) -> core::option::Option<i32> { return self.step(EvensResume::Next); }"), "{text}");
         // The machine rules accept the result.
-        assert!(super::super::elaborate(Path::new("evens.lani"), text, true).unwrap().is_some());
+        let outcome = machines::expand(&[text.as_str()], &[machines::FILE_GENERATORS]).unwrap();
+        assert!(matches!(outcome, Some(machines::Outcome::Expanded(files)) if files[0].is_some()));
     }
 
     #[test]

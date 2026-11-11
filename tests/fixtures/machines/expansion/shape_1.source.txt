@@ -1,0 +1,30 @@
+enum Key { Up, Down(i32), Stop }
+machine HTTPServer2 on Key -> i32 {
+    start A;
+    state A {
+        Key::Up -> goto B(1) with 1,
+        Key::Down(by) -> { let twice: i32 = by * 2; goto B(twice) with twice; },
+        Key::Stop -> stay with 0,
+    }
+    state B(level: i32) {
+        Key::Up -> goto B(level + 1) with level,
+        Key::Down(_) -> goto A with level,
+        Key::Stop -> goto C with 0
+    }
+    final state C { Key::Up -> stay with 0, Key::Down(_) -> stay with 0, Key::Stop -> stay with 0 }
+}
+
+fn between() -> i32 { return 2; }
+
+machine Skip on u8 {
+    start Text;
+    state Text {
+        47 -> goto Slash,
+        c -> stay,
+    }
+    state Slash {
+        47 -> goto Text,
+        _other -> { goto Text; }
+    }
+}
+fn main() -> i32 { return between(); }

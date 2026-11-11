@@ -107,6 +107,33 @@ const CONSTANTS: [&str; 77] = [
 
 const RECORD_WORDS: usize = 6;
 const PIECE_COPY: u32 = 0;
+const NO_ERROR: u32 = u32::MAX;
+const STATUS_WORDS: usize = 4;
+const DETAIL_WORDS: usize = 8;
+const INFO_WORDS: usize = 3;
+const STATE_ROW_WORDS: usize = 8;
+/// A row of the transition graph has 256 bits, and 2^8 is 256.
+const REACH_STEPS: usize = 8;
+
+/// File flags: generators or the closure pass wrote the file, so it may use
+/// the reserved names of that pass.
+pub(super) const FILE_GENERATORS: u32 = 1;
+pub(super) const FILE_CLOSURES: u32 = 2;
+
+/// A machine the rules reject, as a byte span of one file.
+pub(super) struct Invalid {
+    pub(super) file: usize,
+    pub(super) start: usize,
+    pub(super) len: usize,
+    pub(super) message: String,
+    pub(super) help: Option<String>,
+}
+
+pub(super) enum Outcome {
+    /// One entry per file: `None` for a file without machines.
+    Expanded(Vec<Option<Rewritten>>),
+    Invalid(Invalid),
+}
 
 #[derive(encase::ShaderType)]
 struct Params {
@@ -118,6 +145,13 @@ struct Params {
 
 fn params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32) -> LaniusBuffer<Params> {
     uniform_from_val(gpu.device, label, &Params { a, b, c: 0, d: 0 })
+}
+
+/// The parameters of a kernel that checks rules. `explain` is the status
+/// word and key of the error whose spans the kernel writes, or `NO_ERROR`
+/// twice in the run that finds the errors.
+fn check_params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32, explain: [u32; 2]) -> LaniusBuffer<Params> {
+    uniform_from_val(gpu.device, label, &Params { a, b, c: explain[0], d: explain[1] })
 }
 
 struct Frontend {
@@ -197,12 +231,15 @@ fn with_parse<A, R>(
             finish(&Gpu { device, queue }, recorded)
         },
     ))?;
-    frontend.parser.release_current_resident_buffers();
+    // The compiler replaces the lexer's buffers between runs. The parser's
+    // own buffers bind none of them and stay for the next run.
+    frontend.parser.release_lexer_bindings();
     outcome
 }
 
 /// What the first submission leaves for the later ones: the lexer's and
-/// parser's buffers, the token records and the first prefix sums.
+/// parser's buffers, the token records, the first prefix sums and the status
+/// words of the rules.
 struct Marked {
     tokens: u32,
     tokens_out: LaniusBuffer<GpuToken>,
@@ -211,34 +248,45 @@ struct Marked {
     source_file_start: LaniusBuffer<u32>,
     source_file_len: LaniusBuffer<u32>,
     semantic_token_kinds: LaniusBuffer<u32>,
+    file_flags: LaniusBuffer<u32>,
     records: LaniusBuffer<u8>,
     marks: LaniusBuffer<u8>,
     scan: LaniusBuffer<u8>,
+    status: LaniusBuffer<u32>,
+    detail: LaniusBuffer<u8>,
     /// The last row of `scan`: the number of machines, states and transitions.
     totals: LaniusBuffer<u8>,
+    /// The first status word: the reserved names.
+    reserved: LaniusBuffer<u8>,
 }
 
-/// Expands the machines of `sources`, one GPU run for all of them: one entry
-/// per file, `None` for a file without machines. `None` when no file has a
-/// machine, or when a file does not lex or parse: the frontend reports that.
-pub(super) fn expand(sources: &[&str]) -> Result<Option<Vec<Option<Rewritten>>>> {
+/// Expands the machines of `sources`, one GPU run for all of them. `flags`
+/// holds `FILE_GENERATORS` and `FILE_CLOSURES` per file. `None` when no file
+/// has a machine, or when a file does not lex or parse: the frontend reports
+/// that.
+pub(super) fn expand(sources: &[&str], flags: &[u32]) -> Result<Option<Outcome>> {
     if sources.iter().all(|source| source.is_empty()) {
         return Ok(None);
     }
-    with_parse(sources, mark, |gpu, marked| match marked {
-        Some(marked) => write(gpu, sources, &marked),
-        None => Ok(None),
-    })
+    with_parse(
+        sources,
+        |gpu, lexer, parser, encoder, parsed| mark(gpu, lexer, parser, encoder, parsed, flags),
+        |gpu, marked| match marked {
+            Some(marked) => write(gpu, sources, &marked),
+            None => Ok(None),
+        },
+    )
 }
 
-/// Records the kernels that read the parse tree into token records and
-/// number the machines.
+/// Records the kernels that read the parse tree into token records, number
+/// the machines and check the reserved names.
 fn mark(
     gpu: &Gpu<'_>,
     lexer: &GpuBuffers,
     parser: &ParserBuffers,
     encoder: &mut wgpu::CommandEncoder,
     parsed: &Parsed,
+    flags: &[u32],
 ) -> Result<Option<Marked>> {
     let tokens = parsed.token_count;
     if tokens == 0 {
@@ -248,6 +296,9 @@ fn mark(
     let records = gpu.rows("machines.records", rows * RECORD_WORDS, 1);
     let marks = gpu.rows("machines.marks", rows, 4);
     let work = [gpu.rows("machines.scan.a", rows, 4), gpu.rows("machines.scan.b", rows, 4)];
+    let status = storage_ro_from_u32s(gpu.device, "machines.status", &[NO_ERROR; STATUS_WORDS]);
+    let detail = gpu.rows("machines.detail", DETAIL_WORDS, 1);
+    let file_flags = storage_ro_from_u32s(gpu.device, "machines.file_flags", flags);
     let node_params = params(gpu, "machines.nodes.params", parsed.tree_capacity, tokens);
     gpu.dispatch(
         encoder,
@@ -281,8 +332,7 @@ fn mark(
         tokens,
     )?;
     let scan = gpu.scan(encoder, &gpu.kernel("closures/scan")?, &marks, &work, tokens)?.clone();
-    let totals = gpu.read(encoder, &scan, (rows - 1) * 4, 4);
-    Ok(Some(Marked {
+    let marked = Marked {
         tokens,
         tokens_out: lexer.tokens_out.clone(),
         token_file_id: lexer.token_file_id.clone(),
@@ -290,14 +340,42 @@ fn mark(
         source_file_start: lexer.source_file_start.clone(),
         source_file_len: lexer.source_file_len.clone(),
         semantic_token_kinds: parser.semantic_token_kinds.clone(),
+        file_flags,
         records,
         marks,
+        totals: gpu.read(encoder, &scan, (rows - 1) * 4, 4),
         scan,
-        totals,
-    }))
+        reserved: gpu.rows("machines.reserved", 1, 1),
+        status,
+        detail,
+    };
+    record_reserved(gpu, encoder, &marked, [NO_ERROR; 2])?;
+    let reserved = gpu.read(encoder, &marked.status, 0, 1);
+    Ok(Some(Marked { reserved, ..marked }))
 }
 
-/// Records the kernel that writes each marked token into its lists.
+/// Records the kernel that checks the reserved names.
+fn record_reserved(gpu: &Gpu<'_>, encoder: &mut wgpu::CommandEncoder, marked: &Marked, explain: [u32; 2]) -> Result<()> {
+    let reserved_params = check_params(gpu, "machines.reserved.params", marked.tokens, 0, explain);
+    gpu.dispatch(
+        encoder,
+        &gpu.kernel("machines/reserved")?,
+        "machines.reserved",
+        &[
+            ("gReserved", reserved_params.as_entire_binding()),
+            ("tokens_out", marked.tokens_out.as_entire_binding()),
+            ("token_file_id", marked.token_file_id.as_entire_binding()),
+            ("in_bytes", marked.in_bytes.as_entire_binding()),
+            ("file_flags", marked.file_flags.as_entire_binding()),
+            ("status", marked.status.as_entire_binding()),
+            ("detail", marked.detail.as_entire_binding()),
+        ],
+        marked.tokens,
+    )
+}
+
+/// Records the kernel that writes each marked token into its lists. The
+/// fourth component of the marks is a list only when `fourth` is set.
 fn lists(
     gpu: &Gpu<'_>,
     encoder: &mut wgpu::CommandEncoder,
@@ -306,10 +384,16 @@ fn lists(
     marks: &LaniusBuffer<u8>,
     scan: &LaniusBuffer<u8>,
     label: &str,
-) -> Result<[LaniusBuffer<u8>; 3]> {
+    fourth: bool,
+) -> Result<[LaniusBuffer<u8>; 4]> {
     let rows = tokens as usize;
-    let out = [gpu.rows(label, rows, 1), gpu.rows(label, rows, 1), gpu.rows(label, rows, 1)];
-    let list_params = params(gpu, "machines.lists.params", tokens, 0);
+    let out = [
+        gpu.rows(label, rows, 1),
+        gpu.rows(label, rows, 1),
+        gpu.rows(label, rows, 1),
+        gpu.rows(label, if fourth { rows } else { 1 }, 1),
+    ];
+    let list_params = params(gpu, "machines.lists.params", tokens, u32::from(fourth));
     gpu.dispatch(
         encoder,
         kernel,
@@ -321,15 +405,26 @@ fn lists(
             ("list_x", out[0].as_entire_binding()),
             ("list_y", out[1].as_entire_binding()),
             ("list_z", out[2].as_entire_binding()),
+            ("list_w", out[3].as_entire_binding()),
         ],
         tokens,
     )?;
     Ok(out)
 }
 
-/// Writes the pieces of every machine and the expanded bytes.
-fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<Option<Rewritten>>>> {
-    if gpu.words(&marked.totals)?[0] == 0 {
+/// Checks the rules, then writes the pieces of every machine and the
+/// expanded bytes.
+fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outcome>> {
+    let reserved = gpu.words(&marked.reserved)?[0];
+    if reserved != NO_ERROR {
+        let mut encoder = gpu.encoder("machines.explain");
+        record_reserved(gpu, &mut encoder, marked, [0, reserved])?;
+        return explain(gpu, encoder, sources, marked, 0, reserved).map(Some);
+    }
+    let totals = gpu.words(&marked.totals)?;
+    let (machine_count, state_count, transition_count) = (totals[0], totals[1], totals[2]);
+    // A transition outside a machine is an error the rules report.
+    if machine_count == 0 && transition_count == 0 {
         return Ok(None);
     }
     let tokens = marked.tokens;
@@ -337,9 +432,14 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<
     let scan_kernel = gpu.kernel("closures/scan")?;
     let list_kernel = gpu.kernel("machines/lists")?;
     let piece_kernel = gpu.kernel("machines/pieces")?;
+    let resolve_kernel = gpu.kernel("machines/resolve")?;
+    let arm_kernel = gpu.kernel("machines/arms")?;
+    let reach_kernel = gpu.kernel("machines/reach")?;
+    let state_kernel = gpu.kernel("machines/states")?;
     let (const_index, const_bytes) = constant_table(gpu.device);
 
-    // The arms, fields and arguments, then the piece count of every token.
+    // The arms, fields, arguments and enum variants, then the rules and the
+    // piece count of every token.
     let marks_b = gpu.rows("machines.context", rows, 4);
     let work_b = [gpu.rows("machines.context.a", rows, 4), gpu.rows("machines.context.b", rows, 4)];
     let counts = [gpu.rows("machines.counts0", rows, 4), gpu.rows("machines.counts1", rows, 4)];
@@ -348,9 +448,16 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<
         [gpu.rows("machines.counts1.a", rows, 4), gpu.rows("machines.counts1.b", rows, 4)],
     ];
     let no_pieces = [gpu.rows("machines.no_pieces", 1, 4), gpu.rows("machines.no_sources", 1, 4)];
+    let machine_info = gpu.rows("machines.info", machine_count as usize * INFO_WORDS, 1);
+    let arm_event = gpu.rows("machines.arm_event", rows, 1);
+    let adjacency = gpu.rows("machines.adjacency", state_count as usize * STATE_ROW_WORDS, 1);
+    let reach_work = [
+        gpu.rows("machines.reach.a", state_count as usize * STATE_ROW_WORDS, 1),
+        gpu.rows("machines.reach.b", state_count as usize * STATE_ROW_WORDS, 1),
+    ];
     let mut encoder = gpu.encoder("machines.count");
-    let [machines, states, transitions] =
-        lists(gpu, &mut encoder, &list_kernel, tokens, &marked.marks, &marked.scan, "machines.lists.a")?;
+    let [machines, states, transitions, _] =
+        lists(gpu, &mut encoder, &list_kernel, tokens, &marked.marks, &marked.scan, "machines.lists.a", false)?;
     let token_params = params(gpu, "machines.context.params", tokens, 0);
     gpu.dispatch(
         &mut encoder,
@@ -367,7 +474,110 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<
         tokens,
     )?;
     let scan_b = gpu.scan(&mut encoder, &scan_kernel, &marks_b, &work_b, tokens)?;
-    let [arms, fields, arguments] = lists(gpu, &mut encoder, &list_kernel, tokens, &marks_b, scan_b, "machines.lists.b")?;
+    let [arms, fields, arguments, variants] =
+        lists(gpu, &mut encoder, &list_kernel, tokens, &marks_b, scan_b, "machines.lists.b", true)?;
+
+    // The rules. The kernels run again to explain an error, with the same
+    // buffers: every write of the first run repeats its value.
+    let record_checks = |encoder: &mut wgpu::CommandEncoder, explain: [u32; 2]| -> Result<()> {
+        let resolve_params = check_params(gpu, "machines.resolve.params", tokens, machine_count, explain);
+        gpu.dispatch(
+            encoder,
+            &resolve_kernel,
+            "machines.resolve",
+            &[
+                ("gResolve", resolve_params.as_entire_binding()),
+                ("tokens_out", marked.tokens_out.as_entire_binding()),
+                ("token_file_id", marked.token_file_id.as_entire_binding()),
+                ("in_bytes", marked.in_bytes.as_entire_binding()),
+                ("semantic_token_kinds", marked.semantic_token_kinds.as_entire_binding()),
+                ("records", marked.records.as_entire_binding()),
+                ("scan_a", marked.scan.as_entire_binding()),
+                ("scan_b", scan_b.as_entire_binding()),
+                ("machines", machines.as_entire_binding()),
+                ("states", states.as_entire_binding()),
+                ("arms", arms.as_entire_binding()),
+                ("machine_info", machine_info.as_entire_binding()),
+                ("adjacency", adjacency.as_entire_binding()),
+                ("status", marked.status.as_entire_binding()),
+                ("detail", marked.detail.as_entire_binding()),
+            ],
+            tokens,
+        )?;
+        let arm_params = check_params(gpu, "machines.arms.params", tokens, 0, explain);
+        gpu.dispatch(
+            encoder,
+            &arm_kernel,
+            "machines.arms",
+            &[
+                ("gArms", arm_params.as_entire_binding()),
+                ("tokens_out", marked.tokens_out.as_entire_binding()),
+                ("in_bytes", marked.in_bytes.as_entire_binding()),
+                ("records", marked.records.as_entire_binding()),
+                ("scan_a", marked.scan.as_entire_binding()),
+                ("scan_b", scan_b.as_entire_binding()),
+                ("machines", machines.as_entire_binding()),
+                ("states", states.as_entire_binding()),
+                ("arms", arms.as_entire_binding()),
+                ("variants", variants.as_entire_binding()),
+                ("machine_info", machine_info.as_entire_binding()),
+                ("arm_event", arm_event.as_entire_binding()),
+                ("status", marked.status.as_entire_binding()),
+                ("detail", marked.detail.as_entire_binding()),
+            ],
+            tokens,
+        )?;
+        if state_count == 0 {
+            return Ok(());
+        }
+        let reach_params = params(gpu, "machines.reach.params", state_count, 0);
+        let mut reach = &adjacency;
+        for step in 0..REACH_STEPS {
+            let next = &reach_work[step % 2];
+            gpu.dispatch(
+                encoder,
+                &reach_kernel,
+                "machines.reach",
+                &[
+                    ("gReach", reach_params.as_entire_binding()),
+                    ("records", marked.records.as_entire_binding()),
+                    ("scan_a", marked.scan.as_entire_binding()),
+                    ("machines", machines.as_entire_binding()),
+                    ("states", states.as_entire_binding()),
+                    ("rows_in", reach.as_entire_binding()),
+                    ("rows_out", next.as_entire_binding()),
+                ],
+                state_count,
+            )?;
+            reach = next;
+        }
+        let state_params = check_params(gpu, "machines.states.params", state_count, 0, explain);
+        gpu.dispatch(
+            encoder,
+            &state_kernel,
+            "machines.states",
+            &[
+                ("gStates", state_params.as_entire_binding()),
+                ("tokens_out", marked.tokens_out.as_entire_binding()),
+                ("records", marked.records.as_entire_binding()),
+                ("scan_a", marked.scan.as_entire_binding()),
+                ("scan_b", scan_b.as_entire_binding()),
+                ("machines", machines.as_entire_binding()),
+                ("states", states.as_entire_binding()),
+                ("variants", variants.as_entire_binding()),
+                ("machine_info", machine_info.as_entire_binding()),
+                ("arm_event", arm_event.as_entire_binding()),
+                ("adjacency", adjacency.as_entire_binding()),
+                ("reach", reach.as_entire_binding()),
+                ("status", marked.status.as_entire_binding()),
+                ("detail", marked.detail.as_entire_binding()),
+            ],
+            state_count,
+        )
+    };
+    record_checks(&mut encoder, [NO_ERROR; 2])?;
+    let status_read = gpu.read(&mut encoder, &marked.status, 0, STATUS_WORDS);
+
     let record_pieces = |encoder: &mut wgpu::CommandEncoder,
                          write: u32,
                          count_scans: [&LaniusBuffer<u8>; 2],
@@ -414,6 +624,12 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<
     let total0 = gpu.read(&mut encoder, count_scan0, (rows - 1) * 4, 4);
     let total1 = gpu.read(&mut encoder, count_scan1, (rows - 1) * 4, 4);
     gpu.submit("machines.count", encoder);
+    let failures = gpu.words(&status_read)?;
+    if let Some(word) = failures.iter().position(|&key| key != NO_ERROR) {
+        let mut encoder = gpu.encoder("machines.explain");
+        record_checks(&mut encoder, [word as u32, failures[word]])?;
+        return explain(gpu, encoder, sources, marked, word, failures[word]).map(Some);
+    }
     let piece_count = gpu
         .words(&total0)?
         .into_iter()
@@ -467,7 +683,89 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Vec<
     let mut bytes: Vec<u8> = gpu.words(&output_read)?.into_iter().flat_map(u32::to_le_bytes).collect();
     bytes.truncate(out_len as usize);
 
-    split_files(sources, &piece_rows, &piece_ends, &piece_anchors, &bytes).map(Some)
+    split_files(sources, &piece_rows, &piece_ends, &piece_anchors, &bytes).map(|files| Some(Outcome::Expanded(files)))
+}
+
+/// Submits the run that explains the error `key` of status word `word` and
+/// builds its message. The kernels wrote the spans the message names: the
+/// token of the error, two more tokens and a number.
+fn explain(
+    gpu: &Gpu<'_>,
+    mut encoder: wgpu::CommandEncoder,
+    sources: &[&str],
+    marked: &Marked,
+    word: usize,
+    key: u32,
+) -> Result<Outcome> {
+    let detail_read = gpu.read(&mut encoder, &marked.detail, 0, DETAIL_WORDS);
+    gpu.submit("machines.explain", encoder);
+    let detail = gpu.words(&detail_read)?;
+
+    let mut file_starts = Vec::with_capacity(sources.len());
+    let mut next = 0usize;
+    for source in sources {
+        file_starts.push(next);
+        next += source.len();
+    }
+    let file_of = |offset: usize| file_starts.partition_point(|&start| start <= offset).saturating_sub(1);
+    let text = |start: u32, len: u32| {
+        let file = file_of(start as usize);
+        let from = start as usize - file_starts[file];
+        sources[file].get(from..from + len as usize).unwrap_or("")
+    };
+    let label = text(detail[0], detail[1]);
+    let a = text(detail[2], detail[3]);
+    let b = text(detail[4], detail[5]);
+    let number = detail[6];
+    let mut len = detail[1] as usize;
+    let mut help = None;
+    let message = match (word, key & 31) {
+        (0, _) => "identifiers starting with `__lanius_` are reserved for the compiler".to_string(),
+        (1, 1) => "a machine has at most 256 states".to_string(),
+        (1, 2) => "expected `{` here".to_string(),
+        (1, 3) => format!("state `{label}` is declared twice"),
+        (1, 4) => format!("no state is named `{label}`"),
+        (1, 5) => "the start state takes no data, so construction never chooses a state".to_string(),
+        (1, 6) => {
+            // The event type runs to the end of token `a`.
+            len = (detail[2] + detail[3] - detail[0]) as usize;
+            "a machine's event type is an integer type or an enum declared in the machine's file".to_string()
+        }
+        (1, 7) => format!(
+            "state `{a}` handles the remaining events with `_`; list each event, so adding one makes every state decide what it does"
+        ),
+        (1, 8) => {
+            "a machine arm ends in a transition: `goto State` or `stay`, or a block whose every path does".to_string()
+        }
+        (1, 9) => "expected `,` after this block arm".to_string(),
+        (1, 10) => "a machine arm leaves through `goto` or `stay`, not `return`".to_string(),
+        (1, 11) => "expected `;` after this transition".to_string(),
+        (1, 12) => "this machine has no output, so its transitions take no `with`".to_string(),
+        (1, 13) => "this machine has an output: end the transition with `with value`".to_string(),
+        (1, 14) => format!("state `{a}` takes {number} values"),
+        (1, 15) => "`goto` and `stay` are the transitions of a machine: write them in the arms of a state".to_string(),
+        (1, 16) => "a transition is a statement or the whole body of an arm, and it has no value".to_string(),
+        (1, 17) => "expected a field name here".to_string(),
+        (2, code @ (1 | 2)) => {
+            help = Some(format!("add an arm, e.g. `{a}::{b} -> stay{}`", if code == 2 { " with ..." } else { "" }));
+            format!("state `{label}` does not handle `{a}::{b}`")
+        }
+        (2, _) => format!("state `{label}` must end with a `_` or binding arm, since its events are integers"),
+        (3, 1) => format!("state `{label}` is unreachable from `start {a}`"),
+        (3, 2) => {
+            help = Some(format!("mark it `final state {label}` if the machine is meant to stop here"));
+            format!("state `{label}` has no `goto` to another state")
+        }
+        _ => format!("`final` state `{label}` has a `goto` to another state"),
+    };
+    let file = file_of(detail[0] as usize);
+    Ok(Outcome::Invalid(Invalid {
+        file,
+        start: detail[0] as usize - file_starts[file],
+        len: len.max(1),
+        message,
+        help,
+    }))
 }
 
 fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
@@ -579,33 +877,39 @@ mod tests {
         }
     }
 
-    /// The files with machines that the host elaborator accepts, with the
-    /// text it writes for each.
-    fn host_expansions() -> Vec<(std::path::PathBuf, String, String)> {
-        // LANIUS_MACHINE_ROOT names another checkout whose library to read.
-        let root = std::env::var_os("LANIUS_MACHINE_ROOT")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
-        let mut files = Vec::new();
-        for dir in ["tests/fixtures/machines", "stdlib", "extended"] {
-            lani_files(&root.join(dir), &mut files);
+    /// The expansion of sources the rules accept.
+    fn expanded(sources: &[&str]) -> Option<Vec<Option<Rewritten>>> {
+        match expand(sources, &vec![0; sources.len()]).expect("expand") {
+            Some(Outcome::Expanded(files)) => Some(files),
+            Some(Outcome::Invalid(invalid)) => panic!(
+                "file {} at byte {}: {} ({:?})",
+                invalid.file, invalid.start, invalid.message, invalid.help
+            ),
+            None => None,
         }
-        files.sort();
-        let mut out = Vec::new();
-        for path in files {
-            let source = std::fs::read_to_string(&path).expect("read a source file");
-            // Generators are rewritten before machines.
-            if source.contains("gen fn") {
-                continue;
-            }
-            if let Ok(Some(host)) = super::super::elaborate(&path, &source, false) {
-                out.push((path, source, host.text));
-            }
-        }
-        out
     }
 
-    fn first_difference(path: &std::path::Path, expected: &str, actual: &str) -> String {
+    fn expanded_text(source: &str) -> String {
+        let mut files = expanded(&[source]).expect("the source has a machine");
+        files[0].take().expect("the source has a machine").text
+    }
+
+    /// What the rules say about `source`: the labeled text, the message and
+    /// the help of a rejection.
+    fn verdict(source: &str, flags: u32) -> String {
+        match expand(&[source], &[flags]).expect("expand") {
+            Some(Outcome::Invalid(invalid)) => format!(
+                "`{}`: {}{}",
+                &source[invalid.start..invalid.start + invalid.len],
+                invalid.message,
+                invalid.help.map_or(String::new(), |help| format!(" [{help}]"))
+            ),
+            Some(Outcome::Expanded(_)) => "expanded".to_string(),
+            None => "no machine, or the file does not parse".to_string(),
+        }
+    }
+
+    fn first_difference(name: &str, expected: &str, actual: &str) -> String {
         let at = expected.bytes().zip(actual.bytes()).position(|(a, b)| a != b).unwrap_or(expected.len().min(actual.len()));
         let from = at.saturating_sub(120);
         let window = |text: &str| {
@@ -613,8 +917,7 @@ mod tests {
             String::from_utf8_lossy(bytes).into_owned()
         };
         format!(
-            "{}: the texts differ at byte {at} (lengths {} and {})\n--- host ---\n{}\n--- gpu ---\n{}\n",
-            path.display(),
+            "{name}: the texts differ at byte {at} (lengths {} and {})\n--- recorded ---\n{}\n--- gpu ---\n{}\n",
             expected.len(),
             actual.len(),
             window(expected),
@@ -622,79 +925,220 @@ mod tests {
         )
     }
 
+    const DOOR: &str = "enum Input { Open, Close }
+pub machine Door on Input -> Reply {
+    opens: i32,
+    start Closed;
+    state Opened {
+        Input::Close -> goto Closed with Reply::Done,
+        Input::Open -> stay with Reply::Ignored,
+    }
+    state Closed {
+        Input::Open -> { self.opens += 1; goto Opened with Reply::Done; },
+        Input::Close -> stay with Reply::Ignored,
+    }
+}
+";
+
     #[test]
-    fn the_gpu_writes_the_text_the_host_elaborator_writes() {
-        let cases = host_expansions();
-        assert!(cases.len() >= 5, "found {} files with machines", cases.len());
-        println!("{} files with machines", cases.len());
-        let mut failures = String::new();
-        for (path, source, expected) in &cases {
-            match expand(&[source]).expect("expand") {
-                Some(files) => match &files[0] {
-                    Some(file) if file.text == *expected => {}
-                    Some(file) => failures.push_str(&first_difference(path, expected, &file.text)),
-                    None => failures.push_str(&format!("{}: no machine found\n", path.display())),
-                },
-                // A closure is rewritten before machines: the parser does
-                // not read one.
-                None if source.contains('|') => {}
-                None => failures.push_str(&format!("{}: not expanded\n", path.display())),
-            }
-        }
-        assert!(failures.is_empty(), "{failures}");
+    fn a_machine_expands_to_an_enum_a_struct_a_constructor_and_an_impl() {
+        let text = expanded_text(DOOR);
+        assert!(text.starts_with("enum Input { Open, Close }\npub enum DoorState { Opened, Closed }\npub struct Door { opens: i32, __lanius_state: DoorState }\n"), "{text}");
+        assert!(text.contains("pub fn door_start(opens: i32) -> Door { return Door { opens: opens, __lanius_state: DoorState::Closed }; }"), "{text}");
+        assert!(text.contains("DoorState::Opened -> { return self.__lanius_in_Opened(__lanius_event); },"), "{text}");
+        assert!(text.contains("Input::Close -> { self.__lanius_state = DoorState::Closed; return Reply::Done; },"), "{text}");
+        assert!(text.contains("Input::Open -> { return Reply::Ignored; },"), "{text}");
+        assert!(text.contains("Input::Open -> { self.opens += 1; self.__lanius_state = DoorState::Opened; return Reply::Done; },"), "{text}");
+        assert!(text.contains("return match (self.__lanius_state) {"), "{text}");
+    }
+
+    #[test]
+    fn run_has_one_loop_per_state() {
+        let text = expanded_text("enum Op { Push(i32), Drop }
+machine Pair on Op {
+    start Empty;
+    state Empty {
+        Op::Push(x) -> goto Holding(x, 0),
+        Op::Drop -> stay,
+    }
+    state Holding(first: i32, second: i32) {
+        Op::Push(x) -> goto Holding(x, first),
+        Op::Drop -> goto Empty,
+    }
+}
+");
+        assert!(text.contains("fn run(&mut self, __lanius_events: [Op], __lanius_count: i32) {"), "{text}");
+        assert!(text.contains("PairState::Holding(first, second) -> self.__lanius_run_Holding(first, second, __lanius_events, __lanius_at, __lanius_count),"), "{text}");
+        // A transition to the same state continues its loop, reading the
+        // old data before assigning the new.
+        assert!(text.contains("Op::Push(x) -> { let __lanius_next_0: i32 = x; let __lanius_next_1: i32 = first; first = __lanius_next_0; second = __lanius_next_1; continue; },"), "{text}");
+        assert!(text.contains("Op::Drop -> { continue; },"), "{text}");
+        // One to another state stores it and returns the position.
+        assert!(text.contains("Op::Drop -> { self.__lanius_state = PairState::Empty; return __lanius_at; },"), "{text}");
+        assert!(text.contains("self.__lanius_state = PairState::Holding(first, second);\n        return __lanius_at;"), "{text}");
+    }
+
+    #[test]
+    fn integer_events_may_end_with_a_binding_arm() {
+        let text = expanded_text("machine Sum on u8 {
+    total: i64,
+    start Between;
+    state Between {
+        c -> { if (c == 48) { goto Zero; } stay; },
+    }
+    final state Zero {
+        _ -> stay,
+    }
+}
+");
+        assert!(text.contains("fn step(&mut self, __lanius_event: u8) {"), "{text}");
+        assert!(text.contains("_ -> { return; },"), "{text}");
+        assert!(text.contains("_ -> { let c: u8 = __lanius_event; if (c == 48) { self.__lanius_state = SumState::Zero; return; } return; },"), "{text}");
+    }
+
+    #[test]
+    fn files_without_machines_are_unchanged() {
+        assert!(expanded(&["fn plain() -> i32 { return 1; }\n"]).is_none());
+        assert!(expanded(&[""]).is_none());
     }
 
     /// Shapes the fixtures do not have: a public machine, state data, a
     /// transition to the same state with one and with several values, a
     /// binding arm, block arms, two machines in one file and text after the
-    /// last one.
+    /// last one. The recorded texts are the ones the host elaborator wrote
+    /// before the expansion moved to the GPU. One run expands the pack.
     #[test]
-    fn the_gpu_matches_the_host_on_every_shape() {
-        let sources = [
-            "// before\npub machine Counter on i32 {\n    limit: i32,\n    scale: i64,\n    start Idle;\n    state Idle {\n        0 -> stay,\n        n -> goto Counting(n, 0),\n    }\n    state Counting(total: i32, seen: i32) {\n        0 -> goto Done(total),\n        n -> { if (n > self.limit) { goto Done(total); } goto Counting(total + n, seen + 1); },\n    }\n    final state Done(total: i32) {\n        _ -> stay,\n    }\n}\n// after\n",
-            "enum Key { Up, Down(i32), Stop }\nmachine HTTPServer2 on Key -> i32 {\n    start A;\n    state A {\n        Key::Up -> goto B(1) with 1,\n        Key::Down(by) -> { let twice: i32 = by * 2; goto B(twice) with twice; },\n        Key::Stop -> stay with 0,\n    }\n    state B(level: i32) {\n        Key::Up -> goto B(level + 1) with level,\n        Key::Down(_) -> goto A with level,\n        Key::Stop -> goto C with 0\n    }\n    final state C { Key::Up -> stay with 0, Key::Down(_) -> stay with 0, Key::Stop -> stay with 0 }\n}\n\nfn between() -> i32 { return 2; }\n\nmachine Skip on u8 {\n    start Text;\n    state Text {\n        47 -> goto Slash,\n        c -> stay,\n    }\n    state Slash {\n        47 -> goto Text,\n        _other -> { goto Text; }\n    }\n}\nfn main() -> i32 { return between(); }\n",
-            "machine One on i32 {\n    start First;\n    state First {\n        n -> goto Only(n),\n    }\n    final state Only(value: i32) {\n        0 -> goto Only(0),\n        n -> goto Only(value + n),\n    }\n}",
-        ];
-        let files = expand(&sources).expect("expand").expect("the pack has machines");
+    fn the_expansion_matches_the_recorded_text() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/machines/expansion");
+        let read = |name: String| std::fs::read_to_string(dir.join(&name)).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let shapes: Vec<(String, String)> =
+            (0..3).map(|index| (read(format!("shape_{index}.source.txt")), read(format!("shape_{index}.expanded.txt")))).collect();
+        let mut sources: Vec<&str> = vec!["fn plain() -> i32 { return 1; }\n"];
+        sources.extend(shapes.iter().map(|(source, _)| source.as_str()));
+        let files = expanded(&sources).expect("the pack has machines");
+        assert!(files[0].is_none(), "a file without machines is not rewritten");
         let mut failures = String::new();
-        for (index, source) in sources.iter().enumerate() {
-            let path = std::path::PathBuf::from(format!("shape_{index}.lani"));
-            let host = super::super::elaborate(&path, source, false)
-                .unwrap_or_else(|err| panic!("the host rejects shape {index}: {err:?}"))
-                .expect("the shape has a machine");
-            match &files[index] {
-                Some(file) if file.text == host.text => {}
-                Some(file) => failures.push_str(&first_difference(&path, &host.text, &file.text)),
-                None => failures.push_str(&format!("{}: no machine found\n", path.display())),
+        for (index, ((_, expected), file)) in shapes.iter().zip(&files[1..]).enumerate() {
+            match file {
+                Some(file) if file.text == *expected => {}
+                Some(file) => failures.push_str(&first_difference(&format!("shape_{index}"), expected, &file.text)),
+                None => failures.push_str(&format!("shape_{index}: no machine found\n")),
             }
         }
         assert!(failures.is_empty(), "{failures}");
     }
 
+    /// The rules accept every machine of the library and the fixtures.
     #[test]
-    fn one_run_expands_every_file_of_a_pack() {
-        let cases = host_expansions();
-        let cases: Vec<_> = cases.into_iter().filter(|(_, source, _)| !source.contains('|')).collect();
-        let mut sources: Vec<&str> = vec!["fn plain() -> i32 { return 1; }\n"];
-        sources.extend(cases.iter().map(|(_, source, _)| source.as_str()));
-        let files = expand(&sources).expect("expand").expect("the pack has machines");
-        assert!(files[0].is_none(), "a file without machines is not rewritten");
+    fn the_rules_accept_every_library_machine() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        for dir in ["tests/fixtures/machines", "stdlib", "extended"] {
+            lani_files(&root.join(dir), &mut files);
+        }
+        files.sort();
+        let mut paths = Vec::new();
+        let mut sources = Vec::new();
+        for path in files {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let source = std::fs::read_to_string(&path).expect("read a source file");
+            // Generators and closures are rewritten before machines.
+            let machine = source.lines().any(|line| line.starts_with("machine ") || line.starts_with("pub machine "));
+            let rejected = ["reserved", "unreachable", "dead_end", "wildcard", "return", "missing_event"]
+                .iter()
+                .any(|rule| name == format!("reject_{rule}.lani"));
+            if machine && !rejected && !source.contains("gen fn") && !source.contains('|') {
+                paths.push(path);
+                sources.push(source);
+            }
+        }
+        assert!(paths.len() >= 5, "found {} files with machines", paths.len());
+        let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
+        let files = expanded(&texts).expect("the pack has machines");
+        let missing: Vec<_> = paths.iter().zip(&files).filter(|(_, file)| file.is_none()).map(|(path, _)| path).collect();
+        assert!(missing.is_empty(), "no machine expanded in {missing:?}");
+    }
+
+    #[test]
+    fn the_rules_reject_their_violations() {
+        let fixture = |name: &str| {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/machines").join(name);
+            std::fs::read_to_string(path).expect("read a fixture")
+        };
+        let mut many = String::from("enum E { A }\nmachine M on E {\n    start S0;\n");
+        for index in 0..257 {
+            many.push_str(&format!("    state S{index} {{ E::A -> goto S{}, }}\n", (index + 1) % 257));
+        }
+        many.push_str("}\n");
+        let one = |body: &str| format!("enum E {{ A }}\nmachine M on E {{\n    start S;\n{body}}}\n");
+        let cases: Vec<(String, &str)> = vec![
+            ("fn f() { let __lanius_state: i32 = 1; }".to_string(), "`__lanius_state`: identifiers starting with `__lanius_` are reserved for the compiler"),
+            (fixture("reject_reserved.lani"), "`__lanius_state`: identifiers starting with `__lanius_` are reserved for the compiler"),
+            (fixture("reject_unreachable.lani"), "`Draining`: state `Draining` is unreachable from `start S`"),
+            (fixture("reject_dead_end.lani"), "`Closed`: state `Closed` has no `goto` to another state [mark it `final state Closed` if the machine is meant to stop here]"),
+            (fixture("reject_wildcard.lani"), "`_`: state `S` handles the remaining events with `_`; list each event, so adding one makes every state decide what it does"),
+            (fixture("reject_return.lani"), "`return`: a machine arm leaves through `goto` or `stay`, not `return`"),
+            (fixture("reject_missing_event.lani"), "`S`: state `S` does not handle `E::B` [add an arm, e.g. `E::B -> stay with ...`]"),
+            (DOOR.replace("stay with Reply::Ignored,\n    }\n    state Closed", "stay,\n    }\n    state Closed"), "`stay`: this machine has an output: end the transition with `with value`"),
+            (DOOR.replace("goto Closed with", "goto Shut with"), "`Shut`: no state is named `Shut`"),
+            (DOOR.replace("start Closed", "start Shut"), "`Shut`: no state is named `Shut`"),
+            (DOOR.replace("enum Input", "enum Other"), "`Input`: a machine's event type is an integer type or an enum declared in the machine's file"),
+            ("machine M on u8 {\n    start S;\n    final state S { 0 -> stay, }\n}\n".to_string(), "`S`: state `S` must end with a `_` or binding arm, since its events are integers"),
+            (one("    state S { E::A -> goto T, }\n    final state T { E::A -> stay, }\n    final state T { E::A -> stay, }\n"), "`T`: state `T` is declared twice"),
+            (one("    final state S(n: i32) { E::A -> stay, }\n"), "`S`: the start state takes no data, so construction never chooses a state"),
+            (one("    state S { E::A -> goto T(1), }\n    final state T(n: i32) { E::A -> goto T(1, 2), }\n"), "`(`: state `T` takes 1 values"),
+            (one("    state S { E::A -> goto T(1), }\n    final state T(self) { E::A -> stay, }\n"), "`self`: expected a field name here"),
+            (one("    final state S { E::A -> stay with 1, }\n"), "`with`: this machine has no output, so its transitions take no `with`"),
+            (one("    final state S { E::A -> goto T, }\n    final state T { E::A -> stay, }\n"), "`S`: `final` state `S` has a `goto` to another state"),
+            (one("    final state S { E::A -> 1, }\n"), "`1`: a machine arm ends in a transition: `goto State` or `stay`, or a block whose every path does"),
+            ("enum E { A }\nmachine M on E -> i32 -> i32 {\n    start S;\n    final state S { E::A -> stay with 1, }\n}\n".to_string(), "`->`: expected `{` here"),
+            (many, "`machine`: a machine has at most 256 states"),
+            ("fn f() -> i32 {\n    goto Next;\n    return 0;\n}\n".to_string(), "`goto`: `goto` and `stay` are the transitions of a machine: write them in the arms of a state"),
+            // The parser rejects these, and the frontend reports them.
+            (one("    final state S { E::A -> { stay; } E::A -> stay, }\n"), "no machine, or the file does not parse"),
+            (one("    final state S { E::A -> { stay } }\n"), "no machine, or the file does not parse"),
+        ];
         let mut failures = String::new();
-        for ((path, _, expected), file) in cases.iter().zip(&files[1..]) {
-            match file {
-                Some(file) if file.text == *expected => {}
-                Some(file) => failures.push_str(&first_difference(path, expected, &file.text)),
-                None => failures.push_str(&format!("{}: no machine found\n", path.display())),
+        for (index, (source, expected)) in cases.iter().enumerate() {
+            let verdict = verdict(source, 0);
+            if verdict != *expected {
+                failures.push_str(&format!("case {index}:\n  expected {expected}\n  found    {verdict}\n"));
             }
         }
         assert!(failures.is_empty(), "{failures}");
+    }
+
+    /// A name with the reserved prefix is accepted in a file a rewrite wrote,
+    /// when it is one of the names of that rewrite.
+    #[test]
+    fn the_names_of_a_rewrite_are_reserved_for_its_files() {
+        let reserved = "identifiers starting with `__lanius_` are reserved for the compiler";
+        let uses = |name: &str| format!("fn f() -> i32 {{ let {name}: i32 = 1; return {name}; }}\n");
+        for (name, flags) in [
+            ("__lanius_gen_i", FILE_GENERATORS),
+            ("__lanius_closure_3", FILE_CLOSURES),
+            ("__lanius_r", FILE_CLOSURES),
+            ("__lanius_inst_7", 0),
+        ] {
+            assert_eq!(verdict(&uses(name), flags), "no machine, or the file does not parse", "{name}");
+        }
+        for (name, flags) in [
+            ("__lanius_gen_i", 0),
+            ("__lanius_gen_i", FILE_CLOSURES),
+            ("__lanius_closure_3", FILE_GENERATORS),
+            ("__lanius_r", 0),
+            ("__lanius_rest", FILE_CLOSURES),
+            ("__lanius_state", FILE_GENERATORS | FILE_CLOSURES),
+        ] {
+            assert_eq!(verdict(&uses(name), flags), format!("`{name}`: {reserved}"), "{name}");
+        }
     }
 
     /// Prints the parse tree of a machine, to see what the kernels read.
     #[test]
     #[ignore = "a debugging aid: prints the parse tree of a machine"]
     fn print_the_parse_tree_of_a_machine() {
-        let source = "enum E { A, B }\nmachine M on E -> i32 {\n    n: i32,\n    start S;\n    state S { E::A -> goto T(1) with 1, E::B -> { stay with 2; }, }\n    final state T(k: i32) { E::A -> stay with k, E::B -> stay with 0 }\n}\n";
+        let source = "pub enum E { A, B(i32, u8), }\nmachine M on E -> i32 {\n    n: i32,\n    start S;\n    state S { E::A -> goto T(1) with 1, E::B(x, _) -> { if (x > 1) { stay with 2; } let y: i32 = __lanius_q; return 3; }, _ -> stay with 0, }\n    final state T(k: i32) { E::A -> stay with k, c -> stay with 0 }\n}\n";
         let gpu_words = with_parse(&[source], |gpu, lexer, parser, encoder, parsed| {
             let nodes = parsed.tree_capacity;
             Ok((

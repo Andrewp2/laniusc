@@ -1,0 +1,10 @@
+machine One on i32 {
+    start First;
+    state First {
+        n -> goto Only(n),
+    }
+    final state Only(value: i32) {
+        0 -> goto Only(0),
+        n -> goto Only(value + n),
+    }
+}

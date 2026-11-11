@@ -1,0 +1,58 @@
+enum OneState { First, Only(i32) }
+struct One { __lanius_state: OneState }
+fn one_start() -> One { return One { __lanius_state: OneState::First }; }
+impl One {
+    fn step(&mut self, __lanius_event: i32) {
+        match (self.__lanius_state) {
+            OneState::First -> { self.__lanius_in_First(__lanius_event); return; },
+            OneState::Only(value) -> { self.__lanius_in_Only(value, __lanius_event); return; },
+        };
+    }
+    fn state(&self) -> OneState { return self.__lanius_state; }
+    fn __lanius_in_First(&mut self, __lanius_event: i32) {
+        match (__lanius_event) {
+            _ -> { let n: i32 = __lanius_event; self.__lanius_state = OneState::Only(n); return; },
+        };
+    }
+    fn __lanius_in_Only(&mut self, value: i32, __lanius_event: i32) {
+        match (__lanius_event) {
+            0 -> { self.__lanius_state = OneState::Only(0); return; },
+            _ -> { let n: i32 = __lanius_event; self.__lanius_state = OneState::Only(value + n); return; },
+        };
+    }
+    fn run(&mut self, __lanius_events: [i32], __lanius_count: i32) {
+        let __lanius_at: i32 = 0;
+        while (__lanius_at < __lanius_count) {
+            __lanius_at = match (self.__lanius_state) {
+                OneState::First -> self.__lanius_run_First(__lanius_events, __lanius_at, __lanius_count),
+                OneState::Only(value) -> self.__lanius_run_Only(value, __lanius_events, __lanius_at, __lanius_count),
+            };
+        }
+    }
+    fn __lanius_run_First(&mut self, __lanius_events: [i32], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: i32 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            _ -> { let n: i32 = __lanius_event; self.__lanius_state = OneState::Only(n); return __lanius_at; },
+        };
+        }
+        self.__lanius_state = OneState::First;
+        return __lanius_at;
+    }
+    fn __lanius_run_Only(&mut self, __lanius_data_0: i32, __lanius_events: [i32], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let value: i32 = __lanius_data_0;
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: i32 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            0 -> { value = 0; continue; },
+            _ -> { let n: i32 = __lanius_event; value = value + n; continue; },
+        };
+        }
+        self.__lanius_state = OneState::Only(value);
+        return __lanius_at;
+    }
+}

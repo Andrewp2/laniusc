@@ -1,0 +1,18 @@
+// before
+pub machine Counter on i32 {
+    limit: i32,
+    scale: i64,
+    start Idle;
+    state Idle {
+        0 -> stay,
+        n -> goto Counting(n, 0),
+    }
+    state Counting(total: i32, seen: i32) {
+        0 -> goto Done(total),
+        n -> { if (n > self.limit) { goto Done(total); } goto Counting(total + n, seen + 1); },
+    }
+    final state Done(total: i32) {
+        _ -> stay,
+    }
+}
+// after

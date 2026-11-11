@@ -1,0 +1,100 @@
+enum Key { Up, Down(i32), Stop }
+enum HTTPServer2State { A, B(i32), C }
+struct HTTPServer2 { __lanius_state: HTTPServer2State }
+fn http_server2_start() -> HTTPServer2 { return HTTPServer2 { __lanius_state: HTTPServer2State::A }; }
+impl HTTPServer2 {
+    fn step(&mut self, __lanius_event: Key) -> i32 {
+        return match (self.__lanius_state) {
+            HTTPServer2State::A -> { return self.__lanius_in_A(__lanius_event); },
+            HTTPServer2State::B(level) -> { return self.__lanius_in_B(level, __lanius_event); },
+            HTTPServer2State::C -> { return self.__lanius_in_C(__lanius_event); },
+        };
+    }
+    fn state(&self) -> HTTPServer2State { return self.__lanius_state; }
+    fn __lanius_in_A(&mut self, __lanius_event: Key) -> i32 {
+        return match (__lanius_event) {
+            Key::Up -> { self.__lanius_state = HTTPServer2State::B(1); return 1; },
+            Key::Down(by) -> { let twice: i32 = by * 2; self.__lanius_state = HTTPServer2State::B(twice); return twice; },
+            Key::Stop -> { return 0; },
+        };
+    }
+    fn __lanius_in_B(&mut self, level: i32, __lanius_event: Key) -> i32 {
+        return match (__lanius_event) {
+            Key::Up -> { self.__lanius_state = HTTPServer2State::B(level + 1); return level; },
+            Key::Down(_) -> { self.__lanius_state = HTTPServer2State::A; return level; },
+            Key::Stop -> { self.__lanius_state = HTTPServer2State::C; return 0; },
+        };
+    }
+    fn __lanius_in_C(&mut self, __lanius_event: Key) -> i32 {
+        return match (__lanius_event) {
+            Key::Up -> { return 0; },
+            Key::Down(_) -> { return 0; },
+            Key::Stop -> { return 0; },
+        };
+    }
+}
+
+
+fn between() -> i32 { return 2; }
+
+enum SkipState { Text, Slash }
+struct Skip { __lanius_state: SkipState }
+fn skip_start() -> Skip { return Skip { __lanius_state: SkipState::Text }; }
+impl Skip {
+    fn step(&mut self, __lanius_event: u8) {
+        match (self.__lanius_state) {
+            SkipState::Text -> { self.__lanius_in_Text(__lanius_event); return; },
+            SkipState::Slash -> { self.__lanius_in_Slash(__lanius_event); return; },
+        };
+    }
+    fn state(&self) -> SkipState { return self.__lanius_state; }
+    fn __lanius_in_Text(&mut self, __lanius_event: u8) {
+        match (__lanius_event) {
+            47 -> { self.__lanius_state = SkipState::Slash; return; },
+            _ -> { let c: u8 = __lanius_event; return; },
+        };
+    }
+    fn __lanius_in_Slash(&mut self, __lanius_event: u8) {
+        match (__lanius_event) {
+            47 -> { self.__lanius_state = SkipState::Text; return; },
+            _ -> { let _other: u8 = __lanius_event; self.__lanius_state = SkipState::Text; return; },
+        };
+    }
+    fn run(&mut self, __lanius_events: [u8], __lanius_count: i32) {
+        let __lanius_at: i32 = 0;
+        while (__lanius_at < __lanius_count) {
+            __lanius_at = match (self.__lanius_state) {
+                SkipState::Text -> self.__lanius_run_Text(__lanius_events, __lanius_at, __lanius_count),
+                SkipState::Slash -> self.__lanius_run_Slash(__lanius_events, __lanius_at, __lanius_count),
+            };
+        }
+    }
+    fn __lanius_run_Text(&mut self, __lanius_events: [u8], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: u8 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            47 -> { self.__lanius_state = SkipState::Slash; return __lanius_at; },
+            _ -> { let c: u8 = __lanius_event; continue; },
+        };
+        }
+        self.__lanius_state = SkipState::Text;
+        return __lanius_at;
+    }
+    fn __lanius_run_Slash(&mut self, __lanius_events: [u8], __lanius_from: i32, __lanius_count: i32) -> i32 {
+        let __lanius_at: i32 = __lanius_from;
+        while (__lanius_at < __lanius_count) {
+            let __lanius_event: u8 = __lanius_events[__lanius_at];
+            __lanius_at += 1;
+            match (__lanius_event) {
+            47 -> { self.__lanius_state = SkipState::Text; return __lanius_at; },
+            _ -> { let _other: u8 = __lanius_event; self.__lanius_state = SkipState::Text; return __lanius_at; },
+        };
+        }
+        self.__lanius_state = SkipState::Slash;
+        return __lanius_at;
+    }
+}
+
+fn main() -> i32 { return between(); }

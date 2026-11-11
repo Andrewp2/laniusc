@@ -6,7 +6,8 @@ Status: design proposal, 2026-10-27. M0 to M5 are done: see
 [M3 decisions](#m3-decisions), [M3 result](#m3-result),
 [M4 result](#m4-result), [M5 decisions](#m5-decisions),
 [Suspended scope-stack data](#suspended-scope-stack-data) and
-[M5 result](#m5-result). The syntax below is the implemented one except
+[M5 result](#m5-result). The GPU expands machines from the parse tree:
+[M7](#m7-expansion-on-the-gpu). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -851,10 +852,56 @@ parser accept it, so a later stage can read a machine from the parse tree.
 - **Evidence.** `tests/machine_syntax.rs` sends every machine fixture through
   the lexer and parser, checks that the eight words still work as names, and
   checks that malformed machines are syntax errors.
-- **Not done.** The host elaboration in [M1 decisions](#m1-decisions) still
-  runs before the frontend, so a compiled program contains no machine tokens
-  yet. The next step is a GPU stage after the parser that expands a machine
-  from the parse tree, and the removal of the host elaborator.
+- **Superseded.** M6 left the host elaboration of [M1 decisions](#m1-decisions)
+  in place. [M7](#m7-expansion-on-the-gpu) replaces it.
+
+## M7: expansion on the GPU
+
+Done 2026-11-11.
+
+The GPU expands a machine from the parse tree and checks its rules. The host
+elaborator of M1 and M3 is deleted, with its tokenizer use for machines. The
+text a machine expands to is the same, byte for byte, so the generated names
+of [M1 decisions](#m1-decisions) and [M3](#m3-decisions) still hold.
+
+- **Order.** A file passes through three rewrites before the frontend reads
+  it: `gen fn` on the host, closures on the GPU, machines on the GPU
+  (`compiler/machine_elaboration.rs`). Closures go before machines because
+  the parser does not read a closure.
+- **Expansion** (`compiler/machine_elaboration/machines.rs`,
+  `shaders/machines/`). One run lexes and parses all the files of a load.
+  A kernel per tree node writes a record on the first token of each machine,
+  state, field, arm, transition and call argument. Prefix sums number them
+  and build lists. Every token then counts and writes the pieces of text it
+  stands for, and a last kernel copies the bytes. No kernel walks a machine
+  in sequence.
+- **Rules** (`machines/reserved`, `resolve`, `arms`, `reach`, `states`).
+  Each token, arm and state checks its own rules. Reachability squares the
+  256-bit transition rows eight times, so a machine still has at most 256
+  states. An error is the least `token << 5 | code` of its group, and the
+  groups are reported in this order: reserved names, the rules of one token,
+  unhandled events, the graph. The messages are those of M1.
+- **Every file is checked.** The pass runs for a file without `machine` too.
+  It rejects a reserved name and a `goto` or `stay` outside a machine arm.
+  For a file without a machine it costs about 10 ms. The first run of a
+  process costs about 45 ms, because it allocates the parser's buffers.
+- **Reserved names of the other rewrites.** A file that the generator rewrite
+  wrote may name `__lanius_gen_...`. A file that the closure rewrite wrote
+  may name `__lanius_closure_...` and `__lanius_r`. `__lanius_inst_...` is
+  always allowed. A user who writes `__lanius_closure_1` in a file that also
+  holds a closure is not rejected.
+- **Syntax errors come from the parser.** A machine that does not parse is no
+  longer an LNC0076 error with a machine-specific message. The frontend
+  reports LNC0016. Examples: a block arm without its `,`,
+  a transition in a block without its `;`, an array type as the event type.
+- **Evidence.** The unit tests of `machines.rs` hold the M1 and M3
+  expectations, 22 rejections with their labels and messages, and three
+  recorded expansions the host elaborator wrote
+  (`tests/fixtures/machines/expansion/`). `tests/machines_execution.rs` is
+  unchanged and passes.
+- **Not done.** `gen fn` is still rewritten on the host, and closures are
+  rewritten from lexer tokens, not from the parse tree. A closure in a
+  machine arm does not compile; it did not before this change either.
 
 ## Open questions
 
