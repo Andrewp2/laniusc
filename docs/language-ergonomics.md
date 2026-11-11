@@ -54,7 +54,9 @@ Implementation:
 - Codegen lowers it to 13 rows in `codegen/lir/semantic/try_rows`: test the
   tag, build the function's `Err(e)` or `None` and return it, else load the
   payload. Each `?` takes one aggregate element from its own segment in
-  `aggregate_elements`.
+  `aggregate_elements`. A slice payload is loaded as a slice descriptor, so
+  `let view: [T] = value?;` binds the data, length and stride
+  (`tests/fixtures/language/try_slice_payload.lani`).
 
 ## Local type inference
 

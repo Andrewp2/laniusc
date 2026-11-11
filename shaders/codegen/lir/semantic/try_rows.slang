@@ -189,8 +189,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint tag = tag_word ? 1u : local_row == 7u ? error_tag : semantic_expr_ref_tag[node];
             uint payload = tag_word ? 3u : local_row == 7u ? error : semantic_expr_ref_payload[node];
             uint2 layout = tag_word ? tag_layout : local_row == 7u ? error_layout : value_layout;
+            // A slice payload is a descriptor of data, length and stride, as
+            // the member and match-binding loads of a slice are.
+            bool slice = !tag_word && tag == 3u && payload < checked_type_capacity() &&
+                type_instance_kind[payload] == 3u;
             core = row_core(SEMANTIC_LIR_OP_LOAD, tag, payload, layout,
-                unsupported | SEMANTIC_LIR_FLAG_FIELD);
+                unsupported | SEMANTIC_LIR_FLAG_FIELD | (slice ? SEMANTIC_LIR_FLAG_ARRAY_PAIR : 0u));
             operands.a = row - 1u;
             operands.b = tag_word ? 0u : 1u;
             if (!tag_word) operands.c = 1u;

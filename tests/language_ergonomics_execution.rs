@@ -81,6 +81,11 @@ fn try_passes_an_aggregate_payload_as_a_call_argument() {
 }
 
 #[test]
+fn try_binds_a_slice_payload_to_a_local() {
+    assert_exit("try_slice_payload.lani", 65);
+}
+
+#[test]
 fn try_needs_a_result_or_option_operand() {
     assert_rejected(
         "try_not_result.lani",

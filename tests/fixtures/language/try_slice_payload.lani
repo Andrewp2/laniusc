@@ -1,0 +1,61 @@
+// `?` on a `Result` or `Option` whose payload is a slice. The value is the
+// slice's descriptor: its data, length and stride.
+module app::main;
+
+import alloc::vec;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+enum InputError { Missing }
+enum OutputError { Input(InputError) }
+
+struct Glyph { id: u32, cluster: i32, advance: i32 }
+
+fn convert<T>(value: Result<T, InputError>) -> Result<T, OutputError> {
+    return match (value) {
+        Ok(v) -> Ok(v),
+        Err(e) -> Err(OutputError::Input(e))
+    };
+}
+
+// A typed local takes the slice.
+fn second(value: Result<[i32], InputError>) -> Result<i32, InputError> {
+    let view: [i32] = value?;
+    return Ok(view[1] + (slice_len(view) as i32));
+}
+
+// An inferred local takes the slice of a generic call.
+fn first_id(value: Result<[Glyph], InputError>) -> Result<u32, OutputError> {
+    let view = convert(value)?;
+    return Ok(view[0].id);
+}
+
+fn third(value: Option<[i32]>) -> Option<i32> {
+    let view: [i32] = value?;
+    return Some(view[2]);
+}
+
+fn main() -> i32 {
+    let ints = alloc::vec::with_capacity<i32>(4).unwrap();
+    ints.try_push(10).unwrap();
+    ints.try_push(20).unwrap();
+    ints.try_push(30).unwrap();
+    let glyphs = alloc::vec::with_capacity<Glyph>(2).unwrap();
+    glyphs.try_push(Glyph { id: 7, cluster: 1, advance: 100 }).unwrap();
+
+    // 20 + 3 = 23
+    let a: i32 = second(Ok(ints.as_slice())).unwrap();
+    // 7
+    let b: u32 = first_id(Ok(glyphs.as_slice())).unwrap();
+    // 30
+    let c: i32 = match (third(Some(ints.as_slice()))) { Some(v) -> v, None -> 0 };
+    // The error leaves through `?`: 5
+    let d: i32 = match (second(Err(InputError::Missing))) { Ok(v) -> v, Err(e) -> 5 };
+    ints.destroy();
+    glyphs.destroy();
+    return a + (b as i32) + c + d;
+}
