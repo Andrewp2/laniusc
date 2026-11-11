@@ -45,7 +45,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
-StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> method_decl_method_row;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
@@ -91,11 +90,6 @@ static const uint CALL_MISMATCH_DUPLICATE_METHOD = 0xffffff07u;
 uint linear_thread_id(uint3 dtid)
 {
     return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
-
-uint active_module_count()
-{
-    return max(1u, min(module_count_out[0], gParams.method_capacity));
 }
 
 [ForceInline]
@@ -150,7 +144,9 @@ uint invalid_method_status(uint fn_i)
         return METHOD_KEY_STATUS_INVALID_NAME;
 
     uint module_id = method_decl_module_id[fn_i];
-    if (module_id == INVALID || module_id >= active_module_count())
+    // The file-to-module map only yields the id of a module row or of the
+    // unnamed module of a file that declares none.
+    if (module_id == INVALID)
         return METHOD_KEY_STATUS_INVALID_MODULE;
     if (method_decl_receiver_ref_tag[fn_i] == TYPE_REF_INVALID ||
         method_decl_receiver_ref_payload[fn_i] == INVALID)

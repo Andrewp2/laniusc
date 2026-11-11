@@ -657,6 +657,41 @@ fn assert_gpu_type_check_pack_accepts(sources: &[&str]) {
 }
 
 #[test]
+fn a_file_without_a_module_line_is_an_unnamed_module() {
+    let geometry = "module app::geometry;\n\
+        pub const UNIT: i32 = 1;\n\
+        pub struct Size { width: i32, height: i32 }\n\
+        impl Size { pub fn area(self) -> i32 { return self.width * self.height; } }\n\
+        pub fn double(value: i32) -> i32 { return value * 2; }\n";
+    let entry = "import app::geometry;\n\
+        import app::geometry::double;\n\
+        struct Pair { left: i32, right: i32 }\n\
+        impl Pair { fn sum(self) -> i32 { return self.left + self.right; } }\n\
+        fn main() -> i32 {\n\
+            let size = app::geometry::Size { width: 2, height: 3 };\n\
+            let pair = Pair { left: size.area(), right: app::geometry::UNIT };\n\
+            return double(pair.sum());\n\
+        }\n";
+    // The unnamed module imports a named one from either side of it.
+    assert_gpu_type_check_pack_accepts(&[geometry, entry]);
+    assert_gpu_type_check_pack_accepts(&[entry, geometry]);
+
+    // Each such file is a module of its own: no path names it, and its
+    // declarations are not in scope in another file.
+    assert_gpu_type_check_pack_rejects_code(
+        &[
+            "pub fn helper() -> i32 { return 1; }\n",
+            "fn main() -> i32 { return helper(); }\n",
+        ],
+        "LNC0005",
+    );
+    assert_gpu_type_check_pack_accepts(&[
+        "fn helper() -> i32 { return 1; }\n",
+        "fn helper() -> i32 { return 2; }\nfn main() -> i32 { return helper(); }\n",
+    ]);
+}
+
+#[test]
 fn single_file_user_unit_uses_compact_module_count_after_stdlib_unit() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_module_count", "single_file", Some("lani"));

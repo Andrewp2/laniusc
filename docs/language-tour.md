@@ -495,8 +495,9 @@ fn main() -> i32 {
 
 ## Modules
 
-A program can span several files. Each file starts with a `module` line, and
-its path below the source root matches the module name.
+A program can span several files. A file that another file imports starts
+with a `module` line, and its path below the source root matches the module
+name. The file with `main` needs no `module` line.
 
 `src/app/geometry.lani`:
 
@@ -512,11 +513,9 @@ pub fn area(size: Size) -> i32 {
 }
 ```
 
-`src/app/main.lani`:
+`main.lani`:
 
-```lanius file=src/app/main.lani
-module app::main;
-
+```lanius
 import app::geometry;
 import app::geometry::area;
 
@@ -529,7 +528,7 @@ fn main() -> i32 {
 ```
 
 ```sh
-target/release/laniusc --stdlib-root stdlib --source-root src -o app src/app/main.lani
+target/release/laniusc --stdlib-root stdlib --source-root src -o app main.lani
 ```
 
 ```output
@@ -541,6 +540,8 @@ target/release/laniusc --stdlib-root stdlib --source-root src -o app src/app/mai
   full path. `import app::geometry::area;` also makes `area` usable by its
   short name.
 - Only `pub` items are visible outside their module.
+- A file without a `module` line is a module with no name. Nothing can import
+  it.
 
 ## Traps
 
@@ -627,9 +628,6 @@ today.
   `String::from(...)` do not resolve. Call the module function:
   `alloc::vec::new()`, `alloc::string::from_str(...)`.
 - **`slice_len` on a reference.** `slice_len` takes `[T]`, not `&[T]`.
-- **Files without a `module` line.** A file with no `module` line cannot
-  import a module from `--source-root`. The error is a syntax error at the
-  first item.
 - **Trap messages have no location.** The line names the reason, not the
   source line.
 - **No overflow checks.** Integer arithmetic wraps without a trap.

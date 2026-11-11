@@ -4538,6 +4538,9 @@ fn unresolved_import_diagnostic(
             ))
             .with_note(
                 "the module resolver could not match this import path to a loaded module declaration",
+            )
+            .with_help(
+                "the file of a module must begin with a `module` line that gives this path",
             ),
     )
 }

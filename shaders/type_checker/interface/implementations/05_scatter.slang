@@ -65,7 +65,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint module = file < file_rows ? module_id_by_file_id[file] : INVALID;
     uint modules = module_count_out[0u];
     if (module == INVALID && file == 0u && modules == 0u) module = 0u;
-    if (module >= max(modules, 1u)) { fail(row, 13u); return; }
+    // A file that declares no module has an unnamed module after the rows.
+    if (module >= file_rows) { fail(row, 13u); return; }
     uint3 identity = uint3(INVALID, INVALID, INVALID);
     if (!inherent)
     {
