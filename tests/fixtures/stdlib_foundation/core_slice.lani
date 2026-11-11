@@ -327,6 +327,10 @@ fn bulk_checks() -> i32 {
     if (core::slice::memcmp_range(a, 4, b, 4, 2) != 0 || core::slice::memcmp_range(a, 0, b, 1, 1) != -1 || core::slice::memcmp_range(a, -1, b, 0, 2) != 0) { return 8; }
     let c: [u8; 4] = [65, 200, 66, 67];
     if (core::slice::ascii_run_end(c, 0, 4) != 1 || core::slice::ascii_run_end(c, 2, 4) != 4 || core::slice::ascii_run_end(c, 3, 3) != 3) { return 9; }
+    let empty: [u8; 0] = [];
+    if (core::slice::length(a) != 6 || core::slice::length(c) != 4 || core::slice::length(empty) != 0) { return 10; }
+    let all = core::slice::whole(c);
+    if (all.len() != 4 || core::slice::whole(empty).len() != 0) { return 11; }
     return 0;
 }
 
