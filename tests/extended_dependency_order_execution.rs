@@ -1,6 +1,6 @@
 //! Independent ordering, shortest-path and mutual-reachability models for the CSV app.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,

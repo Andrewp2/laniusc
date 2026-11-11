@@ -1,5 +1,5 @@
 //! Explicit Destroy<T> and owning source item constraints.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

@@ -1,6 +1,6 @@
 //! Checked nested aggregate return layout across concrete and generic callees.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     collections::BTreeMap,

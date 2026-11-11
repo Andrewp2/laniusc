@@ -1,6 +1,6 @@
 //! Borrowed streaming encoding admission, contracts and bounded owner lifetimes.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     collections::BTreeMap,
     ffi::{c_char, c_int, c_uint, c_ulong, c_void},

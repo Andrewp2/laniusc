@@ -1,6 +1,6 @@
 //! Resumable generic copying: executable contracts and independent schedules.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {

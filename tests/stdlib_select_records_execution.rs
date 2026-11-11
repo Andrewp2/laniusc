@@ -1,6 +1,6 @@
 //! Binary delimited record selection through a buffered input protocol.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,

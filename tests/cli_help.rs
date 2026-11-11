@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use std::{env, path::PathBuf, process::Command};
 

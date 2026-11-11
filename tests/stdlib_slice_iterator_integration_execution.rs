@@ -1,6 +1,6 @@
 // Focused native admission for the unified raw slice cursor protocol.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 
 fn executable(name: &str) -> common::TempArtifact {

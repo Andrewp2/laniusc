@@ -1,5 +1,5 @@
 //! Replacement transfer requires exact item, key and error trait identities.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

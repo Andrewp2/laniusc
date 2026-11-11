@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use laniusc_compiler::compiler::{
     compile_source_pack_to_x86_64_with_gpu_codegen,

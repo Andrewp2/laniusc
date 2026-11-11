@@ -2,7 +2,7 @@
 // sample_programs/library/agent_fetch.lani (ext::http_agent's streamed
 // response bodies, std::cli options) against Python http.server,
 // libnghttp2's server session over TLS, and the ext::http_proxy fixtures.
-mod common;
+use crate::common;
 use std::{os::unix::fs::PermissionsExt, process::Command, sync::OnceLock, time::Duration};
 
 fn root() -> std::path::PathBuf {

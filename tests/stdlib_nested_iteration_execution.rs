@@ -1,6 +1,6 @@
 //! Public scan/nested adapters: executable smoke, state models and payload shapes.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     os::unix::fs::PermissionsExt,

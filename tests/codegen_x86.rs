@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 #[test]
 fn x86_forwards_aggregate_call_result_directly_from_return() {

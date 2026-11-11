@@ -3,6 +3,9 @@ name = "laniusc"
 version = "0.1.0"
 edition = "2024"
 default-run = "laniusc"
+# One test binary per file in tests/ is 651 links of the compiler. The suites
+# in tests/suites/ list the files instead.
+autotests = false
 
 [workspace]
 members = [
@@ -41,6 +44,18 @@ graphics_debugger = ["laniusc-compiler/graphics_debugger"]
 [profile.release]
 debug = 1   # keep useful line info without bloating too much
 lto = "off" # optional: improves at-a-glance attribution across crates
+
+[[test]]
+name = "compiler"
+path = "tests/suites/compiler.rs"
+
+[[test]]
+name = "stdlib"
+path = "tests/suites/stdlib.rs"
+
+[[test]]
+name = "extended"
+path = "tests/suites/extended.rs"
 
 [dev-dependencies]
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }

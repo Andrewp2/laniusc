@@ -1,6 +1,6 @@
 // Stdin-driven top-level samples that no other test runs. Each sample is
 // listed in sample_programs/DEDICATED.tsv with this file as its test.
-mod common;
+use crate::common;
 
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 

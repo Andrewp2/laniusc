@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 #[test]
 fn actual_option_generic_payload_functions_execute_scalar_and_string_instances() {

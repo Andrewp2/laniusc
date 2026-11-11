@@ -1,6 +1,6 @@
 //! Item imports, local inference and `?` through the real standard library.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

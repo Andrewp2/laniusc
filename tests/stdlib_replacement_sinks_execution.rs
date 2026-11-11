@@ -1,6 +1,6 @@
 //! Actual replacement delegates and helper: state models and payload ownership tags.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     os::unix::fs::PermissionsExt,

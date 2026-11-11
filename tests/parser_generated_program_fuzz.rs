@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use laniusc_compiler::{
     dev::generator::gen_valid_program,

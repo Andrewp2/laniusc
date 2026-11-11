@@ -1,6 +1,6 @@
 //! Generic borrowed slice segmentation: direct contracts and capability boundaries.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     compile_from("tests/fixtures/stdlib_slice_segmentation/direct", name)

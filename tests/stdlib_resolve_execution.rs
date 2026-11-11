@@ -1,6 +1,6 @@
 //! Native glibc resolver conversion, validation and explicit ownership.
 #![cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
-mod common;
+use crate::common;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,

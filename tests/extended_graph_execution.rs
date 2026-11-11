@@ -1,6 +1,6 @@
 //! Directed simple graphs: checked preflight, BFS witnesses and lexical order.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     collections::BTreeMap,

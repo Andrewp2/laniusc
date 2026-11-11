@@ -1,6 +1,6 @@
 //! Canonical thread execution, exact raw-thread ownership and real-pthread faults.
 #![cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
-mod common;
+use crate::common;
 
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 

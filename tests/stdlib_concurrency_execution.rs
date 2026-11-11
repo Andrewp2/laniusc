@@ -1,7 +1,7 @@
 //! Forked workers, libatomic words, futex synchronization and bounded MPMC
 //! channels: exact stress invariants plus two sample programs.
 #![cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
-mod common;
+use crate::common;
 
 use std::{
     fs,

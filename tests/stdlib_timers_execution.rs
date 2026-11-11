@@ -1,6 +1,6 @@
 //! timerfd timers: one-shot, periodic, absolute and alarm clocks; the timer-ticks program.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,

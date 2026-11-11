@@ -87,6 +87,7 @@ const DEFAULT_PROCESS_TEST_TIMEOUT_MS: u64 = 500;
 const DEFAULT_SIGNAL_PROCESS_TEST_TIMEOUT_MS: u64 = 5_000;
 const CHILD_PROCESS_POLL_INTERVAL_MS: u64 = 2;
 const TEST_TIMEOUT_EXIT_CODE: i32 = 124;
+const MIN_GPU_WORKER_GRACE_MS: u64 = 30_000;
 
 pub struct TempArtifact {
     path: PathBuf,
@@ -479,10 +480,12 @@ fn command_output_result_with_timeout(
             let grace_end = Instant::now() + PIPE_READER_GRACE;
             let stdout = stdout.finish_after_timeout(grace_end);
             let stderr = stderr.finish_after_timeout(grace_end);
-            exit_after_timeout(format_args!(
+            // The child is dead, so the timeout fails this test and the
+            // other tests in the binary still run.
+            panic!(
                 "{}{exited}\nstdout {stdout}\nstderr {stderr}",
                 timeout_message(&context, timeout, details),
-            ));
+            );
         }
 
         thread::sleep(Duration::from_millis(CHILD_PROCESS_POLL_INTERVAL_MS));
@@ -547,7 +550,7 @@ impl PipeCapture {
                 Ok(Ok(())) => "",
                 Ok(Err(_)) | Err(_) => ", then reading it failed",
             },
-            // Dropping the handle detaches the reader; the binary exits next.
+            // Dropping the handle detaches the reader until the pipe closes.
             Some(_) => ", and the pipe is still open",
             None => "",
         };
@@ -610,10 +613,24 @@ where
             result
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            exit_after_timeout(format_args!(
-                "{}",
-                timeout_message(context, timeout, TimeoutDetails::gpu_worker(gpu_lock_wait))
-            ));
+            let message =
+                timeout_message(context, timeout, TimeoutDetails::gpu_worker(gpu_lock_wait));
+            // A thread cannot be stopped, and this one still uses the GPU.
+            // Keep the GPU test lock and wait once more: a slow worker fails
+            // this test alone, and only a stuck worker ends the binary.
+            let grace = timeout.max(Duration::from_millis(MIN_GPU_WORKER_GRACE_MS));
+            match rx.recv_timeout(grace) {
+                Err(mpsc::RecvTimeoutError::Timeout) => exit_after_timeout(format_args!(
+                    "{message}; the worker is still running {} ms later, so this test binary exits to stop it",
+                    grace.as_millis()
+                )),
+                Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if handle.join().is_err() {
+                        warn!("{context}: the timed-out worker panicked");
+                    }
+                    panic!("{message}; the worker finished later");
+                }
+            }
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => match handle.join() {
             Ok(()) => panic!("{context} worker exited without sending a result"),
@@ -729,7 +746,7 @@ impl TimeoutDetails {
 
 fn timeout_message(context: &str, timeout: Duration, details: TimeoutDetails) -> String {
     let mut message = format!(
-        "{context} timed out after {} ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker",
+        "{context} timed out after {} ms after acquiring the GPU test lock",
         timeout.as_millis()
     );
     if let Some(wait) = details.gpu_lock_wait {

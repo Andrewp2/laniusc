@@ -1,7 +1,7 @@
 //! UDP deadlines, resolv.conf/hosts parsing and the stub resolver; the stub-dig
 //! program against fake loopback DNS servers.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,

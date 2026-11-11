@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     ffi::{c_char, c_int, c_void, CString, OsStr},
     os::unix::{ffi::OsStrExt, fs::PermissionsExt},

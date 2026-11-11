@@ -1,6 +1,6 @@
 //! Independent finite buffered record effects and terminal UTF-8 model.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 

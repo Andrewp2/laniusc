@@ -1,6 +1,6 @@
 //! Stable sorting: nested owner authority, reached scratch OOM, guarded access and scale.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     collections::{BTreeMap, BTreeSet},

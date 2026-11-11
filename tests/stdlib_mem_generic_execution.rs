@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 #[test]
 fn generic_value_helpers_preserve_scalar_and_string_values() {

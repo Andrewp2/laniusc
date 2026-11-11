@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use laniusc_compiler::compiler::{compile_entry_to_x86_64_with_source_roots, EntrySourceRoots};
 fn executable(name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;

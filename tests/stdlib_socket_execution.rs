@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{collections::BTreeSet, os::unix::fs::PermissionsExt, time::Duration};
 
 fn executable(name: &str) -> common::TempArtifact {

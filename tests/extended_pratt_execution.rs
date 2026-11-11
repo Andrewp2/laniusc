@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 //! ext::pratt: direct API contracts, and the pratt_calc sample against a
 //! CPython `ast` oracle. See docs/extended-pratt.md.
-mod common;
+use crate::common;
 
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 

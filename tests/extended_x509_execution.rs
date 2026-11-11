@@ -1,6 +1,6 @@
 //! Borrowed X.509 schema parsing; host corpora never supply production behavior.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{os::unix::fs::PermissionsExt, process::Command, sync::OnceLock, time::Duration};
 
 fn compile(name: &str) -> common::TempArtifact {

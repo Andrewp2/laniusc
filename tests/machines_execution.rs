@@ -1,7 +1,7 @@
 //! `machine` items and `gen fn` (docs/state-machines-design.md, M1-M5): elaboration, the
 //! rules R2-R5, and the elaborated code against the same machine by hand.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

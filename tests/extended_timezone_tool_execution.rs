@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{os::unix::fs::PermissionsExt, process::Command, time::Duration};
 #[test]
 fn timezone_tool_conversion_resolution_staging_and_fault_cleanup() {

@@ -1,6 +1,6 @@
 //! Distinct trait argument applications on one receiver: diagnostic and control.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

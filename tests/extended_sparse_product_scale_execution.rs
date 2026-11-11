@@ -1,6 +1,6 @@
 //! Analytic sparse/sparse fill-in over an implicit square of over four billion cells.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     os::unix::fs::PermissionsExt,

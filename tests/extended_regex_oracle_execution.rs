@@ -4,7 +4,7 @@
 //! seeded grammar-generated patterns from the shared dialect subset.
 //! See `docs/extended-regex-oracle.md` and
 //! `tests/fixtures/extended/regex_oracle/oracle.py`.
-mod common;
+use crate::common;
 
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 

@@ -1,6 +1,6 @@
 //! Reached constructor/node OOM and post-commit wake failures in real channels.
 #![cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
-mod common;
+use crate::common;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 

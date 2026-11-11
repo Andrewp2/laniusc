@@ -1,6 +1,6 @@
 //! Independent sequence decisions, exact effects and remaining-item model.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 

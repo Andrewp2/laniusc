@@ -1,6 +1,6 @@
 //! Validated zero-copy String/Vec transfers retain one explicit cleanup owner.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     collections::BTreeMap,

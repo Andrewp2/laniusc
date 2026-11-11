@@ -1,6 +1,6 @@
 //! Descriptor copy behavior against real Linux files and injected syscall faults.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     cell::Cell,

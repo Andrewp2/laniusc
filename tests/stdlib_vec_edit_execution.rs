@@ -1,6 +1,6 @@
 //! Owned vector editing: stable survivors, exact cleanup effects, and trait bounds.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {

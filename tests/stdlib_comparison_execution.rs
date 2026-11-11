@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{cmp::Ordering, os::unix::fs::PermissionsExt, process::Command, time::Duration};
 
 fn compile(path: &str) -> common::TempArtifact {

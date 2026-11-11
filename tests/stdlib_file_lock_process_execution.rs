@@ -1,6 +1,6 @@
 //! Real-process advisory flock handshakes, with observed pending kernel calls.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     ffi::c_int,

@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 use std::path::PathBuf;
 
 use laniusc_compiler::compiler::{EntrySourceRoots, compile_entry_to_x86_64_with_source_roots};

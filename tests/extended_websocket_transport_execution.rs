@@ -1,6 +1,6 @@
 //! Pure borrowed-transport contracts; no native socket/TLS/crypto linkage.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 

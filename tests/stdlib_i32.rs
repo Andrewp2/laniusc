@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use laniusc_compiler::compiler::type_check_entry_with_stdlib;
 

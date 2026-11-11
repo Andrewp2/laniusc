@@ -1,5 +1,5 @@
 //! Exact callback type bounds for iterator selection and folding factories.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

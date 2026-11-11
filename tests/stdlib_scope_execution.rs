@@ -1,6 +1,6 @@
 //! std::scope: scoped stacks (docs/memory-scoped-stacks-design.md, phase S0).
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

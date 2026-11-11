@@ -1,5 +1,5 @@
 //! Exact source item, sink item, and sink error bounds at the transfer call.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

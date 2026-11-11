@@ -1,7 +1,7 @@
 //! Positive admission probes for the buffered import / nested-bound dependency.
 //! Explicitly run with --ignored; rejected compilation is a test failure.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 

@@ -1,6 +1,6 @@
 //! Independent bounded-transfer models for real associative and heap sinks.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},

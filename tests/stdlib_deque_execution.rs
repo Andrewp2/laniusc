@@ -1,5 +1,5 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {

@@ -1,6 +1,6 @@
 //! Actual Bash 5.2/helper integration and controlling-terminal Readline checks.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{
     os::unix::fs::PermissionsExt,

@@ -1,5 +1,5 @@
 //! Source-local collection sink opt-in, exact item and exact error bounds.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

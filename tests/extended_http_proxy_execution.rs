@@ -2,7 +2,7 @@
 // ext::http_proxy and its TLS front ends against Python oracles: asyncio
 // upstreams (upstream.py), raw HTTP/1.1 sockets, libnghttp2 sessions
 // (ctypes) and Python's ssl module with ALPN.
-mod common;
+use crate::common;
 use std::{os::unix::fs::PermissionsExt, process::Command, sync::OnceLock, time::Duration};
 
 fn root() -> std::path::PathBuf {

@@ -1,6 +1,6 @@
 //! Isolate item-import type selection from weighted-graph runtime behavior.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::{path::PathBuf, time::Duration};
 

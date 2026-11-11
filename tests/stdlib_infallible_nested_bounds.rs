@@ -1,5 +1,5 @@
 //! Ordinary nested iteration requires infallible policies and exact items.
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

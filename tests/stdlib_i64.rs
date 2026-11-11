@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use laniusc_compiler::compiler::{
     load_entry_path_manifest_with_stdlib,

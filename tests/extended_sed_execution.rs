@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 // text_sed (ext::sed) on cases whose expected bytes come from GNU sed 4.9.
 // The generated comparison is tests/fixtures/extended/sed_oracle/oracle.py.
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     process::{Command, Output, Stdio},

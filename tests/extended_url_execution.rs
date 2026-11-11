@@ -1,7 +1,7 @@
 //! ext::url (WHATWG URLs) and ext::idna (UTS #46): API contracts, the generated
 //! IDNA table, and url-parse compared with the Node.js WHATWG URL implementation.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,

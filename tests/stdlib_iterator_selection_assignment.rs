@@ -1,6 +1,6 @@
 //! Pending reducer for generic iterator Option assignment across branches.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

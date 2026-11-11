@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use laniusc_compiler::{
     lexer::{driver::GpuLexer, test_cpu::lex_on_test_cpu},

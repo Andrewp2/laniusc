@@ -1,7 +1,7 @@
 //! ext::sqlite_statement's transition table against the rules ext::sqlite
 //! enforced before it routed every state change through the machine.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::path::PathBuf;
 
 const READY: u32 = 0;

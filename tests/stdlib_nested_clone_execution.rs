@@ -2,7 +2,7 @@
 // Accepted native Linux x86-64 via GPU compiler checkpoint 59612b34.
 // Seven groups: 10 compilation jobs, 6 ELFs, 4 rejections and 16 native runs.
 // Sources use the production stdlib and durable user root; see the owned guide.
-mod common;
+use crate::common;
 
 use std::{
     collections::BTreeMap,

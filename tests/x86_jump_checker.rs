@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 const BASE: u64 = 0x400000;
 const CODE: usize = 0x78;

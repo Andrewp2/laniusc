@@ -1,7 +1,7 @@
 //! Ordered navigation: exact policy call sequences, interval edges, prefix families, bounds,
 //! and range removal, extraction and split_off under a denied address space.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod common;
+use crate::common;
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {

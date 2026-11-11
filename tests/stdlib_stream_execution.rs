@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 fn compile(path: &str) -> Vec<u8> {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
