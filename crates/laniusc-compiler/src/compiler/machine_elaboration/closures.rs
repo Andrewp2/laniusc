@@ -146,29 +146,29 @@ struct EmitParams {
     reserved1: u32,
 }
 
-type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
+pub(super) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
 
-struct Gpu<'a> {
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
+pub(super) struct Gpu<'a> {
+    pub(super) device: &'a wgpu::Device,
+    pub(super) queue: &'a wgpu::Queue,
 }
 
 impl Gpu<'_> {
-    fn kernel(&self, key: &'static str) -> Result<PassData> {
+    pub(super) fn kernel(&self, key: &'static str) -> Result<PassData> {
         make_pass_data_from_shader_key(self.device, key, "main", key)
     }
 
-    fn encoder(&self, label: &str) -> wgpu::CommandEncoder {
+    pub(super) fn encoder(&self, label: &str) -> wgpu::CommandEncoder {
         self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
     }
 
     /// A zeroed storage buffer of `rows` rows of `row_words` words.
-    fn rows(&self, label: &str, rows: usize, row_words: usize) -> LaniusBuffer<u8> {
+    pub(super) fn rows(&self, label: &str, rows: usize, row_words: usize) -> LaniusBuffer<u8> {
         let rows = rows.max(1);
         storage_rw_uninit_bytes(self.device, label, rows * row_words * 4, rows)
     }
 
-    fn dispatch(
+    pub(super) fn dispatch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         pass: &PassData,
@@ -197,7 +197,7 @@ impl Gpu<'_> {
 
     /// Records an inclusive prefix sum of `input` and returns the buffer
     /// that holds it: one doubling step per power of two below `count`.
-    fn scan<'b>(
+    pub(super) fn scan<'b>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         pass: &PassData,
@@ -264,7 +264,7 @@ impl Gpu<'_> {
     }
 
     /// Records a copy of `words` words of `source` for the host to read.
-    fn read<T>(
+    pub(super) fn read<T>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         source: &LaniusBuffer<T>,
@@ -277,11 +277,11 @@ impl Gpu<'_> {
         readback
     }
 
-    fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
+    pub(super) fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
         passes_core::submit_with_progress(self.queue, label, encoder.finish());
     }
 
-    fn words(&self, readback: &LaniusBuffer<u8>) -> Result<Vec<u32>> {
+    pub(super) fn words(&self, readback: &LaniusBuffer<u8>) -> Result<Vec<u32>> {
         let slice = readback.slice(..);
         map_readback_blocking(self.device, &slice, "closures.readback")?;
         let mapped = slice.get_mapped_range();
