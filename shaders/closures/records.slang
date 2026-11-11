@@ -201,8 +201,14 @@ void main(uint3 tid: SV_DispatchThreadID)
         body_last = 0u;
     }
 
+    // A start after an identifier is a `move` closure: `mark` admits no
+    // other identifier there. The site then begins at the word.
+    bool moved = i > 0u && kind_in_file(i - 1u, count, file) == TK_IDENT;
+    if (moved)
+        flags |= FLAG_MOVE;
+
     uint row = k * REC_WORDS;
-    records[row + REC_START] = i;
+    records[row + REC_START] = moved ? i - 1u : i;
     records[row + REC_PARAM] = param;
     records[row + REC_PTYPE_FIRST] = ptype_first;
     records[row + REC_PTYPE_LAST] = ptype_last;

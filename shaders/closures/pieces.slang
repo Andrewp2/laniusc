@@ -204,7 +204,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         }
         else
         {
-            pieces[q] = constant(C_SITE_END, k);
+            pieces[q] = constant((flags & FLAG_MOVE) != 0u ? C_SITE_END_OWNED : C_SITE_END, k);
         }
         return;
     }

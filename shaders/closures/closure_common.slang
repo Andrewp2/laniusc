@@ -25,6 +25,7 @@ public static const uint REC_CAP_COUNT = 11u;
 public static const uint FLAG_BRACED = 1u;
 public static const uint FLAG_NO_PARAM = 2u;
 public static const uint FLAG_RTYPE = 4u;
+public static const uint FLAG_MOVE = 8u;
 
 // Binder roles of an identifier token.
 public static const uint ROLE_LET = 1u;
@@ -84,6 +85,7 @@ public static const uint C_RETURN = 20u;
 public static const uint C_END_EXPR = 21u;
 public static const uint C_END_BLOCK = 22u;
 public static const uint C_IMPORT = 23u;
+public static const uint C_SITE_END_OWNED = 24u;
 
 public bool tk_paren_open(uint k)
 {

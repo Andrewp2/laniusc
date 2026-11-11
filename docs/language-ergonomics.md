@@ -336,6 +336,17 @@ let made: i32 = make(|| -> i32 { return step * 2; });
   that receives the closure fixes the result type: a bound such as
   `Mapper<i32, i32>`, or the declared type of the `let` that takes the
   call's result.
+- `move` before the bars makes the closure an owned value in place of a
+  borrow: `let next = move |x: i32| -> i32 { return x + 1; };` or an
+  argument for a by-value parameter `step: M`. A `let` without a type or a
+  generic struct field holds it, and it stays callable after the function
+  that received it returns. Every closure has a `borrow` method, so
+  `kept.step.borrow()` passes a stored closure to a `&M` parameter. Captures
+  are copied the same way with and without `move`.
+- A call written on a closure value inside a larger expression, such as
+  `next.apply(5) + next.apply(6)`, needs the closure's `-> Type`. Without
+  it nothing fixes the result type and the call is a type mismatch
+  (`LNC0006`).
 - A closure captures by value. Each local or parameter of the enclosing
   function that the body names is copied when the closure is created. A
   later assignment to the local does not change the closure.
@@ -356,8 +367,12 @@ Rejected with `LNC0078` (invalid closure):
 
 Other limits:
 
-- A closure has no type a program can name, so it cannot be a field or a
-  declared parameter type. A function takes one through a bound.
+- A closure has no type a program can name, so it cannot be a field of a
+  non-generic struct, a declared parameter type or a result type. A
+  function takes one through a bound and cannot return one.
+- `move` is a word only before `|` or `||` where a closure can start. A
+  local named `move` cannot be the left operand of `|` directly after `(`,
+  `,`, `=`, `:`, `->` or `return`.
 - A name bound by a `match` arm or a `for` loop is not captured. The body
   then reports an unresolved identifier (`LNC0005`) for a `match` binding,
   or `LNC0078` for a `for` variable. Copy the value to a `let` with a
@@ -395,7 +410,9 @@ four submissions when a file has a closure and one when none has. The piece
 table becomes the segment map, so a diagnostic in a closure body points at
 the source (`closure_body_error.lani`). Import discovery loads
 `core::function` for every file that contains a `|`, because the rewrite
-adds that import to a file with a closure. Fixtures:
+adds that import to a file with a closure. `mark` reads the word `move` before a
+closure start; `records` then starts the site at that word and `pieces`
+ends it with `}` in place of `}.borrow()`. Fixtures:
 `tests/fixtures/language/closure*.lani` and `closure_modules/`.
 
 ## C callbacks

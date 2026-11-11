@@ -1,0 +1,46 @@
+// A `move` closure is an owned value. A generic struct stores it, and the
+// program calls it after the function that received it has returned.
+module app::main;
+
+struct Counter<P, M> { read: P, step: M }
+
+fn counter<P, M>(read: P, step: M) -> Counter<P, M>
+    where P: core::function::Producer<i32>, M: core::function::Mapper<i32, i32> {
+    return Counter { read: read, step: step };
+}
+
+fn advance<P, M>(read: &P, step: &M, times: i32) -> i32
+    where P: core::function::Producer<i32>, M: core::function::Mapper<i32, i32> {
+    let value: i32 = read.produce();
+    let done: i32 = 0;
+    while (done < times) {
+        value = step.apply(value);
+        done = done + 1;
+    }
+    return value;
+}
+
+// A generic function takes a closure by value and calls it.
+fn once<P>(producer: P) -> i32 where P: core::function::Producer<i32> {
+    return producer.produce();
+}
+
+fn main() -> i32 {
+    let base: i32 = 5;
+    let by: i32 = 4;
+    let stored = counter(move || base, move |x: i32| x + by);
+
+    // 5 + 4 * 3 = 17.
+    let first: i32 = advance(stored.read.borrow(), stored.step.borrow(), 3);
+
+    // A block body: 2 * 5 + 4 = 14.
+    let direct: i32 = once(move || -> i32 { return 2 * base + by; });
+
+    // A local holds a closure and calls it twice: 6 + 7 = 13. A call inside
+    // a larger expression needs the closure's result type.
+    let next = move |x: i32| -> i32 { return x + 1; };
+    let twice: i32 = next.apply(base) + next.apply(base + 1);
+
+    // 17 + 14 + 13 = 44.
+    return first + direct + twice;
+}

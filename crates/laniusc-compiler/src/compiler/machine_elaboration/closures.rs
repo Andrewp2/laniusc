@@ -38,7 +38,7 @@ use crate::{
 /// shaders/closures/closure_common.slang.
 /// A string that follows a copied type starts with a space, so a type that
 /// ends in `>` does not join it into `>=` or `>>`.
-const CONSTANTS: [&str; 24] = [
+const CONSTANTS: [&str; 25] = [
     "__lanius_closure_",
     "{",
     ":",
@@ -63,6 +63,7 @@ const CONSTANTS: [&str; 24] = [
     ";}}\n",
     "}}\n",
     "import core::function;",
+    "}",
 ];
 
 const RECORD_WORDS: usize = 12;
@@ -313,6 +314,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
             ("token_count", bufs.token_count.as_entire_binding()),
             ("tokens_out", bufs.tokens_out.as_entire_binding()),
             ("token_file_id", bufs.token_file_id.as_entire_binding()),
+            ("in_bytes", bufs.in_bytes.as_entire_binding()),
             ("marks", marks.as_entire_binding()),
             ("roles", roles.as_entire_binding()),
         ],

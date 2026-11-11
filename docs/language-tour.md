@@ -486,6 +486,39 @@ fn main() -> i32 {
 52
 ```
 
+A closure written as above is a borrowed callback for the call it stands in.
+`move` makes the closure an owned value, which a `let` or a generic struct
+field can keep:
+
+```lanius
+struct Stepper<M> { step: M }
+
+fn stepper<M>(step: M) -> Stepper<M>
+where M: core::function::Mapper<i32, i32> {
+    return Stepper { step: step };
+}
+
+fn run<M>(step: &M, start: i32) -> i32
+where M: core::function::Mapper<i32, i32> {
+    return step.apply(step.apply(start));
+}
+
+fn main() -> i32 {
+    let by: i32 = 10;
+    let kept = stepper(move |x: i32| x + by);
+    print(run(kept.step.borrow(), 1));
+
+    let next = move |x: i32| -> i32 { return x + 1; };
+    print(next.apply(5) + next.apply(6));
+    return 0;
+}
+```
+
+```output
+21
+13
+```
+
 - `|x: T| expr` is a callback with one parameter. `|| expr` takes none. The
   parameter needs its type.
 - A body in braces is a block of statements and ends with `return`.
@@ -669,7 +702,8 @@ today.
 - **Closure limits.** A closure takes one parameter or none. It cannot use
   `self` or contain another closure, and a local it reads needs a declared
   type. There are no function-typed parameters: a function takes a closure
-  through a `Mapper` or `Producer` bound. On Wasm a closure that reads a
+  through a `Mapper` or `Producer` bound, and no declared type can name a
+  closure, so a function cannot return one. On Wasm a closure that reads a
   local fails with LNC0036.
 - **No `if` expression.** `if` is a statement. Use `match` for a value.
 - **Exhaustiveness follows one payload column.** The arms

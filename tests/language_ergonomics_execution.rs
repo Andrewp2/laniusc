@@ -452,6 +452,11 @@ fn closures_copy_bracketed_and_generic_types() {
 }
 
 #[test]
+fn a_move_closure_is_a_value_that_a_struct_stores() {
+    assert_exit("closure_move.lani", 44);
+}
+
+#[test]
 fn a_closure_does_not_capture_a_local_of_another_function() {
     assert_rejected("closure_scope.lani", &["LNC0005", "unresolved identifier", "closure_scope.lani:11:31"]);
 }
