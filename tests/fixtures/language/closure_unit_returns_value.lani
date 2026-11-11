@@ -1,0 +1,11 @@
+// A block body without a result type returns nothing.
+module app::main;
+
+fn twice<M>(step: M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return step.apply(step.apply(value));
+}
+
+fn main() -> i32 {
+    let by: i32 = 4;
+    return twice(move |x: i32| { return x + by; }, 1);
+}

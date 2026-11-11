@@ -73,11 +73,13 @@ static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 static const uint CALL_MISMATCH_TYPED_SLICE_RETURN = 0xffffff06u;
 static const uint CALL_MISMATCH_INTRINSIC_ARITY = 0xffffff0fu;
+static const uint CALL_MISMATCH_CALL_PTR_ARITY = 0xffffff10u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint INTRINSIC_PRINT = 1u;
 static const uint INTRINSIC_ASSERT = 2u;
 static const uint INTRINSIC_SLICE_LEN = 9u;
 static const uint INTRINSIC_STRING_LEN = 10u;
+static const uint INTRINSIC_CALL_PTR = 11u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint WG_SIZE = 256u;
@@ -314,6 +316,13 @@ void resolve_callee_token(uint callee_i, uint call_node)
         call_arg_count_for_callee(callee_i) != 1u)
     {
         record_error(callee_i, ERR_CALL_MISMATCH, CALL_MISMATCH_INTRINSIC_ARITY);
+        return;
+    }
+    // `call_ptr(entry, a, b, c)` always takes the entry and three pointers.
+    if (call_intrinsic_tag[callee_i] == INTRINSIC_CALL_PTR &&
+        call_arg_count_for_callee(callee_i) != 4u)
+    {
+        record_error(callee_i, ERR_CALL_MISMATCH, CALL_MISMATCH_CALL_PTR_ARITY);
         return;
     }
     if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE &&

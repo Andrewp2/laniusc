@@ -1,0 +1,7 @@
+fn nothing(a: ptr) { }
+
+fn main() -> i32 {
+    let none: ptr = 0;
+    call_ptr(nothing, none, none);
+    return 0;
+}

@@ -42,15 +42,15 @@ fn main() -> i32 {
     // The bound fixes the result type: (1 + 3) + 3 = 7.
     let doubled: i32 = twice(|x: i32| x + offset, 1);
 
-    // A block body declares its own locals and returns: 20 + (3 - 1) = 22.
-    let costed: i32 = price(|entry: &Item| {
+    // A block body with a result type declares its own locals and returns: 20 + (3 - 1) = 22.
+    let costed: i32 = price(|entry: &Item| -> i32 {
         let bonus: i32 = add(offset, 0) - 1;
         if (entry.cost() > 50) { return 0; }
         return entry.cost() + bonus;
     }, item.borrow());
 
     // A local of the body shadows the captured one: 20 + 1 = 21.
-    let shadowed: i32 = price(|entry: &Item| {
+    let shadowed: i32 = price(|entry: &Item| -> i32 {
         let offset: i32 = 1;
         return entry.cost() + offset;
     }, item.borrow());

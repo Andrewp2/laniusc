@@ -212,6 +212,8 @@ void main(uint3 tid: SV_DispatchThreadID)
     bool has_param = (flags & FLAG_NO_PARAM) == 0u;
     bool has_rtype = (flags & FLAG_RTYPE) != 0u;
     bool braced = (flags & FLAG_BRACED) != 0u;
+    // A block body without a result type returns nothing.
+    bool unit = braced && !has_rtype;
     uint param = records[row + REC_PARAM];
     uint ptype_first = records[row + REC_PTYPE_FIRST];
     uint ptype_last = records[row + REC_PTYPE_LAST];
@@ -263,25 +265,25 @@ void main(uint3 tid: SV_DispatchThreadID)
         else if (r == 4u)
             piece = constant(C_TRAIT_IMPL, k);
         else if (r == 5u)
-            piece = has_rtype ? nothing(k) : constant(C_GENERIC_R, k);
+            piece = has_rtype || unit ? nothing(k) : constant(C_GENERIC_R, k);
         else if (r == 6u)
-            piece = constant(has_param ? C_MAPPER : C_PRODUCER, k);
+            piece = constant(unit ? (has_param ? C_CONSUMER : C_RUNNABLE) : (has_param ? C_MAPPER : C_PRODUCER), k);
         else if (r == 7u || r == 15u)
             piece = param_type;
         else if (r == 8u)
-            piece = has_param ? constant(C_COMMA, k) : nothing(k);
+            piece = has_param && !unit ? constant(C_COMMA, k) : nothing(k);
         else if (r == 9u || r == 17u)
-            piece = result;
+            piece = unit ? nothing(k) : result;
         else if (r == 10u)
-            piece = constant(C_FOR, k);
+            piece = constant(unit && !has_param ? C_FOR_PLAIN : C_FOR, k);
         else if (r == 12u)
-            piece = constant(has_param ? C_APPLY : C_PRODUCE, k);
+            piece = constant(unit ? (has_param ? C_ACCEPT : C_RUN) : (has_param ? C_APPLY : C_PRODUCE), k);
         else if (r == 13u)
             piece = has_param ? copy_token(param, k) : nothing(k);
         else if (r == 14u)
             piece = has_param ? constant(C_COLON, k) : nothing(k);
         else if (r == 16u)
-            piece = constant(C_RET, k);
+            piece = constant(unit ? C_RPAREN : C_RET, k);
         else
             piece = constant(C_LBRACE, k);
         pieces[q] = piece;
@@ -311,6 +313,41 @@ void main(uint3 tid: SV_DispatchThreadID)
         pieces[q] = braced ? nothing(k) : constant(C_RETURN, k);
     else if (r == 1u)
         pieces[q] = copy_span(records[row + REC_BODY_FIRST], records[row + REC_BODY_LAST], k);
-    else
+    else if (r == 2u)
         pieces[q] = constant(braced ? C_END_BLOCK : C_END_EXPR, k);
+    else
+    {
+        // The entry function and the `Stored` impl. Only a `move` closure
+        // whose result is known from its text gets them: the entry names
+        // the closure's types, and an expression body does not state its
+        // result.
+        uint e = r - 3u;
+        uint4 piece = nothing(k);
+        if ((flags & FLAG_MOVE) == 0u || !(has_rtype || unit))
+            piece = nothing(k);
+        else if (e == 0u)
+            piece = constant(C_ENTRY_FN, k);
+        else if (e == 1u || e == 4u || e == 10u || e == 12u)
+            piece = id;
+        else if (e == 2u)
+            piece = constant(C_ENTRY_SIG, k);
+        else if (e == 3u)
+            piece = constant(unit ? (has_param ? C_ENTER_CONSUMER : C_ENTER_RUNNABLE)
+                                  : (has_param ? C_ENTER_MAPPER : C_ENTER_PRODUCER), k);
+        else if (e == 5u)
+            piece = has_param ? constant(C_COMMA, k) : nothing(k);
+        else if (e == 6u)
+            piece = param_type;
+        else if (e == 7u)
+            piece = has_rtype ? constant(C_COMMA, k) : nothing(k);
+        else if (e == 8u)
+            piece = has_rtype ? result : nothing(k);
+        else if (e == 9u)
+            piece = constant(C_ENTRY_END, k);
+        else if (e == 11u)
+            piece = constant(C_STORED_FN, k);
+        else
+            piece = constant(C_STORED_END, k);
+        pieces[q] = piece;
+    }
 }

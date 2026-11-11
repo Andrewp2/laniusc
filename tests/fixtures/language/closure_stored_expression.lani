@@ -1,0 +1,10 @@
+// An expression body does not state its result type, so it cannot be stored.
+module app::main;
+
+import alloc::callback;
+
+fn main() -> i32 {
+    let by: i32 = 4;
+    let add: alloc::callback::Callback<i32, i32> = alloc::callback::callback(move |x: i32| x + by);
+    return add.apply(1);
+}

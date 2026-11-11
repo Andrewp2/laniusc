@@ -38,7 +38,7 @@ use crate::{
 /// shaders/closures/closure_common.slang.
 /// A string that follows a copied type starts with a space, so a type that
 /// ends in `>` does not join it into `>=` or `>>`.
-const CONSTANTS: [&str; 25] = [
+const CONSTANTS: [&str; 40] = [
     "__lanius_closure_",
     "{",
     ":",
@@ -64,11 +64,26 @@ const CONSTANTS: [&str; 25] = [
     "}}\n",
     "import core::function;",
     "}",
+    " core::function::Consumer<",
+    " core::function::Runnable",
+    " for __lanius_closure_",
+    "{pub fn accept(&self,",
+    "{pub fn run(&self",
+    ")",
+    "fn __lanius_closure_",
+    "_entry(e:ptr,i:ptr,o:ptr){core::function::enter_",
+    "mapper<__lanius_closure_",
+    "producer<__lanius_closure_",
+    "consumer<__lanius_closure_",
+    "runnable<__lanius_closure_",
+    " >(e,i,o);}\npub impl core::function::Stored for __lanius_closure_",
+    "{pub fn entry(&self)->ptr{return __lanius_closure_",
+    "_entry;}}\n",
 ];
 
 const RECORD_WORDS: usize = 12;
 const PIECES_PER_FILE: u32 = 3;
-const PIECES_PER_CLOSURE: u32 = 30;
+const PIECES_PER_CLOSURE: u32 = 44;
 const PIECES_PER_CAPTURE: u32 = 15;
 const PIECE_COPY: u32 = 0;
 const PIECE_ID: u32 = 2;

@@ -106,6 +106,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+static const uint INTRINSIC_CALL_PTR = 11u;
 
 [ForceInline]
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
@@ -171,6 +172,24 @@ void validate_raw_parts_call(uint node, HirCore core)
     uint callee = raw_parts_callee_token(node);
     if (callee == INVALID) return;
     uint intrinsic = call_intrinsic_tag[callee];
+    if (intrinsic == INTRINSIC_CALL_PTR)
+    {
+        // call_ptr(entry, a, b, c): every argument is a ptr. The three
+        // arguments after the entry may also be the null constant 0.
+        for (uint ordinal = 0u; ordinal < 4u; ordinal += 1u)
+        {
+            uint argument = raw_parts_argument(node, ordinal);
+            if (!valid_hir(argument)) continue;
+            uint argument_ty = scalar_type(argument);
+            HirPayload argument_payload = compact_hir_payload[argument];
+            bool null_argument = ordinal != 0u && argument_payload.a == HIR_EXPR_INT &&
+                argument_payload.b == 0u && argument_payload.c == 0u;
+            if (argument_ty != TY_POINTER && !null_argument)
+                record_min_token_error(status, compact_hir_core[argument].token_start,
+                    ERR_ASSIGN_MISMATCH, TY_POINTER * 256u + argument_ty);
+        }
+        return;
+    }
     if (intrinsic != INTRINSIC_I32_SLICE_FROM_RAW_PARTS &&
         intrinsic != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
         return;

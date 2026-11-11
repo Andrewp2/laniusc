@@ -1,0 +1,72 @@
+// A stored callback owns a `move` closure of any type and is called through
+// one address. A function returns one, and a struct holds callbacks whose
+// closures have different types.
+module app::main;
+
+import alloc::callback;
+
+struct Click { x: i32, y: i32 }
+
+struct Button {
+    on_click: alloc::callback::Handler<Click>,
+    score: alloc::callback::Callback<Click, i32>,
+}
+
+// The callback is called after this function has returned.
+fn make_reader(value: i32) -> alloc::callback::Source<i32> {
+    return alloc::callback::source(move || -> i32 { return value; });
+}
+
+// Two closures of different types become values of one type.
+fn scorer(by: i32, doubled: bool) -> alloc::callback::Callback<Click, i32> {
+    if (doubled) {
+        return alloc::callback::callback(move |click: Click| -> i32 { return 2 * (click.x + click.y) + by; });
+    }
+    return alloc::callback::callback(move |click: Click| -> i32 { return click.x + click.y + by; });
+}
+
+// Generic code takes a stored callback through the same trait as a closure.
+fn twice<M>(step: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return step.apply(step.apply(value));
+}
+
+fn main() -> i32 {
+    let read: alloc::callback::Source<i32> = make_reader(42);
+    let base: i32 = 100;
+    let button: Button = Button {
+        // A block body without a result type returns nothing.
+        on_click: alloc::callback::handler(move |click: Click| {
+            if (click.x < 0) { return; }
+            print(click.x + base);
+        }),
+        score: scorer(30, false),
+    };
+    // A closure without captures.
+    let beep: alloc::callback::Action = alloc::callback::action(move || { print(7); });
+
+    button.on_click.accept(Click { x: 1, y: 2 });
+    button.on_click.accept(Click { x: -1, y: 2 });
+    beep.run();
+
+    // (5 + 7 + 30) + 42 = 84.
+    let total: i32 = button.score.apply(Click { x: 5, y: 7 }) + read.produce();
+
+    // 2 * (5 + 7) + 1 = 25.
+    let other: alloc::callback::Callback<Click, i32> = scorer(1, true);
+    let double: i32 = other.apply(Click { x: 5, y: 7 });
+
+    // (3 + 4) + 4 = 11.
+    let by: i32 = 4;
+    let add: alloc::callback::Callback<i32, i32> = alloc::callback::callback(move |x: i32| -> i32 { return x + by; });
+    let stepped: i32 = twice(add.borrow(), 3);
+
+    read.destroy();
+    button.on_click.destroy();
+    button.score.destroy();
+    beep.destroy();
+    other.destroy();
+    add.destroy();
+
+    // 84 + 25 + 11 = 120.
+    return total + double + stepped;
+}

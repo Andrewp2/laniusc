@@ -769,6 +769,18 @@ tree, the resulting trees and exit statuses agree with GNU `patch`
 (`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
 5,518 comparisons. Binary patches are refused with an error.
 
+[Stored callbacks](language-ergonomics.md#stored-callbacks) (`alloc::callback`)
+hold a `move` closure of any type behind one signature: `Callback<T, U>`,
+`Source<U>`, `Handler<T>` and `Action`. Each owns one heap block, implements
+the matching `core::function` trait (`Mapper`, `Producer`, `Consumer`,
+`Runnable`) and is freed by `destroy`. `core::function` gains `Consumer`,
+`Runnable`, `Stored` and the four `enter_*` entry bodies the compiler's
+generated entries call. They run on x86-64 Linux; the Wasm target rejects the
+call through an address. Receipt:
+`tests/fixtures/language/closure_stored.lani` in
+`language_ergonomics_execution`. The generated pages under `docs/api/` do not
+list these declarations yet.
+
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
 regex-text and real-application gates on the native profile below. The preceding

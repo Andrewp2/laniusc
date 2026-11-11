@@ -1,0 +1,143 @@
+// Stored callbacks. A value here owns a `move` closure of any type and
+// calls it through one address, so a struct field or a list can hold
+// closures of different types that share a signature.
+//
+//   Callback<T, R>   takes a T, returns an R   apply(value)
+//   Source<R>        takes nothing, returns R  produce()
+//   Handler<T>       takes a T, returns nothing accept(value)
+//   Action           takes and returns nothing run()
+//
+// Each implements the core::function trait of the same shape, so generic
+// code that takes a Mapper, Producer, Consumer or Runnable takes these too.
+//
+// A stored callback is one heap block: the closure's captures, then a slot
+// for the argument and a slot for the result. `destroy` frees the block. It
+// does not destroy a captured value that owns storage; the program does
+// that. Copies of a stored callback share the block, so destroy one copy
+// and stop using the rest. A call writes the slots, so two threads must
+// not call copies of one callback at the same time. A callback may call
+// itself.
+//
+// Allocation failure traps. The x86-64 target runs these; the Wasm target
+// rejects the call through an address.
+module alloc::callback;
+
+import core::function;
+import core::mem;
+import core::panic;
+import alloc::allocator;
+
+const ALIGN: usize = 8;
+
+pub struct Callback<T, R> { entry: ptr, block: ptr, size: usize, input: ptr, output: ptr }
+pub struct Source<R> { entry: ptr, block: ptr, size: usize, output: ptr }
+pub struct Handler<T> { entry: ptr, block: ptr, size: usize, input: ptr }
+pub struct Action { entry: ptr, block: ptr, size: usize }
+
+fn rounded(size: usize) -> usize { return (size + 7) / 8 * 8; }
+
+// One block for a closure of type F and two slots. The closure is stored
+// at the start.
+fn store<F>(closure: F, input_size: usize, output_size: usize) -> ptr {
+    let size: usize = rounded(core::mem::size_of<F>()) + rounded(input_size) + rounded(output_size);
+    if (size == 0) { let none: ptr = 0; return none; }
+    let block: ptr = alloc::allocator::alloc(size, ALIGN);
+    if (block == 0) { alloc::allocator::alloc_failed(size, ALIGN); core::panic::panic(); }
+    let slot: [F] = core::mem::typed_slice_from_storage(block, 1);
+    slot[0] = closure;
+    return block;
+}
+
+fn release(block: ptr, size: usize) {
+    if (size > 0) { alloc::allocator::dealloc(block, size, ALIGN); }
+}
+
+// Store a `move` closure that takes one value and returns one.
+pub fn callback<F, T, R>(closure: F) -> Callback<T, R>
+    where F: core::function::Mapper<T, R>, F: core::function::Stored {
+    let env: usize = rounded(core::mem::size_of<F>());
+    let input: usize = rounded(core::mem::size_of<T>());
+    let output: usize = rounded(core::mem::size_of<R>());
+    let entry: ptr = closure.entry();
+    let block: ptr = store(closure, input, output);
+    return Callback { entry: entry, block: block, size: env + input + output, input: block + env, output: block + env + input };
+}
+
+// Store a `move` closure that takes nothing and returns a value.
+pub fn source<F, R>(closure: F) -> Source<R>
+    where F: core::function::Producer<R>, F: core::function::Stored {
+    let env: usize = rounded(core::mem::size_of<F>());
+    let output: usize = rounded(core::mem::size_of<R>());
+    let entry: ptr = closure.entry();
+    let block: ptr = store(closure, 0, output);
+    return Source { entry: entry, block: block, size: env + output, output: block + env };
+}
+
+// Store a `move` closure that takes one value and returns nothing.
+pub fn handler<F, T>(closure: F) -> Handler<T>
+    where F: core::function::Consumer<T>, F: core::function::Stored {
+    let env: usize = rounded(core::mem::size_of<F>());
+    let input: usize = rounded(core::mem::size_of<T>());
+    let entry: ptr = closure.entry();
+    let block: ptr = store(closure, input, 0);
+    return Handler { entry: entry, block: block, size: env + input, input: block + env };
+}
+
+// Store a `move` closure that takes nothing and returns nothing.
+pub fn action<F>(closure: F) -> Action
+    where F: core::function::Runnable, F: core::function::Stored {
+    let env: usize = rounded(core::mem::size_of<F>());
+    let entry: ptr = closure.entry();
+    let block: ptr = store(closure, 0, 0);
+    return Action { entry: entry, block: block, size: env };
+}
+
+pub impl<T, R> Callback<T, R> {
+    pub fn borrow(&self) -> &Callback<T, R> { return self; }
+    pub fn destroy(&self) { release(self.block, self.size); self.size = 0; }
+}
+
+pub impl<T, R> core::function::Mapper<T, R> for Callback<T, R> {
+    pub fn apply(&self, value: T) -> R {
+        let input: [T] = core::mem::typed_slice_from_storage(self.input, 1);
+        input[0] = value;
+        call_ptr(self.entry, self.block, self.input, self.output);
+        let output: [R] = core::mem::typed_slice_from_storage(self.output, 1);
+        return output[0];
+    }
+}
+
+pub impl<R> Source<R> {
+    pub fn borrow(&self) -> &Source<R> { return self; }
+    pub fn destroy(&self) { release(self.block, self.size); self.size = 0; }
+}
+
+pub impl<R> core::function::Producer<R> for Source<R> {
+    pub fn produce(&self) -> R {
+        call_ptr(self.entry, self.block, 0, self.output);
+        let output: [R] = core::mem::typed_slice_from_storage(self.output, 1);
+        return output[0];
+    }
+}
+
+pub impl<T> Handler<T> {
+    pub fn borrow(&self) -> &Handler<T> { return self; }
+    pub fn destroy(&self) { release(self.block, self.size); self.size = 0; }
+}
+
+pub impl<T> core::function::Consumer<T> for Handler<T> {
+    pub fn accept(&self, value: T) {
+        let input: [T] = core::mem::typed_slice_from_storage(self.input, 1);
+        input[0] = value;
+        call_ptr(self.entry, self.block, self.input, 0);
+    }
+}
+
+pub impl Action {
+    pub fn borrow(&self) -> &Action { return self; }
+    pub fn destroy(&self) { release(self.block, self.size); self.size = 0; }
+}
+
+pub impl core::function::Runnable for Action {
+    pub fn run(&self) { call_ptr(self.entry, self.block, 0, 0); }
+}

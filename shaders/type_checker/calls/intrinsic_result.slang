@@ -12,6 +12,7 @@ public static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
 public static const uint INTRINSIC_SLICE_STRIDE = 8u;
 public static const uint INTRINSIC_SLICE_LEN = 9u;
 public static const uint INTRINSIC_STRING_LEN = 10u;
+public static const uint INTRINSIC_CALL_PTR = 11u;
 
 // The legacy result code of an intrinsic: ptr for the data pointers, the
 // i32 slice code for i32_slice_from_raw_parts, isize for slice_stride,

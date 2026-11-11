@@ -1,0 +1,38 @@
+// call_ptr(entry, a, b, c) calls the function whose address is `entry` with
+// three pointer arguments. The function reads and writes through them.
+module app::main;
+
+import core::mem;
+
+// Adds the first value of `left` and of `right` into the first of `sum`.
+fn add_into(left: ptr, right: ptr, sum: ptr) {
+    let a: [i32] = core::mem::typed_slice_from_raw_parts(left, 1);
+    let b: [i32] = core::mem::typed_slice_from_raw_parts(right, 1);
+    let out: [i32] = core::mem::typed_slice_from_raw_parts(sum, 1);
+    out[0] = a[0] + b[0];
+}
+
+// A function that takes fewer pointers ignores the rest.
+fn double(value: ptr) {
+    let view: [i32] = core::mem::typed_slice_from_raw_parts(value, 1);
+    view[0] = view[0] * 2;
+}
+
+// The caller keeps values in registers across the call.
+fn through(entry: ptr, left: ptr, right: ptr, sum: ptr, keep: i32) -> i32 {
+    let before: i32 = keep + 1;
+    call_ptr(entry, left, right, sum);
+    return before + keep;
+}
+
+fn main() -> i32 {
+    let left: [i32; 1] = [30];
+    let right: [i32; 1] = [5];
+    let sum: [i32; 1] = [0];
+    let kept: i32 = through(add_into, core::mem::i32_array_data_ptr(left),
+        core::mem::i32_array_data_ptr(right), core::mem::i32_array_data_ptr(sum), 3);
+    // 30 + 5 = 35, doubled to 70.
+    call_ptr(double, core::mem::i32_array_data_ptr(sum), 0, 0);
+    // 70 + 7 = 77.
+    return sum[0] + kept;
+}

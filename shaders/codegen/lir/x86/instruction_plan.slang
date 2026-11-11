@@ -1430,6 +1430,17 @@ uint plan_specialized(X86PlanInput input)
         // Scatter accepts only print (1) and assert (2) for this opcode.
         plan_jump(1u, 0xe8u, X86_RESOLVE_RUNTIME, operands.a == 2u
             ? X86_RUNTIME_ASSERT_OFFSET : X86_RUNTIME_PRINT_I32_OFFSET);
+    else if (op == X86_LIR_OP_PRINT_I32 && operands.a == INTRINSIC_CALL_PTR)
+    {
+        // call_ptr(entry, a, b, c). The preceding CALL_ARG rows placed the
+        // entry in RDI and the three arguments in RSI, RDX and RCX. Move
+        // each argument down one register and call the entry through RAX.
+        plan_bytes(3u, 0xf88948u); // mov rax, rdi
+        plan_bytes(3u, 0xf78948u); // mov rdi, rsi
+        plan_bytes(3u, 0xd68948u); // mov rsi, rdx
+        plan_bytes(3u, 0xca8948u); // mov rdx, rcx
+        plan_bytes(2u, 0xd0ffu); // call rax
+    }
     else if (op == X86_LIR_OP_INTRINSIC_IDENTITY)
         // The preceding CALL_ARG rows placed the argument's words in RDI,
         // RSI and RDX. Operand a = 1 selects a length in RSI and a = 2 a

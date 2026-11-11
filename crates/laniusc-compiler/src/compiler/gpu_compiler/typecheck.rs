@@ -5070,6 +5070,7 @@ fn call_mismatch_diagnostic(
     const CALL_MISMATCH_INVALID_METHOD_RECEIVER: u32 = 0xffffff0d;
     const CALL_MISMATCH_UNROUTED_BOUND_MEMBER: u32 = 0xffffff0e;
     const CALL_MISMATCH_INTRINSIC_ARITY: u32 = 0xffffff0f;
+    const CALL_MISMATCH_CALL_PTR_ARITY: u32 = 0xffffff10;
     let (label, note) = match detail {
         CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
             "method return type is not supported for generic method dispatch here",
@@ -5094,6 +5095,10 @@ fn call_mismatch_diagnostic(
         CALL_MISMATCH_INTRINSIC_ARITY => (
             "this built-in function takes exactly one argument",
             "`print(count)`, `assert(condition)`, `slice_len(values)` and `string_len(text)` each take one value",
+        ),
+        CALL_MISMATCH_CALL_PTR_ARITY => (
+            "`call_ptr` takes exactly four arguments",
+            "`call_ptr(entry, a, b, c)` calls the function at `entry` with three `ptr` arguments; pass `0` for one the function does not read",
         ),
         CALL_MISMATCH_TYPED_SLICE_RETURN => (
             "slice_from_raw_parts must return a slice type",

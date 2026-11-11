@@ -320,7 +320,7 @@ A closure is a callback written where it is used:
 ```lanius
 let step: i32 = 3;
 let mapped: Option<i32> = some.map(|x: i32| x + step);
-let total: i32 = twice(|x: i32| { let y: i32 = x * x; return y + step; }, 2);
+let total: i32 = twice(|x: i32| -> i32 { let y: i32 = x * x; return y + step; }, 2);
 let made: i32 = make(|| -> i32 { return step * 2; });
 ```
 
@@ -328,14 +328,20 @@ let made: i32 = make(|| -> i32 { return step * 2; });
   `core::function::Mapper<Type, R>`. `|| body` takes none and implements
   `core::function::Producer<R>`. The value is a borrowed callback, the form
   the library's `mapper: &M` parameters take.
-- The body is an expression, or a block in braces that ends with `return`.
-  An expression body ends at the first `,` or `;` outside its own brackets,
-  or at the bracket that closes around the closure. An expression with a
-  comma between explicit type arguments needs braces.
-- `-> Type` before a block body gives the result type. Without it the place
-  that receives the closure fixes the result type: a bound such as
-  `Mapper<i32, i32>`, or the declared type of the `let` that takes the
-  call's result.
+- The body is an expression or a block in braces. An expression body ends
+  at the first `,` or `;` outside its own brackets, or at the bracket that
+  closes around the closure. An expression with a comma between explicit
+  type arguments needs braces.
+- `-> Type` before a block body gives the result type, and the block ends
+  with `return value;`. A block body without `-> Type` returns nothing:
+  `|name: Type| { ... }` implements `core::function::Consumer<Type>`
+  (`accept`) and `|| { ... }` implements `core::function::Runnable` (`run`).
+  A `return value;` in such a block is a type mismatch (`LNC0006`, "expects
+  void"). The rule reads the closure's text only, so the compiler needs no
+  inference to pick the trait.
+- An expression body has no written result type. The place that receives
+  the closure fixes it: a bound such as `Mapper<i32, i32>`, or the declared
+  type of the `let` that takes the call's result.
 - `move` before the bars makes the closure an owned value in place of a
   borrow: `let next = move |x: i32| -> i32 { return x + 1; };` or an
   argument for a by-value parameter `step: M`. A `let` without a type or a
@@ -369,7 +375,8 @@ Other limits:
 
 - A closure has no type a program can name, so it cannot be a field of a
   non-generic struct, a declared parameter type or a result type. A
-  function takes one through a bound and cannot return one.
+  function takes one through a bound. To return one or keep it in a
+  non-generic field, store it (next section).
 - `move` is a word only before `|` or `||` where a closure can start. A
   local named `move` cannot be the left operand of `|` directly after `(`,
   `,`, `=`, `:`, `->` or `return`.
@@ -415,6 +422,77 @@ closure start; `records` then starts the site at that word and `pieces`
 ends it with `}` in place of `}.borrow()`. Fixtures:
 `tests/fixtures/language/closure*.lani` and `closure_modules/`.
 
+## Stored callbacks
+
+`alloc::callback` turns a `move` closure into a value whose type names only
+the signature. A function returns it, a non-generic struct field holds it,
+and one field type takes closures of different types:
+
+```lanius
+import alloc::callback;
+
+struct Button { on_click: alloc::callback::Handler<Click> }
+
+fn make_reader(value: i32) -> alloc::callback::Source<i32> {
+    return alloc::callback::source(move || -> i32 { return value; });
+}
+
+let button: Button = Button {
+    on_click: alloc::callback::handler(move |click: Click| { print(click.x + base); }),
+};
+button.on_click.accept(Click { x: 1, y: 2 });
+```
+
+| Function | Takes a `move` closure | Gives | Call |
+| --- | --- | --- | --- |
+| `callback` | `\|x: T\| -> U { ... }` | `Callback<T, U>` | `apply(value)` |
+| `source` | `\|\| -> U { ... }` | `Source<U>` | `produce()` |
+| `handler` | `\|x: T\| { ... }` | `Handler<T>` | `accept(value)` |
+| `action` | `\|\| { ... }` | `Action` | `run()` |
+
+- Each stored type implements the `core::function` trait of its row, so
+  generic code that takes a `Mapper`, `Producer`, `Consumer` or `Runnable`
+  takes a stored callback through `borrow()`.
+- The closure must be a `move` closure whose result is written: `-> Type`
+  and a block, or a block that returns nothing. An expression body such as
+  `move |x: i32| x + by` is refused with `LNC0008` (unsatisfied trait
+  bound), because its result type is not in its text.
+- A stored callback is one heap block: the captures, a slot for the
+  argument and a slot for the result. `destroy()` frees it. It does not
+  destroy a captured value that owns storage. Copies share the block:
+  destroy one copy and stop using the others.
+- A call writes the slots. A callback may call itself, but two threads
+  must not call copies of one callback at the same time.
+- Allocation failure traps.
+- The x86-64 target runs stored callbacks. The Wasm target rejects the call
+  with `LNC0036`.
+
+Decision: no function types and no trait objects. The checker has no
+dynamic dispatch, and adding it means a new kind of type, coercion rules
+and vtables in two backends. A stored callback needs one thing the language
+lacked: a call through an address. The built-in `call_ptr(entry, a, b, c)`
+supplies it (see C callbacks). Everything else is library code and
+generated text:
+
+- For a `move` closure whose result is written, the closure rewrite appends
+  a function `__lanius_closure_N_entry(e: ptr, i: ptr, o: ptr)` and an impl
+  of `core::function::Stored`, whose `entry` method returns that function's
+  address. The entry calls `core::function::enter_mapper<Closure, T, U>(e,
+  i, o)` or the `enter_producer`, `enter_consumer` or `enter_runnable`
+  variant. Those read the closure from `e` and the argument from `i`, call
+  the trait method and write the result to `o`.
+- `alloc::callback::callback<F, T, U>(closure)` requires `F: Mapper<T, U>`
+  and `F: Stored`. It allocates the block, moves the closure in and keeps
+  the entry address. `apply` writes the argument, runs
+  `call_ptr(entry, block, input, output)` and reads the result.
+- Every entry has the same three-pointer signature, so the argument and
+  result may be any type, including structs.
+- The pairing is sound because the compiler writes `Stored` only next to a
+  trait impl with concrete types. An impl of `Stored` written by hand is
+  unchecked: its entry must read the types its closure's trait names.
+
+Fixture: `tests/fixtures/language/closure_stored.lani`.
+
 ## C callbacks
 
 A non-generic free function named as a value, `compare_i32` or
@@ -442,8 +520,15 @@ functions `fn compare_i32(left: ptr, right: ptr) -> i32` and
   unresolved identifier (`LNC0005`), and a method path such as `S::get` is
   `LNC0006`.
 - The name is already a `ptr`: `let p: i32 = f;` is `LNC0006` and
-  `f as ptr` is `LNC0072`. Lanius cannot call through a `ptr`; the address
-  is for C.
+  `f as ptr` is `LNC0072`.
+- `call_ptr(entry, a, b, c)` calls the function at the address `entry` with
+  three `ptr` arguments and has no result. It takes exactly four arguments
+  (`LNC0027` otherwise); each is a `ptr`, and the last three may be the
+  constant `0` (`LNC0006` otherwise). The compiler cannot check that
+  `entry` is a function that takes pointers, so a wrong address is
+  undefined behavior. A function with fewer parameters ignores the rest.
+  The Wasm target rejects the call (`LNC0036`). `alloc::callback` builds
+  stored callbacks on it; ordinary programs do not call it directly.
 
 Decision: no new syntax. The request suggested `extern "C" fn name(...) {
 ... }`, but every Lanius function already has a C-compatible register

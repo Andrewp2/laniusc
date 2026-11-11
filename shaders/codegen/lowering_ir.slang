@@ -515,6 +515,9 @@ static const uint INTRINSIC_SLICE_STRIDE = 8u;
 static const uint INTRINSIC_SLICE_LEN = 9u;
 // The second word (byte count) of a str argument, as usize.
 static const uint INTRINSIC_STRING_LEN = 10u;
+// call_ptr(entry, a, b, c): calls the System V entry at `entry` with three
+// pointer arguments. It has no result.
+static const uint INTRINSIC_CALL_PTR = 11u;
 
 // An intrinsic whose result is one word of its argument.
 bool intrinsic_argument_word(uint tag)

@@ -1003,8 +1003,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (args.a == HOST_SERVICE_I32_TO_F32 || x86_runtime_service_supported(args.a)))
         flags = 0u;
     if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        // 1 is print and 2 is assert; remaining tags below are view helpers.
-        args.a != 1u && args.a != 2u &&
+        // 1 is print and 2 is assert. call_ptr is an indirect call. The
+        // remaining tags below are view helpers.
+        args.a != 1u && args.a != 2u && args.a != INTRINSIC_CALL_PTR &&
         !intrinsic_argument_word(args.a) &&
         !intrinsic_slice_from_raw_parts(args.a))
         flags = TARGET_LIR_FLAG_UNSUPPORTED;

@@ -1,0 +1,20 @@
+// A block body without a result type returns nothing. With one parameter
+// the closure is a Consumer; with none it is a Runnable.
+module app::main;
+
+fn each<C>(sink: &C, count: i32) where C: core::function::Consumer<i32> {
+    let i: i32 = 0;
+    while (i < count) { sink.accept(i); i += 1; }
+}
+
+fn go<R>(task: &R) where R: core::function::Runnable { task.run(); }
+
+fn main() -> i32 {
+    let base: i32 = 10;
+    each(|value: i32| {
+        if (value == 1) { return; }
+        assert(value + base >= 10);
+    }, 3);
+    go(|| { assert(base == 10); });
+    return 0;
+}

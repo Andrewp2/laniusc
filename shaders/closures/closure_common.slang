@@ -45,13 +45,15 @@ public static const uint ERR_RTYPE_BODY = 7u;
 // Piece counts. A file has PIECES_PER_FILE pieces plus those of its closures
 // and captures: the text before the import, the import, and the text after
 // the last closure. A closure has one piece of text before it, its site and
-// its appendix.
+// its appendix. The appendix ends with ENTRY_PIECES pieces: the entry
+// function and the `Stored` impl of a closure that alloc::callback can hold.
 public static const uint PIECES_PER_FILE = 3u;
 public static const uint SITE_FIXED = 4u;
 public static const uint SITE_PER_CAPTURE = 4u;
-public static const uint APPENDIX_FIXED = 25u;
+public static const uint APPENDIX_FIXED = 39u;
 public static const uint APPENDIX_PER_CAPTURE = 11u;
-public static const uint PIECES_PER_CLOSURE = 30u;
+public static const uint ENTRY_PIECES = 14u;
+public static const uint PIECES_PER_CLOSURE = 44u;
 public static const uint PIECES_PER_CAPTURE = 15u;
 
 // Piece kinds.
@@ -86,6 +88,21 @@ public static const uint C_END_EXPR = 21u;
 public static const uint C_END_BLOCK = 22u;
 public static const uint C_IMPORT = 23u;
 public static const uint C_SITE_END_OWNED = 24u;
+public static const uint C_CONSUMER = 25u;
+public static const uint C_RUNNABLE = 26u;
+public static const uint C_FOR_PLAIN = 27u;
+public static const uint C_ACCEPT = 28u;
+public static const uint C_RUN = 29u;
+public static const uint C_RPAREN = 30u;
+public static const uint C_ENTRY_FN = 31u;
+public static const uint C_ENTRY_SIG = 32u;
+public static const uint C_ENTER_MAPPER = 33u;
+public static const uint C_ENTER_PRODUCER = 34u;
+public static const uint C_ENTER_CONSUMER = 35u;
+public static const uint C_ENTER_RUNNABLE = 36u;
+public static const uint C_ENTRY_END = 37u;
+public static const uint C_STORED_FN = 38u;
+public static const uint C_STORED_END = 39u;
 
 public bool tk_paren_open(uint k)
 {

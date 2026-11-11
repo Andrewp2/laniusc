@@ -331,6 +331,23 @@ fn length_builtins_reject_an_argument_of_another_type() {
 }
 
 #[test]
+fn call_ptr_calls_the_function_at_an_address() {
+    assert_exit("call_ptr.lani", 77);
+}
+
+#[test]
+fn call_ptr_takes_the_entry_and_three_pointers() {
+    assert_rejected(
+        "call_ptr_three_arguments.lani",
+        &["LNC0027", "`call_ptr` takes exactly four arguments"],
+    );
+    assert_rejected(
+        "call_ptr_integer_argument.lani",
+        &["LNC0006", "value type is i32 but this context expects ptr"],
+    );
+}
+
+#[test]
 fn print_rejects_a_value_it_cannot_write() {
     assert_rejected(
         "print_text.lani",
@@ -454,6 +471,34 @@ fn closures_copy_bracketed_and_generic_types() {
 #[test]
 fn a_move_closure_is_a_value_that_a_struct_stores() {
     assert_exit("closure_move.lani", 44);
+}
+
+#[test]
+fn a_stored_callback_holds_any_move_closure_of_its_signature() {
+    let fixture = "closure_stored.lani";
+    let bytes = compile(fixture).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", fixture, &bytes);
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "101\n7\n", "{fixture}");
+        assert_eq!(output.status.code(), Some(120), "{fixture}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn a_block_closure_without_a_result_type_returns_nothing() {
+    assert_exit("closure_unit.lani", 0);
+    assert_rejected(
+        "closure_unit_returns_value.lani",
+        &["LNC0006", "value type is i32 but this context expects void", "closure_unit_returns_value.lani:10:41"],
+    );
+}
+
+#[test]
+fn a_stored_callback_needs_a_written_result_type() {
+    assert_rejected("closure_stored_expression.lani", &["LNC0008", "unsatisfied trait bound"]);
 }
 
 #[test]

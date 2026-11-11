@@ -1,5 +1,8 @@
-// Borrowed, statically dispatched callbacks. No closure or dynamic-call ABI.
+// Statically dispatched callbacks, and the entry points that let
+// alloc::callback call a stored closure of any type.
 module core::function;
+
+import core::mem;
 
 // Ordinary shallow input/output values. The caller keeps the mapper and any
 // borrowed mutable context alive. Cleanup authority follows the application's
@@ -12,4 +15,56 @@ pub trait Mapper<T,U> {
 // callers decide when to invoke it and retain the output's cleanup authority.
 pub trait Producer<T> {
     pub fn produce(&self) -> T;
+}
+
+// Take a value and return nothing.
+pub trait Consumer<T> {
+    pub fn accept(&self,value:T);
+}
+
+// Take nothing and return nothing.
+pub trait Runnable {
+    pub fn run(&self);
+}
+
+// A closure type that alloc::callback can store. `entry` is the address of
+// a function `fn(env: ptr, input: ptr, output: ptr)` that calls the closure
+// stored at `env`. The compiler implements this for a `move` closure whose
+// result is known from its text. An implementation written by hand must
+// return an entry that reads the same types the closure's callback trait
+// names; nothing checks that.
+pub trait Stored {
+    pub fn entry(&self) -> ptr;
+}
+
+// Entry bodies. Each reads the closure of type F from the one-element
+// storage at `env` and the argument from `input`, calls the closure, and
+// writes the result to `output`. All three use the layout of
+// core::mem::typed_slice_from_storage with length 1.
+pub fn enter_mapper<F,T,U>(env:ptr,input:ptr,output:ptr) where F: Mapper<T,U> {
+    let closure: [F] = core::mem::typed_slice_from_storage(env, 1);
+    let argument: [T] = core::mem::typed_slice_from_storage(input, 1);
+    let result: [U] = core::mem::typed_slice_from_storage(output, 1);
+    let call: F = closure[0];
+    result[0] = call.apply(argument[0]);
+}
+
+pub fn enter_producer<F,U>(env:ptr,input:ptr,output:ptr) where F: Producer<U> {
+    let closure: [F] = core::mem::typed_slice_from_storage(env, 1);
+    let result: [U] = core::mem::typed_slice_from_storage(output, 1);
+    let call: F = closure[0];
+    result[0] = call.produce();
+}
+
+pub fn enter_consumer<F,T>(env:ptr,input:ptr,output:ptr) where F: Consumer<T> {
+    let closure: [F] = core::mem::typed_slice_from_storage(env, 1);
+    let argument: [T] = core::mem::typed_slice_from_storage(input, 1);
+    let call: F = closure[0];
+    call.accept(argument[0]);
+}
+
+pub fn enter_runnable<F>(env:ptr,input:ptr,output:ptr) where F: Runnable {
+    let closure: [F] = core::mem::typed_slice_from_storage(env, 1);
+    let call: F = closure[0];
+    call.run();
 }

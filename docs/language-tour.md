@@ -472,7 +472,7 @@ fn main() -> i32 {
     let doubled: Option<i32> = some.map(|x: i32| x * 2);
     print(doubled.unwrap());
 
-    print(twice(|x: i32| {
+    print(twice(|x: i32| -> i32 {
         let squared: i32 = x * x;
         return squared + step;
     }, 2));
@@ -519,15 +519,66 @@ fn main() -> i32 {
 13
 ```
 
+A generic field holds one closure type. A stored callback from
+`alloc::callback` holds any `move` closure with the right signature, so a
+function can return one and a struct can keep handlers of different types:
+
+```lanius
+import alloc::callback;
+
+struct Click { x: i32, y: i32 }
+
+struct Button { on_click: Handler<Click> }
+
+fn adder(by: i32) -> Callback<i32, i32> {
+    return callback(move |x: i32| -> i32 { return x + by; });
+}
+
+fn main() -> i32 {
+    let add: Callback<i32, i32> = adder(10);
+    print(add.apply(1));
+
+    let base: i32 = 100;
+    let button: Button = Button {
+        on_click: handler(move |click: Click| {
+            print(click.x + click.y + base);
+        }),
+    };
+    button.on_click.accept(Click { x: 3, y: 4 });
+
+    add.destroy();
+    button.on_click.destroy();
+    return 0;
+}
+```
+
+```output
+11
+107
+```
+
 - `|x: T| expr` is a callback with one parameter. `|| expr` takes none. The
   parameter needs its type.
-- A body in braces is a block of statements and ends with `return`.
+- A body in braces is a block of statements. With `-> Type` before the block
+  it returns a value of that type. Without it the closure returns nothing.
 - A closure reads the locals of its function. It copies each one when the
   closure is created. Such a local needs a declared type: `let step: i32`.
-- A closure is passed where a function asks for a callback:
-  `core::function::Mapper<T, U>` for one parameter and
-  `core::function::Producer<T>` for none. The library's `map`, `and_then`
-  and `unwrap_or_else` take these.
+- A closure is passed where a function asks for a callback. The traits are in
+  `core::function`:
+
+  | Closure | Trait | Call |
+  | --- | --- | --- |
+  | `\|x: T\| expr`, `\|x: T\| -> U { ... }` | `Mapper<T, U>` | `apply(value)` |
+  | `\|\| expr`, `\|\| -> U { ... }` | `Producer<U>` | `produce()` |
+  | `\|x: T\| { ... }` | `Consumer<T>` | `accept(value)` |
+  | `\|\| { ... }` | `Runnable` | `run()` |
+
+  The library's `map`, `and_then` and `unwrap_or_else` take these.
+- `alloc::callback` stores a `move` closure: `callback` gives a
+  `Callback<T, U>`, `source` a `Source<U>`, `handler` a `Handler<T>` and
+  `action` an `Action`. Each implements the trait in the same row above. A
+  closure that returns a value must state `-> Type` to be stored. `destroy`
+  frees a stored callback.
 
 ## Collections
 
@@ -701,10 +752,10 @@ today.
   method calls need a `while` loop.
 - **Closure limits.** A closure takes one parameter or none. It cannot use
   `self` or contain another closure, and a local it reads needs a declared
-  type. There are no function-typed parameters: a function takes a closure
-  through a `Mapper` or `Producer` bound, and no declared type can name a
-  closure, so a function cannot return one. On Wasm a closure that reads a
-  local fails with LNC0036.
+  type. There are no function types: a function takes a closure through a
+  bound such as `Mapper`, and returns or stores one as an `alloc::callback`
+  value. On Wasm a closure that reads a local and a call of a stored
+  callback both fail with LNC0036.
 - **No `if` expression.** `if` is a statement. Use `match` for a value.
 - **Exhaustiveness follows one payload column.** The arms
   `Some(Shape::Circle(r))`, `Some(Shape::Empty)` and `None` cover every value

@@ -20,7 +20,7 @@ fn main() -> i32 {
     let some: Option<i32> = Some(5);
 
     // 1*4 + 2*5 + 3*6 = 32.
-    let dot: i32 = sum(|values: [i32; 3]| {
+    let dot: i32 = sum(|values: [i32; 3]| -> i32 {
         return weights[0] * values[0] + weights[1] * values[1] + weights[2] * values[2];
     }, [4, 5, 6]);
 
