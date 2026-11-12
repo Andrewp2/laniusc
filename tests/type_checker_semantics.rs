@@ -667,6 +667,10 @@ fn type_checker_accepts_array_length_from_fifth_const_generic_slot() {
     assert_gpu_type_check_ok(
         r#"
 fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, const N: usize>(
+    a: [T; A],
+    b: [T; B],
+    c: [T; C],
+    d: [T; D],
     left: [T; N],
     right: [T; N]
 ) -> T {
@@ -674,9 +678,13 @@ fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, c
 }
 
 fn main() {
+    let a: [i32; 1] = [5];
+    let b: [i32; 3] = [6, 7, 8];
+    let c: [i32; 4] = [9, 10, 11, 12];
+    let d: [i32; 5] = [13, 14, 15, 16, 17];
     let left: [i32; 2] = [1, 2];
     let right: [i32; 2] = [3, 4];
-    let value: i32 = same_len(left, right);
+    let value: i32 = same_len(a, b, c, d, left, right);
     return value;
 }
 "#,
@@ -688,6 +696,10 @@ fn type_checker_rejects_array_length_mismatch_from_fifth_const_generic_slot() {
     assert_gpu_type_check_rejects(
         r#"
 fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, const N: usize>(
+    a: [T; A],
+    b: [T; B],
+    c: [T; C],
+    d: [T; D],
     left: [T; N],
     right: [T; N]
 ) -> T {
@@ -695,9 +707,13 @@ fn same_len<T, const A: usize, const B: usize, const C: usize, const D: usize, c
 }
 
 fn main() {
+    let a: [i32; 1] = [5];
+    let b: [i32; 3] = [6, 7, 8];
+    let c: [i32; 4] = [9, 10, 11, 12];
+    let d: [i32; 5] = [13, 14, 15, 16, 17];
     let left: [i32; 2] = [1, 2];
     let right: [i32; 3] = [3, 4, 5];
-    let value: i32 = same_len(left, right);
+    let value: i32 = same_len(a, b, c, d, left, right);
     return value;
 }
 "#,
@@ -2541,7 +2557,7 @@ fn main() {
         &[
             "error[LNC0021]: invalid trait implementation",
             "impl PairBox<i32> {",
-            "inherent impl target has the wrong number of type arguments",
+            "inherent impl target has the wrong number of generic arguments",
             "match the target declaration's generic parameter count",
         ],
     );
@@ -2651,8 +2667,8 @@ fn main() {
         &[
             "error[LNC0027]: call resolution failed",
             "return number_box.read();",
-            "call does not match a resolved function or method",
-            "no supported function or method signature matches this receiver and argument list",
+            "multiple visible methods match this receiver at the same preferred depth",
+            "use a distinct method name or remove the competing implementation",
         ],
     );
 }
