@@ -604,12 +604,16 @@ pub fn validate_hir_type_records_with_node_kinds(
                 "parser HIR path/type row {owner} published path leaf row {leaf} with a different file id"
             ));
         }
-        if token_pos[leaf] < token_pos[path_node] || token_end[leaf] > token_end[path_node] {
+        // A path span ends after its last name. A leaf segment with explicit
+        // type arguments, as in `map<T, U>(value)`, also covers those
+        // arguments, so the leaf is placed by its name token.
+        let leaf_name_end = token_pos[leaf].saturating_add(1);
+        if token_pos[leaf] < token_pos[path_node] || leaf_name_end > token_end[path_node] {
             return Err(anyhow!(
                 "parser HIR path/type row {owner} published path leaf row {leaf} outside path node {path_node}"
             ));
         }
-        if token_end[leaf] != token_end[path_node] {
+        if leaf_name_end != token_end[path_node] {
             return Err(anyhow!(
                 "parser HIR path/type row {owner} published path leaf row {leaf} that is not the terminal segment of path node {path_node}"
             ));
