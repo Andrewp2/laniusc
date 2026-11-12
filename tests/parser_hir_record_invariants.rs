@@ -203,8 +203,12 @@ fn validate_path_type_leaf_rows(path_leaf_start: u32, path_leaf_end: u32) -> any
 
 #[test]
 fn parser_hir_path_type_leaf_rows_must_be_terminal_path_segments() {
-    validate_path_type_leaf_rows(2, 4)
+    validate_path_type_leaf_rows(3, 4)
         .expect("path type rows should accept a parser-owned terminal path leaf");
+    // A terminal segment with explicit type arguments spans those arguments,
+    // and the path span ends after the segment name.
+    validate_path_type_leaf_rows(3, 7)
+        .expect("path rows should accept a terminal path leaf with type arguments");
 
     let err = validate_path_type_leaf_rows(1, 3)
         .expect_err("non-terminal path leaves should fail closed before type resolution");
