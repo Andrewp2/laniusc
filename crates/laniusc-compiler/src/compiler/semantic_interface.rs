@@ -24,6 +24,8 @@ pub(crate) const IMPLEMENTATION_OWNER_TAG: u32 = 0x8000_0000;
 const INVALID: u32 = u32::MAX;
 const MAX_CANONICAL_NAME_BYTES: usize = 64;
 const DECL_FLAG_NATIVE_C: u32 = 2;
+/// A native C prototype that ends in `...`.
+const DECL_FLAG_NATIVE_C_VARIADIC: u32 = 4;
 const NATIVE_ABI_C: u32 = 1;
 const NATIVE_C_MAX_PARAMETERS: usize = 32;
 
@@ -65,6 +67,8 @@ impl NativeCType {
 pub struct NativeCSignature {
     pub parameters: Vec<NativeCType>,
     pub result: NativeCType,
+    /// The prototype ends in `...`: a call may pass further arguments.
+    pub variadic: bool,
 }
 
 /// A checked source declaration's stable identity and unmangled native name.
@@ -459,7 +463,11 @@ impl GpuSemanticInterfaceArtifact {
         Ok(NativeCFunction {
             identity: [self.library_id, self.unit_id, index as u32],
             name,
-            signature: NativeCSignature { parameters: types, result },
+            signature: NativeCSignature {
+                parameters: types,
+                result,
+                variadic: declaration.flags & DECL_FLAG_NATIVE_C_VARIADIC != 0,
+            },
         })
     }
 
@@ -492,7 +500,9 @@ impl GpuSemanticInterfaceArtifact {
         // dependency lookup; it need not be grouped by module because every
         // record carries its explicit module index and lookup hashes that key.
         for (index, declaration) in self.declarations.iter().enumerate() {
-            if declaration.flags & !3 != 0 ||
+            let variadic = declaration.flags & DECL_FLAG_NATIVE_C_VARIADIC != 0;
+            if declaration.flags & !7 != 0 ||
+                (variadic && declaration.flags & DECL_FLAG_NATIVE_C == 0) ||
                 (declaration.kind != 3 && declaration.flags & DECL_FLAG_NATIVE_C == 0 && declaration.value_hi != 0)
             {
                 return Err(format!("semantic-interface declaration {index} has invalid native ABI metadata"));
@@ -1902,7 +1912,7 @@ mod tests {
             identity: [7, 11, 0],
             name: "add".to_owned(),
             signature: NativeCSignature {
-                parameters: vec![NativeCType::I32], result: NativeCType::I32,
+                parameters: vec![NativeCType::I32], result: NativeCType::I32, variadic: false,
             },
         }]);
     }

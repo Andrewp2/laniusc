@@ -351,3 +351,4 @@ static const uint PROD_TRANSITION_OUTPUT_NONE = 346u;
 static const uint PROD_ITEM_GEN = 347u;
 static const uint PROD_PUB_GEN = 348u;
 static const uint PROD_YIELD = 349u;
+static const uint PROD_PARAMS_AFTER_COMMA_VARIADIC = 350u;

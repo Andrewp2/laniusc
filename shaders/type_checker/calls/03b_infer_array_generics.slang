@@ -29,6 +29,8 @@ StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+StructuredBuffer<uint> call_variadic;
 StructuredBuffer<uint> call_generic_slot_type;
 StructuredBuffer<uint> method_call_name_id;
 
@@ -119,7 +121,8 @@ bool check_call_window(
 {
     param_count = valid_token(fn_token) ? call_param_count[fn_token] : 0u;
     arg_count = call_arg_count_for_callee(callee_token, call_node);
-    bool param_metadata_matches = param_count == 0u || param_count == arg_count;
+    bool param_metadata_matches = param_count == 0u || param_count == arg_count ||
+        (valid_token(fn_token) && call_variadic[fn_token] != 0u && arg_count > param_count);
     if (param_metadata_matches)
         return true;
 

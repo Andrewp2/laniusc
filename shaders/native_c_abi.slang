@@ -12,6 +12,24 @@ public static const uint SOURCE_ABI_LANIUS_ALLOC = 3u;
 public static const uint SOURCE_ABI_LANIUS_LINUX = 4u;
 public static const uint SOURCE_ABI_OTHER = 5u;
 public static const uint NATIVE_C_MAX_PARAMETERS = 32u;
+// The ABI word of a checked function: its kind, and whether a C prototype
+// ends in `...`.
+public static const uint NATIVE_ABI_KIND_MASK = 0xffu;
+public static const uint NATIVE_ABI_VARIADIC = 0x100u;
+// TK_ELLIPSIS of generated_token_ids.
+static const uint NATIVE_TOKEN_ELLIPSIS = 219u;
+
+// Whether `...` follows the parameter whose type ends at token `type_end`.
+// The end is the `,` after the type, or one past it when the type's last
+// production is empty. `...` is grammar only after the last named parameter.
+public bool native_variadic_marker(StructuredBuffer<NativeAbiToken> tokens,
+    uint type_end, uint token_capacity)
+{
+    if (type_end >= token_capacity) return false;
+    if (tokens[type_end].kind == NATIVE_TOKEN_ELLIPSIS) return true;
+    return type_end + 1u < token_capacity &&
+        tokens[type_end + 1u].kind == NATIVE_TOKEN_ELLIPSIS;
+}
 
 uint abi_byte(ByteAddressBuffer bytes, uint offset)
 {

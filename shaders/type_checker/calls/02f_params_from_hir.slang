@@ -8,6 +8,7 @@
 import hir_records;
 import type_checker.type.instances.generic_param_lookup;
 import atomics;
+import native_c_abi;
 import gpu_index;
 
 struct Params
@@ -46,7 +47,10 @@ StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 
+StructuredBuffer<NativeAbiToken> token_words;
 RWStructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+RWStructuredBuffer<uint> call_variadic;
 RWStructuredBuffer<uint> call_param_type;
 RWStructuredBuffer<uint> call_param_ref_tag;
 RWStructuredBuffer<uint> call_param_ref_payload;
@@ -393,6 +397,10 @@ void publish_param(uint param_row)
     if (!hir_callable_parameter(param_row, fn_token, fn_node, type_node, ordinal, source_parameter)) return;
 
     atomic_u32_max(call_param_count, fn_token, ordinal + 1u);
+    // Only the last named parameter of a prototype sees the `...`.
+    if (source_parameter != INVALID && valid_node(type_node) &&
+        native_variadic_marker(token_words, compact_hir_core[type_node].token_end, gParams.n_tokens))
+        call_variadic[fn_token] = ordinal + 1u;
 
     uint tag;
     uint payload;

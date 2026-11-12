@@ -3821,6 +3821,7 @@ fn build_graph(
         backend_call_fn_index in Tokens => token_rows * 4;
         _call_intrinsic_tag as "call_intrinsic_tag" in Tokens => token_rows * 4;
         _call_param_count as "call_param_count" in Tokens => token_rows * 4;
+        _call_variadic as "call_variadic" in Tokens => token_rows * 4;
         _call_param_type as "call_param_type" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_ref_tag as "call_param_ref_tag" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;
         _call_param_ref_payload as "call_param_ref_payload" in CallArguments => token_rows * u64::from(CALL_PARAM_CACHE_STRIDE as u32) * 4;

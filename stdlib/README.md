@@ -155,7 +155,7 @@ pointer and floating-point calls, ordinary ELF linking and libc startup.
 Native entry/package builds spool opaque original/replay payloads and execute
 above one resident aggregate unit; source snapshots and global metadata still
 remain resident and grow. Source frontend-unit limits and the documented native
-link/output caps still apply. Callbacks, aggregate/variadic C calls, checked C
+link/output caps still apply. Callbacks, aggregate C calls, checked C
 Boolean transport and foreign worker entry remain unsupported. Threads, further
 security-library wrappers and broader database interfaces remain work. The older `std::net`
 declarations remain unbound; executable numeric socket ownership is in

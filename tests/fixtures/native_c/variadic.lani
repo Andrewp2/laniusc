@@ -1,0 +1,60 @@
+module app::main;
+import core::mem;
+
+extern "C" fn snprintf(output: ptr, size: usize, format: ptr, ...) -> i32;
+extern "C" fn probe_variadic_mix(count: u32, ...) -> i64;
+extern "C" fn probe_variadic_doubles(count: i32, ...) -> f64;
+
+fn main() -> i32 {
+    // The named parameters alone.
+    if (probe_variadic_mix(0) != 0) { return 1; }
+
+    let cell: [i32; 1] = [1000];
+    let cell_ptr: ptr = core::mem::i32_array_data_ptr(cell);
+    let negative: i32 = -5;
+    let wide: i64 = 4294967296;
+    // A bare float literal is an f32, which `...` does not accept.
+    let half: f64 = 0.5;
+    let three_halves: f64 = 1.5;
+    let five_halves: f64 = 2.5;
+    // One argument of each type, all in registers.
+    if (probe_variadic_mix(4, negative, three_halves, wide, cell_ptr) != 4294968294) { return 2; }
+
+    // Twelve arguments: ten integer words, so four of them are on the stack.
+    let ten: i64 = 10;
+    let twenty: i64 = 20;
+    let thirty: i64 = 30;
+    if (probe_variadic_mix(12,
+            1, half, ten, cell_ptr,
+            2, three_halves, twenty, cell_ptr,
+            3, five_halves, thirty, cell_ptr) != 3075) { return 3; }
+
+    // Ten doubles: the last two are on the stack. The probe weighs each by
+    // its position: 0.5 * (1 + ... + 8) + 1.5 * 9 + 2.5 * 10.
+    let expected: f64 = 56.5;
+    if (probe_variadic_doubles(10, half, half, half, half, half, half, half, half,
+            three_halves, five_halves) != expected) {
+        return 4;
+    }
+    let zero: f64 = 0.0;
+    if (probe_variadic_doubles(0) != zero) { return 5; }
+    // A cast gives a literal the type C reads.
+    if (probe_variadic_doubles(1, 2.5 as f64) != five_halves) { return 8; }
+
+    // libc reads the vector register count from AL: "%d %.1f".
+    let format_words: [i32; 4] = [0; 4];
+    let format: ptr = core::mem::i32_array_data_ptr(format_words);
+    let format_bytes: [u8] = core::mem::typed_slice_from_raw_parts(format, 16);
+    format_bytes[0] = 37; format_bytes[1] = 100; format_bytes[2] = 32;
+    format_bytes[3] = 37; format_bytes[4] = 46; format_bytes[5] = 49; format_bytes[6] = 102;
+    let output_words: [i32; 8] = [0; 8];
+    let output: ptr = core::mem::i32_array_data_ptr(output_words);
+    let integer: i32 = 7;
+    let fraction: f64 = 2.5;
+    if (snprintf(output, 32, format, integer, fraction) != 5) { return 6; }
+    let text: [u8] = core::mem::typed_slice_from_raw_parts(output, 32);
+    if (text[0] != 55 || text[1] != 32 || text[2] != 50 || text[3] != 46 || text[4] != 53 || text[5] != 0) {
+        return 7;
+    }
+    return 0;
+}

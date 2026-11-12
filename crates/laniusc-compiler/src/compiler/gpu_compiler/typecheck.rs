@@ -4176,13 +4176,36 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
         ),
+        // Details 2 to 4 come from `...` (semantic/artifact/00_project.slang).
+        GpuTypeCheckCode::InvalidNativeCSignature if detail == 2 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "unsupported native C signature")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "`...` is accepted only in an `extern \"C\"` prototype",
+                ))
+                .with_note("a Lanius function takes a fixed parameter list; pass a slice for a variable number of values"),
+        ),
+        GpuTypeCheckCode::InvalidNativeCSignature if detail == 3 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "unsupported native C argument")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "this value cannot be passed through `...`",
+                ))
+                .with_note("a variadic argument is an i32, u32, i64, u64, isize, usize, ptr or f64 value")
+                .with_help("C reads a variadic float as a double: write `value as f64`; convert a narrower integer or a bool to i32"),
+        ),
+        GpuTypeCheckCode::InvalidNativeCSignature if detail == 4 => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "unsupported native C argument")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "this call passes more than 32 arguments",
+                ))
+                .with_note("a variadic C call accepts up to 32 arguments, named and variadic together"),
+        ),
         GpuTypeCheckCode::InvalidNativeCSignature => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "unsupported native C signature")
                 .with_primary_label(diagnostic_label_from_source_span(
                     path, source, start, len, "this declaration is outside the direct C-call profile",
                 ))
                 .with_note("extern \"C\" accepts up to 32 i32, u32, i64, u64, isize, usize, ptr, f32 or f64 parameters and one of those result types or void")
-                .with_note("C declarations must be monomorphic; narrow integers, bool, aggregates, references and variadic calls are not supported"),
+                .with_note("C declarations must be monomorphic; narrow integers, bool, aggregates and references are not supported"),
         ),
         GpuTypeCheckCode::MatchNotExhaustive => {
             match_not_exhaustive_diagnostic(path, source, start, len, detail)

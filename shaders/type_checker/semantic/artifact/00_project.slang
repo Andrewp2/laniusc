@@ -82,6 +82,10 @@ StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> call_return_type;
+StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_variadic;
+StructuredBuffer<uint> compact_call_arg_count;
+StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> fn_entrypoint_tag;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
@@ -125,6 +129,8 @@ static const uint HIR_FN = 3u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
@@ -243,6 +249,53 @@ bool validate_native_c_function(uint row, HirPayload payload, uint hir_count)
     }
     if (!accepted) record_min_token_error(status, detail, 29u, 1u);
     return accepted;
+}
+
+// A variadic argument crosses the C boundary under its own checked type, so
+// that type must be one `va_arg` can read. C promotes `float` to `double`,
+// and Lanius has no implicit conversion, so `f32` is rejected here.
+bool native_c_variadic_argument(uint node, uint hir_count)
+{
+    if (node >= hir_count || semantic_expr_ref_tag_by_hir[node] != 1u) return false;
+    uint scalar = semantic_expr_ref_payload_by_hir[node];
+    return scalar != SCALAR_F32 && native_c_scalar(scalar, false);
+}
+
+// Checks the arguments a call passes after the named parameters of a
+// variadic C prototype. Error details: 3 is an argument type, 4 is a call
+// with more than NATIVE_C_MAX_PARAMETERS arguments.
+void validate_native_c_variadic_call(uint row, HirPayload payload, uint hir_count)
+{
+    uint callee = payload.a;
+    if (callee >= hir_count) return;
+    HirCore callee_core = compact_hir_core[callee];
+    HirPayload callee_payload = compact_hir_payload[callee];
+    uint token = callee_core.kind == HIR_MEMBER_EXPR ? callee_payload.c : callee_payload.d;
+    if (!valid_token(token)) token = callee_core.token_start;
+    if (!valid_token(token)) return;
+    // A dependency call's function index is its own callee token.
+    uint function = call_fn_index[token];
+    uint named = valid_token(function) ? call_variadic[function] : 0u;
+    if (named == 0u) return;
+    if (payload.c > NATIVE_C_MAX_PARAMETERS)
+    {
+        record_min_token_error(status, token, 29u, 4u);
+        return;
+    }
+    uint total = compact_call_arg_count[0u];
+    for (uint i = named; i < payload.c; i++)
+    {
+        if (payload.b >= total || i >= total - payload.b) return;
+        HirCallArg argument = compact_call_args[payload.b + i];
+        if (argument.call != row) return;
+        if (!native_c_variadic_argument(argument.value, hir_count))
+        {
+            uint at = argument.value < hir_count
+                ? compact_hir_core[argument.value].token_start : token;
+            record_min_token_error(status, valid_token(at) ? at : token, 29u, 3u);
+            return;
+        }
+    }
 }
 
 // A subject column value with this bit is a scalar subject's type code, not a
@@ -382,6 +435,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint token = core.token_start;
     uint nearest_fn = compact_hir_nearest_fn[row];
     semantic_enclosing_fn_by_hir[row] = nearest_fn < hir_count ? nearest_fn + 1u : 0u;
+    if (core.kind == HIR_CALL_EXPR) validate_native_c_variadic_call(row, payload, hir_count);
     if (core.kind == HIR_FN || core.kind == HIR_CONST_ITEM)
     {
         semantic_function_return_type_by_hir[row] = valid_token(token)
@@ -392,7 +446,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             source_bytes, gParams.n_tokens, gParams.source_len);
         bool native_c = source_abi == NATIVE_ABI_C &&
             validate_native_c_function(row, payload, hir_count);
-        semantic_function_native_abi_by_hir[row] = native_c ? NATIVE_ABI_C : NATIVE_ABI_NONE;
+        // `...` is grammar after any parameter list. Only a C prototype
+        // gives it a calling convention (error detail 2).
+        bool variadic = valid_token(payload.b) && call_variadic[payload.b] != 0u;
+        if (variadic && source_abi != NATIVE_ABI_C)
+            record_min_token_error(status, payload.b, 29u, 2u);
+        semantic_function_native_abi_by_hir[row] = native_c
+            ? NATIVE_ABI_C | (variadic ? NATIVE_ABI_VARIADIC : 0u) : NATIVE_ABI_NONE;
         semantic_function_host_service_by_hir[row] = host_service_for_function(payload, source_abi);
     }
     // Use the native definition policy; method visibility and lexical scope

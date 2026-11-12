@@ -91,7 +91,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION) return;
     uint edge_count = dependency_type_word(signature_base + 4u);
     if (edge_count == 0u) return;
-    if (actual != edge_count - 1u)
+    // Flag 4 of the declaration is a C prototype that ends in `...`: a call
+    // passes its named parameters and any number of further arguments.
+    bool variadic = (dependency_declaration_word(declaration * DECL_WORDS + 11u) & 4u) != 0u;
+    if (variadic ? actual < edge_count - 1u : actual != edge_count - 1u)
         record_min_token_error(
             status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);
 }

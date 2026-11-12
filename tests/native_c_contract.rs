@@ -55,6 +55,7 @@ pub extern "C" fn single() -> f32;
         NativeCSignature {
             parameters: vec![NativeCType::F32, NativeCType::F64, NativeCType::I32],
             result: NativeCType::F64,
+            variadic: false,
         }
     );
     let single = bindings
@@ -66,6 +67,7 @@ pub extern "C" fn single() -> f32;
         NativeCSignature {
             parameters: vec![],
             result: NativeCType::F32,
+            variadic: false,
         }
     );
 }
@@ -78,13 +80,31 @@ fn checked_c_metadata_preserves_private_identity_and_runtime_name_collisions() {
 module native::api;
 extern "C" fn private_c(value: i64, count: usize) -> ptr;
 pub extern "C" fn close(value: i32) -> i32;
+pub extern "C" fn format(output: ptr, size: usize, ...) -> i32;
 pub extern "lanius_std" fn argc() -> i32;
 pub extern "unbound" fn write(value: i32) -> i32;
 "#],
     )
     .expect("checked C interface");
     let bindings = interface.native_c_functions().expect("checked bindings");
-    assert_eq!(bindings.len(), 2);
+    assert_eq!(bindings.len(), 3);
+    // `...` is a fact of the prototype: a flag, not a parameter.
+    let format = bindings
+        .iter()
+        .find(|binding| binding.name == "format")
+        .unwrap();
+    assert_eq!(
+        format.signature,
+        NativeCSignature {
+            parameters: vec![NativeCType::Ptr, NativeCType::Usize],
+            result: NativeCType::I32,
+            variadic: true,
+        }
+    );
+    assert_eq!(
+        interface.declarations[format.identity[2] as usize].flags,
+        6
+    );
     let private = bindings
         .iter()
         .find(|binding| binding.name == "private_c")
@@ -94,6 +114,7 @@ pub extern "unbound" fn write(value: i32) -> i32;
         NativeCSignature {
             parameters: vec![NativeCType::I64, NativeCType::Usize],
             result: NativeCType::Ptr,
+            variadic: false,
         }
     );
     assert_eq!(

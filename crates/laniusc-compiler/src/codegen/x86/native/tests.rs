@@ -73,6 +73,7 @@ fn binding() -> NativeCFunction {
         signature: NativeCSignature {
             parameters: vec![NativeCType::Ptr, NativeCType::Usize],
             result: NativeCType::I32,
+            variadic: false,
         },
     }
 }

@@ -52,6 +52,8 @@ StructuredBuffer<uint> call_arg_param_row;
 RWStructuredBuffer<uint> call_result_instance;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+StructuredBuffer<uint> call_variadic;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_ref_tag;
 StructuredBuffer<uint> call_param_row_ref_payload;
@@ -213,6 +215,8 @@ bool call_window_fits_cache(uint callee_token, uint call_node)
     uint param_count = call_param_count[fn_token];
     uint arg_count = call_arg_count_for_callee(callee_token, call_node);
     if (param_count == arg_count)
+        return true;
+    if (call_variadic[fn_token] != 0u && arg_count > param_count)
         return true;
 
     call_return_type[callee_token] = TY_UNKNOWN;

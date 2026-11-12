@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2953,
+    "cells": 2955,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2953,
+    "cells": 2955,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 162,
     "start_nonterminal": "file",
-    "predict_cells": 35478,
-    "rhs_symbols": 655
+    "predict_cells": 35640,
+    "rhs_symbols": 656
   },
   "ll1_predictions": [
     {
@@ -6427,6 +6427,12 @@
       "lookahead": "TypeAmpersandMut",
       "lookahead_id": 204,
       "production": 294
+    },
+    {
+      "nonterminal": "param_tail_after_comma",
+      "lookahead": "Ellipsis",
+      "lookahead_id": 219,
+      "production": 350
     },
     {
       "nonterminal": "path",
@@ -13837,6 +13843,16 @@
       "rhs": [
         "'Yield'",
         "expr"
+      ]
+    },
+    {
+      "id": 350,
+      "line": 501,
+      "lhs": "param_tail_after_comma",
+      "tag": "params_after_comma_variadic",
+      "arity": 0,
+      "rhs": [
+        "'Ellipsis'"
       ]
     }
   ]

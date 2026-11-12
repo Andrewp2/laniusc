@@ -92,6 +92,8 @@ static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 // A private type an exported layout needs (public_decls/02_hidden).
 static const uint DECL_FLAG_HIDDEN = 1u;
 static const uint DECL_FLAG_NATIVE_C = 2u;
+// A native C prototype that ends in `...`.
+static const uint DECL_FLAG_NATIVE_C_VARIADIC = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -189,11 +191,14 @@ void write_decl(uint dst, uint decl, uint name_ref)
     }
     interface_declaration_words[base + 10u] = persisted_owner;
     uint hir = decl_hir_node[decl];
-    uint native_abi = decl_kind[decl] == 5u && hir < gParams.hir_capacity
+    uint native_word = decl_kind[decl] == 5u && hir < gParams.hir_capacity
         ? semantic_function_native_abi_by_hir[hir] : NATIVE_ABI_NONE;
+    uint native_abi = native_word & NATIVE_ABI_KIND_MASK;
     interface_declaration_words[base + 11u] =
         (decl_visibility[decl] == HIR_ITEM_VIS_PUBLIC ? 0u : DECL_FLAG_HIDDEN) |
-        (native_abi == NATIVE_ABI_C ? DECL_FLAG_NATIVE_C : 0u);
+        (native_abi == NATIVE_ABI_C ? DECL_FLAG_NATIVE_C : 0u) |
+        (native_abi == NATIVE_ABI_C && (native_word & NATIVE_ABI_VARIADIC) != 0u
+            ? DECL_FLAG_NATIVE_C_VARIADIC : 0u);
     uint kind = decl_kind[decl];
     uint value_hir = hir < gParams.hir_capacity ? compact_const_value[hir] : INVALID;
     bool constant_present = kind == 3u && value_hir < gParams.hir_capacity &&

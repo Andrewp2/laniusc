@@ -31,6 +31,9 @@ RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_return_generic_slot;
 RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> call_param_count;
+// Per function name token: the named parameter count when its prototype
+// ends in `...`, else 0. A dependency call holds it at its callee token.
+RWStructuredBuffer<uint> call_variadic;
 RWStructuredBuffer<uint> call_param_type;
 RWStructuredBuffer<uint> call_param_ref_tag;
 RWStructuredBuffer<uint> call_param_ref_payload;
@@ -161,6 +164,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_return_generic_slot[i] = INVALID;
         call_return_aggregate_word_count[i] = 0u;
         call_param_count[i] = 0u;
+        call_variadic[i] = 0u;
         call_param_row_start[i] = INVALID;
         call_param_row_count[i] = 0u;
         clear_call_param_slot(i, 0u);

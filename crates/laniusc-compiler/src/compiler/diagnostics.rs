@@ -3046,6 +3046,7 @@ fn expected_punctuation_text(kind: TokenKind) -> Option<&'static str> {
         TokenKind::MatchArrow => Some("=>"),
         TokenKind::DotDot => Some(".."),
         TokenKind::DotDotEqual => Some("..="),
+        TokenKind::Ellipsis => Some("..."),
         TokenKind::Shl => Some("<<"),
         TokenKind::Shr => Some(">>"),
         TokenKind::Tilde => Some("~"),
@@ -3792,6 +3793,9 @@ fn source_identifier_token_kind(text: &str) -> TokenKind {
 }
 
 fn source_punctuation_token_kind(bytes: &[u8], index: usize) -> Option<(TokenKind, usize)> {
+    if bytes.get(index..index.saturating_add(3)) == Some(b"...") {
+        return Some((TokenKind::Ellipsis, 3));
+    }
     match bytes.get(index..index.saturating_add(2)) {
         Some(b"->") => return Some((TokenKind::Arrow, 2)),
         Some(b"==") => return Some((TokenKind::EqEq, 2)),

@@ -30,6 +30,8 @@ StructuredBuffer<uint> call_arg_row_ordinal;
 StructuredBuffer<uint> call_arg_row_start;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+StructuredBuffer<uint> call_variadic;
 StructuredBuffer<uint> call_param_row_count_out;
 StructuredBuffer<uint> call_param_row_fn_token;
 StructuredBuffer<uint> call_param_row_ordinal;
@@ -142,8 +144,12 @@ uint param_row_for_call_ordinal(uint call_node, uint arg_count, uint arg_ordinal
     uint param_count = call_param_count[fn_i];
     uint param_offset = method_param_offset(callee_i, fn_i);
     uint expected_arg_count = param_count >= param_offset ? param_count - param_offset : 0u;
-    if ((!dependency_rows && (arg_count == 0u || arg_count != expected_arg_count)) ||
-        (dependency_rows && arg_ordinal >= expected_arg_count) ||
+    // An argument past the named parameters of a variadic C prototype has
+    // no parameter row.
+    bool variadic = call_variadic[fn_i] != 0u;
+    bool arity_matches = variadic ? arg_count >= expected_arg_count : arg_count == expected_arg_count;
+    if ((!dependency_rows && (arg_count == 0u || !arity_matches)) ||
+        ((dependency_rows || variadic) && arg_ordinal >= expected_arg_count) ||
         param_offset >= param_count)
         return INVALID;
 

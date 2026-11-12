@@ -47,7 +47,7 @@ an explicit unauthenticated-client policy.
 through OpenSSL with shared credential owners and fresh required authentication.
 Broader security wrappers remain library work. Supported non-generic free
 functions have [C callback entries](language-ergonomics.md#c-callbacks);
-typed indirect calls, variadics and aggregate C layouts need separate
+typed indirect calls and aggregate C layouts need separate
 compiler contracts.
 [Subprocess support](stdlib-command.md) now executes over same-stack
 fork/exec/wait, with explicit startup uncertainty, owned pipes and a

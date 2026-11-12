@@ -107,6 +107,8 @@ pub enum S {
     DecDone,
     ArrowDone,
     DotDotDone,
+    // `...`, the variadic marker of a C prototype
+    EllipsisDone,
 
     Reject,
 }
@@ -119,7 +121,7 @@ impl S {
 }
 
 /// Number of DFA states expected by Rust tables and generated shader constants.
-pub const N_STATES: usize = 82;
+pub const N_STATES: usize = 83;
 /// Start state for normal lexing.
 pub const START: S = S::Start;
 /// Reject state for failed transitions.
@@ -207,6 +209,7 @@ const ALL_STATES: &[S] = &[
     S::DecDone,
     S::ArrowDone,
     S::DotDotDone,
+    S::EllipsisDone,
     S::Reject,
 ];
 
@@ -321,6 +324,7 @@ pub(crate) fn token_of_state(s: S) -> Option<TokenKind> {
         DecDone => Some(TokenKind::Dec),
         ArrowDone => Some(TokenKind::Arrow),
         DotDotDone => Some(TokenKind::DotDot),
+        EllipsisDone => Some(TokenKind::Ellipsis),
         _ => None,
     }
 }
@@ -651,6 +655,8 @@ impl StreamingDfa {
         set(&mut next, S::AfterMinus, b">", S::ArrowDone);
         set(&mut next, S::ShlDone, b"=", S::ShlAssignDone);
         set(&mut next, S::ShrDone, b"=", S::ShrAssignDone);
+
+        set(&mut next, S::DotDotDone, b".", S::EllipsisDone);
 
         // Floats and dot handling
         next[S::MaybeDot.idx()][b'.' as usize] = Next {

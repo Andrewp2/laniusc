@@ -833,6 +833,12 @@ void plan_ordinary(X86PlanInput input)
         uint storage_slot = x86_location_payload(locations.result) + 1u;
         uint words = local ? operands.c : x86_symbol_call_result_words(core.local_ordinal);
         uint stack_bytes = local ? core.local_ordinal : x86_symbol_call_stack_bytes(core.local_ordinal);
+        // A variadic C callee reads AL as an upper bound on the vector
+        // registers that hold arguments. RAX is scratch for every other C
+        // callee, so each C symbol call sets it. The bytes precede the call
+        // instruction, where object relocations count them as row prefix.
+        if (!local && (metadata & X86_LIR_METADATA_NATIVE_C) != 0u)
+            plan_bytes(2u, 0x08b0u); // mov al, 8
         if ((metadata & X86_LIR_METADATA_AGGREGATE) != 0u && words > 2u)
             plan_lea64(7u, storage_slot);
         // Object projection relocates the placeholder following an imported E8.

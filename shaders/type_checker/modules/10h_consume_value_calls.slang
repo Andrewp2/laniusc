@@ -35,6 +35,8 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+StructuredBuffer<uint> call_variadic;
 
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> module_value_path_call_open;
@@ -196,7 +198,8 @@ bool validate_and_infer_call(
         record_error(owner_token, ERR_CALL_MISMATCH, 0u);
         return false;
     }
-    if (expected_count != actual_count)
+    bool variadic = valid_token(fn_token) && call_variadic[fn_token] != 0u;
+    if (variadic ? actual_count < expected_count : expected_count != actual_count)
     {
         call_return_type[owner_token] = TY_UNKNOWN;
         record_error(owner_token, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);

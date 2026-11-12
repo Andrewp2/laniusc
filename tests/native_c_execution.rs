@@ -173,10 +173,112 @@ fn imported_public_c_declarations_and_runtime_name_collisions_execute() {
 }
 
 fn reject_source(name: &str, source: &str) -> CompileError {
+    reject_source_with_roots(name, source, vec![])
+}
+
+fn reject_source_with_roots(name: &str, source: &str, user_roots: Vec<PathBuf>) -> CompileError {
     let entry = common::TempArtifact::new("laniusc_native_c", name, Some("lani"));
     entry.write_str(source);
-    compile_native(name, entry.path(), vec![], &[])
+    compile_native(name, entry.path(), user_roots, &[])
         .expect_err("unsupported C declarations must fail before producing an executable")
+}
+
+#[test]
+fn native_c_variadic_calls_pass_register_and_stack_arguments() {
+    let executable = executable("native_c_variadic", &fixture("variadic.lani"), vec![]);
+    assert_clean_execution(
+        "native C variadic calls",
+        &mut Command::new(executable.path()),
+    );
+}
+
+#[test]
+fn native_c_variadic_calls_reject_unreadable_arguments_and_other_abis() {
+    const PROTOTYPE: &str = "extern \"C\" fn probe_variadic_mix(count: u32, ...) -> i64;";
+    const IMPORT: &str = "import ffi::probes;";
+    // (name, items, body of main, code, text the diagnostic must hold, imported)
+    let cases = [
+        (
+            "variadic_lanius_function",
+            "fn pick(first: i32, ...) -> i32 { return first; }",
+            "return pick(0, 1);",
+            "LNC0006",
+            "`...` is accepted only in",
+            false,
+        ),
+        (
+            "variadic_runtime_abi",
+            "extern \"lanius_std\" fn pick(first: i32, ...) -> i32;",
+            "return 0;",
+            "LNC0006",
+            "`...` is accepted only in",
+            false,
+        ),
+        (
+            "variadic_f32_argument",
+            PROTOTYPE,
+            "let value: f32 = 1.5; if (probe_variadic_mix(2, 1, value) != 0) { return 1; } return 0;",
+            "LNC0006",
+            "cannot be passed through `...`",
+            false,
+        ),
+        (
+            "variadic_float_literal",
+            PROTOTYPE,
+            "if (probe_variadic_mix(2, 1, 1.5) != 0) { return 1; } return 0;",
+            "LNC0006",
+            "cannot be passed through `...`",
+            false,
+        ),
+        (
+            "variadic_bool_argument",
+            PROTOTYPE,
+            "if (probe_variadic_mix(1, true) != 0) { return 1; } return 0;",
+            "LNC0006",
+            "cannot be passed through `...`",
+            false,
+        ),
+        (
+            "variadic_string_argument",
+            PROTOTYPE,
+            "if (probe_variadic_mix(1, \"text\") != 0) { return 1; } return 0;",
+            "LNC0006",
+            "cannot be passed through `...`",
+            false,
+        ),
+        (
+            "variadic_missing_named_argument",
+            PROTOTYPE,
+            "if (probe_variadic_mix() != 0) { return 1; } return 0;",
+            "LNC0027",
+            "wrong number of arguments",
+            false,
+        ),
+        (
+            "variadic_imported_f32_argument",
+            IMPORT,
+            "let value: f32 = 1.5; if (ffi::probes::probe_variadic_mix(2, 1, value) != 0) { return 1; } return 0;",
+            "LNC0006",
+            "cannot be passed through `...`",
+            true,
+        ),
+        (
+            "variadic_imported_missing_named_argument",
+            IMPORT,
+            "if (ffi::probes::probe_variadic_mix() != 0) { return 1; } return 0;",
+            "LNC0027",
+            "wrong number of arguments",
+            true,
+        ),
+    ];
+    for (name, items, body, code, text, imported) in cases {
+        let source = format!("module app::main; {items} fn main() -> i32 {{ {body} }}");
+        let roots = if imported { vec![fixture("imported")] } else { vec![] };
+        let error = reject_source_with_roots(name, &source, roots);
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, code, "{name}: {diagnostic:?}");
+        assert!(format!("{error:?}").contains(text), "{name}: {error:?}");
+    }
 }
 
 #[test]

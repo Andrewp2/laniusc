@@ -250,7 +250,7 @@ their guides record the exact coverage and measured bulk workload. Native
 entry/package builds now spool original/replay section payloads and execute a
 6 MiB source pack above the resident aggregate threshold. Source snapshots and
 global metadata still grow; explicit descriptor CLI modes remain unsupported.
-Callbacks, variadics, aggregates and foreign thread entry remain separate compiler contracts. The
+Callbacks, aggregates and foreign thread entry remain separate compiler contracts. The
 [API conventions](library-api-conventions.md#cryptography-and-tls-boundary)
 record this boundary.
 The [WebSocket Accept helper](extended-openssl-websocket.md) also delegates

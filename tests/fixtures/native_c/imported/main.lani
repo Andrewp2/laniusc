@@ -2,5 +2,10 @@ module app::main;
 import ffi::probes;
 fn main() -> i32 {
     if (ffi::probes::probe_imported(19) != 122) { return 1; }
+    // An imported variadic prototype keeps its `...`.
+    let wide: i64 = 40;
+    let fraction: f64 = 2.5;
+    if (ffi::probes::probe_variadic_mix(3, 7, fraction, wide) != 52) { return 2; }
+    if (ffi::probes::probe_variadic_mix(0) != 0) { return 3; }
     return 0;
 }

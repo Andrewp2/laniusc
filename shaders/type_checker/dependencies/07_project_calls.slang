@@ -59,6 +59,7 @@ RWStructuredBuffer<uint> call_dependency_native_abi;
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_param_count;
+RWStructuredBuffer<uint> call_variadic;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_return_aggregate_word_count;
@@ -186,6 +187,10 @@ void publish_call(
     call_dependency_generic_requirements[token] = types | (constants << 16u);
     call_fn_index[token] = token;
     call_param_count[token] = edge_count - 1u;
+    // Flag 4 of the declaration is a C prototype that ends in `...`.
+    call_variadic[token] =
+        (dependency_declaration_word(declaration_i * DECL_WORDS + 11u) & 4u) != 0u
+        ? edge_count - 1u : 0u;
     call_return_type[token] = return_type;
     call_return_aggregate_word_count[token] = dependency_aggregate_word_count(
         return_root, canonical_type_roots, declaration_field_count);

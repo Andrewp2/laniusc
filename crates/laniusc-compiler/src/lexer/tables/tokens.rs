@@ -306,6 +306,8 @@ define_token_kinds! {
     // bare name. Elsewhere the lexeme stays an identifier.
     Gen,
     Yield,
+    // `...` after the named parameters of a C prototype
+    Ellipsis,
 }
 
 impl TokenKind {
@@ -478,7 +480,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203 | 205..=212 | 217..=218
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203 | 205..=212 | 217..=219
             )
         };
 

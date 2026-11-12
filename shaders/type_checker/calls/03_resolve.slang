@@ -29,6 +29,8 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
+// Per function name token: 1 when its C prototype ends in `...`.
+StructuredBuffer<uint> call_variadic;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
@@ -289,6 +291,9 @@ bool check_call_arity(uint callee_i, uint fn_i)
     uint param_count = valid_token(fn_i) ? call_param_count[fn_i] : 0u;
     uint arg_count = call_arg_count_for_callee(callee_i);
     if (param_count == arg_count)
+        return true;
+    // A C prototype that ends in `...` takes more arguments than it names.
+    if (valid_token(fn_i) && call_variadic[fn_i] != 0u && arg_count > param_count)
         return true;
 
     call_return_type[callee_i] = TY_UNKNOWN;

@@ -287,7 +287,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir, hir_count, public_decl_index_by_hir[hir], core.token_start);
     result.symbol_flags = 0u;
     result.host_service = semantic_function_host_service_by_hir[hir];
-    if (semantic_function_native_abi_by_hir[hir] == 1u)
+    if ((semantic_function_native_abi_by_hir[hir] & 0xffu) == 1u)
         result.flags |= SEMANTIC_FUNCTION_FLAG_NATIVE_C;
     semantic_lir_functions[function_id] = result;
 

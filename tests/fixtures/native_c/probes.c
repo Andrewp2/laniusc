@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <stdarg.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -58,6 +59,35 @@ uint64_t probe_args9(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e,
 
 uint64_t probe_seed(uint32_t index) { return UINT64_C(0x100000001) + index * 29; }
 int32_t probe_imported(int32_t value) { return value * 7 - 11; }
+
+/* The position of a variadic argument selects its type: int, double,
+   int64_t, then a pointer to an int32_t. Doubles count twice. */
+int64_t probe_variadic_mix(uint32_t count, ...) {
+    va_list arguments;
+    int64_t sum = 0;
+    va_start(arguments, count);
+    for (uint32_t index = 0; index < count; index++) {
+        switch (index % 4) {
+        case 0: sum += va_arg(arguments, int32_t); break;
+        case 1: sum += (int64_t)(va_arg(arguments, double) * 2.0); break;
+        case 2: sum += va_arg(arguments, int64_t); break;
+        default: sum += *(const int32_t *)va_arg(arguments, void *); break;
+        }
+    }
+    va_end(arguments);
+    return sum;
+}
+
+/* More than eight doubles reach the stack. Each weighs its position. */
+double probe_variadic_doubles(int32_t count, ...) {
+    va_list arguments;
+    double sum = 0.0;
+    va_start(arguments, count);
+    for (int32_t index = 0; index < count; index++)
+        sum += va_arg(arguments, double) * (double)(index + 1);
+    va_end(arguments);
+    return sum;
+}
 
 uintptr_t probe_environment_length(void) {
     const char *value = getenv("LANIUS_NATIVE_C_TEST");

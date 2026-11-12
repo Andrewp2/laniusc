@@ -5,7 +5,7 @@
 // emit/EOF flags.
 
 #define WORKGROUP_SIZE 256
-#define N_STATES 82
+#define N_STATES 83
 #define CHUNK_COUNT 3
 #define CHUNK_WIDTH_CAP ((WORKGROUP_SIZE + CHUNK_COUNT - 1) / CHUNK_COUNT)
 

@@ -493,3 +493,9 @@ transition_output [transition_output_none] -> ;
 item [item_gen] -> 'Gen' fn_item;
 pub_item [pub_gen] -> 'Gen' fn_item;
 expr [yield] -> 'Yield' expr;
+
+# ----- C variadic prototypes -----
+# `extern "C" fn printf(format: ptr, ...) -> i32;` declares a C function that
+# takes more arguments after its named parameters. The checker accepts `...`
+# only in an `extern "C"` prototype.
+param_tail_after_comma [params_after_comma_variadic] -> 'Ellipsis';

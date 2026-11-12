@@ -70,9 +70,36 @@ registers and eight SSE registers. Overflow arguments share 8-byte stack slots
 in their original parameter order. Float results use XMM0. The limit remains
 32 total parameters, including mixed integer, pointer, `f32` and `f64` values.
 Argument/result transport preserves scalar bits; a called C operation has its
-own floating-point behavior. C variadics and aggregate layouts remain
-outside the profile; callbacks have their own section below. Existing scalar IDs and the selected System V ABI tag
+own floating-point behavior. Aggregate layouts remain outside the profile;
+variadic calls and callbacks have their own sections below. Existing scalar IDs and the selected System V ABI tag
 represent this extension, so it requires no artifact version change.
+
+## C variadic calls
+
+A prototype that ends in `...` declares a C variadic function:
+
+```lanius
+extern "C" fn snprintf(output: ptr, size: usize, format: ptr, ...) -> i32;
+
+let written: i32 = snprintf(output, 32, format, count, ratio);
+```
+
+`...` follows at least one named parameter and is accepted only in an
+`extern "C"` prototype. A call passes every named parameter and then any
+number of further arguments, up to 32 arguments in total. A public variadic
+prototype can be imported like any other declaration.
+
+Each further argument crosses the boundary under its own checked type, which
+must be `i32`, `u32`, `i64`, `u64`, `isize`, `usize`, `ptr` or `f64`. C
+promotes a variadic `float` to `double` and a narrow integer to `int`. Lanius
+converts nothing implicitly, so the checker rejects an `f32`, `bool` or
+narrow integer argument: write `value as f64` or convert the integer to `i32`.
+A bare float literal is an `f32`; write `2.5 as f64` or pass an `f64` local.
+Pass a `ptr` where C reads a pointer, including a terminating null.
+
+Before every C call the backend sets `AL` to 8, the System V upper bound on the
+vector registers that hold arguments. The checker cannot see what types the
+callee reads, so the format string or tag list must match the arguments.
 
 ## System hostname and service resolution
 
@@ -220,7 +247,7 @@ modes remain unsupported by native linking; ordinary raw x86/Wasm execution
 retains its existing storage policy.
 
 Callbacks with float, aggregate or more than six parameters, exported
-callback symbols, variadics, narrow integer and Boolean C types, aggregate C
+callback symbols, narrow integer and Boolean C types, aggregate C
 layouts and generic extern declarations are unsupported. Runtime
 `dlopen`/`dlsym` interfaces are separate work. Wasm, other platforms and user GPU
 execution have no support claim from these gates.

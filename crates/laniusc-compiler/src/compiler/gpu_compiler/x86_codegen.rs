@@ -258,7 +258,7 @@ mod tests {
         let function = |name: &str| NativeCFunction {
             identity: [0, 0, 0],
             name: name.to_owned(),
-            signature: NativeCSignature { parameters: Vec::new(), result: NativeCType::Void },
+            signature: NativeCSignature { parameters: Vec::new(), result: NativeCType::Void, variadic: false },
         };
         let names = ["b", "a", "c", "a", "e", "d", "f"];
         let functions: Vec<NativeCFunction> = names.iter().map(|name| function(name)).collect();
