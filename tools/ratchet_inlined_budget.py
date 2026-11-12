@@ -9,6 +9,7 @@ shader build) and rewrites each line of both budget files to min(limit, measured
 - crates/laniusc-shaders/inlined_size_budget.txt: fully inlined instructions.
   Kernels that now fit the 40k default lose their line, except headroom lines
   (a limit under the default, kept for a kernel that was split to make room).
+  A headroom line keeps its limit; only lines over the default are lowered.
 - crates/laniusc-shaders/local_array_budget.txt: per-thread local array bytes.
   Kernels that now have no local arrays (the default, 0) lose their line.
 
@@ -53,6 +54,12 @@ for budget, column, default, what in BUDGETS:
         # room; it stays. A line over the default goes once the kernel fits.
         if measured is None or (measured <= default and limit > default):
             dropped.append(key)
+            continue
+        # A line under the default is not lowered: pinning it to the measured
+        # size would fail the next change that adds one instruction to a
+        # kernel that is still far under the default.
+        if limit <= default:
+            kept.append((limit, key))
             continue
         if measured < limit:
             lowered += 1
