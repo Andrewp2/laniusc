@@ -110,6 +110,18 @@ fn a_literal_in_a_variant_pattern_needs_the_payload_type() {
 }
 
 #[test]
+fn a_literal_arm_needs_the_scrutinee_type() {
+    assert_rejected(
+        "literal_arm_wrong_type.lani",
+        &["LNC0006", "type mismatch", "true -> 10,"],
+    );
+    assert_rejected(
+        "literal_arm_on_enum.lani",
+        &["LNC0006", "type mismatch", "0 -> 10,"],
+    );
+}
+
+#[test]
 fn the_try_value_of_a_generic_call_is_an_argument() {
     assert_exit("try_generic_call_argument.lani", 42);
 }

@@ -1,9 +1,12 @@
 // Validate imported enum patterns after inferred local type references
 // have been published. Dependency pages are no longer available here, so the
 // projector's stable nominal identity and checked ordinal are authoritative.
+// A literal arm pattern is validated here too: it is compared with the
+// scrutinee, so the scrutinee must have the literal's kind of type.
 
 import hir_records;
 import hir_expr_semantics;
+import primitive_types;
 import type_checker.checked_type_graph;
 import type_checker.checked_scoped_types;
 import type_checker.checked_index_reference;
@@ -50,6 +53,10 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_TRUE = 4u;
+static const uint HIR_EXPR_FALSE = 5u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -104,6 +111,21 @@ bool matches_scrutinee(uint match_node, uint pattern_token)
     return false;
 }
 
+// Whether literal arm `pattern` can be compared with the scrutinee of
+// `match_node`: an integer literal with an integer, `true` or `false` with a
+// bool. A scrutinee without a type yet has its own diagnostic.
+bool literal_fits_scrutinee(uint match_node, uint pattern)
+{
+    uint form = compact_hir_payload[pattern].a;
+    bool integer = form == HIR_EXPR_INT;
+    if (!integer && form != HIR_EXPR_TRUE && form != HIR_EXPR_FALSE) return true;
+    uint tag; uint payload; uint reference_depth;
+    if (!valid_hir(match_node) ||
+        !inference_value_reference(compact_hir_payload[match_node].a, tag, payload) ||
+        !checked_referent_reference(tag, payload, reference_depth)) return true;
+    return tag == 1u && (integer ? scalar_is_integer(payload) : payload == SCALAR_BOOL);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -112,6 +134,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= active_arm_count()) return;
     HirMatchArm arm = compact_match_arms[row];
     if (!valid_hir(arm.pattern)) return;
+    if (compact_hir_core[arm.pattern].kind == HIR_LITERAL_EXPR)
+    {
+        if (!literal_fits_scrutinee(arm.owner, arm.pattern))
+            record_min_token_error(status, compact_hir_core[arm.pattern].token_start,
+                ERR_ASSIGN_MISMATCH, 0u);
+        return;
+    }
     uint path = path_for_pattern(arm.pattern);
     if (!valid_path(path))
         return;

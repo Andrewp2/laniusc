@@ -1,0 +1,15 @@
+module app::main;
+
+import core::option::Option;
+import core::option::None;
+
+fn score(value: Option<i32>) -> i32 {
+    return match (value) {
+        0 -> 10,
+        _ -> 3,
+    };
+}
+
+fn main() -> i32 {
+    return score(None);
+}
