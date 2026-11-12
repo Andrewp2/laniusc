@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2897,
+    "cells": 2953,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2897,
+    "cells": 2953,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 162,
     "start_nonterminal": "file",
-    "predict_cells": 35154,
-    "rhs_symbols": 649
+    "predict_cells": 35478,
+    "rhs_symbols": 655
   },
   "ll1_predictions": [
     {
@@ -765,6 +765,12 @@
       "production": 167
     },
     {
+      "nonterminal": "arg_list_opt",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
+      "production": 168
+    },
+    {
       "nonterminal": "arg_tail",
       "lookahead": "CallRParen",
       "lookahead_id": 63,
@@ -903,6 +909,12 @@
       "production": 172
     },
     {
+      "nonterminal": "arg_tail_after_comma",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
+      "production": 171
+    },
+    {
       "nonterminal": "array_elems_opt",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -1014,6 +1026,12 @@
       "nonterminal": "array_elems_opt",
       "lookahead": "Stay",
       "lookahead_id": 211,
+      "production": 182
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
       "production": 182
     },
     {
@@ -1146,6 +1164,12 @@
       "nonterminal": "array_elems_tail_after_comma",
       "lookahead": "Stay",
       "lookahead_id": 211,
+      "production": 185
+    },
+    {
+      "nonterminal": "array_elems_tail_after_comma",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
       "production": 185
     },
     {
@@ -3849,6 +3873,12 @@
       "production": 79
     },
     {
+      "nonterminal": "else_tail",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
+      "production": 79
+    },
+    {
       "nonterminal": "enum_item",
       "lookahead": "Enum",
       "lookahead_id": 93,
@@ -4521,6 +4551,12 @@
       "production": 342
     },
     {
+      "nonterminal": "expr",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
+      "production": 349
+    },
+    {
       "nonterminal": "extern_abi_opt",
       "lookahead": "Fn",
       "lookahead_id": 67,
@@ -4620,6 +4656,12 @@
       "nonterminal": "file",
       "lookahead": "Machine",
       "lookahead_id": 205,
+      "production": 0
+    },
+    {
+      "nonterminal": "file",
+      "lookahead": "Gen",
+      "lookahead_id": 217,
       "production": 0
     },
     {
@@ -5037,6 +5079,12 @@
       "production": 329
     },
     {
+      "nonterminal": "item",
+      "lookahead": "Gen",
+      "lookahead_id": 217,
+      "production": 347
+    },
+    {
       "nonterminal": "item_list",
       "lookahead": "$",
       "lookahead_id": 0,
@@ -5118,6 +5166,12 @@
       "nonterminal": "item_list",
       "lookahead": "Machine",
       "lookahead_id": 205,
+      "production": 1
+    },
+    {
+      "nonterminal": "item_list",
+      "lookahead": "Gen",
+      "lookahead_id": 217,
       "production": 1
     },
     {
@@ -7821,6 +7875,12 @@
       "production": 330
     },
     {
+      "nonterminal": "pub_item",
+      "lookahead": "Gen",
+      "lookahead_id": 217,
+      "production": 348
+    },
+    {
       "nonterminal": "range_bound",
       "lookahead": "Int",
       "lookahead_id": 2,
@@ -8028,6 +8088,12 @@
       "nonterminal": "return_value_opt",
       "lookahead": "Stay",
       "lookahead_id": 211,
+      "production": 92
+    },
+    {
+      "nonterminal": "return_value_opt",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
       "production": 92
     },
     {
@@ -8583,6 +8649,12 @@
       "production": 87
     },
     {
+      "nonterminal": "stmt",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
+      "production": 87
+    },
+    {
       "nonterminal": "stmt_list",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8760,6 +8832,12 @@
       "nonterminal": "stmt_list",
       "lookahead": "Stay",
       "lookahead_id": 211,
+      "production": 73
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "Yield",
+      "lookahead_id": 218,
       "production": 73
     },
     {
@@ -13727,6 +13805,39 @@
       "tag": "transition_output_none",
       "arity": 0,
       "rhs": []
+    },
+    {
+      "id": 347,
+      "line": 493,
+      "lhs": "item",
+      "tag": "item_gen",
+      "arity": 1,
+      "rhs": [
+        "'Gen'",
+        "fn_item"
+      ]
+    },
+    {
+      "id": 348,
+      "line": 494,
+      "lhs": "pub_item",
+      "tag": "pub_gen",
+      "arity": 1,
+      "rhs": [
+        "'Gen'",
+        "fn_item"
+      ]
+    },
+    {
+      "id": 349,
+      "line": 495,
+      "lhs": "expr",
+      "tag": "yield",
+      "arity": 1,
+      "rhs": [
+        "'Yield'",
+        "expr"
+      ]
     }
   ]
 }

@@ -348,3 +348,6 @@ static const uint PROD_GOTO_ARGS_SOME = 343u;
 static const uint PROD_GOTO_ARGS_NONE = 344u;
 static const uint PROD_TRANSITION_OUTPUT_SOME = 345u;
 static const uint PROD_TRANSITION_OUTPUT_NONE = 346u;
+static const uint PROD_ITEM_GEN = 347u;
+static const uint PROD_PUB_GEN = 348u;
+static const uint PROD_YIELD = 349u;

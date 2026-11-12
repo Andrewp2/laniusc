@@ -75,6 +75,11 @@ static const uint TK_FINAL = 209;
 static const uint TK_GOTO = 210;
 static const uint TK_STAY = 211;
 static const uint TK_WITH = 212;
+static const uint TK_GEN = 217;
+static const uint TK_YIELD = 218;
+static const uint TK_COLON = 38;
+static const uint TK_PLUS_ASSIGN = 46;
+static const uint TK_DEC = 57;
 // A word of up to eight bytes, packed low byte first into two words.
 static const uint2 WORD_MACHINE = uint2(0x6863616du, 0x00656e69u);
 static const uint2 WORD_ON = uint2(0x00006e6fu, 0x00000000u);
@@ -84,6 +89,8 @@ static const uint2 WORD_FINAL = uint2(0x616e6966u, 0x0000006cu);
 static const uint2 WORD_GOTO = uint2(0x6f746f67u, 0x00000000u);
 static const uint2 WORD_STAY = uint2(0x79617473u, 0x00000000u);
 static const uint2 WORD_WITH = uint2(0x68746977u, 0x00000000u);
+static const uint2 WORD_GEN = uint2(0x006e6567u, 0x00000000u);
+static const uint2 WORD_YIELD = uint2(0x6c656979u, 0x00000064u);
 static const uint TK_SELF_VALUE = 105;
 static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
@@ -487,10 +494,15 @@ bool token_spells(uint3 token, uint len, uint2 word)
 //   `stay`: directly before `with`, or a whole statement (`stay;`), or a
 //   whole arm body (`-> stay,`). The parser returns the last form to an
 //   identifier when the arm is not in a state block.
+// The words of a generator follow the same idea:
+//   `gen`: directly before `fn`;
+//   `yield`: at the start of a statement, before a token that starts a
+//   value. A statement that assigns to a variable named `yield`, reads a
+//   member of it or names it alone keeps the identifier.
 uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file_id, uint total)
 {
     uint len = end_excl - start;
-    if (len != 2u && len != 4u && len != 5u && len != 7u)
+    if (len < 2u || len > 7u || len == 6u)
         return TK_IDENT;
     uint2 word = packed_lexeme(start, len);
     uint candidate = TK_IDENT;
@@ -502,6 +514,8 @@ uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file
     else if (len == 4u && all(word == WORD_GOTO)) candidate = TK_GOTO;
     else if (len == 4u && all(word == WORD_STAY)) candidate = TK_STAY;
     else if (len == 4u && all(word == WORD_WITH)) candidate = TK_WITH;
+    else if (len == 3u && all(word == WORD_GEN)) candidate = TK_GEN;
+    else if (len == 5u && all(word == WORD_YIELD)) candidate = TK_YIELD;
     if (candidate == TK_IDENT)
         return TK_IDENT;
 
@@ -519,6 +533,13 @@ uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file
             token_spells(token_in_file(token_index - 2u, file_id, total), 7u, WORD_MACHINE);
     else if (candidate == TK_WITH)
         keyword = previous.x == TK_IDENT || previous.x == TK_RPAREN;
+    else if (candidate == TK_GEN)
+        keyword = next.x == TK_FN;
+    else if (candidate == TK_YIELD)
+        keyword = (previous.x == TK_SEMICOLON || previous.x == TK_LBRACE || previous.x == TK_RBRACE) &&
+            next.x != INVALID && next.x != TK_ASSIGN && next.x != TK_DOT && next.x != TK_SEMICOLON &&
+            next.x != TK_COLON && next.x != TK_COMMA && next.x != TK_RPAREN && next.x != TK_RBRACE &&
+            (next.x < TK_PLUS_ASSIGN || next.x > TK_DEC);
     else if (token_spells(next, 4u, WORD_WITH))
         keyword = true;
     else if (previous.x == TK_ARROW)
