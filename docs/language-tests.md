@@ -14,7 +14,7 @@ contains the text. `--jobs` is the number of programs that run at once.
 `--run-timeout-ms` ends a program that runs longer (default 10000).
 `--verbose` prints one line per passing test with its compile time.
 
-The 116 tests in `tests/fixtures/language/` run in about 12 s:
+The 128 tests in `tests/fixtures/language/` run in about 14 s:
 
 ```
 laniusc test --stdlib-root stdlib tests/fixtures/language
@@ -54,7 +54,7 @@ directive lines count as lines of the file.
 A failing test prints `FAIL path` and the reason. The last line is the result:
 
 ```
-test result: ok. 116 passed; 0 failed; 12.1 s (compiler start 0.9 s, compiles 10.0 s)
+test result: ok. 128 passed; 0 failed; 13.6 s (compiler start 0.9 s, compiles 11.3 s)
 ```
 
 The command exits with a nonzero status when a test fails.
@@ -65,3 +65,8 @@ The command exits with a nonzero status when a test fails.
 `tests/fixtures/language/` in one Rust test,
 `every_language_program_test_passes`. The same file keeps the two Wasm tests
 and the scope-tree layout test, which the directives cannot express yet.
+
+`tests/fixtures/language/diagnostics/` holds the compile errors that
+`tests/cli_diagnostics.rs` used to check with one compiler process each: the
+code, the message, the notes and the position. The Rust file keeps the tests
+of the JSON and LSP renderings of the command line.

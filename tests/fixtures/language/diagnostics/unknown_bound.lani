@@ -1,0 +1,14 @@
+//@ error LNC0007
+//@ error unknown type
+//@ error type not found
+//@ error declare the type before using it
+//@ error import its defining module
+//@ error unknown_bound.lani:8:36
+// A bound names a trait that does not exist.
+fn keep<T>(value: T) -> T where T: MissingTrait<T> {
+    return value;
+}
+fn main() {
+    let value: i32 = keep(1);
+    return value;
+}

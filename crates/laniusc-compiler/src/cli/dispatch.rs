@@ -18,7 +18,14 @@ use super::{
 pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
     let text_diagnostics =
         matches!(diagnostic_format_from_args(raw_args.iter().cloned()), DiagnosticFormat::Text);
-    match args::parse_args(raw_args)? {
+    let command = args::parse_args(raw_args)?;
+    // A resident compiler holds its device for hours and serializes its own
+    // jobs. Every other command is a one-shot process: it waits for a GPU
+    // process slot if it creates a device.
+    if !matches!(command, Command::Daemon(_) | Command::Lsp(_)) {
+        crate::gpu::process_slot::limit_this_process();
+    }
+    match command {
         Command::Help => {
             help::print_help();
             Ok(())

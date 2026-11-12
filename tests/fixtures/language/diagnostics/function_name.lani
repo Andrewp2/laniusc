@@ -1,0 +1,5 @@
+//@ error LNC0016
+//@ error expected function name, found keyword `fn`
+//@ error function_name.lani:5:4
+// A keyword stands where the function name belongs.
+fn fn main() { return 0; }

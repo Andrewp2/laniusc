@@ -1,5 +1,32 @@
 # GPU compiler performance: stdlib fixes
 
+## One-shot process slots (2026-11-12)
+
+A fresh `laniusc` process takes about 550 MB of GPU memory to check a one-line
+program and finishes in 1.0 s. Sixteen processes started together need 9 GB.
+On a 24 GB card with 16 GB already in use, every one of the sixteen stalled
+for more than 40 s.
+
+A one-shot command now takes one of four lock files before it creates its GPU
+device and holds it until the process ends. The files are in
+`$XDG_RUNTIME_DIR/laniusc-gpu-slots`, or in the temporary directory when that
+variable is not set. `LANIUS_GPU_PROCESS_SLOTS=N` changes the number of slots;
+`0` removes the limit. A process that waits 120 s continues without a slot.
+`laniusc daemon` and `laniusc lsp` take no slot.
+
+| Sixteen `laniusc check` processes started together | Peak added GPU memory | Wall time |
+| --- | --- | --- |
+| No limit, memory available | 8.9 GB | 5.1 s |
+| No limit, 8 GB free | stall | more than 40 s each |
+| Four slots | 2.2 GB | 6.6 s |
+
+The test support code (`tests/common/mod.rs`) held one mutex around every
+child process and every compile inside the test binary. `laniusc --help`
+waited 21 s behind the language test run. A child process no longer takes
+the mutex. The `cli_diagnostics`, `cli_daemon`, `cli_help` and
+`language_ergonomics_execution` tests (113 tests) finish in 15 s; they took
+25 s with the mutex. Their peak GPU memory is 7.5 GB.
+
 ## MoonBit lanes (2026-11-01)
 
 `tools/run_runtime_comparison.py`, `tools/run_typical_comparison.py` and

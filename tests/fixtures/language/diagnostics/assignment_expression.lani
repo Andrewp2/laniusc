@@ -1,0 +1,5 @@
+//@ error LNC0016
+//@ error expected expression after `=`
+//@ error assignment_expression.lani:5:21
+// A `let` has no value after `=`.
+fn main() { let x = ; return 0; }

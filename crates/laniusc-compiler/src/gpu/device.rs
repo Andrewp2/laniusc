@@ -625,7 +625,11 @@ pub fn global() -> &'static GpuDevice {
 
 /// Returns the process-global GPU context or its retained initialization error.
 pub fn global_result() -> Result<&'static GpuDevice, &'static GpuDeviceInitializationError> {
-    match GLOBAL_DEVICE.get_or_init(GpuDevice::try_new) {
+    let created = GLOBAL_DEVICE.get_or_init(|| {
+        super::process_slot::acquire_before_device_creation();
+        GpuDevice::try_new()
+    });
+    match created {
         Ok(device) => Ok(device),
         Err(err) => Err(err),
     }

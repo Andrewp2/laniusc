@@ -14,6 +14,8 @@ pub(crate) mod dispatch_capture;
 pub(crate) mod kernels;
 /// Reusable data-parallel operations assembled from reflected kernels.
 pub(crate) mod operations;
+/// Limits how many one-shot compiler processes hold a device at once.
+pub(crate) mod process_slot;
 /// Compute pass construction, bind groups, dispatch, and submission helpers.
 pub mod passes_core;
 /// Fixed-width readback decoders.

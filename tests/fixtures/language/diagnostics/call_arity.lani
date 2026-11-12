@@ -1,0 +1,13 @@
+//@ error LNC0027
+//@ error call resolution failed
+//@ error signature
+//@ error argument list
+//@ error call_arity.lani:12:12
+// A call passes one argument to a function of two parameters.
+fn add(left: i32, right: i32) -> i32 {
+    return left + right;
+}
+
+fn main() {
+    return add(1);
+}

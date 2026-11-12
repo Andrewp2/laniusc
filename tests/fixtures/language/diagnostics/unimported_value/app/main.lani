@@ -1,0 +1,12 @@
+//@ source-root ..
+//@ error LNC0005
+//@ error unresolved identifier
+//@ error declare the value before using it
+//@ error import its defining module
+//@ error main.lani:10:22
+// A qualified name needs an import of its module.
+module app::main;
+fn main() {
+    let value: i32 = app::util::answer();
+    return value;
+}

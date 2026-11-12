@@ -60,6 +60,9 @@ use log::warn;
 
 static TEMP_ARTIFACT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // libtest runs cases concurrently; start GPU timeouts after queued work gets the device.
+// The lock orders work on the compiler inside this process. A child `laniusc`
+// process does not take it: the compiler limits its own one-shot processes
+// (`gpu/process_slot.rs`), and a command such as `--help` creates no device.
 static GPU_TEST_LOCK: Mutex<()> = Mutex::new(());
 // Exec of a file fails with ETXTBSY while any process holds it open for
 // writing. Rust opens files O_CLOEXEC, but a thread that forks copies the
@@ -322,12 +325,11 @@ where
 
 pub fn command_output_with_timeout(context: impl fmt::Display, command: &mut Command) -> Output {
     let context = context.to_string();
-    let (_guard, gpu_lock_wait) = gpu_test_lock();
     command_output_result_with_timeout(
         &context,
         command,
         compiler_process_test_timeout(),
-        TimeoutDetails::with_gpu_lock_wait(gpu_lock_wait),
+        TimeoutDetails::default(),
     )
     .unwrap_or_else(|err| {
         panic!("{context}: spawn command: {err}");
@@ -339,12 +341,11 @@ pub fn codegen_command_output_with_timeout(
     command: &mut Command,
 ) -> Output {
     let context = context.to_string();
-    let (_guard, gpu_lock_wait) = gpu_test_lock();
     command_output_result_with_timeout(
         &context,
         command,
         gpu_codegen_test_timeout(),
-        TimeoutDetails::with_gpu_lock_wait(gpu_lock_wait),
+        TimeoutDetails::default(),
     )
     .unwrap_or_else(|err| {
         panic!("{context}: spawn command: {err}");
@@ -733,25 +734,18 @@ struct TimeoutDetails {
 }
 
 impl TimeoutDetails {
-    fn with_gpu_lock_wait(gpu_lock_wait: Duration) -> Self {
+    fn gpu_worker(gpu_lock_wait: Duration) -> Self {
         Self {
             gpu_lock_wait: Some(gpu_lock_wait),
         }
     }
-
-    fn gpu_worker(gpu_lock_wait: Duration) -> Self {
-        Self::with_gpu_lock_wait(gpu_lock_wait)
-    }
 }
 
 fn timeout_message(context: &str, timeout: Duration, details: TimeoutDetails) -> String {
-    let mut message = format!(
-        "{context} timed out after {} ms after acquiring the GPU test lock",
-        timeout.as_millis()
-    );
+    let mut message = format!("{context} timed out after {} ms", timeout.as_millis());
     if let Some(wait) = details.gpu_lock_wait {
         message.push_str(&format!(
-            "; waited {} ms for the GPU test lock before starting the timeout",
+            " after acquiring the GPU test lock; waited {} ms for the GPU test lock before starting the timeout",
             wait.as_millis()
         ));
     }

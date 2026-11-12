@@ -1,0 +1,5 @@
+//@ error LNC0016
+//@ error expected ';' after return statement
+//@ error return_semicolon.lani:5:22
+// A `return` statement has no `;`.
+fn main() { return 0 }

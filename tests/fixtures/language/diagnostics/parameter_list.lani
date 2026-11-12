@@ -1,0 +1,5 @@
+//@ error LNC0016
+//@ error expected one of `)`, identifier, `&`, or keyword `self`, found `{`
+//@ error parameter_list.lani:5:10
+// A parameter list is not closed.
+fn main( { return 0; }

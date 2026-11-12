@@ -1,0 +1,8 @@
+//@ source-root ..
+//@ error LNC0001
+//@ error missing source-root module app::missing
+//@ error main.lani:7:1
+// An import names a module that no source root holds.
+module app::main;
+import app::missing;
+fn main() { return 0; }

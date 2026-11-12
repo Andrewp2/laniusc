@@ -1,0 +1,11 @@
+//@ error LNC0006
+//@ error type mismatch
+//@ error expected i32
+//@ error found bool
+//@ error change the expression or the annotation
+//@ error assignment_mismatch.lani:9:22
+// A `bool` value does not fit an `i32` binding.
+fn main() {
+    let value: i32 = false;
+    return 0;
+}

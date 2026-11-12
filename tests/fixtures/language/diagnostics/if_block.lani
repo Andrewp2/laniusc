@@ -1,0 +1,5 @@
+//@ error LNC0016
+//@ error expected `{` after if condition, found keyword `return`
+//@ error if_block.lani:5:23
+// An `if` has a statement where its block belongs.
+fn main() { if (true) return 0; }

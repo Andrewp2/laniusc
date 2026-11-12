@@ -1,0 +1,7 @@
+//@ error LNC0016
+//@ error expected module path after `import`
+//@ error import_path.lani:6:8
+// An `import` names no module.
+module app::main;
+import ;
+fn main() { return 0; }
