@@ -1,0 +1,25 @@
+module app::main;
+
+struct Name { label: str }
+struct Entry { code: i32, label: str }
+
+fn label_len(entries: [Entry; 3], index: i32) -> i32 {
+    return string_len(entries[index].label) as i32;
+}
+
+fn main() -> i32 {
+    let names: [Name; 2] = [Name { label: "a" }, Name { label: "abcd" }];
+    let entries: [Entry; 3] = [
+        Entry { code: 1, label: "ab" },
+        Entry { code: 2, label: "abcdefg" },
+        Entry { code: 3, label: "" },
+    ];
+    let direct: i32 = string_len(names[1].label) as i32;
+    let label: str = entries[1].label;
+    let bound: i32 = string_len(label) as i32;
+    let total: i32 = 0;
+    for i in 0..3 {
+        total += label_len(entries, i) + entries[i].code;
+    }
+    return direct + bound + total;
+}

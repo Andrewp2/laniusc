@@ -92,6 +92,11 @@ fn a_type_parameter_takes_precedence_over_a_module_type_of_the_same_name() {
 }
 
 #[test]
+fn a_string_field_of_an_array_element_keeps_its_length() {
+    assert_exit("string_field_of_array_element.lani", 26);
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }

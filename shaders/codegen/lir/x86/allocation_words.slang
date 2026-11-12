@@ -136,6 +136,10 @@ uint parallel_register_location(uint row, uint position, uint total, out bool gp
             opt_ir_op(opt_ir_core[consumer]) == SEMANTIC_LIR_OP_LOAD &&
             (opt_ir_core[consumer].flags & SEMANTIC_LIR_FLAG_FIELD) != 0u &&
             (opt_ir_core[consumer].flags & SEMANTIC_LIR_FLAG_INDEXED) == 0u &&
+            // A string or slice field is loaded one word per target row, and
+            // the first row's value replaces the address in RAX.
+            opt_ir_core[consumer].type_id != SEMANTIC_LIR_TY_STRING &&
+            (opt_ir_core[consumer].flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u &&
             opt_ir_operands[consumer].a == row &&
             opt_ir_operands[consumer].b != row && opt_ir_operands[consumer].c != row)
             return X86_LOCATION_REGISTER;
