@@ -57,6 +57,10 @@ use crate::{
 };
 
 const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
+/// Request features a client can test for in the ready and status events. A
+/// daemon older than this list accepts an unknown field and ignores it, so a
+/// client must not send such a field unless its name is listed here.
+const DAEMON_CAPABILITIES: &[&str] = &["strict_request_fields", "source_roots", "native_link"];
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const DEFAULT_IDLE_BUFFER_TIMEOUT_MS: u64 = 30_000;
 
@@ -562,7 +566,8 @@ fn print_help() {
          A compile request has the fields id, emit, input, output, stdlib_root, and source_root or source_roots.\n\
          native_link, native_libraries, native_objects, native_library_paths and native_linker link the executable\n\
          through the C compiler driver, as the --native-link, --native-library, --native-object, --native-library-path\n\
-         and --native-linker flags do. A request field the daemon does not know is a protocol error."
+         and --native-linker flags do. A request field the daemon does not know is a protocol error.\n\
+         The ready and status events list the supported request features under capabilities."
     );
 }
 
@@ -804,6 +809,7 @@ async fn run_session(
         &json!({
             "schema": DAEMON_SCHEMA,
             "event": "ready",
+            "capabilities": DAEMON_CAPABILITIES,
             "startup_ms": startup_ms,
             "pid": std::process::id(),
             "resident_set_bytes": resident_set_bytes(),
@@ -931,6 +937,7 @@ async fn run_session(
                     "id": request.id,
                     "ok": true,
                     "event": "status",
+                    "capabilities": DAEMON_CAPABILITIES,
                     "tracked_gpu_buffers": tracked_gpu_buffer_metrics(),
                     "resident_set_bytes": resident_set_bytes(),
                     "wgpu_resources": wgpu_resource_metrics(),

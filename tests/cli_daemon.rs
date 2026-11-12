@@ -344,6 +344,15 @@ fn cli_daemon_links_a_native_executable_from_several_source_roots() {
         .collect::<Vec<_>>();
     assert_eq!(responses.len(), 6, "{responses:#?}");
     assert_eq!(responses[0]["event"], "ready");
+    let capabilities = responses[0]["capabilities"]
+        .as_array()
+        .expect("the ready event lists the request features");
+    for capability in ["strict_request_fields", "source_roots", "native_link"] {
+        assert!(
+            capabilities.iter().any(|listed| listed == capability),
+            "ready event does not list {capability}: {capabilities:?}"
+        );
+    }
 
     assert_eq!(responses[1]["id"], "unknown");
     assert_eq!(responses[1]["ok"], false);
