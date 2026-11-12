@@ -6,6 +6,7 @@ import type_checker.checked_index_reference;
 import type_checker.checked_pattern_path;
 import hir_expr_semantics;
 import hir_records;
+import primitive_types;
 import status;
 
 // Substitute enum match payload types from compact HIR family rows.
@@ -63,6 +64,8 @@ static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_EXPR_INT = 3u;
 static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_REF_INVALID = 0u;
@@ -412,6 +415,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     decl_type_ref_tag[binder_token] = tag;
     decl_type_ref_payload[binder_token] = ref_payload;
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    // A literal sub-pattern is compared with the payload: an integer literal
+    // needs an integer payload, and `true` or `false` needs a bool payload.
+    if (compact_hir_core[payload.pattern].kind == HIR_LITERAL_EXPR && call_inference_state[0u] == 0u)
+    {
+        bool agrees = tag == TYPE_REF_SCALAR &&
+            (compact_hir_payload[payload.pattern].a == HIR_EXPR_INT
+                ? scalar_is_integer(ref_payload) : ref_payload == SCALAR_BOOL);
+        if (!agrees) record_min_token_error(status, binder_token, ERR_ASSIGN_MISMATCH, 0u);
+    }
     if (nested_variant) return;
     uint ty = type_ref_to_type_code(tag, ref_payload);
     if (!wildcard && ty != TY_UNKNOWN)

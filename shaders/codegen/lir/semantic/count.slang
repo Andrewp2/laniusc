@@ -70,12 +70,12 @@ uint active_match_payload_count()
 #include "receiver_layout.slang"
 #include "body_return.slang"
 
-// A payload binder's row. Variant sub-patterns are checks, not binders.
+// A payload binder's row. Variant and literal sub-patterns are checks, not
+// binders.
 uint match_payload_for_pattern(uint node)
 {
     uint row = semantic_match_payload_row(node);
-    return row != LIR_INVALID &&
-        semantic_match_variant_ordinal(node, gParams.n_hir_nodes) == LIR_INVALID
+    return row != LIR_INVALID && !semantic_match_check_pattern(node, gParams.n_hir_nodes)
         ? row : LIR_INVALID;
 }
 

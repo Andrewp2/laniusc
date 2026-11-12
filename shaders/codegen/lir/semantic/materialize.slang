@@ -154,11 +154,12 @@ uint2 scalar_match_pattern_value(uint pattern, uint hir_count)
     return uint2(payload.b, payload.c);
 }
 
-uint semantic_materialized_op(uint node, uint local_row, uint local_count)
+// `payload_pattern` is true for a payload sub-pattern; `check` is true when
+// that sub-pattern names a variant or is a literal.
+uint semantic_materialized_op(uint node, uint local_row, uint local_count, bool payload_pattern, bool check)
 {
-    if (semantic_match_payload_row(node) != LIR_INVALID)
+    if (payload_pattern)
     {
-        bool check = semantic_match_variant_ordinal(node, gParams.n_hir_nodes) != LIR_INVALID;
         return local_row == 0u ? SEMANTIC_LIR_OP_VALUE_GET
             : local_row == 1u ? SEMANTIC_LIR_OP_LOAD
             : !check ? SEMANTIC_LIR_OP_VALUE_SET
@@ -529,7 +530,7 @@ uint match_arm_check_count(uint arm, uint hir_count)
     uint total = active_match_payload_count();
     uint checks = 0u;
     for (uint row = start; row < total && compact_match_payloads[row].arm == arm; row += 1u)
-        if (semantic_match_variant_ordinal(compact_match_payloads[row].pattern, hir_count) != LIR_INVALID)
+        if (semantic_match_check_pattern(compact_match_payloads[row].pattern, hir_count))
             checks += 1u;
     return checks;
 }
@@ -1131,13 +1132,16 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         range_payload = compact_hir_payload[payload.c];
 
     uint row = first_row + local_row;
-    uint op = semantic_materialized_op(node, local_row, local_count);
-    // A payload sub-pattern binds a name or, naming a variant, checks it.
-    // Both read one payload word: one offset walk serves both.
+    // A payload sub-pattern binds a name or, naming a variant or a literal,
+    // checks it. Both read one payload word: one offset walk serves both.
     uint pattern_payload_row = semantic_match_payload_row(node);
     uint pattern_variant = pattern_payload_row != LIR_INVALID
         ? semantic_match_variant_ordinal(node, hir_count) : LIR_INVALID;
-    bool match_check = pattern_variant != LIR_INVALID;
+    bool match_literal = pattern_payload_row != LIR_INVALID && pattern_variant == LIR_INVALID &&
+        hir.kind == HIR_LITERAL_EXPR;
+    bool match_check = pattern_variant != LIR_INVALID || match_literal;
+    uint op = semantic_materialized_op(node, local_row, local_count,
+        pattern_payload_row != LIR_INVALID, match_check);
     uint match_check_row = match_check ? pattern_payload_row : LIR_INVALID;
     uint match_payload_row = match_check ? LIR_INVALID : pattern_payload_row;
     bool match_binding = match_payload_row != LIR_INVALID;
@@ -1210,8 +1214,8 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     uint type_ref_tag;
     semantic_type_ref_for_hir(node, hir_count,
         type_ref_tag, core.type_ref_payload);
-    if (type_ref_tag == 1u &&
-        scalar_is_known(core.type_ref_payload))
+    bool known_scalar = type_ref_tag == 1u && scalar_is_known(core.type_ref_payload);
+    if (known_scalar)
     {
         // Member and call slice bases are projected through their checked
         // element reference after the older scalar cache was populated.
@@ -1232,8 +1236,10 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     }
     else if (match_check)
     {
-        // The scrutinee address, then the arm recipe's scalar tag rows.
-        core.type_id = local_row == 0u ? SEMANTIC_LIR_TY_POINTER : 3u;
+        // The scrutinee address, then the arm recipe's scalar tag rows. A
+        // literal is compared in the payload's own scalar type.
+        core.type_id = local_row == 0u ? SEMANTIC_LIR_TY_POINTER
+            : match_literal && known_scalar ? core.type_id : 3u;
         type_ref_tag = 1u;
         core.type_ref_payload = core.type_id;
     }
@@ -1376,7 +1382,9 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     // source `for` statement (the binding token), not to this synthetic
     // comparison; interpreting it as an operand HIR can borrow an unrelated
     // scalar type from another packed module and select an f32 comparison.
-    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression &&
+    // A payload check compares in the type set above; its pattern node's
+    // payload words are not operand nodes.
+    if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression && !match_check &&
         !range_for && !array_for && payload.b < hir_count)
     {
         uint compared_type_node = payload.b;
@@ -1752,7 +1760,12 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
             layout_word_offset = word_offset;
         }
         else if (local_row == 2u)
-            operands.a = pattern_variant;
+        {
+            bool integer = match_literal && payload.a == HIR_EXPR_INT;
+            operands.a = !match_literal ? pattern_variant
+                : integer ? payload.b : payload.a == HIR_EXPR_TRUE ? 1u : 0u;
+            if (integer && op == SEMANTIC_LIR_OP_CONST_I64) operands.b = payload.c;
+        }
         else if (local_row == 3u)
         {
             operands.a = first_row + 1u;

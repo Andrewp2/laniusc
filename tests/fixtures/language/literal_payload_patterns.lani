@@ -1,0 +1,88 @@
+// A literal inside a variant pattern is compared with the payload in the
+// payload's own type. An arm whose literal differs falls through to the next.
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+enum Pair {
+    Both(i32, i32),
+    Wide(i64),
+    Small(u8),
+}
+
+fn wide(value: Option<i64>) -> i32 {
+    return match (value) {
+        Some(0) -> 1,
+        Some(5) -> 2,
+        Some(n) -> 3,
+        None -> 4,
+    };
+}
+
+fn pair(value: Pair) -> i32 {
+    return match (value) {
+        Both(0, n) -> n,
+        Both(n, 0) -> n + 100,
+        Both(a, b) -> a + b,
+        Wide(7) -> 50,
+        Wide(n) -> 60,
+        Small(9) -> 70,
+        Small(n) -> 80,
+    };
+}
+
+fn nested(value: Option<Option<i32>>) -> i32 {
+    return match (value) {
+        Some(Some(0)) -> 1,
+        Some(Some(n)) -> n,
+        Some(None) -> 2,
+        None -> 3,
+    };
+}
+
+fn outcome(value: Result<bool, i32>) -> i32 {
+    return match (value) {
+        Ok(true) -> 1,
+        Ok(false) -> 2,
+        Err(0) -> 3,
+        Err(code) -> code,
+    };
+}
+
+fn main() -> i32 {
+    let big: i64 = 4294967296;
+    let none_wide: Option<i64> = None();
+    let w0: i64 = 0;
+    let w5: i64 = 5;
+    let a: i32 = wide(Some(w0)) + wide(Some(w5)) + wide(Some(big)) + wide(none_wide);
+    if (a != 10) { return 1; }
+    let s9: u8 = 9;
+    let s8: u8 = 8;
+    if (pair(Both(0, 9)) != 9) { return 2; }
+    if (pair(Both(4, 0)) != 104) { return 3; }
+    if (pair(Both(4, 5)) != 9) { return 4; }
+    if (pair(Wide(7)) != 50) { return 5; }
+    if (pair(Wide(big + 7)) != 60) { return 6; }
+    if (pair(Small(s9)) != 70) { return 7; }
+    if (pair(Small(s8)) != 80) { return 8; }
+    let zero: Option<i32> = Some(0);
+    let six: Option<i32> = Some(6);
+    let inner_none: Option<i32> = None();
+    let outer_none: Option<Option<i32>> = None();
+    if (nested(Some(zero)) != 1) { return 9; }
+    if (nested(Some(six)) != 6) { return 10; }
+    if (nested(Some(inner_none)) != 2) { return 11; }
+    if (nested(outer_none) != 3) { return 12; }
+    let ok_true: Result<bool, i32> = Ok(true);
+    let ok_false: Result<bool, i32> = Ok(false);
+    let err_zero: Result<bool, i32> = Err(0);
+    let err_nine: Result<bool, i32> = Err(9);
+    if (outcome(ok_true) != 1) { return 13; }
+    if (outcome(ok_false) != 2) { return 14; }
+    if (outcome(err_zero) != 3) { return 15; }
+    if (outcome(err_nine) != 9) { return 16; }
+    return 42;
+}

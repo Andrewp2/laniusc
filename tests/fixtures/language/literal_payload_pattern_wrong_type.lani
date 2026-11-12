@@ -1,0 +1,15 @@
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+fn score(value: Option<i32>) -> i32 {
+    return match (value) {
+        Some(true) -> 10,
+        Some(n) -> n,
+        None -> 3,
+    };
+}
+
+fn main() -> i32 {
+    return score(Some(1));
+}

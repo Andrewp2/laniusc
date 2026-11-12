@@ -20,11 +20,24 @@ uint semantic_match_variant_ordinal(uint pattern, uint hir_count)
         ? compact_variants[lo].ordinal : LIR_INVALID;
 }
 
-// A payload sub-pattern that names a variant binds nothing. It checks that
-// payload's own discriminant: VALUE_GET, LOAD, CONST, COMPARE and IF_BEGIN
-// open inside its arm, and CONTROL_END closes after the arm's branch, so a
-// failed check falls through to the next arm.
+// A literal in a pattern. The grammar admits an integer, `true` or `false`.
+bool semantic_match_literal_pattern(uint pattern, uint hir_count)
+{
+    return pattern < hir_count && compact_hir_core[pattern].kind == HIR_LITERAL_EXPR;
+}
+
+// A payload sub-pattern that names a variant or is a literal binds nothing.
+// It checks one payload word, the payload's own discriminant or its scalar
+// value: VALUE_GET, LOAD, CONST, COMPARE and IF_BEGIN open inside its arm,
+// and CONTROL_END closes after the arm's branch, so a failed check falls
+// through to the next arm.
 static const uint SEMANTIC_MATCH_CHECK_ROWS = 6u;
+
+bool semantic_match_check_pattern(uint pattern, uint hir_count)
+{
+    return semantic_match_variant_ordinal(pattern, hir_count) != LIR_INVALID ||
+        semantic_match_literal_pattern(pattern, hir_count);
+}
 
 uint semantic_match_payload_row(uint node)
 {
@@ -42,8 +55,7 @@ uint semantic_match_payload_row(uint node)
 uint semantic_match_check_row(uint node, uint hir_count)
 {
     uint row = semantic_match_payload_row(node);
-    return row != LIR_INVALID &&
-        semantic_match_variant_ordinal(node, hir_count) != LIR_INVALID
+    return row != LIR_INVALID && semantic_match_check_pattern(node, hir_count)
         ? row : LIR_INVALID;
 }
 

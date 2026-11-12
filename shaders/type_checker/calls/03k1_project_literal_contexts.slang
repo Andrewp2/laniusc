@@ -188,6 +188,13 @@ uint checked_literal_context(uint literal)
         compact_const_value, type_expr_ref_tag, type_expr_ref_payload);
     if (owned != 0u) return owned;
     bool floating = compact_hir_payload[literal].a == HIR_SEM_EXPR_FLOAT;
+    // A literal payload sub-pattern, as in `Some(0)`, is compared in its
+    // payload slot's type. The payload typing pass publishes that type at
+    // the pattern's first token, and a literal's token names no declaration.
+    uint pattern_token = compact_hir_core[literal].token_start;
+    uint slot_context = valid_token(pattern_token) ? numeric_context(uint2(
+        decl_type_ref_tag[pattern_token], decl_type_ref_payload[pattern_token]), floating) : 0u;
+    if (slot_context != 0u) return slot_context;
     uint range_context = floating ? 0u : direct_range_literal_context(literal);
     if (range_context != 0u) return range_context;
     uint current = literal;

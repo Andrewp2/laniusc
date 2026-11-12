@@ -97,6 +97,19 @@ fn a_string_field_of_an_array_element_keeps_its_length() {
 }
 
 #[test]
+fn a_literal_in_a_variant_pattern_is_compared_with_the_payload() {
+    assert_exit("literal_payload_patterns.lani", 42);
+}
+
+#[test]
+fn a_literal_in_a_variant_pattern_needs_the_payload_type() {
+    assert_rejected(
+        "literal_payload_pattern_wrong_type.lani",
+        &["LNC0006", "type mismatch", "Some(true) -> 10,"],
+    );
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }

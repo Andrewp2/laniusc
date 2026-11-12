@@ -41,6 +41,9 @@ bool match_payload_binding(uint hir)
     }
     if (lo >= count || compact_match_payloads[lo].pattern != hir)
         return false;
+    // A literal sub-pattern is compared, not bound.
+    if (compact_hir_core[hir].kind == HIR_LITERAL_EXPR)
+        return false;
     uint declaration_token = semantic_value_decl_by_hir[hir];
     uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);
     uint variant_lo = 0u;
