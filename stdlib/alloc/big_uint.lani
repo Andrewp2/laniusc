@@ -2,6 +2,7 @@
 // Keep one active owner per allocation. All operands are borrowed; destroy each
 // successful owned result exactly once. Zero has no limbs and needs no allocation.
 module alloc::big_uint;
+import core::lifecycle;
 import alloc::vec;
 import core::cmp;
 import core::hash;
@@ -407,16 +408,16 @@ pub impl core::hash::Hash<BigUint> for BigUint { pub fn hash(value: BigUint) -> 
 // ---- Subquadratic division, radix conversion and modular inverse ----
 // Internal steps record the first failure in Ctx and return zero owners, so
 // each routine stays straight-line; every owner is still destroyed exactly once.
-struct Ctx { limits: Limits, failed: bool, error: Error }
+struct Ctx { limits: Limits, health: core::lifecycle::Health, error: Error }
 impl Ctx { fn borrow(&self) -> &Ctx { return self; } }
-fn context(limits: Limits) -> Ctx { return Ctx { limits: Limits { max_limbs: 536870911, max_work: 18446744073709551615, max_output: limits.max_output }, failed: false, error: Error::Bounds }; }
+fn context(limits: Limits) -> Ctx { return Ctx { limits: Limits { max_limbs: 536870911, max_work: 18446744073709551615, max_output: limits.max_output }, health: core::lifecycle::health_start(), error: Error::Bounds }; }
 fn keep(c: &Ctx, value: core::result::Result<BigUint,Error>) -> BigUint {
-    if (value.is_err()) { if (!c.failed) { c.failed = true; c.error = value.unwrap_err(); } return zero(); } return value.unwrap();
+    if (value.is_err()) { if (!c.health.is_failed()) { c.health.fail(); c.error = value.unwrap_err(); } return zero(); } return value.unwrap();
 }
 fn keep_pair(c: &Ctx, value: core::result::Result<DivRem,Error>) -> DivRem {
-    if (value.is_err()) { if (!c.failed) { c.failed = true; c.error = value.unwrap_err(); } return DivRem { quotient: zero(), remainder: zero() }; } return value.unwrap();
+    if (value.is_err()) { if (!c.health.is_failed()) { c.health.fail(); c.error = value.unwrap_err(); } return DivRem { quotient: zero(), remainder: zero() }; } return value.unwrap();
 }
-fn flag(c: &Ctx, error: Error) { if (!c.failed) { c.failed = true; c.error = error; } }
+fn flag(c: &Ctx, error: Error) { if (!c.health.is_failed()) { c.health.fail(); c.error = error; } }
 fn one(c: &Ctx) -> BigUint { return keep(c,from_u64(1,c.limits)); }
 impl BigUint {
     // Limbs [from, from+count) as a new normalized owner.
@@ -438,7 +439,7 @@ impl BigUint {
 fn decrement(c: &Ctx, value: BigUint) -> BigUint { let unit: BigUint = one(c); let out: BigUint = keep(c,value.sub(unit.borrow(),c.limits)); unit.destroy(); value.destroy(); return out; }
 // Burnikel-Ziegler (as in CPython's _pylong): a < b*2^n and b has exactly n bits.
 fn div2n1n(c: &Ctx, a: &BigUint, b: &BigUint, n: u64) -> DivRem {
-    if (c.failed) { return DivRem { quotient: zero(), remainder: zero() }; }
+    if (c.health.is_failed()) { return DivRem { quotient: zero(), remainder: zero() }; }
     let limit: u64 = (BURNIKEL_ZIEGLER_THRESHOLD as u64)*32;
     if (n < limit || a.bit_length() < n+limit) { return keep_pair(c,a.div_rem_basic(b,c.limits)); }
     if ((n & 1) == 0) { return div2n1n_even(c,a,b,n); }
@@ -468,7 +469,7 @@ fn div3n2n(c: &Ctx, a12: &BigUint, a3: &BigUint, b: &BigUint, b1: &BigUint, b2: 
     top.destroy();
     let shifted_r: BigUint = keep(c,r.shl(n,c.limits)); r.destroy(); let rr: BigUint = keep(c,shifted_r.add(a3,c.limits)); shifted_r.destroy();
     let t: BigUint = keep(c,q.mul(b2,c.limits));
-    while (!c.failed && rr.compare(t.borrow()) < 0) { q = decrement(c,q); let grown: BigUint = keep(c,rr.add(b,c.limits)); rr.destroy(); rr = grown; }
+    while (!c.health.is_failed() && rr.compare(t.borrow()) < 0) { q = decrement(c,q); let grown: BigUint = keep(c,rr.add(b,c.limits)); rr.destroy(); rr = grown; }
     let out: BigUint = keep(c,rr.sub(t.borrow(),c.limits)); rr.destroy(); t.destroy();
     return DivRem { quotient: q, remainder: out };
 }
@@ -481,16 +482,16 @@ fn fast_div(a: &BigUint, b: &BigUint, limits: Limits) -> core::result::Result<Di
     let quotient: BigUint = keep(c,fresh(chunks*width,c.limits)); let r: BigUint = zero(); let index: i32 = chunks-1;
     let top: BigUint = keep(c,an.window(index*width,width,c.limits));
     if (top.compare(bn.borrow()) < 0) { r = top; index -= 1; } else { top.destroy(); }
-    while (index >= 0 && !c.failed) {
+    while (index >= 0 && !c.health.is_failed()) {
         let digit: BigUint = keep(c,an.window(index*width,width,c.limits));
         let shifted: BigUint = keep(c,r.shl(n,c.limits)); r.destroy(); let combined: BigUint = keep(c,shifted.add(digit.borrow(),c.limits)); shifted.destroy(); digit.destroy();
         let pair: DivRem = div2n1n(c,combined.borrow(),bn.borrow(),n); combined.destroy();
-        if (!c.failed) { let qs: [u32] = quotient.limbs.as_slice(); let ps: [u32] = pair.quotient.limbs.as_slice(); let i: i32 = 0; while (i < pair.quotient.limbs.len()) { qs[index*width+i] = ps[i]; i += 1; } }
+        if (!c.health.is_failed()) { let qs: [u32] = quotient.limbs.as_slice(); let ps: [u32] = pair.quotient.limbs.as_slice(); let i: i32 = 0; while (i < pair.quotient.limbs.len()) { qs[index*width+i] = ps[i]; i += 1; } }
         pair.quotient.destroy(); r = pair.remainder; index -= 1;
     }
     quotient.normalize(); let rem: BigUint = keep(c,r.shr(shift,c.limits)); r.destroy(); an.destroy(); bn.destroy();
-    if (!c.failed && (quotient.limbs.len() > limits.max_limbs || rem.limbs.len() > limits.max_limbs)) { flag(c,Error::LimbLimit); }
-    if (c.failed) { quotient.destroy(); rem.destroy(); return core::result::Err(c.error); }
+    if (!c.health.is_failed() && (quotient.limbs.len() > limits.max_limbs || rem.limbs.len() > limits.max_limbs)) { flag(c,Error::LimbLimit); }
+    if (c.health.is_failed()) { quotient.destroy(); rem.destroy(); return core::result::Err(c.error); }
     return core::result::Ok(DivRem { quotient: quotient, remainder: rem });
 }
 // powers[i] = (radix^g)^(2^i). Stops after `levels` entries, or (levels == 0)
@@ -500,25 +501,25 @@ fn radix_powers(c: &Ctx, radix: i32, levels: i32, cover: i32) -> alloc::vec::Vec
     let current: BigUint = keep(c,from_u64(base,c.limits)); let level: i32 = 0;
     while (true) {
         if (powers.try_push(current).is_err()) { current.destroy(); flag(c,Error::AllocationFailed); return powers; }
-        level += 1; if (c.failed || (levels > 0 && level >= levels) || (levels == 0 && 2*(current.limbs.len()-1) >= cover)) { break; }
+        level += 1; if (c.health.is_failed() || (levels > 0 && level >= levels) || (levels == 0 && 2*(current.limbs.len()-1) >= cover)) { break; }
         current = keep(c,current.mul(current.borrow(),c.limits));
     }
     return powers;
 }
 fn destroy_powers(powers: alloc::vec::Vec<BigUint>) { let i: i32 = 0; while (i < powers.len()) { let p: BigUint = powers.at(i); p.destroy(); i += 1; } powers.destroy(); }
 fn push_zeros(c: &Ctx, out: &alloc::vec::Vec<u8>, count: i32) {
-    let i: i32 = 0; while (i < count && !c.failed) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); return; } if (out.try_push(48).is_err()) { flag(c,Error::AllocationFailed); return; } i += 1; }
+    let i: i32 = 0; while (i < count && !c.health.is_failed()) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); return; } if (out.try_push(48).is_err()) { flag(c,Error::AllocationFailed); return; } i += 1; }
 }
 // Appends x in radix; width > 0 left-pads to exactly width digits. Requires
 // x < powers[level+1] (or x < radix^g when level is -1).
 fn emit(c: &Ctx, out: &alloc::vec::Vec<u8>, x: &BigUint, level: i32, width: i32, radix: i32, powers: &alloc::vec::Vec<BigUint>) {
-    if (c.failed) { return; }
+    if (c.health.is_failed()) { return; }
     if (level < 0 || x.limbs.len() <= CONVERSION_THRESHOLD) {
         if (width > 0 && x.is_zero()) { push_zeros(c,out,width); return; }
         let formatted: core::result::Result<alloc::vec::Vec<u8>,Error> = x.format_basic(radix,c.limits);
         if (formatted.is_err()) { flag(c,formatted.unwrap_err()); return; } let digits: alloc::vec::Vec<u8> = formatted.unwrap();
         if (width > digits.len()) { push_zeros(c,out,width-digits.len()); }
-        let i: i32 = 0; while (i < digits.len() && !c.failed) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); } else { if (out.try_push(digits.at(i)).is_err()) { flag(c,Error::AllocationFailed); } } i += 1; }
+        let i: i32 = 0; while (i < digits.len() && !c.health.is_failed()) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); } else { if (out.try_push(digits.at(i)).is_err()) { flag(c,Error::AllocationFailed); } } i += 1; }
         digits.destroy(); return;
     }
     let power: BigUint = powers.at(level); let half: i32 = 0; if (width > 0) { half = width/2; }
@@ -530,7 +531,7 @@ fn emit(c: &Ctx, out: &alloc::vec::Vec<u8>, x: &BigUint, level: i32, width: i32,
 }
 // value = hi * radix^(g*2^j) + lo over the digit string.
 fn parse_dc(c: &Ctx, input: core::slice::View<u8>, from: i32, count: i32, radix: i32, powers: &alloc::vec::Vec<BigUint>) -> BigUint {
-    if (c.failed) { return zero(); }
+    if (c.health.is_failed()) { return zero(); }
     let part: core::slice::View<u8> = core::slice::View { values: input.values, start: input.start+from, length: count };
     if (count <= PARSE_DC_DIGITS) { return keep(c,parse_basic(part,radix,c.limits)); }
     let low: i32 = chunk_digits(radix); let j: i32 = 0; while (low*2 < count) { low = low*2; j += 1; }
@@ -571,8 +572,8 @@ pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::
     let state: Ctx = context(limits); let c: &Ctx = state.borrow();
     let powers: alloc::vec::Vec<BigUint> = radix_powers(c,radix,levels,0);
     let value: BigUint = parse_dc(c,input,0,input.length,radix,powers.borrow()); destroy_powers(powers);
-    if (!c.failed && value.limbs.len() > limits.max_limbs) { flag(c,Error::LimbLimit); }
-    if (c.failed) { value.destroy(); return core::result::Err(c.error); } return core::result::Ok(value);
+    if (!c.health.is_failed() && value.limbs.len() > limits.max_limbs) { flag(c,Error::LimbLimit); }
+    if (c.health.is_failed()) { value.destroy(); return core::result::Err(c.error); } return core::result::Ok(value);
 }
 pub impl BigUint {
     pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
@@ -595,7 +596,7 @@ pub impl BigUint {
         let output: alloc::vec::Vec<u8> = alloc::vec::new(); let reserve: u64 = digits; if (reserve > limits.max_output as u64) { reserve = limits.max_output as u64; }
         if (output.try_reserve(reserve as i32).is_err()) { flag(c,Error::AllocationFailed); }
         emit(c,output.borrow(),self,top,0,radix,powers.borrow()); destroy_powers(powers);
-        if (c.failed) { output.destroy(); return core::result::Err(c.error); } return core::result::Ok(output);
+        if (c.health.is_failed()) { output.destroy(); return core::result::Err(c.error); } return core::result::Ok(output);
     }
     // Power-of-two radix: read digits straight from the bits, most significant first.
     fn format_bits(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
@@ -617,11 +618,11 @@ pub impl BigUint {
     pub fn mod_inverse(&self, modulus: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
         if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (modulus.is_zero()) { return core::result::Err(Error::DivisionByZero); }
         if (modulus.limbs.len() == 1 && modulus.get(0) == 1) { return core::result::Ok(zero()); }
-        let state: Ctx = Ctx { limits: limits, failed: false, error: Error::Bounds }; let c: &Ctx = state.borrow();
+        let state: Ctx = Ctx { limits: limits, health: core::lifecycle::health_start(), error: Error::Bounds }; let c: &Ctx = state.borrow();
         let reduced: DivRem = keep_pair(c,self.div_rem(modulus,limits)); reduced.quotient.destroy();
         let r0: BigUint = keep(c,modulus.try_clone(limits)); let r1: BigUint = reduced.remainder; let u0: BigUint = zero(); let u1: BigUint = one(c); let odd: bool = true;
         let budget: u64 = limits.max_work;
-        while (!c.failed && !r1.is_zero() && !(r1.limbs.len() == 1 && r1.get(0) == 1)) {
+        while (!c.health.is_failed() && !r1.is_zero() && !(r1.limbs.len() == 1 && r1.get(0) == 1)) {
             let cost: u64 = division_work(r0.limbs.len(),r1.limbs.len())+(r0.limbs.len() as u64)*(u1.limbs.len() as u64+1);
             if (cost > budget) { flag(c,Error::WorkLimit); break; } budget -= cost;
             let step: DivRem = keep_pair(c,r0.div_rem(r1.borrow(),limits));
@@ -629,10 +630,10 @@ pub impl BigUint {
             let u2: BigUint = keep(c,u0.add(product.borrow(),limits)); product.destroy();
             r0.destroy(); r0 = r1; r1 = step.remainder; u0.destroy(); u0 = u1; u1 = u2; odd = !odd;
         }
-        if (!c.failed && r1.is_zero()) { flag(c,Error::NotInvertible); }
+        if (!c.health.is_failed() && r1.is_zero()) { flag(c,Error::NotInvertible); }
         let result: BigUint = zero();
-        if (!c.failed) { if (odd) { result = u1; u1 = zero(); } else { result = keep(c,modulus.sub(u1.borrow(),limits)); } }
+        if (!c.health.is_failed()) { if (odd) { result = u1; u1 = zero(); } else { result = keep(c,modulus.sub(u1.borrow(),limits)); } }
         r0.destroy(); r1.destroy(); u0.destroy(); u1.destroy();
-        if (c.failed) { result.destroy(); return core::result::Err(c.error); } return core::result::Ok(result);
+        if (c.health.is_failed()) { result.destroy(); return core::result::Err(c.error); } return core::result::Ok(result);
     }
 }

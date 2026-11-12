@@ -10,7 +10,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: enum: 1; field: 17; function: 7; impl: 1; method: 8; struct: 2; variant: 3.
+Declaration counts: enum: 3; field: 4; function: 7; impl: 1; machine: 1; method: 8; struct: 1; variant: 11.
 
 ## Declared imports
 
@@ -96,123 +96,99 @@ data_length: i32
 done: bool
 ```
 
-### struct: Framer
+### enum: Kind
 
 [Source line 17](../../../extended/ext/http_body.lani#L17)
 
 ```lanius
-pub struct Framer
+pub enum Kind
 ```
 
-#### field: mode
+#### variant: Empty
 
 [Source line 17](../../../extended/ext/http_body.lani#L17)
 
 ```lanius
-mode: i32
+Empty
 ```
 
-#### field: left
+#### variant: Fixed
 
 [Source line 17](../../../extended/ext/http_body.lani#L17)
 
 ```lanius
-left: u64
+Fixed
 ```
 
-#### field: phase
+#### variant: Chunked
 
 [Source line 17](../../../extended/ext/http_body.lani#L17)
 
 ```lanius
-phase: i32
+Chunked
 ```
 
-#### field: size
+#### variant: Close
 
 [Source line 17](../../../extended/ext/http_body.lani#L17)
 
 ```lanius
-size: u64
+Close
 ```
 
-#### field: digits
+### enum: FramingEvent
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 18](../../../extended/ext/http_body.lani#L18)
 
 ```lanius
-digits: i32
+pub enum FramingEvent
 ```
 
-#### field: extension
+#### variant: Begin
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 18](../../../extended/ext/http_body.lani#L18)
 
 ```lanius
-extension: bool
+Begin
 ```
 
-#### field: line
+#### variant: Byte
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 18](../../../extended/ext/http_body.lani#L18)
 
 ```lanius
-line: i32
+Byte(u8)
 ```
 
-#### field: trailer
+#### variant: Content
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 18](../../../extended/ext/http_body.lani#L18)
 
 ```lanius
-trailer: i32
+Content(i32)
 ```
 
-#### field: line_limit
+#### variant: Eof
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 18](../../../extended/ext/http_body.lani#L18)
 
 ```lanius
-line_limit: i32
+Eof
 ```
 
-#### field: trailer_limit
+### machine: Framer
 
-[Source line 17](../../../extended/ext/http_body.lani#L17)
-
-```lanius
-trailer_limit: i32
-```
-
-#### field: done
-
-[Source line 17](../../../extended/ext/http_body.lani#L17)
+[Source line 23](../../../extended/ext/http_body.lani#L23)
 
 ```lanius
-done: bool
-```
-
-#### field: failed
-
-[Source line 17](../../../extended/ext/http_body.lani#L17)
-
-```lanius
-failed: bool
-```
-
-#### field: content
-
-[Source line 17](../../../extended/ext/http_body.lani#L17)
-
-```lanius
-content: u64
+pub machine Framer on FramingEvent -> core::result::Result<bool,Error>
 ```
 
 ## Free functions and extern declarations
 
 ### function: empty
 
-[Source line 34](../../../extended/ext/http_body.lani#L34)
+[Source line 157](../../../extended/ext/http_body.lani#L157)
 
 ```lanius
 pub fn empty() -> Framer
@@ -220,7 +196,7 @@ pub fn empty() -> Framer
 
 ### function: fixed
 
-[Source line 36](../../../extended/ext/http_body.lani#L36)
+[Source line 159](../../../extended/ext/http_body.lani#L159)
 
 ```lanius
 pub fn fixed(length: u64) -> Framer
@@ -228,7 +204,7 @@ pub fn fixed(length: u64) -> Framer
 
 ### function: chunked
 
-[Source line 39](../../../extended/ext/http_body.lani#L39)
+[Source line 162](../../../extended/ext/http_body.lani#L162)
 
 ```lanius
 pub fn chunked(line_bytes: i32, trailer_bytes: i32) -> Framer
@@ -236,7 +212,7 @@ pub fn chunked(line_bytes: i32, trailer_bytes: i32) -> Framer
 
 ### function: until_close
 
-[Source line 41](../../../extended/ext/http_body.lani#L41)
+[Source line 164](../../../extended/ext/http_body.lani#L164)
 
 ```lanius
 pub fn until_close() -> Framer
@@ -244,7 +220,7 @@ pub fn until_close() -> Framer
 
 ### function: chunk_head
 
-[Source line 134](../../../extended/ext/http_body.lani#L134)
+[Source line 217](../../../extended/ext/http_body.lani#L217)
 
 ```lanius
 pub fn chunk_head(out: &alloc::vec::Vec<u8>, length: i32) -> bool
@@ -252,7 +228,7 @@ pub fn chunk_head(out: &alloc::vec::Vec<u8>, length: i32) -> bool
 
 ### function: chunk_end
 
-[Source line 141](../../../extended/ext/http_body.lani#L141)
+[Source line 224](../../../extended/ext/http_body.lani#L224)
 
 ```lanius
 pub fn chunk_end(out: &alloc::vec::Vec<u8>) -> bool
@@ -260,7 +236,7 @@ pub fn chunk_end(out: &alloc::vec::Vec<u8>) -> bool
 
 ### function: last_chunk
 
-[Source line 143](../../../extended/ext/http_body.lani#L143)
+[Source line 226](../../../extended/ext/http_body.lani#L226)
 
 ```lanius
 pub fn last_chunk(out: &alloc::vec::Vec<u8>) -> bool
@@ -268,9 +244,9 @@ pub fn last_chunk(out: &alloc::vec::Vec<u8>) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 51
+### impl at line 174
 
-[Source line 51](../../../extended/ext/http_body.lani#L51)
+[Source line 174](../../../extended/ext/http_body.lani#L174)
 
 ```lanius
 pub impl Framer
@@ -278,7 +254,7 @@ pub impl Framer
 
 #### method: borrow
 
-[Source line 52](../../../extended/ext/http_body.lani#L52)
+[Source line 175](../../../extended/ext/http_body.lani#L175)
 
 ```lanius
 pub fn borrow(&self) -> &Framer
@@ -286,7 +262,7 @@ pub fn borrow(&self) -> &Framer
 
 #### method: is_done
 
-[Source line 53](../../../extended/ext/http_body.lani#L53)
+[Source line 176](../../../extended/ext/http_body.lani#L176)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -294,7 +270,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_chunked
 
-[Source line 54](../../../extended/ext/http_body.lani#L54)
+[Source line 177](../../../extended/ext/http_body.lani#L177)
 
 ```lanius
 pub fn is_chunked(&self) -> bool
@@ -302,7 +278,7 @@ pub fn is_chunked(&self) -> bool
 
 #### method: is_close_delimited
 
-[Source line 55](../../../extended/ext/http_body.lani#L55)
+[Source line 178](../../../extended/ext/http_body.lani#L178)
 
 ```lanius
 pub fn is_close_delimited(&self) -> bool
@@ -310,7 +286,7 @@ pub fn is_close_delimited(&self) -> bool
 
 #### method: content
 
-[Source line 57](../../../extended/ext/http_body.lani#L57)
+[Source line 179](../../../extended/ext/http_body.lani#L179)
 
 ```lanius
 pub fn content(&self) -> u64
@@ -318,7 +294,7 @@ pub fn content(&self) -> u64
 
 #### method: remaining
 
-[Source line 59](../../../extended/ext/http_body.lani#L59)
+[Source line 180](../../../extended/ext/http_body.lani#L180)
 
 ```lanius
 pub fn remaining(&self) -> u64
@@ -326,7 +302,7 @@ pub fn remaining(&self) -> u64
 
 #### method: advance
 
-[Source line 64](../../../extended/ext/http_body.lani#L64)
+[Source line 181](../../../extended/ext/http_body.lani#L181)
 
 ```lanius
 pub fn advance(&self, input: core::slice::View<u8>) -> core::result::Result<Step,Error>
@@ -334,7 +310,7 @@ pub fn advance(&self, input: core::slice::View<u8>) -> core::result::Result<Step
 
 #### method: finish
 
-[Source line 125](../../../extended/ext/http_body.lani#L125)
+[Source line 208](../../../extended/ext/http_body.lani#L208)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32,Error>

@@ -1,5 +1,6 @@
 // Checked hexadecimal stream input and output built on bound one-byte I/O.
 module std::io_hex;
+import core::parse_state;
 import core::hex;
 import core::mem;
 import std::io;
@@ -70,10 +71,8 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
     let data: ptr = core::mem::i32_array_data_ptr(cell);
     let consumed: u32 = 0;
     let value: u32 = 0;
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
-    let leading_zero: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     while (true) {
         cell[0] = 0;
         let received: i32 = std::io::read_stdin(data, 1);
@@ -86,32 +85,32 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) {
+            if (progress.started() && !progress.has_digits()) {
                 return fallback;
             }
-            if (digits) {
-                trailing = true;
+            if (progress.has_digits()) {
+                progress.step(core::parse_state::IntegerEvent::Whitespace);
             }
             continue;
         }
-        if (trailing) {
+        if (progress.trailing()) {
             return fallback;
         }
-        if (!started) {
-            started = true;
+        if (!progress.started()) {
+            progress.step(core::parse_state::IntegerEvent::Started);
             if (byte == 48) {
-                digits = true;
-                leading_zero = true;
+                progress.step(core::parse_state::IntegerEvent::Digit);
+                progress.step(core::parse_state::IntegerEvent::LeadingZero);
                 continue;
             }
         } else {
-            if (leading_zero && (byte == 120 || byte == 88)) {
-                digits = false;
-                leading_zero = false;
+            if (progress.leading_zero() && (byte == 120 || byte == 88)) {
+                progress.step(core::parse_state::IntegerEvent::Prefix);
+                progress.step(core::parse_state::IntegerEvent::OrdinaryByte);
                 continue;
             }
         }
-        leading_zero = false;
+        progress.step(core::parse_state::IntegerEvent::OrdinaryByte);
         if (byte < 0 || byte > 255) {
             return fallback;
         }
@@ -121,9 +120,9 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
             return fallback;
         }
         value = core::hex::append_ascii_digit_or_u32(value, ascii, limit, value);
-        digits = true;
+        progress.step(core::parse_state::IntegerEvent::Digit);
     }
-    if (!digits) {
+    if (!progress.has_digits()) {
         return fallback;
     }
     return value;

@@ -6,6 +6,10 @@
 // floats, and map keys unique and sorted by bytewise order of their encodings.
 // Errors carry u64 byte offsets. See docs/extended-cbor.md.
 module ext::cbor_stream;
+import core::parse_state;
+import core::lifecycle;
+import core::stream_state;
+import core::iter_state;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -14,6 +18,9 @@ import core::result;
 import core::slice;
 import core::text;
 import ext::cbor;
+
+fn pair_bit(pair: core::parse_state::PairPhase) -> u8 { if (pair.needs_value()) { return 1; } return 0; }
+
 
 pub enum ErrorKind {
     InvalidOptions, AllocationFailed, Bounds, Finished, InputLimit, OutputLimit,
@@ -153,26 +160,26 @@ const FRAME: i32 = 6;
 // 11..14 indefinite bytes, text, array, map; 0 at the root. The innermost
 // frame lives in scalar fields so the per-event path touches no vector:
 // `left` counts the items (map pairs) still due and is NO_KEY for frames
-// without a count, `half` is 1 after a map key, `chunked` sums indefinite
+// without a count, `pair` awaits a value after a map key, `chunked` sums indefinite
 // string chunks, and key_at/key_from/key_len track the deterministic key
 // order. Enclosing frames are saved FRAME words each in `stack`, a cached
 // view of `frames`. `data` and `end` cache buf.as_slice() and buf.len().
 pub struct Decoder {
     options: Options, buf: alloc::vec::Vec<u8>, data: [u8], begin: i32, end: i32, base: u64,
-    depth: i32, kind: u8, left: u64, half: u8, chunked: u64, key_at: u64, key_from: i32, key_len: i32,
+    depth: i32, kind: u8, left: u64, pair: core::parse_state::PairPhase, chunked: u64, key_at: u64, key_from: i32, key_len: i32,
     frames: alloc::vec::Vec<u64>, stack: [u64], keys: alloc::vec::Vec<u8>,
-    items: u64, roots: u64, root_done: bool, finished: bool, failed: bool, failure: Error,
-    current: ext::cbor::Event, current_at: u64, ready: bool,
+    items: u64, roots: u64, root: core::iter_state::Completion,   failure: Error,
+    current: ext::cbor::Event, current_at: u64, delivery: core::stream_state::Delivery,
 }
 
 pub fn decoder(options: Options) -> core::result::Result<Decoder, Error> {
     if (options.max_depth < 0 || options.max_string_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
     let buf: alloc::vec::Vec<u8> = alloc::vec::new(); let frames: alloc::vec::Vec<u64> = alloc::vec::new();
     return core::result::Ok(Decoder { options: options, buf: buf, data: buf.as_slice(), begin: 0, end: 0, base: 0,
-        depth: 0, kind: 0, left: NO_KEY, half: 0, chunked: 0, key_at: NO_KEY, key_from: 0, key_len: -1,
+        depth: 0, kind: 0, left: NO_KEY, pair: core::parse_state::pair_phase_start(), chunked: 0, key_at: NO_KEY, key_from: 0, key_len: -1,
         frames: frames, stack: frames.as_slice(), keys: alloc::vec::new(),
-        items: 0, roots: 0, root_done: false, finished: false, failed: false, failure: error(ErrorKind::InvalidOptions, 0),
-        current: ext::cbor::Event::End, current_at: 0, ready: false });
+        items: 0, roots: 0, root: core::iter_state::completion_start(),   failure: error(ErrorKind::InvalidOptions, 0),
+        current: ext::cbor::Event::End, current_at: 0, delivery: core::stream_state::delivery_start() });
 }
 
 pub impl Decoder {
@@ -183,15 +190,15 @@ pub impl Decoder {
     pub fn bytes_received(&self) -> u64 { return self.base + (self.end as u64); }
     pub fn items_read(&self) -> u64 { return self.items; }
     pub fn roots_read(&self) -> u64 { return self.roots; }
-    pub fn has_event(&self) -> bool { return self.ready; }
+    pub fn has_event(&self) -> bool { return self.delivery.ready(); }
     // The ready event. Byte and text payloads borrow the decoder buffer and
     // stay valid until the next feed or reset.
     pub fn event(&self) -> ext::cbor::Event { return self.current; }
     pub fn event_offset(&self) -> u64 { return self.current_at; }
     pub fn is_complete(&self) -> bool {
-        return self.finished && !self.failed && self.begin == self.end && self.depth == 0 && (self.root_done || self.options.sequence);
+        return self.delivery.finished() && !self.delivery.failed() && self.begin == self.end && self.depth == 0 && (self.root.is_done() || self.options.sequence);
     }
-    fn stop(&self, kind: ErrorKind, at: u64) { self.failure = error(kind, at); self.failed = true; self.ready = false; }
+    fn stop(&self, kind: ErrorKind, at: u64) { self.failure = error(kind, at); self.delivery.fail(); self.delivery.taken(); }
     fn refresh(&self) { self.data = self.buf.as_slice(); self.end = self.buf.len(); }
     fn compact(&self) {
         let keep: i32 = self.begin;
@@ -213,12 +220,12 @@ pub impl Decoder {
     // Buffers count bytes of source from start. Earlier event payload views
     // become invalid.
     pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error> {
-        if (self.failed) { return core::result::Err(self.failure); }
-        if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.bytes_received())); }
+        if (self.delivery.failed()) { return core::result::Err(self.failure); }
+        if (self.delivery.finished()) { return core::result::Err(error(ErrorKind::Finished, self.bytes_received())); }
         if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.bytes_received())); }
         if (count == 0) { return core::result::Ok(0); }
         if ((count as u64) > self.options.max_input - self.bytes_received() || self.bytes_received() > self.options.max_input) {
-            self.failure = error(ErrorKind::InputLimit, self.options.max_input); self.failed = true;
+            self.failure = error(ErrorKind::InputLimit, self.options.max_input); self.delivery.fail();
             return core::result::Err(self.failure);
         }
         self.compact();
@@ -229,13 +236,13 @@ pub impl Decoder {
         return core::result::Ok(count);
     }
     // Marks end of input. Later next() calls report incomplete items.
-    pub fn finish(&self) { self.finished = true; }
+    pub fn finish(&self) { self.delivery.finish(); }
     pub fn reset(&self) {
         self.buf.clear(); self.refresh(); self.begin = 0; self.base = 0;
-        self.depth = 0; self.kind = 0; self.left = NO_KEY; self.half = 0; self.chunked = 0; self.key_at = NO_KEY; self.key_from = 0; self.key_len = -1;
+        self.depth = 0; self.kind = 0; self.left = NO_KEY; self.pair = core::parse_state::pair_phase_start(); self.chunked = 0; self.key_at = NO_KEY; self.key_from = 0; self.key_len = -1;
         self.keys.clear();
-        self.items = 0; self.roots = 0; self.root_done = false; self.finished = false; self.failed = false;
-        self.current = ext::cbor::Event::End; self.current_at = 0; self.ready = false;
+        self.items = 0; self.roots = 0; self.root = core::iter_state::completion_start(); self.delivery.reset(); self.delivery.reset();
+        self.current = ext::cbor::Event::End; self.current_at = 0; self.delivery.taken();
     }
     pub fn destroy(&self) {
         self.buf.destroy(); self.frames.destroy(); self.keys.destroy();
@@ -251,20 +258,20 @@ pub impl Decoder {
                 self.stack = self.frames.as_slice();
             }
             let saved: [u64] = self.stack;
-            saved[word] = (self.kind as u64) | ((self.half as u64) << 8); saved[word + 1] = self.left; saved[word + 2] = self.chunked;
+            saved[word] = (self.kind as u64) | ((pair_bit(self.pair) as u64) << 8); saved[word + 1] = self.left; saved[word + 2] = self.chunked;
             saved[word + 3] = self.key_at; saved[word + 4] = self.key_from as u64; saved[word + 5] = (self.key_len + 1) as u64;
         }
-        self.depth += 1; self.kind = kind; self.left = remaining; self.half = 0; self.chunked = 0;
+        self.depth += 1; self.kind = kind; self.left = remaining; self.pair = core::parse_state::pair_phase_start(); self.chunked = 0;
         self.key_at = NO_KEY; self.key_from = self.keys.len(); self.key_len = -1;
         return true;
     }
     fn pop_frame(&self) {
         core::result::unwrap(self.keys.truncate(self.key_from));
         self.depth -= 1;
-        if (self.depth == 0) { self.kind = 0; self.left = NO_KEY; self.half = 0; return; }
+        if (self.depth == 0) { self.kind = 0; self.left = NO_KEY; self.pair = core::parse_state::pair_phase_start(); return; }
         let saved: [u64] = self.stack; let word: i32 = (self.depth - 1) * FRAME;
         let packed: u64 = saved[word];
-        self.kind = (packed & 255) as u8; self.half = (packed >> 8) as u8; self.left = saved[word + 1]; self.chunked = saved[word + 2];
+        self.kind = (packed & 255) as u8; self.pair = core::parse_state::pair_phase((packed >> 8) != 0); self.left = saved[word + 1]; self.chunked = saved[word + 2];
         self.key_at = saved[word + 3]; self.key_from = saved[word + 4] as i32; self.key_len = (saved[word + 5] as i32) - 1;
     }
     fn check_key(&self) -> bool {
@@ -287,23 +294,23 @@ pub impl Decoder {
     fn complete(&self) -> bool {
         let kind: u8 = self.kind;
         if (kind == 5) {
-            if (self.half == 1) { self.half = 0; self.left -= 1; return true; }
-            self.half = 1;
+            if (self.pair.needs_value()) { self.pair = core::parse_state::pair_phase_start(); self.left -= 1; return true; }
+            self.pair.advance();
             if (self.options.deterministic) { return self.check_key(); }
             return true;
         }
         if (kind == 4 || kind == 6) { self.left -= 1; return true; }
-        if (kind == 0) { self.root_done = true; self.roots += 1; return true; }
-        if (kind == 14) { self.half = 1 - self.half; }
+        if (kind == 0) { self.root.finish(); self.roots += 1; return true; }
+        if (kind == 14) { self.pair.advance(); }
         return true;
     }
     fn note_start(&self, at: u64) {
-        if (self.options.deterministic && self.kind == 5 && self.half == 0) { self.key_at = at; }
+        if (self.options.deterministic && self.kind == 5 && !self.pair.needs_value()) { self.key_at = at; }
     }
     fn close(&self, at: u64) -> i32 {
         self.pop_frame();
         if (!self.complete()) { return -1; }
-        self.current = ext::cbor::Event::End; self.current_at = at; self.ready = true;
+        self.current = ext::cbor::Event::End; self.current_at = at; self.delivery.produced();
         return 1;
     }
     // Ok(true): event() holds the next event. Ok(false): more input is needed,
@@ -320,19 +327,19 @@ pub impl Decoder {
     // complete, -1 failed (see last_error()). Checks run in a fixed order per
     // head; the branches below repeat that order for each major type.
     pub fn advance(&self) -> i32 {
-        if (self.failed) { return -1; }
-        self.ready = false;
+        if (self.delivery.failed()) { return -1; }
+        self.delivery.taken();
         let begin: i32 = self.begin;
         let at: u64 = self.base + (begin as u64);
-        if (self.left == 0 && self.half == 0) { return self.close(at); }
+        if (self.left == 0 && !self.pair.needs_value()) { return self.close(at); }
         let available: i32 = self.end - begin;
-        if (self.root_done) {
+        if (self.root.is_done()) {
             if (available == 0) { return 0; }
             if (!self.options.sequence) { self.stop(ErrorKind::TrailingData, at); return -1; }
-            self.root_done = false;
+            self.root = core::iter_state::completion_start();
         }
         if (available == 0) {
-            if (self.finished && !(self.options.sequence && self.depth == 0)) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; }
+            if (self.delivery.finished() && !(self.options.sequence && self.depth == 0)) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; }
             return 0;
         }
         let data: [u8] = self.data;
@@ -344,7 +351,7 @@ pub impl Decoder {
             if (additional >= 28 && additional <= 30) { self.stop(ErrorKind::InvalidHead, at); return -1; }
             if (additional <= 27) {
                 width = 1 << (additional - 24);
-                if (available < 1 + width) { if (self.finished) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; } return 0; }
+                if (available < 1 + width) { if (self.delivery.finished()) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; } return 0; }
                 argument = data[begin + 1] as u64;
                 if (width >= 2) { argument = (argument << 8) | (data[begin + 2] as u64); }
                 if (width >= 4) {
@@ -362,7 +369,7 @@ pub impl Decoder {
             if (major == 0 || major == 1 || major == 6) { self.stop(ErrorKind::InvalidHead, at); return -1; }
             if (major == 7) {
                 if (self.depth == 0) { self.stop(ErrorKind::UnexpectedBreak, at); return -1; }
-                if (parent == 14 && self.half == 1) { self.stop(ErrorKind::OddMap, at); return -1; }
+                if (parent == 14 && self.pair.needs_value()) { self.stop(ErrorKind::OddMap, at); return -1; }
                 if (parent < 11) { self.stop(ErrorKind::UnexpectedBreak, at); return -1; }
                 self.begin = begin + 1;
                 return self.close(at);
@@ -378,7 +385,7 @@ pub impl Decoder {
             if (major == 2) { opened = ext::cbor::Event::BeginBytes; }
             if (major == 3) { opened = ext::cbor::Event::BeginText; }
             if (major == 4) { opened = ext::cbor::Event::BeginArray; }
-            self.current = opened; self.current_at = at; self.ready = true;
+            self.current = opened; self.current_at = at; self.delivery.produced();
             return 1;
         }
         let data_start: i32 = begin + 1 + width;
@@ -417,7 +424,7 @@ pub impl Decoder {
                     let opened: ext::cbor::Event = ext::cbor::Event::Array(argument);
                     if (major == 5) { opened = ext::cbor::Event::Map(argument); }
                     if (major == 6) { opened = ext::cbor::Event::Tag(argument); }
-                    self.current = opened; self.current_at = at; self.ready = true;
+                    self.current = opened; self.current_at = at; self.delivery.produced();
                     return 1;
                 }
                 if ((parent == 11 && major != 2) || (parent == 12 && major != 3)) { self.stop(ErrorKind::ChunkType, at); return -1; }
@@ -425,7 +432,7 @@ pub impl Decoder {
                 if (argument > limit) { self.stop(ErrorKind::StringLimit, at); return -1; }
                 if (chunks && argument > limit - self.chunked) { self.stop(ErrorKind::StringLimit, at); return -1; }
                 if (((available - 1 - width) as u64) < argument) {
-                    if (self.finished) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; }
+                    if (self.delivery.finished()) { self.stop(ErrorKind::UnexpectedEnd, at); return -1; }
                     return 0;
                 }
                 if (self.items >= self.options.max_items) { self.stop(ErrorKind::ItemLimit, at); return -1; }
@@ -447,7 +454,7 @@ pub impl Decoder {
         self.items += 1;
         if (self.options.deterministic) { self.note_start(at); }
         if (!self.complete()) { return -1; }
-        self.current = event; self.current_at = at; self.ready = true;
+        self.current = event; self.current_at = at; self.delivery.produced();
         return 1;
     }
 }
@@ -455,11 +462,11 @@ pub impl Decoder {
 pub enum StreamError { Cbor(Error), Io(core::io::Error) }
 // Pull events from a core::io::Read source through caller scratch. Borrows
 // the reader, decoder and scratch; keep them alive and unshared while driving.
-pub struct EventReader<R> { reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>, eof: bool, reads: u64, failure: StreamError }
+pub struct EventReader<R> { reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>, eof_completion: core::iter_state::Completion, reads: u64, failure: StreamError }
 pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>)
     -> core::result::Result<EventReader<R>, Error> where R: core::io::Read {
     if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
-    let value: EventReader<R> = EventReader { reader: reader, decoder: decoder, scratch: scratch, eof: false, reads: 0, failure: StreamError::Io(core::io::Error::InvalidCount) };
+    let value: EventReader<R> = EventReader { reader: reader, decoder: decoder, scratch: scratch, eof_completion: core::iter_state::completion_start(), reads: 0, failure: StreamError::Io(core::io::Error::InvalidCount) };
     return core::result::Ok(value);
 }
 pub impl<R> EventReader<R> {
@@ -481,7 +488,7 @@ pub impl<R> EventReader<R> {
             let step: i32 = self.decoder.advance();
             if (step > 0) { return 1; }
             if (step < 0) { self.failure = StreamError::Cbor(self.decoder.last_error()); return -1; }
-            if (self.eof) { return 0; }
+            if (self.eof_completion.is_done()) { return 0; }
             let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
             if (received.is_err()) {
                 let cause: core::io::Error = received.unwrap_err();
@@ -491,7 +498,7 @@ pub impl<R> EventReader<R> {
             let count: i32 = received.unwrap();
             if (count < 0 || count > self.scratch.length) { self.failure = StreamError::Io(core::io::Error::InvalidCount); return -1; }
             self.reads += 1;
-            if (count == 0) { self.eof = true; self.decoder.finish(); continue; }
+            if (count == 0) { self.eof_completion.finish(); self.decoder.finish(); continue; }
             let fed: core::result::Result<i32, Error> = self.decoder.feed(self.scratch.values, self.scratch.start, count);
             if (fed.is_err()) { self.failure = StreamError::Cbor(fed.unwrap_err()); return -1; }
         }
@@ -512,7 +519,7 @@ pub struct Writer {
     frames: alloc::vec::Vec<u64>, stack: [u64], stack_cap: i32,
     marks: alloc::vec::Vec<i32>, spots: [i32], mark_count: i32, mark_cap: i32,
     order: alloc::vec::Vec<i32>, spare: alloc::vec::Vec<i32>, swap: alloc::vec::Vec<u8>,
-    roots: u64, flushed: u64, pending: i32, failed: bool, failure: Error,
+    roots: u64, flushed: u64, pending: i32, health: core::lifecycle::Health, failure: Error,
 }
 // Words per saved frame in Writer.stack.
 const WFRAME: i32 = 5;
@@ -525,7 +532,7 @@ pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error> {
         frames: frames, stack: frames.as_slice(), stack_cap: 0,
         marks: marks, spots: marks.as_slice(), mark_count: 0, mark_cap: 0,
         order: alloc::vec::new(), spare: alloc::vec::new(), swap: alloc::vec::new(),
-        roots: 0, flushed: 0, pending: 0, failed: false, failure: error(ErrorKind::InvalidOptions, 0) });
+        roots: 0, flushed: 0, pending: 0, health: core::lifecycle::health_start(), failure: error(ErrorKind::InvalidOptions, 0) });
 }
 // Encoded head width for an argument: 1, 2, 3, 5 or 9 bytes.
 fn head_width(argument: u64) -> i32 {
@@ -549,12 +556,12 @@ pub impl Writer {
     pub fn len(&self) -> i32 { return self.used; }
     pub fn depth(&self) -> i32 { return self.depth; }
     pub fn roots_written(&self) -> u64 { return self.roots; }
-    pub fn is_complete(&self) -> bool { return self.depth == 0 && self.roots > 0 && !self.failed; }
+    pub fn is_complete(&self) -> bool { return self.depth == 0 && self.roots > 0 && !self.health.is_failed(); }
     // Buffered output; valid until the next writer mutation.
     pub fn output(&self) -> core::slice::View<u8> { return core::slice::View { values: self.data, start: 0, length: self.used }; }
     fn offset(&self) -> u64 { return self.flushed + (self.used as u64); }
     fn reject(&self, kind: ErrorKind) -> core::result::Result<i32, Error> { return core::result::Err(error(kind, self.offset())); }
-    fn fail(&self, kind: ErrorKind, at: u64) { self.failure = error(kind, at); self.failed = true; }
+    fn fail(&self, kind: ErrorKind, at: u64) { self.failure = error(kind, at); self.health.fail(); }
     fn poison(&self, kind: ErrorKind, at: u64) -> core::result::Result<i32, Error> {
         self.fail(kind, at); return core::result::Err(self.failure);
     }
@@ -571,7 +578,7 @@ pub impl Writer {
     }
     // True when check(string_major) would succeed; clears pending like it.
     fn placed(&self, string_major: i32) -> bool {
-        if (self.failed) { return false; }
+        if (self.health.is_failed()) { return false; }
         self.pending = 0;
         let kind: u8 = self.kind;
         if (kind == 0) { return self.roots == 0 || self.options.sequence; }
@@ -584,7 +591,7 @@ pub impl Writer {
     }
     // Validates placement of one item; string_major is 2 or 3 for strings.
     fn check(&self, string_major: i32) -> core::result::Result<i32, Error> {
-        if (self.failed) { return core::result::Err(self.failure); }
+        if (self.health.is_failed()) { return core::result::Err(self.failure); }
         self.pending = 0;
         let kind: u8 = self.kind;
         if (kind == 0) {
@@ -831,7 +838,7 @@ pub impl Writer {
     }
     // Closes the innermost array, map or chunked string.
     pub fn end(&self) -> core::result::Result<i32, Error> {
-        if (self.failed) { return core::result::Err(self.failure); }
+        if (self.health.is_failed()) { return core::result::Err(self.failure); }
         self.pending = 0;
         if (self.depth == 0) { return self.reject(ErrorKind::InvalidPlacement); }
         let kind: u8 = self.kind; let used: u64 = self.count;
@@ -894,7 +901,7 @@ pub impl Writer {
     // Retains capacity; forgets output and structure.
     pub fn clear(&self) {
         self.used = 0; self.depth = 0; self.kind = 0; self.known = false; self.declared = 0; self.count = 0; self.begin = 0; self.base = 0;
-        self.mark_count = 0; self.roots = 0; self.flushed = 0; self.pending = 0; self.failed = false;
+        self.mark_count = 0; self.roots = 0; self.flushed = 0; self.pending = 0; self.health.reset();
     }
     pub fn destroy(&self) {
         self.out.destroy(); self.frames.destroy(); self.marks.destroy(); self.order.destroy(); self.spare.destroy(); self.swap.destroy();

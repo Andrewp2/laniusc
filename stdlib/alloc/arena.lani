@@ -1,6 +1,7 @@
 // Stable chunked storage. Keep one active owner; copies alias ownership.
 // No per-object release, automatic destruction or enforced borrowing lifetime.
 module alloc::arena;
+import core::lifecycle;
 import alloc::allocator;
 import core::layout;
 import core::mem;
@@ -15,7 +16,7 @@ pub struct Stats { retained: usize, chunks: i32, used: usize, requested: usize, 
 pub struct Block { data: ptr, length: usize }
 pub enum Error { InvalidConfig, InvalidAlignment, UnsupportedAlignment, Bounds, SizeOverflow, RetainedLimit, ChunkLimit, AllocationFailed, Destroyed }
 struct Chunk { next: ptr, capacity: usize, used: usize, allocated: usize }
-pub struct Arena { config: Config, head: ptr, tail: ptr, current: ptr, retained: usize, chunks: i32, used: usize, requested: usize, allocations: usize, live: bool }
+pub struct Arena { config: Config, head: ptr, tail: ptr, current: ptr, retained: usize, chunks: i32, used: usize, requested: usize, allocations: usize, lifetime: core::lifecycle::Lifetime }
 
 pub fn default_config() -> Config { return Config { chunk_size: 4096, max_retained: 67108864, max_chunks: 16384 }; }
 fn header_size() -> usize { return core::mem::size_of<Chunk>(); }
@@ -33,11 +34,11 @@ fn aligned_offset(value: Chunk, alignment: usize) -> usize {
 pub fn new(config: Config) -> core::result::Result<Arena,Error> {
     if (config.chunk_size == 0 || config.chunk_size > MAX_CHUNK_BYTES-header_size() || config.max_chunks < 0) { return core::result::Err(Error::InvalidConfig); }
     let empty: ptr = 0;
-    return core::result::Ok(Arena { config: config, head: empty, tail: empty, current: empty, retained: 0, chunks: 0, used: 0, requested: 0, allocations: 0, live: true });
+    return core::result::Ok(Arena { config: config, head: empty, tail: empty, current: empty, retained: 0, chunks: 0, used: 0, requested: 0, allocations: 0, lifetime: core::lifecycle::lifetime_start() });
 }
 pub impl Arena {
     pub fn borrow(&self) -> &Arena { return self; }
-    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn is_live(&self) -> bool { return self.lifetime.is_active(); }
     pub fn stats(&self) -> Stats { return Stats { retained: self.retained, chunks: self.chunks, used: self.used, requested: self.requested, allocations: self.allocations }; }
     pub fn allocate(&self, size: usize, alignment: usize) -> core::result::Result<Block,Error> {
         let allocated: core::result::Result<ptr,Error> = self.allocate_pointer(size,alignment);
@@ -45,7 +46,7 @@ pub impl Arena {
         return core::result::Ok(Block { data: core::result::unwrap(allocated), length: size });
     }
     fn allocate_pointer(&self, size: usize, alignment: usize) -> core::result::Result<ptr,Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         if (alignment == 0 || (alignment & (alignment-1)) != 0) { return core::result::Err(Error::InvalidAlignment); }
         if (alignment > MAX_ALIGNMENT) { return core::result::Err(Error::UnsupportedAlignment); }
         if (self.allocations == MAX_COUNT || size > MAX_COUNT-self.requested) { return core::result::Err(Error::SizeOverflow); }
@@ -86,7 +87,7 @@ pub impl Arena {
     // Invalidates every old block, typed view and pointer, without zeroing or
     // releasing retained chunks. Subsequent requests may reuse their bytes.
     pub fn reset(&self) -> core::result::Result<bool,Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         let position: ptr = self.head;
         while (position != 0) { let chunk: Chunk = read(position); chunk.used = 0; write(position,chunk); position = chunk.next; }
         self.current = self.head; self.used = 0; self.requested = 0; self.allocations = 0; return core::result::Ok(true);
@@ -94,13 +95,13 @@ pub impl Arena {
     // Invalidates all old references and releases all retained chunks. The
     // same live owner can allocate again with its original configuration.
     pub fn clear(&self) -> core::result::Result<bool,Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         let position: ptr = self.head;
         while (position != 0) { let chunk: Chunk = read(position); alloc::allocator::dealloc(position,chunk.allocated,8); position = chunk.next; }
         let empty: ptr = 0; self.head = empty; self.tail = empty; self.current = empty;
         self.retained = 0; self.chunks = 0; self.used = 0; self.requested = 0; self.allocations = 0; return core::result::Ok(true);
     }
-    pub fn destroy(&self) { if (self.live) { self.clear(); self.live = false; } }
+    pub fn destroy(&self) { if (self.lifetime.is_active()) { self.clear(); self.lifetime.release(); } }
 }
 
 // Each returned view has one fixed physical extent. Descending native types

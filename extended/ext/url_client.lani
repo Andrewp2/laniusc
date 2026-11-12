@@ -1,6 +1,7 @@
 // URL-based plain HTTP. This module has no OpenSSL source/link dependency.
 // One synchronous call prepares once, selects TCP once and transfers its owner.
 module ext::url_client;
+import core::lifecycle;
 import core::io;
 import core::option::Option;
 import core::option::Some;
@@ -27,7 +28,7 @@ pub struct Failure {
     stage: Stage, cause: Cause, connection: Option<ext::url_connect::ConnectionInfo>,
     http: Option<ext::http_client::Stats>, cleanup: Option<core::io::Error>
 }
-pub struct Response { owner: ext::http_client::Response, selected: ext::url_connect::ConnectionInfo, active: bool }
+pub struct Response { owner: ext::http_client::Response, selected: ext::url_connect::ConnectionInfo, lifetime: core::lifecycle::Lifetime }
 
 pub fn default_options() -> Options {
     let http: ext::http_client::Options = ext::http_client::default_options();
@@ -43,13 +44,13 @@ fn http_failure(stage: Stage, error: ext::http_client::Failure, selected: Option
 
 pub impl Response {
     pub fn borrow(&self) -> &Response { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     // Requires this Response to be active; all returned views borrow its owner.
     pub fn http(&self) -> &ext::http_client::Response { return self.owner.borrow(); }
     pub fn connection(&self) -> ext::url_connect::ConnectionInfo { return self.selected; }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.active = false; self.owner.destroy(); return true;
+        if (!self.lifetime.is_active()) { return false; }
+        self.lifetime.release(); self.owner.destroy(); return true;
     }
 }
 
@@ -81,5 +82,5 @@ pub fn exchange_until(url: &ext::http_url::Url, request: Request, options: Optio
     let exchange: ext::http_client::Exchange = admitted.unwrap();
     let completed: Result<ext::http_client::Response,ext::http_client::Failure> = exchange.run();
     if (completed.is_err()) { return Err(http_failure(Stage::Exchange,completed.unwrap_err(),Some(selected))); }
-    return Ok(Response { owner: completed.unwrap(), selected: selected, active: true });
+    return Ok(Response { owner: completed.unwrap(), selected: selected, lifetime: core::lifecycle::lifetime_start() });
 }

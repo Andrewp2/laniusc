@@ -2,6 +2,7 @@
 // Inputs stay immutable/live; output is disjoint from every borrowed input.
 // Logical bounds are checked; physical backing and lifetimes remain manual.
 module ext::cli_bash;
+import core::lifecycle;
 import core::mem;
 import core::result::Result;
 import core::result::Ok;
@@ -57,11 +58,11 @@ fn validate(reply:Reply) -> Result<bool,Error> {
     return Ok(true);
 }
 
-struct Render { output:View<u8>, writing:bool, total:u64, overflow:bool }
+struct Render { output:View<u8>, writing:bool, total:u64, health: core::lifecycle::Health }
 impl Render {
     fn add(&self,count:u64) -> bool {
-        if(self.overflow) { return false; }
-        if(self.total>18446744073709551615-count) { self.overflow=true; return false; }
+        if(self.health.is_failed()) { return false; }
+        if(self.total>18446744073709551615-count) { self.health.fail(); return false; }
         self.total+=count; return true;
     }
     fn byte(&self,value:u8) {
@@ -102,7 +103,7 @@ impl Render {
 
 // One layout serves measuring and writing, including every NUL delimiter.
 fn render(reply:Reply,output:View<u8>,writing:bool) -> Render {
-    let sink=Render { output:output,writing:writing,total:0,overflow:false };
+    let sink=Render { output:output,writing:writing,total:0,health: core::lifecycle::health_start() };
     sink.text("lanius-completion-1",19); sink.byte(0);
     let mode:i32=match(reply.mode) { Mode::Candidates->0,Mode::Files->1,Mode::None->2 };
     if(mode==0) { sink.text("candidates",10); }
@@ -121,7 +122,7 @@ fn render(reply:Reply,output:View<u8>,writing:bool) -> Render {
 pub fn measure(reply:Reply) -> Result<u64,Error> {
     validate(reply)?;
     let measured=render(reply,reply.stem,false);
-    if(measured.overflow) { return Err(Error::SizeOverflow); }
+    if(measured.health.is_failed()) { return Err(Error::SizeOverflow); }
     return Ok(measured.total);
 }
 
@@ -133,5 +134,5 @@ pub fn encode_into(reply:Reply,output:View<u8>) -> Result<i32,Error> {
     let capacity:u64=output.length as u64;
     if(required>capacity) { return Err(Error::OutputTooSmall(required)); }
     let written=render(reply,output,true);
-    assert(!written.overflow && written.total==required); return Ok(required as i32);
+    assert(!written.health.is_failed() && written.total==required); return Ok(required as i32);
 }

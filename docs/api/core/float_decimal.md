@@ -21,11 +21,12 @@ Declaration counts: constant: 2; enum: 2; field: 7; function: 13; struct: 2; var
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::f32](f32.md) · [source](../../../stdlib/core/float_decimal.lani#L5)
-- [core::f64](f64.md) · [source](../../../stdlib/core/float_decimal.lani#L6)
-- [core::float_tables](float_tables.md) · [source](../../../stdlib/core/float_decimal.lani#L7)
-- [core::result](result.md) · [source](../../../stdlib/core/float_decimal.lani#L8)
-- [core::slice](slice.md) · [source](../../../stdlib/core/float_decimal.lani#L9)
+- [core::lifecycle](lifecycle.md) · [source](../../../stdlib/core/float_decimal.lani#L5)
+- [core::f32](f32.md) · [source](../../../stdlib/core/float_decimal.lani#L6)
+- [core::f64](f64.md) · [source](../../../stdlib/core/float_decimal.lani#L7)
+- [core::float_tables](float_tables.md) · [source](../../../stdlib/core/float_decimal.lani#L8)
+- [core::result](result.md) · [source](../../../stdlib/core/float_decimal.lani#L9)
+- [core::slice](slice.md) · [source](../../../stdlib/core/float_decimal.lani#L10)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 pub enum Error
@@ -41,7 +42,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 Bounds
@@ -49,7 +50,7 @@ Bounds
 
 #### variant: ScratchTooSmall
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 ScratchTooSmall(i32)
@@ -57,7 +58,7 @@ ScratchTooSmall(i32)
 
 #### variant: InputLimit
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 InputLimit
@@ -65,7 +66,7 @@ InputLimit
 
 #### variant: DigitLimit
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 DigitLimit
@@ -73,7 +74,7 @@ DigitLimit
 
 #### variant: WorkLimit
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 WorkLimit
@@ -81,7 +82,7 @@ WorkLimit
 
 #### variant: Invalid
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 Invalid(i32)
@@ -89,7 +90,7 @@ Invalid(i32)
 
 #### variant: Capacity
 
-[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
+[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
 
 ```lanius
 Capacity(i32)
@@ -97,7 +98,7 @@ Capacity(i32)
 
 ### struct: Limits
 
-[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
+[Source line 16](../../../stdlib/core/float_decimal.lani#L16)
 
 ```lanius
 pub struct Limits
@@ -105,7 +106,7 @@ pub struct Limits
 
 #### field: max_input
 
-[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
+[Source line 16](../../../stdlib/core/float_decimal.lani#L16)
 
 ```lanius
 max_input: i32
@@ -113,7 +114,7 @@ max_input: i32
 
 #### field: max_digits
 
-[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
+[Source line 16](../../../stdlib/core/float_decimal.lani#L16)
 
 ```lanius
 max_digits: i32
@@ -121,7 +122,7 @@ max_digits: i32
 
 #### field: max_work
 
-[Source line 15](../../../stdlib/core/float_decimal.lani#L15)
+[Source line 16](../../../stdlib/core/float_decimal.lani#L16)
 
 ```lanius
 max_work: u64
@@ -129,7 +130,7 @@ max_work: u64
 
 ### enum: PrecisionStyle
 
-[Source line 497](../../../stdlib/core/float_decimal.lani#L497)
+[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
 
 ```lanius
 pub enum PrecisionStyle
@@ -137,7 +138,7 @@ pub enum PrecisionStyle
 
 #### variant: Fixed
 
-[Source line 497](../../../stdlib/core/float_decimal.lani#L497)
+[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
 
 ```lanius
 Fixed
@@ -145,7 +146,7 @@ Fixed
 
 #### variant: Scientific
 
-[Source line 497](../../../stdlib/core/float_decimal.lani#L497)
+[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
 
 ```lanius
 Scientific
@@ -153,7 +154,7 @@ Scientific
 
 #### variant: General
 
-[Source line 497](../../../stdlib/core/float_decimal.lani#L497)
+[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
 
 ```lanius
 General
@@ -161,7 +162,7 @@ General
 
 ### struct: PrecisionOptions
 
-[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
+[Source line 499](../../../stdlib/core/float_decimal.lani#L499)
 
 ```lanius
 pub struct PrecisionOptions
@@ -169,7 +170,7 @@ pub struct PrecisionOptions
 
 #### field: style
 
-[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
+[Source line 499](../../../stdlib/core/float_decimal.lani#L499)
 
 ```lanius
 style: PrecisionStyle
@@ -177,7 +178,7 @@ style: PrecisionStyle
 
 #### field: precision
 
-[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
+[Source line 499](../../../stdlib/core/float_decimal.lani#L499)
 
 ```lanius
 precision: i32
@@ -185,7 +186,7 @@ precision: i32
 
 #### field: alternate
 
-[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
+[Source line 499](../../../stdlib/core/float_decimal.lani#L499)
 
 ```lanius
 alternate: bool
@@ -193,7 +194,7 @@ alternate: bool
 
 #### field: uppercase
 
-[Source line 498](../../../stdlib/core/float_decimal.lani#L498)
+[Source line 499](../../../stdlib/core/float_decimal.lani#L499)
 
 ```lanius
 uppercase: bool
@@ -203,7 +204,7 @@ uppercase: bool
 
 ### constant: SCRATCH_LEN
 
-[Source line 13](../../../stdlib/core/float_decimal.lani#L13)
+[Source line 14](../../../stdlib/core/float_decimal.lani#L14)
 
 ```lanius
 pub const SCRATCH_LEN: i32 = 864;
@@ -211,7 +212,7 @@ pub const SCRATCH_LEN: i32 = 864;
 
 ### constant: MAX_PRECISION
 
-[Source line 496](../../../stdlib/core/float_decimal.lani#L496)
+[Source line 497](../../../stdlib/core/float_decimal.lani#L497)
 
 ```lanius
 pub const MAX_PRECISION: i32 = 768;
@@ -221,7 +222,7 @@ pub const MAX_PRECISION: i32 = 768;
 
 ### function: scratch_len
 
-[Source line 16](../../../stdlib/core/float_decimal.lani#L16)
+[Source line 17](../../../stdlib/core/float_decimal.lani#L17)
 
 ```lanius
 pub fn scratch_len() -> i32
@@ -229,7 +230,7 @@ pub fn scratch_len() -> i32
 
 ### function: default_format_work
 
-[Source line 17](../../../stdlib/core/float_decimal.lani#L17)
+[Source line 18](../../../stdlib/core/float_decimal.lani#L18)
 
 ```lanius
 pub fn default_format_work() -> u64
@@ -237,7 +238,7 @@ pub fn default_format_work() -> u64
 
 ### function: default_limits
 
-[Source line 18](../../../stdlib/core/float_decimal.lani#L18)
+[Source line 19](../../../stdlib/core/float_decimal.lani#L19)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -245,7 +246,7 @@ pub fn default_limits() -> Limits
 
 ### function: parse_f32
 
-[Source line 320](../../../stdlib/core/float_decimal.lani#L320)
+[Source line 321](../../../stdlib/core/float_decimal.lani#L321)
 
 ```lanius
 pub fn parse_f32(input: core::slice::View<u8>, scratch: core::slice::View<u32>, limits: Limits) -> core::result::Result<f32,Error>
@@ -253,7 +254,7 @@ pub fn parse_f32(input: core::slice::View<u8>, scratch: core::slice::View<u32>, 
 
 ### function: parse_f64
 
-[Source line 323](../../../stdlib/core/float_decimal.lani#L323)
+[Source line 324](../../../stdlib/core/float_decimal.lani#L324)
 
 ```lanius
 pub fn parse_f64(input: core::slice::View<u8>, scratch: core::slice::View<u32>, limits: Limits) -> core::result::Result<f64,Error>
@@ -261,7 +262,7 @@ pub fn parse_f64(input: core::slice::View<u8>, scratch: core::slice::View<u32>, 
 
 ### function: format_f32_len
 
-[Source line 467](../../../stdlib/core/float_decimal.lani#L467)
+[Source line 468](../../../stdlib/core/float_decimal.lani#L468)
 
 ```lanius
 pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -269,7 +270,7 @@ pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64
 
 ### function: format_f64_len
 
-[Source line 468](../../../stdlib/core/float_decimal.lani#L468)
+[Source line 469](../../../stdlib/core/float_decimal.lani#L469)
 
 ```lanius
 pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -277,7 +278,7 @@ pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64
 
 ### function: format_f32_into
 
-[Source line 469](../../../stdlib/core/float_decimal.lani#L469)
+[Source line 470](../../../stdlib/core/float_decimal.lani#L470)
 
 ```lanius
 pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -285,7 +286,7 @@ pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core:
 
 ### function: format_f64_into
 
-[Source line 481](../../../stdlib/core/float_decimal.lani#L481)
+[Source line 482](../../../stdlib/core/float_decimal.lani#L482)
 
 ```lanius
 pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -293,7 +294,7 @@ pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core:
 
 ### function: format_f32_precision_len
 
-[Source line 601](../../../stdlib/core/float_decimal.lani#L601)
+[Source line 602](../../../stdlib/core/float_decimal.lani#L602)
 
 ```lanius
 pub fn format_f32_precision_len(value: f32, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -301,7 +302,7 @@ pub fn format_f32_precision_len(value: f32, options: PrecisionOptions, scratch: 
 
 ### function: format_f64_precision_len
 
-[Source line 602](../../../stdlib/core/float_decimal.lani#L602)
+[Source line 603](../../../stdlib/core/float_decimal.lani#L603)
 
 ```lanius
 pub fn format_f64_precision_len(value: f64, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -309,7 +310,7 @@ pub fn format_f64_precision_len(value: f64, options: PrecisionOptions, scratch: 
 
 ### function: format_f32_precision_into
 
-[Source line 603](../../../stdlib/core/float_decimal.lani#L603)
+[Source line 604](../../../stdlib/core/float_decimal.lani#L604)
 
 ```lanius
 pub fn format_f32_precision_into(value: f32, output: core::slice::View<u8>, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>
@@ -317,7 +318,7 @@ pub fn format_f32_precision_into(value: f32, output: core::slice::View<u8>, opti
 
 ### function: format_f64_precision_into
 
-[Source line 604](../../../stdlib/core/float_decimal.lani#L604)
+[Source line 605](../../../stdlib/core/float_decimal.lani#L605)
 
 ```lanius
 pub fn format_f64_precision_into(value: f64, output: core::slice::View<u8>, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error>

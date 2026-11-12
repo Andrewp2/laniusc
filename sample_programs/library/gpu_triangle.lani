@@ -1,0 +1,74 @@
+// GPU-rendered triangle. Resize freely; Escape or window close exits.
+// --frames N (1..600) bounds automated runs. Shaders are precompiled GLSL data.
+module app::main;
+import core::result;
+import core::option;
+import core::slice;
+import core::text;
+import core::mem;
+import core::decimal;
+import core::io;
+import std::process;
+import std::stream;
+import ext::window;
+import ext::gpu;
+import shaders::triangle_shaders;
+fn stop(value:ext::window::Event,id:u64) -> bool {
+    return match(value) {
+        ext::window::Event::Close(window) -> window==id,
+        ext::window::Event::Key(key) -> key.window==id && key.down && match(key.key) { ext::window::Key::Escape -> true, _ -> false },
+        _ -> false
+    };
+}
+fn animate(context:&ext::window::Context,window:&ext::window::Window,surface:&ext::gpu::Surface,pipeline:&ext::gpu::Pipeline,limit:i32) -> i32 {
+    let frames:i32=0;
+    while(true) {
+        let events:i32=0;
+        while(events<256) {
+            let next=context.poll(); if(next.is_err()) { return 3; }
+            let item=next.unwrap(); if(item.is_none()) { break; }
+            if(stop(item.unwrap(),window.id())) { return 0; } events+=1;
+        }
+        let rendered=surface.render(pipeline,3); if(rendered.is_err()) { return 3; }
+        let shown=match(rendered.unwrap()) { ext::gpu::Frame::Presented(size) -> true, _ -> false };
+        if(shown && limit>0) { frames+=1; if(frames>=limit) { return 0; } }
+        let event=context.wait(16); if(event.is_err()) { return 3; }
+        if(event.unwrap().is_some() && stop(event.unwrap().unwrap(),window.id())) { return 0; }
+    }
+    return 0;
+}
+fn run(context:&ext::window::Context,window:&ext::window::Window,device:&ext::gpu::Device,limit:i32) -> i32 {
+    let attached=device.create_surface(window); if(attached.is_err()) { return 3; } let surface=attached.unwrap();
+    let vertex=shaders::triangle_shaders::vert(); let fragment=shaders::triangle_shaders::frag();
+    let made=device.create_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format().unwrap());
+    if(made.is_err()) { surface.close(); return 3; } let pipeline=made.unwrap();
+    let status=animate(context,window,surface.borrow(),pipeline.borrow(),limit);
+    if(pipeline.close().is_err()) { status=3; }
+    if(surface.close().is_err()) { status=3; }
+    return status;
+}
+fn arguments() -> i32 {
+    if(std::process::argc()==1) { return 0; }
+    if(std::process::argc()!=3 || std::process::arg_len(1)!=8) { return -1; }
+    let words:[i32;2]=[0;2]; let pointer=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,8);
+    if(std::process::arg_read(1,pointer,8)!=8) { return -1; } let expected=core::text::from_str("--frames"); let i:i32=0;
+    while(i<8) { if(bytes[i]!=expected.bytes[expected.start+i]) { return -1; } i+=1; }
+    let length=std::process::arg_len(2); if(length<1 || length>3) { return -1; }
+    if(std::process::arg_read(2,pointer,8)!=length) { return -1; }
+    let parsed=core::decimal::parse_u32(bytes,length); if(parsed.is_err()) { return -1; }
+    let count=parsed.unwrap(); if(count<1 || count>600) { return -1; } return count as i32;
+}
+fn message(value:str) { let text=core::text::from_str(value); let sink=std::stream::stderr(); core::io::write_all(sink.borrow(),text.bytes,text.start,text.length); }
+fn main() -> i32 {
+    let limit=arguments(); if(limit<0) { message("Usage: gpu-triangle [--frames N], N = 1..600\n"); return 2; }
+    let opened=ext::window::init(); if(opened.is_err()) { message("Could not open an X11 window context.\n"); return 3; } let context=opened.unwrap();
+    let created=context.create(core::text::from_str("GPU triangle"),640,480,true);
+    if(created.is_err()) { context.close(); message("Could not create the window.\n"); return 3; } let window=created.unwrap();
+    let gpu=ext::gpu::open(0);
+    if(gpu.is_err()) { window.close(); context.close(); message("Vulkan 1.1 with swapchain maintenance is required.\n"); return 3; } let device=gpu.unwrap();
+    let status=run(context.borrow(),window.borrow(),device.borrow(),limit);
+    if(device.close().is_err()) { status=3; }
+    if(window.close().is_err()) { status=3; }
+    if(context.close().is_err()) { status=3; }
+    if(status!=0) { message("GPU rendering stopped after a native failure.\n"); } return status;
+}

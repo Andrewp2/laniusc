@@ -104,6 +104,8 @@ mod extended_form_resources_execution;
 mod extended_geometry_execution;
 #[path = "../extended_glob_execution.rs"]
 mod extended_glob_execution;
+#[path = "../extended_gpu_execution.rs"]
+mod extended_gpu_execution;
 #[path = "../extended_graph_components_execution.rs"]
 mod extended_graph_components_execution;
 #[path = "../extended_graph_components_model_execution.rs"]
@@ -226,6 +228,8 @@ mod extended_png_execution;
 mod extended_pratt_execution;
 #[path = "../extended_progress_execution.rs"]
 mod extended_progress_execution;
+#[path = "../extended_reactive_execution.rs"]
+mod extended_reactive_execution;
 #[path = "../extended_regex_execution.rs"]
 mod extended_regex_execution;
 #[path = "../extended_regex_oracle_execution.rs"]
@@ -418,3 +422,8 @@ mod extended_zip_execution;
 mod extended_zip_manifest_execution;
 #[path = "../extended_zip_metadata_execution.rs"]
 mod extended_zip_metadata_execution;
+#[path = "../extended_zstd_execution.rs"]
+mod extended_zstd_execution;
+
+#[path = "../extended_window_execution.rs"]
+mod extended_window_execution;

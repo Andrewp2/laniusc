@@ -141,7 +141,7 @@ fn main() -> i32 {
             if (v.length > 0) { let done: core::result::Result<i32, ext::text_cut::Error> = ext::text_cut::cut(s.borrow(), v, o.borrow()); }
             if (r.finished()) { break; }
         }
-        if (r.failed) { say(literal("text-cut: ", 10)); say(name); say(literal(": read error\n", 13)); status = 1; }
+        if (r.health.is_failed()) { say(literal("text-cut: ", 10)); say(name); say(literal(": read error\n", 13)); status = 1; }
         r.destroy(); ext::text_lines::close_input(fd);
     }
     if (!ext::text_lines::finish(o.borrow())) { status = 1; }

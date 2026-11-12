@@ -1,0 +1,80 @@
+// Per-stream HTTP/2 half-close and failure transitions. Data/window counters
+// remain protocol data; closing either direction cannot reopen the other.
+module ext::http2_lifecycle;
+
+pub enum Event { LocalEnd, RemoteEnd, Failed }
+pub machine Lifecycle on Event {
+    start Open;
+    state Open {
+        Event::LocalEnd -> goto LocalClosed,
+        Event::RemoteEnd -> goto RemoteClosed,
+        Event::Failed -> goto Failed(false,false),
+    }
+    state LocalClosed {
+        Event::LocalEnd -> stay,
+        Event::RemoteEnd -> goto Closed,
+        Event::Failed -> goto Failed(true,false),
+    }
+    state RemoteClosed {
+        Event::LocalEnd -> goto Closed,
+        Event::RemoteEnd -> stay,
+        Event::Failed -> goto Failed(false,true),
+    }
+    final state Closed {
+        Event::LocalEnd -> stay,
+        Event::RemoteEnd -> stay,
+        Event::Failed -> stay,
+    }
+    final state Failed(local: bool, remote: bool) {
+        Event::LocalEnd -> stay,
+        Event::RemoteEnd -> stay,
+        Event::Failed -> stay,
+    }
+}
+pub fn stream(local_closed: bool) -> Lifecycle {
+    let value = lifecycle_start();
+    if (local_closed) { value.step(Event::LocalEnd); }
+    return value;
+}
+pub impl Lifecycle {
+    pub fn local_closed(&self) -> bool { return match (self.state()) { LifecycleState::LocalClosed -> true, LifecycleState::Closed -> true, LifecycleState::Failed(local,_) -> local, _ -> false }; }
+    pub fn remote_closed(&self) -> bool { return match (self.state()) { LifecycleState::RemoteClosed -> true, LifecycleState::Closed -> true, LifecycleState::Failed(_,remote) -> remote, _ -> false }; }
+    pub fn is_open(&self) -> bool { return match (self.state()) { LifecycleState::Closed -> false, LifecycleState::Failed(_,_) -> false, _ -> true }; }
+    pub fn is_done(&self) -> bool { return match (self.state()) { LifecycleState::Closed -> true, _ -> false }; }
+    pub fn is_failed(&self) -> bool { return match (self.state()) { LifecycleState::Failed(_,_) -> true, _ -> false }; }
+}
+
+pub enum GoawayEvent { Sent, Received }
+pub machine Goaway on GoawayEvent {
+    start Open;
+
+    state Open {
+        GoawayEvent::Sent -> goto Sent,
+        GoawayEvent::Received -> goto Received,
+    }
+
+    state Sent {
+        GoawayEvent::Sent -> stay,
+        GoawayEvent::Received -> goto Both,
+    }
+
+    state Received {
+        GoawayEvent::Sent -> goto Both,
+        GoawayEvent::Received -> stay,
+    }
+
+    final state Both {
+        GoawayEvent::Sent -> stay,
+        GoawayEvent::Received -> stay,
+    }
+}
+pub impl Goaway {
+    pub fn is_open(&self) -> bool { return match (self.state()) { GoawayState::Open -> true, _ -> false }; }
+    pub fn is_sent(&self) -> bool { return match (self.state()) { GoawayState::Sent -> true, _ -> false }; }
+    pub fn is_received(&self) -> bool { return match (self.state()) { GoawayState::Received -> true, _ -> false }; }
+    pub fn is_both(&self) -> bool { return match (self.state()) { GoawayState::Both -> true, _ -> false }; }
+}
+pub impl Goaway {
+    pub fn sent(&self) -> bool { return self.is_sent() || self.is_both(); }
+    pub fn received(&self) -> bool { return self.is_received() || self.is_both(); }
+}

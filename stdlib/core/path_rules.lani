@@ -3,6 +3,16 @@
 module core::path_rules;
 import core::utf8;
 
+enum ComponentEvent { Separator, Content }
+machine ComponentScan on ComponentEvent {
+    start Boundary;
+    state Boundary { ComponentEvent::Separator -> stay, ComponentEvent::Content -> goto Inside, }
+    state Inside { ComponentEvent::Separator -> goto Boundary, ComponentEvent::Content -> stay, }
+}
+impl ComponentScan {
+    fn at_boundary(&self) -> bool { return match(self.state()) { ComponentScanState::Boundary -> true, _ -> false }; }
+}
+
 pub type PathCapability = bool;
 pub type PathByte = u8;
 pub type PathComponentLength = u32;
@@ -417,7 +427,7 @@ pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i3
         return fallback;
     }
     let start: i32 = -1;
-    let at_boundary: bool = true;
+    let scan = component_scan_start();
     let index: i32 = 0;
     while (index < length) {
         let byte: PathByte = bytes[index];
@@ -425,12 +435,12 @@ pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i3
             return fallback;
         }
         if (path_byte_is_separator(byte)) {
-            at_boundary = true;
+            scan.step(ComponentEvent::Separator);
         } else {
-            if (at_boundary) {
+            if (scan.at_boundary()) {
                 start = index;
             }
-            at_boundary = false;
+            scan.step(ComponentEvent::Content);
         }
         index += 1;
     }

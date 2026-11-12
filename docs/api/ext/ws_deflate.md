@@ -22,15 +22,18 @@ Declaration counts: enum: 1; field: 17; function: 6; impl: 1; method: 7; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/ws_deflate.lani#L17)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/ws_deflate.lani#L18)
-- [core::option](../core/option.md) · [source](../../../extended/ext/ws_deflate.lani#L19)
-- [core::result](../core/result.md) · [source](../../../extended/ext/ws_deflate.lani#L20)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/ws_deflate.lani#L21)
-- [ext::deflate](deflate.md) · [source](../../../extended/ext/ws_deflate.lani#L22)
-- [ext::http](http.md) · [source](../../../extended/ext/ws_deflate.lani#L23)
-- [ext::inflate](inflate.md) · [source](../../../extended/ext/ws_deflate.lani#L24)
-- [ext::websocket](websocket.md) · [source](../../../extended/ext/ws_deflate.lani#L25)
+- [core::parse_state](../core/parse_state.md) · [source](../../../extended/ext/ws_deflate.lani#L17)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/ws_deflate.lani#L18)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/ws_deflate.lani#L19)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/ws_deflate.lani#L20)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/ws_deflate.lani#L21)
+- [core::option](../core/option.md) · [source](../../../extended/ext/ws_deflate.lani#L22)
+- [core::result](../core/result.md) · [source](../../../extended/ext/ws_deflate.lani#L23)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/ws_deflate.lani#L24)
+- [ext::deflate](deflate.md) · [source](../../../extended/ext/ws_deflate.lani#L25)
+- [ext::http](http.md) · [source](../../../extended/ext/ws_deflate.lani#L26)
+- [ext::inflate](inflate.md) · [source](../../../extended/ext/ws_deflate.lani#L27)
+- [ext::websocket](websocket.md) · [source](../../../extended/ext/ws_deflate.lani#L28)
 
 ## Types, fields and variants
 
@@ -38,7 +41,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 pub enum Error
@@ -46,7 +49,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 Bounds
@@ -54,7 +57,7 @@ Bounds
 
 #### variant: Offer
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 Offer
@@ -62,7 +65,7 @@ Offer
 
 #### variant: Corrupt
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 Corrupt
@@ -70,7 +73,7 @@ Corrupt
 
 #### variant: TooLarge
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 TooLarge
@@ -78,7 +81,7 @@ TooLarge
 
 #### variant: AllocationFailed
 
-[Source line 27](../../../extended/ext/ws_deflate.lani#L27)
+[Source line 30](../../../extended/ext/ws_deflate.lani#L30)
 
 ```lanius
 AllocationFailed
@@ -86,7 +89,7 @@ AllocationFailed
 
 ### struct: Params
 
-[Source line 29](../../../extended/ext/ws_deflate.lani#L29)
+[Source line 32](../../../extended/ext/ws_deflate.lani#L32)
 
 ```lanius
 pub struct Params
@@ -94,7 +97,7 @@ pub struct Params
 
 #### field: server_no_context
 
-[Source line 29](../../../extended/ext/ws_deflate.lani#L29)
+[Source line 32](../../../extended/ext/ws_deflate.lani#L32)
 
 ```lanius
 server_no_context: bool
@@ -102,7 +105,7 @@ server_no_context: bool
 
 #### field: client_no_context
 
-[Source line 29](../../../extended/ext/ws_deflate.lani#L29)
+[Source line 32](../../../extended/ext/ws_deflate.lani#L32)
 
 ```lanius
 client_no_context: bool
@@ -110,7 +113,7 @@ client_no_context: bool
 
 #### field: server_bits
 
-[Source line 29](../../../extended/ext/ws_deflate.lani#L29)
+[Source line 32](../../../extended/ext/ws_deflate.lani#L32)
 
 ```lanius
 server_bits: i32
@@ -118,7 +121,7 @@ server_bits: i32
 
 #### field: client_bits
 
-[Source line 29](../../../extended/ext/ws_deflate.lani#L29)
+[Source line 32](../../../extended/ext/ws_deflate.lani#L32)
 
 ```lanius
 client_bits: i32
@@ -126,7 +129,7 @@ client_bits: i32
 
 ### struct: Codec
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 pub struct Codec
@@ -134,7 +137,7 @@ pub struct Codec
 
 #### field: server
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 server: bool
@@ -142,7 +145,7 @@ server: bool
 
 #### field: params
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 params: Params
@@ -150,7 +153,7 @@ params: Params
 
 #### field: compress_out
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 compress_out: bool
@@ -158,7 +161,7 @@ compress_out: bool
 
 #### field: reset_out
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 reset_out: bool
@@ -166,7 +169,7 @@ reset_out: bool
 
 #### field: history
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 history: alloc::vec::Vec<u8>
@@ -174,7 +177,7 @@ history: alloc::vec::Vec<u8>
 
 #### field: tables
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 tables: alloc::vec::Vec<i32>
@@ -182,7 +185,7 @@ tables: alloc::vec::Vec<i32>
 
 #### field: decoder
 
-[Source line 33](../../../extended/ext/ws_deflate.lani#L33)
+[Source line 36](../../../extended/ext/ws_deflate.lani#L36)
 
 ```lanius
 decoder: ext::inflate::Decoder
@@ -190,7 +193,7 @@ decoder: ext::inflate::Decoder
 
 #### field: block
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
 block: alloc::vec::Vec<u8>
@@ -198,7 +201,7 @@ block: alloc::vec::Vec<u8>
 
 #### field: pending
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
 pending: alloc::vec::Vec<u8>
@@ -206,41 +209,41 @@ pending: alloc::vec::Vec<u8>
 
 #### field: scratch
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
 scratch: alloc::vec::Vec<i32>
 ```
 
-#### field: encoder_ready
+#### field: encoder_ready_completion
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
-encoder_ready: bool
+encoder_ready_completion: core::iter_state::Completion
 ```
 
 #### field: encoder
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
 encoder: core::option::Option<ext::deflate::Encoder>
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 34](../../../extended/ext/ws_deflate.lani#L34)
+[Source line 37](../../../extended/ext/ws_deflate.lani#L37)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: offer
 
-[Source line 102](../../../extended/ext/ws_deflate.lani#L102)
+[Source line 105](../../../extended/ext/ws_deflate.lani#L105)
 
 ```lanius
 pub fn offer() -> core::slice::View<u8>
@@ -248,7 +251,7 @@ pub fn offer() -> core::slice::View<u8>
 
 ### function: offer_no_context
 
-[Source line 107](../../../extended/ext/ws_deflate.lani#L107)
+[Source line 110](../../../extended/ext/ws_deflate.lani#L110)
 
 ```lanius
 pub fn offer_no_context() -> core::slice::View<u8>
@@ -256,7 +259,7 @@ pub fn offer_no_context() -> core::slice::View<u8>
 
 ### function: negotiate
 
-[Source line 116](../../../extended/ext/ws_deflate.lani#L116)
+[Source line 119](../../../extended/ext/ws_deflate.lani#L119)
 
 ```lanius
 pub fn negotiate(head: ext::http::Head, out: &alloc::vec::Vec<u8>) -> core::option::Option<Params>
@@ -264,7 +267,7 @@ pub fn negotiate(head: ext::http::Head, out: &alloc::vec::Vec<u8>) -> core::opti
 
 ### function: negotiate_no_context
 
-[Source line 120](../../../extended/ext/ws_deflate.lani#L120)
+[Source line 123](../../../extended/ext/ws_deflate.lani#L123)
 
 ```lanius
 pub fn negotiate_no_context(head: ext::http::Head, out: &alloc::vec::Vec<u8>) -> core::option::Option<Params>
@@ -272,7 +275,7 @@ pub fn negotiate_no_context(head: ext::http::Head, out: &alloc::vec::Vec<u8>) ->
 
 ### function: accepted
 
-[Source line 153](../../../extended/ext/ws_deflate.lani#L153)
+[Source line 156](../../../extended/ext/ws_deflate.lani#L156)
 
 ```lanius
 pub fn accepted(value: core::slice::View<u8>) -> core::result::Result<Params,Error>
@@ -280,7 +283,7 @@ pub fn accepted(value: core::slice::View<u8>) -> core::result::Result<Params,Err
 
 ### function: codec
 
-[Source line 171](../../../extended/ext/ws_deflate.lani#L171)
+[Source line 174](../../../extended/ext/ws_deflate.lani#L174)
 
 ```lanius
 pub fn codec(role: ext::websocket::Role, params: Params) -> core::result::Result<Codec,Error>
@@ -288,9 +291,9 @@ pub fn codec(role: ext::websocket::Role, params: Params) -> core::result::Result
 
 ## Implementation blocks and public methods
 
-### impl at line 189
+### impl at line 192
 
-[Source line 189](../../../extended/ext/ws_deflate.lani#L189)
+[Source line 192](../../../extended/ext/ws_deflate.lani#L192)
 
 ```lanius
 pub impl Codec
@@ -298,7 +301,7 @@ pub impl Codec
 
 #### method: borrow
 
-[Source line 190](../../../extended/ext/ws_deflate.lani#L190)
+[Source line 193](../../../extended/ext/ws_deflate.lani#L193)
 
 ```lanius
 pub fn borrow(&self) -> &Codec
@@ -306,7 +309,7 @@ pub fn borrow(&self) -> &Codec
 
 #### method: compresses
 
-[Source line 193](../../../extended/ext/ws_deflate.lani#L193)
+[Source line 196](../../../extended/ext/ws_deflate.lani#L196)
 
 ```lanius
 pub fn compresses(&self) -> bool
@@ -314,7 +317,7 @@ pub fn compresses(&self) -> bool
 
 #### method: resets
 
-[Source line 197](../../../extended/ext/ws_deflate.lani#L197)
+[Source line 200](../../../extended/ext/ws_deflate.lani#L200)
 
 ```lanius
 pub fn resets(&self) -> bool
@@ -322,7 +325,7 @@ pub fn resets(&self) -> bool
 
 #### method: compress
 
-[Source line 221](../../../extended/ext/ws_deflate.lani#L221)
+[Source line 224](../../../extended/ext/ws_deflate.lani#L224)
 
 ```lanius
 pub fn compress(&self, message: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -330,7 +333,7 @@ pub fn compress(&self, message: core::slice::View<u8>, out: &alloc::vec::Vec<u8>
 
 #### method: compress_part
 
-[Source line 227](../../../extended/ext/ws_deflate.lani#L227)
+[Source line 230](../../../extended/ext/ws_deflate.lani#L230)
 
 ```lanius
 pub fn compress_part(&self, piece: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, first: bool, last: bool) -> core::result::Result<i32,Error>
@@ -338,7 +341,7 @@ pub fn compress_part(&self, piece: core::slice::View<u8>, out: &alloc::vec::Vec<
 
 #### method: inflate
 
-[Source line 253](../../../extended/ext/ws_deflate.lani#L253)
+[Source line 256](../../../extended/ext/ws_deflate.lani#L256)
 
 ```lanius
 pub fn inflate(&self, compressed: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, limit: i32) -> core::result::Result<i32,Error>
@@ -346,7 +349,7 @@ pub fn inflate(&self, compressed: core::slice::View<u8>, out: &alloc::vec::Vec<u
 
 #### method: destroy
 
-[Source line 281](../../../extended/ext/ws_deflate.lani#L281)
+[Source line 284](../../../extended/ext/ws_deflate.lani#L284)
 
 ```lanius
 pub fn destroy(&self) -> bool

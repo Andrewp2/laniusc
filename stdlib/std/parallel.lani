@@ -8,6 +8,7 @@
 // Linux x86_64/glibc; link with --native-link --native-library atomic.
 // See docs/stdlib-concurrency.md#parallel-slice-operations.
 module std::parallel;
+import core::iter_state;
 import core::function;
 import core::iter;
 import core::cmp;
@@ -111,10 +112,10 @@ pub fn for_each<B>(plan: Plan, length: i32, body: &B) -> core::result::Result<i3
     let started: core::result::Result<std::worker::Pool, Error> = start(plan);
     if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
     let pool: std::worker::Pool = started.unwrap();
-    let w: i32 = 0; let spawned: bool = true;
+    let w: i32 = 0; let spawned_phase = core::iter_state::finished_completion();
     while (w < plan.workers) {
         let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { spawned = false; break; }
+        if (me == -2) { spawned_phase = core::iter_state::completion_start(); break; }
         if (me >= 0) {
             let index: i32 = claim(plan, count);
             while (index >= 0) {
@@ -128,7 +129,7 @@ pub fn for_each<B>(plan: Plan, length: i32, body: &B) -> core::result::Result<i3
         }
         w += 1;
     }
-    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+    return complete(plan, finish_all(plan, pool.borrow(), spawned_phase.is_done()), count);
 }
 
 // output[i] = mapper.apply(input[i]).
@@ -138,10 +139,10 @@ pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M)
     let started: core::result::Result<std::worker::Pool, Error> = start(plan);
     if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
     let pool: std::worker::Pool = started.unwrap();
-    let w: i32 = 0; let spawned: bool = true;
+    let w: i32 = 0; let spawned_phase = core::iter_state::finished_completion();
     while (w < plan.workers) {
         let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { spawned = false; break; }
+        if (me == -2) { spawned_phase = core::iter_state::completion_start(); break; }
         if (me >= 0) {
             let source: [T] = input.view(); let target: [U] = output.view();
             let index: i32 = claim(plan, count);
@@ -155,7 +156,7 @@ pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M)
         }
         w += 1;
     }
-    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+    return complete(plan, finish_all(plan, pool.borrow(), spawned_phase.is_done()), count);
 }
 
 // Fold each chunk from identity with fold, then combine the chunk results
@@ -168,10 +169,10 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: Shared<T>, partials: Shared<A>, ide
     let started: core::result::Result<std::worker::Pool, Error> = start(plan);
     if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
     let pool: std::worker::Pool = started.unwrap();
-    let w: i32 = 0; let spawned: bool = true;
+    let w: i32 = 0; let spawned_phase = core::iter_state::finished_completion();
     while (w < plan.workers) {
         let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { spawned = false; break; }
+        if (me == -2) { spawned_phase = core::iter_state::completion_start(); break; }
         if (me >= 0) {
             let source: [T] = input.view(); let sums: [A] = partials.view();
             let index: i32 = claim(plan, count);
@@ -187,7 +188,7 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: Shared<T>, partials: Shared<A>, ide
         }
         w += 1;
     }
-    let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+    let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned_phase.is_done()), count);
     if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
     let sums: [A] = partials.view();
     let total: A = identity; let k: i32 = 0;
@@ -210,10 +211,10 @@ pub fn scan<T, C>(plan: Plan, data: Shared<T>, partials: Shared<T>, identity: T,
     let started: core::result::Result<std::worker::Pool, Error> = start(plan);
     if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
     let pool: std::worker::Pool = started.unwrap();
-    let w: i32 = 0; let spawned: bool = true;
+    let w: i32 = 0; let spawned_phase = core::iter_state::finished_completion();
     while (w < plan.workers) {
         let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { spawned = false; break; }
+        if (me == -2) { spawned_phase = core::iter_state::completion_start(); break; }
         if (me >= 0) {
             let values: [T] = data.view(); let offsets: [T] = partials.view();
             let index: i32 = claim(plan, count);
@@ -228,7 +229,7 @@ pub fn scan<T, C>(plan: Plan, data: Shared<T>, partials: Shared<T>, identity: T,
         }
         w += 1;
     }
-    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+    return complete(plan, finish_all(plan, pool.borrow(), spawned_phase.is_done()), count);
 }
 
 fn merge<T>(from: [T], to: [T], lo: i32, mid: i32, hi: i32) where T: core::cmp::Ord<T> {
@@ -286,10 +287,10 @@ pub fn merge_sort<T>(plan: Plan, data: Shared<T>, scratch: Shared<T>) -> core::r
         let started: core::result::Result<std::worker::Pool, Error> = start(plan);
         if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
         let pool: std::worker::Pool = started.unwrap();
-        let w: i32 = 0; let spawned: bool = true;
+        let w: i32 = 0; let spawned_phase = core::iter_state::finished_completion();
         while (w < plan.workers) {
             let me: i32 = spawn_one(pool.borrow());
-            if (me == -2) { spawned = false; break; }
+            if (me == -2) { spawned_phase = core::iter_state::completion_start(); break; }
             if (me >= 0) {
                 let values: [T] = data.view(); let spare: [T] = scratch.view();
                 let index: i32 = claim(plan, tasks);
@@ -309,7 +310,7 @@ pub fn merge_sort<T>(plan: Plan, data: Shared<T>, scratch: Shared<T>) -> core::r
             }
             w += 1;
         }
-        let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned), tasks);
+        let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned_phase.is_done()), tasks);
         if (done.is_err()) { return done; }
         if (round > 0) { in_data = !in_data; width = width * 2; }
         round += 1;

@@ -21,12 +21,158 @@ pub struct Directory { path:core::slice::View<u8>, depth:i32, metadata:std::file
 pub struct Fault { path:core::slice::View<u8>, depth:i32, stage:Stage, cause:std::directory::Error }
 pub enum Event { Entry(Item), Enter(Directory), Leave(Directory), Fault(Fault) }
 struct Frame { reader:std::directory::Reader, metadata:std::file_ops::Metadata, length:i32, parent_length:i32, depth:i32 }
-// Phases: 0 root Enter, 1 read, 2 decision, 3 descend, 4 skip entry,
-// 5 Leave after read fault, 6 close after Leave, 7 restore after close fault,
-// 8 exhausted, 9 failed, 10 explicitly closed.
+pub enum TraversalEvent { Entered, DirectoryFound, Descend, Skip, ReadFailed, Left, ClosedFrame, Exhausted, Failed, Closed }
+
+pub machine Traversal on TraversalEvent {
+    start Root;
+
+    state Root {
+        TraversalEvent::Entered -> goto Read,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Read {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> goto Skip,
+        TraversalEvent::ReadFailed -> goto FaultLeave,
+        TraversalEvent::Left -> goto Close,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Decision {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> goto Descend,
+        TraversalEvent::Skip -> goto Skip,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Descend {
+        TraversalEvent::Entered -> goto Read,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> goto Skip,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Skip {
+        TraversalEvent::Entered -> goto Read,
+        TraversalEvent::DirectoryFound -> goto Decision,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state FaultLeave {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> goto Close,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Close {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> goto Restore,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Restore {
+        TraversalEvent::Entered -> goto Read,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> goto Exhausted,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Exhausted {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    state Failed {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> goto Failed,
+        TraversalEvent::Closed -> goto Closed,
+    }
+
+    final state Closed {
+        TraversalEvent::Entered -> stay,
+        TraversalEvent::DirectoryFound -> stay,
+        TraversalEvent::Descend -> stay,
+        TraversalEvent::Skip -> stay,
+        TraversalEvent::ReadFailed -> stay,
+        TraversalEvent::Left -> stay,
+        TraversalEvent::ClosedFrame -> stay,
+        TraversalEvent::Exhausted -> stay,
+        TraversalEvent::Failed -> stay,
+        TraversalEvent::Closed -> stay,
+    }
+}
+
 pub struct Cursor {
     frames:alloc::vec::Vec<Frame>, path:alloc::vec::Vec<u8>, limits:Limits,
-    remaining:u64, entries:u64, phase:i32, pending_start:i32,
+    remaining:u64, entries:u64, phase:Traversal, pending_start:i32,
     pending_depth:i32, pending_metadata:std::file_ops::Metadata, restore_length:i32
 }
 
@@ -58,7 +204,7 @@ fn directory_error(cause:std::directory::Error) -> Error {
 fn empty(limits:Limits) -> Cursor {
     return Cursor {
         frames:alloc::vec::new<Frame>(),path:alloc::vec::new<u8>(),limits:limits,
-        remaining:limits.max_work,entries:0,phase:0,pending_start:0,
+        remaining:limits.max_work,entries:0,phase:traversal_start(),pending_start:0,
         pending_depth:0,pending_metadata:std::file_ops::empty_metadata(),restore_length:0
     };
 }
@@ -98,11 +244,11 @@ pub impl Cursor {
     pub fn work_done(&self) -> u64 { return self.limits.max_work-self.remaining; }
     pub fn entries_seen(&self) -> u64 { return self.entries; }
     fn spend(&self,amount:u64) -> bool {
-        if(amount>self.remaining) { self.phase=9; return false; }
+        if(amount>self.remaining) { self.phase.step(TraversalEvent::Failed); return false; }
         self.remaining-=amount; return true;
     }
     fn terminal(&self,error:Error) -> Result<core::option::Option<Event>,Error> {
-        self.phase=9; return Err(error);
+        self.phase.step(TraversalEvent::Failed); return Err(error);
     }
     fn directory(&self) -> Directory {
         let frame:Frame=self.frames.at(self.frames.len()-1);
@@ -116,17 +262,17 @@ pub impl Cursor {
     // These calls decide only. The next next() performs the child open and
     // identity check, so recoverable host failures remain observable events.
     pub fn descend(&self) -> Result<i32,Error> {
-        if(self.phase==10) { return Err(Error::Closed); }
-        if(self.phase==9) { return Err(Error::Failed); }
-        if(self.phase!=2) { return Err(Error::InvalidState); }
-        if(self.frames.len()==self.limits.max_open_dirs) { self.phase=9; return Err(Error::Limit); }
-        self.phase=3; return Ok(0);
+        if(((match (self.phase.state()) { TraversalState::Closed -> true, _ -> false }))) { return Err(Error::Closed); }
+        if(((match (self.phase.state()) { TraversalState::Failed -> true, _ -> false }))) { return Err(Error::Failed); }
+        if((!(match (self.phase.state()) { TraversalState::Decision -> true, _ -> false }))) { return Err(Error::InvalidState); }
+        if(self.frames.len()==self.limits.max_open_dirs) { self.phase.step(TraversalEvent::Failed); return Err(Error::Limit); }
+        self.phase.step(TraversalEvent::Descend); return Ok(0);
     }
     pub fn prune(&self) -> Result<i32,Error> {
-        if(self.phase==10) { return Err(Error::Closed); }
-        if(self.phase==9) { return Err(Error::Failed); }
-        if(self.phase!=2) { return Err(Error::InvalidState); }
-        self.phase=4; return Ok(0);
+        if(((match (self.phase.state()) { TraversalState::Closed -> true, _ -> false }))) { return Err(Error::Closed); }
+        if(((match (self.phase.state()) { TraversalState::Failed -> true, _ -> false }))) { return Err(Error::Failed); }
+        if((!(match (self.phase.state()) { TraversalState::Decision -> true, _ -> false }))) { return Err(Error::InvalidState); }
+        self.phase.step(TraversalEvent::Skip); return Ok(0);
     }
     fn enter_child(&self) -> Result<core::option::Option<Event>,Error> {
         let parent:Frame=self.frames.at(self.frames.len()-1);
@@ -144,26 +290,26 @@ pub impl Cursor {
             let cause=opened.unwrap_err();
             let allocation:bool=match(cause) { std::directory::Error::AllocationFailed -> true, _ -> false };
             if(allocation) { return self.terminal(Error::AllocationFailed); }
-            self.phase=4; return self.fault(self.pending_depth,Stage::Open,cause);
+            self.phase.step(TraversalEvent::Skip); return self.fault(self.pending_depth,Stage::Open,cause);
         }
         let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
         let file=child.file;
         let queried=std::file_ops::metadata_file_into(file.borrow(),metadata.borrow());
         if(queried.is_err()) {
-            child.close(); self.phase=4;
+            child.close(); self.phase.step(TraversalEvent::Skip);
             return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::Io(queried.unwrap_err()));
         }
         if(!metadata.has(257)) {
-            child.close(); self.phase=4;
+            child.close(); self.phase.step(TraversalEvent::Skip);
             return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::UnavailableMetadata);
         }
         let expected=self.pending_metadata.identity; let actual=metadata.identity;
         if(actual.inode!=expected.inode || actual.device_major!=expected.device_major || actual.device_minor!=expected.device_minor) {
-            child.close(); self.phase=4;
+            child.close(); self.phase.step(TraversalEvent::Skip);
             return self.fault(self.pending_depth,Stage::Verify,std::directory::Error::Changed);
         }
         self.frames.try_push(Frame { reader:child,metadata:metadata,length:self.path.len(),parent_length:parent.length,depth:self.pending_depth }).unwrap();
-        self.phase=1;
+        self.phase.step(TraversalEvent::Entered);
         return Ok(core::option::Some(Event::Enter(self.directory())));
     }
     fn read_entry(&self) -> Result<core::option::Option<Event>,Error> {
@@ -173,9 +319,9 @@ pub impl Cursor {
         // A raw reader call is bounded by three refills. Its actual decoded
         // bytes are known only afterward; charge them before publishing any event.
         if(!self.spend(reader.work_done()-before)) { return Err(Error::Limit); }
-        if(found.is_err()) { self.phase=5; return self.fault(frame.depth,Stage::Read,found.unwrap_err()); }
+        if(found.is_err()) { self.phase.step(TraversalEvent::ReadFailed); return self.fault(frame.depth,Stage::Read,found.unwrap_err()); }
         let selected=found.unwrap();
-        if(selected.is_none()) { self.phase=6; return Ok(core::option::Some(Event::Leave(self.directory()))); }
+        if(selected.is_none()) { self.phase.step(TraversalEvent::Left); return Ok(core::option::Some(Event::Leave(self.directory()))); }
         let entry:std::directory::Entry=selected.unwrap();
         if(self.entries==self.limits.max_entries) { return self.terminal(Error::Limit); }
         self.entries+=1;
@@ -194,39 +340,39 @@ pub impl Cursor {
         let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
         let fd:i32=reader.raw_handle().unwrap();
         let queried=std::file_ops::metadata_at_into(fd,path,false,metadata.borrow());
-        self.phase=4;
+        self.phase.step(TraversalEvent::Skip);
         if(queried.is_err()) { return self.fault(frame.depth+1,Stage::Metadata,std::directory::Error::Io(queried.unwrap_err())); }
         if(!metadata.has(257)) { return self.fault(frame.depth+1,Stage::Metadata,std::directory::Error::UnavailableMetadata); }
         let directory:bool=match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Directory -> true, _ -> false };
         if(directory) {
-            self.pending_start=start; self.pending_depth=frame.depth+1; self.pending_metadata=metadata; self.phase=2;
+            self.pending_start=start; self.pending_depth=frame.depth+1; self.pending_metadata=metadata; self.phase.step(TraversalEvent::DirectoryFound);
         }
         let item:Item=Item { path:self.path.as_view(),name:name,depth:frame.depth+1,metadata:metadata,parent_fd:fd };
         return Ok(core::option::Some(Event::Entry(item)));
     }
     pub fn next(&self) -> Result<core::option::Option<Event>,Error> {
-        if(self.phase==10) { return Err(Error::Closed); }
-        if(self.phase==9) { return Err(Error::Failed); }
-        if(self.phase==2) { return Err(Error::InvalidState); }
-        if(self.phase==8) { return Ok(core::option::None()); }
+        if(((match (self.phase.state()) { TraversalState::Closed -> true, _ -> false }))) { return Err(Error::Closed); }
+        if(((match (self.phase.state()) { TraversalState::Failed -> true, _ -> false }))) { return Err(Error::Failed); }
+        if(((match (self.phase.state()) { TraversalState::Decision -> true, _ -> false }))) { return Err(Error::InvalidState); }
+        if(((match (self.phase.state()) { TraversalState::Exhausted -> true, _ -> false }))) { return Ok(core::option::None()); }
         if(!self.spend(1)) { return Err(Error::Limit); }
-        if(self.phase==0) { self.phase=1; return Ok(core::option::Some(Event::Enter(self.directory()))); }
-        if(self.phase==3) { return self.enter_child(); }
-        if(self.phase==5) { self.phase=6; return Ok(core::option::Some(Event::Leave(self.directory()))); }
-        if(self.phase==6) {
+        if(((match (self.phase.state()) { TraversalState::Root -> true, _ -> false }))) { self.phase.step(TraversalEvent::Entered); return Ok(core::option::Some(Event::Enter(self.directory()))); }
+        if(((match (self.phase.state()) { TraversalState::Descend -> true, _ -> false }))) { return self.enter_child(); }
+        if(((match (self.phase.state()) { TraversalState::FaultLeave -> true, _ -> false }))) { self.phase.step(TraversalEvent::Left); return Ok(core::option::Some(Event::Leave(self.directory()))); }
+        if(((match (self.phase.state()) { TraversalState::Close -> true, _ -> false }))) {
             let frame:Frame=self.frames.pop().unwrap(); let reader=frame.reader;
-            self.restore_length=frame.parent_length; self.phase=7;
+            self.restore_length=frame.parent_length; self.phase.step(TraversalEvent::ClosedFrame);
             let closed=reader.close();
             if(closed.is_err()) { return self.fault(frame.depth,Stage::Close,closed.unwrap_err()); }
         }
-        if(self.phase==7) {
+        if(((match (self.phase.state()) { TraversalState::Restore -> true, _ -> false }))) {
             self.path.truncate(self.restore_length).unwrap();
-            if(self.frames.is_empty()) { self.phase=8; return Ok(core::option::None()); }
-            self.phase=1;
+            if(self.frames.is_empty()) { self.phase.step(TraversalEvent::Exhausted); return Ok(core::option::None()); }
+            self.phase.step(TraversalEvent::Entered);
         }
-        if(self.phase==4) {
+        if(((match (self.phase.state()) { TraversalState::Skip -> true, _ -> false }))) {
             let frame:Frame=self.frames.at(self.frames.len()-1);
-            self.path.truncate(frame.length).unwrap(); self.phase=1;
+            self.path.truncate(frame.length).unwrap(); self.phase.step(TraversalEvent::Entered);
         }
         return self.read_entry();
     }
@@ -240,7 +386,7 @@ pub impl Cursor {
             let closed=reader.close();
             if(closed.is_err() && first.is_none()) { first=core::option::Some(closed.unwrap_err()); }
         }
-        self.frames.destroy(); self.path.destroy(); self.phase=10;
+        self.frames.destroy(); self.path.destroy(); self.phase.step(TraversalEvent::Closed);
         if(first.is_some()) { return Err(Error::Directory(first.unwrap())); }
         return Ok(0);
     }

@@ -1,5 +1,6 @@
 // Maximal-munch UTF-8 tokens over the canonical anchored Pike matcher.
 module ext::lexer;
+import core::iter_state;
 import alloc::vec;
 import core::option;
 import core::result;
@@ -28,7 +29,7 @@ pub struct Lexer { rules: alloc::vec::Vec<CompiledRule>, states: i32, workspace_
 // Distinct scans have distinct scratch; copies must not advance independently.
 // uniform: every rule is in the DFA and has the same VM allowance, so one
 // step can be admitted and charged in bulk; cost is the largest boundary cost.
-pub struct Cursor { rules: alloc::vec::Vec<CompiledRule>, prefix: ext::regex::PrefixSet, uniform: bool, allowance: i64, cost: i64, input: ext::regex::Input, limits: ScanLimits, used: Usage, at: i32, done: bool, workspace: core::option::Option<ext::regex::Workspace> }
+pub struct Cursor { rules: alloc::vec::Vec<CompiledRule>, prefix: ext::regex::PrefixSet, uniform: bool, allowance: i64, cost: i64, input: ext::regex::Input, limits: ScanLimits, used: Usage, at: i32, completion: core::iter_state::Completion, workspace: core::option::Option<ext::regex::Workspace> }
 
 pub fn default_build_limits() -> BuildLimits { return BuildLimits { max_rules: 128, max_pattern_bytes: 1048576, max_states: 65536 }; }
 pub fn default_scan_limits() -> ScanLimits {
@@ -112,7 +113,7 @@ pub impl Lexer {
             if (rule.cost > cost) { cost = rule.cost; }
             index += 1;
         }
-        return core::result::Ok(Cursor { rules: self.rules, prefix: self.prefix, uniform: uniform, allowance: allowance, cost: cost, input: checked.unwrap(), limits: limits, used: empty_usage(), at: 0, done: false, workspace: workspace });
+        return core::result::Ok(Cursor { rules: self.rules, prefix: self.prefix, uniform: uniform, allowance: allowance, cost: cost, input: checked.unwrap(), limits: limits, used: empty_usage(), at: 0, completion: core::iter_state::completion_start(), workspace: workspace });
     }
 }
 pub impl Cursor {
@@ -120,12 +121,12 @@ pub impl Cursor {
     pub fn position(&self) -> i32 { return self.at; }
     pub fn usage(&self) -> Usage { return self.used; }
     pub fn destroy(&self) {
-        self.done = true;
+        self.completion.finish();
         if (self.workspace.is_some()) { let workspace = self.workspace.unwrap(); workspace.destroy(); self.workspace = core::option::None(); }
     }
     fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Token>,Error> { self.destroy(); return core::result::Err(error); }
     pub fn next(&self) -> core::result::Result<core::option::Option<Token>,Error> {
-        if (self.done) { return core::result::Ok(core::option::None()); }
+        if (self.completion.is_done()) { return core::result::Ok(core::option::None()); }
         let text = self.input.text; let rules = self.rules.as_slice();
         while (true) {
             // EOF has no synthetic token and consumes no search allowance.

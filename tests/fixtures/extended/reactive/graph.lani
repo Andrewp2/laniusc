@@ -1,0 +1,240 @@
+// The small interpreter is a test oracle/driver, not the application callback API.
+module app::main;
+import ext::reactive_graph;
+import alloc::allocator;
+import core::mem;
+import core::result;
+struct Cell { id:Id,op:i32,a:i32,b:i32,value:i32,calls:i32,fail:bool }
+struct Driver { storage:ptr,capacity:i32 }
+impl Driver {
+    fn borrow(&self) -> &Driver { return self; }
+    fn cells(&self) -> [Cell] { return core::mem::typed_slice_from_storage<Cell>(self.storage,self.capacity); }
+    fn add(&self,g:&Graph,scope:Id,kind:Kind,op:i32,a:i32,b:i32,value:i32) -> Id {
+        let id=g.create_node(scope,kind).unwrap();
+        self.cells()[id.slot]=Cell {id:id,op:op,a:a,b:b,value:value,calls:0,fail:false}; return id;
+    }
+    fn value(&self,g:&Graph,slot:i32) -> core::result::Result<i32,Error> {
+        g.read(self.cells()[slot].id,self)?; return core::result::Ok(self.cells()[slot].value);
+    }
+    fn write(&self,g:&Graph,id:Id,value:i32) {
+        let changed=self.cells()[id.slot].value!=value;
+        g.publish(id,changed).unwrap(); self.cells()[id.slot].value=value;
+    }
+    fn calls(&self,id:Id) -> i32 { return self.cells()[id.slot].calls; }
+    fn result(&self,id:Id) -> i32 { return self.cells()[id.slot].value; }
+    fn close(&self) { alloc::allocator::dealloc(self.storage,(self.capacity as usize)*core::mem::size_of<Cell>(),8); }
+}
+fn driver(capacity:i32,root:Id) -> Driver {
+    let storage=alloc::allocator::alloc((capacity as usize)*core::mem::size_of<Cell>(),8); assert(storage!=0);
+    let cells=core::mem::typed_slice_from_storage<Cell>(storage,capacity); let i:i32=0;
+    while(i<capacity) { cells[i]=Cell {id:root,op:0,a:0,b:0,value:0,calls:0,fail:false}; i+=1; }
+    return Driver {storage:storage,capacity:capacity};
+}
+pub impl Evaluate for Driver {
+    pub fn evaluate(&self,id:Id,g:&Graph) -> core::result::Result<bool,Error> {
+        let c=self.cells(); let entry=c[id.slot]; c[id.slot].calls+=1; let value:i32=0;
+        if(entry.op==1) { value=self.value(g,entry.a)?+self.value(g,entry.b)?; }
+        else if(entry.op==2) { value=self.value(g,entry.a)?%2; }
+        else if(entry.op==3) { value=self.value(g,entry.a)?; }
+        else if(entry.op==4) {
+            let branch=self.value(g,entry.a)?;
+            if(branch==0) { value=self.value(g,entry.b)?; } else { value=self.value(g,entry.b+1)?; }
+        }
+        else if(entry.op==5) { g.read_untracked(c[entry.a].id,self)?; value=c[entry.a].value; }
+        else if(entry.op==6) {
+            value=self.value(g,entry.a)?; // Keep the previously committed output on failure.
+            if(entry.fail) { self.value(g,entry.b)?; return core::result::Err(Error::Evaluation(17)); }
+        }
+        else if(entry.op==7) {
+            assert(match(g.publish(c[entry.a].id,true).unwrap_err()) { Error::WriteDuringEvaluation -> true, _ -> false });
+            assert(match(g.flush(self,4).unwrap_err()) { Error::Busy -> true, _ -> false });
+            assert(match(g.dispose(c[entry.a].id).unwrap_err()) { Error::Busy -> true, _ -> false });
+            assert(match(g.create_node(g.root().unwrap(),Kind::Source).unwrap_err()) { Error::Busy -> true, _ -> false });
+            assert(match(g.close().unwrap_err()) { Error::Busy -> true, _ -> false });
+            value=self.value(g,entry.a)?;
+        }
+        else { return core::result::Err(Error::Evaluation(-1)); }
+        c[id.slot].value=value; return core::result::Ok(value!=entry.value);
+    }
+}
+fn diamond() {
+    let g=ext::reactive_graph::create(16,24).unwrap(); let root=g.root().unwrap(); let d=driver(16,root);
+    let a=d.add(g.borrow(),root,Kind::Source,0,0,0,1);
+    let b=d.add(g.borrow(),root,Kind::Memo,1,a.slot,a.slot,0);
+    let c=d.add(g.borrow(),root,Kind::Memo,1,b.slot,a.slot,0);
+    let sink=d.add(g.borrow(),root,Kind::Effect,1,b.slot,c.slot,0);
+    let quiet=d.add(g.borrow(),root,Kind::Source,0,0,0,10);
+    let other=d.add(g.borrow(),root,Kind::Effect,3,quiet.slot,0,0);
+    assert(g.flush(d.borrow(),16).unwrap()==2 && d.result(sink)==5);
+    assert(d.calls(b)==1 && d.calls(c)==1 && d.calls(sink)==1 && d.calls(other)==1);
+    d.write(g.borrow(),a,2); d.write(g.borrow(),a,3); d.write(g.borrow(),a,4);
+    assert(g.flush(d.borrow(),16).unwrap()==1 && d.result(sink)==20);
+    assert(d.calls(b)==2 && d.calls(c)==2 && d.calls(sink)==2 && d.calls(other)==1);
+    // Read-your-writes updates memos before the queued sink, without double work.
+    d.write(g.borrow(),a,5); assert(d.value(g.borrow(),c.slot).unwrap()==15);
+    assert(g.flush(d.borrow(),16).unwrap()==1 && d.result(sink)==25 && d.calls(b)==3 && d.calls(c)==3);
+    assert(g.flush(d.borrow(),16).unwrap()==0); d.write(g.borrow(),a,5);
+    assert(g.flush(d.borrow(),16).unwrap()==0 && d.calls(sink)==3);
+    d.close(); assert(g.close().unwrap()); assert(!g.close().unwrap());
+    assert(match(g.root().unwrap_err()) { Error::Closed -> true, _ -> false });
+}
+fn equality_and_dependencies() {
+    let g=ext::reactive_graph::create(20,24).unwrap(); let root=g.root().unwrap(); let d=driver(20,root);
+    let gate=d.add(g.borrow(),root,Kind::Source,0,0,0,0);
+    let left=d.add(g.borrow(),root,Kind::Source,0,0,0,2);
+    let right=d.add(g.borrow(),root,Kind::Source,0,0,0,4);
+    let choice=d.add(g.borrow(),root,Kind::Memo,4,gate.slot,left.slot,0);
+    let parity=d.add(g.borrow(),root,Kind::Memo,2,choice.slot,0,0);
+    let sink=d.add(g.borrow(),root,Kind::Effect,3,parity.slot,0,0);
+    let untracked=d.add(g.borrow(),root,Kind::Effect,5,left.slot,0,0);
+    g.flush(d.borrow(),20).unwrap(); assert(d.calls(sink)==1 && d.calls(untracked)==1);
+    d.write(g.borrow(),left,6); g.flush(d.borrow(),20).unwrap();
+    assert(d.calls(choice)==2 && d.calls(parity)==2 && d.calls(sink)==1 && d.calls(untracked)==1);
+    d.write(g.borrow(),gate,1); g.flush(d.borrow(),20).unwrap(); assert(d.calls(choice)==3 && d.calls(sink)==1);
+    d.write(g.borrow(),left,7); assert(g.flush(d.borrow(),20).unwrap()==0 && d.calls(choice)==3);
+    d.write(g.borrow(),right,5); g.flush(d.borrow(),20).unwrap(); assert(d.calls(choice)==4 && d.calls(sink)==2 && d.result(sink)==1);
+    // Switch back: the old branch is unsubscribed after a successful evaluation.
+    d.write(g.borrow(),gate,0); g.flush(d.borrow(),20).unwrap(); assert(d.calls(choice)==5 && d.calls(sink)==2);
+    d.write(g.borrow(),right,8); assert(g.flush(d.borrow(),20).unwrap()==0);
+    d.close(); g.close().unwrap();
+}
+fn failed_evaluation() {
+    let g=ext::reactive_graph::create(12,2).unwrap(); let root=g.root().unwrap(); let d=driver(12,root);
+    let a=d.add(g.borrow(),root,Kind::Source,0,0,0,1);
+    let b=d.add(g.borrow(),root,Kind::Source,0,0,0,9);
+    let sink=d.add(g.borrow(),root,Kind::Effect,6,a.slot,b.slot,0);
+    g.flush(d.borrow(),12).unwrap(); d.cells()[sink.slot].fail=true; d.write(g.borrow(),a,2);
+    assert(match(g.flush(d.borrow(),12).unwrap_err()) { Error::Evaluation(n) -> n==17, _ -> false });
+    assert(d.result(sink)==1); // Failed effect has not committed a new value.
+    // The failed attempt added b, then rolled it back. Disposing the queued sink
+    // removes both the old subscription and any tentative edge.
+    g.dispose(sink).unwrap();
+    let sum=d.add(g.borrow(),root,Kind::Effect,1,a.slot,b.slot,0);
+    assert(g.flush(d.borrow(),12).unwrap()==1 && d.result(sum)==11);
+    // Both edge slots must have been returned; duplicate reads consume one slot.
+    g.dispose(sum).unwrap(); let duplicate=d.add(g.borrow(),root,Kind::Effect,1,a.slot,a.slot,0);
+    g.flush(d.borrow(),12).unwrap(); d.write(g.borrow(),b,10); assert(g.flush(d.borrow(),12).unwrap()==0);
+    assert(d.result(duplicate)==4); d.close(); g.close().unwrap();
+}
+fn failure_retry_and_capacity() {
+    let g=ext::reactive_graph::create(8,1).unwrap(); let root=g.root().unwrap(); let d=driver(8,root);
+    let a=d.add(g.borrow(),root,Kind::Source,0,0,0,1); let b=d.add(g.borrow(),root,Kind::Source,0,0,0,2);
+    let sink=d.add(g.borrow(),root,Kind::Effect,1,a.slot,b.slot,0);
+    assert(match(g.flush(d.borrow(),8).unwrap_err()) { Error::Capacity -> true, _ -> false });
+    // Error leaves work retryable and returns tentative edge storage.
+    d.cells()[sink.slot].op=3; assert(g.flush(d.borrow(),8).unwrap()==1 && d.result(sink)==1);
+    d.cells()[sink.slot].op=6; d.cells()[sink.slot].b=a.slot; d.cells()[sink.slot].fail=true;
+    d.write(g.borrow(),a,3); assert(g.flush(d.borrow(),8).is_err());
+    d.cells()[sink.slot].fail=false; assert(g.flush(d.borrow(),8).unwrap()==1 && d.result(sink)==3);
+    d.write(g.borrow(),a,4); assert(g.flush(d.borrow(),8).unwrap()==1 && d.result(sink)==4);
+    d.close(); g.close().unwrap();
+    assert(ext::reactive_graph::create(1,1).is_err()); assert(ext::reactive_graph::create(2,0).is_err());
+    let tiny=ext::reactive_graph::create(2,1).unwrap(); let r=tiny.root().unwrap();
+    let old=tiny.create_node(r,Kind::Source).unwrap(); assert(tiny.create_node(r,Kind::Source).is_err());
+    tiny.dispose(old).unwrap(); let fresh=tiny.create_node(r,Kind::Source).unwrap();
+    assert(old.slot==fresh.slot && old.generation!=fresh.generation);
+    assert(match(tiny.publish(old,true).unwrap_err()) { Error::Stale -> true, _ -> false }); tiny.close().unwrap();
+}
+fn lifetime_and_reentrancy() {
+    let g=ext::reactive_graph::create(16,16).unwrap(); let root=g.root().unwrap(); let d=driver(16,root);
+    let branch=g.create_node(root,Kind::Scope).unwrap(); let child=g.create_node(branch,Kind::Scope).unwrap();
+    let a=d.add(g.borrow(),root,Kind::Source,0,0,0,1);
+    let gone=d.add(g.borrow(),child,Kind::Effect,3,a.slot,0,0);
+    let survivor=d.add(g.borrow(),root,Kind::Effect,7,a.slot,0,0);
+    assert(g.dispose(branch).unwrap()==3); assert(g.flush(d.borrow(),16).unwrap()==1 && d.calls(gone)==0 && d.calls(survivor)==1);
+    d.write(g.borrow(),a,2); assert(g.flush(d.borrow(),16).unwrap()==1 && d.calls(survivor)==2);
+    d.cells()[survivor.slot].op=3; assert(g.dispose(a).unwrap()==1); assert(match(g.flush(d.borrow(),16).unwrap_err()) { Error::Stale -> true, _ -> false });
+    // Source loss reports an error; it never quietly freezes the old UI binding.
+    g.dispose(survivor).unwrap(); assert(g.flush(d.borrow(),16).unwrap()==0);
+    assert(g.dispose(root).is_err()); assert(g.publish(root,true).is_err()); assert(g.read(root,d.borrow()).is_err());
+    let another=ext::reactive_graph::create(2,1).unwrap();
+    assert(match(g.dispose(another.root().unwrap()).unwrap_err()) { Error::DifferentGraph -> true, _ -> false });
+    another.close().unwrap(); d.close(); g.close().unwrap();
+}
+fn cycles_budget_and_depth() {
+    let g=ext::reactive_graph::create(320,320).unwrap(); let root=g.root().unwrap(); let d=driver(320,root);
+    let source=d.add(g.borrow(),root,Kind::Source,0,0,0,7);
+    let first=d.add(g.borrow(),root,Kind::Memo,3,3,0,0);
+    let second=d.add(g.borrow(),root,Kind::Memo,3,first.slot,0,0);
+    let sink=d.add(g.borrow(),root,Kind::Effect,3,first.slot,0,0);
+    assert(second.slot==3); assert(match(g.flush(d.borrow(),320).unwrap_err()) { Error::Cycle -> true, _ -> false });
+    d.cells()[second.slot].a=source.slot;
+    assert(match(g.flush(d.borrow(),1).unwrap_err()) { Error::Budget -> true, _ -> false });
+    assert(g.flush(d.borrow(),320).unwrap()==1 && d.result(sink)==7);
+    let previous=source; let i:i32=0;
+    while(i<260) { previous=d.add(g.borrow(),root,Kind::Memo,3,previous.slot,0,0); i+=1; }
+    assert(match(g.read(previous,d.borrow()).unwrap_err()) { Error::Depth -> true, _ -> false });
+    // The depth failure must unwind visiting markers so a shallower retry works.
+    d.cells()[previous.slot].a=source.slot; assert(d.value(g.borrow(),previous.slot).unwrap()==7);
+    d.close(); g.close().unwrap();
+}
+// Compare an incrementally evaluated graph against a full topological evaluator.
+// The model does not inspect dependency lists, graph states or queue order.
+fn model() {
+    let g=ext::reactive_graph::create(80,256).unwrap(); let root=g.root().unwrap(); let d=driver(80,root);
+    let expected:[i32;80]=[0;80]; let rng:u64=163247; let slot:i32=1;
+    while(slot<=16) { d.add(g.borrow(),root,Kind::Source,0,0,0,slot%7); expected[slot]=slot%7; slot+=1; }
+    while(slot<=56) {
+        rng=(rng*1664525+1013904223)&4294967295; let a=1+(rng%((slot-1) as u64)) as i32;
+        rng=(rng*1664525+1013904223)&4294967295; let b=1+(rng%((slot-2) as u64)) as i32;
+        let op=1+((rng>>16)%4) as i32;
+        let kind=match(slot<=48) { true -> Kind::Memo, false -> Kind::Effect };
+        // Effects can only read sources/memos, so cap their choices below slot 49.
+        let aa=match(a>48) { true -> 48, false -> a }; let bb=match(b>47) { true -> 47, false -> b };
+        d.add(g.borrow(),root,kind,op,aa,bb,0); slot+=1;
+    }
+    let round:i32=0;
+    while(round<1000) {
+        let edit:i32=0;
+        while(edit<1+round%5) {
+            rng=(rng*1664525+1013904223)&4294967295; let target=1+((rng>>8)%16) as i32;
+            rng=(rng*1664525+1013904223)&4294967295; let value=((rng>>8)%8) as i32;
+            expected[target]=value; d.write(g.borrow(),d.cells()[target].id,value); edit+=1;
+        }
+        g.flush(d.borrow(),80).unwrap(); slot=17;
+        while(slot<=56) {
+            let c=d.cells()[slot];
+            if(c.op==1) { expected[slot]=expected[c.a]+expected[c.b]; }
+            else if(c.op==2) { expected[slot]=expected[c.a]%2; }
+            else if(c.op==3) { expected[slot]=expected[c.a]; }
+            else { expected[slot]=match(expected[c.a]==0) { true -> expected[c.b], false -> expected[c.b+1] }; }
+            if(slot>=49) { assert(d.result(c.id)==expected[slot]); } slot+=1;
+        }
+        assert(g.flush(d.borrow(),80).unwrap()==0); round+=1;
+    }
+    d.close(); g.close().unwrap();
+}
+fn sparse(count:i32) {
+    let capacity=count*2+1;
+    let g=ext::reactive_graph::create(capacity,count).unwrap(); let root=g.root().unwrap(); let d=driver(capacity,root);
+    let row:i32=0;
+    while(row<count) {
+        let source=d.add(g.borrow(),root,Kind::Source,0,0,0,row);
+        d.add(g.borrow(),root,Kind::Effect,3,source.slot,0,0); row+=1;
+    }
+    assert(g.flush(d.borrow(),count).unwrap()==count); g.reset_stats().unwrap();
+    let target=d.cells()[1+(count/2)*2].id; d.write(g.borrow(),target,90000);
+    assert(g.flush(d.borrow(),count).unwrap()==1);
+    let stats=g.stats().unwrap();
+    assert(stats.evaluations==1 && stats.invalidated==1 && stats.dependency_checks==1 && stats.tracked_reads==1);
+    assert(stats.propagation_edges==1 && stats.tracking_edges==1);
+    g.reset_stats().unwrap(); d.write(g.borrow(),target,90000); assert(g.flush(d.borrow(),count).unwrap()==0);
+    assert(g.stats().unwrap().evaluations==0 && g.stats().unwrap().invalidated==0);
+    // Repeatedly remove/reuse both endpoint slots and pending queue entries.
+    row=0;
+    while(row<1000) {
+        let source=d.cells()[1].id; let old=d.cells()[2].id;
+        g.dispose(old).unwrap(); g.dispose(source).unwrap();
+        let fresh=d.add(g.borrow(),root,Kind::Source,0,0,0,row);
+        let effect=d.add(g.borrow(),root,Kind::Effect,3,fresh.slot,0,0);
+        assert(fresh.slot==1 && effect.slot==2 && effect.generation!=old.generation);
+        if(row%2==0) { assert(g.flush(d.borrow(),count).unwrap()==1 && d.result(effect)==row); }
+        row+=1;
+    }
+    g.flush(d.borrow(),count).unwrap(); d.close(); g.close().unwrap();
+}
+fn main() -> i32 {
+    diamond(); equality_and_dependencies(); failed_evaluation(); failure_retry_and_capacity();
+    lifetime_and_reentrancy(); cycles_budget_and_depth(); model(); sparse(100); sparse(1000); sparse(10000);
+    return 0;
+}

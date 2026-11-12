@@ -4,6 +4,8 @@
 // writer that grows in memory or streams to a file descriptor.
 // See docs/extended-textutils.md.
 module ext::text_lines;
+import core::lifecycle;
+import core::iter_state;
 import alloc::io;
 import core::io;
 import core::mem;
@@ -128,7 +130,7 @@ pub fn line_starts(w: &Words) -> core::result::Result<Starts, Error> {
 
 // Word-at-a-time output. Bytes collect in `acc` and leave as whole words;
 // a full buffer is written to `fd`, or doubled when fd is negative.
-pub struct Out { mem: alloc::io::Buffer, base: ptr, cap: i32, w: [u64], at: i32, acc: u64, fill: i32, fd: i32, failed: bool, written: i64 }
+pub struct Out { mem: alloc::io::Buffer, base: ptr, cap: i32, w: [u64], at: i32, acc: u64, fill: i32, fd: i32, health: core::lifecycle::Health, written: i64 }
 pub impl Out {
     pub fn borrow(&self) -> &Out { return self; }
     pub fn destroy(&self) { self.mem.destroy(); self.cap = 0; self.at = 0; self.fill = 0; }
@@ -145,7 +147,7 @@ pub fn out(fd: i32, words: i32) -> core::result::Result<Out, Error> {
     let p: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(words * 8);
     if (core::result::is_err(p)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
     let base: ptr = core::result::unwrap(p);
-    return core::result::Ok(Out { mem: mem, base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: fd, failed: false, written: 0 });
+    return core::result::Ok(Out { mem: mem, base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: fd, health: core::lifecycle::health_start(), written: 0 });
 }
 // Write count bytes from base to fd, retrying short writes.
 pub fn write_all(fd: i32, base: ptr, count: i32) -> bool { return tl_write(fd, base, count); }
@@ -162,12 +164,12 @@ fn tl_write(fd: i32, base: ptr, count: i32) -> bool {
 // Make room for one more word.
 pub fn spill(o: &Out) {
     if (o.fd >= 0) {
-        if (!tl_write(o.fd, o.base, o.at * 8)) { o.failed = true; }
+        if (!tl_write(o.fd, o.base, o.at * 8)) { o.health.fail(); }
         o.written += (o.at * 8) as i64; o.at = 0; return;
     }
-    if (o.cap > 134000000) { o.failed = true; o.at = 0; return; }
+    if (o.cap > 134000000) { o.health.fail(); o.at = 0; return; }
     let bigger: core::result::Result<Out, Error> = out(-1, o.cap * 2);
-    if (core::result::is_err(bigger)) { o.failed = true; o.at = 0; return; }
+    if (core::result::is_err(bigger)) { o.health.fail(); o.at = 0; return; }
     let b: Out = core::result::unwrap(bigger); let from: [u64] = o.w; let to: [u64] = b.w; let i: i32 = 0; let oc: i32 = o.cap; let nc: i32 = b.cap;
     while (i < o.at) { to[nc-1-i] = from[oc-1-i]; i += 1; }
     o.mem.destroy(); o.mem = b.mem; o.base = b.base; o.cap = b.cap; o.w = b.w;
@@ -248,25 +250,25 @@ pub fn finish(o: &Out) -> bool {
         if (o.at == o.cap) { spill(o); }
         o.w[o.cap-1-o.at] = o.acc;
         if (o.fd >= 0) {
-            if (!tl_write(o.fd, o.base, o.at * 8 + o.fill)) { o.failed = true; }
+            if (!tl_write(o.fd, o.base, o.at * 8 + o.fill)) { o.health.fail(); }
             o.written += (o.at * 8 + o.fill) as i64; o.at = 0; o.fill = 0; o.acc = 0;
-            return !o.failed;
+            return !o.health.is_failed();
         }
         let committed: core::result::Result<i32, core::io::Error> = o.mem.commit_raw(o.at * 8 + o.fill);
         o.at += 1; o.written = 0;
-        return !o.failed;
+        return !o.health.is_failed();
     }
     if (o.fd >= 0) {
-        if (o.at > 0 && !tl_write(o.fd, o.base, o.at * 8)) { o.failed = true; }
-        o.written += (o.at * 8) as i64; o.at = 0; return !o.failed;
+        if (o.at > 0 && !tl_write(o.fd, o.base, o.at * 8)) { o.health.fail(); }
+        o.written += (o.at * 8) as i64; o.at = 0; return !o.health.is_failed();
     }
     let committed: core::result::Result<i32, core::io::Error> = o.mem.commit_raw(o.at * 8);
-    return !o.failed;
+    return !o.health.is_failed();
 }
 // An output into `words` words of caller memory at base. It must never
 // fill up (it would move to a heap buffer): seal it and take its bytes.
 pub fn out_over(base: ptr, words: i32) -> Out {
-    return Out { mem: alloc::io::new(), base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: -1, failed: false, written: 0 };
+    return Out { mem: alloc::io::new(), base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: -1, health: core::lifecycle::health_start(), written: 0 };
 }
 // Store an out_over output's pending word; its byte count.
 pub fn seal(o: &Out) -> i32 { if (o.fill > 0) { let last: u64 = o.acc; o.w[o.cap-1-o.at] = last; } return o.at * 8 + o.fill; }
@@ -456,11 +458,11 @@ pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, E
 // returns the complete lines read so far (ending with `eol`), keeping a
 // trailing partial line for the next call, or everything left at the end of
 // input. A line longer than the buffer doubles it.
-pub struct Lines { mem: alloc::io::Buffer, base: ptr, cap: i32, have: i32, used: i32, fd: i32, done: bool, failed: bool }
+pub struct Lines { mem: alloc::io::Buffer, base: ptr, cap: i32, have: i32, used: i32, fd: i32, completion: core::iter_state::Completion, health: core::lifecycle::Health }
 pub impl Lines {
     pub fn borrow(&self) -> &Lines { return self; }
     // True once the last call returned the end of the input.
-    pub fn finished(&self) -> bool { return self.done && self.used == self.have; }
+    pub fn finished(&self) -> bool { return self.completion.is_done() && self.used == self.have; }
     pub fn destroy(&self) { self.mem.destroy(); }
 }
 struct Room { mem: alloc::io::Buffer, p: ptr }
@@ -476,7 +478,7 @@ pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error> {
     let made: core::result::Result<Room, Error> = tl_room(cap);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     let room: Room = core::result::unwrap(made);
-    return core::result::Ok(Lines { mem: room.mem, base: room.p, cap: cap, have: 0, used: 0, fd: fd, done: false, failed: false });
+    return core::result::Ok(Lines { mem: room.mem, base: room.p, cap: cap, have: 0, used: 0, fd: fd, completion: core::iter_state::completion_start(), health: core::lifecycle::health_start() });
 }
 // The next run of whole lines (see Lines). With `whole`, nothing is handed
 // out before the end of input. An empty view after the end.
@@ -486,19 +488,19 @@ pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8> {
         let i: i32 = r.used; let j: i32 = 0; while (i < r.have) { bytes[j] = bytes[i]; i += 1; j += 1; }
         r.have = r.have - r.used; r.used = 0;
     }
-    while (!r.done) {
+    while (!r.completion.is_done()) {
         if (r.have == r.cap) {
-            if (r.cap > 1000000000) { r.failed = true; r.done = true; break; }
+            if (r.cap > 1000000000) { r.health.fail(); r.completion.finish(); break; }
             let grown: core::result::Result<Room, Error> = tl_room(r.cap * 2);
-            if (core::result::is_err(grown)) { r.failed = true; r.done = true; break; }
+            if (core::result::is_err(grown)) { r.health.fail(); r.completion.finish(); break; }
             let room: Room = core::result::unwrap(grown); let mem: alloc::io::Buffer = room.mem; let nb: ptr = room.p;
             let to: [u8] = core::mem::typed_slice_from_raw_parts<u8>(nb, r.cap * 2); let i: i32 = 0;
             while (i < r.have) { to[i] = bytes[i]; i += 1; }
             r.mem.destroy(); r.mem = mem; r.base = nb; r.cap = r.cap * 2; bytes = to;
         }
         let got: i32 = read_some(r.fd, r.base + (r.have as usize), r.cap - r.have);
-        if (got < 0) { r.failed = true; r.done = true; break; }
-        if (got == 0) { r.done = true; break; }
+        if (got < 0) { r.health.fail(); r.completion.finish(); break; }
+        if (got == 0) { r.completion.finish(); break; }
         let from: i32 = r.have; r.have += got;
         if (!whole) {
             let k: i32 = r.have - 1;

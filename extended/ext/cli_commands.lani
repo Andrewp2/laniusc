@@ -31,9 +31,29 @@ pub enum Error {
     UnknownCommand(ext::cli::Location), Token(i32,ext::cli::Error),
     UnknownCommandId(i32), OutputTooSmall(u64), SizeOverflow
 }
+pub enum SelectionEvent { Operand, Finished }
+pub machine SelectionPhase on SelectionEvent {
+    start Selecting;
+
+    state Selecting {
+        SelectionEvent::Operand -> goto Operands,
+        SelectionEvent::Finished -> goto Done,
+    }
+
+    state Operands {
+        SelectionEvent::Operand -> stay,
+        SelectionEvent::Finished -> goto Done,
+    }
+
+    final state Done {
+        SelectionEvent::Operand -> stay,
+        SelectionEvent::Finished -> stay,
+    }
+}
+
 pub struct Parser {
     commands: View<Command>, scratch: View<ext::cli::Spec>, flat: ext::cli::Parser,
-    selected: i32, selecting: bool, operands: i32, done: bool, failure: Option<Error>
+    selected: i32, phase: SelectionPhase, operands: i32, failure: Option<Error>
 }
 
 fn valid<T>(value: View<T>) -> bool {
@@ -258,7 +278,7 @@ fn parser_mode(arguments: View<View<u8>>, commands: View<Command>, scratch: View
     let flat: Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(arguments,scope,root.ordering);
     if (flat.is_err()) { return Err(Error::Token(root.id,flat.unwrap_err())); }
     let engine: ext::cli::Parser = flat.unwrap(); engine.prefix_mode = prefix;
-    return Ok(Parser { commands: commands, scratch: scratch, flat: engine, selected: 0, selecting: true, operands: 0, done: false, failure: None() });
+    return Ok(Parser { commands: commands, scratch: scratch, flat: engine, selected: 0, phase: selection_phase_start(), operands: 0, failure: None() });
 }
 
 pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error> {
@@ -273,7 +293,7 @@ pub impl Parser {
     pub fn borrow(&self) -> &Parser { return self; }
     pub fn current(&self) -> i32 { return command_at(self.commands,self.selected).id; }
     pub fn operand_index(&self) -> i32 { return self.operands; }
-    pub fn selecting_command(&self) -> bool { return self.selecting && children(self.commands,self.selected); }
+    pub fn selecting_command(&self) -> bool { return (match (self.phase.state()) { SelectionPhaseState::Selecting -> true, _ -> false }) && children(self.commands,self.selected); }
     pub fn options_ended(&self) -> bool { let flat: ext::cli::Parser = self.flat; return flat.options_ended(); }
     pub fn pending_required(&self) -> Option<Pending> {
         let flat: ext::cli::Parser = self.flat;
@@ -301,17 +321,17 @@ pub impl Parser {
     }
     fn route_operand(&self, item: ext::cli::Argument) -> Result<Option<Event>,Error> {
         let flat: ext::cli::Parser = self.flat;
-        if (flat.explicitly_terminated()) { self.selecting = false; }
-        if (self.selecting && children(self.commands,self.selected)) {
+        if (flat.explicitly_terminated()) { self.phase.step(SelectionEvent::Operand); }
+        if ((match (self.phase.state()) { SelectionPhaseState::Selecting -> true, _ -> false }) && children(self.commands,self.selected)) {
             let selected: i32 = child(self.commands,self.selected,item.bytes);
             if (selected < 0) { return self.fail(Error::UnknownCommand(item.at)); }
             let command: Command = command_at(self.commands,selected);
             flat.specs = materialize(self.commands,selected,self.scratch);
-            flat.ordering = command.ordering; flat.ended = false;
+            flat.ordering = command.ordering; flat.phase.step(ext::cli::OrderingEvent::CommandBoundary);
             self.flat = flat; self.selected = selected; self.operands = 0;
             return Ok(Some(Event::Command(Selection { id: command.id, at: item.at })));
         }
-        self.selecting = false;
+        self.phase.step(SelectionEvent::Operand);
         self.operands += 1;
         return Ok(Some(Event::Operand(ScopedOperand { command: self.current(), argument: item })));
     }
@@ -319,13 +339,13 @@ pub impl Parser {
     // global cursor and explicit terminator, changing just scope and ordering.
     pub fn next(&self) -> Result<Option<Event>,Error> {
         if (self.failure.is_some()) { return Err(self.failure.unwrap()); }
-        if (self.done) { return Ok(None()); }
+        if ((match (self.phase.state()) { SelectionPhaseState::Done -> true, _ -> false })) { return Ok(None()); }
         let flat: ext::cli::Parser = self.flat;
         let parsed: Result<Option<ext::cli::Event>,ext::cli::Error> = flat.next();
         self.flat = flat;
         if (parsed.is_err()) { return self.fail(Error::Token(self.current(),parsed.unwrap_err())); }
         let next: Option<ext::cli::Event> = parsed.unwrap();
-        if (next.is_none()) { self.done = true; return Ok(None()); }
+        if (next.is_none()) { self.phase.step(SelectionEvent::Finished); return Ok(None()); }
         let event: ext::cli::Event = next.unwrap();
         return match (event) {
             ext::cli::Event::Option(item) -> self.route_option(item),

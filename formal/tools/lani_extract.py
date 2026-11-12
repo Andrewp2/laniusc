@@ -17,8 +17,9 @@ When extract.lani itself changes, its new extraction is built and run on it
 again, until the extraction it writes is the one it runs as (a fixpoint;
 two rounds when the change is not to the output).
 
-Programs the front end does not read yet (`&mut`, loops: mut_pilot.lani,
-openssl_tls_lifecycle.lani) are still extracted by formal/tools/extract.py.
+Programs outside the validated tree extractor's subset (`machine`, `&mut`,
+loops) use formal/tools/extract.py. SQLite now follows the same machine
+extraction path as openssl_tls_lifecycle.lani.
 """
 
 import argparse
@@ -41,6 +42,7 @@ PROGRAMS = {
 }
 EXTRACT = 'formal/.lake/build/bin/extract'
 LANIUSC = 'target/release/laniusc'
+MACHINE_PROGRAMS = {'sqlite'}
 
 
 def build_extract():
@@ -57,6 +59,14 @@ def build_extract():
 
 def extract(name, work, check):
     """Run the extractor on one program: (returncode, stderr)."""
+    if name in MACHINE_PROGRAMS:
+        source, module = PROGRAMS[name]
+        output = os.path.join('formal', *module.split('.')) + '.lean'
+        command = [sys.executable, 'formal/tools/extract.py']
+        if check:
+            command.append('--check')
+        result = subprocess.run(command + [source, output], capture_output=True, text=True)
+        return result.returncode, result.stderr
     ready = prepare(name, work)
     return ready if isinstance(ready, tuple) else run_extract(ready, check)
 
@@ -104,13 +114,14 @@ def main(argv):
             raise SystemExit(f'no program {name}: {", ".join(PROGRAMS)}')
     # The extractor as the checked-in sources build it: one built before a
     # merge rejects what the merged extract.lani accepts.
-    build_extract()
+    if any(name not in MACHINE_PROGRAMS for name in names):
+        build_extract()
     checked = {}
     if args.check:
         # The checks write nothing, so they run at once (the trees first:
         # laniusc runs one at a time anyway).
         import concurrent.futures
-        ready = {name: prepare(name, work) for name in names}
+        ready = {name: prepare(name, work) for name in names if name not in MACHINE_PROGRAMS}
         with concurrent.futures.ThreadPoolExecutor(len(names)) as pool:
             jobs = {name: pool.submit(run_extract, r, True) for name, r in ready.items() if not isinstance(r, tuple)}
         checked = {name: r if isinstance(r, tuple) else jobs[name].result() for name, r in ready.items()}

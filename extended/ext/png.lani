@@ -8,6 +8,18 @@ import ext::compression;
 import ext::image;
 import ext::inflate;
 
+enum ChunkEvent { ImageData, Other }
+machine ImageChunks on ChunkEvent {
+    start BeforeData;
+    state BeforeData { ChunkEvent::ImageData -> goto Data, ChunkEvent::Other -> stay, }
+    state Data { ChunkEvent::ImageData -> stay, ChunkEvent::Other -> goto AfterData, }
+    final state AfterData { ChunkEvent::ImageData -> stay, ChunkEvent::Other -> stay, }
+}
+impl ImageChunks {
+    fn has_data(&self) -> bool { return match(self.state()) { ImageChunksState::BeforeData -> false, _ -> true }; }
+    fn ended(&self) -> bool { return match(self.state()) { ImageChunksState::AfterData -> true, _ -> false }; }
+}
+
 pub struct Limits { max_input: i32, max_pixels: i32, max_inflated: i32, max_chunks: i32 }
 pub enum Error { Bounds, InputLimit, PixelLimit, InflatedLimit, ChunkLimit, OutputLimit, AllocationFailed, SizeOverflow, Signature, Truncated, ChunkType, ChunkOrder, Crc, Header, Palette, Transparency, UnknownCritical, DataSize, Filter, TrailingData, Compression(ext::compression::Error) }
 pub fn default_limits() -> Limits { return Limits { max_input: 16777216, max_pixels: 16777216, max_inflated: 134217728, max_chunks: 65536 }; }
@@ -59,7 +71,7 @@ fn inflated_size(header: &Header, limit: i32) -> core::result::Result<i32,Error>
 fn parse(input: core::slice::View<u8>, limits: Limits, header: &Header) -> core::result::Result<i32,Error> {
     if (input.length < 8) { return core::result::Err(Error::Truncated); }
     if (big32(input,0) != 2303741511 || big32(input,4) != 218765834) { return core::result::Err(Error::Signature); }
-    let position: i32 = 8; let chunks: i32 = 0; let data: bool = false; let data_ended: bool = false;
+    let position: i32 = 8; let chunks: i32 = 0; let chunks_phase = image_chunks_start();
     while (position < input.length) {
         if (chunks == limits.max_chunks) { return core::result::Err(Error::ChunkLimit); } chunks += 1;
         if (input.length-position < 12) { return core::result::Err(Error::Truncated); }
@@ -83,23 +95,23 @@ fn parse(input: core::slice::View<u8>, limits: Limits, header: &Header) -> core:
             if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); } header.inflated = core::result::unwrap(size);
         } else {
             if (kind == 1347179589) {
-                if (data || header.palette != 0 || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
+                if (chunks_phase.has_data() || header.palette != 0 || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
                 if (header.color == 0 || header.color == 4 || length == 0 || length % 3 != 0 || length > 768 || (header.color == 3 && length/3 > (1 << header.depth))) { return core::result::Err(Error::Palette); }
                 header.palette = start; header.palette_len = length/3;
             } else {
                 if (kind == 1951551059) {
-                    if (data || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
+                    if (chunks_phase.has_data() || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
                     if ((header.color == 0 && length != 2) || (header.color == 2 && length != 6) || (header.color == 3 && (header.palette == 0 || length > header.palette_len)) || header.color == 4 || header.color == 6) { return core::result::Err(Error::Transparency); }
                     header.transparency = start; header.transparency_len = length;
                 } else {
                     if (kind == 1229209940) {
-                        if (data_ended) { return core::result::Err(Error::ChunkOrder); }
+                        if (chunks_phase.ended()) { return core::result::Err(Error::ChunkOrder); }
                         if (header.color == 3 && header.palette == 0) { return core::result::Err(Error::Palette); }
-                        data = true; header.idat_len += length;
+                        chunks_phase.step(ChunkEvent::ImageData); header.idat_len += length;
                     } else {
-                        if (data) { data_ended = true; }
+                        chunks_phase.step(ChunkEvent::Other);
                         if (kind == 1229278788) {
-                            if (!data || length != 0) { return core::result::Err(Error::ChunkOrder); }
+                            if (!chunks_phase.has_data() || length != 0) { return core::result::Err(Error::ChunkOrder); }
                             if (position+12 != input.length) { return core::result::Err(Error::TrailingData); }
                             return core::result::Ok(chunks);
                         }

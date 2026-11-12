@@ -16,16 +16,17 @@ Declaration counts: field: 3; function: 1; impl: 1; method: 12; struct: 1.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_service_tls.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_service_tls.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_service_tls.lani#L11)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_service_tls.lani#L12)
-- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_service_tls.lani#L13)
-- [ext::http_service](http_service.md) · [source](../../../extended/ext/http_service_tls.lani#L14)
-- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_service_tls.lani#L15)
-- [ext::tls_clients](tls_clients.md) · [source](../../../extended/ext/http_service_tls.lani#L16)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_service_tls.lani#L17)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_service_tls.lani#L18)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/http_service_tls.lani#L9)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_service_tls.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_service_tls.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_service_tls.lani#L12)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_service_tls.lani#L13)
+- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_service_tls.lani#L14)
+- [ext::http_service](http_service.md) · [source](../../../extended/ext/http_service_tls.lani#L15)
+- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_service_tls.lani#L16)
+- [ext::tls_clients](tls_clients.md) · [source](../../../extended/ext/http_service_tls.lani#L17)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_service_tls.lani#L18)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_service_tls.lani#L19)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: TlsServer
 
-[Source line 20](../../../extended/ext/http_service_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_service_tls.lani#L21)
 
 ```lanius
 pub struct TlsServer
@@ -41,7 +42,7 @@ pub struct TlsServer
 
 #### field: server
 
-[Source line 20](../../../extended/ext/http_service_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_service_tls.lani#L21)
 
 ```lanius
 server: ext::http_service::Server
@@ -49,25 +50,25 @@ server: ext::http_service::Server
 
 #### field: tls
 
-[Source line 20](../../../extended/ext/http_service_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_service_tls.lani#L21)
 
 ```lanius
 tls: ext::tls_clients::TlsClients
 ```
 
-#### field: closed
+#### field: lifetime
 
-[Source line 20](../../../extended/ext/http_service_tls.lani#L20)
+[Source line 21](../../../extended/ext/http_service_tls.lani#L21)
 
 ```lanius
-closed: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: server
 
-[Source line 26](../../../extended/ext/http_service_tls.lani#L26)
+[Source line 27](../../../extended/ext/http_service_tls.lani#L27)
 
 ```lanius
 pub fn server(listener: &std::socket::Socket, options: ext::http_service::Options, max_connections: i32, context: ext::openssl_tls::ServerContext, h2: bool) -> core::result::Result<TlsServer,ext::http_service::Error>
@@ -75,9 +76,9 @@ pub fn server(listener: &std::socket::Socket, options: ext::http_service::Option
 
 ## Implementation blocks and public methods
 
-### impl at line 36
+### impl at line 37
 
-[Source line 36](../../../extended/ext/http_service_tls.lani#L36)
+[Source line 37](../../../extended/ext/http_service_tls.lani#L37)
 
 ```lanius
 pub impl TlsServer
@@ -85,7 +86,7 @@ pub impl TlsServer
 
 #### method: borrow
 
-[Source line 37](../../../extended/ext/http_service_tls.lani#L37)
+[Source line 38](../../../extended/ext/http_service_tls.lani#L38)
 
 ```lanius
 pub fn borrow(&self) -> &TlsServer
@@ -93,7 +94,7 @@ pub fn borrow(&self) -> &TlsServer
 
 #### method: stats
 
-[Source line 38](../../../extended/ext/http_service_tls.lani#L38)
+[Source line 39](../../../extended/ext/http_service_tls.lani#L39)
 
 ```lanius
 pub fn stats(&self) -> ext::http_service::ServerStats
@@ -101,7 +102,7 @@ pub fn stats(&self) -> ext::http_service::ServerStats
 
 #### method: tls_stats
 
-[Source line 39](../../../extended/ext/http_service_tls.lani#L39)
+[Source line 40](../../../extended/ext/http_service_tls.lani#L40)
 
 ```lanius
 pub fn tls_stats(&self) -> ext::tls_clients::Stats
@@ -109,7 +110,7 @@ pub fn tls_stats(&self) -> ext::tls_clients::Stats
 
 #### method: active
 
-[Source line 40](../../../extended/ext/http_service_tls.lani#L40)
+[Source line 41](../../../extended/ext/http_service_tls.lani#L41)
 
 ```lanius
 pub fn active(&self) -> i32
@@ -117,7 +118,7 @@ pub fn active(&self) -> i32
 
 #### method: request
 
-[Source line 41](../../../extended/ext/http_service_tls.lani#L41)
+[Source line 42](../../../extended/ext/http_service_tls.lani#L42)
 
 ```lanius
 pub fn request(&self, slot: i32) -> ext::http_service::Request
@@ -125,7 +126,7 @@ pub fn request(&self, slot: i32) -> ext::http_service::Request
 
 #### method: take
 
-[Source line 42](../../../extended/ext/http_service_tls.lani#L42)
+[Source line 43](../../../extended/ext/http_service_tls.lani#L43)
 
 ```lanius
 pub fn take(&self, slot: i32) -> ext::http_service::Connection
@@ -133,7 +134,7 @@ pub fn take(&self, slot: i32) -> ext::http_service::Connection
 
 #### method: put
 
-[Source line 43](../../../extended/ext/http_service_tls.lani#L43)
+[Source line 44](../../../extended/ext/http_service_tls.lani#L44)
 
 ```lanius
 pub fn put(&self, slot: i32, conn: ext::http_service::Connection) -> core::result::Result<i32,ext::http_service::Error>
@@ -141,7 +142,7 @@ pub fn put(&self, slot: i32, conn: ext::http_service::Connection) -> core::resul
 
 #### method: h2_request
 
-[Source line 44](../../../extended/ext/http_service_tls.lani#L44)
+[Source line 45](../../../extended/ext/http_service_tls.lani#L45)
 
 ```lanius
 pub fn h2_request(&self, ready: ext::http_service::Ready) -> core::result::Result<ext::http_service::H2Request,ext::http_service::Error>
@@ -149,7 +150,7 @@ pub fn h2_request(&self, ready: ext::http_service::Ready) -> core::result::Resul
 
 #### method: h2_header
 
-[Source line 45](../../../extended/ext/http_service_tls.lani#L45)
+[Source line 46](../../../extended/ext/http_service_tls.lani#L46)
 
 ```lanius
 pub fn h2_header(&self, ready: ext::http_service::Ready, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>>
@@ -157,7 +158,7 @@ pub fn h2_header(&self, ready: ext::http_service::Ready, name: core::slice::View
 
 #### method: h2_respond
 
-[Source line 46](../../../extended/ext/http_service_tls.lani#L46)
+[Source line 47](../../../extended/ext/http_service_tls.lani#L47)
 
 ```lanius
 pub fn h2_respond(&self, ready: ext::http_service::Ready, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,ext::http_service::Error>
@@ -165,7 +166,7 @@ pub fn h2_respond(&self, ready: ext::http_service::Ready, status: i32, content_t
 
 #### method: next_ready
 
-[Source line 48](../../../extended/ext/http_service_tls.lani#L48)
+[Source line 49](../../../extended/ext/http_service_tls.lani#L49)
 
 ```lanius
 pub fn next_ready(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<ext::http_service::Ready>,ext::http_service::Error>
@@ -173,7 +174,7 @@ pub fn next_ready(&self, deadline: core::time::Deadline) -> core::result::Result
 
 #### method: close
 
-[Source line 65](../../../extended/ext/http_service_tls.lani#L65)
+[Source line 66](../../../extended/ext/http_service_tls.lani#L66)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,ext::http_service::Error>

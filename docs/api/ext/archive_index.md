@@ -20,13 +20,15 @@ Declaration counts: enum: 2; field: 15; function: 2; impl: 2; method: 14; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_index.lani#L4)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_index.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/archive_index.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/archive_index.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/archive_index.lani#L8)
-- [ext::sqlite](sqlite.md) · [source](../../../extended/ext/archive_index.lani#L9)
-- [ext::zip](zip.md) · [source](../../../extended/ext/archive_index.lani#L10)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/archive_index.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_index.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_index.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/archive_index.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/archive_index.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/archive_index.lani#L9)
+- [ext::sqlite](sqlite.md) · [source](../../../extended/ext/archive_index.lani#L10)
+- [ext::sqlite_statement](sqlite_statement.md) · [source](../../../extended/ext/archive_index.lani#L11)
+- [ext::zip](zip.md) · [source](../../../extended/ext/archive_index.lani#L12)
 
 ## Types, fields and variants
 
@@ -34,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Cause
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 pub enum Cause
@@ -42,7 +44,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Bounds
@@ -50,7 +52,7 @@ Bounds
 
 #### variant: Limit
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Limit
@@ -58,7 +60,7 @@ Limit
 
 #### variant: AllocationFailed
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 AllocationFailed
@@ -66,7 +68,7 @@ AllocationFailed
 
 #### variant: NotFound
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 NotFound
@@ -74,7 +76,7 @@ NotFound
 
 #### variant: Ordinal
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Ordinal
@@ -82,7 +84,7 @@ Ordinal
 
 #### variant: Corrupt
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Corrupt
@@ -90,7 +92,7 @@ Corrupt
 
 #### variant: Closed
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Closed
@@ -98,7 +100,7 @@ Closed
 
 #### variant: Poisoned
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Poisoned
@@ -106,7 +108,7 @@ Poisoned
 
 #### variant: ReadOnly
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 ReadOnly
@@ -114,7 +116,7 @@ ReadOnly
 
 #### variant: Database
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Database
@@ -122,7 +124,7 @@ Database
 
 #### variant: Archive
 
-[Source line 12](../../../extended/ext/archive_index.lani#L12)
+[Source line 14](../../../extended/ext/archive_index.lani#L14)
 
 ```lanius
 Archive
@@ -130,7 +132,7 @@ Archive
 
 ### enum: Outcome
 
-[Source line 15](../../../extended/ext/archive_index.lani#L15)
+[Source line 17](../../../extended/ext/archive_index.lani#L17)
 
 ```lanius
 pub enum Outcome
@@ -138,7 +140,7 @@ pub enum Outcome
 
 #### variant: Unchanged
 
-[Source line 15](../../../extended/ext/archive_index.lani#L15)
+[Source line 17](../../../extended/ext/archive_index.lani#L17)
 
 ```lanius
 Unchanged
@@ -146,7 +148,7 @@ Unchanged
 
 #### variant: Uncertain
 
-[Source line 15](../../../extended/ext/archive_index.lani#L15)
+[Source line 17](../../../extended/ext/archive_index.lani#L17)
 
 ```lanius
 Uncertain
@@ -154,7 +156,7 @@ Uncertain
 
 ### struct: Error
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 pub struct Error
@@ -162,7 +164,7 @@ pub struct Error
 
 #### field: cause
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 cause: Cause
@@ -170,7 +172,7 @@ cause: Cause
 
 #### field: database
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 database: core::option::Option<ext::sqlite::Error>
@@ -178,7 +180,7 @@ database: core::option::Option<ext::sqlite::Error>
 
 #### field: archive
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 archive: core::option::Option<ext::zip::Error>
@@ -186,7 +188,7 @@ archive: core::option::Option<ext::zip::Error>
 
 #### field: rollback
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 rollback: core::option::Option<ext::sqlite::Error>
@@ -194,7 +196,7 @@ rollback: core::option::Option<ext::sqlite::Error>
 
 #### field: outcome
 
-[Source line 16](../../../extended/ext/archive_index.lani#L16)
+[Source line 18](../../../extended/ext/archive_index.lani#L18)
 
 ```lanius
 outcome: Outcome
@@ -202,7 +204,7 @@ outcome: Outcome
 
 ### struct: Limits
 
-[Source line 17](../../../extended/ext/archive_index.lani#L17)
+[Source line 19](../../../extended/ext/archive_index.lani#L19)
 
 ```lanius
 pub struct Limits
@@ -210,7 +212,7 @@ pub struct Limits
 
 #### field: zip
 
-[Source line 17](../../../extended/ext/archive_index.lani#L17)
+[Source line 19](../../../extended/ext/archive_index.lani#L19)
 
 ```lanius
 zip: ext::zip::Limits
@@ -218,7 +220,7 @@ zip: ext::zip::Limits
 
 #### field: key_bytes
 
-[Source line 17](../../../extended/ext/archive_index.lani#L17)
+[Source line 19](../../../extended/ext/archive_index.lani#L19)
 
 ```lanius
 key_bytes: i32
@@ -226,7 +228,7 @@ key_bytes: i32
 
 ### struct: Store
 
-[Source line 18](../../../extended/ext/archive_index.lani#L18)
+[Source line 20](../../../extended/ext/archive_index.lani#L20)
 
 ```lanius
 pub struct Store
@@ -234,7 +236,7 @@ pub struct Store
 
 #### field: database
 
-[Source line 18](../../../extended/ext/archive_index.lani#L18)
+[Source line 20](../../../extended/ext/archive_index.lani#L20)
 
 ```lanius
 database: ext::sqlite::Database
@@ -242,7 +244,7 @@ database: ext::sqlite::Database
 
 #### field: limits
 
-[Source line 18](../../../extended/ext/archive_index.lani#L18)
+[Source line 20](../../../extended/ext/archive_index.lani#L20)
 
 ```lanius
 limits: Limits
@@ -250,23 +252,23 @@ limits: Limits
 
 #### field: writable
 
-[Source line 18](../../../extended/ext/archive_index.lani#L18)
+[Source line 20](../../../extended/ext/archive_index.lani#L20)
 
 ```lanius
 writable: bool
 ```
 
-#### field: poisoned
+#### field: health
 
-[Source line 18](../../../extended/ext/archive_index.lani#L18)
+[Source line 20](../../../extended/ext/archive_index.lani#L20)
 
 ```lanius
-poisoned: bool
+health: core::lifecycle::Health
 ```
 
 ### struct: Snapshot
 
-[Source line 20](../../../extended/ext/archive_index.lani#L20)
+[Source line 22](../../../extended/ext/archive_index.lani#L22)
 
 ```lanius
 pub struct Snapshot
@@ -274,7 +276,7 @@ pub struct Snapshot
 
 #### field: storage
 
-[Source line 20](../../../extended/ext/archive_index.lani#L20)
+[Source line 22](../../../extended/ext/archive_index.lani#L22)
 
 ```lanius
 storage: alloc::vec::Vec<u8>
@@ -282,7 +284,7 @@ storage: alloc::vec::Vec<u8>
 
 #### field: directory
 
-[Source line 20](../../../extended/ext/archive_index.lani#L20)
+[Source line 22](../../../extended/ext/archive_index.lani#L22)
 
 ```lanius
 directory: ext::zip::Archive
@@ -290,25 +292,25 @@ directory: ext::zip::Archive
 
 #### field: limits
 
-[Source line 20](../../../extended/ext/archive_index.lani#L20)
+[Source line 22](../../../extended/ext/archive_index.lani#L22)
 
 ```lanius
 limits: Limits
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 20](../../../extended/ext/archive_index.lani#L20)
+[Source line 22](../../../extended/ext/archive_index.lani#L22)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 22](../../../extended/ext/archive_index.lani#L22)
+[Source line 24](../../../extended/ext/archive_index.lani#L24)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -316,7 +318,7 @@ pub fn default_limits() -> Limits
 
 ### function: open
 
-[Source line 177](../../../extended/ext/archive_index.lani#L177)
+[Source line 179](../../../extended/ext/archive_index.lani#L179)
 
 ```lanius
 pub fn open(path: core::slice::View<u8>, mode: ext::sqlite::Mode, limits: Limits) -> core::result::Result<Store,Error>
@@ -324,9 +326,9 @@ pub fn open(path: core::slice::View<u8>, mode: ext::sqlite::Mode, limits: Limits
 
 ## Implementation blocks and public methods
 
-### impl at line 257
+### impl at line 259
 
-[Source line 257](../../../extended/ext/archive_index.lani#L257)
+[Source line 259](../../../extended/ext/archive_index.lani#L259)
 
 ```lanius
 pub impl Store
@@ -334,7 +336,7 @@ pub impl Store
 
 #### method: borrow
 
-[Source line 258](../../../extended/ext/archive_index.lani#L258)
+[Source line 260](../../../extended/ext/archive_index.lani#L260)
 
 ```lanius
 pub fn borrow(&self) -> &Store
@@ -342,7 +344,7 @@ pub fn borrow(&self) -> &Store
 
 #### method: is_open
 
-[Source line 259](../../../extended/ext/archive_index.lani#L259)
+[Source line 261](../../../extended/ext/archive_index.lani#L261)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -350,7 +352,7 @@ pub fn is_open(&self) -> bool
 
 #### method: is_poisoned
 
-[Source line 260](../../../extended/ext/archive_index.lani#L260)
+[Source line 262](../../../extended/ext/archive_index.lani#L262)
 
 ```lanius
 pub fn is_poisoned(&self) -> bool
@@ -358,7 +360,7 @@ pub fn is_poisoned(&self) -> bool
 
 #### method: close
 
-[Source line 261](../../../extended/ext/archive_index.lani#L261)
+[Source line 263](../../../extended/ext/archive_index.lani#L263)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>
@@ -366,7 +368,7 @@ pub fn close(&self) -> core::result::Result<i32,Error>
 
 #### method: replace
 
-[Source line 270](../../../extended/ext/archive_index.lani#L270)
+[Source line 272](../../../extended/ext/archive_index.lani#L272)
 
 ```lanius
 pub fn replace(&self, key: core::slice::View<u8>, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -374,15 +376,15 @@ pub fn replace(&self, key: core::slice::View<u8>, bytes: core::slice::View<u8>) 
 
 #### method: load
 
-[Source line 292](../../../extended/ext/archive_index.lani#L292)
+[Source line 294](../../../extended/ext/archive_index.lani#L294)
 
 ```lanius
 pub fn load(&self, key: core::slice::View<u8>) -> core::result::Result<Snapshot,Error>
 ```
 
-### impl at line 383
+### impl at line 385
 
-[Source line 383](../../../extended/ext/archive_index.lani#L383)
+[Source line 385](../../../extended/ext/archive_index.lani#L385)
 
 ```lanius
 pub impl Snapshot
@@ -390,7 +392,7 @@ pub impl Snapshot
 
 #### method: borrow
 
-[Source line 384](../../../extended/ext/archive_index.lani#L384)
+[Source line 386](../../../extended/ext/archive_index.lani#L386)
 
 ```lanius
 pub fn borrow(&self) -> &Snapshot
@@ -398,7 +400,7 @@ pub fn borrow(&self) -> &Snapshot
 
 #### method: is_open
 
-[Source line 385](../../../extended/ext/archive_index.lani#L385)
+[Source line 387](../../../extended/ext/archive_index.lani#L387)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -406,7 +408,7 @@ pub fn is_open(&self) -> bool
 
 #### method: len
 
-[Source line 386](../../../extended/ext/archive_index.lani#L386)
+[Source line 388](../../../extended/ext/archive_index.lani#L388)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -414,7 +416,7 @@ pub fn len(&self) -> i32
 
 #### method: cursor
 
-[Source line 387](../../../extended/ext/archive_index.lani#L387)
+[Source line 389](../../../extended/ext/archive_index.lani#L389)
 
 ```lanius
 pub fn cursor(&self) -> core::result::Result<ext::zip::Cursor,Error>
@@ -422,7 +424,7 @@ pub fn cursor(&self) -> core::result::Result<ext::zip::Cursor,Error>
 
 #### method: bytes
 
-[Source line 393](../../../extended/ext/archive_index.lani#L393)
+[Source line 395](../../../extended/ext/archive_index.lani#L395)
 
 ```lanius
 pub fn bytes(&self) -> core::result::Result<core::slice::View<u8>,Error>
@@ -430,7 +432,7 @@ pub fn bytes(&self) -> core::result::Result<core::slice::View<u8>,Error>
 
 #### method: verify
 
-[Source line 397](../../../extended/ext/archive_index.lani#L397)
+[Source line 399](../../../extended/ext/archive_index.lani#L399)
 
 ```lanius
 pub fn verify(&self) -> core::result::Result<i32,Error>
@@ -438,7 +440,7 @@ pub fn verify(&self) -> core::result::Result<i32,Error>
 
 #### method: get
 
-[Source line 401](../../../extended/ext/archive_index.lani#L401)
+[Source line 403](../../../extended/ext/archive_index.lani#L403)
 
 ```lanius
 pub fn get(&self, ordinal: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -446,7 +448,7 @@ pub fn get(&self, ordinal: i32) -> core::result::Result<alloc::vec::Vec<u8>,Erro
 
 #### method: destroy
 
-[Source line 417](../../../extended/ext/archive_index.lani#L417)
+[Source line 419](../../../extended/ext/archive_index.lani#L419)
 
 ```lanius
 pub fn destroy(&self)

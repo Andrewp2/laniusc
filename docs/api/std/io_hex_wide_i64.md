@@ -16,18 +16,19 @@ Declaration counts: function: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::hex_wide_i64](../core/hex_wide_i64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L3)
-- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L4)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L5)
-- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L6)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L7)
-- [std::io](io.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L8)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L3)
+- [core::hex_wide_i64](../core/hex_wide_i64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L4)
+- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L6)
+- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L7)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L8)
+- [std::io](io.md) · [source](../../../stdlib/std/io_hex_wide_i64.lani#L9)
 
 ## Free functions and extern declarations
 
 ### function: write_lower
 
-[Source line 33](../../../stdlib/std/io_hex_wide_i64.lani#L33)
+[Source line 34](../../../stdlib/std/io_hex_wide_i64.lani#L34)
 
 ```lanius
 pub fn write_lower(handle: i32, value: core::wide_i64::WideI64) -> i32
@@ -35,7 +36,7 @@ pub fn write_lower(handle: i32, value: core::wide_i64::WideI64) -> i32
 
 ### function: write_upper
 
-[Source line 36](../../../stdlib/std/io_hex_wide_i64.lani#L36)
+[Source line 37](../../../stdlib/std/io_hex_wide_i64.lani#L37)
 
 ```lanius
 pub fn write_upper(handle: i32, value: core::wide_i64::WideI64) -> i32
@@ -43,7 +44,7 @@ pub fn write_upper(handle: i32, value: core::wide_i64::WideI64) -> i32
 
 ### function: read_stdin_or
 
-[Source line 44](../../../stdlib/std/io_hex_wide_i64.lani#L44)
+[Source line 45](../../../stdlib/std/io_hex_wide_i64.lani#L45)
 
 ```lanius
 pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64

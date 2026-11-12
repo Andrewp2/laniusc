@@ -1,6 +1,7 @@
 // Canonical weighted directed multigraphs and exact signed shortest paths.
 // Owners copy shallowly: keep one cleanup authority and end borrows first.
 module ext::weighted_graph;
+import core::lifecycle;
 import alloc::binary_heap;
 import alloc::vec;
 import core::cmp;
@@ -24,11 +25,11 @@ pub enum ErrorKind {
 pub struct Error { kind: ErrorKind, node: i32, edge: i32 }
 pub struct Graph {
     offsets: alloc::vec::Vec<i32>, arcs: alloc::vec::Vec<Arc>,
-    count: i32, active: bool
+    count: i32, lifetime: core::lifecycle::Lifetime
 }
 struct Label { reached: bool, distance: i64, parent: i32, parent_cost: i64 }
 pub struct Paths {
-    labels: alloc::vec::Vec<Label>, selected_source: i32, active: bool
+    labels: alloc::vec::Vec<Label>, selected_source: i32, lifetime: core::lifecycle::Lifetime
 }
 struct QueueItem { cost: i64, node: i32 }
 
@@ -177,19 +178,19 @@ pub fn neighbors(value: View, node: i32, limits: Limits)
 
 pub impl Graph {
     pub fn borrow(&self) -> &Graph { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     pub fn node_count(&self) -> i32 { return self.count; }
     pub fn edge_count(&self) -> i32 { return self.arcs.len(); }
     pub fn view(&self) -> core::option::Option<View> {
-        if (!self.active) { return core::option::None(); }
+        if (!self.lifetime.is_active()) { return core::option::None(); }
         return core::option::Some(View {
             nodes: self.count, offsets: self.offsets.as_view(), arcs: self.arcs.as_view()
         });
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
+        if (!self.lifetime.is_active()) { return false; }
         self.offsets.destroy(); self.arcs.destroy();
-        self.count = 0; self.active = false;
+        self.count = 0; self.lifetime.release();
         return true;
     }
 }
@@ -204,7 +205,7 @@ fn allocation_error(cause: alloc::vec::Error, limit: ErrorKind) -> Error {
 }
 fn allocated(nodes: i32, edges: i32) -> core::result::Result<Graph,Error> {
     let out: Graph = Graph {
-        offsets: alloc::vec::new(), arcs: alloc::vec::new(), count: nodes, active: true
+        offsets: alloc::vec::new(), arcs: alloc::vec::new(), count: nodes, lifetime: core::lifecycle::lifetime_start()
     };
     let offsets: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes+1);
     if (offsets.is_err()) {
@@ -291,17 +292,17 @@ pub fn from_edges(nodes: i32, edges: core::slice::View<Edge>, limits: Limits)
 
 pub impl Paths {
     pub fn borrow(&self) -> &Paths { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     pub fn node_count(&self) -> i32 {
-        if (!self.active) { return 0; }
+        if (!self.lifetime.is_active()) { return 0; }
         return self.labels.len();
     }
     pub fn source(&self) -> core::option::Option<i32> {
-        if (!self.active) { return core::option::None(); }
+        if (!self.lifetime.is_active()) { return core::option::None(); }
         return core::option::Some(self.selected_source);
     }
     pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i64>,Error> {
-        if (!self.active) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
         if (node < 0 || node >= self.labels.len()) {
             return core::result::Err(error(ErrorKind::Bounds,node,-1));
         }
@@ -310,7 +311,7 @@ pub impl Paths {
         return core::result::Ok(core::option::Some(label.distance));
     }
     pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Option<Edge>,Error> {
-        if (!self.active) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
         if (node < 0 || node >= self.labels.len()) {
             return core::result::Err(error(ErrorKind::Bounds,node,-1));
         }
@@ -324,7 +325,7 @@ pub impl Paths {
     // output path. The graph's original edge count does not enter this call.
     pub fn path_to(&self, node: i32, limits: Limits)
         -> core::result::Result<core::option::Option<alloc::vec::Vec<Edge>>,Error> {
-        if (!self.active) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(error(ErrorKind::Closed,-1,-1)); }
         let n: i32 = self.labels.len();
         if (node < 0 || node >= n) {
             return core::result::Err(error(ErrorKind::Bounds,node,-1));
@@ -365,8 +366,8 @@ pub impl Paths {
         return core::result::Ok(core::option::Some(out));
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.labels.destroy(); self.selected_source = -1; self.active = false;
+        if (!self.lifetime.is_active()) { return false; }
+        self.labels.destroy(); self.selected_source = -1; self.lifetime.release();
         return true;
     }
 }
@@ -384,7 +385,7 @@ fn allocated_paths(nodes: i32, source: i32) -> core::result::Result<Paths,Error>
     let labels: alloc::vec::Vec<Label> = reserved.unwrap();
     labels.try_resize(nodes,Label { reached: false, distance: 0, parent: -1, parent_cost: 0 }).unwrap();
     labels.set(source,Label { reached: true, distance: 0, parent: -1, parent_cost: 0 }).unwrap();
-    return core::result::Ok(Paths { labels: labels, selected_source: source, active: true });
+    return core::result::Ok(Paths { labels: labels, selected_source: source, lifetime: core::lifecycle::lifetime_start() });
 }
 fn improves(label: Label, cost: i64) -> bool {
     return !label.reached || cost < label.distance;

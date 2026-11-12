@@ -15,7 +15,7 @@ Implemented resumable Linux directory cursor over existing Reader/file-operation
 - [stdlib-directory-cursor](../../stdlib-directory-cursor.md)
 - [extended-text-grep-walk](../../extended-text-grep-walk.md)
 
-Declaration counts: enum: 3; field: 28; function: 3; impl: 1; method: 7; struct: 5; variant: 16.
+Declaration counts: enum: 4; field: 28; function: 3; impl: 1; machine: 1; method: 7; struct: 5; variant: 26.
 
 ## Declared imports
 
@@ -365,9 +365,105 @@ Leave(Directory)
 Fault(Fault)
 ```
 
+### enum: TraversalEvent
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+pub enum TraversalEvent
+```
+
+#### variant: Entered
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Entered
+```
+
+#### variant: DirectoryFound
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+DirectoryFound
+```
+
+#### variant: Descend
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Descend
+```
+
+#### variant: Skip
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Skip
+```
+
+#### variant: ReadFailed
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+ReadFailed
+```
+
+#### variant: Left
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Left
+```
+
+#### variant: ClosedFrame
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+ClosedFrame
+```
+
+#### variant: Exhausted
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Exhausted
+```
+
+#### variant: Failed
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Failed
+```
+
+#### variant: Closed
+
+[Source line 24](../../../stdlib/std/walk.lani#L24)
+
+```lanius
+Closed
+```
+
+### machine: Traversal
+
+[Source line 26](../../../stdlib/std/walk.lani#L26)
+
+```lanius
+pub machine Traversal on TraversalEvent
+```
+
 ### struct: Cursor
 
-[Source line 27](../../../stdlib/std/walk.lani#L27)
+[Source line 173](../../../stdlib/std/walk.lani#L173)
 
 ```lanius
 pub struct Cursor
@@ -375,7 +471,7 @@ pub struct Cursor
 
 #### field: frames
 
-[Source line 28](../../../stdlib/std/walk.lani#L28)
+[Source line 174](../../../stdlib/std/walk.lani#L174)
 
 ```lanius
 frames:alloc::vec::Vec<Frame>
@@ -383,7 +479,7 @@ frames:alloc::vec::Vec<Frame>
 
 #### field: path
 
-[Source line 28](../../../stdlib/std/walk.lani#L28)
+[Source line 174](../../../stdlib/std/walk.lani#L174)
 
 ```lanius
 path:alloc::vec::Vec<u8>
@@ -391,7 +487,7 @@ path:alloc::vec::Vec<u8>
 
 #### field: limits
 
-[Source line 28](../../../stdlib/std/walk.lani#L28)
+[Source line 174](../../../stdlib/std/walk.lani#L174)
 
 ```lanius
 limits:Limits
@@ -399,7 +495,7 @@ limits:Limits
 
 #### field: remaining
 
-[Source line 29](../../../stdlib/std/walk.lani#L29)
+[Source line 175](../../../stdlib/std/walk.lani#L175)
 
 ```lanius
 remaining:u64
@@ -407,7 +503,7 @@ remaining:u64
 
 #### field: entries
 
-[Source line 29](../../../stdlib/std/walk.lani#L29)
+[Source line 175](../../../stdlib/std/walk.lani#L175)
 
 ```lanius
 entries:u64
@@ -415,15 +511,15 @@ entries:u64
 
 #### field: phase
 
-[Source line 29](../../../stdlib/std/walk.lani#L29)
+[Source line 175](../../../stdlib/std/walk.lani#L175)
 
 ```lanius
-phase:i32
+phase:Traversal
 ```
 
 #### field: pending_start
 
-[Source line 29](../../../stdlib/std/walk.lani#L29)
+[Source line 175](../../../stdlib/std/walk.lani#L175)
 
 ```lanius
 pending_start:i32
@@ -431,7 +527,7 @@ pending_start:i32
 
 #### field: pending_depth
 
-[Source line 30](../../../stdlib/std/walk.lani#L30)
+[Source line 176](../../../stdlib/std/walk.lani#L176)
 
 ```lanius
 pending_depth:i32
@@ -439,7 +535,7 @@ pending_depth:i32
 
 #### field: pending_metadata
 
-[Source line 30](../../../stdlib/std/walk.lani#L30)
+[Source line 176](../../../stdlib/std/walk.lani#L176)
 
 ```lanius
 pending_metadata:std::file_ops::Metadata
@@ -447,7 +543,7 @@ pending_metadata:std::file_ops::Metadata
 
 #### field: restore_length
 
-[Source line 30](../../../stdlib/std/walk.lani#L30)
+[Source line 176](../../../stdlib/std/walk.lani#L176)
 
 ```lanius
 restore_length:i32
@@ -457,7 +553,7 @@ restore_length:i32
 
 ### function: default_limits
 
-[Source line 33](../../../stdlib/std/walk.lani#L33)
+[Source line 179](../../../stdlib/std/walk.lani#L179)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -467,7 +563,7 @@ Returns 64 active directories, 65,536 entries, 4095 relative-path bytes, 134,217
 
 ### function: open
 
-[Source line 65](../../../stdlib/std/walk.lani#L65)
+[Source line 211](../../../stdlib/std/walk.lani#L211)
 
 ```lanius
 pub fn open(root:core::path::Path,limits:Limits) -> Result<Cursor,Error>
@@ -477,7 +573,7 @@ Opens a root relative to AT_FDCWD and returns one explicit cleanup authority; fi
 
 ### function: open_at
 
-[Source line 70](../../../stdlib/std/walk.lani#L70)
+[Source line 216](../../../stdlib/std/walk.lani#L216)
 
 ```lanius
 pub fn open_at(parent_fd:i32,root:core::path::Path,limits:Limits) -> Result<Cursor,Error>
@@ -487,9 +583,9 @@ Borrows parent_fd and root bytes only for construction, admits metadata/limits/w
 
 ## Implementation blocks and public methods
 
-### impl at line 96
+### impl at line 242
 
-[Source line 96](../../../stdlib/std/walk.lani#L96)
+[Source line 242](../../../stdlib/std/walk.lani#L242)
 
 ```lanius
 pub impl Cursor
@@ -497,7 +593,7 @@ pub impl Cursor
 
 #### method: borrow
 
-[Source line 97](../../../stdlib/std/walk.lani#L97)
+[Source line 243](../../../stdlib/std/walk.lani#L243)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor
@@ -505,7 +601,7 @@ pub fn borrow(&self) -> &Cursor
 
 #### method: work_done
 
-[Source line 98](../../../stdlib/std/walk.lani#L98)
+[Source line 244](../../../stdlib/std/walk.lani#L244)
 
 ```lanius
 pub fn work_done(&self) -> u64
@@ -513,7 +609,7 @@ pub fn work_done(&self) -> u64
 
 #### method: entries_seen
 
-[Source line 99](../../../stdlib/std/walk.lani#L99)
+[Source line 245](../../../stdlib/std/walk.lani#L245)
 
 ```lanius
 pub fn entries_seen(&self) -> u64
@@ -521,7 +617,7 @@ pub fn entries_seen(&self) -> u64
 
 #### method: descend
 
-[Source line 118](../../../stdlib/std/walk.lani#L118)
+[Source line 264](../../../stdlib/std/walk.lani#L264)
 
 ```lanius
 pub fn descend(&self) -> Result<i32,Error>
@@ -529,7 +625,7 @@ pub fn descend(&self) -> Result<i32,Error>
 
 #### method: prune
 
-[Source line 125](../../../stdlib/std/walk.lani#L125)
+[Source line 271](../../../stdlib/std/walk.lani#L271)
 
 ```lanius
 pub fn prune(&self) -> Result<i32,Error>
@@ -537,7 +633,7 @@ pub fn prune(&self) -> Result<i32,Error>
 
 #### method: next
 
-[Source line 207](../../../stdlib/std/walk.lani#L207)
+[Source line 353](../../../stdlib/std/walk.lani#L353)
 
 ```lanius
 pub fn next(&self) -> Result<core::option::Option<Event>,Error>
@@ -545,7 +641,7 @@ pub fn next(&self) -> Result<core::option::Option<Event>,Error>
 
 #### method: close
 
-[Source line 236](../../../stdlib/std/walk.lani#L236)
+[Source line 382](../../../stdlib/std/walk.lani#L382)
 
 ```lanius
 pub fn close(&self) -> Result<i32,Error>

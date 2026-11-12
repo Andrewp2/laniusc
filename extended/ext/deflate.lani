@@ -2,6 +2,7 @@
 // blocks. Caller-owned disjoint buffers; no allocation and no host services.
 // See docs/extended-deflate.md for ownership, limits and compression policy.
 module ext::deflate;
+import core::iter_state;
 import core::mem;
 import core::result;
 import core::slice;
@@ -13,17 +14,56 @@ pub struct Failure { error: Error, read: i32, written: i32 }
 
 // One active cursor borrows these disjoint workspaces. Copies are inactive
 // aliases; no transient input/output view or external cleanup is retained.
+pub enum EncodingEvent { Block(bool), Flushed, Drained, Reset }
+pub machine EncodingPhase on EncodingEvent {
+    start Feeding;
+
+    state Feeding {
+        EncodingEvent::Block(last) -> { if (last) { goto FinalPending; } stay; },
+        EncodingEvent::Flushed -> goto FlushPending,
+        EncodingEvent::Drained -> stay,
+        EncodingEvent::Reset -> goto Feeding,
+    }
+
+    state FinalPending {
+        EncodingEvent::Block(last) -> stay,
+        EncodingEvent::Flushed -> stay,
+        EncodingEvent::Drained -> goto Done,
+        EncodingEvent::Reset -> goto Feeding,
+    }
+
+    state FlushPending {
+        EncodingEvent::Block(last) -> stay,
+        EncodingEvent::Flushed -> stay,
+        EncodingEvent::Drained -> goto Feeding,
+        EncodingEvent::Reset -> goto Feeding,
+    }
+
+    state Done {
+        EncodingEvent::Block(last) -> stay,
+        EncodingEvent::Flushed -> stay,
+        EncodingEvent::Drained -> stay,
+        EncodingEvent::Reset -> goto Feeding,
+    }
+}
+
+pub impl EncodingPhase {
+    pub fn done(&self) -> bool { return match (self.state()) { EncodingPhaseState::Done -> true, _ -> false }; }
+    pub fn final_pending(&self) -> bool { return match (self.state()) { EncodingPhaseState::FinalPending -> true, EncodingPhaseState::Done -> true, _ -> false }; }
+    pub fn flush_pending(&self) -> bool { return match (self.state()) { EncodingPhaseState::FlushPending -> true, _ -> false }; }
+}
+
 pub struct Encoder {
     block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>,
-    buffered: i32, front: i32, back: i32, final_block: bool, done: bool,
+    buffered: i32, front: i32, back: i32, phase: EncodingPhase,
     // Levels 1-3 only (see level_encoder): match parameters, the sliding
     // window's fill and chunk start, the absolute position of window byte 0,
     // the next position still to hash, and output bits not yet a whole byte.
     level: i32, chain: i32, lazy: i32, nice: i32, good: i32,
-    filled: i32, start: i32, origin: i32, hashed: i32, carry: u64, carry_bits: i32, cleared: bool,
+    filled: i32, start: i32, origin: i32, hashed: i32, carry: u64, carry_bits: i32, initialized: core::iter_state::Completion,
     // A sync flush (see Encoder.sync) is queued in pending. reach: the
     // farthest match distance (see Encoder.limit_window).
-    synced: bool, reach: i32
+    reach: i32
 }
 
 pub fn input_buffer_len() -> i32 { return 32768; }
@@ -490,20 +530,20 @@ pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scr
         block: core::slice::View { values: block.values, start: block.start, length: input_buffer_len() },
         pending: core::slice::View { values: pending.values, start: pending.start, length: output_buffer_len() },
         scratch: core::slice::View { values: scratch.values, start: scratch.start, length: scratch_len() },
-        buffered: 0, front: 0, back: 0, final_block: false, done: false,
+        buffered: 0, front: 0, back: 0, phase: encoding_phase_start(),
         level: 0, chain: 0, lazy: 0, nice: 0, good: 0,
-        filled: 0, start: 0, origin: 0, hashed: 0, carry: 0, carry_bits: 0, cleared: false, synced: false, reach: 32768
+        filled: 0, start: 0, origin: 0, hashed: 0, carry: 0, carry_bits: 0, initialized: core::iter_state::completion_start(), reach: 32768
     });
 }
 
 pub impl Encoder {
     pub fn borrow(&self) -> &Encoder { return self; }
-    pub fn is_done(&self) -> bool { return self.done; }
+    pub fn is_done(&self) -> bool { return self.phase.done(); }
     // Abandon pending bytes and restart without inspecting or clearing backing.
     pub fn reset(&self) {
         self.buffered = 0; self.front = 0; self.back = 0;
-        self.final_block = false; self.done = false;
-        self.filled = 0; self.start = 0; self.origin = 32768; self.hashed = 0; self.carry = 0; self.carry_bits = 0; self.cleared = false; self.synced = false;
+        self.phase.step(EncodingEvent::Reset);
+        self.filled = 0; self.start = 0; self.origin = 32768; self.hashed = 0; self.carry = 0; self.carry_bits = 0; self.initialized = core::iter_state::completion_start(); self.phase.step(EncodingEvent::Drained);
     }
 
     // Called only with no pending bytes. Every block starts with fresh match
@@ -520,14 +560,14 @@ pub impl Encoder {
         if (fixed > stored*8) { size = stored; stored_into(input,self.pending,final_block); }
         // Stored form bounds every selected representation by 32768+5 bytes.
         self.buffered = 0; self.front = 0; self.back = size as i32;
-        self.final_block = final_block;
+        self.phase.step(EncodingEvent::Block(final_block));
     }
 
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
         if (!valid_bytes(input) || !valid_bytes(output)) {
             return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
         }
-        if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
+        if (self.phase.done()) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
         if (self.level > 0) { return level_step(self,input,output,final_input,false); }
         let read: i32 = 0; let written: i32 = 0;
         while (true) {
@@ -538,8 +578,8 @@ pub impl Encoder {
                 return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput });
             }
             self.front = 0; self.back = 0;
-            if (self.final_block) {
-                self.done = true;
+            if (self.phase.final_pending()) {
+                self.phase.step(EncodingEvent::Drained);
                 return core::result::Ok(Step { read: read, written: written, status: Status::Done });
             }
             let count: i32 = input.length-read;
@@ -578,7 +618,7 @@ pub impl Encoder {
         if (!valid_bytes(input) || !valid_bytes(output) || self.level == 0) {
             return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
         }
-        if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
+        if (self.phase.done()) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
         return level_step(self,input,output,false,true);
     }
 }
@@ -629,9 +669,9 @@ pub fn level_encoder(window: core::slice::View<u8>, pending: core::slice::View<u
         block: core::slice::View { values: window.values, start: window.start, length: level_window_len() },
         pending: core::slice::View { values: pending.values, start: pending.start, length: level_pending_len() },
         scratch: core::slice::View { values: scratch.values, start: scratch.start, length: level_scratch_len() },
-        buffered: 0, front: 0, back: 0, final_block: false, done: false,
+        buffered: 0, front: 0, back: 0, phase: encoding_phase_start(),
         level: level, chain: chain, lazy: lazy, nice: nice, good: good,
-        filled: 0, start: 0, origin: 32768, hashed: 0, carry: 0, carry_bits: 0, cleared: false, synced: false, reach: 32768
+        filled: 0, start: 0, origin: 32768, hashed: 0, carry: 0, carry_bits: 0, initialized: core::iter_state::completion_start(), reach: 32768
     });
 }
 
@@ -642,8 +682,8 @@ fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::Vi
         copy_bytes(output,written,e.pending,e.front,publish); e.front += publish; written += publish;
         if (e.front < e.back) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
         e.front = 0; e.back = 0;
-        if (e.final_block) { e.done = true; return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
-        if (e.synced) { e.synced = false; return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+        if (e.phase.final_pending()) { e.phase.step(EncodingEvent::Drained); return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+        if (e.phase.flush_pending()) { e.phase.step(EncodingEvent::Drained); return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
         // After a sync flush a chunk may start anywhere; it still ends by
         // the window's end, where the window slides.
         let chunk_end: i32 = e.start+32768; if (chunk_end > 65536) { chunk_end = 65536; }
@@ -672,7 +712,7 @@ fn level_sync(e: &Encoder) {
     let writer: Bits = Bits { out: core::mem::typed_slice_from_raw_parts<u8>(data(e.pending),e.pending.length), at: e.back, acc: e.carry, count: e.carry_bits };
     writer.put(0,3); writer.put(0,(8-writer.count) & 7);
     writer.put(0,16); writer.put(65535,16);
-    e.carry = 0; e.carry_bits = 0; e.back = writer.at; e.synced = true;
+    e.carry = 0; e.carry_bits = 0; e.back = writer.at; e.phase.step(EncodingEvent::Flushed);
 }
 
 // Keep the newest 32 KiB as history. Positions are absolute; far from the
@@ -699,7 +739,7 @@ fn level_insert(e: &Encoder, bytes: [u8], at: i32) {
 // Parse window[begin..end) into symbols, then code it as one block.
 fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
     let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
-    if (!e.cleared) { let k: i32 = 0; while (k < 32768) { w[s0+HEAD+k] = -1; k += 1; } e.cleared = true; }
+    if (!e.initialized.is_done()) { let k: i32 = 0; while (k < 32768) { w[s0+HEAD+k] = -1; k += 1; } e.initialized.finish(); }
     let base: ptr = data(e.block); let size: i32 = e.block.length;
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base,size);
     let units: i32 = size >> 3; let whole: [u64] = words(base,0,units);
@@ -1042,5 +1082,5 @@ fn level_code(e: &Encoder, begin: i32, end: i32, count: i32, extra_bits: i32, fi
     }
     if (final_block && writer.count > 0) { writer.out[writer.at] = (writer.acc & 255) as u8; writer.at += 1; writer.acc = 0; writer.count = 0; }
     e.carry = writer.acc; e.carry_bits = writer.count;
-    e.front = 0; e.back = writer.at; e.final_block = final_block;
+    e.front = 0; e.back = writer.at; e.phase.step(EncodingEvent::Block(final_block));
 }

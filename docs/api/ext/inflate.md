@@ -15,15 +15,16 @@ The resumable raw decoder preserves bit/block/tree/match state across input/outp
 - [extended-inflate](../../extended-inflate.md)
 - [extended-streaming-inflate](../../extended-streaming-inflate.md)
 
-Declaration counts: enum: 2; field: 36; function: 5; impl: 1; method: 5; struct: 4; variant: 11.
+Declaration counts: enum: 3; field: 36; function: 5; impl: 1; machine: 1; method: 5; struct: 4; variant: 20.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/inflate.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/inflate.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/inflate.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/inflate.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/inflate.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/inflate.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/inflate.lani#L8)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 pub enum Error
@@ -39,7 +40,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 Bounds
@@ -47,7 +48,7 @@ Bounds
 
 #### variant: UnexpectedEof
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 UnexpectedEof
@@ -55,7 +56,7 @@ UnexpectedEof
 
 #### variant: InvalidBlockType
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 InvalidBlockType
@@ -63,7 +64,7 @@ InvalidBlockType
 
 #### variant: InvalidStoredLength
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 InvalidStoredLength
@@ -71,7 +72,7 @@ InvalidStoredLength
 
 #### variant: InvalidCodeLengths
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 InvalidCodeLengths
@@ -79,7 +80,7 @@ InvalidCodeLengths
 
 #### variant: InvalidSymbol
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 InvalidSymbol
@@ -87,7 +88,7 @@ InvalidSymbol
 
 #### variant: InvalidDistance
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 InvalidDistance
@@ -95,7 +96,7 @@ InvalidDistance
 
 #### variant: OutputTooSmall
 
-[Source line 9](../../../extended/ext/inflate.lani#L9)
+[Source line 10](../../../extended/ext/inflate.lani#L10)
 
 ```lanius
 OutputTooSmall
@@ -103,7 +104,7 @@ OutputTooSmall
 
 ### struct: Progress
 
-[Source line 10](../../../extended/ext/inflate.lani#L10)
+[Source line 11](../../../extended/ext/inflate.lani#L11)
 
 ```lanius
 pub struct Progress
@@ -111,7 +112,7 @@ pub struct Progress
 
 #### field: read
 
-[Source line 10](../../../extended/ext/inflate.lani#L10)
+[Source line 11](../../../extended/ext/inflate.lani#L11)
 
 ```lanius
 read: i32
@@ -119,7 +120,7 @@ read: i32
 
 #### field: written
 
-[Source line 10](../../../extended/ext/inflate.lani#L10)
+[Source line 11](../../../extended/ext/inflate.lani#L11)
 
 ```lanius
 written: i32
@@ -127,7 +128,7 @@ written: i32
 
 ### struct: Failure
 
-[Source line 11](../../../extended/ext/inflate.lani#L11)
+[Source line 12](../../../extended/ext/inflate.lani#L12)
 
 ```lanius
 pub struct Failure
@@ -135,7 +136,7 @@ pub struct Failure
 
 #### field: error
 
-[Source line 11](../../../extended/ext/inflate.lani#L11)
+[Source line 12](../../../extended/ext/inflate.lani#L12)
 
 ```lanius
 error: Error
@@ -143,7 +144,7 @@ error: Error
 
 #### field: read
 
-[Source line 11](../../../extended/ext/inflate.lani#L11)
+[Source line 12](../../../extended/ext/inflate.lani#L12)
 
 ```lanius
 read: i32
@@ -151,7 +152,7 @@ read: i32
 
 #### field: written
 
-[Source line 11](../../../extended/ext/inflate.lani#L11)
+[Source line 12](../../../extended/ext/inflate.lani#L12)
 
 ```lanius
 written: i32
@@ -159,7 +160,7 @@ written: i32
 
 ### enum: Status
 
-[Source line 12](../../../extended/ext/inflate.lani#L12)
+[Source line 13](../../../extended/ext/inflate.lani#L13)
 
 ```lanius
 pub enum Status
@@ -167,7 +168,7 @@ pub enum Status
 
 #### variant: NeedInput
 
-[Source line 12](../../../extended/ext/inflate.lani#L12)
+[Source line 13](../../../extended/ext/inflate.lani#L13)
 
 ```lanius
 NeedInput
@@ -175,7 +176,7 @@ NeedInput
 
 #### variant: NeedOutput
 
-[Source line 12](../../../extended/ext/inflate.lani#L12)
+[Source line 13](../../../extended/ext/inflate.lani#L13)
 
 ```lanius
 NeedOutput
@@ -183,7 +184,7 @@ NeedOutput
 
 #### variant: Done
 
-[Source line 12](../../../extended/ext/inflate.lani#L12)
+[Source line 13](../../../extended/ext/inflate.lani#L13)
 
 ```lanius
 Done
@@ -191,7 +192,7 @@ Done
 
 ### struct: Step
 
-[Source line 13](../../../extended/ext/inflate.lani#L13)
+[Source line 14](../../../extended/ext/inflate.lani#L14)
 
 ```lanius
 pub struct Step
@@ -199,7 +200,7 @@ pub struct Step
 
 #### field: read
 
-[Source line 13](../../../extended/ext/inflate.lani#L13)
+[Source line 14](../../../extended/ext/inflate.lani#L14)
 
 ```lanius
 read: i32
@@ -207,7 +208,7 @@ read: i32
 
 #### field: written
 
-[Source line 13](../../../extended/ext/inflate.lani#L13)
+[Source line 14](../../../extended/ext/inflate.lani#L14)
 
 ```lanius
 written: i32
@@ -215,15 +216,103 @@ written: i32
 
 #### field: status
 
-[Source line 13](../../../extended/ext/inflate.lani#L13)
+[Source line 14](../../../extended/ext/inflate.lani#L14)
 
 ```lanius
 status: Status
 ```
 
+### enum: DecodeEvent
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+pub enum DecodeEvent
+```
+
+#### variant: Read
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Read
+```
+
+#### variant: Block
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Block(i32)
+```
+
+#### variant: Repeat
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Repeat
+```
+
+#### variant: TreesReady
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+TreesReady
+```
+
+#### variant: Literal
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Literal
+```
+
+#### variant: Match
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Match
+```
+
+#### variant: End
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+End(bool)
+```
+
+#### variant: Fail
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Fail
+```
+
+#### variant: Reset
+
+[Source line 37](../../../extended/ext/inflate.lani#L37)
+
+```lanius
+Reset
+```
+
+### machine: Decoding
+
+[Source line 39](../../../extended/ext/inflate.lani#L39)
+
+```lanius
+pub machine Decoding on DecodeEvent
+```
+
 ### struct: Decoder
 
-[Source line 57](../../../extended/ext/inflate.lani#L57)
+[Source line 283](../../../extended/ext/inflate.lani#L283)
 
 ```lanius
 pub struct Decoder
@@ -231,7 +320,7 @@ pub struct Decoder
 
 #### field: history
 
-[Source line 58](../../../extended/ext/inflate.lani#L58)
+[Source line 284](../../../extended/ext/inflate.lani#L284)
 
 ```lanius
 history: core::slice::View<u8>
@@ -239,7 +328,7 @@ history: core::slice::View<u8>
 
 #### field: workspace
 
-[Source line 58](../../../extended/ext/inflate.lani#L58)
+[Source line 284](../../../extended/ext/inflate.lani#L284)
 
 ```lanius
 workspace: core::slice::View<i32>
@@ -247,7 +336,7 @@ workspace: core::slice::View<i32>
 
 #### field: max_distance
 
-[Source line 59](../../../extended/ext/inflate.lani#L59)
+[Source line 285](../../../extended/ext/inflate.lani#L285)
 
 ```lanius
 max_distance: i32
@@ -255,7 +344,7 @@ max_distance: i32
 
 #### field: ring
 
-[Source line 59](../../../extended/ext/inflate.lani#L59)
+[Source line 285](../../../extended/ext/inflate.lani#L285)
 
 ```lanius
 ring: bool
@@ -263,7 +352,7 @@ ring: bool
 
 #### field: history_head
 
-[Source line 59](../../../extended/ext/inflate.lani#L59)
+[Source line 285](../../../extended/ext/inflate.lani#L285)
 
 ```lanius
 history_head: i32
@@ -271,7 +360,7 @@ history_head: i32
 
 #### field: history_filled
 
-[Source line 59](../../../extended/ext/inflate.lani#L59)
+[Source line 285](../../../extended/ext/inflate.lani#L285)
 
 ```lanius
 history_filled: i32
@@ -279,15 +368,15 @@ history_filled: i32
 
 #### field: phase
 
-[Source line 60](../../../extended/ext/inflate.lani#L60)
+[Source line 286](../../../extended/ext/inflate.lani#L286)
 
 ```lanius
-phase: i32
+phase: Decoding
 ```
 
 #### field: failure
 
-[Source line 60](../../../extended/ext/inflate.lani#L60)
+[Source line 286](../../../extended/ext/inflate.lani#L286)
 
 ```lanius
 failure: Error
@@ -295,7 +384,7 @@ failure: Error
 
 #### field: buffer
 
-[Source line 60](../../../extended/ext/inflate.lani#L60)
+[Source line 286](../../../extended/ext/inflate.lani#L286)
 
 ```lanius
 buffer: i32
@@ -303,7 +392,7 @@ buffer: i32
 
 #### field: available
 
-[Source line 60](../../../extended/ext/inflate.lani#L60)
+[Source line 286](../../../extended/ext/inflate.lani#L286)
 
 ```lanius
 available: i32
@@ -311,7 +400,7 @@ available: i32
 
 #### field: final_block
 
-[Source line 61](../../../extended/ext/inflate.lani#L61)
+[Source line 287](../../../extended/ext/inflate.lani#L287)
 
 ```lanius
 final_block: i32
@@ -319,7 +408,7 @@ final_block: i32
 
 #### field: kind
 
-[Source line 61](../../../extended/ext/inflate.lani#L61)
+[Source line 287](../../../extended/ext/inflate.lani#L287)
 
 ```lanius
 kind: i32
@@ -327,7 +416,7 @@ kind: i32
 
 #### field: remaining
 
-[Source line 61](../../../extended/ext/inflate.lani#L61)
+[Source line 287](../../../extended/ext/inflate.lani#L287)
 
 ```lanius
 remaining: i32
@@ -335,7 +424,7 @@ remaining: i32
 
 #### field: distance
 
-[Source line 61](../../../extended/ext/inflate.lani#L61)
+[Source line 287](../../../extended/ext/inflate.lani#L287)
 
 ```lanius
 distance: i32
@@ -343,7 +432,7 @@ distance: i32
 
 #### field: literal_count
 
-[Source line 62](../../../extended/ext/inflate.lani#L62)
+[Source line 288](../../../extended/ext/inflate.lani#L288)
 
 ```lanius
 literal_count: i32
@@ -351,7 +440,7 @@ literal_count: i32
 
 #### field: distance_count
 
-[Source line 62](../../../extended/ext/inflate.lani#L62)
+[Source line 288](../../../extended/ext/inflate.lani#L288)
 
 ```lanius
 distance_count: i32
@@ -359,7 +448,7 @@ distance_count: i32
 
 #### field: code_count
 
-[Source line 62](../../../extended/ext/inflate.lani#L62)
+[Source line 288](../../../extended/ext/inflate.lani#L288)
 
 ```lanius
 code_count: i32
@@ -367,7 +456,7 @@ code_count: i32
 
 #### field: index
 
-[Source line 62](../../../extended/ext/inflate.lani#L62)
+[Source line 288](../../../extended/ext/inflate.lani#L288)
 
 ```lanius
 index: i32
@@ -375,7 +464,7 @@ index: i32
 
 #### field: literal_maximum
 
-[Source line 63](../../../extended/ext/inflate.lani#L63)
+[Source line 289](../../../extended/ext/inflate.lani#L289)
 
 ```lanius
 literal_maximum: i32
@@ -383,7 +472,7 @@ literal_maximum: i32
 
 #### field: distance_maximum
 
-[Source line 63](../../../extended/ext/inflate.lani#L63)
+[Source line 289](../../../extended/ext/inflate.lani#L289)
 
 ```lanius
 distance_maximum: i32
@@ -391,7 +480,7 @@ distance_maximum: i32
 
 #### field: code_maximum
 
-[Source line 63](../../../extended/ext/inflate.lani#L63)
+[Source line 289](../../../extended/ext/inflate.lani#L289)
 
 ```lanius
 code_maximum: i32
@@ -399,7 +488,7 @@ code_maximum: i32
 
 #### field: symbol
 
-[Source line 64](../../../extended/ext/inflate.lani#L64)
+[Source line 290](../../../extended/ext/inflate.lani#L290)
 
 ```lanius
 symbol: i32
@@ -407,7 +496,7 @@ symbol: i32
 
 #### field: code
 
-[Source line 64](../../../extended/ext/inflate.lani#L64)
+[Source line 290](../../../extended/ext/inflate.lani#L290)
 
 ```lanius
 code: i32
@@ -415,7 +504,7 @@ code: i32
 
 #### field: first
 
-[Source line 64](../../../extended/ext/inflate.lani#L64)
+[Source line 290](../../../extended/ext/inflate.lani#L290)
 
 ```lanius
 first: i32
@@ -423,7 +512,7 @@ first: i32
 
 #### field: offset
 
-[Source line 64](../../../extended/ext/inflate.lani#L64)
+[Source line 290](../../../extended/ext/inflate.lani#L290)
 
 ```lanius
 offset: i32
@@ -431,7 +520,7 @@ offset: i32
 
 #### field: size
 
-[Source line 64](../../../extended/ext/inflate.lani#L64)
+[Source line 290](../../../extended/ext/inflate.lani#L290)
 
 ```lanius
 size: i32
@@ -439,25 +528,25 @@ size: i32
 
 #### field: fast
 
-[Source line 65](../../../extended/ext/inflate.lani#L65)
+[Source line 291](../../../extended/ext/inflate.lani#L291)
 
 ```lanius
 fast: bool
 ```
 
-#### field: fast_ready
+#### field: fast_ready_completion
 
-[Source line 65](../../../extended/ext/inflate.lani#L65)
+[Source line 291](../../../extended/ext/inflate.lani#L291)
 
 ```lanius
-fast_ready: bool
+fast_ready_completion: core::iter_state::Completion
 ```
 
 ## Free functions and extern declarations
 
 ### function: workspace_len
 
-[Source line 17](../../../extended/ext/inflate.lani#L17)
+[Source line 18](../../../extended/ext/inflate.lani#L18)
 
 ```lanius
 pub fn workspace_len() -> i32
@@ -467,7 +556,7 @@ Returns 707 i32 entries for persistent raw code-length/count/symbol tables. No b
 
 ### function: fast_workspace_len
 
-[Source line 22](../../../extended/ext/inflate.lani#L22)
+[Source line 23](../../../extended/ext/inflate.lani#L23)
 
 ```lanius
 pub fn fast_workspace_len() -> i32
@@ -475,7 +564,7 @@ pub fn fast_workspace_len() -> i32
 
 ### function: decoder
 
-[Source line 96](../../../extended/ext/inflate.lani#L96)
+[Source line 322](../../../extended/ext/inflate.lani#L322)
 
 ```lanius
 pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, max_distance: i32) -> core::result::Result<Decoder,Error>
@@ -485,7 +574,7 @@ Validates full history/workspace metadata, power-of-two 256..32768 window and ca
 
 ### function: decode_into
 
-[Source line 549](../../../extended/ext/inflate.lani#L549)
+[Source line 775](../../../extended/ext/inflate.lani#L775)
 
 ```lanius
 pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Progress,Failure>
@@ -495,7 +584,7 @@ Allocation-free whole-buffer facade over the same raw engine with 32768 maximum 
 
 ### function: decode_into_window
 
-[Source line 552](../../../extended/ext/inflate.lani#L552)
+[Source line 778](../../../extended/ext/inflate.lani#L778)
 
 ```lanius
 pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::View<u8>, max_distance: i32) -> core::result::Result<Progress,Failure>
@@ -505,9 +594,9 @@ Same whole-buffer shared engine with admitted power-of-two 256..32768 history wi
 
 ## Implementation blocks and public methods
 
-### impl at line 527
+### impl at line 753
 
-[Source line 527](../../../extended/ext/inflate.lani#L527)
+[Source line 753](../../../extended/ext/inflate.lani#L753)
 
 ```lanius
 pub impl Decoder
@@ -515,7 +604,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 528](../../../extended/ext/inflate.lani#L528)
+[Source line 754](../../../extended/ext/inflate.lani#L754)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -523,7 +612,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: step
 
-[Source line 529](../../../extended/ext/inflate.lani#L529)
+[Source line 755](../../../extended/ext/inflate.lani#L755)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure>
@@ -531,7 +620,7 @@ pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, 
 
 #### method: is_done
 
-[Source line 532](../../../extended/ext/inflate.lani#L532)
+[Source line 758](../../../extended/ext/inflate.lani#L758)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -539,7 +628,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_failed
 
-[Source line 533](../../../extended/ext/inflate.lani#L533)
+[Source line 759](../../../extended/ext/inflate.lani#L759)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -547,7 +636,7 @@ pub fn is_failed(&self) -> bool
 
 #### method: reset
 
-[Source line 536](../../../extended/ext/inflate.lani#L536)
+[Source line 762](../../../extended/ext/inflate.lani#L762)
 
 ```lanius
 pub fn reset(&self, max_distance: i32) -> core::result::Result<bool,Error>

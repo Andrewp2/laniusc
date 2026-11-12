@@ -1,5 +1,7 @@
 // Ordered Thompson/Pike UTF-8 regular expressions; see docs/extended-regex.md.
 module ext::regex;
+import core::lifecycle;
+import core::iter_state;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -28,12 +30,12 @@ pub struct Input { text: core::text::Text }
 pub struct Regex { code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, entry: i32, groups: i32, config: Options, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8> }
 // Search and Matches each have one active manual owner. Copies cannot fork
 // cursor positions or workspace cleanup authority.
-pub struct Search { regex: Regex, input: Input, workspace: Workspace, position: i32, captures: bool, done: bool }
+pub struct Search { regex: Regex, input: Input, workspace: Workspace, position: i32, captures: bool, completion: core::iter_state::Completion }
 pub struct Matches { search: Search }
 pub struct Inst { op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool }
 pub struct Term { low: u32, high: u32, property: i32, negated: bool }
 struct Node { op: i32, left: i32, right: i32, a: i32, b: i32, flag: bool }
-struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8>, behind: i32 }
+struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, health: core::lifecycle::Health, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8>, behind: i32 }
 // Leaf ops: 0 empty, 1 scalar, 2 class, 3 dot, 4 ^, 5 $, 6 \A,
 // 7 \z, 8 \b, 9 \B. AST: 10 concat,11 alternate,12 repeat,13 group.
 // VM: 10 jump,11 split,12 save,13 accept.
@@ -119,11 +121,11 @@ fn property_matches(property: i32, value: u32) -> bool {
     return gc == 0 || (gc >= 26 && gc <= 29);
 }
 pub impl Parser {
-    fn fail(&self, error: Error) { if (!self.failed) { self.failed = true; self.error = error; } }
+    fn fail(&self, error: Error) { if (!self.health.is_failed()) { self.health.fail(); self.error = error; } }
     fn peek(&self) -> u32 { return core::option::unwrap_or(self.text.scalar_at_byte(self.position), 4294967295); }
     fn take(&self) -> u32 { let value: u32 = self.peek(); if (value != 4294967295) { self.position += core::utf8::encoded_len_or(value, 0) as i32; } return value; }
     fn add(&self, node: Node) -> i32 {
-        if (self.failed) { return 0; }
+        if (self.health.is_failed()) { return 0; }
         if (self.nodes.len() >= self.config.max_states) { self.fail(Error::Limit(self.position)); return 0; }
         let index: i32 = self.nodes.len();
         if (core::result::is_err(self.nodes.try_push(node))) { self.fail(Error::AllocationFailed); }
@@ -188,7 +190,7 @@ pub impl Parser {
         let offset: i32 = self.position - 1; let negative: bool = false;
         if (self.peek() == 94) { self.take(); negative = true; }
         let start: i32 = self.terms.len(); let count: i32 = 0;
-        while (self.peek() != 93 && self.peek() != 4294967295 && !self.failed) {
+        while (self.peek() != 93 && self.peek() != 4294967295 && !self.health.is_failed()) {
             let atom: Node = self.class_atom();
             if (atom.op == 1) {
                 let high: u32 = atom.a as u32;
@@ -278,7 +280,7 @@ pub impl Parser {
         self.behind += 1; let inside: i32 = self.expression(); self.behind -= 1;
         if (self.take() != 41) { self.fail(Error::Syntax(at)); }
         self.depth -= 1;
-        if (self.failed) { return 0; }
+        if (self.health.is_failed()) { return 0; }
         let width: i32 = self.fixed_width(first, inside);
         if (width == -2) { self.fail(Error::AllocationFailed); return 0; }
         if (width < 0) { self.fail(Error::Syntax(at)); return 0; }
@@ -314,7 +316,7 @@ pub impl Parser {
     }
     fn number(&self) -> i32 {
         let count: i32 = 0; let digits: i32 = 0;
-        while (self.peek() >= 48 && self.peek() <= 57 && !self.failed) {
+        while (self.peek() >= 48 && self.peek() <= 57 && !self.health.is_failed()) {
             let digit: i32 = self.take() as i32 - 48;
             if (count > (self.config.max_repeat - digit) / 10 || digit > self.config.max_repeat) { self.fail(Error::Limit(self.position - 1)); return 0; }
             count = count * 10 + digit; digits += 1;
@@ -324,7 +326,7 @@ pub impl Parser {
     }
     fn piece(&self) -> i32 {
         let node: i32 = self.atom(); let value: u32 = self.peek();
-        if (self.failed || (value != 42 && value != 43 && value != 63 && value != 123)) { return node; }
+        if (self.health.is_failed() || (value != 42 && value != 43 && value != 63 && value != 123)) { return node; }
         let at: i32 = self.position; self.take(); let min: i32 = 0; let max: i32 = -1;
         if (value == 43) { min = 1; } if (value == 63) { max = 1; }
         if (value == 123) {
@@ -340,7 +342,7 @@ pub impl Parser {
     }
     fn concatenation(&self) -> i32 {
         let node: i32 = -1;
-        while (self.peek() != 41 && self.peek() != 124 && self.peek() != 4294967295 && !self.failed) {
+        while (self.peek() != 41 && self.peek() != 124 && self.peek() != 4294967295 && !self.health.is_failed()) {
             let right: i32 = self.piece();
             if (node < 0) { node = right; } else { node = self.add(Node { op: 10, left: node, right: right, a: 0, b: 0, flag: false }); }
         }
@@ -349,7 +351,7 @@ pub impl Parser {
     }
     fn expression(&self) -> i32 {
         let node: i32 = self.concatenation();
-        while (self.peek() == 124 && !self.failed) {
+        while (self.peek() == 124 && !self.health.is_failed()) {
             self.take(); let right: i32 = self.concatenation();
             node = self.add(Node { op: 11, left: node, right: right, a: 0, b: 0, flag: false });
         }
@@ -358,26 +360,66 @@ pub impl Parser {
 }
 // Explicit compilation frames avoid recursion proportional to concatenation or
 // repeat expansion. Only parser group nesting uses the bounded native stack.
-struct Frame { node: i32, next: i32, phase: i32, saved: i32, remaining: i32 }
-struct Builder { nodes: alloc::vec::Vec<Node>, code: alloc::vec::Vec<Inst>, frames: alloc::vec::Vec<Frame>, nullable: alloc::vec::Vec<i32>, limit: i32, failed: bool, error: Error }
+pub enum BuildEvent { FirstStarted, Continued, RepeatStarted, RequiredStarted }
+pub machine BuildPhase on BuildEvent {
+    start Initial;
+
+    state Initial {
+        BuildEvent::FirstStarted -> goto FirstChild,
+        BuildEvent::Continued -> goto Continue,
+        BuildEvent::RepeatStarted -> stay,
+        BuildEvent::RequiredStarted -> stay,
+    }
+
+    state FirstChild {
+        BuildEvent::FirstStarted -> stay,
+        BuildEvent::Continued -> goto Continue,
+        BuildEvent::RepeatStarted -> stay,
+        BuildEvent::RequiredStarted -> goto Required,
+    }
+
+    state Continue {
+        BuildEvent::FirstStarted -> stay,
+        BuildEvent::Continued -> stay,
+        BuildEvent::RepeatStarted -> goto RepeatChild,
+        BuildEvent::RequiredStarted -> goto Required,
+    }
+
+    state RepeatChild {
+        BuildEvent::FirstStarted -> stay,
+        BuildEvent::Continued -> goto Continue,
+        BuildEvent::RepeatStarted -> stay,
+        BuildEvent::RequiredStarted -> stay,
+    }
+
+    final state Required {
+        BuildEvent::FirstStarted -> stay,
+        BuildEvent::Continued -> stay,
+        BuildEvent::RepeatStarted -> stay,
+        BuildEvent::RequiredStarted -> stay,
+    }
+}
+
+struct Frame { node: i32, next: i32, phase: BuildPhase, saved: i32, remaining: i32 }
+struct Builder { nodes: alloc::vec::Vec<Node>, code: alloc::vec::Vec<Inst>, frames: alloc::vec::Vec<Frame>, nullable: alloc::vec::Vec<i32>, limit: i32, health: core::lifecycle::Health, error: Error }
 fn instruction(op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool) -> Inst { return Inst { op: op, x: x, y: y, a: a, b: b, flag: flag }; }
-fn frame(node: i32, next: i32) -> Frame { return Frame { node: node, next: next, phase: 0, saved: 0, remaining: 0 }; }
+fn frame(node: i32, next: i32) -> Frame { return Frame { node: node, next: next, phase: build_phase_start(), saved: 0, remaining: 0 }; }
 pub impl Builder {
     fn emit(&self, inst: Inst) -> i32 {
-        if (self.failed) { return 0; }
-        if (self.code.len() >= self.limit) { self.failed = true; self.error = Error::Limit(0); return 0; }
+        if (self.health.is_failed()) { return 0; }
+        if (self.code.len() >= self.limit) { self.health.fail(); self.error = Error::Limit(0); return 0; }
         let index: i32 = self.code.len();
-        if (core::result::is_err(self.code.try_push(inst))) { self.failed = true; self.error = Error::AllocationFailed; }
+        if (core::result::is_err(self.code.try_push(inst))) { self.health.fail(); self.error = Error::AllocationFailed; }
         return index;
     }
     fn push(&self, value: Frame) {
-        if (self.frames.len() >= self.limit) { self.failed = true; self.error = Error::Limit(0); return; }
-        if (core::result::is_err(self.frames.try_push(value))) { self.failed = true; self.error = Error::AllocationFailed; }
+        if (self.frames.len() >= self.limit) { self.health.fail(); self.error = Error::Limit(0); return; }
+        if (core::result::is_err(self.frames.try_push(value))) { self.health.fail(); self.error = Error::AllocationFailed; }
     }
     fn build(&self, root: i32, next: i32) -> i32 {
         self.push(frame(root, next)); let result: i32 = next; let steps: i32 = 0;
-        while (!self.frames.is_empty() && !self.failed) {
-            if (steps >= self.limit * 32) { self.failed = true; self.error = Error::Limit(0); break; }
+        while (!self.frames.is_empty() && !self.health.is_failed()) {
+            if (steps >= self.limit * 32) { self.health.fail(); self.error = Error::Limit(0); break; }
             steps += 1;
             let f: Frame = core::option::unwrap(self.frames.pop());
             let nodes: [Node] = self.nodes.as_slice(); let n: Node = nodes[f.node];
@@ -386,38 +428,38 @@ pub impl Builder {
                 if (n.op != 0) { result = self.emit(instruction(n.op, f.next, 0, n.a, n.b, n.flag)); }
             } else {
                 if (n.op == 10) {
-                    if (f.phase == 0) { f.phase = 1; self.push(f); self.push(frame(n.right, f.next)); }
+                    if ((match (f.phase.state()) { BuildPhaseState::Initial -> true, _ -> false })) { f.phase.step(BuildEvent::FirstStarted); self.push(f); self.push(frame(n.right, f.next)); }
                     else { self.push(frame(n.left, result)); }
                 }
                 if (n.op == 11) {
-                    if (f.phase == 0) { f.phase = 1; self.push(f); self.push(frame(n.right, f.next)); }
+                    if ((match (f.phase.state()) { BuildPhaseState::Initial -> true, _ -> false })) { f.phase.step(BuildEvent::FirstStarted); self.push(f); self.push(frame(n.right, f.next)); }
                     else {
-                        if (f.phase == 1) { f.saved = result; f.phase = 2; self.push(f); self.push(frame(n.left, f.next)); }
+                        if ((match (f.phase.state()) { BuildPhaseState::FirstChild -> true, _ -> false })) { f.saved = result; f.phase.step(BuildEvent::Continued); self.push(f); self.push(frame(n.left, f.next)); }
                         else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
                     }
                 }
                 // Lookbehind: a separate sub-program [accept, look) ending in op 15,
                 // then op 14 (x next, y sub-program base, a its entry, b width).
                 if (n.op == 14) {
-                    if (f.phase == 0) { f.phase = 1; f.saved = self.emit(instruction(15, 0, 0, 0, 0, false)); self.push(f); self.push(frame(n.left, f.saved)); }
+                    if ((match (f.phase.state()) { BuildPhaseState::Initial -> true, _ -> false })) { f.phase.step(BuildEvent::FirstStarted); f.saved = self.emit(instruction(15, 0, 0, 0, 0, false)); self.push(f); self.push(frame(n.left, f.saved)); }
                     else {
-                        if (self.code.len() - f.saved > 256) { self.failed = true; self.error = Error::Limit(0); }
+                        if (self.code.len() - f.saved > 256) { self.health.fail(); self.error = Error::Limit(0); }
                         result = self.emit(instruction(14, f.next, f.saved, result, n.a, n.flag));
                     }
                 }
                 if (n.op == 13) {
-                    if (f.phase == 0) { f.phase = 1; let end: i32 = self.emit(instruction(12, f.next, 0, n.a * 2 + 1, 0, false)); self.push(f); self.push(frame(n.left, end)); }
+                    if ((match (f.phase.state()) { BuildPhaseState::Initial -> true, _ -> false })) { f.phase.step(BuildEvent::FirstStarted); let end: i32 = self.emit(instruction(12, f.next, 0, n.a * 2 + 1, 0, false)); self.push(f); self.push(frame(n.left, end)); }
                     else { result = self.emit(instruction(12, result, 0, n.a * 2, 0, false)); }
                 }
                 if (n.op == 12) {
-                    if (f.phase == 0) {
+                    if ((match (f.phase.state()) { BuildPhaseState::Initial -> true, _ -> false })) {
                         result = f.next;
                         if (n.b < 0) {
                             let split: i32 = self.emit(instruction(11, 0, f.next, 0, 0, false));
-                            f.phase = 1; f.saved = split; self.push(f); self.push(frame(n.left, split));
-                        } else { f.phase = 2; f.remaining = n.b - n.a; self.push(f); }
+                            f.phase.step(BuildEvent::FirstStarted); f.saved = split; self.push(f); self.push(frame(n.left, split));
+                        } else { f.phase.step(BuildEvent::Continued); f.remaining = n.b - n.a; self.push(f); }
                     } else {
-                        if (f.phase == 1) {
+                        if ((match (f.phase.state()) { BuildPhaseState::FirstChild -> true, _ -> false })) {
                             let inst: Inst = instruction(11, result, f.next, 0, 0, false);
                             if (n.flag) { inst.x = f.next; inst.y = result; }
                             core::result::unwrap(self.code.set(f.saved, inst));
@@ -430,17 +472,17 @@ pub impl Builder {
                                     else { result = self.emit(instruction(11, result, f.next, 0, 0, false)); }
                                 } else { result = f.saved; }
                             }
-                            f.phase = 4; self.push(f);
+                            f.phase.step(BuildEvent::RequiredStarted); self.push(f);
                         } else {
-                            if (f.phase == 2) {
-                                if (f.remaining > 0) { f.phase = 3; f.saved = result; self.push(f); self.push(frame(n.left, result)); }
-                                else { f.phase = 4; f.remaining = n.a; self.push(f); }
+                            if ((match (f.phase.state()) { BuildPhaseState::Continue -> true, _ -> false })) {
+                                if (f.remaining > 0) { f.phase.step(BuildEvent::RepeatStarted); f.saved = result; self.push(f); self.push(frame(n.left, result)); }
+                                else { f.phase.step(BuildEvent::RequiredStarted); f.remaining = n.a; self.push(f); }
                             } else {
-                                if (f.phase == 3) {
+                                if ((match (f.phase.state()) { BuildPhaseState::RepeatChild -> true, _ -> false })) {
                                     // Every optional copy skips to the repeat's exit, so x{0,2}? nests as (?:x(?:x)??)??.
                                     if (n.flag) { result = self.emit(instruction(11, f.next, result, 0, 0, false)); }
                                     else { result = self.emit(instruction(11, result, f.next, 0, 0, false)); }
-                                    f.remaining -= 1; f.phase = 2; self.push(f);
+                                    f.remaining -= 1; f.phase.step(BuildEvent::Continued); self.push(f);
                                 } else {
                                     if (f.remaining > 0) { f.remaining -= 1; self.push(f); self.push(frame(n.left, result)); }
                                 }
@@ -459,10 +501,10 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     let checked: core::result::Result<core::text::Text, Error> = validate(pattern);
     if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
     let nodes: alloc::vec::Vec<Node> = alloc::vec::new(); let terms: alloc::vec::Vec<Term> = alloc::vec::new();
-    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new(), behind: 0 };
+    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, health: core::lifecycle::health_start(), error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new(), behind: 0 };
     let root: i32 = parser.expression();
     if (parser.position != pattern.length) { parser.fail(Error::Syntax(parser.position)); }
-    if (parser.failed) { parser.nodes.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(parser.error); }
+    if (parser.health.is_failed()) { parser.nodes.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(parser.error); }
     let code: alloc::vec::Vec<Inst> = alloc::vec::new(); let frames: alloc::vec::Vec<Frame> = alloc::vec::new();
     // Children precede parents in the flat AST, allowing one bounded pass.
     let nullable: alloc::vec::Vec<i32> = alloc::vec::new();
@@ -479,13 +521,13 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
         ni += 1;
     }
     if (allocation_failed) { nullable.destroy(); parser.nodes.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(Error::AllocationFailed); }
-    let builder: Builder = Builder { nodes: parser.nodes, code: code, frames: frames, nullable: nullable, limit: config.max_states, failed: false, error: Error::Bounds };
+    let builder: Builder = Builder { nodes: parser.nodes, code: code, frames: frames, nullable: nullable, limit: config.max_states, health: core::lifecycle::health_start(), error: Error::Bounds };
     let accept: i32 = builder.emit(instruction(13, 0, 0, 0, 0, false));
     let finish: i32 = builder.emit(instruction(12, accept, 0, 1, 0, false));
     let entry: i32 = builder.build(root, finish);
     entry = builder.emit(instruction(12, entry, 0, 0, 0, false));
     builder.frames.destroy(); builder.nullable.destroy(); parser.nodes.destroy();
-    if (builder.failed) { builder.code.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(builder.error); }
+    if (builder.health.is_failed()) { builder.code.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(builder.error); }
     return core::result::Ok(Regex { code: builder.code, terms: parser.terms, entry: entry, groups: parser.groups + 1, config: config, names: parser.names, name_bytes: parser.name_bytes });
 }
 // Fixed-capacity storage for one active search at a time. Public fields are
@@ -498,7 +540,7 @@ pub struct Workspace {
     seen: alloc::vec::Vec<i32>, temporary: alloc::vec::Vec<i32>, candidate: alloc::vec::Vec<i32>,
     states_reserved: i32, groups_reserved: i32, bytes_reserved: u64,
     active_states: i32, slots: i32, result_groups: i32, matched: bool,
-    work: i32, max_work: i32, failed: bool
+    work: i32, max_work: i32, health: core::lifecycle::Health
 }
 fn sized(value: &alloc::vec::Vec<i32>, count: i32, fill: i32) -> bool { return value.try_resize(count,fill).is_ok(); }
 // Groups include group zero. Reserve exactly the requested nine Vec owners;
@@ -519,7 +561,7 @@ pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error> {
         seen: alloc::vec::new(), temporary: alloc::vec::new(), candidate: alloc::vec::new(),
         states_reserved: states, groups_reserved: groups, bytes_reserved: elements * width,
         active_states: 0, slots: 0, result_groups: 0, matched: false,
-        work: 0, max_work: 0, failed: false
+        work: 0, max_work: 0, health: core::lifecycle::health_start()
     };
     if (!sized(value.current.borrow(),states,0) || !sized(value.next.borrow(),states,0) ||
         !sized(value.current_caps.borrow(),matrix,-1) || !sized(value.next_caps.borrow(),matrix,-1) ||
@@ -549,14 +591,14 @@ pub impl Workspace {
     }
     fn invalidate(&self) {
         self.matched = false; self.result_groups = 0; self.active_states = 0;
-        self.slots = 0; self.work = 0; self.max_work = 0; self.failed = false;
+        self.slots = 0; self.work = 0; self.max_work = 0; self.health.reset();
     }
     pub fn destroy(&self) {
         self.current.destroy(); self.next.destroy(); self.current_caps.destroy(); self.next_caps.destroy();
         self.stack.destroy(); self.stack_caps.destroy(); self.seen.destroy(); self.temporary.destroy(); self.candidate.destroy();
         self.states_reserved = 0; self.groups_reserved = 0; self.bytes_reserved = 0;
         self.active_states = 0; self.slots = 0; self.result_groups = 0; self.matched = false;
-        self.max_work = 0; self.failed = false;
+        self.max_work = 0; self.health.reset();
     }
     fn begin(&self, states: i32, groups: i32, limit: i32) {
         self.active_states = states; self.slots = groups * 2; self.max_work = limit;
@@ -567,7 +609,7 @@ pub impl Workspace {
         let temp = self.temporary.as_slice(); let candidate = self.candidate.as_slice(); let i: i32 = 0;
         while (i < self.slots) { temp[i] = -1; candidate[i] = -1; i += 1; }
     }
-    fn tick(&self) -> bool { if (self.work >= self.max_work) { self.failed = true; return false; } self.work += 1; return true; }
+    fn tick(&self) -> bool { if (self.work >= self.max_work) { self.health.fail(); return false; } self.work += 1; return true; }
     fn clear_seen(&self) { let seen = self.seen.as_slice(); let i: i32 = 0; while (i < self.active_states) { seen[i] = 0; i += 1; } }
     fn swap_lists(&self) {
         let pcs = self.current; self.current = self.next; self.next = pcs;
@@ -627,7 +669,7 @@ pub impl Regex {
         let stack: [i32] = scratch.stack.as_slice(); let stack_caps: [i32] = scratch.stack_caps.as_slice(); let temp: [i32] = scratch.temporary.as_slice();
         copy_slots(caps, caps_at, temp, 0, scratch.slots);
         let pending: i32 = 0; let cursor: i32 = pc; let total: i32 = count;
-        while (!scratch.failed) {
+        while (!scratch.health.is_failed()) {
             if (seen[cursor] == 0) {
                 seen[cursor] = 1;
                 if (!scratch.tick()) { break; }
@@ -670,7 +712,7 @@ pub impl Regex {
         let current: [u64; 4] = [0, 0, 0, 0]; let next: [u64; 4] = [0, 0, 0, 0]; let stack: [i32; 256] = [0; 256];
         let one: u64 = 1; let pending: i32 = 1; stack[0] = look.a; next[(look.a - base) / 64] = one << ((look.a - base) % 64) as u64;
         let step: i32 = 0;
-        while (!scratch.failed) {
+        while (!scratch.health.is_failed()) {
             let accepted: bool = false;
             // Epsilon closure at `at`; a PC's bit is set when it is first pushed.
             while (pending > 0) {
@@ -691,7 +733,7 @@ pub impl Regex {
                     if ((next[bit / 64] & mask) == 0) { next[bit / 64] = next[bit / 64] | mask; stack[pending] = other; pending += 1; }
                 }
             }
-            if (scratch.failed) { return false; }
+            if (scratch.health.is_failed()) { return false; }
             if (step == look.b) { return accepted; }
             let w: i32 = 0; while (w < 4) { current[w] = next[w]; next[w] = 0; w += 1; }
             let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(at), 4294967295);
@@ -751,7 +793,7 @@ pub impl Regex {
             let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(position), 4294967295);
             let following: i32 = position;
             if (position < text.length) { following += core::utf8::encoded_len_or(scalar, 0) as i32; }
-            while (i < current_count && !scratch.failed) {
+            while (i < current_count && !scratch.health.is_failed()) {
                 let inst: Inst = code[current[i]];
                 if (inst.op == 13) {
                     if (!longest_prefix || !matched || position > candidate[1]) { copy_slots(current_caps, i * scratch.slots, candidate, 0, scratch.slots); }
@@ -767,7 +809,7 @@ pub impl Regex {
                 }
                 i += 1;
             }
-            if (scratch.failed) { return Err(Error::WorkLimit); }
+            if (scratch.health.is_failed()) { return Err(Error::WorkLimit); }
             if (((longest_prefix || matched) && next_count == 0) || position == text.length) { break; }
             scratch.swap_lists(); current_count = next_count; position = following;
         }
@@ -836,7 +878,7 @@ pub impl Regex {
         let storage = allocated.unwrap();
         return Ok(Search {
             regex: Regex { code: self.code, terms: self.terms, entry: self.entry, groups: self.groups, config: self.config, names: self.names, name_bytes: self.name_bytes },
-            input: input, workspace: storage, position: 0, captures: captures, done: false
+            input: input, workspace: storage, position: 0, captures: captures, completion: core::iter_state::completion_start()
         });
     }
     pub fn capture_iter(&self, input: Input) -> Result<Search,Error> { return self.iterator(input,true); }
@@ -864,17 +906,17 @@ pub impl Search {
     pub fn span(&self, group: i32) -> Option<Span> { return self.workspace.span(group); }
     pub fn group_count(&self) -> i32 { return self.workspace.group_count(); }
     pub fn work_used(&self) -> i32 { return self.workspace.work_used(); }
-    pub fn destroy(&self) { self.done = true; self.workspace.destroy(); }
+    pub fn destroy(&self) { self.completion.finish(); self.workspace.destroy(); }
     pub fn next(&self) -> Result<Option<Span>,Error> {
         // A final empty EOF result remains readable until this next attempt.
         // Releasing it does not execute or charge another VM search.
-        if (self.done) { self.workspace.destroy(); return Ok(None()); }
+        if (self.completion.is_done()) { self.workspace.destroy(); return Ok(None()); }
         let result = self.regex.search_with(self.input,self.position,false,self.captures,self.workspace.borrow());
         if (result.is_err()) { let error = result.unwrap_err(); self.destroy(); return Err(error); }
         if (!result.unwrap()) { self.destroy(); return Ok(None()); }
         let span = self.workspace.span(0).unwrap(); self.position = span.end;
         if (span.start == span.end) {
-            if (self.position == self.input.text.length) { self.done = true; }
+            if (self.position == self.input.text.length) { self.completion.finish(); }
             else { self.position += core::utf8::encoded_len_or(self.input.text.scalar_at_byte(self.position).unwrap(),0) as i32; }
         }
         return Ok(Some(span));

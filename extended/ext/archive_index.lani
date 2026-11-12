@@ -1,12 +1,14 @@
 // Immutable ZIP snapshots and ordinal metadata in a dedicated SQLite database.
 // ZIP and SQLite supply all archive and storage behavior. One active owner.
 module ext::archive_index;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
 import core::result;
 import core::slice;
 import ext::sqlite;
+import ext::sqlite_statement;
 import ext::zip;
 
 pub enum Cause { Bounds, Limit, AllocationFailed, NotFound, Ordinal, Corrupt, Closed, Poisoned, ReadOnly, Database, Archive }
@@ -15,9 +17,9 @@ pub enum Cause { Bounds, Limit, AllocationFailed, NotFound, Ordinal, Corrupt, Cl
 pub enum Outcome { Unchanged, Uncertain }
 pub struct Error { cause: Cause, database: core::option::Option<ext::sqlite::Error>, archive: core::option::Option<ext::zip::Error>, rollback: core::option::Option<ext::sqlite::Error>, outcome: Outcome }
 pub struct Limits { zip: ext::zip::Limits, key_bytes: i32 }
-pub struct Store { database: ext::sqlite::Database, limits: Limits, writable: bool, poisoned: bool }
+pub struct Store { database: ext::sqlite::Database, limits: Limits, writable: bool, health: core::lifecycle::Health }
 // The directory borrows storage. Never modify fields or use inactive copies.
-pub struct Snapshot { storage: alloc::vec::Vec<u8>, directory: ext::zip::Archive, limits: Limits, live: bool }
+pub struct Snapshot { storage: alloc::vec::Vec<u8>, directory: ext::zip::Archive, limits: Limits, lifetime: core::lifecycle::Lifetime }
 
 pub fn default_limits() -> Limits {
     let zip: ext::zip::Limits = ext::zip::default_limits();
@@ -141,16 +143,16 @@ fn version(database: &ext::sqlite::Database) -> core::result::Result<i32,Error> 
 // autocommit already restored cannot establish which durable version survived.
 fn recover(store: &Store, error: Error, committing: bool) -> Error {
     let state = store.database.autocommit();
-    if (state.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(state.unwrap_err()); return error; }
+    if (state.is_err()) { store.health.fail(); error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(state.unwrap_err()); return error; }
     if (state.unwrap()) {
-        if (committing) { store.poisoned = true; error.outcome = Outcome::Uncertain; }
+        if (committing) { store.health.fail(); error.outcome = Outcome::Uncertain; }
         return error;
     }
     let rolled = store.database.rollback();
-    if (rolled.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(rolled.unwrap_err()); return error; }
+    if (rolled.is_err()) { store.health.fail(); error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(rolled.unwrap_err()); return error; }
     let ended = store.database.autocommit();
-    if (ended.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(ended.unwrap_err()); }
-    else { if (!ended.unwrap()) { store.poisoned = true; error.outcome = Outcome::Uncertain; } }
+    if (ended.is_err()) { store.health.fail(); error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(ended.unwrap_err()); }
+    else { if (!ended.unwrap()) { store.health.fail(); error.outcome = Outcome::Uncertain; } }
     return error;
 }
 fn initialize(store: &Store, create: bool) -> core::result::Result<i32,Error> {
@@ -183,7 +185,7 @@ pub fn open(path: core::slice::View<u8>, mode: ext::sqlite::Mode, limits: Limits
     if (opened.is_err()) { return core::result::Err(database_error(opened.unwrap_err())); }
     let database: ext::sqlite::Database = opened.unwrap();
     let writable: bool = match (mode) { ext::sqlite::Mode::ReadOnly -> false, _ -> true };
-    let store: Store = Store { database: database, limits: limits, writable: writable, poisoned: false };
+    let store: Store = Store { database: database, limits: limits, writable: writable, health: core::lifecycle::health_start() };
     let checked: core::result::Result<i32,Error> = core::result::Ok(0);
     if (writable) { let create: bool = match (mode) { ext::sqlite::Mode::Create -> true, _ -> false }; checked = initialize(store.borrow(),create); }
     else {
@@ -257,13 +259,13 @@ fn save_entries(database: &ext::sqlite::Database, key: core::slice::View<u8>, ar
 pub impl Store {
     pub fn borrow(&self) -> &Store { return self; }
     pub fn is_open(&self) -> bool { return self.database.is_open(); }
-    pub fn is_poisoned(&self) -> bool { return self.poisoned; }
+    pub fn is_poisoned(&self) -> bool { return self.health.is_failed(); }
     pub fn close(&self) -> core::result::Result<i32,Error> {
         let closed = self.database.close(); if (closed.is_err()) { return core::result::Err(database_error(closed.unwrap_err())); } return core::result::Ok(0);
     }
     fn ready(&self) -> core::result::Result<i32,Error> {
         if (!self.is_open()) { return core::result::Err(failure(Cause::Closed)); }
-        if (self.poisoned) { return core::result::Err(failure(Cause::Poisoned)); }
+        if (self.health.is_failed()) { return core::result::Err(failure(Cause::Poisoned)); }
         return core::result::Ok(0);
     }
     // Validation and ALL payload CRCs precede the first replacement write.
@@ -324,7 +326,7 @@ fn selected_archive(statement: &ext::sqlite::Statement, limits: Limits) -> core:
     if (archive.len() as i64 != entries.unwrap()) { bytes.destroy(); return core::result::Err(failure(Cause::Corrupt)); }
     let ended = step_done(statement);
     if (ended.is_err()) { bytes.destroy(); return core::result::Err(ended.unwrap_err()); }
-    return core::result::Ok(Snapshot { storage: bytes, directory: archive, limits: limits, live: true });
+    return core::result::Ok(Snapshot { storage: bytes, directory: archive, limits: limits, lifetime: core::lifecycle::lifetime_start() });
 }
 fn integer_matches(statement: &ext::sqlite::Statement, column: i32, value: i64) -> core::result::Result<i32,Error> {
     let read = statement.column_i64(column);
@@ -382,24 +384,24 @@ fn load_snapshot(database: &ext::sqlite::Database, key: core::slice::View<u8>, l
 
 pub impl Snapshot {
     pub fn borrow(&self) -> &Snapshot { return self; }
-    pub fn is_open(&self) -> bool { return self.live; }
-    pub fn len(&self) -> i32 { if (!self.live) { return 0; } return self.directory.len(); }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
+    pub fn len(&self) -> i32 { if (!self.lifetime.is_active()) { return 0; } return self.directory.len(); }
     pub fn cursor(&self) -> core::result::Result<ext::zip::Cursor,Error> {
-        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(failure(Cause::Closed)); }
         return core::result::Ok(self.directory.cursor());
     }
     // bytes() exposes the exact stored ZIP, whose structure/index were checked.
     // Call verify() before exporting if payload corruption must be rejected.
     pub fn bytes(&self) -> core::result::Result<core::slice::View<u8>,Error> {
-        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(failure(Cause::Closed)); }
         return core::result::Ok(self.storage.as_view());
     }
     pub fn verify(&self) -> core::result::Result<i32,Error> {
-        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(failure(Cause::Closed)); }
         return verify_archive(self.directory,self.limits);
     }
     pub fn get(&self, ordinal: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
-        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(failure(Cause::Closed)); }
         if (ordinal < 0 || ordinal >= self.directory.len()) { return core::result::Err(failure(Cause::Ordinal)); }
         let cursor: ext::zip::Cursor = self.directory.cursor(); let index: i32 = 0;
         while (index <= ordinal) {
@@ -414,5 +416,5 @@ pub impl Snapshot {
         }
         return core::result::Err(failure(Cause::Ordinal));
     }
-    pub fn destroy(&self) { if (self.live) { self.live = false; self.storage.destroy(); } }
+    pub fn destroy(&self) { if (self.lifetime.is_active()) { self.lifetime.release(); self.storage.destroy(); } }
 }

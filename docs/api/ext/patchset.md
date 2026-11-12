@@ -18,14 +18,15 @@ Declaration counts: enum: 4; field: 16; function: 6; impl: 2; method: 8; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/patchset.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/patchset.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/patchset.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/patchset.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/patchset.lani#L10)
-- [ext::merge3](merge3.md) · [source](../../../extended/ext/patchset.lani#L11)
-- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/patchset.lani#L12)
-- [ext::unidiff](unidiff.md) · [source](../../../extended/ext/patchset.lani#L13)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/patchset.lani#L6)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/patchset.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/patchset.lani#L8)
+- [core::option](../core/option.md) · [source](../../../extended/ext/patchset.lani#L9)
+- [core::result](../core/result.md) · [source](../../../extended/ext/patchset.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/patchset.lani#L11)
+- [ext::merge3](merge3.md) · [source](../../../extended/ext/patchset.lani#L12)
+- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/patchset.lani#L13)
+- [ext::unidiff](unidiff.md) · [source](../../../extended/ext/patchset.lani#L14)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 pub enum Error
@@ -41,7 +42,7 @@ pub enum Error
 
 #### variant: InvalidInput
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 InvalidInput
@@ -49,7 +50,7 @@ InvalidInput
 
 #### variant: Malformed
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 Malformed
@@ -57,7 +58,7 @@ Malformed
 
 #### variant: FileLimit
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 FileLimit
@@ -65,7 +66,7 @@ FileLimit
 
 #### variant: LineLimit
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 LineLimit
@@ -73,7 +74,7 @@ LineLimit
 
 #### variant: AllocationFailed
 
-[Source line 15](../../../extended/ext/patchset.lani#L15)
+[Source line 16](../../../extended/ext/patchset.lani#L16)
 
 ```lanius
 AllocationFailed
@@ -81,7 +82,7 @@ AllocationFailed
 
 ### enum: Kind
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 pub enum Kind
@@ -89,7 +90,7 @@ pub enum Kind
 
 #### variant: Modify
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 Modify
@@ -97,7 +98,7 @@ Modify
 
 #### variant: Create
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 Create
@@ -105,7 +106,7 @@ Create
 
 #### variant: Delete
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 Delete
@@ -113,7 +114,7 @@ Delete
 
 #### variant: Rename
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 Rename
@@ -121,7 +122,7 @@ Rename
 
 #### variant: Copy
 
-[Source line 16](../../../extended/ext/patchset.lani#L16)
+[Source line 17](../../../extended/ext/patchset.lani#L17)
 
 ```lanius
 Copy
@@ -129,7 +130,7 @@ Copy
 
 ### enum: Binary
 
-[Source line 18](../../../extended/ext/patchset.lani#L18)
+[Source line 19](../../../extended/ext/patchset.lani#L19)
 
 ```lanius
 pub enum Binary
@@ -137,7 +138,7 @@ pub enum Binary
 
 #### variant: Text
 
-[Source line 18](../../../extended/ext/patchset.lani#L18)
+[Source line 19](../../../extended/ext/patchset.lani#L19)
 
 ```lanius
 Text
@@ -145,7 +146,7 @@ Text
 
 #### variant: Literal
 
-[Source line 18](../../../extended/ext/patchset.lani#L18)
+[Source line 19](../../../extended/ext/patchset.lani#L19)
 
 ```lanius
 Literal
@@ -153,7 +154,7 @@ Literal
 
 #### variant: Marker
 
-[Source line 18](../../../extended/ext/patchset.lani#L18)
+[Source line 19](../../../extended/ext/patchset.lani#L19)
 
 ```lanius
 Marker
@@ -161,7 +162,7 @@ Marker
 
 ### struct: FilePatch
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 pub struct FilePatch
@@ -169,7 +170,7 @@ pub struct FilePatch
 
 #### field: kind
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 kind: Kind
@@ -177,7 +178,7 @@ kind: Kind
 
 #### field: binary
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 binary: Binary
@@ -185,7 +186,7 @@ binary: Binary
 
 #### field: git
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 git: bool
@@ -193,7 +194,7 @@ git: bool
 
 #### field: old_mode
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 old_mode: i32
@@ -201,7 +202,7 @@ old_mode: i32
 
 #### field: new_mode
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 new_mode: i32
@@ -209,7 +210,7 @@ new_mode: i32
 
 #### field: old_start
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 old_start: i32
@@ -217,7 +218,7 @@ old_start: i32
 
 #### field: old_length
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 old_length: i32
@@ -225,7 +226,7 @@ old_length: i32
 
 #### field: new_start
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 new_start: i32
@@ -233,7 +234,7 @@ new_start: i32
 
 #### field: new_length
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 new_length: i32
@@ -241,7 +242,7 @@ new_length: i32
 
 #### field: patch
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 patch: ext::unidiff::Patch
@@ -249,7 +250,7 @@ patch: ext::unidiff::Patch
 
 #### field: offset
 
-[Source line 22](../../../extended/ext/patchset.lani#L22)
+[Source line 23](../../../extended/ext/patchset.lani#L23)
 
 ```lanius
 offset: i32
@@ -257,7 +258,7 @@ offset: i32
 
 ### struct: PatchSet
 
-[Source line 23](../../../extended/ext/patchset.lani#L23)
+[Source line 24](../../../extended/ext/patchset.lani#L24)
 
 ```lanius
 pub struct PatchSet
@@ -265,7 +266,7 @@ pub struct PatchSet
 
 #### field: files
 
-[Source line 23](../../../extended/ext/patchset.lani#L23)
+[Source line 24](../../../extended/ext/patchset.lani#L24)
 
 ```lanius
 files: alloc::vec::Vec<FilePatch>
@@ -273,7 +274,7 @@ files: alloc::vec::Vec<FilePatch>
 
 #### field: names
 
-[Source line 23](../../../extended/ext/patchset.lani#L23)
+[Source line 24](../../../extended/ext/patchset.lani#L24)
 
 ```lanius
 names: alloc::vec::Vec<u8>
@@ -281,7 +282,7 @@ names: alloc::vec::Vec<u8>
 
 ### enum: Direction
 
-[Source line 24](../../../extended/ext/patchset.lani#L24)
+[Source line 25](../../../extended/ext/patchset.lani#L25)
 
 ```lanius
 pub enum Direction
@@ -289,7 +290,7 @@ pub enum Direction
 
 #### variant: Forward
 
-[Source line 24](../../../extended/ext/patchset.lani#L24)
+[Source line 25](../../../extended/ext/patchset.lani#L25)
 
 ```lanius
 Forward
@@ -297,7 +298,7 @@ Forward
 
 #### variant: Reversed
 
-[Source line 24](../../../extended/ext/patchset.lani#L24)
+[Source line 25](../../../extended/ext/patchset.lani#L25)
 
 ```lanius
 Reversed
@@ -305,7 +306,7 @@ Reversed
 
 #### variant: Neither
 
-[Source line 24](../../../extended/ext/patchset.lani#L24)
+[Source line 25](../../../extended/ext/patchset.lani#L25)
 
 ```lanius
 Neither
@@ -313,7 +314,7 @@ Neither
 
 ### struct: Merged
 
-[Source line 27](../../../extended/ext/patchset.lani#L27)
+[Source line 28](../../../extended/ext/patchset.lani#L28)
 
 ```lanius
 pub struct Merged
@@ -321,7 +322,7 @@ pub struct Merged
 
 #### field: output
 
-[Source line 27](../../../extended/ext/patchset.lani#L27)
+[Source line 28](../../../extended/ext/patchset.lani#L28)
 
 ```lanius
 output: alloc::vec::Vec<u8>
@@ -329,7 +330,7 @@ output: alloc::vec::Vec<u8>
 
 #### field: applied
 
-[Source line 27](../../../extended/ext/patchset.lani#L27)
+[Source line 28](../../../extended/ext/patchset.lani#L28)
 
 ```lanius
 applied: bool
@@ -337,7 +338,7 @@ applied: bool
 
 #### field: conflicts
 
-[Source line 27](../../../extended/ext/patchset.lani#L27)
+[Source line 28](../../../extended/ext/patchset.lani#L28)
 
 ```lanius
 conflicts: i32
@@ -347,7 +348,7 @@ conflicts: i32
 
 ### function: parse
 
-[Source line 181](../../../extended/ext/patchset.lani#L181)
+[Source line 182](../../../extended/ext/patchset.lani#L182)
 
 ```lanius
 pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines: i32) -> core::result::Result<PatchSet, Error>
@@ -355,7 +356,7 @@ pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines:
 
 ### function: reverse
 
-[Source line 237](../../../extended/ext/patchset.lani#L237)
+[Source line 238](../../../extended/ext/patchset.lani#L238)
 
 ```lanius
 pub fn reverse(patch: &ext::unidiff::Patch) -> core::result::Result<ext::unidiff::Patch, Error>
@@ -363,7 +364,7 @@ pub fn reverse(patch: &ext::unidiff::Patch) -> core::result::Result<ext::unidiff
 
 ### function: reverse_file
 
-[Source line 258](../../../extended/ext/patchset.lani#L258)
+[Source line 259](../../../extended/ext/patchset.lani#L259)
 
 ```lanius
 pub fn reverse_file(file: FilePatch) -> core::result::Result<FilePatch, Error>
@@ -371,7 +372,7 @@ pub fn reverse_file(file: FilePatch) -> core::result::Result<FilePatch, Error>
 
 ### function: direction
 
-[Source line 276](../../../extended/ext/patchset.lani#L276)
+[Source line 277](../../../extended/ext/patchset.lani#L277)
 
 ```lanius
 pub fn direction(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<Direction, ext::unidiff::ApplyError>
@@ -379,7 +380,7 @@ pub fn direction(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, optio
 
 ### function: apply_git
 
-[Source line 346](../../../extended/ext/patchset.lani#L346)
+[Source line 347](../../../extended/ext/patchset.lani#L347)
 
 ```lanius
 pub fn apply_git(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError>
@@ -387,7 +388,7 @@ pub fn apply_git(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, optio
 
 ### function: three_way
 
-[Source line 416](../../../extended/ext/patchset.lani#L416)
+[Source line 417](../../../extended/ext/patchset.lani#L417)
 
 ```lanius
 pub fn three_way(ours: core::slice::View<u8>, base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<Merged, ext::unidiff::ApplyError>
@@ -395,9 +396,9 @@ pub fn three_way(ours: core::slice::View<u8>, base: core::slice::View<u8>, patch
 
 ## Implementation blocks and public methods
 
-### impl at line 222
+### impl at line 223
 
-[Source line 222](../../../extended/ext/patchset.lani#L222)
+[Source line 223](../../../extended/ext/patchset.lani#L223)
 
 ```lanius
 pub impl PatchSet
@@ -405,7 +406,7 @@ pub impl PatchSet
 
 #### method: borrow
 
-[Source line 223](../../../extended/ext/patchset.lani#L223)
+[Source line 224](../../../extended/ext/patchset.lani#L224)
 
 ```lanius
 pub fn borrow(&self) -> &PatchSet
@@ -413,7 +414,7 @@ pub fn borrow(&self) -> &PatchSet
 
 #### method: len
 
-[Source line 224](../../../extended/ext/patchset.lani#L224)
+[Source line 225](../../../extended/ext/patchset.lani#L225)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -421,7 +422,7 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 225](../../../extended/ext/patchset.lani#L225)
+[Source line 226](../../../extended/ext/patchset.lani#L226)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<FilePatch>
@@ -429,7 +430,7 @@ pub fn get(&self, index: i32) -> core::option::Option<FilePatch>
 
 #### method: old_name
 
-[Source line 226](../../../extended/ext/patchset.lani#L226)
+[Source line 227](../../../extended/ext/patchset.lani#L227)
 
 ```lanius
 pub fn old_name(&self, index: i32) -> core::slice::View<u8>
@@ -437,7 +438,7 @@ pub fn old_name(&self, index: i32) -> core::slice::View<u8>
 
 #### method: new_name
 
-[Source line 227](../../../extended/ext/patchset.lani#L227)
+[Source line 228](../../../extended/ext/patchset.lani#L228)
 
 ```lanius
 pub fn new_name(&self, index: i32) -> core::slice::View<u8>
@@ -445,15 +446,15 @@ pub fn new_name(&self, index: i32) -> core::slice::View<u8>
 
 #### method: destroy
 
-[Source line 228](../../../extended/ext/patchset.lani#L228)
+[Source line 229](../../../extended/ext/patchset.lani#L229)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 443
+### impl at line 444
 
-[Source line 443](../../../extended/ext/patchset.lani#L443)
+[Source line 444](../../../extended/ext/patchset.lani#L444)
 
 ```lanius
 pub impl Merged
@@ -461,7 +462,7 @@ pub impl Merged
 
 #### method: borrow
 
-[Source line 444](../../../extended/ext/patchset.lani#L444)
+[Source line 445](../../../extended/ext/patchset.lani#L445)
 
 ```lanius
 pub fn borrow(&self) -> &Merged
@@ -469,7 +470,7 @@ pub fn borrow(&self) -> &Merged
 
 #### method: destroy
 
-[Source line 445](../../../extended/ext/patchset.lani#L445)
+[Source line 446](../../../extended/ext/patchset.lani#L446)
 
 ```lanius
 pub fn destroy(&self)

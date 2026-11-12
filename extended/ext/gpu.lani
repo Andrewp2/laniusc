@@ -1,0 +1,946 @@
+// First native GPU profile: Linux x86_64 Vulkan, explicit owners, retained resources and asynchronous
+// command submission. See docs/extended-gpu.md. Raw ABI details stay in gpu_native.
+module ext::gpu;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::gpu_native;
+import ext::window;
+
+pub enum Cause { Closed, Busy, WrongThread, Bounds, Unsupported, AllocationFailed, InvalidShader, DifferentDevice, Poisoned, Uninitialized, BindingMismatch, Window(ext::window::Failure), Vulkan(i32), DeviceLost }
+pub enum Stage { Init, Buffer, Write, Read, Copy, Surface, Resize, Pipeline, Draw, Texture, Bindings, Encode, Submit, Wait, Close }
+pub struct Failure { cause:Cause, stage:Stage }
+pub struct Device { storage:ptr }
+pub struct Buffer { life:ptr, owner:ptr, handle:u64, memory:u64, mapped:ptr, length:i32 }
+struct Control { instance:ptr, physical:ptr, device:ptr, queue:ptr, family:u32, pool:u64, command:ptr, fence:u64, thread:u64, children:i32, lost:bool, poisoned:bool }
+fn control(p:ptr) -> [Control] { return core::mem::typed_slice_from_storage<Control>(p,1); }
+fn address(words:[i32]) -> ptr { return core::mem::i32_slice_data_ptr(words); }
+fn w(p:ptr,o:usize,v:i32) { core::mem::typed_slice_from_raw_parts<i32>(p+o,1)[0]=v; }
+fn q(p:ptr,o:usize,v:u64) { core::mem::typed_slice_from_raw_parts<u64>(p+o,1)[0]=v; }
+fn pset(p:ptr,o:usize,v:ptr) { core::mem::typed_slice_from_raw_parts<ptr>(p+o,1)[0]=v; }
+fn f(p:ptr,o:usize,v:f32) { core::mem::typed_slice_from_raw_parts<f32>(p+o,1)[0]=v; }
+fn r(p:ptr,o:usize) -> i32 { return core::mem::typed_slice_from_raw_parts<i32>(p+o,1)[0]; }
+fn rq(p:ptr,o:usize) -> u64 { return core::mem::typed_slice_from_raw_parts<u64>(p+o,1)[0]; }
+fn rp(p:ptr,o:usize) -> ptr { return core::mem::typed_slice_from_raw_parts<ptr>(p+o,1)[0]; }
+fn nil() -> ptr { let nothing:ptr=0; return nothing; }
+fn error(c:Cause,s:Stage) -> Failure { return Failure { cause:c,stage:s }; }
+fn check(owner:ptr,stage:Stage) -> core::result::Result<i32,Failure> {
+    if(owner==0) { return core::result::Err(error(Cause::Closed,stage)); }
+    if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,stage)); }
+    if(control(owner)[0].lost) { return core::result::Err(error(Cause::DeviceLost,stage)); }
+    if(control(owner)[0].poisoned) { return core::result::Err(error(Cause::Poisoned,stage)); }
+    return core::result::Ok(0);
+}
+fn result(owner:ptr,code:i32,stage:Stage) -> core::result::Result<i32,Failure> {
+    if(code==0) { return core::result::Ok(0); }
+    if(code== -4) { control(owner)[0].lost=true; return core::result::Err(error(Cause::DeviceLost,stage)); }
+    return core::result::Err(error(Cause::Vulkan(code),stage));
+}
+fn name(out:ptr,text:str) { let source=core::text::from_str(text); let bytes=core::mem::typed_slice_from_raw_parts<u8>(out,(source.length+1) as i32); let i:i32=0; while(i<source.length) { bytes[i]=source.bytes[source.start+i]; i+=1; } bytes[i]=0; }
+fn valid<T>(view:core::slice::View<T>) -> bool { return view.start>=0 && view.length>=0 && (view.start as usize)+(view.length as usize)<=core::mem::slice_len(view.values); }
+
+// Adapter index is the Vulkan enumeration index (0 for the usual first GPU).
+// Instance extensions include Xlib surfaces, so this first profile is Linux.
+pub fn open(adapter:i32) -> core::result::Result<Device,Failure> {
+    if(adapter<0 || adapter>=32) { return core::result::Err(error(Cause::Bounds,Stage::Init)); }
+    let storage=alloc::allocator::alloc(core::mem::size_of<Control>(),8);
+    if(storage==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Init)); }
+    control(storage)[0]=Control { instance:nil(),physical:nil(),device:nil(),queue:nil(),family:0,pool:0,command:nil(),fence:0,thread:pthread_self(),children:0,lost:false,poisoned:false };
+    let made=initialize(storage,adapter);
+    if(made.is_err()) { let e=made.unwrap_err(); dispose(storage); return core::result::Err(e); }
+    return core::result::Ok(Device { storage:storage });
+}
+fn initialize(owner:ptr,adapter:i32) -> core::result::Result<i32,Failure> {
+    let c=control(owner); let application:[i32;12]=[0;12]; let a=address(application);
+    w(a,0,ext::gpu_native::ST_APPLICATION_INFO); w(a,ext::gpu_native::ApplicationInfo_apiVersion,ext::gpu_native::VK_API_VERSION_1_1);
+    let strings:[i32;64]=[0;64]; let s=address(strings);
+    name(s,"VK_KHR_surface"); name(s+64,"VK_KHR_xlib_surface"); name(s+128,"VK_EXT_surface_maintenance1"); name(s+192,"VK_KHR_get_surface_capabilities2");
+    let names:[i32;8]=[0;8]; let n=address(names); pset(n,0,s); pset(n,8,s+64); pset(n,16,s+128); pset(n,24,s+192);
+    let info:[i32;16]=[0;16]; let i=address(info); w(i,0,ext::gpu_native::ST_INSTANCE_CREATE_INFO);
+    pset(i,ext::gpu_native::InstanceCreateInfo_pApplicationInfo,a); w(i,ext::gpu_native::InstanceCreateInfo_enabledExtensionCount,4); pset(i,ext::gpu_native::InstanceCreateInfo_ppEnabledExtensionNames,n);
+    let out:[i32;2]=[0;2]; let o=address(out);
+    result(owner,ext::gpu_native::vkCreateInstance(i,nil(),o),Stage::Init)?; c[0].instance=rp(o,0);
+    let devices:[i32;64]=[0;64]; let d=address(devices); w(o,0,32);
+    result(owner,ext::gpu_native::vkEnumeratePhysicalDevices(c[0].instance,o,d),Stage::Init)?;
+    if(adapter>=r(o,0)) { return core::result::Err(error(Cause::Unsupported,Stage::Init)); } c[0].physical=rp(d,(adapter as usize)*8);
+    let properties:[i32;206]=[0;206]; ext::gpu_native::vkGetPhysicalDeviceProperties(c[0].physical,address(properties));
+    if((r(address(properties),ext::gpu_native::PhysicalDeviceProperties_apiVersion) as u32)<(ext::gpu_native::VK_API_VERSION_1_1 as u32)) { return core::result::Err(error(Cause::Unsupported,Stage::Init)); }
+    let maintenance:[i32;6]=[0;6]; let m=address(maintenance); w(m,0,ext::gpu_native::ST_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT);
+    let features:[i32;60]=[0;60]; w(address(features),0,ext::gpu_native::ST_PHYSICAL_DEVICE_FEATURES_2); pset(address(features),8,m);
+    ext::gpu_native::vkGetPhysicalDeviceFeatures2(c[0].physical,address(features));
+    if(r(m,ext::gpu_native::Maintenance_enabled)!=1) { return core::result::Err(error(Cause::Unsupported,Stage::Init)); }
+    let families:[i32;384]=[0;384]; w(o,0,64); ext::gpu_native::vkGetPhysicalDeviceQueueFamilyProperties(c[0].physical,o,address(families));
+    let family:i32=0; let found:bool=false;
+    while(family<r(o,0) && !found) { let fp=address(families)+(family as usize)*ext::gpu_native::SIZE_QueueFamilyProperties; if((r(fp,ext::gpu_native::QueueFamilyProperties_queueFlags)&3)==3 && r(fp,ext::gpu_native::QueueFamilyProperties_queueCount)>0) { c[0].family=family as u32; found=true; } family+=1; }
+    if(!found) { return core::result::Err(error(Cause::Unsupported,Stage::Init)); }
+    name(s,"VK_KHR_swapchain"); name(s+64,"VK_EXT_swapchain_maintenance1");
+    let priority:[i32;2]=[1065353216,0]; let queue:[i32;10]=[0;10]; let qi=address(queue); w(qi,0,ext::gpu_native::ST_DEVICE_QUEUE_CREATE_INFO);
+    w(qi,ext::gpu_native::DeviceQueueCreateInfo_queueFamilyIndex,c[0].family as i32); w(qi,ext::gpu_native::DeviceQueueCreateInfo_queueCount,1); pset(qi,ext::gpu_native::DeviceQueueCreateInfo_pQueuePriorities,address(priority));
+    let device:[i32;18]=[0;18]; let di=address(device); w(di,0,ext::gpu_native::ST_DEVICE_CREATE_INFO); pset(di,8,m);
+    w(di,ext::gpu_native::DeviceCreateInfo_queueCreateInfoCount,1); pset(di,ext::gpu_native::DeviceCreateInfo_pQueueCreateInfos,qi); w(di,ext::gpu_native::DeviceCreateInfo_enabledExtensionCount,2); pset(di,ext::gpu_native::DeviceCreateInfo_ppEnabledExtensionNames,n);
+    result(owner,ext::gpu_native::vkCreateDevice(c[0].physical,di,nil(),o),Stage::Init)?; c[0].device=rp(o,0);
+    ext::gpu_native::vkGetDeviceQueue(c[0].device,c[0].family,0,o); c[0].queue=rp(o,0);
+    let pool:[i32;6]=[0;6]; let pi=address(pool); w(pi,0,ext::gpu_native::ST_COMMAND_POOL_CREATE_INFO); w(pi,ext::gpu_native::CommandPoolCreateInfo_queueFamilyIndex,c[0].family as i32);
+    result(owner,ext::gpu_native::vkCreateCommandPool(c[0].device,pi,nil(),o),Stage::Init)?; c[0].pool=rq(o,0);
+    let command:[i32;8]=[0;8]; let ci=address(command); w(ci,0,ext::gpu_native::ST_COMMAND_BUFFER_ALLOCATE_INFO); q(ci,ext::gpu_native::CommandBufferAllocateInfo_commandPool,c[0].pool); w(ci,ext::gpu_native::CommandBufferAllocateInfo_commandBufferCount,1);
+    result(owner,ext::gpu_native::vkAllocateCommandBuffers(c[0].device,ci,o),Stage::Init)?; c[0].command=rp(o,0);
+    let fence:[i32;6]=[0;6]; w(address(fence),0,ext::gpu_native::ST_FENCE_CREATE_INFO);
+    result(owner,ext::gpu_native::vkCreateFence(c[0].device,address(fence),nil(),o),Stage::Init)?; c[0].fence=rq(o,0);
+    return core::result::Ok(0);
+}
+fn dispose(owner:ptr) {
+    let c=control(owner)[0];
+    if(c.device!=0) { if(c.fence!=0) { ext::gpu_native::vkDestroyFence(c.device,c.fence,nil()); } if(c.pool!=0) { ext::gpu_native::vkDestroyCommandPool(c.device,c.pool,nil()); } ext::gpu_native::vkDestroyDevice(c.device,nil()); }
+    if(c.instance!=0) { ext::gpu_native::vkDestroyInstance(c.instance,nil()); }
+    alloc::allocator::dealloc(owner,core::mem::size_of<Control>(),8);
+}
+fn begin(owner:ptr,stage:Stage) -> core::result::Result<i32,Failure> {
+    let c=control(owner)[0]; result(owner,ext::gpu_native::vkResetCommandPool(c.device,c.pool,0),stage)?;
+    let words:[i32;8]=[0;8]; w(address(words),0,ext::gpu_native::ST_COMMAND_BUFFER_BEGIN_INFO); w(address(words),ext::gpu_native::CommandBufferBeginInfo_flags,1);
+    result(owner,ext::gpu_native::vkBeginCommandBuffer(c.command,address(words)),stage)?; gpu_barrier(c.command); return core::result::Ok(0);
+}
+fn finish(owner:ptr,wait:u64,signal:u64,stage:Stage) -> core::result::Result<i32,Failure> {
+    let c=control(owner)[0]; result(owner,ext::gpu_native::vkEndCommandBuffer(c.command),stage)?;
+    let handles:[i32;8]=[0;8]; let h=address(handles); q(h,0,c.fence); pset(h,8,c.command); q(h,16,wait); q(h,24,signal);
+    result(owner,ext::gpu_native::vkResetFences(c.device,1,h),stage)?;
+    let mask:[i32;2]=[1024,0]; // COLOR_ATTACHMENT_OUTPUT acquisition wait
+    let words:[i32;18]=[0;18]; let i=address(words); w(i,0,ext::gpu_native::ST_SUBMIT_INFO);
+    w(i,ext::gpu_native::SubmitInfo_commandBufferCount,1); pset(i,ext::gpu_native::SubmitInfo_pCommandBuffers,h+8);
+    if(wait!=0) { w(i,ext::gpu_native::SubmitInfo_waitSemaphoreCount,1); pset(i,ext::gpu_native::SubmitInfo_pWaitSemaphores,h+16); pset(i,ext::gpu_native::SubmitInfo_pWaitDstStageMask,address(mask)); }
+    if(signal!=0) { w(i,ext::gpu_native::SubmitInfo_signalSemaphoreCount,1); pset(i,ext::gpu_native::SubmitInfo_pSignalSemaphores,h+24); }
+    let submitted=ext::gpu_native::vkQueueSubmit(c.queue,1,i,c.fence);
+    if(submitted!=0 && submitted!= -1 && submitted!= -2 && submitted!= -4) { control(owner)[0].poisoned=true; }
+    result(owner,submitted,stage)?;
+    // A failed wait cannot permit command-pool reuse or resource destruction.
+    let waited=ext::gpu_native::vkWaitForFences(c.device,1,h,1,18446744073709551615);
+    if(waited!=0 && waited!= -4) { control(owner)[0].poisoned=true; }
+    return result(owner,waited,stage);
+}
+fn host_barrier(owner:ptr) {
+    let words:[i32;6]=[0;6]; let i=address(words); w(i,0,ext::gpu_native::ST_MEMORY_BARRIER); w(i,ext::gpu_native::MemoryBarrier_srcAccessMask,4096); w(i,ext::gpu_native::MemoryBarrier_dstAccessMask,8192);
+    ext::gpu_native::vkCmdPipelineBarrier(control(owner)[0].command,4096,16384,0,1,i,0,nil(),0,nil()); // transfer write -> host read
+}
+pub impl Device {
+    pub fn borrow(&self) -> &Device { return self; }
+    pub fn is_open(&self) -> bool { return self.storage!=0; }
+    pub fn create_buffer(&self,length:i32) -> core::result::Result<Buffer,Failure> {
+        check(self.storage,Stage::Buffer)?;
+        if(length<=0 || length>67108864) { return core::result::Err(error(Cause::Bounds,Stage::Buffer)); }
+        let buffer=Buffer { life:nil(),owner:self.storage,handle:0,memory:0,mapped:nil(),length:length };
+        let created=buffer_init(buffer.borrow());
+        if(created.is_err()) { let e=created.unwrap_err(); buffer_release(buffer.borrow()); return core::result::Err(e); }
+        control(self.storage)[0].children+=1; return core::result::Ok(buffer);
+    }
+    pub fn copy_buffer(&self,source:&Buffer,source_offset:i32,target:&Buffer,target_offset:i32,count:i32) -> core::result::Result<i32,Failure> {
+        check(self.storage,Stage::Copy)?;
+        if(source.owner!=self.storage || target.owner!=self.storage) { return core::result::Err(error(Cause::DifferentDevice,Stage::Copy)); }
+        if(source_offset<0 || target_offset<0 || count<0 || count>source.length || count>target.length || source_offset>source.length-count || target_offset>target.length-count || source_offset%4!=0 || target_offset%4!=0 || count%4!=0 || source.handle==target.handle) { return core::result::Err(error(Cause::Bounds,Stage::Copy)); }
+        if(count==0) { return core::result::Ok(0); }
+        begin(self.storage,Stage::Copy)?; let region:[i32;6]=[0;6]; let b=address(region); q(b,0,source_offset as u64); q(b,8,target_offset as u64); q(b,16,count as u64);
+        ext::gpu_native::vkCmdCopyBuffer(control(self.storage)[0].command,source.handle,target.handle,1,b); host_barrier(self.storage); finish(self.storage,0,0,Stage::Copy)?; return core::result::Ok(count);
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Ok(false); }
+        if(control(self.storage)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); }
+        if(control(self.storage)[0].children!=0) { return core::result::Err(error(Cause::Busy,Stage::Close)); }
+        let waited=ext::gpu_native::vkDeviceWaitIdle(control(self.storage)[0].device);
+        if(waited!=0 && waited!= -4) { return core::result::Err(error(Cause::Vulkan(waited),Stage::Close)); }
+        dispose(self.storage); self.storage=nil(); return core::result::Ok(true);
+    }
+}
+fn buffer_init(b:&Buffer) -> core::result::Result<i32,Failure> {
+    b.life=new_life(b.owner,true)?;
+    let c=control(b.owner)[0]; let words:[i32;14]=[0;14]; let i=address(words); w(i,0,ext::gpu_native::ST_BUFFER_CREATE_INFO); q(i,ext::gpu_native::BufferCreateInfo_size,b.length as u64); w(i,ext::gpu_native::BufferCreateInfo_usage,51);
+    let output:[i32;6]=[0;6]; let o=address(output); result(b.owner,ext::gpu_native::vkCreateBuffer(c.device,i,nil(),o),Stage::Buffer)?; b.handle=rq(o,0);
+    ext::gpu_native::vkGetBufferMemoryRequirements(c.device,b.handle,o); let bytes=rq(o,0); let bits=r(o,16) as u32;
+    let properties:[i32;130]=[0;130]; let m=address(properties); ext::gpu_native::vkGetPhysicalDeviceMemoryProperties(c.physical,m); let index:i32=0; let chosen:i32= -1;
+    while(index<r(m,ext::gpu_native::PhysicalDeviceMemoryProperties_memoryTypeCount) && chosen<0) {
+        let flags=r(m,ext::gpu_native::PhysicalDeviceMemoryProperties_memoryTypes+(index as usize)*ext::gpu_native::SIZE_MemoryType) as u32;
+        if((bits&((1 as u32)<<(index as u32)))!=0 && (flags&6)==6) { chosen=index; } index+=1;
+    }
+    if(chosen<0) { return core::result::Err(error(Cause::Unsupported,Stage::Buffer)); }
+    let allocate:[i32;8]=[0;8]; let a=address(allocate); w(a,0,ext::gpu_native::ST_MEMORY_ALLOCATE_INFO); q(a,ext::gpu_native::MemoryAllocateInfo_allocationSize,bytes); w(a,ext::gpu_native::MemoryAllocateInfo_memoryTypeIndex,chosen);
+    result(b.owner,ext::gpu_native::vkAllocateMemory(c.device,a,nil(),o),Stage::Buffer)?; b.memory=rq(o,0);
+    result(b.owner,ext::gpu_native::vkBindBufferMemory(c.device,b.handle,b.memory,0),Stage::Buffer)?;
+    result(b.owner,ext::gpu_native::vkMapMemory(c.device,b.memory,0,b.length as u64,0,o),Stage::Buffer)?; b.mapped=rp(o,0);
+    let mapped=core::mem::typed_slice_from_raw_parts<u8>(b.mapped,b.length); index=0; while(index<b.length) { mapped[index]=0; index+=1; }
+    return core::result::Ok(0);
+}
+fn buffer_release(b:&Buffer) {
+    let device=control(b.owner)[0].device;
+    if(b.mapped!=0) { ext::gpu_native::vkUnmapMemory(device,b.memory); }
+    if(b.handle!=0) { ext::gpu_native::vkDestroyBuffer(device,b.handle,nil()); }
+    if(b.memory!=0) { ext::gpu_native::vkFreeMemory(device,b.memory,nil()); }
+    free_life(b.life); b.life=nil(); b.owner=nil(); b.handle=0; b.memory=0; b.mapped=nil(); b.length=0;
+}
+pub impl Buffer {
+    pub fn borrow(&self) -> &Buffer { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn write(&self,offset:i32,bytes:core::slice::View<u8>) -> core::result::Result<i32,Failure> {
+        check(self.owner,Stage::Write)?; unlocked(self.life,Stage::Write)?;
+        if(!valid(bytes) || offset<0 || bytes.length>self.length || offset>self.length-bytes.length) { return core::result::Err(error(Cause::Bounds,Stage::Write)); }
+        let mapped=core::mem::typed_slice_from_raw_parts<u8>(self.mapped,self.length); let i:i32=0;
+        while(i<bytes.length) { mapped[offset+i]=bytes.values[bytes.start+i]; i+=1; } return core::result::Ok(bytes.length);
+    }
+    pub fn read(&self,offset:i32,bytes:core::slice::View<u8>) -> core::result::Result<i32,Failure> {
+        check(self.owner,Stage::Read)?; unlocked(self.life,Stage::Read)?;
+        if(!valid(bytes) || offset<0 || bytes.length>self.length || offset>self.length-bytes.length) { return core::result::Err(error(Cause::Bounds,Stage::Read)); }
+        let mapped=core::mem::typed_slice_from_raw_parts<u8>(self.mapped,self.length); let i:i32=0;
+        while(i<bytes.length) { bytes.values[bytes.start+i]=mapped[offset+i]; i+=1; } return core::result::Ok(bytes.length);
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); }
+        let owner=self.owner; if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); }
+        unretained(self.life)?;
+        let waited=ext::gpu_native::vkDeviceWaitIdle(control(owner)[0].device); if(waited!=0 && waited!= -4) { return core::result::Err(error(Cause::Vulkan(waited),Stage::Close)); }
+        buffer_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+extern "C" fn pthread_self() -> u64;
+
+pub enum Format { Bgra8, Rgba8 }
+pub enum Frame { Presented(ext::window::Size), Retry, Suspended }
+pub struct Pipeline { life:ptr, bindings:ptr, set_layout:u64, owner:ptr, handle:u64, layout:u64, pass:u64, format:Format }
+pub struct Surface { storage:ptr }
+struct DisplayState { owner:ptr, window:&ext::window::Window, surface:u64, chain:u64, pass:u64, records:ptr, count:i32, width:i32, height:i32, format:Format, acquired:u64, available:u64, finished:u64, presented:u64, inflight:ptr, abandoned:ptr, pending_present:bool, pending_acquire:bool, dirty:bool, broken:bool }
+fn display(p:ptr) -> [DisplayState] { return core::mem::typed_slice_from_storage<DisplayState>(p,1); }
+fn format_code(format:Format) -> i32 { return match(format) { Format::Bgra8 -> 44, Format::Rgba8 -> 37 }; }
+fn make_pass(owner:ptr,format:Format) -> core::result::Result<u64,Failure> {
+    let attachment:[i32;10]=[0;10]; let a=address(attachment);
+    w(a,ext::gpu_native::AttachmentDescription_format,format_code(format)); w(a,ext::gpu_native::AttachmentDescription_samples,1); w(a,ext::gpu_native::AttachmentDescription_loadOp,1); w(a,ext::gpu_native::AttachmentDescription_storeOp,0);
+    w(a,ext::gpu_native::AttachmentDescription_stencilLoadOp,2); w(a,ext::gpu_native::AttachmentDescription_stencilStoreOp,1); w(a,ext::gpu_native::AttachmentDescription_finalLayout,6); // TRANSFER_SRC_OPTIMAL for readback
+    let reference:[i32;2]=[0,2]; let subpass:[i32;18]=[0;18]; let s=address(subpass);
+    w(s,ext::gpu_native::SubpassDescription_colorAttachmentCount,1); pset(s,ext::gpu_native::SubpassDescription_pColorAttachments,address(reference));
+    let dependency:[i32;14]=[0;14]; let d=address(dependency);
+    w(d,ext::gpu_native::SubpassDependency_srcSubpass,-1); w(d,ext::gpu_native::SubpassDependency_srcStageMask,1024); w(d,ext::gpu_native::SubpassDependency_dstStageMask,1024); w(d,ext::gpu_native::SubpassDependency_dstAccessMask,256);
+    let after=d+ext::gpu_native::SIZE_SubpassDependency; w(after,ext::gpu_native::SubpassDependency_dstSubpass,-1); w(after,ext::gpu_native::SubpassDependency_srcStageMask,1024); w(after,ext::gpu_native::SubpassDependency_dstStageMask,4096); w(after,ext::gpu_native::SubpassDependency_srcAccessMask,256); w(after,ext::gpu_native::SubpassDependency_dstAccessMask,2048);
+    let info:[i32;16]=[0;16]; let i=address(info); w(i,0,ext::gpu_native::ST_RENDER_PASS_CREATE_INFO); w(i,ext::gpu_native::RenderPassCreateInfo_attachmentCount,1); pset(i,ext::gpu_native::RenderPassCreateInfo_pAttachments,a); w(i,ext::gpu_native::RenderPassCreateInfo_subpassCount,1); pset(i,ext::gpu_native::RenderPassCreateInfo_pSubpasses,s); w(i,ext::gpu_native::RenderPassCreateInfo_dependencyCount,2); pset(i,ext::gpu_native::RenderPassCreateInfo_pDependencies,d);
+    let output:[i32;2]=[0;2]; result(owner,ext::gpu_native::vkCreateRenderPass(control(owner)[0].device,i,nil(),address(output)),Stage::Pipeline)?; return core::result::Ok(rq(address(output),0));
+}
+fn shader(owner:ptr,code:core::slice::View<i32>) -> core::result::Result<u64,Failure> {
+    if(!valid(code) || code.length<5 || code.length>262144) { return core::result::Err(error(Cause::InvalidShader,Stage::Pipeline)); }
+    if(code.values[code.start]!=119734787) { return core::result::Err(error(Cause::InvalidShader,Stage::Pipeline)); }
+    let size=(code.length as usize)*4; let packed=alloc::allocator::alloc(size,8);
+    if(packed==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Pipeline)); }
+    let words=core::mem::typed_slice_from_raw_parts<i32>(packed,code.length); let index:i32=0;
+    while(index<code.length) { words[index]=code.values[code.start+index]; index+=1; }
+    let info:[i32;10]=[0;10]; let i=address(info); w(i,0,ext::gpu_native::ST_SHADER_MODULE_CREATE_INFO); q(i,ext::gpu_native::ShaderModuleCreateInfo_codeSize,size as u64); pset(i,ext::gpu_native::ShaderModuleCreateInfo_pCode,packed);
+    let output:[i32;2]=[0;2]; let status=ext::gpu_native::vkCreateShaderModule(control(owner)[0].device,i,nil(),address(output)); alloc::allocator::dealloc(packed,size,8);
+    result(owner,status,Stage::Pipeline)?; return core::result::Ok(rq(address(output),0));
+}
+pub impl Device {
+    // Trusted SPIR-V: entry point "main", vertex-index drawing with no vertex
+    // attributes/descriptors/push constants, fragment output at location zero.
+    pub fn create_pipeline(&self,vertex:core::slice::View<i32>,fragment:core::slice::View<i32>,format:Format) -> core::result::Result<Pipeline,Failure> {
+        check(self.storage,Stage::Pipeline)?;
+        let pipeline=Pipeline { life:nil(),bindings:nil(),set_layout:0,owner:self.storage,handle:0,layout:0,pass:0,format:format };
+        let made=pipeline_init(pipeline.borrow(),vertex,fragment);
+        if(made.is_err()) { let e=made.unwrap_err(); pipeline_release(pipeline.borrow()); return core::result::Err(e); }
+        control(self.storage)[0].children+=1; return core::result::Ok(pipeline);
+    }
+    pub fn create_surface(&self,window:&ext::window::Window) -> core::result::Result<Surface,Failure> {
+        check(self.storage,Stage::Surface)?;
+        let acquired=window.acquire_gpu(); if(acquired.is_err()) { return core::result::Err(error(Cause::Window(acquired.unwrap_err()),Stage::Surface)); }
+        let native=acquired.unwrap(); let storage=alloc::allocator::alloc(core::mem::size_of<DisplayState>(),8);
+        if(storage==0) { window.release_gpu(); return core::result::Err(error(Cause::AllocationFailed,Stage::Surface)); }
+        display(storage)[0]=DisplayState { owner:self.storage,window:window,surface:0,chain:0,pass:0,records:nil(),count:0,width:0,height:0,format:Format::Bgra8,acquired:0,available:0,finished:0,presented:0,inflight:nil(),abandoned:nil(),pending_present:false,pending_acquire:false,dirty:true,broken:false };
+        let surface=Surface { storage:storage }; let made=surface_init(storage,native);
+        if(made.is_err()) { let e=made.unwrap_err(); surface_release(storage); return core::result::Err(e); }
+        control(self.storage)[0].children+=1; return core::result::Ok(surface);
+    }
+}
+fn pipeline_init(pipeline:&Pipeline,vertex:core::slice::View<i32>,fragment:core::slice::View<i32>) -> core::result::Result<i32,Failure> {
+    let owner=pipeline.owner; let device=control(owner)[0].device;
+    pipeline.life=new_life(owner,true)?;
+    pipeline.pass=make_pass(owner,pipeline.format)?;
+    let vertex_shader=shader(owner,vertex)?; let frag=shader(owner,fragment);
+    if(frag.is_err()) { ext::gpu_native::vkDestroyShaderModule(device,vertex_shader,nil()); return core::result::Err(frag.unwrap_err()); }
+    let fragment_shader=frag.unwrap(); let made=pipeline_link(pipeline,vertex_shader,fragment_shader);
+    ext::gpu_native::vkDestroyShaderModule(device,vertex_shader,nil()); ext::gpu_native::vkDestroyShaderModule(device,fragment_shader,nil()); return made;
+}
+fn pipeline_link(pipeline:&Pipeline,vertex:u64,fragment:u64) -> core::result::Result<i32,Failure> {
+    let owner=pipeline.owner; let device=control(owner)[0].device;
+    let layout:[i32;12]=[0;12]; w(address(layout),0,ext::gpu_native::ST_PIPELINE_LAYOUT_CREATE_INFO); let output:[i32;2]=[0;2];
+    let set:[i32;2]=[0;2]; q(address(set),0,pipeline.set_layout);
+    if(pipeline.set_layout!=0) { w(address(layout),ext::gpu_native::PipelineLayoutCreateInfo_setLayoutCount,1); pset(address(layout),ext::gpu_native::PipelineLayoutCreateInfo_pSetLayouts,address(set)); }
+    result(owner,ext::gpu_native::vkCreatePipelineLayout(device,address(layout),nil(),address(output)),Stage::Pipeline)?; pipeline.layout=rq(address(output),0);
+    let entry:[i32;2]=[0;2]; name(address(entry),"main");
+    let stages:[i32;24]=[0;24]; let s=address(stages); w(s,0,ext::gpu_native::ST_PIPELINE_SHADER_STAGE_CREATE_INFO); w(s,ext::gpu_native::PipelineShaderStageCreateInfo_stage,1); q(s,ext::gpu_native::PipelineShaderStageCreateInfo_module,vertex); pset(s,ext::gpu_native::PipelineShaderStageCreateInfo_pName,address(entry));
+    let t=s+ext::gpu_native::SIZE_PipelineShaderStageCreateInfo; w(t,0,ext::gpu_native::ST_PIPELINE_SHADER_STAGE_CREATE_INFO); w(t,ext::gpu_native::PipelineShaderStageCreateInfo_stage,16); q(t,ext::gpu_native::PipelineShaderStageCreateInfo_module,fragment); pset(t,ext::gpu_native::PipelineShaderStageCreateInfo_pName,address(entry));
+    let vertex_input:[i32;12]=[0;12]; w(address(vertex_input),0,ext::gpu_native::ST_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO);
+    let assembly:[i32;8]=[0;8]; w(address(assembly),0,ext::gpu_native::ST_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO); w(address(assembly),ext::gpu_native::PipelineInputAssemblyStateCreateInfo_topology,3);
+    let viewport:[i32;12]=[0;12]; w(address(viewport),0,ext::gpu_native::ST_PIPELINE_VIEWPORT_STATE_CREATE_INFO); w(address(viewport),ext::gpu_native::PipelineViewportStateCreateInfo_viewportCount,1); w(address(viewport),ext::gpu_native::PipelineViewportStateCreateInfo_scissorCount,1);
+    let raster:[i32;16]=[0;16]; w(address(raster),0,ext::gpu_native::ST_PIPELINE_RASTERIZATION_STATE_CREATE_INFO); f(address(raster),ext::gpu_native::PipelineRasterizationStateCreateInfo_lineWidth,1.0);
+    let multisample:[i32;12]=[0;12]; w(address(multisample),0,ext::gpu_native::ST_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO); w(address(multisample),ext::gpu_native::PipelineMultisampleStateCreateInfo_rasterizationSamples,1);
+    let attachment:[i32;8]=[0;8]; w(address(attachment),ext::gpu_native::PipelineColorBlendAttachmentState_colorWriteMask,15);
+    let blend:[i32;14]=[0;14]; w(address(blend),0,ext::gpu_native::ST_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO); w(address(blend),ext::gpu_native::PipelineColorBlendStateCreateInfo_attachmentCount,1); pset(address(blend),ext::gpu_native::PipelineColorBlendStateCreateInfo_pAttachments,address(attachment));
+    let states:[i32;2]=[0,1]; let dynamic:[i32;8]=[0;8]; w(address(dynamic),0,ext::gpu_native::ST_PIPELINE_DYNAMIC_STATE_CREATE_INFO); w(address(dynamic),ext::gpu_native::PipelineDynamicStateCreateInfo_dynamicStateCount,2); pset(address(dynamic),ext::gpu_native::PipelineDynamicStateCreateInfo_pDynamicStates,address(states));
+    let info:[i32;36]=[0;36]; let i=address(info); w(i,0,ext::gpu_native::ST_GRAPHICS_PIPELINE_CREATE_INFO);
+    w(i,ext::gpu_native::GraphicsPipelineCreateInfo_stageCount,2); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pStages,s); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pVertexInputState,address(vertex_input)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pInputAssemblyState,address(assembly)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pViewportState,address(viewport)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pRasterizationState,address(raster)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pMultisampleState,address(multisample)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pColorBlendState,address(blend)); pset(i,ext::gpu_native::GraphicsPipelineCreateInfo_pDynamicState,address(dynamic)); q(i,ext::gpu_native::GraphicsPipelineCreateInfo_layout,pipeline.layout); q(i,ext::gpu_native::GraphicsPipelineCreateInfo_renderPass,pipeline.pass); w(i,ext::gpu_native::GraphicsPipelineCreateInfo_basePipelineIndex,-1);
+    q(address(output),0,0); let status=ext::gpu_native::vkCreateGraphicsPipelines(device,0,1,i,nil(),address(output)); pipeline.handle=rq(address(output),0);
+    return result(owner,status,Stage::Pipeline);
+}
+fn pipeline_release(pipeline:&Pipeline) {
+    let device=control(pipeline.owner)[0].device;
+    if(pipeline.handle!=0) { ext::gpu_native::vkDestroyPipeline(device,pipeline.handle,nil()); }
+    if(pipeline.layout!=0) { ext::gpu_native::vkDestroyPipelineLayout(device,pipeline.layout,nil()); }
+    if(pipeline.pass!=0) { ext::gpu_native::vkDestroyRenderPass(device,pipeline.pass,nil()); }
+    if(pipeline.bindings!=0) { life(pipeline.bindings)[0].retains-=1; }
+    free_life(pipeline.life); pipeline.life=nil(); pipeline.bindings=nil(); pipeline.owner=nil(); pipeline.handle=0; pipeline.layout=0; pipeline.pass=0;
+}
+pub impl Pipeline {
+    pub fn borrow(&self) -> &Pipeline { return self; }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); }
+        let owner=self.owner; if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); }
+        unretained(self.life)?;
+        let waited=ext::gpu_native::vkDeviceWaitIdle(control(owner)[0].device); if(waited!=0 && waited!= -4) { return core::result::Err(error(Cause::Vulkan(waited),Stage::Close)); }
+        pipeline_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+fn surface_init(storage:ptr,native:ext::window::NativeWindow) -> core::result::Result<i32,Failure> {
+    let s=display(storage); let owner=s[0].owner; let c=control(owner)[0];
+    s[0].records=alloc::allocator::alloc(384,8); if(s[0].records==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Surface)); }
+    let zero=core::mem::typed_slice_from_raw_parts<i32>(s[0].records,96); let at:i32=0; while(at<96) { zero[at]=0; at+=1; }
+    let info:[i32;10]=[0;10]; let i=address(info); w(i,0,ext::gpu_native::ST_XLIB_SURFACE_CREATE_INFO_KHR); pset(i,ext::gpu_native::XlibSurfaceCreateInfoKHR_dpy,native.display); q(i,ext::gpu_native::XlibSurfaceCreateInfoKHR_window,native.window);
+    let output:[i32;2]=[0;2]; let o=address(output); result(owner,ext::gpu_native::vkCreateXlibSurfaceKHR(c.instance,i,nil(),o),Stage::Surface)?; s[0].surface=rq(o,0);
+    result(owner,ext::gpu_native::vkGetPhysicalDeviceSurfaceSupportKHR(c.physical,c.family,s[0].surface,o),Stage::Surface)?;
+    if(r(o,0)==0) { return core::result::Err(error(Cause::Unsupported,Stage::Surface)); }
+    let formats:[i32;128]=[0;128]; w(o,0,64); result(owner,ext::gpu_native::vkGetPhysicalDeviceSurfaceFormatsKHR(c.physical,s[0].surface,o,address(formats)),Stage::Surface)?;
+    let index:i32=0; let found:bool=false;
+    while(index<r(o,0) && !found) {
+        let fp=address(formats)+(index as usize)*ext::gpu_native::SIZE_SurfaceFormatKHR; let format=r(fp,ext::gpu_native::SurfaceFormatKHR_format);
+        if(r(fp,ext::gpu_native::SurfaceFormatKHR_colorSpace)==0 && (format==44 || format==37)) { if(format==37) { s[0].format=Format::Rgba8; } found=true; }
+        index+=1;
+    }
+    if(!found) { return core::result::Err(error(Cause::Unsupported,Stage::Surface)); }
+    s[0].pass=make_pass(owner,s[0].format)?;
+    let fence:[i32;6]=[0;6]; w(address(fence),0,ext::gpu_native::ST_FENCE_CREATE_INFO);
+    result(owner,ext::gpu_native::vkCreateFence(c.device,address(fence),nil(),o),Stage::Surface)?; s[0].acquired=rq(o,0);
+    result(owner,ext::gpu_native::vkCreateFence(c.device,address(fence),nil(),o),Stage::Surface)?; s[0].presented=rq(o,0);
+    w(address(fence),0,ext::gpu_native::ST_SEMAPHORE_CREATE_INFO); result(owner,ext::gpu_native::vkCreateSemaphore(c.device,address(fence),nil(),o),Stage::Surface)?; s[0].finished=rq(o,0);
+    result(owner,ext::gpu_native::vkCreateSemaphore(c.device,address(fence),nil(),o),Stage::Surface)?; s[0].available=rq(o,0);
+    ensure_chain(storage)?; return core::result::Ok(0);
+}
+fn wait_fence(owner:ptr,fence:u64,stage:Stage) -> core::result::Result<i32,Failure> {
+    let words:[i32;2]=[0;2]; q(address(words),0,fence); return result(owner,ext::gpu_native::vkWaitForFences(control(owner)[0].device,1,address(words),1,18446744073709551615),stage);
+}
+fn drain_surface(storage:ptr) -> core::result::Result<i32,Failure> {
+    let s=display(storage); let owner=s[0].owner;
+    let idle=ext::gpu_native::vkDeviceWaitIdle(control(owner)[0].device); if(idle!=0 && idle!= -4) { return result(owner,idle,Stage::Close); }
+    if(s[0].abandoned!=0) { destroy_commands(s[0].abandoned); control(owner)[0].children-=1; s[0].abandoned=nil(); }
+    if(idle== -4) { control(owner)[0].lost=true; s[0].pending_present=false; s[0].pending_acquire=false; return core::result::Ok(0); }
+    if(s[0].pending_acquire) { wait_fence(owner,s[0].acquired,Stage::Close)?; s[0].pending_acquire=false; }
+    if(s[0].pending_present) { wait_fence(owner,s[0].presented,Stage::Close)?; s[0].pending_present=false; }
+    return core::result::Ok(0);
+}
+fn clear_chain(storage:ptr) {
+    let s=display(storage); let device=control(s[0].owner)[0].device;
+    if(s[0].records!=0) { let index:i32=0; while(index<16) {
+        let offset=(index as usize)*8; let framebuffer=rq(s[0].records,256+offset); let view=rq(s[0].records,128+offset);
+        if(framebuffer!=0) { ext::gpu_native::vkDestroyFramebuffer(device,framebuffer,nil()); q(s[0].records,256+offset,0); }
+        if(view!=0) { ext::gpu_native::vkDestroyImageView(device,view,nil()); q(s[0].records,128+offset,0); } index+=1;
+    } }
+    if(s[0].chain!=0) { ext::gpu_native::vkDestroySwapchainKHR(device,s[0].chain,nil()); s[0].chain=0; }
+    s[0].count=0; s[0].width=0; s[0].height=0; s[0].dirty=true;
+}
+fn ensure_chain(storage:ptr) -> core::result::Result<bool,Failure> {
+    let s=display(storage); let c=control(s[0].owner)[0]; let owner=s[0].owner;
+    let queried=s[0].window.size(); if(queried.is_err()) { return core::result::Err(error(Cause::Window(queried.unwrap_err()),Stage::Resize)); } let size=queried.unwrap();
+    let caps:[i32;14]=[0;14]; let cp=address(caps); result(owner,ext::gpu_native::vkGetPhysicalDeviceSurfaceCapabilitiesKHR(c.physical,s[0].surface,cp),Stage::Resize)?;
+    let width=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_currentExtent); let height=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_currentExtent+4);
+    if(width== -1) {
+        width=size.width; height=size.height;
+        if(width<r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_minImageExtent)) { width=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_minImageExtent); }
+        if(height<r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_minImageExtent+4)) { height=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_minImageExtent+4); }
+        if(width>r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_maxImageExtent)) { width=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_maxImageExtent); }
+        if(height>r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_maxImageExtent+4)) { height=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_maxImageExtent+4); }
+    }
+    if(width==0 || height==0) { return core::result::Ok(false); }
+    if(width<0 || height<0 || width>4096 || height>4096) { return core::result::Err(error(Cause::Bounds,Stage::Resize)); }
+    if(s[0].chain!=0 && !s[0].dirty && width==s[0].width && height==s[0].height) { return core::result::Ok(true); }
+    if((r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_supportedUsageFlags)&17)!=17) { return core::result::Err(error(Cause::Unsupported,Stage::Resize)); }
+    let count=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_minImageCount)+1; let maximum=r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_maxImageCount);
+    if(maximum!=0 && count>maximum) { count=maximum; } if(count<1 || count>16) { return core::result::Err(error(Cause::Unsupported,Stage::Resize)); }
+    let composite:i32=1; while((r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_supportedCompositeAlpha)&composite)==0 && composite<8) { composite*=2; }
+    drain_surface(storage)?; clear_chain(storage);
+    let info:[i32;26]=[0;26]; let i=address(info); w(i,0,ext::gpu_native::ST_SWAPCHAIN_CREATE_INFO_KHR); q(i,ext::gpu_native::SwapchainCreateInfoKHR_surface,s[0].surface); w(i,ext::gpu_native::SwapchainCreateInfoKHR_minImageCount,count); w(i,ext::gpu_native::SwapchainCreateInfoKHR_imageFormat,format_code(s[0].format)); w(i,ext::gpu_native::SwapchainCreateInfoKHR_imageExtent,width); w(i,ext::gpu_native::SwapchainCreateInfoKHR_imageExtent+4,height); w(i,ext::gpu_native::SwapchainCreateInfoKHR_imageArrayLayers,1); w(i,ext::gpu_native::SwapchainCreateInfoKHR_imageUsage,17); w(i,ext::gpu_native::SwapchainCreateInfoKHR_preTransform,r(cp,ext::gpu_native::SurfaceCapabilitiesKHR_currentTransform)); w(i,ext::gpu_native::SwapchainCreateInfoKHR_compositeAlpha,composite); w(i,ext::gpu_native::SwapchainCreateInfoKHR_presentMode,2); w(i,ext::gpu_native::SwapchainCreateInfoKHR_clipped,1);
+    let output:[i32;2]=[0;2]; let o=address(output); result(owner,ext::gpu_native::vkCreateSwapchainKHR(c.device,i,nil(),o),Stage::Resize)?; s[0].chain=rq(o,0);
+    let finished=chain_views(storage,width,height);
+    if(finished.is_err()) { let e=finished.unwrap_err(); clear_chain(storage); return core::result::Err(e); }
+    s[0].width=width; s[0].height=height; s[0].dirty=false; return core::result::Ok(true);
+}
+fn chain_views(storage:ptr,width:i32,height:i32) -> core::result::Result<i32,Failure> {
+    let s=display(storage); let owner=s[0].owner; let device=control(owner)[0].device;
+    let output:[i32;2]=[0;2]; let o=address(output); result(owner,ext::gpu_native::vkGetSwapchainImagesKHR(device,s[0].chain,o,nil()),Stage::Resize)?;
+    if(r(o,0)<1 || r(o,0)>16) { return core::result::Err(error(Cause::Unsupported,Stage::Resize)); }
+    result(owner,ext::gpu_native::vkGetSwapchainImagesKHR(device,s[0].chain,o,s[0].records),Stage::Resize)?; s[0].count=r(o,0);
+    let index:i32=0;
+    while(index<s[0].count) {
+        let offset=(index as usize)*8; let view:[i32;20]=[0;20]; let v=address(view); w(v,0,ext::gpu_native::ST_IMAGE_VIEW_CREATE_INFO); q(v,ext::gpu_native::ImageViewCreateInfo_image,rq(s[0].records,offset)); w(v,ext::gpu_native::ImageViewCreateInfo_viewType,1); w(v,ext::gpu_native::ImageViewCreateInfo_format,format_code(s[0].format));
+        w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange,1); w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange+8,1); w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange+16,1);
+        result(owner,ext::gpu_native::vkCreateImageView(device,v,nil(),s[0].records+128+offset),Stage::Resize)?;
+        let framebuffer:[i32;16]=[0;16]; let fb=address(framebuffer); w(fb,0,ext::gpu_native::ST_FRAMEBUFFER_CREATE_INFO); q(fb,ext::gpu_native::FramebufferCreateInfo_renderPass,s[0].pass); w(fb,ext::gpu_native::FramebufferCreateInfo_attachmentCount,1); pset(fb,ext::gpu_native::FramebufferCreateInfo_pAttachments,s[0].records+128+offset); w(fb,ext::gpu_native::FramebufferCreateInfo_width,width); w(fb,ext::gpu_native::FramebufferCreateInfo_height,height); w(fb,ext::gpu_native::FramebufferCreateInfo_layers,1);
+        result(owner,ext::gpu_native::vkCreateFramebuffer(device,fb,nil(),s[0].records+256+offset),Stage::Resize)?; index+=1;
+    }
+    return core::result::Ok(0);
+}
+fn surface_release(storage:ptr) {
+    let s=display(storage); let c=control(s[0].owner)[0]; clear_chain(storage);
+    if(s[0].available!=0) { ext::gpu_native::vkDestroySemaphore(c.device,s[0].available,nil()); }
+    if(s[0].finished!=0) { ext::gpu_native::vkDestroySemaphore(c.device,s[0].finished,nil()); }
+    if(s[0].acquired!=0) { ext::gpu_native::vkDestroyFence(c.device,s[0].acquired,nil()); }
+    if(s[0].presented!=0) { ext::gpu_native::vkDestroyFence(c.device,s[0].presented,nil()); }
+    if(s[0].pass!=0) { ext::gpu_native::vkDestroyRenderPass(c.device,s[0].pass,nil()); }
+    if(s[0].surface!=0) { ext::gpu_native::vkDestroySurfaceKHR(c.instance,s[0].surface,nil()); }
+    if(s[0].records!=0) { alloc::allocator::dealloc(s[0].records,384,8); }
+    s[0].window.release_gpu(); alloc::allocator::dealloc(storage,core::mem::size_of<DisplayState>(),8);
+}
+pub impl Surface {
+    pub fn borrow(&self) -> &Surface { return self; }
+    pub fn format(&self) -> core::result::Result<Format,Failure> { if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Surface)); } check(display(self.storage)[0].owner,Stage::Surface)?; return core::result::Ok(display(self.storage)[0].format); }
+    pub fn render(&self,pipeline:&Pipeline,vertices:i32) -> core::result::Result<Frame,Failure> { return draw(self.storage,pipeline,vertices,0,0,0,nil()); }
+    // Copy the rendered native BGRA8/RGBA8 pixels to a caller-owned buffer.
+    pub fn render_readback(&self,pipeline:&Pipeline,vertices:i32,target:&Buffer) -> core::result::Result<Frame,Failure> {
+        if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Draw)); }
+        if(target.owner!=display(self.storage)[0].owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+        return draw(self.storage,pipeline,vertices,target.handle,target.length,0,nil());
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Ok(false); }
+        let owner=display(self.storage)[0].owner; if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); }
+        if(display(self.storage)[0].inflight!=0) { return core::result::Err(error(Cause::Busy,Stage::Close)); }
+        drain_surface(self.storage)?; surface_release(self.storage); control(owner)[0].children-=1; self.storage=nil(); return core::result::Ok(true);
+    }
+}
+fn draw(storage:ptr,pipeline:&Pipeline,vertices:i32,target:u64,target_length:i32,set:u64,bindings:ptr) -> core::result::Result<Frame,Failure> {
+    if(storage==0) { return core::result::Err(error(Cause::Closed,Stage::Draw)); }
+    let s=display(storage); let owner=s[0].owner; check(owner,Stage::Draw)?;
+    if(s[0].inflight!=0) { return core::result::Err(error(Cause::Busy,Stage::Draw)); }
+    if(pipeline.bindings!=bindings) { return core::result::Err(error(Cause::BindingMismatch,Stage::Draw)); }
+    if(s[0].broken) { return core::result::Err(error(Cause::Poisoned,Stage::Draw)); }
+    if(pipeline.owner!=owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+    if(format_code(pipeline.format)!=format_code(s[0].format) || vertices<1 || vertices>1048576) { return core::result::Err(error(Cause::Bounds,Stage::Draw)); }
+    if(!ensure_chain(storage)?) { return core::result::Ok(Frame::Suspended); }
+    if(target!=0 && target_length<s[0].width*s[0].height*4) { return core::result::Err(error(Cause::Bounds,Stage::Draw)); }
+    let c=control(owner)[0]; let output:[i32;2]=[0;2]; let o=address(output); q(o,0,s[0].acquired); result(owner,ext::gpu_native::vkResetFences(c.device,1,o),Stage::Draw)?;
+    let acquired=ext::gpu_native::vkAcquireNextImageKHR(c.device,s[0].chain,1000000000,0,s[0].acquired,o);
+    if(acquired==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { s[0].dirty=true; return core::result::Ok(Frame::Retry); }
+    if(acquired==1 || acquired==2) { return core::result::Ok(Frame::Retry); }
+    if(acquired!=0 && acquired!=ext::gpu_native::VK_SUBOPTIMAL_KHR) { result(owner,acquired,Stage::Draw)?; return core::result::Ok(Frame::Retry); }
+    if(acquired==ext::gpu_native::VK_SUBOPTIMAL_KHR) { s[0].dirty=true; }
+    let index=r(o,0); s[0].pending_acquire=true; s[0].broken=true;
+    wait_fence(owner,s[0].acquired,Stage::Draw)?; s[0].pending_acquire=false;
+    if(index<0 || index>=s[0].count) { return core::result::Err(error(Cause::Unsupported,Stage::Draw)); }
+    record_draw(storage,pipeline,vertices,index,target,set)?;
+    let presented=present(storage,index)?; s[0].broken=false;
+    if(presented==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR || presented==ext::gpu_native::VK_SUBOPTIMAL_KHR) { s[0].dirty=true; }
+    if(presented==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { return core::result::Ok(Frame::Retry); }
+    return core::result::Ok(Frame::Presented(ext::window::Size { width:s[0].width,height:s[0].height }));
+}
+fn record_draw(storage:ptr,pipeline:&Pipeline,vertices:i32,index:i32,target:u64,set:u64) -> core::result::Result<i32,Failure> {
+    let s=display(storage)[0]; let c=control(s.owner)[0]; begin(s.owner,Stage::Draw)?;
+    record_surface(storage,pipeline,vertices,index,target,set,c.command);
+    return finish(s.owner,0,s.finished,Stage::Draw);
+}
+fn record_surface(storage:ptr,pipeline:&Pipeline,vertices:i32,index:i32,target:u64,set:u64,command:ptr) {
+    let s=display(storage)[0]; gpu_barrier(command);
+    let clear:[i32;4]=[0;4]; f(address(clear),0,0.02); f(address(clear),4,0.03); f(address(clear),8,0.06); f(address(clear),12,1.0);
+    let info:[i32;16]=[0;16]; let i=address(info); w(i,0,ext::gpu_native::ST_RENDER_PASS_BEGIN_INFO); q(i,ext::gpu_native::RenderPassBeginInfo_renderPass,s.pass); q(i,ext::gpu_native::RenderPassBeginInfo_framebuffer,rq(s.records,256+(index as usize)*8)); w(i,ext::gpu_native::RenderPassBeginInfo_renderArea+8,s.width); w(i,ext::gpu_native::RenderPassBeginInfo_renderArea+12,s.height); w(i,ext::gpu_native::RenderPassBeginInfo_clearValueCount,1); pset(i,ext::gpu_native::RenderPassBeginInfo_pClearValues,address(clear));
+    ext::gpu_native::vkCmdBeginRenderPass(command,i,0); ext::gpu_native::vkCmdBindPipeline(command,0,pipeline.handle);
+    if(set!=0) { bind_group(command,0,pipeline.layout,set); }
+    let viewport:[i32;6]=[0;6]; f(address(viewport),ext::gpu_native::Viewport_width,s.width as f32); f(address(viewport),ext::gpu_native::Viewport_height,s.height as f32); f(address(viewport),ext::gpu_native::Viewport_maxDepth,1.0); ext::gpu_native::vkCmdSetViewport(command,0,1,address(viewport));
+    let scissor:[i32;4]=[0;4]; w(address(scissor),8,s.width); w(address(scissor),12,s.height); ext::gpu_native::vkCmdSetScissor(command,0,1,address(scissor));
+    ext::gpu_native::vkCmdDraw(command,vertices as u32,1,0,0); ext::gpu_native::vkCmdEndRenderPass(command);
+    gpu_barrier(command); // Also orders descriptor reads before an aliased readback write.
+    let image=rq(s.records,(index as usize)*8);
+    if(target!=0) {
+        let region:[i32;14]=[0;14]; let b=address(region); w(b,ext::gpu_native::BufferImageCopy_imageSubresource,1); w(b,ext::gpu_native::BufferImageCopy_imageSubresource+12,1); w(b,ext::gpu_native::BufferImageCopy_imageExtent,s.width); w(b,ext::gpu_native::BufferImageCopy_imageExtent+4,s.height); w(b,ext::gpu_native::BufferImageCopy_imageExtent+8,1);
+        ext::gpu_native::vkCmdCopyImageToBuffer(command,image,6,target,1,b); cpu_barrier(command);
+    }
+    let barrier:[i32;18]=[0;18]; let b=address(barrier); w(b,0,ext::gpu_native::ST_IMAGE_MEMORY_BARRIER); w(b,ext::gpu_native::ImageMemoryBarrier_srcAccessMask,2048); w(b,ext::gpu_native::ImageMemoryBarrier_oldLayout,6); w(b,ext::gpu_native::ImageMemoryBarrier_newLayout,1000001002); w(b,ext::gpu_native::ImageMemoryBarrier_srcQueueFamilyIndex,-1); w(b,ext::gpu_native::ImageMemoryBarrier_dstQueueFamilyIndex,-1); q(b,ext::gpu_native::ImageMemoryBarrier_image,image); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange,1); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange+8,1); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange+16,1);
+    ext::gpu_native::vkCmdPipelineBarrier(command,4096,8192,0,0,nil(),0,nil(),1,b);
+}
+fn present(storage:ptr,index:i32) -> core::result::Result<i32,Failure> {
+    let status=queue_present(storage,index)?; let s=display(storage);
+    if(s[0].pending_present) { wait_fence(s[0].owner,s[0].presented,Stage::Draw)?; s[0].pending_present=false; }
+    if(status!=0 && status!=ext::gpu_native::VK_SUBOPTIMAL_KHR && status!=ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { result(s[0].owner,status,Stage::Draw)?; }
+    return core::result::Ok(status);
+}
+fn queue_present(storage:ptr,index:i32) -> core::result::Result<i32,Failure> {
+    let s=display(storage); let c=control(s[0].owner)[0]; let owner=s[0].owner;
+    let handles:[i32;8]=[0;8]; let h=address(handles); q(h,0,s[0].presented); q(h,8,s[0].finished); q(h,16,s[0].chain); w(h,24,index);
+    result(owner,ext::gpu_native::vkResetFences(c.device,1,h),Stage::Draw)?;
+    let fence:[i32;8]=[0;8]; let fp=address(fence); w(fp,0,ext::gpu_native::ST_SWAPCHAIN_PRESENT_FENCE_INFO_EXT); w(fp,ext::gpu_native::SwapchainPresentFenceInfoEXT_swapchainCount,1); pset(fp,ext::gpu_native::SwapchainPresentFenceInfoEXT_pFences,h);
+    let info:[i32;16]=[0;16]; let i=address(info); w(i,0,ext::gpu_native::ST_PRESENT_INFO_KHR); pset(i,8,fp); w(i,ext::gpu_native::PresentInfoKHR_waitSemaphoreCount,1); pset(i,ext::gpu_native::PresentInfoKHR_pWaitSemaphores,h+8); w(i,ext::gpu_native::PresentInfoKHR_swapchainCount,1); pset(i,ext::gpu_native::PresentInfoKHR_pSwapchains,h+16); pset(i,ext::gpu_native::PresentInfoKHR_pImageIndices,h+24);
+    let status=ext::gpu_native::vkQueuePresentKHR(c.queue,i);
+    if(status==0 || status==ext::gpu_native::VK_SUBOPTIMAL_KHR || status==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR || status==ext::gpu_native::VK_ERROR_SURFACE_LOST_KHR) { s[0].pending_present=true; }
+    return core::result::Ok(status);
+}
+
+// Every retained object has stable metadata independent of its movable owner.
+// CPU access is locked from recording until completion (or encoder discard).
+struct Life { owner:ptr, retains:i32, locks:i32, ready:bool, initializer:ptr }
+fn life(p:ptr) -> [Life] { return core::mem::typed_slice_from_storage<Life>(p,1); }
+fn new_life(owner:ptr,ready:bool) -> core::result::Result<ptr,Failure> {
+    let p=alloc::allocator::alloc(core::mem::size_of<Life>(),8);
+    if(p==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Init)); }
+    life(p)[0]=Life {owner:owner,retains:0,locks:0,ready:ready,initializer:nil()}; return core::result::Ok(p);
+}
+fn free_life(p:ptr) { if(p!=0) { alloc::allocator::dealloc(p,core::mem::size_of<Life>(),8); } }
+fn unretained(p:ptr) -> core::result::Result<i32,Failure> { if(life(p)[0].retains!=0) { return core::result::Err(error(Cause::Busy,Stage::Close)); } return core::result::Ok(0); }
+fn unlocked(p:ptr,s:Stage) -> core::result::Result<i32,Failure> { if(life(p)[0].locks!=0) { return core::result::Err(error(Cause::Busy,s)); } return core::result::Ok(0); }
+fn gpu_barrier(command:ptr) {
+    let words:[i32;6]=[0;6]; let p=address(words); w(p,0,ext::gpu_native::ST_MEMORY_BARRIER);
+    w(p,ext::gpu_native::MemoryBarrier_srcAccessMask,65536); w(p,ext::gpu_native::MemoryBarrier_dstAccessMask,98304);
+    ext::gpu_native::vkCmdPipelineBarrier(command,65536,65536,0,1,p,0,nil(),0,nil());
+}
+fn cpu_barrier(command:ptr) {
+    let words:[i32;6]=[0;6]; let p=address(words); w(p,0,ext::gpu_native::ST_MEMORY_BARRIER);
+    w(p,ext::gpu_native::MemoryBarrier_srcAccessMask,65536); w(p,ext::gpu_native::MemoryBarrier_dstAccessMask,8192);
+    ext::gpu_native::vkCmdPipelineBarrier(command,65536,16384,0,1,p,0,nil(),0,nil());
+}
+pub struct CommandEncoder { storage:ptr }
+pub struct Submission { storage:ptr }
+// state: 0 recording, 1 submitted, 2 complete, 3 rejected/ended,
+// 4 uncertain submission acceptance (idle must precede destruction).
+struct Commands { owner:ptr,pool:u64,command:ptr,fence:u64,refs:ptr,count:i32,state:i32,wait_sem:u64,signal_sem:u64,surface:ptr,frame:bool,frame_status:i32,width:i32,height:i32 }
+fn commands(p:ptr) -> [Commands] { return core::mem::typed_slice_from_storage<Commands>(p,1); }
+fn recording(p:ptr) -> core::result::Result<i32,Failure> {
+    if(p==0) { return core::result::Err(error(Cause::Closed,Stage::Encode)); }
+    check(commands(p)[0].owner,Stage::Encode)?;
+    if(commands(p)[0].state!=0) { return core::result::Err(error(Cause::Poisoned,Stage::Encode)); } return core::result::Ok(0);
+}
+// Admit a whole operation before retaining or issuing any commands. Duplicate
+// resources count once, and capacity failure leaves the encoder usable.
+fn retain_batch(p:ptr,refs:ptr,count:i32) -> core::result::Result<i32,Failure> {
+    let c=commands(p); let extra:i32=0; let i:i32=0;
+    while(i<count) {
+        let ref=rp(refs,(i as usize)*8);
+        if(ref==0 || life(ref)[0].owner!=c[0].owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Encode)); }
+        if(life(ref)[0].initializer!=0 && life(ref)[0].initializer!=p) { return core::result::Err(error(Cause::Busy,Stage::Encode)); }
+        let seen:bool=false; let j:i32=0;
+        while(j<c[0].count) { if(rp(c[0].refs,(j as usize)*8)==ref) { seen=true; } j+=1; }
+        j=0; while(j<i) { if(rp(refs,(j as usize)*8)==ref) { seen=true; } j+=1; }
+        if(!seen) { extra+=1; } i+=1;
+    }
+    if(c[0].count+extra>64) { return core::result::Err(error(Cause::Bounds,Stage::Encode)); }
+    i=0; while(i<count) {
+        let ref=rp(refs,(i as usize)*8); let seen:bool=false; let j:i32=0;
+        while(j<c[0].count) { if(rp(c[0].refs,(j as usize)*8)==ref) { seen=true; } j+=1; }
+        if(!seen) { pset(c[0].refs,(c[0].count as usize)*8,ref); c[0].count+=1; life(ref)[0].retains+=1; life(ref)[0].locks+=1; } i+=1;
+    } return core::result::Ok(0);
+}
+fn release_commands(p:ptr) {
+    let c=commands(p); let i:i32=0;
+    while(i<c[0].count) { let ref=rp(c[0].refs,(i as usize)*8); life(ref)[0].retains-=1; life(ref)[0].locks-=1;
+        if(life(ref)[0].initializer==p) { life(ref)[0].initializer=nil(); } i+=1;
+    } c[0].count=0;
+}
+fn destroy_commands(p:ptr) {
+    let c=commands(p)[0]; let device=control(c.owner)[0].device;
+    release_commands(p);
+    if(c.pool!=0) { ext::gpu_native::vkDestroyCommandPool(device,c.pool,nil()); }
+    if(c.fence!=0) { ext::gpu_native::vkDestroyFence(device,c.fence,nil()); }
+    if(c.refs!=0) { alloc::allocator::dealloc(c.refs,512,8); }
+    alloc::allocator::dealloc(p,core::mem::size_of<Commands>(),8);
+}
+fn init_commands(p:ptr) -> core::result::Result<i32,Failure> {
+    let c=commands(p); let owner=c[0].owner; let device=control(owner)[0].device;
+    c[0].refs=alloc::allocator::alloc(512,8); if(c[0].refs==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Encode)); }
+    let words:[i32;8]=[0;8]; let i=address(words); let output:[i32;2]=[0;2]; let o=address(output);
+    w(i,0,ext::gpu_native::ST_COMMAND_POOL_CREATE_INFO); w(i,ext::gpu_native::CommandPoolCreateInfo_queueFamilyIndex,control(owner)[0].family as i32);
+    result(owner,ext::gpu_native::vkCreateCommandPool(device,i,nil(),o),Stage::Encode)?; c[0].pool=rq(o,0);
+    let allocate:[i32;8]=[0;8]; let a=address(allocate); w(a,0,ext::gpu_native::ST_COMMAND_BUFFER_ALLOCATE_INFO); q(a,ext::gpu_native::CommandBufferAllocateInfo_commandPool,c[0].pool); w(a,ext::gpu_native::CommandBufferAllocateInfo_commandBufferCount,1);
+    result(owner,ext::gpu_native::vkAllocateCommandBuffers(device,a,o),Stage::Encode)?; c[0].command=rp(o,0);
+    let fence:[i32;6]=[0;6]; w(address(fence),0,ext::gpu_native::ST_FENCE_CREATE_INFO); result(owner,ext::gpu_native::vkCreateFence(device,address(fence),nil(),o),Stage::Encode)?; c[0].fence=rq(o,0);
+    let begin:[i32;8]=[0;8]; w(address(begin),0,ext::gpu_native::ST_COMMAND_BUFFER_BEGIN_INFO); w(address(begin),ext::gpu_native::CommandBufferBeginInfo_flags,1);
+    return result(owner,ext::gpu_native::vkBeginCommandBuffer(c[0].command,address(begin)),Stage::Encode);
+}
+pub impl Device {
+    pub fn create_encoder(&self) -> core::result::Result<CommandEncoder,Failure> {
+        check(self.storage,Stage::Encode)?; let p=alloc::allocator::alloc(core::mem::size_of<Commands>(),8);
+        if(p==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Encode)); }
+        commands(p)[0]=Commands {owner:self.storage,pool:0,command:nil(),fence:0,refs:nil(),count:0,state:0,wait_sem:0,signal_sem:0,surface:nil(),frame:false,frame_status:0,width:0,height:0};
+        let made=init_commands(p); if(made.is_err()) { let e=made.unwrap_err(); destroy_commands(p); return core::result::Err(e); }
+        control(self.storage)[0].children+=1; return core::result::Ok(CommandEncoder {storage:p});
+    }
+}
+pub impl CommandEncoder {
+    pub fn borrow(&self) -> &CommandEncoder { return self; }
+    pub fn copy_buffer(&self,source:&Buffer,source_offset:i32,target:&Buffer,target_offset:i32,count:i32) -> core::result::Result<i32,Failure> {
+        recording(self.storage)?;
+        if(source.owner==0 || target.owner==0) { return core::result::Err(error(Cause::Closed,Stage::Copy)); }
+        if(source_offset<0 || target_offset<0 || count<0 || count>source.length || count>target.length || source_offset>source.length-count || target_offset>target.length-count || source_offset%4!=0 || target_offset%4!=0 || count%4!=0 || source.handle==target.handle) { return core::result::Err(error(Cause::Bounds,Stage::Copy)); }
+        let refs:[i32;4]=[0;4]; pset(address(refs),0,source.life); pset(address(refs),8,target.life); retain_batch(self.storage,address(refs),2)?;
+        if(count==0) { return core::result::Ok(0); }
+        let cmd=commands(self.storage)[0].command; gpu_barrier(cmd);
+        let region:[i32;6]=[0;6]; q(address(region),0,source_offset as u64); q(address(region),8,target_offset as u64); q(address(region),16,count as u64);
+        ext::gpu_native::vkCmdCopyBuffer(cmd,source.handle,target.handle,1,address(region)); return core::result::Ok(count);
+    }
+    // Success transfers ownership; failure leaves an encoder that may be closed.
+    pub fn submit(&self) -> core::result::Result<Submission,Failure> {
+        recording(self.storage)?; let c=commands(self.storage); let owner=c[0].owner;
+        cpu_barrier(c[0].command); c[0].state=3;
+        result(owner,ext::gpu_native::vkEndCommandBuffer(c[0].command),Stage::Submit)?;
+        let handle:[i32;6]=[0;6]; pset(address(handle),0,c[0].command); q(address(handle),8,c[0].wait_sem); q(address(handle),16,c[0].signal_sem); let mask:[i32;2]=[1024,0];
+        let info:[i32;18]=[0;18]; let i=address(info); w(i,0,ext::gpu_native::ST_SUBMIT_INFO); w(i,ext::gpu_native::SubmitInfo_commandBufferCount,1); pset(i,ext::gpu_native::SubmitInfo_pCommandBuffers,address(handle));
+        if(c[0].wait_sem!=0) { w(i,ext::gpu_native::SubmitInfo_waitSemaphoreCount,1); pset(i,ext::gpu_native::SubmitInfo_pWaitSemaphores,address(handle)+8); pset(i,ext::gpu_native::SubmitInfo_pWaitDstStageMask,address(mask)); }
+        if(c[0].signal_sem!=0) { w(i,ext::gpu_native::SubmitInfo_signalSemaphoreCount,1); pset(i,ext::gpu_native::SubmitInfo_pSignalSemaphores,address(handle)+16); }
+        let submitted=ext::gpu_native::vkQueueSubmit(control(owner)[0].queue,1,i,c[0].fence);
+        if(submitted!=0 && submitted!= -1 && submitted!= -2 && submitted!= -4) { c[0].state=4; control(owner)[0].poisoned=true; }
+        result(owner,submitted,Stage::Submit)?;
+        c[0].state=1; let j:i32=0; while(j<c[0].count) { let ref=rp(c[0].refs,(j as usize)*8); if(life(ref)[0].initializer==self.storage) { life(ref)[0].ready=true; life(ref)[0].initializer=nil(); } j+=1; }
+        let submission=Submission {storage:self.storage}; self.storage=nil(); return core::result::Ok(submission);
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Ok(false); }
+        let owner=commands(self.storage)[0].owner; if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); }
+        if(commands(self.storage)[0].state==4) { idle_for_close(owner)?; }
+        destroy_commands(self.storage); control(owner)[0].children-=1; self.storage=nil(); return core::result::Ok(true);
+    }
+}
+fn completed(p:ptr,status:i32) -> core::result::Result<bool,Failure> {
+    if(status==1 || status==2) { return core::result::Ok(false); }
+    if(status==0 || status== -4) {
+        let surface=commands(p)[0].surface;
+        if(surface!=0) { let s=display(surface); s[0].inflight=nil(); s[0].pending_acquire=false; s[0].pending_present=false; s[0].broken=status== -4 || (commands(p)[0].frame_status!=0 && commands(p)[0].frame_status!=ext::gpu_native::VK_SUBOPTIMAL_KHR && commands(p)[0].frame_status!=ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR); commands(p)[0].surface=nil(); }
+        release_commands(p); commands(p)[0].state=2;
+    }
+    result(commands(p)[0].owner,status,Stage::Wait)?; return core::result::Ok(true);
+}
+pub impl Submission {
+    pub fn borrow(&self) -> &Submission { return self; }
+    pub fn poll(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Wait)); }
+        let c=commands(self.storage)[0]; if(control(c.owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Wait)); }
+        if(control(c.owner)[0].lost) { return completed(self.storage,-4); }
+        if(c.state==2) { return core::result::Ok(true); }
+        let fences:[i32;6]=[0;6]; let count=submission_fences(self.storage,address(fences)); let j:i32=0;
+        while(j<count) { let status=ext::gpu_native::vkGetFenceStatus(control(c.owner)[0].device,rq(address(fences),(j as usize)*8)); if(status!=0) { return completed(self.storage,status); } j+=1; }
+        return completed(self.storage,0);
+    }
+    // Nanoseconds; false means timeout, retaining all resources for another wait.
+    pub fn wait(&self,timeout_ns:u64) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Wait)); }
+        let c=commands(self.storage)[0]; if(control(c.owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Wait)); }
+        if(control(c.owner)[0].lost) { return completed(self.storage,-4); }
+        if(c.state==2) { return core::result::Ok(true); }
+        let handle:[i32;6]=[0;6]; let count=submission_fences(self.storage,address(handle));
+        return completed(self.storage,ext::gpu_native::vkWaitForFences(control(c.owner)[0].device,count as u32,address(handle),1,timeout_ns));
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Ok(false); }
+        let owner=commands(self.storage)[0].owner; let done=self.poll();
+        if(done.is_err()) { if(!control(owner)[0].lost) { return core::result::Err(done.unwrap_err()); } }
+        else { if(!done.unwrap()) { return core::result::Err(error(Cause::Busy,Stage::Close)); } }
+        destroy_commands(self.storage); control(owner)[0].children-=1; self.storage=nil(); return core::result::Ok(true);
+    }
+}
+
+// RGBA8 UNORM, one mip/layer/sample. New textures have undefined contents;
+// clear_texture or upload_texture must initialize them before shader/read use.
+pub struct Texture { owner:ptr,life:ptr,image:u64,memory:u64,view:u64,sampler:u64,width:i32,height:i32 }
+fn texture_init(t:&Texture) -> core::result::Result<i32,Failure> {
+    t.life=new_life(t.owner,false)?; let c=control(t.owner)[0]; let output:[i32;8]=[0;8]; let o=address(output);
+    result(t.owner,ext::gpu_native::vkGetPhysicalDeviceImageFormatProperties(c.physical,37,1,0,31,0,o),Stage::Texture)?;
+    if(t.width>r(o,0) || t.height>r(o,4)) { return core::result::Err(error(Cause::Unsupported,Stage::Texture)); }
+    let words:[i32;22]=[0;22]; let i=address(words); w(i,0,ext::gpu_native::ST_IMAGE_CREATE_INFO); w(i,ext::gpu_native::ImageCreateInfo_imageType,1); w(i,ext::gpu_native::ImageCreateInfo_format,37); w(i,ext::gpu_native::ImageCreateInfo_extent,t.width); w(i,ext::gpu_native::ImageCreateInfo_extent+4,t.height); w(i,ext::gpu_native::ImageCreateInfo_extent+8,1); w(i,ext::gpu_native::ImageCreateInfo_mipLevels,1); w(i,ext::gpu_native::ImageCreateInfo_arrayLayers,1); w(i,ext::gpu_native::ImageCreateInfo_samples,1); w(i,ext::gpu_native::ImageCreateInfo_usage,31);
+    result(t.owner,ext::gpu_native::vkCreateImage(c.device,i,nil(),o),Stage::Texture)?; t.image=rq(o,0);
+    ext::gpu_native::vkGetImageMemoryRequirements(c.device,t.image,o); let bytes=rq(o,0); let bits=r(o,16) as u32;
+    let properties:[i32;130]=[0;130]; let m=address(properties); ext::gpu_native::vkGetPhysicalDeviceMemoryProperties(c.physical,m); let index:i32=0; let chosen:i32= -1;
+    while(index<r(m,ext::gpu_native::PhysicalDeviceMemoryProperties_memoryTypeCount) && chosen<0) { let flags=r(m,ext::gpu_native::PhysicalDeviceMemoryProperties_memoryTypes+(index as usize)*ext::gpu_native::SIZE_MemoryType); if((bits&((1 as u32)<<(index as u32)))!=0 && (flags&1)!=0) { chosen=index; } index+=1; }
+    if(chosen<0) { return core::result::Err(error(Cause::Unsupported,Stage::Texture)); }
+    let allocate:[i32;8]=[0;8]; let a=address(allocate); w(a,0,ext::gpu_native::ST_MEMORY_ALLOCATE_INFO); q(a,ext::gpu_native::MemoryAllocateInfo_allocationSize,bytes); w(a,ext::gpu_native::MemoryAllocateInfo_memoryTypeIndex,chosen);
+    result(t.owner,ext::gpu_native::vkAllocateMemory(c.device,a,nil(),o),Stage::Texture)?; t.memory=rq(o,0); result(t.owner,ext::gpu_native::vkBindImageMemory(c.device,t.image,t.memory,0),Stage::Texture)?;
+    let view:[i32;20]=[0;20]; let v=address(view); w(v,0,ext::gpu_native::ST_IMAGE_VIEW_CREATE_INFO); q(v,ext::gpu_native::ImageViewCreateInfo_image,t.image); w(v,ext::gpu_native::ImageViewCreateInfo_viewType,1); w(v,ext::gpu_native::ImageViewCreateInfo_format,37); w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange,1); w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange+8,1); w(v,ext::gpu_native::ImageViewCreateInfo_subresourceRange+16,1);
+    result(t.owner,ext::gpu_native::vkCreateImageView(c.device,v,nil(),o),Stage::Texture)?; t.view=rq(o,0);
+    let sampler:[i32;20]=[0;20]; let s=address(sampler); w(s,0,ext::gpu_native::ST_SAMPLER_CREATE_INFO); w(s,ext::gpu_native::SamplerCreateInfo_addressModeU,2); w(s,ext::gpu_native::SamplerCreateInfo_addressModeV,2); w(s,ext::gpu_native::SamplerCreateInfo_addressModeW,2);
+    result(t.owner,ext::gpu_native::vkCreateSampler(c.device,s,nil(),o),Stage::Texture)?; t.sampler=rq(o,0); return core::result::Ok(0);
+}
+fn texture_release(t:&Texture) {
+    let device=control(t.owner)[0].device;
+    if(t.sampler!=0) { ext::gpu_native::vkDestroySampler(device,t.sampler,nil()); }
+    if(t.view!=0) { ext::gpu_native::vkDestroyImageView(device,t.view,nil()); }
+    if(t.image!=0) { ext::gpu_native::vkDestroyImage(device,t.image,nil()); }
+    if(t.memory!=0) { ext::gpu_native::vkFreeMemory(device,t.memory,nil()); }
+    free_life(t.life); t.owner=nil(); t.life=nil(); t.image=0; t.memory=0; t.view=0; t.sampler=0;
+}
+pub impl Device {
+    pub fn create_texture(&self,width:i32,height:i32) -> core::result::Result<Texture,Failure> {
+        check(self.storage,Stage::Texture)?;
+        if(width<1 || height<1 || width>4096 || height>4096) { return core::result::Err(error(Cause::Bounds,Stage::Texture)); }
+        let t=Texture {owner:self.storage,life:nil(),image:0,memory:0,view:0,sampler:0,width:width,height:height};
+        let made=texture_init(t.borrow()); if(made.is_err()) { let e=made.unwrap_err(); texture_release(t.borrow()); return core::result::Err(e); }
+        control(self.storage)[0].children+=1; return core::result::Ok(t);
+    }
+}
+pub impl Texture {
+    pub fn borrow(&self) -> &Texture { return self; }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); }
+        let owner=self.owner; if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); } unretained(self.life)?;
+        idle_for_close(owner)?; texture_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+fn ready(ref:ptr,encoder:ptr) -> core::result::Result<i32,Failure> {
+    if(!life(ref)[0].ready && (encoder==0 || life(ref)[0].initializer!=encoder)) { return core::result::Err(error(Cause::Uninitialized,Stage::Encode)); } return core::result::Ok(0);
+}
+fn initialize_texture(encoder:ptr,t:&Texture) {
+    let cmd=commands(encoder)[0].command; gpu_barrier(cmd);
+    if(life(t.life)[0].ready || life(t.life)[0].initializer==encoder) { return; }
+    let words:[i32;18]=[0;18]; let b=address(words); w(b,0,ext::gpu_native::ST_IMAGE_MEMORY_BARRIER); w(b,ext::gpu_native::ImageMemoryBarrier_dstAccessMask,98304); w(b,ext::gpu_native::ImageMemoryBarrier_newLayout,1); w(b,ext::gpu_native::ImageMemoryBarrier_srcQueueFamilyIndex,-1); w(b,ext::gpu_native::ImageMemoryBarrier_dstQueueFamilyIndex,-1); q(b,ext::gpu_native::ImageMemoryBarrier_image,t.image); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange,1); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange+8,1); w(b,ext::gpu_native::ImageMemoryBarrier_subresourceRange+16,1);
+    ext::gpu_native::vkCmdPipelineBarrier(cmd,65536,65536,0,0,nil(),0,nil(),1,b); life(t.life)[0].initializer=encoder;
+}
+fn texture_copy(p:ptr,t:&Texture,buffer:&Buffer,offset:i32,upload:bool) -> core::result::Result<i32,Failure> {
+    recording(p)?; if(t.owner==0 || buffer.owner==0) { return core::result::Err(error(Cause::Closed,Stage::Copy)); }
+    let size=t.width*t.height*4;
+    if(offset<0 || offset%4!=0 || size>buffer.length || offset>buffer.length-size) { return core::result::Err(error(Cause::Bounds,Stage::Copy)); }
+    if(!upload) { ready(t.life,p)?; }
+    let refs:[i32;4]=[0;4]; pset(address(refs),0,t.life); pset(address(refs),8,buffer.life); retain_batch(p,address(refs),2)?;
+    let cmd=commands(p)[0].command; if(upload) { initialize_texture(p,t); } else { gpu_barrier(cmd); }
+    let words:[i32;14]=[0;14]; let b=address(words); q(b,ext::gpu_native::BufferImageCopy_bufferOffset,offset as u64); w(b,ext::gpu_native::BufferImageCopy_imageSubresource,1); w(b,ext::gpu_native::BufferImageCopy_imageSubresource+12,1); w(b,ext::gpu_native::BufferImageCopy_imageExtent,t.width); w(b,ext::gpu_native::BufferImageCopy_imageExtent+4,t.height); w(b,ext::gpu_native::BufferImageCopy_imageExtent+8,1);
+    if(upload) { ext::gpu_native::vkCmdCopyBufferToImage(cmd,buffer.handle,t.image,1,1,b); } else { ext::gpu_native::vkCmdCopyImageToBuffer(cmd,t.image,1,buffer.handle,1,b); }
+    return core::result::Ok(size);
+}
+pub impl CommandEncoder {
+    pub fn clear_texture(&self,t:&Texture) -> core::result::Result<i32,Failure> {
+        recording(self.storage)?; if(t.owner==0) { return core::result::Err(error(Cause::Closed,Stage::Texture)); }
+        let refs:[i32;2]=[0;2]; pset(address(refs),0,t.life); retain_batch(self.storage,address(refs),1)?; initialize_texture(self.storage,t);
+        let color:[i32;4]=[0;4]; let range:[i32;5]=[1,0,1,0,1]; ext::gpu_native::vkCmdClearColorImage(commands(self.storage)[0].command,t.image,1,address(color),1,address(range)); return core::result::Ok(0);
+    }
+    pub fn upload_texture(&self,t:&Texture,source:&Buffer,offset:i32) -> core::result::Result<i32,Failure> { return texture_copy(self.storage,t,source,offset,true); }
+    pub fn download_texture(&self,t:&Texture,target:&Buffer,offset:i32) -> core::result::Result<i32,Failure> { return texture_copy(self.storage,t,target,offset,false); }
+}
+
+pub enum BindingKind { UniformBuffer, StorageBuffer, SampledTexture, StorageTexture }
+pub enum Binding { UniformBuffer(&Buffer), StorageBuffer(&Buffer), SampledTexture(&Texture), StorageTexture(&Texture) }
+pub struct BindingLayout { owner:ptr,life:ptr,handle:u64,kinds:ptr,count:i32 }
+pub struct BindGroup { owner:ptr,life:ptr,layout_life:ptr,pool:u64,set:u64,resources:ptr,count:i32 }
+fn kind_code(kind:BindingKind) -> i32 { return match(kind) { BindingKind::UniformBuffer -> 6, BindingKind::StorageBuffer -> 7, BindingKind::SampledTexture -> 1, BindingKind::StorageTexture -> 3 }; }
+fn binding_code(binding:Binding) -> i32 { return match(binding) { Binding::UniformBuffer(b) -> 6, Binding::StorageBuffer(b) -> 7, Binding::SampledTexture(t) -> 1, Binding::StorageTexture(t) -> 3 }; }
+fn binding_life(binding:Binding) -> ptr { return match(binding) { Binding::UniformBuffer(b) -> b.life, Binding::StorageBuffer(b) -> b.life, Binding::SampledTexture(t) -> t.life, Binding::StorageTexture(t) -> t.life }; }
+fn layout_release(l:&BindingLayout) {
+    if(l.handle!=0) { ext::gpu_native::vkDestroyDescriptorSetLayout(control(l.owner)[0].device,l.handle,nil()); }
+    if(l.kinds!=0) { alloc::allocator::dealloc(l.kinds,16,8); } free_life(l.life); l.life=nil(); l.owner=nil(); l.handle=0; l.kinds=nil();
+}
+fn layout_init(l:&BindingLayout,kinds:core::slice::View<BindingKind>) -> core::result::Result<i32,Failure> {
+    l.life=new_life(l.owner,true)?; l.kinds=alloc::allocator::alloc(16,8); if(l.kinds==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Bindings)); }
+    let bindings:[i32;24]=[0;24]; let index:i32=0;
+    while(index<l.count) { let code=kind_code(kinds.values[kinds.start+index]); w(l.kinds,(index as usize)*4,code); let b=address(bindings)+(index as usize)*ext::gpu_native::SIZE_DescriptorSetLayoutBinding; w(b,ext::gpu_native::DescriptorSetLayoutBinding_binding,index); w(b,ext::gpu_native::DescriptorSetLayoutBinding_descriptorType,code); w(b,ext::gpu_native::DescriptorSetLayoutBinding_descriptorCount,1); w(b,ext::gpu_native::DescriptorSetLayoutBinding_stageFlags,49); index+=1; }
+    let info:[i32;8]=[0;8]; let i=address(info); w(i,0,ext::gpu_native::ST_DESCRIPTOR_SET_LAYOUT_CREATE_INFO); w(i,ext::gpu_native::DescriptorSetLayoutCreateInfo_bindingCount,l.count); pset(i,ext::gpu_native::DescriptorSetLayoutCreateInfo_pBindings,address(bindings)); let output:[i32;2]=[0;2];
+    result(l.owner,ext::gpu_native::vkCreateDescriptorSetLayout(control(l.owner)[0].device,i,nil(),address(output)),Stage::Bindings)?; l.handle=rq(address(output),0); return core::result::Ok(0);
+}
+fn group_release(g:&BindGroup) {
+    if(g.pool!=0) { ext::gpu_native::vkDestroyDescriptorPool(control(g.owner)[0].device,g.pool,nil()); }
+    let i:i32=0; while(i<g.count) { life(rp(g.resources,(i as usize)*8))[0].retains-=1; i+=1; }
+    if(g.layout_life!=0) { life(g.layout_life)[0].retains-=1; }
+    if(g.resources!=0) { alloc::allocator::dealloc(g.resources,32,8); }
+    free_life(g.life); g.owner=nil(); g.life=nil(); g.pool=0; g.set=0; g.layout_life=nil(); g.resources=nil(); g.count=0;
+}
+fn descriptor_data(binding:Binding,out:ptr) -> core::result::Result<i32,Failure> {
+    return match(binding) {
+        Binding::UniformBuffer(b) -> { if(b.length>16384) { return core::result::Err(error(Cause::Bounds,Stage::Bindings)); } q(out,0,b.handle); q(out,16,b.length as u64); return core::result::Ok(0); },
+        Binding::StorageBuffer(b) -> { q(out,0,b.handle); q(out,16,b.length as u64); return core::result::Ok(0); },
+        Binding::SampledTexture(t) -> { q(out,0,t.sampler); q(out,8,t.view); w(out,16,1); return core::result::Ok(0); },
+        Binding::StorageTexture(t) -> { q(out,8,t.view); w(out,16,1); return core::result::Ok(0); }
+    };
+}
+fn group_init(g:&BindGroup,l:&BindingLayout,bindings:core::slice::View<Binding>) -> core::result::Result<i32,Failure> {
+    g.life=new_life(g.owner,true)?; g.resources=alloc::allocator::alloc(32,8); if(g.resources==0) { return core::result::Err(error(Cause::AllocationFailed,Stage::Bindings)); }
+    let data:[i32;24]=[0;24]; let sizes:[i32;8]=[0;8]; let index:i32=0;
+    while(index<bindings.length) {
+        let binding=bindings.values[bindings.start+index]; let ref=binding_life(binding); let code=binding_code(binding);
+        if(ref==0) { return core::result::Err(error(Cause::Closed,Stage::Bindings)); }
+        if(life(ref)[0].owner!=g.owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Bindings)); }
+        if(code!=r(l.kinds,(index as usize)*4)) { return core::result::Err(error(Cause::BindingMismatch,Stage::Bindings)); }
+        descriptor_data(binding,address(data)+(index as usize)*24)?; w(address(sizes),(index as usize)*8,code); w(address(sizes),(index as usize)*8+4,1); index+=1;
+    }
+    let device=control(g.owner)[0].device; let pool:[i32;10]=[0;10]; let p=address(pool); w(p,0,ext::gpu_native::ST_DESCRIPTOR_POOL_CREATE_INFO); w(p,ext::gpu_native::DescriptorPoolCreateInfo_maxSets,1); w(p,ext::gpu_native::DescriptorPoolCreateInfo_poolSizeCount,l.count); pset(p,ext::gpu_native::DescriptorPoolCreateInfo_pPoolSizes,address(sizes)); let output:[i32;2]=[0;2]; let o=address(output);
+    result(g.owner,ext::gpu_native::vkCreateDescriptorPool(device,p,nil(),o),Stage::Bindings)?; g.pool=rq(o,0);
+    let handle:[i32;2]=[0;2]; q(address(handle),0,l.handle); let allocate:[i32;10]=[0;10]; let a=address(allocate); w(a,0,ext::gpu_native::ST_DESCRIPTOR_SET_ALLOCATE_INFO); q(a,ext::gpu_native::DescriptorSetAllocateInfo_descriptorPool,g.pool); w(a,ext::gpu_native::DescriptorSetAllocateInfo_descriptorSetCount,1); pset(a,ext::gpu_native::DescriptorSetAllocateInfo_pSetLayouts,address(handle));
+    result(g.owner,ext::gpu_native::vkAllocateDescriptorSets(device,a,o),Stage::Bindings)?; g.set=rq(o,0);
+    let writes:[i32;64]=[0;64]; index=0;
+    while(index<l.count) {
+        let code=r(l.kinds,(index as usize)*4); let wr=address(writes)+(index as usize)*ext::gpu_native::SIZE_WriteDescriptorSet; w(wr,0,ext::gpu_native::ST_WRITE_DESCRIPTOR_SET); q(wr,ext::gpu_native::WriteDescriptorSet_dstSet,g.set); w(wr,ext::gpu_native::WriteDescriptorSet_dstBinding,index); w(wr,ext::gpu_native::WriteDescriptorSet_descriptorCount,1); w(wr,ext::gpu_native::WriteDescriptorSet_descriptorType,code);
+        if(code==6 || code==7) { pset(wr,ext::gpu_native::WriteDescriptorSet_pBufferInfo,address(data)+(index as usize)*24); } else { pset(wr,ext::gpu_native::WriteDescriptorSet_pImageInfo,address(data)+(index as usize)*24); }
+        let ref=binding_life(bindings.values[bindings.start+index]); pset(g.resources,(index as usize)*8,ref); life(ref)[0].retains+=1; g.count+=1; index+=1;
+    }
+    ext::gpu_native::vkUpdateDescriptorSets(device,l.count as u32,address(writes),0,nil()); life(l.life)[0].retains+=1; g.layout_life=l.life; return core::result::Ok(0);
+}
+pub impl Device {
+    // Bindings are dense 0..N in descriptor set 0. Maximum four per group.
+    pub fn create_binding_layout(&self,kinds:core::slice::View<BindingKind>) -> core::result::Result<BindingLayout,Failure> {
+        check(self.storage,Stage::Bindings)?; if(!valid(kinds) || kinds.length<1 || kinds.length>4) { return core::result::Err(error(Cause::Bounds,Stage::Bindings)); }
+        let l=BindingLayout {owner:self.storage,life:nil(),handle:0,kinds:nil(),count:kinds.length}; let made=layout_init(l.borrow(),kinds);
+        if(made.is_err()) { let e=made.unwrap_err(); layout_release(l.borrow()); return core::result::Err(e); } control(self.storage)[0].children+=1; return core::result::Ok(l);
+    }
+    pub fn create_bind_group(&self,l:&BindingLayout,bindings:core::slice::View<Binding>) -> core::result::Result<BindGroup,Failure> {
+        check(self.storage,Stage::Bindings)?; if(l.owner!=self.storage) { return core::result::Err(error(Cause::DifferentDevice,Stage::Bindings)); }
+        if(!valid(bindings) || bindings.length!=l.count) { return core::result::Err(error(Cause::BindingMismatch,Stage::Bindings)); }
+        let g=BindGroup {owner:self.storage,life:nil(),layout_life:nil(),pool:0,set:0,resources:nil(),count:0}; let made=group_init(g.borrow(),l,bindings);
+        if(made.is_err()) { let e=made.unwrap_err(); group_release(g.borrow()); return core::result::Err(e); } control(self.storage)[0].children+=1; return core::result::Ok(g);
+    }
+}
+pub impl BindingLayout {
+    pub fn borrow(&self) -> &BindingLayout { return self; }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); } let owner=self.owner;
+        if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); } unretained(self.life)?;
+        layout_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+pub impl BindGroup {
+    pub fn borrow(&self) -> &BindGroup { return self; }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); } let owner=self.owner;
+        if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); } unretained(self.life)?;
+        idle_for_close(owner)?; group_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+
+pub struct ComputePipeline { owner:ptr,life:ptr,bindings:ptr,handle:u64,layout:u64 }
+fn compute_release(p:&ComputePipeline) {
+    let device=control(p.owner)[0].device;
+    if(p.handle!=0) { ext::gpu_native::vkDestroyPipeline(device,p.handle,nil()); }
+    if(p.layout!=0) { ext::gpu_native::vkDestroyPipelineLayout(device,p.layout,nil()); }
+    if(p.bindings!=0) { life(p.bindings)[0].retains-=1; } free_life(p.life); p.owner=nil(); p.life=nil(); p.bindings=nil(); p.handle=0; p.layout=0;
+}
+fn compute_link(p:&ComputePipeline,layout:&BindingLayout,shader_handle:u64) -> core::result::Result<i32,Failure> {
+    let owner=p.owner; let device=control(owner)[0].device; let handle:[i32;2]=[0;2]; q(address(handle),0,layout.handle);
+    let words:[i32;12]=[0;12]; let l=address(words); w(l,0,ext::gpu_native::ST_PIPELINE_LAYOUT_CREATE_INFO); w(l,ext::gpu_native::PipelineLayoutCreateInfo_setLayoutCount,1); pset(l,ext::gpu_native::PipelineLayoutCreateInfo_pSetLayouts,address(handle)); let output:[i32;2]=[0;2]; let o=address(output);
+    result(owner,ext::gpu_native::vkCreatePipelineLayout(device,l,nil(),o),Stage::Pipeline)?; p.layout=rq(o,0);
+    let entry:[i32;2]=[0;2]; name(address(entry),"main"); let info:[i32;24]=[0;24]; let i=address(info); w(i,0,ext::gpu_native::ST_COMPUTE_PIPELINE_CREATE_INFO); let s=i+ext::gpu_native::ComputePipelineCreateInfo_stage; w(s,0,ext::gpu_native::ST_PIPELINE_SHADER_STAGE_CREATE_INFO); w(s,ext::gpu_native::PipelineShaderStageCreateInfo_stage,32); q(s,ext::gpu_native::PipelineShaderStageCreateInfo_module,shader_handle); pset(s,ext::gpu_native::PipelineShaderStageCreateInfo_pName,address(entry)); q(i,ext::gpu_native::ComputePipelineCreateInfo_layout,p.layout); w(i,ext::gpu_native::ComputePipelineCreateInfo_basePipelineIndex,-1);
+    q(o,0,0); let status=ext::gpu_native::vkCreateComputePipelines(device,0,1,i,nil(),o); p.handle=rq(o,0); return result(owner,status,Stage::Pipeline);
+}
+pub impl Device {
+    pub fn create_compute_pipeline(&self,code:core::slice::View<i32>,layout:&BindingLayout) -> core::result::Result<ComputePipeline,Failure> {
+        check(self.storage,Stage::Pipeline)?; if(layout.owner!=self.storage) { return core::result::Err(error(Cause::DifferentDevice,Stage::Pipeline)); }
+        let ref=new_life(self.storage,true)?; let shader_handle=shader(self.storage,code);
+        if(shader_handle.is_err()) { free_life(ref); return core::result::Err(shader_handle.unwrap_err()); }
+        let p=ComputePipeline {owner:self.storage,life:ref,bindings:layout.life,handle:0,layout:0}; life(layout.life)[0].retains+=1;
+        let made=compute_link(p.borrow(),layout,shader_handle.unwrap()); ext::gpu_native::vkDestroyShaderModule(control(self.storage)[0].device,shader_handle.unwrap(),nil());
+        if(made.is_err()) { let e=made.unwrap_err(); compute_release(p.borrow()); return core::result::Err(e); } control(self.storage)[0].children+=1; return core::result::Ok(p);
+    }
+    pub fn create_bound_pipeline(&self,vertex:core::slice::View<i32>,fragment:core::slice::View<i32>,format:Format,layout:&BindingLayout) -> core::result::Result<Pipeline,Failure> {
+        check(self.storage,Stage::Pipeline)?; if(layout.owner!=self.storage) { return core::result::Err(error(Cause::DifferentDevice,Stage::Pipeline)); }
+        let p=Pipeline {owner:self.storage,life:nil(),bindings:layout.life,set_layout:layout.handle,handle:0,layout:0,pass:0,format:format}; life(layout.life)[0].retains+=1;
+        let made=pipeline_init(p.borrow(),vertex,fragment); if(made.is_err()) { let e=made.unwrap_err(); pipeline_release(p.borrow()); return core::result::Err(e); } control(self.storage)[0].children+=1; return core::result::Ok(p);
+    }
+}
+pub impl ComputePipeline {
+    pub fn borrow(&self) -> &ComputePipeline { return self; }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.owner==0) { return core::result::Ok(false); } let owner=self.owner;
+        if(control(owner)[0].thread!=pthread_self()) { return core::result::Err(error(Cause::WrongThread,Stage::Close)); } unretained(self.life)?;
+        compute_release(self); control(owner)[0].children-=1; return core::result::Ok(true);
+    }
+}
+fn group_check(owner:ptr,layout:ptr,g:&BindGroup,encoder:ptr) -> core::result::Result<i32,Failure> {
+    if(g.owner!=owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Bindings)); }
+    if(g.layout_life!=layout) { return core::result::Err(error(Cause::BindingMismatch,Stage::Bindings)); }
+    let i:i32=0; while(i<g.count) { ready(rp(g.resources,(i as usize)*8),encoder)?; i+=1; } return core::result::Ok(0);
+}
+fn retain_group(encoder:ptr,pipeline_life:ptr,g:&BindGroup,extra:ptr) -> core::result::Result<i32,Failure> {
+    let refs:[i32;14]=[0;14]; let p=address(refs); pset(p,0,pipeline_life); let base:i32=1; if(g.life!=0) { pset(p,8,g.life); base=2; } let i:i32=0;
+    while(i<g.count) { pset(p,((base+i) as usize)*8,rp(g.resources,(i as usize)*8)); i+=1; }
+    let count=g.count+base; if(extra!=0) { pset(p,(count as usize)*8,extra); count+=1; } return retain_batch(encoder,p,count);
+}
+fn bind_group(command:ptr,point:i32,layout:u64,set:u64) {
+    let handles:[i32;2]=[0;2]; q(address(handles),0,set); ext::gpu_native::vkCmdBindDescriptorSets(command,point,layout,0,1,address(handles),0,nil());
+}
+pub impl CommandEncoder {
+    pub fn dispatch(&self,pipeline:&ComputePipeline,group:&BindGroup,x:i32,y:i32,z:i32) -> core::result::Result<i32,Failure> {
+        recording(self.storage)?; let c=commands(self.storage)[0];
+        if(pipeline.owner!=c.owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Encode)); }
+        if(x<1 || y<1 || z<1 || x>65535 || y>65535 || z>65535 || (x as u64)*(y as u64)*(z as u64)>1048576) { return core::result::Err(error(Cause::Bounds,Stage::Encode)); }
+        group_check(c.owner,pipeline.bindings,group,self.storage)?; retain_group(self.storage,pipeline.life,group,nil())?;
+        gpu_barrier(c.command); ext::gpu_native::vkCmdBindPipeline(c.command,1,pipeline.handle); bind_group(c.command,1,pipeline.layout,group.set); ext::gpu_native::vkCmdDispatch(c.command,x as u32,y as u32,z as u32); return core::result::Ok(0);
+    }
+}
+fn idle_for_close(owner:ptr) -> core::result::Result<i32,Failure> {
+    let status=ext::gpu_native::vkDeviceWaitIdle(control(owner)[0].device); if(status== -4) { control(owner)[0].lost=true; return core::result::Ok(0); } return result(owner,status,Stage::Close);
+}
+pub impl Surface {
+    pub fn render_bound(&self,pipeline:&Pipeline,group:&BindGroup,vertices:i32) -> core::result::Result<Frame,Failure> {
+        if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Draw)); }
+        let owner=display(self.storage)[0].owner; check(owner,Stage::Draw)?; group_check(owner,pipeline.bindings,group,nil())?;
+        return draw(self.storage,pipeline,vertices,0,0,group.set,group.layout_life);
+    }
+    pub fn render_bound_readback(&self,pipeline:&Pipeline,group:&BindGroup,vertices:i32,target:&Buffer) -> core::result::Result<Frame,Failure> {
+        if(self.storage==0) { return core::result::Err(error(Cause::Closed,Stage::Draw)); }
+        let owner=display(self.storage)[0].owner; check(owner,Stage::Draw)?; group_check(owner,pipeline.bindings,group,nil())?;
+        if(target.owner!=owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+        return draw(self.storage,pipeline,vertices,target.handle,target.length,group.set,group.layout_life);
+    }
+}
+
+pub enum FrameSubmission { Submitted(Submission), Retry, Suspended }
+fn submission_fences(p:ptr,out:ptr) -> i32 {
+    let c=commands(p)[0]; q(out,0,c.fence); let count:i32=1;
+    if(c.surface!=0) { let s=display(c.surface)[0]; if(s.pending_acquire) { q(out,(count as usize)*8,s.acquired); count+=1; } if(s.pending_present) { q(out,(count as usize)*8,s.presented); count+=1; } } return count;
+}
+pub impl Submission {
+    // After completion: reports presentation success/retry/error separately from
+    // submission acceptance. Presentation errors never discard a pending owner.
+    pub fn frame(&self) -> core::result::Result<Frame,Failure> {
+        if(!self.poll()?) { return core::result::Err(error(Cause::Busy,Stage::Draw)); }
+        let c=commands(self.storage)[0]; if(!c.frame) { return core::result::Err(error(Cause::Unsupported,Stage::Draw)); }
+        if(c.frame_status==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { return core::result::Ok(Frame::Retry); }
+        if(c.frame_status!=0 && c.frame_status!=ext::gpu_native::VK_SUBOPTIMAL_KHR) { result(c.owner,c.frame_status,Stage::Draw)?; }
+        return core::result::Ok(Frame::Presented(ext::window::Size {width:c.width,height:c.height}));
+    }
+}
+fn submit_frame(storage:ptr,pipeline:&Pipeline,group:&BindGroup,vertices:i32,target:u64,length:i32,target_life:ptr) -> core::result::Result<FrameSubmission,Failure> {
+    if(storage==0) { return core::result::Err(error(Cause::Closed,Stage::Draw)); }
+    let s=display(storage); let owner=s[0].owner; check(owner,Stage::Draw)?;
+    if(s[0].inflight!=0) { return core::result::Err(error(Cause::Busy,Stage::Draw)); }
+    if(s[0].broken) { return core::result::Err(error(Cause::Poisoned,Stage::Draw)); }
+    if(pipeline.owner!=owner) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+    group_check(owner,pipeline.bindings,group,nil())?;
+    if(format_code(pipeline.format)!=format_code(s[0].format) || vertices<1 || vertices>1048576) { return core::result::Err(error(Cause::Bounds,Stage::Draw)); }
+    if(!ensure_chain(storage)?) { return core::result::Ok(FrameSubmission::Suspended); }
+    if(target!=0 && length<s[0].width*s[0].height*4) { return core::result::Err(error(Cause::Bounds,Stage::Draw)); }
+    let d=Device {storage:owner}; let encoder=d.create_encoder()?;
+    let retained=retain_group(encoder.storage,pipeline.life,group,target_life);
+    if(retained.is_err()) { encoder.close(); return core::result::Err(retained.unwrap_err()); }
+    let made=submit_acquired(storage,pipeline,group,vertices,target,encoder.borrow());
+    if(encoder.storage!=0) { let closed=encoder.close(); if(closed.is_err()) { s[0].abandoned=encoder.storage; encoder.storage=nil(); } } return made;
+}
+fn submit_acquired(storage:ptr,pipeline:&Pipeline,group:&BindGroup,vertices:i32,target:u64,encoder:&CommandEncoder) -> core::result::Result<FrameSubmission,Failure> {
+    let s=display(storage); let owner=s[0].owner; let c=control(owner)[0]; let out:[i32;2]=[0;2]; let o=address(out); q(o,0,s[0].acquired);
+    result(owner,ext::gpu_native::vkResetFences(c.device,1,o),Stage::Draw)?;
+    let status=ext::gpu_native::vkAcquireNextImageKHR(c.device,s[0].chain,0,s[0].available,s[0].acquired,o);
+    if(status==1 || status==2) { return core::result::Ok(FrameSubmission::Retry); }
+    if(status==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { s[0].dirty=true; return core::result::Ok(FrameSubmission::Retry); }
+    if(status!=0 && status!=ext::gpu_native::VK_SUBOPTIMAL_KHR) { result(owner,status,Stage::Draw)?; }
+    s[0].pending_acquire=true; s[0].broken=true; if(status==ext::gpu_native::VK_SUBOPTIMAL_KHR) { s[0].dirty=true; }
+    let index=r(o,0); if(index<0 || index>=s[0].count) { return core::result::Err(error(Cause::Unsupported,Stage::Draw)); }
+    let cmd=commands(encoder.storage); cmd[0].wait_sem=s[0].available; cmd[0].signal_sem=s[0].finished;
+    record_surface(storage,pipeline,vertices,index,target,group.set,cmd[0].command);
+    let ticket=encoder.submit()?;
+    // From here all failure paths return the ticket. The caller can wait/close it.
+    let queued=queue_present(storage,index); let presentation:i32=0;
+    if(queued.is_err()) { let failure=queued.unwrap_err(); presentation=match(failure.cause) { Cause::Vulkan(code) -> code, Cause::DeviceLost -> -4, _ -> -1 }; } else { presentation=queued.unwrap(); }
+    if(presentation== -4) { control(owner)[0].lost=true; }
+    if(presentation==ext::gpu_native::VK_SUBOPTIMAL_KHR || presentation==ext::gpu_native::VK_ERROR_OUT_OF_DATE_KHR) { s[0].dirty=true; }
+    commands(ticket.storage)[0].surface=storage; commands(ticket.storage)[0].frame=true; commands(ticket.storage)[0].frame_status=presentation; commands(ticket.storage)[0].width=s[0].width; commands(ticket.storage)[0].height=s[0].height; s[0].inflight=ticket.storage;
+    return core::result::Ok(FrameSubmission::Submitted(ticket));
+}
+fn empty_group(owner:ptr) -> BindGroup { return BindGroup {owner:owner,life:nil(),layout_life:nil(),pool:0,set:0,resources:nil(),count:0}; }
+pub impl Surface {
+    pub fn submit(&self,pipeline:&Pipeline,vertices:i32) -> core::result::Result<FrameSubmission,Failure> {
+        let group=empty_group(pipeline.owner); return submit_frame(self.storage,pipeline,group.borrow(),vertices,0,0,nil());
+    }
+    pub fn submit_readback(&self,pipeline:&Pipeline,vertices:i32,target:&Buffer) -> core::result::Result<FrameSubmission,Failure> {
+        if(target.owner!=pipeline.owner || target.owner==0) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+        let group=empty_group(pipeline.owner); return submit_frame(self.storage,pipeline,group.borrow(),vertices,target.handle,target.length,target.life);
+    }
+    pub fn submit_bound(&self,pipeline:&Pipeline,group:&BindGroup,vertices:i32) -> core::result::Result<FrameSubmission,Failure> { return submit_frame(self.storage,pipeline,group,vertices,0,0,nil()); }
+    pub fn submit_bound_readback(&self,pipeline:&Pipeline,group:&BindGroup,vertices:i32,target:&Buffer) -> core::result::Result<FrameSubmission,Failure> {
+        if(target.owner!=pipeline.owner || target.owner==0) { return core::result::Err(error(Cause::DifferentDevice,Stage::Draw)); }
+        return submit_frame(self.storage,pipeline,group,vertices,target.handle,target.length,target.life);
+    }
+}

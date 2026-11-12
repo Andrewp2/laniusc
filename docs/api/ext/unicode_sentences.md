@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-unicode-sentences](../../extended-unicode-sentences.md)
 
-Declaration counts: enum: 1; field: 14; function: 5; impl: 1; method: 1; struct: 3; variant: 3.
+Declaration counts: enum: 1; field: 13; function: 5; impl: 2; machine: 1; method: 4; struct: 3; variant: 3.
 
 ## Declared imports
 
@@ -28,9 +28,17 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: Error
+### machine: TerminatorSuffix
 
 [Source line 10](../../../extended/ext/unicode_sentences.lani#L10)
+
+```lanius
+pub machine TerminatorSuffix on u32
+```
+
+### enum: Error
+
+[Source line 25](../../../extended/ext/unicode_sentences.lani#L25)
 
 ```lanius
 pub enum Error
@@ -38,7 +46,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 10](../../../extended/ext/unicode_sentences.lani#L10)
+[Source line 25](../../../extended/ext/unicode_sentences.lani#L25)
 
 ```lanius
 Bounds
@@ -46,7 +54,7 @@ Bounds
 
 #### variant: InputLimit
 
-[Source line 10](../../../extended/ext/unicode_sentences.lani#L10)
+[Source line 25](../../../extended/ext/unicode_sentences.lani#L25)
 
 ```lanius
 InputLimit
@@ -54,7 +62,7 @@ InputLimit
 
 #### variant: WorkLimit
 
-[Source line 10](../../../extended/ext/unicode_sentences.lani#L10)
+[Source line 25](../../../extended/ext/unicode_sentences.lani#L25)
 
 ```lanius
 WorkLimit
@@ -62,7 +70,7 @@ WorkLimit
 
 ### struct: Limits
 
-[Source line 11](../../../extended/ext/unicode_sentences.lani#L11)
+[Source line 26](../../../extended/ext/unicode_sentences.lani#L26)
 
 ```lanius
 pub struct Limits
@@ -70,7 +78,7 @@ pub struct Limits
 
 #### field: max_bytes
 
-[Source line 11](../../../extended/ext/unicode_sentences.lani#L11)
+[Source line 26](../../../extended/ext/unicode_sentences.lani#L26)
 
 ```lanius
 max_bytes: i32
@@ -78,7 +86,7 @@ max_bytes: i32
 
 #### field: max_work
 
-[Source line 11](../../../extended/ext/unicode_sentences.lani#L11)
+[Source line 26](../../../extended/ext/unicode_sentences.lani#L26)
 
 ```lanius
 max_work: u64
@@ -86,7 +94,7 @@ max_work: u64
 
 ### struct: Segment
 
-[Source line 12](../../../extended/ext/unicode_sentences.lani#L12)
+[Source line 27](../../../extended/ext/unicode_sentences.lani#L27)
 
 ```lanius
 pub struct Segment
@@ -94,7 +102,7 @@ pub struct Segment
 
 #### field: start
 
-[Source line 12](../../../extended/ext/unicode_sentences.lani#L12)
+[Source line 27](../../../extended/ext/unicode_sentences.lani#L27)
 
 ```lanius
 start: i32
@@ -102,7 +110,7 @@ start: i32
 
 #### field: end
 
-[Source line 12](../../../extended/ext/unicode_sentences.lani#L12)
+[Source line 27](../../../extended/ext/unicode_sentences.lani#L27)
 
 ```lanius
 end: i32
@@ -110,7 +118,7 @@ end: i32
 
 #### field: text
 
-[Source line 12](../../../extended/ext/unicode_sentences.lani#L12)
+[Source line 27](../../../extended/ext/unicode_sentences.lani#L27)
 
 ```lanius
 text: core::text::Text
@@ -118,7 +126,7 @@ text: core::text::Text
 
 ### struct: Cursor
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 pub struct Cursor
@@ -126,7 +134,7 @@ pub struct Cursor
 
 #### field: text
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 text: core::text::Text
@@ -134,7 +142,7 @@ text: core::text::Text
 
 #### field: position
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 position: i32
@@ -142,7 +150,7 @@ position: i32
 
 #### field: raw
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 raw: u32
@@ -150,7 +158,7 @@ raw: u32
 
 #### field: previous
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 previous: u32
@@ -158,31 +166,23 @@ previous: u32
 
 #### field: before
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 before: u32
 ```
 
-#### field: term
+#### field: terminator
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
-
-```lanius
-term: u32
-```
-
-#### field: spaces
-
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
-spaces: bool
+terminator: TerminatorSuffix
 ```
 
 #### field: look_end
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 look_end: i32
@@ -190,7 +190,7 @@ look_end: i32
 
 #### field: look_lower
 
-[Source line 15](../../../extended/ext/unicode_sentences.lani#L15)
+[Source line 30](../../../extended/ext/unicode_sentences.lani#L30)
 
 ```lanius
 look_lower: bool
@@ -200,7 +200,7 @@ look_lower: bool
 
 ### function: default_limits
 
-[Source line 17](../../../extended/ext/unicode_sentences.lani#L17)
+[Source line 32](../../../extended/ext/unicode_sentences.lani#L32)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -208,7 +208,7 @@ pub fn default_limits() -> Limits
 
 ### function: cursor_with_limits
 
-[Source line 18](../../../extended/ext/unicode_sentences.lani#L18)
+[Source line 33](../../../extended/ext/unicode_sentences.lani#L33)
 
 ```lanius
 pub fn cursor_with_limits(text: core::text::Text, limits: Limits) -> core::result::Result<Cursor,Error>
@@ -216,7 +216,7 @@ pub fn cursor_with_limits(text: core::text::Text, limits: Limits) -> core::resul
 
 ### function: cursor
 
-[Source line 26](../../../extended/ext/unicode_sentences.lani#L26)
+[Source line 41](../../../extended/ext/unicode_sentences.lani#L41)
 
 ```lanius
 pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor,Error>
@@ -224,7 +224,7 @@ pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor,Error>
 
 ### function: count
 
-[Source line 92](../../../extended/ext/unicode_sentences.lani#L92)
+[Source line 104](../../../extended/ext/unicode_sentences.lani#L104)
 
 ```lanius
 pub fn count(text: core::text::Text) -> core::result::Result<i32,Error>
@@ -232,7 +232,7 @@ pub fn count(text: core::text::Text) -> core::result::Result<i32,Error>
 
 ### function: is_boundary
 
-[Source line 97](../../../extended/ext/unicode_sentences.lani#L97)
+[Source line 109](../../../extended/ext/unicode_sentences.lani#L109)
 
 ```lanius
 pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<bool,Error>
@@ -240,9 +240,41 @@ pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<b
 
 ## Implementation blocks and public methods
 
-### impl at line 34
+### impl at line 18
 
-[Source line 34](../../../extended/ext/unicode_sentences.lani#L34)
+[Source line 18](../../../extended/ext/unicode_sentences.lani#L18)
+
+```lanius
+pub impl TerminatorSuffix
+```
+
+#### method: active
+
+[Source line 19](../../../extended/ext/unicode_sentences.lani#L19)
+
+```lanius
+pub fn active(&self) -> bool
+```
+
+#### method: abbreviation
+
+[Source line 20](../../../extended/ext/unicode_sentences.lani#L20)
+
+```lanius
+pub fn abbreviation(&self) -> bool
+```
+
+#### method: spaces
+
+[Source line 21](../../../extended/ext/unicode_sentences.lani#L21)
+
+```lanius
+pub fn spaces(&self) -> bool
+```
+
+### impl at line 49
+
+[Source line 49](../../../extended/ext/unicode_sentences.lani#L49)
 
 ```lanius
 pub impl Cursor
@@ -250,7 +282,7 @@ pub impl Cursor
 
 #### method: next
 
-[Source line 77](../../../extended/ext/unicode_sentences.lani#L77)
+[Source line 89](../../../extended/ext/unicode_sentences.lani#L89)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Segment>

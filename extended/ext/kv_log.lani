@@ -4,6 +4,7 @@
 // truncates a torn or corrupt tail; compact() rewrites the live records and
 // renames the new log over the old one. See docs/extended-kv-log.md.
 module ext::kv_log;
+import core::lifecycle;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -43,7 +44,7 @@ const GONE: i32 = -2;
 // past the mapping, or a failed mmap, use pread.
 const MAP_LIMIT: i64 = 1073741824;
 
-struct Entry { key: i32, key_len: i32, value: i64, value_len: i32, hash: u32, live: bool }
+struct Entry { key: i32, key_len: i32, value: i64, value_len: i32, hash: u32, lifetime: core::lifecycle::Lifetime }
 
 fn magic(index: i32) -> u8 {
     // "LKVLOG01"
@@ -138,7 +139,7 @@ fn read_all(file: &std::file::File, bytes: [u8], start: i32, length: i32, positi
 }
 
 pub struct Store {
-    file: std::file::File, open: bool, path: alloc::vec::Vec<u8>, options: Options,
+    file: std::file::File, lifetime: core::lifecycle::Lifetime, path: alloc::vec::Vec<u8>, options: Options,
     entries: alloc::vec::Vec<Entry>, keys: alloc::vec::Vec<u8>,
     slots: alloc::vec::Vec<i32>, slot_cap: i32, slot_used: i32, live: i32,
     // pending and keys are used up to pending_len and keys_len; growing them
@@ -156,7 +157,7 @@ pub fn open(path: core::slice::View<u8>, options: Options) -> core::result::Resu
     if (opened.is_err()) { owned.destroy(); return core::result::Err(io(opened.unwrap_err())); }
     let nowhere: ptr = 0;
     let store: Store = Store {
-        file: opened.unwrap(), open: true, path: owned, options: options,
+        file: opened.unwrap(), lifetime: core::lifecycle::lifetime_start(), path: owned, options: options,
         entries: alloc::vec::new(), keys: alloc::vec::new(), slots: alloc::vec::new(), slot_cap: 0, slot_used: 0, live: 0,
         pending: alloc::vec::new(), pending_len: 0, keys_len: 0, map: nowhere, map_len: 0, flushed: 0, synced: 0, live_bytes: 0, table: crc_table(), recovery: Recovery { records: 0, truncated: 0 },
     };
@@ -181,7 +182,7 @@ pub impl Store {
 
     fn release(&self) {
         self.unmap();
-        if (self.open) { let closed = self.file.close(); self.open = false; }
+        if (self.lifetime.is_active()) { let closed = self.file.close(); self.lifetime.release(); }
         self.path.destroy(); self.entries.destroy(); self.keys.destroy(); self.slots.destroy(); self.pending.destroy(); self.table.destroy();
         self.slot_cap = 0; self.slot_used = 0; self.live = 0; self.pending_len = 0; self.keys_len = 0;
     }
@@ -248,7 +249,7 @@ pub impl Store {
         let index: i32 = 0;
         while (index < self.entries.len()) {
             let entry: Entry = self.entries.at(index);
-            if (entry.live) {
+            if (entry.lifetime.is_active()) {
                 let at: i32 = (entry.hash as i32) & mask;
                 while (slots[at] != EMPTY) { at = (at + 1) & mask; }
                 slots[at] = index; self.slot_used += 1;
@@ -280,7 +281,7 @@ pub impl Store {
             if (found < 0) { return true; }
             let entry: Entry = self.entries.at(found);
             self.live_bytes -= (RECORD_HEAD + entry.key_len + entry.value_len) as i64;
-            entry.live = false; core::result::unwrap(self.entries.set(found, entry));
+            entry.lifetime.release(); core::result::unwrap(self.entries.set(found, entry));
             self.remove_slot(found, hash); self.live -= 1;
             return true;
         }
@@ -297,7 +298,7 @@ pub impl Store {
         if (key_len > 0) { core::slice::copy_nonoverlapping_range(self.keys.as_slice(), self.keys.len(), key_at, bytes, start + key_len, start, key_len); }
         self.keys_len = key_at + key_len;
         let index: i32 = self.entries.len();
-        if (self.entries.try_push(Entry { key: key_at, key_len: key_len, value: value, value_len: value_len, hash: hash, live: true }).is_err()) { return false; }
+        if (self.entries.try_push(Entry { key: key_at, key_len: key_len, value: value, value_len: value_len, hash: hash, lifetime: core::lifecycle::lifetime_start() }).is_err()) { return false; }
         self.insert_slot(index, hash); self.live += 1; self.live_bytes += size;
         return true;
     }
@@ -396,7 +397,7 @@ pub impl Store {
     }
     // Writes buffered records to the file (no fsync).
     pub fn flush(&self) -> core::result::Result<i32, Error> {
-        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(fail(ErrorKind::Closed)); }
         let count: i32 = self.pending_len;
         if (count == 0) { return core::result::Ok(0); }
         let wrote = write_all(self.file.borrow(), self.pending.as_slice(), 0, count, self.flushed);
@@ -422,7 +423,7 @@ pub impl Store {
         return core::result::Ok(0);
     }
     pub fn put(&self, key: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32, Error> {
-        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(fail(ErrorKind::Closed)); }
         if (key.length > self.options.max_key || key.length > FORMAT_MAX_KEY) { return core::result::Err(fail(ErrorKind::KeyLimit)); }
         if (value.length > self.options.max_value || value.length > FORMAT_MAX_VALUE) { return core::result::Err(fail(ErrorKind::ValueLimit)); }
         let made = self.record(KIND_PUT, key, value);
@@ -436,7 +437,7 @@ pub impl Store {
     }
     // Ok(true) when the key existed. Deleting a missing key writes nothing.
     pub fn delete(&self, key: core::slice::View<u8>) -> core::result::Result<bool, Error> {
-        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(fail(ErrorKind::Closed)); }
         if (!self.contains(key)) { return core::result::Ok(false); }
         let made = self.record(KIND_DELETE, key, core::slice::View { values: key.values, start: key.start, length: 0 });
         if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
@@ -450,7 +451,7 @@ pub impl Store {
     }
     // Replaces out with the value of key; Ok(false) when there is none.
     pub fn get(&self, key: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error> {
-        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(fail(ErrorKind::Closed)); }
         let found: i32 = self.find(key.values, key.start, key.length, hash_of(key.values, key.start, key.length));
         if (found < 0) { return core::result::Ok(false); }
         let read = self.read_value(self.entries.at(found), out);
@@ -482,7 +483,7 @@ pub impl Store {
     pub fn first(&self) -> i32 { return self.next(-1); }
     pub fn next(&self, position: i32) -> i32 {
         let index: i32 = position + 1;
-        while (index < self.entries.len()) { if (self.entries.at(index).live) { return index; } index += 1; }
+        while (index < self.entries.len()) { if (self.entries.at(index).lifetime.is_active()) { return index; } index += 1; }
         return -1;
     }
     pub fn key(&self, position: i32) -> core::slice::View<u8> {
@@ -522,7 +523,7 @@ pub impl Store {
         let position: i64 = HEADER as i64; let index: i32 = 0; let ok: bool = true;
         while (index < old_entries.len() && ok) {
             let entry: Entry = old_entries.at(index);
-            if (entry.live) {
+            if (entry.lifetime.is_active()) {
                 ok = self.apply(KIND_PUT, old_keys.as_slice(), entry.key, entry.key_len, position + ((RECORD_HEAD + entry.key_len) as i64), entry.value_len);
                 position += (RECORD_HEAD + entry.key_len + entry.value_len) as i64;
             }
@@ -542,7 +543,7 @@ pub impl Store {
         let position: i64 = 0; let index: i32 = 0; let failure: Error = fail(ErrorKind::AllocationFailed);
         while (ok && index < self.entries.len()) {
             let entry: Entry = self.entries.at(index);
-            if (entry.live) {
+            if (entry.lifetime.is_active()) {
                 let read = self.read_value(entry, value.borrow());
                 if (read.is_err()) { failure = read.unwrap_err(); ok = false; break; }
                 let at: i32 = out.len(); let total: i32 = RECORD_HEAD + entry.key_len + entry.value_len;
@@ -584,14 +585,14 @@ pub impl Store {
     // Flushes, syncs and closes. The store is unusable afterwards except for
     // destroy (close calls it).
     pub fn close(&self) -> core::result::Result<i32, Error> {
-        if (!self.open) { return core::result::Err(fail(ErrorKind::Closed)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(fail(ErrorKind::Closed)); }
         let synced = self.sync();
         self.release();
         return synced;
     }
     // Releases memory and the descriptor without flushing (buffered records
     // are lost, as in a crash).
-    pub fn destroy(&self) { if (self.open) { self.release(); } }
+    pub fn destroy(&self) { if (self.lifetime.is_active()) { self.release(); } }
 }
 
 pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8> {

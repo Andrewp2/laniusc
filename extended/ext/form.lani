@@ -1,6 +1,7 @@
 // Ordered application/x-www-form-urlencoded byte pairs. No allocation or
 // UTF-8 replacement conversion. See docs/library-form-plan.md for lifetimes.
 module ext::form;
+import core::parse_state;
 import core::io;
 import core::iter;
 import core::option;
@@ -232,18 +233,18 @@ impl ComponentCursor {
         return core::option::Some(result);
     }
 }
-struct EncodingMachine { source: PairSource, count: i32, index: i32, value: bool, component: ComponentCursor }
+struct EncodingMachine { source: PairSource, count: i32, index: i32, pair: core::parse_state::PairPhase, component: ComponentCursor }
 impl EncodingMachine {
     fn pull(&self) -> core::option::Option<u8> {
         if (self.index == self.count) { return core::option::None(); }
         let pair: Pair = source_pair(self.source,self.index);
         let input: core::slice::View<u8> = pair.name;
-        if (self.value) { input = pair.value; }
+        if (self.pair.needs_value()) { input = pair.value; }
         let next: core::option::Option<u8> = self.component.pull(input);
         if (next.is_some()) { return next; }
         self.component.position = 0; self.component.part = 0;
-        if (!self.value) { self.value = true; return core::option::Some(61); }
-        self.value = false; self.index += 1;
+        if (!self.pair.needs_value()) { self.pair.advance(); return core::option::Some(61); }
+        self.pair.advance(); self.index += 1;
         if (self.index == self.count) { return core::option::None(); }
         return core::option::Some(38);
     }
@@ -256,7 +257,7 @@ pub fn encoding(source: PairSource, max_output: u64) -> core::result::Result<Enc
     if (measured.is_err()) { return core::result::Err(measured.unwrap_err()); }
     let length: u64 = measured.unwrap();
     if (length > max_output) { return core::result::Err(Error::OutputLimit); }
-    let machine: EncodingMachine = EncodingMachine { source: source, count: source_count(source), index: 0, value: false, component: ComponentCursor { position: 0, part: 0 } };
+    let machine: EncodingMachine = EncodingMachine { source: source, count: source_count(source), index: 0, pair: core::parse_state::pair_phase_start(), component: ComponentCursor { position: 0, part: 0 } };
     return core::result::Ok(Encoding { machine: machine, remaining_bytes: length });
 }
 pub impl Encoding {

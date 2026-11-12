@@ -24,7 +24,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/cli_response_files.lani#L4)
 - [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/cli_response_files.lani#L5)
 - [core::io](../core/io.md) · [source](../../../extended/ext/cli_response_files.lani#L6)
-- [core::io::Read](../core/io.md) (items in separate namespaces: variant, trait; no use-site resolution) · [variant declaration](../../../stdlib/core/io.lani#L26) · [trait declaration](../../../stdlib/core/io.lani#L41) · [source](../../../extended/ext/cli_response_files.lani#L7)
+- [core::io::Read](../core/io.md) (items in separate namespaces: variant, trait; no use-site resolution) · [variant declaration](../../../stdlib/core/io.lani#L28) · [trait declaration](../../../stdlib/core/io.lani#L43) · [source](../../../extended/ext/cli_response_files.lani#L7)
 - [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_response_files.lani#L8)
 - [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/cli_response_files.lani#L9)
 - [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/cli_response_files.lani#L10)
@@ -32,9 +32,9 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_response_files.lani#L12)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_response_files.lani#L13)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_response_files.lani#L14)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/cli_response_files.lani#L15)
-- [ext::cli_response::Provider](cli_response.md) (items in separate namespaces: trait, variant; no use-site resolution) · [trait declaration](../../../extended/ext/cli_response.lani#L17) · [variant declaration](../../../extended/ext/cli_response.lani#L31) · [source](../../../extended/ext/cli_response_files.lani#L16)
-- [std::file::File](../std/file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L26) · [source](../../../extended/ext/cli_response_files.lani#L17)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/cli_response_files.lani#L15)
+- [ext::cli_response::Provider](cli_response.md) (items in separate namespaces: trait, variant; no use-site resolution) · [trait declaration](../../../extended/ext/cli_response.lani#L47) · [variant declaration](../../../extended/ext/cli_response.lani#L61) · [source](../../../extended/ext/cli_response_files.lani#L16)
+- [std::file::File](../std/file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L27) · [source](../../../extended/ext/cli_response_files.lani#L17)
 - [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/cli_response_files.lani#L18)
 
 ## Types, fields and variants

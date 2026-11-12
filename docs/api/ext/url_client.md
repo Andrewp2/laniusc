@@ -22,19 +22,20 @@ Declaration counts: enum: 2; field: 13; function: 2; impl: 1; method: 5; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](../core/io.md) · [source](../../../extended/ext/url_client.lani#L4)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_client.lani#L5)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/url_client.lani#L6)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/url_client.lani#L7)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_client.lani#L8)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_client.lani#L9)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_client.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/url_client.lani#L11)
-- [core::time](../core/time.md) · [source](../../../extended/ext/url_client.lani#L12)
-- [ext::http](http.md) · [source](../../../extended/ext/url_client.lani#L13)
-- [ext::http_client](http_client.md) · [source](../../../extended/ext/url_client.lani#L14)
-- [ext::http_url](http_url.md) · [source](../../../extended/ext/url_client.lani#L15)
-- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/url_client.lani#L16)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/url_client.lani#L4)
+- [core::io](../core/io.md) · [source](../../../extended/ext/url_client.lani#L5)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_client.lani#L6)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/url_client.lani#L7)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/url_client.lani#L8)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_client.lani#L9)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_client.lani#L10)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_client.lani#L11)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/url_client.lani#L12)
+- [core::time](../core/time.md) · [source](../../../extended/ext/url_client.lani#L13)
+- [ext::http](http.md) · [source](../../../extended/ext/url_client.lani#L14)
+- [ext::http_client](http_client.md) · [source](../../../extended/ext/url_client.lani#L15)
+- [ext::http_url](http_url.md) · [source](../../../extended/ext/url_client.lani#L16)
+- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/url_client.lani#L17)
 
 ## Types, fields and variants
 
@@ -42,7 +43,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Request
 
-[Source line 18](../../../extended/ext/url_client.lani#L18)
+[Source line 19](../../../extended/ext/url_client.lani#L19)
 
 ```lanius
 pub struct Request
@@ -50,7 +51,7 @@ pub struct Request
 
 #### field: method
 
-[Source line 18](../../../extended/ext/url_client.lani#L18)
+[Source line 19](../../../extended/ext/url_client.lani#L19)
 
 ```lanius
 method: View<u8>
@@ -58,7 +59,7 @@ method: View<u8>
 
 #### field: headers
 
-[Source line 18](../../../extended/ext/url_client.lani#L18)
+[Source line 19](../../../extended/ext/url_client.lani#L19)
 
 ```lanius
 headers: View<ext::http::Field>
@@ -66,7 +67,7 @@ headers: View<ext::http::Field>
 
 #### field: body
 
-[Source line 18](../../../extended/ext/url_client.lani#L18)
+[Source line 19](../../../extended/ext/url_client.lani#L19)
 
 ```lanius
 body: View<u8>
@@ -74,7 +75,7 @@ body: View<u8>
 
 ### struct: Options
 
-[Source line 19](../../../extended/ext/url_client.lani#L19)
+[Source line 20](../../../extended/ext/url_client.lani#L20)
 
 ```lanius
 pub struct Options
@@ -82,7 +83,7 @@ pub struct Options
 
 #### field: connection
 
-[Source line 19](../../../extended/ext/url_client.lani#L19)
+[Source line 20](../../../extended/ext/url_client.lani#L20)
 
 ```lanius
 connection: ext::url_connect::Options
@@ -90,7 +91,7 @@ connection: ext::url_connect::Options
 
 #### field: http
 
-[Source line 19](../../../extended/ext/url_client.lani#L19)
+[Source line 20](../../../extended/ext/url_client.lani#L20)
 
 ```lanius
 http: ext::http_client::Options
@@ -98,7 +99,7 @@ http: ext::http_client::Options
 
 ### enum: Stage
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 pub enum Stage
@@ -106,7 +107,7 @@ pub enum Stage
 
 #### variant: Validate
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 Validate
@@ -114,7 +115,7 @@ Validate
 
 #### variant: Prepare
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 Prepare
@@ -122,7 +123,7 @@ Prepare
 
 #### variant: Connect
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 Connect
@@ -130,7 +131,7 @@ Connect
 
 #### variant: Adopt
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 Adopt
@@ -138,7 +139,7 @@ Adopt
 
 #### variant: Exchange
 
-[Source line 20](../../../extended/ext/url_client.lani#L20)
+[Source line 21](../../../extended/ext/url_client.lani#L21)
 
 ```lanius
 Exchange
@@ -146,7 +147,7 @@ Exchange
 
 ### enum: Cause
 
-[Source line 21](../../../extended/ext/url_client.lani#L21)
+[Source line 22](../../../extended/ext/url_client.lani#L22)
 
 ```lanius
 pub enum Cause
@@ -154,7 +155,7 @@ pub enum Cause
 
 #### variant: InvalidState
 
-[Source line 22](../../../extended/ext/url_client.lani#L22)
+[Source line 23](../../../extended/ext/url_client.lani#L23)
 
 ```lanius
 InvalidState
@@ -162,7 +163,7 @@ InvalidState
 
 #### variant: SchemeMismatch
 
-[Source line 22](../../../extended/ext/url_client.lani#L22)
+[Source line 23](../../../extended/ext/url_client.lani#L23)
 
 ```lanius
 SchemeMismatch
@@ -170,7 +171,7 @@ SchemeMismatch
 
 #### variant: ConnectionOptions
 
-[Source line 22](../../../extended/ext/url_client.lani#L22)
+[Source line 23](../../../extended/ext/url_client.lani#L23)
 
 ```lanius
 ConnectionOptions(ext::url_connect::Cause)
@@ -178,7 +179,7 @@ ConnectionOptions(ext::url_connect::Cause)
 
 #### variant: Connect
 
-[Source line 23](../../../extended/ext/url_client.lani#L23)
+[Source line 24](../../../extended/ext/url_client.lani#L24)
 
 ```lanius
 Connect(ext::url_connect::Failure)
@@ -186,7 +187,7 @@ Connect(ext::url_connect::Failure)
 
 #### variant: Http
 
-[Source line 23](../../../extended/ext/url_client.lani#L23)
+[Source line 24](../../../extended/ext/url_client.lani#L24)
 
 ```lanius
 Http(ext::http_client::Failure)
@@ -194,7 +195,7 @@ Http(ext::http_client::Failure)
 
 ### struct: Failure
 
-[Source line 26](../../../extended/ext/url_client.lani#L26)
+[Source line 27](../../../extended/ext/url_client.lani#L27)
 
 ```lanius
 pub struct Failure
@@ -202,7 +203,7 @@ pub struct Failure
 
 #### field: stage
 
-[Source line 27](../../../extended/ext/url_client.lani#L27)
+[Source line 28](../../../extended/ext/url_client.lani#L28)
 
 ```lanius
 stage: Stage
@@ -210,7 +211,7 @@ stage: Stage
 
 #### field: cause
 
-[Source line 27](../../../extended/ext/url_client.lani#L27)
+[Source line 28](../../../extended/ext/url_client.lani#L28)
 
 ```lanius
 cause: Cause
@@ -218,7 +219,7 @@ cause: Cause
 
 #### field: connection
 
-[Source line 27](../../../extended/ext/url_client.lani#L27)
+[Source line 28](../../../extended/ext/url_client.lani#L28)
 
 ```lanius
 connection: Option<ext::url_connect::ConnectionInfo>
@@ -226,7 +227,7 @@ connection: Option<ext::url_connect::ConnectionInfo>
 
 #### field: http
 
-[Source line 28](../../../extended/ext/url_client.lani#L28)
+[Source line 29](../../../extended/ext/url_client.lani#L29)
 
 ```lanius
 http: Option<ext::http_client::Stats>
@@ -234,7 +235,7 @@ http: Option<ext::http_client::Stats>
 
 #### field: cleanup
 
-[Source line 28](../../../extended/ext/url_client.lani#L28)
+[Source line 29](../../../extended/ext/url_client.lani#L29)
 
 ```lanius
 cleanup: Option<core::io::Error>
@@ -242,7 +243,7 @@ cleanup: Option<core::io::Error>
 
 ### struct: Response
 
-[Source line 30](../../../extended/ext/url_client.lani#L30)
+[Source line 31](../../../extended/ext/url_client.lani#L31)
 
 ```lanius
 pub struct Response
@@ -250,7 +251,7 @@ pub struct Response
 
 #### field: owner
 
-[Source line 30](../../../extended/ext/url_client.lani#L30)
+[Source line 31](../../../extended/ext/url_client.lani#L31)
 
 ```lanius
 owner: ext::http_client::Response
@@ -258,25 +259,25 @@ owner: ext::http_client::Response
 
 #### field: selected
 
-[Source line 30](../../../extended/ext/url_client.lani#L30)
+[Source line 31](../../../extended/ext/url_client.lani#L31)
 
 ```lanius
 selected: ext::url_connect::ConnectionInfo
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 30](../../../extended/ext/url_client.lani#L30)
+[Source line 31](../../../extended/ext/url_client.lani#L31)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 32](../../../extended/ext/url_client.lani#L32)
+[Source line 33](../../../extended/ext/url_client.lani#L33)
 
 ```lanius
 pub fn default_options() -> Options
@@ -286,7 +287,7 @@ Composes connector defaults and canonical HTTP defaults with explicit Trailing::
 
 ### function: exchange_until
 
-[Source line 56](../../../extended/ext/url_client.lani#L56)
+[Source line 57](../../../extended/ext/url_client.lani#L57)
 
 ```lanius
 pub fn exchange_until(url: &ext::http_url::Url, request: Request, options: Options,
@@ -297,9 +298,9 @@ Accepts Http only, checks the live URL/connector configuration and canonical req
 
 ## Implementation blocks and public methods
 
-### impl at line 44
+### impl at line 45
 
-[Source line 44](../../../extended/ext/url_client.lani#L44)
+[Source line 45](../../../extended/ext/url_client.lani#L45)
 
 ```lanius
 pub impl Response
@@ -307,7 +308,7 @@ pub impl Response
 
 #### method: borrow
 
-[Source line 45](../../../extended/ext/url_client.lani#L45)
+[Source line 46](../../../extended/ext/url_client.lani#L46)
 
 ```lanius
 pub fn borrow(&self) -> &Response
@@ -315,7 +316,7 @@ pub fn borrow(&self) -> &Response
 
 #### method: is_open
 
-[Source line 46](../../../extended/ext/url_client.lani#L46)
+[Source line 47](../../../extended/ext/url_client.lani#L47)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -323,7 +324,7 @@ pub fn is_open(&self) -> bool
 
 #### method: http
 
-[Source line 48](../../../extended/ext/url_client.lani#L48)
+[Source line 49](../../../extended/ext/url_client.lani#L49)
 
 ```lanius
 pub fn http(&self) -> &ext::http_client::Response
@@ -331,7 +332,7 @@ pub fn http(&self) -> &ext::http_client::Response
 
 #### method: connection
 
-[Source line 49](../../../extended/ext/url_client.lani#L49)
+[Source line 50](../../../extended/ext/url_client.lani#L50)
 
 ```lanius
 pub fn connection(&self) -> ext::url_connect::ConnectionInfo
@@ -339,7 +340,7 @@ pub fn connection(&self) -> ext::url_connect::ConnectionInfo
 
 #### method: destroy
 
-[Source line 50](../../../extended/ext/url_client.lani#L50)
+[Source line 51](../../../extended/ext/url_client.lani#L51)
 
 ```lanius
 pub fn destroy(&self) -> bool

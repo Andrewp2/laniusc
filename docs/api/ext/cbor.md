@@ -19,11 +19,13 @@ Declaration counts: enum: 2; field: 15; function: 7; impl: 1; method: 2; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/cbor.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/cbor.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/cbor.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/cbor.lani#L8)
-- [core::text](../core/text.md) · [source](../../../extended/ext/cbor.lani#L9)
+- [core::parse_state](../core/parse_state.md) · [source](../../../extended/ext/cbor.lani#L5)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/cbor.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/cbor.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/cbor.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/cbor.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/cbor.lani#L10)
+- [core::text](../core/text.md) · [source](../../../extended/ext/cbor.lani#L11)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Event
 
-[Source line 11](../../../extended/ext/cbor.lani#L11)
+[Source line 13](../../../extended/ext/cbor.lani#L13)
 
 ```lanius
 pub enum Event
@@ -39,7 +41,7 @@ pub enum Event
 
 #### variant: Unsigned
 
-[Source line 12](../../../extended/ext/cbor.lani#L12)
+[Source line 14](../../../extended/ext/cbor.lani#L14)
 
 ```lanius
 Unsigned(u64)
@@ -47,7 +49,7 @@ Unsigned(u64)
 
 #### variant: Negative
 
-[Source line 12](../../../extended/ext/cbor.lani#L12)
+[Source line 14](../../../extended/ext/cbor.lani#L14)
 
 ```lanius
 Negative(u64)
@@ -55,7 +57,7 @@ Negative(u64)
 
 #### variant: Bytes
 
-[Source line 12](../../../extended/ext/cbor.lani#L12)
+[Source line 14](../../../extended/ext/cbor.lani#L14)
 
 ```lanius
 Bytes(core::slice::View<u8>)
@@ -63,7 +65,7 @@ Bytes(core::slice::View<u8>)
 
 #### variant: Text
 
-[Source line 12](../../../extended/ext/cbor.lani#L12)
+[Source line 14](../../../extended/ext/cbor.lani#L14)
 
 ```lanius
 Text(core::slice::View<u8>)
@@ -71,7 +73,7 @@ Text(core::slice::View<u8>)
 
 #### variant: Array
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Array(u64)
@@ -79,7 +81,7 @@ Array(u64)
 
 #### variant: Map
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Map(u64)
@@ -87,7 +89,7 @@ Map(u64)
 
 #### variant: Tag
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Tag(u64)
@@ -95,7 +97,7 @@ Tag(u64)
 
 #### variant: Simple
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Simple(u8)
@@ -103,7 +105,7 @@ Simple(u8)
 
 #### variant: Float16
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Float16(u32)
@@ -111,7 +113,7 @@ Float16(u32)
 
 #### variant: Float32
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Float32(u32)
@@ -119,7 +121,7 @@ Float32(u32)
 
 #### variant: Float64
 
-[Source line 13](../../../extended/ext/cbor.lani#L13)
+[Source line 15](../../../extended/ext/cbor.lani#L15)
 
 ```lanius
 Float64(u64)
@@ -127,7 +129,7 @@ Float64(u64)
 
 #### variant: BeginBytes
 
-[Source line 14](../../../extended/ext/cbor.lani#L14)
+[Source line 16](../../../extended/ext/cbor.lani#L16)
 
 ```lanius
 BeginBytes
@@ -135,7 +137,7 @@ BeginBytes
 
 #### variant: BeginText
 
-[Source line 14](../../../extended/ext/cbor.lani#L14)
+[Source line 16](../../../extended/ext/cbor.lani#L16)
 
 ```lanius
 BeginText
@@ -143,7 +145,7 @@ BeginText
 
 #### variant: BeginArray
 
-[Source line 14](../../../extended/ext/cbor.lani#L14)
+[Source line 16](../../../extended/ext/cbor.lani#L16)
 
 ```lanius
 BeginArray
@@ -151,7 +153,7 @@ BeginArray
 
 #### variant: BeginMap
 
-[Source line 14](../../../extended/ext/cbor.lani#L14)
+[Source line 16](../../../extended/ext/cbor.lani#L16)
 
 ```lanius
 BeginMap
@@ -159,7 +161,7 @@ BeginMap
 
 #### variant: End
 
-[Source line 14](../../../extended/ext/cbor.lani#L14)
+[Source line 16](../../../extended/ext/cbor.lani#L16)
 
 ```lanius
 End
@@ -167,7 +169,7 @@ End
 
 ### enum: ErrorKind
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 pub enum ErrorKind
@@ -175,7 +177,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 Bounds
@@ -183,7 +185,7 @@ Bounds
 
 #### variant: InputLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 InputLimit
@@ -191,7 +193,7 @@ InputLimit
 
 #### variant: OutputLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 OutputLimit
@@ -199,7 +201,7 @@ OutputLimit
 
 #### variant: ScratchTooSmall
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 ScratchTooSmall
@@ -207,7 +209,7 @@ ScratchTooSmall
 
 #### variant: DepthLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 DepthLimit
@@ -215,7 +217,7 @@ DepthLimit
 
 #### variant: ItemLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 ItemLimit
@@ -223,7 +225,7 @@ ItemLimit
 
 #### variant: StringLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 StringLimit
@@ -231,7 +233,7 @@ StringLimit
 
 #### variant: WorkLimit
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 WorkLimit
@@ -239,7 +241,7 @@ WorkLimit
 
 #### variant: UnexpectedEnd
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 UnexpectedEnd
@@ -247,7 +249,7 @@ UnexpectedEnd
 
 #### variant: InvalidHead
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 InvalidHead
@@ -255,7 +257,7 @@ InvalidHead
 
 #### variant: InvalidSimple
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 InvalidSimple
@@ -263,7 +265,7 @@ InvalidSimple
 
 #### variant: InvalidUtf8
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 InvalidUtf8
@@ -271,7 +273,7 @@ InvalidUtf8
 
 #### variant: UnexpectedBreak
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 UnexpectedBreak
@@ -279,7 +281,7 @@ UnexpectedBreak
 
 #### variant: ChunkType
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 ChunkType
@@ -287,7 +289,7 @@ ChunkType
 
 #### variant: OddMap
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 OddMap
@@ -295,7 +297,7 @@ OddMap
 
 #### variant: TrailingData
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 TrailingData
@@ -303,7 +305,7 @@ TrailingData
 
 #### variant: InvalidEvent
 
-[Source line 16](../../../extended/ext/cbor.lani#L16)
+[Source line 18](../../../extended/ext/cbor.lani#L18)
 
 ```lanius
 InvalidEvent
@@ -311,7 +313,7 @@ InvalidEvent
 
 ### struct: Error
 
-[Source line 17](../../../extended/ext/cbor.lani#L17)
+[Source line 19](../../../extended/ext/cbor.lani#L19)
 
 ```lanius
 pub struct Error
@@ -319,7 +321,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 17](../../../extended/ext/cbor.lani#L17)
+[Source line 19](../../../extended/ext/cbor.lani#L19)
 
 ```lanius
 kind: ErrorKind
@@ -327,7 +329,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 17](../../../extended/ext/cbor.lani#L17)
+[Source line 19](../../../extended/ext/cbor.lani#L19)
 
 ```lanius
 offset: i32
@@ -335,7 +337,7 @@ offset: i32
 
 ### struct: Limits
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 pub struct Limits
@@ -343,7 +345,7 @@ pub struct Limits
 
 #### field: max_input
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_input: i32
@@ -351,7 +353,7 @@ max_input: i32
 
 #### field: max_output
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_output: i32
@@ -359,7 +361,7 @@ max_output: i32
 
 #### field: max_depth
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_depth: i32
@@ -367,7 +369,7 @@ max_depth: i32
 
 #### field: max_items
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_items: u64
@@ -375,7 +377,7 @@ max_items: u64
 
 #### field: max_string_bytes
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_string_bytes: i32
@@ -383,7 +385,7 @@ max_string_bytes: i32
 
 #### field: max_work
 
-[Source line 18](../../../extended/ext/cbor.lani#L18)
+[Source line 20](../../../extended/ext/cbor.lani#L20)
 
 ```lanius
 max_work: u64
@@ -391,7 +393,7 @@ max_work: u64
 
 ### struct: Frame
 
-[Source line 19](../../../extended/ext/cbor.lani#L19)
+[Source line 21](../../../extended/ext/cbor.lani#L21)
 
 ```lanius
 pub struct Frame
@@ -399,7 +401,7 @@ pub struct Frame
 
 #### field: kind
 
-[Source line 19](../../../extended/ext/cbor.lani#L19)
+[Source line 21](../../../extended/ext/cbor.lani#L21)
 
 ```lanius
 kind: i32
@@ -407,23 +409,23 @@ kind: i32
 
 #### field: remaining
 
-[Source line 19](../../../extended/ext/cbor.lani#L19)
+[Source line 21](../../../extended/ext/cbor.lani#L21)
 
 ```lanius
 remaining: u64
 ```
 
-#### field: odd
+#### field: pair
 
-[Source line 19](../../../extended/ext/cbor.lani#L19)
+[Source line 21](../../../extended/ext/cbor.lani#L21)
 
 ```lanius
-odd: bool
+pair: core::parse_state::PairPhase
 ```
 
 #### field: bytes
 
-[Source line 19](../../../extended/ext/cbor.lani#L19)
+[Source line 21](../../../extended/ext/cbor.lani#L21)
 
 ```lanius
 bytes: u64
@@ -431,7 +433,7 @@ bytes: u64
 
 ### struct: Reader
 
-[Source line 99](../../../extended/ext/cbor.lani#L99)
+[Source line 101](../../../extended/ext/cbor.lani#L101)
 
 ```lanius
 pub struct Reader
@@ -439,7 +441,7 @@ pub struct Reader
 
 #### field: input
 
-[Source line 99](../../../extended/ext/cbor.lani#L99)
+[Source line 101](../../../extended/ext/cbor.lani#L101)
 
 ```lanius
 input: core::slice::View<u8>
@@ -447,7 +449,7 @@ input: core::slice::View<u8>
 
 #### field: state
 
-[Source line 99](../../../extended/ext/cbor.lani#L99)
+[Source line 101](../../../extended/ext/cbor.lani#L101)
 
 ```lanius
 state: Machine
@@ -455,7 +457,7 @@ state: Machine
 
 #### field: position
 
-[Source line 99](../../../extended/ext/cbor.lani#L99)
+[Source line 101](../../../extended/ext/cbor.lani#L101)
 
 ```lanius
 position: i32
@@ -465,7 +467,7 @@ position: i32
 
 ### function: empty_frame
 
-[Source line 20](../../../extended/ext/cbor.lani#L20)
+[Source line 22](../../../extended/ext/cbor.lani#L22)
 
 ```lanius
 pub fn empty_frame() -> Frame
@@ -473,7 +475,7 @@ pub fn empty_frame() -> Frame
 
 ### function: default_limits
 
-[Source line 21](../../../extended/ext/cbor.lani#L21)
+[Source line 23](../../../extended/ext/cbor.lani#L23)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -481,7 +483,7 @@ pub fn default_limits() -> Limits
 
 ### function: scratch_len
 
-[Source line 30](../../../extended/ext/cbor.lani#L30)
+[Source line 32](../../../extended/ext/cbor.lani#L32)
 
 ```lanius
 pub fn scratch_len(limits: Limits) -> core::result::Result<i32,Error>
@@ -489,7 +491,7 @@ pub fn scratch_len(limits: Limits) -> core::result::Result<i32,Error>
 
 ### function: validate
 
-[Source line 157](../../../extended/ext/cbor.lani#L157)
+[Source line 159](../../../extended/ext/cbor.lani#L159)
 
 ```lanius
 pub fn validate(input: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error>
@@ -497,7 +499,7 @@ pub fn validate(input: core::slice::View<u8>, frames: core::slice::View<Frame>, 
 
 ### function: reader
 
-[Source line 165](../../../extended/ext/cbor.lani#L165)
+[Source line 167](../../../extended/ext/cbor.lani#L167)
 
 ```lanius
 pub fn reader(input: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<Reader,Error>
@@ -505,7 +507,7 @@ pub fn reader(input: core::slice::View<u8>, frames: core::slice::View<Frame>, li
 
 ### function: encoded_len
 
-[Source line 193](../../../extended/ext/cbor.lani#L193)
+[Source line 195](../../../extended/ext/cbor.lani#L195)
 
 ```lanius
 pub fn encoded_len(events: core::slice::View<Event>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error>
@@ -513,7 +515,7 @@ pub fn encoded_len(events: core::slice::View<Event>, frames: core::slice::View<F
 
 ### function: encode_into
 
-[Source line 202](../../../extended/ext/cbor.lani#L202)
+[Source line 204](../../../extended/ext/cbor.lani#L204)
 
 ```lanius
 pub fn encode_into(events: core::slice::View<Event>, output: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error>
@@ -521,9 +523,9 @@ pub fn encode_into(events: core::slice::View<Event>, output: core::slice::View<u
 
 ## Implementation blocks and public methods
 
-### impl at line 169
+### impl at line 171
 
-[Source line 169](../../../extended/ext/cbor.lani#L169)
+[Source line 171](../../../extended/ext/cbor.lani#L171)
 
 ```lanius
 pub impl Reader
@@ -531,7 +533,7 @@ pub impl Reader
 
 #### method: next
 
-[Source line 170](../../../extended/ext/cbor.lani#L170)
+[Source line 172](../../../extended/ext/cbor.lani#L172)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Event>
@@ -539,7 +541,7 @@ pub fn next(&self) -> core::option::Option<Event>
 
 #### method: position
 
-[Source line 171](../../../extended/ext/cbor.lani#L171)
+[Source line 173](../../../extended/ext/cbor.lani#L173)
 
 ```lanius
 pub fn position(&self) -> i32

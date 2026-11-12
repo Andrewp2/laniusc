@@ -7,6 +7,7 @@ import core::mem;
 import core::result;
 import core::slice;
 import ext::sqlite;
+import ext::sqlite_statement;
 import std::stream;
 pub extern "C" fn sqlite3_memory_highwater(reset: i32) -> i64;
 
@@ -38,7 +39,7 @@ fn phase(value: ext::sqlite::Phase) -> i32 { return match (value) {
     ext::sqlite::Phase::Finalize -> 9, ext::sqlite::Phase::Close -> 10, ext::sqlite::Phase::Transaction -> 11 }; }
 fn expected(error: ext::sqlite::Error, c: i32, p: i32) { assert(cause(error.cause) == c && phase(error.phase) == p && error.code == 0); }
 fn kind(value: ext::sqlite::ColumnType) -> u64 { return match (value) { ext::sqlite::ColumnType::Integer -> 1, ext::sqlite::ColumnType::Real -> 2, ext::sqlite::ColumnType::Text -> 3, ext::sqlite::ColumnType::Blob -> 4, ext::sqlite::ColumnType::Null -> 5 }; }
-fn state(value: ext::sqlite::State) -> i32 { return match (value) { ext::sqlite::State::Ready -> 0, ext::sqlite::State::Row -> 1, ext::sqlite::State::Done -> 2, ext::sqlite::State::Failed -> 3, ext::sqlite::State::Finalized -> 4 }; }
+fn state(value: ext::sqlite_statement::StatementState) -> i32 { return match (value) { ext::sqlite_statement::StatementState::Ready -> 0, ext::sqlite_statement::StatementState::Row -> 1, ext::sqlite_statement::StatementState::Done -> 2, ext::sqlite_statement::StatementState::Failed -> 3, ext::sqlite_statement::StatementState::Finalized -> 4 }; }
 fn execute(db: &ext::sqlite::Database, sql: core::slice::View<u8>) -> core::result::Result<i32, ext::sqlite::Error> {
     let prepared: core::result::Result<ext::sqlite::Statement, ext::sqlite::Error> = db.prepare(sql);
     if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }

@@ -10,16 +10,18 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: enum: 2; field: 46; function: 5; impl: 1; method: 3; struct: 2; variant: 5.
+Declaration counts: enum: 3; field: 46; function: 5; impl: 1; machine: 1; method: 3; struct: 2; variant: 9.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/zstd_encode.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/zstd_encode.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/zstd_encode.lani#L13)
-- [ext::xxhash](xxhash.md) · [source](../../../extended/ext/zstd_encode.lani#L14)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/zstd_encode.lani#L11)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/zstd_encode.lani#L12)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/zstd_encode.lani#L13)
+- [core::result](../core/result.md) · [source](../../../extended/ext/zstd_encode.lani#L14)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/zstd_encode.lani#L15)
+- [ext::xxhash](xxhash.md) · [source](../../../extended/ext/zstd_encode.lani#L16)
 
 ## Types, fields and variants
 
@@ -27,7 +29,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 16](../../../extended/ext/zstd_encode.lani#L16)
+[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
 
 ```lanius
 pub enum Error
@@ -35,7 +37,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 16](../../../extended/ext/zstd_encode.lani#L16)
+[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
 
 ```lanius
 Bounds
@@ -43,7 +45,7 @@ Bounds
 
 #### variant: Level
 
-[Source line 16](../../../extended/ext/zstd_encode.lani#L16)
+[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
 
 ```lanius
 Level
@@ -51,7 +53,7 @@ Level
 
 ### enum: Status
 
-[Source line 17](../../../extended/ext/zstd_encode.lani#L17)
+[Source line 19](../../../extended/ext/zstd_encode.lani#L19)
 
 ```lanius
 pub enum Status
@@ -59,7 +61,7 @@ pub enum Status
 
 #### variant: NeedInput
 
-[Source line 17](../../../extended/ext/zstd_encode.lani#L17)
+[Source line 19](../../../extended/ext/zstd_encode.lani#L19)
 
 ```lanius
 NeedInput
@@ -67,7 +69,7 @@ NeedInput
 
 #### variant: NeedOutput
 
-[Source line 17](../../../extended/ext/zstd_encode.lani#L17)
+[Source line 19](../../../extended/ext/zstd_encode.lani#L19)
 
 ```lanius
 NeedOutput
@@ -75,7 +77,7 @@ NeedOutput
 
 #### variant: Done
 
-[Source line 17](../../../extended/ext/zstd_encode.lani#L17)
+[Source line 19](../../../extended/ext/zstd_encode.lani#L19)
 
 ```lanius
 Done
@@ -83,7 +85,7 @@ Done
 
 ### struct: Step
 
-[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
+[Source line 20](../../../extended/ext/zstd_encode.lani#L20)
 
 ```lanius
 pub struct Step
@@ -91,7 +93,7 @@ pub struct Step
 
 #### field: read
 
-[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
+[Source line 20](../../../extended/ext/zstd_encode.lani#L20)
 
 ```lanius
 read: i32
@@ -99,7 +101,7 @@ read: i32
 
 #### field: written
 
-[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
+[Source line 20](../../../extended/ext/zstd_encode.lani#L20)
 
 ```lanius
 written: i32
@@ -107,15 +109,63 @@ written: i32
 
 #### field: status
 
-[Source line 18](../../../extended/ext/zstd_encode.lani#L18)
+[Source line 20](../../../extended/ext/zstd_encode.lani#L20)
 
 ```lanius
 status: Status
 ```
 
+### enum: EncodeEvent
+
+[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+
+```lanius
+pub enum EncodeEvent
+```
+
+#### variant: Reset
+
+[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+
+```lanius
+Reset
+```
+
+#### variant: HeaderWritten
+
+[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+
+```lanius
+HeaderWritten
+```
+
+#### variant: BlocksWritten
+
+[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+
+```lanius
+BlocksWritten
+```
+
+#### variant: ChecksumWritten
+
+[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+
+```lanius
+ChecksumWritten
+```
+
+### machine: Encoding
+
+[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+
+```lanius
+pub machine Encoding on EncodeEvent
+```
+
 ### struct: Encoder
 
-[Source line 110](../../../extended/ext/zstd_encode.lani#L110)
+[Source line 146](../../../extended/ext/zstd_encode.lani#L146)
 
 ```lanius
 pub struct Encoder
@@ -123,7 +173,7 @@ pub struct Encoder
 
 #### field: ws
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 ws: core::slice::View<i32>
@@ -131,7 +181,7 @@ ws: core::slice::View<i32>
 
 #### field: win
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 win: [u8]
@@ -139,7 +189,7 @@ win: [u8]
 
 #### field: win_ptr
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 win_ptr: ptr
@@ -147,7 +197,7 @@ win_ptr: ptr
 
 #### field: win_len
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 win_len: i32
@@ -155,7 +205,7 @@ win_len: i32
 
 #### field: units
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 units: i32
@@ -163,7 +213,7 @@ units: i32
 
 #### field: lit
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 lit: [u8]
@@ -171,7 +221,7 @@ lit: [u8]
 
 #### field: lit_ptr
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 lit_ptr: ptr
@@ -179,7 +229,7 @@ lit_ptr: ptr
 
 #### field: stage
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 stage: [u8]
@@ -187,7 +237,7 @@ stage: [u8]
 
 #### field: stage_ptr
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 stage_ptr: ptr
@@ -195,7 +245,7 @@ stage_ptr: ptr
 
 #### field: stage_cap
 
-[Source line 111](../../../extended/ext/zstd_encode.lani#L111)
+[Source line 147](../../../extended/ext/zstd_encode.lani#L147)
 
 ```lanius
 stage_cap: i32
@@ -203,7 +253,7 @@ stage_cap: i32
 
 #### field: level
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 level: i32
@@ -211,7 +261,7 @@ level: i32
 
 #### field: wlog
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 wlog: i32
@@ -219,7 +269,7 @@ wlog: i32
 
 #### field: wsize
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 wsize: i32
@@ -227,7 +277,7 @@ wsize: i32
 
 #### field: hlog
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 hlog: i32
@@ -235,7 +285,7 @@ hlog: i32
 
 #### field: chain
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 chain: i32
@@ -243,7 +293,7 @@ chain: i32
 
 #### field: lazy
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 lazy: bool
@@ -251,7 +301,7 @@ lazy: bool
 
 #### field: nice
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 nice: i32
@@ -259,7 +309,7 @@ nice: i32
 
 #### field: head_at
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 head_at: i32
@@ -267,7 +317,7 @@ head_at: i32
 
 #### field: prev_at
 
-[Source line 112](../../../extended/ext/zstd_encode.lani#L112)
+[Source line 148](../../../extended/ext/zstd_encode.lani#L148)
 
 ```lanius
 prev_at: i32
@@ -275,7 +325,7 @@ prev_at: i32
 
 #### field: origin
 
-[Source line 113](../../../extended/ext/zstd_encode.lani#L113)
+[Source line 149](../../../extended/ext/zstd_encode.lani#L149)
 
 ```lanius
 origin: i32
@@ -283,7 +333,7 @@ origin: i32
 
 #### field: filled
 
-[Source line 113](../../../extended/ext/zstd_encode.lani#L113)
+[Source line 149](../../../extended/ext/zstd_encode.lani#L149)
 
 ```lanius
 filled: i32
@@ -291,7 +341,7 @@ filled: i32
 
 #### field: start
 
-[Source line 113](../../../extended/ext/zstd_encode.lani#L113)
+[Source line 149](../../../extended/ext/zstd_encode.lani#L149)
 
 ```lanius
 start: i32
@@ -299,23 +349,23 @@ start: i32
 
 #### field: hashed
 
-[Source line 113](../../../extended/ext/zstd_encode.lani#L113)
+[Source line 149](../../../extended/ext/zstd_encode.lani#L149)
 
 ```lanius
 hashed: i32
 ```
 
-#### field: cleared
+#### field: cleared_completion
 
-[Source line 113](../../../extended/ext/zstd_encode.lani#L113)
+[Source line 149](../../../extended/ext/zstd_encode.lani#L149)
 
 ```lanius
-cleared: bool
+cleared_completion: core::iter_state::Completion
 ```
 
 #### field: rep0
 
-[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+[Source line 150](../../../extended/ext/zstd_encode.lani#L150)
 
 ```lanius
 rep0: i32
@@ -323,7 +373,7 @@ rep0: i32
 
 #### field: rep1
 
-[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+[Source line 150](../../../extended/ext/zstd_encode.lani#L150)
 
 ```lanius
 rep1: i32
@@ -331,7 +381,7 @@ rep1: i32
 
 #### field: rep2
 
-[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+[Source line 150](../../../extended/ext/zstd_encode.lani#L150)
 
 ```lanius
 rep2: i32
@@ -339,7 +389,7 @@ rep2: i32
 
 #### field: nseq
 
-[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+[Source line 150](../../../extended/ext/zstd_encode.lani#L150)
 
 ```lanius
 nseq: i32
@@ -347,7 +397,7 @@ nseq: i32
 
 #### field: nlit
 
-[Source line 114](../../../extended/ext/zstd_encode.lani#L114)
+[Source line 150](../../../extended/ext/zstd_encode.lani#L150)
 
 ```lanius
 nlit: i32
@@ -355,7 +405,7 @@ nlit: i32
 
 #### field: bw_acc
 
-[Source line 115](../../../extended/ext/zstd_encode.lani#L115)
+[Source line 151](../../../extended/ext/zstd_encode.lani#L151)
 
 ```lanius
 bw_acc: u64
@@ -363,7 +413,7 @@ bw_acc: u64
 
 #### field: bw_bits
 
-[Source line 115](../../../extended/ext/zstd_encode.lani#L115)
+[Source line 151](../../../extended/ext/zstd_encode.lani#L151)
 
 ```lanius
 bw_bits: i32
@@ -371,23 +421,23 @@ bw_bits: i32
 
 #### field: bw_pos
 
-[Source line 115](../../../extended/ext/zstd_encode.lani#L115)
+[Source line 151](../../../extended/ext/zstd_encode.lani#L151)
 
 ```lanius
 bw_pos: i32
 ```
 
-#### field: bw_over
+#### field: bit_health
 
-[Source line 115](../../../extended/ext/zstd_encode.lani#L115)
+[Source line 151](../../../extended/ext/zstd_encode.lani#L151)
 
 ```lanius
-bw_over: bool
+bit_health: core::lifecycle::Health
 ```
 
 #### field: ll_log
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 ll_log: i32
@@ -395,7 +445,7 @@ ll_log: i32
 
 #### field: of_log
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 of_log: i32
@@ -403,7 +453,7 @@ of_log: i32
 
 #### field: ml_log
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 ml_log: i32
@@ -411,7 +461,7 @@ ml_log: i32
 
 #### field: ll_rle
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 ll_rle: bool
@@ -419,7 +469,7 @@ ll_rle: bool
 
 #### field: of_rle
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 of_rle: bool
@@ -427,7 +477,7 @@ of_rle: bool
 
 #### field: ml_rle
 
-[Source line 116](../../../extended/ext/zstd_encode.lani#L116)
+[Source line 152](../../../extended/ext/zstd_encode.lani#L152)
 
 ```lanius
 ml_rle: bool
@@ -435,7 +485,7 @@ ml_rle: bool
 
 #### field: hash
 
-[Source line 117](../../../extended/ext/zstd_encode.lani#L117)
+[Source line 153](../../../extended/ext/zstd_encode.lani#L153)
 
 ```lanius
 hash: ext::xxhash::State
@@ -443,15 +493,15 @@ hash: ext::xxhash::State
 
 #### field: phase
 
-[Source line 117](../../../extended/ext/zstd_encode.lani#L117)
+[Source line 153](../../../extended/ext/zstd_encode.lani#L153)
 
 ```lanius
-phase: i32
+phase: Encoding
 ```
 
 #### field: out_len
 
-[Source line 117](../../../extended/ext/zstd_encode.lani#L117)
+[Source line 153](../../../extended/ext/zstd_encode.lani#L153)
 
 ```lanius
 out_len: i32
@@ -459,7 +509,7 @@ out_len: i32
 
 #### field: out_pos
 
-[Source line 117](../../../extended/ext/zstd_encode.lani#L117)
+[Source line 153](../../../extended/ext/zstd_encode.lani#L153)
 
 ```lanius
 out_pos: i32
@@ -469,7 +519,7 @@ out_pos: i32
 
 ### function: workspace_len
 
-[Source line 54](../../../extended/ext/zstd_encode.lani#L54)
+[Source line 56](../../../extended/ext/zstd_encode.lani#L56)
 
 ```lanius
 pub fn workspace_len(level: i32) -> i32
@@ -477,7 +527,7 @@ pub fn workspace_len(level: i32) -> i32
 
 ### function: window_len
 
-[Source line 56](../../../extended/ext/zstd_encode.lani#L56)
+[Source line 58](../../../extended/ext/zstd_encode.lani#L58)
 
 ```lanius
 pub fn window_len(level: i32) -> i32
@@ -485,7 +535,7 @@ pub fn window_len(level: i32) -> i32
 
 ### function: literals_len
 
-[Source line 57](../../../extended/ext/zstd_encode.lani#L57)
+[Source line 59](../../../extended/ext/zstd_encode.lani#L59)
 
 ```lanius
 pub fn literals_len() -> i32
@@ -493,7 +543,7 @@ pub fn literals_len() -> i32
 
 ### function: stage_len
 
-[Source line 58](../../../extended/ext/zstd_encode.lani#L58)
+[Source line 60](../../../extended/ext/zstd_encode.lani#L60)
 
 ```lanius
 pub fn stage_len() -> i32
@@ -501,7 +551,7 @@ pub fn stage_len() -> i32
 
 ### function: encoder
 
-[Source line 119](../../../extended/ext/zstd_encode.lani#L119)
+[Source line 155](../../../extended/ext/zstd_encode.lani#L155)
 
 ```lanius
 pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>, literals: core::slice::View<u8>, stage: core::slice::View<u8>, level: i32) -> core::result::Result<Encoder,Error>
@@ -509,9 +559,9 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
 
 ## Implementation blocks and public methods
 
-### impl at line 139
+### impl at line 175
 
-[Source line 139](../../../extended/ext/zstd_encode.lani#L139)
+[Source line 175](../../../extended/ext/zstd_encode.lani#L175)
 
 ```lanius
 pub impl Encoder
@@ -519,7 +569,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 140](../../../extended/ext/zstd_encode.lani#L140)
+[Source line 176](../../../extended/ext/zstd_encode.lani#L176)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -527,7 +577,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: is_done
 
-[Source line 141](../../../extended/ext/zstd_encode.lani#L141)
+[Source line 177](../../../extended/ext/zstd_encode.lani#L177)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -535,7 +585,7 @@ pub fn is_done(&self) -> bool
 
 #### method: step
 
-[Source line 635](../../../extended/ext/zstd_encode.lani#L635)
+[Source line 671](../../../extended/ext/zstd_encode.lani#L671)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error>

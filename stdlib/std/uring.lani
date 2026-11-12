@@ -8,12 +8,59 @@
 // iovec tables and address slots handed to an operation must stay valid and
 // untouched until its completion is consumed. See docs/stdlib-uring.md.
 module std::uring;
+import core::iter_state;
+import core::io_state;
+import core::lifecycle;
 import core::mem;
 import core::option;
 import core::result;
 import core::slice;
 import std::linux;
 import std::atomic;
+
+pub enum TransferPhaseEvent { Begin, ReadReady, ReadEmpty, WriteStarted, Complete }
+pub machine TransferPhase on TransferPhaseEvent {
+    start Free;
+
+    state Free {
+        TransferPhaseEvent::Begin -> goto Active,
+        TransferPhaseEvent::ReadReady -> stay,
+        TransferPhaseEvent::ReadEmpty -> stay,
+        TransferPhaseEvent::WriteStarted -> stay,
+        TransferPhaseEvent::Complete -> stay,
+    }
+
+    state Active {
+        TransferPhaseEvent::Begin -> stay,
+        TransferPhaseEvent::ReadReady -> goto Waiting,
+        TransferPhaseEvent::ReadEmpty -> goto Empty,
+        TransferPhaseEvent::WriteStarted -> stay,
+        TransferPhaseEvent::Complete -> goto Free,
+    }
+
+    state Waiting {
+        TransferPhaseEvent::Begin -> stay,
+        TransferPhaseEvent::ReadReady -> stay,
+        TransferPhaseEvent::ReadEmpty -> stay,
+        TransferPhaseEvent::WriteStarted -> goto Active,
+        TransferPhaseEvent::Complete -> goto Free,
+    }
+
+    state Empty {
+        TransferPhaseEvent::Begin -> stay,
+        TransferPhaseEvent::ReadReady -> stay,
+        TransferPhaseEvent::ReadEmpty -> stay,
+        TransferPhaseEvent::WriteStarted -> stay,
+        TransferPhaseEvent::Complete -> goto Free,
+    }
+}
+pub impl TransferPhase {
+    pub fn is_free(&self) -> bool { return match (self.state()) { TransferPhaseState::Free -> true, _ -> false }; }
+    pub fn is_active(&self) -> bool { return match (self.state()) { TransferPhaseState::Active -> true, _ -> false }; }
+    pub fn is_waiting(&self) -> bool { return match (self.state()) { TransferPhaseState::Waiting -> true, _ -> false }; }
+    pub fn is_empty(&self) -> bool { return match (self.state()) { TransferPhaseState::Empty -> true, _ -> false }; }
+}
+
 
 // Host(errno) is a failed syscall (setup, mmap, enter); operation failures
 // arrive as negative Completion results instead. Full means the operation
@@ -67,7 +114,7 @@ pub impl Completion {
 
 // Index fields are free-running 32-bit counters kept in i64.
 pub struct Ring {
-    fd: i32, features: i64, live: bool,
+    fd: i32, features: i64, lifetime: core::lifecycle::Lifetime,
     sq_map: ptr, sq_bytes: i64, cq_map: ptr, cq_bytes: i64, sqes: ptr, sqe_bytes: i64,
     sq_head: ptr, sq_tail: ptr, sq_flags: ptr, sq_dropped: ptr, sq_mask: i64, sq_entries: i64,
     cq_head: ptr, cq_tail: ptr, cq_overflow: ptr, cqes: ptr, cq_mask: i64, cq_entries: i64,
@@ -212,7 +259,7 @@ pub fn setup_with(entries: u32, flags: u32) -> core::result::Result<Ring, Error>
         return core::result::Err(scratch.unwrap_err());
     }
     let ring: Ring = Ring {
-        fd: fd, features: features, live: true,
+        fd: fd, features: features, lifetime: core::lifecycle::lifetime_start(),
         sq_map: sq_map, sq_bytes: sq_bytes, cq_map: cq_map, cq_bytes: cq_bytes, sqes: entries_map.unwrap(), sqe_bytes: sqe_bytes,
         sq_head: sq_map + (load32(p + 40) as usize), sq_tail: sq_map + (load32(p + 44) as usize),
         sq_flags: sq_map + (load32(p + 56) as usize), sq_dropped: sq_map + (load32(p + 60) as usize),
@@ -253,7 +300,7 @@ pub impl Ring {
     // Kernel counters: invalid SQ indices dropped, completions overflowed.
     pub fn dropped(&self) -> i32 { return load32(self.sq_dropped) as i32; }
     pub fn overflowed(&self) -> i32 { return acquire32(self.cq_overflow) as i32; }
-    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn is_live(&self) -> bool { return self.lifetime.is_active(); }
     // Bytes the last transfer wrote, also when it failed.
     pub fn transferred(&self) -> i64 { return self.moved; }
 
@@ -261,7 +308,7 @@ pub impl Ring {
     // already owed (prepared + in flight, unconsumed) equal the completion
     // ring's size: refusing there keeps the CQ from ever overflowing.
     pub fn push(&self, opcode: i64, fd: i32, offset: i64, address: ptr, length: i64, op_flags: i64, user_data: u64, flags: i64) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (self.owed >= self.cq_entries) { return core::result::Err(Error::Full); }
         let used: i64 = (self.tail - acquire32(self.sq_head)) & MASK32;
         if (used >= self.sq_entries) { return core::result::Err(Error::Full); }
@@ -355,7 +402,7 @@ pub impl Ring {
     }
     // Publish prepared SQEs and hand them to the kernel; returns how many it took.
     pub fn submit(&self) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
         release32(self.sq_tail, self.tail);
         if (self.pending == 0) { return core::result::Ok(0); }
         let taken: core::result::Result<i64, Error> = self.enter(self.pending, 0, 0);
@@ -364,7 +411,7 @@ pub impl Ring {
     }
     // Submit, then block until at least count completions are ready.
     pub fn submit_and_wait(&self, count: i32) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (count < 0 || (count as i64) > self.owed) { return core::result::Err(Error::InvalidInput); }
         release32(self.sq_tail, self.tail);
         let taken: core::result::Result<i64, Error> = self.enter(self.pending, count as i64, ENTER_GETEVENTS);
@@ -375,7 +422,7 @@ pub impl Ring {
     pub fn ready(&self) -> i32 { return ((acquire32(self.cq_tail) - self.head) & MASK32) as i32; }
     // Consume one completion if one is ready.
     pub fn peek(&self) -> core::option::Option<Completion> {
-        if (!self.live) { return core::option::None(); }
+        if (!self.lifetime.is_active()) { return core::option::None(); }
         let tail: i64 = acquire32(self.cq_tail);
         if (tail == self.head) { return core::option::None(); }
         let cqe: ptr = self.cqes + ((self.head & self.cq_mask) as usize) * 16;
@@ -401,8 +448,8 @@ pub impl Ring {
     // Unmap the rings and close the ring descriptor. Owed operations are
     // cancelled by the kernel; their buffers must stay mapped until then.
     pub fn destroy(&self) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Closed); }
-        self.live = false;
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
+        self.lifetime.release();
         unmap(self.sqes, self.sqe_bytes);
         unmap(self.scratch, 4096);
         if (self.cq_map != self.sq_map) { unmap(self.cq_map, self.cq_bytes); }
@@ -428,16 +475,16 @@ pub impl Ring {
     // once every operation in flight has completed (transferred() then
     // still counts the bytes written).
     pub fn transfer(&self, input: i32, output: i32, buffers: ptr, block: i32, depth: i32, stream: bool, output_at: i64) -> core::result::Result<i64, Error> {
-        if (!self.live) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (self.owed != 0 || block <= 0 || block > 67108864 || depth <= 0 || depth > 64 || (2 * depth as i64) > self.sq_entries || (2 * depth as i64) > self.cq_entries) {
             return core::result::Err(Error::InvalidInput);
         }
         let ordered: bool = output_at < 0;
         self.moved = 0;
-        // Eight words per slot in the ring's scratch page: state (0 free,
-        // 1 active, 2 read and waiting for its ordered turn, 4 ended empty
-        // and waiting for its turn), input origin, bytes filled, bytes
-        // written, ordered sequence, read in flight, writes in flight.
+        // Native phase per slot; the scratch page holds transfer counters.
+        // Its first word is reserved, followed by input origin, bytes filled,
+        // bytes written, ordered sequence, read in flight, writes in flight.
+        let phases: [TransferPhase; 64] = [transfer_phase_start(); 64];
         let v: [i64] = core::mem::typed_slice_from_storage<i64>(self.scratch, 512);
         let z: i32 = 0;
         while (z < depth * 8) { v[z] = 0; z += 1; }
@@ -445,12 +492,12 @@ pub impl Ring {
         let stream_at: i64 = 0;
         let next_sequence: i64 = 0;
         let turn: i64 = 0;
-        let writing: bool = false;
+        let output_work = core::io_state::pending_work_start();
         let reading: i64 = 0;
         // Reads allowed in flight: 1 at first, doubling with each full block,
         // so a small file costs one read instead of depth.
         let window: i64 = 1;
-        let ended: bool = false;
+        let input_end = core::iter_state::completion_start();
         let failure: i32 = 0;
         let output_failed: bool = false;
         let total: i64 = 0;
@@ -461,10 +508,10 @@ pub impl Ring {
             let s: i32 = 0;
             while (s < depth) {
                 let f: i32 = s * 8;
-                let start: bool = v[f] == 0 && !ended && failure == 0;
+                let start: bool = phases[s].is_free() && !input_end.is_done() && failure == 0;
                 if (start && reading >= window) { start = false; }
                 if (start) {
-                    v[f] = 1; v[f + 1] = next_offset; v[f + 2] = 0; v[f + 3] = 0; v[f + 4] = next_sequence; v[f + 5] = 1; v[f + 6] = 0;
+                    phases[s].step(TransferPhaseEvent::Begin); v[f + 1] = next_offset; v[f + 2] = 0; v[f + 3] = 0; v[f + 4] = next_sequence; v[f + 5] = 1; v[f + 6] = 0;
                     let at: i64 = next_offset;
                     if (stream) { at = CURRENT; }
                     next_offset += block as i64; next_sequence += 1;
@@ -474,15 +521,15 @@ pub impl Ring {
                 s += 1;
             }
             // Ordered output: issue the write whose turn it is.
-            if (ordered && !writing) {
+            if (ordered && !output_work.pending()) {
                 let w: i32 = 0;
                 while (w < depth) {
                     let f: i32 = w * 8;
-                    let waiting: bool = v[f] == 2 || v[f] == 4;
+                    let waiting: bool = phases[w].is_waiting() || phases[w].is_empty();
                     if (waiting && v[f + 4] == turn) {
-                        if (v[f] == 4) { v[f] = 0; turn += 1; w = 0; }
+                        if (phases[w].is_empty()) { phases[w].step(TransferPhaseEvent::Complete); turn += 1; w = 0; }
                         else {
-                            v[f] = 1; v[f + 6] = 1; writing = true; active += 1;
+                            phases[w].step(TransferPhaseEvent::WriteStarted); v[f + 6] = 1; output_work.update(true); active += 1;
                             let c0: i64 = v[f + 3];
                             let length: i64 = v[f + 2] - c0;
                             self.write(output, buffers + (w as usize) * size + (c0 as usize), length as i32, CURRENT, write_tag(w, c0, length));
@@ -528,9 +575,9 @@ pub impl Ring {
                         active += 1;
                     } else {
                         v[f + 5] = 0; reading -= 1;
-                        if (res <= 0) { ended = true; }
+                        if (res <= 0) { input_end.finish(); }
                         if (ordered) {
-                            if (v[f + 2] > 0 && failure == 0) { v[f] = 2; } else { v[f] = 4; }
+                            if (v[f + 2] > 0 && failure == 0) { phases[slot].step(TransferPhaseEvent::ReadReady); } else { phases[slot].step(TransferPhaseEvent::ReadEmpty); }
                         }
                     }
                 }
@@ -549,15 +596,15 @@ pub impl Ring {
                     v[f + 6] = v[f + 6] + 1; active += 1;
                     self.write(output, buffer + ((c0 + sent) as usize), (length - sent) as i32, at, write_tag(slot, c0 + sent, length - sent));
                 } else {
-                    if (ordered && v[f + 6] == 0) { writing = false; v[f] = 0; turn += 1; }
+                    if (ordered && v[f + 6] == 0) { output_work.update(false); phases[slot].step(TransferPhaseEvent::Complete); turn += 1; }
                 }
             }
             // Positional slots finish when their reads and writes have.
-            if (!ordered && v[f] == 1 && v[f + 5] == 0 && v[f + 6] == 0) { v[f] = 0; }
+            if (!ordered && phases[slot].is_active() && v[f + 5] == 0 && v[f + 6] == 0) { phases[slot].step(TransferPhaseEvent::Complete); }
             // After a failure, ordered slots still waiting will never write.
-            if (failure != 0 && ordered && !writing) {
+            if (failure != 0 && ordered && !output_work.pending()) {
                 let q: i32 = 0;
-                while (q < depth) { if (v[q * 8] == 2 || v[q * 8] == 4) { v[q * 8] = 0; } q += 1; }
+                while (q < depth) { if (phases[q].is_waiting() || phases[q].is_empty()) { phases[q].step(TransferPhaseEvent::Complete); } q += 1; }
             }
         }
         if (failure != 0 && output_failed) { return core::result::Err(Error::Write(failure)); }

@@ -12,26 +12,67 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: field: 11; function: 7; impl: 1; method: 1; struct: 2.
+Declaration counts: enum: 1; field: 11; function: 7; impl: 2; machine: 1; method: 2; struct: 2; variant: 3.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_wc.lani#L9)
-- [core::io](../core/io.md) · [source](../../../extended/ext/text_wc.lani#L10)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_wc.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/text_wc.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_wc.lani#L13)
-- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_wc.lani#L14)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/text_wc.lani#L9)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_wc.lani#L10)
+- [core::io](../core/io.md) · [source](../../../extended/ext/text_wc.lani#L11)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_wc.lani#L12)
+- [core::result](../core/result.md) · [source](../../../extended/ext/text_wc.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_wc.lani#L14)
+- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_wc.lani#L15)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: WordEvent
+
+[Source line 17](../../../extended/ext/text_wc.lani#L17)
+
+```lanius
+pub enum WordEvent
+```
+
+#### variant: Space
+
+[Source line 17](../../../extended/ext/text_wc.lani#L17)
+
+```lanius
+Space
+```
+
+#### variant: Printable
+
+[Source line 17](../../../extended/ext/text_wc.lani#L17)
+
+```lanius
+Printable
+```
+
+#### variant: Classified
+
+[Source line 17](../../../extended/ext/text_wc.lani#L17)
+
+```lanius
+Classified(bool)
+```
+
+### machine: WordPhase
+
+[Source line 18](../../../extended/ext/text_wc.lani#L18)
+
+```lanius
+pub machine WordPhase on WordEvent
+```
+
 ### struct: Counter
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 pub struct Counter
@@ -39,7 +80,7 @@ pub struct Counter
 
 #### field: lines
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 lines: i64
@@ -47,7 +88,7 @@ lines: i64
 
 #### field: words
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 words: i64
@@ -55,7 +96,7 @@ words: i64
 
 #### field: bytes
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 bytes: i64
@@ -63,7 +104,7 @@ bytes: i64
 
 #### field: longest
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 longest: i64
@@ -71,23 +112,23 @@ longest: i64
 
 #### field: pos
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
 pos: i64
 ```
 
-#### field: space
+#### field: phase
 
-[Source line 16](../../../extended/ext/text_wc.lani#L16)
+[Source line 26](../../../extended/ext/text_wc.lani#L26)
 
 ```lanius
-space: bool
+phase: WordPhase
 ```
 
 ### struct: Select
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 pub struct Select
@@ -95,7 +136,7 @@ pub struct Select
 
 #### field: lines
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 lines: bool
@@ -103,7 +144,7 @@ lines: bool
 
 #### field: words
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 words: bool
@@ -111,7 +152,7 @@ words: bool
 
 #### field: chars
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 chars: bool
@@ -119,7 +160,7 @@ chars: bool
 
 #### field: bytes
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 bytes: bool
@@ -127,7 +168,7 @@ bytes: bool
 
 #### field: longest
 
-[Source line 20](../../../extended/ext/text_wc.lani#L20)
+[Source line 30](../../../extended/ext/text_wc.lani#L30)
 
 ```lanius
 longest: bool
@@ -137,7 +178,7 @@ longest: bool
 
 ### function: counter
 
-[Source line 18](../../../extended/ext/text_wc.lani#L18)
+[Source line 28](../../../extended/ext/text_wc.lani#L28)
 
 ```lanius
 pub fn counter() -> Counter
@@ -145,7 +186,7 @@ pub fn counter() -> Counter
 
 ### function: default_select
 
-[Source line 21](../../../extended/ext/text_wc.lani#L21)
+[Source line 31](../../../extended/ext/text_wc.lani#L31)
 
 ```lanius
 pub fn default_select() -> Select
@@ -153,7 +194,7 @@ pub fn default_select() -> Select
 
 ### function: selected
 
-[Source line 22](../../../extended/ext/text_wc.lani#L22)
+[Source line 32](../../../extended/ext/text_wc.lani#L32)
 
 ```lanius
 pub fn selected(s: Select) -> i32
@@ -161,7 +202,7 @@ pub fn selected(s: Select) -> i32
 
 ### function: feed
 
-[Source line 74](../../../extended/ext/text_wc.lani#L74)
+[Source line 84](../../../extended/ext/text_wc.lani#L84)
 
 ```lanius
 pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: bool) -> core::result::Result<i32, ext::text_lines::Error>
@@ -169,7 +210,7 @@ pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: boo
 
 ### function: done
 
-[Source line 127](../../../extended/ext/text_wc.lani#L127)
+[Source line 137](../../../extended/ext/text_wc.lani#L137)
 
 ```lanius
 pub fn done(c: &Counter)
@@ -177,7 +218,7 @@ pub fn done(c: &Counter)
 
 ### function: write_row
 
-[Source line 131](../../../extended/ext/text_wc.lani#L131)
+[Source line 141](../../../extended/ext/text_wc.lani#L141)
 
 ```lanius
 pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, name: core::slice::View<u8>, named: bool)
@@ -185,7 +226,7 @@ pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, na
 
 ### function: width
 
-[Source line 144](../../../extended/ext/text_wc.lani#L144)
+[Source line 154](../../../extended/ext/text_wc.lani#L154)
 
 ```lanius
 pub fn width(sizes: [i64], count: i32, counts: i32) -> i32
@@ -193,9 +234,25 @@ pub fn width(sizes: [i64], count: i32, counts: i32) -> i32
 
 ## Implementation blocks and public methods
 
-### impl at line 17
+### impl at line 23
 
-[Source line 17](../../../extended/ext/text_wc.lani#L17)
+[Source line 23](../../../extended/ext/text_wc.lani#L23)
+
+```lanius
+pub impl WordPhase
+```
+
+#### method: space
+
+[Source line 23](../../../extended/ext/text_wc.lani#L23)
+
+```lanius
+pub fn space(&self) -> bool
+```
+
+### impl at line 27
+
+[Source line 27](../../../extended/ext/text_wc.lani#L27)
 
 ```lanius
 pub impl Counter
@@ -203,7 +260,7 @@ pub impl Counter
 
 #### method: borrow
 
-[Source line 17](../../../extended/ext/text_wc.lani#L17)
+[Source line 27](../../../extended/ext/text_wc.lani#L27)
 
 ```lanius
 pub fn borrow(&self) -> &Counter

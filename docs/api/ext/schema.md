@@ -18,15 +18,16 @@ Declaration counts: enum: 2; field: 21; function: 6; impl: 1; method: 4; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/schema.lani#L4)
-- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/schema.lani#L5)
-- [core::decimal_number](../core/decimal_number.md) · [source](../../../extended/ext/schema.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/schema.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/schema.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/schema.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/schema.lani#L10)
-- [core::text](../core/text.md) · [source](../../../extended/ext/schema.lani#L11)
-- [ext::json](json.md) · [source](../../../extended/ext/schema.lani#L12)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/schema.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/schema.lani#L5)
+- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/schema.lani#L6)
+- [core::decimal_number](../core/decimal_number.md) · [source](../../../extended/ext/schema.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/schema.lani#L8)
+- [core::option](../core/option.md) · [source](../../../extended/ext/schema.lani#L9)
+- [core::result](../core/result.md) · [source](../../../extended/ext/schema.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/schema.lani#L11)
+- [core::text](../core/text.md) · [source](../../../extended/ext/schema.lani#L12)
+- [ext::json](json.md) · [source](../../../extended/ext/schema.lani#L13)
 
 ## Types, fields and variants
 
@@ -34,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Options
 
-[Source line 14](../../../extended/ext/schema.lani#L14)
+[Source line 15](../../../extended/ext/schema.lani#L15)
 
 ```lanius
 pub struct Options
@@ -42,7 +43,7 @@ pub struct Options
 
 #### field: max_schema_nodes
 
-[Source line 14](../../../extended/ext/schema.lani#L14)
+[Source line 15](../../../extended/ext/schema.lani#L15)
 
 ```lanius
 max_schema_nodes: i32
@@ -50,7 +51,7 @@ max_schema_nodes: i32
 
 #### field: max_schema_depth
 
-[Source line 14](../../../extended/ext/schema.lani#L14)
+[Source line 15](../../../extended/ext/schema.lani#L15)
 
 ```lanius
 max_schema_depth: i32
@@ -58,7 +59,7 @@ max_schema_depth: i32
 
 #### field: max_validation_depth
 
-[Source line 14](../../../extended/ext/schema.lani#L14)
+[Source line 15](../../../extended/ext/schema.lani#L15)
 
 ```lanius
 max_validation_depth: i32
@@ -66,7 +67,7 @@ max_validation_depth: i32
 
 #### field: max_work
 
-[Source line 14](../../../extended/ext/schema.lani#L14)
+[Source line 15](../../../extended/ext/schema.lani#L15)
 
 ```lanius
 max_work: u64
@@ -74,7 +75,7 @@ max_work: u64
 
 ### enum: ErrorKind
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 pub enum ErrorKind
@@ -82,7 +83,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 Bounds
@@ -90,7 +91,7 @@ Bounds
 
 #### variant: InvalidOptions
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 InvalidOptions
@@ -98,7 +99,7 @@ InvalidOptions
 
 #### variant: InvalidSchema
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 InvalidSchema
@@ -106,7 +107,7 @@ InvalidSchema
 
 #### variant: UnsupportedKeyword
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 UnsupportedKeyword
@@ -114,7 +115,7 @@ UnsupportedKeyword
 
 #### variant: UnsupportedDialect
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 UnsupportedDialect
@@ -122,7 +123,7 @@ UnsupportedDialect
 
 #### variant: InvalidReference
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 InvalidReference
@@ -130,7 +131,7 @@ InvalidReference
 
 #### variant: DuplicateKey
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 DuplicateKey
@@ -138,7 +139,7 @@ DuplicateKey
 
 #### variant: SchemaNodeLimit
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 SchemaNodeLimit
@@ -146,7 +147,7 @@ SchemaNodeLimit
 
 #### variant: DepthLimit
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 DepthLimit
@@ -154,7 +155,7 @@ DepthLimit
 
 #### variant: WorkLimit
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 WorkLimit
@@ -162,7 +163,7 @@ WorkLimit
 
 #### variant: Cycle
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 Cycle
@@ -170,7 +171,7 @@ Cycle
 
 #### variant: ScratchTooSmall
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 ScratchTooSmall
@@ -178,7 +179,7 @@ ScratchTooSmall
 
 #### variant: CapacityOverflow
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 CapacityOverflow
@@ -186,7 +187,7 @@ CapacityOverflow
 
 #### variant: AllocationFailed
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 AllocationFailed
@@ -194,7 +195,7 @@ AllocationFailed
 
 #### variant: Destroyed
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 Destroyed
@@ -202,7 +203,7 @@ Destroyed
 
 #### variant: ChangedDocument
 
-[Source line 15](../../../extended/ext/schema.lani#L15)
+[Source line 16](../../../extended/ext/schema.lani#L16)
 
 ```lanius
 ChangedDocument
@@ -210,7 +211,7 @@ ChangedDocument
 
 ### struct: Error
 
-[Source line 16](../../../extended/ext/schema.lani#L16)
+[Source line 17](../../../extended/ext/schema.lani#L17)
 
 ```lanius
 pub struct Error
@@ -218,7 +219,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 16](../../../extended/ext/schema.lani#L16)
+[Source line 17](../../../extended/ext/schema.lani#L17)
 
 ```lanius
 kind: ErrorKind
@@ -226,7 +227,7 @@ kind: ErrorKind
 
 #### field: schema_node
 
-[Source line 16](../../../extended/ext/schema.lani#L16)
+[Source line 17](../../../extended/ext/schema.lani#L17)
 
 ```lanius
 schema_node: i32
@@ -234,7 +235,7 @@ schema_node: i32
 
 #### field: instance_node
 
-[Source line 16](../../../extended/ext/schema.lani#L16)
+[Source line 17](../../../extended/ext/schema.lani#L17)
 
 ```lanius
 instance_node: i32
@@ -242,7 +243,7 @@ instance_node: i32
 
 ### struct: Issue
 
-[Source line 17](../../../extended/ext/schema.lani#L17)
+[Source line 18](../../../extended/ext/schema.lani#L18)
 
 ```lanius
 pub struct Issue
@@ -250,7 +251,7 @@ pub struct Issue
 
 #### field: keyword
 
-[Source line 17](../../../extended/ext/schema.lani#L17)
+[Source line 18](../../../extended/ext/schema.lani#L18)
 
 ```lanius
 keyword: Keyword
@@ -258,7 +259,7 @@ keyword: Keyword
 
 #### field: schema_node
 
-[Source line 17](../../../extended/ext/schema.lani#L17)
+[Source line 18](../../../extended/ext/schema.lani#L18)
 
 ```lanius
 schema_node: i32
@@ -266,7 +267,7 @@ schema_node: i32
 
 #### field: instance_node
 
-[Source line 17](../../../extended/ext/schema.lani#L17)
+[Source line 18](../../../extended/ext/schema.lani#L18)
 
 ```lanius
 instance_node: i32
@@ -274,7 +275,7 @@ instance_node: i32
 
 #### field: property_name
 
-[Source line 17](../../../extended/ext/schema.lani#L17)
+[Source line 18](../../../extended/ext/schema.lani#L18)
 
 ```lanius
 property_name: bool
@@ -282,7 +283,7 @@ property_name: bool
 
 ### struct: Report
 
-[Source line 18](../../../extended/ext/schema.lani#L18)
+[Source line 19](../../../extended/ext/schema.lani#L19)
 
 ```lanius
 pub struct Report
@@ -290,7 +291,7 @@ pub struct Report
 
 #### field: valid
 
-[Source line 18](../../../extended/ext/schema.lani#L18)
+[Source line 19](../../../extended/ext/schema.lani#L19)
 
 ```lanius
 valid: bool
@@ -298,7 +299,7 @@ valid: bool
 
 #### field: issue
 
-[Source line 18](../../../extended/ext/schema.lani#L18)
+[Source line 19](../../../extended/ext/schema.lani#L19)
 
 ```lanius
 issue: core::option::Option<Issue>
@@ -306,7 +307,7 @@ issue: core::option::Option<Issue>
 
 #### field: work
 
-[Source line 18](../../../extended/ext/schema.lani#L18)
+[Source line 19](../../../extended/ext/schema.lani#L19)
 
 ```lanius
 work: u64
@@ -314,7 +315,7 @@ work: u64
 
 ### struct: Schema
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 pub struct Schema
@@ -322,7 +323,7 @@ pub struct Schema
 
 #### field: document
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 document: &ext::json::Document
@@ -330,7 +331,7 @@ document: &ext::json::Document
 
 #### field: marks
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 marks: alloc::vec::Vec<i32>
@@ -338,7 +339,7 @@ marks: alloc::vec::Vec<i32>
 
 #### field: refs
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 refs: alloc::vec::Vec<i32>
@@ -346,7 +347,7 @@ refs: alloc::vec::Vec<i32>
 
 #### field: options
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 options: Options
@@ -354,7 +355,7 @@ options: Options
 
 #### field: required_scratch
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 required_scratch: i32
@@ -362,23 +363,23 @@ required_scratch: i32
 
 #### field: document_nodes
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
 document_nodes: i32
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 19](../../../extended/ext/schema.lani#L19)
+[Source line 20](../../../extended/ext/schema.lani#L20)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### enum: Keyword
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 pub enum Keyword
@@ -386,7 +387,7 @@ pub enum Keyword
 
 #### variant: FalseSchema
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 FalseSchema
@@ -394,7 +395,7 @@ FalseSchema
 
 #### variant: Type
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Type
@@ -402,7 +403,7 @@ Type
 
 #### variant: Const
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Const
@@ -410,7 +411,7 @@ Const
 
 #### variant: Enum
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Enum
@@ -418,7 +419,7 @@ Enum
 
 #### variant: Minimum
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Minimum
@@ -426,7 +427,7 @@ Minimum
 
 #### variant: Maximum
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Maximum
@@ -434,7 +435,7 @@ Maximum
 
 #### variant: ExclusiveMinimum
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 ExclusiveMinimum
@@ -442,7 +443,7 @@ ExclusiveMinimum
 
 #### variant: ExclusiveMaximum
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 ExclusiveMaximum
@@ -450,7 +451,7 @@ ExclusiveMaximum
 
 #### variant: MultipleOf
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MultipleOf
@@ -458,7 +459,7 @@ MultipleOf
 
 #### variant: MinLength
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MinLength
@@ -466,7 +467,7 @@ MinLength
 
 #### variant: MaxLength
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MaxLength
@@ -474,7 +475,7 @@ MaxLength
 
 #### variant: MinItems
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MinItems
@@ -482,7 +483,7 @@ MinItems
 
 #### variant: MaxItems
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MaxItems
@@ -490,7 +491,7 @@ MaxItems
 
 #### variant: UniqueItems
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 UniqueItems
@@ -498,7 +499,7 @@ UniqueItems
 
 #### variant: Contains
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Contains
@@ -506,7 +507,7 @@ Contains
 
 #### variant: MinContains
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MinContains
@@ -514,7 +515,7 @@ MinContains
 
 #### variant: MaxContains
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MaxContains
@@ -522,7 +523,7 @@ MaxContains
 
 #### variant: Required
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Required
@@ -530,7 +531,7 @@ Required
 
 #### variant: DependentRequired
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 DependentRequired
@@ -538,7 +539,7 @@ DependentRequired
 
 #### variant: MinProperties
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MinProperties
@@ -546,7 +547,7 @@ MinProperties
 
 #### variant: MaxProperties
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 MaxProperties
@@ -554,7 +555,7 @@ MaxProperties
 
 #### variant: AdditionalProperties
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 AdditionalProperties
@@ -562,7 +563,7 @@ AdditionalProperties
 
 #### variant: PropertyNames
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 PropertyNames
@@ -570,7 +571,7 @@ PropertyNames
 
 #### variant: AllOf
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 AllOf
@@ -578,7 +579,7 @@ AllOf
 
 #### variant: AnyOf
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 AnyOf
@@ -586,7 +587,7 @@ AnyOf
 
 #### variant: OneOf
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 OneOf
@@ -594,7 +595,7 @@ OneOf
 
 #### variant: Not
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Not
@@ -602,7 +603,7 @@ Not
 
 #### variant: Items
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Items
@@ -610,7 +611,7 @@ Items
 
 #### variant: PrefixItems
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 PrefixItems
@@ -618,7 +619,7 @@ PrefixItems
 
 #### variant: Properties
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Properties
@@ -626,7 +627,7 @@ Properties
 
 #### variant: DependentSchemas
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 DependentSchemas
@@ -634,7 +635,7 @@ DependentSchemas
 
 #### variant: Ref
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Ref
@@ -642,7 +643,7 @@ Ref
 
 #### variant: If
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 If
@@ -650,7 +651,7 @@ If
 
 #### variant: Then
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Then
@@ -658,7 +659,7 @@ Then
 
 #### variant: Else
 
-[Source line 77](../../../extended/ext/schema.lani#L77)
+[Source line 78](../../../extended/ext/schema.lani#L78)
 
 ```lanius
 Else
@@ -668,7 +669,7 @@ Else
 
 ### function: default_options
 
-[Source line 31](../../../extended/ext/schema.lani#L31)
+[Source line 32](../../../extended/ext/schema.lani#L32)
 
 ```lanius
 pub fn default_options() -> Options
@@ -676,7 +677,7 @@ pub fn default_options() -> Options
 
 ### function: keyword_name
 
-[Source line 78](../../../extended/ext/schema.lani#L78)
+[Source line 79](../../../extended/ext/schema.lani#L79)
 
 ```lanius
 pub fn keyword_name(keyword: Keyword) -> str
@@ -684,7 +685,7 @@ pub fn keyword_name(keyword: Keyword) -> str
 
 ### function: keyword_name_len
 
-[Source line 79](../../../extended/ext/schema.lani#L79)
+[Source line 80](../../../extended/ext/schema.lani#L80)
 
 ```lanius
 pub fn keyword_name_len(keyword: Keyword) -> i32
@@ -692,7 +693,7 @@ pub fn keyword_name_len(keyword: Keyword) -> i32
 
 ### function: keyword_text
 
-[Source line 80](../../../extended/ext/schema.lani#L80)
+[Source line 81](../../../extended/ext/schema.lani#L81)
 
 ```lanius
 pub fn keyword_text(keyword: Keyword) -> core::text::Text
@@ -700,7 +701,7 @@ pub fn keyword_text(keyword: Keyword) -> core::text::Text
 
 ### function: error_kind_text
 
-[Source line 81](../../../extended/ext/schema.lani#L81)
+[Source line 82](../../../extended/ext/schema.lani#L82)
 
 ```lanius
 pub fn error_kind_text(value: ErrorKind) -> core::text::Text
@@ -708,7 +709,7 @@ pub fn error_kind_text(value: ErrorKind) -> core::text::Text
 
 ### function: compile
 
-[Source line 261](../../../extended/ext/schema.lani#L261)
+[Source line 262](../../../extended/ext/schema.lani#L262)
 
 ```lanius
 pub fn compile(document: &ext::json::Document, options: Options) -> core::result::Result<Schema,Error>
@@ -716,9 +717,9 @@ pub fn compile(document: &ext::json::Document, options: Options) -> core::result
 
 ## Implementation blocks and public methods
 
-### impl at line 445
+### impl at line 446
 
-[Source line 445](../../../extended/ext/schema.lani#L445)
+[Source line 446](../../../extended/ext/schema.lani#L446)
 
 ```lanius
 pub impl Schema
@@ -726,7 +727,7 @@ pub impl Schema
 
 #### method: borrow
 
-[Source line 446](../../../extended/ext/schema.lani#L446)
+[Source line 447](../../../extended/ext/schema.lani#L447)
 
 ```lanius
 pub fn borrow(&self) -> &Schema
@@ -734,7 +735,7 @@ pub fn borrow(&self) -> &Schema
 
 #### method: scratch_len
 
-[Source line 447](../../../extended/ext/schema.lani#L447)
+[Source line 448](../../../extended/ext/schema.lani#L448)
 
 ```lanius
 pub fn scratch_len(&self) -> i32
@@ -742,7 +743,7 @@ pub fn scratch_len(&self) -> i32
 
 #### method: destroy
 
-[Source line 448](../../../extended/ext/schema.lani#L448)
+[Source line 449](../../../extended/ext/schema.lani#L449)
 
 ```lanius
 pub fn destroy(&self)
@@ -750,7 +751,7 @@ pub fn destroy(&self)
 
 #### method: validate
 
-[Source line 449](../../../extended/ext/schema.lani#L449)
+[Source line 450](../../../extended/ext/schema.lani#L450)
 
 ```lanius
 pub fn validate(&self, instance: &ext::json::Document, scratch: core::slice::View<u8>) -> core::result::Result<Report,Error>

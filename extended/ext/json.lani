@@ -1,6 +1,8 @@
 // Owned JSON documents. RFC 8259 grammar with Unicode-scalar strings.
 // One owner frees the entire document; NodeId values borrow that owner.
 module ext::json;
+import core::iter_state;
+import core::parse_state;
 import alloc::io;
 import alloc::string;
 import core::decimal;
@@ -35,7 +37,7 @@ pub fn default_options() -> Options {
 
 fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
 fn tag(kind: Kind) -> i32 {
-    let value: i32 = match (kind) { Null -> 0, Boolean -> 1, Number -> 2, Text -> 3, Array -> 4, Object -> 5 };
+    let value: i32 = match (kind) { Kind::Null -> 0, Kind::Boolean -> 1, Kind::Number -> 2, Kind::Text -> 3, Kind::Array -> 4, Kind::Object -> 5 };
     return value;
 }
 fn valid_options(options: Options) -> bool {
@@ -48,14 +50,14 @@ fn valid_options(options: Options) -> bool {
 // digits. No floating-point rounding, exponent-sized loop or allocation.
 fn integer_magnitude(text: core::text::Text, limit: u64) -> core::result::Result<u64, Error> {
     let start: i32 = 0; if (core::option::unwrap(text.byte_at(0)) == 45) { start = 1; }
-    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional: bool = false;
+    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional_phase = core::iter_state::completion_start();
     let first: i32 = -1; let last: i32 = -1; let first_byte: i32 = -1; let last_byte: i32 = -1;
     while (end < text.byte_len()) {
         let byte: u8 = core::option::unwrap(text.byte_at(end)); if (byte == 101 || byte == 69) { break; }
-        if (byte == 46) { fractional = true; }
+        if (byte == 46) { fractional_phase.finish(); }
         else {
             if (byte != 48) { if (first < 0) { first = digits; first_byte = end; } last = digits; last_byte = end; }
-            digits += 1; if (fractional) { fraction += 1; }
+            digits += 1; if (fractional_phase.is_done()) { fraction += 1; }
         }
         end += 1;
     }
@@ -389,7 +391,7 @@ fn number_end(bytes: [u8], length: i32, start: i32) -> i32 {
     return index;
 }
 
-struct Frame { node: NodeId, phase: i32 }
+struct Frame { node: NodeId, sequence: core::parse_state::Sequence }
 struct Parser {
     input: alloc::string::String, document: Document, frames: alloc::vec::Vec<Frame>,
     position: i32, failure: Error,
@@ -547,7 +549,7 @@ impl Parser {
         let added: core::result::Result<NodeId, Error> = self.document.insert_owned(at, kind, flag, text, start);
         if (core::result::is_err(added)) { self.failure = core::result::unwrap_err(added); return false; }
         if (tag(kind) >= 4) {
-            let frame: Frame = Frame { node: core::result::unwrap(added), phase: 0 };
+            let frame: Frame = Frame { node: core::result::unwrap(added), sequence: core::parse_state::sequence_start() };
             if (core::result::is_err(self.frames.try_push(frame))) { return self.fail(ErrorKind::AllocationFailed, start); }
         }
         return true;
@@ -567,14 +569,14 @@ impl Parser {
             if (object) { closing = 125; }
             let byte: u8 = bytes[self.position];
             if (byte == closing) {
-                if (frame.phase == 2) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
+                if (frame.sequence.needs_value()) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
                 self.frames.pop();
                 self.position += 1;
                 continue;
             }
-            if (frame.phase == 1) {
+            if (frame.sequence.needs_separator()) {
                 if (byte != 44) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
-                frame.phase = 2;
+                frame.sequence.step(core::parse_state::SequenceEvent::CommaRead);
                 core::result::unwrap(self.frames.set(top, frame));
                 self.position += 1;
                 continue;
@@ -591,7 +593,7 @@ impl Parser {
                 self.position += 1;
                 self.whitespace();
             }
-            frame.phase = 1;
+            frame.sequence.step(core::parse_state::SequenceEvent::ValueRead);
             core::result::unwrap(self.frames.set(top, frame));
             if (!self.value(frame.node, object, key)) { return false; }
         }
@@ -618,22 +620,127 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 // The same byte machine serves preflight and emission. Links supply the
 // traversal stack: each first/next/parent edge is followed only a constant
 // number of times. A byte or escape advances once; no prefix is rescanned.
-const ENCODE_NODE: i32 = 0;
-const ENCODE_KEY: i32 = 1;
-const ENCODE_COLON: i32 = 2;
-const ENCODE_VALUE: i32 = 3;
-const ENCODE_TEXT: i32 = 4;
-const ENCODE_NUMBER: i32 = 5;
-const ENCODE_LITERAL: i32 = 6;
-const ENCODE_CHILDREN: i32 = 7;
-const ENCODE_AFTER: i32 = 8;
+pub enum EmissionEvent { NextNode, KeyStarted, ColonStarted, ValueStarted, TextStarted, NumberStarted, LiteralStarted, ChildrenStarted, ValueWritten }
+
+pub machine Emission on EmissionEvent {
+    start Node;
+
+    state Node {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> goto Value,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+    }
+
+    state Key {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> goto Colon,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+    }
+
+    state Colon {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> goto Value,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+    }
+
+    state Value {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> goto Key,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> goto Text,
+        EmissionEvent::NumberStarted -> goto Number,
+        EmissionEvent::LiteralStarted -> goto Literal,
+        EmissionEvent::ChildrenStarted -> goto Children,
+        EmissionEvent::ValueWritten -> stay,
+    }
+
+    state Text {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+    }
+
+    state Number {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+    }
+
+    state Literal {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+    }
+
+    state Children {
+        EmissionEvent::NextNode -> goto Node,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+    }
+
+    state After {
+        EmissionEvent::NextNode -> goto Node,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::ColonStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::NumberStarted -> stay,
+        EmissionEvent::LiteralStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+    }
+}
+
 struct EncodingMachine {
-    document: &Document, current: NodeId, phase: i32, offset: i32,
+    document: &Document, current: NodeId, phase: Emission, offset: i32,
     escaped: u8, escape_offset: i32, escape_length: i32,
 }
 fn encoding_machine(document: &Document) -> EncodingMachine {
     return EncodingMachine {
-        document: document, current: 0, phase: ENCODE_NODE, offset: 0,
+        document: document, current: 0, phase: emission_start(), offset: 0,
         escaped: 0, escape_offset: 0, escape_length: 0,
     };
 }
@@ -650,19 +757,19 @@ impl EncodingMachine {
     fn pull(&self) -> core::option::Option<u8> {
         while (self.current >= 0) {
             let node: Node = self.document.nodes.at(self.current);
-            if (self.phase == ENCODE_NODE) {
-                self.phase = ENCODE_VALUE;
+            if ((match (self.phase.state()) { EmissionState::Node -> true, _ -> false })) {
+                self.phase.step(EmissionEvent::ValueStarted);
                 if (node.parent >= 0) {
                     let parent: Node = self.document.nodes.at(node.parent);
                     if (tag(parent.kind) == 5) {
-                        self.phase = ENCODE_KEY; self.offset = 0;
+                        self.phase.step(EmissionEvent::KeyStarted); self.offset = 0;
                         self.escape_offset = 0; self.escape_length = 0;
                         return core::option::Some(34);
                     }
                 }
                 continue;
             }
-            if (self.phase == ENCODE_KEY || self.phase == ENCODE_TEXT) {
+            if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false }) || (match (self.phase.state()) { EmissionState::Text -> true, _ -> false })) {
                 if (self.escape_offset < self.escape_length) {
                     let byte: u8 = self.escaped;
                     if (self.escape_length == 6) {
@@ -675,10 +782,10 @@ impl EncodingMachine {
                     return core::option::Some(byte);
                 }
                 let text: core::text::Text = node.text.as_text();
-                if (self.phase == ENCODE_KEY) { text = node.key.as_text(); }
+                if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false })) { text = node.key.as_text(); }
                 if (self.offset == text.length) {
-                    if (self.phase == ENCODE_KEY) { self.phase = ENCODE_COLON; }
-                    else { self.phase = ENCODE_AFTER; }
+                    if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false })) { self.phase.step(EmissionEvent::ColonStarted); }
+                    else { self.phase.step(EmissionEvent::ValueWritten); }
                     return core::option::Some(34);
                 }
                 let byte: u8 = text.bytes[text.start + self.offset];
@@ -693,55 +800,55 @@ impl EncodingMachine {
                 // equal any ASCII byte requiring JSON escaping.
                 return core::option::Some(byte);
             }
-            if (self.phase == ENCODE_COLON) {
-                self.phase = ENCODE_VALUE; return core::option::Some(58);
+            if ((match (self.phase.state()) { EmissionState::Colon -> true, _ -> false })) {
+                self.phase.step(EmissionEvent::ValueStarted); return core::option::Some(58);
             }
-            if (self.phase == ENCODE_VALUE) {
+            if ((match (self.phase.state()) { EmissionState::Value -> true, _ -> false })) {
                 let kind: i32 = tag(node.kind);
                 self.offset = 0;
-                if (kind <= 1) { self.phase = ENCODE_LITERAL; continue; }
-                if (kind == 2) { self.phase = ENCODE_NUMBER; continue; }
+                if (kind <= 1) { self.phase.step(EmissionEvent::LiteralStarted); continue; }
+                if (kind == 2) { self.phase.step(EmissionEvent::NumberStarted); continue; }
                 if (kind == 3) {
-                    self.phase = ENCODE_TEXT;
+                    self.phase.step(EmissionEvent::TextStarted);
                     self.escape_offset = 0; self.escape_length = 0;
                     return core::option::Some(34);
                 }
-                self.phase = ENCODE_CHILDREN;
+                self.phase.step(EmissionEvent::ChildrenStarted);
                 if (kind == 4) { return core::option::Some(91); }
                 return core::option::Some(123);
             }
-            if (self.phase == ENCODE_NUMBER) {
+            if ((match (self.phase.state()) { EmissionState::Number -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 let byte: u8 = text.bytes[text.start + self.offset];
                 self.offset += 1;
-                if (self.offset == text.length) { self.phase = ENCODE_AFTER; }
+                if (self.offset == text.length) { self.phase.step(EmissionEvent::ValueWritten); }
                 return core::option::Some(byte);
             }
-            if (self.phase == ENCODE_LITERAL) {
+            if ((match (self.phase.state()) { EmissionState::Literal -> true, _ -> false })) {
                 let length: i32 = 4;
                 if (tag(node.kind) == 1 && !node.flag) { length = 5; }
                 let byte: u8 = literal_byte(node.kind,node.flag,self.offset);
                 self.offset += 1;
-                if (self.offset == length) { self.phase = ENCODE_AFTER; }
+                if (self.offset == length) { self.phase.step(EmissionEvent::ValueWritten); }
                 return core::option::Some(byte);
             }
-            if (self.phase == ENCODE_CHILDREN) {
+            if ((match (self.phase.state()) { EmissionState::Children -> true, _ -> false })) {
                 if (node.first >= 0) {
-                    self.current = node.first; self.phase = ENCODE_NODE; continue;
+                    self.current = node.first; self.phase.step(EmissionEvent::NextNode); continue;
                 }
-                self.phase = ENCODE_AFTER;
+                self.phase.step(EmissionEvent::ValueWritten);
                 return core::option::Some(closing(node.kind));
             }
             // A completed child either advances to its next sibling or emits
             // one parent close. Deep unwinding never needs native recursion.
             if (node.next >= 0) {
-                self.current = node.next; self.phase = ENCODE_NODE;
+                self.current = node.next; self.phase.step(EmissionEvent::NextNode);
                 return core::option::Some(44);
             }
             if (node.parent < 0) { self.current = -1; return core::option::None(); }
             self.current = node.parent;
             let parent: Node = self.document.nodes.at(self.current);
-            self.phase = ENCODE_AFTER;
+            self.phase.step(EmissionEvent::ValueWritten);
             return core::option::Some(closing(parent.kind));
         }
         return core::option::None();

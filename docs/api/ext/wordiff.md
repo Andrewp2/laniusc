@@ -18,12 +18,13 @@ Declaration counts: enum: 2; field: 4; function: 5; struct: 1; variant: 7.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/wordiff.lani#L4)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/wordiff.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/wordiff.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/wordiff.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/wordiff.lani#L8)
-- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/wordiff.lani#L9)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/wordiff.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/wordiff.lani#L5)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/wordiff.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/wordiff.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/wordiff.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/wordiff.lani#L9)
+- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/wordiff.lani#L10)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Mode
 
-[Source line 14](../../../extended/ext/wordiff.lani#L14)
+[Source line 15](../../../extended/ext/wordiff.lani#L15)
 
 ```lanius
 pub enum Mode
@@ -39,7 +40,7 @@ pub enum Mode
 
 #### variant: Words
 
-[Source line 14](../../../extended/ext/wordiff.lani#L14)
+[Source line 15](../../../extended/ext/wordiff.lani#L15)
 
 ```lanius
 Words
@@ -47,7 +48,7 @@ Words
 
 #### variant: Chars
 
-[Source line 14](../../../extended/ext/wordiff.lani#L14)
+[Source line 15](../../../extended/ext/wordiff.lani#L15)
 
 ```lanius
 Chars
@@ -55,7 +56,7 @@ Chars
 
 ### enum: Error
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 pub enum Error
@@ -63,7 +64,7 @@ pub enum Error
 
 #### variant: InvalidInput
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 InvalidInput
@@ -71,7 +72,7 @@ InvalidInput
 
 #### variant: ItemLimit
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 ItemLimit
@@ -79,7 +80,7 @@ ItemLimit
 
 #### variant: WorkLimit
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 WorkLimit
@@ -87,7 +88,7 @@ WorkLimit
 
 #### variant: OutputLimit
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 OutputLimit
@@ -95,7 +96,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 15](../../../extended/ext/wordiff.lani#L15)
+[Source line 16](../../../extended/ext/wordiff.lani#L16)
 
 ```lanius
 AllocationFailed
@@ -103,7 +104,7 @@ AllocationFailed
 
 ### struct: Options
 
-[Source line 18](../../../extended/ext/wordiff.lani#L18)
+[Source line 19](../../../extended/ext/wordiff.lani#L19)
 
 ```lanius
 pub struct Options
@@ -111,7 +112,7 @@ pub struct Options
 
 #### field: mode
 
-[Source line 18](../../../extended/ext/wordiff.lani#L18)
+[Source line 19](../../../extended/ext/wordiff.lani#L19)
 
 ```lanius
 mode: Mode
@@ -119,7 +120,7 @@ mode: Mode
 
 #### field: function_names
 
-[Source line 18](../../../extended/ext/wordiff.lani#L18)
+[Source line 19](../../../extended/ext/wordiff.lani#L19)
 
 ```lanius
 function_names: bool
@@ -127,7 +128,7 @@ function_names: bool
 
 #### field: max_output
 
-[Source line 18](../../../extended/ext/wordiff.lani#L18)
+[Source line 19](../../../extended/ext/wordiff.lani#L19)
 
 ```lanius
 max_output: i32
@@ -135,7 +136,7 @@ max_output: i32
 
 #### field: limits
 
-[Source line 18](../../../extended/ext/wordiff.lani#L18)
+[Source line 19](../../../extended/ext/wordiff.lani#L19)
 
 ```lanius
 limits: ext::seqdiff::Limits
@@ -145,7 +146,7 @@ limits: ext::seqdiff::Limits
 
 ### function: default_options
 
-[Source line 19](../../../extended/ext/wordiff.lani#L19)
+[Source line 20](../../../extended/ext/wordiff.lani#L20)
 
 ```lanius
 pub fn default_options(mode: Mode) -> Options
@@ -153,7 +154,7 @@ pub fn default_options(mode: Mode) -> Options
 
 ### function: split_words
 
-[Source line 73](../../../extended/ext/wordiff.lani#L73)
+[Source line 74](../../../extended/ext/wordiff.lani#L74)
 
 ```lanius
 pub fn split_words(text: core::slice::View<u8>, mode: Mode, limits: ext::seqdiff::Limits) -> core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, Error>
@@ -161,7 +162,7 @@ pub fn split_words(text: core::slice::View<u8>, mode: Mode, limits: ext::seqdiff
 
 ### function: write_group
 
-[Source line 152](../../../extended/ext/wordiff.lani#L152)
+[Source line 153](../../../extended/ext/wordiff.lani#L153)
 
 ```lanius
 pub fn write_group(minus: core::slice::View<u8>, plus: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -169,7 +170,7 @@ pub fn write_group(minus: core::slice::View<u8>, plus: core::slice::View<u8>, op
 
 ### function: write_word_diff
 
-[Source line 190](../../../extended/ext/wordiff.lani#L190)
+[Source line 191](../../../extended/ext/wordiff.lani#L191)
 
 ```lanius
 pub fn write_word_diff(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -177,7 +178,7 @@ pub fn write_word_diff(a: core::slice::View<ext::seqdiff::Line>, b: core::slice:
 
 ### function: write_word_diff_split
 
-[Source line 196](../../../extended/ext/wordiff.lani#L196)
+[Source line 197](../../../extended/ext/wordiff.lani#L197)
 
 ```lanius
 pub fn write_word_diff_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>

@@ -1,0 +1,37 @@
+// Incremental producer lifecycle. EndedReady retains its final borrowed item.
+module core::stream_state;
+
+pub enum Event { Produced, Taken, Finished, Failed, Reset }
+pub machine Delivery on Event {
+    start Feeding;
+    state Feeding {
+        Event::Produced -> goto Ready, Event::Taken -> stay,
+        Event::Finished -> goto Ended, Event::Failed -> goto Failed, Event::Reset -> stay,
+    }
+    state Ready {
+        Event::Produced -> stay, Event::Taken -> goto Feeding,
+        Event::Finished -> goto EndedReady, Event::Failed -> goto Failed, Event::Reset -> goto Feeding,
+    }
+    state Ended {
+        Event::Produced -> goto EndedReady, Event::Taken -> stay,
+        Event::Finished -> stay, Event::Failed -> goto Failed, Event::Reset -> goto Feeding,
+    }
+    state EndedReady {
+        Event::Produced -> stay, Event::Taken -> goto Ended,
+        Event::Finished -> stay, Event::Failed -> goto Failed, Event::Reset -> goto Feeding,
+    }
+    state Failed {
+        Event::Produced -> stay, Event::Taken -> stay,
+        Event::Finished -> stay, Event::Failed -> stay, Event::Reset -> goto Feeding,
+    }
+}
+pub impl Delivery {
+    pub fn ready(&self) -> bool { return match (self.state()) { DeliveryState::Ready -> true, DeliveryState::EndedReady -> true, _ -> false }; }
+    pub fn finished(&self) -> bool { return match (self.state()) { DeliveryState::Ended -> true, DeliveryState::EndedReady -> true, _ -> false }; }
+    pub fn failed(&self) -> bool { return match (self.state()) { DeliveryState::Failed -> true, _ -> false }; }
+    pub fn produced(&self) { self.step(Event::Produced); }
+    pub fn taken(&self) { self.step(Event::Taken); }
+    pub fn finish(&self) { self.step(Event::Finished); }
+    pub fn fail(&self) { self.step(Event::Failed); }
+    pub fn reset(&self) { self.step(Event::Reset); }
+}

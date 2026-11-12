@@ -19,9 +19,37 @@ pub struct Prefix {
     kind: PrefixKind, prefix: core::slice::View<u8>, stem: core::slice::View<u8>,
     option: core::option::Option<Spec>
 }
+pub enum OrderingEvent { Operand, Terminator, CommandBoundary }
+pub machine OrderingPhase on OrderingEvent {
+    start Options;
+
+    state Options {
+        OrderingEvent::Operand -> goto Operands,
+        OrderingEvent::Terminator -> goto Terminated,
+        OrderingEvent::CommandBoundary -> stay,
+    }
+
+    state Operands {
+        OrderingEvent::Operand -> stay,
+        OrderingEvent::Terminator -> goto Terminated,
+        OrderingEvent::CommandBoundary -> goto Options,
+    }
+
+    final state Terminated {
+        OrderingEvent::Operand -> stay,
+        OrderingEvent::Terminator -> stay,
+        OrderingEvent::CommandBoundary -> stay,
+    }
+}
+
+pub impl OrderingPhase {
+    pub fn ended(&self) -> bool { return match (self.state()) { OrderingPhaseState::Options -> false, _ -> true }; }
+    pub fn terminated(&self) -> bool { return match (self.state()) { OrderingPhaseState::Terminated -> true, _ -> false }; }
+}
+
 pub struct Parser {
     arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering,
-    index: i32, short_offset: i32, ended: bool, terminated: bool, failure: core::option::Option<Error>,
+    index: i32, short_offset: i32, phase: OrderingPhase, failure: core::option::Option<Error>,
     prefix_mode: bool, pending: core::option::Option<Pending>,
 }
 
@@ -72,7 +100,7 @@ pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::
         }
         index += 1;
     }
-    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, terminated: false, failure: core::option::None(), prefix_mode: false, pending: core::option::None() });
+    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, phase: ordering_phase_start(), failure: core::option::None(), prefix_mode: false, pending: core::option::None() });
 }
 
 // This explicit mode admits a trailing required option as pending. Strict
@@ -87,8 +115,8 @@ pub fn prefix_parser(arguments: core::slice::View<core::slice::View<u8>>, specs:
 pub impl Parser {
     // Distinguish an actual terminator from an OptionsFirst operand. A required
     // option value equal to '--' never enters the terminator branch.
-    pub fn explicitly_terminated(&self) -> bool { return self.terminated; }
-    pub fn options_ended(&self) -> bool { return self.ended; }
+    pub fn explicitly_terminated(&self) -> bool { return self.phase.terminated(); }
+    pub fn options_ended(&self) -> bool { return self.phase.ended(); }
     pub fn pending_required(&self) -> core::option::Option<Pending> { return self.pending; }
     fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Event>, Error> {
         self.failure = core::option::Some(error); return core::result::Err(error);
@@ -150,14 +178,14 @@ pub impl Parser {
         while (self.index < self.arguments.len()) {
             let token: core::slice::View<u8> = core::option::unwrap(self.arguments.get(self.index));
             if (self.short_offset > 0) { return self.short_option(token); }
-            if (!self.ended && token.len() >= 2 && byte(token, 0) == 45) {
+            if (!self.phase.ended() && token.len() >= 2 && byte(token, 0) == 45) {
                 if (byte(token, 1) == 45) {
-                    if (token.len() == 2) { self.ended = true; self.terminated = true; self.index += 1; }
+                    if (token.len() == 2) { self.phase.step(OrderingEvent::Terminator); self.index += 1; }
                     else { return self.long_option(token); }
                 } else { self.short_offset = 1; return self.short_option(token); }
             } else {
                 let first: bool = match (self.ordering) { Ordering::OptionsFirst -> true, _ -> false };
-                if (first) { self.ended = true; }
+                if (first) { self.phase.step(OrderingEvent::Operand); }
                 let item: Argument = Argument { bytes: token, at: Location { argument: self.index, byte: 0 } }; self.index += 1;
                 return core::result::Ok(core::option::Some(Event::Operand(item)));
             }
@@ -175,7 +203,7 @@ pub impl Parser {
             let pending: Pending = self.pending.unwrap();
             return core::result::Ok(Prefix { kind: PrefixKind::Value, prefix: prefix, stem: empty, option: core::option::Some(pending.spec) });
         }
-        if (self.ended || prefix.len() == 0 || byte(prefix,0) != 45) {
+        if (self.phase.ended() || prefix.len() == 0 || byte(prefix,0) != 45) {
             return core::result::Ok(Prefix { kind: PrefixKind::Word, prefix: prefix, stem: empty, option: core::option::None() });
         }
         if (prefix.len() >= 2 && byte(prefix,1) == 45) {

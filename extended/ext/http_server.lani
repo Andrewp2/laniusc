@@ -1,5 +1,8 @@
 // One canonical server protocol, bounded plain driver and synchronous facade.
 module ext::http_server;
+import core::iter_state;
+import core::io_state;
+import core::lifecycle;
 import alloc::vec;
 import core::calendar;
 import core::clone;
@@ -34,19 +37,294 @@ pub enum BodyDecision { Read, ContinueThenRead }
 pub enum SendKind { Continue, Final }
 pub enum Event { Head(RequestHead), Request(Request), Rejected(Rejection), Empty, Complete(Stats) }
 pub enum Need { Local, Input(i32), Output(SendKind), Decision, Shutdown, Drain(i32), FinishTransport }
-enum Phase { ScanHead, InputHead, Head, Continue, ScanBody, InputBody, Validate, Decode, Request, Rejected, Final, Shutdown, Drain, Finish, Terminal }
+
 // All published views survive abort/error/close until the actual destroy.
+pub enum PhaseEvent { InputReceived, NeedHead, HeadParsed, Finished, Rejected, ContinueAccepted, BodyAccepted, ResponsePrepared, NeedBody, BodyFramed, Validated, Decoded, ResponseSent, WriteClosed, Terminated }
+pub machine Phase on PhaseEvent {
+    start ScanHead;
+
+    state ScanHead {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> goto InputHead,
+        PhaseEvent::HeadParsed -> goto Head,
+        PhaseEvent::Finished -> goto Finish,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state InputHead {
+        PhaseEvent::InputReceived -> goto ScanHead,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Head {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> goto Continue,
+        PhaseEvent::BodyAccepted -> goto ScanBody,
+        PhaseEvent::ResponsePrepared -> goto Final,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Continue {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> goto ScanBody,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state ScanBody {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> goto InputBody,
+        PhaseEvent::BodyFramed -> goto Validate,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state InputBody {
+        PhaseEvent::InputReceived -> goto ScanBody,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Validate {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> goto Decode,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Decode {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> goto Rejected,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> goto Request,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Request {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> goto Final,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Rejected {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> goto Final,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Final {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> goto Shutdown,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Shutdown {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> goto Drain,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Drain {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> goto Finish,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    state Finish {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> goto Terminal,
+    }
+
+    final state Terminal {
+        PhaseEvent::InputReceived -> stay,
+        PhaseEvent::NeedHead -> stay,
+        PhaseEvent::HeadParsed -> stay,
+        PhaseEvent::Finished -> stay,
+        PhaseEvent::Rejected -> stay,
+        PhaseEvent::ContinueAccepted -> stay,
+        PhaseEvent::BodyAccepted -> stay,
+        PhaseEvent::ResponsePrepared -> stay,
+        PhaseEvent::NeedBody -> stay,
+        PhaseEvent::BodyFramed -> stay,
+        PhaseEvent::Validated -> stay,
+        PhaseEvent::Decoded -> stay,
+        PhaseEvent::ResponseSent -> stay,
+        PhaseEvent::WriteClosed -> stay,
+        PhaseEvent::Terminated -> stay,
+    }
+}
+
 pub struct Protocol {
     options: Options, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, phase: Phase, current: Status,
     progress: Stats, head_wire: alloc::vec::Vec<u8>, wire: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, response_wire: alloc::vec::Vec<u8>,
     cursor: ext::http::Cursor, header: core::option::Option<RequestHead>, request: core::option::Option<Request>,
     boundary: core::option::Option<ext::http::FrameBoundary>, validated: core::option::Option<ext::http::Message>,
-    input_eof: bool, final_staged: bool, continue_staged: bool, empty: bool, owned: bool,
+    input_eof_completion: core::iter_state::Completion, final_staged_completion: core::iter_state::Completion, continue_staged_completion: core::iter_state::Completion, empty: bool, ownership: core::lifecycle::Lifetime,
     sending: i32, sending_kind: SendKind, rejected: core::option::Option<Rejection>, terminal: core::option::Option<Failure>,
     current_event: core::option::Option<Event>, revision: u64
 }
-pub struct Exchange { owner: Protocol, socket: std::socket::Socket, remote: core::net::SocketAddr, published: u64, read_blocked: bool, write_blocked: bool, receive_turn: bool }
-pub struct Connection { exchange: Exchange, head_taken: bool, body_requested: bool, request_taken: bool }
+pub struct Exchange { owner: Protocol, socket: std::socket::Socket, remote: core::net::SocketAddr, published: u64, read_readiness: core::io_state::Readiness, write_readiness: core::io_state::Readiness, turn: core::io_state::DuplexTurn }
+pub struct Connection { exchange: Exchange, head_taken_completion: core::iter_state::Completion, body_requested_completion: core::iter_state::Completion, request_taken_completion: core::iter_state::Completion }
 
 pub fn default_options() -> Options {
     let request = ext::http::default_limits(); request.body_bytes = 1048576;
@@ -90,9 +368,9 @@ pub fn protocol(options: Options, deadline: core::time::Deadline) -> core::resul
     let now = check_time(core::time::instant(core::time::zero()),deadline); if (now.is_err()) { return core::result::Err(initial_failure(now.unwrap_err(),stats)); }
     let made = ext::http::cursor(ext::http::CursorMode::Request,options.request,options.request_bytes,allowance);
     if (made.is_err()) { return core::result::Err(initial_failure(Cause::Http(made.unwrap_err()),stats)); }
-    return core::result::Ok(Protocol { options:options,deadline:deadline,last:now.unwrap(),stage:Stage::Head,phase:Phase::ScanHead,current:Status::Active,progress:stats,
+    return core::result::Ok(Protocol { options:options,deadline:deadline,last:now.unwrap(),stage:Stage::Head,phase: phase_start(),current:Status::Active,progress:stats,
         head_wire:alloc::vec::new<u8>(),wire:alloc::vec::new<u8>(),decoded:alloc::vec::new<u8>(),response_wire:alloc::vec::new<u8>(),cursor:made.unwrap(),
-        header:core::option::None(),request:core::option::None(),boundary:core::option::None(),validated:core::option::None(),input_eof:false,final_staged:false,continue_staged:false,empty:false,owned:true,sending:0,sending_kind:SendKind::Final,
+        header:core::option::None(),request:core::option::None(),boundary:core::option::None(),validated:core::option::None(),input_eof_completion: core::iter_state::completion_start(),final_staged_completion: core::iter_state::completion_start(),continue_staged_completion: core::iter_state::completion_start(),empty:false,ownership: core::lifecycle::lifetime_start(),sending:0,sending_kind:SendKind::Final,
         rejected:core::option::None(),terminal:core::option::None(),current_event:core::option::None(),revision:0 });
 }
 
@@ -107,7 +385,7 @@ pub impl Protocol {
     pub fn last_terminal_failure(&self) -> core::option::Option<Failure> { return self.terminal; }
     pub fn head(&self) -> core::option::Option<RequestHead> { return self.header; }
     pub fn request(&self) -> core::option::Option<Request> { return self.request; }
-    pub fn final_staged(&self) -> bool { return self.final_staged; }
+    pub fn final_staged(&self) -> bool { return self.final_staged_completion.is_done(); }
     pub fn event(&self) -> core::option::Option<Event> { return self.current_event; }
     pub fn event_revision(&self) -> u64 { return self.revision; }
     pub fn pending_send_bytes(&self) -> i32 { return self.sending; }
@@ -137,44 +415,44 @@ pub impl Protocol {
     fn rejected_or_failed(&self, cause: Cause) -> core::result::Result<Need,Failure> {
         if (!rejectable(cause)) { return core::result::Err(self.failure(cause)); }
         if (self.rejected.is_none()) { self.rejected = core::option::Some(Rejection { cause:cause,stage:self.stage,stats:self.progress }); }
-        self.phase = Phase::Rejected; self.publish(Event::Rejected(self.rejected.unwrap())); return core::result::Ok(Need::Decision);
+        self.phase.step(PhaseEvent::Rejected); self.publish(Event::Rejected(self.rejected.unwrap())); return core::result::Ok(Need::Decision);
     }
     fn command_error(&self, cause: Cause) -> Failure { if (command_fatal(cause)) { return self.failure(cause); } return self.local_failure(cause); }
     pub fn need(&self) -> Need {
         if (!running(self.current)) { return Need::Local; }
-        if (match(self.phase) { Phase::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Continue); }
-        if (match(self.phase) { Phase::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Final); }
-        if (match(self.phase) { Phase::Drain -> true, _ -> false }) { if (self.progress.peer_eof || self.progress.drain_received > self.options.drain_bytes as u64) { return Need::Local; } return Need::Drain(self.discard_capacity()); }
-        return match(self.phase) {
-            Phase::InputHead -> self.input_need(), Phase::InputBody -> self.input_need(),
-            Phase::Head -> Need::Decision, Phase::Request -> Need::Decision, Phase::Rejected -> Need::Decision,
-            Phase::Shutdown -> Need::Shutdown,
-            Phase::Finish -> Need::FinishTransport, _ -> Need::Local
+        if (match(self.phase.state()) { PhaseState::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Continue); }
+        if (match(self.phase.state()) { PhaseState::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Final); }
+        if (match(self.phase.state()) { PhaseState::Drain -> true, _ -> false }) { if (self.progress.peer_eof || self.progress.drain_received > self.options.drain_bytes as u64) { return Need::Local; } return Need::Drain(self.discard_capacity()); }
+        return match(self.phase.state()) {
+            PhaseState::InputHead -> self.input_need(), PhaseState::InputBody -> self.input_need(),
+            PhaseState::Head -> Need::Decision, PhaseState::Request -> Need::Decision, PhaseState::Rejected -> Need::Decision,
+            PhaseState::Shutdown -> Need::Shutdown,
+            PhaseState::Finish -> Need::FinishTransport, _ -> Need::Local
         };
     }
     fn input_need(&self) -> Need { let remaining: i32 = self.options.request_bytes-self.wire.len(); if (remaining <= 0) { return Need::Local; } if (remaining > 1024) { remaining = 1024; } return Need::Input(remaining); }
     fn discard_capacity(&self) -> i32 { let remaining: u64 = (self.options.drain_bytes as u64)-self.progress.drain_received; if (remaining == 0) { return 1; } if (remaining > 1024 as u64) { return 1024; } return remaining as i32; }
     pub fn read_body(&self, decision: BodyDecision) -> core::result::Result<bool,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return guard; } self.stage = Stage::Body;
-        if (!match(self.phase) { Phase::Head -> true, _ -> false } || self.final_staged || self.continue_staged) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        if (!match(self.phase.state()) { PhaseState::Head -> true, _ -> false } || self.final_staged_completion.is_done() || self.continue_staged_completion.is_done()) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         let now = self.check(); if (now.is_err()) { return now; }
         let expected: i32 = match(self.header.unwrap().expectation) { Expectation::None -> 0, Expectation::Continue -> 1, Expectation::Unsupported -> 2 };
         let continuing: bool = match(decision) { BodyDecision::ContinueThenRead -> true, _ -> false };
         if (expected == 2 || (expected == 1 && !continuing)) { return core::result::Err(self.local_failure(Cause::ExpectationRequired)); }
         if (continuing && expected != 1) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
-        if (continuing) { let paid = self.pay(25); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); } self.continue_staged = true; self.phase = Phase::Continue; }
-        else { self.phase = Phase::ScanBody; } self.current_event = core::option::None(); return core::result::Ok(true);
+        if (continuing) { let paid = self.pay(25); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); } self.continue_staged_completion = core::iter_state::completed_if( true); self.phase.step(PhaseEvent::ContinueAccepted); }
+        else { self.phase.step(PhaseEvent::BodyAccepted); } self.current_event = core::option::None(); return core::result::Ok(true);
     }
     pub fn respond(&self, response: Response) -> core::result::Result<bool,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return guard; } self.stage = Stage::Prepare;
-        let decision: bool = match(self.phase) { Phase::Head -> true, Phase::Request -> true, Phase::Rejected -> true, _ -> false };
-        if (!decision || self.final_staged || self.sending != 0 || (self.continue_staged && self.progress.continue_sent != 25)) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let decision: bool = match(self.phase.state()) { PhaseState::Head -> true, PhaseState::Request -> true, PhaseState::Rejected -> true, _ -> false };
+        if (!decision || self.final_staged_completion.is_done() || self.sending != 0 || (self.continue_staged_completion.is_done() && self.progress.continue_sent != 25)) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         let staged = self.prepare_response(response); if (staged.is_err()) { return core::result::Err(self.command_error(staged.unwrap_err())); } return core::result::Ok(true);
     }
     pub fn receive_limit(&self) -> core::result::Result<i32,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
-        let input: bool = match(self.phase) { Phase::InputHead -> true, Phase::InputBody -> true, _ -> false };
-        if (!input || self.input_eof) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let input: bool = match(self.phase.state()) { PhaseState::InputHead -> true, PhaseState::InputBody -> true, _ -> false };
+        if (!input || self.input_eof_completion.is_done()) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         let remaining: i32 = self.options.request_bytes-self.wire.len(); if (remaining <= 0) { return core::result::Err(self.local_failure(Cause::RequestLimit)); } if (remaining > 1024) { remaining = 1024; } return core::result::Ok(remaining);
     }
     pub fn feed(&self, bytes: core::slice::View<u8>) -> core::result::Result<bool,Failure> {
@@ -183,15 +461,15 @@ pub impl Protocol {
         self.progress.received += bytes.length as u64; let now = self.check(); if (now.is_err()) { return now; }
         let paid = self.pay(bytes.length as u64); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); }
         if (self.wire.try_extend(bytes).is_err()) { let rejected = self.rejected_or_failed(Cause::AllocationFailed); if (rejected.is_err()) { return core::result::Err(rejected.unwrap_err()); } return core::result::Ok(true); }
-        self.progress.retained = self.wire.len(); self.phase = match(self.phase) { Phase::InputHead -> Phase::ScanHead, _ -> Phase::ScanBody }; return self.check();
+        self.progress.retained = self.wire.len(); self.phase.step(PhaseEvent::InputReceived); return self.check();
     }
     pub fn feed_eof(&self) -> core::result::Result<bool,Failure> {
         let capacity = self.receive_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); }
-        self.input_eof = true; self.progress.peer_eof = true; self.phase = match(self.phase) { Phase::InputHead -> Phase::ScanHead, _ -> Phase::ScanBody }; return self.check();
+        self.input_eof_completion = core::iter_state::completed_if( true); self.progress.peer_eof = true; self.phase.step(PhaseEvent::InputReceived); return self.check();
     }
     pub fn start_send(&self) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
-        let interim: bool = match(self.phase) { Phase::Continue -> true, _ -> false }; let final: bool = match(self.phase) { Phase::Final -> true, _ -> false };
+        let interim: bool = match(self.phase.state()) { PhaseState::Continue -> true, _ -> false }; let final: bool = match(self.phase.state()) { PhaseState::Final -> true, _ -> false };
         if ((!interim && !final) || self.sending != 0) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         let bytes = self.response_wire.as_view(); let offset: i32 = self.progress.response_sent;
         if (interim) { bytes = literal("HTTP/1.1 100 Continue\r\n\r\n",25); offset = self.progress.continue_sent; }
@@ -207,7 +485,7 @@ pub impl Protocol {
     pub fn cancel_send(&self) -> core::result::Result<bool,Failure> { let guard = self.guard(); if (guard.is_err()) { return guard; } let pending: bool = self.sending != 0; self.sending = 0; return core::result::Ok(pending); }
     pub fn drain_limit(&self) -> core::result::Result<i32,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
-        let allowed: bool = match(self.phase) { Phase::Final -> true, Phase::Shutdown -> true, Phase::Drain -> true, _ -> false };
+        let allowed: bool = match(self.phase.state()) { PhaseState::Final -> true, PhaseState::Shutdown -> true, PhaseState::Drain -> true, _ -> false };
         if (!allowed || self.progress.peer_eof) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         if (self.progress.drain_received > self.options.drain_bytes as u64) { return core::result::Err(self.failure(Cause::DrainLimit)); } return core::result::Ok(self.discard_capacity());
     }
@@ -220,10 +498,10 @@ pub impl Protocol {
     }
     pub fn record_write_shutdown(&self, peer_eof: bool) -> core::result::Result<bool,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return guard; }
-        let shutdown: bool = match(self.phase) { Phase::Shutdown -> true, Phase::Finish -> self.empty, _ -> false };
+        let shutdown: bool = match(self.phase.state()) { PhaseState::Shutdown -> true, PhaseState::Finish -> self.empty, _ -> false };
         if (!shutdown || self.progress.write_shutdown) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
         self.progress.write_shutdown = true; if (peer_eof) { self.progress.peer_eof = true; }
-        if (match(self.phase) { Phase::Shutdown -> true, _ -> false }) { self.phase = Phase::Drain; } return self.check();
+        if (match(self.phase.state()) { PhaseState::Shutdown -> true, _ -> false }) { self.phase.step(PhaseEvent::WriteClosed); } return self.check();
     }
     pub fn record_close(&self, attempted: bool, cleanup: core::option::Option<core::io::Error>) -> core::result::Result<bool,Failure> {
         if (self.progress.closed) { if (self.terminal.is_some()) { return core::result::Err(self.terminal.unwrap()); } return core::result::Ok(false); }
@@ -233,13 +511,13 @@ pub impl Protocol {
     }
     pub fn transport_finished(&self) -> core::result::Result<bool,Failure> {
         let guard = self.guard(); if (guard.is_err()) { return guard; }
-        if (!match(self.phase) { Phase::Finish -> true, _ -> false } || self.sending != 0 || !self.progress.closed || (!self.empty && (!self.progress.write_shutdown || !self.progress.peer_eof))) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+        if (!match(self.phase.state()) { PhaseState::Finish -> true, _ -> false } || self.sending != 0 || !self.progress.closed || (!self.empty && (!self.progress.write_shutdown || !self.progress.peer_eof))) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
         self.stage = Stage::Close; let now = self.check(); if (now.is_err()) { return now; }
-        self.current = Status::Complete; self.phase = Phase::Terminal; if (self.empty) { self.publish(Event::Empty); } else { self.publish(Event::Complete(self.progress)); } return core::result::Ok(true);
+        self.current = Status::Complete; self.phase.step(PhaseEvent::Terminated); if (self.empty) { self.publish(Event::Empty); } else { self.publish(Event::Complete(self.progress)); } return core::result::Ok(true);
     }
-    pub fn abort(&self) -> bool { if (!running(self.current)) { return false; } self.current = Status::Aborted; self.phase = Phase::Terminal; self.sending = 0; self.current_event = core::option::None(); return true; }
+    pub fn abort(&self) -> bool { if (!running(self.current)) { return false; } self.current = Status::Aborted; self.phase.step(PhaseEvent::Terminated); self.sending = 0; self.current_event = core::option::None(); return true; }
     pub fn destroy(&self) -> bool {
-        if (!self.owned) { return false; } self.owned = false; self.abort(); self.head_wire.destroy(); self.wire.destroy(); self.decoded.destroy(); self.response_wire.destroy();
+        if (!self.ownership.is_active()) { return false; } self.ownership.release(); self.abort(); self.head_wire.destroy(); self.wire.destroy(); self.decoded.destroy(); self.response_wire.destroy();
         self.header = core::option::None(); self.request = core::option::None(); self.boundary = core::option::None(); self.validated = core::option::None(); self.current_event = core::option::None(); self.sending = 0; return true;
     }
 }
@@ -293,7 +571,7 @@ pub impl Protocol {
     }
     fn scan(&self) -> core::result::Result<ext::http::Scan,Cause> {
         let before = self.active(); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
-        let got = self.cursor.advance(self.wire.as_view(),literal("",0),self.input_eof); self.progress.scan_work = self.cursor.work();
+        let got = self.cursor.advance(self.wire.as_view(),literal("",0),self.input_eof_completion.is_done()); self.progress.scan_work = self.cursor.work();
         if (got.is_err()) {
             let error = got.unwrap_err(); let at: core::option::Option<i32> = match(error) { ext::http::Error::Limit(n) -> core::option::Some(n), _ -> core::option::None() };
             if (at.is_some()) { let classified = self.request_line_limit(at.unwrap()); if (classified.is_err()) { return core::result::Err(classified.unwrap_err()); } if (classified.unwrap() == 2) { return core::result::Err(Cause::RequestTargetLimit); } if (classified.unwrap() == 1) { return core::result::Err(Cause::RequestLineLimit); } }
@@ -313,15 +591,15 @@ pub impl Protocol {
         self.head_wire = owner; self.header = core::option::Some(view);
         let fixed: bool = match(h.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
         if (fixed && (h.content_length > self.options.request.body_bytes || h.content_length > self.options.request_bytes-n)) { return core::result::Err(Cause::BodyLimit); }
-        self.phase = Phase::Head; self.publish(Event::Head(view)); return core::result::Ok(true);
+        self.phase.step(PhaseEvent::HeadParsed); self.publish(Event::Head(view)); return core::result::Ok(true);
     }
     fn validate_request(&self) -> core::result::Result<bool,Cause> {
         let b: ext::http::FrameBoundary = self.boundary.unwrap(); self.stage = Stage::Validate;
         let paid = self.pay((b.consumed as u64)*4+4*(self.options.request.head_bytes as u64)*((self.options.request.trailers as u64)+1)); if (paid.is_err()) { return paid; }
-        let parsed = ext::http::parse_request(self.wire.as_view().subview(0,b.consumed).unwrap(),self.input_eof,self.options.request);
+        let parsed = ext::http::parse_request(self.wire.as_view().subview(0,b.consumed).unwrap(),self.input_eof_completion.is_done(),self.options.request);
         if (parsed.is_err()) { return core::result::Err(Cause::Http(parsed.unwrap_err())); } let message: ext::http::Message = parsed.unwrap();
         if (message.consumed != b.consumed || message.decoded_length != b.decoded_length) { return core::result::Err(Cause::BoundaryMismatch); }
-        let after = self.active(); if (after.is_err()) { return after; } self.validated = core::option::Some(message); self.phase = Phase::Decode; return core::result::Ok(true);
+        let after = self.active(); if (after.is_err()) { return after; } self.validated = core::option::Some(message); self.phase.step(PhaseEvent::Validated); return core::result::Ok(true);
     }
     fn decode_request(&self) -> core::result::Result<bool,Cause> {
         self.stage = Stage::Decode; let message: ext::http::Message = self.validated.unwrap();
@@ -331,18 +609,18 @@ pub impl Protocol {
         if (got.unwrap() != message.decoded_length) { storage.destroy(); return core::result::Err(Cause::BoundaryMismatch); }
         let after = self.active(); if (after.is_err()) { storage.destroy(); return after; }
         self.decoded = storage; self.progress.decoded = message.decoded_length; self.progress.retained = message.consumed;
-        let request: Request = Request { message:message,body:self.decoded.as_view() }; self.request = core::option::Some(request); self.phase = Phase::Request; self.publish(Event::Request(request)); return core::result::Ok(true);
+        let request: Request = Request { message:message,body:self.decoded.as_view() }; self.request = core::option::Some(request); self.phase.step(PhaseEvent::Decoded); self.publish(Event::Request(request)); return core::result::Ok(true);
     }
     pub fn advance(&self) -> core::result::Result<Need,Failure> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        let heading: bool = match(self.phase) { Phase::ScanHead -> true, _ -> false };
-        let body: bool = match(self.phase) { Phase::ScanBody -> true, _ -> false };
+        let heading: bool = match(self.phase.state()) { PhaseState::ScanHead -> true, _ -> false };
+        let body: bool = match(self.phase.state()) { PhaseState::ScanBody -> true, _ -> false };
         if (heading || body) {
             self.stage = Stage::Head; if (body) { self.stage = Stage::Body; }
-            if (heading && self.input_eof && self.wire.is_empty()) { self.empty = true; self.phase = Phase::Finish; self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); }
+            if (heading && self.input_eof_completion.is_done() && self.wire.is_empty()) { self.empty = true; self.phase.step(PhaseEvent::Finished); self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); }
             let got = self.scan(); if (got.is_err()) { return self.rejected_or_failed(got.unwrap_err()); }
             let event: ext::http::Scan = got.unwrap();
-            if (match(event) { ext::http::Scan::NeedMore -> true, _ -> false }) { self.phase = Phase::InputHead; if (body) { self.phase = Phase::InputBody; } return core::result::Ok(self.need()); }
+            if (match(event) { ext::http::Scan::NeedMore -> true, _ -> false }) { if (body) { self.phase.step(PhaseEvent::NeedBody); } else { self.phase.step(PhaseEvent::NeedHead); } return core::result::Ok(self.need()); }
             let info: core::option::Option<ext::http::HeadInfo> = match(event) { ext::http::Scan::HeadReady(v) -> core::option::Some(v), _ -> core::option::None() };
             if (info.is_some()) {
                 if (!heading) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
@@ -351,16 +629,16 @@ pub impl Protocol {
             let found: core::option::Option<ext::http::FrameBoundary> = match(event) { ext::http::Scan::Boundary(v) -> core::option::Some(v), _ -> core::option::None() };
             if (!body || found.is_none()) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
             let boundary: ext::http::FrameBoundary = found.unwrap(); if (boundary.consumed < 0 || boundary.consumed > self.wire.len()) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
-            self.progress.buffered_discarded = self.wire.len()-boundary.consumed; self.boundary = found; self.phase = Phase::Validate; return core::result::Ok(Need::Local);
+            self.progress.buffered_discarded = self.wire.len()-boundary.consumed; self.boundary = found; self.phase.step(PhaseEvent::BodyFramed); return core::result::Ok(Need::Local);
         }
-        if (match(self.phase) { Phase::InputHead -> true, Phase::InputBody -> true, _ -> false }) {
+        if (match(self.phase.state()) { PhaseState::InputHead -> true, PhaseState::InputBody -> true, _ -> false }) {
             let capacity = self.receive_limit(); if (capacity.is_err()) { return self.rejected_or_failed(capacity.unwrap_err().cause); } return core::result::Ok(Need::Input(capacity.unwrap()));
         }
-        if (match(self.phase) { Phase::Validate -> true, _ -> false }) { let validated = self.validate_request(); if (validated.is_err()) { return self.rejected_or_failed(validated.unwrap_err()); } return core::result::Ok(Need::Local); }
-        if (match(self.phase) { Phase::Decode -> true, _ -> false }) { let decoded = self.decode_request(); if (decoded.is_err()) { return self.rejected_or_failed(decoded.unwrap_err()); } return core::result::Ok(Need::Decision); }
-        if (match(self.phase) { Phase::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { self.phase = Phase::ScanBody; self.stage = Stage::Body; return core::result::Ok(Need::Local); } return core::result::Ok(Need::Output(SendKind::Continue)); }
-        if (match(self.phase) { Phase::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { self.phase = Phase::Shutdown; self.stage = Stage::Shutdown; return core::result::Ok(Need::Shutdown); } return core::result::Ok(Need::Output(SendKind::Final)); }
-        if (match(self.phase) { Phase::Drain -> true, _ -> false }) { if (self.progress.peer_eof) { self.phase = Phase::Finish; self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); } let capacity = self.drain_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); } return core::result::Ok(Need::Drain(capacity.unwrap())); }
+        if (match(self.phase.state()) { PhaseState::Validate -> true, _ -> false }) { let validated = self.validate_request(); if (validated.is_err()) { return self.rejected_or_failed(validated.unwrap_err()); } return core::result::Ok(Need::Local); }
+        if (match(self.phase.state()) { PhaseState::Decode -> true, _ -> false }) { let decoded = self.decode_request(); if (decoded.is_err()) { return self.rejected_or_failed(decoded.unwrap_err()); } return core::result::Ok(Need::Decision); }
+        if (match(self.phase.state()) { PhaseState::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { self.phase.step(PhaseEvent::BodyAccepted); self.stage = Stage::Body; return core::result::Ok(Need::Local); } return core::result::Ok(Need::Output(SendKind::Continue)); }
+        if (match(self.phase.state()) { PhaseState::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { self.phase.step(PhaseEvent::ResponseSent); self.stage = Stage::Shutdown; return core::result::Ok(Need::Shutdown); } return core::result::Ok(Need::Output(SendKind::Final)); }
+        if (match(self.phase.state()) { PhaseState::Drain -> true, _ -> false }) { if (self.progress.peer_eof) { self.phase.step(PhaseEvent::Finished); self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); } let capacity = self.drain_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); } return core::result::Ok(Need::Drain(capacity.unwrap())); }
         return core::result::Ok(self.need());
     }
     fn prepare_response(&self, response: Response) -> core::result::Result<bool,Cause> {
@@ -397,7 +675,7 @@ pub impl Protocol {
         if (parsed.unwrap().consumed != owner.len()) { owner.destroy(); return core::result::Err(Cause::BoundaryMismatch); }
         let after = self.active(); if (after.is_err()) { owner.destroy(); return after; }
         if (self.request.is_none() && self.header.is_some()) { self.progress.buffered_discarded = self.wire.len()-self.header.unwrap().head.raw.len(); }
-        self.response_wire = owner; self.progress.response_bytes = owner.len(); self.final_staged = true; self.phase = Phase::Final; self.current_event = core::option::None(); return core::result::Ok(true);
+        self.response_wire = owner; self.progress.response_bytes = owner.len(); self.final_staged_completion = core::iter_state::completed_if( true); self.phase.step(PhaseEvent::ResponsePrepared); self.current_event = core::option::None(); return core::result::Ok(true);
     }
 }
 
@@ -408,7 +686,7 @@ fn initial_close(socket: &std::socket::Socket, error: Failure) -> Failure {
     failure.cleanup_attempted = attempted; failure.cleanup = cleanup_error(closed); failure.stats.closed = true;
     if (attempted) { failure.stats.cleanup_calls += 1; } if (closed.is_err()) { failure.stats.cleanup_errors += 1; } return failure;
 }
-fn exchange_owner(owner: Protocol, socket: std::socket::Socket, peer: core::net::SocketAddr) -> Exchange { return Exchange { owner:owner,socket:socket,remote:peer,published:0,read_blocked:false,write_blocked:false,receive_turn:false }; }
+fn exchange_owner(owner: Protocol, socket: std::socket::Socket, peer: core::net::SocketAddr) -> Exchange { return Exchange { owner:owner,socket:socket,remote:peer,published:0,read_readiness: core::io_state::readiness_start(),write_readiness: core::io_state::readiness_start(),turn: core::io_state::sending_turn() }; }
 fn stop(exchange: &Exchange, error: Failure) -> Failure {
     if (exchange.owner.last_terminal_failure().is_none()) { exchange.owner.stage = error.stage; exchange.owner.failure(error.cause); }
     if (!exchange.owner.progress.closed) { let attempted: bool = exchange.socket.is_open(); let closed = exchange.socket.close(); exchange.owner.record_close(attempted,cleanup_error(closed)); }
@@ -431,7 +709,7 @@ fn publish(exchange: &Exchange) -> core::option::Option<Event> {
     exchange.published = exchange.owner.event_revision(); return event;
 }
 fn receive_step(exchange: &Exchange, count: i32, discard: bool) -> core::result::Result<bool,Failure> {
-    if (exchange.read_blocked) { return core::result::Ok(false); }
+    if (exchange.read_readiness.blocked()) { return core::result::Ok(false); }
     let stage: Stage = exchange.owner.stage(); if (discard) { stage = Stage::Drain; }
     let before = exchange.owner.before_io(stage); if (before.is_err()) { return before; }
     let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),1024);
@@ -441,22 +719,22 @@ fn receive_step(exchange: &Exchange, count: i32, discard: bool) -> core::result:
         let fed: core::result::Result<bool,Failure> = core::result::Ok(true);
         if (discard) { fed = exchange.owner.discard(got); }
         else { if (got == 0) { fed = exchange.owner.feed_eof(); } else { fed = exchange.owner.feed(core::slice::view<u8>(scratch,got).unwrap()); } }
-        if (fed.is_err()) { return fed; } exchange.read_blocked = false; exchange.write_blocked = false; exchange.receive_turn = false; return core::result::Ok(true);
+        if (fed.is_err()) { return fed; } exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.write_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.turn.step(core::io_state::TransferEvent::Read); return core::result::Ok(true);
     }
     let after = exchange.owner.check(); if (after.is_err()) { return after; }
-    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.read_blocked = true; } return core::result::Ok(false); }
+    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.read_readiness.step(core::io_state::ReadinessEvent::WouldBlock); } return core::result::Ok(false); }
     return core::result::Err(exchange.owner.failure(Cause::Io(error)));
 }
 fn send_step(exchange: &Exchange, kind: SendKind) -> core::result::Result<bool,Failure> {
-    if (exchange.write_blocked) { return core::result::Ok(false); }
+    if (exchange.write_readiness.blocked()) { return core::result::Ok(false); }
     let reserved = exchange.owner.start_send(); if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); } if (reserved.unwrap().is_none()) { return core::result::Ok(false); }
     let stage: Stage = Stage::Send; if (match(kind) { SendKind::Continue -> true, _ -> false }) { stage = Stage::Continue; }
     let before = exchange.owner.before_io(stage); if (before.is_err()) { return before; }
     let result = exchange.socket.send(reserved.unwrap().unwrap());
-    if (result.is_ok()) { let committed = exchange.owner.commit_send(result.unwrap()); if (committed.is_err()) { return committed; } exchange.read_blocked = false; exchange.write_blocked = false; exchange.receive_turn = true; return core::result::Ok(true); }
+    if (result.is_ok()) { let committed = exchange.owner.commit_send(result.unwrap()); if (committed.is_err()) { return committed; } exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.write_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.turn.step(core::io_state::TransferEvent::Written); return core::result::Ok(true); }
     let cancelled = exchange.owner.cancel_send(); if (cancelled.is_err()) { return cancelled; }
     let after = exchange.owner.check(); if (after.is_err()) { return after; }
-    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.write_blocked = true; } return core::result::Ok(false); }
+    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.write_readiness.step(core::io_state::ReadinessEvent::WouldBlock); } return core::result::Ok(false); }
     return core::result::Err(exchange.owner.failure(Cause::Io(error)));
 }
 pub impl Exchange {
@@ -475,14 +753,14 @@ pub impl Exchange {
         if (self.owner.event().is_some() && self.published != self.owner.event_revision()) { interest.immediate = true; return interest; }
         let need: Need = self.owner.need();
         if (match(need) { Need::Decision -> true, _ -> false }) { return interest; }
-        if (match(need) { Need::Input(n) -> true, Need::Drain(n) -> true, _ -> false }) { interest.readable = true; interest.immediate = !self.read_blocked; return interest; }
+        if (match(need) { Need::Input(n) -> true, Need::Drain(n) -> true, _ -> false }) { interest.readable = true; interest.immediate = !self.read_readiness.blocked(); return interest; }
         let output: core::option::Option<SendKind> = match(need) { Need::Output(kind) -> core::option::Some(kind), _ -> core::option::None() };
         if (output.is_some()) {
-            interest.writable = true; interest.immediate = !self.write_blocked;
-            if (match(output.unwrap()) { SendKind::Final -> true, _ -> false } && !self.owner.stats().peer_eof) { interest.readable = true; if (!self.read_blocked) { interest.immediate = true; } }
+            interest.writable = true; interest.immediate = !self.write_readiness.blocked();
+            if (match(output.unwrap()) { SendKind::Final -> true, _ -> false } && !self.owner.stats().peer_eof) { interest.readable = true; if (!self.read_readiness.blocked()) { interest.immediate = true; } }
             return interest;
         }
-        if (match(need) { Need::Shutdown -> true, _ -> false }) { interest.writable = true; interest.immediate = !self.write_blocked; return interest; }
+        if (match(need) { Need::Shutdown -> true, _ -> false }) { interest.writable = true; interest.immediate = !self.write_readiness.blocked(); return interest; }
         interest.immediate = true; return interest;
     }
     pub fn before_wait(&self) -> core::result::Result<bool,Failure> {
@@ -500,8 +778,8 @@ pub impl Exchange {
         if (self.owner.last_terminal_failure().is_some()) { return core::result::Err(stop(self,self.owner.last_terminal_failure().unwrap())); }
         if (!running(self.owner.status())) { return core::result::Ok(publish(self)); }
         let checked = self.owner.check(); if (checked.is_err()) { return core::result::Err(stop(self,checked.unwrap_err())); }
-        if (ready.readable || ready.hangup || ready.error) { self.read_blocked = false; }
-        if (ready.writable || ready.hangup || ready.error) { self.write_blocked = false; }
+        if (ready.readable || ready.hangup || ready.error) { self.read_readiness.step(core::io_state::ReadinessEvent::Ready); }
+        if (ready.writable || ready.hangup || ready.error) { self.write_readiness.step(core::io_state::ReadinessEvent::Ready); }
         let event: core::option::Option<Event> = publish(self); if (event.is_some()) { return core::result::Ok(event); }
         let need: Need = self.owner.need();
         if (match(need) { Need::Local -> true, _ -> false }) { let result = self.owner.advance(); if (result.is_err()) { return core::result::Err(stop(self,result.unwrap_err())); } return core::result::Ok(publish(self)); }
@@ -511,18 +789,18 @@ pub impl Exchange {
         let output: core::option::Option<SendKind> = match(need) { Need::Output(kind) -> core::option::Some(kind), _ -> core::option::None() };
         if (output.is_some()) {
             let final: bool = match(output.unwrap()) { SendKind::Final -> true, _ -> false };
-            if (final && !self.owner.stats().peer_eof && !self.read_blocked && (self.write_blocked || self.receive_turn)) {
+            if (final && !self.owner.stats().peer_eof && !self.read_readiness.blocked() && (self.write_readiness.blocked() || self.turn.receive())) {
                 let capacity = self.owner.drain_limit(); if (capacity.is_err()) { return core::result::Err(stop(self,capacity.unwrap_err())); }
                 let got = receive_step(self,capacity.unwrap(),true); if (got.is_err()) { return core::result::Err(stop(self,got.unwrap_err())); }
             } else { let wrote = send_step(self,output.unwrap()); if (wrote.is_err()) { return core::result::Err(stop(self,wrote.unwrap_err())); } }
             return core::result::Ok(core::option::None());
         }
         if (match(need) { Need::Shutdown -> true, _ -> false }) {
-            if (self.write_blocked) { return core::result::Ok(core::option::None()); }
+            if (self.write_readiness.blocked()) { return core::result::Ok(core::option::None()); }
             let before = self.owner.before_io(Stage::Shutdown); if (before.is_err()) { return core::result::Err(stop(self,before.unwrap_err())); }
             let result = self.socket.shutdown(std::socket::Shutdown::Write);
-            if (result.is_ok()) { let recorded = self.owner.record_write_shutdown(false); if (recorded.is_err()) { return core::result::Err(stop(self,recorded.unwrap_err())); } self.read_blocked = false; self.write_blocked = false; }
-            else { let after = self.owner.check(); if (after.is_err()) { return core::result::Err(stop(self,after.unwrap_err())); } if (!transient(result.unwrap_err())) { return core::result::Err(stop(self,self.owner.failure(Cause::Io(result.unwrap_err())))); } if (blocked(result.unwrap_err())) { self.write_blocked = true; } }
+            if (result.is_ok()) { let recorded = self.owner.record_write_shutdown(false); if (recorded.is_err()) { return core::result::Err(stop(self,recorded.unwrap_err())); } self.read_readiness.step(core::io_state::ReadinessEvent::Ready); self.write_readiness.step(core::io_state::ReadinessEvent::Ready); }
+            else { let after = self.owner.check(); if (after.is_err()) { return core::result::Err(stop(self,after.unwrap_err())); } if (!transient(result.unwrap_err())) { return core::result::Err(stop(self,self.owner.failure(Cause::Io(result.unwrap_err())))); } if (blocked(result.unwrap_err())) { self.write_readiness.step(core::io_state::ReadinessEvent::WouldBlock); } }
             return core::result::Ok(core::option::None());
         }
         let drain: core::option::Option<i32> = match(need) { Need::Drain(count) -> core::option::Some(count), _ -> core::option::None() };
@@ -573,7 +851,7 @@ pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: 
             let accepted: std::socket::Accepted = got.unwrap(); let exchange: Exchange = exchange_owner(owner,accepted.socket,accepted.peer);
             let after = exchange.owner.check(); if (after.is_err()) { let error = stop(exchange.borrow(),after.unwrap_err()); exchange.owner.destroy(); return core::result::Err(error); }
             exchange.owner.stage = Stage::Head;
-            return core::result::Ok(Connection { exchange:exchange,head_taken:false,body_requested:false,request_taken:false });
+            return core::result::Ok(Connection { exchange:exchange,head_taken_completion: core::iter_state::completion_start(),body_requested_completion: core::iter_state::completion_start(),request_taken_completion: core::iter_state::completion_start() });
         }
         let failure: std::socket::AcceptFailure = got.unwrap_err();
         if (!transient(failure.cause) || failure.cleanup_attempted) {
@@ -613,19 +891,19 @@ pub impl Connection {
     pub fn stats(&self) -> Stats { return self.exchange.stats(); }
     pub fn read_head(&self) -> core::result::Result<core::option::Option<RequestHead>,Failure> {
         if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
-        if (self.head_taken) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        if (self.head_taken_completion.is_done()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
         let got = synchronous_event(self.exchange.borrow()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
         let event: Event = got.unwrap(); let head: core::option::Option<RequestHead> = match(event) { Event::Head(value) -> core::option::Some(value), _ -> core::option::None() };
-        if (head.is_some()) { self.head_taken = true; return core::result::Ok(head); }
-        if (match(event) { Event::Empty -> true, _ -> false }) { self.head_taken = true; return core::result::Ok(core::option::None()); }
+        if (head.is_some()) { self.head_taken_completion = core::iter_state::completed_if( true); return core::result::Ok(head); }
+        if (match(event) { Event::Empty -> true, _ -> false }) { self.head_taken_completion = core::iter_state::completed_if( true); return core::result::Ok(core::option::None()); }
         let rejected: core::option::Option<Rejection> = match(event) { Event::Rejected(value) -> core::option::Some(value), _ -> core::option::None() };
-        if (rejected.is_some()) { self.head_taken = true; return core::result::Err(rejection_failure(self.exchange.protocol(),rejected.unwrap())); }
+        if (rejected.is_some()) { self.head_taken_completion = core::iter_state::completed_if( true); return core::result::Err(rejection_failure(self.exchange.protocol(),rejected.unwrap())); }
         return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState));
     }
     pub fn send_continue(&self) -> core::result::Result<Stats,Failure> {
         if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
-        if (!self.head_taken || self.body_requested || self.request_taken) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
-        let requested = self.exchange.read_body(BodyDecision::ContinueThenRead); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested = true;
+        if (!self.head_taken_completion.is_done() || self.body_requested_completion.is_done() || self.request_taken_completion.is_done()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        let requested = self.exchange.read_body(BodyDecision::ContinueThenRead); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested_completion = core::iter_state::completed_if( true);
         let ready: ext::http_client::Readiness = empty_ready();
         while (self.exchange.stats().continue_sent < 25) {
             let got = self.exchange.step(ready); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
@@ -637,11 +915,11 @@ pub impl Connection {
     }
     pub fn read_request(&self) -> core::result::Result<Request,Failure> {
         if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
-        if (!self.head_taken || self.request_taken || self.exchange.protocol().final_staged()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
-        if (!self.body_requested) { let requested = self.exchange.read_body(BodyDecision::Read); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested = true; }
+        if (!self.head_taken_completion.is_done() || self.request_taken_completion.is_done() || self.exchange.protocol().final_staged()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        if (!self.body_requested_completion.is_done()) { let requested = self.exchange.read_body(BodyDecision::Read); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested_completion = core::iter_state::completed_if( true); }
         let got = synchronous_event(self.exchange.borrow()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
         let event: Event = got.unwrap(); let request: core::option::Option<Request> = match(event) { Event::Request(value) -> core::option::Some(value), _ -> core::option::None() };
-        if (request.is_some()) { self.request_taken = true; return core::result::Ok(request.unwrap()); }
+        if (request.is_some()) { self.request_taken_completion = core::iter_state::completed_if( true); return core::result::Ok(request.unwrap()); }
         let rejected: core::option::Option<Rejection> = match(event) { Event::Rejected(value) -> core::option::Some(value), _ -> core::option::None() };
         if (rejected.is_some()) { return core::result::Err(rejection_failure(self.exchange.protocol(),rejected.unwrap())); }
         return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState));

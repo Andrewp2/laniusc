@@ -14,27 +14,61 @@ Declarative command-line parser with GNU getopt_long rules: short options and -a
 
 - [stdlib-cli](../../stdlib-cli.md)
 
-Declaration counts: enum: 2; field: 22; function: 2; impl: 2; method: 26; struct: 3; variant: 14.
+Declaration counts: enum: 3; field: 22; function: 2; impl: 3; machine: 1; method: 29; struct: 3; variant: 16.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/cli.lani#L7)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/cli.lani#L8)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/cli.lani#L9)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/cli.lani#L10)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/cli.lani#L11)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/cli.lani#L12)
-- [std::stream](stream.md) · [source](../../../stdlib/std/cli.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/cli.lani#L7)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/std/cli.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/cli.lani#L9)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/cli.lani#L10)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/cli.lani#L11)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/cli.lani#L12)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/cli.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/cli.lani#L14)
+- [std::stream](stream.md) · [source](../../../stdlib/std/cli.lani#L15)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: RunPhaseEvent
+
+[Source line 17](../../../stdlib/std/cli.lani#L17)
+
+```lanius
+pub enum RunPhaseEvent
+```
+
+#### variant: HelpRequested
+
+[Source line 17](../../../stdlib/std/cli.lani#L17)
+
+```lanius
+HelpRequested
+```
+
+#### variant: Failed
+
+[Source line 17](../../../stdlib/std/cli.lani#L17)
+
+```lanius
+Failed
+```
+
+### machine: RunPhase
+
+[Source line 18](../../../stdlib/std/cli.lani#L18)
+
+```lanius
+pub machine RunPhase on RunPhaseEvent
+```
+
 ### enum: Arity
 
-[Source line 15](../../../stdlib/std/cli.lani#L15)
+[Source line 43](../../../stdlib/std/cli.lani#L43)
 
 ```lanius
 pub enum Arity
@@ -42,7 +76,7 @@ pub enum Arity
 
 #### variant: Flag
 
-[Source line 15](../../../stdlib/std/cli.lani#L15)
+[Source line 43](../../../stdlib/std/cli.lani#L43)
 
 ```lanius
 Flag
@@ -50,7 +84,7 @@ Flag
 
 #### variant: Required
 
-[Source line 15](../../../stdlib/std/cli.lani#L15)
+[Source line 43](../../../stdlib/std/cli.lani#L43)
 
 ```lanius
 Required
@@ -58,7 +92,7 @@ Required
 
 #### variant: Optional
 
-[Source line 15](../../../stdlib/std/cli.lani#L15)
+[Source line 43](../../../stdlib/std/cli.lani#L43)
 
 ```lanius
 Optional
@@ -66,7 +100,7 @@ Optional
 
 ### enum: ErrorKind
 
-[Source line 16](../../../stdlib/std/cli.lani#L16)
+[Source line 44](../../../stdlib/std/cli.lani#L44)
 
 ```lanius
 pub enum ErrorKind
@@ -74,7 +108,7 @@ pub enum ErrorKind
 
 #### variant: UnknownOption
 
-[Source line 17](../../../stdlib/std/cli.lani#L17)
+[Source line 45](../../../stdlib/std/cli.lani#L45)
 
 ```lanius
 UnknownOption
@@ -82,7 +116,7 @@ UnknownOption
 
 #### variant: InvalidOption
 
-[Source line 17](../../../stdlib/std/cli.lani#L17)
+[Source line 45](../../../stdlib/std/cli.lani#L45)
 
 ```lanius
 InvalidOption
@@ -90,7 +124,7 @@ InvalidOption
 
 #### variant: AmbiguousOption
 
-[Source line 17](../../../stdlib/std/cli.lani#L17)
+[Source line 45](../../../stdlib/std/cli.lani#L45)
 
 ```lanius
 AmbiguousOption
@@ -98,7 +132,7 @@ AmbiguousOption
 
 #### variant: UnexpectedValue
 
-[Source line 17](../../../stdlib/std/cli.lani#L17)
+[Source line 45](../../../stdlib/std/cli.lani#L45)
 
 ```lanius
 UnexpectedValue
@@ -106,7 +140,7 @@ UnexpectedValue
 
 #### variant: MissingValue
 
-[Source line 17](../../../stdlib/std/cli.lani#L17)
+[Source line 45](../../../stdlib/std/cli.lani#L45)
 
 ```lanius
 MissingValue
@@ -114,7 +148,7 @@ MissingValue
 
 #### variant: MissingCommand
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 MissingCommand
@@ -122,7 +156,7 @@ MissingCommand
 
 #### variant: UnknownCommand
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 UnknownCommand
@@ -130,7 +164,7 @@ UnknownCommand
 
 #### variant: MissingOperand
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 MissingOperand
@@ -138,7 +172,7 @@ MissingOperand
 
 #### variant: ExtraOperand
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 ExtraOperand
@@ -146,7 +180,7 @@ ExtraOperand
 
 #### variant: InvalidSpec
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 InvalidSpec
@@ -154,7 +188,7 @@ InvalidSpec
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../stdlib/std/cli.lani#L18)
+[Source line 46](../../../stdlib/std/cli.lani#L46)
 
 ```lanius
 AllocationFailed
@@ -162,7 +196,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 pub struct Error
@@ -170,7 +204,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 kind: ErrorKind
@@ -178,7 +212,7 @@ kind: ErrorKind
 
 #### field: argument
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 argument: i32
@@ -186,7 +220,7 @@ argument: i32
 
 #### field: offset
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 offset: i32
@@ -194,7 +228,7 @@ offset: i32
 
 #### field: spec
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 spec: i32
@@ -202,7 +236,7 @@ spec: i32
 
 #### field: scope
 
-[Source line 24](../../../stdlib/std/cli.lani#L24)
+[Source line 52](../../../stdlib/std/cli.lani#L52)
 
 ```lanius
 scope: i32
@@ -210,7 +244,7 @@ scope: i32
 
 ### struct: Matches
 
-[Source line 57](../../../stdlib/std/cli.lani#L57)
+[Source line 85](../../../stdlib/std/cli.lani#L85)
 
 ```lanius
 pub struct Matches
@@ -218,7 +252,7 @@ pub struct Matches
 
 #### field: ids
 
-[Source line 58](../../../stdlib/std/cli.lani#L58)
+[Source line 86](../../../stdlib/std/cli.lani#L86)
 
 ```lanius
 ids: alloc::vec::Vec<i32>
@@ -226,7 +260,7 @@ ids: alloc::vec::Vec<i32>
 
 #### field: values
 
-[Source line 58](../../../stdlib/std/cli.lani#L58)
+[Source line 86](../../../stdlib/std/cli.lani#L86)
 
 ```lanius
 values: alloc::vec::Vec<core::slice::View<u8>>
@@ -234,7 +268,7 @@ values: alloc::vec::Vec<core::slice::View<u8>>
 
 #### field: has_value
 
-[Source line 58](../../../stdlib/std/cli.lani#L58)
+[Source line 86](../../../stdlib/std/cli.lani#L86)
 
 ```lanius
 has_value: alloc::vec::Vec<bool>
@@ -242,7 +276,7 @@ has_value: alloc::vec::Vec<bool>
 
 #### field: operands
 
-[Source line 59](../../../stdlib/std/cli.lani#L59)
+[Source line 87](../../../stdlib/std/cli.lani#L87)
 
 ```lanius
 operands: alloc::vec::Vec<core::slice::View<u8>>
@@ -250,7 +284,7 @@ operands: alloc::vec::Vec<core::slice::View<u8>>
 
 #### field: operand_index
 
-[Source line 59](../../../stdlib/std/cli.lani#L59)
+[Source line 87](../../../stdlib/std/cli.lani#L87)
 
 ```lanius
 operand_index: alloc::vec::Vec<i32>
@@ -258,7 +292,7 @@ operand_index: alloc::vec::Vec<i32>
 
 #### field: command
 
-[Source line 59](../../../stdlib/std/cli.lani#L59)
+[Source line 87](../../../stdlib/std/cli.lani#L87)
 
 ```lanius
 command: i32
@@ -266,7 +300,7 @@ command: i32
 
 ### struct: Command
 
-[Source line 100](../../../stdlib/std/cli.lani#L100)
+[Source line 128](../../../stdlib/std/cli.lani#L128)
 
 ```lanius
 pub struct Command
@@ -274,7 +308,7 @@ pub struct Command
 
 #### field: name
 
-[Source line 101](../../../stdlib/std/cli.lani#L101)
+[Source line 129](../../../stdlib/std/cli.lani#L129)
 
 ```lanius
 name: core::slice::View<u8>
@@ -282,7 +316,7 @@ name: core::slice::View<u8>
 
 #### field: about
 
-[Source line 101](../../../stdlib/std/cli.lani#L101)
+[Source line 129](../../../stdlib/std/cli.lani#L129)
 
 ```lanius
 about: core::slice::View<u8>
@@ -290,7 +324,7 @@ about: core::slice::View<u8>
 
 #### field: specs
 
-[Source line 102](../../../stdlib/std/cli.lani#L102)
+[Source line 130](../../../stdlib/std/cli.lani#L130)
 
 ```lanius
 specs: alloc::vec::Vec<Spec>
@@ -298,7 +332,7 @@ specs: alloc::vec::Vec<Spec>
 
 #### field: subs
 
-[Source line 102](../../../stdlib/std/cli.lani#L102)
+[Source line 130](../../../stdlib/std/cli.lani#L130)
 
 ```lanius
 subs: alloc::vec::Vec<Sub>
@@ -306,7 +340,7 @@ subs: alloc::vec::Vec<Sub>
 
 #### field: operand
 
-[Source line 103](../../../stdlib/std/cli.lani#L103)
+[Source line 131](../../../stdlib/std/cli.lani#L131)
 
 ```lanius
 operand: core::slice::View<u8>
@@ -314,7 +348,7 @@ operand: core::slice::View<u8>
 
 #### field: minimum
 
-[Source line 103](../../../stdlib/std/cli.lani#L103)
+[Source line 131](../../../stdlib/std/cli.lani#L131)
 
 ```lanius
 minimum: i32
@@ -322,7 +356,7 @@ minimum: i32
 
 #### field: maximum
 
-[Source line 103](../../../stdlib/std/cli.lani#L103)
+[Source line 131](../../../stdlib/std/cli.lani#L131)
 
 ```lanius
 maximum: i32
@@ -330,7 +364,7 @@ maximum: i32
 
 #### field: scope
 
-[Source line 104](../../../stdlib/std/cli.lani#L104)
+[Source line 132](../../../stdlib/std/cli.lani#L132)
 
 ```lanius
 scope: i32
@@ -338,7 +372,7 @@ scope: i32
 
 #### field: options_first
 
-[Source line 104](../../../stdlib/std/cli.lani#L104)
+[Source line 132](../../../stdlib/std/cli.lani#L132)
 
 ```lanius
 options_first: bool
@@ -346,25 +380,25 @@ options_first: bool
 
 #### field: help_id
 
-[Source line 104](../../../stdlib/std/cli.lani#L104)
+[Source line 132](../../../stdlib/std/cli.lani#L132)
 
 ```lanius
 help_id: i32
 ```
 
-#### field: broken
+#### field: health
 
-[Source line 104](../../../stdlib/std/cli.lani#L104)
+[Source line 132](../../../stdlib/std/cli.lani#L132)
 
 ```lanius
-broken: bool
+health: core::lifecycle::Health
 ```
 
 ## Free functions and extern declarations
 
 ### function: command
 
-[Source line 107](../../../stdlib/std/cli.lani#L107)
+[Source line 135](../../../stdlib/std/cli.lani#L135)
 
 ```lanius
 pub fn command(name: core::slice::View<u8>, about: core::slice::View<u8>) -> Command
@@ -372,7 +406,7 @@ pub fn command(name: core::slice::View<u8>, about: core::slice::View<u8>) -> Com
 
 ### function: kind_name
 
-[Source line 504](../../../stdlib/std/cli.lani#L504)
+[Source line 532](../../../stdlib/std/cli.lani#L532)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8>
@@ -380,9 +414,41 @@ pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 61
+### impl at line 36
 
-[Source line 61](../../../stdlib/std/cli.lani#L61)
+[Source line 36](../../../stdlib/std/cli.lani#L36)
+
+```lanius
+pub impl RunPhase
+```
+
+#### method: is_running
+
+[Source line 37](../../../stdlib/std/cli.lani#L37)
+
+```lanius
+pub fn is_running(&self) -> bool
+```
+
+#### method: is_help
+
+[Source line 38](../../../stdlib/std/cli.lani#L38)
+
+```lanius
+pub fn is_help(&self) -> bool
+```
+
+#### method: is_failed
+
+[Source line 39](../../../stdlib/std/cli.lani#L39)
+
+```lanius
+pub fn is_failed(&self) -> bool
+```
+
+### impl at line 89
+
+[Source line 89](../../../stdlib/std/cli.lani#L89)
 
 ```lanius
 pub impl Matches
@@ -390,7 +456,7 @@ pub impl Matches
 
 #### method: borrow
 
-[Source line 62](../../../stdlib/std/cli.lani#L62)
+[Source line 90](../../../stdlib/std/cli.lani#L90)
 
 ```lanius
 pub fn borrow(&self) -> &Matches
@@ -398,7 +464,7 @@ pub fn borrow(&self) -> &Matches
 
 #### method: command
 
-[Source line 64](../../../stdlib/std/cli.lani#L64)
+[Source line 92](../../../stdlib/std/cli.lani#L92)
 
 ```lanius
 pub fn command(&self) -> i32
@@ -406,7 +472,7 @@ pub fn command(&self) -> i32
 
 #### method: occurrences
 
-[Source line 65](../../../stdlib/std/cli.lani#L65)
+[Source line 93](../../../stdlib/std/cli.lani#L93)
 
 ```lanius
 pub fn occurrences(&self) -> i32
@@ -414,7 +480,7 @@ pub fn occurrences(&self) -> i32
 
 #### method: occurrence_id
 
-[Source line 66](../../../stdlib/std/cli.lani#L66)
+[Source line 94](../../../stdlib/std/cli.lani#L94)
 
 ```lanius
 pub fn occurrence_id(&self, index: i32) -> i32
@@ -422,7 +488,7 @@ pub fn occurrence_id(&self, index: i32) -> i32
 
 #### method: occurrence_value
 
-[Source line 67](../../../stdlib/std/cli.lani#L67)
+[Source line 95](../../../stdlib/std/cli.lani#L95)
 
 ```lanius
 pub fn occurrence_value(&self, index: i32) -> core::option::Option<core::slice::View<u8>>
@@ -430,7 +496,7 @@ pub fn occurrence_value(&self, index: i32) -> core::option::Option<core::slice::
 
 #### method: count
 
-[Source line 71](../../../stdlib/std/cli.lani#L71)
+[Source line 99](../../../stdlib/std/cli.lani#L99)
 
 ```lanius
 pub fn count(&self, id: i32) -> i32
@@ -438,7 +504,7 @@ pub fn count(&self, id: i32) -> i32
 
 #### method: present
 
-[Source line 76](../../../stdlib/std/cli.lani#L76)
+[Source line 104](../../../stdlib/std/cli.lani#L104)
 
 ```lanius
 pub fn present(&self, id: i32) -> bool
@@ -446,7 +512,7 @@ pub fn present(&self, id: i32) -> bool
 
 #### method: value
 
-[Source line 78](../../../stdlib/std/cli.lani#L78)
+[Source line 106](../../../stdlib/std/cli.lani#L106)
 
 ```lanius
 pub fn value(&self, id: i32) -> core::option::Option<core::slice::View<u8>>
@@ -454,7 +520,7 @@ pub fn value(&self, id: i32) -> core::option::Option<core::slice::View<u8>>
 
 #### method: value_at
 
-[Source line 84](../../../stdlib/std/cli.lani#L84)
+[Source line 112](../../../stdlib/std/cli.lani#L112)
 
 ```lanius
 pub fn value_at(&self, id: i32, n: i32) -> core::option::Option<core::slice::View<u8>>
@@ -462,7 +528,7 @@ pub fn value_at(&self, id: i32, n: i32) -> core::option::Option<core::slice::Vie
 
 #### method: operand_count
 
-[Source line 92](../../../stdlib/std/cli.lani#L92)
+[Source line 120](../../../stdlib/std/cli.lani#L120)
 
 ```lanius
 pub fn operand_count(&self) -> i32
@@ -470,7 +536,7 @@ pub fn operand_count(&self) -> i32
 
 #### method: operand
 
-[Source line 93](../../../stdlib/std/cli.lani#L93)
+[Source line 121](../../../stdlib/std/cli.lani#L121)
 
 ```lanius
 pub fn operand(&self, index: i32) -> core::slice::View<u8>
@@ -478,15 +544,15 @@ pub fn operand(&self, index: i32) -> core::slice::View<u8>
 
 #### method: destroy
 
-[Source line 94](../../../stdlib/std/cli.lani#L94)
+[Source line 122](../../../stdlib/std/cli.lani#L122)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 119
+### impl at line 147
 
-[Source line 119](../../../stdlib/std/cli.lani#L119)
+[Source line 147](../../../stdlib/std/cli.lani#L147)
 
 ```lanius
 pub impl Command
@@ -494,7 +560,7 @@ pub impl Command
 
 #### method: borrow
 
-[Source line 120](../../../stdlib/std/cli.lani#L120)
+[Source line 148](../../../stdlib/std/cli.lani#L148)
 
 ```lanius
 pub fn borrow(&self) -> &Command
@@ -502,7 +568,7 @@ pub fn borrow(&self) -> &Command
 
 #### method: flag
 
-[Source line 142](../../../stdlib/std/cli.lani#L142)
+[Source line 170](../../../stdlib/std/cli.lani#L170)
 
 ```lanius
 pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -510,7 +576,7 @@ pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::
 
 #### method: option
 
-[Source line 145](../../../stdlib/std/cli.lani#L145)
+[Source line 173](../../../stdlib/std/cli.lani#L173)
 
 ```lanius
 pub fn option(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -518,7 +584,7 @@ pub fn option(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name
 
 #### method: optional
 
-[Source line 149](../../../stdlib/std/cli.lani#L149)
+[Source line 177](../../../stdlib/std/cli.lani#L177)
 
 ```lanius
 pub fn optional(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -526,7 +592,7 @@ pub fn optional(&self, id: i32, short: u8, long: core::slice::View<u8>, value_na
 
 #### method: help
 
-[Source line 155](../../../stdlib/std/cli.lani#L155)
+[Source line 183](../../../stdlib/std/cli.lani#L183)
 
 ```lanius
 pub fn help(&self, id: i32)
@@ -534,7 +600,7 @@ pub fn help(&self, id: i32)
 
 #### method: operands
 
-[Source line 165](../../../stdlib/std/cli.lani#L165)
+[Source line 193](../../../stdlib/std/cli.lani#L193)
 
 ```lanius
 pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32)
@@ -542,7 +608,7 @@ pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32)
 
 #### method: stop_at_operand
 
-[Source line 173](../../../stdlib/std/cli.lani#L173)
+[Source line 201](../../../stdlib/std/cli.lani#L201)
 
 ```lanius
 pub fn stop_at_operand(&self)
@@ -550,7 +616,7 @@ pub fn stop_at_operand(&self)
 
 #### method: subcommand
 
-[Source line 174](../../../stdlib/std/cli.lani#L174)
+[Source line 202](../../../stdlib/std/cli.lani#L202)
 
 ```lanius
 pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -558,7 +624,7 @@ pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice
 
 #### method: destroy
 
-[Source line 181](../../../stdlib/std/cli.lani#L181)
+[Source line 209](../../../stdlib/std/cli.lani#L209)
 
 ```lanius
 pub fn destroy(&self)
@@ -566,7 +632,7 @@ pub fn destroy(&self)
 
 #### method: parse
 
-[Source line 208](../../../stdlib/std/cli.lani#L208)
+[Source line 236](../../../stdlib/std/cli.lani#L236)
 
 ```lanius
 pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::result::Result<Matches, Error>
@@ -574,7 +640,7 @@ pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::res
 
 #### method: write_error
 
-[Source line 315](../../../stdlib/std/cli.lani#L315)
+[Source line 343](../../../stdlib/std/cli.lani#L343)
 
 ```lanius
 pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>, out: &alloc::vec::Vec<u8>) -> bool
@@ -582,7 +648,7 @@ pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::Vie
 
 #### method: write_help
 
-[Source line 352](../../../stdlib/std/cli.lani#L352)
+[Source line 380](../../../stdlib/std/cli.lani#L380)
 
 ```lanius
 pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool
@@ -590,7 +656,7 @@ pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool
 
 #### method: print_help
 
-[Source line 467](../../../stdlib/std/cli.lani#L467)
+[Source line 495](../../../stdlib/std/cli.lani#L495)
 
 ```lanius
 pub fn print_help(&self, sub: i32) -> bool
@@ -598,7 +664,7 @@ pub fn print_help(&self, sub: i32) -> bool
 
 #### method: print_error
 
-[Source line 473](../../../stdlib/std/cli.lani#L473)
+[Source line 501](../../../stdlib/std/cli.lani#L501)
 
 ```lanius
 pub fn print_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>) -> bool

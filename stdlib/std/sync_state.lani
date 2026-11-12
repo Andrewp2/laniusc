@@ -1,0 +1,141 @@
+// Atomic protocol decisions. A machine is a LOCAL snapshot: its proposed
+// transition takes effect only when the caller's native compare-exchange
+// succeeds. On a race, discard it and observe the shared word again.
+module std::sync_state;
+
+pub const MUTEX_WAITING: u32 = 2;
+pub const ONCE_COMPLETE: u32 = 2;
+pub struct MutexChange { expected: u32, desired: u32, acquired: bool, wake: bool }
+fn lock_change(expected: u32, desired: u32, acquired: bool, wake: bool) -> MutexChange {
+    return MutexChange { expected: expected, desired: desired, acquired: acquired, wake: wake };
+}
+pub enum MutexEvent { Observe(u32), Try, Lock, Contend, Unlock }
+pub machine MutexTransition on MutexEvent -> MutexChange {
+    start Observe;
+    state Observe {
+        MutexEvent::Observe(word) -> {
+            if (word == 0) { goto Unlocked with lock_change(0,0,false,false); }
+            if (word == 1) { goto Locked with lock_change(1,1,false,false); }
+            if (word == 2) { goto Contended with lock_change(2,2,false,false); }
+            goto Other(word) with lock_change(word,word,false,false);
+        },
+        MutexEvent::Try -> stay with lock_change(0,0,false,false),
+        MutexEvent::Lock -> stay with lock_change(0,0,false,false),
+        MutexEvent::Contend -> stay with lock_change(0,0,false,false),
+        MutexEvent::Unlock -> stay with lock_change(0,0,false,false),
+    }
+    state Unlocked {
+        MutexEvent::Observe(_) -> stay with lock_change(0,0,false,false),
+        MutexEvent::Try -> goto Locked with lock_change(0,1,true,false),
+        MutexEvent::Lock -> goto Locked with lock_change(0,1,true,false),
+        MutexEvent::Contend -> goto Contended with lock_change(0,2,true,false),
+        MutexEvent::Unlock -> stay with lock_change(0,0,false,false),
+    }
+    state Locked {
+        MutexEvent::Observe(_) -> stay with lock_change(1,1,false,false),
+        MutexEvent::Try -> stay with lock_change(1,1,false,false),
+        MutexEvent::Lock -> stay with lock_change(1,1,false,false),
+        MutexEvent::Contend -> goto Contended with lock_change(1,2,false,false),
+        MutexEvent::Unlock -> goto Unlocked with lock_change(1,0,true,false),
+    }
+    state Contended {
+        MutexEvent::Observe(_) -> stay with lock_change(2,2,false,false),
+        MutexEvent::Try -> stay with lock_change(2,2,false,false),
+        MutexEvent::Lock -> goto Locked with lock_change(2,1,false,false),
+        MutexEvent::Contend -> stay with lock_change(2,2,false,false),
+        MutexEvent::Unlock -> goto Unlocked with lock_change(2,0,true,true),
+    }
+    state Other(word: u32) {
+        MutexEvent::Observe(_) -> stay with lock_change(word,word,false,false),
+        MutexEvent::Try -> stay with lock_change(word,word,false,false),
+        MutexEvent::Lock -> goto Locked with lock_change(word,1,false,false),
+        MutexEvent::Contend -> goto Contended with lock_change(word,2,false,false),
+        MutexEvent::Unlock -> goto Unlocked with lock_change(word,0,true,false),
+    }
+}
+
+pub struct OnceChange { expected: u32, desired: u32, wake: bool }
+fn once_change(expected: u32, desired: u32, wake: bool) -> OnceChange {
+    return OnceChange { expected: expected, desired: desired, wake: wake };
+}
+pub enum OnceAction { Observed, Run(OnceChange), MarkWaiting(OnceChange), Wait(u32), Done, Finish(OnceChange), Invalid }
+pub enum OnceEvent { Observe(u32), Begin, Complete, Abandon }
+pub machine OnceTransition on OnceEvent -> OnceAction {
+    start Observe;
+    state Observe {
+        OnceEvent::Observe(word) -> {
+            if (word == 0) { goto Unstarted with OnceAction::Observed; }
+            if (word == 1) { goto Running with OnceAction::Observed; }
+            if (word == 2) { goto Complete with OnceAction::Observed; }
+            if (word == 3) { goto Waiting with OnceAction::Observed; }
+            goto Invalid with OnceAction::Invalid;
+        },
+        OnceEvent::Begin -> stay with OnceAction::Invalid,
+        OnceEvent::Complete -> stay with OnceAction::Invalid,
+        OnceEvent::Abandon -> stay with OnceAction::Invalid,
+    }
+    state Unstarted {
+        OnceEvent::Observe(_) -> stay with OnceAction::Invalid,
+        OnceEvent::Begin -> goto Running with OnceAction::Run(once_change(0,1,false)),
+        OnceEvent::Complete -> stay with OnceAction::Invalid,
+        OnceEvent::Abandon -> stay with OnceAction::Invalid,
+    }
+    state Running {
+        OnceEvent::Observe(_) -> stay with OnceAction::Invalid,
+        OnceEvent::Begin -> goto Waiting with OnceAction::MarkWaiting(once_change(1,3,false)),
+        OnceEvent::Complete -> goto Complete with OnceAction::Finish(once_change(1,2,false)),
+        OnceEvent::Abandon -> goto Unstarted with OnceAction::Finish(once_change(1,0,false)),
+    }
+    state Waiting {
+        OnceEvent::Observe(_) -> stay with OnceAction::Invalid,
+        OnceEvent::Begin -> stay with OnceAction::Wait(3),
+        OnceEvent::Complete -> goto Complete with OnceAction::Finish(once_change(3,2,true)),
+        OnceEvent::Abandon -> goto Unstarted with OnceAction::Finish(once_change(3,0,true)),
+    }
+    final state Complete {
+        OnceEvent::Observe(_) -> stay with OnceAction::Invalid,
+        OnceEvent::Begin -> stay with OnceAction::Done,
+        OnceEvent::Complete -> stay with OnceAction::Invalid,
+        OnceEvent::Abandon -> stay with OnceAction::Invalid,
+    }
+    final state Invalid {
+        OnceEvent::Observe(_) -> stay with OnceAction::Invalid,
+        OnceEvent::Begin -> stay with OnceAction::Invalid,
+        OnceEvent::Complete -> stay with OnceAction::Invalid,
+        OnceEvent::Abandon -> stay with OnceAction::Invalid,
+    }
+}
+
+// A local view of a sticky shared flag. The caller publishes word() with
+// libatomic; observing a word never replaces an atomic read or write.
+pub enum FlagEvent { Observe(u64), Signal }
+pub machine Flag on FlagEvent -> bool {
+    start Clear;
+    state Clear {
+        FlagEvent::Observe(word) -> { if (word != 0) { goto Signaled with false; } stay with false; },
+        FlagEvent::Signal -> goto Signaled with true,
+    }
+    final state Signaled { FlagEvent::Observe(_) -> stay with false, FlagEvent::Signal -> stay with false, }
+}
+pub impl Flag {
+    pub fn is_signaled(&self) -> bool { return match (self.state()) { FlagState::Signaled -> true, _ -> false }; }
+    pub fn word(&self) -> u64 { if (self.is_signaled()) { return 1; } return 0; }
+}
+pub fn observed_flag(word: u64) -> Flag { let flag = flag_start(); flag.step(FlagEvent::Observe(word)); return flag; }
+pub fn signaled_flag() -> Flag { let flag = flag_start(); flag.step(FlagEvent::Signal); return flag; }
+
+// Snapshot of a channel's single receiver word (1 open, 0 closed).
+pub enum EndpointEvent { Observe(u64), Close }
+pub machine Endpoint on EndpointEvent -> bool {
+    start Open;
+    state Open {
+        EndpointEvent::Observe(word) -> { if (word == 0) { goto Closed with false; } stay with false; },
+        EndpointEvent::Close -> goto Closed with true,
+    }
+    final state Closed { EndpointEvent::Observe(_) -> stay with false, EndpointEvent::Close -> stay with false, }
+}
+pub impl Endpoint {
+    pub fn is_open(&self) -> bool { return match(self.state()) { EndpointState::Open -> true, _ -> false }; }
+    pub fn word(&self) -> u64 { if (self.is_open()) { return 1; } return 0; }
+}
+pub fn observed_endpoint(word: u64) -> Endpoint { let endpoint = endpoint_start(); endpoint.step(EndpointEvent::Observe(word)); return endpoint; }

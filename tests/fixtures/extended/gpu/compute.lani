@@ -1,0 +1,21 @@
+module app::main;
+import ext::gpu;
+import core::result;
+import core::slice;
+import shaders::work_shaders;
+extern "C" fn probe_empty();
+fn main() -> i32 {
+    let d=ext::gpu::open(0).unwrap(); let t=d.create_texture(13,9).unwrap(); let params=d.create_buffer(16).unwrap(); let values=d.create_buffer(468).unwrap(); let pixels=d.create_buffer(468).unwrap();
+    let bytes:[u8;16]=[13,0,0,0,9,0,0,0,23,0,0,0,0,0,0,0]; params.write(0,core::slice::whole(bytes)).unwrap();
+    let kinds:[ext::gpu::BindingKind;3]=[ext::gpu::BindingKind::UniformBuffer,ext::gpu::BindingKind::StorageBuffer,ext::gpu::BindingKind::StorageTexture]; let layout=d.create_binding_layout(core::slice::whole(kinds)).unwrap();
+    let bindings:[ext::gpu::Binding;3]=[ext::gpu::Binding::UniformBuffer(params.borrow()),ext::gpu::Binding::StorageBuffer(values.borrow()),ext::gpu::Binding::StorageTexture(t.borrow())]; let group=d.create_bind_group(layout.borrow(),core::slice::whole(bindings)).unwrap();
+    let code=shaders::work_shaders::comp(); let pipeline=d.create_compute_pipeline(core::slice::whole(code),layout.borrow()).unwrap();
+    assert(layout.close().is_err()); assert(t.close().is_err());
+    let e=d.create_encoder().unwrap(); assert(e.dispatch(pipeline.borrow(),group.borrow(),2,2,1).is_err());
+    e.clear_texture(t.borrow()).unwrap(); assert(e.dispatch(pipeline.borrow(),group.borrow(),0,2,1).is_err()); e.dispatch(pipeline.borrow(),group.borrow(),2,2,1).unwrap(); e.download_texture(t.borrow(),pixels.borrow(),0).unwrap();
+    assert(pipeline.close().is_err()); assert(group.close().is_err()); let ticket=e.submit().unwrap(); assert(ticket.wait(10000000000).unwrap()); ticket.close().unwrap();
+    let out:[u8;468]=[0;468]; pixels.read(0,core::slice::whole(out)).unwrap(); let i:i32=0;
+    while(i<117) { let x=i%13; let y=i/13; assert(out[i*4]==((x*17+y*3+23)%256) as u8); assert(out[i*4+1]==((x*7+y*13)%256) as u8); assert(out[i*4+2]==(x^y) as u8); assert(out[i*4+3]==255); i+=1; }
+    values.read(0,core::slice::whole(out)).unwrap(); i=0; while(i<117) { let expected=i*3+23; assert(out[i*4]==(expected%256) as u8); assert(out[i*4+1]==(expected/256) as u8); assert(out[i*4+2]==0 && out[i*4+3]==0); i+=1; }
+    group.close().unwrap(); pipeline.close().unwrap(); layout.close().unwrap(); t.close().unwrap(); params.close().unwrap(); values.close().unwrap(); pixels.close().unwrap(); d.close().unwrap(); probe_empty(); return 0;
+}

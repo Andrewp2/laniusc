@@ -14,18 +14,21 @@ WHATWG basic URL parser without state override; hosts use ext::idna (UTS #46). A
 
 - [extended-url](../../extended-url.md)
 
-Declaration counts: constant: 1; enum: 2; field: 17; function: 4; impl: 1; method: 23; struct: 1; variant: 18.
+Declaration counts: constant: 1; enum: 3; field: 17; function: 4; impl: 1; machine: 1; method: 23; struct: 1; variant: 37.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/url.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/url.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/url.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/url.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/url.lani#L10)
-- [ext::idna](idna.md) · [source](../../../extended/ext/url.lani#L11)
+- [core::io_state](../core/io_state.md) · [source](../../../extended/ext/url.lani#L6)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/url.lani#L7)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/url.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/url.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/url.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/url.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/url.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/url.lani#L13)
+- [ext::idna](idna.md) · [source](../../../extended/ext/url.lani#L14)
 
 ## Types, fields and variants
 
@@ -33,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: HostKind
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 pub enum HostKind
@@ -41,7 +44,7 @@ pub enum HostKind
 
 #### variant: None
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 None
@@ -49,7 +52,7 @@ None
 
 #### variant: Empty
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 Empty
@@ -57,7 +60,7 @@ Empty
 
 #### variant: Domain
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 Domain
@@ -65,7 +68,7 @@ Domain
 
 #### variant: Ipv4
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 Ipv4
@@ -73,7 +76,7 @@ Ipv4
 
 #### variant: Ipv6
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 Ipv6
@@ -81,7 +84,7 @@ Ipv6
 
 #### variant: Opaque
 
-[Source line 13](../../../extended/ext/url.lani#L13)
+[Source line 16](../../../extended/ext/url.lani#L16)
 
 ```lanius
 Opaque
@@ -89,7 +92,7 @@ Opaque
 
 ### enum: Error
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 pub enum Error
@@ -97,7 +100,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 Bounds
@@ -105,7 +108,7 @@ Bounds
 
 #### variant: TooLong
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 TooLong
@@ -113,7 +116,7 @@ TooLong
 
 #### variant: InvalidUtf8
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidUtf8
@@ -121,7 +124,7 @@ InvalidUtf8
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 AllocationFailed
@@ -129,7 +132,7 @@ AllocationFailed
 
 #### variant: MissingScheme
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 MissingScheme
@@ -137,7 +140,7 @@ MissingScheme
 
 #### variant: MissingHost
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 MissingHost
@@ -145,7 +148,7 @@ MissingHost
 
 #### variant: InvalidHost
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidHost
@@ -153,7 +156,7 @@ InvalidHost
 
 #### variant: InvalidPort
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidPort
@@ -161,7 +164,7 @@ InvalidPort
 
 #### variant: InvalidIpv4
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidIpv4
@@ -169,7 +172,7 @@ InvalidIpv4
 
 #### variant: InvalidIpv6
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidIpv6
@@ -177,7 +180,7 @@ InvalidIpv6
 
 #### variant: UnsupportedIdna
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 UnsupportedIdna
@@ -185,7 +188,7 @@ UnsupportedIdna
 
 #### variant: InvalidIdna
 
-[Source line 18](../../../extended/ext/url.lani#L18)
+[Source line 21](../../../extended/ext/url.lani#L21)
 
 ```lanius
 InvalidIdna
@@ -193,7 +196,7 @@ InvalidIdna
 
 ### struct: Url
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 pub struct Url
@@ -201,7 +204,7 @@ pub struct Url
 
 #### field: text
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 text: alloc::vec::Vec<u8>
@@ -209,7 +212,7 @@ text: alloc::vec::Vec<u8>
 
 #### field: scheme_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 scheme_end: i32
@@ -217,7 +220,7 @@ scheme_end: i32
 
 #### field: username_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 username_start: i32
@@ -225,7 +228,7 @@ username_start: i32
 
 #### field: username_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 username_end: i32
@@ -233,7 +236,7 @@ username_end: i32
 
 #### field: password_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 password_start: i32
@@ -241,7 +244,7 @@ password_start: i32
 
 #### field: password_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 password_end: i32
@@ -249,7 +252,7 @@ password_end: i32
 
 #### field: host_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 host_start: i32
@@ -257,7 +260,7 @@ host_start: i32
 
 #### field: host_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 host_end: i32
@@ -265,7 +268,7 @@ host_end: i32
 
 #### field: kind
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 kind: i32
@@ -273,7 +276,7 @@ kind: i32
 
 #### field: port_value
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 port_value: i32
@@ -281,7 +284,7 @@ port_value: i32
 
 #### field: port_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 port_start: i32
@@ -289,7 +292,7 @@ port_start: i32
 
 #### field: port_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 port_end: i32
@@ -297,7 +300,7 @@ port_end: i32
 
 #### field: path_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 path_start: i32
@@ -305,7 +308,7 @@ path_start: i32
 
 #### field: path_end
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 path_end: i32
@@ -313,7 +316,7 @@ path_end: i32
 
 #### field: opaque
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 opaque: bool
@@ -321,7 +324,7 @@ opaque: bool
 
 #### field: query_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 query_start: i32
@@ -329,17 +332,185 @@ query_start: i32
 
 #### field: fragment_start
 
-[Source line 23](../../../extended/ext/url.lani#L23)
+[Source line 26](../../../extended/ext/url.lani#L26)
 
 ```lanius
 fragment_start: i32
+```
+
+### enum: ParseEvent
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+pub enum ParseEvent
+```
+
+#### variant: SchemeLetter
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+SchemeLetter
+```
+
+#### variant: SchemeMissing
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+SchemeMissing
+```
+
+#### variant: SpecialRelativeOrAuthorityStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+SpecialRelativeOrAuthorityStarted
+```
+
+#### variant: PathOrAuthorityStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+PathOrAuthorityStarted
+```
+
+#### variant: RelativeStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+RelativeStarted
+```
+
+#### variant: RelativeSlashStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+RelativeSlashStarted
+```
+
+#### variant: SpecialAuthoritySlashesStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+SpecialAuthoritySlashesStarted
+```
+
+#### variant: SpecialAuthorityIgnoreSlashesStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+SpecialAuthorityIgnoreSlashesStarted
+```
+
+#### variant: AuthorityStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+AuthorityStarted
+```
+
+#### variant: AuthorityRead
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+AuthorityRead
+```
+
+#### variant: PortDelimiter
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+PortDelimiter
+```
+
+#### variant: FileStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+FileStarted
+```
+
+#### variant: FileSlashStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+FileSlashStarted
+```
+
+#### variant: FileHostStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+FileHostStarted
+```
+
+#### variant: HostRead
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+HostRead
+```
+
+#### variant: PathStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+PathStarted
+```
+
+#### variant: OpaquePathStarted
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+OpaquePathStarted
+```
+
+#### variant: QueryDelimiter
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+QueryDelimiter
+```
+
+#### variant: FragmentDelimiter
+
+[Source line 33](../../../extended/ext/url.lani#L33)
+
+```lanius
+FragmentDelimiter
+```
+
+### machine: Parsing
+
+[Source line 35](../../../extended/ext/url.lani#L35)
+
+```lanius
+pub machine Parsing on ParseEvent
 ```
 
 ## Constants
 
 ### constant: MAX_INPUT_BYTES
 
-[Source line 19](../../../extended/ext/url.lani#L19)
+[Source line 22](../../../extended/ext/url.lani#L22)
 
 ```lanius
 pub const MAX_INPUT_BYTES: i32 = 16777216;
@@ -349,7 +520,7 @@ pub const MAX_INPUT_BYTES: i32 = 16777216;
 
 ### function: default_port
 
-[Source line 69](../../../extended/ext/url.lani#L69)
+[Source line 513](../../../extended/ext/url.lani#L513)
 
 ```lanius
 pub fn default_port(scheme: core::slice::View<u8>) -> i32
@@ -357,7 +528,7 @@ pub fn default_port(scheme: core::slice::View<u8>) -> i32
 
 ### function: parse
 
-[Source line 616](../../../extended/ext/url.lani#L616)
+[Source line 1060](../../../extended/ext/url.lani#L1060)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>) -> core::result::Result<Url, Error>
@@ -365,7 +536,7 @@ pub fn parse(input: core::slice::View<u8>) -> core::result::Result<Url, Error>
 
 ### function: parse_with_base
 
-[Source line 620](../../../extended/ext/url.lani#L620)
+[Source line 1064](../../../extended/ext/url.lani#L1064)
 
 ```lanius
 pub fn parse_with_base(input: core::slice::View<u8>, base: &Url) -> core::result::Result<Url, Error>
@@ -373,7 +544,7 @@ pub fn parse_with_base(input: core::slice::View<u8>, base: &Url) -> core::result
 
 ### function: can_parse
 
-[Source line 622](../../../extended/ext/url.lani#L622)
+[Source line 1066](../../../extended/ext/url.lani#L1066)
 
 ```lanius
 pub fn can_parse(input: core::slice::View<u8>) -> bool
@@ -381,9 +552,9 @@ pub fn can_parse(input: core::slice::View<u8>) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 627
+### impl at line 1071
 
-[Source line 627](../../../extended/ext/url.lani#L627)
+[Source line 1071](../../../extended/ext/url.lani#L1071)
 
 ```lanius
 impl Url
@@ -391,7 +562,7 @@ impl Url
 
 #### method: borrow
 
-[Source line 628](../../../extended/ext/url.lani#L628)
+[Source line 1072](../../../extended/ext/url.lani#L1072)
 
 ```lanius
 pub fn borrow(&self) -> &Url
@@ -399,7 +570,7 @@ pub fn borrow(&self) -> &Url
 
 #### method: href
 
-[Source line 632](../../../extended/ext/url.lani#L632)
+[Source line 1076](../../../extended/ext/url.lani#L1076)
 
 ```lanius
 pub fn href(&self) -> core::slice::View<u8>
@@ -407,7 +578,7 @@ pub fn href(&self) -> core::slice::View<u8>
 
 #### method: href_without_fragment
 
-[Source line 634](../../../extended/ext/url.lani#L634)
+[Source line 1078](../../../extended/ext/url.lani#L1078)
 
 ```lanius
 pub fn href_without_fragment(&self) -> core::slice::View<u8>
@@ -415,7 +586,7 @@ pub fn href_without_fragment(&self) -> core::slice::View<u8>
 
 #### method: scheme
 
-[Source line 635](../../../extended/ext/url.lani#L635)
+[Source line 1079](../../../extended/ext/url.lani#L1079)
 
 ```lanius
 pub fn scheme(&self) -> core::slice::View<u8>
@@ -423,7 +594,7 @@ pub fn scheme(&self) -> core::slice::View<u8>
 
 #### method: protocol
 
-[Source line 637](../../../extended/ext/url.lani#L637)
+[Source line 1081](../../../extended/ext/url.lani#L1081)
 
 ```lanius
 pub fn protocol(&self) -> core::slice::View<u8>
@@ -431,7 +602,7 @@ pub fn protocol(&self) -> core::slice::View<u8>
 
 #### method: username
 
-[Source line 638](../../../extended/ext/url.lani#L638)
+[Source line 1082](../../../extended/ext/url.lani#L1082)
 
 ```lanius
 pub fn username(&self) -> core::slice::View<u8>
@@ -439,7 +610,7 @@ pub fn username(&self) -> core::slice::View<u8>
 
 #### method: password
 
-[Source line 639](../../../extended/ext/url.lani#L639)
+[Source line 1083](../../../extended/ext/url.lani#L1083)
 
 ```lanius
 pub fn password(&self) -> core::slice::View<u8>
@@ -447,7 +618,7 @@ pub fn password(&self) -> core::slice::View<u8>
 
 #### method: hostname
 
-[Source line 641](../../../extended/ext/url.lani#L641)
+[Source line 1085](../../../extended/ext/url.lani#L1085)
 
 ```lanius
 pub fn hostname(&self) -> core::slice::View<u8>
@@ -455,7 +626,7 @@ pub fn hostname(&self) -> core::slice::View<u8>
 
 #### method: host
 
-[Source line 643](../../../extended/ext/url.lani#L643)
+[Source line 1087](../../../extended/ext/url.lani#L1087)
 
 ```lanius
 pub fn host(&self) -> core::slice::View<u8>
@@ -463,7 +634,7 @@ pub fn host(&self) -> core::slice::View<u8>
 
 #### method: port
 
-[Source line 644](../../../extended/ext/url.lani#L644)
+[Source line 1088](../../../extended/ext/url.lani#L1088)
 
 ```lanius
 pub fn port(&self) -> core::slice::View<u8>
@@ -471,7 +642,7 @@ pub fn port(&self) -> core::slice::View<u8>
 
 #### method: port_number
 
-[Source line 646](../../../extended/ext/url.lani#L646)
+[Source line 1090](../../../extended/ext/url.lani#L1090)
 
 ```lanius
 pub fn port_number(&self) -> i32
@@ -479,7 +650,7 @@ pub fn port_number(&self) -> i32
 
 #### method: port_or_default
 
-[Source line 647](../../../extended/ext/url.lani#L647)
+[Source line 1091](../../../extended/ext/url.lani#L1091)
 
 ```lanius
 pub fn port_or_default(&self) -> i32
@@ -487,7 +658,7 @@ pub fn port_or_default(&self) -> i32
 
 #### method: pathname
 
-[Source line 648](../../../extended/ext/url.lani#L648)
+[Source line 1092](../../../extended/ext/url.lani#L1092)
 
 ```lanius
 pub fn pathname(&self) -> core::slice::View<u8>
@@ -495,7 +666,7 @@ pub fn pathname(&self) -> core::slice::View<u8>
 
 #### method: has_opaque_path
 
-[Source line 649](../../../extended/ext/url.lani#L649)
+[Source line 1093](../../../extended/ext/url.lani#L1093)
 
 ```lanius
 pub fn has_opaque_path(&self) -> bool
@@ -503,7 +674,7 @@ pub fn has_opaque_path(&self) -> bool
 
 #### method: is_special
 
-[Source line 650](../../../extended/ext/url.lani#L650)
+[Source line 1094](../../../extended/ext/url.lani#L1094)
 
 ```lanius
 pub fn is_special(&self) -> bool
@@ -511,7 +682,7 @@ pub fn is_special(&self) -> bool
 
 #### method: host_kind
 
-[Source line 651](../../../extended/ext/url.lani#L651)
+[Source line 1095](../../../extended/ext/url.lani#L1095)
 
 ```lanius
 pub fn host_kind(&self) -> HostKind
@@ -519,7 +690,7 @@ pub fn host_kind(&self) -> HostKind
 
 #### method: query
 
-[Source line 657](../../../extended/ext/url.lani#L657)
+[Source line 1101](../../../extended/ext/url.lani#L1101)
 
 ```lanius
 pub fn query(&self) -> core::option::Option<core::slice::View<u8>>
@@ -527,7 +698,7 @@ pub fn query(&self) -> core::option::Option<core::slice::View<u8>>
 
 #### method: fragment
 
-[Source line 658](../../../extended/ext/url.lani#L658)
+[Source line 1102](../../../extended/ext/url.lani#L1102)
 
 ```lanius
 pub fn fragment(&self) -> core::option::Option<core::slice::View<u8>>
@@ -535,7 +706,7 @@ pub fn fragment(&self) -> core::option::Option<core::slice::View<u8>>
 
 #### method: search
 
-[Source line 660](../../../extended/ext/url.lani#L660)
+[Source line 1104](../../../extended/ext/url.lani#L1104)
 
 ```lanius
 pub fn search(&self) -> core::slice::View<u8>
@@ -543,7 +714,7 @@ pub fn search(&self) -> core::slice::View<u8>
 
 #### method: hash
 
-[Source line 661](../../../extended/ext/url.lani#L661)
+[Source line 1105](../../../extended/ext/url.lani#L1105)
 
 ```lanius
 pub fn hash(&self) -> core::slice::View<u8>
@@ -551,7 +722,7 @@ pub fn hash(&self) -> core::slice::View<u8>
 
 #### method: origin
 
-[Source line 669](../../../extended/ext/url.lani#L669)
+[Source line 1113](../../../extended/ext/url.lani#L1113)
 
 ```lanius
 pub fn origin(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -559,7 +730,7 @@ pub fn origin(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error>
 
 #### method: try_clone
 
-[Source line 686](../../../extended/ext/url.lani#L686)
+[Source line 1130](../../../extended/ext/url.lani#L1130)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Url, Error>
@@ -567,7 +738,7 @@ pub fn try_clone(&self) -> core::result::Result<Url, Error>
 
 #### method: destroy
 
-[Source line 691](../../../extended/ext/url.lani#L691)
+[Source line 1135](../../../extended/ext/url.lani#L1135)
 
 ```lanius
 pub fn destroy(&self)

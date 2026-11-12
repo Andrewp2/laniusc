@@ -1,6 +1,7 @@
 // Bounded LF lines using caller-owned [i32] views of byte values. This is an
 // x86_64 Linux host module; no allocation or implicit buffering occurs.
 module std::io_line;
+import core::iter_state;
 import std::io_byte;
 
 pub const LINE_EOF: i32 = -1;
@@ -21,14 +22,14 @@ pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32 {
         return LINE_INVALID_CAPACITY;
     }
     let count: i32 = 0;
-    let too_long: bool = false;
+    let too_long_phase = core::iter_state::completion_start();
     while (true) {
         let code: i32 = std::io_byte::read_stdin_byte_or(LINE_EOF, LINE_HOST_ERROR);
         if (code == LINE_HOST_ERROR) {
             return LINE_HOST_ERROR;
         }
         if (code == LINE_EOF) {
-            if (too_long) {
+            if (too_long_phase.is_done()) {
                 return LINE_TOO_LONG;
             }
             if (count == 0) {
@@ -37,7 +38,7 @@ pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32 {
             return count;
         }
         if (code == 10) {
-            if (too_long) {
+            if (too_long_phase.is_done()) {
                 return LINE_TOO_LONG;
             }
             return count;
@@ -46,7 +47,7 @@ pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32 {
             values[count] = code;
             count += 1;
         } else {
-            too_long = true;
+            too_long_phase.finish();
         }
     }
     return LINE_HOST_ERROR;

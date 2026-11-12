@@ -9,6 +9,7 @@
 // total order. Native float membership follows IEEE equality; sorting float
 // encodings needs core::float_order wrappers or an explicit total comparator.
 module core::slice;
+import core::iter_state;
 
 import core::cmp;
 import core::mem;
@@ -31,7 +32,7 @@ pub struct Windows<T> { values: [T], position: i32, end: i32, width: i32 }
 // Copies fork their positions but share backing and predicate context. Keep
 // both alive and stable; no clone, allocation or cleanup authority is implied.
 // Iterator impls and their Mapper bounds live in core::iter to avoid a cycle.
-pub struct Split<T,P> { values: [T], predicate: &P, position: i32, end: i32, done: bool }
+pub struct Split<T,P> { values: [T], predicate: &P, position: i32, end: i32, completion: core::iter_state::Completion }
 pub struct SplitInclusive<T,P> { values: [T], predicate: &P, position: i32, end: i32 }
 pub struct ChunkBy<T,P> { values: [T], predicate: &P, position: i32, end: i32 }
 
@@ -66,7 +67,7 @@ pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Resul
 // iteration requires P:core::function::Mapper<T,bool> through core::iter.
 pub fn split<T,P>(values: View<T>, predicate: &P) -> core::result::Result<Split<T,P>,ViewError> {
     if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
-    let cursor: Split<T,P> = Split { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length, done: false };
+    let cursor: Split<T,P> = Split { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length, completion: core::iter_state::completion_start() };
     return core::result::Ok(cursor);
 }
 

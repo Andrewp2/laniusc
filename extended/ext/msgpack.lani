@@ -5,6 +5,8 @@
 // unknown until it ends, and flushes its stable prefix to core::io::Write.
 // Errors carry u64 byte offsets. See docs/extended-msgpack.md.
 module ext::msgpack;
+import core::stream_state;
+import core::iter_state;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -109,14 +111,14 @@ fn extra_bytes(first: i32) -> i32 {
 pub struct Decoder {
     options: Options, buf: alloc::vec::Vec<u8>, begin: i32, base: u64,
     remaining: alloc::vec::Vec<u64>,
-    items: u64, roots: u64, root_done: bool, finished: bool, failure: core::option::Option<Error>,
-    current: Event, current_at: u64, ready: bool,
+    items: u64, roots: u64, root: core::iter_state::Completion,  failure: core::option::Option<Error>,
+    current: Event, current_at: u64, delivery: core::stream_state::Delivery,
 }
 pub fn decoder(options: Options) -> core::result::Result<Decoder, Error> {
     if (options.max_depth < 0 || options.max_string_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
     return core::result::Ok(Decoder { options: options, buf: alloc::vec::new(), begin: 0, base: 0, remaining: alloc::vec::new(),
-        items: 0, roots: 0, root_done: false, finished: false, failure: core::option::None(),
-        current: Event::End, current_at: 0, ready: false });
+        items: 0, roots: 0, root: core::iter_state::completion_start(),  failure: core::option::None(),
+        current: Event::End, current_at: 0, delivery: core::stream_state::delivery_start() });
 }
 
 pub impl Decoder {
@@ -126,21 +128,21 @@ pub impl Decoder {
     pub fn bytes_received(&self) -> u64 { return self.base + (self.buf.len() as u64); }
     pub fn items_read(&self) -> u64 { return self.items; }
     pub fn roots_read(&self) -> u64 { return self.roots; }
-    pub fn has_event(&self) -> bool { return self.ready; }
+    pub fn has_event(&self) -> bool { return self.delivery.ready(); }
     // Str, Bin and Ext payloads borrow the decoder buffer until the next feed.
     pub fn event(&self) -> Event { return self.current; }
     pub fn event_offset(&self) -> u64 { return self.current_at; }
     pub fn is_complete(&self) -> bool {
-        return self.finished && core::option::is_none(self.failure) && self.begin == self.buf.len() && self.remaining.len() == 0 && (self.root_done || self.options.sequence);
+        return self.delivery.finished() && core::option::is_none(self.failure) && self.begin == self.buf.len() && self.remaining.len() == 0 && (self.root.is_done() || self.options.sequence);
     }
     fn fail(&self, kind: ErrorKind, at: u64) -> core::result::Result<bool, Error> {
         let failure: Error = error(kind, at);
-        self.failure = core::option::Some(failure); self.ready = false;
+        self.failure = core::option::Some(failure); self.delivery.fail();
         return core::result::Err(failure);
     }
     pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error> {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
-        if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.bytes_received())); }
+        if (self.delivery.finished()) { return core::result::Err(error(ErrorKind::Finished, self.bytes_received())); }
         if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.bytes_received())); }
         if (count == 0) { return core::result::Ok(0); }
         if (self.bytes_received() > self.options.max_input || (count as u64) > self.options.max_input - self.bytes_received()) {
@@ -158,11 +160,11 @@ pub impl Decoder {
         if (self.buf.try_extend(view).is_err()) { return core::result::Err(error(ErrorKind::AllocationFailed, self.bytes_received())); }
         return core::result::Ok(count);
     }
-    pub fn finish(&self) { self.finished = true; }
+    pub fn finish(&self) { self.delivery.finish(); }
     pub fn reset(&self) {
         self.buf.clear(); self.begin = 0; self.base = 0; self.remaining.clear();
-        self.items = 0; self.roots = 0; self.root_done = false; self.finished = false; self.failure = core::option::None();
-        self.current = Event::End; self.current_at = 0; self.ready = false;
+        self.items = 0; self.roots = 0; self.root = core::iter_state::completion_start(); self.delivery.reset(); self.failure = core::option::None();
+        self.current = Event::End; self.current_at = 0; self.delivery.taken();
     }
     pub fn destroy(&self) {
         self.buf.destroy(); self.remaining.destroy();
@@ -170,18 +172,18 @@ pub impl Decoder {
     }
     fn complete(&self) {
         let depth: i32 = self.remaining.len();
-        if (depth == 0) { self.root_done = true; self.roots += 1; return; }
+        if (depth == 0) { self.root.finish(); self.roots += 1; return; }
         core::result::unwrap(self.remaining.set(depth - 1, self.remaining.at(depth - 1) - 1));
     }
     fn emit(&self, event: Event, at: u64) -> core::result::Result<bool, Error> {
-        self.current = event; self.current_at = at; self.ready = true;
+        self.current = event; self.current_at = at; self.delivery.produced();
         return core::result::Ok(true);
     }
     // Ok(true): event() holds the next event. Ok(false): more input is needed,
     // or after finish() the input is complete. Errors are sticky.
     pub fn next(&self) -> core::result::Result<bool, Error> {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
-        self.ready = false;
+        self.delivery.taken();
         let at: u64 = self.byte_offset();
         let depth: i32 = self.remaining.len();
         if (depth > 0 && self.remaining.at(depth - 1) == 0) {
@@ -189,20 +191,20 @@ pub impl Decoder {
             return self.emit(Event::End, at);
         }
         let available: i32 = self.buf.len() - self.begin;
-        if (self.root_done) {
+        if (self.root.is_done()) {
             if (available == 0) { return core::result::Ok(false); }
             if (!self.options.sequence) { return self.fail(ErrorKind::TrailingData, at); }
-            self.root_done = false;
+            self.root = core::iter_state::completion_start();
         }
         if (available == 0) {
-            if (self.finished && !(self.options.sequence && depth == 0)) { return self.fail(ErrorKind::UnexpectedEnd, at); }
+            if (self.delivery.finished() && !(self.options.sequence && depth == 0)) { return self.fail(ErrorKind::UnexpectedEnd, at); }
             return core::result::Ok(false);
         }
         let data: [u8] = self.buf.as_slice();
         let first: i32 = data[self.begin] as i32;
         if (first == 193) { return self.fail(ErrorKind::InvalidByte, at); }
         let extra: i32 = extra_bytes(first);
-        if (available < 1 + extra) { if (self.finished) { return self.fail(ErrorKind::UnexpectedEnd, at); } return core::result::Ok(false); }
+        if (available < 1 + extra) { if (self.delivery.finished()) { return self.fail(ErrorKind::UnexpectedEnd, at); } return core::result::Ok(false); }
         let head: i32 = self.begin + 1;
         // Class 0 scalar, 1 str, 2 bin, 3 ext, 4 array, 5 map.
         let class: i32 = 0; let length: u64 = 0; let ext_type: i8 = 0; let canonical: bool = true;
@@ -254,7 +256,7 @@ pub impl Decoder {
         if (class >= 1 && class <= 3) {
             if (length > self.options.max_string_bytes as u64) { return self.fail(ErrorKind::StringLimit, at); }
             if (((available - 1 - extra) as u64) < length) {
-                if (self.finished) { return self.fail(ErrorKind::UnexpectedEnd, at); }
+                if (self.delivery.finished()) { return self.fail(ErrorKind::UnexpectedEnd, at); }
                 return core::result::Ok(false);
             }
             payload = length as i32;
@@ -283,11 +285,11 @@ pub impl Decoder {
 }
 
 pub enum StreamError { Pack(Error), Io(core::io::Error) }
-pub struct EventReader<R> { reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>, eof: bool, reads: u64 }
+pub struct EventReader<R> { reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>, eof_completion: core::iter_state::Completion, reads: u64 }
 pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>)
     -> core::result::Result<EventReader<R>, Error> where R: core::io::Read {
     if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
-    let value: EventReader<R> = EventReader { reader: reader, decoder: decoder, scratch: scratch, eof: false, reads: 0 };
+    let value: EventReader<R> = EventReader { reader: reader, decoder: decoder, scratch: scratch, eof_completion: core::iter_state::completion_start(), reads: 0 };
     return core::result::Ok(value);
 }
 pub impl<R> EventReader<R> {
@@ -298,7 +300,7 @@ pub impl<R> EventReader<R> {
             let step: core::result::Result<bool, Error> = self.decoder.next();
             if (step.is_err()) { return core::result::Err(StreamError::Pack(step.unwrap_err())); }
             if (step.unwrap()) { return core::result::Ok(true); }
-            if (self.eof) { return core::result::Ok(false); }
+            if (self.eof_completion.is_done()) { return core::result::Ok(false); }
             let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
             if (received.is_err()) {
                 let cause: core::io::Error = received.unwrap_err();
@@ -308,7 +310,7 @@ pub impl<R> EventReader<R> {
             let count: i32 = received.unwrap();
             if (count < 0 || count > self.scratch.length) { return core::result::Err(StreamError::Io(core::io::Error::InvalidCount)); }
             self.reads += 1;
-            if (count == 0) { self.eof = true; self.decoder.finish(); continue; }
+            if (count == 0) { self.eof_completion.finish(); self.decoder.finish(); continue; }
             let fed: core::result::Result<i32, Error> = self.decoder.feed(self.scratch.values, self.scratch.start, count);
             if (fed.is_err()) { return core::result::Err(StreamError::Pack(fed.unwrap_err())); }
         }

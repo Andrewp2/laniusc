@@ -3,6 +3,7 @@
 // reversal, reversed-patch detection, git-apply hunk placement and the
 // `git apply --3way` merge fallback. See docs/extended-patchset.md.
 module ext::patchset;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -122,14 +123,14 @@ fn ps_header_name(out: &alloc::vec::Vec<u8>, line: core::slice::View<u8>, second
 }
 
 // ---------------------------------------------------------------- parsing
-struct Section { open: bool, git: bool, offset: i32, header: i32, header_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, copy: bool, is_new: bool, is_delete: bool, old_mode: i32, new_mode: i32, binary: i32, has_patch: bool, patch: ext::unidiff::Patch }
+struct Section { lifetime: core::lifecycle::Lifetime, git: bool, offset: i32, header: i32, header_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, copy: bool, is_new: bool, is_delete: bool, old_mode: i32, new_mode: i32, binary: i32, has_patch: bool, patch: ext::unidiff::Patch }
 impl Section { fn borrow(&self) -> &Section { return self; } }
 fn ps_empty_patch(text: core::slice::View<u8>) -> ext::unidiff::Patch {
     let none: core::slice::View<u8> = core::slice::View { values: text.values, start: text.start, length: 0 };
     return ext::unidiff::Patch { old_name: none, new_name: none, hunks: alloc::vec::new(), lines: alloc::vec::new(), end: 0 };
 }
 fn ps_open(s: &Section, text: core::slice::View<u8>, git: bool, offset: i32) {
-    s.open = true; s.git = git; s.offset = offset; s.header = -1; s.header_end = -1; s.old_from = -1; s.old_end = -1; s.new_from = -1; s.new_end = -1;
+    s.lifetime = core::lifecycle::lifetime_start(); s.git = git; s.offset = offset; s.header = -1; s.header_end = -1; s.old_from = -1; s.old_end = -1; s.new_from = -1; s.new_end = -1;
     s.ren_from = -1; s.ren_from_end = -1; s.ren_to = -1; s.ren_to_end = -1; s.copy = false; s.is_new = false; s.is_delete = false;
     s.old_mode = 0; s.new_mode = 0; s.binary = 0; s.has_patch = false; s.patch = ps_empty_patch(text);
 }
@@ -139,7 +140,7 @@ fn ps_octal(text: core::slice::View<u8>, from: i32, end: i32) -> i32 {
     return v;
 }
 fn ps_close(ps: &PatchSet, text: core::slice::View<u8>, s: &Section, strip: i32, max_files: i32) -> core::result::Result<i32, Error> {
-    s.open = false;
+    s.lifetime.release();
     if (ps.files.len() >= max_files) { s.patch.destroy(); return core::result::Err(Error::FileLimit); }
     let old_dash: core::slice::View<u8> = ps_literal("", 0); let new_dash: core::slice::View<u8> = ps_literal("", 0);
     if (s.old_from >= 0) { old_dash = ps_dash_name(text, s.old_from, s.old_end); if (ps_is_null(old_dash)) { s.is_new = true; } }
@@ -170,7 +171,7 @@ fn ps_close(ps: &PatchSet, text: core::slice::View<u8>, s: &Section, strip: i32,
     return core::result::Ok(0);
 }
 fn ps_parse_fail(ps: PatchSet, s: &Section, error: Error) -> core::result::Result<PatchSet, Error> {
-    if (s.open) { s.patch.destroy(); }
+    if (s.lifetime.is_active()) { s.patch.destroy(); }
     ps.destroy(); return core::result::Err(error);
 }
 
@@ -180,18 +181,18 @@ fn ps_parse_fail(ps: PatchSet, s: &Section, error: Error) -> core::result::Resul
 // strip drops leading path components as -p does; max_lines bounds each hunk.
 pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines: i32) -> core::result::Result<PatchSet, Error> {
     let ps: PatchSet = PatchSet { files: alloc::vec::new(), names: alloc::vec::new() };
-    let s: Section = Section { open: false, git: false, offset: 0, header: -1, header_end: -1, old_from: -1, old_end: -1, new_from: -1, new_end: -1, ren_from: -1, ren_from_end: -1, ren_to: -1, ren_to_end: -1, copy: false, is_new: false, is_delete: false, old_mode: 0, new_mode: 0, binary: 0, has_patch: false, patch: ps_empty_patch(text) };
+    let s: Section = Section { lifetime: core::lifecycle::released_lifetime(), git: false, offset: 0, header: -1, header_end: -1, old_from: -1, old_end: -1, new_from: -1, new_end: -1, ren_from: -1, ren_from_end: -1, ren_to: -1, ren_to_end: -1, copy: false, is_new: false, is_delete: false, old_mode: 0, new_mode: 0, binary: 0, has_patch: false, patch: ps_empty_patch(text) };
     if (text.start < 0 || text.length < 0 || strip < 0 || max_files < 0 || max_lines < 0) { return ps_parse_fail(ps, s.borrow(), Error::InvalidInput); }
     let pos: i32 = 0;
     while (pos < text.length) {
         let end: i32 = ps_line_end(text, pos); let next: i32 = end;
         if (ps_starts(text, pos, "diff --git ", 11)) {
-            if (s.open) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+            if (s.lifetime.is_active()) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
             ps_open(s.borrow(), text, true, pos); s.header = pos + 11; s.header_end = ps_text_end(text, pos, end);
         }
         else { if (ps_starts(text, pos, "--- ", 4) && ps_starts(text, end, "+++ ", 4)) {
-            if (s.open && (!s.git || s.has_patch)) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
-            if (!s.open) { ps_open(s.borrow(), text, false, pos); }
+            if (s.lifetime.is_active() && (!s.git || s.has_patch)) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+            if (!s.lifetime.is_active()) { ps_open(s.borrow(), text, false, pos); }
             s.old_from = pos + 4; s.old_end = end; s.new_from = end + 4; s.new_end = ps_line_end(text, end);
             let parsed: core::result::Result<ext::unidiff::Patch, ext::unidiff::ParseError> = ext::unidiff::parse(ps_sub(text, pos, text.length), max_lines);
             if (core::result::is_err(parsed)) {
@@ -201,7 +202,7 @@ pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines:
             s.patch = core::result::unwrap(parsed); s.has_patch = true; next = pos + s.patch.end;
             if (!s.git) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
         }
-        else { if (s.open && s.git && !s.has_patch) {
+        else { if (s.lifetime.is_active() && s.git && !s.has_patch) {
             let e: i32 = ps_text_end(text, pos, end);
             if (ps_starts(text, pos, "old mode ", 9)) { s.old_mode = ps_octal(text, pos + 9, e); }
             if (ps_starts(text, pos, "new mode ", 9)) { s.new_mode = ps_octal(text, pos + 9, e); }
@@ -216,7 +217,7 @@ pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines:
         } } }
         pos = next;
     }
-    if (s.open) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+    if (s.lifetime.is_active()) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
     return core::result::Ok(ps);
 }
 pub impl PatchSet {

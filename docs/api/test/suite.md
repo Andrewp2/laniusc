@@ -12,7 +12,7 @@ Layer: `test`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-development](../../stdlib-development.md)
 
-Declaration counts: field: 18; function: 7; impl: 1; method: 4; struct: 2; trait: 1; trait member: 3.
+Declaration counts: enum: 1; field: 17; function: 7; impl: 2; machine: 1; method: 8; struct: 2; trait: 1; trait member: 3; variant: 4.
 
 ## Declared imports
 
@@ -32,9 +32,57 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: RunLifecycleEvent
+
+[Source line 14](../../../stdlib/test/suite.lani#L14)
+
+```lanius
+pub enum RunLifecycleEvent
+```
+
+#### variant: Selected
+
+[Source line 14](../../../stdlib/test/suite.lani#L14)
+
+```lanius
+Selected
+```
+
+#### variant: Recorded
+
+[Source line 14](../../../stdlib/test/suite.lani#L14)
+
+```lanius
+Recorded
+```
+
+#### variant: Finished
+
+[Source line 14](../../../stdlib/test/suite.lani#L14)
+
+```lanius
+Finished
+```
+
+#### variant: Failed
+
+[Source line 14](../../../stdlib/test/suite.lani#L14)
+
+```lanius
+Failed
+```
+
+### machine: RunLifecycle
+
+[Source line 15](../../../stdlib/test/suite.lani#L15)
+
+```lanius
+pub machine RunLifecycle on RunLifecycleEvent
+```
+
 ### struct: Options
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 pub struct Options
@@ -42,7 +90,7 @@ pub struct Options
 
 #### field: seed
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 seed: u32
@@ -50,7 +98,7 @@ seed: u32
 
 #### field: cases
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 cases: u32
@@ -58,7 +106,7 @@ cases: u32
 
 #### field: filter_arg
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 filter_arg: i32
@@ -66,7 +114,7 @@ filter_arg: i32
 
 #### field: list
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 list: bool
@@ -74,7 +122,7 @@ list: bool
 
 #### field: error
 
-[Source line 19](../../../stdlib/test/suite.lani#L19)
+[Source line 59](../../../stdlib/test/suite.lani#L59)
 
 ```lanius
 error: bool
@@ -82,7 +130,7 @@ error: bool
 
 ### struct: Runner
 
-[Source line 101](../../../stdlib/test/suite.lani#L101)
+[Source line 141](../../../stdlib/test/suite.lani#L141)
 
 ```lanius
 pub struct Runner
@@ -90,7 +138,7 @@ pub struct Runner
 
 #### field: seed
 
-[Source line 102](../../../stdlib/test/suite.lani#L102)
+[Source line 142](../../../stdlib/test/suite.lani#L142)
 
 ```lanius
 seed: u32
@@ -98,7 +146,7 @@ seed: u32
 
 #### field: cases
 
-[Source line 102](../../../stdlib/test/suite.lani#L102)
+[Source line 142](../../../stdlib/test/suite.lani#L142)
 
 ```lanius
 cases: u32
@@ -106,7 +154,7 @@ cases: u32
 
 #### field: list
 
-[Source line 102](../../../stdlib/test/suite.lani#L102)
+[Source line 142](../../../stdlib/test/suite.lani#L142)
 
 ```lanius
 list: bool
@@ -114,7 +162,7 @@ list: bool
 
 #### field: filter_arg
 
-[Source line 102](../../../stdlib/test/suite.lani#L102)
+[Source line 142](../../../stdlib/test/suite.lani#L142)
 
 ```lanius
 filter_arg: i32
@@ -122,7 +170,7 @@ filter_arg: i32
 
 #### field: filter
 
-[Source line 102](../../../stdlib/test/suite.lani#L102)
+[Source line 142](../../../stdlib/test/suite.lani#L142)
 
 ```lanius
 filter: test::check::Label
@@ -130,7 +178,7 @@ filter: test::check::Label
 
 #### field: selected
 
-[Source line 103](../../../stdlib/test/suite.lani#L103)
+[Source line 143](../../../stdlib/test/suite.lani#L143)
 
 ```lanius
 selected: u32
@@ -138,7 +186,7 @@ selected: u32
 
 #### field: passed
 
-[Source line 103](../../../stdlib/test/suite.lani#L103)
+[Source line 143](../../../stdlib/test/suite.lani#L143)
 
 ```lanius
 passed: u32
@@ -146,7 +194,7 @@ passed: u32
 
 #### field: failed
 
-[Source line 103](../../../stdlib/test/suite.lani#L103)
+[Source line 143](../../../stdlib/test/suite.lani#L143)
 
 ```lanius
 failed: u32
@@ -154,7 +202,7 @@ failed: u32
 
 #### field: skipped
 
-[Source line 103](../../../stdlib/test/suite.lani#L103)
+[Source line 143](../../../stdlib/test/suite.lani#L143)
 
 ```lanius
 skipped: u32
@@ -162,7 +210,7 @@ skipped: u32
 
 #### field: filtered
 
-[Source line 103](../../../stdlib/test/suite.lani#L103)
+[Source line 143](../../../stdlib/test/suite.lani#L143)
 
 ```lanius
 filtered: u32
@@ -170,33 +218,25 @@ filtered: u32
 
 #### field: pending
 
-[Source line 104](../../../stdlib/test/suite.lani#L104)
+[Source line 144](../../../stdlib/test/suite.lani#L144)
 
 ```lanius
 pending: test::check::Label
 ```
 
-#### field: active
+#### field: lifecycle
 
-[Source line 104](../../../stdlib/test/suite.lani#L104)
-
-```lanius
-active: bool
-```
-
-#### field: error
-
-[Source line 104](../../../stdlib/test/suite.lani#L104)
+[Source line 144](../../../stdlib/test/suite.lani#L144)
 
 ```lanius
-error: bool
+lifecycle: RunLifecycle
 ```
 
 ## Free functions and extern declarations
 
 ### function: defaults
 
-[Source line 20](../../../stdlib/test/suite.lani#L20)
+[Source line 60](../../../stdlib/test/suite.lani#L60)
 
 ```lanius
 pub fn defaults() -> Options
@@ -204,7 +244,7 @@ pub fn defaults() -> Options
 
 ### function: arguments
 
-[Source line 33](../../../stdlib/test/suite.lani#L33)
+[Source line 73](../../../stdlib/test/suite.lani#L73)
 
 ```lanius
 pub fn arguments() -> Options
@@ -212,7 +252,7 @@ pub fn arguments() -> Options
 
 ### function: contains
 
-[Source line 71](../../../stdlib/test/suite.lani#L71)
+[Source line 111](../../../stdlib/test/suite.lani#L111)
 
 ```lanius
 pub fn contains(name: test::check::Label, filter: test::check::Label) -> bool
@@ -220,7 +260,7 @@ pub fn contains(name: test::check::Label, filter: test::check::Label) -> bool
 
 ### function: begin
 
-[Source line 106](../../../stdlib/test/suite.lani#L106)
+[Source line 146](../../../stdlib/test/suite.lani#L146)
 
 ```lanius
 pub fn begin(filter: test::check::Label, seed: u32, cases: u32, list: bool) -> Runner
@@ -228,7 +268,7 @@ pub fn begin(filter: test::check::Label, seed: u32, cases: u32, list: bool) -> R
 
 ### function: begin_args
 
-[Source line 113](../../../stdlib/test/suite.lani#L113)
+[Source line 153](../../../stdlib/test/suite.lani#L153)
 
 ```lanius
 pub fn begin_args() -> Runner
@@ -236,7 +276,7 @@ pub fn begin_args() -> Runner
 
 ### function: run
 
-[Source line 179](../../../stdlib/test/suite.lani#L179)
+[Source line 219](../../../stdlib/test/suite.lani#L219)
 
 ```lanius
 pub fn run<T>(tests: &T, filter: test::check::Label, seed: u32, cases: u32, list: bool) -> i32 where T: Cases
@@ -244,7 +284,7 @@ pub fn run<T>(tests: &T, filter: test::check::Label, seed: u32, cases: u32, list
 
 ### function: run_args
 
-[Source line 182](../../../stdlib/test/suite.lani#L182)
+[Source line 222](../../../stdlib/test/suite.lani#L222)
 
 ```lanius
 pub fn run_args<T>(tests: &T) -> i32 where T: Cases
@@ -254,7 +294,7 @@ pub fn run_args<T>(tests: &T) -> i32 where T: Cases
 
 ### trait: Cases
 
-[Source line 14](../../../stdlib/test/suite.lani#L14)
+[Source line 54](../../../stdlib/test/suite.lani#L54)
 
 ```lanius
 pub trait Cases
@@ -262,7 +302,7 @@ pub trait Cases
 
 #### trait member: count
 
-[Source line 15](../../../stdlib/test/suite.lani#L15)
+[Source line 55](../../../stdlib/test/suite.lani#L55)
 
 ```lanius
 pub fn count(&self) -> i32;
@@ -270,7 +310,7 @@ pub fn count(&self) -> i32;
 
 #### trait member: name
 
-[Source line 16](../../../stdlib/test/suite.lani#L16)
+[Source line 56](../../../stdlib/test/suite.lani#L56)
 
 ```lanius
 pub fn name(&self, index: i32) -> test::check::Label;
@@ -278,7 +318,7 @@ pub fn name(&self, index: i32) -> test::check::Label;
 
 #### trait member: run
 
-[Source line 17](../../../stdlib/test/suite.lani#L17)
+[Source line 57](../../../stdlib/test/suite.lani#L57)
 
 ```lanius
 pub fn run(&self, index: i32, seed: u32, cases: u32) -> test::check::Outcome;
@@ -286,9 +326,49 @@ pub fn run(&self, index: i32, seed: u32, cases: u32) -> test::check::Outcome;
 
 ## Implementation blocks and public methods
 
-### impl at line 123
+### impl at line 46
 
-[Source line 123](../../../stdlib/test/suite.lani#L123)
+[Source line 46](../../../stdlib/test/suite.lani#L46)
+
+```lanius
+pub impl RunLifecycle
+```
+
+#### method: is_idle
+
+[Source line 47](../../../stdlib/test/suite.lani#L47)
+
+```lanius
+pub fn is_idle(&self) -> bool
+```
+
+#### method: is_selected
+
+[Source line 48](../../../stdlib/test/suite.lani#L48)
+
+```lanius
+pub fn is_selected(&self) -> bool
+```
+
+#### method: is_finished
+
+[Source line 49](../../../stdlib/test/suite.lani#L49)
+
+```lanius
+pub fn is_finished(&self) -> bool
+```
+
+#### method: is_failed
+
+[Source line 50](../../../stdlib/test/suite.lani#L50)
+
+```lanius
+pub fn is_failed(&self) -> bool
+```
+
+### impl at line 163
+
+[Source line 163](../../../stdlib/test/suite.lani#L163)
 
 ```lanius
 pub impl Runner
@@ -296,7 +376,7 @@ pub impl Runner
 
 #### method: borrow
 
-[Source line 124](../../../stdlib/test/suite.lani#L124)
+[Source line 164](../../../stdlib/test/suite.lani#L164)
 
 ```lanius
 pub fn borrow(&self) -> &Runner
@@ -304,7 +384,7 @@ pub fn borrow(&self) -> &Runner
 
 #### method: select
 
-[Source line 125](../../../stdlib/test/suite.lani#L125)
+[Source line 165](../../../stdlib/test/suite.lani#L165)
 
 ```lanius
 pub fn select(&self, name: test::check::Label) -> bool
@@ -312,7 +392,7 @@ pub fn select(&self, name: test::check::Label) -> bool
 
 #### method: record
 
-[Source line 142](../../../stdlib/test/suite.lani#L142)
+[Source line 182](../../../stdlib/test/suite.lani#L182)
 
 ```lanius
 pub fn record(&self, result: test::check::Outcome)
@@ -320,7 +400,7 @@ pub fn record(&self, result: test::check::Outcome)
 
 #### method: finish
 
-[Source line 160](../../../stdlib/test/suite.lani#L160)
+[Source line 200](../../../stdlib/test/suite.lani#L200)
 
 ```lanius
 pub fn finish(&self) -> i32

@@ -4,31 +4,68 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/function.lani#L2)
+[All modules](../README.md) · [Source](../../../stdlib/core/function.lani#L3)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-Canonical import-free home of Mapper<T,U>::apply(&self,value:T)->U and Producer<T>::produce(&self)->T. These are borrowed nominal values with static dispatch, not closures or dynamic trait objects. Mapper transports ordinary shallow values; each consumer defines its callback timing, ownership and observation restrictions. Producers run only when invoked, while their construction remains eager. Keep callback/context and returned borrowed backing live, with explicit sole cleanup authority. The lazy-outcome increment adds nineteen free-function/method pairs: ten Option operations and nine Result operations. Callbacks use canonical core::function::Mapper<T,U>; argument-free Option fallbacks use Producer<T>. Selected callbacks run once, skipped callbacks never run; argument/callback construction remains eager and all static bounds apply. Library selection adds no allocation, clone, destruction, host call or panic. Transformation callbacks have their own effects and explicit sole-owner transfer policy; filter and Boolean-query payloads are call-scoped read-only observations that must not escape. Discarded payloads and eager fallbacks retain manual cleanup obligations; no rollback or unwind guarantee is supplied. All eight new library groups pass on native Linux x86_64 CPU output: six native-positive tests and two bound-rejection groups covering fourteen invalid calls. The independent model checks sixteen cases/1536 actions/1044 API calls across all 76 branch routes; nested-owner tests observe selected callback cleanup and one reached callback allocation denial with same-process recovery. Four migrated optional-sum groups pass 98 cases with unchanged output; six selected existing family regressions pass separately. No GPU-device execution, automatic ownership, general generic completeness or formal proof is claimed.
+Canonical callback traits: Mapper<T,U>, Producer<T>, Consumer<T> and Runnable use static dispatch and are implemented by closures. Stored and the four enter_* entry helpers support alloc::callback uniform invocation on native x86_64. Hand-written Stored implementations must provide an entry matching their callback types; this contract is unchecked. No automatic destruction or dynamic trait objects are supplied. Mapper transports ordinary shallow values; each consumer defines its callback timing, ownership and observation restrictions. Producers run only when invoked, while their construction remains eager. Keep callback/context and returned borrowed backing live, with explicit sole cleanup authority. The lazy-outcome increment adds nineteen free-function/method pairs: ten Option operations and nine Result operations. Callbacks use canonical core::function::Mapper<T,U>; argument-free Option fallbacks use Producer<T>. Selected callbacks run once, skipped callbacks never run; argument/callback construction remains eager and all static bounds apply. Library selection adds no allocation, clone, destruction, host call or panic. Transformation callbacks have their own effects and explicit sole-owner transfer policy; filter and Boolean-query payloads are call-scoped read-only observations that must not escape. Discarded payloads and eager fallbacks retain manual cleanup obligations; no rollback or unwind guarantee is supplied. All eight new library groups pass on native Linux x86_64 CPU output: six native-positive tests and two bound-rejection groups covering fourteen invalid calls. The independent model checks sixteen cases/1536 actions/1044 API calls across all 76 branch routes; nested-owner tests observe selected callback cleanup and one reached callback allocation denial with same-process recovery. Four migrated optional-sum groups pass 98 cases with unchanged output; six selected existing family regressions pass separately. No GPU-device execution, automatic ownership, general generic completeness or formal proof is claimed.
 
 ## Contract and evidence guides
 
+- [language-ergonomics](../../language-ergonomics.md)
 - [stdlib-lazy-outcomes](../../stdlib-lazy-outcomes.md)
 - [stdlib-iterator-adapters](../../stdlib-iterator-adapters.md)
 - [stdlib-map-updates](../../stdlib-map-updates.md)
 - [stdlib-vec-edit](../../stdlib-vec-edit.md)
 - [stdlib-slice-segmentation](../../stdlib-slice-segmentation.md)
 
-Declaration counts: trait: 2; trait member: 2.
+Declaration counts: function: 4; trait: 5; trait member: 5.
 
 ## Declared imports
 
-None.
+Direct source imports; this is not a package-resolution or transitive dependency result.
+
+- [core::mem](mem.md) · [source](../../../stdlib/core/function.lani#L5)
+
+## Free functions and extern declarations
+
+### function: enter_mapper
+
+[Source line 44](../../../stdlib/core/function.lani#L44)
+
+```lanius
+pub fn enter_mapper<F,T,U>(env:ptr,input:ptr,output:ptr) where F: Mapper<T,U>
+```
+
+### function: enter_producer
+
+[Source line 52](../../../stdlib/core/function.lani#L52)
+
+```lanius
+pub fn enter_producer<F,U>(env:ptr,input:ptr,output:ptr) where F: Producer<U>
+```
+
+### function: enter_consumer
+
+[Source line 59](../../../stdlib/core/function.lani#L59)
+
+```lanius
+pub fn enter_consumer<F,T>(env:ptr,input:ptr,output:ptr) where F: Consumer<T>
+```
+
+### function: enter_runnable
+
+[Source line 66](../../../stdlib/core/function.lani#L66)
+
+```lanius
+pub fn enter_runnable<F>(env:ptr,input:ptr,output:ptr) where F: Runnable
+```
 
 ## Traits and members
 
 ### trait: Mapper
 
-[Source line 7](../../../stdlib/core/function.lani#L7)
+[Source line 10](../../../stdlib/core/function.lani#L10)
 
 ```lanius
 pub trait Mapper<T,U>
@@ -36,7 +73,7 @@ pub trait Mapper<T,U>
 
 #### trait member: apply
 
-[Source line 8](../../../stdlib/core/function.lani#L8)
+[Source line 11](../../../stdlib/core/function.lani#L11)
 
 ```lanius
 pub fn apply(&self,value:T) -> U;
@@ -44,7 +81,7 @@ pub fn apply(&self,value:T) -> U;
 
 ### trait: Producer
 
-[Source line 13](../../../stdlib/core/function.lani#L13)
+[Source line 16](../../../stdlib/core/function.lani#L16)
 
 ```lanius
 pub trait Producer<T>
@@ -52,8 +89,56 @@ pub trait Producer<T>
 
 #### trait member: produce
 
-[Source line 14](../../../stdlib/core/function.lani#L14)
+[Source line 17](../../../stdlib/core/function.lani#L17)
 
 ```lanius
 pub fn produce(&self) -> T;
+```
+
+### trait: Consumer
+
+[Source line 21](../../../stdlib/core/function.lani#L21)
+
+```lanius
+pub trait Consumer<T>
+```
+
+#### trait member: accept
+
+[Source line 22](../../../stdlib/core/function.lani#L22)
+
+```lanius
+pub fn accept(&self,value:T);
+```
+
+### trait: Runnable
+
+[Source line 26](../../../stdlib/core/function.lani#L26)
+
+```lanius
+pub trait Runnable
+```
+
+#### trait member: run
+
+[Source line 27](../../../stdlib/core/function.lani#L27)
+
+```lanius
+pub fn run(&self);
+```
+
+### trait: Stored
+
+[Source line 36](../../../stdlib/core/function.lani#L36)
+
+```lanius
+pub trait Stored
+```
+
+#### trait member: entry
+
+[Source line 37](../../../stdlib/core/function.lani#L37)
+
+```lanius
+pub fn entry(&self) -> ptr;
 ```

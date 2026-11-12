@@ -4,6 +4,8 @@
 // operands with counts, subcommands, generated --help text and GNU-style
 // error messages that name the bad argument. See docs/stdlib-cli.md.
 module std::cli;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -11,6 +13,32 @@ import core::option;
 import core::result;
 import core::slice;
 import std::stream;
+
+pub enum RunPhaseEvent { HelpRequested, Failed }
+pub machine RunPhase on RunPhaseEvent {
+    start Running;
+
+    state Running {
+        RunPhaseEvent::HelpRequested -> goto Help,
+        RunPhaseEvent::Failed -> goto Failed,
+    }
+
+    state Help {
+        RunPhaseEvent::HelpRequested -> stay,
+        RunPhaseEvent::Failed -> goto Failed,
+    }
+
+    final state Failed {
+        RunPhaseEvent::HelpRequested -> stay,
+        RunPhaseEvent::Failed -> stay,
+    }
+}
+pub impl RunPhase {
+    pub fn is_running(&self) -> bool { return match (self.state()) { RunPhaseState::Running -> true, _ -> false }; }
+    pub fn is_help(&self) -> bool { return match (self.state()) { RunPhaseState::Help -> true, _ -> false }; }
+    pub fn is_failed(&self) -> bool { return match (self.state()) { RunPhaseState::Failed -> true, _ -> false }; }
+}
+
 
 pub enum Arity { Flag, Required, Optional }
 pub enum ErrorKind {
@@ -101,18 +129,18 @@ pub struct Command {
     name: core::slice::View<u8>, about: core::slice::View<u8>,
     specs: alloc::vec::Vec<Spec>, subs: alloc::vec::Vec<Sub>,
     operand: core::slice::View<u8>, minimum: i32, maximum: i32,
-    scope: i32, options_first: bool, help_id: i32, broken: bool,
+    scope: i32, options_first: bool, help_id: i32, health: core::lifecycle::Health,
 }
 
 pub fn command(name: core::slice::View<u8>, about: core::slice::View<u8>) -> Command {
     return Command { name: name, about: about, specs: alloc::vec::new(), subs: alloc::vec::new(),
-        operand: empty_view(), minimum: 0, maximum: 0, scope: -1, options_first: false, help_id: -1, broken: false };
+        operand: empty_view(), minimum: 0, maximum: 0, scope: -1, options_first: false, help_id: -1, health: core::lifecycle::health_start() };
 }
 
 // The parse state for one run of parse().
 struct Run {
     args: core::slice::View<core::slice::View<u8>>, index: i32, scope: i32,
-    matches: Matches, error: Error, failed: bool, helped: bool,
+    matches: Matches, error: Error, phase: RunPhase,
 }
 impl Run { fn borrow(&self) -> &Run { return self; } }
 
@@ -134,9 +162,9 @@ pub impl Command {
             if (other.scope == self.scope && ((short != 0 && other.short == short) || (long.length > 0 && same(other.long, long)))) { valid = false; }
             index += 1;
         }
-        if (!valid) { self.broken = true; return; }
+        if (!valid) { self.health.fail(); return; }
         let spec: Spec = Spec { id: id, short: short, long: long, arity: arity, value_name: value_name, help: help, scope: self.scope, is_help: false };
-        if (self.specs.try_push(spec).is_err()) { self.broken = true; }
+        if (self.specs.try_push(spec).is_err()) { self.health.fail(); }
     }
     // short is 0 for none and long is empty for none, but not both.
     pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::slice::View<u8>) {
@@ -163,7 +191,7 @@ pub impl Command {
     // Operand count for the current scope; maximum -1 means unbounded. The
     // usage line shows name, [name] when minimum is 0, and ... when unbounded.
     pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32) {
-        if (minimum < 0 || (maximum >= 0 && maximum < minimum)) { self.broken = true; return; }
+        if (minimum < 0 || (maximum >= 0 && maximum < minimum)) { self.health.fail(); return; }
         if (self.scope == -1) { self.operand = name; self.minimum = minimum; self.maximum = maximum; return; }
         let sub: Sub = self.subs.at(self.scope);
         sub.operand = name; sub.minimum = minimum; sub.maximum = maximum;
@@ -173,9 +201,9 @@ pub impl Command {
     pub fn stop_at_operand(&self) { self.options_first = true; }
     pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice::View<u8>) {
         let index: i32 = 0;
-        while (index < self.subs.len()) { if (same(self.subs.at(index).name, name)) { self.broken = true; } index += 1; }
-        if (name.length == 0) { self.broken = true; }
-        if (self.subs.try_push(Sub { id: id, name: name, help: help, operand: empty_view(), minimum: 0, maximum: 0 }).is_err()) { self.broken = true; return; }
+        while (index < self.subs.len()) { if (same(self.subs.at(index).name, name)) { self.health.fail(); } index += 1; }
+        if (name.length == 0) { self.health.fail(); }
+        if (self.subs.try_push(Sub { id: id, name: name, help: help, operand: empty_view(), minimum: 0, maximum: 0 }).is_err()) { self.health.fail(); return; }
         self.scope = self.subs.len() - 1;
     }
     pub fn destroy(&self) { self.specs.destroy(); self.subs.destroy(); }
@@ -207,12 +235,12 @@ pub impl Command {
 
     pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::result::Result<Matches, Error> {
         let matches: Matches = Matches { ids: alloc::vec::new(), values: alloc::vec::new(), has_value: alloc::vec::new(), operands: alloc::vec::new(), operand_index: alloc::vec::new(), command: -1 };
-        let run: Run = Run { args: args, index: 0, scope: -1, matches: matches, error: Error { kind: ErrorKind::InvalidSpec, argument: -1, offset: -1, spec: -1, scope: -1 }, failed: false, helped: false };
-        if (self.broken) { run.failed = true; }
-        if (!run.failed) {
+        let run: Run = Run { args: args, index: 0, scope: -1, matches: matches, error: Error { kind: ErrorKind::InvalidSpec, argument: -1, offset: -1, spec: -1, scope: -1 }, phase: run_phase_start() };
+        if (self.health.is_failed()) { run.phase.step(RunPhaseEvent::Failed); }
+        if (!run.phase.is_failed()) {
             let has_subs: bool = self.subs.len() > 0;
             self.scan(run.borrow(), self.options_first || has_subs);
-            if (!run.failed && has_subs && !run.helped) {
+            if (!run.phase.is_failed() && has_subs && !run.phase.is_help()) {
                 if (run.index >= args.length) { self.fail(run.borrow(), ErrorKind::MissingCommand, -1, -1, -1); }
                 else {
                     let word: core::slice::View<u8> = args.values[args.start + run.index];
@@ -225,17 +253,17 @@ pub impl Command {
                     }
                 }
             }
-            if (!run.failed && !run.helped) { self.check_operands(run.borrow()); }
+            if (!run.phase.is_failed() && !run.phase.is_help()) { self.check_operands(run.borrow()); }
         }
-        if (run.failed) { run.matches.destroy(); return core::result::Err(run.error); }
+        if (run.phase.is_failed()) { run.matches.destroy(); return core::result::Err(run.error); }
         return core::result::Ok(run.matches);
     }
     fn fail(&self, run: &Run, kind: ErrorKind, argument: i32, offset: i32, spec: i32) {
-        if (!run.failed) { run.failed = true; run.error = Error { kind: kind, argument: argument, offset: offset, spec: spec, scope: run.scope }; }
+        if (!run.phase.is_failed()) { run.phase.step(RunPhaseEvent::Failed); run.error = Error { kind: kind, argument: argument, offset: offset, spec: spec, scope: run.scope }; }
     }
     fn record(&self, run: &Run, spec: i32, value: core::slice::View<u8>, has: bool) {
         let id: i32 = self.specs.at(spec).id;
-        if (self.specs.at(spec).is_help) { run.helped = true; }
+        if (self.specs.at(spec).is_help) { run.phase.step(RunPhaseEvent::HelpRequested); }
         if (run.matches.ids.try_push(id).is_err() || run.matches.values.try_push(value).is_err() || run.matches.has_value.try_push(has).is_err()) {
             self.fail(run, ErrorKind::AllocationFailed, -1, -1, -1);
         }
@@ -249,16 +277,16 @@ pub impl Command {
     fn scan(&self, run: &Run, stop: bool) {
         let args: core::slice::View<core::slice::View<u8>> = run.args;
         let root_with_subs: bool = run.scope == -1 && self.subs.len() > 0;
-        let ended: bool = false;
-        while (run.index < args.length && !run.failed) {
+        let ended_phase = core::iter_state::completion_start();
+        while (run.index < args.length && !run.phase.is_failed()) {
             let word: core::slice::View<u8> = args.values[args.start + run.index];
-            if (ended || word.length < 2 || at(word, 0) != 45) {
+            if (ended_phase.is_done() || word.length < 2 || at(word, 0) != 45) {
                 if (root_with_subs) { return; }
-                if (stop) { ended = true; }
+                if (stop) { ended_phase.finish(); }
                 self.operand(run, word); run.index += 1; continue;
             }
             if (at(word, 1) == 45) {
-                if (word.length == 2) { ended = true; run.index += 1; if (root_with_subs) { return; } continue; }
+                if (word.length == 2) { ended_phase.finish(); run.index += 1; if (root_with_subs) { return; } continue; }
                 self.long_option(run, word);
             } else { self.short_options(run, word); }
         }
@@ -286,7 +314,7 @@ pub impl Command {
         let args: core::slice::View<core::slice::View<u8>> = run.args;
         let argument: i32 = run.index; run.index += 1;
         let offset: i32 = 1;
-        while (offset < word.length && !run.failed) {
+        while (offset < word.length && !run.phase.is_failed()) {
             let found: i32 = self.find_short(run.scope, at(word, offset));
             if (found < 0) { self.fail(run, ErrorKind::InvalidOption, argument, offset, -1); return; }
             let spec: Spec = self.specs.at(found);
@@ -313,7 +341,7 @@ pub impl Command {
     // GNU-style messages. Each ends with a line feed; usage errors add
     // "Try 'NAME --help' for more information." when help is registered.
     pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>, out: &alloc::vec::Vec<u8>) -> bool {
-        let w: Writer = Writer { out: out, ok: true };
+        let w: Writer = Writer { out: out, health: core::lifecycle::health_start() };
         w.view(self.name); w.text(": ", 2);
         let word: core::slice::View<u8> = empty_view();
         if (error.argument >= 0 && error.argument < args.length) { word = args.values[args.start + error.argument]; }
@@ -335,7 +363,7 @@ pub impl Command {
         if (code == 10) { w.text("out of memory", 13); }
         w.byte(10);
         if (code < 9 && self.help_id >= 0) { w.text("Try '", 5); w.view(self.name); w.text(" --help' for more information.", 30); w.byte(10); }
-        return w.ok;
+        return (!w.health.is_failed());
     }
     fn possibilities(&self, w: &Writer, scope: i32, word: core::slice::View<u8>) {
         let equals: i32 = 2;
@@ -350,7 +378,7 @@ pub impl Command {
     }
     // The --help text for the root (sub -1) or a subcommand id.
     pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool {
-        let w: Writer = Writer { out: out, ok: true };
+        let w: Writer = Writer { out: out, health: core::lifecycle::health_start() };
         let scope: i32 = -1; let index: i32 = 0;
         while (index < self.subs.len()) { if (self.subs.at(index).id == sub) { scope = index; } index += 1; }
         w.text("Usage: ", 7); w.view(self.name);
@@ -395,7 +423,7 @@ pub impl Command {
                 index += 1;
             }
         }
-        return w.ok;
+        return (!w.health.is_failed());
     }
     fn option_count(&self, scope: i32) -> i32 {
         let total: i32 = 0; let index: i32 = 0;
@@ -482,11 +510,11 @@ fn flush(handle: i32, out: &alloc::vec::Vec<u8>) -> bool {
     return core::io::write_all<std::stream::Descriptor>(target.borrow(), out.as_slice(), 0, out.len()).is_ok();
 }
 
-struct Writer { out: &alloc::vec::Vec<u8>, ok: bool }
+struct Writer { out: &alloc::vec::Vec<u8>, health: core::lifecycle::Health }
 impl Writer {
     fn borrow(&self) -> &Writer { return self; }
-    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.ok = false; } }
-    fn view(&self, value: core::slice::View<u8>) { if (value.length > 0 && self.ok && self.out.try_extend(value).is_err()) { self.ok = false; } }
+    fn byte(&self, value: u8) { if ((!self.health.is_failed()) && self.out.try_push(value).is_err()) { self.health.fail(); } }
+    fn view(&self, value: core::slice::View<u8>) { if (value.length > 0 && (!self.health.is_failed()) && self.out.try_extend(value).is_err()) { self.health.fail(); } }
     fn text(&self, value: str, count: i32) { self.view(lit(value, count)); }
     fn spaces(&self, count: i32) { let index: i32 = 0; while (index < count) { self.byte(32); index += 1; } }
 }

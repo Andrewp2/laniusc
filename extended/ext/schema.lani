@@ -1,6 +1,7 @@
 // JSON Schema 2020-12, bounded supported profile. See docs/extended-schema.md.
 // Schema owns indexes and borrows an immutable, live JSON Document.
 module ext::schema;
+import core::lifecycle;
 import alloc::vec;
 import core::decimal;
 import core::decimal_number;
@@ -16,7 +17,7 @@ pub enum ErrorKind { Bounds, InvalidOptions, InvalidSchema, UnsupportedKeyword, 
 pub struct Error { kind: ErrorKind, schema_node: i32, instance_node: i32 }
 pub struct Issue { keyword: Keyword, schema_node: i32, instance_node: i32, property_name: bool }
 pub struct Report { valid: bool, issue: core::option::Option<Issue>, work: u64 }
-pub struct Schema { document: &ext::json::Document, marks: alloc::vec::Vec<i32>, refs: alloc::vec::Vec<i32>, options: Options, required_scratch: i32, document_nodes: i32, live: bool }
+pub struct Schema { document: &ext::json::Document, marks: alloc::vec::Vec<i32>, refs: alloc::vec::Vec<i32>, options: Options, required_scratch: i32, document_nodes: i32, lifetime: core::lifecycle::Lifetime }
 struct Budget { remaining: u64, used: u64, failure: core::option::Option<Error> }
 impl Budget {
     fn borrow(&self) -> &Budget { return self; }
@@ -31,7 +32,7 @@ impl Budget {
 pub fn default_options() -> Options { return Options { max_schema_nodes: 100000, max_schema_depth: 64, max_validation_depth: 64, max_work: 10000000 }; }
 fn err(kind: ErrorKind, sn: i32, inn: i32) -> Error { return Error { kind: kind, schema_node: sn, instance_node: inn }; }
 fn literal(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),0,count); }
-fn kind(document: &ext::json::Document, node: i32) -> i32 { return match (core::result::unwrap(document.kind(node))) { Null -> 0, Boolean -> 1, Number -> 2, Text -> 3, Array -> 4, Object -> 5 }; }
+fn kind(document: &ext::json::Document, node: i32) -> i32 { return match (core::result::unwrap(document.kind(node))) { ext::json::Kind::Null -> 0, ext::json::Kind::Boolean -> 1, ext::json::Kind::Number -> 2, ext::json::Kind::Text -> 3, ext::json::Kind::Array -> 4, ext::json::Kind::Object -> 5 }; }
 fn first(document: &ext::json::Document, node: i32) -> i32 { return core::option::unwrap_or(core::result::unwrap(document.first_child(node)),-1); }
 fn next(document: &ext::json::Document, node: i32) -> i32 { return core::option::unwrap_or(core::result::unwrap(document.next_sibling(node)),-1); }
 fn count(document: &ext::json::Document, node: i32) -> i32 { return core::result::unwrap(document.child_count(node)); }
@@ -209,36 +210,36 @@ fn check_schema(schema: &Schema, node: i32, depth: i32, budget: &Budget) -> bool
 }
 // URI fragment decoder. Delimiters are recognized after percent decoding,
 // while RFC 6901 tilde escaping is applied exactly once inside each token.
-struct Fragment { value: core::text::Text, at: i32, end: i32, good: bool }
+struct Fragment { value: core::text::Text, at: i32, end: i32, health: core::lifecycle::Health }
 impl Fragment { fn borrow(&self) -> &Fragment { return self; } }
 fn hex(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 70) { return (byte-55) as i32; } if (byte >= 97 && byte <= 102) { return (byte-87) as i32; } return -1; }
 fn fragment_byte(reader: &Fragment) -> i32 {
-    if (!reader.good || reader.at >= reader.end) { return -1; } let value: u8 = core::option::unwrap(reader.value.byte_at(reader.at)); reader.at += 1;
-    if (value == 37) { if (reader.end-reader.at < 2) { reader.good = false; return -1; } let a: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at))); let b: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at+1))); reader.at += 2; if (a < 0 || b < 0) { reader.good = false; return -1; } return a*16+b; }
+    if (!(!reader.health.is_failed()) || reader.at >= reader.end) { return -1; } let value: u8 = core::option::unwrap(reader.value.byte_at(reader.at)); reader.at += 1;
+    if (value == 37) { if (reader.end-reader.at < 2) { reader.health.fail(); return -1; } let a: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at))); let b: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at+1))); reader.at += 2; if (a < 0 || b < 0) { reader.health.fail(); return -1; } return a*16+b; }
     let allowed: bool = (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57) || value == 45 || value == 46 || value == 95 || value == 126 || value == 33 || value == 36 || value == 38 || value == 39 || value == 40 || value == 41 || value == 42 || value == 43 || value == 44 || value == 59 || value == 61 || value == 58 || value == 64 || value == 47 || value == 63;
-    if (!allowed) { reader.good = false; return -1; } return value as i32;
+    if (!allowed) { reader.health.fail(); return -1; } return value as i32;
 }
 fn token_byte(reader: &Fragment) -> i32 {
     let value: i32 = fragment_byte(reader); if (value != 126) { return value; }
-    let escape: i32 = fragment_byte(reader); if (escape == 48) { return 126; } if (escape == 49) { return 47; } reader.good = false; return -1;
+    let escape: i32 = fragment_byte(reader); if (escape == 48) { return 126; } if (escape == 49) { return 47; } reader.health.fail(); return -1;
 }
 fn token_equal(value: core::text::Text, start: i32, end: i32, name: core::text::Text, budget: &Budget, sn: i32) -> bool {
     if (!budget.charge(4*((end-start) as u64)+(name.length as u64)+1,sn,-1)) { return false; }
-    let reader: Fragment = Fragment { value: value, at: start, end: end, good: true }; let index: i32 = 0;
-    while (reader.at < reader.end && reader.good) { let byte: i32 = token_byte(reader.borrow()); if (byte < 0 || index >= name.length || byte != core::option::unwrap(name.byte_at(index)) as i32) { return false; } index += 1; }
-    return reader.good && index == name.length;
+    let reader: Fragment = Fragment { value: value, at: start, end: end, health: core::lifecycle::health_start() }; let index: i32 = 0;
+    while (reader.at < reader.end && (!reader.health.is_failed())) { let byte: i32 = token_byte(reader.borrow()); if (byte < 0 || index >= name.length || byte != core::option::unwrap(name.byte_at(index)) as i32) { return false; } index += 1; }
+    return (!reader.health.is_failed()) && index == name.length;
 }
 fn reference(schema: &Schema, node: i32, budget: &Budget) -> i32 {
     let value: core::text::Text = text(schema.document,node); if (!budget.charge(8*((value.length as u64)+1),node,-1)) { return -1; }
     if (value.length == 0) { return 0; } if (core::option::unwrap(value.byte_at(0)) != 35) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
-    let reader: Fragment = Fragment { value: value, at: 1, end: value.length, good: true }; let target: i32 = 0;
+    let reader: Fragment = Fragment { value: value, at: 1, end: value.length, health: core::lifecycle::health_start() }; let target: i32 = 0;
     if (reader.at == reader.end) { return 0; }
     if (fragment_byte(reader.borrow()) != 47) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
     let done: bool = false;
     while (!done) {
         let start: i32 = reader.at; let end: i32 = start;
-        while (reader.at < reader.end && reader.good) { let before: i32 = reader.at; let byte: i32 = fragment_byte(reader.borrow()); if (byte == 47) { end = before; break; } end = reader.at; }
-        if (!reader.good) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
+        while (reader.at < reader.end && (!reader.health.is_failed())) { let before: i32 = reader.at; let byte: i32 = fragment_byte(reader.borrow()); if (byte == 47) { end = before; break; } end = reader.at; }
+        if (!(!reader.health.is_failed())) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
         done = reader.at == reader.end && end == reader.end;
         // A final slash denotes an empty final token, not end of pointer.
         let tag: i32 = kind(schema.document,target); let found: i32 = -1;
@@ -246,12 +247,12 @@ fn reference(schema: &Schema, node: i32, budget: &Budget) -> i32 {
             let child: i32 = first(schema.document,target); while (child >= 0) { if (!budget.charge(1,node,-1)) { return -1; } if (token_equal(value,start,end,key(schema.document,child),budget,node)) { found = child; break; } if (!budget.good()) { return -1; } child = next(schema.document,child); }
         }
         if (tag == 4) {
-            let token: Fragment = Fragment { value: value, at: start, end: end, good: true }; let index: i32 = 0; let digits: i32 = 0; let leading: bool = false;
-            while (token.at < token.end && token.good) {
-                let digit: i32 = token_byte(token.borrow()); if (digit < 48 || digit > 57 || (digits > 0 && leading) || index > (2147483647-(digit-48))/10) { token.good = false; break; }
+            let token: Fragment = Fragment { value: value, at: start, end: end, health: core::lifecycle::health_start() }; let index: i32 = 0; let digits: i32 = 0; let leading: bool = false;
+            while (token.at < token.end && (!token.health.is_failed())) {
+                let digit: i32 = token_byte(token.borrow()); if (digit < 48 || digit > 57 || (digits > 0 && leading) || index > (2147483647-(digit-48))/10) { token.health.fail(); break; }
                 if (digits == 0) { leading = digit == 48; } index = index*10+digit-48; digits += 1;
             }
-            if (token.good && digits > 0) { let child: i32 = first(schema.document,target); while (child >= 0 && index > 0) { if (!budget.charge(1,node,-1)) { return -1; } child = next(schema.document,child); index -= 1; } found = child; }
+            if ((!token.health.is_failed()) && digits > 0) { let child: i32 = first(schema.document,target); while (child >= 0 && index > 0) { if (!budget.charge(1,node,-1)) { return -1; } child = next(schema.document,child); index -= 1; } found = child; }
         }
         if (found < 0) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; } target = found;
         if (!budget.charge(1,node,-1)) { return -1; }
@@ -268,7 +269,7 @@ pub fn compile(document: &ext::json::Document, options: Options) -> core::result
     if (core::result::is_err(a)) { return core::result::Err(err(ErrorKind::AllocationFailed,0,-1)); } let marks: alloc::vec::Vec<i32> = core::result::unwrap(a); marks.try_resize(nodes,0);
     let b: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes);
     if (core::result::is_err(b)) { marks.destroy(); return core::result::Err(err(ErrorKind::AllocationFailed,0,-1)); } let refs: alloc::vec::Vec<i32> = core::result::unwrap(b); refs.try_resize(nodes,-1);
-    let schema: Schema = Schema { document: document, marks: marks, refs: refs, options: options, required_scratch: 0, document_nodes: nodes, live: true };
+    let schema: Schema = Schema { document: document, marks: marks, refs: refs, options: options, required_scratch: 0, document_nodes: nodes, lifetime: core::lifecycle::lifetime_start() };
     if (!check_schema(schema.borrow(),0,0,budget.borrow())) { schema.destroy(); return core::result::Err(core::option::unwrap(budget.failure)); }
     let node: i32 = 0;
     while (node < nodes && budget.good()) {
@@ -444,10 +445,10 @@ fn evaluate(state: &State, sn: i32, inn: i32, property: bool, depth: i32) -> boo
 }
 pub impl Schema {
     pub fn borrow(&self) -> &Schema { return self; }
-    pub fn scratch_len(&self) -> i32 { if (!self.live) { return 0; } return self.required_scratch; }
-    pub fn destroy(&self) { if (self.live) { self.marks.destroy(); self.refs.destroy(); self.live = false; } }
+    pub fn scratch_len(&self) -> i32 { if (!self.lifetime.is_active()) { return 0; } return self.required_scratch; }
+    pub fn destroy(&self) { if (self.lifetime.is_active()) { self.marks.destroy(); self.refs.destroy(); self.lifetime.release(); } }
     pub fn validate(&self, instance: &ext::json::Document, scratch: core::slice::View<u8>) -> core::result::Result<Report,Error> {
-        if (!self.live) { return core::result::Err(err(ErrorKind::Destroyed,-1,-1)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(err(ErrorKind::Destroyed,-1,-1)); }
         if (self.document.node_count() != self.document_nodes) { return core::result::Err(err(ErrorKind::ChangedDocument,-1,-1)); }
         if (scratch.start < 0 || scratch.length < 0 || scratch.start > 2147483647-scratch.length) { return core::result::Err(err(ErrorKind::Bounds,-1,-1)); }
         if (scratch.length < self.required_scratch) { return core::result::Err(err(ErrorKind::ScratchTooSmall,-1,-1)); }

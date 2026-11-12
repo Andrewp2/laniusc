@@ -64,8 +64,9 @@ valid. A rejected compiled statement is finalized before the staging buffer is
 released. This validation prevents a second statement from being stepped; it
 does not sandbox SQL or promise that native preparation has no effects.
 
-The statement starts in `State::Ready`. `parameter_count()` reports SQLite's
-highest parameter index, including any holes from `?NNN`. `column_count()`
+The statement starts in `ext::sqlite_statement::StatementState::Ready`.
+`parameter_count()` reports SQLite's highest parameter index, including any
+holes from `?NNN`. `column_count()`
 reports the result-column count and refreshes it after successful stepping to
 account for SQLite's schema reprepare behavior. Both are cached metadata.
 
@@ -117,10 +118,13 @@ NaN payload or universal binary64 bit-round-trip contract.
 | `Done` / `Failed` | Further step returns `InvalidState` until reset. |
 | `Finalized` | Further use returns `Closed`. |
 
-These rules are one transition function, `ext::sqlite_statement::transition`,
-and `Statement` changes its state nowhere else. Its Lean translation proves
-that `Column` needs `Row` and that nothing leaves `Finalized`
-([state machines, M0](state-machines-design.md#m0-result)).
+These rules are the native `ext::sqlite_statement::Statement` machine. The
+wrapper sends events through `step`; its generated `StatementState` is the
+only statement phase. The regenerated Lean translation proves that `Column`
+needs `Row`, that nothing leaves `Finalized`, and that finalization refuses
+subsequent operations other than another finalize. See the
+[library machine migration](library-state-machines.md) and the
+[historical M0 result](state-machines-design.md#m0-result).
 
 There is no implicit reset, execution retry or row loop. BUSY is a native error,
 not a successful empty result. `is_busy(error)` recognizes primary code 5;
@@ -141,8 +145,8 @@ owned separately.
 
 ## Reading a row
 
-Column indexes are zero-based. Accessors require `State::Row` and an index below
-`column_count()`. `column_type(index)` returns `Null`, `Integer`, `Real`, `Text`
+Column indexes are zero-based. Accessors require
+`ext::sqlite_statement::StatementState::Row` and an index below `column_count()`. `column_type(index)` returns `Null`, `Integer`, `Real`, `Text`
 or `Blob`. All value access is strict: the wrapper does not turn an INTEGER into
 a REAL, a BLOB into TEXT, or NULL into a zero/empty value.
 

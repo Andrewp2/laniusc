@@ -3,6 +3,7 @@
 // No host lookup, symlink resolution, allocation or implicit UTF-8 conversion.
 
 module core::path;
+import core::iter_state;
 import core::cmp;
 import core::hash;
 import core::text;
@@ -26,8 +27,20 @@ pub enum Error { Bounds, Nul(i32) }
 pub struct Path { bytes: View<u8> }
 pub enum Kind { Root, Current, Parent, Normal }
 pub struct Component { kind: Kind, bytes: View<u8> }
-pub struct Components { path: Path, front: i32, back: i32, prefix: bool, rooted: bool }
-pub struct Ancestors { path: Path, done: bool }
+pub enum LeadingEvent { Initialize(bool), Taken }
+pub machine Leading on LeadingEvent {
+    start Empty;
+    state Empty { LeadingEvent::Initialize(present) -> { if (present) { goto Pending; } stay; }, LeadingEvent::Taken -> stay, }
+    state Pending { LeadingEvent::Initialize(present) -> stay, LeadingEvent::Taken -> goto Consumed, }
+    final state Consumed { LeadingEvent::Initialize(present) -> stay, LeadingEvent::Taken -> stay, }
+}
+pub impl Leading {
+    pub fn pending(&self) -> bool { return match (self.state()) { LeadingState::Pending -> true, _ -> false }; }
+}
+fn leading(present: bool) -> Leading { let phase = leading_start(); phase.step(LeadingEvent::Initialize(present)); return phase; }
+
+pub struct Components { path: Path, front: i32, back: i32, leading: Leading, rooted: bool }
+pub struct Ancestors { path: Path, completion: core::iter_state::Completion }
 
 pub fn from_view(bytes: View<u8>) -> Result<Path, Error> {
     if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647 - bytes.length) { return Err(Error::Bounds); }
@@ -79,7 +92,7 @@ pub impl Path {
             }
         }
         let first: i32 = 0; if (rooted || current) { first = 1; }
-        return Components { path: Path { bytes: self.bytes }, front: first, back: self.byte_len(), prefix: rooted || current, rooted: rooted };
+        return Components { path: Path { bytes: self.bytes }, front: first, back: self.byte_len(), leading: leading(rooted || current), rooted: rooted };
     }
     pub fn parent(&self) -> Option<Path> {
         let cursor = self.components(); let value = cursor.next_back()?;
@@ -99,7 +112,7 @@ pub impl Path {
         let name = self.file_name()?; let dot: i32 = extension_dot(name);
         if (dot < 0) { return Some(name); } return Some(part(name,0,dot));
     }
-    pub fn ancestors(&self) -> Ancestors { return Ancestors { path: Path { bytes: self.bytes }, done: false }; }
+    pub fn ancestors(&self) -> Ancestors { return Ancestors { path: Path { bytes: self.bytes }, completion: core::iter_state::completion_start() }; }
     pub fn strip_prefix(&self, prefix: Path) -> Option<Path> {
         let left: Components = self.components(); let right: Components = prefix.components();
         while (true) {
@@ -161,9 +174,9 @@ pub impl Component {
     }
 }
 pub impl Components {
-    fn copy(&self) -> Components { return Components { path: self.path, front: self.front, back: self.back, prefix: self.prefix, rooted: self.rooted }; }
+    fn copy(&self) -> Components { return Components { path: self.path, front: self.front, back: self.back, leading: self.leading, rooted: self.rooted }; }
     fn leading(&self) -> Component {
-        self.prefix = false; let kind: Kind = Kind::Current; if (self.rooted) { kind = Kind::Root; }
+        self.leading.step(LeadingEvent::Taken); let kind: Kind = Kind::Current; if (self.rooted) { kind = Kind::Root; }
         return Component { kind: kind, bytes: part(self.path.bytes,0,1) };
     }
     fn classify(&self, first: i32, end: i32) -> Option<Component> {
@@ -175,7 +188,7 @@ pub impl Components {
         return Some(Component { kind: kind, bytes: part(self.path.bytes,first,end) });
     }
     pub fn next(&self) -> Option<Component> {
-        if (self.prefix) { return Some(self.leading()); }
+        if (self.leading.pending()) { return Some(self.leading()); }
         while (self.front < self.back) {
             if (unwrap(self.path.byte_at(self.front)) == 47) { self.front += 1; continue; }
             let first: i32 = self.front;
@@ -191,7 +204,7 @@ pub impl Components {
             while (self.back > self.front && unwrap(self.path.byte_at(self.back-1)) != 47) { self.back -= 1; }
             let value: Option<Component> = self.classify(self.back,end); if (is_some(value)) { return value; }
         }
-        if (self.prefix) { return Some(self.leading()); } return None();
+        if (self.leading.pending()) { return Some(self.leading()); } return None();
     }
     // A borrowed window from the first remaining component through the last.
     // Internal spelling stays intact; outer separators/dots are omitted.
@@ -205,9 +218,9 @@ pub impl Components {
 }
 pub impl Ancestors {
     pub fn next(&self) -> Option<Path> {
-        if (self.done) { return None(); } let value: Path = self.path;
+        if (self.completion.is_done()) { return None(); } let value: Path = self.path;
         let parent: Option<Path> = value.parent();
-        if (is_none(parent)) { self.done = true; } else { self.path = unwrap(parent); }
+        if (is_none(parent)) { self.completion.finish(); } else { self.path = unwrap(parent); }
         return Some(value);
     }
 }

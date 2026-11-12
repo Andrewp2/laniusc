@@ -6,6 +6,8 @@
 // ext::regex; s/// takes the leftmost-longest match as POSIX does.
 // See docs/extended-sed.md.
 module ext::sed;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -40,11 +42,11 @@ pub struct Program {
 // number of bytes of the last executed input read so far. status is the
 // exit code of a q or Q that ended the run.
 pub struct Run {
-    line: u64, quit: bool, status: i32, missing: bool, consumed: i32, previous: i32,
+    line: u64, quit_completion: core::iter_state::Completion, status: i32, missing: bool, consumed: i32, previous: i32,
     active: alloc::vec::Vec<u8>, until: alloc::vec::Vec<u64>, workspace: ext::regex::Workspace,
     space: alloc::vec::Vec<u8>, spare: alloc::vec::Vec<u8>,
-    input: [u8], cursor: i32, limit: i32, failed: bool, error: Error,
-    joins: core::slice::View<i32>, join: i32, no_joins: alloc::vec::Vec<i32>, probed: bool,
+    input: [u8], cursor: i32, limit: i32, health: core::lifecycle::Health, error: Error,
+    joins: core::slice::View<i32>, join: i32, no_joins: alloc::vec::Vec<i32>, probed_completion: core::iter_state::Completion,
     // The current s/// match; whole: only group 0 is known (from the DFAs).
     found_start: i32, found_end: i32, whole: bool,
     // Unchanged input lines written so far but not yet copied to output:
@@ -58,9 +60,9 @@ pub struct Run {
 // The pattern space: values[start, start + length). chomped: the line had
 // a newline. checked: known to be valid UTF-8. original: values is the
 // input and the space is the line as read.
-struct Space { values: [u8], start: i32, length: i32, chomped: bool, checked: bool, original: bool }
+struct Space { values: [u8], start: i32, length: i32, chomped: bool, checked_completion: core::iter_state::Completion, original: bool }
 
-struct Parser { script: [u8], base: i32, length: i32, at: i32, extended: bool, failed: bool, error: Error, program: Program, blocks: alloc::vec::Vec<i32>, raw: alloc::vec::Vec<u8>, pattern: alloc::vec::Vec<u8> }
+struct Parser { script: [u8], base: i32, length: i32, at: i32, extended: bool, health: core::lifecycle::Health, error: Error, program: Program, blocks: alloc::vec::Vec<i32>, raw: alloc::vec::Vec<u8>, pattern: alloc::vec::Vec<u8> }
 
 fn none() -> Address { return Address { kind: 0, number: 0, step: 0, regex: -1 }; }
 fn digit(c: i32) -> bool { return c >= 48 && c <= 57; }
@@ -126,7 +128,7 @@ impl Parser {
     fn peek(&self) -> i32 { if (self.at >= self.length) { return -1; } return self.script[self.base + self.at] as i32; }
     fn peek_at(&self, offset: i32) -> i32 { if (self.at + offset >= self.length) { return -1; } return self.script[self.base + self.at + offset] as i32; }
     fn take(&self) -> i32 { let c: i32 = self.peek(); if (c >= 0) { self.at += 1; } return c; }
-    fn fail(&self, error: Error) { if (!self.failed) { self.failed = true; self.error = error; } }
+    fn fail(&self, error: Error) { if (!self.health.is_failed()) { self.health.fail(); self.error = error; } }
     fn oom(&self) { self.fail(Error::AllocationFailed); }
     fn skip_blanks(&self) { while (blank(self.peek())) { self.at += 1; } }
     fn number(&self) -> u64 {
@@ -353,7 +355,7 @@ impl Parser {
     fn substitute(&self, command: &Command) {
         let open: i32 = self.at; let delimiter: i32 = self.take();
         if (delimiter < 0 || delimiter == 10 || delimiter == 92) { self.fail(Error::Unterminated(open)); return; }
-        command.regex = self.regex(delimiter); if (self.failed) { return; }
+        command.regex = self.regex(delimiter); if (self.health.is_failed()) { return; }
         command.parts = self.program.parts.len(); let reference: i32 = 0;
         let run: i32 = self.program.pool.len();
         while (true) {
@@ -394,7 +396,7 @@ impl Parser {
             if (c == 112) { if (command.print) { self.fail(Error::Syntax(self.at)); return; } command.print = true; self.take(); continue; }
             if (digit(c)) {
                 let at: i32 = self.at; if (numbered) { self.fail(Error::Syntax(at)); return; }
-                let value: u64 = self.number(); if (self.failed) { return; }
+                let value: u64 = self.number(); if (self.health.is_failed()) { return; }
                 if (value == 0 || value > 2147483647) { self.fail(Error::Syntax(at)); return; }
                 command.nth = value as i32; numbered = true; continue;
             }
@@ -427,9 +429,9 @@ impl Parser {
         let open: i32 = self.at; let delimiter: i32 = self.take();
         if (delimiter < 0 || delimiter == 10 || delimiter == 92 || delimiter >= 128) { self.fail(Error::Unterminated(open)); return; }
         command.parts = self.program.pool.len();
-        let left: i32 = self.y_string(delimiter,open); if (self.failed) { return; }
+        let left: i32 = self.y_string(delimiter,open); if (self.health.is_failed()) { return; }
         command.part_count = self.program.pool.len() - command.parts; command.nth = self.program.pool.len();
-        let right: i32 = self.y_string(delimiter,open); if (self.failed) { return; }
+        let right: i32 = self.y_string(delimiter,open); if (self.health.is_failed()) { return; }
         command.code = self.program.pool.len() - command.nth;
         if (left != right) { self.fail(Error::Syntax(open)); }
     }
@@ -442,15 +444,15 @@ impl Parser {
         if (core::result::is_err(self.program.commands.try_push(command))) { self.oom(); return false; } return true;
     }
     fn commands(&self) {
-        while (!self.failed) {
+        while (!self.health.is_failed()) {
             while (blank(self.peek()) || self.peek() == 10 || self.peek() == 59) { self.at += 1; }
             if (self.peek() < 0) { return; }
-            let first: Address = self.address(false); if (self.failed) { return; }
+            let first: Address = self.address(false); if (self.health.is_failed()) { return; }
             let second: Address = none();
             if (first.kind != 0) {
                 self.skip_blanks();
                 if (self.peek() == 44) {
-                    self.take(); self.skip_blanks(); second = self.address(true); if (self.failed) { return; }
+                    self.take(); self.skip_blanks(); second = self.address(true); if (self.health.is_failed()) { return; }
                     if (second.kind == 0) { self.fail(Error::Syntax(self.at)); return; }
                     if (second.kind == 5) { second.kind = 1; }
                 }
@@ -482,11 +484,11 @@ impl Parser {
             if (name == 113 || name == 81) {
                 if (second.kind != 0) { self.fail(Error::Syntax(at)); return; }
                 self.skip_blanks();
-                if (digit(self.peek())) { let code: u64 = self.number(); if (self.failed) { return; } command.code = (code & 255) as i32; }
+                if (digit(self.peek())) { let code: u64 = self.number(); if (self.health.is_failed()) { return; } command.code = (code & 255) as i32; }
                 if (!self.add(command)) { return; } self.end_of_command(); continue;
             }
-            if (name == 121) { self.transliterate(command.borrow()); if (self.failed) { return; } if (!self.add(command)) { return; } self.end_of_command(); continue; }
-            if (name == 115) { self.substitute(command.borrow()); if (self.failed) { return; } if (!self.add(command)) { return; } self.end_of_command(); continue; }
+            if (name == 121) { self.transliterate(command.borrow()); if (self.health.is_failed()) { return; } if (!self.add(command)) { return; } self.end_of_command(); continue; }
+            if (name == 115) { self.substitute(command.borrow()); if (self.health.is_failed()) { return; } if (!self.add(command)) { return; } self.end_of_command(); continue; }
             // GNU commands outside this subset.
             if (name == 97 || name == 105 || name == 99 || name == 104 || name == 72 || name == 103 || name == 71 || name == 120 ||
                 name == 78 || name == 68 || name == 80 || name == 98 || name == 116 || name == 84 || name == 58 || name == 108 || name == 114 ||
@@ -507,13 +509,13 @@ pub fn compile(script: core::slice::View<u8>, extended: bool) -> core::result::R
     if (script.start < 0 || script.length < 0 || script.start > 2147483647 - script.length) { return core::result::Err(Error::Syntax(0)); }
     let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(script.values,script.start,script.length);
     if (core::result::is_err(checked)) { let at: i32 = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(offset) -> offset, _ -> 0 }; return core::result::Err(Error::InvalidUtf8(at)); }
-    let parser: Parser = Parser { script: script.values, base: script.start, length: script.length, at: 0, extended: extended, failed: false, error: Error::Limit, program: empty_program(), blocks: alloc::vec::new(), raw: alloc::vec::new(), pattern: alloc::vec::new() };
+    let parser: Parser = Parser { script: script.values, base: script.start, length: script.length, at: 0, extended: extended, health: core::lifecycle::health_start(), error: Error::Limit, program: empty_program(), blocks: alloc::vec::new(), raw: alloc::vec::new(), pattern: alloc::vec::new() };
     // "#n" alone on the first line acts as -n.
     if (parser.peek() == 35 && parser.peek_at(1) == 110 && (parser.peek_at(2) < 0 || parser.peek_at(2) == 10)) { parser.program.quiet = true; }
     parser.commands();
-    if (!parser.failed && parser.blocks.len() > 0) { parser.fail(Error::Syntax(parser.length)); }
+    if (!parser.health.is_failed() && parser.blocks.len() > 0) { parser.fail(Error::Syntax(parser.length)); }
     parser.blocks.destroy(); parser.raw.destroy(); parser.pattern.destroy();
-    if (parser.failed) { parser.program.destroy(); return core::result::Err(parser.error); }
+    if (parser.health.is_failed()) { parser.program.destroy(); return core::result::Err(parser.error); }
     return core::result::Ok(parser.program);
 }
 
@@ -538,10 +540,10 @@ pub impl Program {
         if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
         let none: alloc::vec::Vec<i32> = alloc::vec::new();
         let run: Run = Run {
-            line: 0, quit: false, status: 0, missing: false, consumed: 0, previous: -1,
+            line: 0, quit_completion: core::iter_state::completion_start(), status: 0, missing: false, consumed: 0, previous: -1,
             active: alloc::vec::new(), until: alloc::vec::new(), workspace: core::result::unwrap(made),
-            space: alloc::vec::new(), spare: alloc::vec::new(), input: self.pool.as_slice(), cursor: 0, limit: 0, failed: false, error: Error::Limit,
-            joins: none.as_view(), join: 0, no_joins: none, probed: false, found_start: 0, found_end: -1, whole: false,
+            space: alloc::vec::new(), spare: alloc::vec::new(), input: self.pool.as_slice(), cursor: 0, limit: 0, health: core::lifecycle::health_start(), error: Error::Limit,
+            joins: none.as_view(), join: 0, no_joins: none, probed_completion: core::iter_state::completion_start(), found_start: 0, found_end: -1, whole: false,
             pending_from: 0, pending_to: 0, base: 0, quiet_run: false, hit_from: alloc::vec::new(), hit_at: alloc::vec::new()
         };
         if (core::result::is_err(run.active.try_resize(self.commands.len(),0)) || core::result::is_err(run.until.try_resize(self.commands.len(),0))
@@ -565,7 +567,7 @@ pub impl Program {
         if (core::result::is_err(begun)) { return begun; }
         let done: core::result::Result<bool, Error> = self.proceed(run,output,2147483647);
         if (core::result::is_err(done)) { return done; }
-        return core::result::Ok(run.quit);
+        return core::result::Ok(run.quit_completion.is_done());
     }
     // execute_joined in steps, so output can be written while it runs:
     // begin_joined sets the input up, then each proceed runs whole cycles
@@ -579,13 +581,13 @@ pub impl Program {
         run.base = input.start; run.pending_from = input.start; run.pending_to = input.start;
         let from: [i32] = run.hit_from.as_slice(); let k: i32 = 0; while (k < run.hit_from.len()) { from[k] = 2147483647; k += 1; }
         run.quiet_run = quiet || self.quiet;
-        run.probed = false;
+        run.probed_completion = core::iter_state::completion_start();
         return core::result::Ok(true);
     }
     pub fn proceed(&self, run: &Run, output: &alloc::vec::Vec<u8>, budget: i32) -> core::result::Result<bool, Error> {
         let quiet_run: bool = run.quiet_run;
-        while (!run.quit && !run.at_end()) {
-            let space: Space = Space { values: run.input, start: 0, length: 0, chomped: false, checked: false, original: true };
+        while (!run.quit_completion.is_done() && !run.at_end()) {
+            let space: Space = Space { values: run.input, start: 0, length: 0, chomped: false, checked_completion: core::iter_state::completion_start(), original: true };
             run.next(space.borrow());
             if (!self.cycle(run,space.borrow(),quiet_run,output)) { run.drain(output); run.mark(run.base); return core::result::Err(run.error); }
             if (output.len() >= budget - (run.pending_to - run.pending_from)) {
@@ -736,8 +738,8 @@ pub impl Program {
                 if (!quiet && !run.emit(output,space)) { return false; }
                 run.next(space); continue;
             }
-            if (name == 113) { run.quit = true; run.status = command.code; if (!quiet && !run.emit(output,space)) { return false; } return run.owed(output); }
-            if (name == 81) { run.quit = true; run.status = command.code; deleted = true; break; }
+            if (name == 113) { run.quit_completion.finish(); run.status = command.code; if (!quiet && !run.emit(output,space)) { return false; } return run.owed(output); }
+            if (name == 81) { run.quit_completion.finish(); run.status = command.code; deleted = true; break; }
             if (name == 61) { if (!run.number(output)) { return false; } continue; }
             if (name == 115) { if (!self.substitute(run,command,space,output)) { return false; } continue; }
             if (name == 121) { if (!self.transliterate(run,command,space)) { return false; } continue; }
@@ -835,7 +837,7 @@ impl Space { fn borrow(&self) -> &Space { return self; } }
 pub impl Run {
     pub fn borrow(&self) -> &Run { return self; }
     pub fn line_number(&self) -> u64 { return self.line; }
-    pub fn ended(&self) -> bool { return self.quit; }
+    pub fn ended(&self) -> bool { return self.quit_completion.is_done(); }
     pub fn exit_status(&self) -> i32 { return self.status; }
     // After execute: the end (relative to input.start) of the last line
     // read, before an added join newline.
@@ -844,7 +846,7 @@ pub impl Run {
     // last line read (a $ address, n, or starting another cycle). An
     // unreadable file at consumed() is one GNU sed would have opened only
     // then.
-    pub fn looked_past(&self) -> bool { return self.probed; }
+    pub fn looked_past(&self) -> bool { return self.probed_completion.is_done(); }
     // Starts a new file of a separate-files run (-s, -i): line numbers
     // restart and no range stays open.
     pub fn restart(&self, program: &Program) {
@@ -859,10 +861,10 @@ pub impl Run {
     // Output goes to a new destination: no newline is owed to it.
     pub fn new_output(&self) { self.missing = false; }
     pub fn destroy(&self) { self.hit_from.destroy(); self.hit_at.destroy(); self.no_joins.destroy(); self.active.destroy(); self.until.destroy(); self.workspace.destroy(); self.space.destroy(); self.spare.destroy(); }
-    fn fail(&self, error: Error) { self.failed = true; self.error = error; }
+    fn fail(&self, error: Error) { self.health.fail(); self.error = error; }
     // Whether no input follows the current line; GNU sed only looks for
     // the next file when it asks this.
-    fn at_end(&self) -> bool { self.probed = true; return self.cursor >= self.limit; }
+    fn at_end(&self) -> bool { self.probed_completion.finish(); return self.cursor >= self.limit; }
     fn mark(&self, base: i32) {
         let end: i32 = self.cursor;
         if (self.join > 0 && self.joins.values[self.joins.start + self.join - 1] == end - 1) { end -= 1; }
@@ -872,19 +874,19 @@ pub impl Run {
     fn next(&self, space: &Space) {
         let start: i32 = self.cursor;
         let end: i32 = core::search::find_byte(self.input,start,self.limit,10);
-        space.values = self.input; space.start = start; space.checked = false; space.original = true;
+        space.values = self.input; space.start = start; space.checked_completion = core::iter_state::completion_start(); space.original = true;
         if (end < 0) { space.length = self.limit - start; space.chomped = false; self.cursor = self.limit; }
         else {
             space.length = end - start; space.chomped = true; self.cursor = end + 1;
             if (self.join < self.joins.length && self.joins.values[self.joins.start + self.join] == end) { space.chomped = false; self.join += 1; }
         }
-        self.line += 1; self.probed = false;
+        self.line += 1; self.probed_completion = core::iter_state::completion_start();
     }
     fn check(&self, space: &Space) -> bool {
-        if (space.checked) { return true; }
+        if (space.checked_completion.is_done()) { return true; }
         let valid: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(space.values,space.start,space.length);
         if (core::result::is_err(valid)) { self.fail(Error::InvalidUtf8(-1)); return false; }
-        space.checked = true; return true;
+        space.checked_completion.finish(); return true;
     }
     // Copies the pending input lines to output.
     fn drain(&self, output: &alloc::vec::Vec<u8>) -> bool {

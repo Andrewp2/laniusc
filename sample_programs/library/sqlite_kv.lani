@@ -11,6 +11,7 @@ import core::slice;
 import core::text;
 import ext::cli;
 import ext::sqlite;
+import ext::sqlite_statement;
 import std::args;
 import std::stream;
 

@@ -12,25 +12,35 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-unicode-lines](../../extended-unicode-lines.md)
 
-Declaration counts: constant: 1; enum: 2; field: 16; function: 4; impl: 1; method: 2; struct: 3; variant: 8.
+Declaration counts: constant: 1; enum: 2; field: 16; function: 4; impl: 2; machine: 1; method: 3; struct: 3; variant: 8.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_lines.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_lines.lani#L5)
-- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_lines.lani#L6)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_lines.lani#L7)
-- [ext::unicode_lines_data](unicode_lines_data.md) · [source](../../../extended/ext/unicode_lines.lani#L8)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/unicode_lines.lani#L4)
+- [ext::unicode_break_state](unicode_break_state.md) · [source](../../../extended/ext/unicode_lines.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_lines.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_lines.lani#L7)
+- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_lines.lani#L8)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_lines.lani#L9)
+- [ext::unicode_lines_data](unicode_lines_data.md) · [source](../../../extended/ext/unicode_lines.lani#L10)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### machine: NumericSuffix
+
+[Source line 12](../../../extended/ext/unicode_lines.lani#L12)
+
+```lanius
+pub machine NumericSuffix on u32
+```
+
 ### enum: Kind
 
-[Source line 10](../../../extended/ext/unicode_lines.lani#L10)
+[Source line 20](../../../extended/ext/unicode_lines.lani#L20)
 
 ```lanius
 pub enum Kind
@@ -38,7 +48,7 @@ pub enum Kind
 
 #### variant: Allowed
 
-[Source line 10](../../../extended/ext/unicode_lines.lani#L10)
+[Source line 20](../../../extended/ext/unicode_lines.lani#L20)
 
 ```lanius
 Allowed
@@ -46,7 +56,7 @@ Allowed
 
 #### variant: Mandatory
 
-[Source line 10](../../../extended/ext/unicode_lines.lani#L10)
+[Source line 20](../../../extended/ext/unicode_lines.lani#L20)
 
 ```lanius
 Mandatory
@@ -54,7 +64,7 @@ Mandatory
 
 ### struct: Opportunity
 
-[Source line 11](../../../extended/ext/unicode_lines.lani#L11)
+[Source line 21](../../../extended/ext/unicode_lines.lani#L21)
 
 ```lanius
 pub struct Opportunity
@@ -62,7 +72,7 @@ pub struct Opportunity
 
 #### field: offset
 
-[Source line 11](../../../extended/ext/unicode_lines.lani#L11)
+[Source line 21](../../../extended/ext/unicode_lines.lani#L21)
 
 ```lanius
 offset: i32
@@ -70,7 +80,7 @@ offset: i32
 
 #### field: kind
 
-[Source line 11](../../../extended/ext/unicode_lines.lani#L11)
+[Source line 21](../../../extended/ext/unicode_lines.lani#L21)
 
 ```lanius
 kind: Kind
@@ -78,7 +88,7 @@ kind: Kind
 
 ### struct: Limits
 
-[Source line 12](../../../extended/ext/unicode_lines.lani#L12)
+[Source line 22](../../../extended/ext/unicode_lines.lani#L22)
 
 ```lanius
 pub struct Limits
@@ -86,7 +96,7 @@ pub struct Limits
 
 #### field: max_bytes
 
-[Source line 12](../../../extended/ext/unicode_lines.lani#L12)
+[Source line 22](../../../extended/ext/unicode_lines.lani#L22)
 
 ```lanius
 max_bytes: i32
@@ -94,7 +104,7 @@ max_bytes: i32
 
 #### field: max_scalars
 
-[Source line 12](../../../extended/ext/unicode_lines.lani#L12)
+[Source line 22](../../../extended/ext/unicode_lines.lani#L22)
 
 ```lanius
 max_scalars: i32
@@ -102,7 +112,7 @@ max_scalars: i32
 
 #### field: max_work
 
-[Source line 12](../../../extended/ext/unicode_lines.lani#L12)
+[Source line 22](../../../extended/ext/unicode_lines.lani#L22)
 
 ```lanius
 max_work: u64
@@ -110,7 +120,7 @@ max_work: u64
 
 ### enum: Error
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 pub enum Error
@@ -118,7 +128,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 Bounds
@@ -126,7 +136,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 InvalidLimits
@@ -134,7 +144,7 @@ InvalidLimits
 
 #### variant: ByteLimit
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 ByteLimit
@@ -142,7 +152,7 @@ ByteLimit
 
 #### variant: ScalarLimit
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 ScalarLimit
@@ -150,7 +160,7 @@ ScalarLimit
 
 #### variant: WorkLimit
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 WorkLimit
@@ -158,7 +168,7 @@ WorkLimit
 
 #### variant: InvalidUtf8
 
-[Source line 13](../../../extended/ext/unicode_lines.lani#L13)
+[Source line 23](../../../extended/ext/unicode_lines.lani#L23)
 
 ```lanius
 InvalidUtf8(i32)
@@ -166,7 +176,7 @@ InvalidUtf8(i32)
 
 ### struct: Cursor
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 pub struct Cursor
@@ -174,7 +184,7 @@ pub struct Cursor
 
 #### field: text
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 text: core::text::Text
@@ -182,7 +192,7 @@ text: core::text::Text
 
 #### field: position
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 position: i32
@@ -190,7 +200,7 @@ position: i32
 
 #### field: raw
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 raw: u32
@@ -198,7 +208,7 @@ raw: u32
 
 #### field: previous
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 previous: u32
@@ -206,7 +216,7 @@ previous: u32
 
 #### field: before
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 before: u32
@@ -214,7 +224,7 @@ before: u32
 
 #### field: nonspace
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 nonspace: u32
@@ -222,7 +232,7 @@ nonspace: u32
 
 #### field: initial_quote
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
 initial_quote: bool
@@ -230,41 +240,41 @@ initial_quote: bool
 
 #### field: numeric
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
-numeric: bool
+numeric: NumericSuffix
 ```
 
 #### field: before_numeric
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
-before_numeric: bool
+before_numeric: NumericSuffix
 ```
 
-#### field: ri_odd
+#### field: regional
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
-ri_odd: bool
+regional: ext::unicode_break_state::RegionalRun
 ```
 
-#### field: ended
+#### field: completion
 
-[Source line 19](../../../extended/ext/unicode_lines.lani#L19)
+[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
 
 ```lanius
-ended: bool
+completion: core::iter_state::Completion
 ```
 
 ## Constants
 
 ### constant: MAX_BYTES
 
-[Source line 14](../../../extended/ext/unicode_lines.lani#L14)
+[Source line 24](../../../extended/ext/unicode_lines.lani#L24)
 
 ```lanius
 pub const MAX_BYTES: i32 = 67108864;
@@ -274,7 +284,7 @@ pub const MAX_BYTES: i32 = 67108864;
 
 ### function: default_limits
 
-[Source line 15](../../../extended/ext/unicode_lines.lani#L15)
+[Source line 25](../../../extended/ext/unicode_lines.lani#L25)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -282,7 +292,7 @@ pub fn default_limits() -> Limits
 
 ### function: work
 
-[Source line 16](../../../extended/ext/unicode_lines.lani#L16)
+[Source line 26](../../../extended/ext/unicode_lines.lani#L26)
 
 ```lanius
 pub fn work(bytes: i32) -> core::result::Result<u64,Error>
@@ -290,7 +300,7 @@ pub fn work(bytes: i32) -> core::result::Result<u64,Error>
 
 ### function: cursor
 
-[Source line 29](../../../extended/ext/unicode_lines.lani#L29)
+[Source line 39](../../../extended/ext/unicode_lines.lani#L39)
 
 ```lanius
 pub fn cursor(text: core::text::Text, limits: Limits) -> core::result::Result<Cursor,Error>
@@ -298,7 +308,7 @@ pub fn cursor(text: core::text::Text, limits: Limits) -> core::result::Result<Cu
 
 ### function: opportunity_at
 
-[Source line 124](../../../extended/ext/unicode_lines.lani#L124)
+[Source line 134](../../../extended/ext/unicode_lines.lani#L134)
 
 ```lanius
 pub fn opportunity_at(text: core::text::Text, offset: i32, limits: Limits) -> core::result::Result<core::option::Option<Kind>,Error>
@@ -306,9 +316,25 @@ pub fn opportunity_at(text: core::text::Text, offset: i32, limits: Limits) -> co
 
 ## Implementation blocks and public methods
 
-### impl at line 39
+### impl at line 17
 
-[Source line 39](../../../extended/ext/unicode_lines.lani#L39)
+[Source line 17](../../../extended/ext/unicode_lines.lani#L17)
+
+```lanius
+pub impl NumericSuffix
+```
+
+#### method: number
+
+[Source line 17](../../../extended/ext/unicode_lines.lani#L17)
+
+```lanius
+pub fn number(&self) -> bool
+```
+
+### impl at line 49
+
+[Source line 49](../../../extended/ext/unicode_lines.lani#L49)
 
 ```lanius
 pub impl Cursor
@@ -316,7 +342,7 @@ pub impl Cursor
 
 #### method: borrow
 
-[Source line 40](../../../extended/ext/unicode_lines.lani#L40)
+[Source line 50](../../../extended/ext/unicode_lines.lani#L50)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor
@@ -324,7 +350,7 @@ pub fn borrow(&self) -> &Cursor
 
 #### method: next
 
-[Source line 112](../../../extended/ext/unicode_lines.lani#L112)
+[Source line 122](../../../extended/ext/unicode_lines.lani#L122)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Opportunity>

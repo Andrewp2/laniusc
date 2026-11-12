@@ -12,23 +12,185 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-xz](../../extended-xz.md)
 
-Declaration counts: constant: 4; enum: 3; field: 109; function: 8; impl: 3; method: 18; struct: 4; variant: 19.
+Declaration counts: constant: 4; enum: 9; field: 105; function: 8; impl: 8; machine: 6; method: 34; struct: 4; variant: 54.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::crc32](../core/crc32.md) · [source](../../../extended/ext/xz.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/xz.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/xz.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/xz.lani#L5)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/xz.lani#L6)
+- [core::crc32](../core/crc32.md) · [source](../../../extended/ext/xz.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/xz.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/xz.lani#L9)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: DictionaryContextEvent
+
+[Source line 11](../../../extended/ext/xz.lani#L11)
+
+```lanius
+pub enum DictionaryContextEvent
+```
+
+#### variant: Reset
+
+[Source line 11](../../../extended/ext/xz.lani#L11)
+
+```lanius
+Reset
+```
+
+#### variant: DictionaryReset
+
+[Source line 11](../../../extended/ext/xz.lani#L11)
+
+```lanius
+DictionaryReset
+```
+
+#### variant: PropertiesRead
+
+[Source line 11](../../../extended/ext/xz.lani#L11)
+
+```lanius
+PropertiesRead
+```
+
+### machine: DictionaryContext
+
+[Source line 12](../../../extended/ext/xz.lani#L12)
+
+```lanius
+pub machine DictionaryContext on DictionaryContextEvent
+```
+
+### enum: ChunkContextEvent
+
+[Source line 40](../../../extended/ext/xz.lani#L40)
+
+```lanius
+pub enum ChunkContextEvent
+```
+
+#### variant: Stored
+
+[Source line 40](../../../extended/ext/xz.lani#L40)
+
+```lanius
+Stored
+```
+
+#### variant: Compressed
+
+[Source line 40](../../../extended/ext/xz.lani#L40)
+
+```lanius
+Compressed
+```
+
+### machine: ChunkContext
+
+[Source line 41](../../../extended/ext/xz.lani#L41)
+
+```lanius
+pub machine ChunkContext on ChunkContextEvent
+```
+
+### enum: EncodingEvent
+
+[Source line 72](../../../extended/ext/xz.lani#L72)
+
+```lanius
+pub enum EncodingEvent
+```
+
+#### variant: HeaderWritten
+
+[Source line 72](../../../extended/ext/xz.lani#L72)
+
+```lanius
+HeaderWritten
+```
+
+#### variant: FooterWritten
+
+[Source line 72](../../../extended/ext/xz.lani#L72)
+
+```lanius
+FooterWritten
+```
+
+### machine: Encoding
+
+[Source line 73](../../../extended/ext/xz.lani#L73)
+
+```lanius
+pub machine Encoding on EncodingEvent
+```
+
+### enum: IndexPhaseEvent
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+pub enum IndexPhaseEvent
+```
+
+#### variant: CountRead
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+CountRead
+```
+
+#### variant: SizeRead
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+SizeRead
+```
+
+#### variant: RecordRead
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+RecordRead
+```
+
+#### variant: RecordsRead
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+RecordsRead
+```
+
+#### variant: PaddingRead
+
+[Source line 98](../../../extended/ext/xz.lani#L98)
+
+```lanius
+PaddingRead
+```
+
+### machine: IndexPhase
+
+[Source line 99](../../../extended/ext/xz.lani#L99)
+
+```lanius
+pub machine IndexPhase on IndexPhaseEvent
+```
+
 ### enum: Format
 
-[Source line 9](../../../extended/ext/xz.lani#L9)
+[Source line 151](../../../extended/ext/xz.lani#L151)
 
 ```lanius
 pub enum Format
@@ -36,7 +198,7 @@ pub enum Format
 
 #### variant: Xz
 
-[Source line 9](../../../extended/ext/xz.lani#L9)
+[Source line 151](../../../extended/ext/xz.lani#L151)
 
 ```lanius
 Xz
@@ -44,7 +206,7 @@ Xz
 
 #### variant: Lzma
 
-[Source line 9](../../../extended/ext/xz.lani#L9)
+[Source line 151](../../../extended/ext/xz.lani#L151)
 
 ```lanius
 Lzma
@@ -52,7 +214,7 @@ Lzma
 
 ### enum: Error
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 pub enum Error
@@ -60,7 +222,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Bounds
@@ -68,7 +230,7 @@ Bounds
 
 #### variant: Header
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Header
@@ -76,7 +238,7 @@ Header
 
 #### variant: Options
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Options
@@ -84,7 +246,7 @@ Options
 
 #### variant: UnsupportedCheck
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 UnsupportedCheck
@@ -92,7 +254,7 @@ UnsupportedCheck
 
 #### variant: UnsupportedFilter
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 UnsupportedFilter
@@ -100,7 +262,7 @@ UnsupportedFilter
 
 #### variant: Corrupt
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Corrupt
@@ -108,7 +270,7 @@ Corrupt
 
 #### variant: Checksum
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Checksum
@@ -116,7 +278,7 @@ Checksum
 
 #### variant: Index
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Index
@@ -124,7 +286,7 @@ Index
 
 #### variant: Footer
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Footer
@@ -132,7 +294,7 @@ Footer
 
 #### variant: SizeMismatch
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 SizeMismatch
@@ -140,7 +302,7 @@ SizeMismatch
 
 #### variant: Truncated
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Truncated
@@ -148,7 +310,7 @@ Truncated
 
 #### variant: TrailingData
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 TrailingData
@@ -156,7 +318,7 @@ TrailingData
 
 #### variant: Failed
 
-[Source line 10](../../../extended/ext/xz.lani#L10)
+[Source line 152](../../../extended/ext/xz.lani#L152)
 
 ```lanius
 Failed
@@ -164,7 +326,7 @@ Failed
 
 ### enum: Status
 
-[Source line 11](../../../extended/ext/xz.lani#L11)
+[Source line 153](../../../extended/ext/xz.lani#L153)
 
 ```lanius
 pub enum Status
@@ -172,7 +334,7 @@ pub enum Status
 
 #### variant: NeedInput
 
-[Source line 11](../../../extended/ext/xz.lani#L11)
+[Source line 153](../../../extended/ext/xz.lani#L153)
 
 ```lanius
 NeedInput
@@ -180,7 +342,7 @@ NeedInput
 
 #### variant: NeedOutput
 
-[Source line 11](../../../extended/ext/xz.lani#L11)
+[Source line 153](../../../extended/ext/xz.lani#L153)
 
 ```lanius
 NeedOutput
@@ -188,7 +350,7 @@ NeedOutput
 
 #### variant: NeedDictionary
 
-[Source line 11](../../../extended/ext/xz.lani#L11)
+[Source line 153](../../../extended/ext/xz.lani#L153)
 
 ```lanius
 NeedDictionary
@@ -196,7 +358,7 @@ NeedDictionary
 
 #### variant: Done
 
-[Source line 11](../../../extended/ext/xz.lani#L11)
+[Source line 153](../../../extended/ext/xz.lani#L153)
 
 ```lanius
 Done
@@ -204,7 +366,7 @@ Done
 
 ### struct: Step
 
-[Source line 12](../../../extended/ext/xz.lani#L12)
+[Source line 154](../../../extended/ext/xz.lani#L154)
 
 ```lanius
 pub struct Step
@@ -212,7 +374,7 @@ pub struct Step
 
 #### field: read
 
-[Source line 12](../../../extended/ext/xz.lani#L12)
+[Source line 154](../../../extended/ext/xz.lani#L154)
 
 ```lanius
 read: i32
@@ -220,7 +382,7 @@ read: i32
 
 #### field: written
 
-[Source line 12](../../../extended/ext/xz.lani#L12)
+[Source line 154](../../../extended/ext/xz.lani#L154)
 
 ```lanius
 written: i32
@@ -228,15 +390,71 @@ written: i32
 
 #### field: status
 
-[Source line 12](../../../extended/ext/xz.lani#L12)
+[Source line 154](../../../extended/ext/xz.lani#L154)
 
 ```lanius
 status: Status
 ```
 
+### enum: ContextEvent
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+pub enum ContextEvent
+```
+
+#### variant: Literal
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+Literal
+```
+
+#### variant: Match
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+Match
+```
+
+#### variant: Repeat
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+Repeat
+```
+
+#### variant: ShortRepeat
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+ShortRepeat
+```
+
+#### variant: Reset
+
+[Source line 156](../../../extended/ext/xz.lani#L156)
+
+```lanius
+Reset
+```
+
+### machine: Context
+
+[Source line 157](../../../extended/ext/xz.lani#L157)
+
+```lanius
+pub machine Context on ContextEvent
+```
+
 ### struct: Decoder
 
-[Source line 13](../../../extended/ext/xz.lani#L13)
+[Source line 261](../../../extended/ext/xz.lani#L261)
 
 ```lanius
 pub struct Decoder
@@ -244,7 +462,7 @@ pub struct Decoder
 
 #### field: lzma1
 
-[Source line 14](../../../extended/ext/xz.lani#L14)
+[Source line 262](../../../extended/ext/xz.lani#L262)
 
 ```lanius
 lzma1: bool
@@ -252,7 +470,7 @@ lzma1: bool
 
 #### field: probs
 
-[Source line 14](../../../extended/ext/xz.lani#L14)
+[Source line 262](../../../extended/ext/xz.lani#L262)
 
 ```lanius
 probs: core::slice::View<i32>
@@ -260,7 +478,7 @@ probs: core::slice::View<i32>
 
 #### field: stage
 
-[Source line 14](../../../extended/ext/xz.lani#L14)
+[Source line 262](../../../extended/ext/xz.lani#L262)
 
 ```lanius
 stage: core::slice::View<u8>
@@ -268,7 +486,7 @@ stage: core::slice::View<u8>
 
 #### field: dict
 
-[Source line 14](../../../extended/ext/xz.lani#L14)
+[Source line 262](../../../extended/ext/xz.lani#L262)
 
 ```lanius
 dict: core::slice::View<u8>
@@ -276,15 +494,15 @@ dict: core::slice::View<u8>
 
 #### field: phase
 
-[Source line 15](../../../extended/ext/xz.lani#L15)
+[Source line 263](../../../extended/ext/xz.lani#L263)
 
 ```lanius
-phase: i32
+phase: Decoding
 ```
 
 #### field: need
 
-[Source line 15](../../../extended/ext/xz.lani#L15)
+[Source line 263](../../../extended/ext/xz.lani#L263)
 
 ```lanius
 need: i32
@@ -292,23 +510,23 @@ need: i32
 
 #### field: have
 
-[Source line 15](../../../extended/ext/xz.lani#L15)
+[Source line 263](../../../extended/ext/xz.lani#L263)
 
 ```lanius
 have: i32
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 15](../../../extended/ext/xz.lani#L15)
+[Source line 263](../../../extended/ext/xz.lani#L263)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 #### field: check
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 check: i32
@@ -316,7 +534,7 @@ check: i32
 
 #### field: check_size
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 check_size: i32
@@ -324,7 +542,7 @@ check_size: i32
 
 #### field: crc
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 crc: u32
@@ -332,7 +550,7 @@ crc: u32
 
 #### field: crc64
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 crc64: u64
@@ -340,7 +558,7 @@ crc64: u64
 
 #### field: flag0
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 flag0: u8
@@ -348,7 +566,7 @@ flag0: u8
 
 #### field: flag1
 
-[Source line 16](../../../extended/ext/xz.lani#L16)
+[Source line 264](../../../extended/ext/xz.lani#L264)
 
 ```lanius
 flag1: u8
@@ -356,7 +574,7 @@ flag1: u8
 
 #### field: header_size
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 header_size: i32
@@ -364,7 +582,7 @@ header_size: i32
 
 #### field: declared_packed
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 declared_packed: u64
@@ -372,7 +590,7 @@ declared_packed: u64
 
 #### field: has_packed
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 has_packed: bool
@@ -380,7 +598,7 @@ has_packed: bool
 
 #### field: declared_unpacked
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 declared_unpacked: u64
@@ -388,7 +606,7 @@ declared_unpacked: u64
 
 #### field: has_unpacked
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 has_unpacked: bool
@@ -396,7 +614,7 @@ has_unpacked: bool
 
 #### field: block_packed
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 block_packed: u64
@@ -404,7 +622,7 @@ block_packed: u64
 
 #### field: block_out
 
-[Source line 17](../../../extended/ext/xz.lani#L17)
+[Source line 265](../../../extended/ext/xz.lani#L265)
 
 ```lanius
 block_out: u64
@@ -412,7 +630,7 @@ block_out: u64
 
 #### field: blocks
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 blocks: u64
@@ -420,7 +638,7 @@ blocks: u64
 
 #### field: record_hash
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 record_hash: u32
@@ -428,7 +646,7 @@ record_hash: u32
 
 #### field: index_hash
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 index_hash: u32
@@ -436,7 +654,7 @@ index_hash: u32
 
 #### field: index_crc
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 index_crc: u32
@@ -444,7 +662,7 @@ index_crc: u32
 
 #### field: index_size
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 index_size: u64
@@ -452,23 +670,23 @@ index_size: u64
 
 #### field: index_left
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 index_left: u64
 ```
 
-#### field: index_field
+#### field: index_phase
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
-index_field: i32
+index_phase: IndexPhase
 ```
 
 #### field: index_unpadded
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 index_unpadded: u64
@@ -476,7 +694,7 @@ index_unpadded: u64
 
 #### field: varint
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 varint: u64
@@ -484,7 +702,7 @@ varint: u64
 
 #### field: shift
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 shift: i32
@@ -492,31 +710,23 @@ shift: i32
 
 #### field: pad
 
-[Source line 18](../../../extended/ext/xz.lani#L18)
+[Source line 266](../../../extended/ext/xz.lani#L266)
 
 ```lanius
 pad: i32
 ```
 
-#### field: need_dict_reset
+#### field: dictionary_context
 
-[Source line 19](../../../extended/ext/xz.lani#L19)
-
-```lanius
-need_dict_reset: bool
-```
-
-#### field: need_props
-
-[Source line 19](../../../extended/ext/xz.lani#L19)
+[Source line 267](../../../extended/ext/xz.lani#L267)
 
 ```lanius
-need_props: bool
+dictionary_context: DictionaryContext
 ```
 
 #### field: control
 
-[Source line 19](../../../extended/ext/xz.lani#L19)
+[Source line 267](../../../extended/ext/xz.lani#L267)
 
 ```lanius
 control: i32
@@ -524,7 +734,7 @@ control: i32
 
 #### field: reset
 
-[Source line 19](../../../extended/ext/xz.lani#L19)
+[Source line 267](../../../extended/ext/xz.lani#L267)
 
 ```lanius
 reset: i32
@@ -532,7 +742,7 @@ reset: i32
 
 #### field: packed
 
-[Source line 19](../../../extended/ext/xz.lani#L19)
+[Source line 267](../../../extended/ext/xz.lani#L267)
 
 ```lanius
 packed: i32
@@ -540,7 +750,7 @@ packed: i32
 
 #### field: lc
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 lc: i32
@@ -548,7 +758,7 @@ lc: i32
 
 #### field: lp
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 lp: i32
@@ -556,23 +766,23 @@ lp: i32
 
 #### field: pb
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 pb: i32
 ```
 
-#### field: state
+#### field: context
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
-state: i32
+context: Context
 ```
 
 #### field: rep0
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 rep0: u32
@@ -580,7 +790,7 @@ rep0: u32
 
 #### field: rep1
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 rep1: u32
@@ -588,7 +798,7 @@ rep1: u32
 
 #### field: rep2
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 rep2: u32
@@ -596,7 +806,7 @@ rep2: u32
 
 #### field: rep3
 
-[Source line 20](../../../extended/ext/xz.lani#L20)
+[Source line 268](../../../extended/ext/xz.lani#L268)
 
 ```lanius
 rep3: u32
@@ -604,7 +814,7 @@ rep3: u32
 
 #### field: range
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
 range: u32
@@ -612,7 +822,7 @@ range: u32
 
 #### field: code
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
 code: u32
@@ -620,7 +830,7 @@ code: u32
 
 #### field: in_pos
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
 in_pos: i32
@@ -628,39 +838,39 @@ in_pos: i32
 
 #### field: in_end
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
 in_end: i32
 ```
 
-#### field: bad
+#### field: range_health
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
-bad: bool
+range_health: core::lifecycle::Health
 ```
 
-#### field: rc_ready
+#### field: rc_ready_completion
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
-rc_ready: bool
+rc_ready_completion: core::iter_state::Completion
 ```
 
-#### field: end_marker
+#### field: end_marker_completion
 
-[Source line 21](../../../extended/ext/xz.lani#L21)
+[Source line 269](../../../extended/ext/xz.lani#L269)
 
 ```lanius
-end_marker: bool
+end_marker_completion: core::iter_state::Completion
 ```
 
 #### field: pending
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 pending: i32
@@ -668,7 +878,7 @@ pending: i32
 
 #### field: limited
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 limited: bool
@@ -676,7 +886,7 @@ limited: bool
 
 #### field: left
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 left: u64
@@ -684,7 +894,7 @@ left: u64
 
 #### field: dict_size
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 dict_size: i32
@@ -692,7 +902,7 @@ dict_size: i32
 
 #### field: dict_want
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 dict_want: i32
@@ -700,7 +910,7 @@ dict_want: i32
 
 #### field: dict_pos
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 dict_pos: i32
@@ -708,7 +918,7 @@ dict_pos: i32
 
 #### field: dict_full
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 dict_full: i32
@@ -716,7 +926,7 @@ dict_full: i32
 
 #### field: position
 
-[Source line 22](../../../extended/ext/xz.lani#L22)
+[Source line 270](../../../extended/ext/xz.lani#L270)
 
 ```lanius
 position: u64
@@ -724,7 +934,7 @@ position: u64
 
 #### field: read_total
 
-[Source line 23](../../../extended/ext/xz.lani#L23)
+[Source line 271](../../../extended/ext/xz.lani#L271)
 
 ```lanius
 read_total: u64
@@ -732,7 +942,7 @@ read_total: u64
 
 #### field: written_total
 
-[Source line 23](../../../extended/ext/xz.lani#L23)
+[Source line 271](../../../extended/ext/xz.lani#L271)
 
 ```lanius
 written_total: u64
@@ -740,7 +950,7 @@ written_total: u64
 
 ### struct: Encoder
 
-[Source line 24](../../../extended/ext/xz.lani#L24)
+[Source line 272](../../../extended/ext/xz.lani#L272)
 
 ```lanius
 pub struct Encoder
@@ -748,7 +958,7 @@ pub struct Encoder
 
 #### field: probs
 
-[Source line 25](../../../extended/ext/xz.lani#L25)
+[Source line 273](../../../extended/ext/xz.lani#L273)
 
 ```lanius
 probs: core::slice::View<i32>
@@ -756,7 +966,7 @@ probs: core::slice::View<i32>
 
 #### field: heads
 
-[Source line 25](../../../extended/ext/xz.lani#L25)
+[Source line 273](../../../extended/ext/xz.lani#L273)
 
 ```lanius
 heads: core::slice::View<i32>
@@ -764,7 +974,7 @@ heads: core::slice::View<i32>
 
 #### field: chain
 
-[Source line 25](../../../extended/ext/xz.lani#L25)
+[Source line 273](../../../extended/ext/xz.lani#L273)
 
 ```lanius
 chain: core::slice::View<i32>
@@ -772,7 +982,7 @@ chain: core::slice::View<i32>
 
 #### field: window
 
-[Source line 25](../../../extended/ext/xz.lani#L25)
+[Source line 273](../../../extended/ext/xz.lani#L273)
 
 ```lanius
 window: core::slice::View<u8>
@@ -780,7 +990,7 @@ window: core::slice::View<u8>
 
 #### field: stage
 
-[Source line 25](../../../extended/ext/xz.lani#L25)
+[Source line 273](../../../extended/ext/xz.lani#L273)
 
 ```lanius
 stage: core::slice::View<u8>
@@ -788,7 +998,7 @@ stage: core::slice::View<u8>
 
 #### field: depth
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 depth: i32
@@ -796,7 +1006,7 @@ depth: i32
 
 #### field: nice
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 nice: i32
@@ -804,7 +1014,7 @@ nice: i32
 
 #### field: lazy
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 lazy: bool
@@ -812,7 +1022,7 @@ lazy: bool
 
 #### field: dict_size
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 dict_size: i32
@@ -820,7 +1030,7 @@ dict_size: i32
 
 #### field: dict_code
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 dict_code: u8
@@ -828,7 +1038,7 @@ dict_code: u8
 
 #### field: fill
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 fill: i32
@@ -836,7 +1046,7 @@ fill: i32
 
 #### field: pos
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 pos: i32
@@ -844,7 +1054,7 @@ pos: i32
 
 #### field: hashed
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 hashed: i32
@@ -852,7 +1062,7 @@ hashed: i32
 
 #### field: base
 
-[Source line 26](../../../extended/ext/xz.lani#L26)
+[Source line 274](../../../extended/ext/xz.lani#L274)
 
 ```lanius
 base: u64
@@ -860,7 +1070,7 @@ base: u64
 
 #### field: stage_pos
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 275](../../../extended/ext/xz.lani#L275)
 
 ```lanius
 stage_pos: i32
@@ -868,71 +1078,47 @@ stage_pos: i32
 
 #### field: stage_len
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 275](../../../extended/ext/xz.lani#L275)
 
 ```lanius
 stage_len: i32
 ```
 
-#### field: started
+#### field: encoding
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 275](../../../extended/ext/xz.lani#L275)
 
 ```lanius
-started: bool
+encoding: Encoding
 ```
 
-#### field: ended
+#### field: health
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 275](../../../extended/ext/xz.lani#L275)
 
 ```lanius
-ended: bool
+health: core::lifecycle::Health
 ```
 
-#### field: failed
+#### field: chunk_context
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 275](../../../extended/ext/xz.lani#L275)
 
 ```lanius
-failed: bool
+chunk_context: ChunkContext
 ```
 
-#### field: first
+#### field: context
 
-[Source line 27](../../../extended/ext/xz.lani#L27)
-
-```lanius
-first: bool
-```
-
-#### field: state_reset
-
-[Source line 27](../../../extended/ext/xz.lani#L27)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
-state_reset: bool
-```
-
-#### field: props_needed
-
-[Source line 27](../../../extended/ext/xz.lani#L27)
-
-```lanius
-props_needed: bool
-```
-
-#### field: state
-
-[Source line 28](../../../extended/ext/xz.lani#L28)
-
-```lanius
-state: i32
+context: Context
 ```
 
 #### field: rep0
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 rep0: i32
@@ -940,7 +1126,7 @@ rep0: i32
 
 #### field: rep1
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 rep1: i32
@@ -948,7 +1134,7 @@ rep1: i32
 
 #### field: rep2
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 rep2: i32
@@ -956,7 +1142,7 @@ rep2: i32
 
 #### field: rep3
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 rep3: i32
@@ -964,7 +1150,7 @@ rep3: i32
 
 #### field: low
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 low: u64
@@ -972,7 +1158,7 @@ low: u64
 
 #### field: range
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 range: u32
@@ -980,7 +1166,7 @@ range: u32
 
 #### field: cache
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 cache: u8
@@ -988,7 +1174,7 @@ cache: u8
 
 #### field: cache_size
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 cache_size: i32
@@ -996,7 +1182,7 @@ cache_size: i32
 
 #### field: out
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 out: i32
@@ -1004,7 +1190,7 @@ out: i32
 
 #### field: found_len
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 found_len: i32
@@ -1012,7 +1198,7 @@ found_len: i32
 
 #### field: found_dist
 
-[Source line 28](../../../extended/ext/xz.lani#L28)
+[Source line 276](../../../extended/ext/xz.lani#L276)
 
 ```lanius
 found_dist: i32
@@ -1020,7 +1206,7 @@ found_dist: i32
 
 #### field: crc64
 
-[Source line 29](../../../extended/ext/xz.lani#L29)
+[Source line 277](../../../extended/ext/xz.lani#L277)
 
 ```lanius
 crc64: u64
@@ -1028,7 +1214,7 @@ crc64: u64
 
 #### field: packed
 
-[Source line 29](../../../extended/ext/xz.lani#L29)
+[Source line 277](../../../extended/ext/xz.lani#L277)
 
 ```lanius
 packed: u64
@@ -1036,7 +1222,7 @@ packed: u64
 
 #### field: unpacked
 
-[Source line 29](../../../extended/ext/xz.lani#L29)
+[Source line 277](../../../extended/ext/xz.lani#L277)
 
 ```lanius
 unpacked: u64
@@ -1044,7 +1230,7 @@ unpacked: u64
 
 #### field: read_total
 
-[Source line 29](../../../extended/ext/xz.lani#L29)
+[Source line 277](../../../extended/ext/xz.lani#L277)
 
 ```lanius
 read_total: u64
@@ -1052,7 +1238,7 @@ read_total: u64
 
 #### field: written_total
 
-[Source line 29](../../../extended/ext/xz.lani#L29)
+[Source line 277](../../../extended/ext/xz.lani#L277)
 
 ```lanius
 written_total: u64
@@ -1060,7 +1246,7 @@ written_total: u64
 
 ### struct: StoreEncoder
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 pub struct StoreEncoder
@@ -1068,7 +1254,7 @@ pub struct StoreEncoder
 
 #### field: table
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 table: core::slice::View<i32>
@@ -1076,7 +1262,7 @@ table: core::slice::View<i32>
 
 #### field: crc64
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 crc64: u64
@@ -1084,7 +1270,7 @@ crc64: u64
 
 #### field: packed
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 packed: u64
@@ -1092,7 +1278,7 @@ packed: u64
 
 #### field: unpacked
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 unpacked: u64
@@ -1100,17 +1286,177 @@ unpacked: u64
 
 #### field: chunks
 
-[Source line 30](../../../extended/ext/xz.lani#L30)
+[Source line 278](../../../extended/ext/xz.lani#L278)
 
 ```lanius
 chunks: u64
+```
+
+### enum: DecodeEvent
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+pub enum DecodeEvent
+```
+
+#### variant: NextStream
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+NextStream
+```
+
+#### variant: NextBlock
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+NextBlock
+```
+
+#### variant: BlockFound
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+BlockFound
+```
+
+#### variant: BlockHeaderRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+BlockHeaderRead
+```
+
+#### variant: NextChunk
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+NextChunk
+```
+
+#### variant: ChunkFound
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+ChunkFound
+```
+
+#### variant: CompressedChunk
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+CompressedChunk
+```
+
+#### variant: ChunkRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+ChunkRead
+```
+
+#### variant: StoredChunk
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+StoredChunk
+```
+
+#### variant: BlockRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+BlockRead
+```
+
+#### variant: PaddingRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+PaddingRead
+```
+
+#### variant: IndexFound
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+IndexFound
+```
+
+#### variant: IndexRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+IndexRead
+```
+
+#### variant: FooterRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+FooterRead
+```
+
+#### variant: AloneStarted
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+AloneStarted
+```
+
+#### variant: AloneHeaderRead
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+AloneHeaderRead
+```
+
+#### variant: DictionaryReady
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+DictionaryReady
+```
+
+#### variant: Finished
+
+[Source line 300](../../../extended/ext/xz.lani#L300)
+
+```lanius
+Finished
+```
+
+### machine: Decoding
+
+[Source line 302](../../../extended/ext/xz.lani#L302)
+
+```lanius
+pub machine Decoding on DecodeEvent
 ```
 
 ## Constants
 
 ### constant: PROBABILITIES
 
-[Source line 33](../../../extended/ext/xz.lani#L33)
+[Source line 281](../../../extended/ext/xz.lani#L281)
 
 ```lanius
 pub const PROBABILITIES: i32 = 14902;
@@ -1118,7 +1464,7 @@ pub const PROBABILITIES: i32 = 14902;
 
 ### constant: STAGE
 
-[Source line 36](../../../extended/ext/xz.lani#L36)
+[Source line 284](../../../extended/ext/xz.lani#L284)
 
 ```lanius
 pub const STAGE: i32 = 65536;
@@ -1126,7 +1472,7 @@ pub const STAGE: i32 = 65536;
 
 ### constant: STORE_WORKSPACE
 
-[Source line 650](../../../extended/ext/xz.lani#L650)
+[Source line 1262](../../../extended/ext/xz.lani#L1262)
 
 ```lanius
 pub const STORE_WORKSPACE: i32 = 512;
@@ -1134,7 +1480,7 @@ pub const STORE_WORKSPACE: i32 = 512;
 
 ### constant: ENCODER_STAGE
 
-[Source line 688](../../../extended/ext/xz.lani#L688)
+[Source line 1300](../../../extended/ext/xz.lani#L1300)
 
 ```lanius
 pub const ENCODER_STAGE: i32 = 65600;
@@ -1144,7 +1490,7 @@ pub const ENCODER_STAGE: i32 = 65600;
 
 ### function: probabilities_len
 
-[Source line 124](../../../extended/ext/xz.lani#L124)
+[Source line 736](../../../extended/ext/xz.lani#L736)
 
 ```lanius
 pub fn probabilities_len() -> i32
@@ -1152,7 +1498,7 @@ pub fn probabilities_len() -> i32
 
 ### function: stage_len
 
-[Source line 125](../../../extended/ext/xz.lani#L125)
+[Source line 737](../../../extended/ext/xz.lani#L737)
 
 ```lanius
 pub fn stage_len() -> i32
@@ -1160,7 +1506,7 @@ pub fn stage_len() -> i32
 
 ### function: decoder
 
-[Source line 128](../../../extended/ext/xz.lani#L128)
+[Source line 740](../../../extended/ext/xz.lani#L740)
 
 ```lanius
 pub fn decoder(probabilities: core::slice::View<i32>, stage: core::slice::View<u8>, format: Format) -> core::result::Result<Decoder,Error>
@@ -1168,7 +1514,7 @@ pub fn decoder(probabilities: core::slice::View<i32>, stage: core::slice::View<u
 
 ### function: store_encoder
 
-[Source line 651](../../../extended/ext/xz.lani#L651)
+[Source line 1263](../../../extended/ext/xz.lani#L1263)
 
 ```lanius
 pub fn store_encoder(workspace: core::slice::View<i32>) -> core::result::Result<StoreEncoder,Error>
@@ -1176,7 +1522,7 @@ pub fn store_encoder(workspace: core::slice::View<i32>) -> core::result::Result<
 
 ### function: encoder_window_len
 
-[Source line 695](../../../extended/ext/xz.lani#L695)
+[Source line 1307](../../../extended/ext/xz.lani#L1307)
 
 ```lanius
 pub fn encoder_window_len(level: i32) -> i32
@@ -1184,7 +1530,7 @@ pub fn encoder_window_len(level: i32) -> i32
 
 ### function: encoder_workspace_len
 
-[Source line 696](../../../extended/ext/xz.lani#L696)
+[Source line 1308](../../../extended/ext/xz.lani#L1308)
 
 ```lanius
 pub fn encoder_workspace_len(level: i32) -> i32
@@ -1192,7 +1538,7 @@ pub fn encoder_workspace_len(level: i32) -> i32
 
 ### function: encoder
 
-[Source line 697](../../../extended/ext/xz.lani#L697)
+[Source line 1309](../../../extended/ext/xz.lani#L1309)
 
 ```lanius
 pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>, stage: core::slice::View<u8>, level: i32) -> core::result::Result<Encoder,Error>
@@ -1200,7 +1546,7 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
 
 ### function: unused_encoder
 
-[Source line 719](../../../extended/ext/xz.lani#L719)
+[Source line 1331](../../../extended/ext/xz.lani#L1331)
 
 ```lanius
 pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32>) -> Encoder
@@ -1208,9 +1554,177 @@ pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32
 
 ## Implementation blocks and public methods
 
-### impl at line 427
+### impl at line 33
 
-[Source line 427](../../../extended/ext/xz.lani#L427)
+[Source line 33](../../../extended/ext/xz.lani#L33)
+
+```lanius
+pub impl DictionaryContext
+```
+
+#### method: is_need_dictionary
+
+[Source line 34](../../../extended/ext/xz.lani#L34)
+
+```lanius
+pub fn is_need_dictionary(&self) -> bool
+```
+
+#### method: is_need_properties
+
+[Source line 35](../../../extended/ext/xz.lani#L35)
+
+```lanius
+pub fn is_need_properties(&self) -> bool
+```
+
+#### method: is_ready
+
+[Source line 36](../../../extended/ext/xz.lani#L36)
+
+```lanius
+pub fn is_ready(&self) -> bool
+```
+
+### impl at line 64
+
+[Source line 64](../../../extended/ext/xz.lani#L64)
+
+```lanius
+pub impl ChunkContext
+```
+
+#### method: is_first
+
+[Source line 65](../../../extended/ext/xz.lani#L65)
+
+```lanius
+pub fn is_first(&self) -> bool
+```
+
+#### method: is_need_props
+
+[Source line 66](../../../extended/ext/xz.lani#L66)
+
+```lanius
+pub fn is_need_props(&self) -> bool
+```
+
+#### method: is_need_state
+
+[Source line 67](../../../extended/ext/xz.lani#L67)
+
+```lanius
+pub fn is_need_state(&self) -> bool
+```
+
+#### method: is_ready
+
+[Source line 68](../../../extended/ext/xz.lani#L68)
+
+```lanius
+pub fn is_ready(&self) -> bool
+```
+
+### impl at line 91
+
+[Source line 91](../../../extended/ext/xz.lani#L91)
+
+```lanius
+pub impl Encoding
+```
+
+#### method: is_header
+
+[Source line 92](../../../extended/ext/xz.lani#L92)
+
+```lanius
+pub fn is_header(&self) -> bool
+```
+
+#### method: is_blocks
+
+[Source line 93](../../../extended/ext/xz.lani#L93)
+
+```lanius
+pub fn is_blocks(&self) -> bool
+```
+
+#### method: is_ended
+
+[Source line 94](../../../extended/ext/xz.lani#L94)
+
+```lanius
+pub fn is_ended(&self) -> bool
+```
+
+### impl at line 142
+
+[Source line 142](../../../extended/ext/xz.lani#L142)
+
+```lanius
+pub impl IndexPhase
+```
+
+#### method: is_count
+
+[Source line 143](../../../extended/ext/xz.lani#L143)
+
+```lanius
+pub fn is_count(&self) -> bool
+```
+
+#### method: is_unpadded
+
+[Source line 144](../../../extended/ext/xz.lani#L144)
+
+```lanius
+pub fn is_unpadded(&self) -> bool
+```
+
+#### method: is_uncompressed
+
+[Source line 145](../../../extended/ext/xz.lani#L145)
+
+```lanius
+pub fn is_uncompressed(&self) -> bool
+```
+
+#### method: is_padding
+
+[Source line 146](../../../extended/ext/xz.lani#L146)
+
+```lanius
+pub fn is_padding(&self) -> bool
+```
+
+#### method: is_crc
+
+[Source line 147](../../../extended/ext/xz.lani#L147)
+
+```lanius
+pub fn is_crc(&self) -> bool
+```
+
+### impl at line 257
+
+[Source line 257](../../../extended/ext/xz.lani#L257)
+
+```lanius
+pub impl Context
+```
+
+#### method: index
+
+[Source line 258](../../../extended/ext/xz.lani#L258)
+
+```lanius
+pub fn index(&self) -> i32
+```
+
+### impl at line 1039
+
+[Source line 1039](../../../extended/ext/xz.lani#L1039)
 
 ```lanius
 pub impl Decoder
@@ -1218,7 +1732,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 428](../../../extended/ext/xz.lani#L428)
+[Source line 1040](../../../extended/ext/xz.lani#L1040)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -1226,7 +1740,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: dictionary_len
 
-[Source line 430](../../../extended/ext/xz.lani#L430)
+[Source line 1042](../../../extended/ext/xz.lani#L1042)
 
 ```lanius
 pub fn dictionary_len(&self) -> i32
@@ -1234,7 +1748,7 @@ pub fn dictionary_len(&self) -> i32
 
 #### method: window_len
 
-[Source line 432](../../../extended/ext/xz.lani#L432)
+[Source line 1044](../../../extended/ext/xz.lani#L1044)
 
 ```lanius
 pub fn window_len(&self) -> i32
@@ -1242,7 +1756,7 @@ pub fn window_len(&self) -> i32
 
 #### method: set_dictionary
 
-[Source line 436](../../../extended/ext/xz.lani#L436)
+[Source line 1048](../../../extended/ext/xz.lani#L1048)
 
 ```lanius
 pub fn set_dictionary(&self, dictionary: core::slice::View<u8>) -> core::result::Result<bool,Error>
@@ -1250,7 +1764,7 @@ pub fn set_dictionary(&self, dictionary: core::slice::View<u8>) -> core::result:
 
 #### method: total_read
 
-[Source line 441](../../../extended/ext/xz.lani#L441)
+[Source line 1053](../../../extended/ext/xz.lani#L1053)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -1258,7 +1772,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 442](../../../extended/ext/xz.lani#L442)
+[Source line 1054](../../../extended/ext/xz.lani#L1054)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -1266,7 +1780,7 @@ pub fn total_written(&self) -> u64
 
 #### method: is_done
 
-[Source line 443](../../../extended/ext/xz.lani#L443)
+[Source line 1055](../../../extended/ext/xz.lani#L1055)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -1274,7 +1788,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_failed
 
-[Source line 444](../../../extended/ext/xz.lani#L444)
+[Source line 1056](../../../extended/ext/xz.lani#L1056)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -1282,15 +1796,15 @@ pub fn is_failed(&self) -> bool
 
 #### method: step
 
-[Source line 447](../../../extended/ext/xz.lani#L447)
+[Source line 1059](../../../extended/ext/xz.lani#L1059)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error>
 ```
 
-### impl at line 661
+### impl at line 1273
 
-[Source line 661](../../../extended/ext/xz.lani#L661)
+[Source line 1273](../../../extended/ext/xz.lani#L1273)
 
 ```lanius
 pub impl StoreEncoder
@@ -1298,7 +1812,7 @@ pub impl StoreEncoder
 
 #### method: borrow
 
-[Source line 662](../../../extended/ext/xz.lani#L662)
+[Source line 1274](../../../extended/ext/xz.lani#L1274)
 
 ```lanius
 pub fn borrow(&self) -> &StoreEncoder
@@ -1306,7 +1820,7 @@ pub fn borrow(&self) -> &StoreEncoder
 
 #### method: begin
 
-[Source line 664](../../../extended/ext/xz.lani#L664)
+[Source line 1276](../../../extended/ext/xz.lani#L1276)
 
 ```lanius
 pub fn begin(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -1314,7 +1828,7 @@ pub fn begin(&self, output: core::slice::View<u8>) -> core::result::Result<i32,E
 
 #### method: chunk
 
-[Source line 669](../../../extended/ext/xz.lani#L669)
+[Source line 1281](../../../extended/ext/xz.lani#L1281)
 
 ```lanius
 pub fn chunk(&self, data: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -1322,15 +1836,15 @@ pub fn chunk(&self, data: core::slice::View<u8>, output: core::slice::View<u8>) 
 
 #### method: finish
 
-[Source line 678](../../../extended/ext/xz.lani#L678)
+[Source line 1290](../../../extended/ext/xz.lani#L1290)
 
 ```lanius
 pub fn finish(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 943
+### impl at line 1555
 
-[Source line 943](../../../extended/ext/xz.lani#L943)
+[Source line 1555](../../../extended/ext/xz.lani#L1555)
 
 ```lanius
 pub impl Encoder
@@ -1338,7 +1852,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 944](../../../extended/ext/xz.lani#L944)
+[Source line 1556](../../../extended/ext/xz.lani#L1556)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -1346,7 +1860,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: total_read
 
-[Source line 945](../../../extended/ext/xz.lani#L945)
+[Source line 1557](../../../extended/ext/xz.lani#L1557)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -1354,7 +1868,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 946](../../../extended/ext/xz.lani#L946)
+[Source line 1558](../../../extended/ext/xz.lani#L1558)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -1362,7 +1876,7 @@ pub fn total_written(&self) -> u64
 
 #### method: is_done
 
-[Source line 947](../../../extended/ext/xz.lani#L947)
+[Source line 1559](../../../extended/ext/xz.lani#L1559)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -1370,7 +1884,7 @@ pub fn is_done(&self) -> bool
 
 #### method: step
 
-[Source line 950](../../../extended/ext/xz.lani#L950)
+[Source line 1562](../../../extended/ext/xz.lani#L1562)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error>

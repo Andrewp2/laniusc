@@ -22,15 +22,16 @@ Declaration counts: field: 10; function: 4; impl: 3; method: 22; struct: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::binary_heap](../alloc/binary_heap.md) · [source](../../../extended/ext/graph_algorithms.lani#L6)
-- [alloc::deque](../alloc/deque.md) · [source](../../../extended/ext/graph_algorithms.lani#L7)
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/graph_algorithms.lani#L8)
-- [core::i32](../core/i32.md) · [source](../../../extended/ext/graph_algorithms.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/graph_algorithms.lani#L10)
-- [core::option](../core/option.md) · [source](../../../extended/ext/graph_algorithms.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/graph_algorithms.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph_algorithms.lani#L13)
-- [ext::graph](graph.md) · [source](../../../extended/ext/graph_algorithms.lani#L14)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/graph_algorithms.lani#L6)
+- [alloc::binary_heap](../alloc/binary_heap.md) · [source](../../../extended/ext/graph_algorithms.lani#L7)
+- [alloc::deque](../alloc/deque.md) · [source](../../../extended/ext/graph_algorithms.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/graph_algorithms.lani#L9)
+- [core::i32](../core/i32.md) · [source](../../../extended/ext/graph_algorithms.lani#L10)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/graph_algorithms.lani#L11)
+- [core::option](../core/option.md) · [source](../../../extended/ext/graph_algorithms.lani#L12)
+- [core::result](../core/result.md) · [source](../../../extended/ext/graph_algorithms.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph_algorithms.lani#L14)
+- [ext::graph](graph.md) · [source](../../../extended/ext/graph_algorithms.lani#L15)
 
 ## Types, fields and variants
 
@@ -38,7 +39,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: BfsPaths
 
-[Source line 16](../../../extended/ext/graph_algorithms.lani#L16)
+[Source line 17](../../../extended/ext/graph_algorithms.lani#L17)
 
 ```lanius
 pub struct BfsPaths
@@ -46,7 +47,7 @@ pub struct BfsPaths
 
 #### field: distances
 
-[Source line 17](../../../extended/ext/graph_algorithms.lani#L17)
+[Source line 18](../../../extended/ext/graph_algorithms.lani#L18)
 
 ```lanius
 distances: alloc::vec::Vec<i32>
@@ -54,7 +55,7 @@ distances: alloc::vec::Vec<i32>
 
 #### field: parents
 
-[Source line 18](../../../extended/ext/graph_algorithms.lani#L18)
+[Source line 19](../../../extended/ext/graph_algorithms.lani#L19)
 
 ```lanius
 parents: alloc::vec::Vec<i32>
@@ -62,23 +63,23 @@ parents: alloc::vec::Vec<i32>
 
 #### field: selected_source
 
-[Source line 19](../../../extended/ext/graph_algorithms.lani#L19)
+[Source line 20](../../../extended/ext/graph_algorithms.lani#L20)
 
 ```lanius
 selected_source: i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 20](../../../extended/ext/graph_algorithms.lani#L20)
+[Source line 21](../../../extended/ext/graph_algorithms.lani#L21)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### struct: StrongComponents
 
-[Source line 207](../../../extended/ext/graph_algorithms.lani#L207)
+[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
 
 ```lanius
 pub struct StrongComponents
@@ -86,7 +87,7 @@ pub struct StrongComponents
 
 #### field: labels
 
-[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+[Source line 209](../../../extended/ext/graph_algorithms.lani#L209)
 
 ```lanius
 labels: alloc::vec::Vec<i32>
@@ -94,23 +95,23 @@ labels: alloc::vec::Vec<i32>
 
 #### field: count
 
-[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+[Source line 209](../../../extended/ext/graph_algorithms.lani#L209)
 
 ```lanius
 count: i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+[Source line 209](../../../extended/ext/graph_algorithms.lani#L209)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### struct: Condensation
 
-[Source line 211](../../../extended/ext/graph_algorithms.lani#L211)
+[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
 
 ```lanius
 pub struct Condensation
@@ -118,7 +119,7 @@ pub struct Condensation
 
 #### field: components
 
-[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
+[Source line 213](../../../extended/ext/graph_algorithms.lani#L213)
 
 ```lanius
 components: StrongComponents
@@ -126,25 +127,25 @@ components: StrongComponents
 
 #### field: graph
 
-[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
+[Source line 213](../../../extended/ext/graph_algorithms.lani#L213)
 
 ```lanius
 graph: ext::graph::Graph
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
+[Source line 213](../../../extended/ext/graph_algorithms.lani#L213)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: bfs
 
-[Source line 73](../../../extended/ext/graph_algorithms.lani#L73)
+[Source line 74](../../../extended/ext/graph_algorithms.lani#L74)
 
 ```lanius
 pub fn bfs(graph: ext::graph::View, source: i32, limits: ext::graph::Limits)
@@ -155,7 +156,7 @@ Validate once, then check the requested source, admit V+4n+2m+1 and allocate res
 
 ### function: topological_order
 
-[Source line 138](../../../extended/ext/graph_algorithms.lani#L138)
+[Source line 139](../../../extended/ext/graph_algorithms.lani#L139)
 
 ```lanius
 pub fn topological_order(graph: ext::graph::View, limits: ext::graph::Limits)
@@ -166,7 +167,7 @@ Validate once and admit V+4n+2m+4n(1+h(n)); choose minimum ready ID via the exis
 
 ### function: strong_components
 
-[Source line 396](../../../extended/ext/graph_algorithms.lani#L396)
+[Source line 397](../../../extended/ext/graph_algorithms.lani#L397)
 
 ```lanius
 pub fn strong_components(graph: ext::graph::View, limits: ext::graph::Limits)
@@ -177,7 +178,7 @@ Validates once, admits V+16n+4m+1, then uses explicit DFS frames and six reserve
 
 ### function: condensation
 
-[Source line 408](../../../extended/ext/graph_algorithms.lani#L408)
+[Source line 409](../../../extended/ext/graph_algorithms.lani#L409)
 
 ```lanius
 pub fn condensation(graph: ext::graph::View, limits: ext::graph::Limits)
@@ -188,9 +189,9 @@ Validates once, admits native m-Edge capacity before V+16n+6m+1+F(n,m), computes
 
 ## Implementation blocks and public methods
 
-### impl at line 36
+### impl at line 37
 
-[Source line 36](../../../extended/ext/graph_algorithms.lani#L36)
+[Source line 37](../../../extended/ext/graph_algorithms.lani#L37)
 
 ```lanius
 pub impl BfsPaths
@@ -198,7 +199,7 @@ pub impl BfsPaths
 
 #### method: borrow
 
-[Source line 37](../../../extended/ext/graph_algorithms.lani#L37)
+[Source line 38](../../../extended/ext/graph_algorithms.lani#L38)
 
 ```lanius
 pub fn borrow(&self) -> &BfsPaths
@@ -206,7 +207,7 @@ pub fn borrow(&self) -> &BfsPaths
 
 #### method: is_open
 
-[Source line 38](../../../extended/ext/graph_algorithms.lani#L38)
+[Source line 39](../../../extended/ext/graph_algorithms.lani#L39)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -214,7 +215,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 39](../../../extended/ext/graph_algorithms.lani#L39)
+[Source line 40](../../../extended/ext/graph_algorithms.lani#L40)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -222,7 +223,7 @@ pub fn node_count(&self) -> i32
 
 #### method: source
 
-[Source line 43](../../../extended/ext/graph_algorithms.lani#L43)
+[Source line 44](../../../extended/ext/graph_algorithms.lani#L44)
 
 ```lanius
 pub fn source(&self) -> core::option::Option<i32>
@@ -230,7 +231,7 @@ pub fn source(&self) -> core::option::Option<i32>
 
 #### method: distance
 
-[Source line 47](../../../extended/ext/graph_algorithms.lani#L47)
+[Source line 48](../../../extended/ext/graph_algorithms.lani#L48)
 
 ```lanius
 pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error>
@@ -238,7 +239,7 @@ pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i
 
 #### method: predecessor
 
-[Source line 55](../../../extended/ext/graph_algorithms.lani#L55)
+[Source line 56](../../../extended/ext/graph_algorithms.lani#L56)
 
 ```lanius
 pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error>
@@ -246,15 +247,15 @@ pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Optio
 
 #### method: destroy
 
-[Source line 63](../../../extended/ext/graph_algorithms.lani#L63)
+[Source line 64](../../../extended/ext/graph_algorithms.lani#L64)
 
 ```lanius
 pub fn destroy(&self) -> bool
 ```
 
-### impl at line 215
+### impl at line 216
 
-[Source line 215](../../../extended/ext/graph_algorithms.lani#L215)
+[Source line 216](../../../extended/ext/graph_algorithms.lani#L216)
 
 ```lanius
 pub impl StrongComponents
@@ -262,7 +263,7 @@ pub impl StrongComponents
 
 #### method: borrow
 
-[Source line 216](../../../extended/ext/graph_algorithms.lani#L216)
+[Source line 217](../../../extended/ext/graph_algorithms.lani#L217)
 
 ```lanius
 pub fn borrow(&self) -> &StrongComponents
@@ -270,7 +271,7 @@ pub fn borrow(&self) -> &StrongComponents
 
 #### method: is_open
 
-[Source line 217](../../../extended/ext/graph_algorithms.lani#L217)
+[Source line 218](../../../extended/ext/graph_algorithms.lani#L218)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -278,7 +279,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 218](../../../extended/ext/graph_algorithms.lani#L218)
+[Source line 219](../../../extended/ext/graph_algorithms.lani#L219)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -286,7 +287,7 @@ pub fn node_count(&self) -> i32
 
 #### method: component_count
 
-[Source line 222](../../../extended/ext/graph_algorithms.lani#L222)
+[Source line 223](../../../extended/ext/graph_algorithms.lani#L223)
 
 ```lanius
 pub fn component_count(&self) -> i32
@@ -294,7 +295,7 @@ pub fn component_count(&self) -> i32
 
 #### method: component
 
-[Source line 226](../../../extended/ext/graph_algorithms.lani#L226)
+[Source line 227](../../../extended/ext/graph_algorithms.lani#L227)
 
 ```lanius
 pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error>
@@ -302,7 +303,7 @@ pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Erro
 
 #### method: same_component
 
-[Source line 233](../../../extended/ext/graph_algorithms.lani#L233)
+[Source line 234](../../../extended/ext/graph_algorithms.lani#L234)
 
 ```lanius
 pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error>
@@ -310,15 +311,15 @@ pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool
 
 #### method: destroy
 
-[Source line 238](../../../extended/ext/graph_algorithms.lani#L238)
+[Source line 239](../../../extended/ext/graph_algorithms.lani#L239)
 
 ```lanius
 pub fn destroy(&self) -> bool
 ```
 
-### impl at line 245
+### impl at line 246
 
-[Source line 245](../../../extended/ext/graph_algorithms.lani#L245)
+[Source line 246](../../../extended/ext/graph_algorithms.lani#L246)
 
 ```lanius
 pub impl Condensation
@@ -326,7 +327,7 @@ pub impl Condensation
 
 #### method: borrow
 
-[Source line 246](../../../extended/ext/graph_algorithms.lani#L246)
+[Source line 247](../../../extended/ext/graph_algorithms.lani#L247)
 
 ```lanius
 pub fn borrow(&self) -> &Condensation
@@ -334,7 +335,7 @@ pub fn borrow(&self) -> &Condensation
 
 #### method: is_open
 
-[Source line 247](../../../extended/ext/graph_algorithms.lani#L247)
+[Source line 248](../../../extended/ext/graph_algorithms.lani#L248)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -342,7 +343,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 248](../../../extended/ext/graph_algorithms.lani#L248)
+[Source line 249](../../../extended/ext/graph_algorithms.lani#L249)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -350,7 +351,7 @@ pub fn node_count(&self) -> i32
 
 #### method: component_count
 
-[Source line 252](../../../extended/ext/graph_algorithms.lani#L252)
+[Source line 253](../../../extended/ext/graph_algorithms.lani#L253)
 
 ```lanius
 pub fn component_count(&self) -> i32
@@ -358,7 +359,7 @@ pub fn component_count(&self) -> i32
 
 #### method: component
 
-[Source line 256](../../../extended/ext/graph_algorithms.lani#L256)
+[Source line 257](../../../extended/ext/graph_algorithms.lani#L257)
 
 ```lanius
 pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error>
@@ -366,7 +367,7 @@ pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Erro
 
 #### method: same_component
 
-[Source line 260](../../../extended/ext/graph_algorithms.lani#L260)
+[Source line 261](../../../extended/ext/graph_algorithms.lani#L261)
 
 ```lanius
 pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error>
@@ -374,7 +375,7 @@ pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool
 
 #### method: view
 
-[Source line 265](../../../extended/ext/graph_algorithms.lani#L265)
+[Source line 266](../../../extended/ext/graph_algorithms.lani#L266)
 
 ```lanius
 pub fn view(&self) -> core::option::Option<ext::graph::View>
@@ -382,7 +383,7 @@ pub fn view(&self) -> core::option::Option<ext::graph::View>
 
 #### method: destroy
 
-[Source line 269](../../../extended/ext/graph_algorithms.lani#L269)
+[Source line 270](../../../extended/ext/graph_algorithms.lani#L270)
 
 ```lanius
 pub fn destroy(&self) -> bool

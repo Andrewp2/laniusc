@@ -18,17 +18,19 @@ Declaration counts: constant: 6; enum: 1; field: 33; function: 28; impl: 4; meth
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_lines.lani#L7)
-- [core::io](../core/io.md) · [source](../../../extended/ext/text_lines.lani#L8)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_lines.lani#L9)
-- [core::option](../core/option.md) · [source](../../../extended/ext/text_lines.lani#L10)
-- [core::path](../core/path.md) · [source](../../../extended/ext/text_lines.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/text_lines.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_lines.lani#L13)
-- [std::file](../std/file.md) · [source](../../../extended/ext/text_lines.lani#L14)
-- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/text_lines.lani#L15)
-- [std::fs](../std/fs.md) · [source](../../../extended/ext/text_lines.lani#L16)
-- [std::stream](../std/stream.md) · [source](../../../extended/ext/text_lines.lani#L17)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/text_lines.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/text_lines.lani#L8)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_lines.lani#L9)
+- [core::io](../core/io.md) · [source](../../../extended/ext/text_lines.lani#L10)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_lines.lani#L11)
+- [core::option](../core/option.md) · [source](../../../extended/ext/text_lines.lani#L12)
+- [core::path](../core/path.md) · [source](../../../extended/ext/text_lines.lani#L13)
+- [core::result](../core/result.md) · [source](../../../extended/ext/text_lines.lani#L14)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_lines.lani#L15)
+- [std::file](../std/file.md) · [source](../../../extended/ext/text_lines.lani#L16)
+- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/text_lines.lani#L17)
+- [std::fs](../std/fs.md) · [source](../../../extended/ext/text_lines.lani#L18)
+- [std::stream](../std/stream.md) · [source](../../../extended/ext/text_lines.lani#L19)
 
 ## Types, fields and variants
 
@@ -36,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 28](../../../extended/ext/text_lines.lani#L28)
+[Source line 30](../../../extended/ext/text_lines.lani#L30)
 
 ```lanius
 pub enum Error
@@ -44,7 +46,7 @@ pub enum Error
 
 #### variant: AllocationFailed
 
-[Source line 28](../../../extended/ext/text_lines.lani#L28)
+[Source line 30](../../../extended/ext/text_lines.lani#L30)
 
 ```lanius
 AllocationFailed
@@ -52,7 +54,7 @@ AllocationFailed
 
 #### variant: LimitExceeded
 
-[Source line 28](../../../extended/ext/text_lines.lani#L28)
+[Source line 30](../../../extended/ext/text_lines.lani#L30)
 
 ```lanius
 LimitExceeded
@@ -60,7 +62,7 @@ LimitExceeded
 
 #### variant: Io
 
-[Source line 28](../../../extended/ext/text_lines.lani#L28)
+[Source line 30](../../../extended/ext/text_lines.lani#L30)
 
 ```lanius
 Io
@@ -68,7 +70,7 @@ Io
 
 ### struct: Words
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 pub struct Words
@@ -76,7 +78,7 @@ pub struct Words
 
 #### field: words
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 words: [u64]
@@ -84,7 +86,7 @@ words: [u64]
 
 #### field: nw
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 nw: i32
@@ -92,7 +94,7 @@ nw: i32
 
 #### field: tail
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 tail: u64
@@ -100,7 +102,7 @@ tail: u64
 
 #### field: length
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 length: i32
@@ -108,7 +110,7 @@ length: i32
 
 #### field: values
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 values: [u8]
@@ -116,7 +118,7 @@ values: [u8]
 
 #### field: start
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 start: i32
@@ -124,7 +126,7 @@ start: i32
 
 #### field: copy
 
-[Source line 32](../../../extended/ext/text_lines.lani#L32)
+[Source line 34](../../../extended/ext/text_lines.lani#L34)
 
 ```lanius
 copy: alloc::io::Buffer
@@ -132,7 +134,7 @@ copy: alloc::io::Buffer
 
 ### struct: Starts
 
-[Source line 76](../../../extended/ext/text_lines.lani#L76)
+[Source line 78](../../../extended/ext/text_lines.lani#L78)
 
 ```lanius
 pub struct Starts
@@ -140,7 +142,7 @@ pub struct Starts
 
 #### field: mem
 
-[Source line 76](../../../extended/ext/text_lines.lani#L76)
+[Source line 78](../../../extended/ext/text_lines.lani#L78)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -148,7 +150,7 @@ mem: alloc::io::Buffer
 
 #### field: at
 
-[Source line 76](../../../extended/ext/text_lines.lani#L76)
+[Source line 78](../../../extended/ext/text_lines.lani#L78)
 
 ```lanius
 at: [i32]
@@ -156,7 +158,7 @@ at: [i32]
 
 #### field: count
 
-[Source line 76](../../../extended/ext/text_lines.lani#L76)
+[Source line 78](../../../extended/ext/text_lines.lani#L78)
 
 ```lanius
 count: i32
@@ -164,7 +166,7 @@ count: i32
 
 #### field: room
 
-[Source line 76](../../../extended/ext/text_lines.lani#L76)
+[Source line 78](../../../extended/ext/text_lines.lani#L78)
 
 ```lanius
 room: i32
@@ -172,7 +174,7 @@ room: i32
 
 ### struct: Out
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 pub struct Out
@@ -180,7 +182,7 @@ pub struct Out
 
 #### field: mem
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -188,7 +190,7 @@ mem: alloc::io::Buffer
 
 #### field: base
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 base: ptr
@@ -196,7 +198,7 @@ base: ptr
 
 #### field: cap
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 cap: i32
@@ -204,7 +206,7 @@ cap: i32
 
 #### field: w
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 w: [u64]
@@ -212,7 +214,7 @@ w: [u64]
 
 #### field: at
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 at: i32
@@ -220,7 +222,7 @@ at: i32
 
 #### field: acc
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 acc: u64
@@ -228,7 +230,7 @@ acc: u64
 
 #### field: fill
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 fill: i32
@@ -236,23 +238,23 @@ fill: i32
 
 #### field: fd
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 fd: i32
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 #### field: written
 
-[Source line 131](../../../extended/ext/text_lines.lani#L131)
+[Source line 133](../../../extended/ext/text_lines.lani#L133)
 
 ```lanius
 written: i64
@@ -260,7 +262,7 @@ written: i64
 
 ### struct: Stat
 
-[Source line 315](../../../extended/ext/text_lines.lani#L315)
+[Source line 317](../../../extended/ext/text_lines.lani#L317)
 
 ```lanius
 pub struct Stat
@@ -268,7 +270,7 @@ pub struct Stat
 
 #### field: ok
 
-[Source line 315](../../../extended/ext/text_lines.lani#L315)
+[Source line 317](../../../extended/ext/text_lines.lani#L317)
 
 ```lanius
 ok: bool
@@ -276,7 +278,7 @@ ok: bool
 
 #### field: regular
 
-[Source line 315](../../../extended/ext/text_lines.lani#L315)
+[Source line 317](../../../extended/ext/text_lines.lani#L317)
 
 ```lanius
 regular: bool
@@ -284,7 +286,7 @@ regular: bool
 
 #### field: size
 
-[Source line 315](../../../extended/ext/text_lines.lani#L315)
+[Source line 317](../../../extended/ext/text_lines.lani#L317)
 
 ```lanius
 size: i64
@@ -292,7 +294,7 @@ size: i64
 
 #### field: block
 
-[Source line 315](../../../extended/ext/text_lines.lani#L315)
+[Source line 317](../../../extended/ext/text_lines.lani#L317)
 
 ```lanius
 block: i64
@@ -300,7 +302,7 @@ block: i64
 
 ### struct: Lines
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 pub struct Lines
@@ -308,7 +310,7 @@ pub struct Lines
 
 #### field: mem
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -316,7 +318,7 @@ mem: alloc::io::Buffer
 
 #### field: base
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 base: ptr
@@ -324,7 +326,7 @@ base: ptr
 
 #### field: cap
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 cap: i32
@@ -332,7 +334,7 @@ cap: i32
 
 #### field: have
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 have: i32
@@ -340,7 +342,7 @@ have: i32
 
 #### field: used
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 used: i32
@@ -348,33 +350,33 @@ used: i32
 
 #### field: fd
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 fd: i32
 ```
 
-#### field: done
+#### field: completion
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
-done: bool
+completion: core::iter_state::Completion
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 459](../../../extended/ext/text_lines.lani#L459)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 ## Constants
 
 ### constant: ALL
 
-[Source line 19](../../../extended/ext/text_lines.lani#L19)
+[Source line 21](../../../extended/ext/text_lines.lani#L21)
 
 ```lanius
 pub const ALL: u64 = 18446744073709551615;
@@ -382,7 +384,7 @@ pub const ALL: u64 = 18446744073709551615;
 
 ### constant: LOW7
 
-[Source line 21](../../../extended/ext/text_lines.lani#L21)
+[Source line 23](../../../extended/ext/text_lines.lani#L23)
 
 ```lanius
 pub const LOW7: u64 = 9187201950435737471;
@@ -390,7 +392,7 @@ pub const LOW7: u64 = 9187201950435737471;
 
 ### constant: HIGH
 
-[Source line 22](../../../extended/ext/text_lines.lani#L22)
+[Source line 24](../../../extended/ext/text_lines.lani#L24)
 
 ```lanius
 pub const HIGH: u64 = 9259542123273814144;
@@ -398,7 +400,7 @@ pub const HIGH: u64 = 9259542123273814144;
 
 ### constant: ONES
 
-[Source line 23](../../../extended/ext/text_lines.lani#L23)
+[Source line 25](../../../extended/ext/text_lines.lani#L25)
 
 ```lanius
 pub const ONES: u64 = 72340172838076673;
@@ -406,7 +408,7 @@ pub const ONES: u64 = 72340172838076673;
 
 ### constant: NL
 
-[Source line 24](../../../extended/ext/text_lines.lani#L24)
+[Source line 26](../../../extended/ext/text_lines.lani#L26)
 
 ```lanius
 pub const NL: u64 = 723401728380766730;
@@ -414,7 +416,7 @@ pub const NL: u64 = 723401728380766730;
 
 ### constant: RANKS
 
-[Source line 26](../../../extended/ext/text_lines.lani#L26)
+[Source line 28](../../../extended/ext/text_lines.lani#L28)
 
 ```lanius
 pub const RANKS: u64 = 72623859790382856;
@@ -424,7 +426,7 @@ pub const RANKS: u64 = 72623859790382856;
 
 ### function: packed
 
-[Source line 47](../../../extended/ext/text_lines.lani#L47)
+[Source line 49](../../../extended/ext/text_lines.lani#L49)
 
 ```lanius
 pub fn packed(v: core::slice::View<u8>) -> bool
@@ -432,7 +434,7 @@ pub fn packed(v: core::slice::View<u8>) -> bool
 
 ### function: words
 
-[Source line 55](../../../extended/ext/text_lines.lani#L55)
+[Source line 57](../../../extended/ext/text_lines.lani#L57)
 
 ```lanius
 pub fn words(v: core::slice::View<u8>) -> core::result::Result<Words, Error>
@@ -440,7 +442,7 @@ pub fn words(v: core::slice::View<u8>) -> core::result::Result<Words, Error>
 
 ### function: line_starts
 
-[Source line 103](../../../extended/ext/text_lines.lani#L103)
+[Source line 105](../../../extended/ext/text_lines.lani#L105)
 
 ```lanius
 pub fn line_starts(w: &Words) -> core::result::Result<Starts, Error>
@@ -448,7 +450,7 @@ pub fn line_starts(w: &Words) -> core::result::Result<Starts, Error>
 
 ### function: out
 
-[Source line 139](../../../extended/ext/text_lines.lani#L139)
+[Source line 141](../../../extended/ext/text_lines.lani#L141)
 
 ```lanius
 pub fn out(fd: i32, words: i32) -> core::result::Result<Out, Error>
@@ -456,7 +458,7 @@ pub fn out(fd: i32, words: i32) -> core::result::Result<Out, Error>
 
 ### function: write_all
 
-[Source line 151](../../../extended/ext/text_lines.lani#L151)
+[Source line 153](../../../extended/ext/text_lines.lani#L153)
 
 ```lanius
 pub fn write_all(fd: i32, base: ptr, count: i32) -> bool
@@ -464,7 +466,7 @@ pub fn write_all(fd: i32, base: ptr, count: i32) -> bool
 
 ### function: spill
 
-[Source line 163](../../../extended/ext/text_lines.lani#L163)
+[Source line 165](../../../extended/ext/text_lines.lani#L165)
 
 ```lanius
 pub fn spill(o: &Out)
@@ -472,7 +474,7 @@ pub fn spill(o: &Out)
 
 ### function: put
 
-[Source line 176](../../../extended/ext/text_lines.lani#L176)
+[Source line 178](../../../extended/ext/text_lines.lani#L178)
 
 ```lanius
 pub fn put(o: &Out, x: u64, k: i32)
@@ -480,7 +482,7 @@ pub fn put(o: &Out, x: u64, k: i32)
 
 ### function: put_byte
 
-[Source line 187](../../../extended/ext/text_lines.lani#L187)
+[Source line 189](../../../extended/ext/text_lines.lani#L189)
 
 ```lanius
 pub fn put_byte(o: &Out, b: u8)
@@ -488,7 +490,7 @@ pub fn put_byte(o: &Out, b: u8)
 
 ### function: put_span
 
-[Source line 195](../../../extended/ext/text_lines.lani#L195)
+[Source line 197](../../../extended/ext/text_lines.lani#L197)
 
 ```lanius
 pub fn put_span(o: &Out, src: &Words, off: i32, len: i32)
@@ -496,7 +498,7 @@ pub fn put_span(o: &Out, src: &Words, off: i32, len: i32)
 
 ### function: put_number
 
-[Source line 234](../../../extended/ext/text_lines.lani#L234)
+[Source line 236](../../../extended/ext/text_lines.lani#L236)
 
 ```lanius
 pub fn put_number(o: &Out, value: i64, width: i32)
@@ -504,7 +506,7 @@ pub fn put_number(o: &Out, value: i64, width: i32)
 
 ### function: finish
 
-[Source line 246](../../../extended/ext/text_lines.lani#L246)
+[Source line 248](../../../extended/ext/text_lines.lani#L248)
 
 ```lanius
 pub fn finish(o: &Out) -> bool
@@ -512,7 +514,7 @@ pub fn finish(o: &Out) -> bool
 
 ### function: out_over
 
-[Source line 268](../../../extended/ext/text_lines.lani#L268)
+[Source line 270](../../../extended/ext/text_lines.lani#L270)
 
 ```lanius
 pub fn out_over(base: ptr, words: i32) -> Out
@@ -520,7 +522,7 @@ pub fn out_over(base: ptr, words: i32) -> Out
 
 ### function: seal
 
-[Source line 272](../../../extended/ext/text_lines.lani#L272)
+[Source line 274](../../../extended/ext/text_lines.lani#L274)
 
 ```lanius
 pub fn seal(o: &Out) -> i32
@@ -528,7 +530,7 @@ pub fn seal(o: &Out) -> i32
 
 ### function: bytes
 
-[Source line 274](../../../extended/ext/text_lines.lani#L274)
+[Source line 276](../../../extended/ext/text_lines.lani#L276)
 
 ```lanius
 pub fn bytes(o: &Out) -> core::slice::View<u8>
@@ -536,7 +538,7 @@ pub fn bytes(o: &Out) -> core::slice::View<u8>
 
 ### function: open_input
 
-[Source line 281](../../../extended/ext/text_lines.lani#L281)
+[Source line 283](../../../extended/ext/text_lines.lani#L283)
 
 ```lanius
 pub fn open_input(name: core::slice::View<u8>) -> i32
@@ -544,7 +546,7 @@ pub fn open_input(name: core::slice::View<u8>) -> i32
 
 ### function: close_input
 
-[Source line 293](../../../extended/ext/text_lines.lani#L293)
+[Source line 295](../../../extended/ext/text_lines.lani#L295)
 
 ```lanius
 pub fn close_input(fd: i32)
@@ -552,7 +554,7 @@ pub fn close_input(fd: i32)
 
 ### function: input_size
 
-[Source line 300](../../../extended/ext/text_lines.lani#L300)
+[Source line 302](../../../extended/ext/text_lines.lani#L302)
 
 ```lanius
 pub fn input_size(fd: i32) -> i64
@@ -560,7 +562,7 @@ pub fn input_size(fd: i32) -> i64
 
 ### function: stat
 
-[Source line 316](../../../extended/ext/text_lines.lani#L316)
+[Source line 318](../../../extended/ext/text_lines.lani#L318)
 
 ```lanius
 pub fn stat(fd: i32) -> Stat
@@ -568,7 +570,7 @@ pub fn stat(fd: i32) -> Stat
 
 ### function: seek
 
-[Source line 330](../../../extended/ext/text_lines.lani#L330)
+[Source line 332](../../../extended/ext/text_lines.lani#L332)
 
 ```lanius
 pub fn seek(fd: i32, offset: i64, whence: i32) -> i64
@@ -576,7 +578,7 @@ pub fn seek(fd: i32, offset: i64, whence: i32) -> i64
 
 ### function: read_all
 
-[Source line 344](../../../extended/ext/text_lines.lani#L344)
+[Source line 346](../../../extended/ext/text_lines.lani#L346)
 
 ```lanius
 pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool
@@ -584,7 +586,7 @@ pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool
 
 ### function: read_some
 
-[Source line 352](../../../extended/ext/text_lines.lani#L352)
+[Source line 354](../../../extended/ext/text_lines.lani#L354)
 
 ```lanius
 pub fn read_some(fd: i32, p: ptr, count: i32) -> i32
@@ -592,7 +594,7 @@ pub fn read_some(fd: i32, p: ptr, count: i32) -> i32
 
 ### function: count_byte
 
-[Source line 363](../../../extended/ext/text_lines.lani#L363)
+[Source line 365](../../../extended/ext/text_lines.lani#L365)
 
 ```lanius
 pub fn count_byte(p: ptr, k: i32, b: u8) -> u64
@@ -600,7 +602,7 @@ pub fn count_byte(p: ptr, k: i32, b: u8) -> u64
 
 ### function: nth_byte
 
-[Source line 381](../../../extended/ext/text_lines.lani#L381)
+[Source line 383](../../../extended/ext/text_lines.lani#L383)
 
 ```lanius
 pub fn nth_byte(p: ptr, k: i32, b: u8, want: u64) -> i32
@@ -608,7 +610,7 @@ pub fn nth_byte(p: ptr, k: i32, b: u8, want: u64) -> i32
 
 ### function: copy_bytes
 
-[Source line 404](../../../extended/ext/text_lines.lani#L404)
+[Source line 406](../../../extended/ext/text_lines.lani#L406)
 
 ```lanius
 pub fn copy_bytes(fd: i32, count: u64) -> i32
@@ -616,7 +618,7 @@ pub fn copy_bytes(fd: i32, count: u64) -> i32
 
 ### function: byte_positions
 
-[Source line 424](../../../extended/ext/text_lines.lani#L424)
+[Source line 426](../../../extended/ext/text_lines.lani#L426)
 
 ```lanius
 pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, Error>
@@ -624,7 +626,7 @@ pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, E
 
 ### function: lines
 
-[Source line 475](../../../extended/ext/text_lines.lani#L475)
+[Source line 477](../../../extended/ext/text_lines.lani#L477)
 
 ```lanius
 pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error>
@@ -632,7 +634,7 @@ pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error>
 
 ### function: next_lines
 
-[Source line 483](../../../extended/ext/text_lines.lani#L483)
+[Source line 485](../../../extended/ext/text_lines.lani#L485)
 
 ```lanius
 pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8>
@@ -640,7 +642,7 @@ pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8>
 
 ### function: open_output
 
-[Source line 514](../../../extended/ext/text_lines.lani#L514)
+[Source line 516](../../../extended/ext/text_lines.lani#L516)
 
 ```lanius
 pub fn open_output(name: core::slice::View<u8>) -> i32
@@ -648,9 +650,9 @@ pub fn open_output(name: core::slice::View<u8>) -> i32
 
 ## Implementation blocks and public methods
 
-### impl at line 33
+### impl at line 35
 
-[Source line 33](../../../extended/ext/text_lines.lani#L33)
+[Source line 35](../../../extended/ext/text_lines.lani#L35)
 
 ```lanius
 pub impl Words
@@ -658,7 +660,7 @@ pub impl Words
 
 #### method: borrow
 
-[Source line 34](../../../extended/ext/text_lines.lani#L34)
+[Source line 36](../../../extended/ext/text_lines.lani#L36)
 
 ```lanius
 pub fn borrow(&self) -> &Words
@@ -666,7 +668,7 @@ pub fn borrow(&self) -> &Words
 
 #### method: len
 
-[Source line 35](../../../extended/ext/text_lines.lani#L35)
+[Source line 37](../../../extended/ext/text_lines.lani#L37)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -674,7 +676,7 @@ pub fn len(&self) -> i32
 
 #### method: word
 
-[Source line 37](../../../extended/ext/text_lines.lani#L37)
+[Source line 39](../../../extended/ext/text_lines.lani#L39)
 
 ```lanius
 pub fn word(&self, i: i32) -> u64
@@ -682,7 +684,7 @@ pub fn word(&self, i: i32) -> u64
 
 #### method: load
 
-[Source line 39](../../../extended/ext/text_lines.lani#L39)
+[Source line 41](../../../extended/ext/text_lines.lani#L41)
 
 ```lanius
 pub fn load(&self, at: i32) -> u64
@@ -690,7 +692,7 @@ pub fn load(&self, at: i32) -> u64
 
 #### method: byte
 
-[Source line 44](../../../extended/ext/text_lines.lani#L44)
+[Source line 46](../../../extended/ext/text_lines.lani#L46)
 
 ```lanius
 pub fn byte(&self, at: i32) -> u8
@@ -698,15 +700,15 @@ pub fn byte(&self, at: i32) -> u8
 
 #### method: destroy
 
-[Source line 45](../../../extended/ext/text_lines.lani#L45)
+[Source line 47](../../../extended/ext/text_lines.lani#L47)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 77
+### impl at line 79
 
-[Source line 77](../../../extended/ext/text_lines.lani#L77)
+[Source line 79](../../../extended/ext/text_lines.lani#L79)
 
 ```lanius
 pub impl Starts
@@ -714,7 +716,7 @@ pub impl Starts
 
 #### method: borrow
 
-[Source line 78](../../../extended/ext/text_lines.lani#L78)
+[Source line 80](../../../extended/ext/text_lines.lani#L80)
 
 ```lanius
 pub fn borrow(&self) -> &Starts
@@ -722,7 +724,7 @@ pub fn borrow(&self) -> &Starts
 
 #### method: len
 
-[Source line 79](../../../extended/ext/text_lines.lani#L79)
+[Source line 81](../../../extended/ext/text_lines.lani#L81)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -730,7 +732,7 @@ pub fn len(&self) -> i32
 
 #### method: start
 
-[Source line 80](../../../extended/ext/text_lines.lani#L80)
+[Source line 82](../../../extended/ext/text_lines.lani#L82)
 
 ```lanius
 pub fn start(&self, i: i32) -> i32
@@ -738,7 +740,7 @@ pub fn start(&self, i: i32) -> i32
 
 #### method: end
 
-[Source line 81](../../../extended/ext/text_lines.lani#L81)
+[Source line 83](../../../extended/ext/text_lines.lani#L83)
 
 ```lanius
 pub fn end(&self, i: i32) -> i32
@@ -746,15 +748,15 @@ pub fn end(&self, i: i32) -> i32
 
 #### method: destroy
 
-[Source line 82](../../../extended/ext/text_lines.lani#L82)
+[Source line 84](../../../extended/ext/text_lines.lani#L84)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 132
+### impl at line 134
 
-[Source line 132](../../../extended/ext/text_lines.lani#L132)
+[Source line 134](../../../extended/ext/text_lines.lani#L134)
 
 ```lanius
 pub impl Out
@@ -762,7 +764,7 @@ pub impl Out
 
 #### method: borrow
 
-[Source line 133](../../../extended/ext/text_lines.lani#L133)
+[Source line 135](../../../extended/ext/text_lines.lani#L135)
 
 ```lanius
 pub fn borrow(&self) -> &Out
@@ -770,7 +772,7 @@ pub fn borrow(&self) -> &Out
 
 #### method: destroy
 
-[Source line 134](../../../extended/ext/text_lines.lani#L134)
+[Source line 136](../../../extended/ext/text_lines.lani#L136)
 
 ```lanius
 pub fn destroy(&self)
@@ -778,15 +780,15 @@ pub fn destroy(&self)
 
 #### method: total
 
-[Source line 136](../../../extended/ext/text_lines.lani#L136)
+[Source line 138](../../../extended/ext/text_lines.lani#L138)
 
 ```lanius
 pub fn total(&self) -> i64
 ```
 
-### impl at line 460
+### impl at line 462
 
-[Source line 460](../../../extended/ext/text_lines.lani#L460)
+[Source line 462](../../../extended/ext/text_lines.lani#L462)
 
 ```lanius
 pub impl Lines
@@ -794,7 +796,7 @@ pub impl Lines
 
 #### method: borrow
 
-[Source line 461](../../../extended/ext/text_lines.lani#L461)
+[Source line 463](../../../extended/ext/text_lines.lani#L463)
 
 ```lanius
 pub fn borrow(&self) -> &Lines
@@ -802,7 +804,7 @@ pub fn borrow(&self) -> &Lines
 
 #### method: finished
 
-[Source line 463](../../../extended/ext/text_lines.lani#L463)
+[Source line 465](../../../extended/ext/text_lines.lani#L465)
 
 ```lanius
 pub fn finished(&self) -> bool
@@ -810,7 +812,7 @@ pub fn finished(&self) -> bool
 
 #### method: destroy
 
-[Source line 464](../../../extended/ext/text_lines.lani#L464)
+[Source line 466](../../../extended/ext/text_lines.lani#L466)
 
 ```lanius
 pub fn destroy(&self)

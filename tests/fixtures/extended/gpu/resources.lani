@@ -1,0 +1,48 @@
+module app::main;
+import ext::gpu;
+import core::result;
+import core::option;
+import core::slice;
+import shaders::work_shaders;
+extern "C" fn probe_fault(value:i32);
+extern "C" fn probe_live() -> i32;
+extern "C" fn probe_hits() -> i32;
+extern "C" fn probe_empty();
+fn main() -> i32 {
+    let d=ext::gpu::open(0).unwrap(); let base=probe_live();
+    let failures:[i32;5]=[22,2,32,9,23]; let i:i32=0;
+    while(i<5) { probe_fault(failures[i]); assert(d.create_texture(7,5).is_err()); assert(probe_live()==base); i+=1; }
+    assert(d.create_texture(0,1).is_err()); assert(d.create_texture(4097,1).is_err());
+    let kinds:[ext::gpu::BindingKind;3]=[ext::gpu::BindingKind::UniformBuffer,ext::gpu::BindingKind::StorageBuffer,ext::gpu::BindingKind::StorageTexture];
+    probe_fault(24); assert(d.create_binding_layout(core::slice::whole(kinds)).is_err()); assert(probe_live()==base);
+    let layout=d.create_binding_layout(core::slice::whole(kinds)).unwrap(); let params=d.create_buffer(16).unwrap(); let b=d.create_buffer(256).unwrap(); let t=d.create_texture(7,5).unwrap();
+    let bindings:[ext::gpu::Binding;3]=[ext::gpu::Binding::UniformBuffer(params.borrow()),ext::gpu::Binding::StorageBuffer(b.borrow()),ext::gpu::Binding::StorageTexture(t.borrow())];
+    let before=probe_live(); probe_fault(25); assert(d.create_bind_group(layout.borrow(),core::slice::whole(bindings)).is_err()); assert(probe_live()==before);
+    probe_fault(26); assert(d.create_bind_group(layout.borrow(),core::slice::whole(bindings)).is_err()); assert(probe_live()==before);
+    let wrong:[ext::gpu::Binding;3]=[ext::gpu::Binding::StorageBuffer(params.borrow()),ext::gpu::Binding::StorageBuffer(b.borrow()),ext::gpu::Binding::StorageTexture(t.borrow())]; assert(d.create_bind_group(layout.borrow(),core::slice::whole(wrong)).is_err());
+    assert(d.create_bind_group(layout.borrow(),core::slice::View<ext::gpu::Binding> {values:bindings,start:1,length:3}).is_err());
+    let code=shaders::work_shaders::comp(); let pf:[i32;4]=[5,6,27,28]; i=0;
+    while(i<4) { probe_fault(pf[i]); assert(d.create_compute_pipeline(core::slice::whole(code),layout.borrow()).is_err()); assert(probe_live()==before); i+=1; }
+    let group=d.create_bind_group(layout.borrow(),core::slice::whole(bindings)).unwrap(); assert(params.close().is_err());
+    let data:[u8;256]=[0;256]; let output:[u8;256]=[0;256]; i=0; while(i<256) { data[i]=((i*19+7)%256) as u8; i+=1; } b.write(0,core::slice::whole(data)).unwrap();
+    let encbase=probe_live(); probe_fault(14); assert(d.create_encoder().is_err()); assert(probe_live()==encbase); probe_fault(12); assert(d.create_encoder().is_err()); assert(probe_live()==encbase);
+    let e=d.create_encoder().unwrap(); assert(e.download_texture(t.borrow(),b.borrow(),0).is_err()); e.clear_texture(t.borrow()).unwrap();
+    let e2=d.create_encoder().unwrap(); assert(e2.clear_texture(t.borrow()).is_err()); e.close().unwrap(); e2.clear_texture(t.borrow()).unwrap(); e2.close().unwrap();
+    // A failed end/submit owns no GPU work and can be discarded; initialization rolls back.
+    let fail_submit:[i32;2]=[30,29]; i=0; while(i<2) { let failed=d.create_encoder().unwrap(); failed.clear_texture(t.borrow()).unwrap(); probe_fault(fail_submit[i]); assert(failed.submit().is_err()); assert(failed.submit().is_err()); failed.close().unwrap(); i+=1; }
+    let e3=d.create_encoder().unwrap(); assert(e3.download_texture(t.borrow(),b.borrow(),0).is_err()); assert(e3.upload_texture(t.borrow(),b.borrow(),1).is_err()); assert(e3.upload_texture(t.borrow(),b.borrow(),120).is_err()); e3.upload_texture(t.borrow(),b.borrow(),4).unwrap(); e3.download_texture(t.borrow(),b.borrow(),8).unwrap();
+    let submitted=e3.submit().unwrap(); assert(submitted.wait(10000000000).unwrap()); assert(submitted.frame().is_err()); submitted.close().unwrap(); b.read(0,core::slice::whole(output)).unwrap(); i=0; while(i<256) { if(i>=8 && i<148) { assert(output[i]==data[i-4]); } else { assert(output[i]==data[i]); } i+=1; }
+    let e4=d.create_encoder().unwrap(); e4.clear_texture(t.borrow()).unwrap(); e4.download_texture(t.borrow(),b.borrow(),0).unwrap(); let ticket=e4.submit().unwrap(); ticket.wait(10000000000).unwrap(); ticket.close().unwrap(); b.read(0,core::slice::whole(output)).unwrap(); i=0; while(i<140) { assert(output[i]==0); i+=1; }
+    group.close().unwrap(); layout.close().unwrap(); params.close().unwrap(); b.close().unwrap(); t.close().unwrap(); assert(probe_live()==base);
+    let foreign=ext::gpu::open(0).unwrap(); let other=foreign.create_buffer(4).unwrap(); let local=d.create_buffer(4).unwrap(); let wrong_device=d.create_encoder().unwrap(); assert(wrong_device.copy_buffer(other.borrow(),0,local.borrow(),0,4).is_err()); wrong_device.close().unwrap(); other.close().unwrap(); foreign.close().unwrap(); local.close().unwrap();
+    // The documented encoder capacity is atomic: rejecting resource 65 must
+    // preserve the 63 accepted copies and leave the last destination untouched.
+    let source=d.create_buffer(4).unwrap(); let seed:[u8;4]=[11,22,33,44]; source.write(0,core::slice::whole(seed)).unwrap();
+    let targets:[core::option::Option<ext::gpu::Buffer>;64]=[core::option::None();64]; let limited=d.create_encoder().unwrap(); i=0;
+    while(i<64) { let target=d.create_buffer(4).unwrap(); targets[i]=core::option::Some(target); let copied=limited.copy_buffer(source.borrow(),0,target.borrow(),0,4); if(i<63) { assert(copied.unwrap()==4); } else { assert(match(copied.unwrap_err().cause) { ext::gpu::Cause::Bounds -> true, _ -> false }); } i+=1; }
+    let full=limited.submit().unwrap(); assert(full.wait(10000000000).unwrap()); full.close().unwrap(); i=0;
+    while(i<64) { let target=targets[i].unwrap(); targets[i]=core::option::None(); let actual:[u8;4]=[0;4]; target.read(0,core::slice::whole(actual)).unwrap(); if(i<63) { assert(actual[0]==11 && actual[3]==44); } else { assert(actual[0]==0 && actual[3]==0); } target.close().unwrap(); i+=1; }
+    source.close().unwrap(); assert(probe_live()==base);
+    assert(probe_hits()==16);
+    let a=d.create_buffer(4).unwrap(); let b=d.create_buffer(4).unwrap(); let unknown=d.create_encoder().unwrap(); unknown.copy_buffer(a.borrow(),0,b.borrow(),0,4).unwrap(); probe_fault(34); assert(unknown.submit().is_err()); assert(unknown.close().is_err()); assert(b.close().is_err()); assert(d.create_encoder().is_err()); unknown.close().unwrap(); a.close().unwrap(); b.close().unwrap(); assert(probe_hits()==18); d.close().unwrap(); probe_empty(); return 0;
+}

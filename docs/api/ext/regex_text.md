@@ -21,12 +21,13 @@ Declaration counts: enum: 1; field: 15; function: 5; impl: 2; method: 6; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/regex_text.lani#L4)
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/regex_text.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/regex_text.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/regex_text.lani#L7)
-- [core::text](../core/text.md) · [source](../../../extended/ext/regex_text.lani#L8)
-- [ext::regex](regex.md) · [source](../../../extended/ext/regex_text.lani#L9)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/regex_text.lani#L4)
+- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/regex_text.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/regex_text.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/regex_text.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/regex_text.lani#L8)
+- [core::text](../core/text.md) · [source](../../../extended/ext/regex_text.lani#L9)
+- [ext::regex](regex.md) · [source](../../../extended/ext/regex_text.lani#L10)
 
 ## Types, fields and variants
 
@@ -34,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: SearchLimits
 
-[Source line 11](../../../extended/ext/regex_text.lani#L11)
+[Source line 12](../../../extended/ext/regex_text.lani#L12)
 
 ```lanius
 pub struct SearchLimits
@@ -42,7 +43,7 @@ pub struct SearchLimits
 
 #### field: max_matches
 
-[Source line 11](../../../extended/ext/regex_text.lani#L11)
+[Source line 12](../../../extended/ext/regex_text.lani#L12)
 
 ```lanius
 max_matches: i32
@@ -50,7 +51,7 @@ max_matches: i32
 
 #### field: max_calls
 
-[Source line 11](../../../extended/ext/regex_text.lani#L11)
+[Source line 12](../../../extended/ext/regex_text.lani#L12)
 
 ```lanius
 max_calls: i32
@@ -58,7 +59,7 @@ max_calls: i32
 
 #### field: max_work
 
-[Source line 11](../../../extended/ext/regex_text.lani#L11)
+[Source line 12](../../../extended/ext/regex_text.lani#L12)
 
 ```lanius
 max_work: i64
@@ -66,7 +67,7 @@ max_work: i64
 
 ### struct: ReplaceLimits
 
-[Source line 12](../../../extended/ext/regex_text.lani#L12)
+[Source line 13](../../../extended/ext/regex_text.lani#L13)
 
 ```lanius
 pub struct ReplaceLimits
@@ -74,7 +75,7 @@ pub struct ReplaceLimits
 
 #### field: search
 
-[Source line 12](../../../extended/ext/regex_text.lani#L12)
+[Source line 13](../../../extended/ext/regex_text.lani#L13)
 
 ```lanius
 search: SearchLimits
@@ -82,7 +83,7 @@ search: SearchLimits
 
 #### field: max_output_bytes
 
-[Source line 12](../../../extended/ext/regex_text.lani#L12)
+[Source line 13](../../../extended/ext/regex_text.lani#L13)
 
 ```lanius
 max_output_bytes: i32
@@ -90,7 +91,7 @@ max_output_bytes: i32
 
 #### field: max_replacement_bytes
 
-[Source line 12](../../../extended/ext/regex_text.lani#L12)
+[Source line 13](../../../extended/ext/regex_text.lani#L13)
 
 ```lanius
 max_replacement_bytes: i32
@@ -98,7 +99,7 @@ max_replacement_bytes: i32
 
 ### struct: Usage
 
-[Source line 13](../../../extended/ext/regex_text.lani#L13)
+[Source line 14](../../../extended/ext/regex_text.lani#L14)
 
 ```lanius
 pub struct Usage
@@ -106,7 +107,7 @@ pub struct Usage
 
 #### field: matches
 
-[Source line 13](../../../extended/ext/regex_text.lani#L13)
+[Source line 14](../../../extended/ext/regex_text.lani#L14)
 
 ```lanius
 matches: i32
@@ -114,7 +115,7 @@ matches: i32
 
 #### field: calls
 
-[Source line 13](../../../extended/ext/regex_text.lani#L13)
+[Source line 14](../../../extended/ext/regex_text.lani#L14)
 
 ```lanius
 calls: i32
@@ -122,7 +123,7 @@ calls: i32
 
 #### field: reserved_work
 
-[Source line 13](../../../extended/ext/regex_text.lani#L13)
+[Source line 14](../../../extended/ext/regex_text.lani#L14)
 
 ```lanius
 reserved_work: i64
@@ -130,7 +131,7 @@ reserved_work: i64
 
 ### enum: Error
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 pub enum Error
@@ -138,7 +139,7 @@ pub enum Error
 
 #### variant: InvalidLimits
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 InvalidLimits
@@ -146,7 +147,7 @@ InvalidLimits
 
 #### variant: Text
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 Text(core::text::Error)
@@ -154,7 +155,7 @@ Text(core::text::Error)
 
 #### variant: Regex
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 Regex(ext::regex::Error)
@@ -162,7 +163,7 @@ Regex(ext::regex::Error)
 
 #### variant: Template
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 Template(i32)
@@ -170,7 +171,7 @@ Template(i32)
 
 #### variant: Capture
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 Capture(i32,i32)
@@ -178,7 +179,7 @@ Capture(i32,i32)
 
 #### variant: SearchCallLimit
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 SearchCallLimit
@@ -186,7 +187,7 @@ SearchCallLimit
 
 #### variant: SearchWorkLimit
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 SearchWorkLimit
@@ -194,7 +195,7 @@ SearchWorkLimit
 
 #### variant: OutputLimit
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 OutputLimit
@@ -202,7 +203,7 @@ OutputLimit
 
 #### variant: ReplacementLimit
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 ReplacementLimit
@@ -210,7 +211,7 @@ ReplacementLimit
 
 #### variant: AllocationFailed
 
-[Source line 14](../../../extended/ext/regex_text.lani#L14)
+[Source line 15](../../../extended/ext/regex_text.lani#L15)
 
 ```lanius
 AllocationFailed
@@ -218,7 +219,7 @@ AllocationFailed
 
 ### struct: Split
 
-[Source line 17](../../../extended/ext/regex_text.lani#L17)
+[Source line 18](../../../extended/ext/regex_text.lani#L18)
 
 ```lanius
 pub struct Split
@@ -226,7 +227,7 @@ pub struct Split
 
 #### field: search
 
-[Source line 17](../../../extended/ext/regex_text.lani#L17)
+[Source line 18](../../../extended/ext/regex_text.lani#L18)
 
 ```lanius
 search: Search
@@ -234,7 +235,7 @@ search: Search
 
 #### field: text
 
-[Source line 17](../../../extended/ext/regex_text.lani#L17)
+[Source line 18](../../../extended/ext/regex_text.lani#L18)
 
 ```lanius
 text: core::text::Text
@@ -242,23 +243,23 @@ text: core::text::Text
 
 #### field: field_start
 
-[Source line 17](../../../extended/ext/regex_text.lani#L17)
+[Source line 18](../../../extended/ext/regex_text.lani#L18)
 
 ```lanius
 field_start: i32
 ```
 
-#### field: done
+#### field: completion
 
-[Source line 17](../../../extended/ext/regex_text.lani#L17)
+[Source line 18](../../../extended/ext/regex_text.lani#L18)
 
 ```lanius
-done: bool
+completion: core::iter_state::Completion
 ```
 
 ### struct: Replacement
 
-[Source line 19](../../../extended/ext/regex_text.lani#L19)
+[Source line 20](../../../extended/ext/regex_text.lani#L20)
 
 ```lanius
 pub struct Replacement
@@ -266,7 +267,7 @@ pub struct Replacement
 
 #### field: output
 
-[Source line 19](../../../extended/ext/regex_text.lani#L19)
+[Source line 20](../../../extended/ext/regex_text.lani#L20)
 
 ```lanius
 output: alloc::string::String
@@ -274,7 +275,7 @@ output: alloc::string::String
 
 #### field: usage
 
-[Source line 19](../../../extended/ext/regex_text.lani#L19)
+[Source line 20](../../../extended/ext/regex_text.lani#L20)
 
 ```lanius
 usage: Usage
@@ -284,7 +285,7 @@ usage: Usage
 
 ### function: default_search_limits
 
-[Source line 28](../../../extended/ext/regex_text.lani#L28)
+[Source line 29](../../../extended/ext/regex_text.lani#L29)
 
 ```lanius
 pub fn default_search_limits() -> SearchLimits
@@ -292,7 +293,7 @@ pub fn default_search_limits() -> SearchLimits
 
 ### function: default_replace_limits
 
-[Source line 32](../../../extended/ext/regex_text.lani#L32)
+[Source line 33](../../../extended/ext/regex_text.lani#L33)
 
 ```lanius
 pub fn default_replace_limits() -> ReplaceLimits
@@ -300,7 +301,7 @@ pub fn default_replace_limits() -> ReplaceLimits
 
 ### function: split
 
-[Source line 104](../../../extended/ext/regex_text.lani#L104)
+[Source line 105](../../../extended/ext/regex_text.lani#L105)
 
 ```lanius
 pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLimits) -> core::result::Result<Split,Error>
@@ -308,7 +309,7 @@ pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLi
 
 ### function: replace_literal
 
-[Source line 229](../../../extended/ext/regex_text.lani#L229)
+[Source line 230](../../../extended/ext/regex_text.lani#L230)
 
 ```lanius
 pub fn replace_literal(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error>
@@ -316,7 +317,7 @@ pub fn replace_literal(regex: &ext::regex::Regex, text: core::text::Text, replac
 
 ### function: replace_template
 
-[Source line 234](../../../extended/ext/regex_text.lani#L234)
+[Source line 235](../../../extended/ext/regex_text.lani#L235)
 
 ```lanius
 pub fn replace_template(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error>
@@ -324,9 +325,9 @@ pub fn replace_template(regex: &ext::regex::Regex, text: core::text::Text, repla
 
 ## Implementation blocks and public methods
 
-### impl at line 110
+### impl at line 111
 
-[Source line 110](../../../extended/ext/regex_text.lani#L110)
+[Source line 111](../../../extended/ext/regex_text.lani#L111)
 
 ```lanius
 pub impl Split
@@ -334,7 +335,7 @@ pub impl Split
 
 #### method: borrow
 
-[Source line 111](../../../extended/ext/regex_text.lani#L111)
+[Source line 112](../../../extended/ext/regex_text.lani#L112)
 
 ```lanius
 pub fn borrow(&self) -> &Split
@@ -342,7 +343,7 @@ pub fn borrow(&self) -> &Split
 
 #### method: usage
 
-[Source line 112](../../../extended/ext/regex_text.lani#L112)
+[Source line 113](../../../extended/ext/regex_text.lani#L113)
 
 ```lanius
 pub fn usage(&self) -> Usage
@@ -350,7 +351,7 @@ pub fn usage(&self) -> Usage
 
 #### method: destroy
 
-[Source line 113](../../../extended/ext/regex_text.lani#L113)
+[Source line 114](../../../extended/ext/regex_text.lani#L114)
 
 ```lanius
 pub fn destroy(&self)
@@ -358,15 +359,15 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 114](../../../extended/ext/regex_text.lani#L114)
+[Source line 115](../../../extended/ext/regex_text.lani#L115)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<core::text::Text>,Error>
 ```
 
-### impl at line 129
+### impl at line 130
 
-[Source line 129](../../../extended/ext/regex_text.lani#L129)
+[Source line 130](../../../extended/ext/regex_text.lani#L130)
 
 ```lanius
 pub impl Replacement
@@ -374,7 +375,7 @@ pub impl Replacement
 
 #### method: borrow
 
-[Source line 130](../../../extended/ext/regex_text.lani#L130)
+[Source line 131](../../../extended/ext/regex_text.lani#L131)
 
 ```lanius
 pub fn borrow(&self) -> &Replacement
@@ -382,7 +383,7 @@ pub fn borrow(&self) -> &Replacement
 
 #### method: destroy
 
-[Source line 131](../../../extended/ext/regex_text.lani#L131)
+[Source line 132](../../../extended/ext/regex_text.lani#L132)
 
 ```lanius
 pub fn destroy(&self)

@@ -1,6 +1,7 @@
 // Complete archive metadata admission before filesystem mutation. One manual
 // owner of the namespace/member tables; archive payload bytes remain borrowed.
 module ext::archive_source;
+import core::lifecycle;
 import alloc::vec::Vec;
 import alloc::vec::with_capacity;
 import core::mem;
@@ -30,7 +31,7 @@ pub enum Payload { Tar(View<u8>), Zip(ext::zip::Entry) }
 pub struct Member { node:i32, kind:ext::archive_plan::Kind, payload:Payload }
 pub struct Prepared {
     namespace:ext::archive_plan::Plan, members:Vec<Member>, limits:Limits,
-    total:u64, metadata_charged:u64, live:bool
+    total:u64, metadata_charged:u64, lifetime: core::lifecycle::Lifetime
 }
 
 pub fn default_limits() -> Limits {
@@ -66,7 +67,7 @@ fn allocate(limits:Limits) -> Result<Prepared,Error> {
     let made=with_capacity<Member>(limits.plan.max_entries);
     if(made.is_err()) { namespace.destroy(); return Err(error(Cause::AllocationFailed,-1)); }
     return Ok(Prepared { namespace:namespace,members:made.unwrap(),limits:limits,
-        total:0,metadata_charged:0,live:true });
+        total:0,metadata_charged:0,lifetime: core::lifecycle::lifetime_start() });
 }
 fn admit_input(input:View<u8>,limits:Limits) -> Result<i32,Error> {
     if(!valid(input)) { return Err(error(Cause::Bounds,-1)); }
@@ -85,9 +86,9 @@ fn plan_kind(kind:ext::archive_profile::Kind) -> ext::archive_plan::Kind {
 
 pub impl Prepared {
     pub fn borrow(&self) -> &Prepared { return self; }
-    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn is_live(&self) -> bool { return self.lifetime.is_active(); }
     pub fn plan(&self) -> &ext::archive_plan::Plan { return self.namespace.borrow(); }
-    pub fn len(&self) -> i32 { if(!self.live) { return 0; } return self.members.len(); }
+    pub fn len(&self) -> i32 { if(!self.lifetime.is_active()) { return 0; } return self.members.len(); }
     pub fn decoded_total(&self) -> u64 { return self.total; }
     pub fn metadata_units(&self) -> u64 { return self.metadata_charged; }
     pub fn reserved_bytes(&self) -> u64 {
@@ -96,7 +97,7 @@ pub impl Prepared {
     // Member and path views are read-only, shallow borrows. Keep this owner and
     // the complete immutable archive backing alive through every consumer.
     pub fn member(&self,index:i32) -> Option<Member> {
-        if(!self.live || index<0 || index>=self.members.len()) { return None(); }
+        if(!self.lifetime.is_active() || index<0 || index>=self.members.len()) { return None(); }
         return Some(self.members.as_slice()[index]);
     }
     fn charge(&self,units:u64,ordinal:i32) -> Result<i32,Error> {
@@ -117,8 +118,8 @@ pub impl Prepared {
         self.total+=count as u64; return Ok(ordinal);
     }
     pub fn destroy(&self) {
-        if(!self.live) { return; }
-        self.members.destroy(); self.namespace.destroy(); self.live=false;
+        if(!self.lifetime.is_active()) { return; }
+        self.members.destroy(); self.namespace.destroy(); self.lifetime.release();
     }
 }
 

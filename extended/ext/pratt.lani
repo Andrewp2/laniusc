@@ -10,6 +10,14 @@ import core::result::Ok;
 import core::result::Err;
 import core::slice;
 
+enum ExpressionEvent { NeedOperand, OperandRead }
+machine ExpressionPhase on ExpressionEvent {
+    start Operand;
+    state Operand { ExpressionEvent::NeedOperand -> stay, ExpressionEvent::OperandRead -> goto Continuation, }
+    state Continuation { ExpressionEvent::NeedOperand -> goto Operand, ExpressionEvent::OperandRead -> stay, }
+}
+impl ExpressionPhase { fn needs_operand(&self) -> bool { return match(self.state()) { ExpressionPhaseState::Operand -> true, _ -> false }; } }
+
 pub const ATOM: i32 = 0;
 pub const PREFIX: i32 = 1;
 pub const INFIX: i32 = 2;
@@ -163,13 +171,13 @@ pub impl Parser {
         return result;
     }
     fn run(&self, table: &Table, tokens: core::slice::View<Token>) -> Result<i32, Error> {
-        let operand: bool = true; let index: i32 = 0;
+        let phase = expression_phase_start(); let index: i32 = 0;
         while (index < tokens.length) {
             let kind: i32 = tokens.values[tokens.start + index].kind;
             let found = table.spec(kind); if (found.is_none()) { return Err(Error::UnknownToken(index)); }
             let s: Spec = found.unwrap();
-            if (operand) {
-                if (s.atom) { if (!self.emit(ATOM, kind, index, 0)) { return Err(Error::AllocationFailed); } operand = false; }
+            if (phase.needs_operand()) {
+                if (s.atom) { if (!self.emit(ATOM, kind, index, 0)) { return Err(Error::AllocationFailed); } phase.step(ExpressionEvent::OperandRead); }
                 else { if (s.prefix > 0) { if (!self.push(Frame { role: PREFIX, kind: kind, token: index, power: s.prefix, close: -1, arity: 0 })) { return Err(Error::AllocationFailed); } }
                 else { if (s.group_close >= 0) { if (!self.push(Frame { role: 0, kind: kind, token: index, power: 0, close: s.group_close, arity: 0 })) { return Err(Error::AllocationFailed); } }
                 else {
@@ -179,27 +187,27 @@ pub impl Parser {
                     if (top.role != CALL || top.close != kind || top.token != index - 1) { return Err(Error::ExpectedOperand(index)); }
                     let unused = self.stack.pop();
                     if (!self.emit(CALL, top.kind, top.token, 0)) { return Err(Error::AllocationFailed); }
-                    operand = false;
+                    phase.step(ExpressionEvent::OperandRead);
                 } } }
             } else {
                 if (s.left > 0) {
                     if (!self.reduce(s.left)) { return Err(Error::AllocationFailed); }
                     if (!self.push(Frame { role: INFIX, kind: kind, token: index, power: s.right, close: -1, arity: 0 })) { return Err(Error::AllocationFailed); }
-                    operand = true;
+                    phase.step(ExpressionEvent::NeedOperand);
                 } else { if (s.postfix > 0) {
                     if (!self.reduce(s.postfix)) { return Err(Error::AllocationFailed); }
                     if (!self.emit(POSTFIX, kind, index, 1)) { return Err(Error::AllocationFailed); }
                 } else { if (s.call_close >= 0) {
                     if (!self.reduce(s.call_power)) { return Err(Error::AllocationFailed); }
                     if (!self.push(Frame { role: CALL, kind: kind, token: index, power: 0, close: s.call_close, arity: 0 })) { return Err(Error::AllocationFailed); }
-                    operand = true;
+                    phase.step(ExpressionEvent::NeedOperand);
                 } else { if (s.separator) {
                     if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
                     if (self.stack.is_empty()) { return Err(Error::MisplacedSeparator(index)); }
                     let top: Frame = self.stack.at(self.stack.len() - 1);
                     if (top.role != CALL) { return Err(Error::MisplacedSeparator(index)); }
                     top.arity += 1; let unused = self.stack.set(self.stack.len() - 1, top);
-                    operand = true;
+                    phase.step(ExpressionEvent::NeedOperand);
                 } else { if (s.close) {
                     if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
                     if (self.stack.is_empty()) { return Err(Error::Unmatched(index)); }
@@ -211,7 +219,7 @@ pub impl Parser {
             }
             index += 1;
         }
-        if (operand) { return Err(Error::UnexpectedEnd(index)); }
+        if (phase.needs_operand()) { return Err(Error::UnexpectedEnd(index)); }
         if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
         if (!self.stack.is_empty()) { return Err(Error::Unclosed(self.stack.at(self.stack.len() - 1).token)); }
         return Ok(self.events.len());

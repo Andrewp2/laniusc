@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: field: 9; function: 6; impl: 2; method: 2; struct: 2.
+Declaration counts: enum: 2; field: 9; function: 6; impl: 4; machine: 2; method: 7; struct: 2; variant: 4.
 
 ## Declared imports
 
@@ -28,9 +28,73 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### struct: Options
+### enum: CarriageEvent
 
 [Source line 13](../../../extended/ext/text_cat.lani#L13)
+
+```lanius
+pub enum CarriageEvent
+```
+
+#### variant: Held
+
+[Source line 13](../../../extended/ext/text_cat.lani#L13)
+
+```lanius
+Held
+```
+
+#### variant: Written
+
+[Source line 13](../../../extended/ext/text_cat.lani#L13)
+
+```lanius
+Written
+```
+
+### machine: Carriage
+
+[Source line 14](../../../extended/ext/text_cat.lani#L14)
+
+```lanius
+pub machine Carriage on CarriageEvent
+```
+
+### enum: LineRunEvent
+
+[Source line 33](../../../extended/ext/text_cat.lani#L33)
+
+```lanius
+pub enum LineRunEvent
+```
+
+#### variant: Content
+
+[Source line 33](../../../extended/ext/text_cat.lani#L33)
+
+```lanius
+Content
+```
+
+#### variant: Newline
+
+[Source line 33](../../../extended/ext/text_cat.lani#L33)
+
+```lanius
+Newline
+```
+
+### machine: LineRun
+
+[Source line 34](../../../extended/ext/text_cat.lani#L34)
+
+```lanius
+pub machine LineRun on LineRunEvent
+```
+
+### struct: Options
+
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 pub struct Options
@@ -38,7 +102,7 @@ pub struct Options
 
 #### field: number
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 number: bool
@@ -46,7 +110,7 @@ number: bool
 
 #### field: nonblank
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 nonblank: bool
@@ -54,7 +118,7 @@ nonblank: bool
 
 #### field: squeeze
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 squeeze: bool
@@ -62,7 +126,7 @@ squeeze: bool
 
 #### field: ends
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 ends: bool
@@ -70,7 +134,7 @@ ends: bool
 
 #### field: tabs
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 tabs: bool
@@ -78,7 +142,7 @@ tabs: bool
 
 #### field: nonprinting
 
-[Source line 13](../../../extended/ext/text_cat.lani#L13)
+[Source line 65](../../../extended/ext/text_cat.lani#L65)
 
 ```lanius
 nonprinting: bool
@@ -86,41 +150,41 @@ nonprinting: bool
 
 ### struct: State
 
-[Source line 21](../../../extended/ext/text_cat.lani#L21)
+[Source line 72](../../../extended/ext/text_cat.lani#L72)
 
 ```lanius
 pub struct State
 ```
 
-#### field: newlines
+#### field: lines
 
-[Source line 21](../../../extended/ext/text_cat.lani#L21)
+[Source line 72](../../../extended/ext/text_cat.lani#L72)
 
 ```lanius
-newlines: i32
+lines: LineRun
 ```
 
 #### field: line
 
-[Source line 21](../../../extended/ext/text_cat.lani#L21)
+[Source line 72](../../../extended/ext/text_cat.lani#L72)
 
 ```lanius
 line: i64
 ```
 
-#### field: pending
+#### field: carriage
 
-[Source line 21](../../../extended/ext/text_cat.lani#L21)
+[Source line 72](../../../extended/ext/text_cat.lani#L72)
 
 ```lanius
-pending: bool
+carriage: Carriage
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 15](../../../extended/ext/text_cat.lani#L15)
+[Source line 67](../../../extended/ext/text_cat.lani#L67)
 
 ```lanius
 pub fn default_options() -> Options
@@ -128,7 +192,7 @@ pub fn default_options() -> Options
 
 ### function: plain
 
-[Source line 17](../../../extended/ext/text_cat.lani#L17)
+[Source line 69](../../../extended/ext/text_cat.lani#L69)
 
 ```lanius
 pub fn plain(o: Options) -> bool
@@ -136,7 +200,7 @@ pub fn plain(o: Options) -> bool
 
 ### function: start
 
-[Source line 23](../../../extended/ext/text_cat.lani#L23)
+[Source line 74](../../../extended/ext/text_cat.lani#L74)
 
 ```lanius
 pub fn start() -> State
@@ -144,7 +208,7 @@ pub fn start() -> State
 
 ### function: copy_plain
 
-[Source line 28](../../../extended/ext/text_cat.lani#L28)
+[Source line 79](../../../extended/ext/text_cat.lani#L79)
 
 ```lanius
 pub fn copy_plain(fd: i32) -> i32
@@ -152,7 +216,7 @@ pub fn copy_plain(fd: i32) -> i32
 
 ### function: copy
 
-[Source line 31](../../../extended/ext/text_cat.lani#L31)
+[Source line 82](../../../extended/ext/text_cat.lani#L82)
 
 ```lanius
 pub fn copy(fd: i32, o: &Options, st: &State, out: &ext::text_lines::Out) -> i32
@@ -160,7 +224,7 @@ pub fn copy(fd: i32, o: &Options, st: &State, out: &ext::text_lines::Out) -> i32
 
 ### function: finish
 
-[Source line 51](../../../extended/ext/text_cat.lani#L51)
+[Source line 102](../../../extended/ext/text_cat.lani#L102)
 
 ```lanius
 pub fn finish(st: &State, out: &ext::text_lines::Out) -> bool
@@ -168,9 +232,65 @@ pub fn finish(st: &State, out: &ext::text_lines::Out) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 14
+### impl at line 27
 
-[Source line 14](../../../extended/ext/text_cat.lani#L14)
+[Source line 27](../../../extended/ext/text_cat.lani#L27)
+
+```lanius
+pub impl Carriage
+```
+
+#### method: is_clear
+
+[Source line 28](../../../extended/ext/text_cat.lani#L28)
+
+```lanius
+pub fn is_clear(&self) -> bool
+```
+
+#### method: is_pending
+
+[Source line 29](../../../extended/ext/text_cat.lani#L29)
+
+```lanius
+pub fn is_pending(&self) -> bool
+```
+
+### impl at line 58
+
+[Source line 58](../../../extended/ext/text_cat.lani#L58)
+
+```lanius
+pub impl LineRun
+```
+
+#### method: is_content
+
+[Source line 59](../../../extended/ext/text_cat.lani#L59)
+
+```lanius
+pub fn is_content(&self) -> bool
+```
+
+#### method: is_blank
+
+[Source line 60](../../../extended/ext/text_cat.lani#L60)
+
+```lanius
+pub fn is_blank(&self) -> bool
+```
+
+#### method: is_blank_run
+
+[Source line 61](../../../extended/ext/text_cat.lani#L61)
+
+```lanius
+pub fn is_blank_run(&self) -> bool
+```
+
+### impl at line 66
+
+[Source line 66](../../../extended/ext/text_cat.lani#L66)
 
 ```lanius
 pub impl Options
@@ -178,15 +298,15 @@ pub impl Options
 
 #### method: borrow
 
-[Source line 14](../../../extended/ext/text_cat.lani#L14)
+[Source line 66](../../../extended/ext/text_cat.lani#L66)
 
 ```lanius
 pub fn borrow(&self) -> &Options
 ```
 
-### impl at line 22
+### impl at line 73
 
-[Source line 22](../../../extended/ext/text_cat.lani#L22)
+[Source line 73](../../../extended/ext/text_cat.lani#L73)
 
 ```lanius
 pub impl State
@@ -194,7 +314,7 @@ pub impl State
 
 #### method: borrow
 
-[Source line 22](../../../extended/ext/text_cat.lani#L22)
+[Source line 73](../../../extended/ext/text_cat.lani#L73)
 
 ```lanius
 pub fn borrow(&self) -> &State

@@ -23,19 +23,20 @@ Declaration counts: enum: 2; field: 12; function: 2; impl: 1; method: 6; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](../core/io.md) · [source](../../../extended/ext/url_tls.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/url_tls.lani#L5)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_tls.lani#L6)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_tls.lani#L7)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_tls.lani#L8)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_tls.lani#L9)
-- [core::time](../core/time.md) · [source](../../../extended/ext/url_tls.lani#L10)
-- [ext::http_client](http_client.md) · [source](../../../extended/ext/url_tls.lani#L11)
-- [ext::http_url](http_url.md) · [source](../../../extended/ext/url_tls.lani#L12)
-- [ext::https_client](https_client.md) · [source](../../../extended/ext/url_tls.lani#L13)
-- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/url_tls.lani#L14)
-- [ext::url_client](url_client.md) · [source](../../../extended/ext/url_tls.lani#L15)
-- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/url_tls.lani#L16)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/url_tls.lani#L4)
+- [core::io](../core/io.md) · [source](../../../extended/ext/url_tls.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/url_tls.lani#L6)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_tls.lani#L7)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_tls.lani#L8)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_tls.lani#L9)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_tls.lani#L10)
+- [core::time](../core/time.md) · [source](../../../extended/ext/url_tls.lani#L11)
+- [ext::http_client](http_client.md) · [source](../../../extended/ext/url_tls.lani#L12)
+- [ext::http_url](http_url.md) · [source](../../../extended/ext/url_tls.lani#L13)
+- [ext::https_client](https_client.md) · [source](../../../extended/ext/url_tls.lani#L14)
+- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/url_tls.lani#L15)
+- [ext::url_client](url_client.md) · [source](../../../extended/ext/url_tls.lani#L16)
+- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/url_tls.lani#L17)
 
 ## Types, fields and variants
 
@@ -43,7 +44,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Options
 
-[Source line 18](../../../extended/ext/url_tls.lani#L18)
+[Source line 19](../../../extended/ext/url_tls.lani#L19)
 
 ```lanius
 pub struct Options
@@ -51,7 +52,7 @@ pub struct Options
 
 #### field: request
 
-[Source line 18](../../../extended/ext/url_tls.lani#L18)
+[Source line 19](../../../extended/ext/url_tls.lani#L19)
 
 ```lanius
 request: ext::url_client::Options
@@ -59,7 +60,7 @@ request: ext::url_client::Options
 
 #### field: tls
 
-[Source line 18](../../../extended/ext/url_tls.lani#L18)
+[Source line 19](../../../extended/ext/url_tls.lani#L19)
 
 ```lanius
 tls: ext::https_client::Options
@@ -67,7 +68,7 @@ tls: ext::https_client::Options
 
 ### enum: Stage
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 pub enum Stage
@@ -75,7 +76,7 @@ pub enum Stage
 
 #### variant: Validate
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Validate
@@ -83,7 +84,7 @@ Validate
 
 #### variant: Identity
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Identity
@@ -91,7 +92,7 @@ Identity
 
 #### variant: Prepare
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Prepare
@@ -99,7 +100,7 @@ Prepare
 
 #### variant: Connect
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Connect
@@ -107,7 +108,7 @@ Connect
 
 #### variant: Adopt
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Adopt
@@ -115,7 +116,7 @@ Adopt
 
 #### variant: Exchange
 
-[Source line 19](../../../extended/ext/url_tls.lani#L19)
+[Source line 20](../../../extended/ext/url_tls.lani#L20)
 
 ```lanius
 Exchange
@@ -123,7 +124,7 @@ Exchange
 
 ### enum: Cause
 
-[Source line 20](../../../extended/ext/url_tls.lani#L20)
+[Source line 21](../../../extended/ext/url_tls.lani#L21)
 
 ```lanius
 pub enum Cause
@@ -131,7 +132,7 @@ pub enum Cause
 
 #### variant: InvalidState
 
-[Source line 21](../../../extended/ext/url_tls.lani#L21)
+[Source line 22](../../../extended/ext/url_tls.lani#L22)
 
 ```lanius
 InvalidState
@@ -139,7 +140,7 @@ InvalidState
 
 #### variant: SchemeMismatch
 
-[Source line 21](../../../extended/ext/url_tls.lani#L21)
+[Source line 22](../../../extended/ext/url_tls.lani#L22)
 
 ```lanius
 SchemeMismatch
@@ -147,7 +148,7 @@ SchemeMismatch
 
 #### variant: InvalidOptions
 
-[Source line 21](../../../extended/ext/url_tls.lani#L21)
+[Source line 22](../../../extended/ext/url_tls.lani#L22)
 
 ```lanius
 InvalidOptions
@@ -155,7 +156,7 @@ InvalidOptions
 
 #### variant: ConnectionOptions
 
-[Source line 21](../../../extended/ext/url_tls.lani#L21)
+[Source line 22](../../../extended/ext/url_tls.lani#L22)
 
 ```lanius
 ConnectionOptions(ext::url_connect::Cause)
@@ -163,7 +164,7 @@ ConnectionOptions(ext::url_connect::Cause)
 
 #### variant: Identity
 
-[Source line 22](../../../extended/ext/url_tls.lani#L22)
+[Source line 23](../../../extended/ext/url_tls.lani#L23)
 
 ```lanius
 Identity(ext::openssl_tls::Error)
@@ -171,7 +172,7 @@ Identity(ext::openssl_tls::Error)
 
 #### variant: Connect
 
-[Source line 22](../../../extended/ext/url_tls.lani#L22)
+[Source line 23](../../../extended/ext/url_tls.lani#L23)
 
 ```lanius
 Connect(ext::url_connect::Failure)
@@ -179,7 +180,7 @@ Connect(ext::url_connect::Failure)
 
 #### variant: Http
 
-[Source line 23](../../../extended/ext/url_tls.lani#L23)
+[Source line 24](../../../extended/ext/url_tls.lani#L24)
 
 ```lanius
 Http(ext::http_client::Failure)
@@ -187,7 +188,7 @@ Http(ext::http_client::Failure)
 
 #### variant: Https
 
-[Source line 23](../../../extended/ext/url_tls.lani#L23)
+[Source line 24](../../../extended/ext/url_tls.lani#L24)
 
 ```lanius
 Https(ext::https_client::Failure)
@@ -195,7 +196,7 @@ Https(ext::https_client::Failure)
 
 ### struct: Failure
 
-[Source line 25](../../../extended/ext/url_tls.lani#L25)
+[Source line 26](../../../extended/ext/url_tls.lani#L26)
 
 ```lanius
 pub struct Failure
@@ -203,7 +204,7 @@ pub struct Failure
 
 #### field: stage
 
-[Source line 26](../../../extended/ext/url_tls.lani#L26)
+[Source line 27](../../../extended/ext/url_tls.lani#L27)
 
 ```lanius
 stage: Stage
@@ -211,7 +212,7 @@ stage: Stage
 
 #### field: cause
 
-[Source line 26](../../../extended/ext/url_tls.lani#L26)
+[Source line 27](../../../extended/ext/url_tls.lani#L27)
 
 ```lanius
 cause: Cause
@@ -219,7 +220,7 @@ cause: Cause
 
 #### field: connection
 
-[Source line 26](../../../extended/ext/url_tls.lani#L26)
+[Source line 27](../../../extended/ext/url_tls.lani#L27)
 
 ```lanius
 connection: Option<ext::url_connect::ConnectionInfo>
@@ -227,7 +228,7 @@ connection: Option<ext::url_connect::ConnectionInfo>
 
 #### field: http
 
-[Source line 27](../../../extended/ext/url_tls.lani#L27)
+[Source line 28](../../../extended/ext/url_tls.lani#L28)
 
 ```lanius
 http: Option<ext::http_client::Stats>
@@ -235,7 +236,7 @@ http: Option<ext::http_client::Stats>
 
 #### field: tls
 
-[Source line 27](../../../extended/ext/url_tls.lani#L27)
+[Source line 28](../../../extended/ext/url_tls.lani#L28)
 
 ```lanius
 tls: Option<ext::https_client::TlsStats>
@@ -243,7 +244,7 @@ tls: Option<ext::https_client::TlsStats>
 
 #### field: cleanup
 
-[Source line 28](../../../extended/ext/url_tls.lani#L28)
+[Source line 29](../../../extended/ext/url_tls.lani#L29)
 
 ```lanius
 cleanup: Option<core::io::Error>
@@ -251,7 +252,7 @@ cleanup: Option<core::io::Error>
 
 ### struct: Response
 
-[Source line 30](../../../extended/ext/url_tls.lani#L30)
+[Source line 31](../../../extended/ext/url_tls.lani#L31)
 
 ```lanius
 pub struct Response
@@ -259,7 +260,7 @@ pub struct Response
 
 #### field: owner
 
-[Source line 31](../../../extended/ext/url_tls.lani#L31)
+[Source line 32](../../../extended/ext/url_tls.lani#L32)
 
 ```lanius
 owner: ext::http_client::Response
@@ -267,7 +268,7 @@ owner: ext::http_client::Response
 
 #### field: selected
 
-[Source line 31](../../../extended/ext/url_tls.lani#L31)
+[Source line 32](../../../extended/ext/url_tls.lani#L32)
 
 ```lanius
 selected: ext::url_connect::ConnectionInfo
@@ -275,25 +276,25 @@ selected: ext::url_connect::ConnectionInfo
 
 #### field: tls
 
-[Source line 32](../../../extended/ext/url_tls.lani#L32)
+[Source line 33](../../../extended/ext/url_tls.lani#L33)
 
 ```lanius
 tls: ext::https_client::TlsStats
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 32](../../../extended/ext/url_tls.lani#L32)
+[Source line 33](../../../extended/ext/url_tls.lani#L33)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 34](../../../extended/ext/url_tls.lani#L34)
+[Source line 35](../../../extended/ext/url_tls.lani#L35)
 
 ```lanius
 pub fn default_options() -> Options
@@ -303,7 +304,7 @@ Composes plain URL request/connector defaults with canonical HTTPS TLS-call defa
 
 ### function: exchange_until
 
-[Source line 53](../../../extended/ext/url_tls.lani#L53)
+[Source line 54](../../../extended/ext/url_tls.lani#L54)
 
 ```lanius
 pub fn exchange_until(url: &ext::http_url::Url, context: &ext::openssl_tls::Context,
@@ -315,9 +316,9 @@ Accepts Https only and validates live Context, original URL identity and TLS/req
 
 ## Implementation blocks and public methods
 
-### impl at line 40
+### impl at line 41
 
-[Source line 40](../../../extended/ext/url_tls.lani#L40)
+[Source line 41](../../../extended/ext/url_tls.lani#L41)
 
 ```lanius
 pub impl Response
@@ -325,7 +326,7 @@ pub impl Response
 
 #### method: borrow
 
-[Source line 41](../../../extended/ext/url_tls.lani#L41)
+[Source line 42](../../../extended/ext/url_tls.lani#L42)
 
 ```lanius
 pub fn borrow(&self) -> &Response
@@ -333,7 +334,7 @@ pub fn borrow(&self) -> &Response
 
 #### method: is_open
 
-[Source line 42](../../../extended/ext/url_tls.lani#L42)
+[Source line 43](../../../extended/ext/url_tls.lani#L43)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -341,7 +342,7 @@ pub fn is_open(&self) -> bool
 
 #### method: http
 
-[Source line 44](../../../extended/ext/url_tls.lani#L44)
+[Source line 45](../../../extended/ext/url_tls.lani#L45)
 
 ```lanius
 pub fn http(&self) -> &ext::http_client::Response
@@ -349,7 +350,7 @@ pub fn http(&self) -> &ext::http_client::Response
 
 #### method: connection
 
-[Source line 45](../../../extended/ext/url_tls.lani#L45)
+[Source line 46](../../../extended/ext/url_tls.lani#L46)
 
 ```lanius
 pub fn connection(&self) -> ext::url_connect::ConnectionInfo
@@ -357,7 +358,7 @@ pub fn connection(&self) -> ext::url_connect::ConnectionInfo
 
 #### method: tls_stats
 
-[Source line 46](../../../extended/ext/url_tls.lani#L46)
+[Source line 47](../../../extended/ext/url_tls.lani#L47)
 
 ```lanius
 pub fn tls_stats(&self) -> ext::https_client::TlsStats
@@ -365,7 +366,7 @@ pub fn tls_stats(&self) -> ext::https_client::TlsStats
 
 #### method: destroy
 
-[Source line 47](../../../extended/ext/url_tls.lani#L47)
+[Source line 48](../../../extended/ext/url_tls.lani#L48)
 
 ```lanius
 pub fn destroy(&self) -> bool

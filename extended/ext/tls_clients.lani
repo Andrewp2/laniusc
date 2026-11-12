@@ -7,6 +7,7 @@
 // outcome is HTTP/1.1. Programs using it link OpenSSL (--native-link
 // --native-library ssl --native-library crypto).
 module ext::tls_clients;
+import core::lifecycle;
 import alloc::vec;
 import core::option;
 import core::result;
@@ -20,11 +21,36 @@ import std::socket;
 // handshakes: completed; h2: of them, ALPN "h2"; failures: handshakes or
 // records that failed; truncated: clients that closed without close_notify.
 pub struct Stats { handshakes: i32, h2: i32, failures: i32, truncated: i32 }
-pub struct TlsClients { context: ext::openssl_tls::ServerContext, sessions: alloc::vec::Vec<core::option::Option<ext::openssl_tls::Session>>, phases: alloc::vec::Vec<i32>, more: alloc::vec::Vec<i32>, stats: Stats, closed: bool }
+pub struct TlsClients { context: ext::openssl_tls::ServerContext, sessions: alloc::vec::Vec<core::option::Option<ext::openssl_tls::Session>>, phases: alloc::vec::Vec<SessionPhase>, more: alloc::vec::Vec<i32>, stats: Stats, lifetime: core::lifecycle::Lifetime }
 
-const T_NONE: i32 = 0;
-const T_HANDSHAKE: i32 = 1;
-const T_OPEN: i32 = 2;
+pub enum SessionEvent { Accepted, Handshaken, Dropped }
+pub machine SessionPhase on SessionEvent {
+    start Empty;
+
+    state Empty {
+        SessionEvent::Accepted -> goto Handshake,
+        SessionEvent::Handshaken -> stay,
+        SessionEvent::Dropped -> stay,
+    }
+
+    state Handshake {
+        SessionEvent::Accepted -> stay,
+        SessionEvent::Handshaken -> goto Open,
+        SessionEvent::Dropped -> goto Empty,
+    }
+
+    state Open {
+        SessionEvent::Accepted -> stay,
+        SessionEvent::Handshaken -> stay,
+        SessionEvent::Dropped -> goto Empty,
+    }
+}
+
+pub impl SessionPhase {
+    pub fn open(&self) -> bool { return match (self.state()) { SessionPhaseState::Open -> true, _ -> false }; }
+    pub fn handshaking(&self) -> bool { return match (self.state()) { SessionPhaseState::Handshake -> true, _ -> false }; }
+}
+
 const READ: u32 = 1;
 const WRITE: u32 = 4;
 
@@ -43,10 +69,10 @@ pub fn alpn_protocols(out: &alloc::vec::Vec<u8>, h2: bool) -> bool {
 // keeps (and destroys after close).
 pub fn clients(context: ext::openssl_tls::ServerContext, max_clients: i32) -> core::option::Option<TlsClients> {
     if (!context.is_open() || max_clients < 1) { return core::option::None(); }
-    let t: TlsClients = TlsClients { context: context, sessions: alloc::vec::new<core::option::Option<ext::openssl_tls::Session>>(), phases: alloc::vec::new<i32>(), more: alloc::vec::new<i32>(), stats: Stats { handshakes: 0, h2: 0, failures: 0, truncated: 0 }, closed: false };
+    let t: TlsClients = TlsClients { context: context, sessions: alloc::vec::new<core::option::Option<ext::openssl_tls::Session>>(), phases: alloc::vec::new<SessionPhase>(), more: alloc::vec::new<i32>(), stats: Stats { handshakes: 0, h2: 0, failures: 0, truncated: 0 }, lifetime: core::lifecycle::lifetime_start() };
     let i: i32 = 0;
     while (i < max_clients) {
-        if (t.sessions.try_push(core::option::None()).is_err() || t.phases.try_push(T_NONE).is_err()) { t.close(); return core::option::None(); }
+        if (t.sessions.try_push(core::option::None()).is_err() || t.phases.try_push(session_phase_start()).is_err()) { t.close(); return core::option::None(); }
         i += 1;
     }
     return core::option::Some(t);
@@ -70,13 +96,13 @@ pub impl TlsClients {
     }
     // After each server poll: handle its notices and buffered input.
     pub fn serve<P>(&self, p: &P) where P: ext::client_transport::Clients {
-        if (self.closed) { return; }
+        if (self.lifetime.is_released()) { return; }
         self.serve_notices(p);
         let rounds: i32 = self.more.len(); let k: i32 = 0;
         while (rounds > 0 && k < self.more.len()) {
             rounds -= 1;
             let slot: i32 = self.more.at(k);
-            if (self.phases.at(slot) != T_OPEN) { self.more.swap_remove(k); continue; }
+            if (!self.phases.at(slot).open()) { self.more.swap_remove(k); continue; }
             if (p.client_wants_read(slot)) { self.more.swap_remove(k); self.pump(p, slot, true, false); continue; }
             k += 1;
         }
@@ -85,8 +111,8 @@ pub impl TlsClients {
     // Free every session without close_notify (before the server closes
     // the sockets).
     pub fn close(&self) {
-        if (self.closed) { return; }
-        self.closed = true;
+        if (self.lifetime.is_released()) { return; }
+        self.lifetime.release();
         let i: i32 = 0;
         while (i < self.sessions.len()) {
             let s: core::option::Option<ext::openssl_tls::Session> = self.sessions.at(i);
@@ -98,6 +124,7 @@ pub impl TlsClients {
 }
 
 impl TlsClients {
+    fn advance_phase(&self, slot: i32, event: SessionEvent) { let phase = self.phases.at(slot); phase.step(event); self.phases.set(slot,phase); }
     fn remember(&self, slot: i32) { let k: i32 = 0; while (k < self.more.len()) { if (self.more.at(k) == slot) { return; } k += 1; } self.more.try_push(slot); }
     fn serve_notices<P>(&self, p: &P) where P: ext::client_transport::Clients {
         let k: i32 = 0;
@@ -113,7 +140,7 @@ impl TlsClients {
     fn accepted<P>(&self, p: &P, slot: i32, fd: i32) where P: ext::client_transport::Clients {
         let made: core::result::Result<ext::openssl_tls::Session,ext::openssl_tls::Error> = self.context.session(fd);
         if (made.is_err()) { self.stats.failures += 1; p.client_drop(slot); return; }
-        self.sessions.set(slot, core::option::Some(made.unwrap())); self.phases.set(slot, T_HANDSHAKE);
+        self.sessions.set(slot, core::option::Some(made.unwrap())); self.advance_phase(slot, SessionEvent::Accepted);
         p.client_hold(slot, READ);
     }
     // close_notify (best effort), then the write side of the socket.
@@ -130,7 +157,7 @@ impl TlsClients {
             if (open) { ts.quiesce_read(); ts.shutdown(); }
             ts.destroy(); self.sessions.set(slot, core::option::None());
         }
-        self.phases.set(slot, T_NONE);
+        self.advance_phase(slot, SessionEvent::Dropped);
         let socket: std::socket::Socket = socket_of(fd); socket.close();
     }
     // Readiness the session waits for: a read or write that wants the
@@ -151,7 +178,7 @@ impl TlsClients {
     fn pump<P>(&self, p: &P, slot: i32, readable: bool, writable: bool) where P: ext::client_transport::Clients {
         if (!p.client_open(slot) || self.sessions.at(slot).is_none()) { return; }
         let r: bool = readable;
-        if (self.phases.at(slot) == T_HANDSHAKE) {
+        if (self.phases.at(slot).handshaking()) {
             let ts: ext::openssl_tls::Session = self.sessions.at(slot).unwrap();
             let got: core::result::Result<ext::openssl_tls::Handshake,ext::openssl_tls::Error> = ts.handshake();
             self.sessions.set(slot, core::option::Some(ts));
@@ -159,7 +186,7 @@ impl TlsClients {
             let step: i32 = match (got.unwrap()) { ext::openssl_tls::Handshake::Complete -> 0, ext::openssl_tls::Handshake::WantRead -> 1, ext::openssl_tls::Handshake::WantWrite -> 2 };
             if (step == 1) { p.client_hold(slot, READ); return; }
             if (step == 2) { p.client_hold(slot, READ | WRITE); return; }
-            self.phases.set(slot, T_OPEN); self.stats.handshakes += 1; p.client_hold(slot, 0);
+            self.advance_phase(slot, SessionEvent::Handshaken); self.stats.handshakes += 1; p.client_hold(slot, 0);
             let name: [u8;16] = [0;16]; let n: i32 = ts.selected_protocol(core::slice::View { values: name, start: 0, length: 16 });
             if (n == 2 && name[0] == 104 && name[1] == 50) { self.stats.h2 += 1; p.client_start_h2(slot); }
             r = true;
@@ -211,7 +238,7 @@ impl TlsClients {
     // Encrypt the server's output. A record that must wait keeps its bytes
     // in the session (retry_write); client_sent follows completed records.
     fn send<P>(&self, p: &P, slot: i32) -> bool where P: ext::client_transport::Clients {
-        if (self.phases.at(slot) != T_OPEN || !p.client_open(slot)) { return true; }
+        if (!self.phases.at(slot).open() || !p.client_open(slot)) { return true; }
         let ts: ext::openssl_tls::Session = self.sessions.at(slot).unwrap(); let most: i32 = self.context.io_bytes();
         let ok: bool = true; let calls: i32 = 64;
         while (calls > 0 && p.client_open(slot)) {

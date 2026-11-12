@@ -1,6 +1,7 @@
 // Unicode 17.0.0 default word boundaries (UAX #29 revision 47).
 // Every segment is returned, including punctuation and whitespace.
 module ext::unicode_words;
+import ext::unicode_break_state;
 import core::option;
 import core::result;
 import core::text;
@@ -11,7 +12,7 @@ pub enum Error { Bounds }
 pub struct Segment { start: i32, end: i32, text: core::text::Text }
 // Implementation state. Use cursor(); do not forge or change fields.
 // Copying a cursor forks its current position and all retained context.
-pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, ri_odd: bool }
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, regional: ext::unicode_break_state::RegionalRun }
 
 // Requires valid UTF-8 and live physical backing, established by
 // core::text::from_utf8[_range]. Only logical integer bounds are checked.
@@ -19,7 +20,7 @@ pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error> {
     if (text.start < 0 || text.length < 0 || text.length > 2147483647 - text.start) {
         return core::result::Err(Error::Bounds);
     }
-    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, ri_odd: false });
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, regional: ext::unicode_break_state::regional_run_start() });
 }
 
 // Low five bits are Word_Break; bit 5 is Extended_Pictographic.
@@ -70,7 +71,7 @@ pub impl Cursor {
         if (self.previous == 8 && current == 8) { return false; } // WB13
         if (extender_base(self.previous) && current == 17) { return false; } // WB13a
         if (self.previous == 17 && (letter(current) || current == 8 || current == 16)) { return false; } // WB13b
-        if (self.previous == 6 && current == 6 && self.ri_odd) { return false; } // WB15/16
+        if (self.previous == 6 && current == 6 && self.regional.odd()) { return false; } // WB15/16
         return true; // WB999
     }
 
@@ -79,8 +80,7 @@ pub impl Cursor {
         if (!ignored(current)) {
             self.before = self.previous;
             self.previous = current;
-            if (current == 6) { self.ri_odd = !self.ri_odd; }
-            else { self.ri_odd = false; }
+            self.regional.classify(current == 6);
         }
         self.raw = current;
         self.position += width;

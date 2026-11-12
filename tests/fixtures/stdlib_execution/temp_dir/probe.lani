@@ -1,5 +1,6 @@
 // Real TempDir owner. Four ACK barriers expose creation and recovery before exit.
 module app::main;
+import std::temp_lifecycle;
 import core::io;
 import core::mem;
 import core::option::Option;
@@ -23,7 +24,7 @@ fn optional(value:Option<core::io::Error>)->u64 { if(value.is_none()) { return 0
 fn entropy(value:std::entropy::Error)->u64 { return match(value) { std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+code as u64 }; }
 fn cause(value:std::temp_dir::Error)->u64 { return match(value) { std::temp_dir::Error::InvalidState->1,std::temp_dir::Error::InvalidLimits->2,std::temp_dir::Error::AllocationFailed->3,std::temp_dir::Error::UnavailableMetadata->4,std::temp_dir::Error::NotDirectory->5,std::temp_dir::Error::UnsupportedDescriptor->6,std::temp_dir::Error::NameLimit->7,std::temp_dir::Error::Io(error)->1000+io(error),std::temp_dir::Error::Entropy(error)->2000+entropy(error.cause) }; }
 fn stage(value:std::temp_dir::Stage)->u64 { return match(value) { std::temp_dir::Stage::Validate->1,std::temp_dir::Stage::Allocate->2,std::temp_dir::Stage::Duplicate->3,std::temp_dir::Stage::Metadata->4,std::temp_dir::Stage::Flags->5,std::temp_dir::Stage::Entropy->6,std::temp_dir::Stage::Create->7,std::temp_dir::Stage::OpenDirectory->8,std::temp_dir::Stage::CloseDirectory->9,std::temp_dir::Stage::Remove->10,std::temp_dir::Stage::CloseParent->11 }; }
-fn state(value:std::temp_dir::State)->u64 { return match(value) { std::temp_dir::State::Inactive->0,std::temp_dir::State::Open->1,std::temp_dir::State::ClosedNamed->2,std::temp_dir::State::Kept->3,std::temp_dir::State::CleanupPending->4,std::temp_dir::State::Released->5 }; }
+fn state(value:std::temp_lifecycle::LifecycleState)->u64 { return match(value) { std::temp_lifecycle::LifecycleState::Inactive->0,std::temp_lifecycle::LifecycleState::Open->1,std::temp_lifecycle::LifecycleState::ClosedNamed->2,std::temp_lifecycle::LifecycleState::Kept->3,std::temp_lifecycle::LifecycleState::CleanupPending(_) ->4,std::temp_lifecycle::LifecycleState::Released->5 }; }
 fn removal(value:std::temp_dir::Removal)->u64 { return match(value) { std::temp_dir::Removal::NotOwned->0,std::temp_dir::Removal::Removed->1,std::temp_dir::Removal::AlreadyAbsent->2,std::temp_dir::Removal::Unconfirmed->3 }; }
 fn fd(value:&std::file::File)->u64 { if(value.raw_handle().is_none()) { return 18446744073709551615; } return value.raw_handle().unwrap() as u64; }
 fn clean(output:[u64],at:i32,value:std::temp_dir::Cleanup) { output[at]=value.directory_close_attempted as u64; output[at+1]=optional(value.directory_close_error); output[at+2]=value.remove_attempted as u64; output[at+3]=removal(value.removal); output[at+4]=optional(value.remove_error); output[at+5]=value.parent_close_attempted as u64; output[at+6]=optional(value.parent_close_error); output[at+7]=value.retained as u64; }

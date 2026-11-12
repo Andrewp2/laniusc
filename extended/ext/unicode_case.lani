@@ -2,6 +2,7 @@
 // Allocation-free; every returned error leaves output untouched. Selected
 // storage must be backed, alive and disjoint; input is immutable for the call.
 module ext::unicode_case;
+import core::iter_state;
 import core::option;
 import core::result;
 import core::slice;
@@ -11,6 +12,40 @@ import core::utf8;
 import ext::unicode_case_data;
 import ext::unicode_case_fast_data;
 import ext::unicode_words;
+
+pub enum CaseEvent { Classified(bool,bool) }
+pub machine CaseSuffix on CaseEvent {
+    start Uncased;
+    state Uncased { CaseEvent::Classified(cased,ignored) -> { if (!ignored && cased) { goto Cased; } stay; }, }
+    state Cased { CaseEvent::Classified(cased,ignored) -> { if (!ignored && !cased) { goto Uncased; } stay; }, }
+}
+pub impl CaseSuffix { pub fn cased(&self) -> bool { return match(self.state()) { CaseSuffixState::Cased -> true, _ -> false }; } }
+pub enum DotEvent { Classified(bool,bool,bool) }
+pub machine DotSuffix on DotEvent {
+    start Empty;
+    state Empty { DotEvent::Classified(clear,soft,capital) -> {
+        let has_soft: bool = soft; let has_capital: bool = capital;
+        if (has_soft && has_capital) { goto Both; } if (has_soft) { goto Soft; } if (has_capital) { goto CapitalI; } goto Empty;
+    }, }
+    state Soft { DotEvent::Classified(clear,soft,capital) -> {
+        let has_soft: bool = soft || !clear; let has_capital: bool = capital;
+        if (has_soft && has_capital) { goto Both; } if (has_soft) { goto Soft; } if (has_capital) { goto CapitalI; } goto Empty;
+    }, }
+    state CapitalI { DotEvent::Classified(clear,soft,capital) -> {
+        let has_soft: bool = soft; let has_capital: bool = capital || !clear;
+        if (has_soft && has_capital) { goto Both; } if (has_soft) { goto Soft; } if (has_capital) { goto CapitalI; } goto Empty;
+    }, }
+    state Both { DotEvent::Classified(clear,soft,capital) -> {
+        let has_soft: bool = soft || !clear; let has_capital: bool = capital || !clear;
+        if (has_soft && has_capital) { goto Both; } if (has_soft) { goto Soft; } if (has_capital) { goto CapitalI; } goto Empty;
+    }, }
+}
+pub impl DotSuffix {
+    pub fn soft(&self) -> bool { return match(self.state()) { DotSuffixState::Soft -> true, DotSuffixState::Both -> true, _ -> false }; }
+    pub fn capital_i(&self) -> bool { return match(self.state()) { DotSuffixState::CapitalI -> true, DotSuffixState::Both -> true, _ -> false }; }
+}
+
+
 
 pub enum Kind { Lower, Upper, Title, Fold }
 pub enum Locale { Root, Turkic, Lithuanian }
@@ -26,16 +61,14 @@ impl Budget {
     }
 }
 // These suffix states refer exclusively to original input, across word edges.
-struct Prefix { cased: bool, soft: bool, capital_i: bool }
+struct Prefix { casing: CaseSuffix, dot: DotSuffix }
 impl Prefix {
     fn borrow(&self) -> &Prefix { return self; }
     // bits are the scalar's ext::unicode_case_fast_data flags.
     fn consume(&self, value: u32, bits: u32, locale: u32) {
-        // Possessive Case_Ignorable* takes precedence over Cased (U+0345).
-        if ((bits & ext::unicode_case_fast_data::CASE_IGNORABLE) == 0) { self.cased = (bits & ext::unicode_case_fast_data::CASED) != 0; }
-        if ((bits & 12) != 0) { self.soft = false; self.capital_i = false; }
-        if (value == 73) { self.capital_i = true; }
-        if (locale == 1 && (bits & ext::unicode_case_fast_data::SOFT_DOTTED) != 0) { self.soft = true; }
+        // Case_Ignorable* takes precedence over Cased (U+0345).
+        self.casing.step(CaseEvent::Classified((bits & ext::unicode_case_fast_data::CASED) != 0,(bits & ext::unicode_case_fast_data::CASE_IGNORABLE) != 0));
+        self.dot.step(DotEvent::Classified((bits & 12) != 0,locale == 1 && (bits & ext::unicode_case_fast_data::SOFT_DOTTED) != 0,value == 73));
     }
 }
 fn valid(start: i32, length: i32) -> bool {
@@ -71,9 +104,9 @@ fn validate(input: core::text::Text, budget: &Budget) -> core::result::Result<i3
 // are carried in constant space. Every scanned scalar reserves both passes.
 fn context_matches(context: u32, input: core::text::Text, after: i32, prefix: &Prefix, budget: &Budget) -> core::result::Result<bool, Error> {
     if (context == 0) { return core::result::Ok(true); }
-    if (context == 2) { return core::result::Ok(prefix.soft); }
-    if (context == 5) { return core::result::Ok(prefix.capital_i); }
-    if (context == 1 && !prefix.cased) { return core::result::Ok(false); }
+    if (context == 2) { return core::result::Ok(prefix.dot.soft()); }
+    if (context == 5) { return core::result::Ok(prefix.dot.capital_i()); }
+    if (context == 1 && !prefix.casing.cased()) { return core::result::Ok(false); }
     let position: i32 = after;
     while (position < input.length) {
         if (!budget.charge(2)) { return core::result::Err(Error::WorkLimit(budget.used)); }
@@ -136,12 +169,12 @@ fn part(mapped: ext::unicode_case_data::Mapping, index: i32) -> u32 {
 }
 fn scan(input: core::text::Text, kind: i32, locale: u32, output: core::slice::View<u8>, commit: bool, budget: &Budget) -> core::result::Result<Report, Error> {
     let words: ext::unicode_words::Cursor = core::result::unwrap(ext::unicode_words::cursor(input));
-    let prefix: Prefix = Prefix { cased: false, soft: false, capital_i: false };
+    let prefix: Prefix = Prefix { casing: case_suffix_start(), dot: dot_suffix_start() };
     let position: i32 = 0; let end: i32 = input.length;
-    let bytes: i32 = 0; let scalars: i32 = 0; let have_cased: bool = false;
+    let bytes: i32 = 0; let scalars: i32 = 0; let title_completion = core::iter_state::completion_start();
     while (position < input.length) {
         if (kind == 1 && (position == 0 || position == end)) {
-            end = core::option::unwrap(words.next()).end; have_cased = false;
+            end = core::option::unwrap(words.next()).end; title_completion = core::iter_state::completion_start();
         }
         if (!budget.charge(2)) { return core::result::Err(Error::WorkLimit(budget.used)); }
         let value: u32 = input.bytes[input.start + position] as u32;
@@ -155,15 +188,15 @@ fn scan(input: core::text::Text, kind: i32, locale: u32, output: core::slice::Vi
             let ascii: i32 = kind;
             if (kind == 1) {
                 ascii = 4;
-                if (have_cased) { ascii = 0; }
-                else { if (big || small) { ascii = 1; have_cased = true; } }
+                if (title_completion.is_done()) { ascii = 0; }
+                else { if (big || small) { ascii = 1; title_completion.finish(); } }
             }
             let mapped: u32 = value;
             if ((ascii == 0 || ascii == 3) && big) { mapped = value + 32; }
             if ((ascii == 1 || ascii == 2) && small) { mapped = value - 32; }
             if (kind != 3) {
-                if (value != 39 && value != 46 && value != 58 && value != 94 && value != 96) { prefix.cased = big || small; }
-                prefix.soft = false; prefix.capital_i = value == 73;
+                if (value != 39 && value != 46 && value != 58 && value != 94 && value != 96) { prefix.casing.step(CaseEvent::Classified(big || small,false)); }
+                prefix.dot.step(DotEvent::Classified(true,false,value == 73));
             }
             if (scalars > 2147483646 || bytes > 2147483646) { return core::result::Err(Error::SizeOverflow); }
             scalars += 1;
@@ -182,8 +215,8 @@ fn scan(input: core::text::Text, kind: i32, locale: u32, output: core::slice::Vi
         let operation: i32 = kind;
         if (kind == 1) {
             operation = 4;
-            if (have_cased) { operation = 0; }
-            else { if ((bits & ext::unicode_case_fast_data::CASED) != 0) { operation = 1; have_cased = true; } }
+            if (title_completion.is_done()) { operation = 0; }
+            else { if ((bits & ext::unicode_case_fast_data::CASED) != 0) { operation = 1; title_completion.finish(); } }
         }
         let selected: core::result::Result<ext::unicode_case_data::Mapping, Error> = mapping(value, slot, bits, operation, locale, input, position, prefix.borrow(), budget);
         if (core::result::is_err(selected)) { return core::result::Err(core::result::unwrap_err(selected)); }

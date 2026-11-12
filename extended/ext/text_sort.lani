@@ -27,6 +27,32 @@ import core::slice;
 import ext::text_lines;
 import std::linux;
 
+pub enum SortPassEvent { Repair, Output }
+pub machine SortPass on SortPassEvent {
+    start Keys;
+
+    state Keys {
+        SortPassEvent::Repair -> goto Repair,
+        SortPassEvent::Output -> goto Output,
+    }
+
+    state Repair {
+        SortPassEvent::Repair -> stay,
+        SortPassEvent::Output -> goto Output,
+    }
+
+    final state Output {
+        SortPassEvent::Repair -> stay,
+        SortPassEvent::Output -> stay,
+    }
+}
+pub impl SortPass {
+    pub fn is_keys(&self) -> bool { return match (self.state()) { SortPassState::Keys -> true, _ -> false }; }
+    pub fn is_repair(&self) -> bool { return match (self.state()) { SortPassState::Repair -> true, _ -> false }; }
+    pub fn is_output(&self) -> bool { return match (self.state()) { SortPassState::Output -> true, _ -> false }; }
+}
+
+
 pub enum Error { AllocationFailed, LimitExceeded, WorkerFailed }
 pub const MAX: u64 = 18446744073709551615;
 
@@ -867,12 +893,12 @@ fn ts_emit(wk: &Work, w: &ext::text_lines::Words, from: i32, to: i32, out: &ext:
 // worker a slice of whole runs to finish and write into a shared buffer.
 // The parent works as worker 0 and writes the buffers in order.
 const PARALLEL: i32 = 50000;
-struct Job { round: i32, a: i32, b: i32, level: i32, chunk: i32, nb: i32, ib: u64, flip: u64, shift: u64, exact: bool, fin: bool, area: ptr, words: i32 }
+struct Job { pass: SortPass, a: i32, b: i32, level: i32, chunk: i32, nb: i32, ib: u64, flip: u64, shift: u64, exact: bool, fin: bool, area: ptr, words: i32 }
 fn ts_job(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, o: Options, c: i32, j: Job) -> bool {
     let k: Key = whole_line(false); if (j.level < levels.len()) { k = levels.at(j.level); }
     let one: u64 = 1; let keep: u64 = (one << j.ib) - one;
     wk.cnt = ts_region(wk, c);
-    if (j.round == 1) {
+    if (j.pass.is_keys()) {
         if (j.chunk == 0) { ts_keys(wk, w, j.a, j.b, k.borrow(), o.tab); }
         if (k.numeric) {
             let scan: NumScan = ts_numbers(wk, w, j.a, j.b, keep);
@@ -880,7 +906,7 @@ fn ts_job(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, 
         } else { ts_pack(wk, w, 0, j.a, j.b, j.chunk, j.nb, j.ib, k.fold, j.flip); }
         return true;
     }
-    if (j.round == 2) {
+    if (j.pass.is_repair()) {
         if (j.b - j.a >= 2) { ts_msd(wk, j.a, j.b, j.ib); }
         ts_positions(wk, 0, j.a, j.b, keep);
         let pos: [i32] = wk.pos; let ln: [u64] = wk.ln; let kk: [u64] = wk.kk; let tln: [u64] = wk.tln; let tk: [u64] = wk.tk;
@@ -904,14 +930,14 @@ fn ts_round(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>
     let pids: [i64; 64] = [0; 64]; let c: i32 = 1; let ok: bool = true; let mine: [i32] = wk.cnt;
     while (c < count) {
         let job: Job = j; job.a = cuts[c]; job.b = cuts[c+1];
-        if (j.round == 3) { job.area = j.area + (offsets[c] as usize); job.words = ((offsets[c+1] - offsets[c]) / 8) as i32; }
+        if (j.pass.is_output()) { job.area = j.area + (offsets[c] as usize); job.words = ((offsets[c+1] - offsets[c]) / 8) as i32; }
         let pid: i64 = ts_fork();
         if (pid == 0) { let done: bool = ts_job(wk, w, levels, o, c, job); ts_exit(0); }
         if (pid < 0) { let done: bool = ts_job(wk, w, levels, o, c, job); wk.cnt = mine; }
         pids[c] = pid; c += 1;
     }
     let first: Job = j; first.a = cuts[0]; first.b = cuts[1];
-    if (j.round == 3) { first.area = j.area; first.words = ((offsets[1] - offsets[0]) / 8) as i32; }
+    if (j.pass.is_output()) { first.area = j.area; first.words = ((offsets[1] - offsets[0]) / 8) as i32; }
     let done: bool = ts_job(wk, w, levels, o, 0, first); wk.cnt = mine;
     c = 1;
     while (c < count) { if (pids[c] > 0 && !ts_wait(pids[c])) { ok = false; } c += 1; }
@@ -926,7 +952,7 @@ fn ts_parallel(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<K
     let cuts: [i32; 72] = [0; 72]; let offsets: [i64; 72] = [0; 72];
     let level: i32 = 0; let chunk: i32 = 0; let fin: bool = false;
     let ib: u64 = ts_ib(n); let keep: u64 = (one << ib) - one;
-    let j: Job = Job { round: 1, a: 0, b: n, level: 0, chunk: 0, nb: 0, ib: ib, flip: 0, shift: 0, exact: true, fin: false, area: wk.base, words: 0 };
+    let j: Job = Job { pass: sort_pass_start(), a: 0, b: n, level: 0, chunk: 0, nb: 0, ib: ib, flip: 0, shift: 0, exact: true, fin: false, area: wk.base, words: 0 };
     while (true) {
         if (level == nl) {
             if (o.unique) { let p: i32 = 1; while (p < n) { wk.dup[p] = 1; p += 1; } }
@@ -934,7 +960,7 @@ fn ts_parallel(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<K
         }
         let k: Key = levels.at(level); let flip: u64 = 0; if (k.reverse) { flip = all ^ keep; }
         let nb: i32 = ((61 - ib) / 8) as i32;
-        j = Job { round: 1, a: 0, b: n, level: level, chunk: chunk, nb: nb, ib: ib, flip: flip, shift: ib, exact: true, fin: false, area: wk.base, words: 0 };
+        j = Job { pass: sort_pass_start(), a: 0, b: n, level: level, chunk: chunk, nb: nb, ib: ib, flip: flip, shift: ib, exact: true, fin: false, area: wk.base, words: 0 };
         ts_even(cuts, n, count);
         if (!ts_round(wk, w, levels, o, j, cuts, count, offsets)) { return false; }
         let packed: bool = true;
@@ -963,7 +989,7 @@ fn ts_parallel(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<K
                     cuts[c] = at; c += 1;
                 }
                 cuts[count] = n;
-                j.round = 2;
+                j.pass.step(SortPassEvent::Repair);
                 if (!ts_round(wk, w, levels, o, j, cuts, count, offsets)) { return false; }
                 let t1: [u64] = wk.ln; wk.ln = wk.tln; wk.tln = t1; let t2: [u64] = wk.kk; wk.kk = wk.tk; wk.tk = t2;
             }
@@ -993,11 +1019,11 @@ fn ts_parallel(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<K
     let mapped: core::result::Result<ptr, Error> = ts_map(total + 64);
     if (core::result::is_err(mapped)) { return false; }
     let area: ptr = core::result::unwrap(mapped);
-    j.round = 3; j.fin = fin; j.level = level; j.chunk = chunk; j.area = area;
+    j.pass.step(SortPassEvent::Output); j.fin = fin; j.level = level; j.chunk = chunk; j.area = area;
     let ok: bool = ts_round(wk, w, levels, o, j, cuts, count, offsets);
     c = 0;
     while (ok && c < count) {
-        if (!ext::text_lines::write_all(out.fd, area + (offsets[c] as usize), wk.flags[c*4+2] as i32)) { out.failed = true; }
+        if (!ext::text_lines::write_all(out.fd, area + (offsets[c] as usize), wk.flags[c*4+2] as i32)) { out.health.fail(); }
         c += 1;
     }
     ts_unmap(area, total + 64);

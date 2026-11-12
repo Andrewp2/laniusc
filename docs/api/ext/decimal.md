@@ -18,14 +18,15 @@ Declaration counts: enum: 2; field: 10; function: 8; impl: 7; method: 42; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/decimal.lani#L4)
-- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/decimal.lani#L5)
-- [core::hash](../core/hash.md) · [source](../../../extended/ext/decimal.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/decimal.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/decimal.lani#L8)
-- [core::text](../core/text.md) · [source](../../../extended/ext/decimal.lani#L9)
-- [alloc::big_int](../alloc/big_int.md) · [source](../../../extended/ext/decimal.lani#L10)
-- [alloc::big_uint](../alloc/big_uint.md) · [source](../../../extended/ext/decimal.lani#L11)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/decimal.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/decimal.lani#L5)
+- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/decimal.lani#L6)
+- [core::hash](../core/hash.md) · [source](../../../extended/ext/decimal.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/decimal.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/decimal.lani#L9)
+- [core::text](../core/text.md) · [source](../../../extended/ext/decimal.lani#L10)
+- [alloc::big_int](../alloc/big_int.md) · [source](../../../extended/ext/decimal.lani#L11)
+- [alloc::big_uint](../alloc/big_uint.md) · [source](../../../extended/ext/decimal.lani#L12)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 pub enum Error
@@ -41,7 +42,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 Bounds
@@ -49,7 +50,7 @@ Bounds
 
 #### variant: InvalidSyntax
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 InvalidSyntax
@@ -57,7 +58,7 @@ InvalidSyntax
 
 #### variant: NonFinite
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 NonFinite
@@ -65,7 +66,7 @@ NonFinite
 
 #### variant: DigitLimit
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 DigitLimit
@@ -73,7 +74,7 @@ DigitLimit
 
 #### variant: ScaleLimit
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 ScaleLimit
@@ -81,7 +82,7 @@ ScaleLimit
 
 #### variant: LimbLimit
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 LimbLimit
@@ -89,7 +90,7 @@ LimbLimit
 
 #### variant: WorkLimit
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 WorkLimit
@@ -97,7 +98,7 @@ WorkLimit
 
 #### variant: OutputLimit
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 OutputLimit
@@ -105,7 +106,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 AllocationFailed
@@ -113,7 +114,7 @@ AllocationFailed
 
 #### variant: DivisionByZero
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 DivisionByZero
@@ -121,7 +122,7 @@ DivisionByZero
 
 #### variant: Inexact
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 Inexact
@@ -129,7 +130,7 @@ Inexact
 
 #### variant: Overflow
 
-[Source line 13](../../../extended/ext/decimal.lani#L13)
+[Source line 14](../../../extended/ext/decimal.lani#L14)
 
 ```lanius
 Overflow
@@ -137,7 +138,7 @@ Overflow
 
 ### enum: Rounding
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 pub enum Rounding
@@ -145,7 +146,7 @@ pub enum Rounding
 
 #### variant: Down
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 Down
@@ -153,7 +154,7 @@ Down
 
 #### variant: Up
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 Up
@@ -161,7 +162,7 @@ Up
 
 #### variant: Floor
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 Floor
@@ -169,7 +170,7 @@ Floor
 
 #### variant: Ceiling
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 Ceiling
@@ -177,7 +178,7 @@ Ceiling
 
 #### variant: HalfUp
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 HalfUp
@@ -185,7 +186,7 @@ HalfUp
 
 #### variant: HalfDown
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 HalfDown
@@ -193,7 +194,7 @@ HalfDown
 
 #### variant: HalfEven
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 HalfEven
@@ -201,7 +202,7 @@ HalfEven
 
 #### variant: Unnecessary
 
-[Source line 14](../../../extended/ext/decimal.lani#L14)
+[Source line 15](../../../extended/ext/decimal.lani#L15)
 
 ```lanius
 Unnecessary
@@ -209,7 +210,7 @@ Unnecessary
 
 ### struct: Limits
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 pub struct Limits
@@ -217,7 +218,7 @@ pub struct Limits
 
 #### field: max_limbs
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 max_limbs: i32
@@ -225,7 +226,7 @@ max_limbs: i32
 
 #### field: max_digits
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 max_digits: i32
@@ -233,7 +234,7 @@ max_digits: i32
 
 #### field: max_scale
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 max_scale: i32
@@ -241,7 +242,7 @@ max_scale: i32
 
 #### field: max_work
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 max_work: u64
@@ -249,7 +250,7 @@ max_work: u64
 
 #### field: max_output
 
-[Source line 15](../../../extended/ext/decimal.lani#L15)
+[Source line 16](../../../extended/ext/decimal.lani#L16)
 
 ```lanius
 max_output: i32
@@ -257,7 +258,7 @@ max_output: i32
 
 ### struct: Context
 
-[Source line 16](../../../extended/ext/decimal.lani#L16)
+[Source line 17](../../../extended/ext/decimal.lani#L17)
 
 ```lanius
 pub struct Context
@@ -265,7 +266,7 @@ pub struct Context
 
 #### field: precision
 
-[Source line 16](../../../extended/ext/decimal.lani#L16)
+[Source line 17](../../../extended/ext/decimal.lani#L17)
 
 ```lanius
 precision: i32
@@ -273,7 +274,7 @@ precision: i32
 
 #### field: rounding
 
-[Source line 16](../../../extended/ext/decimal.lani#L16)
+[Source line 17](../../../extended/ext/decimal.lani#L17)
 
 ```lanius
 rounding: Rounding
@@ -281,7 +282,7 @@ rounding: Rounding
 
 ### struct: Decimal
 
-[Source line 17](../../../extended/ext/decimal.lani#L17)
+[Source line 18](../../../extended/ext/decimal.lani#L18)
 
 ```lanius
 pub struct Decimal
@@ -289,7 +290,7 @@ pub struct Decimal
 
 #### field: coefficient
 
-[Source line 17](../../../extended/ext/decimal.lani#L17)
+[Source line 18](../../../extended/ext/decimal.lani#L18)
 
 ```lanius
 coefficient: alloc::big_int::BigInt
@@ -297,7 +298,7 @@ coefficient: alloc::big_int::BigInt
 
 #### field: digits
 
-[Source line 17](../../../extended/ext/decimal.lani#L17)
+[Source line 18](../../../extended/ext/decimal.lani#L18)
 
 ```lanius
 digits: alloc::vec::Vec<u8>
@@ -305,7 +306,7 @@ digits: alloc::vec::Vec<u8>
 
 #### field: power
 
-[Source line 17](../../../extended/ext/decimal.lani#L17)
+[Source line 18](../../../extended/ext/decimal.lani#L18)
 
 ```lanius
 power: i32
@@ -315,7 +316,7 @@ power: i32
 
 ### function: default_limits
 
-[Source line 20](../../../extended/ext/decimal.lani#L20)
+[Source line 21](../../../extended/ext/decimal.lani#L21)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -323,7 +324,7 @@ pub fn default_limits() -> Limits
 
 ### function: default_context
 
-[Source line 21](../../../extended/ext/decimal.lani#L21)
+[Source line 22](../../../extended/ext/decimal.lani#L22)
 
 ```lanius
 pub fn default_context() -> Context
@@ -331,7 +332,7 @@ pub fn default_context() -> Context
 
 ### function: zero
 
-[Source line 22](../../../extended/ext/decimal.lani#L22)
+[Source line 23](../../../extended/ext/decimal.lani#L23)
 
 ```lanius
 pub fn zero() -> Decimal
@@ -339,7 +340,7 @@ pub fn zero() -> Decimal
 
 ### function: parse
 
-[Source line 88](../../../extended/ext/decimal.lani#L88)
+[Source line 89](../../../extended/ext/decimal.lani#L89)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -347,7 +348,7 @@ pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Resu
 
 ### function: parse_text
 
-[Source line 91](../../../extended/ext/decimal.lani#L91)
+[Source line 92](../../../extended/ext/decimal.lani#L92)
 
 ```lanius
 pub fn parse_text(input: core::text::Text, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -355,7 +356,7 @@ pub fn parse_text(input: core::text::Text, limits: Limits) -> core::result::Resu
 
 ### function: from_i64
 
-[Source line 153](../../../extended/ext/decimal.lani#L153)
+[Source line 154](../../../extended/ext/decimal.lani#L154)
 
 ```lanius
 pub fn from_i64(value: i64, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -363,7 +364,7 @@ pub fn from_i64(value: i64, limits: Limits) -> core::result::Result<Decimal, Err
 
 ### function: from_u64
 
-[Source line 161](../../../extended/ext/decimal.lani#L161)
+[Source line 162](../../../extended/ext/decimal.lani#L162)
 
 ```lanius
 pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -371,7 +372,7 @@ pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<Decimal, Err
 
 ### function: from_coefficient
 
-[Source line 383](../../../extended/ext/decimal.lani#L383)
+[Source line 384](../../../extended/ext/decimal.lani#L384)
 
 ```lanius
 pub fn from_coefficient(coefficient: &alloc::big_int::BigInt, exponent: i32, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -379,9 +380,9 @@ pub fn from_coefficient(coefficient: &alloc::big_int::BigInt, exponent: i32, lim
 
 ## Implementation blocks and public methods
 
-### impl at line 301
+### impl at line 302
 
-[Source line 301](../../../extended/ext/decimal.lani#L301)
+[Source line 302](../../../extended/ext/decimal.lani#L302)
 
 ```lanius
 pub impl Decimal
@@ -389,7 +390,7 @@ pub impl Decimal
 
 #### method: borrow
 
-[Source line 302](../../../extended/ext/decimal.lani#L302)
+[Source line 303](../../../extended/ext/decimal.lani#L303)
 
 ```lanius
 pub fn borrow(&self) -> &Decimal
@@ -397,7 +398,7 @@ pub fn borrow(&self) -> &Decimal
 
 #### method: destroy
 
-[Source line 303](../../../extended/ext/decimal.lani#L303)
+[Source line 304](../../../extended/ext/decimal.lani#L304)
 
 ```lanius
 pub fn destroy(&self)
@@ -405,7 +406,7 @@ pub fn destroy(&self)
 
 #### method: is_zero
 
-[Source line 304](../../../extended/ext/decimal.lani#L304)
+[Source line 305](../../../extended/ext/decimal.lani#L305)
 
 ```lanius
 pub fn is_zero(&self) -> bool
@@ -413,7 +414,7 @@ pub fn is_zero(&self) -> bool
 
 #### method: sign
 
-[Source line 305](../../../extended/ext/decimal.lani#L305)
+[Source line 306](../../../extended/ext/decimal.lani#L306)
 
 ```lanius
 pub fn sign(&self) -> i32
@@ -421,7 +422,7 @@ pub fn sign(&self) -> i32
 
 #### method: exponent
 
-[Source line 306](../../../extended/ext/decimal.lani#L306)
+[Source line 307](../../../extended/ext/decimal.lani#L307)
 
 ```lanius
 pub fn exponent(&self) -> i32
@@ -429,7 +430,7 @@ pub fn exponent(&self) -> i32
 
 #### method: scale
 
-[Source line 307](../../../extended/ext/decimal.lani#L307)
+[Source line 308](../../../extended/ext/decimal.lani#L308)
 
 ```lanius
 pub fn scale(&self) -> i32
@@ -437,7 +438,7 @@ pub fn scale(&self) -> i32
 
 #### method: precision
 
-[Source line 308](../../../extended/ext/decimal.lani#L308)
+[Source line 309](../../../extended/ext/decimal.lani#L309)
 
 ```lanius
 pub fn precision(&self) -> i32
@@ -445,7 +446,7 @@ pub fn precision(&self) -> i32
 
 #### method: compare
 
-[Source line 309](../../../extended/ext/decimal.lani#L309)
+[Source line 310](../../../extended/ext/decimal.lani#L310)
 
 ```lanius
 pub fn compare(&self, other: &Decimal) -> i32
@@ -453,7 +454,7 @@ pub fn compare(&self, other: &Decimal) -> i32
 
 #### method: value_hash
 
-[Source line 315](../../../extended/ext/decimal.lani#L315)
+[Source line 316](../../../extended/ext/decimal.lani#L316)
 
 ```lanius
 pub fn value_hash(&self) -> u32
@@ -461,7 +462,7 @@ pub fn value_hash(&self) -> u32
 
 #### method: try_clone
 
-[Source line 324](../../../extended/ext/decimal.lani#L324)
+[Source line 325](../../../extended/ext/decimal.lani#L325)
 
 ```lanius
 pub fn try_clone(&self, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -469,7 +470,7 @@ pub fn try_clone(&self, limits: Limits) -> core::result::Result<Decimal, Error>
 
 #### method: neg
 
-[Source line 330](../../../extended/ext/decimal.lani#L330)
+[Source line 331](../../../extended/ext/decimal.lani#L331)
 
 ```lanius
 pub fn neg(&self, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -477,7 +478,7 @@ pub fn neg(&self, limits: Limits) -> core::result::Result<Decimal, Error>
 
 #### method: abs
 
-[Source line 338](../../../extended/ext/decimal.lani#L338)
+[Source line 339](../../../extended/ext/decimal.lani#L339)
 
 ```lanius
 pub fn abs(&self, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -485,7 +486,7 @@ pub fn abs(&self, limits: Limits) -> core::result::Result<Decimal, Error>
 
 #### method: add
 
-[Source line 339](../../../extended/ext/decimal.lani#L339)
+[Source line 340](../../../extended/ext/decimal.lani#L340)
 
 ```lanius
 pub fn add(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -493,7 +494,7 @@ pub fn add(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decim
 
 #### method: sub
 
-[Source line 340](../../../extended/ext/decimal.lani#L340)
+[Source line 341](../../../extended/ext/decimal.lani#L341)
 
 ```lanius
 pub fn sub(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -501,7 +502,7 @@ pub fn sub(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decim
 
 #### method: mul
 
-[Source line 341](../../../extended/ext/decimal.lani#L341)
+[Source line 342](../../../extended/ext/decimal.lani#L342)
 
 ```lanius
 pub fn mul(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -509,7 +510,7 @@ pub fn mul(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decim
 
 #### method: rescale
 
-[Source line 342](../../../extended/ext/decimal.lani#L342)
+[Source line 343](../../../extended/ext/decimal.lani#L343)
 
 ```lanius
 pub fn rescale(&self, target_exponent: i32, rounding: Rounding, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -517,7 +518,7 @@ pub fn rescale(&self, target_exponent: i32, rounding: Rounding, limits: Limits) 
 
 #### method: round
 
-[Source line 346](../../../extended/ext/decimal.lani#L346)
+[Source line 347](../../../extended/ext/decimal.lani#L347)
 
 ```lanius
 pub fn round(&self, context: Context, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -525,7 +526,7 @@ pub fn round(&self, context: Context, limits: Limits) -> core::result::Result<De
 
 #### method: quantize
 
-[Source line 351](../../../extended/ext/decimal.lani#L351)
+[Source line 352](../../../extended/ext/decimal.lani#L352)
 
 ```lanius
 pub fn quantize(&self, quantum: &Decimal, context: Context, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -533,15 +534,15 @@ pub fn quantize(&self, quantum: &Decimal, context: Context, limits: Limits) -> c
 
 #### method: pow
 
-[Source line 361](../../../extended/ext/decimal.lani#L361)
+[Source line 362](../../../extended/ext/decimal.lani#L362)
 
 ```lanius
 pub fn pow(&self, exponent: u32, limits: Limits) -> core::result::Result<Decimal, Error>
 ```
 
-### impl at line 483
+### impl at line 484
 
-[Source line 483](../../../extended/ext/decimal.lani#L483)
+[Source line 484](../../../extended/ext/decimal.lani#L484)
 
 ```lanius
 pub impl Decimal
@@ -549,7 +550,7 @@ pub impl Decimal
 
 #### method: div
 
-[Source line 484](../../../extended/ext/decimal.lani#L484)
+[Source line 485](../../../extended/ext/decimal.lani#L485)
 
 ```lanius
 pub fn div(&self, other: &Decimal, context: Context, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -557,7 +558,7 @@ pub fn div(&self, other: &Decimal, context: Context, limits: Limits) -> core::re
 
 #### method: reduce
 
-[Source line 485](../../../extended/ext/decimal.lani#L485)
+[Source line 486](../../../extended/ext/decimal.lani#L486)
 
 ```lanius
 pub fn reduce(&self, limits: Limits) -> core::result::Result<Decimal, Error>
@@ -565,7 +566,7 @@ pub fn reduce(&self, limits: Limits) -> core::result::Result<Decimal, Error>
 
 #### method: to_big_int
 
-[Source line 493](../../../extended/ext/decimal.lani#L493)
+[Source line 494](../../../extended/ext/decimal.lani#L494)
 
 ```lanius
 pub fn to_big_int(&self, rounding: Rounding, limits: Limits) -> core::result::Result<alloc::big_int::BigInt, Error>
@@ -573,7 +574,7 @@ pub fn to_big_int(&self, rounding: Rounding, limits: Limits) -> core::result::Re
 
 #### method: to_i64
 
-[Source line 497](../../../extended/ext/decimal.lani#L497)
+[Source line 498](../../../extended/ext/decimal.lani#L498)
 
 ```lanius
 pub fn to_i64(&self, limits: Limits) -> core::result::Result<i64, Error>
@@ -581,7 +582,7 @@ pub fn to_i64(&self, limits: Limits) -> core::result::Result<i64, Error>
 
 #### method: to_u64
 
-[Source line 503](../../../extended/ext/decimal.lani#L503)
+[Source line 504](../../../extended/ext/decimal.lani#L504)
 
 ```lanius
 pub fn to_u64(&self, limits: Limits) -> core::result::Result<u64, Error>
@@ -589,7 +590,7 @@ pub fn to_u64(&self, limits: Limits) -> core::result::Result<u64, Error>
 
 #### method: measure
 
-[Source line 509](../../../extended/ext/decimal.lani#L509)
+[Source line 510](../../../extended/ext/decimal.lani#L510)
 
 ```lanius
 pub fn measure(&self, limits: Limits) -> core::result::Result<i32, Error>
@@ -597,7 +598,7 @@ pub fn measure(&self, limits: Limits) -> core::result::Result<i32, Error>
 
 #### method: format
 
-[Source line 510](../../../extended/ext/decimal.lani#L510)
+[Source line 511](../../../extended/ext/decimal.lani#L511)
 
 ```lanius
 pub fn format(&self, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -605,7 +606,7 @@ pub fn format(&self, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>
 
 #### method: format_into
 
-[Source line 527](../../../extended/ext/decimal.lani#L527)
+[Source line 528](../../../extended/ext/decimal.lani#L528)
 
 ```lanius
 pub fn format_into(&self, output: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error>
@@ -613,15 +614,15 @@ pub fn format_into(&self, output: core::slice::View<u8>, limits: Limits) -> core
 
 #### method: format_scientific
 
-[Source line 537](../../../extended/ext/decimal.lani#L537)
+[Source line 538](../../../extended/ext/decimal.lani#L538)
 
 ```lanius
 pub fn format_scientific(&self, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>, Error>
 ```
 
-### impl at line 555
+### impl at line 556
 
-[Source line 555](../../../extended/ext/decimal.lani#L555)
+[Source line 556](../../../extended/ext/decimal.lani#L556)
 
 ```lanius
 pub impl core::cmp::Eq<Decimal> for Decimal
@@ -629,7 +630,7 @@ pub impl core::cmp::Eq<Decimal> for Decimal
 
 #### method: eq
 
-[Source line 556](../../../extended/ext/decimal.lani#L556)
+[Source line 557](../../../extended/ext/decimal.lani#L557)
 
 ```lanius
 pub fn eq(left: Decimal, right: Decimal) -> bool
@@ -637,15 +638,15 @@ pub fn eq(left: Decimal, right: Decimal) -> bool
 
 #### method: ne
 
-[Source line 557](../../../extended/ext/decimal.lani#L557)
+[Source line 558](../../../extended/ext/decimal.lani#L558)
 
 ```lanius
 pub fn ne(left: Decimal, right: Decimal) -> bool
 ```
 
-### impl at line 559
+### impl at line 560
 
-[Source line 559](../../../extended/ext/decimal.lani#L559)
+[Source line 560](../../../extended/ext/decimal.lani#L560)
 
 ```lanius
 pub impl core::cmp::Ord<Decimal> for Decimal
@@ -653,7 +654,7 @@ pub impl core::cmp::Ord<Decimal> for Decimal
 
 #### method: lt
 
-[Source line 560](../../../extended/ext/decimal.lani#L560)
+[Source line 561](../../../extended/ext/decimal.lani#L561)
 
 ```lanius
 pub fn lt(left: Decimal, right: Decimal) -> bool
@@ -661,7 +662,7 @@ pub fn lt(left: Decimal, right: Decimal) -> bool
 
 #### method: le
 
-[Source line 561](../../../extended/ext/decimal.lani#L561)
+[Source line 562](../../../extended/ext/decimal.lani#L562)
 
 ```lanius
 pub fn le(left: Decimal, right: Decimal) -> bool
@@ -669,7 +670,7 @@ pub fn le(left: Decimal, right: Decimal) -> bool
 
 #### method: gt
 
-[Source line 562](../../../extended/ext/decimal.lani#L562)
+[Source line 563](../../../extended/ext/decimal.lani#L563)
 
 ```lanius
 pub fn gt(left: Decimal, right: Decimal) -> bool
@@ -677,15 +678,15 @@ pub fn gt(left: Decimal, right: Decimal) -> bool
 
 #### method: ge
 
-[Source line 563](../../../extended/ext/decimal.lani#L563)
+[Source line 564](../../../extended/ext/decimal.lani#L564)
 
 ```lanius
 pub fn ge(left: Decimal, right: Decimal) -> bool
 ```
 
-### impl at line 565
+### impl at line 566
 
-[Source line 565](../../../extended/ext/decimal.lani#L565)
+[Source line 566](../../../extended/ext/decimal.lani#L566)
 
 ```lanius
 pub impl core::cmp::PartialEq<Decimal> for Decimal
@@ -693,7 +694,7 @@ pub impl core::cmp::PartialEq<Decimal> for Decimal
 
 #### method: partial_eq
 
-[Source line 566](../../../extended/ext/decimal.lani#L566)
+[Source line 567](../../../extended/ext/decimal.lani#L567)
 
 ```lanius
 pub fn partial_eq(left: Decimal, right: Decimal) -> bool
@@ -701,15 +702,15 @@ pub fn partial_eq(left: Decimal, right: Decimal) -> bool
 
 #### method: partial_ne
 
-[Source line 567](../../../extended/ext/decimal.lani#L567)
+[Source line 568](../../../extended/ext/decimal.lani#L568)
 
 ```lanius
 pub fn partial_ne(left: Decimal, right: Decimal) -> bool
 ```
 
-### impl at line 569
+### impl at line 570
 
-[Source line 569](../../../extended/ext/decimal.lani#L569)
+[Source line 570](../../../extended/ext/decimal.lani#L570)
 
 ```lanius
 pub impl core::cmp::PartialOrd<Decimal> for Decimal
@@ -717,7 +718,7 @@ pub impl core::cmp::PartialOrd<Decimal> for Decimal
 
 #### method: partial_lt
 
-[Source line 570](../../../extended/ext/decimal.lani#L570)
+[Source line 571](../../../extended/ext/decimal.lani#L571)
 
 ```lanius
 pub fn partial_lt(left: Decimal, right: Decimal) -> bool
@@ -725,7 +726,7 @@ pub fn partial_lt(left: Decimal, right: Decimal) -> bool
 
 #### method: partial_le
 
-[Source line 571](../../../extended/ext/decimal.lani#L571)
+[Source line 572](../../../extended/ext/decimal.lani#L572)
 
 ```lanius
 pub fn partial_le(left: Decimal, right: Decimal) -> bool
@@ -733,7 +734,7 @@ pub fn partial_le(left: Decimal, right: Decimal) -> bool
 
 #### method: partial_gt
 
-[Source line 572](../../../extended/ext/decimal.lani#L572)
+[Source line 573](../../../extended/ext/decimal.lani#L573)
 
 ```lanius
 pub fn partial_gt(left: Decimal, right: Decimal) -> bool
@@ -741,7 +742,7 @@ pub fn partial_gt(left: Decimal, right: Decimal) -> bool
 
 #### method: partial_ge
 
-[Source line 573](../../../extended/ext/decimal.lani#L573)
+[Source line 574](../../../extended/ext/decimal.lani#L574)
 
 ```lanius
 pub fn partial_ge(left: Decimal, right: Decimal) -> bool
@@ -749,15 +750,15 @@ pub fn partial_ge(left: Decimal, right: Decimal) -> bool
 
 #### method: partial_cmp
 
-[Source line 574](../../../extended/ext/decimal.lani#L574)
+[Source line 575](../../../extended/ext/decimal.lani#L575)
 
 ```lanius
 pub fn partial_cmp(left: Decimal, right: Decimal) -> core::cmp::PartialOrdering
 ```
 
-### impl at line 578
+### impl at line 579
 
-[Source line 578](../../../extended/ext/decimal.lani#L578)
+[Source line 579](../../../extended/ext/decimal.lani#L579)
 
 ```lanius
 pub impl core::hash::Hash<Decimal> for Decimal
@@ -765,7 +766,7 @@ pub impl core::hash::Hash<Decimal> for Decimal
 
 #### method: hash
 
-[Source line 578](../../../extended/ext/decimal.lani#L578)
+[Source line 579](../../../extended/ext/decimal.lani#L579)
 
 ```lanius
 pub fn hash(value: Decimal) -> u32

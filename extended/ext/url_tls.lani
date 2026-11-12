@@ -1,6 +1,7 @@
 // Verified HTTPS over URL-selected TCP. OpenSSL performs all cryptography.
 // Importing this module requires the explicit native SSL/crypto libraries.
 module ext::url_tls;
+import core::lifecycle;
 import core::io;
 import core::option;
 import core::option::Option;
@@ -29,7 +30,7 @@ pub struct Failure {
 }
 pub struct Response {
     owner: ext::http_client::Response, selected: ext::url_connect::ConnectionInfo,
-    tls: ext::https_client::TlsStats, active: bool
+    tls: ext::https_client::TlsStats, lifetime: core::lifecycle::Lifetime
 }
 pub fn default_options() -> Options {
     return Options { request: ext::url_client::default_options(), tls: ext::https_client::default_options() };
@@ -39,14 +40,14 @@ fn local(stage: Stage, cause: Cause) -> Failure {
 }
 pub impl Response {
     pub fn borrow(&self) -> &Response { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     // Requires an active owner; body/header views expire when it is destroyed.
     pub fn http(&self) -> &ext::http_client::Response { return self.owner.borrow(); }
     pub fn connection(&self) -> ext::url_connect::ConnectionInfo { return self.selected; }
     pub fn tls_stats(&self) -> ext::https_client::TlsStats { return self.tls; }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.active = false; self.owner.destroy(); return true;
+        if (!self.lifetime.is_active()) { return false; }
+        self.lifetime.release(); self.owner.destroy(); return true;
     }
 }
 
@@ -92,5 +93,5 @@ pub fn exchange_until(url: &ext::http_url::Url, context: &ext::openssl_tls::Cont
         let error: ext::https_client::Failure = completed.unwrap_err();
         return Err(Failure { stage: Stage::Exchange, cause: Cause::Https(error), connection: core::option::Some(selected), http: core::option::Some(error.stats), tls: core::option::Some(exchange.tls_stats()), cleanup: error.cleanup });
     }
-    return Ok(Response { owner: completed.unwrap(), selected: selected, tls: exchange.tls_stats(), active: true });
+    return Ok(Response { owner: completed.unwrap(), selected: selected, tls: exchange.tls_stats(), lifetime: core::lifecycle::lifetime_start() });
 }

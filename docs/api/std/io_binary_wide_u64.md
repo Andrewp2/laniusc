@@ -16,16 +16,17 @@ Declaration counts: function: 2.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::binary_wide_u64](../core/binary_wide_u64.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L4)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L5)
-- [std::io](io.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L6)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L3)
+- [core::binary_wide_u64](../core/binary_wide_u64.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L5)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L6)
+- [std::io](io.md) · [source](../../../stdlib/std/io_binary_wide_u64.lani#L7)
 
 ## Free functions and extern declarations
 
 ### function: write
 
-[Source line 8](../../../stdlib/std/io_binary_wide_u64.lani#L8)
+[Source line 9](../../../stdlib/std/io_binary_wide_u64.lani#L9)
 
 ```lanius
 pub fn write(handle: i32, value: core::wide_u64::WideU64) -> i32
@@ -33,7 +34,7 @@ pub fn write(handle: i32, value: core::wide_u64::WideU64) -> i32
 
 ### function: read_stdin_or
 
-[Source line 28](../../../stdlib/std/io_binary_wide_u64.lani#L28)
+[Source line 29](../../../stdlib/std/io_binary_wide_u64.lani#L29)
 
 ```lanius
 pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64

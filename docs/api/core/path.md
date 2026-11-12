@@ -12,27 +12,28 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-paths](../../stdlib-paths.md)
 
-Declaration counts: enum: 2; field: 10; function: 3; impl: 9; method: 44; struct: 4; variant: 6.
+Declaration counts: enum: 3; field: 10; function: 3; impl: 10; machine: 1; method: 45; struct: 4; variant: 8.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::cmp](cmp.md) · [source](../../../stdlib/core/path.lani#L6)
-- [core::hash](hash.md) · [source](../../../stdlib/core/path.lani#L7)
-- [core::text](text.md) · [source](../../../stdlib/core/path.lani#L8)
-- [core::option::Option](option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../stdlib/core/path.lani#L9)
-- [core::option::Some](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../stdlib/core/path.lani#L10)
-- [core::option::None](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../stdlib/core/path.lani#L11)
-- [core::option::is_none](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L23) · [source](../../../stdlib/core/path.lani#L12)
-- [core::option::is_some](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L19) · [source](../../../stdlib/core/path.lani#L13)
-- [core::option::unwrap](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L31) · [source](../../../stdlib/core/path.lani#L14)
-- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/core/path.lani#L15)
-- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/core/path.lani#L16)
-- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/core/path.lani#L17)
-- [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../stdlib/core/path.lani#L18)
-- [core::slice::ViewError](slice.md) (item: enum) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/core/path.lani#L19)
-- [core::slice::view_range](slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L49) · [source](../../../stdlib/core/path.lani#L20)
+- [core::iter_state](iter_state.md) · [source](../../../stdlib/core/path.lani#L6)
+- [core::cmp](cmp.md) · [source](../../../stdlib/core/path.lani#L7)
+- [core::hash](hash.md) · [source](../../../stdlib/core/path.lani#L8)
+- [core::text](text.md) · [source](../../../stdlib/core/path.lani#L9)
+- [core::option::Option](option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../stdlib/core/path.lani#L10)
+- [core::option::Some](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../stdlib/core/path.lani#L11)
+- [core::option::None](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../stdlib/core/path.lani#L12)
+- [core::option::is_none](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L23) · [source](../../../stdlib/core/path.lani#L13)
+- [core::option::is_some](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L19) · [source](../../../stdlib/core/path.lani#L14)
+- [core::option::unwrap](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L31) · [source](../../../stdlib/core/path.lani#L15)
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/core/path.lani#L16)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/core/path.lani#L17)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/core/path.lani#L18)
+- [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../stdlib/core/path.lani#L19)
+- [core::slice::ViewError](slice.md) (item: enum) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../stdlib/core/path.lani#L20)
+- [core::slice::view_range](slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L59) · [source](../../../stdlib/core/path.lani#L21)
 
 ## Types, fields and variants
 
@@ -40,7 +41,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 25](../../../stdlib/core/path.lani#L25)
+[Source line 26](../../../stdlib/core/path.lani#L26)
 
 ```lanius
 pub enum Error
@@ -48,7 +49,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 25](../../../stdlib/core/path.lani#L25)
+[Source line 26](../../../stdlib/core/path.lani#L26)
 
 ```lanius
 Bounds
@@ -56,7 +57,7 @@ Bounds
 
 #### variant: Nul
 
-[Source line 25](../../../stdlib/core/path.lani#L25)
+[Source line 26](../../../stdlib/core/path.lani#L26)
 
 ```lanius
 Nul(i32)
@@ -64,7 +65,7 @@ Nul(i32)
 
 ### struct: Path
 
-[Source line 26](../../../stdlib/core/path.lani#L26)
+[Source line 27](../../../stdlib/core/path.lani#L27)
 
 ```lanius
 pub struct Path
@@ -72,7 +73,7 @@ pub struct Path
 
 #### field: bytes
 
-[Source line 26](../../../stdlib/core/path.lani#L26)
+[Source line 27](../../../stdlib/core/path.lani#L27)
 
 ```lanius
 bytes: View<u8>
@@ -80,7 +81,7 @@ bytes: View<u8>
 
 ### enum: Kind
 
-[Source line 27](../../../stdlib/core/path.lani#L27)
+[Source line 28](../../../stdlib/core/path.lani#L28)
 
 ```lanius
 pub enum Kind
@@ -88,7 +89,7 @@ pub enum Kind
 
 #### variant: Root
 
-[Source line 27](../../../stdlib/core/path.lani#L27)
+[Source line 28](../../../stdlib/core/path.lani#L28)
 
 ```lanius
 Root
@@ -96,7 +97,7 @@ Root
 
 #### variant: Current
 
-[Source line 27](../../../stdlib/core/path.lani#L27)
+[Source line 28](../../../stdlib/core/path.lani#L28)
 
 ```lanius
 Current
@@ -104,7 +105,7 @@ Current
 
 #### variant: Parent
 
-[Source line 27](../../../stdlib/core/path.lani#L27)
+[Source line 28](../../../stdlib/core/path.lani#L28)
 
 ```lanius
 Parent
@@ -112,7 +113,7 @@ Parent
 
 #### variant: Normal
 
-[Source line 27](../../../stdlib/core/path.lani#L27)
+[Source line 28](../../../stdlib/core/path.lani#L28)
 
 ```lanius
 Normal
@@ -120,7 +121,7 @@ Normal
 
 ### struct: Component
 
-[Source line 28](../../../stdlib/core/path.lani#L28)
+[Source line 29](../../../stdlib/core/path.lani#L29)
 
 ```lanius
 pub struct Component
@@ -128,7 +129,7 @@ pub struct Component
 
 #### field: kind
 
-[Source line 28](../../../stdlib/core/path.lani#L28)
+[Source line 29](../../../stdlib/core/path.lani#L29)
 
 ```lanius
 kind: Kind
@@ -136,15 +137,47 @@ kind: Kind
 
 #### field: bytes
 
-[Source line 28](../../../stdlib/core/path.lani#L28)
+[Source line 29](../../../stdlib/core/path.lani#L29)
 
 ```lanius
 bytes: View<u8>
 ```
 
+### enum: LeadingEvent
+
+[Source line 30](../../../stdlib/core/path.lani#L30)
+
+```lanius
+pub enum LeadingEvent
+```
+
+#### variant: Initialize
+
+[Source line 30](../../../stdlib/core/path.lani#L30)
+
+```lanius
+Initialize(bool)
+```
+
+#### variant: Taken
+
+[Source line 30](../../../stdlib/core/path.lani#L30)
+
+```lanius
+Taken
+```
+
+### machine: Leading
+
+[Source line 31](../../../stdlib/core/path.lani#L31)
+
+```lanius
+pub machine Leading on LeadingEvent
+```
+
 ### struct: Components
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
 pub struct Components
@@ -152,7 +185,7 @@ pub struct Components
 
 #### field: path
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
 path: Path
@@ -160,7 +193,7 @@ path: Path
 
 #### field: front
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
 front: i32
@@ -168,23 +201,23 @@ front: i32
 
 #### field: back
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
 back: i32
 ```
 
-#### field: prefix
+#### field: leading
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
-prefix: bool
+leading: Leading
 ```
 
 #### field: rooted
 
-[Source line 29](../../../stdlib/core/path.lani#L29)
+[Source line 42](../../../stdlib/core/path.lani#L42)
 
 ```lanius
 rooted: bool
@@ -192,7 +225,7 @@ rooted: bool
 
 ### struct: Ancestors
 
-[Source line 30](../../../stdlib/core/path.lani#L30)
+[Source line 43](../../../stdlib/core/path.lani#L43)
 
 ```lanius
 pub struct Ancestors
@@ -200,25 +233,25 @@ pub struct Ancestors
 
 #### field: path
 
-[Source line 30](../../../stdlib/core/path.lani#L30)
+[Source line 43](../../../stdlib/core/path.lani#L43)
 
 ```lanius
 path: Path
 ```
 
-#### field: done
+#### field: completion
 
-[Source line 30](../../../stdlib/core/path.lani#L30)
+[Source line 43](../../../stdlib/core/path.lani#L43)
 
 ```lanius
-done: bool
+completion: core::iter_state::Completion
 ```
 
 ## Free functions and extern declarations
 
 ### function: from_view
 
-[Source line 32](../../../stdlib/core/path.lani#L32)
+[Source line 45](../../../stdlib/core/path.lani#L45)
 
 ```lanius
 pub fn from_view(bytes: View<u8>) -> Result<Path, Error>
@@ -226,7 +259,7 @@ pub fn from_view(bytes: View<u8>) -> Result<Path, Error>
 
 ### function: from_bytes_range
 
-[Source line 45](../../../stdlib/core/path.lani#L45)
+[Source line 58](../../../stdlib/core/path.lani#L58)
 
 ```lanius
 pub fn from_bytes_range(bytes: [u8], start: i32, count: i32) -> Result<Path, Error>
@@ -234,7 +267,7 @@ pub fn from_bytes_range(bytes: [u8], start: i32, count: i32) -> Result<Path, Err
 
 ### function: from_bytes
 
-[Source line 51](../../../stdlib/core/path.lani#L51)
+[Source line 64](../../../stdlib/core/path.lani#L64)
 
 ```lanius
 pub fn from_bytes(bytes: [u8], count: i32) -> Result<Path, Error>
@@ -242,9 +275,25 @@ pub fn from_bytes(bytes: [u8], count: i32) -> Result<Path, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 55
+### impl at line 37
 
-[Source line 55](../../../stdlib/core/path.lani#L55)
+[Source line 37](../../../stdlib/core/path.lani#L37)
+
+```lanius
+pub impl Leading
+```
+
+#### method: pending
+
+[Source line 38](../../../stdlib/core/path.lani#L38)
+
+```lanius
+pub fn pending(&self) -> bool
+```
+
+### impl at line 68
+
+[Source line 68](../../../stdlib/core/path.lani#L68)
 
 ```lanius
 pub impl Path
@@ -252,7 +301,7 @@ pub impl Path
 
 #### method: borrow
 
-[Source line 56](../../../stdlib/core/path.lani#L56)
+[Source line 69](../../../stdlib/core/path.lani#L69)
 
 ```lanius
 pub fn borrow(&self) -> &Path
@@ -260,7 +309,7 @@ pub fn borrow(&self) -> &Path
 
 #### method: byte_len
 
-[Source line 57](../../../stdlib/core/path.lani#L57)
+[Source line 70](../../../stdlib/core/path.lani#L70)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -268,7 +317,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 58](../../../stdlib/core/path.lani#L58)
+[Source line 71](../../../stdlib/core/path.lani#L71)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -276,7 +325,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: byte_at
 
-[Source line 59](../../../stdlib/core/path.lani#L59)
+[Source line 72](../../../stdlib/core/path.lani#L72)
 
 ```lanius
 pub fn byte_at(&self, index: i32) -> Option<u8>
@@ -284,7 +333,7 @@ pub fn byte_at(&self, index: i32) -> Option<u8>
 
 #### method: as_bytes
 
-[Source line 61](../../../stdlib/core/path.lani#L61)
+[Source line 74](../../../stdlib/core/path.lani#L74)
 
 ```lanius
 pub fn as_bytes(&self) -> View<u8>
@@ -292,7 +341,7 @@ pub fn as_bytes(&self) -> View<u8>
 
 #### method: is_absolute
 
-[Source line 62](../../../stdlib/core/path.lani#L62)
+[Source line 75](../../../stdlib/core/path.lani#L75)
 
 ```lanius
 pub fn is_absolute(&self) -> bool
@@ -300,7 +349,7 @@ pub fn is_absolute(&self) -> bool
 
 #### method: is_relative
 
-[Source line 66](../../../stdlib/core/path.lani#L66)
+[Source line 79](../../../stdlib/core/path.lani#L79)
 
 ```lanius
 pub fn is_relative(&self) -> bool
@@ -308,7 +357,7 @@ pub fn is_relative(&self) -> bool
 
 #### method: has_trailing_separator
 
-[Source line 67](../../../stdlib/core/path.lani#L67)
+[Source line 80](../../../stdlib/core/path.lani#L80)
 
 ```lanius
 pub fn has_trailing_separator(&self) -> bool
@@ -316,7 +365,7 @@ pub fn has_trailing_separator(&self) -> bool
 
 #### method: as_text
 
-[Source line 70](../../../stdlib/core/path.lani#L70)
+[Source line 83](../../../stdlib/core/path.lani#L83)
 
 ```lanius
 pub fn as_text(&self) -> Result<core::text::Text, core::text::Error>
@@ -324,7 +373,7 @@ pub fn as_text(&self) -> Result<core::text::Text, core::text::Error>
 
 #### method: components
 
-[Source line 73](../../../stdlib/core/path.lani#L73)
+[Source line 86](../../../stdlib/core/path.lani#L86)
 
 ```lanius
 pub fn components(&self) -> Components
@@ -332,7 +381,7 @@ pub fn components(&self) -> Components
 
 #### method: parent
 
-[Source line 84](../../../stdlib/core/path.lani#L84)
+[Source line 97](../../../stdlib/core/path.lani#L97)
 
 ```lanius
 pub fn parent(&self) -> Option<Path>
@@ -340,7 +389,7 @@ pub fn parent(&self) -> Option<Path>
 
 #### method: file_name
 
-[Source line 89](../../../stdlib/core/path.lani#L89)
+[Source line 102](../../../stdlib/core/path.lani#L102)
 
 ```lanius
 pub fn file_name(&self) -> Option<View<u8>>
@@ -348,7 +397,7 @@ pub fn file_name(&self) -> Option<View<u8>>
 
 #### method: extension
 
-[Source line 93](../../../stdlib/core/path.lani#L93)
+[Source line 106](../../../stdlib/core/path.lani#L106)
 
 ```lanius
 pub fn extension(&self) -> Option<View<u8>>
@@ -356,7 +405,7 @@ pub fn extension(&self) -> Option<View<u8>>
 
 #### method: file_stem
 
-[Source line 98](../../../stdlib/core/path.lani#L98)
+[Source line 111](../../../stdlib/core/path.lani#L111)
 
 ```lanius
 pub fn file_stem(&self) -> Option<View<u8>>
@@ -364,7 +413,7 @@ pub fn file_stem(&self) -> Option<View<u8>>
 
 #### method: ancestors
 
-[Source line 102](../../../stdlib/core/path.lani#L102)
+[Source line 115](../../../stdlib/core/path.lani#L115)
 
 ```lanius
 pub fn ancestors(&self) -> Ancestors
@@ -372,7 +421,7 @@ pub fn ancestors(&self) -> Ancestors
 
 #### method: strip_prefix
 
-[Source line 103](../../../stdlib/core/path.lani#L103)
+[Source line 116](../../../stdlib/core/path.lani#L116)
 
 ```lanius
 pub fn strip_prefix(&self, prefix: Path) -> Option<Path>
@@ -380,7 +429,7 @@ pub fn strip_prefix(&self, prefix: Path) -> Option<Path>
 
 #### method: starts_with
 
-[Source line 115](../../../stdlib/core/path.lani#L115)
+[Source line 128](../../../stdlib/core/path.lani#L128)
 
 ```lanius
 pub fn starts_with(&self, prefix: Path) -> bool
@@ -388,7 +437,7 @@ pub fn starts_with(&self, prefix: Path) -> bool
 
 #### method: ends_with
 
-[Source line 116](../../../stdlib/core/path.lani#L116)
+[Source line 129](../../../stdlib/core/path.lani#L129)
 
 ```lanius
 pub fn ends_with(&self, suffix: Path) -> bool
@@ -396,7 +445,7 @@ pub fn ends_with(&self, suffix: Path) -> bool
 
 #### method: compare
 
-[Source line 125](../../../stdlib/core/path.lani#L125)
+[Source line 138](../../../stdlib/core/path.lani#L138)
 
 ```lanius
 pub fn compare(&self, other: Path) -> i32
@@ -404,15 +453,15 @@ pub fn compare(&self, other: Path) -> i32
 
 #### method: equals
 
-[Source line 135](../../../stdlib/core/path.lani#L135)
+[Source line 148](../../../stdlib/core/path.lani#L148)
 
 ```lanius
 pub fn equals(&self, other: Path) -> bool
 ```
 
-### impl at line 146
+### impl at line 159
 
-[Source line 146](../../../stdlib/core/path.lani#L146)
+[Source line 159](../../../stdlib/core/path.lani#L159)
 
 ```lanius
 pub impl Component
@@ -420,7 +469,7 @@ pub impl Component
 
 #### method: is_root
 
-[Source line 147](../../../stdlib/core/path.lani#L147)
+[Source line 160](../../../stdlib/core/path.lani#L160)
 
 ```lanius
 pub fn is_root(&self) -> bool
@@ -428,7 +477,7 @@ pub fn is_root(&self) -> bool
 
 #### method: is_current
 
-[Source line 148](../../../stdlib/core/path.lani#L148)
+[Source line 161](../../../stdlib/core/path.lani#L161)
 
 ```lanius
 pub fn is_current(&self) -> bool
@@ -436,7 +485,7 @@ pub fn is_current(&self) -> bool
 
 #### method: is_parent
 
-[Source line 149](../../../stdlib/core/path.lani#L149)
+[Source line 162](../../../stdlib/core/path.lani#L162)
 
 ```lanius
 pub fn is_parent(&self) -> bool
@@ -444,7 +493,7 @@ pub fn is_parent(&self) -> bool
 
 #### method: is_normal
 
-[Source line 150](../../../stdlib/core/path.lani#L150)
+[Source line 163](../../../stdlib/core/path.lani#L163)
 
 ```lanius
 pub fn is_normal(&self) -> bool
@@ -452,7 +501,7 @@ pub fn is_normal(&self) -> bool
 
 #### method: as_path
 
-[Source line 151](../../../stdlib/core/path.lani#L151)
+[Source line 164](../../../stdlib/core/path.lani#L164)
 
 ```lanius
 pub fn as_path(&self) -> Path
@@ -460,15 +509,15 @@ pub fn as_path(&self) -> Path
 
 #### method: compare
 
-[Source line 152](../../../stdlib/core/path.lani#L152)
+[Source line 165](../../../stdlib/core/path.lani#L165)
 
 ```lanius
 pub fn compare(&self, other: Component) -> i32
 ```
 
-### impl at line 163
+### impl at line 176
 
-[Source line 163](../../../stdlib/core/path.lani#L163)
+[Source line 176](../../../stdlib/core/path.lani#L176)
 
 ```lanius
 pub impl Components
@@ -476,7 +525,7 @@ pub impl Components
 
 #### method: next
 
-[Source line 177](../../../stdlib/core/path.lani#L177)
+[Source line 190](../../../stdlib/core/path.lani#L190)
 
 ```lanius
 pub fn next(&self) -> Option<Component>
@@ -484,7 +533,7 @@ pub fn next(&self) -> Option<Component>
 
 #### method: next_back
 
-[Source line 187](../../../stdlib/core/path.lani#L187)
+[Source line 200](../../../stdlib/core/path.lani#L200)
 
 ```lanius
 pub fn next_back(&self) -> Option<Component>
@@ -492,15 +541,15 @@ pub fn next_back(&self) -> Option<Component>
 
 #### method: remaining
 
-[Source line 198](../../../stdlib/core/path.lani#L198)
+[Source line 211](../../../stdlib/core/path.lani#L211)
 
 ```lanius
 pub fn remaining(&self) -> Path
 ```
 
-### impl at line 206
+### impl at line 219
 
-[Source line 206](../../../stdlib/core/path.lani#L206)
+[Source line 219](../../../stdlib/core/path.lani#L219)
 
 ```lanius
 pub impl Ancestors
@@ -508,15 +557,15 @@ pub impl Ancestors
 
 #### method: next
 
-[Source line 207](../../../stdlib/core/path.lani#L207)
+[Source line 220](../../../stdlib/core/path.lani#L220)
 
 ```lanius
 pub fn next(&self) -> Option<Path>
 ```
 
-### impl at line 214
+### impl at line 227
 
-[Source line 214](../../../stdlib/core/path.lani#L214)
+[Source line 227](../../../stdlib/core/path.lani#L227)
 
 ```lanius
 pub impl core::cmp::Eq<Path> for Path
@@ -524,7 +573,7 @@ pub impl core::cmp::Eq<Path> for Path
 
 #### method: eq
 
-[Source line 215](../../../stdlib/core/path.lani#L215)
+[Source line 228](../../../stdlib/core/path.lani#L228)
 
 ```lanius
 pub fn eq(a: Path,b: Path) -> bool
@@ -532,15 +581,15 @@ pub fn eq(a: Path,b: Path) -> bool
 
 #### method: ne
 
-[Source line 216](../../../stdlib/core/path.lani#L216)
+[Source line 229](../../../stdlib/core/path.lani#L229)
 
 ```lanius
 pub fn ne(a: Path,b: Path) -> bool
 ```
 
-### impl at line 218
+### impl at line 231
 
-[Source line 218](../../../stdlib/core/path.lani#L218)
+[Source line 231](../../../stdlib/core/path.lani#L231)
 
 ```lanius
 pub impl core::cmp::Ord<Path> for Path
@@ -548,7 +597,7 @@ pub impl core::cmp::Ord<Path> for Path
 
 #### method: lt
 
-[Source line 219](../../../stdlib/core/path.lani#L219)
+[Source line 232](../../../stdlib/core/path.lani#L232)
 
 ```lanius
 pub fn lt(a: Path,b: Path) -> bool
@@ -556,7 +605,7 @@ pub fn lt(a: Path,b: Path) -> bool
 
 #### method: le
 
-[Source line 220](../../../stdlib/core/path.lani#L220)
+[Source line 233](../../../stdlib/core/path.lani#L233)
 
 ```lanius
 pub fn le(a: Path,b: Path) -> bool
@@ -564,7 +613,7 @@ pub fn le(a: Path,b: Path) -> bool
 
 #### method: gt
 
-[Source line 221](../../../stdlib/core/path.lani#L221)
+[Source line 234](../../../stdlib/core/path.lani#L234)
 
 ```lanius
 pub fn gt(a: Path,b: Path) -> bool
@@ -572,26 +621,10 @@ pub fn gt(a: Path,b: Path) -> bool
 
 #### method: ge
 
-[Source line 222](../../../stdlib/core/path.lani#L222)
+[Source line 235](../../../stdlib/core/path.lani#L235)
 
 ```lanius
 pub fn ge(a: Path,b: Path) -> bool
-```
-
-### impl at line 224
-
-[Source line 224](../../../stdlib/core/path.lani#L224)
-
-```lanius
-pub impl core::hash::Hash<Path> for Path
-```
-
-#### method: hash
-
-[Source line 225](../../../stdlib/core/path.lani#L225)
-
-```lanius
-pub fn hash(value: Path) -> u32
 ```
 
 ### impl at line 237
@@ -599,12 +632,28 @@ pub fn hash(value: Path) -> u32
 [Source line 237](../../../stdlib/core/path.lani#L237)
 
 ```lanius
+pub impl core::hash::Hash<Path> for Path
+```
+
+#### method: hash
+
+[Source line 238](../../../stdlib/core/path.lani#L238)
+
+```lanius
+pub fn hash(value: Path) -> u32
+```
+
+### impl at line 250
+
+[Source line 250](../../../stdlib/core/path.lani#L250)
+
+```lanius
 pub impl core::cmp::PartialEq<Path> for Path
 ```
 
 #### method: partial_eq
 
-[Source line 238](../../../stdlib/core/path.lani#L238)
+[Source line 251](../../../stdlib/core/path.lani#L251)
 
 ```lanius
 pub fn partial_eq(left: Path, right: Path) -> bool
@@ -612,15 +661,15 @@ pub fn partial_eq(left: Path, right: Path) -> bool
 
 #### method: partial_ne
 
-[Source line 239](../../../stdlib/core/path.lani#L239)
+[Source line 252](../../../stdlib/core/path.lani#L252)
 
 ```lanius
 pub fn partial_ne(left: Path, right: Path) -> bool
 ```
 
-### impl at line 242
+### impl at line 255
 
-[Source line 242](../../../stdlib/core/path.lani#L242)
+[Source line 255](../../../stdlib/core/path.lani#L255)
 
 ```lanius
 pub impl core::cmp::PartialOrd<Path> for Path
@@ -628,7 +677,7 @@ pub impl core::cmp::PartialOrd<Path> for Path
 
 #### method: partial_lt
 
-[Source line 243](../../../stdlib/core/path.lani#L243)
+[Source line 256](../../../stdlib/core/path.lani#L256)
 
 ```lanius
 pub fn partial_lt(left: Path, right: Path) -> bool
@@ -636,7 +685,7 @@ pub fn partial_lt(left: Path, right: Path) -> bool
 
 #### method: partial_le
 
-[Source line 244](../../../stdlib/core/path.lani#L244)
+[Source line 257](../../../stdlib/core/path.lani#L257)
 
 ```lanius
 pub fn partial_le(left: Path, right: Path) -> bool
@@ -644,7 +693,7 @@ pub fn partial_le(left: Path, right: Path) -> bool
 
 #### method: partial_gt
 
-[Source line 245](../../../stdlib/core/path.lani#L245)
+[Source line 258](../../../stdlib/core/path.lani#L258)
 
 ```lanius
 pub fn partial_gt(left: Path, right: Path) -> bool
@@ -652,7 +701,7 @@ pub fn partial_gt(left: Path, right: Path) -> bool
 
 #### method: partial_ge
 
-[Source line 246](../../../stdlib/core/path.lani#L246)
+[Source line 259](../../../stdlib/core/path.lani#L259)
 
 ```lanius
 pub fn partial_ge(left: Path, right: Path) -> bool
@@ -660,7 +709,7 @@ pub fn partial_ge(left: Path, right: Path) -> bool
 
 #### method: partial_cmp
 
-[Source line 247](../../../stdlib/core/path.lani#L247)
+[Source line 260](../../../stdlib/core/path.lani#L260)
 
 ```lanius
 pub fn partial_cmp(left: Path, right: Path) -> core::cmp::PartialOrdering

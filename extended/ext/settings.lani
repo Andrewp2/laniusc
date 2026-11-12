@@ -1,6 +1,7 @@
 // Borrowed typed configuration across native JSON, TOML and explicit bindings.
 // Every source is borrowed. This module never destroys a source or its storage.
 module ext::settings;
+import core::iter_state;
 import core::mem;
 import core::decimal;
 import core::decimal_number;
@@ -215,9 +216,9 @@ pub fn parse_integer(text: core::text::Text, work: &Budget) -> core::result::Res
 fn exact_magnitude(text: core::text::Text, limit: u64, work: &Budget) -> core::result::Result<u64,Error> {
     if (!pay(work,3*(text.byte_len() as u64)+21)) { return core::result::Err(Error::WorkLimit); }
     let start: i32 = 0; if (core::option::unwrap(text.byte_at(0)) == 45) { start = 1; }
-    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional: bool = false;
+    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional_phase = core::iter_state::completion_start();
     let first: i32 = -1; let last: i32 = -1; let first_byte: i32 = -1; let last_byte: i32 = -1;
-    while (end < text.byte_len()) { let byte: u8 = core::option::unwrap(text.byte_at(end)); if (byte == 101 || byte == 69) { break; } if (byte == 46) { fractional = true; } else { if (byte != 48) { if (first < 0) { first = digits; first_byte = end; } last = digits; last_byte = end; } digits += 1; if (fractional) { fraction += 1; } } end += 1; }
+    while (end < text.byte_len()) { let byte: u8 = core::option::unwrap(text.byte_at(end)); if (byte == 101 || byte == 69) { break; } if (byte == 46) { fractional_phase.finish(); } else { if (byte != 48) { if (first < 0) { first = digits; first_byte = end; } last = digits; last_byte = end; } digits += 1; if (fractional_phase.is_done()) { fraction += 1; } } end += 1; }
     if (first < 0) { return core::result::Ok(0); }
     let exponent: i64 = 0; let negative: bool = false; let index: i32 = end; if (index < text.byte_len()) { index += 1; }
     if (index < text.byte_len()) { let sign: u8 = core::option::unwrap(text.byte_at(index)); if (sign == 43 || sign == 45) { negative = sign == 45; index += 1; } }

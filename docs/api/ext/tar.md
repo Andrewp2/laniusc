@@ -19,10 +19,11 @@ Declaration counts: enum: 2; field: 37; function: 6; impl: 3; method: 11; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/tar.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/tar.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/tar.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/tar.lani#L7)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/tar.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/tar.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/tar.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/tar.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/tar.lani#L8)
 
 ## Types, fields and variants
 
@@ -30,7 +31,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 pub enum Error
@@ -38,7 +39,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 Bounds
@@ -46,7 +47,7 @@ Bounds
 
 #### variant: UnexpectedEof
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 UnexpectedEof
@@ -54,7 +55,7 @@ UnexpectedEof
 
 #### variant: MissingFooter
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 MissingFooter
@@ -62,7 +63,7 @@ MissingFooter
 
 #### variant: InvalidChecksum
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidChecksum
@@ -70,7 +71,7 @@ InvalidChecksum
 
 #### variant: UnsupportedFormat
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 UnsupportedFormat
@@ -78,7 +79,7 @@ UnsupportedFormat
 
 #### variant: InvalidNumber
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidNumber
@@ -86,7 +87,7 @@ InvalidNumber
 
 #### variant: NumberOverflow
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 NumberOverflow
@@ -94,7 +95,7 @@ NumberOverflow
 
 #### variant: InvalidName
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidName
@@ -102,7 +103,7 @@ InvalidName
 
 #### variant: UnsupportedType
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 UnsupportedType
@@ -110,7 +111,7 @@ UnsupportedType
 
 #### variant: InvalidSize
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidSize
@@ -118,7 +119,7 @@ InvalidSize
 
 #### variant: InvalidPadding
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidPadding
@@ -126,7 +127,7 @@ InvalidPadding
 
 #### variant: TrailingData
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 TrailingData
@@ -134,7 +135,7 @@ TrailingData
 
 #### variant: PathTooLong
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 PathTooLong
@@ -142,7 +143,7 @@ PathTooLong
 
 #### variant: LinkTooLong
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 LinkTooLong
@@ -150,7 +151,7 @@ LinkTooLong
 
 #### variant: NameTooLong
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 NameTooLong
@@ -158,7 +159,7 @@ NameTooLong
 
 #### variant: CapacityOverflow
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 CapacityOverflow
@@ -166,7 +167,7 @@ CapacityOverflow
 
 #### variant: OutputTooSmall
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 OutputTooSmall
@@ -174,7 +175,7 @@ OutputTooSmall
 
 #### variant: Finished
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 Finished
@@ -182,7 +183,7 @@ Finished
 
 #### variant: InvalidState
 
-[Source line 9](../../../extended/ext/tar.lani#L9)
+[Source line 10](../../../extended/ext/tar.lani#L10)
 
 ```lanius
 InvalidState
@@ -190,7 +191,7 @@ InvalidState
 
 ### enum: Kind
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 pub enum Kind
@@ -198,7 +199,7 @@ pub enum Kind
 
 #### variant: Regular
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 Regular
@@ -206,7 +207,7 @@ Regular
 
 #### variant: HardLink
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 HardLink
@@ -214,7 +215,7 @@ HardLink
 
 #### variant: SymbolicLink
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 SymbolicLink
@@ -222,7 +223,7 @@ SymbolicLink
 
 #### variant: CharacterDevice
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 CharacterDevice
@@ -230,7 +231,7 @@ CharacterDevice
 
 #### variant: BlockDevice
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 BlockDevice
@@ -238,7 +239,7 @@ BlockDevice
 
 #### variant: Directory
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 Directory
@@ -246,7 +247,7 @@ Directory
 
 #### variant: Fifo
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 Fifo
@@ -254,7 +255,7 @@ Fifo
 
 #### variant: Contiguous
 
-[Source line 10](../../../extended/ext/tar.lani#L10)
+[Source line 11](../../../extended/ext/tar.lani#L11)
 
 ```lanius
 Contiguous
@@ -262,7 +263,7 @@ Contiguous
 
 ### struct: Metadata
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 pub struct Metadata
@@ -270,7 +271,7 @@ pub struct Metadata
 
 #### field: path
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 path: core::slice::View<u8>
@@ -278,7 +279,7 @@ path: core::slice::View<u8>
 
 #### field: link_name
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 link_name: core::slice::View<u8>
@@ -286,7 +287,7 @@ link_name: core::slice::View<u8>
 
 #### field: uname
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 uname: core::slice::View<u8>
@@ -294,7 +295,7 @@ uname: core::slice::View<u8>
 
 #### field: gname
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 gname: core::slice::View<u8>
@@ -302,7 +303,7 @@ gname: core::slice::View<u8>
 
 #### field: kind
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 kind: Kind
@@ -310,7 +311,7 @@ kind: Kind
 
 #### field: mode
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 mode: u32
@@ -318,7 +319,7 @@ mode: u32
 
 #### field: uid
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 uid: u64
@@ -326,7 +327,7 @@ uid: u64
 
 #### field: gid
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 gid: u64
@@ -334,7 +335,7 @@ gid: u64
 
 #### field: mtime
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 mtime: u64
@@ -342,7 +343,7 @@ mtime: u64
 
 #### field: dev_major
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 dev_major: u64
@@ -350,7 +351,7 @@ dev_major: u64
 
 #### field: dev_minor
 
-[Source line 11](../../../extended/ext/tar.lani#L11)
+[Source line 12](../../../extended/ext/tar.lani#L12)
 
 ```lanius
 dev_minor: u64
@@ -358,7 +359,7 @@ dev_minor: u64
 
 ### struct: Entry
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 pub struct Entry
@@ -366,7 +367,7 @@ pub struct Entry
 
 #### field: name
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 name: core::slice::View<u8>
@@ -374,7 +375,7 @@ name: core::slice::View<u8>
 
 #### field: prefix
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 prefix: core::slice::View<u8>
@@ -382,7 +383,7 @@ prefix: core::slice::View<u8>
 
 #### field: link_name
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 link_name: core::slice::View<u8>
@@ -390,7 +391,7 @@ link_name: core::slice::View<u8>
 
 #### field: uname
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 uname: core::slice::View<u8>
@@ -398,7 +399,7 @@ uname: core::slice::View<u8>
 
 #### field: gname
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 gname: core::slice::View<u8>
@@ -406,7 +407,7 @@ gname: core::slice::View<u8>
 
 #### field: data
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 data: core::slice::View<u8>
@@ -414,7 +415,7 @@ data: core::slice::View<u8>
 
 #### field: kind
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 kind: Kind
@@ -422,7 +423,7 @@ kind: Kind
 
 #### field: mode
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 mode: u32
@@ -430,7 +431,7 @@ mode: u32
 
 #### field: uid
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 uid: u64
@@ -438,7 +439,7 @@ uid: u64
 
 #### field: gid
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 gid: u64
@@ -446,7 +447,7 @@ gid: u64
 
 #### field: size
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 size: u64
@@ -454,7 +455,7 @@ size: u64
 
 #### field: mtime
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 mtime: u64
@@ -462,7 +463,7 @@ mtime: u64
 
 #### field: dev_major
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 dev_major: u64
@@ -470,7 +471,7 @@ dev_major: u64
 
 #### field: dev_minor
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 dev_minor: u64
@@ -478,7 +479,7 @@ dev_minor: u64
 
 #### field: offset
 
-[Source line 12](../../../extended/ext/tar.lani#L12)
+[Source line 13](../../../extended/ext/tar.lani#L13)
 
 ```lanius
 offset: i32
@@ -486,7 +487,7 @@ offset: i32
 
 ### struct: ReadOptions
 
-[Source line 16](../../../extended/ext/tar.lani#L16)
+[Source line 17](../../../extended/ext/tar.lani#L17)
 
 ```lanius
 pub struct ReadOptions
@@ -494,7 +495,7 @@ pub struct ReadOptions
 
 #### field: full_uname
 
-[Source line 16](../../../extended/ext/tar.lani#L16)
+[Source line 17](../../../extended/ext/tar.lani#L17)
 
 ```lanius
 full_uname: bool
@@ -502,7 +503,7 @@ full_uname: bool
 
 #### field: full_gname
 
-[Source line 16](../../../extended/ext/tar.lani#L16)
+[Source line 17](../../../extended/ext/tar.lani#L17)
 
 ```lanius
 full_gname: bool
@@ -510,7 +511,7 @@ full_gname: bool
 
 #### field: gnu
 
-[Source line 16](../../../extended/ext/tar.lani#L16)
+[Source line 17](../../../extended/ext/tar.lani#L17)
 
 ```lanius
 gnu: bool
@@ -518,7 +519,7 @@ gnu: bool
 
 #### field: headers_only
 
-[Source line 16](../../../extended/ext/tar.lani#L16)
+[Source line 17](../../../extended/ext/tar.lani#L17)
 
 ```lanius
 headers_only: bool
@@ -526,7 +527,7 @@ headers_only: bool
 
 ### struct: Reader
 
-[Source line 17](../../../extended/ext/tar.lani#L17)
+[Source line 18](../../../extended/ext/tar.lani#L18)
 
 ```lanius
 pub struct Reader
@@ -534,7 +535,7 @@ pub struct Reader
 
 #### field: input
 
-[Source line 17](../../../extended/ext/tar.lani#L17)
+[Source line 18](../../../extended/ext/tar.lani#L18)
 
 ```lanius
 input: core::slice::View<u8>
@@ -542,23 +543,23 @@ input: core::slice::View<u8>
 
 #### field: cursor
 
-[Source line 17](../../../extended/ext/tar.lani#L17)
+[Source line 18](../../../extended/ext/tar.lani#L18)
 
 ```lanius
 cursor: i32
 ```
 
-#### field: ended
+#### field: completion
 
-[Source line 17](../../../extended/ext/tar.lani#L17)
+[Source line 18](../../../extended/ext/tar.lani#L18)
 
 ```lanius
-ended: bool
+completion: core::iter_state::Completion
 ```
 
 #### field: options
 
-[Source line 17](../../../extended/ext/tar.lani#L17)
+[Source line 18](../../../extended/ext/tar.lani#L18)
 
 ```lanius
 options: ReadOptions
@@ -566,7 +567,7 @@ options: ReadOptions
 
 ### struct: Writer
 
-[Source line 18](../../../extended/ext/tar.lani#L18)
+[Source line 19](../../../extended/ext/tar.lani#L19)
 
 ```lanius
 pub struct Writer
@@ -574,7 +575,7 @@ pub struct Writer
 
 #### field: output
 
-[Source line 18](../../../extended/ext/tar.lani#L18)
+[Source line 19](../../../extended/ext/tar.lani#L19)
 
 ```lanius
 output: core::slice::View<u8>
@@ -582,25 +583,25 @@ output: core::slice::View<u8>
 
 #### field: cursor
 
-[Source line 18](../../../extended/ext/tar.lani#L18)
+[Source line 19](../../../extended/ext/tar.lani#L19)
 
 ```lanius
 cursor: i32
 ```
 
-#### field: ended
+#### field: completion
 
-[Source line 18](../../../extended/ext/tar.lani#L18)
+[Source line 19](../../../extended/ext/tar.lani#L19)
 
 ```lanius
-ended: bool
+completion: core::iter_state::Completion
 ```
 
 ## Free functions and extern declarations
 
 ### function: metadata
 
-[Source line 71](../../../extended/ext/tar.lani#L71)
+[Source line 72](../../../extended/ext/tar.lani#L72)
 
 ```lanius
 pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata
@@ -608,7 +609,7 @@ pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata
 
 ### function: reader
 
-[Source line 76](../../../extended/ext/tar.lani#L76)
+[Source line 77](../../../extended/ext/tar.lani#L77)
 
 ```lanius
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error>
@@ -616,7 +617,7 @@ pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error
 
 ### function: read_options
 
-[Source line 79](../../../extended/ext/tar.lani#L79)
+[Source line 80](../../../extended/ext/tar.lani#L80)
 
 ```lanius
 pub fn read_options() -> ReadOptions
@@ -624,7 +625,7 @@ pub fn read_options() -> ReadOptions
 
 ### function: reader_with
 
-[Source line 83](../../../extended/ext/tar.lani#L83)
+[Source line 84](../../../extended/ext/tar.lani#L84)
 
 ```lanius
 pub fn reader_with(input: core::slice::View<u8>, cursor: i32, options: ReadOptions) -> core::result::Result<Reader,Error>
@@ -632,7 +633,7 @@ pub fn reader_with(input: core::slice::View<u8>, cursor: i32, options: ReadOptio
 
 ### function: writer
 
-[Source line 175](../../../extended/ext/tar.lani#L175)
+[Source line 176](../../../extended/ext/tar.lani#L176)
 
 ```lanius
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error>
@@ -640,7 +641,7 @@ pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Erro
 
 ### function: writer_at
 
-[Source line 179](../../../extended/ext/tar.lani#L179)
+[Source line 180](../../../extended/ext/tar.lani#L180)
 
 ```lanius
 pub fn writer_at(output: core::slice::View<u8>, cursor: i32) -> core::result::Result<Writer,Error>
@@ -648,9 +649,9 @@ pub fn writer_at(output: core::slice::View<u8>, cursor: i32) -> core::result::Re
 
 ## Implementation blocks and public methods
 
-### impl at line 86
+### impl at line 87
 
-[Source line 86](../../../extended/ext/tar.lani#L86)
+[Source line 87](../../../extended/ext/tar.lani#L87)
 
 ```lanius
 pub impl Entry
@@ -658,7 +659,7 @@ pub impl Entry
 
 #### method: path_len
 
-[Source line 87](../../../extended/ext/tar.lani#L87)
+[Source line 88](../../../extended/ext/tar.lani#L88)
 
 ```lanius
 pub fn path_len(&self) -> i32
@@ -666,15 +667,15 @@ pub fn path_len(&self) -> i32
 
 #### method: copy_path
 
-[Source line 88](../../../extended/ext/tar.lani#L88)
+[Source line 89](../../../extended/ext/tar.lani#L89)
 
 ```lanius
 pub fn copy_path(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 97
+### impl at line 98
 
-[Source line 97](../../../extended/ext/tar.lani#L97)
+[Source line 98](../../../extended/ext/tar.lani#L98)
 
 ```lanius
 pub impl Reader
@@ -682,7 +683,7 @@ pub impl Reader
 
 #### method: position
 
-[Source line 98](../../../extended/ext/tar.lani#L98)
+[Source line 99](../../../extended/ext/tar.lani#L99)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -690,7 +691,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 99](../../../extended/ext/tar.lani#L99)
+[Source line 100](../../../extended/ext/tar.lani#L100)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -698,15 +699,15 @@ pub fn is_finished(&self) -> bool
 
 #### method: next
 
-[Source line 101](../../../extended/ext/tar.lani#L101)
+[Source line 102](../../../extended/ext/tar.lani#L102)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
 ```
 
-### impl at line 182
+### impl at line 183
 
-[Source line 182](../../../extended/ext/tar.lani#L182)
+[Source line 183](../../../extended/ext/tar.lani#L183)
 
 ```lanius
 pub impl Writer
@@ -714,7 +715,7 @@ pub impl Writer
 
 #### method: position
 
-[Source line 183](../../../extended/ext/tar.lani#L183)
+[Source line 184](../../../extended/ext/tar.lani#L184)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -722,7 +723,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 184](../../../extended/ext/tar.lani#L184)
+[Source line 185](../../../extended/ext/tar.lani#L185)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -730,7 +731,7 @@ pub fn is_finished(&self) -> bool
 
 #### method: rebind
 
-[Source line 186](../../../extended/ext/tar.lani#L186)
+[Source line 187](../../../extended/ext/tar.lani#L187)
 
 ```lanius
 pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool,Error>
@@ -738,7 +739,7 @@ pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool
 
 #### method: add
 
-[Source line 191](../../../extended/ext/tar.lani#L191)
+[Source line 192](../../../extended/ext/tar.lani#L192)
 
 ```lanius
 pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -746,7 +747,7 @@ pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::
 
 #### method: add_header
 
-[Source line 196](../../../extended/ext/tar.lani#L196)
+[Source line 197](../../../extended/ext/tar.lani#L197)
 
 ```lanius
 pub fn add_header(&self, meta: Metadata, size: i32) -> core::result::Result<i32,Error>
@@ -754,7 +755,7 @@ pub fn add_header(&self, meta: Metadata, size: i32) -> core::result::Result<i32,
 
 #### method: finish
 
-[Source line 232](../../../extended/ext/tar.lani#L232)
+[Source line 233](../../../extended/ext/tar.lani#L233)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32,Error>

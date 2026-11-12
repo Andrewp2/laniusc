@@ -1,5 +1,8 @@
 // Shared bounded server scheduling; HTTP policy belongs to http_server.
 module ext::server_poll;
+import core::io_state;
+import core::lifecycle;
+import core::iter_state;
 import alloc::vec;
 import core::clone;
 import core::io;
@@ -13,6 +16,32 @@ import ext::http_server;
 import std::clock;
 import std::poll;
 import std::socket;
+
+pub enum ServerLifecycleEvent { ReportTaken, Released }
+pub machine ServerLifecycle on ServerLifecycleEvent {
+    start Active;
+
+    state Active {
+        ServerLifecycleEvent::ReportTaken -> goto Transferred,
+        ServerLifecycleEvent::Released -> goto Released,
+    }
+
+    final state Transferred {
+        ServerLifecycleEvent::ReportTaken -> stay,
+        ServerLifecycleEvent::Released -> stay,
+    }
+
+    final state Released {
+        ServerLifecycleEvent::ReportTaken -> stay,
+        ServerLifecycleEvent::Released -> stay,
+    }
+}
+pub impl ServerLifecycle {
+    pub fn is_active(&self) -> bool { return match (self.state()) { ServerLifecycleState::Active -> true, _ -> false }; }
+    pub fn is_transferred(&self) -> bool { return match (self.state()) { ServerLifecycleState::Transferred -> true, _ -> false }; }
+    pub fn is_released(&self) -> bool { return match (self.state()) { ServerLifecycleState::Released -> true, _ -> false }; }
+}
+
 
 // Errors from step/before_wait and terminal events retire native transport.
 // abort does so explicitly, retaining backing and readable diagnostic stats.
@@ -51,17 +80,17 @@ pub trait Handler<A> {
 }
 // This sink borrows the current Protocol only within its caller's lifetime.
 // stage validates/copies handler-local response backing before returning.
-pub struct Reply { owner: &ext::http_server::Protocol, staged: bool, failure: core::option::Option<ext::http_server::Failure> }
-pub fn reply(protocol: &ext::http_server::Protocol) -> Reply { return Reply { owner: protocol, staged: false, failure: core::option::None() }; }
+pub struct Reply { owner: &ext::http_server::Protocol, staged_completion: core::iter_state::Completion, failure: core::option::Option<ext::http_server::Failure> }
+pub fn reply(protocol: &ext::http_server::Protocol) -> Reply { return Reply { owner: protocol, staged_completion: core::iter_state::completion_start(), failure: core::option::None() }; }
 pub impl Reply {
     pub fn borrow(&self) -> &Reply { return self; }
     pub fn head(&self) -> core::option::Option<ext::http_server::RequestHead> { return self.owner.head(); }
-    pub fn is_staged(&self) -> bool { return self.staged; }
+    pub fn is_staged(&self) -> bool { return self.staged_completion.is_done(); }
     pub fn last_failure(&self) -> core::option::Option<ext::http_server::Failure> { return self.failure; }
     pub fn stage(&self, response: ext::http_server::Response) -> core::result::Result<bool,ext::http_server::Failure> {
         let result: core::result::Result<bool,ext::http_server::Failure> = self.owner.respond(response);
         if (result.is_err()) { self.failure = core::option::Some(result.unwrap_err()); }
-        else { if (result.unwrap() && self.owner.final_staged()) { self.staged = true; self.failure = core::option::None(); } }
+        else { if (result.unwrap() && self.owner.final_staged()) { self.staged_completion = core::iter_state::completed_if( true); self.failure = core::option::None(); } }
         return result;
     }
 }
@@ -113,21 +142,21 @@ pub impl<E,A> Report<E,A> {
 pub impl<E,A> ServiceFailure<E,A> { pub fn borrow(&self) -> &ServiceFailure<E,A> { return self; } pub fn destroy(&self) where E: core::clone::Destroy<E>, A: core::clone::Destroy<A> { self.report.destroy(); } }
 
 pub struct PollInterest { epoch: u64, requests: core::slice::View<std::poll::Request>, timeout_ms: i32, immediate: bool, complete: bool }
-struct Slot<D> { id: i32, generation: u64, peer: core::option::Option<core::net::SocketAddr>, deadline: core::time::Deadline, owner: core::option::Option<D>, event: core::option::Option<ext::http_server::Event>, credit: u64, reported_work: u64, reported_io: u64, transport: core::option::Option<u64>, counted: bool, ready: ext::http_client::Readiness }
+struct Slot<D> { id: i32, generation: u64, peer: core::option::Option<core::net::SocketAddr>, deadline: core::time::Deadline, owner: core::option::Option<D>, event: core::option::Option<ext::http_server::Event>, credit: u64, reported_work: u64, reported_io: u64, transport: core::option::Option<u64>, accounting: core::iter_state::Completion, ready: ext::http_client::Readiness }
 impl<D> Slot<D> { fn borrow(&self) -> &Slot<D> { return self; } }
 struct Binding { id: i32, generation: u64, handle: i32 }
 pub struct Server<D,E,F,H,A> {
     listener: &std::socket::Socket, listener_handle: i32, factory: &F, handler: &H,
     limits: ServerLimits, reservation: Reservation, deadline: core::time::Deadline, last: core::time::Instant,
     report: Report<E,A>, slots: alloc::vec::Vec<Slot<D>>, requests: alloc::vec::Vec<std::poll::Request>, bindings: alloc::vec::Vec<Binding>, poller: std::poll::PollSet,
-    turn: i32, accepting: bool, listener_ready: bool, alive: bool, transferred: bool, failure: core::option::Option<Cause>, epoch: u64, published: bool
+    turn: i32, acceptance: core::lifecycle::Lifetime, listener_readiness: core::io_state::Readiness, lifecycle: ServerLifecycle, failure: core::option::Option<Cause>, epoch: u64, publication: core::io_state::PendingWork
 }
 fn no_ready() -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; }
 fn no_request() -> std::poll::Request { return std::poll::Request { handle:-1,events:0 }; }
 fn no_binding() -> Binding { return Binding { id:-1,generation:0,handle:-1 }; }
 fn blank_stats() -> ext::http_server::Stats { return ext::http_server::Stats { received:0,retained:0,decoded:0,buffered_discarded:0,drain_received:0,response_bytes:0,response_sent:0,continue_sent:0,io_calls:0,work:0,scan_work:0,cleanup_calls:0,cleanup_errors:0,write_shutdown:false,peer_eof:false,final_started:false,closed:false }; }
-fn empty_slot<D>(deadline: core::time::Deadline) -> Slot<D> { return Slot { id:-1,generation:0,peer:core::option::None(),deadline:deadline,owner:core::option::None(),event:core::option::None(),credit:0,reported_work:0,reported_io:0,transport:core::option::None(),counted:false,ready:no_ready() }; }
-fn invalidate<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.published = false; if (s.epoch < 18446744073709551615) { s.epoch += 1; } }
+fn empty_slot<D>(deadline: core::time::Deadline) -> Slot<D> { return Slot { id:-1,generation:0,peer:core::option::None(),deadline:deadline,owner:core::option::None(),event:core::option::None(),credit:0,reported_work:0,reported_io:0,transport:core::option::None(),accounting: core::iter_state::completion_start(),ready:no_ready() }; }
+fn invalidate<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.publication.step(core::io_state::PendingEvent::Consumed); if (s.epoch < 18446744073709551615) { s.epoch += 1; } }
 fn spend<D,E,F,H,A>(s: &Server<D,E,F,H,A>, count: u64) -> core::result::Result<bool,Cause> { if (count > s.limits.operations-s.report.stats.operations) { return core::result::Err(Cause::OperationLimit); } s.report.stats.operations += count; return core::result::Ok(true); }
 fn observe<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::result::Result<bool,Cause> {
     let paid = spend(s,1); if (paid.is_err()) { return paid; }
@@ -142,18 +171,18 @@ fn information<D,E>(slot: &Slot<D>, stats: ext::http_server::Stats, transport: c
 fn refresh<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, driver: D) where D: Driver<E> { outcome(s,slot.id,Outcome::Pending(information<D,E>(slot,driver.stats(),driver.transport_calls(),driver.rejection()))); }
 fn account<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, stats: ext::http_server::Stats, transport: core::option::Option<u64>) -> core::result::Result<bool,Cause> {
     if (stats.work < slot.reported_work || stats.io_calls < slot.reported_io) { return core::result::Err(Cause::InvalidDriver); }
-    if (slot.counted) {
+    if (slot.accounting.is_done()) {
         if (slot.transport.is_some() != transport.is_some()) { return core::result::Err(Cause::InvalidDriver); }
         if (transport.is_some() && transport.unwrap() < slot.transport.unwrap()) { return core::result::Err(Cause::InvalidDriver); }
     }
     let work: u64 = stats.work-slot.reported_work; let io: u64 = stats.io_calls-slot.reported_io;
     if (work > slot.credit || work > s.report.stats.reserved_work || work > s.limits.work-s.report.stats.work || io > 18446744073709551615-s.report.stats.io_calls) { return core::result::Err(Cause::InvalidDriver); }
     slot.credit -= work; s.report.stats.reserved_work -= work; s.report.stats.work += work; s.report.stats.io_calls += io;
-    slot.reported_work = stats.work; slot.reported_io = stats.io_calls; slot.transport = transport; slot.counted = true; return core::result::Ok(true);
+    slot.reported_work = stats.work; slot.reported_io = stats.io_calls; slot.transport = transport; slot.accounting.finish(); return core::result::Ok(true);
 }
 fn release<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>) { s.report.stats.reserved_work -= slot.credit; slot.credit = 0; s.report.stats.reserved_bytes -= s.reservation.bytes; s.report.stats.active -= 1; }
 fn remember<D,E,F,H,A>(s: &Server<D,E,F,H,A>, cause: Cause) { if (s.failure.is_none()) { s.failure = core::option::Some(cause); } }
-fn free_storage<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.slots.destroy(); s.requests.destroy(); s.bindings.destroy(); s.poller.destroy(); s.alive = false; invalidate(s); }
+fn free_storage<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.slots.destroy(); s.requests.destroy(); s.bindings.destroy(); s.poller.destroy(); s.lifecycle.step(ServerLifecycleEvent::Released); invalidate(s); }
 fn abort_slots<D,E,F,H,A>(s: &Server<D,E,F,H,A>) where D: Driver<E> {
     let index: i32 = 0;
     while (index < s.slots.len()) {
@@ -168,7 +197,7 @@ fn abort_slots<D,E,F,H,A>(s: &Server<D,E,F,H,A>) where D: Driver<E> {
         index += 1;
     }
 }
-fn fatal<D,E,F,H,A>(s: &Server<D,E,F,H,A>, cause: Cause) -> Cause where D: Driver<E> { remember(s,cause); s.accepting = false; invalidate(s); abort_slots(s); return s.failure.unwrap(); }
+fn fatal<D,E,F,H,A>(s: &Server<D,E,F,H,A>, cause: Cause) -> Cause where D: Driver<E> { remember(s,cause); s.acceptance.release(); invalidate(s); abort_slots(s); return s.failure.unwrap(); }
 fn terminal<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, driver: D, error: E, cleanup: core::option::Option<E>) -> core::result::Result<bool,Cause> where D: Driver<E>, F: Factory<D,E> {
     let info: ConnectionInfo = information<D,E>(slot,driver.stats(),driver.transport_calls(),driver.rejection());
     driver.destroy(); release(s,slot); outcome(s,slot.id,Outcome::Failed(TransportFailure { info:info,error:error,cleanup:cleanup })); s.report.stats.failed += 1;
@@ -257,12 +286,12 @@ fn advance<D,E,F,H,A>(s: &Server<D,E,F,H,A>, index: i32) -> core::result::Result
     refresh(s,slot.borrow(),driver); slot.owner = core::option::Some(driver); put(s,index,slot); return core::result::Ok(true);
 }
 fn can_admit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> bool {
-    return s.accepting && s.report.stats.accepted < s.limits.max_accepted && s.report.stats.active < s.slots.len()
+    return s.acceptance.is_active() && s.report.stats.accepted < s.limits.max_accepted && s.report.stats.active < s.slots.len()
         && s.reservation.work <= s.limits.work-s.report.stats.work-s.report.stats.reserved_work
         && s.reservation.bytes <= s.limits.live_bytes-s.report.stats.reserved_bytes;
 }
 fn admission_limit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::option::Option<Cause> {
-    if (!s.accepting || s.report.stats.active > 0 || can_admit(s)) { return core::option::None(); }
+    if (!s.acceptance.is_active() || s.report.stats.active > 0 || can_admit(s)) { return core::option::None(); }
     if (s.reservation.work > s.limits.work-s.report.stats.work-s.report.stats.reserved_work) { return core::option::Some(Cause::WorkLimit); }
     return core::option::Some(Cause::ByteLimit);
 }
@@ -271,7 +300,7 @@ fn accept_transient(error: core::io::Error) -> bool {
     return match(error) { core::io::Error::WouldBlock -> true, core::io::Error::Host(code) -> code == 64 || code == 71 || code == 92 || code == 95 || code == 100 || code == 101 || code == 103 || code == 112 || code == 113, _ -> false };
 }
 fn accepted_info(id: i32, peer: core::option::Option<core::net::SocketAddr>) -> ConnectionInfo { return ConnectionInfo { id:id as u64,peer:peer,stats:blank_stats(),transport_calls:core::option::None(),rejection:core::option::None() }; }
-fn count_accepted<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.report.stats.accepted += 1; s.report.stats.active += 1; if (s.report.stats.active > s.report.stats.peak_active) { s.report.stats.peak_active = s.report.stats.active; } if (s.report.stats.accepted == s.limits.max_accepted) { s.accepting = false; } }
+fn count_accepted<D,E,F,H,A>(s: &Server<D,E,F,H,A>) { s.report.stats.accepted += 1; s.report.stats.active += 1; if (s.report.stats.active > s.report.stats.peak_active) { s.report.stats.peak_active = s.report.stats.active; } if (s.report.stats.accepted == s.limits.max_accepted) { s.acceptance.release(); } }
 fn cancel_accepted<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, accepted: std::socket::Accepted) {
     let closed = accepted.socket.close(); let info = accepted_info(slot.id,slot.peer); info.stats.closed = true; info.stats.cleanup_calls = 1;
     if (closed.is_err()) {
@@ -282,7 +311,7 @@ fn cancel_accepted<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, accepted: s
 }
 fn admit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::result::Result<bool,Cause> where D: Driver<E>, F: Factory<D,E> {
     let shortage = admission_limit(s); if (shortage.is_some()) { return core::result::Err(shortage.unwrap()); }
-    if (!s.listener_ready || !can_admit(s)) { return core::result::Ok(false); }
+    if (!(!s.listener_readiness.blocked()) || !can_admit(s)) { return core::result::Ok(false); }
     if (s.report.stats.accept_calls == s.limits.accept_calls) { return core::result::Err(Cause::AcceptLimit); }
     // Reserve the complete slot search, attempt and possible constructor hook
     // before searching or acquiring an fd. An early exit keeps this charge.
@@ -291,14 +320,14 @@ fn admit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::result::Result<bool,Cause> w
     if (index == s.slots.len()) { return core::result::Err(Cause::InvalidDriver); }
     s.report.stats.reserved_work += s.reservation.work; s.report.stats.reserved_bytes += s.reservation.bytes;
     if (s.report.stats.reserved_bytes > s.report.stats.peak_reserved_bytes) { s.report.stats.peak_reserved_bytes = s.report.stats.reserved_bytes; }
-    s.listener_ready = false; s.report.stats.accept_calls += 1;
+    s.listener_readiness.step(core::io_state::ReadinessEvent::WouldBlock); s.report.stats.accept_calls += 1;
     let got: core::result::Result<std::socket::Accepted,std::socket::AcceptFailure> = s.listener.accept(true);
     if (got.is_err()) {
         let error = got.unwrap_err(); s.report.stats.reserved_work -= s.reservation.work; s.report.stats.reserved_bytes -= s.reservation.bytes;
         if (error.cleanup_attempted) {
             let id: i32 = s.report.stats.accepted; count_accepted(s); let info = accepted_info(id,core::option::None()); info.stats.closed = true; info.stats.cleanup_calls = 1; if (error.cleanup_error.is_some()) { info.stats.cleanup_errors = 1; }
             let value: Outcome<E,A> = Outcome::AcceptFailed(AcceptedFailure { info:info,error:error }); s.report.outcomes.try_push(value).unwrap(); s.report.stats.active -= 1; s.report.stats.accept_failures += 1;
-            let after = observe(s); if (after.is_err()) { return after; } s.listener_ready = true; return core::result::Ok(true);
+            let after = observe(s); if (after.is_err()) { return after; } s.listener_readiness.step(core::io_state::ReadinessEvent::Ready); return core::result::Ok(true);
         }
         let after = observe(s); if (after.is_err()) { return after; }
         if (accept_transient(error.cause)) { return core::result::Ok(true); } return core::result::Err(Cause::Io(error.cause));
@@ -312,7 +341,7 @@ fn admit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::result::Result<bool,Cause> w
         let due = core::time::deadline_after(s.last,duration); if (due.is_err()) { cancel_accepted(s,slot.borrow(),accepted); return core::result::Err(Cause::Time(due.unwrap_err())); } slot.deadline = due.unwrap();
     }
     let made: core::result::Result<D,E> = s.factory.begin(accepted,slot.deadline);
-    s.listener_ready = true;
+    s.listener_readiness.step(core::io_state::ReadinessEvent::Ready);
     if (made.is_err()) {
         let error: E = made.unwrap_err(); let stats = s.factory.failure_stats(error); let transport = s.factory.failure_transport_calls(error); let counted = account(s,slot.borrow(),stats,transport);
         let info = information<D,E>(slot.borrow(),stats,transport,core::option::None()); release(s,slot.borrow()); outcome(s,id,Outcome::Failed(TransportFailure { info:info,error:error,cleanup:core::option::None() })); s.report.stats.failed += 1;
@@ -340,7 +369,7 @@ fn allocate<D,E,F,H,A>(s: &Server<D,E,F,H,A>, width: i32) -> core::result::Resul
 pub fn new<D,E,F,H,A>(listener: &std::socket::Socket, factory: &F, handler: &H, limits: ServerLimits, deadline: core::time::Deadline) -> core::result::Result<Server<D,E,F,H,A>,Cause> where D: Driver<E>, F: Factory<D,E>, H: Handler<A> {
     if (limits.max_accepted < 0 || limits.max_accepted > MAX_ACCEPTED || limits.concurrency <= 0 || limits.concurrency > MAX_CONCURRENCY || limits.connection_timeout.nanos >= 1000000000 || deadline.instant.ticks.nanos >= 1000000000) { return core::result::Err(Cause::InvalidLimits); }
     let handle: i32 = -1; if (listener.raw_handle().is_some()) { handle = listener.raw_handle().unwrap(); }
-    let s: Server<D,E,F,H,A> = Server { listener:listener,listener_handle:handle,factory:factory,handler:handler,limits:limits,reservation:Reservation { work:0,bytes:0 },deadline:deadline,last:core::time::instant(core::time::zero()),report:empty_report<E,A>(),slots:alloc::vec::new<Slot<D>>(),requests:alloc::vec::new<std::poll::Request>(),bindings:alloc::vec::new<Binding>(),poller:std::poll::new(0).unwrap(),turn:0,accepting:limits.max_accepted>0,listener_ready:true,alive:true,transferred:false,failure:core::option::None(),epoch:1,published:false };
+    let s: Server<D,E,F,H,A> = Server { listener:listener,listener_handle:handle,factory:factory,handler:handler,limits:limits,reservation:Reservation { work:0,bytes:0 },deadline:deadline,last:core::time::instant(core::time::zero()),report:empty_report<E,A>(),slots:alloc::vec::new<Slot<D>>(),requests:alloc::vec::new<std::poll::Request>(),bindings:alloc::vec::new<Binding>(),poller:std::poll::new(0).unwrap(),turn:0,acceptance:core::lifecycle::lifetime_if(limits.max_accepted>0),listener_readiness: core::io_state::readiness_start(),lifecycle:server_lifecycle_start(),failure:core::option::None(),epoch:1,publication: core::io_state::pending_work_start() };
     if (limits.max_accepted == 0) { return core::result::Ok(s); }
     let observed = observe(s.borrow()); if (observed.is_err()) { free_storage(s.borrow()); return core::result::Err(observed.unwrap_err()); }
     let paid = spend(s.borrow(),1); if (paid.is_err()) { free_storage(s.borrow()); return core::result::Err(paid.unwrap_err()); }
@@ -357,8 +386,8 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
     pub fn borrow(&self) -> &Server<D,E,F,H,A> { return self; }
     pub fn stats(&self) -> Stats { return self.report.stats; }
     pub fn last_failure(&self) -> core::option::Option<Cause> { return self.failure; }
-    pub fn is_complete(&self) -> bool { return !self.accepting && self.report.stats.active == 0; }
-    pub fn is_accepting(&self) -> bool { return self.alive && self.accepting; }
+    pub fn is_complete(&self) -> bool { return !self.acceptance.is_active() && self.report.stats.active == 0; }
+    pub fn is_accepting(&self) -> bool { return self.lifecycle.is_active() && self.acceptance.is_active(); }
     pub fn len(&self) -> i32 { return self.report.len(); }
     pub fn get(&self, index: i32) -> core::option::Option<Outcome<E,A>> { return self.report.get(index); }
     pub fn take(&self, index: i32) -> core::option::Option<Outcome<E,A>> {
@@ -367,19 +396,19 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
         invalidate(self); return self.report.take(index);
     }
     pub fn take_report(&self) -> core::result::Result<Report<E,A>,Cause> {
-        if (!self.alive || self.transferred || !self.is_complete()) { return core::result::Err(Cause::Inactive); }
-        invalidate(self); let owned: Report<E,A> = self.report; self.report = empty_report<E,A>(); self.report.stats = owned.stats; self.transferred = true; free_storage(self); return core::result::Ok(owned);
+        if (!self.lifecycle.is_active() || self.lifecycle.is_transferred() || !self.is_complete()) { return core::result::Err(Cause::Inactive); }
+        invalidate(self); let owned: Report<E,A> = self.report; self.report = empty_report<E,A>(); self.report.stats = owned.stats; self.lifecycle.step(ServerLifecycleEvent::ReportTaken); free_storage(self); return core::result::Ok(owned);
     }
-    pub fn stop_accepting(&self) -> bool { let was: bool = self.accepting; self.accepting = false; invalidate(self); return was; }
-    pub fn abort_all(&self) -> bool where D: Driver<E> { let active: bool = self.report.stats.active > 0; self.accepting = false; invalidate(self); abort_slots(self); return active; }
+    pub fn stop_accepting(&self) -> bool { let was: bool = self.acceptance.is_active(); self.acceptance.release(); invalidate(self); return was; }
+    pub fn abort_all(&self) -> bool where D: Driver<E> { let active: bool = self.report.stats.active > 0; self.acceptance.release(); invalidate(self); abort_slots(self); return active; }
     // Explicitly discards untaken diagnostics. To inspect cleanup, abort_all
     // then take_report first. This boolean never promises native close success.
     pub fn destroy(&self) -> bool where D: Driver<E>, E: core::clone::Destroy<E>, A: core::clone::Destroy<A> {
-        if (!self.alive) { return false; } self.abort_all(); self.report.destroy(); free_storage(self); return true;
+        if (!self.lifecycle.is_active()) { return false; } self.abort_all(); self.report.destroy(); free_storage(self); return true;
     }
     // One fair round; no poll or retry. True means some active/admission work.
     pub fn step(&self) -> core::result::Result<bool,Cause> where D: Driver<E>, F: Factory<D,E>, H: Handler<A> {
-        if (!self.alive || self.transferred) { return core::result::Err(Cause::Inactive); } invalidate(self);
+        if (!self.lifecycle.is_active() || self.lifecycle.is_transferred()) { return core::result::Err(Cause::Inactive); } invalidate(self);
         if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); } if (self.is_complete()) { return core::result::Ok(false); }
         let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
         let paid = spend(self,self.slots.len() as u64); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
@@ -390,7 +419,7 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
     }
 }
 fn interest_view<D,E,F,H,A>(s: &Server<D,E,F,H,A>, timeout: i32, immediate: bool, complete: bool) -> PollInterest {
-    let length: i32 = 0; let epoch: u64 = 0; if (s.published) { length = s.requests.len(); epoch = s.epoch; }
+    let length: i32 = 0; let epoch: u64 = 0; if (s.publication.pending()) { length = s.requests.len(); epoch = s.epoch; }
     return PollInterest { epoch:epoch,requests:s.requests.as_view().subview(0,length).unwrap(),timeout_ms:timeout,immediate:immediate,complete:complete };
 }
 fn milliseconds(duration: core::time::Duration) -> i32 { if (duration.seconds >= 2147484) { return 2147483647; } let value: u64 = duration.seconds*1000+((duration.nanos as u64)+999999)/1000000; if (value > 2147483647) { return 2147483647; } return value as i32; }
@@ -398,15 +427,15 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
     // Freezes one publication. Its backing expires at the next mutation.
     // A terminal gate returns immediate work without issuing a wait permit.
     pub fn prepare_wait(&self) -> core::result::Result<PollInterest,Cause> where D: Driver<E>, F: Factory<D,E> {
-        if (!self.alive || self.transferred) { return core::result::Err(Cause::Inactive); } invalidate(self);
+        if (!self.lifecycle.is_active() || self.lifecycle.is_transferred()) { return core::result::Err(Cause::Inactive); } invalidate(self);
         if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
         if (self.is_complete()) { return core::result::Ok(interest_view(self,0,false,true)); }
         let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
         let shortage = admission_limit(self); if (shortage.is_some()) { return core::result::Err(fatal(self,shortage.unwrap())); }
         let paid = spend(self,(self.requests.len() as u64)+(self.slots.len() as u64)); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
         let index: i32 = 0; while (index < self.requests.len()) { self.requests.set(index,no_request()).unwrap(); self.bindings.set(index,no_binding()).unwrap(); index += 1; }
-        let registered: i32 = 0; let immediate: bool = can_admit(self) && self.listener_ready;
-        if (can_admit(self) && !self.listener_ready) {
+        let registered: i32 = 0; let immediate: bool = can_admit(self) && (!self.listener_readiness.blocked());
+        if (can_admit(self) && !(!self.listener_readiness.blocked())) {
             let handle = self.listener.raw_handle(); if (handle.is_none() || handle.unwrap() != self.listener_handle) { return core::result::Err(fatal(self,Cause::InvalidDriver)); }
             self.requests.set(0,std::poll::Request { handle:self.listener_handle,events:std::poll::READABLE }).unwrap(); self.bindings.set(0,Binding { id:-2,generation:0,handle:self.listener_handle }).unwrap(); registered += 1;
         }
@@ -445,13 +474,13 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
         let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
         if (self.report.stats.waits == self.limits.polls || self.epoch == 18446744073709551615) { return core::result::Err(fatal(self,Cause::PollLimit)); }
         let timeout: i32 = 0; if (!immediate) { timeout = milliseconds(earliest.remaining(self.last)); }
-        self.report.stats.waits += 1; self.published = true; return core::result::Ok(interest_view(self,timeout,immediate,false));
+        self.report.stats.waits += 1; self.publication.step(core::io_state::PendingEvent::Queued); return core::result::Ok(interest_view(self,timeout,immediate,false));
     }
     // A valid submission consumes its epoch once. Validate every binding before
     // caching any hint; old fd/slot publications cannot wake a replacement.
     pub fn resume(&self, epoch: u64, ready: core::slice::View<std::poll::Readiness>) -> core::result::Result<bool,Cause> where D: Driver<E> {
-        if (!self.alive || self.transferred) { return core::result::Err(Cause::Inactive); }
-        if (!self.published || epoch != self.epoch || !core::io::valid_range(ready.start,ready.length) || ready.length != self.requests.len()) { return core::result::Err(Cause::InvalidPublication); }
+        if (!self.lifecycle.is_active() || self.lifecycle.is_transferred()) { return core::result::Err(Cause::Inactive); }
+        if (!self.publication.pending() || epoch != self.epoch || !core::io::valid_range(ready.start,ready.length) || ready.length != self.requests.len()) { return core::result::Err(Cause::InvalidPublication); }
         let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
         // Pay both bounded passes before inspecting any binding or caching a
         // hint. Failed identity validation still consumes the reserved work.
@@ -460,7 +489,7 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
         while (index < self.bindings.len()) {
             let binding: Binding = self.bindings.at(index);
             if (binding.handle >= 0) {
-                if (index == 0) { let handle = self.listener.raw_handle(); if (!self.accepting || handle.is_none() || handle.unwrap() != binding.handle || binding.id != -2) { return core::result::Err(Cause::InvalidPublication); } }
+                if (index == 0) { let handle = self.listener.raw_handle(); if (!self.acceptance.is_active() || handle.is_none() || handle.unwrap() != binding.handle || binding.id != -2) { return core::result::Err(Cause::InvalidPublication); } }
                 else {
                     let slot: Slot<D> = self.slots.at(index-1);
                     if (slot.owner.is_none() || slot.id != binding.id || slot.generation != binding.generation) { return core::result::Err(Cause::InvalidPublication); }
@@ -469,12 +498,12 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
             }
             index += 1;
         }
-        self.published = false;
+        self.publication.step(core::io_state::PendingEvent::Consumed);
         index = 0;
         while (index < self.bindings.len()) {
             if (self.bindings.at(index).handle >= 0) {
                 let flags: std::poll::Readiness = ready.values[ready.start+index];
-                if (index == 0) { self.listener_ready = flags.readable() || flags.hangup() || flags.error() || flags.invalid(); }
+                if (index == 0) { self.listener_readiness = core::io_state::readiness(flags.readable() || flags.hangup() || flags.error() || flags.invalid()); }
                 else { let slot: Slot<D> = take(self,index-1); slot.ready = ext::http_client::Readiness { readable:flags.readable() || flags.read_closed(),writable:flags.writable(),hangup:flags.hangup(),error:flags.error() || flags.invalid() }; put(self,index-1,slot); }
             }
             index += 1;

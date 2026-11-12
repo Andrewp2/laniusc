@@ -16,7 +16,7 @@ Progress.status may be an observed terminal status while Progress.reaped is fals
 - [stdlib-command-groups](../../stdlib-command-groups.md)
 - [stdlib-run-group](../../stdlib-run-group.md)
 
-Declaration counts: enum: 5; field: 28; function: 2; impl: 2; method: 4; struct: 5; variant: 38.
+Declaration counts: enum: 5; field: 28; function: 2; impl: 2; machine: 2; method: 4; struct: 5; variant: 34.
 
 ## Declared imports
 
@@ -256,36 +256,20 @@ Clock(std::clock::Error)
 Wait(std::command::Failure)
 ```
 
-### enum: InputState
+### enum: InputEvent
 
 [Source line 20](../../../stdlib/std/command_capture.lani#L20)
 
 ```lanius
-pub enum InputState
+pub enum InputEvent
 ```
 
-#### variant: NotAcquired
+#### variant: Acquire
 
 [Source line 20](../../../stdlib/std/command_capture.lani#L20)
 
 ```lanius
-NotAcquired
-```
-
-#### variant: NotPiped
-
-[Source line 20](../../../stdlib/std/command_capture.lani#L20)
-
-```lanius
-NotPiped
-```
-
-#### variant: Sending
-
-[Source line 20](../../../stdlib/std/command_capture.lani#L20)
-
-```lanius
-Sending
+Acquire(bool)
 ```
 
 #### variant: Sent
@@ -304,65 +288,65 @@ Sent
 PeerClosed
 ```
 
-#### variant: ClosedOnError
+#### variant: Failed
 
 [Source line 20](../../../stdlib/std/command_capture.lani#L20)
 
 ```lanius
-ClosedOnError
+Failed
 ```
 
-### enum: StreamState
+### machine: Input
 
 [Source line 21](../../../stdlib/std/command_capture.lani#L21)
 
 ```lanius
-pub enum StreamState
+pub machine Input on InputEvent
 ```
 
-#### variant: NotAcquired
+### enum: StreamEvent
 
-[Source line 21](../../../stdlib/std/command_capture.lani#L21)
+[Source line 67](../../../stdlib/std/command_capture.lani#L67)
 
 ```lanius
-NotAcquired
+pub enum StreamEvent
 ```
 
-#### variant: NotPiped
+#### variant: Acquire
 
-[Source line 21](../../../stdlib/std/command_capture.lani#L21)
-
-```lanius
-NotPiped
-```
-
-#### variant: Reading
-
-[Source line 21](../../../stdlib/std/command_capture.lani#L21)
+[Source line 67](../../../stdlib/std/command_capture.lani#L67)
 
 ```lanius
-Reading
+Acquire(bool)
 ```
 
 #### variant: Eof
 
-[Source line 21](../../../stdlib/std/command_capture.lani#L21)
+[Source line 67](../../../stdlib/std/command_capture.lani#L67)
 
 ```lanius
 Eof
 ```
 
-#### variant: ClosedOnError
+#### variant: Failed
 
-[Source line 21](../../../stdlib/std/command_capture.lani#L21)
+[Source line 67](../../../stdlib/std/command_capture.lani#L67)
 
 ```lanius
-ClosedOnError
+Failed
+```
+
+### machine: OutputStream
+
+[Source line 68](../../../stdlib/std/command_capture.lani#L68)
+
+```lanius
+pub machine OutputStream on StreamEvent
 ```
 
 ### enum: Stream
 
-[Source line 22](../../../stdlib/std/command_capture.lani#L22)
+[Source line 102](../../../stdlib/std/command_capture.lani#L102)
 
 ```lanius
 pub enum Stream
@@ -370,7 +354,7 @@ pub enum Stream
 
 #### variant: Stdout
 
-[Source line 22](../../../stdlib/std/command_capture.lani#L22)
+[Source line 102](../../../stdlib/std/command_capture.lani#L102)
 
 ```lanius
 Stdout
@@ -378,7 +362,7 @@ Stdout
 
 #### variant: Stderr
 
-[Source line 22](../../../stdlib/std/command_capture.lani#L22)
+[Source line 102](../../../stdlib/std/command_capture.lani#L102)
 
 ```lanius
 Stderr
@@ -386,7 +370,7 @@ Stderr
 
 ### struct: Overflow
 
-[Source line 23](../../../stdlib/std/command_capture.lani#L23)
+[Source line 103](../../../stdlib/std/command_capture.lani#L103)
 
 ```lanius
 pub struct Overflow
@@ -394,7 +378,7 @@ pub struct Overflow
 
 #### field: stream
 
-[Source line 23](../../../stdlib/std/command_capture.lani#L23)
+[Source line 103](../../../stdlib/std/command_capture.lani#L103)
 
 ```lanius
 stream: Stream
@@ -402,7 +386,7 @@ stream: Stream
 
 #### field: byte
 
-[Source line 23](../../../stdlib/std/command_capture.lani#L23)
+[Source line 103](../../../stdlib/std/command_capture.lani#L103)
 
 ```lanius
 byte: u8
@@ -410,7 +394,7 @@ byte: u8
 
 ### struct: Limits
 
-[Source line 24](../../../stdlib/std/command_capture.lani#L24)
+[Source line 104](../../../stdlib/std/command_capture.lani#L104)
 
 ```lanius
 pub struct Limits
@@ -418,7 +402,7 @@ pub struct Limits
 
 #### field: max_input_bytes
 
-[Source line 24](../../../stdlib/std/command_capture.lani#L24)
+[Source line 104](../../../stdlib/std/command_capture.lani#L104)
 
 ```lanius
 max_input_bytes: i32
@@ -426,7 +410,7 @@ max_input_bytes: i32
 
 #### field: max_stdout_bytes
 
-[Source line 24](../../../stdlib/std/command_capture.lani#L24)
+[Source line 104](../../../stdlib/std/command_capture.lani#L104)
 
 ```lanius
 max_stdout_bytes: i32
@@ -434,7 +418,7 @@ max_stdout_bytes: i32
 
 #### field: max_stderr_bytes
 
-[Source line 24](../../../stdlib/std/command_capture.lani#L24)
+[Source line 104](../../../stdlib/std/command_capture.lani#L104)
 
 ```lanius
 max_stderr_bytes: i32
@@ -442,7 +426,7 @@ max_stderr_bytes: i32
 
 #### field: max_operations
 
-[Source line 24](../../../stdlib/std/command_capture.lani#L24)
+[Source line 104](../../../stdlib/std/command_capture.lani#L104)
 
 ```lanius
 max_operations: u64
@@ -450,7 +434,7 @@ max_operations: u64
 
 ### struct: Progress
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 pub struct Progress
@@ -458,7 +442,7 @@ pub struct Progress
 
 #### field: input_written
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 input_written: i32
@@ -466,7 +450,7 @@ input_written: i32
 
 #### field: stdout_read
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 stdout_read: u64
@@ -474,7 +458,7 @@ stdout_read: u64
 
 #### field: stderr_read
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 stderr_read: u64
@@ -482,7 +466,7 @@ stderr_read: u64
 
 #### field: operations
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 operations: u64
@@ -490,7 +474,7 @@ operations: u64
 
 #### field: input_state
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 input_state: InputState
@@ -498,23 +482,23 @@ input_state: InputState
 
 #### field: stdout_state
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
-stdout_state: StreamState
+stdout_state: OutputStreamState
 ```
 
 #### field: stderr_state
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
-stderr_state: StreamState
+stderr_state: OutputStreamState
 ```
 
 #### field: status
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 status: core::option::Option<std::command::ExitStatus>
@@ -522,7 +506,7 @@ status: core::option::Option<std::command::ExitStatus>
 
 #### field: startup
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 startup: std::command::Startup
@@ -530,7 +514,7 @@ startup: std::command::Startup
 
 #### field: acquired
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 acquired: bool
@@ -538,7 +522,7 @@ acquired: bool
 
 #### field: reaped
 
-[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+[Source line 105](../../../stdlib/std/command_capture.lani#L105)
 
 ```lanius
 reaped: bool
@@ -546,7 +530,7 @@ reaped: bool
 
 ### struct: Output
 
-[Source line 26](../../../stdlib/std/command_capture.lani#L26)
+[Source line 106](../../../stdlib/std/command_capture.lani#L106)
 
 ```lanius
 pub struct Output
@@ -554,7 +538,7 @@ pub struct Output
 
 #### field: stdout
 
-[Source line 26](../../../stdlib/std/command_capture.lani#L26)
+[Source line 106](../../../stdlib/std/command_capture.lani#L106)
 
 ```lanius
 stdout: alloc::vec::Vec<u8>
@@ -562,7 +546,7 @@ stdout: alloc::vec::Vec<u8>
 
 #### field: stderr
 
-[Source line 26](../../../stdlib/std/command_capture.lani#L26)
+[Source line 106](../../../stdlib/std/command_capture.lani#L106)
 
 ```lanius
 stderr: alloc::vec::Vec<u8>
@@ -570,7 +554,7 @@ stderr: alloc::vec::Vec<u8>
 
 #### field: status
 
-[Source line 26](../../../stdlib/std/command_capture.lani#L26)
+[Source line 106](../../../stdlib/std/command_capture.lani#L106)
 
 ```lanius
 status: std::command::ExitStatus
@@ -578,7 +562,7 @@ status: std::command::ExitStatus
 
 #### field: progress
 
-[Source line 26](../../../stdlib/std/command_capture.lani#L26)
+[Source line 106](../../../stdlib/std/command_capture.lani#L106)
 
 ```lanius
 progress: Progress
@@ -586,7 +570,7 @@ progress: Progress
 
 ### struct: Failure
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 pub struct Failure
@@ -594,7 +578,7 @@ pub struct Failure
 
 #### field: cause
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 cause: Error
@@ -602,7 +586,7 @@ cause: Error
 
 #### field: stage
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 stage: Stage
@@ -610,7 +594,7 @@ stage: Stage
 
 #### field: stdout
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 stdout: alloc::vec::Vec<u8>
@@ -618,7 +602,7 @@ stdout: alloc::vec::Vec<u8>
 
 #### field: stderr
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 stderr: alloc::vec::Vec<u8>
@@ -626,7 +610,7 @@ stderr: alloc::vec::Vec<u8>
 
 #### field: progress
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 progress: Progress
@@ -634,7 +618,7 @@ progress: Progress
 
 #### field: overflow
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 overflow: core::option::Option<Overflow>
@@ -642,7 +626,7 @@ overflow: core::option::Option<Overflow>
 
 #### field: cleanup_error
 
-[Source line 27](../../../stdlib/std/command_capture.lani#L27)
+[Source line 107](../../../stdlib/std/command_capture.lani#L107)
 
 ```lanius
 cleanup_error: core::option::Option<core::io::Error>
@@ -652,7 +636,7 @@ cleanup_error: core::option::Option<core::io::Error>
 
 ### function: default_limits
 
-[Source line 30](../../../stdlib/std/command_capture.lani#L30)
+[Source line 110](../../../stdlib/std/command_capture.lani#L110)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -660,7 +644,7 @@ pub fn default_limits() -> Limits
 
 ### function: communicate
 
-[Source line 123](../../../stdlib/std/command_capture.lani#L123)
+[Source line 212](../../../stdlib/std/command_capture.lani#L212)
 
 ```lanius
 pub fn communicate(child: &std::command::Child, data: core::slice::View<u8>, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Output,Failure>
@@ -668,9 +652,9 @@ pub fn communicate(child: &std::command::Child, data: core::slice::View<u8>, lim
 
 ## Implementation blocks and public methods
 
-### impl at line 28
+### impl at line 108
 
-[Source line 28](../../../stdlib/std/command_capture.lani#L28)
+[Source line 108](../../../stdlib/std/command_capture.lani#L108)
 
 ```lanius
 pub impl Output
@@ -678,7 +662,7 @@ pub impl Output
 
 #### method: borrow
 
-[Source line 28](../../../stdlib/std/command_capture.lani#L28)
+[Source line 108](../../../stdlib/std/command_capture.lani#L108)
 
 ```lanius
 pub fn borrow(&self) -> &Output
@@ -686,15 +670,15 @@ pub fn borrow(&self) -> &Output
 
 #### method: destroy
 
-[Source line 28](../../../stdlib/std/command_capture.lani#L28)
+[Source line 108](../../../stdlib/std/command_capture.lani#L108)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 29
+### impl at line 109
 
-[Source line 29](../../../stdlib/std/command_capture.lani#L29)
+[Source line 109](../../../stdlib/std/command_capture.lani#L109)
 
 ```lanius
 pub impl Failure
@@ -702,7 +686,7 @@ pub impl Failure
 
 #### method: borrow
 
-[Source line 29](../../../stdlib/std/command_capture.lani#L29)
+[Source line 109](../../../stdlib/std/command_capture.lani#L109)
 
 ```lanius
 pub fn borrow(&self) -> &Failure
@@ -710,7 +694,7 @@ pub fn borrow(&self) -> &Failure
 
 #### method: destroy
 
-[Source line 29](../../../stdlib/std/command_capture.lani#L29)
+[Source line 109](../../../stdlib/std/command_capture.lani#L109)
 
 ```lanius
 pub fn destroy(&self)

@@ -1,6 +1,7 @@
 // Resumable raw DEFLATE, zlib and gzip framing with borrowed fixed workspace.
 // Owned decode destroys all private storage on error; success owns one Vec.
 module ext::compression;
+import core::iter_state;
 import alloc::vec;
 import core::adler32;
 import core::crc32;
@@ -198,14 +199,55 @@ pub struct EncodeFailure { error: Error, read: i32, written: i32 }
 pub fn default_encode_limits() -> EncodeLimits {
     return EncodeLimits { max_input: DEFAULT_MAX_INPUT as u64, max_output: DEFAULT_MAX_OUTPUT as u64 };
 }
-const ENCODE_HEADER: i32 = 0;
-const ENCODE_BODY: i32 = 1;
-const ENCODE_TRAILER: i32 = 2;
-const ENCODE_FINISHED: i32 = 3;
-const ENCODE_FAILED: i32 = 4;
+pub enum EncodingEvent { HeaderWritten, BodyWritten, TrailerWritten, Failed, Reset }
+
+pub machine Encoding on EncodingEvent {
+    start EncodeHeader;
+
+    state EncodeHeader {
+        EncodingEvent::HeaderWritten -> goto EncodeBody,
+        EncodingEvent::BodyWritten -> stay,
+        EncodingEvent::TrailerWritten -> stay,
+        EncodingEvent::Failed -> goto EncodeFailed,
+        EncodingEvent::Reset -> goto EncodeHeader,
+    }
+
+    state EncodeBody {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::BodyWritten -> goto EncodeTrailer,
+        EncodingEvent::TrailerWritten -> stay,
+        EncodingEvent::Failed -> goto EncodeFailed,
+        EncodingEvent::Reset -> goto EncodeHeader,
+    }
+
+    state EncodeTrailer {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::BodyWritten -> stay,
+        EncodingEvent::TrailerWritten -> goto EncodeFinished,
+        EncodingEvent::Failed -> goto EncodeFailed,
+        EncodingEvent::Reset -> goto EncodeHeader,
+    }
+
+    state EncodeFinished {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::BodyWritten -> stay,
+        EncodingEvent::TrailerWritten -> stay,
+        EncodingEvent::Failed -> goto EncodeFailed,
+        EncodingEvent::Reset -> goto EncodeHeader,
+    }
+
+    state EncodeFailed {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::BodyWritten -> stay,
+        EncodingEvent::TrailerWritten -> stay,
+        EncodingEvent::Failed -> goto EncodeFailed,
+        EncodingEvent::Reset -> goto EncodeHeader,
+    }
+}
+
 pub struct Encoder {
     raw: ext::deflate::Encoder, kind: i32, limits: EncodeLimits,
-    phase: i32, failure: Error, read_total: u64, written_total: u64,
+    phase: Encoding, failure: Error, read_total: u64, written_total: u64,
     checksum: u32, member_size: u32, field_count: i32
 }
 fn encode_initial_checksum(kind: i32) -> u32 {
@@ -228,7 +270,7 @@ pub fn level_encoder(block: core::slice::View<u8>, pending: core::slice::View<u8
     let kind: i32 = format_kind(format);
     return core::result::Ok(Encoder {
         raw: core::result::unwrap(made), kind: kind, limits: limits,
-        phase: ENCODE_HEADER, failure: Error::Bounds, read_total: 0, written_total: 0,
+        phase: encoding_start(), failure: Error::Bounds, read_total: 0, written_total: 0,
         checksum: encode_initial_checksum(kind), member_size: 0, field_count: 0
     });
 }
@@ -236,7 +278,7 @@ fn encode_progress(call: &Call, status: ext::deflate::Status) -> core::result::R
     return core::result::Ok(ext::deflate::Step { read: call.read, written: call.written, status: status });
 }
 fn encode_fail(state: &Encoder, call: &Call, error: Error) -> core::result::Result<ext::deflate::Step,EncodeFailure> {
-    state.phase = ENCODE_FAILED; state.failure = error;
+    state.phase.step(EncodingEvent::Failed); state.failure = error;
     return core::result::Err(EncodeFailure { error: error, read: call.read, written: call.written });
 }
 fn encode_header_byte(kind: i32, index: i32) -> u8 {
@@ -272,22 +314,22 @@ fn encode_run(state: &Encoder, input: core::slice::View<u8>, output: core::slice
     // Bad descriptors remain recoverable even after a sticky error or Done.
     if (!valid(input) || !valid(output)) { return core::result::Err(EncodeFailure { error: Error::Bounds, read: 0, written: 0 }); }
     let call: Call = Call { input: input, output: output, read: 0, written: 0 };
-    if (state.phase == ENCODE_FINISHED) { return encode_progress(call.borrow(),ext::deflate::Status::Done); }
-    if (state.phase == ENCODE_FAILED) { return core::result::Err(EncodeFailure { error: state.failure, read: 0, written: 0 }); }
+    if (((match (state.phase.state()) { EncodingState::EncodeFinished -> true, _ -> false }))) { return encode_progress(call.borrow(),ext::deflate::Status::Done); }
+    if (((match (state.phase.state()) { EncodingState::EncodeFailed -> true, _ -> false }))) { return core::result::Err(EncodeFailure { error: state.failure, read: 0, written: 0 }); }
     // Admission covers the whole offer, including bytes a pending header or
     // body may prevent this call from consuming. Failure precedes all effects.
     if ((input.length as u64) > state.limits.max_input-state.read_total) { return encode_fail(state,call.borrow(),Error::InputLimit); }
     while (true) {
-        if (state.phase == ENCODE_HEADER) {
+        if (((match (state.phase.state()) { EncodingState::EncodeHeader -> true, _ -> false }))) {
             let length: i32 = 0; if (state.kind == 1) { length = 2; } if (state.kind == 2) { length = 10; }
             while (state.field_count < length) {
                 if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
                 if (call.written == output.length) { return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput); }
                 encode_put(state,call.borrow(),encode_header_byte(state.kind,state.field_count));
             }
-            state.field_count = 0; state.phase = ENCODE_BODY;
+            state.field_count = 0; state.phase.step(EncodingEvent::HeaderWritten);
         }
-        if (state.phase == ENCODE_BODY) {
+        if (((match (state.phase.state()) { EncodingState::EncodeBody -> true, _ -> false }))) {
             let count: i32 = output.length-call.written;
             let remaining: u64 = state.limits.max_output-state.written_total;
             if ((count as u64) > remaining) { count = remaining as i32; }
@@ -308,16 +350,16 @@ fn encode_run(state: &Encoder, input: core::slice::View<u8>, output: core::slice
                 if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
                 return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput);
             }
-            state.field_count = 0; state.phase = ENCODE_TRAILER;
+            state.field_count = 0; state.phase.step(EncodingEvent::BodyWritten);
         }
-        if (state.phase == ENCODE_TRAILER) {
+        if (((match (state.phase.state()) { EncodingState::EncodeTrailer -> true, _ -> false }))) {
             let length: i32 = 0; if (state.kind == 1) { length = 4; } if (state.kind == 2) { length = 8; }
             while (state.field_count < length) {
                 if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
                 if (call.written == output.length) { return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput); }
                 encode_put(state,call.borrow(),encode_trailer_byte(state));
             }
-            state.phase = ENCODE_FINISHED;
+            state.phase.step(EncodingEvent::TrailerWritten);
             return encode_progress(call.borrow(),ext::deflate::Status::Done);
         }
     }
@@ -328,12 +370,12 @@ pub impl Encoder {
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::deflate::Step,EncodeFailure> { return encode_run(self,input,output,final_input); }
     pub fn total_read(&self) -> u64 { return self.read_total; }
     pub fn total_written(&self) -> u64 { return self.written_total; }
-    pub fn is_done(&self) -> bool { return self.phase == ENCODE_FINISHED; }
-    pub fn is_failed(&self) -> bool { return self.phase == ENCODE_FAILED; }
+    pub fn is_done(&self) -> bool { return ((match (self.phase.state()) { EncodingState::EncodeFinished -> true, _ -> false })); }
+    pub fn is_failed(&self) -> bool { return ((match (self.phase.state()) { EncodingState::EncodeFailed -> true, _ -> false })); }
     // Reset discards pending output without clearing or reading workspace.
     pub fn reset(&self, format: Format, limits: EncodeLimits) {
         self.raw.reset(); self.kind = format_kind(format); self.limits = limits;
-        self.phase = ENCODE_HEADER; self.failure = Error::Bounds;
+        self.phase.step(EncodingEvent::Reset); self.failure = Error::Bounds;
         self.read_total = 0; self.written_total = 0;
         self.checksum = encode_initial_checksum(self.kind); self.member_size = 0; self.field_count = 0;
     }
@@ -342,37 +384,367 @@ pub impl Encoder {
 // Framing retains only scalar progress and the raw decoder's caller borrows.
 // Input/output views belong to one call and may be recycled after it returns.
 pub struct DecodeFailure { error: Error, read: i32, written: i32 }
-const RAW_START: i32 = 0;
-const ZLIB_HEADER: i32 = 1;
-const ZLIB_DICTIONARY: i32 = 2;
-const GZIP_START: i32 = 3;
-const GZIP_PREFIX: i32 = 4;
-const GZIP_HEADER: i32 = 5;
-const GZIP_EXTRA_LENGTH: i32 = 6;
-const GZIP_EXTRA: i32 = 7;
-const GZIP_NAME: i32 = 8;
-const GZIP_COMMENT: i32 = 9;
-const GZIP_HEADER_CRC: i32 = 10;
-const BODY: i32 = 11;
-const ZLIB_TRAILER: i32 = 12;
-const GZIP_TRAILER: i32 = 13;
-const AWAIT_END: i32 = 14;
-const BETWEEN_MEMBERS: i32 = 15;
-const FINISHED: i32 = 16;
-const FAILED: i32 = 17;
+pub enum DecodingEvent { Initialize(i32), DictionaryRequired, MemberStarted, HeaderStarted, ExtraPresent, ExtraSized, NamePresent, CommentPresent, HeaderChecksumPresent, HeaderRead, ZlibBodyRead, GzipBodyRead, StreamRead, MemberRead, Finished, Failed }
+
+pub machine Decoding on DecodingEvent {
+    start RawStart;
+
+    state RawStart {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state ZlibHeader {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> goto ZlibDictionary,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state ZlibDictionary {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipStart {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> goto GzipHeader,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipPrefix {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> goto GzipHeader,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipHeader {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> goto GzipExtraLength,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> goto GzipName,
+        DecodingEvent::CommentPresent -> goto GzipComment,
+        DecodingEvent::HeaderChecksumPresent -> goto GzipHeaderCrc,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipExtraLength {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> goto GzipExtra,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipExtra {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> goto GzipName,
+        DecodingEvent::CommentPresent -> goto GzipComment,
+        DecodingEvent::HeaderChecksumPresent -> goto GzipHeaderCrc,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipName {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> goto GzipComment,
+        DecodingEvent::HeaderChecksumPresent -> goto GzipHeaderCrc,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipComment {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> goto GzipHeaderCrc,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipHeaderCrc {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> goto Body,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state Body {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> goto ZlibTrailer,
+        DecodingEvent::GzipBodyRead -> goto GzipTrailer,
+        DecodingEvent::StreamRead -> goto AwaitEnd,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state ZlibTrailer {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> goto AwaitEnd,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state GzipTrailer {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> goto BetweenMembers,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state AwaitEnd {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> goto Finished,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state BetweenMembers {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> goto GzipPrefix,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> goto Finished,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state Finished {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+
+    state Failed {
+        DecodingEvent::Initialize(kind) -> { if (kind == 0) { goto RawStart; } if (kind == 1) { goto ZlibHeader; } goto GzipStart; },
+        DecodingEvent::DictionaryRequired -> stay,
+        DecodingEvent::MemberStarted -> stay,
+        DecodingEvent::HeaderStarted -> stay,
+        DecodingEvent::ExtraPresent -> stay,
+        DecodingEvent::ExtraSized -> stay,
+        DecodingEvent::NamePresent -> stay,
+        DecodingEvent::CommentPresent -> stay,
+        DecodingEvent::HeaderChecksumPresent -> stay,
+        DecodingEvent::HeaderRead -> stay,
+        DecodingEvent::ZlibBodyRead -> stay,
+        DecodingEvent::GzipBodyRead -> stay,
+        DecodingEvent::StreamRead -> stay,
+        DecodingEvent::MemberRead -> stay,
+        DecodingEvent::Finished -> stay,
+        DecodingEvent::Failed -> goto Failed,
+    }
+}
+
 
 pub struct Decoder {
-    raw: ext::inflate::Decoder, kind: i32, limits: Limits, phase: i32, failure: Error,
+    raw: ext::inflate::Decoder, kind: i32, limits: Limits, phase: Decoding, failure: Error,
     read_total: u64, written_total: u64, completed_members: i32,
     checksum: u32, member_size: u32, header_crc: u32,
     field: u64, field_count: i32, flags: i32, remaining: i32,
-    tables: core::slice::View<i32>, crc_fast: bool, crc_ready: bool
+    tables: core::slice::View<i32>, crc_fast: bool, crc_ready_completion: core::iter_state::Completion
 }
 struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
 impl Call { fn borrow(&self) -> &Call { return self; } }
 fn valid_limits(limits: Limits) -> bool { return limits.max_input >= 0 && limits.max_output >= 0 && limits.max_members >= 0; }
 fn format_kind(format: Format) -> i32 { return match (format) { Format::RawDeflate -> 0, Format::Zlib -> 1, Format::Gzip -> 2 }; }
-fn initial_phase(kind: i32) -> i32 { if (kind == 0) { return RAW_START; } if (kind == 1) { return ZLIB_HEADER; } return GZIP_START; }
+fn initial_phase(kind: i32) -> Decoding { let phase = decoding_start(); phase.step(DecodingEvent::Initialize(kind)); return phase; }
 
 // Construction is inert: no backing is read or initialized. The caller keeps
 // history/workspace live, disjoint and exclusively writable until retirement.
@@ -386,14 +758,14 @@ pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>
         read_total: 0, written_total: 0, completed_members: 0,
         checksum: 0, member_size: 0, header_crc: core::crc32::INITIAL,
         field: 0, field_count: 0, flags: 0, remaining: 0,
-        tables: workspace, crc_fast: workspace.length >= fast_workspace_len(), crc_ready: false
+        tables: workspace, crc_fast: workspace.length >= fast_workspace_len(), crc_ready_completion: core::iter_state::completion_start()
     });
 }
 fn progress(call: &Call, status: ext::inflate::Status) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
     return core::result::Ok(ext::inflate::Step { read: call.read, written: call.written, status: status });
 }
 fn fail(state: &Decoder, call: &Call, error: Error) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
-    state.phase = FAILED; state.failure = error;
+    state.phase.step(DecodingEvent::Failed); state.failure = error;
     return core::result::Err(DecodeFailure { error: error, read: call.read, written: call.written });
 }
 fn missing_input(state: &Decoder, call: &Call, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
@@ -403,24 +775,24 @@ fn missing_input(state: &Decoder, call: &Call, final_input: bool) -> core::resul
 fn take_byte(state: &Decoder, call: &Call) -> u8 {
     let value: u8 = byte(call.input,call.read); call.read += 1; state.read_total += 1; return value;
 }
-fn clear_field(state: &Decoder, phase: i32) { state.field = 0; state.field_count = 0; state.phase = phase; }
+fn clear_field(state: &Decoder, event: DecodingEvent) { state.field = 0; state.field_count = 0; state.phase.step(event); }
 fn begin_body(state: &Decoder, window: i32) {
     // Admitted immutable descriptors and windows make this reset infallible.
     core::result::unwrap(state.raw.reset(window));
     state.checksum = core::crc32::INITIAL;
     if (state.kind == 1) { state.checksum = core::adler32::INITIAL; }
-    state.member_size = 0; state.phase = BODY;
+    state.member_size = 0; state.phase.step(DecodingEvent::HeaderRead);
 }
 fn after_comment(state: &Decoder) {
-    if ((state.flags & 2) != 0) { clear_field(state,GZIP_HEADER_CRC); }
+    if ((state.flags & 2) != 0) { clear_field(state,DecodingEvent::HeaderChecksumPresent); }
     else { begin_body(state,32768); }
 }
 fn after_name(state: &Decoder) {
-    if ((state.flags & 16) != 0) { state.phase = GZIP_COMMENT; }
+    if ((state.flags & 16) != 0) { state.phase.step(DecodingEvent::CommentPresent); }
     else { after_comment(state); }
 }
 fn after_extra(state: &Decoder) {
-    if ((state.flags & 8) != 0) { state.phase = GZIP_NAME; }
+    if ((state.flags & 8) != 0) { state.phase.step(DecodingEvent::NamePresent); }
     else { after_name(state); }
 }
 fn account_body(state: &Decoder, call: &Call, read: i32, written: i32) {
@@ -432,7 +804,7 @@ fn account_body(state: &Decoder, call: &Call, read: i32, written: i32) {
         if (written >= 16384 && core::mem::slice_stride(call.output.values) == 1) {
             state.checksum = crc_span(state.checksum,call.output,call.written,call.written+written);
         } else { if (state.crc_fast && core::mem::slice_stride(call.output.values) == 1) {
-            if (!state.crc_ready) { crc_tables(state.tables,ext::inflate::fast_workspace_len()); state.crc_ready = true; }
+            if (!state.crc_ready_completion.is_done()) { crc_tables(state.tables,ext::inflate::fast_workspace_len()); state.crc_ready_completion.finish(); }
             state.checksum = crc_fast(state.tables,ext::inflate::fast_workspace_len(),state.checksum,call.output,call.written,call.written+written);
         } else {
             let index: i32 = 0;
@@ -447,15 +819,15 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
     // Bounds is recoverable and wins even over a previous terminal state.
     if (!valid(input) || !valid(output)) { return core::result::Err(DecodeFailure { error: Error::Bounds, read: 0, written: 0 }); }
     let call: Call = Call { input: input, output: output, read: 0, written: 0 };
-    if (state.phase == FINISHED) { return progress(call.borrow(),ext::inflate::Status::Done); }
-    if (state.phase == FAILED) { return core::result::Err(DecodeFailure { error: state.failure, read: 0, written: 0 }); }
+    if (((match (state.phase.state()) { DecodingState::Finished -> true, _ -> false }))) { return progress(call.borrow(),ext::inflate::Status::Done); }
+    if (((match (state.phase.state()) { DecodingState::Failed -> true, _ -> false }))) { return core::result::Err(DecodeFailure { error: state.failure, read: 0, written: 0 }); }
     if ((input.length as u64) > (state.limits.max_input as u64)-state.read_total) { return fail(state,call.borrow(),Error::InputLimit); }
     while (true) {
-        if (state.phase == RAW_START) {
+        if (((match (state.phase.state()) { DecodingState::RawStart -> true, _ -> false }))) {
             if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
             begin_body(state,32768);
         }
-        if (state.phase == ZLIB_HEADER) {
+        if (((match (state.phase.state()) { DecodingState::ZlibHeader -> true, _ -> false }))) {
             while (state.field_count < 2) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
@@ -464,25 +836,25 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             if ((cmf & 15) != 8) { return fail(state,call.borrow(),Error::UnsupportedMethod); }
             if ((cmf >> 4) > 7) { return fail(state,call.borrow(),Error::UnsupportedWindow); }
             if (((cmf << 8) | flags) % 31 != 0) { return fail(state,call.borrow(),Error::Header); }
-            if ((flags & 32) != 0) { clear_field(state,ZLIB_DICTIONARY); }
+            if ((flags & 32) != 0) { clear_field(state,DecodingEvent::DictionaryRequired); }
             else {
                 if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
                 begin_body(state,1 << ((cmf >> 4)+8));
             }
         }
-        if (state.phase == ZLIB_DICTIONARY) {
+        if (((match (state.phase.state()) { DecodingState::ZlibDictionary -> true, _ -> false }))) {
             while (state.field_count < 4) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 take_byte(state,call.borrow()); state.field_count += 1;
             }
             return fail(state,call.borrow(),Error::UnsupportedDictionary);
         }
-        if (state.phase == GZIP_START) {
+        if (((match (state.phase.state()) { DecodingState::GzipStart -> true, _ -> false }))) {
             if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
             if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
-            state.header_crc = core::crc32::INITIAL; clear_field(state,GZIP_HEADER);
+            state.header_crc = core::crc32::INITIAL; clear_field(state,DecodingEvent::HeaderStarted);
         }
-        if (state.phase == GZIP_PREFIX) {
+        if (((match (state.phase.state()) { DecodingState::GzipPrefix -> true, _ -> false }))) {
             if (call.read == input.length) {
                 if (final_input && state.completed_members == state.limits.max_members) { return fail(state,call.borrow(),Error::MemberLimit); }
                 return missing_input(state,call.borrow(),final_input);
@@ -494,9 +866,9 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             state.header_crc = core::crc32::update_byte(state.header_crc,value);
             state.field = state.field | ((value as u64) << 8); state.field_count = 2;
             if (state.completed_members == state.limits.max_members) { return fail(state,call.borrow(),Error::MemberLimit); }
-            state.phase = GZIP_HEADER;
+            state.phase.step(DecodingEvent::HeaderStarted);
         }
-        if (state.phase == GZIP_HEADER) {
+        if (((match (state.phase.state()) { DecodingState::GzipHeader -> true, _ -> false }))) {
             while (state.field_count < 10) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 let value: u8 = take_byte(state,call.borrow());
@@ -508,34 +880,34 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             if (((state.field >> 16) & 255) != 8) { return fail(state,call.borrow(),Error::UnsupportedMethod); }
             state.flags = ((state.field >> 24) & 255) as i32;
             if ((state.flags & 224) != 0) { return fail(state,call.borrow(),Error::Header); }
-            if ((state.flags & 4) != 0) { clear_field(state,GZIP_EXTRA_LENGTH); }
+            if ((state.flags & 4) != 0) { clear_field(state,DecodingEvent::ExtraPresent); }
             else { after_extra(state); }
         }
-        if (state.phase == GZIP_EXTRA_LENGTH) {
+        if (((match (state.phase.state()) { DecodingState::GzipExtraLength -> true, _ -> false }))) {
             while (state.field_count < 2) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 let value: u8 = take_byte(state,call.borrow()); state.header_crc = core::crc32::update_byte(state.header_crc,value);
                 state.field = state.field | ((value as u64) << (state.field_count*8)); state.field_count += 1;
             }
-            state.remaining = state.field as i32; state.phase = GZIP_EXTRA;
+            state.remaining = state.field as i32; state.phase.step(DecodingEvent::ExtraSized);
         }
-        if (state.phase == GZIP_EXTRA) {
+        if (((match (state.phase.state()) { DecodingState::GzipExtra -> true, _ -> false }))) {
             while (state.remaining > 0) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 state.header_crc = core::crc32::update_byte(state.header_crc,take_byte(state,call.borrow())); state.remaining -= 1;
             }
             after_extra(state);
         }
-        if (state.phase == GZIP_NAME || state.phase == GZIP_COMMENT) {
-            let finished: bool = false;
-            while (!finished) {
+        if (((match (state.phase.state()) { DecodingState::GzipName -> true, _ -> false })) || ((match (state.phase.state()) { DecodingState::GzipComment -> true, _ -> false }))) {
+            let finished_phase = core::iter_state::completion_start();
+            while (!finished_phase.is_done()) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 let value: u8 = take_byte(state,call.borrow()); state.header_crc = core::crc32::update_byte(state.header_crc,value);
-                finished = value == 0;
+                finished_phase = core::iter_state::completed_if(value == 0);
             }
-            if (state.phase == GZIP_NAME) { after_name(state); } else { after_comment(state); }
+            if (((match (state.phase.state()) { DecodingState::GzipName -> true, _ -> false }))) { after_name(state); } else { after_comment(state); }
         }
-        if (state.phase == GZIP_HEADER_CRC) {
+        if (((match (state.phase.state()) { DecodingState::GzipHeaderCrc -> true, _ -> false }))) {
             while (state.field_count < 2) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
@@ -543,7 +915,7 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             if (state.field != (core::crc32::finish(state.header_crc) & 65535) as u64) { return fail(state,call.borrow(),Error::Checksum); }
             begin_body(state,32768);
         }
-        if (state.phase == BODY) {
+        if (((match (state.phase.state()) { DecodingState::Body -> true, _ -> false }))) {
             let space: i32 = output.length-call.written;
             let allowance: u64 = (state.limits.max_output as u64)-state.written_total;
             if ((space as u64) > allowance) { space = allowance as i32; }
@@ -564,41 +936,41 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
                 if (state.written_total == state.limits.max_output as u64) { return fail(state,call.borrow(),Error::OutputLimit); }
                 return progress(call.borrow(),ext::inflate::Status::NeedOutput);
             }
-            if (state.kind == 0) { state.completed_members += 1; state.phase = AWAIT_END; }
-            if (state.kind == 1) { clear_field(state,ZLIB_TRAILER); }
-            if (state.kind == 2) { clear_field(state,GZIP_TRAILER); }
+            if (state.kind == 0) { state.completed_members += 1; state.phase.step(DecodingEvent::StreamRead); }
+            if (state.kind == 1) { clear_field(state,DecodingEvent::ZlibBodyRead); }
+            if (state.kind == 2) { clear_field(state,DecodingEvent::GzipBodyRead); }
         }
-        if (state.phase == ZLIB_TRAILER) {
+        if (((match (state.phase.state()) { DecodingState::ZlibTrailer -> true, _ -> false }))) {
             while (state.field_count < 4) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 state.field = (state.field << 8) | (take_byte(state,call.borrow()) as u64); state.field_count += 1;
             }
             if (state.field != state.checksum as u64) { return fail(state,call.borrow(),Error::Checksum); }
-            state.completed_members += 1; state.phase = AWAIT_END;
+            state.completed_members += 1; state.phase.step(DecodingEvent::StreamRead);
         }
-        if (state.phase == GZIP_TRAILER) {
+        if (((match (state.phase.state()) { DecodingState::GzipTrailer -> true, _ -> false }))) {
             while (state.field_count < 8) {
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
                 state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
             }
             if ((state.field & 4294967295) != core::crc32::finish(state.checksum) as u64) { return fail(state,call.borrow(),Error::Checksum); }
             if ((state.field >> 32) != state.member_size as u64) { return fail(state,call.borrow(),Error::SizeMismatch); }
-            state.completed_members += 1; state.phase = BETWEEN_MEMBERS;
+            state.completed_members += 1; state.phase.step(DecodingEvent::MemberRead);
         }
-        if (state.phase == AWAIT_END) {
+        if (((match (state.phase.state()) { DecodingState::AwaitEnd -> true, _ -> false }))) {
             if (call.read < input.length) { return fail(state,call.borrow(),Error::TrailingData); }
-            if (final_input) { state.phase = FINISHED; return progress(call.borrow(),ext::inflate::Status::Done); }
+            if (final_input) { state.phase.step(DecodingEvent::Finished); return progress(call.borrow(),ext::inflate::Status::Done); }
             return progress(call.borrow(),ext::inflate::Status::NeedInput);
         }
-        if (state.phase == BETWEEN_MEMBERS) {
+        if (((match (state.phase.state()) { DecodingState::BetweenMembers -> true, _ -> false }))) {
             if (call.read == input.length) {
-                if (final_input) { state.phase = FINISHED; return progress(call.borrow(),ext::inflate::Status::Done); }
+                if (final_input) { state.phase.step(DecodingEvent::Finished); return progress(call.borrow(),ext::inflate::Status::Done); }
                 return progress(call.borrow(),ext::inflate::Status::NeedInput);
             }
             if (byte(input,call.read) != 31) { return fail(state,call.borrow(),Error::TrailingData); }
             let value: u8 = take_byte(state,call.borrow());
             state.header_crc = core::crc32::update_byte(core::crc32::INITIAL,value);
-            state.field = value as u64; state.field_count = 1; state.phase = GZIP_PREFIX;
+            state.field = value as u64; state.field_count = 1; state.phase.step(DecodingEvent::MemberStarted);
         }
     }
     return progress(call.borrow(),ext::inflate::Status::Done);
@@ -610,8 +982,8 @@ pub impl Decoder {
     pub fn total_read(&self) -> u64 { return self.read_total; }
     pub fn total_written(&self) -> u64 { return self.written_total; }
     pub fn members(&self) -> i32 { return self.completed_members; }
-    pub fn is_done(&self) -> bool { return self.phase == FINISHED; }
-    pub fn is_failed(&self) -> bool { return self.phase == FAILED; }
+    pub fn is_done(&self) -> bool { return ((match (self.phase.state()) { DecodingState::Finished -> true, _ -> false })); }
+    pub fn is_failed(&self) -> bool { return ((match (self.phase.state()) { DecodingState::Failed -> true, _ -> false })); }
     pub fn reset(&self, format: Format, limits: Limits) -> core::result::Result<bool,Error> {
         if (!valid_limits(limits)) { return core::result::Err(Error::Bounds); }
         let reset: core::result::Result<bool,ext::inflate::Error> = self.raw.reset(32768);

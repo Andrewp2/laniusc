@@ -1,6 +1,8 @@
 // Three-way merge (diff3 algorithm) with git-style conflict refinement and
 // merge/diff3 conflict markers. See docs/extended-merge3.md.
 module ext::merge3;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::slice;
 import core::option;
@@ -235,16 +237,16 @@ fn m3_simplify(a: core::slice::View<ext::seqdiff::Line>, text: core::slice::View
         let c: Chunk = src[i];
         if (c.kind != 4) { ok = m3_push(out.borrow(), c); i += 1; }
         else {
-            let merging: bool = true;
-            while (merging) {
+            let merging_phase = core::iter_state::finished_completion();
+            while (merging_phase.is_done()) {
                 let j: i32 = i + 1; while (j < total && (src[j].kind == 0 || src[j].kind == 5)) { j += 1; }
-                merging = false;
+                merging_phase = core::iter_state::completion_start();
                 if (j < total && src[j].kind == 4) {
                     let gap0: i32 = c.a1; let gap1: i32 = src[j].a0;
                     let plain: bool = false;
                     if (gap1 - gap0 > 3 && alnum) { if (by_text) { plain = !m3_text_alnum(text, st, gap0, gap1); } else { plain = !m3_has_alnum(a, gap0, gap1); } }
                     if (gap1 - gap0 <= 3 || plain) {
-                        let n: Chunk = src[j]; c.a1 = n.a1; c.b1 = n.b1; c.o1 = n.o1; i = j; merging = true;
+                        let n: Chunk = src[j]; c.a1 = n.a1; c.b1 = n.b1; c.o1 = n.o1; i = j; merging_phase.finish();
                     }
                 }
             }
@@ -306,17 +308,17 @@ pub impl Merge {
     pub fn destroy(&self) { self.chunks.destroy(); self.chunks = alloc::vec::new(); self.conflicts = 0; }
 }
 
-struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, failed: bool, full: bool }
+struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, health: core::lifecycle::Health, full: bool }
 impl Out { fn borrow(&self) -> &Out { return self; } }
 fn m3_bytes(o: &Out, v: core::slice::View<u8>) {
-    if (o.failed) { return; }
-    if (v.length > o.limit - o.bytes.len()) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_extend(v))) { o.failed = true; }
+    if (o.health.is_failed()) { return; }
+    if (v.length > o.limit - o.bytes.len()) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_extend(v))) { o.health.fail(); }
 }
 fn m3_byte(o: &Out, byte: u8) {
-    if (o.failed) { return; }
-    if (o.bytes.len() >= o.limit) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_push(byte))) { o.failed = true; }
+    if (o.health.is_failed()) { return; }
+    if (o.bytes.len() >= o.limit) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_push(byte))) { o.health.fail(); }
 }
 fn m3_lines(o: &Out, lines: core::slice::View<ext::seqdiff::Line>, x0: i32, x1: i32, terminate: bool) {
     let i: i32 = x0; while (i < x1) { m3_bytes(o, lines.values[lines.start+i].bytes); i += 1; }
@@ -333,9 +335,9 @@ fn m3_marker(o: &Out, byte: u8, label: core::slice::View<u8>) {
 pub fn write_merge(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, m: &Merge, labels: Labels, format: Format) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
     if (format.max_output < 0) { return core::result::Err(Error::InvalidOptions); }
     let diff3: bool = match (format.style) { Style::Diff3 -> true, Style::Merge -> false };
-    let out: Out = Out { bytes: alloc::vec::new(), limit: format.max_output, failed: false, full: false };
+    let out: Out = Out { bytes: alloc::vec::new(), limit: format.max_output, health: core::lifecycle::health_start(), full: false };
     let i: i32 = 0;
-    while (i < m.chunks.len() && !out.failed) {
+    while (i < m.chunks.len() && !out.health.is_failed()) {
         let c: Chunk = m.chunks.as_slice()[i];
         if (c.a0 < 0 || c.a1 > a.length || c.b0 < 0 || c.b1 > b.length || c.o0 < 0 || c.o1 > o.length) { out.bytes.destroy(); return core::result::Err(Error::Bounds); }
         if (c.kind == 2) { m3_lines(out.borrow(), b, c.b0, c.b1, false); }
@@ -351,7 +353,7 @@ pub fn write_merge(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::Vie
         } else { m3_lines(out.borrow(), a, c.a0, c.a1, false); } } }
         i += 1;
     }
-    if (out.failed) { out.bytes.destroy(); if (out.full) { return core::result::Err(Error::OutputLimit); } return core::result::Err(Error::AllocationFailed); }
+    if (out.health.is_failed()) { out.bytes.destroy(); if (out.full) { return core::result::Err(Error::OutputLimit); } return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(out.bytes);
 }
 

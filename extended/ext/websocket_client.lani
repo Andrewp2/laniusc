@@ -4,6 +4,8 @@
 // rules come from ext::websocket's frame code, with the client role. Every
 // outgoing frame is masked with a fresh key from the OS random source.
 module ext::websocket_client;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -50,9 +52,9 @@ pub struct Options {
 // One manual owner; destroy it once.
 pub struct Client {
     conn: ext::http_agent::Connection, wire: ext::websocket::Connection, options: Options,
-    input: alloc::vec::Vec<u8>, start: i32, filled: i32, eof: bool,
+    input: alloc::vec::Vec<u8>, start: i32, filled: i32, eof_completion: core::iter_state::Completion,
     masks: alloc::vec::Vec<u8>, used: i32, protocol: alloc::vec::Vec<u8>, selected: bool,
-    peer_code: i32, active: bool, open: bool,
+    peer_code: i32, lifetime: core::lifecycle::Lifetime, connection_lifetime: core::lifecycle::Lifetime,
     codec: core::option::Option<ext::ws_deflate::Codec>, inflated: alloc::vec::Vec<u8>, packed: alloc::vec::Vec<u8>,
     // A fragmented send is open (sending: its opcode, 0 when none), and
     // UTF-8 state for compressed text, checked before compression.
@@ -205,8 +207,8 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     }
     let head: i32 = response.head.raw.len(); request.destroy();
     let w: ext::websocket::Connection = wire.unwrap(); if (codec.is_some()) { w.enable_compression(); }
-    return core::result::Ok(Client { conn: conn, wire: w, options: options, input: input, start: head, filled: filled, eof: false,
-        masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, active: true, open: true,
+    return core::result::Ok(Client { conn: conn, wire: w, options: options, input: input, start: head, filled: filled, eof_completion: core::iter_state::completion_start(),
+        masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, lifetime: core::lifecycle::lifetime_start(), connection_lifetime: core::lifecycle::lifetime_start(),
         codec: codec, inflated: alloc::vec::new<u8>(), packed: alloc::vec::new<u8>(), sending: 0, text: ext::websocket::text_check() });
 }
 
@@ -217,7 +219,7 @@ pub impl Client {
         if (!self.selected) { return core::option::None(); } return core::option::Some(self.protocol.as_view());
     }
     // Open: neither side has started the close handshake and nothing failed.
-    pub fn is_open(&self) -> bool { return self.active && self.open && !self.wire.close_sent() && !self.wire.close_received(); }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active() && self.connection_lifetime.is_active() && !self.wire.close_sent() && !self.wire.close_received(); }
     pub fn is_secure(&self) -> bool { return self.conn.is_secure(); }
     // The code from the peer's Close (-1 if none or no code).
     pub fn peer_close_code(&self) -> i32 { return self.peer_code; }
@@ -232,10 +234,10 @@ pub impl Client {
         self.used += 4; return core::result::Ok(key);
     }
     // Stop using the transport. graceful sends TLS close_notify first.
-    fn drop_transport(&self, graceful: bool) { if (self.open) { self.open = false; self.conn.close(graceful); } }
+    fn drop_transport(&self, graceful: bool) { if (self.connection_lifetime.is_active()) { self.connection_lifetime.release(); self.conn.close(graceful); } }
     fn transmit(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit_with(fin,opcode,payload,false); }
     fn transmit_with(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, compressed: bool) -> core::result::Result<i32,Error> {
-        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active() || !self.connection_lifetime.is_active()) { return core::result::Err(Error::Closed); }
         let key: core::result::Result<[u8;4],Error> = self.mask(); if (key.is_err()) { return core::result::Err(key.unwrap_err()); }
         let framed: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = core::result::Err(ext::websocket::Error::Failed);
         if (compressed) { framed = self.wire.send_compressed(fin,opcode,payload,key.unwrap()); } else { framed = self.wire.send(fin,opcode,payload,key.unwrap()); }
@@ -261,7 +263,7 @@ pub impl Client {
     pub fn compressed(&self) -> bool { return self.codec.is_some(); }
     fn send_message(&self, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         if (self.codec.is_none()) { return self.transmit(true,opcode,data); }
-        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active() || !self.connection_lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (self.sending != 0) { return core::result::Err(Error::InvalidRequest); }
         let c: ext::ws_deflate::Codec = self.codec.unwrap();
         // Text is checked before it enters the compression context.
@@ -309,7 +311,7 @@ pub impl Client {
             if (plain.is_ok()) { if (opcode != 0) { self.sending = opcode; } if (fin) { self.sending = 0; } }
             return plain;
         }
-        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active() || !self.connection_lifetime.is_active()) { return core::result::Err(Error::Closed); }
         let first: bool = opcode != 0; let kind: i32 = opcode; if (!first) { kind = self.sending; }
         if (first) { self.text = ext::websocket::text_check(); }
         if (kind == 1 && (!self.text.feed(data) || (fin && !self.text.complete()))) {
@@ -332,21 +334,21 @@ pub impl Client {
     // After both Close frames: wait up to close_ms for the server to close the
     // transport, as RFC 6455 asks of clients, then close it.
     fn finish(&self) {
-        if (!self.open) { return; }
+        if (!self.connection_lifetime.is_active()) { return; }
         let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.close_ms);
         let rounds: i32 = 0;
-        while (deadline.is_ok() && !self.eof && rounds < 64) {
+        while (deadline.is_ok() && !self.eof_completion.is_done() && rounds < 64) {
             rounds += 1; self.start = 0; self.filled = 0;
             if (!grow(self.input.borrow(),0,READ_BYTES * 2)) { break; }
             let got: core::result::Result<i32,ext::http_agent::Error> = self.conn.receive(part(self.input.as_view(),0,self.input.len()),deadline.unwrap());
-            if (got.is_err() || got.unwrap() == 0) { self.eof = true; }
+            if (got.is_err() || got.unwrap() == 0) { self.eof_completion.finish(); }
         }
         self.drop_transport(true);
     }
     // The connection failed: send the matching Close if possible, then close.
     fn fail(&self, e: ext::websocket::Error) -> Error {
         let code: i32 = match(e) { ext::websocket::Error::InvalidUtf8(n) -> 1007, ext::websocket::Error::Limit(n) -> 1009, ext::websocket::Error::AllocationFailed -> 1011, _ -> 1002 };
-        if (self.open && !self.wire.close_sent()) {
+        if (self.connection_lifetime.is_active() && !self.wire.close_sent()) {
             let payload: [u8;2] = [(code >> 8) as u8,(code & 255) as u8];
             self.transmit(true,8,core::slice::view<u8>(payload,2).unwrap());
         }
@@ -358,7 +360,7 @@ pub impl Client {
     // transport is closed, and Close is returned. Timeout leaves the client
     // usable.
     pub fn receive(&self, timeout_ms: i32) -> core::result::Result<Message,Error> {
-        if (!self.active) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (self.wire.close_received()) { return core::result::Err(Error::Closed); }
         let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(timeout_ms);
         if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
@@ -402,12 +404,12 @@ pub impl Client {
                     continue;
                 }
             }
-            if (self.eof) {
+            if (self.eof_completion.is_done()) {
                 let ended: core::result::Result<i32,ext::websocket::Error> = self.wire.finish_receive();
                 self.drop_transport(false);
                 if (ended.is_err()) { return core::result::Err(Error::Eof); } return core::result::Err(Error::Closed);
             }
-            if (!self.open) { return core::result::Err(Error::Closed); }
+            if (!self.connection_lifetime.is_active()) { return core::result::Err(Error::Closed); }
             // Compact, then read more.
             if (self.start > 0) {
                 let all: core::slice::View<u8> = self.input.as_view(); let n: i32 = self.filled - self.start; let k: i32 = 0;
@@ -420,12 +422,12 @@ pub impl Client {
             if (got.is_err()) {
                 let e: ext::http_agent::Error = got.unwrap_err();
                 let ended: bool = match(e) { ext::http_agent::Error::Truncated(n) -> true, _ -> false };
-                if (ended) { self.eof = true; continue; }
+                if (ended) { self.eof_completion.finish(); continue; }
                 let late: bool = match(e) { ext::http_agent::Error::Timeout -> true, _ -> false };
                 if (late) { return core::result::Err(Error::Timeout); }
                 self.drop_transport(false); return core::result::Err(Error::Io(e));
             }
-            if (got.unwrap() == 0) { self.eof = true; } else { self.filled += got.unwrap(); }
+            if (got.unwrap() == 0) { self.eof_completion.finish(); } else { self.filled += got.unwrap(); }
         }
         return core::result::Err(Error::Closed);
     }
@@ -434,7 +436,7 @@ pub impl Client {
     // UTF-8 reason, then wait up to close_ms for the peer's Close, answering
     // Pings and discarding data. Returns the peer's close code.
     pub fn close(&self, code: i32, reason: core::slice::View<u8>) -> core::result::Result<i32,Error> {
-        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (!self.lifetime.is_active() || !self.connection_lifetime.is_active()) { return core::result::Err(Error::Closed); }
         if (code >= 0 && reason.len() > 123) { return core::result::Err(Error::InvalidRequest); }
         let payload: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
         if (code >= 0) {
@@ -454,7 +456,7 @@ pub impl Client {
     }
     // Release everything; an open transport is closed without a Close frame.
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; } self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.lifetime.release();
         self.drop_transport(false); self.wire.destroy(); self.input.destroy(); self.masks.destroy(); self.protocol.destroy();
         if (self.codec.is_some()) { let c: ext::ws_deflate::Codec = self.codec.unwrap(); c.destroy(); self.codec = core::option::None(); }
         self.inflated.destroy(); self.packed.destroy();

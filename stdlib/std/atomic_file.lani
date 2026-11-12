@@ -2,6 +2,7 @@
 // Manual owner; one active copy, cooperative parent namespace, no hidden retry
 // of rename/close and no rollback after publication. See stdlib-atomic-files.md.
 module std::atomic_file;
+import core::iter_state;
 import alloc::vec;
 import core::io;
 import core::option;
@@ -11,16 +12,92 @@ import core::slice;
 import std::file;
 import std::file_ops;
 import std::temp_file;
+import std::temp_lifecycle;
+
+pub enum PublicationEvent { Renamed, RenameFailed(Visibility), Reset }
+pub machine Publication on PublicationEvent {
+    start NotPublished;
+    state NotPublished {
+        PublicationEvent::Renamed -> goto Published,
+        PublicationEvent::RenameFailed(visibility) -> { if (match(visibility) { Visibility::Unconfirmed -> true, _ -> false }) { goto Unconfirmed; } stay; },
+        PublicationEvent::Reset -> stay,
+    }
+    state Published { PublicationEvent::Renamed -> stay, PublicationEvent::RenameFailed(_) -> stay, PublicationEvent::Reset -> goto NotPublished, }
+    state Unconfirmed { PublicationEvent::Renamed -> goto Published, PublicationEvent::RenameFailed(_) -> stay, PublicationEvent::Reset -> goto NotPublished, }
+}
+pub impl Publication {
+    pub fn visibility(&self) -> Visibility { return match(self.state()) { PublicationState::NotPublished -> Visibility::NotPublished, PublicationState::Published -> Visibility::Published, PublicationState::Unconfirmed -> Visibility::Unconfirmed }; }
+}
+
 
 pub struct Options { temporary:std::temp_file::Limits, policy:std::file_ops::RenamePolicy, max_bytes:u64, write_calls:u64, directory_sync_calls:u64 }
-pub enum State { Inactive, Writing, Failed, Published, Kept, Released }
+pub enum LifecycleEvent { Prepare, Created, Failed, Published, Kept, Released }
+
+pub machine Lifecycle on LifecycleEvent {
+    start Inactive;
+
+    state Inactive {
+        LifecycleEvent::Prepare -> stay,
+        LifecycleEvent::Created -> stay,
+        LifecycleEvent::Failed -> goto Failed,
+        LifecycleEvent::Published -> stay,
+        LifecycleEvent::Kept -> stay,
+        LifecycleEvent::Released -> goto Released,
+    }
+
+    state Writing {
+        LifecycleEvent::Prepare -> stay,
+        LifecycleEvent::Created -> stay,
+        LifecycleEvent::Failed -> goto Failed,
+        LifecycleEvent::Published -> goto Published,
+        LifecycleEvent::Kept -> goto Kept,
+        LifecycleEvent::Released -> goto Released,
+    }
+
+    state Failed {
+        LifecycleEvent::Prepare -> stay,
+        LifecycleEvent::Created -> goto Writing,
+        LifecycleEvent::Failed -> stay,
+        LifecycleEvent::Published -> goto Published,
+        LifecycleEvent::Kept -> goto Kept,
+        LifecycleEvent::Released -> goto Released,
+    }
+
+    state Published {
+        LifecycleEvent::Prepare -> stay,
+        LifecycleEvent::Created -> stay,
+        LifecycleEvent::Failed -> stay,
+        LifecycleEvent::Published -> stay,
+        LifecycleEvent::Kept -> stay,
+        LifecycleEvent::Released -> goto Released,
+    }
+
+    state Kept {
+        LifecycleEvent::Prepare -> stay,
+        LifecycleEvent::Created -> stay,
+        LifecycleEvent::Failed -> goto Failed,
+        LifecycleEvent::Published -> stay,
+        LifecycleEvent::Kept -> stay,
+        LifecycleEvent::Released -> goto Released,
+    }
+
+    state Released {
+        LifecycleEvent::Prepare -> goto Inactive,
+        LifecycleEvent::Created -> stay,
+        LifecycleEvent::Failed -> stay,
+        LifecycleEvent::Published -> stay,
+        LifecycleEvent::Kept -> stay,
+        LifecycleEvent::Released -> stay,
+    }
+}
+
 pub enum Visibility { NotPublished, Published, Unconfirmed }
 pub enum Stage { Validate, Allocate, Create, Write, SyncFile, CloseFile, Rename, Disarm, SyncDirectory, Cleanup, Keep }
 pub enum Error { InvalidState, InvalidOptions, InvalidDestination, AllocationFailed, Bounds, ByteLimit, WriteLimit, DirectorySyncLimit, NoProgress, InvalidCount, Io(core::io::Error), Temporary(std::temp_file::Failure), Ownership(std::temp_file::Error) }
 pub struct Stats { bytes:u64, writes:u64, file_syncs:u64, renames:u64, directory_syncs:u64 }
 pub struct Diagnostic { stage:Stage, cause:Error, completed:u64 }
 pub struct Receipt {
-    state:State, visibility:Visibility, stats:Stats, temporary_stats:std::temp_file::Stats,
+    state:LifecycleState, visibility:Visibility, stats:Stats, temporary_stats:std::temp_file::Stats,
     file_synced:bool, directory_synced:bool, file_open:bool, directory_open:bool,
     temporary_owned:bool, retained:bool, cleanup:std::temp_file::Cleanup,
     last_error:core::option::Option<Diagnostic>
@@ -28,7 +105,7 @@ pub struct Receipt {
 pub struct Failure { stage:Stage, cause:Error, completed:u64, receipt:Receipt }
 pub struct AtomicFile {
     temporary:std::temp_file::TempFile, destination_bytes:alloc::vec::Vec<u8>, options:Options,
-    current:State, visible:Visibility, counters:Stats, file_synced:bool, directory_synced:bool,
+    lifecycle:Lifecycle, publication:Publication, counters:Stats, file_sync:core::iter_state::Completion, directory_sync:core::iter_state::Completion,
     cleanup_record:std::temp_file::Cleanup, latest_cleanup:std::temp_file::Cleanup,
     primary:core::option::Option<Diagnostic>, latest_error:core::option::Option<Diagnostic>,
     committed:core::option::Option<core::result::Result<Receipt,Failure>>
@@ -42,7 +119,7 @@ fn empty_cleanup() -> std::temp_file::Cleanup {
 }
 fn empty_stats() -> Stats { return Stats { bytes:0,writes:0,file_syncs:0,renames:0,directory_syncs:0 }; }
 pub fn empty() -> AtomicFile {
-    return AtomicFile { temporary:std::temp_file::empty(),destination_bytes:alloc::vec::new(),options:default_options(),current:State::Inactive,visible:Visibility::NotPublished,counters:empty_stats(),file_synced:false,directory_synced:false,cleanup_record:empty_cleanup(),latest_cleanup:empty_cleanup(),primary:core::option::None(),latest_error:core::option::None(),committed:core::option::None() };
+    return AtomicFile { temporary:std::temp_file::empty(),destination_bytes:alloc::vec::new(),options:default_options(),lifecycle:lifecycle_start(),publication:publication_start(),counters:empty_stats(),file_sync:core::iter_state::completion_start(),directory_sync:core::iter_state::completion_start(),cleanup_record:empty_cleanup(),latest_cleanup:empty_cleanup(),primary:core::option::None(),latest_error:core::option::None(),committed:core::option::None() };
 }
 fn valid(view:core::slice::View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
 fn component(view:core::slice::View<u8>) -> bool {
@@ -65,7 +142,7 @@ fn rename_visibility(error:core::io::Error) -> Visibility {
 
 pub impl AtomicFile {
     pub fn borrow(&self) -> &AtomicFile { return self; }
-    fn temporary_retained(&self) -> bool { return match(self.temporary.state()) { std::temp_file::State::Inactive->false,std::temp_file::State::Released->false,_ ->true }; }
+    fn temporary_retained(&self) -> bool { return match(self.temporary.state()) { std::temp_lifecycle::LifecycleState::Inactive->false,std::temp_lifecycle::LifecycleState::Released->false,_ ->true }; }
     fn retained(&self) -> bool { return self.destination_bytes.capacity()!=0 || self.temporary_retained(); }
     pub fn temporary_name(&self) -> core::slice::View<u8> { return self.temporary.name(); }
     pub fn destination(&self) -> core::slice::View<u8> { return self.destination_bytes.as_view(); }
@@ -75,7 +152,7 @@ pub impl AtomicFile {
     pub fn last_cleanup(&self) -> std::temp_file::Cleanup { return self.latest_cleanup; }
     pub fn receipt(&self) -> Receipt {
         let cleanup:std::temp_file::Cleanup=self.cleanup_record; cleanup.retained=self.temporary_retained();
-        return Receipt { state:self.current,visibility:self.visible,stats:self.counters,temporary_stats:self.temporary.stats(),file_synced:self.file_synced,directory_synced:self.directory_synced,file_open:self.temporary.file().is_open(),directory_open:self.temporary.directory().is_open(),temporary_owned:self.temporary.owns_temporary_name(),retained:self.retained(),cleanup:cleanup,last_error:self.latest_error };
+        return Receipt { state:self.lifecycle.state(),visibility:self.publication.visibility(),stats:self.counters,temporary_stats:self.temporary.stats(),file_synced:self.file_sync.is_done(),directory_synced:self.directory_sync.is_done(),file_open:self.temporary.file().is_open(),directory_open:self.temporary.directory().is_open(),temporary_owned:self.temporary.owns_temporary_name(),retained:self.retained(),cleanup:cleanup,last_error:self.latest_error };
     }
     pub fn last_failure(&self) -> core::option::Option<Failure> {
         if(core::option::is_none(self.primary)) { return core::option::None(); }
@@ -86,9 +163,9 @@ pub impl AtomicFile {
         let diagnostic:Diagnostic=Diagnostic { stage:stage,cause:cause,completed:completed }; self.latest_error=core::option::Some(diagnostic);
         if(sticky) {
             if(core::option::is_none(self.primary)) { self.primary=core::option::Some(diagnostic); }
-            let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
-            let released:bool=match(self.current) { State::Released->true,_ ->false };
-            if(!published && !released) { self.current=State::Failed; }
+            let published:bool=match(self.publication.visibility()) { Visibility::Published->true,_ ->false };
+            let released:bool=match(self.lifecycle.state()) { LifecycleState::Released->true,_ ->false };
+            if(!published && !released) { self.lifecycle.step(LifecycleEvent::Failed); }
         }
         if(core::option::is_some(self.primary)) { return core::option::unwrap(self.last_failure()); }
         return Failure { stage:stage,cause:cause,completed:completed,receipt:self.receipt() };
@@ -106,9 +183,9 @@ pub impl AtomicFile {
     }
 
     pub fn create_in(&self,parent:&std::file::File,destination:core::path::Path,options:Options) -> core::result::Result<bool,Failure> {
-        let reusable:bool=match(self.current) { State::Inactive->true,State::Released->true,_ ->false };
+        let reusable:bool=match(self.lifecycle.state()) { LifecycleState::Inactive->true,LifecycleState::Released->true,_ ->false };
         if(!reusable || self.retained()) { return core::result::Err(self.failure(Stage::Validate,Error::InvalidState,0,false)); }
-        self.temporary=std::temp_file::empty(); self.options=options; self.current=State::Inactive; self.visible=Visibility::NotPublished; self.counters=empty_stats(); self.file_synced=false; self.directory_synced=false; self.cleanup_record=empty_cleanup(); self.latest_cleanup=empty_cleanup(); self.primary=core::option::None(); self.latest_error=core::option::None(); self.committed=core::option::None();
+        self.temporary=std::temp_file::empty(); self.options=options; self.lifecycle.step(LifecycleEvent::Prepare); self.publication.step(PublicationEvent::Reset); self.counters=empty_stats(); self.file_sync=core::iter_state::completion_start(); self.directory_sync=core::iter_state::completion_start(); self.cleanup_record=empty_cleanup(); self.latest_cleanup=empty_cleanup(); self.primary=core::option::None(); self.latest_error=core::option::None(); self.committed=core::option::None();
         if(options.temporary.name_attempts==0 || options.temporary.name_attempts>std::temp_file::MAX_NAME_ATTEMPTS || options.temporary.entropy_calls==0 || options.temporary.entropy_calls>std::temp_file::MAX_ENTROPY_CALLS || options.directory_sync_calls==0) {
             return core::result::Err(self.failure(Stage::Validate,Error::InvalidOptions,0,true));
         }
@@ -116,16 +193,16 @@ pub impl AtomicFile {
         if(!component(name)) { return core::result::Err(self.failure(Stage::Validate,Error::InvalidDestination,0,true)); }
         let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(name.length);
         if(core::result::is_err(made)) { return core::result::Err(self.failure(Stage::Allocate,Error::AllocationFailed,0,true)); }
-        self.destination_bytes=core::result::unwrap(made); self.current=State::Failed;
+        self.destination_bytes=core::result::unwrap(made); self.lifecycle.step(LifecycleEvent::Failed);
         if(core::result::is_err(self.destination_bytes.try_extend(name))) { return core::result::Err(self.failure(Stage::Allocate,Error::AllocationFailed,0,true)); }
         let owned:core::path::Path=core::result::unwrap(core::path::from_view(self.destination_bytes.as_view()));
         let created=self.temporary.create_in_excluding(parent,owned,options.temporary);
         if(core::result::is_err(created)) { return core::result::Err(self.failure(Stage::Create,Error::Temporary(core::result::unwrap_err(created)),0,true)); }
-        self.current=State::Writing; self.latest_error=core::option::None(); return core::result::Ok(true);
+        self.lifecycle.step(LifecycleEvent::Created); self.latest_error=core::option::None(); return core::result::Ok(true);
     }
 
     fn validate_write(&self,input:core::slice::View<u8>) -> core::result::Result<i32,Failure> {
-        let writing:bool=match(self.current) { State::Writing->true,_ ->false };
+        let writing:bool=match(self.lifecycle.state()) { LifecycleState::Writing->true,_ ->false };
         if(!writing) { return core::result::Err(self.failure(Stage::Write,Error::InvalidState,0,false)); }
         if(!valid(input)) { return core::result::Err(self.failure(Stage::Write,Error::Bounds,0,false)); }
         if(self.counters.bytes>self.options.max_bytes || (input.length as u64)>self.options.max_bytes-self.counters.bytes) { return core::result::Err(self.failure(Stage::Write,Error::ByteLimit,0,false)); }
@@ -170,22 +247,22 @@ pub impl AtomicFile {
     }
     pub fn commit(&self) -> core::result::Result<Receipt,Failure> {
         if(core::option::is_some(self.committed)) { return core::option::unwrap(self.committed); }
-        let writing:bool=match(self.current) { State::Writing->true,_ ->false };
+        let writing:bool=match(self.lifecycle.state()) { LifecycleState::Writing->true,_ ->false };
         if(!writing) { return self.cache_failure(Stage::Validate,Error::InvalidState); }
-        self.current=State::Failed; self.counters.file_syncs+=1;
+        self.lifecycle.step(LifecycleEvent::Failed); self.counters.file_syncs+=1;
         let synced=std::file_ops::sync_all(self.temporary.file());
         if(core::result::is_err(synced)) { return self.cache_failure(Stage::SyncFile,Error::Io(core::result::unwrap_err(synced))); }
-        self.file_synced=true;
+        self.file_sync.finish();
         let closed=self.temporary.close_file(); self.merge_cleanup(self.temporary.last_cleanup());
         if(core::result::is_err(closed)) { return self.cache_failure(Stage::CloseFile,Error::Temporary(core::result::unwrap_err(closed))); }
         let from:core::path::Path=core::result::unwrap(core::path::from_view(self.temporary.name()));
         let to:core::path::Path=core::result::unwrap(core::path::from_view(self.destination_bytes.as_view()));
         let directory:i32=core::option::unwrap(self.temporary.directory().raw_handle()); self.counters.renames+=1;
         let renamed=std::file_ops::rename_at(directory,from,directory,to,self.options.policy);
-        if(core::result::is_err(renamed)) { let error:core::io::Error=core::result::unwrap_err(renamed); self.visible=rename_visibility(error); return self.cache_failure(Stage::Rename,Error::Io(error)); }
+        if(core::result::is_err(renamed)) { let error:core::io::Error=core::result::unwrap_err(renamed); self.publication.step(PublicationEvent::RenameFailed(rename_visibility(error))); return self.cache_failure(Stage::Rename,Error::Io(error)); }
         // Pure local transitions precede the next syscall. No destination name
         // is ever adopted as a temporary deletion target.
-        self.visible=Visibility::Published; self.current=State::Published;
+        self.publication.step(PublicationEvent::Renamed); self.lifecycle.step(LifecycleEvent::Published);
         let disarmed=self.temporary.keep();
         if(core::result::is_err(disarmed)) { return self.cache_failure(Stage::Disarm,Error::Ownership(core::result::unwrap_err(disarmed))); }
         self.latest_error=core::option::None();
@@ -196,29 +273,29 @@ pub impl AtomicFile {
         if(self.counters.directory_syncs==self.options.directory_sync_calls) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::DirectorySyncLimit,0,true)); }
         self.counters.directory_syncs+=1; let synced=std::file_ops::sync_all(self.temporary.directory());
         if(core::result::is_err(synced)) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::Io(core::result::unwrap_err(synced)),0,true)); }
-        self.directory_synced=true; self.latest_error=core::option::None(); return self.cleanup();
+        self.directory_sync.finish(); self.latest_error=core::option::None(); return self.cleanup();
     }
     pub fn retry_directory_sync(&self) -> core::result::Result<Receipt,Failure> {
-        let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
+        let published:bool=match(self.publication.visibility()) { Visibility::Published->true,_ ->false };
         if(!published) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::InvalidState,0,false)); }
-        if(self.directory_synced) { self.latest_error=core::option::None(); return core::result::Ok(self.receipt()); }
+        if(self.directory_sync.is_done()) { self.latest_error=core::option::None(); return core::result::Ok(self.receipt()); }
         if(!self.temporary.directory().is_open()) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::InvalidState,0,false)); }
         return self.sync_directory();
     }
     pub fn keep(&self) -> core::result::Result<bool,Failure> {
-        let kept:bool=match(self.current) { State::Kept->true,_ ->false }; if(kept) { self.latest_error=core::option::None(); return core::result::Ok(false); }
+        let kept:bool=match(self.lifecycle.state()) { LifecycleState::Kept->true,_ ->false }; if(kept) { self.latest_error=core::option::None(); return core::result::Ok(false); }
         if(!self.temporary.owns_temporary_name()) { return core::result::Err(self.failure(Stage::Keep,Error::InvalidState,0,false)); }
         let result=self.temporary.keep();
         if(core::result::is_err(result)) { return core::result::Err(self.failure(Stage::Keep,Error::Ownership(core::result::unwrap_err(result)),0,true)); }
-        self.current=State::Kept; self.latest_error=core::option::None(); return core::result::Ok(core::result::unwrap(result));
+        self.lifecycle.step(LifecycleEvent::Kept); self.latest_error=core::option::None(); return core::result::Ok(core::result::unwrap(result));
     }
     pub fn cleanup(&self) -> core::result::Result<Receipt,Failure> {
         let cleaned=self.temporary.cleanup();
         let latest:std::temp_file::Cleanup=self.temporary.last_cleanup(); self.merge_cleanup(latest);
-        if(!latest.retained) { self.destination_bytes.destroy(); self.current=State::Released; }
+        if(!latest.retained) { self.destination_bytes.destroy(); self.lifecycle.step(LifecycleEvent::Released); }
         else {
-            let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
-            if(!published) { self.current=State::Failed; }
+            let published:bool=match(self.publication.visibility()) { Visibility::Published->true,_ ->false };
+            if(!published) { self.lifecycle.step(LifecycleEvent::Failed); }
         }
         if(core::result::is_err(cleaned)) { return core::result::Err(self.failure(Stage::Cleanup,Error::Temporary(core::result::unwrap_err(cleaned)),0,true)); }
         self.latest_error=core::option::None(); return core::result::Ok(self.receipt());

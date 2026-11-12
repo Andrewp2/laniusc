@@ -4,6 +4,8 @@
 // Number spellings are written exactly as the tree keeps them.
 // See docs/extended-toml-writer.md.
 module ext::toml_writer;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::result;
@@ -61,14 +63,14 @@ fn fits_i64(t: core::text::Text) -> bool {
     return true;
 }
 
-struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, top: i32, ok: bool, error: Error }
+struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, top: i32, health: core::lifecycle::Health, error: Error }
 
 impl Emitter {
     fn borrow(&self) -> &Emitter { return self; }
-    fn fail(&self, kind: ErrorKind, node: i32) { if (self.ok) { self.ok = false; self.error = Error { kind: kind, node: node }; } }
-    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); } }
+    fn fail(&self, kind: ErrorKind, node: i32) { if ((!self.health.is_failed())) { self.health.fail(); self.error = Error { kind: kind, node: node }; } }
+    fn byte(&self, value: u8) { if ((!self.health.is_failed()) && self.out.try_push(value).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); } }
     fn run(&self, bytes: [u8], start: i32, length: i32) {
-        if (length > 0 && self.ok && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); }
+        if (length > 0 && (!self.health.is_failed()) && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); }
     }
     fn text(&self, t: core::text::Text) { self.run(t.bytes, t.start, t.length); }
     fn word(&self, value: str, count: i32) { self.text(lit(value, count)); }
@@ -126,12 +128,12 @@ impl Emitter {
         }
         if (code == 4) { self.basic(tree.text(node)); return; }
         if (code == 5) { self.byte(91); } else { self.byte(123); }
-        let child: i32 = tree.first_child(node); let first: bool = true;
-        while (child >= 0 && self.ok) {
-            if (!first) { self.word(", ", 2); }
+        let child: i32 = tree.first_child(node); let first_phase = core::iter_state::finished_completion();
+        while (child >= 0 && (!self.health.is_failed())) {
+            if (!first_phase.is_done()) { self.word(", ", 2); }
             if (code == 6) { self.key(tree.key(child)); self.word(" = ", 3); }
             self.inline(child);
-            first = false; child = tree.next_sibling(child);
+            first_phase = core::iter_state::completion_start(); child = tree.next_sibling(child);
         }
         if (code == 5) { self.byte(93); } else { self.byte(125); }
     }
@@ -146,19 +148,19 @@ impl Emitter {
             self.byte(10);
         }
         let child: i32 = tree.first_child(node);
-        while (child >= 0 && self.ok) {
+        while (child >= 0 && (!self.health.is_failed())) {
             if (tree.code(child) != 6 && !self.table_array(child)) {
                 self.key(tree.key(child)); self.word(" = ", 3); self.inline(child); self.byte(10);
             }
             child = tree.next_sibling(child);
         }
         child = tree.first_child(node);
-        while (child >= 0 && self.ok) {
+        while (child >= 0 && (!self.health.is_failed())) {
             if (tree.code(child) == 6) { self.table(child, 1); }
             else {
                 if (self.table_array(child)) {
                     let element: i32 = tree.first_child(child);
-                    while (element >= 0 && self.ok) { self.table(element, 2); element = tree.next_sibling(element); }
+                    while (element >= 0 && (!self.health.is_failed())) { self.table(element, 2); element = tree.next_sibling(element); }
                 }
             }
             child = tree.next_sibling(child);
@@ -171,8 +173,8 @@ impl Emitter {
 pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
     if (tree.code(node) != 6) { return core::result::Err(Error { kind: ErrorKind::NotTable, node: node }); }
     let before: i32 = out.len();
-    let emitter: Emitter = Emitter { tree: tree, out: out, top: node, ok: true, error: Error { kind: ErrorKind::AllocationFailed, node: -1 } };
+    let emitter: Emitter = Emitter { tree: tree, out: out, top: node, health: core::lifecycle::health_start(), error: Error { kind: ErrorKind::AllocationFailed, node: -1 } };
     emitter.table(node, 0);
-    if (!emitter.ok) { return core::result::Err(emitter.error); }
+    if (!(!emitter.health.is_failed())) { return core::result::Err(emitter.error); }
     return core::result::Ok(out.len() - before);
 }

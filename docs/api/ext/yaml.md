@@ -14,26 +14,60 @@ YAML 1.2 reader into ext::json_tree with the core schema: block and flow collect
 
 - [extended-yaml](../../extended-yaml.md)
 
-Declaration counts: enum: 1; field: 7; function: 4; struct: 2; variant: 15.
+Declaration counts: enum: 2; field: 7; function: 4; impl: 1; machine: 1; method: 2; struct: 2; variant: 17.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/yaml.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/yaml.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/yaml.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/yaml.lani#L8)
-- [core::text](../core/text.md) · [source](../../../extended/ext/yaml.lani#L9)
-- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/yaml.lani#L10)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/yaml.lani#L5)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/yaml.lani#L6)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/yaml.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/yaml.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/yaml.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/yaml.lani#L10)
+- [core::text](../core/text.md) · [source](../../../extended/ext/yaml.lani#L11)
+- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/yaml.lani#L12)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: KeyContextEvent
+
+[Source line 14](../../../extended/ext/yaml.lani#L14)
+
+```lanius
+pub enum KeyContextEvent
+```
+
+#### variant: Allowed
+
+[Source line 14](../../../extended/ext/yaml.lani#L14)
+
+```lanius
+Allowed
+```
+
+#### variant: Forbidden
+
+[Source line 14](../../../extended/ext/yaml.lani#L14)
+
+```lanius
+Forbidden
+```
+
+### machine: KeyContext
+
+[Source line 15](../../../extended/ext/yaml.lani#L15)
+
+```lanius
+pub machine KeyContext on KeyContextEvent
+```
+
 ### enum: ErrorKind
 
-[Source line 12](../../../extended/ext/yaml.lani#L12)
+[Source line 26](../../../extended/ext/yaml.lani#L26)
 
 ```lanius
 pub enum ErrorKind
@@ -41,7 +75,7 @@ pub enum ErrorKind
 
 #### variant: Syntax
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 Syntax
@@ -49,7 +83,7 @@ Syntax
 
 #### variant: InvalidCharacter
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 InvalidCharacter
@@ -57,7 +91,7 @@ InvalidCharacter
 
 #### variant: InvalidEscape
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 InvalidEscape
@@ -65,7 +99,7 @@ InvalidEscape
 
 #### variant: Unsupported
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 Unsupported
@@ -73,7 +107,7 @@ Unsupported
 
 #### variant: UnknownAlias
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 UnknownAlias
@@ -81,7 +115,7 @@ UnknownAlias
 
 #### variant: RecursiveAlias
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 RecursiveAlias
@@ -89,7 +123,7 @@ RecursiveAlias
 
 #### variant: AliasLimit
 
-[Source line 13](../../../extended/ext/yaml.lani#L13)
+[Source line 27](../../../extended/ext/yaml.lani#L27)
 
 ```lanius
 AliasLimit
@@ -97,7 +131,7 @@ AliasLimit
 
 #### variant: DuplicateKey
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 DuplicateKey
@@ -105,7 +139,7 @@ DuplicateKey
 
 #### variant: NonScalarKey
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 NonScalarKey
@@ -113,7 +147,7 @@ NonScalarKey
 
 #### variant: NonFinite
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 NonFinite
@@ -121,7 +155,7 @@ NonFinite
 
 #### variant: InvalidTag
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 InvalidTag
@@ -129,7 +163,7 @@ InvalidTag
 
 #### variant: MultipleDocuments
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 MultipleDocuments
@@ -137,7 +171,7 @@ MultipleDocuments
 
 #### variant: DepthLimit
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 DepthLimit
@@ -145,7 +179,7 @@ DepthLimit
 
 #### variant: NodeLimit
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 NodeLimit
@@ -153,7 +187,7 @@ NodeLimit
 
 #### variant: AllocationFailed
 
-[Source line 14](../../../extended/ext/yaml.lani#L14)
+[Source line 28](../../../extended/ext/yaml.lani#L28)
 
 ```lanius
 AllocationFailed
@@ -161,7 +195,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 18](../../../extended/ext/yaml.lani#L18)
+[Source line 32](../../../extended/ext/yaml.lani#L32)
 
 ```lanius
 pub struct Error
@@ -169,7 +203,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 18](../../../extended/ext/yaml.lani#L18)
+[Source line 32](../../../extended/ext/yaml.lani#L32)
 
 ```lanius
 kind: ErrorKind
@@ -177,7 +211,7 @@ kind: ErrorKind
 
 #### field: line
 
-[Source line 18](../../../extended/ext/yaml.lani#L18)
+[Source line 32](../../../extended/ext/yaml.lani#L32)
 
 ```lanius
 line: i32
@@ -185,7 +219,7 @@ line: i32
 
 #### field: column
 
-[Source line 18](../../../extended/ext/yaml.lani#L18)
+[Source line 32](../../../extended/ext/yaml.lani#L32)
 
 ```lanius
 column: i32
@@ -193,7 +227,7 @@ column: i32
 
 #### field: offset
 
-[Source line 18](../../../extended/ext/yaml.lani#L18)
+[Source line 32](../../../extended/ext/yaml.lani#L32)
 
 ```lanius
 offset: i32
@@ -201,7 +235,7 @@ offset: i32
 
 ### struct: Limits
 
-[Source line 21](../../../extended/ext/yaml.lani#L21)
+[Source line 35](../../../extended/ext/yaml.lani#L35)
 
 ```lanius
 pub struct Limits
@@ -209,7 +243,7 @@ pub struct Limits
 
 #### field: max_depth
 
-[Source line 21](../../../extended/ext/yaml.lani#L21)
+[Source line 35](../../../extended/ext/yaml.lani#L35)
 
 ```lanius
 max_depth: i32
@@ -217,7 +251,7 @@ max_depth: i32
 
 #### field: max_nodes
 
-[Source line 21](../../../extended/ext/yaml.lani#L21)
+[Source line 35](../../../extended/ext/yaml.lani#L35)
 
 ```lanius
 max_nodes: i32
@@ -225,7 +259,7 @@ max_nodes: i32
 
 #### field: max_alias_nodes
 
-[Source line 21](../../../extended/ext/yaml.lani#L21)
+[Source line 35](../../../extended/ext/yaml.lani#L35)
 
 ```lanius
 max_alias_nodes: i32
@@ -235,7 +269,7 @@ max_alias_nodes: i32
 
 ### function: default_limits
 
-[Source line 22](../../../extended/ext/yaml.lani#L22)
+[Source line 36](../../../extended/ext/yaml.lani#L36)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -243,7 +277,7 @@ pub fn default_limits() -> Limits
 
 ### function: kind_name
 
-[Source line 28](../../../extended/ext/yaml.lani#L28)
+[Source line 42](../../../extended/ext/yaml.lani#L42)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -251,7 +285,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: load
 
-[Source line 1102](../../../extended/ext/yaml.lani#L1102)
+[Source line 1116](../../../extended/ext/yaml.lani#L1116)
 
 ```lanius
 pub fn load(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error>
@@ -259,8 +293,34 @@ pub fn load(source: [u8], start: i32, count: i32, limits: Limits) -> core::resul
 
 ### function: load_all
 
-[Source line 1106](../../../extended/ext/yaml.lani#L1106)
+[Source line 1120](../../../extended/ext/yaml.lani#L1120)
 
 ```lanius
 pub fn load_all(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error>
+```
+
+## Implementation blocks and public methods
+
+### impl at line 20
+
+[Source line 20](../../../extended/ext/yaml.lani#L20)
+
+```lanius
+pub impl KeyContext
+```
+
+#### method: allowed
+
+[Source line 21](../../../extended/ext/yaml.lani#L21)
+
+```lanius
+pub fn allowed(&self) -> bool
+```
+
+#### method: restrict
+
+[Source line 22](../../../extended/ext/yaml.lani#L22)
+
+```lanius
+pub fn restrict(&self, allowed: bool)
 ```

@@ -9,6 +9,7 @@
 // Linux x86_64/glibc; link with --native-link --native-library atomic.
 // See docs/stdlib-concurrency.md#parallel-sorting-map-reduce-and-scan.
 module std::par;
+import core::iter_state;
 import core::cmp;
 import core::function;
 import core::iter;
@@ -322,15 +323,15 @@ fn sort_with<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parall
     let made: core::result::Result<std::worker::Pool, std::worker::Error> = std::worker::pool(plan.workers);
     if (made.is_err()) { return core::result::Err(Error::Worker(made.unwrap_err())); }
     let pool: std::worker::Pool = made.unwrap();
-    let w: i32 = 1; let started: bool = true;
+    let w: i32 = 1; let started_phase = core::iter_state::finished_completion();
     while (w < plan.workers) {
         let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { started = false; break; }
+        if (me == -2) { started_phase = core::iter_state::completion_start(); break; }
         if (me >= 0) { std::worker::finish(crew_member(plan, me + 1, data, scratch, false)); return core::result::Err(Error::Failed); }
         w += 1;
     }
     let sorted: core::result::Result<i32, Error> = core::result::Err(Error::Failed);
-    if (started) { sorted = sort_phases(plan, data, scratch, stable, false); }
+    if (started_phase.is_done()) { sorted = sort_phases(plan, data, scratch, stable, false); }
     let stopped: core::result::Result<i32, Error> = crew_stop(plan, pool.borrow());
     if (sorted.is_err()) { return sorted; }
     if (stopped.is_err()) { return stopped; }

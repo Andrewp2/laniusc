@@ -154,7 +154,7 @@ fn main() -> i32 {
         }
         if (r.finished()) { break; }
     }
-    if (r.failed) { say(literal("text-uniq: ", 11)); say(input); say(literal(": read error\n", 13)); status = 1; }
+    if (r.health.is_failed()) { say(literal("text-uniq: ", 11)); say(input); say(literal(": read error\n", 13)); status = 1; }
     ext::text_uniq::finish(u.borrow(), out.borrow());
     if (!ext::text_lines::finish(out.borrow())) { status = 1; }
     out.destroy(); u.destroy(); r.destroy(); ext::text_lines::close_input(fd); if (ofd > 1) { ext::text_lines::close_input(ofd); }

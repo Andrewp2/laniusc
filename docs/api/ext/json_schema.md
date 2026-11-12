@@ -20,13 +20,14 @@ Declaration counts: enum: 1; field: 25; function: 3; impl: 1; method: 4; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json_schema.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_schema.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/json_schema.lani#L7)
-- [core::text](../core/text.md) · [source](../../../extended/ext/json_schema.lani#L8)
-- [ext::json_pointer](json_pointer.md) · [source](../../../extended/ext/json_schema.lani#L9)
-- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/json_schema.lani#L10)
-- [ext::regex](regex.md) · [source](../../../extended/ext/json_schema.lani#L11)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/json_schema.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json_schema.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_schema.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/json_schema.lani#L8)
+- [core::text](../core/text.md) · [source](../../../extended/ext/json_schema.lani#L9)
+- [ext::json_pointer](json_pointer.md) · [source](../../../extended/ext/json_schema.lani#L10)
+- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/json_schema.lani#L11)
+- [ext::regex](regex.md) · [source](../../../extended/ext/json_schema.lani#L12)
 
 ## Types, fields and variants
 
@@ -34,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 pub enum ErrorKind
@@ -42,7 +43,7 @@ pub enum ErrorKind
 
 #### variant: InvalidSchema
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 InvalidSchema
@@ -50,7 +51,7 @@ InvalidSchema
 
 #### variant: InvalidPattern
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 InvalidPattern
@@ -58,7 +59,7 @@ InvalidPattern
 
 #### variant: InvalidReference
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 InvalidReference
@@ -66,7 +67,7 @@ InvalidReference
 
 #### variant: Unsupported
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 Unsupported
@@ -74,7 +75,7 @@ Unsupported
 
 #### variant: UnsupportedDialect
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 UnsupportedDialect
@@ -82,7 +83,7 @@ UnsupportedDialect
 
 #### variant: DepthLimit
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 DepthLimit
@@ -90,7 +91,7 @@ DepthLimit
 
 #### variant: WorkLimit
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 WorkLimit
@@ -98,7 +99,7 @@ WorkLimit
 
 #### variant: AllocationFailed
 
-[Source line 13](../../../extended/ext/json_schema.lani#L13)
+[Source line 14](../../../extended/ext/json_schema.lani#L14)
 
 ```lanius
 AllocationFailed
@@ -106,7 +107,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 16](../../../extended/ext/json_schema.lani#L16)
+[Source line 17](../../../extended/ext/json_schema.lani#L17)
 
 ```lanius
 pub struct Error
@@ -114,7 +115,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 16](../../../extended/ext/json_schema.lani#L16)
+[Source line 17](../../../extended/ext/json_schema.lani#L17)
 
 ```lanius
 kind: ErrorKind
@@ -122,7 +123,7 @@ kind: ErrorKind
 
 #### field: schema_node
 
-[Source line 16](../../../extended/ext/json_schema.lani#L16)
+[Source line 17](../../../extended/ext/json_schema.lani#L17)
 
 ```lanius
 schema_node: i32
@@ -130,7 +131,7 @@ schema_node: i32
 
 ### struct: Limits
 
-[Source line 19](../../../extended/ext/json_schema.lani#L19)
+[Source line 20](../../../extended/ext/json_schema.lani#L20)
 
 ```lanius
 pub struct Limits
@@ -138,7 +139,7 @@ pub struct Limits
 
 #### field: max_depth
 
-[Source line 19](../../../extended/ext/json_schema.lani#L19)
+[Source line 20](../../../extended/ext/json_schema.lani#L20)
 
 ```lanius
 max_depth: i32
@@ -146,7 +147,7 @@ max_depth: i32
 
 #### field: max_work
 
-[Source line 19](../../../extended/ext/json_schema.lani#L19)
+[Source line 20](../../../extended/ext/json_schema.lani#L20)
 
 ```lanius
 max_work: u64
@@ -154,7 +155,7 @@ max_work: u64
 
 ### struct: Schema
 
-[Source line 129](../../../extended/ext/json_schema.lani#L129)
+[Source line 130](../../../extended/ext/json_schema.lani#L130)
 
 ```lanius
 pub struct Schema
@@ -162,7 +163,7 @@ pub struct Schema
 
 #### field: tree
 
-[Source line 130](../../../extended/ext/json_schema.lani#L130)
+[Source line 131](../../../extended/ext/json_schema.lani#L131)
 
 ```lanius
 tree: &ext::json_tree::Tree
@@ -170,7 +171,7 @@ tree: &ext::json_tree::Tree
 
 #### field: slot_store
 
-[Source line 134](../../../extended/ext/json_schema.lani#L134)
+[Source line 135](../../../extended/ext/json_schema.lani#L135)
 
 ```lanius
 slot_store: alloc::vec::Vec<i32>
@@ -178,7 +179,7 @@ slot_store: alloc::vec::Vec<i32>
 
 #### field: slots
 
-[Source line 134](../../../extended/ext/json_schema.lani#L134)
+[Source line 135](../../../extended/ext/json_schema.lani#L135)
 
 ```lanius
 slots: [i32]
@@ -186,7 +187,7 @@ slots: [i32]
 
 #### field: link_store
 
-[Source line 134](../../../extended/ext/json_schema.lani#L134)
+[Source line 135](../../../extended/ext/json_schema.lani#L135)
 
 ```lanius
 link_store: alloc::vec::Vec<i32>
@@ -194,7 +195,7 @@ link_store: alloc::vec::Vec<i32>
 
 #### field: links
 
-[Source line 134](../../../extended/ext/json_schema.lani#L134)
+[Source line 135](../../../extended/ext/json_schema.lani#L135)
 
 ```lanius
 links: [i32]
@@ -202,7 +203,7 @@ links: [i32]
 
 #### field: record_store
 
-[Source line 135](../../../extended/ext/json_schema.lani#L135)
+[Source line 136](../../../extended/ext/json_schema.lani#L136)
 
 ```lanius
 record_store: alloc::vec::Vec<i32>
@@ -210,7 +211,7 @@ record_store: alloc::vec::Vec<i32>
 
 #### field: records
 
-[Source line 135](../../../extended/ext/json_schema.lani#L135)
+[Source line 136](../../../extended/ext/json_schema.lani#L136)
 
 ```lanius
 records: [i32]
@@ -218,7 +219,7 @@ records: [i32]
 
 #### field: record_used
 
-[Source line 135](../../../extended/ext/json_schema.lani#L135)
+[Source line 136](../../../extended/ext/json_schema.lani#L136)
 
 ```lanius
 record_used: i32
@@ -226,7 +227,7 @@ record_used: i32
 
 #### field: record_cap
 
-[Source line 135](../../../extended/ext/json_schema.lani#L135)
+[Source line 136](../../../extended/ext/json_schema.lani#L136)
 
 ```lanius
 record_cap: i32
@@ -234,7 +235,7 @@ record_cap: i32
 
 #### field: regexes
 
-[Source line 137](../../../extended/ext/json_schema.lani#L137)
+[Source line 138](../../../extended/ext/json_schema.lani#L138)
 
 ```lanius
 regexes: alloc::vec::Vec<ext::regex::Regex>
@@ -242,7 +243,7 @@ regexes: alloc::vec::Vec<ext::regex::Regex>
 
 #### field: dfas
 
-[Source line 137](../../../extended/ext/json_schema.lani#L137)
+[Source line 138](../../../extended/ext/json_schema.lani#L138)
 
 ```lanius
 dfas: alloc::vec::Vec<ext::regex::Dfa>
@@ -250,7 +251,7 @@ dfas: alloc::vec::Vec<ext::regex::Dfa>
 
 #### field: dfa_of
 
-[Source line 137](../../../extended/ext/json_schema.lani#L137)
+[Source line 138](../../../extended/ext/json_schema.lani#L138)
 
 ```lanius
 dfa_of: alloc::vec::Vec<i32>
@@ -258,7 +259,7 @@ dfa_of: alloc::vec::Vec<i32>
 
 #### field: workspace
 
-[Source line 138](../../../extended/ext/json_schema.lani#L138)
+[Source line 139](../../../extended/ext/json_schema.lani#L139)
 
 ```lanius
 workspace: ext::regex::Workspace
@@ -266,7 +267,7 @@ workspace: ext::regex::Workspace
 
 #### field: max_states
 
-[Source line 138](../../../extended/ext/json_schema.lani#L138)
+[Source line 139](../../../extended/ext/json_schema.lani#L139)
 
 ```lanius
 max_states: i32
@@ -274,7 +275,7 @@ max_states: i32
 
 #### field: limits
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
 limits: Limits
@@ -282,7 +283,7 @@ limits: Limits
 
 #### field: depth
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
 depth: i32
@@ -290,23 +291,23 @@ depth: i32
 
 #### field: work
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
 work: u64
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 #### field: fault
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
 fault: ErrorKind
@@ -314,7 +315,7 @@ fault: ErrorKind
 
 #### field: fault_node
 
-[Source line 139](../../../extended/ext/json_schema.lani#L139)
+[Source line 140](../../../extended/ext/json_schema.lani#L140)
 
 ```lanius
 fault_node: i32
@@ -322,7 +323,7 @@ fault_node: i32
 
 #### field: scratch
 
-[Source line 140](../../../extended/ext/json_schema.lani#L140)
+[Source line 141](../../../extended/ext/json_schema.lani#L141)
 
 ```lanius
 scratch: alloc::vec::Vec<u8>
@@ -332,7 +333,7 @@ scratch: alloc::vec::Vec<u8>
 
 ### function: default_limits
 
-[Source line 20](../../../extended/ext/json_schema.lani#L20)
+[Source line 21](../../../extended/ext/json_schema.lani#L21)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -340,7 +341,7 @@ pub fn default_limits() -> Limits
 
 ### function: kind_name
 
-[Source line 26](../../../extended/ext/json_schema.lani#L26)
+[Source line 27](../../../extended/ext/json_schema.lani#L27)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -348,7 +349,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: compile
 
-[Source line 603](../../../extended/ext/json_schema.lani#L603)
+[Source line 604](../../../extended/ext/json_schema.lani#L604)
 
 ```lanius
 pub fn compile(tree: &ext::json_tree::Tree, limits: Limits) -> core::result::Result<Schema, Error>
@@ -356,9 +357,9 @@ pub fn compile(tree: &ext::json_tree::Tree, limits: Limits) -> core::result::Res
 
 ## Implementation blocks and public methods
 
-### impl at line 143
+### impl at line 144
 
-[Source line 143](../../../extended/ext/json_schema.lani#L143)
+[Source line 144](../../../extended/ext/json_schema.lani#L144)
 
 ```lanius
 pub impl Schema
@@ -366,7 +367,7 @@ pub impl Schema
 
 #### method: borrow
 
-[Source line 144](../../../extended/ext/json_schema.lani#L144)
+[Source line 145](../../../extended/ext/json_schema.lani#L145)
 
 ```lanius
 pub fn borrow(&self) -> &Schema
@@ -374,7 +375,7 @@ pub fn borrow(&self) -> &Schema
 
 #### method: validate
 
-[Source line 349](../../../extended/ext/json_schema.lani#L349)
+[Source line 350](../../../extended/ext/json_schema.lani#L350)
 
 ```lanius
 pub fn validate(&self, instance: &ext::json_tree::Tree) -> core::result::Result<bool, Error>
@@ -382,7 +383,7 @@ pub fn validate(&self, instance: &ext::json_tree::Tree) -> core::result::Result<
 
 #### method: validate_node
 
-[Source line 352](../../../extended/ext/json_schema.lani#L352)
+[Source line 353](../../../extended/ext/json_schema.lani#L353)
 
 ```lanius
 pub fn validate_node(&self, instance: &ext::json_tree::Tree, node: i32) -> core::result::Result<bool, Error>
@@ -390,7 +391,7 @@ pub fn validate_node(&self, instance: &ext::json_tree::Tree, node: i32) -> core:
 
 #### method: destroy
 
-[Source line 573](../../../extended/ext/json_schema.lani#L573)
+[Source line 574](../../../extended/ext/json_schema.lani#L574)
 
 ```lanius
 pub fn destroy(&self)

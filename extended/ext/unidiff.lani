@@ -1,6 +1,8 @@
 // Unified diff writer, tolerant parser and fuzzy patch applier.
 // See docs/extended-seqdiff.md.
 module ext::unidiff;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::slice;
 import core::option;
@@ -26,17 +28,17 @@ pub struct HunkReport { index: i32, status: HunkStatus, reason: RejectReason, li
 pub enum ApplyError { InvalidOptions, LineLimit, WorkLimit, OutputLimit, AllocationFailed }
 pub struct Applied { output: alloc::vec::Vec<u8>, reports: alloc::vec::Vec<HunkReport>, rejected: i32 }
 
-struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, failed: bool, full: bool }
+struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, health: core::lifecycle::Health, full: bool }
 impl Out { fn borrow(&self) -> &Out { return self; } }
 fn ud_byte(o: &Out, byte: u8) {
-    if (o.failed) { return; }
-    if (o.bytes.len() >= o.limit) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_push(byte))) { o.failed = true; }
+    if (o.health.is_failed()) { return; }
+    if (o.bytes.len() >= o.limit) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_push(byte))) { o.health.fail(); }
 }
 fn ud_bytes(o: &Out, v: core::slice::View<u8>) {
-    if (o.failed) { return; }
-    if (v.length > o.limit - o.bytes.len()) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_extend(v))) { o.failed = true; }
+    if (o.health.is_failed()) { return; }
+    if (v.length > o.limit - o.bytes.len()) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_extend(v))) { o.health.fail(); }
 }
 fn ud_text(o: &Out, text: str, count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count); let i: i32 = 0; while (i < count) { ud_byte(o, raw[i]); i += 1; } }
 fn ud_number(o: &Out, number: i32) {
@@ -119,11 +121,11 @@ fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Scrip
         }
         h0 += 1;
     }
-    let o: Out = Out { bytes: alloc::vec::new(), limit: max_output, failed: false, full: false };
+    let o: Out = Out { bytes: alloc::vec::new(), limit: max_output, health: core::lifecycle::health_start(), full: false };
     if (hunks.length == 0) { return core::result::Ok(o.bytes); }
     ud_text(o.borrow(), "--- ", 4); ud_bytes(o.borrow(), old_name); ud_text(o.borrow(), "\n+++ ", 5); ud_bytes(o.borrow(), new_name); ud_byte(o.borrow(), 10);
     let h: i32 = 0; let func_line: i32 = -1; let func_len: i32 = 0; let previous: i32 = -1;
-    while (h < hunks.length && !o.failed) {
+    while (h < hunks.length && !o.health.is_failed()) {
         let hunk: ext::seqdiff::Hunk = hunks.values[hunks.start+h];
         if (names) {
             let k: i32 = hunk.before - 1; if (k >= l.na) { k = l.na - 1; }
@@ -134,7 +136,7 @@ fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Scrip
         if (func_line >= 0 && func_len > 0) { ud_byte(o.borrow(), 32); ud_bytes(o.borrow(), ud_sub(ud_get(l, split, 0, func_line), func_len)); }
         ud_byte(o.borrow(), 10);
         let at: i32 = hunk.first;
-        while (at < hunk.first + hunk.count && !o.failed) {
+        while (at < hunk.first + hunk.count && !o.health.is_failed()) {
             let step: ext::seqdiff::Edit = steps[at];
             if (step.kind == 2) { ud_line(o.borrow(), 43, ud_get(l, split, 1, step.after)); }
             else { if (step.kind == 1) { ud_line(o.borrow(), 45, ud_get(l, split, 0, step.before)); } else { ud_line(o.borrow(), 32, ud_get(l, split, 0, step.before)); } }
@@ -142,7 +144,7 @@ fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Scrip
         }
         h += 1;
     }
-    if (o.failed) { o.bytes.destroy(); if (o.full) { return core::result::Err(WriteError::OutputLimit); } return core::result::Err(WriteError::AllocationFailed); }
+    if (o.health.is_failed()) { o.bytes.destroy(); if (o.full) { return core::result::Err(WriteError::OutputLimit); } return core::result::Err(WriteError::AllocationFailed); }
     return core::result::Ok(o.bytes);
 }
 
@@ -160,19 +162,19 @@ fn ud_name(input: core::slice::View<u8>, pos: i32, end: i32) -> core::slice::Vie
     let i: i32 = pos; while (i < end) { let c: u8 = input.values[input.start+i]; if (c == 9 || c == 10) { break; } i += 1; }
     return core::slice::View { values: input.values, start: input.start+pos, length: i-pos };
 }
-struct Cursor { pos: i32, ok: bool }
+struct Cursor { pos: i32, parse_health: core::lifecycle::Health }
 impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
 fn ud_digits(input: core::slice::View<u8>, c: &Cursor) -> i32 {
     let value: i32 = 0; let any: bool = false;
     while (true) {
         let b: i32 = ud_at(input, c.pos);
         if (b < 48 || b > 57) { break; }
-        if (value > 214748363) { c.ok = false; return 0; }
+        if (value > 214748363) { c.parse_health.fail(); return 0; }
         value = value * 10 + (b - 48); c.pos += 1; any = true;
     }
-    if (!any) { c.ok = false; } return value;
+    if (!any) { c.parse_health.fail(); } return value;
 }
-fn ud_expect(input: core::slice::View<u8>, c: &Cursor, byte: i32) { if (ud_at(input, c.pos) != byte) { c.ok = false; } else { c.pos += 1; } }
+fn ud_expect(input: core::slice::View<u8>, c: &Cursor, byte: i32) { if (ud_at(input, c.pos) != byte) { c.parse_health.fail(); } else { c.pos += 1; } }
 fn ud_parse_fail(p: Patch, kind: ParseKind, offset: i32) -> core::result::Result<Patch, ParseError> { p.hunks.destroy(); p.lines.destroy(); return core::result::Err(ParseError { kind: kind, offset: offset }); }
 
 // Parse the first file section of a unified diff. Lines before `--- `/`+++ `
@@ -192,14 +194,14 @@ pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Resu
     }
     if (!found) { return ud_parse_fail(p, ParseKind::MissingHeader, 0); }
     while (pos < input.length && ud_starts(input, pos, "@@ -", 4)) {
-        let header: i32 = pos; let c: Cursor = Cursor { pos: pos + 4, ok: true };
+        let header: i32 = pos; let c: Cursor = Cursor { pos: pos + 4, parse_health: core::lifecycle::health_start() };
         let os: i32 = ud_digits(input, c.borrow()); let oc: i32 = 1;
         if (ud_at(input, c.pos) == 44) { c.pos += 1; oc = ud_digits(input, c.borrow()); }
         ud_expect(input, c.borrow(), 32); ud_expect(input, c.borrow(), 43);
         let ns: i32 = ud_digits(input, c.borrow()); let nc: i32 = 1;
         if (ud_at(input, c.pos) == 44) { c.pos += 1; nc = ud_digits(input, c.borrow()); }
         ud_expect(input, c.borrow(), 32); ud_expect(input, c.borrow(), 64); ud_expect(input, c.borrow(), 64);
-        if (!c.ok || (oc > 0 && os == 0) || (nc > 0 && ns == 0)) { return ud_parse_fail(p, ParseKind::BadHunkHeader, header); }
+        if (!(!c.parse_health.is_failed()) || (oc > 0 && os == 0) || (nc > 0 && ns == 0)) { return ud_parse_fail(p, ParseKind::BadHunkHeader, header); }
         if (oc > max_lines || nc > max_lines) { return ud_parse_fail(p, ParseKind::LineLimit, header); }
         pos = ud_line_end(input, c.pos);
         let first: i32 = p.lines.len(); let old_left: i32 = oc; let new_left: i32 = nc;
@@ -282,14 +284,14 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
     let all: [PatchLine] = patch.lines.as_slice();
     while (h < patch.hunks.len()) {
         let hunk: PatchHunk = patch.hunks.as_slice()[h];
-        old.clear(); let lead: i32 = 0; let trail: i32 = 0; let seen_change: bool = false; let q: i32 = 0;
+        old.clear(); let lead: i32 = 0; let trail: i32 = 0; let seen_change_phase = core::iter_state::completion_start(); let q: i32 = 0;
         while (q < hunk.count) {
             let pl: PatchLine = all[hunk.first+q];
             if (pl.kind != 2) { if (core::result::is_err(old.try_push(pl.bytes))) { return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); } }
-            if (pl.kind == 0) { if (!seen_change) { lead += 1; } trail += 1; } else { seen_change = true; trail = 0; }
+            if (pl.kind == 0) { if (!seen_change_phase.is_done()) { lead += 1; } trail += 1; } else { seen_change_phase.finish(); trail = 0; }
             q += 1;
         }
-        if (!seen_change) { trail = 0; }
+        if (!seen_change_phase.is_done()) { trail = 0; }
         let ov: core::slice::View<core::slice::View<u8>> = old.as_view(); let olen: i32 = old.len();
         let declared: i32 = hunk.old_start - 1; if (hunk.old_count == 0) { declared = hunk.old_start; }
         let expected: i32 = declared + last_offset;
@@ -304,13 +306,13 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
         while (!found && fuzz <= max_fuzz) {
             top = fuzz + lead - context; bot = fuzz + trail - context;
             // Leading and trailing context cannot both fall short of `context`.
-            let anchored: bool = false; let at_start: bool = false;
-            if (top < 0) { top = 0; if (hunk.old_start <= 1) { anchored = true; at_start = true; } }
+            let anchored: bool = false; let at_start_phase = core::iter_state::completion_start();
+            if (top < 0) { top = 0; if (hunk.old_start <= 1) { anchored = true; at_start_phase.finish(); } }
             if (bot < 0) { bot = 0; anchored = true; }
             if (anchored) {
                 // Start anchor tries position 0; end anchor tries n - olen.
                 if (fuzz == 0 || top != ptop || bot != pbot) {
-                    let at: i32 = n - olen; if (at_start) { at = 0; }
+                    let at: i32 = n - olen; if (at_start_phase.is_done()) { at = 0; }
                     let reach: i32 = at - expected; if (reach < 0) { reach = 0 - reach; }
                     if (reach <= options.max_offset && ud_matches(base, st, n, ov, at, top, bot, w.borrow())) {
                         if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }

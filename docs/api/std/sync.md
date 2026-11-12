@@ -18,12 +18,14 @@ Declaration counts: constant: 2; enum: 4; field: 16; function: 20; impl: 7; meth
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/sync.lani#L8)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/sync.lani#L9)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/sync.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/sync.lani#L11)
-- [std::linux](linux.md) · [source](../../../stdlib/std/sync.lani#L12)
-- [std::atomic](atomic.md) · [source](../../../stdlib/std/sync.lani#L13)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/std/sync.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/sync.lani#L9)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/sync.lani#L10)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/sync.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/sync.lani#L12)
+- [std::linux](linux.md) · [source](../../../stdlib/std/sync.lani#L13)
+- [std::atomic](atomic.md) · [source](../../../stdlib/std/sync.lani#L14)
+- [std::sync_state](sync_state.md) · [source](../../../stdlib/std/sync.lani#L15)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 pub enum Error
@@ -39,7 +41,7 @@ pub enum Error
 
 #### variant: Host
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 Host(i32)
@@ -47,7 +49,7 @@ Host(i32)
 
 #### variant: InvalidSize
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 InvalidSize
@@ -55,7 +57,7 @@ InvalidSize
 
 #### variant: Exhausted
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 Exhausted
@@ -63,7 +65,7 @@ Exhausted
 
 #### variant: Unmapped
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 Unmapped
@@ -71,7 +73,7 @@ Unmapped
 
 #### variant: NotLocked
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 NotLocked
@@ -79,7 +81,7 @@ NotLocked
 
 #### variant: InvalidState
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 InvalidState
@@ -87,7 +89,7 @@ InvalidState
 
 #### variant: TimedOut
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 TimedOut
@@ -95,7 +97,7 @@ TimedOut
 
 #### variant: Overflow
 
-[Source line 15](../../../stdlib/std/sync.lani#L15)
+[Source line 17](../../../stdlib/std/sync.lani#L17)
 
 ```lanius
 Overflow
@@ -103,7 +105,7 @@ Overflow
 
 ### enum: Wait
 
-[Source line 16](../../../stdlib/std/sync.lani#L16)
+[Source line 18](../../../stdlib/std/sync.lani#L18)
 
 ```lanius
 pub enum Wait
@@ -111,7 +113,7 @@ pub enum Wait
 
 #### variant: Woken
 
-[Source line 16](../../../stdlib/std/sync.lani#L16)
+[Source line 18](../../../stdlib/std/sync.lani#L18)
 
 ```lanius
 Woken
@@ -119,7 +121,7 @@ Woken
 
 #### variant: Changed
 
-[Source line 16](../../../stdlib/std/sync.lani#L16)
+[Source line 18](../../../stdlib/std/sync.lani#L18)
 
 ```lanius
 Changed
@@ -127,7 +129,7 @@ Changed
 
 #### variant: Interrupted
 
-[Source line 16](../../../stdlib/std/sync.lani#L16)
+[Source line 18](../../../stdlib/std/sync.lani#L18)
 
 ```lanius
 Interrupted
@@ -135,7 +137,7 @@ Interrupted
 
 #### variant: TimedOut
 
-[Source line 16](../../../stdlib/std/sync.lani#L16)
+[Source line 18](../../../stdlib/std/sync.lani#L18)
 
 ```lanius
 TimedOut
@@ -143,7 +145,7 @@ TimedOut
 
 ### enum: Step
 
-[Source line 17](../../../stdlib/std/sync.lani#L17)
+[Source line 19](../../../stdlib/std/sync.lani#L19)
 
 ```lanius
 pub enum Step
@@ -151,7 +153,7 @@ pub enum Step
 
 #### variant: Run
 
-[Source line 17](../../../stdlib/std/sync.lani#L17)
+[Source line 19](../../../stdlib/std/sync.lani#L19)
 
 ```lanius
 Run
@@ -159,7 +161,7 @@ Run
 
 #### variant: Done
 
-[Source line 17](../../../stdlib/std/sync.lani#L17)
+[Source line 19](../../../stdlib/std/sync.lani#L19)
 
 ```lanius
 Done
@@ -167,7 +169,7 @@ Done
 
 ### struct: Deadline
 
-[Source line 23](../../../stdlib/std/sync.lani#L23)
+[Source line 25](../../../stdlib/std/sync.lani#L25)
 
 ```lanius
 pub struct Deadline
@@ -175,7 +177,7 @@ pub struct Deadline
 
 #### field: seconds
 
-[Source line 23](../../../stdlib/std/sync.lani#L23)
+[Source line 25](../../../stdlib/std/sync.lani#L25)
 
 ```lanius
 seconds: i64
@@ -183,7 +185,7 @@ seconds: i64
 
 #### field: nanos
 
-[Source line 23](../../../stdlib/std/sync.lani#L23)
+[Source line 25](../../../stdlib/std/sync.lani#L25)
 
 ```lanius
 nanos: i64
@@ -191,7 +193,7 @@ nanos: i64
 
 ### struct: Region
 
-[Source line 143](../../../stdlib/std/sync.lani#L143)
+[Source line 145](../../../stdlib/std/sync.lani#L145)
 
 ```lanius
 pub struct Region
@@ -199,7 +201,7 @@ pub struct Region
 
 #### field: base
 
-[Source line 143](../../../stdlib/std/sync.lani#L143)
+[Source line 145](../../../stdlib/std/sync.lani#L145)
 
 ```lanius
 base: ptr
@@ -207,7 +209,7 @@ base: ptr
 
 #### field: bytes
 
-[Source line 143](../../../stdlib/std/sync.lani#L143)
+[Source line 145](../../../stdlib/std/sync.lani#L145)
 
 ```lanius
 bytes: usize
@@ -215,23 +217,23 @@ bytes: usize
 
 #### field: used
 
-[Source line 143](../../../stdlib/std/sync.lani#L143)
+[Source line 145](../../../stdlib/std/sync.lani#L145)
 
 ```lanius
 used: usize
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 143](../../../stdlib/std/sync.lani#L143)
+[Source line 145](../../../stdlib/std/sync.lani#L145)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### struct: Mutex
 
-[Source line 182](../../../stdlib/std/sync.lani#L182)
+[Source line 184](../../../stdlib/std/sync.lani#L184)
 
 ```lanius
 pub struct Mutex
@@ -239,7 +241,7 @@ pub struct Mutex
 
 #### field: state
 
-[Source line 182](../../../stdlib/std/sync.lani#L182)
+[Source line 184](../../../stdlib/std/sync.lani#L184)
 
 ```lanius
 state: ptr
@@ -247,7 +249,7 @@ state: ptr
 
 ### struct: Condvar
 
-[Source line 243](../../../stdlib/std/sync.lani#L243)
+[Source line 259](../../../stdlib/std/sync.lani#L259)
 
 ```lanius
 pub struct Condvar
@@ -255,7 +257,7 @@ pub struct Condvar
 
 #### field: sequence
 
-[Source line 243](../../../stdlib/std/sync.lani#L243)
+[Source line 259](../../../stdlib/std/sync.lani#L259)
 
 ```lanius
 sequence: ptr
@@ -263,7 +265,7 @@ sequence: ptr
 
 #### field: waiters
 
-[Source line 243](../../../stdlib/std/sync.lani#L243)
+[Source line 259](../../../stdlib/std/sync.lani#L259)
 
 ```lanius
 waiters: ptr
@@ -271,7 +273,7 @@ waiters: ptr
 
 ### struct: Once
 
-[Source line 298](../../../stdlib/std/sync.lani#L298)
+[Source line 314](../../../stdlib/std/sync.lani#L314)
 
 ```lanius
 pub struct Once
@@ -279,7 +281,7 @@ pub struct Once
 
 #### field: state
 
-[Source line 298](../../../stdlib/std/sync.lani#L298)
+[Source line 314](../../../stdlib/std/sync.lani#L314)
 
 ```lanius
 state: ptr
@@ -287,7 +289,7 @@ state: ptr
 
 ### enum: Init
 
-[Source line 333](../../../stdlib/std/sync.lani#L333)
+[Source line 369](../../../stdlib/std/sync.lani#L369)
 
 ```lanius
 pub enum Init
@@ -295,7 +297,7 @@ pub enum Init
 
 #### variant: Ready
 
-[Source line 333](../../../stdlib/std/sync.lani#L333)
+[Source line 369](../../../stdlib/std/sync.lani#L369)
 
 ```lanius
 Ready(u64)
@@ -303,7 +305,7 @@ Ready(u64)
 
 #### variant: Run
 
-[Source line 333](../../../stdlib/std/sync.lani#L333)
+[Source line 369](../../../stdlib/std/sync.lani#L369)
 
 ```lanius
 Run
@@ -311,7 +313,7 @@ Run
 
 ### struct: Lazy64
 
-[Source line 334](../../../stdlib/std/sync.lani#L334)
+[Source line 370](../../../stdlib/std/sync.lani#L370)
 
 ```lanius
 pub struct Lazy64
@@ -319,7 +321,7 @@ pub struct Lazy64
 
 #### field: gate
 
-[Source line 334](../../../stdlib/std/sync.lani#L334)
+[Source line 370](../../../stdlib/std/sync.lani#L370)
 
 ```lanius
 gate: Once
@@ -327,7 +329,7 @@ gate: Once
 
 #### field: value
 
-[Source line 334](../../../stdlib/std/sync.lani#L334)
+[Source line 370](../../../stdlib/std/sync.lani#L370)
 
 ```lanius
 value: ptr
@@ -335,7 +337,7 @@ value: ptr
 
 ### struct: Barrier
 
-[Source line 363](../../../stdlib/std/sync.lani#L363)
+[Source line 399](../../../stdlib/std/sync.lani#L399)
 
 ```lanius
 pub struct Barrier
@@ -343,7 +345,7 @@ pub struct Barrier
 
 #### field: arrived
 
-[Source line 363](../../../stdlib/std/sync.lani#L363)
+[Source line 399](../../../stdlib/std/sync.lani#L399)
 
 ```lanius
 arrived: ptr
@@ -351,7 +353,7 @@ arrived: ptr
 
 #### field: generation
 
-[Source line 363](../../../stdlib/std/sync.lani#L363)
+[Source line 399](../../../stdlib/std/sync.lani#L399)
 
 ```lanius
 generation: ptr
@@ -359,7 +361,7 @@ generation: ptr
 
 #### field: parties
 
-[Source line 363](../../../stdlib/std/sync.lani#L363)
+[Source line 399](../../../stdlib/std/sync.lani#L399)
 
 ```lanius
 parties: u32
@@ -367,7 +369,7 @@ parties: u32
 
 ### struct: Token
 
-[Source line 396](../../../stdlib/std/sync.lani#L396)
+[Source line 432](../../../stdlib/std/sync.lani#L432)
 
 ```lanius
 pub struct Token
@@ -375,7 +377,7 @@ pub struct Token
 
 #### field: state
 
-[Source line 396](../../../stdlib/std/sync.lani#L396)
+[Source line 432](../../../stdlib/std/sync.lani#L432)
 
 ```lanius
 state: ptr
@@ -385,7 +387,7 @@ state: ptr
 
 ### constant: MAX_REGION_BYTES
 
-[Source line 19](../../../stdlib/std/sync.lani#L19)
+[Source line 21](../../../stdlib/std/sync.lani#L21)
 
 ```lanius
 pub const MAX_REGION_BYTES: usize = 1073741824;
@@ -393,7 +395,7 @@ pub const MAX_REGION_BYTES: usize = 1073741824;
 
 ### constant: LINE_BYTES
 
-[Source line 20](../../../stdlib/std/sync.lani#L20)
+[Source line 22](../../../stdlib/std/sync.lani#L22)
 
 ```lanius
 pub const LINE_BYTES: usize = 64;
@@ -403,7 +405,7 @@ pub const LINE_BYTES: usize = 64;
 
 ### function: now
 
-[Source line 32](../../../stdlib/std/sync.lani#L32)
+[Source line 34](../../../stdlib/std/sync.lani#L34)
 
 ```lanius
 pub fn now() -> core::result::Result<Deadline, Error>
@@ -411,7 +413,7 @@ pub fn now() -> core::result::Result<Deadline, Error>
 
 ### function: deadline_after_ms
 
-[Source line 41](../../../stdlib/std/sync.lani#L41)
+[Source line 43](../../../stdlib/std/sync.lani#L43)
 
 ```lanius
 pub fn deadline_after_ms(milliseconds: i64) -> core::result::Result<Deadline, Error>
@@ -419,7 +421,7 @@ pub fn deadline_after_ms(milliseconds: i64) -> core::result::Result<Deadline, Er
 
 ### function: is_past
 
-[Source line 51](../../../stdlib/std/sync.lani#L51)
+[Source line 53](../../../stdlib/std/sync.lani#L53)
 
 ```lanius
 pub fn is_past(deadline: Deadline) -> core::result::Result<bool, Error>
@@ -427,7 +429,7 @@ pub fn is_past(deadline: Deadline) -> core::result::Result<bool, Error>
 
 ### function: futex_wait
 
-[Source line 76](../../../stdlib/std/sync.lani#L76)
+[Source line 78](../../../stdlib/std/sync.lani#L78)
 
 ```lanius
 pub fn futex_wait(word: ptr, expected: u32) -> core::result::Result<Wait, Error>
@@ -435,7 +437,7 @@ pub fn futex_wait(word: ptr, expected: u32) -> core::result::Result<Wait, Error>
 
 ### function: futex_wait_until
 
-[Source line 80](../../../stdlib/std/sync.lani#L80)
+[Source line 82](../../../stdlib/std/sync.lani#L82)
 
 ```lanius
 pub fn futex_wait_until(word: ptr, expected: u32, deadline: Deadline) -> core::result::Result<Wait, Error>
@@ -443,7 +445,7 @@ pub fn futex_wait_until(word: ptr, expected: u32, deadline: Deadline) -> core::r
 
 ### function: futex_wake
 
-[Source line 87](../../../stdlib/std/sync.lani#L87)
+[Source line 89](../../../stdlib/std/sync.lani#L89)
 
 ```lanius
 pub fn futex_wake(word: ptr, count: i32) -> core::result::Result<i32, Error>
@@ -451,7 +453,7 @@ pub fn futex_wake(word: ptr, count: i32) -> core::result::Result<i32, Error>
 
 ### function: futex_wait_private
 
-[Source line 96](../../../stdlib/std/sync.lani#L96)
+[Source line 98](../../../stdlib/std/sync.lani#L98)
 
 ```lanius
 pub fn futex_wait_private(word: ptr, expected: u32) -> core::result::Result<Wait, Error>
@@ -459,7 +461,7 @@ pub fn futex_wait_private(word: ptr, expected: u32) -> core::result::Result<Wait
 
 ### function: futex_wait_until_private
 
-[Source line 100](../../../stdlib/std/sync.lani#L100)
+[Source line 102](../../../stdlib/std/sync.lani#L102)
 
 ```lanius
 pub fn futex_wait_until_private(word: ptr, expected: u32, deadline: Deadline) -> core::result::Result<Wait, Error>
@@ -467,7 +469,7 @@ pub fn futex_wait_until_private(word: ptr, expected: u32, deadline: Deadline) ->
 
 ### function: futex_wake_private
 
-[Source line 106](../../../stdlib/std/sync.lani#L106)
+[Source line 108](../../../stdlib/std/sync.lani#L108)
 
 ```lanius
 pub fn futex_wake_private(word: ptr, count: i32) -> core::result::Result<i32, Error>
@@ -475,7 +477,7 @@ pub fn futex_wake_private(word: ptr, count: i32) -> core::result::Result<i32, Er
 
 ### function: futex_wait_either_private
 
-[Source line 128](../../../stdlib/std/sync.lani#L128)
+[Source line 130](../../../stdlib/std/sync.lani#L130)
 
 ```lanius
 pub fn futex_wait_either_private(first: ptr, first_seen: u32, second: ptr, second_seen: u32) -> core::result::Result<Wait, Error>
@@ -483,7 +485,7 @@ pub fn futex_wait_either_private(first: ptr, first_seen: u32, second: ptr, secon
 
 ### function: futex_wait_either_until_private
 
-[Source line 132](../../../stdlib/std/sync.lani#L132)
+[Source line 134](../../../stdlib/std/sync.lani#L134)
 
 ```lanius
 pub fn futex_wait_either_until_private(first: ptr, first_seen: u32, second: ptr, second_seen: u32, deadline: Deadline) -> core::result::Result<Wait, Error>
@@ -491,7 +493,7 @@ pub fn futex_wait_either_until_private(first: ptr, first_seen: u32, second: ptr,
 
 ### function: map_shared
 
-[Source line 144](../../../stdlib/std/sync.lani#L144)
+[Source line 146](../../../stdlib/std/sync.lani#L146)
 
 ```lanius
 pub fn map_shared(bytes: usize) -> core::result::Result<Region, Error>
@@ -499,7 +501,7 @@ pub fn map_shared(bytes: usize) -> core::result::Result<Region, Error>
 
 ### function: mutex
 
-[Source line 183](../../../stdlib/std/sync.lani#L183)
+[Source line 185](../../../stdlib/std/sync.lani#L185)
 
 ```lanius
 pub fn mutex(region: &Region) -> core::result::Result<Mutex, Error>
@@ -507,7 +509,7 @@ pub fn mutex(region: &Region) -> core::result::Result<Mutex, Error>
 
 ### function: mutex_at
 
-[Source line 190](../../../stdlib/std/sync.lani#L190)
+[Source line 192](../../../stdlib/std/sync.lani#L192)
 
 ```lanius
 pub fn mutex_at(state: ptr) -> Mutex
@@ -515,7 +517,7 @@ pub fn mutex_at(state: ptr) -> Mutex
 
 ### function: condvar
 
-[Source line 244](../../../stdlib/std/sync.lani#L244)
+[Source line 260](../../../stdlib/std/sync.lani#L260)
 
 ```lanius
 pub fn condvar(region: &Region) -> core::result::Result<Condvar, Error>
@@ -523,7 +525,7 @@ pub fn condvar(region: &Region) -> core::result::Result<Condvar, Error>
 
 ### function: condvar_at
 
-[Source line 252](../../../stdlib/std/sync.lani#L252)
+[Source line 268](../../../stdlib/std/sync.lani#L268)
 
 ```lanius
 pub fn condvar_at(words: ptr) -> Condvar
@@ -531,7 +533,7 @@ pub fn condvar_at(words: ptr) -> Condvar
 
 ### function: once
 
-[Source line 299](../../../stdlib/std/sync.lani#L299)
+[Source line 315](../../../stdlib/std/sync.lani#L315)
 
 ```lanius
 pub fn once(region: &Region) -> core::result::Result<Once, Error>
@@ -539,7 +541,7 @@ pub fn once(region: &Region) -> core::result::Result<Once, Error>
 
 ### function: lazy64
 
-[Source line 335](../../../stdlib/std/sync.lani#L335)
+[Source line 371](../../../stdlib/std/sync.lani#L371)
 
 ```lanius
 pub fn lazy64(region: &Region) -> core::result::Result<Lazy64, Error>
@@ -547,7 +549,7 @@ pub fn lazy64(region: &Region) -> core::result::Result<Lazy64, Error>
 
 ### function: barrier
 
-[Source line 364](../../../stdlib/std/sync.lani#L364)
+[Source line 400](../../../stdlib/std/sync.lani#L400)
 
 ```lanius
 pub fn barrier(region: &Region, parties: i32) -> core::result::Result<Barrier, Error>
@@ -555,7 +557,7 @@ pub fn barrier(region: &Region, parties: i32) -> core::result::Result<Barrier, E
 
 ### function: token
 
-[Source line 397](../../../stdlib/std/sync.lani#L397)
+[Source line 433](../../../stdlib/std/sync.lani#L433)
 
 ```lanius
 pub fn token(region: &Region) -> core::result::Result<Token, Error>
@@ -563,9 +565,9 @@ pub fn token(region: &Region) -> core::result::Result<Token, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 154
+### impl at line 156
 
-[Source line 154](../../../stdlib/std/sync.lani#L154)
+[Source line 156](../../../stdlib/std/sync.lani#L156)
 
 ```lanius
 pub impl Region
@@ -573,7 +575,7 @@ pub impl Region
 
 #### method: borrow
 
-[Source line 155](../../../stdlib/std/sync.lani#L155)
+[Source line 157](../../../stdlib/std/sync.lani#L157)
 
 ```lanius
 pub fn borrow(&self) -> &Region
@@ -581,7 +583,7 @@ pub fn borrow(&self) -> &Region
 
 #### method: capacity
 
-[Source line 156](../../../stdlib/std/sync.lani#L156)
+[Source line 158](../../../stdlib/std/sync.lani#L158)
 
 ```lanius
 pub fn capacity(&self) -> usize
@@ -589,7 +591,7 @@ pub fn capacity(&self) -> usize
 
 #### method: used
 
-[Source line 157](../../../stdlib/std/sync.lani#L157)
+[Source line 159](../../../stdlib/std/sync.lani#L159)
 
 ```lanius
 pub fn used(&self) -> usize
@@ -597,7 +599,7 @@ pub fn used(&self) -> usize
 
 #### method: is_live
 
-[Source line 158](../../../stdlib/std/sync.lani#L158)
+[Source line 160](../../../stdlib/std/sync.lani#L160)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -605,7 +607,7 @@ pub fn is_live(&self) -> bool
 
 #### method: allocate
 
-[Source line 159](../../../stdlib/std/sync.lani#L159)
+[Source line 161](../../../stdlib/std/sync.lani#L161)
 
 ```lanius
 pub fn allocate(&self, bytes: usize) -> core::result::Result<ptr, Error>
@@ -613,15 +615,15 @@ pub fn allocate(&self, bytes: usize) -> core::result::Result<ptr, Error>
 
 #### method: unmap
 
-[Source line 169](../../../stdlib/std/sync.lani#L169)
+[Source line 171](../../../stdlib/std/sync.lani#L171)
 
 ```lanius
 pub fn unmap(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 191
+### impl at line 193
 
-[Source line 191](../../../stdlib/std/sync.lani#L191)
+[Source line 193](../../../stdlib/std/sync.lani#L193)
 
 ```lanius
 pub impl Mutex
@@ -629,7 +631,7 @@ pub impl Mutex
 
 #### method: borrow
 
-[Source line 192](../../../stdlib/std/sync.lani#L192)
+[Source line 194](../../../stdlib/std/sync.lani#L194)
 
 ```lanius
 pub fn borrow(&self) -> &Mutex
@@ -637,7 +639,7 @@ pub fn borrow(&self) -> &Mutex
 
 #### method: try_lock
 
-[Source line 194](../../../stdlib/std/sync.lani#L194)
+[Source line 207](../../../stdlib/std/sync.lani#L207)
 
 ```lanius
 pub fn try_lock(&self) -> bool
@@ -645,7 +647,7 @@ pub fn try_lock(&self) -> bool
 
 #### method: lock
 
-[Source line 197](../../../stdlib/std/sync.lani#L197)
+[Source line 213](../../../stdlib/std/sync.lani#L213)
 
 ```lanius
 pub fn lock(&self) -> core::result::Result<i32, Error>
@@ -653,7 +655,7 @@ pub fn lock(&self) -> core::result::Result<i32, Error>
 
 #### method: lock_until
 
-[Source line 210](../../../stdlib/std/sync.lani#L210)
+[Source line 226](../../../stdlib/std/sync.lani#L226)
 
 ```lanius
 pub fn lock_until(&self, deadline: Deadline) -> core::result::Result<i32, Error>
@@ -661,7 +663,7 @@ pub fn lock_until(&self, deadline: Deadline) -> core::result::Result<i32, Error>
 
 #### method: unlock
 
-[Source line 225](../../../stdlib/std/sync.lani#L225)
+[Source line 241](../../../stdlib/std/sync.lani#L241)
 
 ```lanius
 pub fn unlock(&self) -> core::result::Result<i32, Error>
@@ -669,15 +671,15 @@ pub fn unlock(&self) -> core::result::Result<i32, Error>
 
 #### method: is_locked
 
-[Source line 234](../../../stdlib/std/sync.lani#L234)
+[Source line 250](../../../stdlib/std/sync.lani#L250)
 
 ```lanius
 pub fn is_locked(&self) -> bool
 ```
 
-### impl at line 253
+### impl at line 269
 
-[Source line 253](../../../stdlib/std/sync.lani#L253)
+[Source line 269](../../../stdlib/std/sync.lani#L269)
 
 ```lanius
 pub impl Condvar
@@ -685,7 +687,7 @@ pub impl Condvar
 
 #### method: borrow
 
-[Source line 254](../../../stdlib/std/sync.lani#L254)
+[Source line 270](../../../stdlib/std/sync.lani#L270)
 
 ```lanius
 pub fn borrow(&self) -> &Condvar
@@ -693,7 +695,7 @@ pub fn borrow(&self) -> &Condvar
 
 #### method: wait
 
-[Source line 256](../../../stdlib/std/sync.lani#L256)
+[Source line 272](../../../stdlib/std/sync.lani#L272)
 
 ```lanius
 pub fn wait(&self, held: &Mutex) -> core::result::Result<Wait, Error>
@@ -701,7 +703,7 @@ pub fn wait(&self, held: &Mutex) -> core::result::Result<Wait, Error>
 
 #### method: wait_until
 
-[Source line 268](../../../stdlib/std/sync.lani#L268)
+[Source line 284](../../../stdlib/std/sync.lani#L284)
 
 ```lanius
 pub fn wait_until(&self, held: &Mutex, deadline: Deadline) -> core::result::Result<Wait, Error>
@@ -709,7 +711,7 @@ pub fn wait_until(&self, held: &Mutex, deadline: Deadline) -> core::result::Resu
 
 #### method: has_waiters
 
-[Source line 283](../../../stdlib/std/sync.lani#L283)
+[Source line 299](../../../stdlib/std/sync.lani#L299)
 
 ```lanius
 pub fn has_waiters(&self) -> bool
@@ -717,7 +719,7 @@ pub fn has_waiters(&self) -> bool
 
 #### method: notify_one
 
-[Source line 284](../../../stdlib/std/sync.lani#L284)
+[Source line 300](../../../stdlib/std/sync.lani#L300)
 
 ```lanius
 pub fn notify_one(&self) -> core::result::Result<i32, Error>
@@ -725,15 +727,15 @@ pub fn notify_one(&self) -> core::result::Result<i32, Error>
 
 #### method: notify_all
 
-[Source line 288](../../../stdlib/std/sync.lani#L288)
+[Source line 304](../../../stdlib/std/sync.lani#L304)
 
 ```lanius
 pub fn notify_all(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 304
+### impl at line 320
 
-[Source line 304](../../../stdlib/std/sync.lani#L304)
+[Source line 320](../../../stdlib/std/sync.lani#L320)
 
 ```lanius
 pub impl Once
@@ -741,7 +743,7 @@ pub impl Once
 
 #### method: borrow
 
-[Source line 305](../../../stdlib/std/sync.lani#L305)
+[Source line 321](../../../stdlib/std/sync.lani#L321)
 
 ```lanius
 pub fn borrow(&self) -> &Once
@@ -749,7 +751,7 @@ pub fn borrow(&self) -> &Once
 
 #### method: is_complete
 
-[Source line 307](../../../stdlib/std/sync.lani#L307)
+[Source line 323](../../../stdlib/std/sync.lani#L323)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -757,7 +759,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: begin
 
-[Source line 308](../../../stdlib/std/sync.lani#L308)
+[Source line 324](../../../stdlib/std/sync.lani#L324)
 
 ```lanius
 pub fn begin(&self) -> core::result::Result<Step, Error>
@@ -765,7 +767,7 @@ pub fn begin(&self) -> core::result::Result<Step, Error>
 
 #### method: complete
 
-[Source line 328](../../../stdlib/std/sync.lani#L328)
+[Source line 363](../../../stdlib/std/sync.lani#L363)
 
 ```lanius
 pub fn complete(&self) -> core::result::Result<i32, Error>
@@ -773,15 +775,15 @@ pub fn complete(&self) -> core::result::Result<i32, Error>
 
 #### method: abandon
 
-[Source line 329](../../../stdlib/std/sync.lani#L329)
+[Source line 364](../../../stdlib/std/sync.lani#L364)
 
 ```lanius
 pub fn abandon(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 342
+### impl at line 378
 
-[Source line 342](../../../stdlib/std/sync.lani#L342)
+[Source line 378](../../../stdlib/std/sync.lani#L378)
 
 ```lanius
 pub impl Lazy64
@@ -789,7 +791,7 @@ pub impl Lazy64
 
 #### method: borrow
 
-[Source line 343](../../../stdlib/std/sync.lani#L343)
+[Source line 379](../../../stdlib/std/sync.lani#L379)
 
 ```lanius
 pub fn borrow(&self) -> &Lazy64
@@ -797,7 +799,7 @@ pub fn borrow(&self) -> &Lazy64
 
 #### method: get_or_begin
 
-[Source line 345](../../../stdlib/std/sync.lani#L345)
+[Source line 381](../../../stdlib/std/sync.lani#L381)
 
 ```lanius
 pub fn get_or_begin(&self) -> core::result::Result<Init, Error>
@@ -805,7 +807,7 @@ pub fn get_or_begin(&self) -> core::result::Result<Init, Error>
 
 #### method: publish
 
-[Source line 352](../../../stdlib/std/sync.lani#L352)
+[Source line 388](../../../stdlib/std/sync.lani#L388)
 
 ```lanius
 pub fn publish(&self, value: u64) -> core::result::Result<u64, Error>
@@ -813,15 +815,15 @@ pub fn publish(&self, value: u64) -> core::result::Result<u64, Error>
 
 #### method: abandon
 
-[Source line 358](../../../stdlib/std/sync.lani#L358)
+[Source line 394](../../../stdlib/std/sync.lani#L394)
 
 ```lanius
 pub fn abandon(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 371
+### impl at line 407
 
-[Source line 371](../../../stdlib/std/sync.lani#L371)
+[Source line 407](../../../stdlib/std/sync.lani#L407)
 
 ```lanius
 pub impl Barrier
@@ -829,7 +831,7 @@ pub impl Barrier
 
 #### method: borrow
 
-[Source line 372](../../../stdlib/std/sync.lani#L372)
+[Source line 408](../../../stdlib/std/sync.lani#L408)
 
 ```lanius
 pub fn borrow(&self) -> &Barrier
@@ -837,15 +839,15 @@ pub fn borrow(&self) -> &Barrier
 
 #### method: wait
 
-[Source line 373](../../../stdlib/std/sync.lani#L373)
+[Source line 409](../../../stdlib/std/sync.lani#L409)
 
 ```lanius
 pub fn wait(&self) -> core::result::Result<bool, Error>
 ```
 
-### impl at line 402
+### impl at line 438
 
-[Source line 402](../../../stdlib/std/sync.lani#L402)
+[Source line 438](../../../stdlib/std/sync.lani#L438)
 
 ```lanius
 pub impl Token
@@ -853,7 +855,7 @@ pub impl Token
 
 #### method: borrow
 
-[Source line 403](../../../stdlib/std/sync.lani#L403)
+[Source line 439](../../../stdlib/std/sync.lani#L439)
 
 ```lanius
 pub fn borrow(&self) -> &Token
@@ -861,7 +863,7 @@ pub fn borrow(&self) -> &Token
 
 #### method: cancel
 
-[Source line 407](../../../stdlib/std/sync.lani#L407)
+[Source line 443](../../../stdlib/std/sync.lani#L443)
 
 ```lanius
 pub fn cancel(&self) -> core::result::Result<bool, Error>
@@ -869,7 +871,7 @@ pub fn cancel(&self) -> core::result::Result<bool, Error>
 
 #### method: cancel_at
 
-[Source line 414](../../../stdlib/std/sync.lani#L414)
+[Source line 451](../../../stdlib/std/sync.lani#L451)
 
 ```lanius
 pub fn cancel_at(&self, deadline: Deadline)
@@ -877,7 +879,7 @@ pub fn cancel_at(&self, deadline: Deadline)
 
 #### method: deadline
 
-[Source line 419](../../../stdlib/std/sync.lani#L419)
+[Source line 456](../../../stdlib/std/sync.lani#L456)
 
 ```lanius
 pub fn deadline(&self) -> core::option::Option<Deadline>
@@ -885,7 +887,7 @@ pub fn deadline(&self) -> core::option::Option<Deadline>
 
 #### method: is_cancelled
 
-[Source line 424](../../../stdlib/std/sync.lani#L424)
+[Source line 461](../../../stdlib/std/sync.lani#L461)
 
 ```lanius
 pub fn is_cancelled(&self) -> bool
@@ -893,7 +895,7 @@ pub fn is_cancelled(&self) -> bool
 
 #### method: wait_until
 
-[Source line 433](../../../stdlib/std/sync.lani#L433)
+[Source line 470](../../../stdlib/std/sync.lani#L470)
 
 ```lanius
 pub fn wait_until(&self, deadline: Deadline) -> core::result::Result<bool, Error>

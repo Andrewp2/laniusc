@@ -10,32 +10,35 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: enum: 1; field: 52; function: 2; impl: 3; method: 24; struct: 3; variant: 5.
+Declaration counts: enum: 3; field: 52; function: 2; impl: 5; machine: 2; method: 34; struct: 3; variant: 15.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_proxy.lani#L11)
-- [core::io](../core/io.md) · [source](../../../extended/ext/http_proxy.lani#L12)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_proxy.lani#L13)
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_proxy.lani#L14)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_proxy.lani#L15)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_proxy.lani#L16)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_proxy.lani#L17)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_proxy.lani#L18)
-- [ext::hpack](hpack.md) · [source](../../../extended/ext/http_proxy.lani#L19)
-- [ext::http](http.md) · [source](../../../extended/ext/http_proxy.lani#L20)
-- [ext::http2](http2.md) · [source](../../../extended/ext/http_proxy.lani#L21)
-- [ext::http2_frame](http2_frame.md) · [source](../../../extended/ext/http_proxy.lani#L22)
-- [ext::http2_server](http2_server.md) · [source](../../../extended/ext/http_proxy.lani#L23)
-- [ext::http_body](http_body.md) · [source](../../../extended/ext/http_proxy.lani#L24)
-- [ext::http_rewrite](http_rewrite.md) · [source](../../../extended/ext/http_proxy.lani#L25)
-- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_proxy.lani#L26)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_proxy.lani#L27)
-- [std::event](../std/event.md) · [source](../../../extended/ext/http_proxy.lani#L28)
-- [std::linux](../std/linux.md) · [source](../../../extended/ext/http_proxy.lani#L29)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_proxy.lani#L30)
+- [core::io_state](../core/io_state.md) · [source](../../../extended/ext/http_proxy.lani#L11)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/http_proxy.lani#L12)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/http_proxy.lani#L13)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_proxy.lani#L14)
+- [core::io](../core/io.md) · [source](../../../extended/ext/http_proxy.lani#L15)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_proxy.lani#L16)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_proxy.lani#L17)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_proxy.lani#L18)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_proxy.lani#L19)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_proxy.lani#L20)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_proxy.lani#L21)
+- [ext::hpack](hpack.md) · [source](../../../extended/ext/http_proxy.lani#L22)
+- [ext::http](http.md) · [source](../../../extended/ext/http_proxy.lani#L23)
+- [ext::http2](http2.md) · [source](../../../extended/ext/http_proxy.lani#L24)
+- [ext::http2_frame](http2_frame.md) · [source](../../../extended/ext/http_proxy.lani#L25)
+- [ext::http2_server](http2_server.md) · [source](../../../extended/ext/http_proxy.lani#L26)
+- [ext::http_body](http_body.md) · [source](../../../extended/ext/http_proxy.lani#L27)
+- [ext::http_rewrite](http_rewrite.md) · [source](../../../extended/ext/http_proxy.lani#L28)
+- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/http_proxy.lani#L29)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_proxy.lani#L30)
+- [std::event](../std/event.md) · [source](../../../extended/ext/http_proxy.lani#L31)
+- [std::linux](../std/linux.md) · [source](../../../extended/ext/http_proxy.lani#L32)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_proxy.lani#L33)
 
 ## Types, fields and variants
 
@@ -43,7 +46,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 pub enum Error
@@ -51,7 +54,7 @@ pub enum Error
 
 #### variant: Io
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 Io(core::io::Error)
@@ -59,7 +62,7 @@ Io(core::io::Error)
 
 #### variant: Event
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 Event(std::event::Error)
@@ -67,7 +70,7 @@ Event(std::event::Error)
 
 #### variant: Clock
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 Clock
@@ -75,7 +78,7 @@ Clock
 
 #### variant: AllocationFailed
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 AllocationFailed
@@ -83,7 +86,7 @@ AllocationFailed
 
 #### variant: InvalidState
 
-[Source line 32](../../../extended/ext/http_proxy.lani#L32)
+[Source line 35](../../../extended/ext/http_proxy.lani#L35)
 
 ```lanius
 InvalidState
@@ -91,7 +94,7 @@ InvalidState
 
 ### struct: Options
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 pub struct Options
@@ -99,7 +102,7 @@ pub struct Options
 
 #### field: limits
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 limits: ext::http::Limits
@@ -107,7 +110,7 @@ limits: ext::http::Limits
 
 #### field: buffer_bytes
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 buffer_bytes: i32
@@ -115,7 +118,7 @@ buffer_bytes: i32
 
 #### field: connect_timeout_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 connect_timeout_ms: i32
@@ -123,7 +126,7 @@ connect_timeout_ms: i32
 
 #### field: response_timeout_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 response_timeout_ms: i32
@@ -131,7 +134,7 @@ response_timeout_ms: i32
 
 #### field: io_timeout_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 io_timeout_ms: i32
@@ -139,7 +142,7 @@ io_timeout_ms: i32
 
 #### field: head_timeout_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 head_timeout_ms: i32
@@ -147,7 +150,7 @@ head_timeout_ms: i32
 
 #### field: idle_timeout_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 idle_timeout_ms: i32
@@ -155,7 +158,7 @@ idle_timeout_ms: i32
 
 #### field: pool_idle_ms
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 pool_idle_ms: i32
@@ -163,7 +166,7 @@ pool_idle_ms: i32
 
 #### field: max_idle
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 max_idle: i32
@@ -171,7 +174,7 @@ max_idle: i32
 
 #### field: upstream_connections
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 upstream_connections: i32
@@ -179,7 +182,7 @@ upstream_connections: i32
 
 #### field: max_requests
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 max_requests: i32
@@ -187,7 +190,7 @@ max_requests: i32
 
 #### field: via
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 via: core::slice::View<u8>
@@ -195,7 +198,7 @@ via: core::slice::View<u8>
 
 #### field: h2
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 h2: bool
@@ -203,7 +206,7 @@ h2: bool
 
 #### field: h2_streams
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 h2_streams: i32
@@ -211,7 +214,7 @@ h2_streams: i32
 
 #### field: h2_stream_window
 
-[Source line 44](../../../extended/ext/http_proxy.lani#L44)
+[Source line 47](../../../extended/ext/http_proxy.lani#L47)
 
 ```lanius
 h2_stream_window: i32
@@ -219,7 +222,7 @@ h2_stream_window: i32
 
 ### struct: Stats
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 pub struct Stats
@@ -227,7 +230,7 @@ pub struct Stats
 
 #### field: clients
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 clients: i32
@@ -235,7 +238,7 @@ clients: i32
 
 #### field: h2_clients
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 h2_clients: i32
@@ -243,7 +246,7 @@ h2_clients: i32
 
 #### field: requests
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 requests: i32
@@ -251,7 +254,7 @@ requests: i32
 
 #### field: h2_requests
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 h2_requests: i32
@@ -259,7 +262,7 @@ h2_requests: i32
 
 #### field: responses
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 responses: i32
@@ -267,7 +270,7 @@ responses: i32
 
 #### field: upstream_connects
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 upstream_connects: i32
@@ -275,7 +278,7 @@ upstream_connects: i32
 
 #### field: reused
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 reused: i32
@@ -283,7 +286,7 @@ reused: i32
 
 #### field: retries
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 retries: i32
@@ -291,7 +294,7 @@ retries: i32
 
 #### field: bad_gateway
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 bad_gateway: i32
@@ -299,7 +302,7 @@ bad_gateway: i32
 
 #### field: gateway_timeout
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 gateway_timeout: i32
@@ -307,7 +310,7 @@ gateway_timeout: i32
 
 #### field: rejected
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 rejected: i32
@@ -315,7 +318,7 @@ rejected: i32
 
 #### field: aborted
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 aborted: i32
@@ -323,7 +326,7 @@ aborted: i32
 
 #### field: peak_clients
 
-[Source line 45](../../../extended/ext/http_proxy.lani#L45)
+[Source line 48](../../../extended/ext/http_proxy.lani#L48)
 
 ```lanius
 peak_clients: i32
@@ -331,7 +334,7 @@ peak_clients: i32
 
 ### struct: Proxy
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 pub struct Proxy
@@ -339,7 +342,7 @@ pub struct Proxy
 
 #### field: events
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 events: std::event::Loop
@@ -347,23 +350,23 @@ events: std::event::Loop
 
 #### field: listener
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 listener: std::socket::Socket
 ```
 
-#### field: listening
+#### field: registration
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
-listening: bool
+registration: core::io_state::Registration
 ```
 
 #### field: options
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 options: Options
@@ -371,7 +374,7 @@ options: Options
 
 #### field: upstreams
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 upstreams: alloc::vec::Vec<core::net::SocketAddr>
@@ -379,7 +382,7 @@ upstreams: alloc::vec::Vec<core::net::SocketAddr>
 
 #### field: routes
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 routes: alloc::vec::Vec<Route>
@@ -387,7 +390,7 @@ routes: alloc::vec::Vec<Route>
 
 #### field: clients
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 clients: alloc::vec::Vec<Client>
@@ -395,7 +398,7 @@ clients: alloc::vec::Vec<Client>
 
 #### field: engines
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>
@@ -403,7 +406,7 @@ engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>
 
 #### field: links
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 links: alloc::vec::Vec<Link>
@@ -411,7 +414,7 @@ links: alloc::vec::Vec<Link>
 
 #### field: exchanges
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 exchanges: alloc::vec::Vec<Exchange>
@@ -419,7 +422,7 @@ exchanges: alloc::vec::Vec<Exchange>
 
 #### field: free_exchanges
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 free_exchanges: alloc::vec::Vec<i32>
@@ -427,7 +430,7 @@ free_exchanges: alloc::vec::Vec<i32>
 
 #### field: idle
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 idle: alloc::vec::Vec<i32>
@@ -435,7 +438,7 @@ idle: alloc::vec::Vec<i32>
 
 #### field: queue
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 queue: alloc::vec::Vec<i32>
@@ -443,7 +446,7 @@ queue: alloc::vec::Vec<i32>
 
 #### field: live
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 live: alloc::vec::Vec<i32>
@@ -451,7 +454,7 @@ live: alloc::vec::Vec<i32>
 
 #### field: wrap
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 wrap: bool
@@ -459,7 +462,7 @@ wrap: bool
 
 #### field: secure
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 secure: bool
@@ -467,7 +470,7 @@ secure: bool
 
 #### field: notices
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 notices: alloc::vec::Vec<ext::client_transport::Notice>
@@ -475,7 +478,7 @@ notices: alloc::vec::Vec<ext::client_transport::Notice>
 
 #### field: active
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 active: i32
@@ -483,7 +486,7 @@ active: i32
 
 #### field: stats
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 stats: Stats
@@ -491,7 +494,7 @@ stats: Stats
 
 #### field: now
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 now: core::time::Instant
@@ -499,7 +502,7 @@ now: core::time::Instant
 
 #### field: sweep_at
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 sweep_at: core::time::Deadline
@@ -507,7 +510,7 @@ sweep_at: core::time::Deadline
 
 #### field: scratch_fields
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 scratch_fields: alloc::vec::Vec<ext::hpack::Header>
@@ -515,25 +518,137 @@ scratch_fields: alloc::vec::Vec<ext::hpack::Header>
 
 #### field: scratch
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
 scratch: alloc::vec::Vec<u8>
 ```
 
-#### field: closed
+#### field: lifetime
 
-[Source line 52](../../../extended/ext/http_proxy.lani#L52)
+[Source line 55](../../../extended/ext/http_proxy.lani#L55)
 
 ```lanius
-closed: bool
+lifetime: core::lifecycle::Lifetime
+```
+
+### enum: ClientEvent
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+pub enum ClientEvent
+```
+
+#### variant: Closed
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+Closed
+```
+
+#### variant: NextRequest
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+NextRequest
+```
+
+#### variant: InputStarted
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+InputStarted
+```
+
+#### variant: Dispatched
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+Dispatched
+```
+
+#### variant: ResponseFinished
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+ResponseFinished
+```
+
+#### variant: Http2Detected
+
+[Source line 57](../../../extended/ext/http_proxy.lani#L57)
+
+```lanius
+Http2Detected
+```
+
+### machine: ClientPhase
+
+[Source line 59](../../../extended/ext/http_proxy.lani#L59)
+
+```lanius
+pub machine ClientPhase on ClientEvent
+```
+
+### enum: LinkEvent
+
+[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+
+```lanius
+pub enum LinkEvent
+```
+
+#### variant: Closed
+
+[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+
+```lanius
+Closed
+```
+
+#### variant: Connecting
+
+[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+
+```lanius
+Connecting
+```
+
+#### variant: Dispatched
+
+[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+
+```lanius
+Dispatched
+```
+
+#### variant: Returned
+
+[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+
+```lanius
+Returned
+```
+
+### machine: LinkPhase
+
+[Source line 128](../../../extended/ext/http_proxy.lani#L128)
+
+```lanius
+pub machine LinkPhase on LinkEvent
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 75](../../../extended/ext/http_proxy.lani#L75)
+[Source line 176](../../../extended/ext/http_proxy.lani#L176)
 
 ```lanius
 pub fn default_options() -> Options
@@ -541,7 +656,7 @@ pub fn default_options() -> Options
 
 ### function: proxy
 
-[Source line 126](../../../extended/ext/http_proxy.lani#L126)
+[Source line 227](../../../extended/ext/http_proxy.lani#L227)
 
 ```lanius
 pub fn proxy(listener: &std::socket::Socket, options: Options, max_clients: i32) -> core::result::Result<Proxy,Error>
@@ -549,9 +664,105 @@ pub fn proxy(listener: &std::socket::Socket, options: Options, max_clients: i32)
 
 ## Implementation blocks and public methods
 
-### impl at line 146
+### impl at line 117
 
-[Source line 146](../../../extended/ext/http_proxy.lani#L146)
+[Source line 117](../../../extended/ext/http_proxy.lani#L117)
+
+```lanius
+pub impl ClientPhase
+```
+
+#### method: is_free
+
+[Source line 118](../../../extended/ext/http_proxy.lani#L118)
+
+```lanius
+pub fn is_free(&self) -> bool
+```
+
+#### method: is_idle
+
+[Source line 119](../../../extended/ext/http_proxy.lani#L119)
+
+```lanius
+pub fn is_idle(&self) -> bool
+```
+
+#### method: is_head
+
+[Source line 120](../../../extended/ext/http_proxy.lani#L120)
+
+```lanius
+pub fn is_head(&self) -> bool
+```
+
+#### method: is_busy
+
+[Source line 121](../../../extended/ext/http_proxy.lani#L121)
+
+```lanius
+pub fn is_busy(&self) -> bool
+```
+
+#### method: is_closing
+
+[Source line 122](../../../extended/ext/http_proxy.lani#L122)
+
+```lanius
+pub fn is_closing(&self) -> bool
+```
+
+#### method: is_http2
+
+[Source line 123](../../../extended/ext/http_proxy.lani#L123)
+
+```lanius
+pub fn is_http2(&self) -> bool
+```
+
+### impl at line 160
+
+[Source line 160](../../../extended/ext/http_proxy.lani#L160)
+
+```lanius
+pub impl LinkPhase
+```
+
+#### method: is_free
+
+[Source line 161](../../../extended/ext/http_proxy.lani#L161)
+
+```lanius
+pub fn is_free(&self) -> bool
+```
+
+#### method: is_connecting
+
+[Source line 162](../../../extended/ext/http_proxy.lani#L162)
+
+```lanius
+pub fn is_connecting(&self) -> bool
+```
+
+#### method: is_busy
+
+[Source line 163](../../../extended/ext/http_proxy.lani#L163)
+
+```lanius
+pub fn is_busy(&self) -> bool
+```
+
+#### method: is_idle
+
+[Source line 164](../../../extended/ext/http_proxy.lani#L164)
+
+```lanius
+pub fn is_idle(&self) -> bool
+```
+
+### impl at line 247
+
+[Source line 247](../../../extended/ext/http_proxy.lani#L247)
 
 ```lanius
 pub impl Proxy
@@ -559,7 +770,7 @@ pub impl Proxy
 
 #### method: borrow
 
-[Source line 147](../../../extended/ext/http_proxy.lani#L147)
+[Source line 248](../../../extended/ext/http_proxy.lani#L248)
 
 ```lanius
 pub fn borrow(&self) -> &Proxy
@@ -567,7 +778,7 @@ pub fn borrow(&self) -> &Proxy
 
 #### method: stats
 
-[Source line 148](../../../extended/ext/http_proxy.lani#L148)
+[Source line 249](../../../extended/ext/http_proxy.lani#L249)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -575,7 +786,7 @@ pub fn stats(&self) -> Stats
 
 #### method: active
 
-[Source line 150](../../../extended/ext/http_proxy.lani#L150)
+[Source line 251](../../../extended/ext/http_proxy.lani#L251)
 
 ```lanius
 pub fn active(&self) -> i32
@@ -583,7 +794,7 @@ pub fn active(&self) -> i32
 
 #### method: upstream_connections
 
-[Source line 152](../../../extended/ext/http_proxy.lani#L152)
+[Source line 253](../../../extended/ext/http_proxy.lani#L253)
 
 ```lanius
 pub fn upstream_connections(&self) -> i32
@@ -591,7 +802,7 @@ pub fn upstream_connections(&self) -> i32
 
 #### method: idle_connections
 
-[Source line 153](../../../extended/ext/http_proxy.lani#L153)
+[Source line 254](../../../extended/ext/http_proxy.lani#L254)
 
 ```lanius
 pub fn idle_connections(&self) -> i32
@@ -599,7 +810,7 @@ pub fn idle_connections(&self) -> i32
 
 #### method: add_upstream
 
-[Source line 156](../../../extended/ext/http_proxy.lani#L156)
+[Source line 257](../../../extended/ext/http_proxy.lani#L257)
 
 ```lanius
 pub fn add_upstream(&self, address: core::net::SocketAddr) -> core::result::Result<i32,Error>
@@ -607,7 +818,7 @@ pub fn add_upstream(&self, address: core::net::SocketAddr) -> core::result::Resu
 
 #### method: route
 
-[Source line 161](../../../extended/ext/http_proxy.lani#L161)
+[Source line 262](../../../extended/ext/http_proxy.lani#L262)
 
 ```lanius
 pub fn route(&self, prefix: core::slice::View<u8>, upstream: i32) -> core::result::Result<i32,Error>
@@ -615,7 +826,7 @@ pub fn route(&self, prefix: core::slice::View<u8>, upstream: i32) -> core::resul
 
 #### method: wrap_clients
 
-[Source line 181](../../../extended/ext/http_proxy.lani#L181)
+[Source line 282](../../../extended/ext/http_proxy.lani#L282)
 
 ```lanius
 pub fn wrap_clients(&self, secure: bool) -> core::result::Result<i32,Error>
@@ -623,15 +834,15 @@ pub fn wrap_clients(&self, secure: bool) -> core::result::Result<i32,Error>
 
 #### method: close
 
-[Source line 187](../../../extended/ext/http_proxy.lani#L187)
+[Source line 288](../../../extended/ext/http_proxy.lani#L288)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 203
+### impl at line 304
 
-[Source line 203](../../../extended/ext/http_proxy.lani#L203)
+[Source line 304](../../../extended/ext/http_proxy.lani#L304)
 
 ```lanius
 pub impl ext::client_transport::Clients for Proxy
@@ -639,7 +850,7 @@ pub impl ext::client_transport::Clients for Proxy
 
 #### method: notice_count
 
-[Source line 206](../../../extended/ext/http_proxy.lani#L206)
+[Source line 307](../../../extended/ext/http_proxy.lani#L307)
 
 ```lanius
 pub fn notice_count(&self) -> i32
@@ -647,7 +858,7 @@ pub fn notice_count(&self) -> i32
 
 #### method: notice
 
-[Source line 207](../../../extended/ext/http_proxy.lani#L207)
+[Source line 308](../../../extended/ext/http_proxy.lani#L308)
 
 ```lanius
 pub fn notice(&self, i: i32) -> ext::client_transport::Notice
@@ -655,7 +866,7 @@ pub fn notice(&self, i: i32) -> ext::client_transport::Notice
 
 #### method: clear_notices
 
-[Source line 208](../../../extended/ext/http_proxy.lani#L208)
+[Source line 309](../../../extended/ext/http_proxy.lani#L309)
 
 ```lanius
 pub fn clear_notices(&self)
@@ -663,7 +874,7 @@ pub fn clear_notices(&self)
 
 #### method: client_open
 
-[Source line 209](../../../extended/ext/http_proxy.lani#L209)
+[Source line 310](../../../extended/ext/http_proxy.lani#L310)
 
 ```lanius
 pub fn client_open(&self, slot: i32) -> bool
@@ -671,7 +882,7 @@ pub fn client_open(&self, slot: i32) -> bool
 
 #### method: client_input
 
-[Source line 211](../../../extended/ext/http_proxy.lani#L211)
+[Source line 312](../../../extended/ext/http_proxy.lani#L312)
 
 ```lanius
 pub fn client_input(&self, slot: i32) -> core::slice::View<u8>
@@ -679,7 +890,7 @@ pub fn client_input(&self, slot: i32) -> core::slice::View<u8>
 
 #### method: client_received
 
-[Source line 215](../../../extended/ext/http_proxy.lani#L215)
+[Source line 316](../../../extended/ext/http_proxy.lani#L316)
 
 ```lanius
 pub fn client_received(&self, slot: i32, count: i32)
@@ -687,7 +898,7 @@ pub fn client_received(&self, slot: i32, count: i32)
 
 #### method: client_eof
 
-[Source line 220](../../../extended/ext/http_proxy.lani#L220)
+[Source line 321](../../../extended/ext/http_proxy.lani#L321)
 
 ```lanius
 pub fn client_eof(&self, slot: i32)
@@ -695,7 +906,7 @@ pub fn client_eof(&self, slot: i32)
 
 #### method: client_wants_read
 
-[Source line 222](../../../extended/ext/http_proxy.lani#L222)
+[Source line 323](../../../extended/ext/http_proxy.lani#L323)
 
 ```lanius
 pub fn client_wants_read(&self, slot: i32) -> bool
@@ -703,7 +914,7 @@ pub fn client_wants_read(&self, slot: i32) -> bool
 
 #### method: client_ready
 
-[Source line 224](../../../extended/ext/http_proxy.lani#L224)
+[Source line 325](../../../extended/ext/http_proxy.lani#L325)
 
 ```lanius
 pub fn client_ready(&self, slot: i32, readable: bool, writable: bool)
@@ -711,7 +922,7 @@ pub fn client_ready(&self, slot: i32, readable: bool, writable: bool)
 
 #### method: client_output
 
-[Source line 230](../../../extended/ext/http_proxy.lani#L230)
+[Source line 331](../../../extended/ext/http_proxy.lani#L331)
 
 ```lanius
 pub fn client_output(&self, slot: i32) -> core::slice::View<u8>
@@ -719,7 +930,7 @@ pub fn client_output(&self, slot: i32) -> core::slice::View<u8>
 
 #### method: client_sent
 
-[Source line 235](../../../extended/ext/http_proxy.lani#L235)
+[Source line 336](../../../extended/ext/http_proxy.lani#L336)
 
 ```lanius
 pub fn client_sent(&self, slot: i32, count: i32)
@@ -727,7 +938,7 @@ pub fn client_sent(&self, slot: i32, count: i32)
 
 #### method: client_start_h2
 
-[Source line 246](../../../extended/ext/http_proxy.lani#L246)
+[Source line 347](../../../extended/ext/http_proxy.lani#L347)
 
 ```lanius
 pub fn client_start_h2(&self, slot: i32)
@@ -735,7 +946,7 @@ pub fn client_start_h2(&self, slot: i32)
 
 #### method: client_hold
 
-[Source line 249](../../../extended/ext/http_proxy.lani#L249)
+[Source line 350](../../../extended/ext/http_proxy.lani#L350)
 
 ```lanius
 pub fn client_hold(&self, slot: i32, bits: u32)
@@ -743,15 +954,15 @@ pub fn client_hold(&self, slot: i32, bits: u32)
 
 #### method: client_drop
 
-[Source line 251](../../../extended/ext/http_proxy.lani#L251)
+[Source line 352](../../../extended/ext/http_proxy.lani#L352)
 
 ```lanius
 pub fn client_drop(&self, slot: i32)
 ```
 
-### impl at line 941
+### impl at line 1042
 
-[Source line 941](../../../extended/ext/http_proxy.lani#L941)
+[Source line 1042](../../../extended/ext/http_proxy.lani#L1042)
 
 ```lanius
 impl Proxy
@@ -759,7 +970,7 @@ impl Proxy
 
 #### method: poll
 
-[Source line 1043](../../../extended/ext/http_proxy.lani#L1043)
+[Source line 1144](../../../extended/ext/http_proxy.lani#L1144)
 
 ```lanius
 pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error>

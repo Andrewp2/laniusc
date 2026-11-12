@@ -18,12 +18,14 @@ Declaration counts: constant: 1; enum: 1; field: 10; function: 3; impl: 1; metho
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/glob.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/glob.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/glob.lani#L6)
-- [core::path](../core/path.md) · [source](../../../extended/ext/glob.lani#L7)
-- [core::result](../core/result.md) · [source](../../../extended/ext/glob.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/glob.lani#L9)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/glob.lani#L4)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/glob.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/glob.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/glob.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/glob.lani#L8)
+- [core::path](../core/path.md) · [source](../../../extended/ext/glob.lani#L9)
+- [core::result](../core/result.md) · [source](../../../extended/ext/glob.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/glob.lani#L11)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Options
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 pub struct Options
@@ -39,7 +41,7 @@ pub struct Options
 
 #### field: pathname
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 pathname: bool
@@ -47,7 +49,7 @@ pathname: bool
 
 #### field: literal_leading_dot
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 literal_leading_dot: bool
@@ -55,7 +57,7 @@ literal_leading_dot: bool
 
 #### field: escape
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 escape: bool
@@ -63,7 +65,7 @@ escape: bool
 
 #### field: ascii_case_insensitive
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 ascii_case_insensitive: bool
@@ -71,7 +73,7 @@ ascii_case_insensitive: bool
 
 #### field: globstar
 
-[Source line 11](../../../extended/ext/glob.lani#L11)
+[Source line 13](../../../extended/ext/glob.lani#L13)
 
 ```lanius
 globstar: bool
@@ -79,7 +81,7 @@ globstar: bool
 
 ### struct: Limits
 
-[Source line 12](../../../extended/ext/glob.lani#L12)
+[Source line 14](../../../extended/ext/glob.lani#L14)
 
 ```lanius
 pub struct Limits
@@ -87,7 +89,7 @@ pub struct Limits
 
 #### field: max_pattern_bytes
 
-[Source line 12](../../../extended/ext/glob.lani#L12)
+[Source line 14](../../../extended/ext/glob.lani#L14)
 
 ```lanius
 max_pattern_bytes: i32
@@ -95,7 +97,7 @@ max_pattern_bytes: i32
 
 #### field: max_tokens
 
-[Source line 12](../../../extended/ext/glob.lani#L12)
+[Source line 14](../../../extended/ext/glob.lani#L14)
 
 ```lanius
 max_tokens: i32
@@ -103,7 +105,7 @@ max_tokens: i32
 
 ### enum: Error
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 pub enum Error
@@ -111,7 +113,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 Bounds
@@ -119,7 +121,7 @@ Bounds
 
 #### variant: PatternLimit
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 PatternLimit
@@ -127,7 +129,7 @@ PatternLimit
 
 #### variant: TokenLimit
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 TokenLimit
@@ -135,7 +137,7 @@ TokenLimit
 
 #### variant: Nul
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 Nul(i32)
@@ -143,7 +145,7 @@ Nul(i32)
 
 #### variant: InvalidEscape
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 InvalidEscape(i32)
@@ -151,7 +153,7 @@ InvalidEscape(i32)
 
 #### variant: UnclosedClass
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 UnclosedClass(i32)
@@ -159,7 +161,7 @@ UnclosedClass(i32)
 
 #### variant: InvalidRange
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 InvalidRange(i32)
@@ -167,7 +169,7 @@ InvalidRange(i32)
 
 #### variant: UnknownClass
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 UnknownClass(i32)
@@ -175,7 +177,7 @@ UnknownClass(i32)
 
 #### variant: UnsupportedClass
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 UnsupportedClass(i32)
@@ -183,7 +185,7 @@ UnsupportedClass(i32)
 
 #### variant: CapacityOverflow
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 CapacityOverflow
@@ -191,7 +193,7 @@ CapacityOverflow
 
 #### variant: AllocationFailed
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 AllocationFailed
@@ -199,7 +201,7 @@ AllocationFailed
 
 #### variant: ScratchTooSmall
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 ScratchTooSmall(i32)
@@ -207,7 +209,7 @@ ScratchTooSmall(i32)
 
 #### variant: WorkLimit
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 WorkLimit
@@ -215,7 +217,7 @@ WorkLimit
 
 #### variant: Destroyed
 
-[Source line 13](../../../extended/ext/glob.lani#L13)
+[Source line 15](../../../extended/ext/glob.lani#L15)
 
 ```lanius
 Destroyed
@@ -223,7 +225,7 @@ Destroyed
 
 ### struct: Pattern
 
-[Source line 17](../../../extended/ext/glob.lani#L17)
+[Source line 19](../../../extended/ext/glob.lani#L19)
 
 ```lanius
 pub struct Pattern
@@ -231,7 +233,7 @@ pub struct Pattern
 
 #### field: tokens
 
-[Source line 17](../../../extended/ext/glob.lani#L17)
+[Source line 19](../../../extended/ext/glob.lani#L19)
 
 ```lanius
 tokens: alloc::vec::Vec<Token>
@@ -239,25 +241,25 @@ tokens: alloc::vec::Vec<Token>
 
 #### field: options
 
-[Source line 17](../../../extended/ext/glob.lani#L17)
+[Source line 19](../../../extended/ext/glob.lani#L19)
 
 ```lanius
 options: Options
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 17](../../../extended/ext/glob.lani#L17)
+[Source line 19](../../../extended/ext/glob.lani#L19)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Constants
 
 ### constant: DEFAULT_WORK_LIMIT
 
-[Source line 18](../../../extended/ext/glob.lani#L18)
+[Source line 20](../../../extended/ext/glob.lani#L20)
 
 ```lanius
 pub const DEFAULT_WORK_LIMIT: u64 = 67108864;
@@ -267,7 +269,7 @@ pub const DEFAULT_WORK_LIMIT: u64 = 67108864;
 
 ### function: default_options
 
-[Source line 26](../../../extended/ext/glob.lani#L26)
+[Source line 28](../../../extended/ext/glob.lani#L28)
 
 ```lanius
 pub fn default_options() -> Options
@@ -275,7 +277,7 @@ pub fn default_options() -> Options
 
 ### function: default_limits
 
-[Source line 27](../../../extended/ext/glob.lani#L27)
+[Source line 29](../../../extended/ext/glob.lani#L29)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -283,7 +285,7 @@ pub fn default_limits() -> Limits
 
 ### function: compile
 
-[Source line 124](../../../extended/ext/glob.lani#L124)
+[Source line 126](../../../extended/ext/glob.lani#L126)
 
 ```lanius
 pub fn compile(bytes: core::slice::View<u8>, options: Options, limits: Limits) -> core::result::Result<Pattern, Error>
@@ -291,9 +293,9 @@ pub fn compile(bytes: core::slice::View<u8>, options: Options, limits: Limits) -
 
 ## Implementation blocks and public methods
 
-### impl at line 170
+### impl at line 172
 
-[Source line 170](../../../extended/ext/glob.lani#L170)
+[Source line 172](../../../extended/ext/glob.lani#L172)
 
 ```lanius
 pub impl Pattern
@@ -301,7 +303,7 @@ pub impl Pattern
 
 #### method: borrow
 
-[Source line 171](../../../extended/ext/glob.lani#L171)
+[Source line 173](../../../extended/ext/glob.lani#L173)
 
 ```lanius
 pub fn borrow(&self) -> &Pattern
@@ -309,7 +311,7 @@ pub fn borrow(&self) -> &Pattern
 
 #### method: is_live
 
-[Source line 172](../../../extended/ext/glob.lani#L172)
+[Source line 174](../../../extended/ext/glob.lani#L174)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -317,7 +319,7 @@ pub fn is_live(&self) -> bool
 
 #### method: token_count
 
-[Source line 173](../../../extended/ext/glob.lani#L173)
+[Source line 175](../../../extended/ext/glob.lani#L175)
 
 ```lanius
 pub fn token_count(&self) -> i32
@@ -325,7 +327,7 @@ pub fn token_count(&self) -> i32
 
 #### method: scratch_len
 
-[Source line 174](../../../extended/ext/glob.lani#L174)
+[Source line 176](../../../extended/ext/glob.lani#L176)
 
 ```lanius
 pub fn scratch_len(&self) -> i32
@@ -333,7 +335,7 @@ pub fn scratch_len(&self) -> i32
 
 #### method: destroy
 
-[Source line 175](../../../extended/ext/glob.lani#L175)
+[Source line 177](../../../extended/ext/glob.lani#L177)
 
 ```lanius
 pub fn destroy(&self)
@@ -341,7 +343,7 @@ pub fn destroy(&self)
 
 #### method: try_clone
 
-[Source line 176](../../../extended/ext/glob.lani#L176)
+[Source line 178](../../../extended/ext/glob.lani#L178)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Pattern, Error>
@@ -349,7 +351,7 @@ pub fn try_clone(&self) -> core::result::Result<Pattern, Error>
 
 #### method: new_scratch
 
-[Source line 182](../../../extended/ext/glob.lani#L182)
+[Source line 184](../../../extended/ext/glob.lani#L184)
 
 ```lanius
 pub fn new_scratch(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -357,7 +359,7 @@ pub fn new_scratch(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error>
 
 #### method: work_bound
 
-[Source line 190](../../../extended/ext/glob.lani#L190)
+[Source line 192](../../../extended/ext/glob.lani#L192)
 
 ```lanius
 pub fn work_bound(&self, input_bytes: i32) -> core::result::Result<u64, Error>
@@ -365,7 +367,7 @@ pub fn work_bound(&self, input_bytes: i32) -> core::result::Result<u64, Error>
 
 #### method: matches
 
-[Source line 195](../../../extended/ext/glob.lani#L195)
+[Source line 197](../../../extended/ext/glob.lani#L197)
 
 ```lanius
 pub fn matches(&self, path: core::path::Path, scratch: core::slice::View<u8>, max_work: u64) -> core::result::Result<bool, Error>
