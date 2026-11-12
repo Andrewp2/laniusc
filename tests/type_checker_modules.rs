@@ -3258,9 +3258,10 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani"))
     );
-    // The entry, the module, and `core::function`: discovery loads it with a
-    // file that contains a `|`, where a closure can stand.
-    assert_eq!(manifest.files.len(), 3);
+    // The entry, the module, `core::function` and the `core::mem` it imports:
+    // discovery loads `core::function` with a file that contains a `|`, where
+    // a closure can stand.
+    assert_eq!(manifest.files.len(), 4);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::runtime import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -3304,9 +3305,10 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/target.lani"))
     );
-    // The entry, the module, and `core::function`: discovery loads it with a
-    // file that contains a `|`, where a closure can stand.
-    assert_eq!(manifest.files.len(), 3);
+    // The entry, the module, `core::function` and the `core::mem` it imports:
+    // discovery loads `core::function` with a file that contains a `|`, where
+    // a closure can stand.
+    assert_eq!(manifest.files.len(), 4);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::target import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -3373,9 +3375,10 @@ fn main() {
             .iter()
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/bool.lani"))
     );
-    // The entry, the module, and `core::function`: discovery loads it with a
-    // file that contains a `|`, where a closure can stand.
-    assert_eq!(manifest.files.len(), 3);
+    // The entry, the module, `core::function` and the `core::mem` it imports:
+    // discovery loads `core::function` with a file that contains a `|`, where
+    // a closure can stand.
+    assert_eq!(manifest.files.len(), 4);
     common::block_on_gpu_with_timeout(
         "GPU type check source-root core::bool import",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
@@ -4299,6 +4302,7 @@ fn type_checker_enforces_stdlib_trait_where_obligations_from_source_pack() {
         include_str!("../stdlib/core/option.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
@@ -4337,6 +4341,7 @@ fn main() {
         include_str!("../stdlib/core/option.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
@@ -4394,6 +4399,7 @@ fn main() {
                 include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/function.lani"),
+                include_str!("../stdlib/core/mem.lani"),
                 include_str!("../stdlib/core/option.lani"),
                 include_str!("../stdlib/core/u64.lani"),
                 include_str!("../stdlib/core/i32.lani"),
@@ -4453,6 +4459,7 @@ fn main() {
                 include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/function.lani"),
+                include_str!("../stdlib/core/mem.lani"),
                 include_str!("../stdlib/core/option.lani"),
                 include_str!("../stdlib/core/u64.lani"),
                 include_str!("../stdlib/core/u8.lani"),
@@ -4751,6 +4758,7 @@ fn type_checker_accepts_core_ordering_module_calls() {
         include_str!("../stdlib/core/option.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
@@ -4778,6 +4786,7 @@ fn type_checker_accepts_qualified_generic_option_and_result_calls() {
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         r#"
 module app::main;
 
@@ -4819,6 +4828,7 @@ fn type_checker_accepts_qualified_generic_enum_instance_returns() {
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
 module app::main;
