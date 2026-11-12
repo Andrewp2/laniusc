@@ -7,13 +7,12 @@ Reads target/laniusc-shader-artifacts/<profile>/inlined_sizes.txt (written by th
 shader build) and rewrites each line of both budget files to min(limit, measured):
 
 - crates/laniusc-shaders/inlined_size_budget.txt: fully inlined instructions.
-  Kernels that now fit the 40k default lose their line, except headroom lines
-  (a limit under the default, kept for a kernel that was split to make room).
-  A headroom line keeps its limit; only lines over the default are lowered.
+  Kernels that now fit the 40k default lose their line. A kernel under the
+  default has no line: it may grow up to the default.
 - crates/laniusc-shaders/local_array_budget.txt: per-thread local array bytes.
   Kernels that now have no local arrays (the default, 0) lose their line.
 
-Limits never go up and no kernel is added (a headroom line is added by hand); a kernel that grew past its limit
+Limits never go up and no kernel is added; a kernel that grew past its limit
 fails the build before this script ever sees it.
 """
 import argparse
@@ -50,16 +49,11 @@ for budget, column, default, what in BUDGETS:
             continue
         limit, key = int(fields[0]), fields[1]
         measured = rows.get(key, [None] * 5)[column]
-        # A line under the default caps a kernel that was split to make
-        # room; it stays. A line over the default goes once the kernel fits.
-        if measured is None or (measured <= default and limit > default):
+        # A line goes once the kernel fits the default. A limit under the
+        # default would fail a change that adds one instruction to a kernel
+        # that is still far under the size the driver compiles quickly.
+        if measured is None or measured <= default:
             dropped.append(key)
-            continue
-        # A line under the default is not lowered: pinning it to the measured
-        # size would fail the next change that adds one instruction to a
-        # kernel that is still far under the default.
-        if limit <= default:
-            kept.append((limit, key))
             continue
         if measured < limit:
             lowered += 1
