@@ -55,6 +55,7 @@ static const uint TK_CAST_TYPE_IDENT = 196u;
 static const uint TK_BOUND_COLON = 107u;
 static const uint TK_TYPE_IDENT = 80u;
 static const uint TK_BOUND_TYPE_IDENT = 174u;
+static const uint TK_BOUND_TYPE_AMPERSAND = 179u;
 static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
 static const uint TK_PATH_TYPE_ARG_LT = 184u;
@@ -116,7 +117,7 @@ uint direct_type_path_context_kind(uint parser_i, uint count)
     uint prev = previous_symbol_kind(parser_i, count);
     if (prev == TK_TYPE_SEMICOLON)
         return TK_ARRAY_LENGTH_IDENT;
-    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS)
+    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS || prev == TK_BOUND_TYPE_AMPERSAND)
         return TK_BOUND_TYPE_IDENT;
     if (prev == TK_AS)
         return TK_CAST_TYPE_IDENT;

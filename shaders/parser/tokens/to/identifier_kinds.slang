@@ -60,6 +60,7 @@ static const uint TK_WHERE_IDENT = 156u;
 static const uint TK_WHERE_COMMA = 157u;
 static const uint TK_PARAM_SELF_VALUE = 173u;
 static const uint TK_BOUND_TYPE_IDENT = 174u;
+static const uint TK_BOUND_TYPE_AMPERSAND = 179u;
 static const uint TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint TK_BOUND_TYPE_ARG_COMMA = 177u;
 static const uint TK_PARAM_SELF_REF_VALUE = 178u;
@@ -118,7 +119,7 @@ bool impl_type_context_before(uint parser_i, uint count)
 
 uint type_context_identifier_kind(uint prev, bool impl_context)
 {
-    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS)
+    if (prev == TK_BOUND_COLON || prev == TK_BOUND_PLUS || prev == TK_BOUND_TYPE_AMPERSAND)
         return TK_BOUND_TYPE_IDENT;
     // Cast targets have their own kind; see the cast grammar.
     if (prev == TK_AS)
