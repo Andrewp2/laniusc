@@ -282,6 +282,11 @@ fn a_static_bound_call_fills_a_generic_record_field() {
 }
 
 #[test]
+fn a_method_borrows_an_element_of_a_call_result() {
+    assert_exit("receiver_element_of_call_result.lani", 74);
+}
+
+#[test]
 fn a_receiver_binding_types_a_literal_argument() {
     assert_exit("receiver_binds_literal_argument.lani", 0);
 }

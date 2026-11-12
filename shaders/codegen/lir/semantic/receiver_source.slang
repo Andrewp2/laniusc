@@ -19,10 +19,11 @@ uint receiver_source_hir(uint node, uint hir_count)
     return LIR_INVALID;
 }
 
-// The expression under a receiver's field projections and parentheses: `w`
-// in `w.inner.get()`, `make()` in `make().inner.get()`. When it is not a
-// place, the call stores it (receiver_temporary.slang). One loop handles
-// both steps; a nested walk would risk the Slang loop-merge miscompile.
+// The expression under a receiver's field and index projections and
+// parentheses: `w` in `w.inner.get()`, `make()` in `make().inner.get()` and
+// in `make()[0].get()`. When it is not a place, the call stores it
+// (receiver_temporary.slang). One loop handles every step; a nested walk
+// would risk the Slang loop-merge miscompile.
 uint receiver_projection_root(uint node, uint hir_count)
 {
     for (uint depth = 0u; depth < 128u && node < hir_count; depth++)
@@ -31,7 +32,7 @@ uint receiver_projection_root(uint node, uint hir_count)
         HirPayload payload = compact_hir_payload[node];
         bool forward = (kind == HIR_EXPR || kind == HIR_BINARY_EXPR || kind == HIR_UNARY_EXPR) &&
             payload.a == HIR_EXPR_FORWARD;
-        if (!forward && kind != HIR_MEMBER_EXPR) return node;
+        if (!forward && kind != HIR_MEMBER_EXPR && kind != HIR_INDEX_EXPR) return node;
         node = payload.b;
     }
     return LIR_INVALID;

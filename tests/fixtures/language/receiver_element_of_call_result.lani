@@ -1,0 +1,58 @@
+module app::main;
+
+struct Conn {
+    code: i32,
+}
+
+impl Conn {
+    fn read(&self) -> i32 {
+        return self.code;
+    }
+
+    fn bump(&mut self) -> i32 {
+        self.code += 1;
+        return self.code;
+    }
+}
+
+struct State {
+    connection: Conn,
+    other: i32,
+}
+
+struct Holder {
+    states: [State; 3],
+}
+
+fn states(seed: i32) -> [State; 3] {
+    return [
+        State { connection: Conn { code: seed }, other: 1 },
+        State { connection: Conn { code: seed + 10 }, other: 2 },
+        State { connection: Conn { code: seed + 20 }, other: 3 },
+    ];
+}
+
+fn conns() -> [Conn; 1] {
+    return [Conn { code: 4 }];
+}
+
+fn holder() -> Holder {
+    return Holder { states: states(3) };
+}
+
+fn pick() -> usize {
+    return 2;
+}
+
+fn main() -> i32 {
+    let total: i32 = 0;
+    // Each call result is stored once, then the method borrows inside it.
+    total += conns()[0].read();
+    total += states(1)[0].connection.read();
+    total += states(1)[pick()].connection.read();
+    total += states(2)[1].connection.bump();
+    total += holder().states[1].connection.read();
+    let index: usize = 1;
+    total += states(0)[index + 1].connection.read() + states(0)[index].other;
+    return total;
+}

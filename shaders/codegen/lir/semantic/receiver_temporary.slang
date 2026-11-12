@@ -9,9 +9,10 @@
 // local. The call owns the local, which is keyed by the method name token at
 // the call site: every call has its own, and it never names a declaration.
 //
-// A field of such a value (`make().inner.get()`) is borrowed the same way:
-// the call stores the aggregate under the projection, its holder, and the
-// method borrows the field inside the stored copy. place_mark records the
+// A field or element of such a value (`make().inner.get()`,
+// `make()[0].get()`) is borrowed the same way: the call stores the aggregate
+// under the projections, its holder, and the method borrows the field or
+// element inside the stored copy. place_mark records the
 // holder in semantic_receiver_call_by_hir (receiver_words.slang), so later
 // passes need not repeat this walk.
 
@@ -45,10 +46,10 @@ uint receiver_temporary_token(uint call, CheckedCallArtifact checked, uint hir_c
     if (source >= hir_count || root >= hir_count) return LIR_INVALID;
     uint kind = compact_hir_core[root].kind;
     uint form = compact_hir_payload[root].a;
-    // Names and indexes keep their own storage, inside parentheses too.
+    // A name keeps its own storage, inside parentheses too.
     bool name = (kind == HIR_EXPR || kind == HIR_BINARY_EXPR || kind == HIR_UNARY_EXPR) &&
         form == HIR_EXPR_NAME;
-    bool place = kind == HIR_INDEX_EXPR || kind == HIR_NAME_EXPR || kind == HIR_PATH_EXPR || name;
+    bool place = kind == HIR_NAME_EXPR || kind == HIR_PATH_EXPR || name;
     if (place || (root != source && !receiver_temporary_aggregate(root))) return LIR_INVALID;
     holder = root;
     return compact_hir_payload[member].c;
