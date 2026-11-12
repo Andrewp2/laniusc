@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use encase::ShaderType;
@@ -33,14 +33,13 @@ impl PackTotalsStatusPass {
         &self.data
     }
 
-    /// Records the final packed-total status pass.
-    pub fn record_pass(
+    /// The bind group of the pass on `buffers`, created on first use.
+    pub(in crate::parser) fn bind_group(
         &self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
-    ) -> Result<()> {
+    ) -> Result<Arc<wgpu::BindGroup>> {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gParams".into(),
@@ -77,7 +76,7 @@ impl PackTotalsStatusPass {
                     .as_entire_binding(),
             ),
         ]);
-        let bind_group = cache
+        Ok(cache
             .reflected_for_graph_pass_data(
                 device,
                 crate::parser::compiler_graph::PACK_TOTALS_STATUS,
@@ -88,7 +87,18 @@ impl PackTotalsStatusPass {
             )?
             .into_iter()
             .next()
-            .expect("pack totals status pass must have one reflected bind group");
+            .expect("pack totals status pass must have one reflected bind group"))
+    }
+
+    /// Records the final packed-total status pass.
+    pub fn record_pass(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        let bind_group = self.bind_group(device, buffers, cache)?;
         crate::gpu::passes_core::record_or_defer_compute_direct(
             encoder,
             &self.data,

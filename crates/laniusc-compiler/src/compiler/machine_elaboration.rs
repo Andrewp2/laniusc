@@ -93,6 +93,13 @@ fn unchanged() -> &'static Mutex<HashSet<blake3::Hash>> {
     UNCHANGED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+/// Frees the buffers the rewrites keep between runs, for a resident compiler
+/// that trims its idle storage. The next run allocates them again.
+pub(crate) fn release_resident_buffers() {
+    closures::release_resident_buffers();
+    machines::release_resident_buffers();
+}
+
 /// The original text and span behind a span of elaborated text, if `source`
 /// is an elaborated file.
 pub(crate) fn original_span(source: &str, start: usize, len: usize) -> Option<(Arc<Elaborated>, usize, usize)> {

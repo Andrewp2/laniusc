@@ -9,19 +9,17 @@
 //! buffers from the counts the kernels publish, and reads back the rewritten
 //! text and the piece table that maps it to the source.
 
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError},
+};
+
 use anyhow::{Context, Result, anyhow};
 
 use super::Segment;
 use crate::{
     gpu::{
-        buffers::{
-            LaniusBuffer,
-            readback_bytes,
-            storage_ro_from_bytes,
-            storage_ro_from_u32s,
-            storage_rw_uninit_bytes,
-            uniform_from_val,
-        },
+        buffers::{CapacityBufferCache, LaniusBuffer, live_tracked_allocation_ids, tracked_buffer_identity},
         passes_core::{
             self,
             DispatchDim,
@@ -146,11 +144,108 @@ struct EmitParams {
     reserved1: u32,
 }
 
+/// What a buffer the kernels read and write is used for.
+const STORAGE: wgpu::BufferUsages =
+    wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC).union(wgpu::BufferUsages::COPY_DST);
+/// What a buffer the host maps is used for.
+const READBACK: wgpu::BufferUsages = wgpu::BufferUsages::MAP_READ.union(wgpu::BufferUsages::COPY_DST);
+
 pub(super) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
 
 pub(super) struct Gpu<'a> {
     pub(super) device: &'a wgpu::Device,
     pub(super) queue: &'a wgpu::Queue,
+}
+
+/// The rows of one capacity step of a prefix sum: the token granularity of
+/// the parser's resident workspace.
+const SCAN_BUCKET_ROWS: u32 = 4 * 1024;
+/// The bytes of one capacity step of a resident buffer: `SCAN_BUCKET_ROWS`
+/// rows of four words.
+const BUCKET_BYTES: usize = SCAN_BUCKET_ROWS as usize * 16;
+
+/// The buffers and bind groups the rewrites keep between runs. A resident
+/// compiler runs them again for every source text it has not seen, so a run
+/// takes its storage from the run before it, as the compiler's stages do.
+#[derive(Default)]
+struct Resident {
+    buffers: CapacityBufferCache,
+    state: Mutex<ResidentState>,
+    /// Held for one run: the keys of `ResidentState::taken` name one run's
+    /// buffers.
+    run: Mutex<()>,
+}
+
+#[derive(Default)]
+struct ResidentState {
+    /// The buffers this run took, per label. The next one of a label gets
+    /// the next key, so a run finds the buffers of the run before it.
+    taken: HashMap<String, u32>,
+    /// The bytes each key holds.
+    capacity: HashMap<String, usize>,
+    /// Row buffers the next dispatch zeroes before it runs: a kernel reads a
+    /// row no kernel wrote as zero.
+    stale: Vec<LaniusBuffer<u8>>,
+    /// Bind groups by kernel and by the name, allocation, offset and size of
+    /// each binding.
+    groups: HashMap<(String, Vec<(&'static str, [u64; 3])>), Arc<wgpu::BindGroup>>,
+}
+
+static RESIDENT: LazyLock<Resident> = LazyLock::new(Resident::default);
+
+impl Resident {
+    fn state(&self) -> MutexGuard<'_, ResidentState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl ResidentState {
+    /// The key of the next buffer of `label` and the bytes it holds once it
+    /// covers `bytes`. A buffer that grows gets 1/64 more than it needs,
+    /// rounded up to `BUCKET_BYTES`, so the next text of nearly the same size
+    /// fits.
+    fn take(&mut self, label: &str, bytes: usize) -> (String, usize) {
+        let taken = self.taken.entry(label.to_owned()).or_default();
+        let key = format!("{label}#{taken}");
+        *taken += 1;
+        let bytes = bytes.max(4).next_multiple_of(4);
+        let held = self.capacity.entry(key.clone()).or_default();
+        if *held < bytes {
+            *held = (bytes + bytes / 64).next_multiple_of(BUCKET_BYTES);
+        }
+        (key, *held)
+    }
+}
+
+/// Starts one run of a rewrite. The guard keeps other runs out until it
+/// drops.
+pub(super) fn begin_run() -> MutexGuard<'static, ()> {
+    let guard = RESIDENT.run.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut state = RESIDENT.state();
+    state.taken.clear();
+    // A bind group keeps its buffers alive. Drop the ones whose buffer the
+    // lexer, the parser or this pool has replaced.
+    let live = live_tracked_allocation_ids();
+    state.groups.retain(|(_, bindings), _| bindings.iter().all(|(_, binding)| live.contains(&binding[0])));
+    guard
+}
+
+/// Frees the buffers of the rewrites. The next run allocates them again.
+pub(super) fn release_resident_buffers() {
+    let _run = RESIDENT.run.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut state = RESIDENT.state();
+    *state = ResidentState::default();
+    RESIDENT.buffers.clear();
+}
+
+/// The allocation, offset and size a binding names, when it is a buffer the
+/// compiler tracks.
+fn binding_identity(resource: &wgpu::BindingResource<'_>) -> Option<[u64; 3]> {
+    let wgpu::BindingResource::Buffer(binding) = resource else {
+        return None;
+    };
+    let (allocation, _, _) = tracked_buffer_identity(binding.buffer)?;
+    Some([allocation, binding.offset, binding.size.map_or(0, std::num::NonZeroU64::get)])
 }
 
 impl Gpu<'_> {
@@ -162,10 +257,44 @@ impl Gpu<'_> {
         self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
     }
 
-    /// A zeroed storage buffer of `rows` rows of `row_words` words.
+    /// The whole resident buffer of the next `label`, grown to cover `bytes`.
+    /// A kernel reads the count of its rows from its parameters, so the bind
+    /// group stays the same while the text fits.
+    fn resident(&self, state: &mut ResidentState, label: &str, bytes: usize, usage: wgpu::BufferUsages) -> LaniusBuffer<u8> {
+        let (key, capacity) = state.take(label, bytes);
+        RESIDENT.buffers.binding_capacity(self.device, &key, capacity, usage)
+    }
+
+    /// A zeroed storage buffer of at least `rows` rows of `row_words` words.
     pub(super) fn rows(&self, label: &str, rows: usize, row_words: usize) -> LaniusBuffer<u8> {
-        let rows = rows.max(1);
-        storage_rw_uninit_bytes(self.device, label, rows * row_words * 4, rows)
+        let mut state = RESIDENT.state();
+        let buffer = self.resident(&mut state, label, rows.max(1) * row_words * 4, STORAGE);
+        state.stale.push(buffer.clone());
+        buffer
+    }
+
+    /// A storage buffer that starts with `words`.
+    pub(super) fn words_from(&self, label: &str, words: &[u32]) -> LaniusBuffer<u32> {
+        let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+        self.bytes_from(label, &bytes).reinterpret(words.len())
+    }
+
+    /// A storage buffer that starts with `bytes`, a whole number of words.
+    pub(super) fn bytes_from(&self, label: &str, bytes: &[u8]) -> LaniusBuffer<u8> {
+        let buffer = self.resident(&mut RESIDENT.state(), label, bytes.len(), STORAGE);
+        buffer.write(self.queue, 0, bytes);
+        buffer
+    }
+
+    /// The parameters of one dispatch.
+    pub(super) fn uniform<T>(&self, label: &str, value: &T) -> LaniusBuffer<T>
+    where
+        T: encase::ShaderType + encase::internal::WriteInto,
+    {
+        // Every value of one label has the same size, so its buffer never
+        // grows.
+        let (key, _) = RESIDENT.state().take(label, 0);
+        RESIDENT.buffers.uniform(self.device, self.queue, &key, value)
     }
 
     pub(super) fn dispatch(
@@ -178,8 +307,25 @@ impl Gpu<'_> {
     ) -> Result<()> {
         passes_core::bind_group::validate_exact_binding_names(pass, 0, bindings)
             .with_context(|| format!("bind {label}"))?;
-        let group =
-            passes_core::bind_group::create_bind_group_from_bindings(self.device, Some(label), pass, 0, bindings)?;
+        let create = || {
+            passes_core::bind_group::create_bind_group_from_bindings(self.device, Some(label), pass, 0, bindings)
+                .map(Arc::new)
+        };
+        let group = {
+            let mut state = RESIDENT.state();
+            for buffer in state.stale.drain(..) {
+                buffer.clear(encoder, 0, None);
+            }
+            let identity: Option<Vec<_>> =
+                bindings.iter().map(|(name, resource)| Some((*name, binding_identity(resource)?))).collect();
+            match identity {
+                None => create()?,
+                Some(identity) => match state.groups.entry((pass.shader_id.clone(), identity)) {
+                    Entry::Occupied(group) => group.get().clone(),
+                    Entry::Vacant(slot) => slot.insert(create()?).clone(),
+                },
+            }
+        };
         let (x, y, z) =
             passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
         let mut compute = passes_core::begin_counted_compute_pass(
@@ -187,16 +333,22 @@ impl Gpu<'_> {
             &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
         );
         compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, Some(&group), &[]);
+        compute.set_bind_group(0, Some(group.as_ref()), &[]);
         passes_core::record_compute_dispatch();
         if !passes_core::debug_operation_skipped() {
             compute.dispatch_workgroups(x, y, z);
         }
+        drop(compute);
+        // A profiled job needs one timestamp per dispatch.
+        crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
         Ok(())
     }
 
     /// Records an inclusive prefix sum of `input` and returns the buffer
-    /// that holds it: one doubling step per power of two below `count`.
+    /// that holds it: one doubling step per power of two below `count`
+    /// rounded up to `SCAN_BUCKET_ROWS`. A step at or past `count` copies the
+    /// rows. The steps and the buffer that holds the sum then stay the same
+    /// for every text of one capacity step, and so do the bind groups.
     pub(super) fn scan<'b>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -205,15 +357,12 @@ impl Gpu<'_> {
         work: &'b [LaniusBuffer<u8>; 2],
         count: u32,
     ) -> Result<&'b LaniusBuffer<u8>> {
+        let bound = count.max(1).saturating_add(SCAN_BUCKET_ROWS - 1) / SCAN_BUCKET_ROWS * SCAN_BUCKET_ROWS;
         let mut source = input;
         let mut target = 0;
         let mut step = 1u32;
         loop {
-            let params = uniform_from_val(
-                self.device,
-                "closures.scan.params",
-                &ScanParams { count, step, reserved0: 0, reserved1: 0 },
-            );
+            let params = self.uniform("closures.scan.params", &ScanParams { count, step, reserved0: 0, reserved1: 0 });
             self.dispatch(
                 encoder,
                 pass,
@@ -228,7 +377,7 @@ impl Gpu<'_> {
             source = &work[target];
             target = 1 - target;
             step = match step.checked_mul(2) {
-                Some(next) if next < count => next,
+                Some(next) if next < bound => next,
                 _ => return Ok(source),
             };
         }
@@ -244,11 +393,8 @@ impl Gpu<'_> {
         slot: u32,
         component: u32,
     ) -> Result<()> {
-        let params = uniform_from_val(
-            self.device,
-            "closures.summary.params",
-            &SummaryParams { slot, component, reserved0: 0, reserved1: 0 },
-        );
+        let params =
+            self.uniform("closures.summary.params", &SummaryParams { slot, component, reserved0: 0, reserved1: 0 });
         self.dispatch(
             encoder,
             pass,
@@ -272,7 +418,10 @@ impl Gpu<'_> {
         words: usize,
     ) -> LaniusBuffer<u8> {
         let words = words.max(1);
-        let readback = readback_bytes(self.device, "closures.readback", words * 4, words);
+        let readback = self
+            .resident(&mut RESIDENT.state(), "closures.readback", words * 4, READBACK)
+            .subrange(0, words as u64 * 4, words)
+            .expect("the readback buffer covers the words it was sized for");
         source.copy_to(encoder, first_word as u64 * 4, &readback, 0, words as u64 * 4);
         readback
     }
@@ -282,7 +431,7 @@ impl Gpu<'_> {
     }
 
     pub(super) fn words(&self, readback: &LaniusBuffer<u8>) -> Result<Vec<u32>> {
-        let slice = readback.slice(..);
+        let slice = readback.buffer.slice(readback.byte_offset..readback.byte_offset + readback.byte_size as u64);
         map_readback_blocking(self.device, &slice, "closures.readback")?;
         let mapped = slice.get_mapped_range();
         let words = mapped
@@ -303,6 +452,7 @@ pub(super) fn rewrite(sources: &[&str]) -> Result<Option<Outcome>> {
     if total == 0 {
         return Ok(None);
     }
+    let _run = begin_run();
     let lexer = try_global_lexer()?;
     pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
         run(&Gpu { device, queue }, bufs, sources, total)
@@ -348,7 +498,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
 
     // The parts of each closure and the locals it captures.
     let records = gpu.rows("closures.records", closure_count as usize * RECORD_WORDS, 1);
-    let status = storage_ro_from_u32s(gpu.device, "closures.status", &[NO_ERROR]);
+    let status = gpu.words_from("closures.status", &[NO_ERROR]);
     let capture_marks = gpu.rows("closures.capture_marks", total, 4);
     let capture_work = [gpu.rows("closures.capture.a", total, 4), gpu.rows("closures.capture.b", total, 4)];
     let mut encoder = gpu.encoder("closures.records");
@@ -407,8 +557,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     let file_info = gpu.rows("closures.file_info", sources.len() + 1, 4);
     let pieces = gpu.rows("closures.pieces", pieces_len, 4);
     let piece_work = [gpu.rows("closures.pieces.a", pieces_len, 4), gpu.rows("closures.pieces.b", pieces_len, 4)];
-    let layout = uniform_from_val(
-        gpu.device,
+    let layout = gpu.uniform(
         "closures.layout.params",
         &LayoutParams {
             file_count,
@@ -421,7 +570,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
             reserved2: 0,
         },
     );
-    let (const_index, const_bytes) = constant_table(gpu.device);
+    let (const_index, const_bytes) = constant_table(gpu);
     let mut encoder = gpu.encoder("closures.pieces");
     gpu.dispatch(
         &mut encoder,
@@ -483,8 +632,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     // The rewritten bytes.
     let out_words = (out_len as usize).div_ceil(4);
     let output = gpu.rows("closures.output", out_words, 1);
-    let emit = uniform_from_val(
-        gpu.device,
+    let emit = gpu.uniform(
         "closures.emit.params",
         &EmitParams { out_len, piece_count, reserved0: 0, reserved1: 0 },
     );
@@ -512,7 +660,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     split_files(sources, &file_rows, &piece_rows, &piece_ends, &bytes).map(|files| Some(Outcome::Rewritten(files)))
 }
 
-fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
+fn constant_table(gpu: &Gpu<'_>) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
     let mut index = Vec::with_capacity(CONSTANTS.len() * 2);
     let mut bytes = Vec::new();
     for text in CONSTANTS {
@@ -520,11 +668,7 @@ fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>
         bytes.extend_from_slice(text.as_bytes());
     }
     bytes.resize(bytes.len().next_multiple_of(4), 0);
-    let count = bytes.len();
-    (
-        storage_ro_from_u32s(device, "closures.const_index", &index),
-        storage_ro_from_bytes(device, "closures.const_bytes", &bytes, count),
-    )
+    (gpu.words_from("closures.const_index", &index), gpu.bytes_from("closures.const_bytes", &bytes))
 }
 
 /// Cuts the rewritten pack into its files and builds the map from each

@@ -6,7 +6,7 @@
 //! commands, sizes the buffers from the counts the kernels publish, and reads
 //! back the expanded text and the piece table that maps it to the source.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     gpu::{
-        buffers::{LaniusBuffer, storage_ro_from_bytes, storage_ro_from_u32s, uniform_from_val},
+        buffers::LaniusBuffer,
         passes_core::PassData,
     },
     lexer::{GpuToken, buffers::GpuBuffers, driver::try_global_lexer},
@@ -150,19 +150,49 @@ pub(super) struct Params {
 }
 
 pub(super) fn params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32) -> LaniusBuffer<Params> {
-    uniform_from_val(gpu.device, label, &Params { a, b, c: 0, d: 0 })
+    gpu.uniform(label, &Params { a, b, c: 0, d: 0 })
 }
 
 /// The parameters of a kernel that checks rules. `explain` is the status
 /// word and key of the error whose spans the kernel writes, or `NO_ERROR`
 /// twice in the run that finds the errors.
 pub(super) fn check_params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32, explain: [u32; 2]) -> LaniusBuffer<Params> {
-    uniform_from_val(gpu.device, label, &Params { a, b, c: explain[0], d: explain[1] })
+    gpu.uniform(label, &Params { a, b, c: explain[0], d: explain[1] })
 }
 
 struct Frontend {
     parser: GpuParser,
     tables: PrecomputedParseTables,
+    /// The allocations of the lexer buffers the parser's bind groups name.
+    lexer_buffers: Mutex<Option<[Option<u64>; 5]>>,
+}
+
+impl Frontend {
+    /// Keeps the parser's bind groups while the lexer keeps its buffers, and
+    /// drops them when the lexer has replaced one.
+    fn bind_lexer(&self, buffers: &GpuBuffers) {
+        let bound = [
+            buffers.tokens_out.allocation_id(),
+            buffers.token_count.allocation_id(),
+            buffers.token_file_id.allocation_id(),
+            buffers.in_bytes.allocation_id(),
+            buffers.parser_feature_flags.allocation_id(),
+        ];
+        let mut held = self.lexer_buffers.lock().unwrap_or_else(PoisonError::into_inner);
+        if *held != Some(bound) {
+            self.parser.release_lexer_bindings();
+            *held = Some(bound);
+        }
+    }
+
+}
+
+/// Frees the parser's buffers. The next run allocates them again.
+pub(super) fn release_resident_buffers() {
+    if let Some(Ok(frontend)) = FRONTEND.get() {
+        *frontend.lexer_buffers.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        frontend.parser.release_current_resident_buffers();
+    }
 }
 
 static FRONTEND: OnceLock<Result<Frontend, String>> = OnceLock::new();
@@ -178,7 +208,7 @@ fn frontend() -> Result<&'static Frontend> {
             )))
             .map_err(|err| format!("load parser tables: {err}"))?;
             let parser = pollster::block_on(GpuParser::new()).map_err(|err| err.to_string())?;
-            Ok(Frontend { parser, tables })
+            Ok(Frontend { parser, tables, lexer_buffers: Mutex::new(None) })
         })
         .as_ref()
         .map_err(|err| anyhow!("initialize the machine parser: {err}"))
@@ -202,11 +232,13 @@ fn with_parse<A, R>(
     record: impl FnOnce(&Gpu<'_>, &GpuBuffers, &ParserBuffers, &mut wgpu::CommandEncoder, &Parsed) -> Result<A>,
     finish: impl FnOnce(&Gpu<'_>, A) -> Result<Option<R>>,
 ) -> Result<Option<R>> {
+    let _run = super::closures::begin_run();
     let lexer = try_global_lexer()?;
     let frontend = frontend()?;
     let outcome = pollster::block_on(lexer.with_recorded_resident_source_pack_tokens_after_count(
         sources,
         |device, queue, buffers, token_count, encoder, mut timer| {
+            frontend.bind_lexer(buffers);
             let token_capacity = token_count.max(1);
             let tree_capacity = frontend.parser.read_resident_partial_parse_tree_capacity(
                 token_capacity,
@@ -230,6 +262,7 @@ fn with_parse<A, R>(
                 &mut timer,
                 |parse_buffers, encoder, _| record(&gpu, buffers, parse_buffers, encoder, &parsed),
             )?;
+            frontend.parser.retain_resident_capacity_probe_bindings()?;
             Ok::<_, anyhow::Error>((check, recorded?))
         },
         |device, queue, (check, recorded)| {
@@ -239,9 +272,6 @@ fn with_parse<A, R>(
             finish(&Gpu { device, queue }, recorded)
         },
     ))?;
-    // The compiler replaces the lexer's buffers between runs. The parser's
-    // own buffers bind none of them and stay for the next run.
-    frontend.parser.release_lexer_bindings();
     outcome
 }
 
@@ -320,9 +350,9 @@ fn mark(
     let records = gpu.rows("machines.records", rows * RECORD_WORDS, 1);
     let marks = gpu.rows("machines.marks", rows, 4);
     let work = [gpu.rows("machines.scan.a", rows, 4), gpu.rows("machines.scan.b", rows, 4)];
-    let status = storage_ro_from_u32s(gpu.device, "machines.status", &[NO_ERROR; STATUS_WORDS + 1]);
+    let status = gpu.words_from("machines.status", &[NO_ERROR; STATUS_WORDS + 1]);
     let detail = gpu.rows("machines.detail", DETAIL_WORDS, 1);
-    let file_flags = storage_ro_from_u32s(gpu.device, "machines.file_flags", flags);
+    let file_flags = gpu.words_from("machines.file_flags", flags);
     let node_params = params(gpu, "machines.nodes.params", parsed.tree_capacity, tokens);
     gpu.dispatch(
         encoder,
@@ -476,7 +506,7 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     let arm_kernel = gpu.kernel("machines/arms")?;
     let reach_kernel = gpu.kernel("machines/reach")?;
     let state_kernel = gpu.kernel("machines/states")?;
-    let (const_index, const_bytes) = constant_table(gpu.device);
+    let (const_index, const_bytes) = constant_table(gpu);
 
     // The arms, fields, arguments and enum variants, then the rules and the
     // piece count of every token.
@@ -808,7 +838,7 @@ fn explain(
     }))
 }
 
-fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
+fn constant_table(gpu: &Gpu<'_>) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
     let mut index = Vec::with_capacity(CONSTANTS.len() * 2);
     let mut bytes = Vec::new();
     for text in CONSTANTS {
@@ -816,11 +846,7 @@ fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>
         bytes.extend_from_slice(text.as_bytes());
     }
     bytes.resize(bytes.len().next_multiple_of(4), 0);
-    let count = bytes.len();
-    (
-        storage_ro_from_u32s(device, "machines.const_index", &index),
-        storage_ro_from_bytes(device, "machines.const_bytes", &bytes, count),
-    )
+    (gpu.words_from("machines.const_index", &index), gpu.bytes_from("machines.const_bytes", &bytes))
 }
 
 /// Cuts the expanded pack into its files and builds the map from each

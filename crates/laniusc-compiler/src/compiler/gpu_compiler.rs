@@ -550,6 +550,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.trait_solver_workspace.release();
         self.clear_library_instance_cache();
+        // The rewrites bind lexer buffers, so their storage goes first.
+        crate::compiler::machine_elaboration::release_resident_buffers();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();

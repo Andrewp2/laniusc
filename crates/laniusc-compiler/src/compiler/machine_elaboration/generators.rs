@@ -44,7 +44,7 @@ use super::{
     machines::{Invalid, Marked, NO_ERROR, Outcome, check_params, params, split_files},
 };
 use crate::gpu::{
-    buffers::{LaniusBuffer, storage_ro_from_bytes, storage_ro_from_u32s},
+    buffers::LaniusBuffer,
     passes_core::PassData,
 };
 
@@ -137,7 +137,7 @@ pub(super) fn expand(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result
     let list_kernel = gpu.kernel("generators/lists")?;
     let piece_kernel = gpu.kernel("generators/pieces")?;
     let check_kernel = gpu.kernel("generators/check")?;
-    let (const_index, const_bytes) = constant_table(gpu.device);
+    let (const_index, const_bytes) = constant_table(gpu);
 
     let records = gpu.rows("generators.records", rows * RECORD_WORDS, 1);
     let file_option = gpu.rows("generators.file_option", sources.len(), 1);
@@ -150,7 +150,7 @@ pub(super) fn expand(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result
     let work3 = [gpu.rows("generators.scan3.a", rows, 4), gpu.rows("generators.scan3.b", rows, 4)];
     let counts = gpu.rows("generators.piece_counts", rows, 4);
     let count_work = [gpu.rows("generators.piece_counts.a", rows, 4), gpu.rows("generators.piece_counts.b", rows, 4)];
-    let status = storage_ro_from_u32s(gpu.device, "generators.status", &[NO_ERROR]);
+    let status = gpu.words_from("generators.status", &[NO_ERROR]);
     let detail = gpu.rows("generators.detail", DETAIL_WORDS, 1);
     let nothing = [
         gpu.rows("generators.no_scope", 1, 1),
@@ -417,7 +417,7 @@ fn invalid(sources: &[&str], key: u32, detail: &[u32]) -> Invalid {
     Invalid { file, start, len: (detail[1] as usize).max(1), message, help: None }
 }
 
-fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
+fn constant_table(gpu: &Gpu<'_>) -> (LaniusBuffer<u32>, LaniusBuffer<u8>) {
     let mut index = Vec::with_capacity(CONSTANTS.len() * 2);
     let mut bytes = Vec::new();
     for text in CONSTANTS {
@@ -425,11 +425,7 @@ fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>
         bytes.extend_from_slice(text.as_bytes());
     }
     bytes.resize(bytes.len().next_multiple_of(4), 0);
-    let count = bytes.len();
-    (
-        storage_ro_from_u32s(device, "generators.const_index", &index),
-        storage_ro_from_bytes(device, "generators.const_bytes", &bytes, count),
-    )
+    (gpu.words_from("generators.const_index", &index), gpu.bytes_from("generators.const_bytes", &bytes))
 }
 
 #[cfg(test)]

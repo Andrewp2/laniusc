@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use encase::ShaderType;
@@ -31,15 +31,13 @@ impl PackTotalsBlocksPass {
         &self.data
     }
 
-    /// Records the block-total pass over parser pair outputs.
-    pub fn record_pass(
+    /// The bind group of the pass on `buffers`, created on first use.
+    pub(in crate::parser) fn bind_group(
         &self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
-    ) -> Result<()> {
-        let n_pairs = buffers.n_tokens.saturating_sub(1);
+    ) -> Result<Arc<wgpu::BindGroup>> {
         let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
                 "gParams".into(),
@@ -62,7 +60,7 @@ impl PackTotalsBlocksPass {
                 buffers.pack_emit_prefix_a.as_entire_binding(),
             ),
         ]);
-        let bind_group = cache
+        Ok(cache
             .reflected_for_graph_pass_data(
                 device,
                 crate::parser::compiler_graph::PACK_TOTALS_BLOCKS,
@@ -73,7 +71,19 @@ impl PackTotalsBlocksPass {
             )?
             .into_iter()
             .next()
-            .expect("pack totals block pass must have one reflected bind group");
+            .expect("pack totals block pass must have one reflected bind group"))
+    }
+
+    /// Records the block-total pass over parser pair outputs.
+    pub fn record_pass(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        buffers: &ParserBuffers,
+        cache: &mut BindGroupCache,
+    ) -> Result<()> {
+        let n_pairs = buffers.n_tokens.saturating_sub(1);
+        let bind_group = self.bind_group(device, buffers, cache)?;
         let [tgsx, tgsy, _] = self.data.thread_group_size;
         let pair_blocks = n_pairs.div_ceil(256).max(1);
         let (gx, gy, gz) = plan_workgroups(

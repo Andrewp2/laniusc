@@ -19,6 +19,28 @@ impl GpuParser {
         bufs.dispatch_operations.record_active_pair(encoder)
     }
 
+    /// Creates, on the resident workspace, the bind groups that only the
+    /// capacity probe uses. The first probe of a process runs on a temporary
+    /// allocation, so a caller that probes every job calls this once the full
+    /// parse has allocated the workspace. Its second job then creates nothing.
+    pub(crate) fn retain_resident_capacity_probe_bindings(&self) -> Result<()> {
+        let resident = self
+            .resident_buffers
+            .lock()
+            .expect("parser.resident_buffers poisoned");
+        let Some(resident) = resident.as_ref() else {
+            return Ok(());
+        };
+        let mut cache = self.bg_cache.lock().expect("parser.bg_cache poisoned");
+        self.passes
+            .pack_totals_blocks
+            .bind_group(&self.device, &resident.buffers, &mut cache)?;
+        self.passes
+            .pack_totals_status
+            .bind_group(&self.device, &resident.buffers, &mut cache)?;
+        Ok(())
+    }
+
     /// Records the minimal parser sequence needed to project tree capacity/status.
     pub(super) fn record_resident_partial_parse_status(
         &self,
