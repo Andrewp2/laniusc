@@ -268,7 +268,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint max_pos = start;
     if (end_node > i + 1u)
     {
-        uint last_pos = hir_token_pos[end_node - 1u];
+        uint last = end_node - 1u;
+        uint last_pos = hir_token_pos[last];
+        // An `if` without `else` ends in the empty `else_none` production,
+        // which sits on the token after the statement. That token is the end
+        // of the span, not its last token.
+        if (node_kind[last] == PROD_ELSE_NONE && last_pos != INVALID &&
+            last_pos > start)
+        {
+            hir_token_end[i] = min(last_pos, token_count[0]);
+            return;
+        }
         if (last_pos != INVALID)
             max_pos = last_pos;
     }

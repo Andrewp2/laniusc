@@ -1,0 +1,27 @@
+//@ exit 14
+// A call that takes a struct by reference follows an `else if` chain. The
+// chain ends on one `}`, and the call's receiver starts on the next token.
+struct Counter { value: i32 }
+
+impl Counter {
+    fn get(self: &Counter) -> i32 { return self.value; }
+    fn close(self: Counter) { }
+}
+
+fn make(value: i32) -> Counter { return Counter { value: value }; }
+
+fn pick(a: bool, b: bool, c: bool) -> i32 {
+    let first = make(5);
+    let second = make(6);
+    let result = 0;
+    if (a) { result = 1; } else if (b) { result = 3; } else if (c) { result = 4; }
+    first.close(); second.close();
+    return result + first.get() + second.get();
+}
+
+fn main() -> i32 {
+    if (pick(true, true, true) != 12) { return 1; }
+    if (pick(false, false, true) != 15) { return 2; }
+    if (pick(false, false, false) != 11) { return 3; }
+    return pick(false, true, true);
+}
