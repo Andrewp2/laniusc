@@ -287,6 +287,11 @@ fn a_method_borrows_an_element_of_a_call_result() {
 }
 
 #[test]
+fn a_let_of_a_method_on_an_imported_call_takes_the_method_result() {
+    assert_exit("let_of_method_on_imported_call.lani", 31);
+}
+
+#[test]
 fn a_receiver_binding_types_a_literal_argument() {
     assert_exit("receiver_binds_literal_argument.lani", 0);
 }

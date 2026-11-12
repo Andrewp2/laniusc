@@ -76,7 +76,12 @@ uint initializer_token(uint node)
     if (core.kind == HIR_PATH_EXPR || core.kind == HIR_NAME_EXPR)
         return first_imported_token(node);
     if (core.kind != HIR_CALL_EXPR) return INVALID;
+    // Only a path names an imported function. A method callee starts at its
+    // receiver, so `imported().method()` would yield the inner call's result.
     uint callee = compact_hir_payload[node].a;
+    if (!valid_hir(callee)) return INVALID;
+    uint callee_kind = compact_hir_core[callee].kind;
+    if (callee_kind != HIR_PATH_EXPR && callee_kind != HIR_NAME_EXPR) return INVALID;
     return first_imported_token(callee);
 }
 

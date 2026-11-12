@@ -1,0 +1,12 @@
+module app::main;
+import core::time;
+import core::option;
+import core::option::Option;
+import std::clock;
+fn main() -> i32 {
+    let now=std::clock::system_now().unwrap();
+    let saved:Option<core::time::SystemTime> =core::option::Some(core::time::SystemTime { seconds: 7, nanos: 0 });
+    now=saved.unwrap();
+    if (now.seconds==7) { return 31; }
+    return 1;
+}
