@@ -183,7 +183,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (!complete_arm_reference(arm.result, next_tag, next_payload, next_id))
         {
             if (call_inference_state[0u] == 0u)
-                record_min_token_error(status, valid_token(result_token) ? result_token : match_token, 6u, 0x474e0003u);
+                record_boundary_error(status, valid_token(result_token) ? result_token : match_token, 3u);
             return;
         }
         if (next_tag == 1u && next_payload == SCALAR_NEVER) continue;

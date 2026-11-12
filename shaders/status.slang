@@ -34,3 +34,17 @@ public void record_min_token_error(
         status[STATUS_DETAIL_SLOT] = detail;
     }
 }
+
+// Record a compiler-boundary report (code 6 tagged 0x474e) unless a language
+// error is already recorded at `token_i`. The boundary is then a follow-on of
+// that error, and a later report at the same token would replace it.
+public void record_boundary_error(
+    RWStructuredBuffer<uint> status,
+    uint token_i,
+    uint detail)
+{
+    bool boundary = status[STATUS_CODE_SLOT] == 6u && (status[STATUS_DETAIL_SLOT] & 0xffff0000u) == 0x474e0000u;
+    if (status[STATUS_OK_SLOT] == 0u && status[STATUS_TOKEN_SLOT] == token_i && !boundary)
+        return;
+    record_min_token_error(status, token_i, 6u, 0x474e0000u | detail);
+}
