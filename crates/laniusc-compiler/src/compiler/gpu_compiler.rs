@@ -39,7 +39,11 @@ use helpers::{
     type_mismatch_label,
     type_mismatch_note,
 };
-pub(in crate::compiler) use helpers::{prepare_source_for_gpu, prepare_source_for_gpu_from_path};
+pub(in crate::compiler) use helpers::{
+    prepare_source_for_gpu,
+    prepare_source_for_gpu_from_path,
+    prepare_source_pack_for_gpu,
+};
 use host_timer::CompilerHostTimer;
 
 mod source_pack_executor;

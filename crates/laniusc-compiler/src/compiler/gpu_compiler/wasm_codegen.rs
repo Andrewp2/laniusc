@@ -27,12 +27,21 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         sources: &[S],
     ) -> Result<Vec<u8>, CompileError> {
+        self.compile_source_pack_to_wasm_with_paths(sources, None).await
+    }
+
+    async fn compile_source_pack_to_wasm_with_paths<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<Vec<u8>, CompileError> {
         validate_in_memory_source_pack_fits_codegen_unit(
             "compile source pack to WASM",
             sources,
             self.resident_source_unit_limits(),
         )?;
-        self.compile_wasm_source_pack_with_specialization(sources, None).await
+        let sources = prepare_source_pack_for_gpu(sources, source_paths)?;
+        self.compile_wasm_source_pack_with_specialization(&sources, source_paths).await
     }
 
     /// Compile an explicit in-memory source-pack manifest through the WASM
@@ -41,7 +50,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         &self,
         source_pack: &ExplicitSourcePack,
     ) -> Result<Vec<u8>, CompileError> {
-        self.compile_source_pack_to_wasm(&source_pack.sources).await
+        self.compile_source_pack_to_wasm_with_paths(&source_pack.sources, Some(&source_pack.source_paths))
+            .await
     }
     /// Compiles prepared source text to WASM output using a synthetic path.
     pub(in crate::compiler) async fn compile_expanded_source_to_wasm(

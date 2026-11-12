@@ -128,6 +128,26 @@ pub(in crate::compiler) fn prepare_source_for_gpu(src: &str) -> Result<String, C
     crate::compiler::machine_elaboration::elaborate_source(Path::new("<source>"), src.to_string())
 }
 
+/// Prepares the already-loaded texts of a source pack for GPU compiler input.
+/// A file without a path is named as the frontend names it.
+pub(in crate::compiler) fn prepare_source_pack_for_gpu<S: AsRef<str>>(
+    sources: &[S],
+    source_paths: Option<&[Option<PathBuf>]>,
+) -> Result<Vec<String>, CompileError> {
+    let files = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let path = source_paths
+                .and_then(|paths| paths.get(index))
+                .and_then(|path| path.clone())
+                .unwrap_or_else(|| PathBuf::from(format!("<source pack file {index}>")));
+            (path, source.as_ref().to_string())
+        })
+        .collect();
+    crate::compiler::machine_elaboration::elaborate_sources(files)
+}
+
 /// Reads source text from disk and prepares it for GPU compiler input.
 pub(in crate::compiler) fn prepare_source_for_gpu_from_path(
     path: impl AsRef<Path>,

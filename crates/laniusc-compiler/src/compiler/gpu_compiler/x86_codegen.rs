@@ -49,7 +49,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
-        self.compile_x86_source_pack_with_specialization(sources, source_paths)
+        let sources = prepare_source_pack_for_gpu(sources, source_paths)?;
+        self.compile_x86_source_pack_with_specialization(&sources, source_paths)
             .await
     }
 

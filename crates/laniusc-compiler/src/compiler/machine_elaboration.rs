@@ -16,7 +16,7 @@
 //! rewritten byte back to the source, so diagnostics point at the source.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
@@ -84,6 +84,13 @@ impl Elaborated {
 fn registry() -> &'static Mutex<HashMap<blake3::Hash, Arc<Elaborated>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<blake3::Hash, Arc<Elaborated>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Texts the rewrites read and left as they were. A pack that reaches two
+/// entry points is read once.
+fn unchanged() -> &'static Mutex<HashSet<blake3::Hash>> {
+    static UNCHANGED: OnceLock<Mutex<HashSet<blake3::Hash>>> = OnceLock::new();
+    UNCHANGED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// The original text and span behind a span of elaborated text, if `source`
@@ -163,8 +170,10 @@ impl Pending {
 pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<String>, CompileError> {
     let mut files = Vec::with_capacity(sources.len());
     for (path, source) in sources {
-        let known = source.contains(RESERVED_PREFIX)
-            && registry().lock().is_ok_and(|registry| registry.contains_key(&blake3::hash(source.as_bytes())));
+        let hash = blake3::hash(source.as_bytes());
+        let known = unchanged().lock().is_ok_and(|unchanged| unchanged.contains(&hash))
+            || (source.contains(RESERVED_PREFIX)
+                && registry().lock().is_ok_and(|registry| registry.contains_key(&hash)));
         files.push(Pending { path, source, known, stages: None, flags: 0 });
     }
 
@@ -249,7 +258,12 @@ pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<S
     let mut texts = Vec::with_capacity(files.len());
     for file in files {
         texts.push(match file.stages {
-            None => file.source,
+            None => {
+                if !file.known && let Ok(mut unchanged) = unchanged().lock() {
+                    unchanged.insert(blake3::hash(file.source.as_bytes()));
+                }
+                file.source
+            }
             Some(elaborated) => {
                 let text = elaborated.text.clone();
                 if let Ok(mut registry) = registry().lock() {

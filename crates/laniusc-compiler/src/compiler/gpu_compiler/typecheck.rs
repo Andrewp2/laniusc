@@ -1263,7 +1263,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
-        self.type_check_explicit_source_pack(sources).await
+        let sources = prepare_source_pack_for_gpu(sources, None)?;
+        self.type_check_explicit_source_pack(&sources).await
     }
 
     /// Type-checks one bounded library against already-materialized dependency
@@ -1279,8 +1280,9 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
+        let sources = prepare_source_pack_for_gpu(sources, None)?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
-            sources,
+            &sources,
             None,
             Some(library_id),
             0,
@@ -1305,8 +1307,9 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
+        let sources = prepare_source_pack_for_gpu(sources, None)?;
         self.type_check_explicit_source_pack_with_paths_and_interface(
-            sources,
+            &sources,
             None,
             Some(library_id),
             0,
@@ -1332,10 +1335,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         dependency_interfaces: &[crate::compiler::GpuSemanticInterfaceArtifact],
     ) -> Result<crate::compiler::GpuSemanticInterfaceArtifact, CompileError> {
+        let sources = prepare_source_pack_for_gpu(sources, None)?;
         self.semantic_interface_for_source_pack_unit_with_dependencies(
             library_id,
             0,
-            sources,
+            &sources,
             dependency_interfaces,
         )
         .await
@@ -1438,11 +1442,9 @@ impl<'gpu> GpuCompiler<'gpu> {
             &source_pack.sources,
             self.resident_source_unit_limits(),
         )?;
-        self.type_check_explicit_source_pack_with_paths(
-            &source_pack.sources,
-            Some(&source_pack.source_paths),
-        )
-        .await
+        let sources = prepare_source_pack_for_gpu(&source_pack.sources, Some(&source_pack.source_paths))?;
+        self.type_check_explicit_source_pack_with_paths(&sources, Some(&source_pack.source_paths))
+            .await
     }
     /// Type-checks already-prepared source text using the default synthetic path.
     pub(in crate::compiler) async fn type_check_expanded_source(

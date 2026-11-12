@@ -760,6 +760,8 @@ fn x86_try_operand_keeps_the_following_binary_operator() {
     let sources = [
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/function.lani"),
+        // core::function imports core::mem.
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         r#"
@@ -11317,6 +11319,7 @@ fn x86_executes_source_pack_path_rules_separator_helper() {
         // core::utf8 imports core::slice (its bulk byte ops) and so these.
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/iter_state.lani"),
         include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/option.lani"),
@@ -11861,6 +11864,8 @@ fn x86_executes_stdlib_helper_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/function.lani"),
+        // core::function imports core::mem.
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
