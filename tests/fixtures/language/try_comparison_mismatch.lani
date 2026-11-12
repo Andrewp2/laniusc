@@ -1,0 +1,14 @@
+// The operands of a comparison have one type; `value?` has its payload's.
+module app::main;
+import core::result::Result;
+import core::result::Ok;
+
+fn number() -> Result<i32, i32> { return Ok(7); }
+
+fn check(flag: bool) -> Result<bool, i32> {
+    return Ok(number()? == flag);
+}
+
+fn main() -> i32 {
+    return match (check(true)) { Ok(same) -> 1, Err(code) -> code };
+}

@@ -1,0 +1,39 @@
+// `value?` is typed as an operand of a comparison or of arithmetic.
+module app::main;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+fn pass<T>(value: Result<T, i32>) -> Result<T, i32> { return value; }
+fn address(offset: i32) -> Result<ptr, i32> {
+    let zero: ptr = 0;
+    if (offset < 0) { return Err(offset); }
+    return Ok(zero + offset);
+}
+fn number() -> Result<i32, i32> { return Ok(7); }
+
+fn same_address(expected: ptr, offset: i32) -> Result<bool, i32> {
+    if (pass(address(offset))? != expected) { return Ok(false); }
+    return Ok(expected == address(offset)?);
+}
+
+fn total(extra: i32) -> Result<i32, i32> {
+    if (number()? == extra) { return Ok(pass(number())? + extra); }
+    return Ok(pass(number())? * 2 - number()?);
+}
+
+fn code(result: Result<bool, i32>) -> i32 {
+    if (result.is_err()) { return match (result) { Ok(same) -> 0, Err(code) -> code }; }
+    if (result.unwrap()) { return 1; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let zero: ptr = 0;
+    let same = code(same_address(zero + 8, 8));       // 1
+    let other = code(same_address(zero, 8));          // 0
+    let failed = code(same_address(zero, -3));        // -3
+    let equal = match (total(7)) { Ok(sum) -> sum, Err(code) -> code };   // 14
+    let unequal = match (total(1)) { Ok(sum) -> sum, Err(code) -> code }; // 7
+    return same + other + failed + equal + unequal; // 1 + 0 - 3 + 14 + 7 = 19
+}

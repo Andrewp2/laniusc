@@ -78,6 +78,15 @@ fn a_name_in_the_value_of_its_own_let_is_the_earlier_declaration() {
 }
 
 #[test]
+fn a_try_expression_is_typed_as_an_operand() {
+    assert_exit("try_in_comparison.lani", 19);
+    assert_rejected(
+        "try_comparison_mismatch.lani",
+        &["LNC0006", "type mismatch", "return Ok(number()? == flag);"],
+    );
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }

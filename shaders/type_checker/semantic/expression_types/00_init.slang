@@ -45,6 +45,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -202,6 +203,15 @@ uint direct_result_type(uint node)
         return compact_index_result_type(node);
     if (core.kind == HIR_MATCH_EXPR)
         return visible_type_for_token(core.token_start);
+    // `value?` publishes its checked type at its `?` token.
+    if (core.kind == HIR_TRY_EXPR)
+    {
+        uint try_token = core.token_end - 1u;
+        if (!valid_token(try_token)) return TY_UNKNOWN;
+        if (decl_type_ref_tag[try_token] == TYPE_REF_SCALAR)
+            return checked_scalar_type(decl_type_ref_payload[try_token]);
+        return TY_UNKNOWN;
+    }
 
     uint form = payload.a;
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE || form == HIR_EXPR_NOT ||
