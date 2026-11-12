@@ -1,0 +1,9 @@
+// Without an item import, the module import of a source module provides
+// its names.
+module app::main;
+import shapes::role;
+
+fn main() -> i32 {
+    let role: Role = None();
+    return unwrap_or(50, 9) + text_code(role); // 41 + 1 = 42
+}

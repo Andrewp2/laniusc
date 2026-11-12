@@ -1,0 +1,21 @@
+// The module import of a source module and the item imports of a library
+// declaration name the same things. The item imports are explicit and win.
+module app::main;
+import shapes::role;
+import core::option::Option;
+import core::option::None;
+import core::option::Some;
+import core::option::unwrap_or;
+
+fn value_or(value: Option<i32>, fallback: i32) -> i32 {
+    return match (value) { None -> fallback, Some(inner) -> inner };
+}
+
+fn main() -> i32 {
+    let absent: Option<i32> = None();
+    let present: Option<i32> = Some(30);
+    assert(absent.is_none());
+    let role: Role = shapes::role::Text();
+    return value_or(absent, 3) + unwrap_or(present, 0) + text_code(role) +
+        shapes::role::unwrap_or(9, 2); // 3 + 30 + 2 + 7 = 42
+}

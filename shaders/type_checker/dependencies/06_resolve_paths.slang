@@ -40,6 +40,10 @@ ByteAddressBuffer language_symbol_bytes;
 StructuredBuffer<uint> dependency_visible_owner_module;
 StructuredBuffer<uint> dependency_visible_decl;
 StructuredBuffer<uint> dependency_visible_lookup;
+StructuredBuffer<uint> dependency_visible_prefix;
+StructuredBuffer<uint> import_item_name_id;
+// The source declaration that the source-pack passes resolved a path to.
+RWStructuredBuffer<uint> resolved_decl;
 RWStructuredBuffer<uint> resolved_status;
 // The operation binds this identity triple to the selected namespace's
 // retained columns, alongside its independently bound status column.
@@ -265,6 +269,27 @@ uint find_qualified_declaration(
     return match;
 }
 
+// Whether an item import produced a visible row. Rows are grouped by import,
+// so the import of a row is the last one whose prefix is not past the row.
+bool visible_row_from_item_import(uint visible_i)
+{
+    uint first = 0u;
+    uint count = min(import_count_out[0u], gParams.import_capacity);
+    while (count != 0u)
+    {
+        uint step = count >> 1u;
+        uint probe = first + step;
+        if (dependency_visible_prefix[probe] <= visible_i)
+        {
+            first = probe + 1u;
+            count -= step + 1u;
+        }
+        else
+            count = step;
+    }
+    return first != 0u && import_item_name_id[first - 1u] != INVALID;
+}
+
 void reject_ambiguous_path(uint path)
 {
     resolved_status[path] = PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
@@ -316,9 +341,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
     }
+    // The source-pack passes run first and know only source modules, so a
+    // module import of a source module resolves a name that an item import
+    // of a dependency declaration also names. The item import is explicit
+    // and takes precedence, as it does between two source modules.
+    uint source_module = INVALID;
     if (resolved_status[path_i] == PATH_RESOLVE_STATUS_OK)
     {
-        return;
+        uint source_decl = resolved_decl[path_i];
+        uint decl_capacity; uint decl_stride;
+        decl_module_id.GetDimensions(decl_capacity, decl_stride);
+        if (segment_count != 1u || owner_module == INVALID || source_decl >= decl_capacity)
+            return;
+        source_module = decl_module_id[source_decl];
+        if (source_module == INVALID || source_module == owner_module)
+            return;
     }
     if (resolved_status[path_i] == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT) return;
     if (owner_module == INVALID)
@@ -348,7 +385,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint visible_i = dependency_visible_lookup[slot];
             if (visible_i == INVALID) break;
             if (visible_i < gParams.visible_capacity &&
-                exact_match(name_id, owner_module, visible_i))
+                exact_match(name_id, owner_module, visible_i) &&
+                (source_module == INVALID || visible_row_from_item_import(visible_i)))
             {
                 uint declaration_i = dependency_visible_decl[visible_i];
                 if (match != INVALID && match != declaration_i)
@@ -367,6 +405,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED;
         return;
     }
+    if (source_module != INVALID)
+        resolved_decl[path_i] = INVALID;
     // Type and value paths both retain declaration identity. A canonical row
     // is meaningful only while this dependency page occupies the shared slot.
     resolved_dependency_library_id[path_i] = dependency_declaration_library_id(match);

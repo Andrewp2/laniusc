@@ -5,7 +5,9 @@ use crate::common;
 use std::path::PathBuf;
 
 use laniusc_compiler::compiler::{
+    EntrySourceRoots,
     compile_entry_to_wasm_with_stdlib,
+    compile_entry_to_x86_64_with_source_roots,
     compile_entry_to_x86_64_with_stdlib,
 };
 
@@ -35,6 +37,35 @@ fn assert_rejected(fixture: &str, expected: &[&str]) {
     for text in expected {
         assert!(error.contains(text), "{fixture}: expected `{text}` in:\n{error}");
     }
+}
+
+/// Compiles a fixture whose imports name modules under `import_roots` and
+/// checks the exit code of the program.
+fn assert_exit_with_source_root(fixture: &str, code: i32) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let source_root = root.join("tests/fixtures/language/import_roots");
+    let entry = source_root.join(fixture);
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(root.join("stdlib")),
+        user_roots: vec![source_root],
+    };
+    let bytes = common::run_gpu_codegen_with_timeout(fixture, move || {
+        pollster::block_on(compile_entry_to_x86_64_with_source_roots(&entry, &roots))
+    })
+    .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("language ergonomics", fixture, &bytes);
+        assert_eq!(output.status.code(), Some(code), "{fixture}: {output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (bytes, code);
+}
+
+#[test]
+fn a_library_item_import_takes_precedence_over_a_source_module_import() {
+    assert_exit_with_source_root("item_import_over_source_module.lani", 42);
+    assert_exit_with_source_root("source_module_names.lani", 42);
 }
 
 #[test]

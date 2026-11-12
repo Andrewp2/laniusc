@@ -242,6 +242,7 @@ pub(in crate::type_checker) const DEPENDENCY_TYPE_PATHS_RESOLVE: ReflectedComput
         Declarations,
         "type_checker/dependencies/06_resolve_paths"
         ; resources [
+            typecheck_resource!("resolved_decl" => "resolved_type_decl"),
             typecheck_resource!("resolved_status" => "resolved_type_status"),
         ]
     )
@@ -253,6 +254,7 @@ pub(in crate::type_checker) const DEPENDENCY_VALUE_PATHS_RESOLVE: ReflectedCompu
         Declarations,
         "type_checker/dependencies/06_resolve_paths"
         ; resources [
+            typecheck_resource!("resolved_decl" => "resolved_value_decl"),
             typecheck_resource!("resolved_status" => "resolved_value_status"),
             typecheck_resource!("resolved_dependency_library_id" => "resolved_dependency_value_library_id"),
             typecheck_resource!("resolved_dependency_unit_id" => "resolved_dependency_value_unit_id"),

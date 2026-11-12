@@ -1,0 +1,13 @@
+module shapes::role;
+
+// `None`, `Option` and `unwrap_or` are also names in `core::option`.
+pub enum Role { None, Text }
+pub struct Option { code: i32 }
+
+pub fn unwrap_or(left: i32, right: i32) -> i32 {
+    return left - right;
+}
+
+pub fn text_code(role: Role) -> i32 {
+    return match (role) { None -> 1, Text -> 2 };
+}
