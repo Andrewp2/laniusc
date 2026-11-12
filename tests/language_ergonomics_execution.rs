@@ -292,6 +292,11 @@ fn a_let_of_a_method_on_an_imported_call_takes_the_method_result() {
 }
 
 #[test]
+fn a_match_joins_forty_arms() {
+    assert_exit("match_with_forty_arms.lani", 42);
+}
+
+#[test]
 fn a_receiver_binding_types_a_literal_argument() {
     assert_exit("receiver_binds_literal_argument.lani", 0);
 }

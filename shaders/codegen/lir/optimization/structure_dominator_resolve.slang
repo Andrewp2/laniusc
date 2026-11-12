@@ -88,9 +88,13 @@ uint walk_advance(inout Walk walk, uint block_total, uint edge_total,
     blocker = NONE;
     if (walk.end > edge_total || walk.row > walk.end) return WALK_FAILED;
     OptIrBlock record = opt_ir_blocks[walk.goal];
-    // Every step folds one predecessor row or lowers one cursor, and a cursor
-    // strictly descends in position.
-    uint budget = edge_total + 2u * block_total + 2u;
+    // Every step reads one predecessor row, lowers one cursor or closes one
+    // fold. A cursor strictly descends in position, so one fold takes at most
+    // two steps per block. The right cursor starts again at each predecessor,
+    // so a join of many arms needs one such walk per remaining row.
+    uint rows = walk.end - walk.row;
+    uint budget = rows > 0xffffu || block_total > 0x3fffu
+        ? 0xffffffffu : (rows + 1u) * (2u * block_total + 3u);
     for (uint step = 0u; step < budget; ++step)
     {
         if (walk.right == NONE)
