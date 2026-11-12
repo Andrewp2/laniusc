@@ -482,3 +482,14 @@ goto_args [goto_args_some] -> 'GotoLParen' arg_list_opt 'GotoRParen';
 goto_args [goto_args_none] -> ;
 transition_output [transition_output_some] -> 'With' expr;
 transition_output [transition_output_none] -> ;
+
+# ----- Generators -----
+# `gen fn evens(limit: i32) -> i32 { ... yield i; ... }` declares a function
+# that suspends at each `yield`. `gen` and `yield` are contextual keywords the
+# lexer retags. `yield` is an expression, as `goto` is, so `yield value;` is
+# an expression statement. A later stage turns each generator into a machine
+# and rejects a `yield` outside one or inside a larger expression. The
+# productions sit at the end of the file to keep earlier production IDs.
+item [item_gen] -> 'Gen' fn_item;
+pub_item [pub_gen] -> 'Gen' fn_item;
+expr [yield] -> 'Yield' expr;

@@ -300,6 +300,12 @@ define_token_kinds! {
     // parser retags of the parentheses around a `goto` target's arguments
     GotoLParen,
     GotoRParen,
+    // lexer retags of the words of a generator. Each is a contextual
+    // keyword: `gen` only directly before `fn`, and `yield` only at the
+    // start of a statement that is not an assignment, a member access or a
+    // bare name. Elsewhere the lexeme stays an identifier.
+    Gen,
+    Yield,
 }
 
 impl TokenKind {
@@ -472,7 +478,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203 | 205..=212
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203 | 205..=212 | 217..=218
             )
         };
 

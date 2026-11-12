@@ -1138,7 +1138,11 @@ machine Pair on Op {
     #[test]
     #[ignore = "a debugging aid: prints the parse tree of a machine"]
     fn print_the_parse_tree_of_a_machine() {
-        let source = "pub enum E { A, B(i32, u8), }\nmachine M on E -> i32 {\n    n: i32,\n    start S;\n    state S { E::A -> goto T(1) with 1, E::B(x, _) -> { if (x > 1) { stay with 2; } let y: i32 = __lanius_q; return 3; }, _ -> stay with 0, }\n    final state T(k: i32) { E::A -> stay with k, c -> stay with 0 }\n}\n";
+        // `LANIUS_DUMP_FILE` names another source to print.
+        let source = std::env::var("LANIUS_DUMP_FILE")
+            .map(|path| std::fs::read_to_string(path).expect("read LANIUS_DUMP_FILE"))
+            .unwrap_or_else(|_| "pub enum E { A, B(i32, u8), }\nmachine M on E -> i32 {\n    n: i32,\n    start S;\n    state S { E::A -> goto T(1) with 1, E::B(x, _) -> { if (x > 1) { stay with 2; } let y: i32 = __lanius_q; return 3; }, _ -> stay with 0, }\n    final state T(k: i32) { E::A -> stay with k, c -> stay with 0 }\n}\n".to_string());
+        let source = source.as_str();
         let gpu_words = with_parse(&[source], |gpu, lexer, parser, encoder, parsed| {
             let nodes = parsed.tree_capacity;
             Ok((
