@@ -42,6 +42,15 @@ StructuredBuffer<uint> generic_type_param_prefix;
 StructuredBuffer<uint> generic_const_param_prefix;
 StructuredBuffer<uint> interface_public_decl_index_by_hir;
 
+StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_segment_count;
+StructuredBuffer<uint> path_owner_hir;
+StructuredBuffer<uint> path_id_by_owner_hir;
+
+RWStructuredBuffer<uint> resolved_type_decl;
+RWStructuredBuffer<uint> resolved_type_status;
+RWStructuredBuffer<uint> module_type_path_type;
+RWStructuredBuffer<uint> module_type_path_status;
 RWStructuredBuffer<uint> type_generic_param_slot_by_token;
 RWStructuredBuffer<uint> type_const_param_slot_by_token;
 RWStructuredBuffer<uint> type_expr_ref_tag;
@@ -67,6 +76,8 @@ static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint ERR_BAD_HIR = 6u;
 static const uint GENERIC_STATUS_DUPLICATE_PARAM = 21u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_UNRESOLVED = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -126,6 +137,25 @@ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
     uint payload = generic_param_token[row];
     type_expr_ref_tag[use_token] = tag;
     type_expr_ref_payload[use_token] = payload;
+}
+
+// A type parameter in scope is nearer than a module declaration of the same
+// name. The path resolver runs before the parameter rows exist and resolves
+// the one-segment path to that declaration, so the resolution is withdrawn
+// here, before any pass reads it as the type of this use.
+void withdraw_module_type_path(uint node, uint use_token)
+{
+    uint path = path_id_by_owner_hir[node];
+    if (path >= min(path_count_out[0u], gParams.n_hir_nodes))
+        return;
+    if (path_owner_hir[path] != node || path_segment_count[path] != 1u)
+        return;
+    if (resolved_type_status[path] != PATH_RESOLVE_STATUS_OK)
+        return;
+    resolved_type_decl[path] = INVALID;
+    resolved_type_status[path] = PATH_RESOLVE_STATUS_UNRESOLVED;
+    module_type_path_type[use_token] = 0u;
+    module_type_path_status[use_token] = INVALID;
 }
 
 void publish_compact_variant_payload_use_slot(uint row)
@@ -288,5 +318,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (slot != INVALID)
     {
         publish_type_parameter_reference(row, slot, token);
+        if (!qualified_value) withdraw_module_type_path(node, token);
     }
 }

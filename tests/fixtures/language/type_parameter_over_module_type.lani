@@ -1,0 +1,46 @@
+module app::main;
+
+struct T {
+    value: i32,
+}
+
+struct Holder<T> {
+    item: T,
+}
+
+enum Maybe<T> {
+    Just(T),
+    Nothing,
+}
+
+trait Get<Value> {
+    fn get(self) -> Value;
+}
+
+impl<T> Get<T> for Holder<T> {
+    fn get(self) -> T {
+        return self.item;
+    }
+}
+
+fn same<T>(value: T) -> T {
+    return value;
+}
+
+fn unwrap_or<T>(value: Maybe<T>, fallback: T) -> T {
+    return match (value) {
+        Just(inner) -> inner,
+        Nothing -> fallback,
+    };
+}
+
+fn record() -> T {
+    return T { value: 20 };
+}
+
+fn main() -> i32 {
+    let holder = Holder { item: 12 };
+    let record: T = same(record());
+    let ten = unwrap_or(Just(10), 3);
+    return holder.get() + record.value + ten;
+}

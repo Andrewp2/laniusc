@@ -87,6 +87,11 @@ fn a_try_expression_is_typed_as_an_operand() {
 }
 
 #[test]
+fn a_type_parameter_takes_precedence_over_a_module_type_of_the_same_name() {
+    assert_exit("type_parameter_over_module_type.lani", 42);
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }
