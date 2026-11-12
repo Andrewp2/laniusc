@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     fs,
     io,
@@ -7,6 +7,12 @@ use std::{
     process::Command,
     time::Duration,
 };
+
+// The key checks live with the shader build; this script runs them because it
+// is the one that reruns when the compiler's Rust sources change.
+#[path = "../laniusc-shaders/kernel_keys.rs"]
+#[allow(dead_code)]
+mod kernel_keys;
 
 fn main() {
     const DEFAULT_SLANGC_VERSION_TIMEOUT_MS: u64 = 2_000;
@@ -18,6 +24,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LANIUS_SHADER_COMPILE_TIMEOUT_MS");
 
     let workspace_root = workspace_root();
+    check_kernel_keys(&workspace_root);
     generate_lowering_ir_opcodes(&workspace_root);
     generate_primitive_type_constants(&workspace_root);
     let slangc_version_timeout = timeout_from_env_ms(
@@ -282,6 +289,70 @@ fn parse_schema_u32(value: &str, name: &str) -> u32 {
             .parse::<u32>()
             .unwrap_or_else(|err| panic!("invalid uint value for {name}: {err}"))
     }
+}
+
+/// Fails the build when the kernels the compiler names and the kernels the
+/// shader build compiled disagree. A named kernel with no entry point is never
+/// compiled, and a compiled kernel that no Rust string literal names is dead.
+fn check_kernel_keys(workspace_root: &Path) {
+    println!("cargo:rerun-if-changed=src");
+    let kernel_list = shader_artifact_root(workspace_root).join("kernels.txt");
+    println!("cargo:rerun-if-changed={}", kernel_list.display());
+    let named = named_kernel_keys(Path::new("src"));
+    let shader_root = workspace_root.join("shaders");
+    let unbuilt =
+        kernel_keys::keys_without_entry_point(named.iter().map(String::as_str), |key| {
+            fs::read_to_string(shader_root.join(format!("{key}.slang"))).ok()
+        });
+    if !unbuilt.is_empty() {
+        panic!(
+            "the compiler names kernel(s) whose shader file has no entry point, so the build would not compile them: {}; give each file its own [shader(\"compute\")] main (an #include of another kernel does not count)",
+            unbuilt.join(", ")
+        );
+    }
+    let built = fs::read_to_string(&kernel_list)
+        .unwrap_or_else(|error| panic!("read kernel list {}: {error}", kernel_list.display()));
+    for key in built.lines() {
+        if !named.contains(key) {
+            panic!(
+                "compute shader `{key}` has no runtime loader; remove the dead entrypoint or reference its artifact key as a Rust string literal"
+            );
+        }
+    }
+}
+
+/// Every string literal in the compiler's Rust sources, with the artifact
+/// suffix and the `shaders/` prefix removed.
+fn named_kernel_keys(source_root: &Path) -> BTreeSet<String> {
+    fn walk(dir: &Path, keys: &mut BTreeSet<String>) {
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
+        for entry in entries {
+            let path = entry.expect("read source directory entry").path();
+            if path.is_dir() {
+                walk(&path, keys);
+                continue;
+            }
+            if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            // Kernel keys are ordinary string literals. Taking every quoted
+            // segment is a lexical superset: a comment can keep a kernel
+            // named, but no kernel the compiler loads can be missed.
+            for literal in source.split('"').skip(1).step_by(2) {
+                let key = literal
+                    .strip_suffix(".spv")
+                    .or_else(|| literal.strip_suffix(".reflect.json"))
+                    .unwrap_or(literal);
+                keys.insert(key.strip_prefix("shaders/").unwrap_or(key).to_owned());
+            }
+        }
+    }
+    let mut keys = BTreeSet::new();
+    walk(source_root, &mut keys);
+    keys
 }
 
 fn workspace_root() -> PathBuf {

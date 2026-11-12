@@ -43,6 +43,7 @@ graphics_debugger = ["laniusc-compiler/graphics_debugger"]
 
 [profile.release]
 debug = 1   # keep useful line info without bloating too much
+incremental = true # an edit rebuilds laniusc in about 12 s; without it, 70 s
 lto = "off" # optional: improves at-a-glance attribution across crates
 
 [[test]]

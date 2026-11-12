@@ -33,9 +33,11 @@ fn main() -> Result<()> {
 
     let workspace_root = workspace_root()?;
     let shader_root = workspace_root.join("shaders");
-    let compiler_source_root = workspace_root.join("crates/laniusc-compiler/src");
+    // This script must not read the compiler's Rust sources. A Rust edit would
+    // then rerun it, and one run takes seconds. The checks that compare kernel
+    // keys with Rust string literals run in the compiler's build script, from
+    // the kernel list written below.
     track_dir_recursively(&shader_root);
-    track_dir_recursively(&compiler_source_root);
     let slangc = find_slangc()
         .context("could not locate `slangc` binary. Set $SLANGC or add it to PATH.")?;
     let shader_compile_timeout = timeout_from_env_ms(
@@ -53,20 +55,6 @@ fn main() -> Result<()> {
     let mut sources =
         collect_slang_sources(&shader_root).context("walk workspace shaders/ for .slang files")?;
     sources.sort();
-    let runtime_shader_keys = collect_runtime_shader_keys(&compiler_source_root)?;
-    let unbuilt = kernel_keys::keys_without_entry_point(
-        runtime_shader_keys.iter().map(String::as_str),
-        |key| {
-            let path = shader_root.join(format!("{key}.slang"));
-            if path.is_file() { fs::read_to_string(path).ok() } else { None }
-        },
-    );
-    if !unbuilt.is_empty() {
-        return Err(anyhow!(
-            "the compiler names kernel(s) whose shader file has no entry point, so the build would not compile them: {}; give each file its own [shader(\"compute\")] main (an #include of another kernel does not count)",
-            unbuilt.join(", ")
-        ));
-    }
     let mut shader_artifacts = Vec::new();
     let mut shader_compile_jobs = Vec::new();
     let max_shader_spv_bytes = shader_max_spv_bytes()?;
@@ -81,11 +69,6 @@ fn main() -> Result<()> {
             continue;
         }
         let artifact_key = shader_artifact_key(&shader_root, &ep)?;
-        if !runtime_shader_keys.contains(&artifact_key) {
-            return Err(anyhow!(
-                "compute shader `{artifact_key}` has no runtime loader; remove the dead entrypoint or reference its artifact key as a Rust string literal"
-            ));
-        }
         let spv_out = shader_out_dir.join(format!("{artifact_key}.spv"));
         let refl_out = shader_out_dir.join(format!("{artifact_key}.reflect.json"));
         let stamp_out = shader_out_dir.join(format!("{artifact_key}.stamp"));
@@ -159,6 +142,7 @@ fn main() -> Result<()> {
         size_guard_status: shader_size_guard_status.to_string(),
         size_guard_max_bytes: shader_size_guard_max_bytes,
     };
+    write_kernel_list(&shader_out_dir, &shader_artifacts)?;
     write_shader_artifact_metadata(&shader_out_dir, &shader_metadata)?;
     if !runtime_loaded_debug_shader_artifacts() {
         emit_shader_artifact_rustc_env(&shader_metadata);
@@ -969,6 +953,22 @@ fn write_shader_artifact_metadata(
         .with_context(|| format!("write shader artifact metadata {}", path.display()))
 }
 
+/// Writes the key of every built kernel, one per line and sorted, next to the
+/// artifacts. The compiler's build script compares this list with the kernel
+/// keys the compiler names.
+fn write_kernel_list(
+    shader_out_dir: &Path,
+    artifacts: &[(String, PathBuf, PathBuf)],
+) -> Result<()> {
+    let mut keys: Vec<&str> = artifacts.iter().map(|(key, _, _)| key.as_str()).collect();
+    keys.sort_unstable();
+    let mut text = keys.join("\n");
+    text.push('\n');
+    let path = shader_out_dir.join("kernels.txt");
+    write_if_changed(&path, text.as_bytes())
+        .with_context(|| format!("write kernel list {}", path.display()))
+}
+
 fn write_generated_shader_artifacts(
     out_dir: &Path,
     artifacts: &[(String, PathBuf, PathBuf)],
@@ -1149,43 +1149,6 @@ impl StableHasher {
     fn finish_hex(&self) -> String {
         format!("{:016x}", self.value)
     }
-}
-
-fn collect_runtime_shader_keys(compiler_source_root: &Path) -> Result<HashSet<String>> {
-    let mut source_files = Vec::new();
-    collect_files_with_extension(compiler_source_root, "rs", &mut source_files)?;
-    let mut literals = HashSet::new();
-    for source_file in source_files {
-        let source = fs::read_to_string(&source_file)
-            .with_context(|| format!("read Rust shader consumer {}", source_file.display()))?;
-        // Shader keys are required to be ordinary string literals by the pass
-        // construction macros. Taking quoted segments is intentionally a
-        // lexical superset: a comment may keep an extra artifact active, but
-        // no runtime-referenced artifact can silently disappear.
-        literals.extend(source.split('"').skip(1).step_by(2).map(str::to_owned));
-    }
-    Ok(literals
-        .into_iter()
-        .map(|literal| {
-            let key = literal
-                .strip_suffix(".spv")
-                .or_else(|| literal.strip_suffix(".reflect.json"))
-                .unwrap_or(&literal);
-            key.strip_prefix("shaders/").unwrap_or(key).to_owned()
-        })
-        .collect())
-}
-
-fn collect_files_with_extension(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
-        let path = entry?.path();
-        if path.is_dir() {
-            collect_files_with_extension(&path, extension, out)?;
-        } else if path.extension().and_then(|value| value.to_str()) == Some(extension) {
-            out.push(path);
-        }
-    }
-    Ok(())
 }
 
 fn shader_artifact_key(shader_root: &Path, path: &Path) -> Result<String> {
