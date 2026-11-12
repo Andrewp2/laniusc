@@ -1,0 +1,33 @@
+// A name in the value of its own `let` is the earlier declaration.
+module app::main;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+fn checked(value: i32) -> Result<i32, i32> {
+    if (value < 0) { return Err(value); }
+    return Ok(value);
+}
+
+fn bump(value: i32) -> Result<i32, i32> {
+    let value = checked(value);
+    let value = value?;
+    let value = value + 1;
+    return Ok(value);
+}
+
+fn main() -> i32 {
+    let total = 3;
+    let total = total * 2 + 1;
+    let sum = 0;
+    for total in 0..total {
+        let total = total + sum;
+        sum = total;
+    }
+    if (sum == 21) {
+        let sum = sum - total;
+        let sum = match (bump(sum)) { Ok(next) -> next, Err(code) -> code };
+        return sum + total + match (bump(-5)) { Ok(next) -> next, Err(code) -> code }; // 15 + 7 - 5 = 17
+    }
+    return 0;
+}

@@ -1,0 +1,8 @@
+// The value of a `let` cannot read the name it declares when no earlier
+// declaration of that name exists.
+module app::main;
+
+fn main() -> i32 {
+    let fresh = fresh + 1;
+    return fresh;
+}

@@ -323,7 +323,10 @@ public struct ScopeEndAfterUse : IRangeSearchPredicate<uint, uint>
     }
 }
 
-uint best_hir_decl_row_from_table(uint use_token, uint owner_encoded, uint use_name)
+// The last declaration of `use_name` before `before_token` whose scope is
+// still open at `use_token`.
+uint best_hir_decl_row_from_table(
+    uint use_token, uint before_token, uint owner_encoded, uint use_name)
 {
     uint count = active_decl_count();
     if (count == 0u || !visible_decl_tree_shape_supported())
@@ -332,7 +335,7 @@ uint best_hir_decl_row_from_table(uint use_token, uint owner_encoded, uint use_n
     HirVisibleDeclLookupKey range_start =
         hir_visible_decl_lookup_key(owner_encoded, use_name, 0u);
     HirVisibleDeclLookupKey use_key =
-        hir_visible_decl_lookup_key(owner_encoded, use_name, use_token);
+        hir_visible_decl_lookup_key(owner_encoded, use_name, before_token);
 
     uint lo = lower_bound_query<HirVisibleDeclLookupKey, HirVisibleDeclRowCompare>(
         count,
@@ -379,6 +382,9 @@ bool has_prior_hir_decl_in_owner(uint use_token, uint owner_encoded, uint use_na
     return hi > lo;
 }
 
+// Nested declarations of one name whose values all contain one use.
+static const uint MAX_SHADOW_DEPTH = 8u;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -416,19 +422,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint owner_encoded = encoded_owner_fn(use_token);
-    uint decl_row = hir_value_decl_name_present[use_name] != 0u
-        ? best_hir_decl_row_from_table(use_token, owner_encoded, use_name) : INVALID;
-    uint decl_i = sorted_decl_row(decl_row);
-    uint decl_token = decl_i == INVALID ? INVALID : hir_visible_decl_token[decl_i];
-    if (valid_token(decl_token))
+    // A name in the value of its own declaration is the earlier declaration
+    // of that name: `let total = total + 1;`. Each step passes over one
+    // declaration whose value contains the use.
+    uint before_token = use_token;
+    for (uint depth = 0u; depth < MAX_SHADOW_DEPTH; depth += 1u)
     {
-        if (local_decl_initializer_contains_token(use_token, decl_i))
+        uint decl_row = hir_value_decl_name_present[use_name] != 0u
+            ? best_hir_decl_row_from_table(use_token, before_token, owner_encoded, use_name)
+            : INVALID;
+        uint decl_i = sorted_decl_row(decl_row);
+        uint decl_token = decl_i == INVALID ? INVALID : hir_visible_decl_token[decl_i];
+        if (!valid_token(decl_token))
+            break;
+        if (!local_decl_initializer_contains_token(use_token, decl_i))
         {
-            record_error(use_token, ERR_UNRESOLVED_IDENT, 0u);
+            visible_decl[use_token] = decl_token;
             return;
         }
-        visible_decl[use_token] = decl_token;
-        return;
+        before_token = decl_token;
     }
 
     // Live value declarations shadow constant parameters. A single-name use

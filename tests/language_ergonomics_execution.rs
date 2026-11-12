@@ -69,6 +69,15 @@ fn a_library_item_import_takes_precedence_over_a_source_module_import() {
 }
 
 #[test]
+fn a_name_in_the_value_of_its_own_let_is_the_earlier_declaration() {
+    assert_exit("shadowed_let_value.lani", 17);
+    assert_rejected(
+        "let_value_reads_itself.lani",
+        &["LNC0005", "unresolved identifier", "let fresh = fresh + 1;"],
+    );
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }
