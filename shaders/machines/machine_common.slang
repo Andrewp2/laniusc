@@ -173,6 +173,8 @@ public static const uint STATUS_RESERVED = 0u;
 public static const uint STATUS_TOKENS = 1u;
 public static const uint STATUS_EVENTS = 2u;
 public static const uint STATUS_GRAPH = 3u;
+// Not a rule: the first `gen` or `yield` token of the pack.
+public static const uint STATUS_GENERATORS = 4u;
 
 public static const uint E_RESERVED = 1u;
 

@@ -1,0 +1,32 @@
+// A closure in a generator's body: the closure rewrite runs first, and the
+// generator rewrite copies its result into the machine's arms.
+module app::main;
+import core::option;
+import core::function;
+
+fn apply<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(value);
+}
+
+gen fn doubles(limit: i32) -> i32 {
+    let i: i32 = 0;
+    while (i < limit) {
+        yield apply(|x: i32| x * 2, i);
+        i += 1;
+    }
+}
+
+fn main() -> i32 {
+    let it: Doubles = doubles(4);
+    let total: i32 = 0;
+    let mask: i32 = 5 | 2;
+    let running: bool = true;
+    while (running) {
+        match (it.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    if (total == 12 && mask == 7) { return 0; }
+    return 1;
+}

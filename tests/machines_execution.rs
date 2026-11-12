@@ -109,6 +109,11 @@ fn generators_yield_through_loops_branches_and_returns() {
 }
 
 #[test]
+fn a_generator_holds_a_closure() {
+    assert_exit("generator_closure.lani", 0);
+}
+
+#[test]
 fn a_generator_diagnostic_points_at_its_source() {
     assert_rejected("reject_generator_type.lani", &["LNC0006", "reject_generator_type.lani:7"]);
 }

@@ -173,9 +173,7 @@ fn machine_files(dir: &std::path::Path, files: &mut Vec<(String, String)>) {
                 let line = line.strip_prefix("pub ").unwrap_or(line);
                 line.strip_prefix("machine ").is_some_and(|rest| rest.contains(" on "))
             });
-            // Generators are not grammar yet: a pass in front of the parser
-            // rewrites them.
-            if declares && !source.contains("gen fn") {
+            if declares {
                 files.push((path.display().to_string(), source));
             }
         }

@@ -7,7 +7,8 @@ Status: design proposal, 2026-10-27. M0 to M5 are done: see
 [M4 result](#m4-result), [M5 decisions](#m5-decisions),
 [Suspended scope-stack data](#suspended-scope-stack-data) and
 [M5 result](#m5-result). The GPU expands machines from the parse tree:
-[M7](#m7-expansion-on-the-gpu). The syntax below is the implemented one except
+[M7](#m7-expansion-on-the-gpu). It rewrites generators too:
+[M8](#m8-generators-on-the-gpu). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -809,7 +810,8 @@ live across the inner yield and a yield after both loops; and signs, from
 an `if`/`else` with a yield in each branch and an early `return`. Every
 `next` after the end is `None`. `reject_generator_type.lani` reports a type
 error in a generator's body at its source line. The elaboration's unit
-tests check the machine text and the subset's five rejections.
+tests check the machine text and the subset's rejections. Since 2026-11-11
+the GPU does this rewrite: see [M8](#m8-generators-on-the-gpu).
 
 **Speed** (`benchmark_artifacts/machines_m5/`). The sum of odd squares
 below 200000000:
@@ -865,9 +867,10 @@ text a machine expands to is the same, byte for byte, so the generated names
 of [M1 decisions](#m1-decisions) and [M3](#m3-decisions) still hold.
 
 - **Order.** A file passes through three rewrites before the frontend reads
-  it: `gen fn` on the host, closures on the GPU, machines on the GPU
-  (`compiler/machine_elaboration.rs`). Closures go before machines because
-  the parser does not read a closure.
+  it: closures, `gen fn`, machines (`compiler/machine_elaboration.rs`).
+  Closures go first because the parser does not read a closure. At M7 the
+  host still rewrote `gen fn`, before the closures;
+  [M8](#m8-generators-on-the-gpu) moved it.
 - **Expansion** (`compiler/machine_elaboration/machines.rs`,
   `shaders/machines/`). One run lexes and parses all the files of a load.
   A kernel per tree node writes a record on the first token of each machine,
@@ -899,9 +902,51 @@ of [M1 decisions](#m1-decisions) and [M3](#m3-decisions) still hold.
   recorded expansions the host elaborator wrote
   (`tests/fixtures/machines/expansion/`). `tests/machines_execution.rs` is
   unchanged and passes.
-- **Not done.** `gen fn` is still rewritten on the host, and closures are
-  rewritten from lexer tokens, not from the parse tree. A closure in a
-  machine arm does not compile; it did not before this change either.
+- **Not done.** Closures are rewritten from lexer tokens, not from the
+  parse tree. A closure in a machine arm does not compile; it did not before
+  this change either.
+
+## M8: generators on the GPU
+
+Done 2026-11-11.
+
+`gen` and `yield` are keywords, and `gen fn` and `yield expr;` are grammar.
+The GPU rewrites a generator into the machine of
+[M5 decisions](#m5-decisions) from the parse tree. The host tokenizer and
+the host generator rewrite are deleted, so no rewrite reads source text on
+the host.
+
+- **One parse.** The machine pass lexes and parses every file. Its kernel
+  for reserved names also publishes the first `gen` or `yield` token. When
+  there is one, the pass rewrites the generators instead of expanding
+  machines (`compiler/machine_elaboration/generators.rs`,
+  `shaders/generators/`), and the host runs the machine pass again on the
+  result. A load without a generator runs the pass once, as before.
+- **Records and sums.** A kernel per tree node writes a record on the token
+  of each generator, parameter, `let`, `yield`, statement block and block
+  end. Three prefix sums over the tokens give each `yield` its number, its
+  depth in the statement blocks, the locals in scope and its first slot in
+  the scope table. A block end subtracts the locals its block declared, so
+  the running sum at a token is the number of locals in scope there.
+- **Pieces.** Each `gen` token, `yield` and body end owns the pieces of one
+  part of the output: the text before the generator and the machine head
+  with `Start`, one `YieldK` state, and `Done` with the constructor, the
+  `impl` and the text after the file's last generator. A count run gives
+  each owner its number of pieces. A write run has one thread per piece. It
+  finds its owner by binary search in the prefix sum of the counts, then
+  its piece by walking the owner's sections. A copy of body text is a range
+  of pieces: source text between replacements, and a replacement for each
+  `yield`, `return` and parameter name.
+- **Rules** (`generators/check`). The subset of M5, with the same messages.
+  The kernel also rejects a `yield` outside a generator and a generator with
+  type parameters, a `where` clause or contracts. A file with a generator
+  that does not import `core::option` is rejected at the `gen` token.
+- **Text.** The names (`NameResume`, `Name`, `YieldK`, `__lanius_gen_x`) are
+  those of M5. The layout of the generated text is not the host's.
+- **Evidence.** The unit tests of `generators.rs` check the machine text of
+  one generator, two generators in one file beside a file without one, and
+  nine rejections. `tests/machines_execution.rs` passes unchanged, and
+  `generator_closure.lani` runs a generator whose `yield` holds a closure.
 
 ## Open questions
 

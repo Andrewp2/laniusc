@@ -1,5 +1,6 @@
 // Per token: names that start with `__lanius_` belong to generated code, so
-// a source file may not use one. Generated text reaches this kernel too: the
+// a source file may not use one. The kernel also publishes the first `gen`
+// or `yield` token of the pack. Generated text reaches this kernel too: the
 // copies of generic functions, and files that generators or the closure pass
 // wrote, which use the names of those passes.
 import gpu_index;
@@ -49,7 +50,16 @@ bool text_at(uint t, uint offset, uint low, uint high, uint count)
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint t = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
-    if (t >= gReserved.token_count || token_kind(tokens_out, t) != TK_IDENT)
+    if (t >= gReserved.token_count)
+        return;
+    uint kind = token_kind(tokens_out, t);
+    // The host runs the generator kernels only for a pack that has one.
+    if (kind == TK_GEN || kind == TK_YIELD)
+    {
+        uint first;
+        InterlockedMin(status[STATUS_GENERATORS], t, first);
+    }
+    if (kind != TK_IDENT)
         return;
     // "__lanius", "_"
     if (!text_at(t, 0u, 0x616c5f5fu, 0x7375696eu, 8u) || !text_at(t, 8u, 0x5fu, 0u, 1u))

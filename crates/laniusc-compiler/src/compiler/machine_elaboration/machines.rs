@@ -107,7 +107,9 @@ const CONSTANTS: [&str; 77] = [
 
 const RECORD_WORDS: usize = 6;
 const PIECE_COPY: u32 = 0;
-const NO_ERROR: u32 = u32::MAX;
+pub(super) const NO_ERROR: u32 = u32::MAX;
+/// The status words of the machine rules. One more word follows them: the
+/// first `gen` or `yield` token of the pack.
 const STATUS_WORDS: usize = 4;
 const DETAIL_WORDS: usize = 8;
 const INFO_WORDS: usize = 3;
@@ -132,25 +134,29 @@ pub(super) struct Invalid {
 pub(super) enum Outcome {
     /// One entry per file: `None` for a file without machines.
     Expanded(Vec<Option<Rewritten>>),
+    /// The pack has generators, and they are machines now: one entry per
+    /// file, `None` for a file without generators. The machines of the
+    /// rewritten pack are not expanded yet.
+    Generators(Vec<Option<Rewritten>>),
     Invalid(Invalid),
 }
 
 #[derive(encase::ShaderType)]
-struct Params {
+pub(super) struct Params {
     a: u32,
     b: u32,
     c: u32,
     d: u32,
 }
 
-fn params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32) -> LaniusBuffer<Params> {
+pub(super) fn params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32) -> LaniusBuffer<Params> {
     uniform_from_val(gpu.device, label, &Params { a, b, c: 0, d: 0 })
 }
 
 /// The parameters of a kernel that checks rules. `explain` is the status
 /// word and key of the error whose spans the kernel writes, or `NO_ERROR`
 /// twice in the run that finds the errors.
-fn check_params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32, explain: [u32; 2]) -> LaniusBuffer<Params> {
+pub(super) fn check_params(gpu: &Gpu<'_>, label: &str, a: u32, b: u32, explain: [u32; 2]) -> LaniusBuffer<Params> {
     uniform_from_val(gpu.device, label, &Params { a, b, c: explain[0], d: explain[1] })
 }
 
@@ -181,6 +187,8 @@ fn frontend() -> Result<&'static Frontend> {
 /// The parse of one source pack, as far as the host needs it.
 struct Parsed {
     token_count: u32,
+    /// Read by the tree dump of the tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     token_capacity: u32,
     tree_capacity: u32,
 }
@@ -240,24 +248,40 @@ fn with_parse<A, R>(
 /// What the first submission leaves for the later ones: the lexer's and
 /// parser's buffers, the token records, the first prefix sums and the status
 /// words of the rules.
-struct Marked {
-    tokens: u32,
-    tokens_out: LaniusBuffer<GpuToken>,
-    token_file_id: LaniusBuffer<u32>,
-    in_bytes: LaniusBuffer<u8>,
-    source_file_start: LaniusBuffer<u32>,
-    source_file_len: LaniusBuffer<u32>,
-    semantic_token_kinds: LaniusBuffer<u32>,
+pub(super) struct Marked {
+    pub(super) tokens: u32,
+    pub(super) tokens_out: LaniusBuffer<GpuToken>,
+    pub(super) token_file_id: LaniusBuffer<u32>,
+    pub(super) in_bytes: LaniusBuffer<u8>,
+    pub(super) source_file_start: LaniusBuffer<u32>,
+    pub(super) source_file_len: LaniusBuffer<u32>,
+    pub(super) semantic_token_kinds: LaniusBuffer<u32>,
+    pub(super) tree: Tree,
     file_flags: LaniusBuffer<u32>,
     records: LaniusBuffer<u8>,
     marks: LaniusBuffer<u8>,
-    scan: LaniusBuffer<u8>,
+    /// Inclusive prefix sums: machines, states, transitions, bracket depth.
+    pub(super) scan: LaniusBuffer<u8>,
     status: LaniusBuffer<u32>,
     detail: LaniusBuffer<u8>,
     /// The last row of `scan`: the number of machines, states and transitions.
     totals: LaniusBuffer<u8>,
     /// The first status word: the reserved names.
     reserved: LaniusBuffer<u8>,
+    /// The word after the status words: the first `gen` or `yield` token.
+    generators: LaniusBuffer<u8>,
+}
+
+/// The parse tree of the pack, for the generator kernels.
+pub(super) struct Tree {
+    pub(super) capacity: u32,
+    pub(super) status: LaniusBuffer<u32>,
+    pub(super) node_kind: LaniusBuffer<u32>,
+    pub(super) parent: LaniusBuffer<u32>,
+    pub(super) first_child: LaniusBuffer<u32>,
+    pub(super) next_sibling: LaniusBuffer<u32>,
+    pub(super) hir_token_pos: LaniusBuffer<u32>,
+    pub(super) hir_token_end: LaniusBuffer<u32>,
 }
 
 /// Expands the machines of `sources`, one GPU run for all of them. `flags`
@@ -296,7 +320,7 @@ fn mark(
     let records = gpu.rows("machines.records", rows * RECORD_WORDS, 1);
     let marks = gpu.rows("machines.marks", rows, 4);
     let work = [gpu.rows("machines.scan.a", rows, 4), gpu.rows("machines.scan.b", rows, 4)];
-    let status = storage_ro_from_u32s(gpu.device, "machines.status", &[NO_ERROR; STATUS_WORDS]);
+    let status = storage_ro_from_u32s(gpu.device, "machines.status", &[NO_ERROR; STATUS_WORDS + 1]);
     let detail = gpu.rows("machines.detail", DETAIL_WORDS, 1);
     let file_flags = storage_ro_from_u32s(gpu.device, "machines.file_flags", flags);
     let node_params = params(gpu, "machines.nodes.params", parsed.tree_capacity, tokens);
@@ -340,18 +364,30 @@ fn mark(
         source_file_start: lexer.source_file_start.clone(),
         source_file_len: lexer.source_file_len.clone(),
         semantic_token_kinds: parser.semantic_token_kinds.clone(),
+        tree: Tree {
+            capacity: parsed.tree_capacity,
+            status: parser.ll1_status.clone(),
+            node_kind: parser.node_kind.clone(),
+            parent: parser.parent.clone(),
+            first_child: parser.first_child.clone(),
+            next_sibling: parser.next_sibling.clone(),
+            hir_token_pos: parser.hir_token_pos.clone(),
+            hir_token_end: parser.hir_token_end.clone(),
+        },
         file_flags,
         records,
         marks,
         totals: gpu.read(encoder, &scan, (rows - 1) * 4, 4),
         scan,
         reserved: gpu.rows("machines.reserved", 1, 1),
+        generators: gpu.rows("machines.generators", 1, 1),
         status,
         detail,
     };
     record_reserved(gpu, encoder, &marked, [NO_ERROR; 2])?;
     let reserved = gpu.read(encoder, &marked.status, 0, 1);
-    Ok(Some(Marked { reserved, ..marked }))
+    let generators = gpu.read(encoder, &marked.status, STATUS_WORDS, 1);
+    Ok(Some(Marked { reserved, generators, ..marked }))
 }
 
 /// Records the kernel that checks the reserved names.
@@ -420,6 +456,10 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
         let mut encoder = gpu.encoder("machines.explain");
         record_reserved(gpu, &mut encoder, marked, [0, reserved])?;
         return explain(gpu, encoder, sources, marked, 0, reserved).map(Some);
+    }
+    // Generators become machines first. The caller runs the pack again.
+    if gpu.words(&marked.generators)?[0] != NO_ERROR {
+        return super::generators::expand(gpu, sources, marked);
     }
     let totals = gpu.words(&marked.totals)?;
     let (machine_count, state_count, transition_count) = (totals[0], totals[1], totals[2]);
@@ -787,7 +827,7 @@ fn constant_table(device: &wgpu::Device) -> (LaniusBuffer<u32>, LaniusBuffer<u8>
 /// expanded byte to the source. A piece row is `(len, kind, value, anchor
 /// token)`; an anchor row is `(file, start, len)` of the anchor token. The
 /// pieces of one file are adjacent, and a file without machines has none.
-fn split_files(
+pub(super) fn split_files(
     sources: &[&str],
     piece_rows: &[u32],
     piece_ends: &[u32],
@@ -838,6 +878,7 @@ fn split_files(
     Ok(files)
 }
 
+#[cfg(test)]
 fn read_all(gpu: &Gpu<'_>, encoder: &mut wgpu::CommandEncoder, buffer: &LaniusBuffer<u32>, words: u32) -> LaniusBuffer<u8> {
     gpu.read(encoder, buffer, 0, words as usize)
 }
@@ -885,6 +926,7 @@ mod tests {
                 "file {} at byte {}: {} ({:?})",
                 invalid.file, invalid.start, invalid.message, invalid.help
             ),
+            Some(Outcome::Generators(_)) => panic!("the sources declare a generator"),
             None => None,
         }
     }
@@ -905,6 +947,7 @@ mod tests {
                 invalid.help.map_or(String::new(), |help| format!(" [{help}]"))
             ),
             Some(Outcome::Expanded(_)) => "expanded".to_string(),
+            Some(Outcome::Generators(_)) => "generators".to_string(),
             None => "no machine, or the file does not parse".to_string(),
         }
     }
