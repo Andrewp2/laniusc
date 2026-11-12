@@ -39,6 +39,7 @@ C call. Conflicting checked signatures for the same native symbol fail linking.
 | `f32` | IEEE binary32, matching C `float` |
 | `f64` | IEEE binary64, matching C `double` |
 | Omitted result | C void; not a parameter type |
+| Record with one integer or pointer field | The field itself, as C passes `struct { uint32_t sequence; }` by value |
 
 Declarations accept up to 32 parameters. The backend supplies System V register
 and stack arguments, stack alignment, preserved registers, pointer bits,
@@ -53,9 +54,26 @@ lifetimes, aliasing, error and ownership rules. A `ptr` carries no element type,
 length, NUL termination or cleanup authority. Raw declarations are an unsafe
 boundary even though this language has no `unsafe` block.
 
-Lanius slices, strings, arrays and records do not acquire C layouts through
-this feature. Library adapters must stage bytes or use a documented raw-memory
-layout. The EVP wrapper demonstrates explicit NUL-terminated names, packed
+A record with exactly one field of type `i32`, `u32`, `i64`, `u64`, `isize`,
+`usize` or `ptr` is a parameter or result type. System V gives such a C struct
+the class of its field, so it crosses in one integer register or stack slot.
+XCB cookies have this shape:
+
+```lanius
+struct Cookie { sequence: u32 }
+extern "C" fn xcb_get_input_focus(connection: ptr) -> Cookie;
+extern "C" fn xcb_get_input_focus_reply(connection: ptr, cookie: Cookie, error: ptr) -> ptr;
+```
+
+The record is declared in the library that declares the function and has no
+generic parameters. A private record works in a private declaration; a `pub`
+declaration needs a `pub` record. A record with a float field, with a record
+field, or with more than one field is rejected, and so is a record as a
+variadic argument.
+
+Other Lanius records, slices, strings and arrays do not acquire C layouts
+through this feature. Library adapters must stage bytes or use a documented
+raw-memory layout. The EVP wrapper demonstrates explicit NUL-terminated names, packed
 input/output staging, immediate error capture and native context cleanup.
 
 ## C floating-point ABI
@@ -247,8 +265,9 @@ modes remain unsupported by native linking; ordinary raw x86/Wasm execution
 retains its existing storage policy.
 
 Callbacks with float, aggregate or more than six parameters, exported
-callback symbols, narrow integer and Boolean C types, aggregate C
-layouts and generic extern declarations are unsupported. Runtime
+callback symbols, narrow integer and Boolean C types, C aggregates other than
+a record with one integer or pointer field, and generic extern declarations
+are unsupported. Runtime
 `dlopen`/`dlsym` interfaces are separate work. Wasm, other platforms and user GPU
 execution have no support claim from these gates.
 

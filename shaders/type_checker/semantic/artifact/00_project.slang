@@ -7,6 +7,7 @@ import type_checker.type.instances.generic_param_lookup;
 import type_checker.predicates.scalar_subject;
 import gpu_index;
 import native_c_abi;
+import type_checker.local_struct_layout;
 import status;
 
 // Projection columns are sparse by their compact semantic domain. Value,
@@ -79,6 +80,10 @@ StructuredBuffer<uint> visible_type;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
+StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
 StructuredBuffer<uint> call_return_type;
@@ -135,6 +140,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_STRUCT = 27u;
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint HIR_EXPR_NAME = 2u;
@@ -204,13 +210,40 @@ uint host_service_for_function(HirPayload payload, uint source_abi)
     return INVALID;
 }
 
+// A record of this unit with one integer or pointer field. System V gives it
+// the class of that field, so it crosses in one integer register. A float
+// field is excluded: the call lowering puts every record in the integer bank.
+bool native_c_record(uint instance, uint hir_count)
+{
+    if (!valid_instance(instance) || type_instance_kind[instance] != 1u) return false;
+    uint declaration = type_instance_decl_token[instance];
+    uint owner = declaration < gParams.n_tokens
+        ? type_decl_hir_node_by_token[declaration] : INVALID;
+    if (owner >= hir_count || compact_hir_core[owner].kind != HIR_STRUCT ||
+        compact_generic_param_ranges[owner].count != 0u) return false;
+    uint count = min(compact_field_count[0u], gParams.n_hir_nodes);
+    uint start = first_local_struct_field(compact_hir_core[owner].token_start,
+        count, compact_fields);
+    if (start >= count) return false;
+    HirField field = compact_fields[start];
+    if (field.owner != owner || field.ordinal != 0u || field.value >= hir_count ||
+        (start + 1u < count && compact_fields[start + 1u].owner == owner)) return false;
+    uint scalar = semantic_expr_ref_payload_by_hir[field.value];
+    return semantic_expr_ref_tag_by_hir[field.value] == 1u &&
+        (scalar_is_integer(scalar) || scalar == SCALAR_PTR) &&
+        native_c_scalar(scalar, false);
+}
+
 // The accepted type graph, rather than source spelling or inferred machine
-// width, admits a C signature. In particular references and aggregates cannot
-// borrow the opaque-ptr calling convention.
+// width, admits a C signature. In particular references and other aggregates
+// cannot borrow the opaque-ptr calling convention.
 bool native_c_type(uint node, bool result, uint hir_count)
 {
-    return node < hir_count && semantic_expr_ref_tag_by_hir[node] == 1u &&
-        native_c_scalar(semantic_expr_ref_payload_by_hir[node], result);
+    if (node >= hir_count) return false;
+    uint tag = semantic_expr_ref_tag_by_hir[node];
+    uint payload = semantic_expr_ref_payload_by_hir[node];
+    return tag == 1u ? native_c_scalar(payload, result)
+        : tag == 3u && native_c_record(payload, hir_count);
 }
 
 bool validate_native_c_function(uint row, HirPayload payload, uint hir_count)

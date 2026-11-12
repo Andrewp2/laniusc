@@ -445,8 +445,7 @@ impl GpuSemanticInterfaceArtifact {
         let mut types = Vec::with_capacity(edges.len());
         for edge in &self.type_edges[edges] {
             let leaf = self.types.get(edge.type_index as usize).ok_or_else(invalid)?;
-            if leaf.kind != GpuSemanticInterfaceTypeKind::Scalar as u32 { return Err(invalid()); }
-            types.push(NativeCType::from_scalar(leaf.payload_lo).ok_or_else(invalid)?);
+            types.push(self.native_c_type(leaf).ok_or_else(invalid)?);
         }
         let result = types.pop().ok_or_else(invalid)?;
         if types.contains(&NativeCType::Void) { return Err(invalid()); }
@@ -469,6 +468,26 @@ impl GpuSemanticInterfaceArtifact {
                 variadic: declaration.flags & DECL_FLAG_NATIVE_C_VARIADIC != 0,
             },
         })
+    }
+
+    /// The C type of one signature leaf: a scalar, or a record of this unit
+    /// with one integer or pointer field, which System V passes as that field.
+    fn native_c_type(&self, leaf: &GpuSemanticInterfaceTypeRecord) -> Option<NativeCType> {
+        if leaf.kind == GpuSemanticInterfaceTypeKind::Scalar as u32 {
+            return NativeCType::from_scalar(leaf.payload_lo);
+        }
+        if leaf.kind != GpuSemanticInterfaceTypeKind::Declaration as u32 ||
+            leaf.payload_lo != self.library_id || leaf.nominal_unit_id != self.unit_id ||
+            leaf.edge_count != 0
+        { return None; }
+        let record = self.declarations.get(leaf.payload_hi as usize)?;
+        if record.member_count != 1 { return None; }
+        let field = self.members.get(record.first_member as usize)?;
+        if field.kind != GpuSemanticInterfaceMemberKind::Field as u32 { return None; }
+        let field_type = self.types.get(field.type_index as usize)?;
+        if field_type.kind != GpuSemanticInterfaceTypeKind::Scalar as u32 { return None; }
+        NativeCType::from_scalar(field_type.payload_lo).filter(|field| !matches!(field,
+            NativeCType::Void | NativeCType::F32 | NativeCType::F64))
     }
 
     /// Validates all record ranges, canonical names, and typed references.

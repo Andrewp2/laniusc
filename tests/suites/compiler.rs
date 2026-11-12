@@ -100,6 +100,8 @@ mod native_c_contract;
 mod native_c_execution;
 #[path = "../native_c_float_execution.rs"]
 mod native_c_float_execution;
+#[path = "../native_c_record_execution.rs"]
+mod native_c_record_execution;
 #[path = "../native_c_storage_execution.rs"]
 mod native_c_storage_execution;
 #[path = "../optimizer_semantics.rs"]

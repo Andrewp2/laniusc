@@ -9,6 +9,9 @@ fn checked_c_declarations_reject_unsupported_unused_signatures() {
         include_str!("fixtures/native_c/unsupported_bool.lani"),
         include_str!("fixtures/native_c/unsupported_string.lani"),
         include_str!("fixtures/native_c/unsupported_aggregate.lani"),
+        include_str!("fixtures/native_c/unsupported_record_float.lani"),
+        include_str!("fixtures/native_c/unsupported_record_generic.lani"),
+        include_str!("fixtures/native_c/unsupported_record_nested.lani"),
         include_str!("fixtures/native_c/unsupported_reference.lani"),
         include_str!("fixtures/native_c/unsupported_slice.lani"),
         include_str!("fixtures/native_c/unsupported_generic.lani"),
@@ -29,6 +32,45 @@ fn checked_c_declarations_reject_unsupported_unused_signatures() {
             other => panic!("expected source diagnostic for {source}: {other:?}"),
         }
     }
+}
+
+/// The link metadata of a record is the C type of its one field. A private
+/// record of a private declaration is resolved the same way.
+#[test]
+fn checked_c_record_metadata_is_the_field_type() {
+    let interface = common::semantic_interface_with_timeout(
+        75,
+        &[r#"
+module native::records;
+pub struct Cookie { sequence: u32 }
+struct Handle { raw: ptr }
+pub extern "C" fn make(value: i64) -> Cookie;
+extern "C" fn open(cookie: Cookie, flags: i32) -> Handle;
+"#],
+    )
+    .expect("checked C record interface");
+    let bindings = interface
+        .native_c_functions()
+        .expect("record native bindings");
+    assert_eq!(bindings.len(), 2);
+    let make = bindings.iter().find(|binding| binding.name == "make").unwrap();
+    assert_eq!(
+        make.signature,
+        NativeCSignature {
+            parameters: vec![NativeCType::I64],
+            result: NativeCType::U32,
+            variadic: false,
+        }
+    );
+    let open = bindings.iter().find(|binding| binding.name == "open").unwrap();
+    assert_eq!(
+        open.signature,
+        NativeCSignature {
+            parameters: vec![NativeCType::U32, NativeCType::I32],
+            result: NativeCType::Ptr,
+            variadic: false,
+        }
+    );
 }
 
 #[test]

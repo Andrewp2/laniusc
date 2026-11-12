@@ -820,6 +820,16 @@ void plan_ordinary(X86PlanInput input)
         else plan_value_move(is_float, is_float ? f64 :
             (metadata & (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u,
             locations.a, destination);
+        // A record in a C signature has one integer or pointer field. C takes
+        // the field itself; the value here is the address of the record.
+        if (native_c && (metadata & (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_IMMEDIATE)) ==
+            X86_LIR_METADATA_AGGREGATE)
+        {
+            uint reg = x86_location_payload(destination);
+            // mov reg, [reg]
+            plan_bytes(3u, select(reg >= 8u, 0x4du, 0x48u) | 0x8b00u |
+                ((((reg & 7u) << 3u) | (reg & 7u)) << 16u));
+        }
         if (stack_argument) plan_bytes(1u, 0x50u); // push rax
     }
     else if (op == X86_LIR_OP_CALL && (metadata & X86_LIR_METADATA_NATIVE_C) != 0u)

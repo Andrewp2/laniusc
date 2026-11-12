@@ -1,0 +1,6 @@
+module app::main;
+
+pub struct Ratio { value: f32 }
+extern "C" fn native_unused(value: Ratio) -> i32;
+
+fn main() -> i32 { return 0; }

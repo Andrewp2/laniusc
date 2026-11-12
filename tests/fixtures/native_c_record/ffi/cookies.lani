@@ -1,0 +1,10 @@
+module ffi::cookies;
+
+// A record with one integer or pointer field has that field's C class.
+pub struct Cookie { sequence: u32 }
+
+pub extern "C" fn rec_c_make(value: u32) -> Cookie;
+pub extern "C" fn rec_c_read(unused: ptr, cookie: Cookie, add: u32) -> u32;
+pub extern "C" fn rec_asm_dirty() -> Cookie;
+
+pub fn sequence(cookie: Cookie) -> u32 { return cookie.sequence; }

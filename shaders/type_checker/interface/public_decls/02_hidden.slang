@@ -39,6 +39,10 @@ StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> compact_type_alias_target;
+StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<HirRange> compact_param_ranges;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> compact_path_segment_count;
@@ -240,9 +244,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = dtid.x + dtid.y * MAX_GROUPS_X * 256u;
     uint decls = active_decls();
+    uint top = STACK_END;
     // A private C declaration still needs a stable symbol/name/signature for
     // native linking. Keep it in the hidden partition; dependency name lookup
     // continues to exclude it. It is admitted later by the checked C profile.
+    // Its signature may name a private record, which that profile reads, so
+    // the parameter and result types are roots here too.
     if (row < decls)
     {
         uint hir = decl_hir_node[row];
@@ -255,10 +262,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             interface_public_decl_index_by_local[row] = MARK;
             interface_public_decl_index_by_hir[hir] = MARK;
+            walk(compact_fn_return_type[hir], top);
+            HirRange range = compact_param_ranges[hir];
+            uint parameters = min(compact_param_count[0u], hir_capacity());
+            uint count = range.start < parameters
+                ? min(min(range.count, parameters - range.start), NATIVE_C_MAX_PARAMETERS) : 0u;
+            [loop]
+            for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+                walk(compact_params[range.start + ordinal].type_node, top);
         }
     }
 
-    uint top = STACK_END;
     uint hirs = hir_capacity();
     if (row < min(compact_field_count[0u], hirs))
     {

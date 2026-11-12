@@ -1,0 +1,7 @@
+module app::main;
+
+pub struct Inner { value: u32 }
+pub struct Outer { inner: Inner }
+extern "C" fn native_unused() -> Outer;
+
+fn main() -> i32 { return 0; }

@@ -1,0 +1,6 @@
+module app::main;
+
+pub struct Boxed<T> { value: T }
+extern "C" fn native_unused(value: Boxed<u32>) -> i32;
+
+fn main() -> i32 { return 0; }

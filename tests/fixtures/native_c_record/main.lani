@@ -1,0 +1,74 @@
+module app::main;
+import ffi::cookies;
+
+// Private records work in private C declarations.
+struct Token { sequence: u32 }
+pub struct Handle { raw: ptr }
+struct Wide { value: i64 }
+struct Holder { before: u64, token: Token, after: u64 }
+
+extern "C" fn rec_c_make(value: u32) -> Token;
+extern "C" fn rec_c_read(unused: ptr, token: Token, add: u32) -> u32;
+extern "C" fn rec_c_stack(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64, token: Token, tail: u32) -> u32;
+extern "C" fn rec_c_handle(index: u32) -> Handle;
+extern "C" fn rec_c_handle_value(handle: Handle) -> u32;
+extern "C" fn rec_c_wide(value: i64) -> Wide;
+extern "C" fn rec_c_wide_difference(left: Wide, right: Wide) -> i64;
+extern "C" fn rec_asm_wide_bits(unused: u64, wide: Wide) -> i64;
+
+fn check_register() -> i32 {
+    let none: ptr = 0;
+    let token = rec_c_make(40);
+    if (token.sequence != 41) { return 1; }
+    if (rec_c_read(none, token, 1) != 42) { return 2; }
+    if (rec_c_read(none, rec_c_make(9), 5) != 15) { return 3; }
+    let built = Token { sequence: 100 };
+    if (rec_c_read(none, built, 7) != 107) { return 4; }
+    let holder = Holder { before: 1, token: rec_c_make(20), after: 2 };
+    if (rec_c_read(none, holder.token, 0) != 21) { return 5; }
+    if (holder.before != 1 || holder.after != 2) { return 6; }
+    return 0;
+}
+
+fn check_stack() -> i32 {
+    let token = rec_c_make(10);
+    if (rec_c_stack(1, 2, 3, 4, 5, 6, token, 8) != 30) { return 11; }
+    if (rec_c_stack(1, 2, 3, 4, 5, 6, Token { sequence: 3 }, 1) != 7) { return 12; }
+    return 0;
+}
+
+fn check_imported() -> i32 {
+    let none: ptr = 0;
+    let cookie = ffi::cookies::rec_c_make(1);
+    if (ffi::cookies::sequence(cookie) != 2) { return 21; }
+    if (ffi::cookies::rec_c_read(none, cookie, 3) != 5) { return 22; }
+    // The callee leaves the upper half of the register undefined.
+    let dirty = ffi::cookies::rec_asm_dirty();
+    let wide: u64 = ffi::cookies::sequence(dirty) as u64;
+    if (wide != 42) { return 23; }
+    if (ffi::cookies::rec_c_read(none, dirty, 0) != 42) { return 24; }
+    return 0;
+}
+
+fn check_wide_fields() -> i32 {
+    let first = rec_c_handle(0);
+    let second = rec_c_handle(1);
+    if (rec_c_handle_value(first) != 1234567) { return 31; }
+    if (rec_c_handle_value(second) != 7654321) { return 32; }
+    let large = rec_c_wide(6000000000);
+    if (large.value != 12000000000) { return 33; }
+    let small = rec_c_wide(-5);
+    if (rec_c_wide_difference(large, small) != 12000000010) { return 34; }
+    if (rec_asm_wide_bits(0, large) != 12000000000) { return 35; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let register = check_register();
+    if (register != 0) { return register; }
+    let stack = check_stack();
+    if (stack != 0) { return stack; }
+    let imported = check_imported();
+    if (imported != 0) { return imported; }
+    return check_wide_fields();
+}
