@@ -12515,6 +12515,7 @@ fn main() -> i32 {
 fn x86_borrowed_receiver_temporary_holds_imported_option_result() {
     let sources = [
         include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/mem.lani"),
         include_str!("../stdlib/core/function.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
