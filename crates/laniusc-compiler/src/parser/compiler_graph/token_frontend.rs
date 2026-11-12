@@ -40,8 +40,6 @@ pub(in crate::parser) const GENERIC_SHR_SCAN_UP: &str = "parser.tokens.generic_s
 pub(in crate::parser) const GENERIC_SHR_SCAN_DOWN: &str = "parser.tokens.generic_shr.scan.down";
 pub(in crate::parser) const IMPL_HEADER_KIND_CLEAR: &str = "parser.tokens.impl_header_kind.clear";
 pub(in crate::parser) const FEATURE_FLAGS_CLEAR: &str = "parser.tokens.feature_flags.clear";
-pub(in crate::parser) const BRACED_RHS_STATEMENT_KIND_CLEAR: &str =
-    "parser.tokens.braced_rhs_statement_kind.clear";
 
 pub(in crate::parser) const ENCLOSING_OPENS: &str = "parser.tokens.enclosing_opens";
 pub(in crate::parser) const ANGLE_KINDS: &str = "parser.tokens_to_angle_kinds.pass";
@@ -72,7 +70,6 @@ pub(super) fn register_resources(
         "depth_bracket_inblock",
         "depth_angle_inblock",
         "brace_semantic_kind",
-        "braced_rhs_statement_kind",
         "bracket_semantic_kind",
         "statement_context_kind",
         "token_impl_header_kind",
@@ -86,6 +83,8 @@ pub(super) fn register_resources(
         "angle_match_depth",
         "token_angle_close",
         "token_direct_lt_kind",
+        "statement_boundary_depth",
+        "token_statement_start",
     ] {
         let resource = workspace(graph, name, ResourceDomain::Tokens, token_rows * 4)?;
         if capacity.preclassified_token_kinds {
@@ -132,6 +131,7 @@ pub(super) fn register_resources(
         "brace_match_block_min",
         "bracket_match_block_min",
         "angle_match_block_min",
+        "statement_boundary_block_min",
     ] {
         let resource = workspace(graph, name, ResourceDomain::Tokens, block_rows * 4)?;
         if capacity.preclassified_token_kinds {
@@ -144,6 +144,7 @@ pub(super) fn register_resources(
         "brace_match_min_tree",
         "bracket_match_min_tree",
         "angle_match_min_tree",
+        "statement_boundary_min_tree",
     ] {
         let resource = workspace(graph, name, ResourceDomain::Tokens, tree_rows * 4)?;
         if capacity.preclassified_token_kinds {
@@ -160,6 +161,16 @@ pub(super) fn register_resources(
     )?;
     if capacity.preclassified_token_kinds {
         graph.mark_zero_initialized(local_min)?;
+    }
+    // The same heap over the statement boundary keys, one int per node.
+    let boundary_local_min = workspace(
+        graph,
+        "statement_boundary_local_min",
+        ResourceDomain::Tokens,
+        block_rows * 256 * 4,
+    )?;
+    if capacity.preclassified_token_kinds {
+        graph.mark_zero_initialized(boundary_local_min)?;
     }
     Ok(())
 }
@@ -487,6 +498,21 @@ pub(super) fn register_schedule(
                 "delimiter_match_local_min",
                 Some(AccessMode::Write),
             ),
+            (
+                "statement_boundary_depth",
+                "statement_boundary_depth",
+                Some(AccessMode::Write),
+            ),
+            (
+                "statement_boundary_block_min",
+                "statement_boundary_block_min",
+                Some(AccessMode::Write),
+            ),
+            (
+                "statement_boundary_local_min",
+                "statement_boundary_local_min",
+                Some(AccessMode::Write),
+            ),
         ],
     )?;
     pass(
@@ -502,6 +528,7 @@ pub(super) fn register_schedule(
             "brace_match_min_tree",
             "bracket_match_min_tree",
             "angle_match_min_tree",
+            "statement_boundary_min_tree",
         ],
     )?;
     graph.repeat_pass_range(
@@ -525,6 +552,11 @@ pub(super) fn register_schedule(
             (
                 "token_angle_close",
                 "token_angle_close",
+                Some(AccessMode::Write),
+            ),
+            (
+                "token_statement_start",
+                "token_statement_start",
                 Some(AccessMode::Write),
             ),
         ],
@@ -609,12 +641,6 @@ pub(super) fn register_schedule(
             "bracket_semantic_kind",
             Some(AccessMode::Write),
         )],
-    )?;
-    clear(
-        graph,
-        BRACED_RHS_STATEMENT_KIND_CLEAR,
-        CompilerPhase::Parse,
-        &[("braced_rhs_statement_kind", "braced_rhs_statement_kind")],
     )?;
     pass(
         graph,

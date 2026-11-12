@@ -1,0 +1,58 @@
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+fn note() {
+}
+
+fn pick(first: i32, second: i32) -> i32 {
+    return second - first + first;
+}
+
+// Two and more `match` values in one `let`, `return` and assignment.
+fn plain(left: Option<i32>, right: Option<i32>) -> i32 {
+    let sum: i32 = match (left) { Some(inner) -> inner, None -> 0 } +
+        match (right) { Some(inner) -> inner, None -> 0 };
+    let same: bool = match (left) { Some(inner) -> inner, None -> 0 } ==
+        match (left) { Some(inner) -> inner, None -> 1 };
+    let total: i32 = 0;
+    total = match (left) { Some(inner) -> inner, None -> 0 } + 2;
+    total = match (left) { Some(inner) -> inner, None -> 0 } -
+        match (right) { Some(inner) -> inner, None -> 0 } +
+        match (right) { Some(inner) -> inner, None -> 0 } -
+        match (left) { Some(inner) -> inner, None -> 0 } + total;
+    if (!same) { return 0; }
+    return match (left) { Some(inner) -> inner, None -> 0 } -
+        match (left) { Some(inner) -> inner, None -> 0 } + total - sum;
+}
+
+// Arms that hold statements end in `;` and `}` inside the outer statement.
+fn blocks(left: Option<i32>, right: Option<i32>) -> i32 {
+    let sum: i32 = match (left) { Some(inner) -> inner, None -> { note(); return 70; } } +
+        match (right) { None -> { let code: i32 = 80; note(); return code; }, Some(inner) -> inner };
+    let nested: i32 = match (left) {
+        None -> {
+            let twice: i32 = match (right) { Some(inner) -> inner, None -> 0 } +
+                match (right) { Some(inner) -> inner, None -> 0 };
+            note();
+            return twice;
+        },
+        Some(inner) -> inner + match (right) { None -> { return 90; }, Some(other) -> other },
+    };
+    let called: i32 = pick(
+        match (right) { None -> { note(); return 91; }, Some(inner) -> inner },
+        match (left) { None -> { note(); return 92; }, Some(inner) -> inner });
+    if (called != 40) { return 93; }
+    return sum + nested - 82;
+}
+
+fn main() -> i32 {
+    let left: Option<i32> = Some(40);
+    let right: Option<i32> = Some(2);
+    let none: Option<i32> = None();
+    if (plain(left, right) != 0) { return 1; }
+    if (blocks(none, right) != 70) { return 2; }
+    if (blocks(left, none) != 80) { return 3; }
+    return blocks(left, right) + plain(left, right);
+}

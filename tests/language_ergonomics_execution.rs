@@ -188,6 +188,11 @@ fn try_and_other_tails_follow_a_closing_brace_or_parenthesis() {
 }
 
 #[test]
+fn one_statement_holds_several_match_values() {
+    assert_exit("match_chain.lani", 2);
+}
+
+#[test]
 fn try_needs_a_result_or_option_operand() {
     assert_rejected(
         "try_not_result.lani",

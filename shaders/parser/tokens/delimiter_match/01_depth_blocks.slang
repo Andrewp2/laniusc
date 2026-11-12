@@ -2,9 +2,16 @@
 // for all four delimiter classes (x paren, y brace, z bracket, w angle). The
 // heaps let 03_enclosing_opens search without scanning rows; see
 // blocked_search_tree.slang for the layout.
+//
+// A fifth sequence keys the statement boundaries by brace level. A `;` or a
+// statement keyword at brace depth d has key d, and a `{` has the depth of
+// its contents. The last key at most d before a token at depth d is where
+// that token's statement starts: braces opened and closed inside the
+// statement hold only larger keys.
 
 import prefix_scan;
 import blocked_search_tree;
+import parser.tokens.statement.parameter_keywords;
 
 struct Params
 {
@@ -40,6 +47,9 @@ RWStructuredBuffer<int> brace_match_block_min;
 RWStructuredBuffer<int> bracket_match_block_min;
 RWStructuredBuffer<int> angle_match_block_min;
 RWStructuredBuffer<int4> delimiter_match_local_min;
+RWStructuredBuffer<int> statement_boundary_depth;
+RWStructuredBuffer<int> statement_boundary_block_min;
+RWStructuredBuffer<int> statement_boundary_local_min;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -64,6 +74,7 @@ static const uint TK_ARRAY_LBRACKET = 31u;
 static const uint TK_STRING = 32u;
 static const uint TK_FLOAT = 33u;
 static const uint TK_CHAR = 34u;
+static const uint TK_SEMICOLON = 37u;
 static const uint TK_COLON = 38u;
 static const uint TK_GROUP_RPAREN = 62u;
 static const uint TK_CALL_RPAREN = 63u;
@@ -91,6 +102,20 @@ static const uint TK_MEMBER_TYPE_ARG_GT = 191u;
 static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
 groupshared int4 local_heap[512];
+groupshared int boundary_heap[512];
+
+struct PrefixScanBoundaryMin : IPrefixScanOp<int>
+{
+    static int identity()
+    {
+        return INF;
+    }
+
+    static int combine(int left, int right)
+    {
+        return min(left, right);
+    }
+};
 
 struct PrefixScanI32x4Min : IPrefixScanOp<int4>
 {
@@ -149,6 +174,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint token_i = block_idx * WG_SIZE + ltid.x;
     uint count = active_token_count();
     int4 event_depth = PrefixScanI32x4Min.identity();
+    int boundary = INF;
 
     if (token_i < gParams.n_tokens && token_i < count)
     {
@@ -171,6 +197,15 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         if (is_angle_open(kind)) event_depth.w = depth_before.w;
         else if (is_angle_close(kind)) event_depth.w = depth_before.w - 1;
         else if (kind == TK_SHR) event_depth.w = depth_before.w - 2;
+
+        // A `;` inside brackets separates an array's element from its length.
+        uint previous = token_i != 0u ? token_words[token_i - 1u].kind : 0u;
+        if (kind == TK_LBRACE)
+            boundary = depth_before.y + 1;
+        else if (depth_before.z == 0 && (kind == TK_SEMICOLON ||
+            (statement_keyword_starts_statement(kind) &&
+             !statement_keyword_is_const_parameter(kind, previous))))
+            boundary = depth_before.y;
     }
 
     if (token_i < gParams.n_tokens)
@@ -179,6 +214,7 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         brace_match_depth[token_i] = event_depth.y;
         bracket_match_depth[token_i] = event_depth.z;
         angle_match_depth[token_i] = event_depth.w;
+        statement_boundary_depth[token_i] = boundary;
     }
 
     blocked_local_heap_build<int4, PrefixScanI32x4Min>(ltid.x, event_depth, local_heap);
@@ -191,4 +227,9 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         bracket_match_block_min[block_idx] = block_min.z;
         angle_match_block_min[block_idx] = block_min.w;
     }
+
+    blocked_local_heap_build<int, PrefixScanBoundaryMin>(ltid.x, boundary, boundary_heap);
+    statement_boundary_local_min[block_idx * WG_SIZE + ltid.x] = boundary_heap[max(ltid.x, 1u)];
+    if (ltid.x == 0u)
+        statement_boundary_block_min[block_idx] = boundary_heap[1];
 }

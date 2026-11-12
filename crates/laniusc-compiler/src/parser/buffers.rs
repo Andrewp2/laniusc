@@ -654,8 +654,6 @@ impl ParserBuffers {
             optional_graph_buffer!(u32, "statement_event_block_prefix", token_frontend_required);
         let token_brace_semantic_kind =
             optional_graph_buffer!(u32, "brace_semantic_kind", token_frontend_required);
-        let token_braced_rhs_statement_kind =
-            optional_graph_buffer!(u32, "braced_rhs_statement_kind", token_frontend_required);
         let token_bracket_semantic_kind =
             optional_graph_buffer!(u32, "bracket_semantic_kind", token_frontend_required);
         let token_statement_context_kind =
@@ -1969,7 +1967,6 @@ impl ParserBuffers {
             token_statement_event_prefix_a,
             token_statement_event_block_prefix,
             token_brace_semantic_kind,
-            token_braced_rhs_statement_kind,
             token_bracket_semantic_kind,
             token_statement_context_kind,
             token_impl_header_kind,

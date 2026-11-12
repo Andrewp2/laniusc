@@ -1,5 +1,4 @@
-// Gives every raw `}` the semantic kind of the `{` it closes, and the
-// statement kind that owns a braced right-hand side.
+// Gives every raw `}` the semantic kind of the `{` it closes.
 //
 // A raw `}` has brace match depth equal to its depth before minus one, which
 // is exactly the brace query that tokens_delimiter_match_03_enclosing_opens
@@ -24,10 +23,8 @@ struct TokenIn
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
 StructuredBuffer<uint4> token_enclosing_open;
-StructuredBuffer<uint> statement_context_kind;
 
 RWStructuredBuffer<uint> brace_semantic_kind;
-RWStructuredBuffer<uint> braced_rhs_statement_kind;
 
 static const uint WG_SIZE = 256u;
 static const uint TK_LBRACE = 22u;
@@ -50,14 +47,6 @@ static const uint TK_FN_BLOCK_LBRACE = 149u;
 static const uint TK_FN_BLOCK_RBRACE = 150u;
 static const uint TK_IMPL_FN_BLOCK_LBRACE = 151u;
 static const uint TK_IMPL_FN_BLOCK_RBRACE = 152u;
-static const uint TK_CONST = 92u;
-static const uint TK_LET = 68u;
-static const uint TK_TYPE = 103u;
-static const uint STATEMENT_CONTEXT_CONST_RHS = 250u;
-static const uint STATEMENT_CONTEXT_ASSIGN_RHS = 251u;
-static const uint STATEMENT_CONTEXT_FOR_IN = 252u;
-static const uint STATEMENT_CONTEXT_LET_RHS = 253u;
-static const uint STATEMENT_CONTEXT_TYPE_ALIAS_RHS = 254u;
 
 [ForceInline]
 uint active_token_count()
@@ -88,27 +77,11 @@ uint close_kind_for_open_kind(uint open_kind)
     return TK_RBRACE;
 }
 
-uint statement_kind_for_context(uint context)
-{
-    uint kind = context & 0xffu;
-    if (kind == STATEMENT_CONTEXT_CONST_RHS)
-        return TK_CONST;
-    if (kind == STATEMENT_CONTEXT_LET_RHS)
-        return TK_LET;
-    if (kind == STATEMENT_CONTEXT_TYPE_ALIAS_RHS)
-        return TK_TYPE;
-    if (kind == STATEMENT_CONTEXT_ASSIGN_RHS || kind == STATEMENT_CONTEXT_FOR_IN)
-        return 0u;
-    return kind;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint close_i = tid.x;
-    if (close_i < gParams.n_tokens)
-        braced_rhs_statement_kind[close_i] = 0u;
     uint count = active_token_count();
     if (close_i >= gParams.n_tokens || close_i >= count)
         return;
@@ -120,8 +93,4 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     brace_semantic_kind[close_i] = close_kind_for_open_kind(brace_semantic_kind[open_i]);
-    // The context of a token is the last statement event before it, so the
-    // context of the `{` covers a `;` or a `}` directly before the brace.
-    braced_rhs_statement_kind[close_i] =
-        statement_kind_for_context(statement_context_kind[open_i]);
 }

@@ -583,7 +583,6 @@ pub struct ParserBuffers {
     pub token_statement_event_prefix_a: LaniusBuffer<u32>,
     pub token_statement_event_block_prefix: LaniusBuffer<u32>,
     pub token_brace_semantic_kind: LaniusBuffer<u32>,
-    pub token_braced_rhs_statement_kind: LaniusBuffer<u32>,
     pub token_bracket_semantic_kind: LaniusBuffer<u32>,
     pub token_statement_context_kind: LaniusBuffer<u32>,
     pub token_impl_header_kind: LaniusBuffer<u32>,

@@ -86,6 +86,7 @@ static const uint TK_RETURN_ARROW = 112u;
 static const uint TK_MATCH_ARROW = 113u;
 static const uint TK_PATH_COLON = 114u;
 static const uint TK_MATCH_LBRACE = 119u;
+static const uint TK_MATCH_RBRACE = 120u;
 static const uint TK_IMPL_LBRACE = 121u;
 static const uint TK_TRAIT_LBRACE = 123u;
 static const uint TK_STRUCT_LIT_LBRACE = 125u;

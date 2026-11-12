@@ -113,7 +113,6 @@ pub(in crate::parser) struct ParserClearOperations {
     token_file_id: ClearBufferOperation,
     token_feature_flags: Option<ClearBufferOperation>,
     token_impl_header_kind: Option<ClearBufferOperation>,
-    token_braced_rhs_statement_kind: Option<ClearBufferOperation>,
     tree_depth_status: ClearBufferOperation,
     hir_literal_status: ClearBufferOperation,
     hir_expr_name_role: ClearBufferOperation,
@@ -152,15 +151,6 @@ impl ParserClearOperations {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         if let Some(operation) = &self.token_impl_header_kind {
-            operation.record(encoder);
-        }
-    }
-
-    pub(in crate::parser) fn record_token_braced_rhs_statement_kind(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        if let Some(operation) = &self.token_braced_rhs_statement_kind {
             operation.record(encoder);
         }
     }
@@ -741,11 +731,6 @@ impl ParserCompilerGraph {
                 token_frontend::IMPL_HEADER_KIND_CLEAR,
                 "token_impl_header_kind",
                 &buffers.token_impl_header_kind,
-            )?,
-            token_braced_rhs_statement_kind: optional_clear(
-                token_frontend::BRACED_RHS_STATEMENT_KIND_CLEAR,
-                "braced_rhs_statement_kind",
-                &buffers.token_braced_rhs_statement_kind,
             )?,
             hir_literal_status: clear(HIR_LITERAL_STATUS_CLEAR, "hir_literal_status", &buffers.hir_literal_status)?,
             tree_depth_status: clear(

@@ -13,6 +13,11 @@
 // token_angle_close[t] is, for a raw `<`, the first later row whose angle
 // match depth is at most the opener's: the closer that ends its list.
 //
+// token_statement_start[t] is, for a `;` outside brackets, the last earlier
+// statement boundary of its own brace level: the keyword that starts the
+// statement it ends, or the `;` or `{` before an expression statement. Braces
+// inside the statement do not hide it (01_depth_blocks keys them deeper).
+//
 // Each search climbs the per-block minimum heaps from 01_depth_blocks and the
 // block minimum tree from 02_build_min_tree, so it reads O(log distance) rows
 // instead of scanning blocks (blocked_search_tree.slang).
@@ -56,14 +61,19 @@ StructuredBuffer<int> angle_match_depth;
 StructuredBuffer<int> angle_match_min_tree;
 // Local minimum heaps of every 256-row block, all four classes per node.
 StructuredBuffer<int4> delimiter_match_local_min;
+StructuredBuffer<int> statement_boundary_depth;
+StructuredBuffer<int> statement_boundary_min_tree;
+StructuredBuffer<int> statement_boundary_local_min;
 
 RWStructuredBuffer<uint4> token_enclosing_open;
 RWStructuredBuffer<uint> token_angle_close;
+RWStructuredBuffer<uint> token_statement_start;
 
 static const uint WG_SIZE = 256u;
 static const uint INVALID = 0xffffffffu;
 static const int INF = 2147483647;
 static const uint TK_LT = 12u;
+static const uint TK_SEMICOLON = 37u;
 static const uint TK_SHR = 44u;
 
 uint depth_search_leaf_base()
@@ -122,6 +132,15 @@ public struct AngleDepthTree : IBlockedSearchTree<int>
     [ForceInline] public static int block_node(uint node) { return angle_match_min_tree[node]; }
 }
 
+public struct StatementBoundaryTree : IBlockedSearchTree<int>
+{
+    [ForceInline] public static uint row_count() { return gParams.token_capacity; }
+    [ForceInline] public static int row_value(uint row) { return statement_boundary_depth[row]; }
+    [ForceInline] public static int local_node(uint block, uint node) { return statement_boundary_local_min[block * WG_SIZE + node]; }
+    [ForceInline] public static uint block_leaf_base() { return depth_search_leaf_base(); }
+    [ForceInline] public static int block_node(uint node) { return statement_boundary_min_tree[node]; }
+}
+
 public struct DepthAtMost : IRangeSearchPredicate<int, int>
 {
     [ForceInline] public static bool aggregate_may_match(int aggregate, int query) { return aggregate <= query; }
@@ -139,6 +158,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint count = min(lexer_token_count[0], gParams.token_capacity);
     uint4 open = uint4(INVALID, INVALID, INVALID, INVALID);
     uint close = INVALID;
+    uint statement = INVALID;
     if (token_i < count)
     {
         uint block_i = token_i / WG_SIZE;
@@ -161,7 +181,14 @@ void main(uint3 tid: SV_DispatchThreadID)
             close = blocked_search_first_at_or_after<int, int, AngleDepthTree, DepthAtMost>(
                 token_i + 1u,
                 open_depth);
+
+        // query holds each class depth before the token, minus one.
+        if (kind == TK_SEMICOLON && query.z == -1)
+            statement = blocked_search_last_before<int, int, StatementBoundaryTree, DepthAtMost>(
+                token_i,
+                query.y + 1);
     }
     token_enclosing_open[token_i] = open;
     token_angle_close[token_i] = close;
+    token_statement_start[token_i] = statement;
 }

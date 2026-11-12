@@ -45,7 +45,7 @@ RWStructuredBuffer<uint> semantic_token_kinds;
 RWStructuredBuffer<uint> parser_token_count;
 RWStructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> brace_semantic_kind;
-StructuredBuffer<uint> braced_rhs_statement_kind;
+StructuredBuffer<uint> token_statement_start;
 StructuredBuffer<uint> bracket_semantic_kind;
 StructuredBuffer<uint> statement_context_kind;
 StructuredBuffer<uint> token_impl_header_kind;
@@ -124,12 +124,10 @@ bool semantic_token_before_ends_primary(uint parser_i, uint count)
     uint prev_token_i = prev_parser_i - 1u;
     if (prev_token_i >= gParams.token_capacity)
         return false;
-    if (brace_semantic_kind[prev_token_i] == TK_STRUCT_LIT_RBRACE)
-        return true;
-    // A `}` that closes the value of a `let`, `const` or `return` is an
-    // operand: `let n = match (v) { ... } + 1;`.
-    uint rhs = braced_rhs_statement_kind[prev_token_i];
-    return rhs == TK_LET || rhs == TK_CONST || rhs == TK_RETURN;
+    // A struct literal and a `match` are operands wherever they stand:
+    // `total = match (v) { ... } + 1;`.
+    uint close_kind = brace_semantic_kind[prev_token_i];
+    return close_kind == TK_STRUCT_LIT_RBRACE || close_kind == TK_MATCH_RBRACE;
 }
 
 uint raw_token_kind(uint token_i)
@@ -484,21 +482,13 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
     if (extern_fn_signature_context_before(token_i))
         return TK_EXTERN_SEMICOLON;
 
-    uint recorded = semicolon_kind_for_statement_context(statement_context_token_kind(token_i));
-    if (recorded != 0u)
-        return recorded;
-    // A `}` resets the statement context. When that `}` is the last event
-    // before this `;`, the statement is the one the brace's value belongs
-    // to: `let n = match (v) { ... }?;`.
-    uint event_i = statement_event_token_at(token_i);
-    if (event_i != INVALID && (statement_context_kind[token_i] & 0xffu) == 0u &&
-        raw_token_kind(event_i) == TK_RBRACE)
-    {
-        uint braced = semicolon_kind_for_statement_context(braced_rhs_statement_kind[event_i]);
-        if (braced != 0u)
-            return braced;
-    }
-    return TK_EXPR_SEMICOLON;
+    // The statement this `;` ends starts at the last boundary of its own
+    // brace level. The scanned statement context cannot answer this: a brace
+    // inside the statement resets it, as in
+    // `let n = match (a) { ... } + match (b) { ... };`.
+    uint owned = semicolon_kind_for_statement_context(
+        raw_token_kind(token_statement_start[token_i]));
+    return owned != 0u ? owned : TK_EXPR_SEMICOLON;
 }
 
 // Whether the raw `{` at open_i holds a state's arms: it follows `state Name`

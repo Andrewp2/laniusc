@@ -749,8 +749,6 @@ impl GpuParser {
             &[("gParams", bufs.token_brace_match_params.as_entire_binding())],
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
-        bufs.clear_operations()
-            .record_token_braced_rhs_statement_kind(encoder);
         self.record_token_brace_pairing(encoder, token_buf, token_count_buf, bufs)?;
         self.record_token_bracket_pairing(encoder, token_buf, token_count_buf, bufs)
     }
@@ -964,7 +962,6 @@ impl GpuParser {
             &bufs.token_angle_match_block_min,
             &bufs.token_angle_match_min_tree,
             &bufs.token_brace_semantic_kind,
-            &bufs.token_braced_rhs_statement_kind,
             &bufs.token_bracket_semantic_kind,
             &bufs.token_statement_context_kind,
             &bufs.token_impl_header_kind,
