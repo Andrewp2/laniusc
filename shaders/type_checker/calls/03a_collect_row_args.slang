@@ -380,9 +380,17 @@ void collect_row_argument(uint row)
     }
     // A path call's imported &self receiver row is the impl root, which the
     // argument reaches through exactly one reference (dependencies/07b).
+    // An inference round sees provisional argument types: a `?` on a generic
+    // call has the callee's type parameter until the call is inferred. Only
+    // the final run reports a mismatch.
+    bool final_run = call_inference_state[0u] == 0u;
     if (type == TY_BORROWED_SELF && ct_is_resolved(actual))
     {
-        if (ct_kind(actual) != CT_KIND_REF) { record_error(error_token, ERR_ASSIGN_MISMATCH, 0u); return; }
+        if (ct_kind(actual) != CT_KIND_REF)
+        {
+            if (final_run) record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
+            return;
+        }
         actual = ct_arg(actual, 0u);
     }
     // The slots a pattern uses do not depend on the argument: they size its
@@ -415,7 +423,7 @@ void collect_row_argument(uint row)
     // An interning overflow retries the job with larger tables.
     if (environment == CT_MATCH_OVERFLOW) return;
     bool matches = intern ? ct_is_record(environment) : environment == CT_MATCH_OK;
-    if (mask == 0u && constant_mask == 0u && !matches)
+    if (mask == 0u && constant_mask == 0u && !matches && final_run)
         record_error(error_token, ERR_ASSIGN_MISMATCH, 0u);
     if (!matches) return;
     // Legacy scalar consumers get only projections of complete structural

@@ -1,0 +1,29 @@
+module app::main;
+
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+struct Element { slot: i32 }
+struct Snapshot { width: i32 }
+struct Tree { width: i32 }
+enum Error { Source(i32) }
+
+fn checked<T>(value: Result<T, i32>) -> Result<T, Error> {
+    return match (value) { Ok(v) -> Ok(v), Err(e) -> Err(Error::Source(e)) };
+}
+
+impl Tree {
+    fn view(&self) -> Result<Snapshot, i32> { return Ok(Snapshot { width: self.width }); }
+}
+
+fn slot_of(id: Element) -> i32 { return id.slot; }
+
+fn value() -> Result<i32, Error> {
+    let tree = Tree { width: 30 };
+    return Ok(slot_of(checked(tree.view())?));
+}
+
+fn main() -> i32 {
+    return value().unwrap();
+}

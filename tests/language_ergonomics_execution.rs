@@ -110,6 +110,19 @@ fn a_literal_in_a_variant_pattern_needs_the_payload_type() {
 }
 
 #[test]
+fn the_try_value_of_a_generic_call_is_an_argument() {
+    assert_exit("try_generic_call_argument.lani", 42);
+}
+
+#[test]
+fn the_try_value_of_a_generic_call_needs_the_parameter_type() {
+    assert_rejected(
+        "try_generic_call_argument_wrong_type.lani",
+        &["LNC0006", "type mismatch", "slot_of(checked(tree.view())?)"],
+    );
+}
+
+#[test]
 fn item_imports_name_single_declarations() {
     assert_exit("item_import.lani", 7);
 }

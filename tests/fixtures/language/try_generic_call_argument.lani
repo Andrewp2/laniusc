@@ -1,0 +1,57 @@
+module app::main;
+
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+struct Element { slot: i32 }
+struct Snapshot { width: i32 }
+struct Tree { width: i32 }
+enum Error { Source(i32) }
+
+fn checked<T>(value: Result<T, i32>) -> Result<T, Error> {
+    return match (value) { Ok(v) -> Ok(v), Err(e) -> Err(Error::Source(e)) };
+}
+
+impl Tree {
+    fn root(&self) -> Result<Element, i32> { return Ok(Element { slot: 2 }); }
+    fn missing(&self) -> Result<Element, i32> { return Err(9); }
+    fn snapshot(&self, id: Element) -> Result<Snapshot, i32> {
+        return Ok(Snapshot { width: self.width + id.slot });
+    }
+}
+
+fn slot_of(id: Element) -> i32 { return id.slot; }
+
+// The `?` value of a generic call is an argument of a method call, which is
+// the argument of a second generic call.
+fn nested() -> Result<i32, Error> {
+    let tree = Tree { width: 30 };
+    let viewport = checked(tree.snapshot(checked(tree.root())?))?;
+    return Ok(viewport.width);
+}
+
+// The same value through an unannotated binding.
+fn bound() -> Result<i32, Error> {
+    let tree = Tree { width: 30 };
+    let root = checked(tree.root())?;
+    return Ok(slot_of(root));
+}
+
+// The generic call takes a binding whose type came from a method call.
+fn through_local() -> Result<i32, Error> {
+    let tree = Tree { width: 30 };
+    let found = tree.root();
+    return Ok(slot_of(checked(found)?));
+}
+
+fn failing() -> Result<i32, Error> {
+    let tree = Tree { width: 30 };
+    return Ok(slot_of(checked(tree.missing())?));
+}
+
+fn main() -> i32 {
+    let total = nested().unwrap() + bound().unwrap() + through_local().unwrap();
+    let failed = match (failing()) { Ok(value) -> value, Err(Error::Source(code)) -> code };
+    return total + failed - 3;
+}
