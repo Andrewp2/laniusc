@@ -47,6 +47,7 @@ static const uint X86_RESOLVE_ROW = 1u;          // body offset of target row b
 static const uint X86_RESOLVE_RUNTIME = 2u;      // runtime offset + b
 static const uint X86_RESOLVE_STRING_ADDR = 3u;  // address of string b
 static const uint X86_RESOLVE_STRING_LEN = 4u;   // decoded length of string b
+static const uint X86_RESOLVE_RAW_ONLY = 5u;     // b in a raw executable, 0 in an object
 
 struct X86PlanOp
 {

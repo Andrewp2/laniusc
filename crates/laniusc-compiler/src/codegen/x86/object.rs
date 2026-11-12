@@ -284,6 +284,11 @@ pub enum GpuX86RelocationKind {
     Rel32 = 1,
     CallRel32 = 2,
     Abs32 = 3,
+    /// A `Rel32` that only the raw executable link applies. A native link
+    /// leaves the zero in the object's bytes. It is the jump over the load of
+    /// the process vector in a C entry (`instruction_plan.slang`,
+    /// `plan_c_entry`): a raw executable has no vector and no C callers.
+    RawRel32 = 4,
 }
 
 impl GpuX86RelocationKind {
@@ -292,6 +297,7 @@ impl GpuX86RelocationKind {
             1 => Ok(Self::Rel32),
             2 => Ok(Self::CallRel32),
             3 => Ok(Self::Abs32),
+            4 => Ok(Self::RawRel32),
             _ => Err(format!("x86 object relocation kind {value} is invalid")),
         }
     }

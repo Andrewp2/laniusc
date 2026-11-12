@@ -340,7 +340,15 @@ void plan_footer(X86PlanInput input)
 // runs on a thread a C library created, zero-extends 32-bit register
 // arguments as Lanius callers do, and calls the function's ordinary body. Its
 // length does not depend on the parameters, so byte counting needs no mask.
-static const uint X86_C_ENTRY_BYTES = 58u;
+//
+// A raw executable has no crt_entry and no C code. Its only callers are
+// Lanius functions (`call_ptr`), whose R15 is the process stack, and nothing
+// is mapped at the vector's address. So the load of R15 follows a jump whose
+// displacement is 0 in an object and the length of the load in a raw
+// executable. An object records the displacement as a relocation that only
+// the raw link applies (emit.slang, X86_RUNTIME_REFERENCE_RAW_REL32).
+static const uint X86_C_ENTRY_BYTES = 63u;
+static const uint X86_C_ENTRY_VECTOR_LOAD_BYTES = 10u;
 void plan_c_entry(X86PlanInput input)
 {
     plan_bytes_word(3u, 0x058d48u, 2u);                  // lea rax, [rip + 2]
@@ -349,6 +357,8 @@ void plan_c_entry(X86PlanInput input)
     plan_bytes(4u, 0x55415441u);                       // push r12; push r13
     plan_bytes(4u, 0x57415641u);                       // push r14; push r15
     plan_bytes(4u, 0x08ec8348u);                       // sub rsp, 8
+    plan_op(X86_OP_BYTES | (1u << 8u) | X86_BYTES_ONE_WORD |
+        (X86_RESOLVE_RAW_ONLY << 13u), 0xe9u, X86_C_ENTRY_VECTOR_LOAD_BYTES, 0u); // jmp rel32
     plan_bytes_words(2u, 0xbf49u, 0u, 0x1000u);        // movabs r15, 0x100000000000
     uint mask = input.c_entry_narrow_mask;
     // mov edi,edi; mov esi,esi; mov edx,edx; mov ecx,ecx, or a 2-byte nop.

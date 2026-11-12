@@ -1,0 +1,21 @@
+// A stored callback is called through its C entry. In a standalone
+// executable the entry keeps the caller's runtime context, so the callback
+// can allocate.
+module app::main;
+
+import alloc::callback;
+import alloc::vec;
+
+fn main() -> i32 {
+    let total: alloc::callback::Source<i32> = alloc::callback::source(move || -> i32 {
+        let values: alloc::vec::Vec<i32> = alloc::vec::new();
+        values.try_push(40).unwrap();
+        values.try_push(2).unwrap();
+        let sum: i32 = values.as_slice()[0] + values.as_slice()[1];
+        values.destroy();
+        return sum;
+    });
+    let result: i32 = total.produce();
+    total.destroy();
+    return result;
+}

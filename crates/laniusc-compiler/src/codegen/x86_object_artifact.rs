@@ -714,6 +714,7 @@ impl GpuX86ObjectStage {
                 1 => GpuX86RelocationKind::Rel32,
                 2 => GpuX86RelocationKind::CallRel32,
                 3 => GpuX86RelocationKind::Abs32,
+                4 => GpuX86RelocationKind::RawRel32,
                 value => anyhow::bail!("GPU x86 object relocation {index} has kind {value}"),
             };
             let site_section = section_tag(row[1], "relocation site", index)?;

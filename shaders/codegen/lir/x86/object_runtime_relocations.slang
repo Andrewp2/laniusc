@@ -1,7 +1,9 @@
 // Compacts the native-runtime references emit recorded per target row into
 // object relocation rows. Each targets the object's own runtime copy as a
 // Text section offset, so an unlinked object stays self-contained, while a
-// link that keeps one runtime can point every object at that copy.
+// link that keeps one runtime can point every object at that copy. The one
+// other reference a row records, a C entry's raw-only jump, targets the
+// entry's own text.
 
 import codegen.lowering_ir;
 import gpu_index;
@@ -17,6 +19,7 @@ RWStructuredBuffer<X86ObjectRelocationRow> x86_object_runtime_relocations;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint SECTION_TEXT = 1u;
 static const uint TARGET_SECTION_OFFSET = 1u;
+static const uint RELOCATION_RAW_REL32 = 4u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -33,8 +36,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     relocation.site_offset = reference.x - 1u;
     relocation.target_kind = TARGET_SECTION_OFFSET;
     relocation.target_index = SECTION_TEXT;
-    relocation.target_offset = layout.runtime_offset - layout.text_offset +
-        (reference.y & 0xffffu);
+    // A raw-only rel32 jumps `reference.y & 0xffff` bytes past its own end.
+    relocation.target_offset = relocation.kind == RELOCATION_RAW_REL32
+        ? relocation.site_offset + 4u + (reference.y & 0xffffu)
+        : layout.runtime_offset - layout.text_offset + (reference.y & 0xffffu);
     relocation.addend_lo = 0xfffffffcu; // rel32 is relative to the next byte
     relocation.addend_hi = 0xffffffffu;
     x86_object_runtime_relocations[x86_runtime_relocation_prefix[row]] = relocation;

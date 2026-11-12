@@ -515,6 +515,12 @@ functions `fn compare_i32(left: ptr, right: ptr) -> i32` and
   returns, so every thread that runs a callback must finish before then.
   A Lanius library linked into a C program without a Lanius `main` has no
   vector; its callbacks must not use those services.
+- A standalone executable has no `crt_entry`, no vector and no C code, so
+  its entries keep the caller's R15. The load of R15 follows a `jmp` whose
+  displacement is 0 in an object. The standalone link writes the length of
+  the load there (relocation kind `RawRel32`), and the native link leaves
+  the 0. A stored callback therefore allocates and reads arguments in both
+  outputs (`tests/fixtures/language/closure_stored_allocation.lani`).
 - Admitted signatures: at most six parameters, each `i32`, `u32`, `i64`,
   `u64`, `isize`, `usize` or `ptr`, and a result of one of those types or
   none. Other signatures (floats, aggregates, more parameters) and the Wasm

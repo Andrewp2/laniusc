@@ -24,6 +24,10 @@ RWStructuredBuffer<uint> x86_runtime_reference_flag;
 
 static const uint X86_RUNTIME_REFERENCE_REL32 = 1u;
 static const uint X86_RUNTIME_REFERENCE_CALL_REL32 = 2u;
+// Not a runtime reference: the rel32 of the jump over a C entry's load of the
+// process vector (instruction_plan.slang, plan_c_entry). y = kind << 16 | the
+// displacement a raw link writes. A native link leaves the 0 in place.
+static const uint X86_RUNTIME_REFERENCE_RAW_REL32 = 4u;
 
 // The runtime trap a row's guard branches to, or 0xffffffff. Every trap guard
 // ends in its jcc or jmp rel32 (safety_emit.emit_guards).
@@ -46,6 +50,8 @@ uint resolve_plan_word(X86PlanOp op, uint cursor, X86ArtifactLayout layout)
     else if (mode == X86_RESOLVE_STRING_ADDR)
         value = ELF_BASE_VADDR + layout.rodata_offset + semantic_lir_strings[value].data_offset;
     else if (mode == X86_RESOLVE_STRING_LEN) value = semantic_lir_strings[value].decoded_len;
+    // No object is projected: the artifact is a raw executable.
+    else if (mode == X86_RESOLVE_RAW_ONLY && gParams.runtime_reference_capacity != 0u) value = 0u;
     if (((op.head >> 16u) & 1u) != 0u) value -= cursor + x86_bytes_op_length(op.head);
     return value;
 }
@@ -195,10 +201,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (x86_op_kind(op.head) == X86_OP_BYTES)
         {
             // A runtime target is the op's one trailing rel32 word (plan_jump).
-            if (((op.head >> 13u) & 7u) == X86_RESOLVE_RUNTIME)
+            uint mode = (op.head >> 13u) & 7u;
+            if (mode == X86_RESOLVE_RUNTIME || mode == X86_RESOLVE_RAW_ONLY)
                 runtime_reference = uint2(
                     cursor + x86_bytes_op_length(op.head) - 4u - layout.text_offset + 1u,
-                    (X86_RUNTIME_REFERENCE_CALL_REL32 << 16u) | op.b);
+                    ((mode == X86_RESOLVE_RUNTIME ? X86_RUNTIME_REFERENCE_CALL_REL32
+                        : X86_RUNTIME_REFERENCE_RAW_REL32) << 16u) | op.b);
             op.b = resolve_plan_word(op, cursor, layout);
         }
         X86Code code = x86_encode(op);

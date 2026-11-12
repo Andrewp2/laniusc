@@ -37,6 +37,9 @@ static const uint TARGET_OBJECT_SECTION = 3u; // pre-resolved by the host link p
 static const uint RELOC_REL32 = 1u;
 static const uint RELOC_CALL_REL32 = 2u;
 static const uint RELOC_ABS32 = 3u;
+// A rel32 that only this link applies: the jump over a C entry's load of the
+// process vector, which a raw executable does not map.
+static const uint RELOC_RAW_REL32 = 4u;
 static const uint X86_LINK_RELOCATION_ERROR = 2u;
 static const uint ELF_BASE_VADDR = 0x400000u;
 
@@ -93,7 +96,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     // complete low/high pair. x86 rel32 consumes its two's-complement low word;
     // the small code model keeps linked section distances within 32 bits.
     uint value = 0u;
-    if (a.y == RELOC_REL32 || a.y == RELOC_CALL_REL32)
+    if (a.y == RELOC_REL32 || a.y == RELOC_CALL_REL32 || a.y == RELOC_RAW_REL32)
         value = target_file + b.w - site_file;
     else if (a.y == RELOC_ABS32)
         value = ELF_BASE_VADDR + target_file + b.w;

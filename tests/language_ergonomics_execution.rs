@@ -493,6 +493,11 @@ fn a_stored_callback_holds_any_move_closure_of_its_signature() {
 }
 
 #[test]
+fn a_stored_callback_allocates_in_a_standalone_executable() {
+    assert_exit("closure_stored_allocation.lani", 42);
+}
+
+#[test]
 fn a_block_closure_without_a_result_type_returns_nothing() {
     assert_exit("closure_unit.lani", 0);
     assert_rejected(

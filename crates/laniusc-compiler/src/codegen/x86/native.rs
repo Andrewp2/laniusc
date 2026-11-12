@@ -424,6 +424,13 @@ fn emit_object<W: Write + Seek>(
     let mut text_relocations = Vec::new();
     let mut rodata_relocations = Vec::new();
     for relocation in &object.relocations {
+        let relocation_type = match relocation.kind {
+            GpuX86RelocationKind::Rel32 => 2,     // R_X86_64_PC32
+            GpuX86RelocationKind::CallRel32 => 4, // R_X86_64_PLT32
+            GpuX86RelocationKind::Abs32 => 10,    // R_X86_64_32
+            // crt_entry maps the process vector, so a C entry loads it.
+            GpuX86RelocationKind::RawRel32 => continue,
+        };
         let (symbol_index, addend) = match relocation.target_kind {
             GpuX86RelocationTargetKind::SectionOffset => {
                 let section = match relocation.target_index {
@@ -465,11 +472,6 @@ fn emit_object<W: Write + Seek>(
                     relocation.addend,
                 )
             }
-        };
-        let relocation_type = match relocation.kind {
-            GpuX86RelocationKind::Rel32 => 2,     // R_X86_64_PC32
-            GpuX86RelocationKind::CallRel32 => 4, // R_X86_64_PLT32
-            GpuX86RelocationKind::Abs32 => 10,    // R_X86_64_32
         };
         let output = match relocation.site_section {
             GpuX86ObjectSection::Text => &mut text_relocations,
