@@ -8776,6 +8776,8 @@ fn record_context_stdlib() -> ReceiverTestStdlib {
         ("cmp", include_str!("../stdlib/core/cmp.lani")),
         ("panic", include_str!("../stdlib/core/panic.lani")),
         ("result", include_str!("../stdlib/core/result.lani")),
+        ("function", include_str!("../stdlib/core/function.lani")),
+        ("mem", include_str!("../stdlib/core/mem.lani")),
     ] {
         std::fs::write(root.0.path().join(format!("core/{name}.lani")), source)
             .expect("record context module");
