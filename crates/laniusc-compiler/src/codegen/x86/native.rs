@@ -927,11 +927,13 @@ pub(crate) fn link_native_file_executable(
         !diagnostic_overflow.load(Ordering::Relaxed),
         "native C linker diagnostics exceeded their {MAX_DIAGNOSTIC_BYTES} byte limit"
     );
-    ensure!(
-        status.success(),
-        "native C linker failed ({status}){}",
-        read_diagnostics(&diagnostics_path)
-    );
+    if !status.success() {
+        return Err(NativeLinkerFailed {
+            status: status.to_string(),
+            diagnostics: read_diagnostics(&diagnostics_path),
+        }
+        .into());
+    }
     let metadata = fs::metadata(&output_path).context("stat native linked executable")?;
     ensure!(
         metadata.is_file(),
@@ -1131,6 +1133,23 @@ fn collect_diagnostics<R: Read>(
         // The disk spool itself never exceeds MAX_DIAGNOSTIC_BYTES.
     }
 }
+
+/// The C driver ran and reported a failure: an unresolved symbol, a missing
+/// library, an object it cannot read. `diagnostics` is what it wrote to
+/// stderr, starting with a newline when there is any.
+#[derive(Debug)]
+pub(crate) struct NativeLinkerFailed {
+    pub(crate) status: String,
+    pub(crate) diagnostics: String,
+}
+
+impl std::fmt::Display for NativeLinkerFailed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "native C linker failed ({}){}", self.status, self.diagnostics)
+    }
+}
+
+impl std::error::Error for NativeLinkerFailed {}
 
 fn read_diagnostics(path: &Path) -> String {
     let Ok(file) = File::open(path) else {

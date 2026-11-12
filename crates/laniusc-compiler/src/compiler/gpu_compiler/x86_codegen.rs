@@ -192,6 +192,17 @@ pub(super) fn x86_source_pack_link_error(context: &str, error: anyhow::Error) ->
                 .with_help("provide an executable native definition; imported generic payload bodies require concrete specialization support"),
         );
     }
+    if let Some(failed) = error.downcast_ref::<x86::native::NativeLinkerFailed>() {
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0017", "native linker failed")
+                .with_primary_label(DiagnosticLabel::primary(
+                    PathBuf::from("<source pack link>"), 1, 1, 1, None,
+                    "the C linker could not link the program",
+                ))
+                .with_note(failed.to_string())
+                .with_help("for an undefined reference, pass --native-library NAME or --native-object PATH for the library that defines the symbol, and --native-library-path DIR when the linker cannot find the library"),
+        );
+    }
     source_pack_artifact_store_error(format!("{context}: {error}"))
 }
 
@@ -211,6 +222,34 @@ mod tests {
                 parameter,
             )),
         }
+    }
+
+    /// A failure of the C linker is a link error with the linker's text. It
+    /// is not a broken artifact store, which is what every other failure of
+    /// this step still reports.
+    #[test]
+    fn a_linker_failure_is_a_link_diagnostic() {
+        let failed = x86::native::NativeLinkerFailed {
+            status: "exit status: 1".to_string(),
+            diagnostics: "\nundefined reference to `missing`".to_string(),
+        };
+        let CompileError::Diagnostic(diagnostic) = x86_source_pack_link_error("link native C executable", failed.into())
+        else {
+            panic!("a linker failure is a diagnostic");
+        };
+        let text = format!("{diagnostic:?}");
+        assert_eq!(diagnostic.code, "LNC0017");
+        assert!(text.contains("native linker failed"), "{text}");
+        assert!(text.contains("undefined reference to `missing`"), "{text}");
+        assert!(text.contains("--native-library"), "{text}");
+        assert!(!text.contains("artifact"), "{text}");
+
+        let CompileError::Diagnostic(diagnostic) =
+            x86_source_pack_link_error("write native C executable", anyhow::anyhow!("disk full"))
+        else {
+            panic!("a write failure is a diagnostic");
+        };
+        assert_eq!(diagnostic.code, "LNC0059");
     }
 
     #[test]
