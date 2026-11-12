@@ -1,3 +1,6 @@
+//@ error LNC0005
+//@ error unresolved identifier
+//@ error let fresh = fresh + 1;
 // The value of a `let` cannot read the name it declares when no earlier
 // declaration of that name exists.
 module app::main;

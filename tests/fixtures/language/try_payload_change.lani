@@ -1,3 +1,4 @@
+//@ exit 97
 module app::main;
 import core::result;
 import core::option;

@@ -1,3 +1,4 @@
+//@ exit 0
 // Nested patterns through imported and generic variants.
 module app::main;
 import core::io;

@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
 // `Some(Some(None))` has no arm.
 import core::option;
 fn depth(value: Option<Option<Option<i32>>>) -> i32 {

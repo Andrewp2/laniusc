@@ -1,3 +1,4 @@
+//@ exit 0
 module app::main;
 import core::option;
 // The receiver binds V = i64; the literal argument takes that type, so the

@@ -14,8 +14,8 @@ use crate::compiler::Diagnostic;
 pub fn run_from_env() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
     let diagnostic_format = diagnostic_format_from_args(args.iter().cloned());
-    // The daemon checks device errors per job.
-    let one_shot = args.first().is_none_or(|command| command != "daemon");
+    // The daemon and the test command check device errors per job.
+    let one_shot = args.first().is_none_or(|command| command != "daemon" && command != "test");
     let result = dispatch::run(args);
     let gpu_errors = crate::gpu::device::uncaptured_error_count();
     if one_shot && gpu_errors != 0 {

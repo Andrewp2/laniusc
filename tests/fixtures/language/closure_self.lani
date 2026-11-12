@@ -1,3 +1,6 @@
+//@ error LNC0078
+//@ error a closure cannot use `self`
+//@ error closure_self.lani:11:35
 module app::main;
 struct Counter { step: i32 }
 fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {

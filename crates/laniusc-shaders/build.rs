@@ -14,6 +14,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
+// The compiler's build script uses the rest of this module.
+#[allow(dead_code)]
 mod kernel_keys;
 mod reflection_names;
 mod spirv_size;

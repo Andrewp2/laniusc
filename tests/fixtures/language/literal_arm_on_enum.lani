@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error type mismatch
+//@ error 0 -> 10,
 module app::main;
 
 import core::option::Option;

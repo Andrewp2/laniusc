@@ -1,3 +1,4 @@
+//@ exit 20
 // A chain: enumerate_from's and map's inferred results are the next calls'
 // sources, whose item types follow from the stdlib Iterator implementations
 // of Enumerate and Map in later rounds.

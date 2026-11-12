@@ -1,3 +1,4 @@
+//@ exit 18
 // map<I, M, T, U> where I: Iterator<T>, M: Mapper<T, U>: Counter's
 // Iterator<i32> binds T, the local Mapper<i32, i64> implementation binds U.
 module app::main;

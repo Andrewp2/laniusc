@@ -1,3 +1,7 @@
+//@ error LNC0078
+//@ error invalid closure
+//@ error a closure parameter needs a type
+//@ error closure_untyped_parameter.lani:10:18
 module app::main;
 fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
     return mapper.apply(mapper.apply(value));

@@ -1,3 +1,4 @@
+//@ error LNC0008
 // The explicit T = i64 disagrees with Counter's Iterator<i32>.
 module app::main;
 import core::iter;

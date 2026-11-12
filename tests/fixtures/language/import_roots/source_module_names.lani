@@ -1,3 +1,5 @@
+//@ source-root .
+//@ exit 42
 // Without an item import, the module import of a source module provides
 // its names.
 module app::main;

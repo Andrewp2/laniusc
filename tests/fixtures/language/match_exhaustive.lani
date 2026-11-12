@@ -1,3 +1,4 @@
+//@ exit 78
 // Each match here covers every value of its scrutinee, so each compiles.
 import core::option;
 import core::result;

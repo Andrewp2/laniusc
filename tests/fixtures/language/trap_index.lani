@@ -1,3 +1,6 @@
+//@ exit 101
+//@ stdout 2
+//@ stderr lanius: index out of range
 // An index outside a slice ends the program with a message and exit 101.
 fn at(values: [i32], index: i32) -> i32 { return values[index]; }
 

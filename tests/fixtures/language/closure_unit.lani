@@ -1,3 +1,4 @@
+//@ exit 0
 // A block body without a result type returns nothing. With one parameter
 // the closure is a Consumer; with none it is a Runnable.
 module app::main;

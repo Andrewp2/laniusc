@@ -1,3 +1,6 @@
+//@ error LNC0078
+//@ error which has no declared type
+//@ error closure_untyped_capture.lani:10:31
 module app::main;
 fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
     return mapper.apply(mapper.apply(value));

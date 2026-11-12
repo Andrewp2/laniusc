@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
 // Three arms and three variants, but `Color::Blue` has no arm.
 enum Color { Red, Green, Blue }
 fn rank(color: Color) -> i32 {

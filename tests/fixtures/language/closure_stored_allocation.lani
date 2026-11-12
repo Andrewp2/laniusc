@@ -1,3 +1,4 @@
+//@ exit 42
 // A stored callback is called through its C entry. In a standalone
 // executable the entry keeps the caller's runtime context, so the callback
 // can allocate.

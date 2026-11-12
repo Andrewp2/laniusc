@@ -5,6 +5,11 @@ mod plan;
 
 pub(crate) use plan::{PlanBuffers, ReadPlan, ReplayStats};
 
+/// Creates the pipeline of the kernel that batches small readback regions.
+pub(crate) fn prepare_gather_kernel(device: &wgpu::Device) {
+    gather::prepare(device);
+}
+
 use super::{
     buffers::{LaniusBuffer, readback_bytes},
     passes_core::map_readback_blocking,

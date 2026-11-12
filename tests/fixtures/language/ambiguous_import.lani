@@ -1,3 +1,6 @@
+//@ error LNC0005
+//@ error ambiguous imported name
+//@ error import std::stream::copy;
 // Two module imports both declare `unwrap_or`.
 module app::main;
 import core::option;

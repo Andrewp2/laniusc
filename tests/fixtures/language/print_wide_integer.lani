@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error this value is `i64`
+//@ error as i32
 fn main() -> i32 {
     let wide: i64 = 5;
     print(wide);

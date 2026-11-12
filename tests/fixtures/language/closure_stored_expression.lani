@@ -1,3 +1,5 @@
+//@ error LNC0008
+//@ error unsatisfied trait bound
 // An expression body does not state its result type, so it cannot be stored.
 module app::main;
 

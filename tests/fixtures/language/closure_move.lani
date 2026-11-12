@@ -1,3 +1,4 @@
+//@ exit 44
 // A `move` closure is an owned value. A generic struct stores it, and the
 // program calls it after the function that received it has returned.
 module app::main;

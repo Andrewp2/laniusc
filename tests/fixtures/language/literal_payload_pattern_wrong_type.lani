@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error type mismatch
+//@ error Some(true) -> 10,
 import core::option::Option;
 import core::option::Some;
 import core::option::None;

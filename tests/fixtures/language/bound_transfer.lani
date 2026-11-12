@@ -1,3 +1,4 @@
+//@ exit 15
 // try_transfer_up_to<I, S, T, E> where I: Iterator<T>, S: TrySink<T, E>:
 // the source binds T, the sink's one TrySink implementation binds E.
 module app::main;

@@ -2,8 +2,8 @@
 
 Ten features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
-decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
-in `tests/fixtures/language/`.
+decision behind it. Tests: the programs in `tests/fixtures/language/`, run by
+`laniusc test` ([language-tests.md](language-tests.md)).
 
 ## Item imports
 

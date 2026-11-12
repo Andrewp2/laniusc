@@ -1,3 +1,4 @@
+//@ exit 0
 // Nested variant patterns: a failed inner check falls through to later arms.
 module app::main;
 enum Color { Red, Green }

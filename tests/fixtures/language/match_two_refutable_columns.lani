@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error at least one value has no arm
+//@ error together cover one payload
 // These arms list every value, but the check follows one payload column of
 // a variant. An arm that splits two columns covers nothing, so this match
 // needs a `_` arm.

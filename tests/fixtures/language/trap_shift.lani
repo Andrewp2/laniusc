@@ -1,3 +1,6 @@
+//@ exit 102
+//@ stdout 8
+//@ stderr lanius: shift amount out of range
 // A shift by the operand's bit width or more ends the program with exit 102.
 fn shifted(value: i32, amount: i32) -> i32 { return value << amount; }
 

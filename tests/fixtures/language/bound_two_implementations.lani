@@ -1,3 +1,4 @@
+//@ error LNC0006
 // Wrap<i32> implements Iterator<i32> and, through the generic
 // implementation, Iterator<i64>: no implementation is unique, so T stays
 // unbound.

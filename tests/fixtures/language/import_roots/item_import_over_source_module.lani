@@ -1,3 +1,5 @@
+//@ source-root .
+//@ exit 42
 // The module import of a source module and the item imports of a library
 // declaration name the same things. The item imports are explicit and win.
 module app::main;

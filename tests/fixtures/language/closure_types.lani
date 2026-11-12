@@ -1,3 +1,4 @@
+//@ exit 67
 // Captured and parameter types with brackets, commas and paths.
 module app::main;
 

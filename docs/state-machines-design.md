@@ -676,8 +676,8 @@ Done 2026-10-28.
   machine on enum events with two data values per state, including a swap
   `goto Holding(second, first)`, and checks that `run` over every prefix of
   400 events gives the state and fields that `step` gives.
-  `tests/language_ergonomics_execution.rs` has the loop-exit arms and the
-  rejection of a function whose only exit is a `break`.
+  `tests/fixtures/language/` has the loop-exit arms and the rejection of a
+  function whose only exit is a `break`.
 - **Benchmark** (`benchmark_artifacts/machines_m3/`, the laptop, 5 runs,
   minimum wall time, checksums agree):
 

@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
 // `None` has no arm.
 import core::option;
 fn value(option: Option<i32>) -> i32 {

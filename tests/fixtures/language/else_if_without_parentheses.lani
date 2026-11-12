@@ -1,3 +1,5 @@
+//@ error LNC0016
+//@ error expected `(`
 fn main() -> i32 {
     let n = 1;
     if (n > 9) {

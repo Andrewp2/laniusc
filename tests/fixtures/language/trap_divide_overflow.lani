@@ -1,3 +1,6 @@
+//@ exit 104
+//@ stdout 2147483647
+//@ stderr lanius: division overflow
 // The smallest signed value divided by -1 has no result of its type. The
 // program ends with exit 104.
 fn quotient(a: i32, b: i32) -> i32 { return a / b; }

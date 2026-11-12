@@ -1,3 +1,7 @@
+//@ error LNC0077
+//@ error invalid match pattern
+//@ error this is not an enum variant
+//@ error match_pattern_not_a_variant.lani:9
 // A constant is not a pattern.
 const LIMIT: i32 = 3;
 fn word(value: i32) -> i32 {

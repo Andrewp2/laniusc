@@ -1,5 +1,7 @@
 #[cfg(unix)]
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(unix)]
+use std::sync::{Condvar, Mutex};
 use std::{
     collections::{BTreeSet, HashMap},
     ffi::OsString,
@@ -99,11 +101,17 @@ impl BackendSelection {
 
 #[derive(Debug)]
 struct DaemonOptions {
+    session: SessionOptions,
+    transport: DaemonTransport,
+}
+
+/// What one resident compiler session needs, whoever its clients are.
+#[derive(Debug)]
+struct SessionOptions {
     backend: BackendSelection,
     stdlib_root: Option<PathBuf>,
-    transport: DaemonTransport,
     idle_buffer_timeout: Option<Duration>,
-    /// Sources compiled once before the daemon reports ready.
+    /// Sources compiled once before the session reports ready.
     warmups: Vec<DaemonWarmup>,
 }
 
@@ -561,6 +569,9 @@ fn print_help() {
     eprintln!(
         "Usage: laniusc daemon (--stdio | --unix-socket path) [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds] [--warmup source [--warmup-source-root dir]]...\n\
          Starts one GPU-resident compiler and accepts newline-delimited JSON compile, trim, status, and shutdown requests.\n\
+         --unix-socket serves every client that connects. Each client receives the ready event and the responses to\n\
+         its own requests. Requests run one at a time in the order they arrive. The daemon exits on a shutdown\n\
+         request or when its last client disconnects.\n\
          --warmup compiles a source for every selected target before reporting ready, discarding the output and the\n\
          project's cached units, so resident buffers are already sized for the largest declared workload.\n\
          A compile request has the fields id, emit, input, output, stdlib_root, and source_root or source_roots.\n\
@@ -675,12 +686,14 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
         }
     };
     Ok(DaemonOptions {
-        backend,
-        stdlib_root,
+        session: SessionOptions {
+            backend,
+            stdlib_root,
+            idle_buffer_timeout: (idle_buffer_timeout_ms != 0)
+                .then(|| Duration::from_millis(idle_buffer_timeout_ms)),
+            warmups,
+        },
         transport,
-        idle_buffer_timeout: (idle_buffer_timeout_ms != 0)
-            .then(|| Duration::from_millis(idle_buffer_timeout_ms)),
-        warmups,
     })
 }
 
@@ -725,9 +738,50 @@ fn daemon_loads_kernel(backends: GpuCompilerBackends, key: &str) -> bool {
     !key.starts_with("tests/") && (backends.wasm || !wasm_only) && (backends.x86 || !x86_only)
 }
 
+/// Runs one session for clients inside this process, as `laniusc test` does.
+/// The session compiles for x86_64 and reads each request from `clients`.
+pub(super) fn run_in_process(stdlib_root: PathBuf, clients: impl Clients) -> Result<(), CliError> {
+    let options = SessionOptions {
+        backend: BackendSelection::X86,
+        stdlib_root: Some(stdlib_root),
+        idle_buffer_timeout: None,
+        warmups: Vec::new(),
+    };
+    pollster::block_on(async {
+        let (compiler, startup_ms) = start_compiler(options.backend).await?;
+        run_session(compiler, &options, startup_ms, clients).await
+    })
+}
+
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
+    let (compiler, startup_ms) = start_compiler(options.session.backend).await?;
+    match &options.transport {
+        DaemonTransport::Stdio => {
+            let clients = StdioClient {
+                input: io::stdin().lock(),
+                output: io::stdout().lock(),
+            };
+            run_session(compiler, &options.session, startup_ms, clients).await
+        }
+        #[cfg(unix)]
+        DaemonTransport::UnixSocket(path) => {
+            let listener = UnixListener::bind(path).map_err(|err| {
+                CliError::from(format!("bind daemon socket {}: {err}", path.display()))
+            })?;
+            let _socket_cleanup = UnixSocketCleanup(path.clone());
+            let clients = SocketClients::listen(listener);
+            run_session(compiler, &options.session, startup_ms, clients).await
+        }
+    }
+}
+
+/// Creates the resident compiler and every pipeline `backend` can load.
+/// Returns the compiler and the time this took in milliseconds.
+async fn start_compiler(
+    backend: BackendSelection,
+) -> Result<(Arc<GpuCompiler<'static>>, f64), CliError> {
     let startup = Instant::now();
-    let backends = options.backend.compiler_backends();
+    let backends = backend.compiler_backends();
     // Before any other pipeline: see `prepare_largest_local_memory_kernels`.
     let gpu = device::global_result()
         .map_err(|err| CliError::from(format!("initialize GPU device: {err}")))?;
@@ -736,7 +790,7 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
     })
     .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
     let compiler: Arc<GpuCompiler<'static>> = Arc::new(
-        GpuCompiler::new_with_backends(options.backend.compiler_backends())
+        GpuCompiler::new_with_backends(backends)
             .await
             .map_err(CliError::from_compile_error)?,
     );
@@ -747,32 +801,205 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
         daemon_loads_kernel(backends, key)
     })
     .map_err(|err| CliError::from(format!("prepare daemon GPU kernels: {err:#}")))?;
+    // The readback gather builds its own pipeline of a kernel prepared above.
+    crate::gpu::readback::prepare_gather_kernel(&compiler.gpu().device);
     // Compare the cache with its file off the startup path: reading the data
     // back costs ~90 ms even when every pipeline above was a hit.
     device::persist_created_pipelines_in_background();
-    let startup_ms = startup.elapsed().as_secs_f64() * 1000.0;
+    Ok((compiler, startup.elapsed().as_secs_f64() * 1000.0))
+}
 
-    match &options.transport {
-        DaemonTransport::Stdio => {
-            let stdin = io::stdin();
-            let input = stdin.lock();
-            let stdout = io::stdout();
-            let output = stdout.lock();
-            run_session(compiler.clone(), &options, startup_ms, input, output).await
+/// The clients of one daemon. A response goes to the client that sent the
+/// request read last.
+pub(super) trait Clients: Write {
+    /// Sends the ready event to every client: those connected now and each
+    /// one that connects later.
+    fn announce(&mut self, ready: &Value) -> Result<(), CliError>;
+
+    /// Reads the next request into `line`. Returns false when no client can
+    /// send another one.
+    fn next_request(&mut self, line: &mut String) -> Result<bool, CliError>;
+}
+
+/// The one client on the daemon's standard input and output.
+struct StdioClient<R, W> {
+    input: R,
+    output: W,
+}
+
+impl<R, W: Write> Write for StdioClient<R, W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.output.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
+    }
+}
+
+impl<C: Clients> Clients for &mut C {
+    fn announce(&mut self, ready: &Value) -> Result<(), CliError> {
+        (**self).announce(ready)
+    }
+
+    fn next_request(&mut self, line: &mut String) -> Result<bool, CliError> {
+        (**self).next_request(line)
+    }
+}
+
+impl<R: BufRead, W: Write> Clients for StdioClient<R, W> {
+    fn announce(&mut self, ready: &Value) -> Result<(), CliError> {
+        write_response(&mut self.output, ready)
+    }
+
+    fn next_request(&mut self, line: &mut String) -> Result<bool, CliError> {
+        line.clear();
+        let read = self
+            .input
+            .read_line(line)
+            .map_err(|err| CliError::from(format!("read daemon request: {err}")))?;
+        Ok(read != 0)
+    }
+}
+
+#[cfg(unix)]
+enum SocketEvent {
+    Connected,
+    Request(String, Arc<UnixStream>),
+    Disconnected,
+}
+
+/// The ready line, once the session has announced it. A connection sends it
+/// before it reads a request.
+#[cfg(unix)]
+type ReadyLine = Arc<(Mutex<Option<Arc<[u8]>>>, Condvar)>;
+
+/// Every client of a Unix socket. One thread accepts connections and one
+/// thread per connection reads its requests into a single queue, so requests
+/// run one at a time in the order they arrive.
+#[cfg(unix)]
+struct SocketClients {
+    events: mpsc::Receiver<SocketEvent>,
+    ready: ReadyLine,
+    connected: usize,
+    /// The client that sent the request being answered.
+    current: Option<Arc<UnixStream>>,
+    /// The bytes of the response being written, sent whole on flush.
+    response: Vec<u8>,
+}
+
+#[cfg(unix)]
+impl SocketClients {
+    fn listen(listener: UnixListener) -> Self {
+        let (sender, events) = mpsc::channel();
+        let ready = ReadyLine::default();
+        let announced = ready.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { break };
+                // Sent here, not on the connection's thread, so that it is
+                // queued before that connection's disconnect.
+                if sender.send(SocketEvent::Connected).is_err() {
+                    break;
+                }
+                let sender = sender.clone();
+                let ready = announced.clone();
+                std::thread::spawn(move || serve_socket_client(stream, &ready, &sender));
+            }
+        });
+        Self {
+            events,
+            ready,
+            connected: 0,
+            current: None,
+            response: Vec::new(),
         }
-        #[cfg(unix)]
-        DaemonTransport::UnixSocket(path) => {
-            let listener = UnixListener::bind(path).map_err(|err| {
-                CliError::from(format!("bind daemon socket {}: {err}", path.display()))
-            })?;
-            let _socket_cleanup = UnixSocketCleanup(path.clone());
-            let (stream, _) = listener.accept().map_err(|err| {
-                CliError::from(format!("accept daemon socket {}: {err}", path.display()))
-            })?;
-            let input = io::BufReader::new(stream.try_clone().map_err(|err| {
-                CliError::from(format!("clone daemon socket {}: {err}", path.display()))
-            })?);
-            run_session(compiler.clone(), &options, startup_ms, input, stream).await
+    }
+}
+
+#[cfg(unix)]
+fn serve_socket_client(stream: UnixStream, ready: &ReadyLine, sender: &Sender<SocketEvent>) {
+    let stream = Arc::new(stream);
+    let line = {
+        let (line, announced) = &**ready;
+        let mut line = line.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        loop {
+            if let Some(line) = &*line {
+                break line.clone();
+            }
+            line = announced
+                .wait(line)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    };
+    if (&*stream).write_all(&line).is_ok() {
+        let mut input = io::BufReader::new(&*stream);
+        loop {
+            let mut request = String::new();
+            match input.read_line(&mut request) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if sender
+                        .send(SocketEvent::Request(request, stream.clone()))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    let _ = sender.send(SocketEvent::Disconnected);
+}
+
+#[cfg(unix)]
+impl Write for SocketClients {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.response.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // A client that disconnected before its response loses it. That is
+        // not a failure of the daemon, which still serves the others.
+        if let Some(client) = &self.current {
+            let _ = (&**client).write_all(&self.response);
+        }
+        self.response.clear();
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Clients for SocketClients {
+    fn announce(&mut self, ready: &Value) -> Result<(), CliError> {
+        let mut line = serde_json::to_vec(ready)
+            .map_err(|err| CliError::from(format!("serialize daemon response: {err}")))?;
+        line.push(b'\n');
+        let (slot, announced) = &*self.ready;
+        *slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(line.into());
+        announced.notify_all();
+        Ok(())
+    }
+
+    fn next_request(&mut self, line: &mut String) -> Result<bool, CliError> {
+        self.current = None;
+        loop {
+            match self.events.recv() {
+                Ok(SocketEvent::Connected) => self.connected += 1,
+                Ok(SocketEvent::Disconnected) => {
+                    self.connected -= 1;
+                    if self.connected == 0 {
+                        return Ok(false);
+                    }
+                }
+                Ok(SocketEvent::Request(request, client)) => {
+                    *line = request;
+                    self.current = Some(client);
+                    return Ok(true);
+                }
+                Err(_) => return Ok(false),
+            }
         }
     }
 }
@@ -789,10 +1016,9 @@ impl Drop for UnixSocketCleanup {
 
 async fn run_session(
     compiler: Arc<GpuCompiler<'static>>,
-    options: &DaemonOptions,
+    options: &SessionOptions,
     startup_ms: f64,
-    mut input: impl BufRead,
-    mut output: impl Write,
+    mut clients: impl Clients,
 ) -> Result<(), CliError> {
     let reaper = ResidentBufferReaper::start(compiler.clone(), options.idle_buffer_timeout);
     let mut source_pack_cache = SourcePackCache::default();
@@ -804,8 +1030,7 @@ async fn run_session(
     if crate::options::get().report.host_timing {
         eprintln!("[gpu_compile_host_timer] driver_shader_cache: {}", driver_cache.summary());
     }
-    write_response(
-        &mut output,
+    clients.announce(
         &json!({
             "schema": DAEMON_SCHEMA,
             "event": "ready",
@@ -837,16 +1062,12 @@ async fn run_session(
 
     let mut line = String::new();
     loop {
-        line.clear();
-        let read = input
-            .read_line(&mut line)
-            .map_err(|err| CliError::from(format!("read daemon request: {err}")))?;
-        if read == 0 {
+        if !clients.next_request(&mut line)? {
             break;
         }
         if line.len() > MAX_REQUEST_BYTES {
             write_response(
-                &mut output,
+                &mut clients,
                 &protocol_error(Value::Null, "request exceeds the 1 MiB limit"),
             )?;
             continue;
@@ -854,13 +1075,13 @@ async fn run_session(
         let request = match parse_request(&line) {
             Ok(request) => request,
             Err(response) => {
-                write_response(&mut output, &response)?;
+                write_response(&mut clients, &response)?;
                 continue;
             }
         };
         if request.command == "shutdown" {
             write_response(
-                &mut output,
+                &mut clients,
                 &json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request.id,
@@ -875,7 +1096,7 @@ async fn run_session(
             compiler.release_resident_job_buffers().await;
             reaper.disarm();
             write_response(
-                &mut output,
+                &mut clients,
                 &json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request.id,
@@ -896,7 +1117,7 @@ async fn run_session(
             compiler.clear_compiled_unit_cache();
             let after = compiler.compiled_unit_cache_stats();
             write_response(
-                &mut output,
+                &mut clients,
                 &json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request.id,
@@ -915,7 +1136,7 @@ async fn run_session(
             compiler.clear_project_compiled_unit_cache();
             let after = compiler.compiled_unit_cache_stats();
             write_response(
-                &mut output,
+                &mut clients,
                 &json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request.id,
@@ -931,7 +1152,7 @@ async fn run_session(
         }
         if request.command == "status" {
             write_response(
-                &mut output,
+                &mut clients,
                 &json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request.id,
@@ -949,7 +1170,7 @@ async fn run_session(
         }
         if request.command != "compile" {
             write_response(
-                &mut output,
+                &mut clients,
                 &protocol_error(
                     request.id,
                     "command must be compile, clear-compiled-unit-cache, clear-project-compiled-unit-cache, trim, status, or shutdown",
@@ -1175,7 +1396,7 @@ async fn run_session(
                 );
             }
         }
-        write_response(&mut output, &response)?;
+        write_response(&mut clients, &response)?;
         // The response is out and nothing reads this job's GPU storage
         // again, so the next job's parser clear runs now. Debug dumps and
         // captures above read the storage first.
@@ -1366,7 +1587,7 @@ impl Drop for ResidentBufferReaper {
 /// the standard library's cached units, which every job shares.
 async fn run_warmups(
     compiler: &GpuCompiler<'_>,
-    options: &DaemonOptions,
+    options: &SessionOptions,
     source_pack_cache: &mut SourcePackCache,
 ) -> Result<Value, CliError> {
     if options.warmups.is_empty() {
@@ -1431,7 +1652,7 @@ fn parse_request(line: &str) -> Result<DaemonRequest, Value> {
 
 async fn compile_request(
     compiler: &GpuCompiler<'_>,
-    options: &DaemonOptions,
+    options: &SessionOptions,
     source_pack_cache: &mut SourcePackCache,
     request: DaemonRequest,
 ) -> Value {
@@ -1796,10 +2017,10 @@ mod tests {
             "stdlib".into(),
         ])
         .expect("daemon options should parse");
-        assert!(matches!(options.backend, BackendSelection::X86));
-        assert_eq!(options.stdlib_root, Some(PathBuf::from("stdlib")));
+        assert!(matches!(options.session.backend, BackendSelection::X86));
+        assert_eq!(options.session.stdlib_root, Some(PathBuf::from("stdlib")));
         assert_eq!(
-            options.idle_buffer_timeout,
+            options.session.idle_buffer_timeout,
             Some(Duration::from_millis(DEFAULT_IDLE_BUFFER_TIMEOUT_MS))
         );
     }
@@ -1880,7 +2101,7 @@ mod tests {
         ])
         .expect("idle buffer timeout should parse");
         assert_eq!(
-            options.idle_buffer_timeout,
+            options.session.idle_buffer_timeout,
             Some(Duration::from_millis(1250))
         );
 
@@ -1890,7 +2111,7 @@ mod tests {
             "0".into(),
         ])
         .expect("zero idle buffer timeout should parse");
-        assert_eq!(options.idle_buffer_timeout, None);
+        assert_eq!(options.session.idle_buffer_timeout, None);
     }
 
     #[test]
@@ -1904,7 +2125,7 @@ mod tests {
         ])
         .expect("warm-up options should parse");
         assert_eq!(
-            options.warmups,
+            options.session.warmups,
             vec![
                 DaemonWarmup {
                     input: PathBuf::from("big.lani"),
@@ -1938,6 +2159,51 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(unix)]
+    #[test]
+    fn socket_clients_answer_the_sender_and_end_with_the_last_client() {
+        use std::io::{BufRead, BufReader, Read};
+
+        let path = std::env::temp_dir().join(format!("laniusc-clients-{}.sock", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).expect("bind test socket");
+        let _cleanup = UnixSocketCleanup(path.clone());
+        let mut clients = SocketClients::listen(listener);
+
+        // A client that connects before the ready event still receives it.
+        let mut early = UnixStream::connect(&path).expect("connect early client");
+        clients.announce(&json!({"event": "ready"})).expect("announce");
+        let mut late = UnixStream::connect(&path).expect("connect late client");
+        for client in [&early, &late] {
+            let mut ready = String::new();
+            BufReader::new(client).read_line(&mut ready).expect("read ready");
+            assert_eq!(ready, "{\"event\":\"ready\"}\n");
+        }
+
+        late.write_all(b"from late\n").expect("send request");
+        let mut line = String::new();
+        assert!(clients.next_request(&mut line).expect("next request"));
+        assert_eq!(line, "from late\n");
+        write_response(&mut clients, &json!({"id": 1})).expect("write response");
+
+        // The response reaches its sender only: the other client reads end
+        // of file with nothing before it once the daemon side is dropped.
+        let mut response = String::new();
+        BufReader::new(&late).read_line(&mut response).expect("read response");
+        assert_eq!(response, "{\"id\":1}\n");
+
+        drop(late);
+        early.write_all(b"from early\n").expect("send request");
+        assert!(clients.next_request(&mut line).expect("next request"));
+        assert_eq!(line, "from early\n");
+        early.shutdown(std::net::Shutdown::Write).expect("close the write half");
+        assert!(!clients.next_request(&mut line).expect("after the last client"));
+        drop(clients);
+        let mut rest = Vec::new();
+        early.read_to_end(&mut rest).expect("read to the end");
+        assert!(rest.is_empty(), "a client received another client's response");
+    }
+
     #[test]
     fn daemon_options_accept_unix_socket_transport() {
         let options = parse_options(vec![
@@ -1946,7 +2212,7 @@ mod tests {
             "--backend=wasm".into(),
         ])
         .expect("Unix socket transport should parse");
-        assert!(matches!(options.backend, BackendSelection::Wasm));
+        assert!(matches!(options.session.backend, BackendSelection::Wasm));
         assert!(matches!(
             options.transport,
             DaemonTransport::UnixSocket(path) if path == PathBuf::from("/tmp/laniusc.sock")

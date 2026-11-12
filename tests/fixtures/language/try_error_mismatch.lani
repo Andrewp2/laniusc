@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error `?` returns this error from a function whose result type differs
 module app::main;
 import core::result;
 

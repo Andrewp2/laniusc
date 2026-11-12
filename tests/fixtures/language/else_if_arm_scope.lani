@@ -1,3 +1,5 @@
+//@ error LNC0005
+//@ error not found in this scope
 fn main() -> i32 {
     let n = 1;
     if (n > 9) {

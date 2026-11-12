@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error this value's distinct type differs from the one expected here
 type Meters = distinct i64;
 fn length(raw: i64) -> Meters { return raw; }
 fn main() -> i32 { let m: Meters = length(2); return 0; }

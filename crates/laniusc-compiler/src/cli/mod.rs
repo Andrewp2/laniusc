@@ -20,5 +20,6 @@ mod lsp;
 mod output;
 mod package;
 mod source_pack;
+mod test_command;
 
 pub use entry::run_from_env;

@@ -1,3 +1,4 @@
+//@ exit 7
 // An item import makes one declaration visible by its own name.
 module app::main;
 import core::option::Option;

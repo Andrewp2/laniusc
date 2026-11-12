@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error type mismatch
+//@ error return Ok(number()? == flag);
 // The operands of a comparison have one type; `value?` has its payload's.
 module app::main;
 import core::result::Result;

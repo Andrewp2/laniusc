@@ -187,14 +187,12 @@ These facts are what the verified compiler and its optimizer will consume:
 
 ## Tests
 
-- `tests/language_ergonomics_execution.rs`:
-  - `distinct_types_mix_with_themselves_literals_and_casts`
-  - `distinct_types_reject_values_of_another_type` (seven rejection fixtures)
-  - `requires_clauses_that_hold_let_the_body_run`
-  - `a_broken_requires_clause_traps_before_the_body` (prints `4`, then
-    SIGILL)
-  - `a_requires_condition_must_be_bool`
-- Fixtures: `tests/fixtures/language/distinct_types_*.lani` and
-  `requires_*.lani`.
+- `laniusc test tests/fixtures/language` ([language-tests.md](language-tests.md))
+  runs these programs:
+  - `distinct_types_accept.lani` and `distinct_types_methods.lani`
+  - `distinct_types_reject_*.lani` (eight rejection programs)
+  - `requires_holds.lani`
+  - `requires_fails.lani` (prints `4`, then SIGILL)
+  - `requires_not_bool.lani`
 - `crates/laniusc-compiler/src/lexer/test_cpu.rs`:
   `distinct_is_a_keyword_only_between_assign_and_an_identifier`.

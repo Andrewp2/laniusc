@@ -184,6 +184,10 @@ where
             args.next();
             Some(Command::Package(args.collect()))
         }
+        "test" => {
+            args.next();
+            Some(Command::Test(args.collect()))
+        }
         "lsp" => {
             args.next();
             Some(Command::Lsp(args.collect()))

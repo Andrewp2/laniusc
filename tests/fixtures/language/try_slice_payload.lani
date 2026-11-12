@@ -1,3 +1,4 @@
+//@ exit 65
 // `?` on a `Result` or `Option` whose payload is a slice. The value is the
 // slice's descriptor: its data, length and stride.
 module app::main;

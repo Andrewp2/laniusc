@@ -1,3 +1,7 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
+//@ error match_missing_nested_variant.lani:9
 // `Some(Shape::Empty)` has no arm.
 import core::option;
 enum Shape { Circle(i32), Square(i32), Empty }

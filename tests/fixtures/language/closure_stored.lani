@@ -1,3 +1,6 @@
+//@ exit 120
+//@ stdout 101
+//@ stdout 7
 // A stored callback owns a `move` closure of any type and is called through
 // one address. A function returns one, and a struct holds callbacks whose
 // closures have different types.

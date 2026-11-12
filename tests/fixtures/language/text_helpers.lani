@@ -1,3 +1,13 @@
+//@ stdout 12
+//@ stdout hello, world
+//@ stdout hello
+//@ stdout world
+//@ stdout name: Lanius
+//@ stdout 6
+//@ stdout 5
+//@ stdout 100
+//@ stdout 4
+//@ stdout -1234567890123 18446744073709551615
 // A `str` becomes a Text or a String without a byte count, a slice reports
 // its own length, and std::console writes whole values to standard output.
 import alloc::string;

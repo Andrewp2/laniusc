@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
 // `false` has no arm.
 fn flag(on: bool) -> i32 {
     return match (on) {

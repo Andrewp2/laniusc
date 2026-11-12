@@ -1,3 +1,4 @@
+//@ exit 31
 module app::main;
 import core::time;
 import core::option;

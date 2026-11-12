@@ -1,8 +1,8 @@
 [env]
-# Most integration tests touch the shared GPU frontend and already serialize in
-# the test helper. Running libtest serially avoids scheduler contention that can
-# trip the short watchdog and makes plain `cargo test` the fast path.
-RUST_TEST_THREADS = { value = "1" }
+# The test helper holds one lock around each GPU compile, so compiles still
+# run one at a time. The threads let the rest of a test overlap: host-only
+# tests, and running the programs the compiles produce.
+RUST_TEST_THREADS = { value = "16" }
 # Release builds skip wgpu's indirect-dispatch argument check
 # (`indirect_dispatch_validation` in gpu/device.rs). Tests keep it, so a
 # kernel that writes an out-of-range dispatch is still caught.

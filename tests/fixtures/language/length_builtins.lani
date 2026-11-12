@@ -1,3 +1,14 @@
+//@ stdout 15
+//@ stdout 3
+//@ stdout 6
+//@ stdout 5
+//@ stdout 0
+//@ stdout 6
+//@ stdout 3
+//@ stdout 3
+//@ stdout 3
+//@ stdout 2
+//@ stdout 3
 // `slice_len` counts the elements of a slice or of an array passed as one.
 // `string_len` counts the bytes of a `str`. Each result is a `usize`.
 import core::mem;

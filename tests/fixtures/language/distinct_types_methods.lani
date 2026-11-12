@@ -1,3 +1,4 @@
+//@ exit 0
 type Meters = distinct i64;
 struct Odometer { total: Meters }
 impl Odometer {

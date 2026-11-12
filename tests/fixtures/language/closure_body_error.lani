@@ -1,3 +1,6 @@
+//@ error LNC0005
+//@ error unresolved identifier
+//@ error closure_body_error.lani:10:40
 module app::main;
 fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
     return mapper.apply(mapper.apply(value));

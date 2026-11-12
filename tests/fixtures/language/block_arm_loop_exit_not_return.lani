@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error block_arm_loop_exit_not_return.lani:4
 // A `break` ends a block arm but does not return from the function.
 fn first_odd(limit: i32) -> i32 {
     let index: i32 = 0;

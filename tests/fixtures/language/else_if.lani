@@ -1,3 +1,15 @@
+//@ stdout 1
+//@ stdout 2
+//@ stdout 3
+//@ stdout 4
+//@ stdout 5
+//@ stdout 4
+//@ stdout 3
+//@ stdout 0
+//@ stdout 1432
+//@ stdout 10
+//@ stdout 11
+//@ stdout 12
 // `else if` continues an `if` statement without a nested block. The first
 // true condition selects its arm, and later conditions are not evaluated.
 fn classify(n: i32) -> i32 {

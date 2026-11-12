@@ -1,3 +1,5 @@
+//@ source-root ..
+//@ exit 35
 // Closures in two files of one program.
 module app::main;
 

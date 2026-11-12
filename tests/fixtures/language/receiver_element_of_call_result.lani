@@ -1,3 +1,4 @@
+//@ exit 74
 module app::main;
 
 struct Conn {

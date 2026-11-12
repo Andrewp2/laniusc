@@ -11,6 +11,7 @@ use super::{
     help,
     lsp,
     package,
+    test_command,
 };
 
 /// Parses raw CLI arguments and routes the resulting command to its owner.
@@ -29,6 +30,7 @@ pub(super) fn run(raw_args: Vec<String>) -> Result<(), CliError> {
         Command::Fmt(args) => fmt::run(args),
         Command::Doctor(args) => doctor::run(args),
         Command::Daemon(args) => daemon::run(args),
+        Command::Test(args) => test_command::run(args),
         Command::Package(args) => package::run(args),
         Command::Lsp(args) => lsp::run(args),
         Command::Diagnostics(args) => diagnostics::run(args),

@@ -1,3 +1,4 @@
+//@ exit 0
 // Block arms: `pattern -> { ... }` runs statements, and every path returns.
 enum Input { Open, Close, Lock(u32), Unlock(u32) }
 enum Reply { Done, Ignored, WrongCode }

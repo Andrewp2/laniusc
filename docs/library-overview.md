@@ -46,9 +46,9 @@ of a slice or fixed array as `i32`, and `core::slice::whole(values)` returns a
 `write(text)`, `write_line(text)`, `write_str(text)`, `write_i64(value)` and
 `write_u64(value)`; each returns false when the host write fails. These use the
 `slice_len` and `string_len` built-ins described in
-[stdlib-memory.md](stdlib-memory.md). One x86_64 program in
-`tests/language_ergonomics_execution.rs` runs all of them and compares standard
-output. Wasm does not compile `alloc::string` or `std::console` yet.
+[stdlib-memory.md](stdlib-memory.md). One x86_64 program,
+`tests/fixtures/language/length_builtins.lani`, runs all of them and compares
+standard output. Wasm does not compile `alloc::string` or `std::console` yet.
 
 The [native thread consolidation](stdlib-thread-lifecycle.md) moves the
 implemented glibc interface into canonical `std::thread` and removes
@@ -813,8 +813,8 @@ the matching `core::function` trait (`Mapper`, `Producer`, `Consumer`,
 `Runnable`, `Stored` and the four `enter_*` entry bodies the compiler's
 generated entries call. They run on x86-64 Linux; the Wasm target rejects the
 call through an address. Receipt:
-`tests/fixtures/language/closure_stored.lani` in
-`language_ergonomics_execution`. Generated declarations and the execution
+`tests/fixtures/language/closure_stored.lani`, run by `laniusc test`
+([language-tests.md](language-tests.md)). Generated declarations and the execution
 contract are linked from the [callback reference](api/alloc/callback.md).
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is

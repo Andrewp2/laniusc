@@ -78,6 +78,12 @@ static GATHER_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 /// batched readback. Concurrent readbacks copy directly instead of waiting.
 pub(super) struct GatherLease(MutexGuard<'static, Option<GatherKernel>>);
 
+/// Creates the gather kernel's pipeline. A resident compiler calls this before
+/// it reports readiness, so the first batched readback of a job creates none.
+pub(super) fn prepare(device: &wgpu::Device) {
+    drop(lease(device, MIN_GATHER_REGIONS));
+}
+
 /// Leases the gather for a readback of `region_count` regions, or returns
 /// `None` when direct copies should be used.
 pub(super) fn lease(device: &wgpu::Device, region_count: usize) -> Option<GatherLease> {

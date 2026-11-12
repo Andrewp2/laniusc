@@ -1,3 +1,4 @@
+//@ exit 68
 // enumerate_from<I, T> where I: Iterator<T>: the one Iterator implementation
 // of Counter binds T.
 module app::main;

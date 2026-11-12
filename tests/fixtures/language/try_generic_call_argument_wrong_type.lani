@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error type mismatch
+//@ error slot_of(checked(tree.view())?)
 module app::main;
 
 import core::result::Result;

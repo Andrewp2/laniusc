@@ -1,3 +1,4 @@
+//@ exit 77
 // Closures: a typed parameter or none, captures by value, an expression or
 // a block body.
 module app::main;

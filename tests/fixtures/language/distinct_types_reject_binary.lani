@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error this value's distinct type differs from the one expected here
 type Meters = distinct i64;
 type Seconds = distinct i64;
 fn main() -> i32 {

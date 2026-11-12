@@ -56,8 +56,8 @@ Limits of this first version:
   callee can't name them.
 - If either table overflows (16384 rows), nothing is inferred.
 
-Tests: the `bound_*` fixtures in `tests/fixtures/language/`, run by
-`tests/language_ergonomics_execution.rs`.
+Tests: the `bound_*` programs in `tests/fixtures/language/`, run by
+`laniusc test` ([language-tests.md](language-tests.md)).
 
 ## `core::mem::size_of<T>()` (2026-10-15, implemented 2026-10-18)
 

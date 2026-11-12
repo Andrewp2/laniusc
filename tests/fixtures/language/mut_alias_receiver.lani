@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error same value as a `&mut` argument
 // The receiver is a `&mut self` argument; a field of it is passed as well.
 struct Counter { total: i32 }
 impl Counter {

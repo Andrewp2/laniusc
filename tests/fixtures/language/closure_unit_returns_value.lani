@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error value type is i32 but this context expects void
+//@ error closure_unit_returns_value.lani:13:41
 // A block body without a result type returns nothing.
 module app::main;
 

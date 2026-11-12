@@ -753,6 +753,44 @@ error[LNC0005]: unresolved identifier
 `laniusc diagnostics explain LNC0005` prints the registry entry for a code as
 JSON.
 
+## Tests
+
+A test is a program whose first comment lines say what a run of it must do.
+Save this as `tests/sum.lani`:
+
+```lanius
+//@ exit 7
+//@ stdout 7
+
+fn main() -> i32 {
+    print(3 + 4);
+    return 7;
+}
+```
+
+```output exit=7
+7
+```
+
+`laniusc test` compiles and runs every test under a path. It starts the
+compiler once for all of them:
+
+```sh
+target/release/laniusc test --stdlib-root stdlib tests
+```
+
+```text
+test result: ok. 1 passed; 0 failed; 1.0 s (compiler start 0.9 s, compiles 0.1 s)
+```
+
+- `//@ exit N` and `//@ stdout TEXT` state the exit status and one line of
+  standard output.
+- `//@ error TEXT` states that the compiler rejects the file with a
+  diagnostic that contains `TEXT`.
+- A failing test prints `FAIL`, its path and the reason, and the command exits
+  with a nonzero status.
+- [`docs/language-tests.md`](language-tests.md) lists every directive.
+
 ## Not yet
 
 These are known gaps. A program that needs one of them has to work around it
@@ -793,6 +831,8 @@ today.
 
 - [`docs/language-ergonomics.md`](language-ergonomics.md): item imports, `?`,
   block arms, `else if` and trap messages in detail.
+- [`docs/language-tests.md`](language-tests.md): the `laniusc test` command
+  and its directives.
 - [`docs/library-overview.md`](library-overview.md): the standard and extended
   libraries.
 - `sample_programs/`: larger programs with their expected output.

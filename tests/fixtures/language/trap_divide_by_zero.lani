@@ -1,3 +1,7 @@
+//@ exit 103
+//@ stdout -4
+//@ stdout 3
+//@ stderr lanius: division by zero
 // Dividing by zero ends the program with exit 103. The guard covers `/` and
 // `%`, signed and unsigned, 32-bit and 64-bit.
 fn quotient(a: i64, b: i64) -> i64 { return a / b; }

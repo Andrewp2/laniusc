@@ -1,3 +1,6 @@
+//@ signal 4
+//@ stdout 3
+//@ stderr lanius: assertion failed
 // A false assert reports and raises SIGILL.
 fn main() -> i32 {
     let n = 3;

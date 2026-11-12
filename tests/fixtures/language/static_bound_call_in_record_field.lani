@@ -1,3 +1,4 @@
+//@ exit 0
 module app::main;
 // A static bound-trait call fills a generic record field directly.
 pub struct Obs<T> { stamp: u64, payload: T }

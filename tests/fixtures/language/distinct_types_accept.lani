@@ -1,3 +1,4 @@
+//@ exit 0
 // Distinct types: values of one distinct type mix with each other and with
 // literals; a cast converts to and from the target type.
 type Meters = distinct i64;

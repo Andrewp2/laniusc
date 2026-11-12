@@ -1,3 +1,5 @@
+//@ error LNC0005
+//@ error unresolved identifier
 // An item import makes only its item visible: `Some` is not imported.
 module app::main;
 import core::option::Option;

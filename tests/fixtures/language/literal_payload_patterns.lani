@@ -1,3 +1,4 @@
+//@ exit 42
 // A literal inside a variant pattern is compared with the payload in the
 // payload's own type. An arm whose literal differs falls through to the next.
 import core::option::Option;

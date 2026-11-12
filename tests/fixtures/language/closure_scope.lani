@@ -1,3 +1,6 @@
+//@ error LNC0005
+//@ error unresolved identifier
+//@ error closure_scope.lani:14:31
 // A closure sees the locals of its own function only.
 module app::main;
 fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {

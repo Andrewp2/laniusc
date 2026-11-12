@@ -1,3 +1,5 @@
+//@ error LNC0027
+//@ error `call_ptr` takes exactly four arguments
 fn nothing(a: ptr) { }
 
 fn main() -> i32 {

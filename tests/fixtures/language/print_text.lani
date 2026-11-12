@@ -1,3 +1,6 @@
+//@ error LNC0006
+//@ error this value is `str`
+//@ error std::io::println
 fn main() -> i32 {
     print("text");
     return 0;

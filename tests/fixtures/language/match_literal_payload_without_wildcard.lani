@@ -1,3 +1,6 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
 // `Slot::Held(2)` has no arm: an integer literal covers one value.
 enum Slot { Held(i32), Empty }
 fn first(slot: Slot) -> i32 {

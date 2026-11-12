@@ -1,3 +1,4 @@
+//@ exit 0
 // `&mut T` and `&mut self` write through to the caller's value. A caller
 // gets a reference from a `&self` or `&mut self` method, as with `&T`.
 struct Counter { total: i32 }

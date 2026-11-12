@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error `?` needs a `core::result::Result` or `core::option::Option` value
 module app::main;
 import core::result;
 

@@ -1,3 +1,4 @@
+//@ exit 19
 // `value?` is typed as an operand of a comparison or of arithmetic.
 module app::main;
 import core::result::Result;

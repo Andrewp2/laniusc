@@ -1,13 +1,13 @@
 use crate::common;
 
-#[cfg(unix)]
-use std::os::unix::net::UnixStream;
 use std::{
     env,
     fs,
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
+    os::unix::net::UnixStream,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
@@ -130,9 +130,15 @@ fn assert_twenty_capacity_stable_jobs(backend: &str, emit: &str, extension: Opti
         "ready, 21 stable jobs, token growth and repeat, byte growth and repeat, and shutdown"
     );
     assert_eq!(responses[0]["event"], "ready");
+    assert_eq!(responses[0]["targets"], serde_json::json!([emit]));
     assert_eq!(
         responses[1]["workspace_request_kind"],
         "cold_or_grown_workspace"
+    );
+    assert_eq!(
+        responses[1]["resources_created_during_job"]["compute_pipelines"], 0,
+        "the first job must not create pipelines after readiness: {}",
+        responses[1]
     );
     let retained_wgpu_buffers = responses[2]["wgpu_resources"]["buffers"]["kept_from_user"]
         .as_u64()
@@ -192,90 +198,181 @@ fn cli_daemon_reuses_capacity_for_twenty_jobs_on_each_target() {
     assert_twenty_capacity_stable_jobs("wasm", "wasm", Some("wasm"));
 }
 
-#[cfg(unix)]
-#[test]
-fn cli_daemon_accepts_a_unix_socket_session() {
-    let socket = common::temp_artifact_path("laniusc_daemon", "socket", Some("sock"));
-    let mut command = Command::new(laniusc_bin());
-    command
-        .arg("daemon")
-        .arg("--unix-socket")
-        .arg(&socket)
-        .arg("--backend")
-        .arg("x86_64")
-        .arg("--stdlib-root")
-        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = ChildGuard(command.spawn().expect("spawn Unix-socket daemon"));
+/// A daemon process that listens on a Unix socket.
+struct SocketDaemon {
+    /// Ends the process when the daemon is dropped.
+    _child: ChildGuard,
+    socket: PathBuf,
+}
 
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let stream = loop {
-        match UnixStream::connect(&socket) {
-            Ok(stream) => break stream,
-            Err(err) if Instant::now() < deadline => {
-                assert!(
-                    child
-                        .0
-                        .try_wait()
-                        .expect("poll Unix-socket daemon")
-                        .is_none(),
-                    "Unix-socket daemon exited before accepting a connection: {err}"
-                );
-                thread::sleep(Duration::from_millis(10));
-            }
-            Err(err) => panic!(
-                "connect to Unix-socket daemon at {}: {err}",
-                socket.display()
-            ),
+impl SocketDaemon {
+    /// Starts a daemon for both targets.
+    fn start(name: &str) -> Self {
+        let socket = common::temp_artifact_path("laniusc_daemon", name, Some("sock"));
+        let child = Command::new(laniusc_bin())
+            .arg("daemon")
+            .arg("--unix-socket")
+            .arg(&socket)
+            .arg("--stdlib-root")
+            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn Unix-socket daemon");
+        Self {
+            _child: ChildGuard(child),
+            socket,
         }
-    };
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .expect("set daemon socket read timeout");
-    stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
-        .expect("set daemon socket write timeout");
-    let mut reader = BufReader::new(stream.try_clone().expect("clone daemon client socket"));
-    let mut writer = stream;
-
-    let mut ready_line = String::new();
-    reader
-        .read_line(&mut ready_line)
-        .expect("read daemon ready response");
-    let ready: serde_json::Value =
-        serde_json::from_str(&ready_line).expect("parse daemon ready response");
-    assert_eq!(ready["event"], "ready");
-
-    writeln!(writer, r#"{{"id":"stop","command":"shutdown"}}"#)
-        .expect("send daemon shutdown request");
-    writer.flush().expect("flush daemon shutdown request");
-    let mut shutdown_line = String::new();
-    reader
-        .read_line(&mut shutdown_line)
-        .expect("read daemon shutdown response");
-    let shutdown: serde_json::Value =
-        serde_json::from_str(&shutdown_line).expect("parse daemon shutdown response");
-    assert_eq!(shutdown["id"], "stop");
-    assert_eq!(shutdown["event"], "shutdown");
-
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(status) = child.0.try_wait().expect("poll daemon shutdown") {
-            assert!(status.success(), "Unix-socket daemon failed: {status}");
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "Unix-socket daemon did not exit after shutdown"
-        );
-        thread::sleep(Duration::from_millis(10));
     }
-    assert!(
-        !socket.exists(),
-        "Unix-socket daemon should remove {} after shutdown",
-        socket.display()
-    );
+
+    /// Connects one more client and reads its ready event.
+    fn connect(&self) -> DaemonSession {
+        // The daemon binds the socket after it has created its pipelines.
+        let deadline = Instant::now() + Duration::from_secs(120);
+        let stream = loop {
+            match UnixStream::connect(&self.socket) {
+                Ok(stream) => break stream,
+                Err(err) => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "connect to the daemon at {}: {err}",
+                        self.socket.display()
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        };
+        // A request waits for the other clients' jobs queued before it.
+        stream
+            .set_read_timeout(Some(Duration::from_secs(300)))
+            .expect("set daemon socket read timeout");
+        let mut session = DaemonSession {
+            reader: BufReader::new(stream.try_clone().expect("clone daemon client socket")),
+            writer: stream,
+            ready: serde_json::Value::Null,
+        };
+        session.ready = session.response();
+        assert_eq!(session.ready["event"], "ready");
+        session
+    }
+}
+
+/// One client of a socket daemon.
+struct DaemonSession {
+    reader: BufReader<UnixStream>,
+    writer: UnixStream,
+    ready: serde_json::Value,
+}
+
+impl DaemonSession {
+    fn send(&mut self, request: &serde_json::Value) {
+        writeln!(self.writer, "{request}").expect("send daemon request");
+        self.writer.flush().expect("flush daemon request");
+    }
+
+    fn response(&mut self) -> serde_json::Value {
+        let mut line = String::new();
+        self.reader
+            .read_line(&mut line)
+            .expect("read daemon response");
+        serde_json::from_str(&line)
+            .unwrap_or_else(|error| panic!("daemon response {line:?}: {error}"))
+    }
+
+    fn request(&mut self, request: &serde_json::Value) -> serde_json::Value {
+        self.send(request);
+        self.response()
+    }
+
+    fn compile_project(&mut self, project: &Path, output: &Path) -> serde_json::Value {
+        self.request(&serde_json::json!({
+            "id": "compile",
+            "command": "compile",
+            "emit": "x86_64",
+            "input": project.join("main.lani"),
+            "source_root": project.join("src"),
+            "output": output,
+        }))
+    }
+
+    fn compile_file(&mut self, emit: &str, input: &Path, output: &Path) -> serde_json::Value {
+        self.request(&serde_json::json!({
+            "id": "compile",
+            "command": "compile",
+            "emit": emit,
+            "input": input,
+            "output": output,
+        }))
+    }
+}
+
+/// Connects a client to the daemon that the tests in this file share. The
+/// daemon serves both targets and runs the clients' requests one at a time,
+/// so these tests need no lock. A test that asserts what a job allocates
+/// starts its own daemon instead, because another client's job or trim
+/// changes that.
+///
+/// The first client stays connected for as long as the test process runs.
+/// The daemon exits when its last client disconnects, which is when this
+/// process ends.
+fn shared_daemon() -> DaemonSession {
+    static SHARED: OnceLock<(SocketDaemon, DaemonSession)> = OnceLock::new();
+    let (daemon, _first_client) = SHARED.get_or_init(|| {
+        let daemon = SocketDaemon::start("shared");
+        let first_client = daemon.connect();
+        (daemon, first_client)
+    });
+    daemon.connect()
+}
+
+#[test]
+fn cli_daemon_answers_each_socket_client_with_its_own_responses() {
+    let first_source = common::TempArtifact::new("laniusc_daemon_clients", "first", Some("lani"));
+    let second_source = common::TempArtifact::new("laniusc_daemon_clients", "second", Some("lani"));
+    let first_artifact = common::TempArtifact::new("laniusc_daemon_clients", "first", None);
+    let second_artifact = common::TempArtifact::new("laniusc_daemon_clients", "second", None);
+    fs::write(
+        first_source.path(),
+        "fn main() -> i32 {\n    print(7);\n    return 0;\n}\n",
+    )
+    .expect("write the first client's source");
+    fs::write(
+        second_source.path(),
+        "fn main() -> i32 {\n    print(9);\n    return 0;\n}\n",
+    )
+    .expect("write the second client's source");
+    let compile = |id: &str, input: &Path, output: &Path| {
+        serde_json::json!({
+            "id": id,
+            "command": "compile",
+            "emit": "x86_64",
+            "input": input,
+            "output": output,
+        })
+    };
+
+    let mut first = shared_daemon();
+    let mut second = shared_daemon();
+    // Both requests are queued before either response is read.
+    first.send(&compile("first", first_source.path(), first_artifact.path()));
+    second.send(&compile("second", second_source.path(), second_artifact.path()));
+    let second_response = second.response();
+    let first_response = first.response();
+    assert_eq!(first_response["id"], "first");
+    assert_eq!(first_response["ok"], true, "{first_response:#}");
+    assert_eq!(second_response["id"], "second");
+    assert_eq!(second_response["ok"], true, "{second_response:#}");
+    assert_eq!(second.request(&serde_json::json!({"id": "s", "command": "status"}))["id"], "s");
+
+    for (artifact, expected) in [(&first_artifact, "7\n"), (&second_artifact, "9\n")] {
+        let run = common::short_process_output_with_timeout(
+            "run a socket client's x86 artifact",
+            &mut Command::new(artifact.path()),
+        );
+        common::assert_command_success("run a socket client's x86 artifact", &run);
+        assert_eq!(String::from_utf8_lossy(&run.stdout), expected);
+    }
 }
 
 #[test]
@@ -283,7 +380,6 @@ fn cli_daemon_links_a_native_executable_from_several_source_roots() {
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cli_daemon/native_roots");
     let artifact = common::TempArtifact::new("laniusc_daemon_native", "artifact", None);
-    let requests = common::TempArtifact::new("laniusc_daemon_native", "requests", Some("jsonl"));
     let compile = |id: &str| {
         serde_json::json!({
             "id": id,
@@ -313,40 +409,11 @@ fn cli_daemon_links_a_native_executable_from_several_source_roots() {
         "source_root": fixture.join("first_root"),
         "source_roots": [fixture.join("second_root")],
     });
-    let shutdown = serde_json::json!({"id": "shutdown", "command": "shutdown"});
-    fs::write(
-        requests.path(),
-        format!(
-            "{unknown}\n{both_roots}\n{}\n{}\n{shutdown}\n",
-            compile("native"),
-            compile("repeat")
-        ),
-    )
-    .expect("write native daemon request fixture");
-
-    let stdin = fs::File::open(requests.path()).expect("open native daemon request fixture");
-    let mut command = Command::new(laniusc_bin());
-    command
-        .arg("daemon")
-        .arg("--stdio")
-        .arg("--backend")
-        .arg("x86_64")
-        .arg("--stdlib-root")
-        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
-        .stdin(Stdio::from(stdin));
-    let output =
-        common::codegen_command_output_with_timeout("laniusc daemon native job", &mut command);
-    common::assert_command_success("laniusc daemon native job", &output);
-    let responses = String::from_utf8(output.stdout)
-        .expect("daemon stdout should be UTF-8")
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
-        .collect::<Vec<_>>();
-    assert_eq!(responses.len(), 6, "{responses:#?}");
-    assert_eq!(responses[0]["event"], "ready");
-    let capabilities = responses[0]["capabilities"]
+    let mut session = shared_daemon();
+    let capabilities = session.ready["capabilities"]
         .as_array()
-        .expect("the ready event lists the request features");
+        .expect("the ready event lists the request features")
+        .clone();
     for capability in ["strict_request_fields", "source_roots", "native_link"] {
         assert!(
             capabilities.iter().any(|listed| listed == capability),
@@ -354,28 +421,30 @@ fn cli_daemon_links_a_native_executable_from_several_source_roots() {
         );
     }
 
-    assert_eq!(responses[1]["id"], "unknown");
-    assert_eq!(responses[1]["ok"], false);
-    let message = responses[1]["protocol_error"]
+    let response = session.request(&unknown);
+    assert_eq!(response["id"], "unknown");
+    assert_eq!(response["ok"], false);
+    let message = response["protocol_error"]
         .as_str()
         .expect("an unknown request field is a protocol error");
     assert!(message.contains("unknown field `linker_flags`"), "{message}");
 
-    assert_eq!(responses[2]["id"], "both_roots");
-    assert_eq!(responses[2]["ok"], false);
-    let message = responses[2]["job_error"]
+    let response = session.request(&both_roots);
+    assert_eq!(response["id"], "both_roots");
+    assert_eq!(response["ok"], false);
+    let message = response["job_error"]
         .as_str()
         .expect("two root fields are a job error");
     assert!(message.contains("source_root and source_roots"), "{message}");
 
-    for (response, id) in responses[3..5].iter().zip(["native", "repeat"]) {
+    for id in ["native", "repeat"] {
+        let response = session.request(&compile(id));
         assert_eq!(response["id"], id);
         assert_eq!(response["ok"], true, "{response:#}");
         assert_eq!(response["native_link"], true);
         assert_eq!(response["source_roots"].as_array().map(Vec::len), Some(2));
         assert!(response["output_bytes"].as_u64().is_some_and(|bytes| bytes > 0));
     }
-    assert_eq!(responses[5]["id"], "shutdown");
 
     // `abs` comes from libc, so the program runs only when it was linked.
     let status = Command::new(artifact.path())
@@ -714,165 +783,43 @@ fn cli_daemon_traced_compile_stamps_every_dispatch() {
 }
 
 #[test]
-fn cli_daemon_first_wasm_job_creates_no_pipelines_and_runs() {
+fn cli_daemon_emits_a_runnable_wasm_artifact() {
     common::require_node();
 
-    let source = common::temp_artifact_path("laniusc_daemon_wasm", "source", Some("lani"));
-    let artifact = common::temp_artifact_path("laniusc_daemon_wasm", "artifact", Some("wasm"));
-    let repeat_artifact = common::temp_artifact_path("laniusc_daemon_wasm", "repeat", Some("wasm"));
-    let requests = common::temp_artifact_path("laniusc_daemon_wasm", "requests", Some("jsonl"));
+    let source = common::TempArtifact::new("laniusc_daemon_wasm", "source", Some("lani"));
+    let artifact = common::TempArtifact::new("laniusc_daemon_wasm", "artifact", Some("wasm"));
     fs::write(
-        &source,
+        source.path(),
         "fn main() -> i32 {\n    print(7);\n    return 0;\n}\n",
     )
     .expect("write daemon Wasm source fixture");
-    let compile = serde_json::json!({
-        "id": "compile",
-        "command": "compile",
-        "emit": "wasm",
-        "input": source,
-        "output": artifact,
-    });
-    let repeat_compile = serde_json::json!({
-        "id": "repeat_compile",
-        "command": "compile",
-        "emit": "wasm",
-        "input": source,
-        "output": repeat_artifact,
-    });
-    let shutdown = serde_json::json!({"id": "shutdown", "command": "shutdown"});
-    fs::write(
-        &requests,
-        format!("{compile}\n{repeat_compile}\n{shutdown}\n"),
-    )
-    .expect("write daemon Wasm requests");
 
-    let stdin = fs::File::open(&requests).expect("open daemon Wasm request fixture");
-    let mut command = Command::new(laniusc_bin());
-    command
-        .arg("daemon")
-        .arg("--stdio")
-        .arg("--backend")
-        .arg("wasm")
-        .arg("--stdlib-root")
-        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
-        .stdin(Stdio::from(stdin));
-    let output =
-        common::codegen_command_output_with_timeout("laniusc daemon Wasm first job", &mut command);
-    common::assert_command_success("laniusc daemon Wasm first job", &output);
-
-    let responses = String::from_utf8(output.stdout)
-        .expect("daemon stdout should be UTF-8")
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
-        .collect::<Vec<_>>();
-    assert_eq!(responses.len(), 4, "ready, two compiles, and shutdown");
-    assert_eq!(responses[0]["event"], "ready");
-    assert_eq!(responses[0]["targets"], serde_json::json!(["wasm"]));
-    for response in [&responses[1], &responses[2]] {
-        assert_eq!(
-            response["ok"], true,
-            "Wasm daemon compile failed: {response}"
-        );
-        assert_eq!(response["emit"], "wasm");
-        assert_eq!(
-            response["resources_created_during_job"]["compute_pipelines"], 0,
-            "daemon Wasm jobs must not create pipelines after readiness: {response}"
-        );
-    }
+    let mut session = shared_daemon();
+    assert_eq!(session.ready["targets"], serde_json::json!(["x86_64", "wasm"]));
+    let response = session.compile_file("wasm", source.path(), artifact.path());
+    assert_eq!(response["ok"], true, "Wasm daemon compile failed: {response}");
+    assert_eq!(response["emit"], "wasm");
     assert_eq!(
-        responses[1]["workspace_request_kind"],
-        "cold_or_grown_workspace"
-    );
-    assert_eq!(responses[2]["workspace_request_kind"], "retained_capacity");
-    assert_eq!(responses[2]["resources_created_during_job"]["buffers"], 0);
-    assert_eq!(
-        responses[2]["resources_created_during_job"]["bind_groups"],
-        0
+        response["resources_created_during_job"]["compute_pipelines"], 0,
+        "daemon Wasm jobs must not create pipelines after readiness: {response}"
     );
 
-    let wasm = fs::read(&artifact).expect("read daemon Wasm artifact");
-    let stdout =
-        common::run_wasm_main_with_node("daemon first Wasm job", "daemon_first_wasm_job", &wasm);
+    let wasm = fs::read(artifact.path()).expect("read daemon Wasm artifact");
+    let stdout = common::run_wasm_main_with_node("daemon Wasm job", "daemon_wasm_job", &wasm);
     assert_eq!(stdout, "7\n");
-}
-
-/// One interactive `laniusc daemon --stdio --backend x86_64` session.
-struct DaemonSession {
-    child: ChildGuard,
-    stdin: std::process::ChildStdin,
-    stdout: BufReader<std::process::ChildStdout>,
-}
-
-impl DaemonSession {
-    fn start() -> Self {
-        let mut child = Command::new(laniusc_bin())
-            .arg("daemon")
-            .arg("--stdio")
-            .arg("--backend")
-            .arg("x86_64")
-            .arg("--stdlib-root")
-            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn x86 daemon");
-        let stdin = child.stdin.take().expect("daemon stdin");
-        let stdout = BufReader::new(child.stdout.take().expect("daemon stdout"));
-        let mut session = Self {
-            child: ChildGuard(child),
-            stdin,
-            stdout,
-        };
-        assert_eq!(session.response()["event"], "ready");
-        session
-    }
-
-    fn response(&mut self) -> serde_json::Value {
-        let mut line = String::new();
-        self.stdout
-            .read_line(&mut line)
-            .expect("read daemon response");
-        serde_json::from_str(&line)
-            .unwrap_or_else(|error| panic!("daemon response {line:?}: {error}"))
-    }
-
-    fn compile_project(
-        &mut self,
-        project: &std::path::Path,
-        output: &std::path::Path,
-    ) -> serde_json::Value {
-        let request = serde_json::json!({
-            "id": "compile",
-            "command": "compile",
-            "emit": "x86_64",
-            "input": project.join("main.lani"),
-            "source_root": project.join("src"),
-            "output": output,
-        });
-        writeln!(self.stdin, "{request}").expect("send daemon request");
-        self.stdin.flush().expect("flush daemon request");
-        self.response()
-    }
-
-    fn shutdown(mut self) {
-        let request = serde_json::json!({"id": "shutdown", "command": "shutdown"});
-        writeln!(self.stdin, "{request}").expect("send daemon shutdown");
-        self.stdin.flush().expect("flush daemon shutdown");
-        let _ = self.response();
-        let _ = self.child.0.wait();
-    }
 }
 
 // A warm daemon keeps a project's parser shape between jobs. An edit that
 // removes tokens (padding functions deleted, or turned into spaces so the
 // bytes stay the same) must compile exactly as a fresh daemon compiles the
 // edited files; a shrinking comment, which removes no tokens, is the
-// control. The project reads fields through imported generic records, the
+// control. The reference is the same daemon after a trim: a trim frees the
+// resident buffers, so the job after it holds no more token capacity than it
+// needs, as a fresh daemon's first job does. The project reads fields through imported generic records, the
 // shape that went wrong when a warm job's token capacity exceeded its count.
 #[test]
-fn cli_daemon_matches_a_fresh_daemon_after_edits_that_remove_tokens() {
+fn cli_daemon_matches_a_trimmed_daemon_after_edits_that_remove_tokens() {
+    let mut session = shared_daemon();
     let padding: String = (0..60)
         .map(|index| {
             format!(
@@ -933,7 +880,6 @@ fn main() -> i32 {
         let warm = project.join("warm");
         let fresh = project.join("fresh");
 
-        let mut session = DaemonSession::start();
         let response = session.compile_project(&project, &warm);
         assert_eq!(response["ok"], true, "{edit}: padded project: {response}");
         fs::write(&extract_path, format!("{extract}{small}")).expect("write edited lib::extract");
@@ -942,17 +888,17 @@ fn main() -> i32 {
             response["ok"], true,
             "{edit}: warm daemon after the edit: {response}"
         );
-        session.shutdown();
-
-        let mut session = DaemonSession::start();
+        // Queued together, so that another client's job seldom runs between.
+        session.send(&serde_json::json!({"id": "trim", "command": "trim"}));
         let response = session.compile_project(&project, &fresh);
-        assert_eq!(response["ok"], true, "{edit}: fresh daemon: {response}");
-        session.shutdown();
+        assert_eq!(response["event"], "trimmed", "{edit}: {response}");
+        let response = session.response();
+        assert_eq!(response["ok"], true, "{edit}: after a trim: {response}");
 
         assert!(
             fs::read(&warm).expect("read warm artifact")
                 == fs::read(&fresh).expect("read fresh artifact"),
-            "{edit}: the warm daemon's artifact differs from a fresh daemon's"
+            "{edit}: the warm job's artifact differs from the job after a trim"
         );
         let run = common::short_process_output_with_timeout(
             format!("run the {edit} artifact"),
@@ -963,35 +909,19 @@ fn main() -> i32 {
     }
 }
 
-impl DaemonSession {
-    fn compile_file(
-        &mut self,
-        input: &std::path::Path,
-        output: &std::path::Path,
-    ) -> serde_json::Value {
-        let request = serde_json::json!({
-            "id": "compile",
-            "command": "compile",
-            "emit": "x86_64",
-            "input": input,
-            "output": output,
-        });
-        writeln!(self.stdin, "{request}").expect("send daemon request");
-        self.stdin.flush().expect("flush daemon request");
-        self.response()
-    }
-}
-
 // The first job of a fresh daemon once typed `original.value` as i32 or as
 // unknown depending on warp order: type_checker/scope/hir read a struct
 // declaration's visible type while that declaration's own lane was writing
 // it (2026-10-19; about one fresh daemon in three emitted an extra spill
-// pair). Every fresh daemon must emit the same bytes for the same source.
+// pair). A trim frees the resident buffers, so the job after it starts from
+// new, zeroed buffers as a fresh daemon's first job does. Every such job
+// must emit the same bytes for the same source.
 #[test]
-fn cli_daemon_first_jobs_of_fresh_daemons_emit_identical_artifacts() {
+fn cli_daemon_first_jobs_after_a_trim_emit_identical_artifacts() {
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
         "tests/fixtures/stdlib_foundation/repro_nominal_parameter_after_field_assignment.lani",
     );
+    let mut session = shared_daemon();
     let mut first: Option<Vec<u8>> = None;
     for round in 0..8 {
         let output = common::temp_artifact_path(
@@ -999,23 +929,25 @@ fn cli_daemon_first_jobs_of_fresh_daemons_emit_identical_artifacts() {
             &round.to_string(),
             None,
         );
-        let mut session = DaemonSession::start();
-        let response = session.compile_file(&input, &output);
-        assert_eq!(response["ok"], true, "fresh daemon {round}: {response}");
-        session.shutdown();
-        let bytes = fs::read(&output).expect("read fresh-daemon artifact");
+        // Queued together, so that another client's job seldom runs between.
+        session.send(&serde_json::json!({"id": "trim", "command": "trim"}));
+        let response = session.compile_file("x86_64", &input, &output);
+        assert_eq!(response["event"], "trimmed", "round {round}: {response}");
+        let response = session.response();
+        assert_eq!(response["ok"], true, "round {round}: {response}");
+        let bytes = fs::read(&output).expect("read the artifact");
         if round == 0 {
             let run = common::short_process_output_with_timeout(
-                "run the fresh-daemon artifact",
+                "run the first-job artifact",
                 &mut Command::new(&output),
             );
-            assert_eq!(run.status.code(), Some(0), "fresh-daemon artifact exit status");
+            assert_eq!(run.status.code(), Some(0), "first-job artifact exit status");
         }
         let _ = fs::remove_file(&output);
         match &first {
             Some(expected) => assert!(
                 *expected == bytes,
-                "fresh daemon {round} emitted {} bytes; the first emitted {}",
+                "round {round} emitted {} bytes; the first emitted {}",
                 bytes.len(),
                 expected.len()
             ),

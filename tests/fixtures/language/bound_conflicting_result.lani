@@ -1,3 +1,4 @@
+//@ error LNC0008
 // The receiving type binds T = i64 first; Counter's Iterator<i32> disagrees
 // and publishes nothing.
 module app::main;

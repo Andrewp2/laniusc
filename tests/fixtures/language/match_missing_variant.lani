@@ -1,3 +1,7 @@
+//@ error LNC0077
+//@ error match is not exhaustive
+//@ error at least one value has no arm
+//@ error match_missing_variant.lani:8
 // `Color::Blue` has no arm.
 enum Color { Red, Green, Blue }
 fn rank(color: Color) -> i32 {

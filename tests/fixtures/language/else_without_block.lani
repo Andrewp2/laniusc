@@ -1,3 +1,5 @@
+//@ error LNC0016
+//@ error expected `{` or keyword `if`
 fn main() -> i32 {
     let n = 1;
     if (n > 9) {

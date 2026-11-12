@@ -1,3 +1,4 @@
+//@ error LNC0006
 module app::main;
 import core::option::Option;
 import core::option::Some;

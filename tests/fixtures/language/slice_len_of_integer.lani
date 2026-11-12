@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error `slice_len` takes a slice or an array; this value is `i32`
 fn main() -> i32 {
     return slice_len(3) as i32;
 }

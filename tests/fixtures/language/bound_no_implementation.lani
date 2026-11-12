@@ -1,3 +1,4 @@
+//@ error LNC0006
 // Plain implements no Iterator: nothing binds T.
 module app::main;
 import core::iter;

@@ -1,3 +1,5 @@
+//@ error LNC0006
+//@ error same value as a `&mut` argument
 // The `&mut` argument and the `&` argument reach the same counter.
 struct Counter { total: i32 }
 impl Counter {
