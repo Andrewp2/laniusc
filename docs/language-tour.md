@@ -328,12 +328,21 @@ fn describe(n: i32) -> i32 {
     };
 }
 
+fn is_unit_square(shape: Shape) -> bool {
+    return match (shape) {
+        Shape::Rect(1, 1) -> true,
+        _ -> false,
+    };
+}
+
 fn main() -> i32 {
     print(area(Shape::Circle(2)));
     print(area(Shape::Rect(2, 5)));
     print(area(Shape::Empty));
     print(describe(1));
     print(describe(9));
+    if (is_unit_square(Shape::Rect(1, 1))) { print(1); }
+    if (is_unit_square(Shape::Rect(1, 2))) { print(2); }
     return 0;
 }
 ```
@@ -344,12 +353,15 @@ fn main() -> i32 {
 0
 200
 300
+1
 ```
 
 - `match` is an expression. Each arm is `pattern -> value`.
 - An arm can also be a block, `pattern -> { statements }`. Every path through
   a block arm must end with `return`.
 - `_` matches every value that the arms above it do not.
+- A literal in a payload position is compared with the payload:
+  `Shape::Rect(1, 1)` matches a rectangle with both sides 1.
 - A `match` must cover every value. On an enum that means an arm for each
   variant or a `_` arm, and on a bool both `true` and `false`. A variant
   inside a payload needs its own arms too: `Some(Shape::Circle(r))` covers
@@ -762,9 +774,6 @@ today.
   when `Shape` has those two variants. A set of arms that splits two payloads
   of one variant at once, such as `Pair(Bit::Zero, Bit::One)`, counts as
   covering nothing. Add a `_` arm to such a match.
-- **Literal payload patterns.** An arm such as `Some(1)` or `Some(true)`
-  passes the type check and then fails in code generation (LNC0057). Bind the
-  payload to a name and compare it in the arm.
 - **Associated constructors of library types.** `Vec::new()` and
   `String::from(...)` do not resolve. Call the module function:
   `alloc::vec::new()`, `alloc::string::from_str(...)`.
