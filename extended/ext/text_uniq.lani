@@ -8,12 +8,42 @@
 // lines are found and compared eight bytes at a time, and neighbouring
 // output lines leave as one span. See docs/extended-textutils.md.
 module ext::text_uniq;
+import core::lifecycle;
 import alloc::io;
 import core::io;
 import core::mem;
 import core::result;
 import core::slice;
 import ext::text_lines;
+
+pub enum GroupPhaseEvent { Opened, Retained, Flushed }
+pub machine GroupPhase on GroupPhaseEvent {
+    start Empty;
+
+    state Empty {
+        GroupPhaseEvent::Opened -> goto Borrowed,
+        GroupPhaseEvent::Retained -> stay,
+        GroupPhaseEvent::Flushed -> stay,
+    }
+
+    state Borrowed {
+        GroupPhaseEvent::Opened -> stay,
+        GroupPhaseEvent::Retained -> goto Held,
+        GroupPhaseEvent::Flushed -> goto Empty,
+    }
+
+    state Held {
+        GroupPhaseEvent::Opened -> goto Borrowed,
+        GroupPhaseEvent::Retained -> stay,
+        GroupPhaseEvent::Flushed -> goto Empty,
+    }
+}
+pub impl GroupPhase {
+    pub fn is_empty(&self) -> bool { return match (self.state()) { GroupPhaseState::Empty -> true, _ -> false }; }
+    pub fn is_borrowed(&self) -> bool { return match (self.state()) { GroupPhaseState::Borrowed -> true, _ -> false }; }
+    pub fn is_held(&self) -> bool { return match (self.state()) { GroupPhaseState::Held -> true, _ -> false }; }
+}
+
 
 pub enum Error { AllocationFailed }
 pub const MAX: u64 = 18446744073709551615;
@@ -27,8 +57,8 @@ pub fn default_options() -> Options {
 // The open group: its first line lives in the current chunk (`first` is
 // its offset) or, across a chunk boundary, in `hold`.
 pub struct Uniq {
-    o: Options, open: bool, held: bool, first: i32, first_end: i32, key: i32, key_len: i32, count: u64,
-    hold: alloc::io::Buffer, hold_p: ptr, hold_cap: i32, hold_len: i32, failed: bool
+    o: Options, group: GroupPhase, first: i32, first_end: i32, key: i32, key_len: i32, count: u64,
+    hold: alloc::io::Buffer, hold_p: ptr, hold_cap: i32, hold_len: i32, health: core::lifecycle::Health
 }
 pub impl Uniq {
     pub fn borrow(&self) -> &Uniq { return self; }
@@ -40,7 +70,7 @@ pub fn uniq(o: Options) -> core::result::Result<Uniq, Error> {
     let hold: alloc::io::Buffer = core::result::unwrap(made);
     let p: core::result::Result<ptr, core::io::Error> = hold.reserve_raw(1040);
     if (core::result::is_err(p)) { hold.destroy(); return core::result::Err(Error::AllocationFailed); }
-    return core::result::Ok(Uniq { o: o, open: false, held: false, first: 0, first_end: 0, key: 0, key_len: 0, count: 0, hold: hold, hold_p: core::result::unwrap(p), hold_cap: 1024, hold_len: 0, failed: false });
+    return core::result::Ok(Uniq { o: o, group: group_phase_start(), first: 0, first_end: 0, key: 0, key_len: 0, count: 0, hold: hold, hold_p: core::result::unwrap(p), hold_cap: 1024, hold_len: 0, health: core::lifecycle::health_start() });
 }
 
 // Pending output: source bytes [start, end) of the current chunk, written
@@ -94,7 +124,7 @@ fn tu_emit(u: &Uniq, w: &ext::text_lines::Words, p: &Pending, out: &ext::text_li
             ext::text_lines::put(out, x, 8);
         } else { ext::text_lines::put_number(out, c as i64, 7); ext::text_lines::put_byte(out, 32); }
     }
-    if (u.held) {
+    if (u.group.is_held()) {
         tu_flush(p, w, out);
         let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, u.hold_len); let i: i32 = 0;
         while (i < u.hold_len) { ext::text_lines::put_byte(out, bytes[i]); i += 1; }
@@ -163,9 +193,9 @@ pub fn feed(u: &Uniq, v: core::slice::View<u8>, out: &ext::text_lines::Out) -> c
             let room: u64 = (e - k) as u64; if (sc < room) { k += sc as i32; } else { k = e; }
             let len: u64 = (e - k) as u64; if (cc < len) { len = cc; } kl = len as i32;
         }
-        if (u.open) {
+        if (!u.group.is_empty()) {
             let same: bool = false;
-            if (u.held) {
+            if (u.group.is_held()) {
                 if (u.key_len == kl) {
                     let hb: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, u.hold_len); let i: i32 = 0; same = true;
                     while (i < kl && same) {
@@ -178,38 +208,38 @@ pub fn feed(u: &Uniq, v: core::slice::View<u8>, out: &ext::text_lines::Out) -> c
             if (same) { u.count += 1; continue; }
             tu_emit(u, w.borrow(), p.borrow(), out);
         }
-        u.open = true; u.held = false; u.first = s; u.first_end = e; u.key = k; u.key_len = kl; u.count = 0;
+        u.group.step(GroupPhaseEvent::Opened); u.first = s; u.first_end = e; u.key = k; u.key_len = kl; u.count = 0;
     }
     // Keep a group that is still open past this chunk.
-    if (u.open && !u.held) {
+    if (!u.group.is_empty() && !u.group.is_held()) {
         let len: i32 = u.first_end - u.first;
         if (len > u.hold_cap) {
             let bigger: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(len + 16);
-            if (core::result::is_err(bigger)) { u.failed = true; }
+            if (core::result::is_err(bigger)) { u.health.fail(); }
             else {
                 let b: alloc::io::Buffer = core::result::unwrap(bigger); let q: core::result::Result<ptr, core::io::Error> = b.reserve_raw(len + 16);
-                if (core::result::is_err(q)) { b.destroy(); u.failed = true; }
+                if (core::result::is_err(q)) { b.destroy(); u.health.fail(); }
                 else { u.hold.destroy(); u.hold = b; u.hold_p = core::result::unwrap(q); u.hold_cap = len; }
             }
         }
-        if (!u.failed) {
+        if (!u.health.is_failed()) {
             let hb: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, len); let i: i32 = 0;
             while (i < len) { hb[i] = values[base+u.first+i]; i += 1; }
-            u.hold_len = len; u.key = u.key - u.first; u.held = true;
+            u.hold_len = len; u.key = u.key - u.first; u.group.step(GroupPhaseEvent::Retained);
         }
     }
     tu_flush(p.borrow(), w.borrow(), out);
     hits.destroy(); w.destroy();
-    if (u.failed) { return core::result::Err(Error::AllocationFailed); }
+    if (u.health.is_failed()) { return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(0);
 }
 // Write the last group after the final run.
 pub fn finish(u: &Uniq, out: &ext::text_lines::Out) {
-    if (!u.open) { return; }
+    if (u.group.is_empty()) { return; }
     let empty: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, 0), start: 0, length: 0 };
     let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(empty));
     let p: Pending = Pending { start: 0, end: 0 };
     tu_emit(u, w.borrow(), p.borrow(), out);
     tu_flush(p.borrow(), w.borrow(), out);
-    w.destroy(); u.open = false;
+    w.destroy(); u.group.step(GroupPhaseEvent::Flushed);
 }

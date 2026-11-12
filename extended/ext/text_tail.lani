@@ -5,6 +5,7 @@
 // Every path leaves a regular file's offset at its end, as GNU's does.
 // See docs/extended-textutils.md.
 module ext::text_tail;
+import core::iter_state;
 import alloc::io;
 import core::io;
 import core::mem;
@@ -116,7 +117,7 @@ fn tt_last_lines(fd: i32, count: u64, start: i64, end: i64, eol: u8) -> i32 {
     let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(block + 16));
     let p: ptr = core::result::unwrap(mem.reserve_raw(block + 16));
     let b: [u8] = core::mem::typed_slice_from_raw_parts<u8>(p, block);
-    let pos: i64 = end; let n: u64 = count; let first: bool = true; let from: i64 = start;
+    let pos: i64 = end; let n: u64 = count; let first_phase = core::iter_state::finished_completion(); let from: i64 = start;
     while (pos > start) {
         let size: i32 = block; if (pos - start < (block as i64)) { size = (pos - start) as i32; }
         pos -= size as i64;
@@ -124,7 +125,7 @@ fn tt_last_lines(fd: i32, count: u64, start: i64, end: i64, eol: u8) -> i32 {
         let got: i32 = ext::text_lines::read_some(fd, p, size);
         if (got < 0) { mem.destroy(); return 1; }
         if (got < size) { size = got; }
-        if (first) { first = false; if (size > 0 && b[size-1] != eol) { n -= 1; } }
+        if (first_phase.is_done()) { first_phase = core::iter_state::completion_start(); if (size > 0 && b[size-1] != eol) { n -= 1; } }
         let c: u64 = ext::text_lines::count_byte(p, size, eol);
         if (c > n) { from = pos + (ext::text_lines::nth_byte(p, size, eol, c - n) as i64); break; }
         n -= c;

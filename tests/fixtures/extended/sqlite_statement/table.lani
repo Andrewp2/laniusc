@@ -3,12 +3,13 @@
 module app::main;
 import ext::sqlite_statement;
 
-fn state_at(index: i32) -> ext::sqlite_statement::State {
-    if (index == 0) { return ext::sqlite_statement::State::Ready; }
-    if (index == 1) { return ext::sqlite_statement::State::Row; }
-    if (index == 2) { return ext::sqlite_statement::State::Done; }
-    if (index == 3) { return ext::sqlite_statement::State::Failed; }
-    return ext::sqlite_statement::State::Finalized;
+fn machine_at(index: i32) -> ext::sqlite_statement::Statement {
+    let machine = ext::sqlite_statement::statement_start();
+    if (index == 1) { machine.step(ext::sqlite_statement::Event::StepRow); }
+    if (index == 2) { machine.step(ext::sqlite_statement::Event::StepDone); }
+    if (index == 3) { machine.step(ext::sqlite_statement::Event::StepFailed); }
+    if (index == 4) { machine.step(ext::sqlite_statement::Event::Finalize); }
+    return machine;
 }
 
 fn event_at(index: i32) -> ext::sqlite_statement::Event {
@@ -24,13 +25,13 @@ fn event_at(index: i32) -> ext::sqlite_statement::Event {
     return ext::sqlite_statement::Event::Finalize;
 }
 
-fn index_of(state: ext::sqlite_statement::State) -> i32 {
+fn index_of(state: ext::sqlite_statement::StatementState) -> i32 {
     return match (state) {
-        ext::sqlite_statement::State::Ready -> 0,
-        ext::sqlite_statement::State::Row -> 1,
-        ext::sqlite_statement::State::Done -> 2,
-        ext::sqlite_statement::State::Failed -> 3,
-        ext::sqlite_statement::State::Finalized -> 4,
+        ext::sqlite_statement::StatementState::Ready -> 0,
+        ext::sqlite_statement::StatementState::Row -> 1,
+        ext::sqlite_statement::StatementState::Done -> 2,
+        ext::sqlite_statement::StatementState::Failed -> 3,
+        ext::sqlite_statement::StatementState::Finalized -> 4,
     };
 }
 
@@ -39,15 +40,16 @@ fn main() -> i32 {
     while (state < 5) {
         let event: i32 = 0;
         while (event < 10) {
-            let decided: ext::sqlite_statement::Move = ext::sqlite_statement::transition(state_at(state), event_at(event));
+            let machine = machine_at(state);
+            let admitted: bool = machine.step(event_at(event));
             let allowed: i32 = 0;
-            if (decided.allowed) { allowed = 1; }
-            print(index_of(decided.next) * 10 + allowed);
+            if (admitted) { allowed = 1; }
+            print(index_of(machine.state()) * 10 + allowed);
             event += 1;
         }
         state += 1;
     }
-    let start: i32 = index_of(ext::sqlite_statement::start());
+    let start: i32 = index_of(ext::sqlite_statement::statement_start().state());
     print(start);
     return 0;
 }

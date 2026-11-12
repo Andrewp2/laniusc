@@ -20,14 +20,15 @@ Declaration counts: enum: 2; field: 25; function: 13; impl: 1; method: 25; struc
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json_tree.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_tree.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/json_tree.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/json_tree.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/json_tree.lani#L10)
-- [core::text](../core/text.md) · [source](../../../extended/ext/json_tree.lani#L11)
-- [core::u32](../core/u32.md) · [source](../../../extended/ext/json_tree.lani#L12)
-- [ext::json_stream](json_stream.md) · [source](../../../extended/ext/json_tree.lani#L13)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/json_tree.lani#L6)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json_tree.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_tree.lani#L8)
+- [core::option](../core/option.md) · [source](../../../extended/ext/json_tree.lani#L9)
+- [core::result](../core/result.md) · [source](../../../extended/ext/json_tree.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/json_tree.lani#L11)
+- [core::text](../core/text.md) · [source](../../../extended/ext/json_tree.lani#L12)
+- [core::u32](../core/u32.md) · [source](../../../extended/ext/json_tree.lani#L13)
+- [ext::json_stream](json_stream.md) · [source](../../../extended/ext/json_tree.lani#L14)
 
 ## Types, fields and variants
 
@@ -35,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Kind
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 pub enum Kind
@@ -43,7 +44,7 @@ pub enum Kind
 
 #### variant: Null
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Null
@@ -51,7 +52,7 @@ Null
 
 #### variant: Boolean
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Boolean
@@ -59,7 +60,7 @@ Boolean
 
 #### variant: Number
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Number
@@ -67,7 +68,7 @@ Number
 
 #### variant: Text
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Text
@@ -75,7 +76,7 @@ Text
 
 #### variant: Array
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Array
@@ -83,7 +84,7 @@ Array
 
 #### variant: Object
 
-[Source line 15](../../../extended/ext/json_tree.lani#L15)
+[Source line 16](../../../extended/ext/json_tree.lani#L16)
 
 ```lanius
 Object
@@ -91,7 +92,7 @@ Object
 
 ### enum: ErrorKind
 
-[Source line 17](../../../extended/ext/json_tree.lani#L17)
+[Source line 18](../../../extended/ext/json_tree.lani#L18)
 
 ```lanius
 pub enum ErrorKind
@@ -99,7 +100,7 @@ pub enum ErrorKind
 
 #### variant: Parse
 
-[Source line 18](../../../extended/ext/json_tree.lani#L18)
+[Source line 19](../../../extended/ext/json_tree.lani#L19)
 
 ```lanius
 Parse
@@ -107,7 +108,7 @@ Parse
 
 #### variant: DuplicateKey
 
-[Source line 18](../../../extended/ext/json_tree.lani#L18)
+[Source line 19](../../../extended/ext/json_tree.lani#L19)
 
 ```lanius
 DuplicateKey
@@ -115,7 +116,7 @@ DuplicateKey
 
 #### variant: NodeLimit
 
-[Source line 18](../../../extended/ext/json_tree.lani#L18)
+[Source line 19](../../../extended/ext/json_tree.lani#L19)
 
 ```lanius
 NodeLimit
@@ -123,7 +124,7 @@ NodeLimit
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/json_tree.lani#L18)
+[Source line 19](../../../extended/ext/json_tree.lani#L19)
 
 ```lanius
 AllocationFailed
@@ -131,7 +132,7 @@ AllocationFailed
 
 #### variant: Output
 
-[Source line 18](../../../extended/ext/json_tree.lani#L18)
+[Source line 19](../../../extended/ext/json_tree.lani#L19)
 
 ```lanius
 Output
@@ -139,7 +140,7 @@ Output
 
 #### variant: InvalidPointer
 
-[Source line 19](../../../extended/ext/json_tree.lani#L19)
+[Source line 20](../../../extended/ext/json_tree.lani#L20)
 
 ```lanius
 InvalidPointer
@@ -147,7 +148,7 @@ InvalidPointer
 
 #### variant: NotFound
 
-[Source line 19](../../../extended/ext/json_tree.lani#L19)
+[Source line 20](../../../extended/ext/json_tree.lani#L20)
 
 ```lanius
 NotFound
@@ -155,7 +156,7 @@ NotFound
 
 #### variant: InvalidIndex
 
-[Source line 19](../../../extended/ext/json_tree.lani#L19)
+[Source line 20](../../../extended/ext/json_tree.lani#L20)
 
 ```lanius
 InvalidIndex
@@ -163,7 +164,7 @@ InvalidIndex
 
 #### variant: OutOfRange
 
-[Source line 19](../../../extended/ext/json_tree.lani#L19)
+[Source line 20](../../../extended/ext/json_tree.lani#L20)
 
 ```lanius
 OutOfRange
@@ -171,7 +172,7 @@ OutOfRange
 
 #### variant: InvalidPatch
 
-[Source line 20](../../../extended/ext/json_tree.lani#L20)
+[Source line 21](../../../extended/ext/json_tree.lani#L21)
 
 ```lanius
 InvalidPatch
@@ -179,7 +180,7 @@ InvalidPatch
 
 #### variant: UnknownOperation
 
-[Source line 20](../../../extended/ext/json_tree.lani#L20)
+[Source line 21](../../../extended/ext/json_tree.lani#L21)
 
 ```lanius
 UnknownOperation
@@ -187,7 +188,7 @@ UnknownOperation
 
 #### variant: TestFailed
 
-[Source line 20](../../../extended/ext/json_tree.lani#L20)
+[Source line 21](../../../extended/ext/json_tree.lani#L21)
 
 ```lanius
 TestFailed
@@ -195,7 +196,7 @@ TestFailed
 
 #### variant: MoveIntoChild
 
-[Source line 20](../../../extended/ext/json_tree.lani#L20)
+[Source line 21](../../../extended/ext/json_tree.lani#L21)
 
 ```lanius
 MoveIntoChild
@@ -203,7 +204,7 @@ MoveIntoChild
 
 #### variant: RemoveRoot
 
-[Source line 20](../../../extended/ext/json_tree.lani#L20)
+[Source line 21](../../../extended/ext/json_tree.lani#L21)
 
 ```lanius
 RemoveRoot
@@ -211,7 +212,7 @@ RemoveRoot
 
 ### struct: Error
 
-[Source line 25](../../../extended/ext/json_tree.lani#L25)
+[Source line 26](../../../extended/ext/json_tree.lani#L26)
 
 ```lanius
 pub struct Error
@@ -219,7 +220,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 25](../../../extended/ext/json_tree.lani#L25)
+[Source line 26](../../../extended/ext/json_tree.lani#L26)
 
 ```lanius
 kind: ErrorKind
@@ -227,7 +228,7 @@ kind: ErrorKind
 
 #### field: operation
 
-[Source line 25](../../../extended/ext/json_tree.lani#L25)
+[Source line 26](../../../extended/ext/json_tree.lani#L26)
 
 ```lanius
 operation: i32
@@ -235,7 +236,7 @@ operation: i32
 
 #### field: offset
 
-[Source line 25](../../../extended/ext/json_tree.lani#L25)
+[Source line 26](../../../extended/ext/json_tree.lani#L26)
 
 ```lanius
 offset: u64
@@ -243,7 +244,7 @@ offset: u64
 
 #### field: cause
 
-[Source line 25](../../../extended/ext/json_tree.lani#L25)
+[Source line 26](../../../extended/ext/json_tree.lani#L26)
 
 ```lanius
 cause: ext::json_stream::ErrorKind
@@ -251,7 +252,7 @@ cause: ext::json_stream::ErrorKind
 
 ### struct: Limits
 
-[Source line 26](../../../extended/ext/json_tree.lani#L26)
+[Source line 27](../../../extended/ext/json_tree.lani#L27)
 
 ```lanius
 pub struct Limits
@@ -259,7 +260,7 @@ pub struct Limits
 
 #### field: max_depth
 
-[Source line 26](../../../extended/ext/json_tree.lani#L26)
+[Source line 27](../../../extended/ext/json_tree.lani#L27)
 
 ```lanius
 max_depth: i32
@@ -267,7 +268,7 @@ max_depth: i32
 
 #### field: max_string_bytes
 
-[Source line 26](../../../extended/ext/json_tree.lani#L26)
+[Source line 27](../../../extended/ext/json_tree.lani#L27)
 
 ```lanius
 max_string_bytes: i32
@@ -275,7 +276,7 @@ max_string_bytes: i32
 
 #### field: max_number_bytes
 
-[Source line 26](../../../extended/ext/json_tree.lani#L26)
+[Source line 27](../../../extended/ext/json_tree.lani#L27)
 
 ```lanius
 max_number_bytes: i32
@@ -283,7 +284,7 @@ max_number_bytes: i32
 
 #### field: max_nodes
 
-[Source line 26](../../../extended/ext/json_tree.lani#L26)
+[Source line 27](../../../extended/ext/json_tree.lani#L27)
 
 ```lanius
 max_nodes: i32
@@ -291,7 +292,7 @@ max_nodes: i32
 
 ### struct: Tree
 
-[Source line 85](../../../extended/ext/json_tree.lani#L85)
+[Source line 86](../../../extended/ext/json_tree.lani#L86)
 
 ```lanius
 pub struct Tree
@@ -299,7 +300,7 @@ pub struct Tree
 
 #### field: store
 
-[Source line 86](../../../extended/ext/json_tree.lani#L86)
+[Source line 87](../../../extended/ext/json_tree.lani#L87)
 
 ```lanius
 store: alloc::vec::Vec<i32>
@@ -307,7 +308,7 @@ store: alloc::vec::Vec<i32>
 
 #### field: cells
 
-[Source line 86](../../../extended/ext/json_tree.lani#L86)
+[Source line 87](../../../extended/ext/json_tree.lani#L87)
 
 ```lanius
 cells: [i32]
@@ -315,7 +316,7 @@ cells: [i32]
 
 #### field: nodes
 
-[Source line 86](../../../extended/ext/json_tree.lani#L86)
+[Source line 87](../../../extended/ext/json_tree.lani#L87)
 
 ```lanius
 nodes: i32
@@ -323,7 +324,7 @@ nodes: i32
 
 #### field: cell_cap
 
-[Source line 86](../../../extended/ext/json_tree.lani#L86)
+[Source line 87](../../../extended/ext/json_tree.lani#L87)
 
 ```lanius
 cell_cap: i32
@@ -331,7 +332,7 @@ cell_cap: i32
 
 #### field: bytes
 
-[Source line 87](../../../extended/ext/json_tree.lani#L87)
+[Source line 88](../../../extended/ext/json_tree.lani#L88)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -339,7 +340,7 @@ bytes: alloc::vec::Vec<u8>
 
 #### field: pool
 
-[Source line 87](../../../extended/ext/json_tree.lani#L87)
+[Source line 88](../../../extended/ext/json_tree.lani#L88)
 
 ```lanius
 pool: [u8]
@@ -347,7 +348,7 @@ pool: [u8]
 
 #### field: pool_used
 
-[Source line 87](../../../extended/ext/json_tree.lani#L87)
+[Source line 88](../../../extended/ext/json_tree.lani#L88)
 
 ```lanius
 pool_used: i32
@@ -355,7 +356,7 @@ pool_used: i32
 
 #### field: pool_cap
 
-[Source line 87](../../../extended/ext/json_tree.lani#L87)
+[Source line 88](../../../extended/ext/json_tree.lani#L88)
 
 ```lanius
 pool_cap: i32
@@ -363,7 +364,7 @@ pool_cap: i32
 
 #### field: table
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
 table: alloc::vec::Vec<i32>
@@ -371,7 +372,7 @@ table: alloc::vec::Vec<i32>
 
 #### field: slots
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
 slots: [i32]
@@ -379,7 +380,7 @@ slots: [i32]
 
 #### field: slot_cap
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
 slot_cap: i32
@@ -387,7 +388,7 @@ slot_cap: i32
 
 #### field: slot_used
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
 slot_used: i32
@@ -395,23 +396,23 @@ slot_used: i32
 
 #### field: slot_live
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
 slot_live: i32
 ```
 
-#### field: broken
+#### field: health
 
-[Source line 88](../../../extended/ext/json_tree.lani#L88)
+[Source line 89](../../../extended/ext/json_tree.lani#L89)
 
 ```lanius
-broken: bool
+health: core::lifecycle::Health
 ```
 
 #### field: root
 
-[Source line 89](../../../extended/ext/json_tree.lani#L89)
+[Source line 90](../../../extended/ext/json_tree.lani#L90)
 
 ```lanius
 root: i32
@@ -419,7 +420,7 @@ root: i32
 
 #### field: max_nodes
 
-[Source line 89](../../../extended/ext/json_tree.lani#L89)
+[Source line 90](../../../extended/ext/json_tree.lani#L90)
 
 ```lanius
 max_nodes: i32
@@ -427,7 +428,7 @@ max_nodes: i32
 
 #### field: fault
 
-[Source line 89](../../../extended/ext/json_tree.lani#L89)
+[Source line 90](../../../extended/ext/json_tree.lani#L90)
 
 ```lanius
 fault: ErrorKind
@@ -437,7 +438,7 @@ fault: ErrorKind
 
 ### function: default_limits
 
-[Source line 28](../../../extended/ext/json_tree.lani#L28)
+[Source line 29](../../../extended/ext/json_tree.lani#L29)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -445,7 +446,7 @@ pub fn default_limits() -> Limits
 
 ### function: failure
 
-[Source line 31](../../../extended/ext/json_tree.lani#L31)
+[Source line 32](../../../extended/ext/json_tree.lani#L32)
 
 ```lanius
 pub fn failure(kind: ErrorKind, operation: i32, offset: u64) -> Error
@@ -453,7 +454,7 @@ pub fn failure(kind: ErrorKind, operation: i32, offset: u64) -> Error
 
 ### function: kind_name
 
-[Source line 39](../../../extended/ext/json_tree.lani#L39)
+[Source line 40](../../../extended/ext/json_tree.lani#L40)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -461,7 +462,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: new_tree
 
-[Source line 393](../../../extended/ext/json_tree.lani#L393)
+[Source line 394](../../../extended/ext/json_tree.lani#L394)
 
 ```lanius
 pub fn new_tree(limits: Limits) -> Tree
@@ -469,7 +470,7 @@ pub fn new_tree(limits: Limits) -> Tree
 
 ### function: copy
 
-[Source line 395](../../../extended/ext/json_tree.lani#L395)
+[Source line 396](../../../extended/ext/json_tree.lani#L396)
 
 ```lanius
 pub fn copy(source: &Tree, limits: Limits) -> core::result::Result<Tree, Error>
@@ -477,7 +478,7 @@ pub fn copy(source: &Tree, limits: Limits) -> core::result::Result<Tree, Error>
 
 ### function: parse
 
-[Source line 408](../../../extended/ext/json_tree.lani#L408)
+[Source line 409](../../../extended/ext/json_tree.lani#L409)
 
 ```lanius
 pub fn parse(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<Tree, Error>
@@ -485,7 +486,7 @@ pub fn parse(source: [u8], start: i32, count: i32, limits: Limits) -> core::resu
 
 ### function: numbers_equal
 
-[Source line 464](../../../extended/ext/json_tree.lani#L464)
+[Source line 465](../../../extended/ext/json_tree.lani#L465)
 
 ```lanius
 pub fn numbers_equal(left: core::text::Text, right: core::text::Text) -> bool
@@ -493,7 +494,7 @@ pub fn numbers_equal(left: core::text::Text, right: core::text::Text) -> bool
 
 ### function: number_compare
 
-[Source line 477](../../../extended/ext/json_tree.lani#L477)
+[Source line 478](../../../extended/ext/json_tree.lani#L478)
 
 ```lanius
 pub fn number_compare(left: core::text::Text, right: core::text::Text) -> i32
@@ -501,7 +502,7 @@ pub fn number_compare(left: core::text::Text, right: core::text::Text) -> i32
 
 ### function: number_is_integer
 
-[Source line 502](../../../extended/ext/json_tree.lani#L502)
+[Source line 503](../../../extended/ext/json_tree.lani#L503)
 
 ```lanius
 pub fn number_is_integer(text: core::text::Text) -> bool
@@ -509,7 +510,7 @@ pub fn number_is_integer(text: core::text::Text) -> bool
 
 ### function: number_count
 
-[Source line 508](../../../extended/ext/json_tree.lani#L508)
+[Source line 509](../../../extended/ext/json_tree.lani#L509)
 
 ```lanius
 pub fn number_count(text: core::text::Text, limit: i64) -> i64
@@ -517,7 +518,7 @@ pub fn number_count(text: core::text::Text, limit: i64) -> i64
 
 ### function: number_digits
 
-[Source line 522](../../../extended/ext/json_tree.lani#L522)
+[Source line 523](../../../extended/ext/json_tree.lani#L523)
 
 ```lanius
 pub fn number_digits(text: core::text::Text) -> i32
@@ -525,7 +526,7 @@ pub fn number_digits(text: core::text::Text) -> i32
 
 ### function: number_is_multiple
 
-[Source line 529](../../../extended/ext/json_tree.lani#L529)
+[Source line 530](../../../extended/ext/json_tree.lani#L530)
 
 ```lanius
 pub fn number_is_multiple(value: core::text::Text, divisor: core::text::Text) -> bool
@@ -533,7 +534,7 @@ pub fn number_is_multiple(value: core::text::Text, divisor: core::text::Text) ->
 
 ### function: equal
 
-[Source line 582](../../../extended/ext/json_tree.lani#L582)
+[Source line 583](../../../extended/ext/json_tree.lani#L583)
 
 ```lanius
 pub fn equal(left: &Tree, a: i32, right: &Tree, b: i32) -> bool
@@ -541,9 +542,9 @@ pub fn equal(left: &Tree, a: i32, right: &Tree, b: i32) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 99
+### impl at line 100
 
-[Source line 99](../../../extended/ext/json_tree.lani#L99)
+[Source line 100](../../../extended/ext/json_tree.lani#L100)
 
 ```lanius
 pub impl Tree
@@ -551,7 +552,7 @@ pub impl Tree
 
 #### method: borrow
 
-[Source line 100](../../../extended/ext/json_tree.lani#L100)
+[Source line 101](../../../extended/ext/json_tree.lani#L101)
 
 ```lanius
 pub fn borrow(&self) -> &Tree
@@ -559,7 +560,7 @@ pub fn borrow(&self) -> &Tree
 
 #### method: root
 
-[Source line 101](../../../extended/ext/json_tree.lani#L101)
+[Source line 102](../../../extended/ext/json_tree.lani#L102)
 
 ```lanius
 pub fn root(&self) -> i32
@@ -567,7 +568,7 @@ pub fn root(&self) -> i32
 
 #### method: node_count
 
-[Source line 102](../../../extended/ext/json_tree.lani#L102)
+[Source line 103](../../../extended/ext/json_tree.lani#L103)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -575,7 +576,7 @@ pub fn node_count(&self) -> i32
 
 #### method: set_root
 
-[Source line 103](../../../extended/ext/json_tree.lani#L103)
+[Source line 104](../../../extended/ext/json_tree.lani#L104)
 
 ```lanius
 pub fn set_root(&self, node: i32)
@@ -583,7 +584,7 @@ pub fn set_root(&self, node: i32)
 
 #### method: fault
 
-[Source line 105](../../../extended/ext/json_tree.lani#L105)
+[Source line 106](../../../extended/ext/json_tree.lani#L106)
 
 ```lanius
 pub fn fault(&self) -> ErrorKind
@@ -591,7 +592,7 @@ pub fn fault(&self) -> ErrorKind
 
 #### method: code
 
-[Source line 108](../../../extended/ext/json_tree.lani#L108)
+[Source line 109](../../../extended/ext/json_tree.lani#L109)
 
 ```lanius
 pub fn code(&self, node: i32) -> i32
@@ -599,7 +600,7 @@ pub fn code(&self, node: i32) -> i32
 
 #### method: kind
 
-[Source line 109](../../../extended/ext/json_tree.lani#L109)
+[Source line 110](../../../extended/ext/json_tree.lani#L110)
 
 ```lanius
 pub fn kind(&self, node: i32) -> Kind
@@ -607,7 +608,7 @@ pub fn kind(&self, node: i32) -> Kind
 
 #### method: boolean
 
-[Source line 118](../../../extended/ext/json_tree.lani#L118)
+[Source line 119](../../../extended/ext/json_tree.lani#L119)
 
 ```lanius
 pub fn boolean(&self, node: i32) -> bool
@@ -615,7 +616,7 @@ pub fn boolean(&self, node: i32) -> bool
 
 #### method: parent
 
-[Source line 119](../../../extended/ext/json_tree.lani#L119)
+[Source line 120](../../../extended/ext/json_tree.lani#L120)
 
 ```lanius
 pub fn parent(&self, node: i32) -> i32
@@ -623,7 +624,7 @@ pub fn parent(&self, node: i32) -> i32
 
 #### method: first_child
 
-[Source line 120](../../../extended/ext/json_tree.lani#L120)
+[Source line 121](../../../extended/ext/json_tree.lani#L121)
 
 ```lanius
 pub fn first_child(&self, node: i32) -> i32
@@ -631,7 +632,7 @@ pub fn first_child(&self, node: i32) -> i32
 
 #### method: next_sibling
 
-[Source line 121](../../../extended/ext/json_tree.lani#L121)
+[Source line 122](../../../extended/ext/json_tree.lani#L122)
 
 ```lanius
 pub fn next_sibling(&self, node: i32) -> i32
@@ -639,7 +640,7 @@ pub fn next_sibling(&self, node: i32) -> i32
 
 #### method: child_count
 
-[Source line 122](../../../extended/ext/json_tree.lani#L122)
+[Source line 123](../../../extended/ext/json_tree.lani#L123)
 
 ```lanius
 pub fn child_count(&self, node: i32) -> i32
@@ -647,7 +648,7 @@ pub fn child_count(&self, node: i32) -> i32
 
 #### method: text
 
-[Source line 124](../../../extended/ext/json_tree.lani#L124)
+[Source line 125](../../../extended/ext/json_tree.lani#L125)
 
 ```lanius
 pub fn text(&self, node: i32) -> core::text::Text
@@ -655,7 +656,7 @@ pub fn text(&self, node: i32) -> core::text::Text
 
 #### method: key
 
-[Source line 127](../../../extended/ext/json_tree.lani#L127)
+[Source line 128](../../../extended/ext/json_tree.lani#L128)
 
 ```lanius
 pub fn key(&self, node: i32) -> core::text::Text
@@ -663,7 +664,7 @@ pub fn key(&self, node: i32) -> core::text::Text
 
 #### method: child
 
-[Source line 131](../../../extended/ext/json_tree.lani#L131)
+[Source line 132](../../../extended/ext/json_tree.lani#L132)
 
 ```lanius
 pub fn child(&self, node: i32, index: i32) -> i32
@@ -671,7 +672,7 @@ pub fn child(&self, node: i32, index: i32) -> i32
 
 #### method: member
 
-[Source line 138](../../../extended/ext/json_tree.lani#L138)
+[Source line 139](../../../extended/ext/json_tree.lani#L139)
 
 ```lanius
 pub fn member(&self, node: i32, key: core::text::Text) -> i32
@@ -679,7 +680,7 @@ pub fn member(&self, node: i32, key: core::text::Text) -> i32
 
 #### method: new_node
 
-[Source line 177](../../../extended/ext/json_tree.lani#L177)
+[Source line 178](../../../extended/ext/json_tree.lani#L178)
 
 ```lanius
 pub fn new_node(&self, code: i32) -> i32
@@ -687,7 +688,7 @@ pub fn new_node(&self, code: i32) -> i32
 
 #### method: new_text
 
-[Source line 208](../../../extended/ext/json_tree.lani#L208)
+[Source line 209](../../../extended/ext/json_tree.lani#L209)
 
 ```lanius
 pub fn new_text(&self, code: i32, text: core::text::Text) -> i32
@@ -695,7 +696,7 @@ pub fn new_text(&self, code: i32, text: core::text::Text) -> i32
 
 #### method: set_key
 
-[Source line 217](../../../extended/ext/json_tree.lani#L217)
+[Source line 218](../../../extended/ext/json_tree.lani#L218)
 
 ```lanius
 pub fn set_key(&self, node: i32, key: core::text::Text) -> bool
@@ -703,7 +704,7 @@ pub fn set_key(&self, node: i32, key: core::text::Text) -> bool
 
 #### method: insert
 
-[Source line 265](../../../extended/ext/json_tree.lani#L265)
+[Source line 266](../../../extended/ext/json_tree.lani#L266)
 
 ```lanius
 pub fn insert(&self, parent: i32, node: i32, before: i32)
@@ -711,7 +712,7 @@ pub fn insert(&self, parent: i32, node: i32, before: i32)
 
 #### method: detach
 
-[Source line 280](../../../extended/ext/json_tree.lani#L280)
+[Source line 281](../../../extended/ext/json_tree.lani#L281)
 
 ```lanius
 pub fn detach(&self, node: i32)
@@ -719,7 +720,7 @@ pub fn detach(&self, node: i32)
 
 #### method: replace
 
-[Source line 296](../../../extended/ext/json_tree.lani#L296)
+[Source line 297](../../../extended/ext/json_tree.lani#L297)
 
 ```lanius
 pub fn replace(&self, old: i32, node: i32)
@@ -727,7 +728,7 @@ pub fn replace(&self, old: i32, node: i32)
 
 #### method: copy_node
 
-[Source line 305](../../../extended/ext/json_tree.lani#L305)
+[Source line 306](../../../extended/ext/json_tree.lani#L306)
 
 ```lanius
 pub fn copy_node(&self, source: &Tree, node: i32) -> i32
@@ -735,7 +736,7 @@ pub fn copy_node(&self, source: &Tree, node: i32) -> i32
 
 #### method: write
 
-[Source line 333](../../../extended/ext/json_tree.lani#L333)
+[Source line 334](../../../extended/ext/json_tree.lani#L334)
 
 ```lanius
 pub fn write(&self, node: i32, writer: &ext::json_stream::Writer) -> core::result::Result<i32, ext::json_stream::Error>
@@ -743,7 +744,7 @@ pub fn write(&self, node: i32, writer: &ext::json_stream::Writer) -> core::resul
 
 #### method: destroy
 
-[Source line 366](../../../extended/ext/json_tree.lani#L366)
+[Source line 367](../../../extended/ext/json_tree.lani#L367)
 
 ```lanius
 pub fn destroy(&self)

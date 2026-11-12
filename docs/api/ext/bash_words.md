@@ -21,10 +21,12 @@ Declaration counts: enum: 3; field: 3; function: 2; struct: 1; variant: 13.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/bash_words.lani#L5)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/bash_words.lani#L6)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/bash_words.lani#L7)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/bash_words.lani#L8)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/bash_words.lani#L5)
+- [core::parse_state](../core/parse_state.md) · [source](../../../extended/ext/bash_words.lani#L6)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/bash_words.lani#L7)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/bash_words.lani#L8)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/bash_words.lani#L9)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/bash_words.lani#L10)
 
 ## Types, fields and variants
 
@@ -32,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Mode
 
-[Source line 10](../../../extended/ext/bash_words.lani#L10)
+[Source line 12](../../../extended/ext/bash_words.lani#L12)
 
 ```lanius
 pub enum Mode
@@ -40,7 +42,7 @@ pub enum Mode
 
 #### variant: Complete
 
-[Source line 10](../../../extended/ext/bash_words.lani#L10)
+[Source line 12](../../../extended/ext/bash_words.lani#L12)
 
 ```lanius
 Complete
@@ -48,7 +50,7 @@ Complete
 
 #### variant: Prefix
 
-[Source line 10](../../../extended/ext/bash_words.lani#L10)
+[Source line 12](../../../extended/ext/bash_words.lani#L12)
 
 ```lanius
 Prefix
@@ -56,7 +58,7 @@ Prefix
 
 ### enum: Quote
 
-[Source line 11](../../../extended/ext/bash_words.lani#L11)
+[Source line 13](../../../extended/ext/bash_words.lani#L13)
 
 ```lanius
 pub enum Quote
@@ -64,7 +66,7 @@ pub enum Quote
 
 #### variant: Unquoted
 
-[Source line 11](../../../extended/ext/bash_words.lani#L11)
+[Source line 13](../../../extended/ext/bash_words.lani#L13)
 
 ```lanius
 Unquoted
@@ -72,7 +74,7 @@ Unquoted
 
 #### variant: Single
 
-[Source line 11](../../../extended/ext/bash_words.lani#L11)
+[Source line 13](../../../extended/ext/bash_words.lani#L13)
 
 ```lanius
 Single
@@ -80,7 +82,7 @@ Single
 
 #### variant: Double
 
-[Source line 11](../../../extended/ext/bash_words.lani#L11)
+[Source line 13](../../../extended/ext/bash_words.lani#L13)
 
 ```lanius
 Double
@@ -88,7 +90,7 @@ Double
 
 ### struct: Shape
 
-[Source line 12](../../../extended/ext/bash_words.lani#L12)
+[Source line 14](../../../extended/ext/bash_words.lani#L14)
 
 ```lanius
 pub struct Shape
@@ -96,7 +98,7 @@ pub struct Shape
 
 #### field: bytes
 
-[Source line 12](../../../extended/ext/bash_words.lani#L12)
+[Source line 14](../../../extended/ext/bash_words.lani#L14)
 
 ```lanius
 bytes:i32
@@ -104,7 +106,7 @@ bytes:i32
 
 #### field: quote
 
-[Source line 12](../../../extended/ext/bash_words.lani#L12)
+[Source line 14](../../../extended/ext/bash_words.lani#L14)
 
 ```lanius
 quote:Quote
@@ -112,7 +114,7 @@ quote:Quote
 
 #### field: incomplete_escape
 
-[Source line 12](../../../extended/ext/bash_words.lani#L12)
+[Source line 14](../../../extended/ext/bash_words.lani#L14)
 
 ```lanius
 incomplete_escape:bool
@@ -120,7 +122,7 @@ incomplete_escape:bool
 
 ### enum: Error
 
-[Source line 13](../../../extended/ext/bash_words.lani#L13)
+[Source line 15](../../../extended/ext/bash_words.lani#L15)
 
 ```lanius
 pub enum Error
@@ -128,7 +130,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 14](../../../extended/ext/bash_words.lani#L14)
+[Source line 16](../../../extended/ext/bash_words.lani#L16)
 
 ```lanius
 Bounds
@@ -136,7 +138,7 @@ Bounds
 
 #### variant: Nul
 
-[Source line 14](../../../extended/ext/bash_words.lani#L14)
+[Source line 16](../../../extended/ext/bash_words.lani#L16)
 
 ```lanius
 Nul(i32)
@@ -144,7 +146,7 @@ Nul(i32)
 
 #### variant: Expansion
 
-[Source line 14](../../../extended/ext/bash_words.lani#L14)
+[Source line 16](../../../extended/ext/bash_words.lani#L16)
 
 ```lanius
 Expansion(i32)
@@ -152,7 +154,7 @@ Expansion(i32)
 
 #### variant: Operator
 
-[Source line 14](../../../extended/ext/bash_words.lani#L14)
+[Source line 16](../../../extended/ext/bash_words.lani#L16)
 
 ```lanius
 Operator(i32)
@@ -160,7 +162,7 @@ Operator(i32)
 
 #### variant: Whitespace
 
-[Source line 14](../../../extended/ext/bash_words.lani#L14)
+[Source line 16](../../../extended/ext/bash_words.lani#L16)
 
 ```lanius
 Whitespace(i32)
@@ -168,7 +170,7 @@ Whitespace(i32)
 
 #### variant: UnclosedQuote
 
-[Source line 15](../../../extended/ext/bash_words.lani#L15)
+[Source line 17](../../../extended/ext/bash_words.lani#L17)
 
 ```lanius
 UnclosedQuote(i32)
@@ -176,7 +178,7 @@ UnclosedQuote(i32)
 
 #### variant: TrailingEscape
 
-[Source line 15](../../../extended/ext/bash_words.lani#L15)
+[Source line 17](../../../extended/ext/bash_words.lani#L17)
 
 ```lanius
 TrailingEscape(i32)
@@ -184,7 +186,7 @@ TrailingEscape(i32)
 
 #### variant: OutputTooSmall
 
-[Source line 15](../../../extended/ext/bash_words.lani#L15)
+[Source line 17](../../../extended/ext/bash_words.lani#L17)
 
 ```lanius
 OutputTooSmall(i32)
@@ -194,7 +196,7 @@ OutputTooSmall(i32)
 
 ### function: measure
 
-[Source line 100](../../../extended/ext/bash_words.lani#L100)
+[Source line 102](../../../extended/ext/bash_words.lani#L102)
 
 ```lanius
 pub fn measure(word:View<u8>,mode:Mode) -> Result<Shape,Error>
@@ -202,7 +204,7 @@ pub fn measure(word:View<u8>,mode:Mode) -> Result<Shape,Error>
 
 ### function: decode_into
 
-[Source line 106](../../../extended/ext/bash_words.lani#L106)
+[Source line 108](../../../extended/ext/bash_words.lani#L108)
 
 ```lanius
 pub fn decode_into(word:View<u8>,mode:Mode,output:View<u8>) -> Result<Shape,Error>

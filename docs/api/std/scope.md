@@ -21,10 +21,11 @@ Declaration counts: enum: 1; field: 24; function: 9; impl: 4; method: 14; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/scope.lani#L15)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/scope.lani#L16)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/scope.lani#L17)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/scope.lani#L18)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../stdlib/std/scope.lani#L15)
+- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/scope.lani#L16)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/scope.lani#L17)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/scope.lani#L18)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/scope.lani#L19)
 
 ## Types, fields and variants
 
@@ -32,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 pub enum Error
@@ -40,7 +41,7 @@ pub enum Error
 
 #### variant: InvalidCapacity
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 InvalidCapacity
@@ -48,7 +49,7 @@ InvalidCapacity
 
 #### variant: AllocationFailed
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 AllocationFailed
@@ -56,7 +57,7 @@ AllocationFailed
 
 #### variant: Exhausted
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 Exhausted
@@ -64,7 +65,7 @@ Exhausted
 
 #### variant: InvalidMark
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 InvalidMark
@@ -72,7 +73,7 @@ InvalidMark
 
 #### variant: NotOnTop
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 NotOnTop
@@ -80,7 +81,7 @@ NotOnTop
 
 #### variant: Destroyed
 
-[Source line 20](../../../stdlib/std/scope.lani#L20)
+[Source line 21](../../../stdlib/std/scope.lani#L21)
 
 ```lanius
 Destroyed
@@ -88,7 +89,7 @@ Destroyed
 
 ### struct: Mark
 
-[Source line 22](../../../stdlib/std/scope.lani#L22)
+[Source line 23](../../../stdlib/std/scope.lani#L23)
 
 ```lanius
 pub struct Mark
@@ -96,7 +97,7 @@ pub struct Mark
 
 #### field: low
 
-[Source line 22](../../../stdlib/std/scope.lani#L22)
+[Source line 23](../../../stdlib/std/scope.lani#L23)
 
 ```lanius
 low: usize
@@ -104,7 +105,7 @@ low: usize
 
 #### field: high
 
-[Source line 22](../../../stdlib/std/scope.lani#L22)
+[Source line 23](../../../stdlib/std/scope.lani#L23)
 
 ```lanius
 high: usize
@@ -112,7 +113,7 @@ high: usize
 
 ### struct: Stats
 
-[Source line 23](../../../stdlib/std/scope.lani#L23)
+[Source line 24](../../../stdlib/std/scope.lani#L24)
 
 ```lanius
 pub struct Stats
@@ -120,7 +121,7 @@ pub struct Stats
 
 #### field: capacity
 
-[Source line 23](../../../stdlib/std/scope.lani#L23)
+[Source line 24](../../../stdlib/std/scope.lani#L24)
 
 ```lanius
 capacity: usize
@@ -128,7 +129,7 @@ capacity: usize
 
 #### field: used
 
-[Source line 23](../../../stdlib/std/scope.lani#L23)
+[Source line 24](../../../stdlib/std/scope.lani#L24)
 
 ```lanius
 used: usize
@@ -136,7 +137,7 @@ used: usize
 
 #### field: peak
 
-[Source line 23](../../../stdlib/std/scope.lani#L23)
+[Source line 24](../../../stdlib/std/scope.lani#L24)
 
 ```lanius
 peak: usize
@@ -144,7 +145,7 @@ peak: usize
 
 ### struct: Stack
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 pub struct Stack
@@ -152,7 +153,7 @@ pub struct Stack
 
 #### field: base
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 base: ptr
@@ -160,7 +161,7 @@ base: ptr
 
 #### field: capacity
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 capacity: usize
@@ -168,7 +169,7 @@ capacity: usize
 
 #### field: low
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 low: usize
@@ -176,7 +177,7 @@ low: usize
 
 #### field: high
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 high: usize
@@ -184,23 +185,23 @@ high: usize
 
 #### field: peak
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
 peak: usize
 ```
 
-#### field: live
+#### field: lifetime
 
-[Source line 24](../../../stdlib/std/scope.lani#L24)
+[Source line 25](../../../stdlib/std/scope.lani#L25)
 
 ```lanius
-live: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### type alias: Scratch
 
-[Source line 28](../../../stdlib/std/scope.lani#L28)
+[Source line 29](../../../stdlib/std/scope.lani#L29)
 
 ```lanius
 pub type Scratch = Stack;
@@ -208,7 +209,7 @@ pub type Scratch = Stack;
 
 ### struct: Grow
 
-[Source line 31](../../../stdlib/std/scope.lani#L31)
+[Source line 32](../../../stdlib/std/scope.lani#L32)
 
 ```lanius
 pub struct Grow<T>
@@ -216,7 +217,7 @@ pub struct Grow<T>
 
 #### field: start
 
-[Source line 31](../../../stdlib/std/scope.lani#L31)
+[Source line 32](../../../stdlib/std/scope.lani#L32)
 
 ```lanius
 start: usize
@@ -224,7 +225,7 @@ start: usize
 
 #### field: length
 
-[Source line 31](../../../stdlib/std/scope.lani#L31)
+[Source line 32](../../../stdlib/std/scope.lani#L32)
 
 ```lanius
 length: i32
@@ -232,7 +233,7 @@ length: i32
 
 #### field: high
 
-[Source line 31](../../../stdlib/std/scope.lani#L31)
+[Source line 32](../../../stdlib/std/scope.lani#L32)
 
 ```lanius
 high: bool
@@ -240,7 +241,7 @@ high: bool
 
 #### field: size
 
-[Source line 31](../../../stdlib/std/scope.lani#L31)
+[Source line 32](../../../stdlib/std/scope.lani#L32)
 
 ```lanius
 size: usize
@@ -248,7 +249,7 @@ size: usize
 
 ### struct: Soa2
 
-[Source line 33](../../../stdlib/std/scope.lani#L33)
+[Source line 34](../../../stdlib/std/scope.lani#L34)
 
 ```lanius
 pub struct Soa2<A, B>
@@ -256,7 +257,7 @@ pub struct Soa2<A, B>
 
 #### field: first
 
-[Source line 33](../../../stdlib/std/scope.lani#L33)
+[Source line 34](../../../stdlib/std/scope.lani#L34)
 
 ```lanius
 first: [A]
@@ -264,7 +265,7 @@ first: [A]
 
 #### field: second
 
-[Source line 33](../../../stdlib/std/scope.lani#L33)
+[Source line 34](../../../stdlib/std/scope.lani#L34)
 
 ```lanius
 second: [B]
@@ -272,7 +273,7 @@ second: [B]
 
 #### field: length
 
-[Source line 33](../../../stdlib/std/scope.lani#L33)
+[Source line 34](../../../stdlib/std/scope.lani#L34)
 
 ```lanius
 length: i32
@@ -280,7 +281,7 @@ length: i32
 
 #### field: capacity
 
-[Source line 33](../../../stdlib/std/scope.lani#L33)
+[Source line 34](../../../stdlib/std/scope.lani#L34)
 
 ```lanius
 capacity: i32
@@ -288,7 +289,7 @@ capacity: i32
 
 ### struct: Soa3
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 pub struct Soa3<A, B, C>
@@ -296,7 +297,7 @@ pub struct Soa3<A, B, C>
 
 #### field: first
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 first: [A]
@@ -304,7 +305,7 @@ first: [A]
 
 #### field: second
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 second: [B]
@@ -312,7 +313,7 @@ second: [B]
 
 #### field: third
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 third: [C]
@@ -320,7 +321,7 @@ third: [C]
 
 #### field: length
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 length: i32
@@ -328,7 +329,7 @@ length: i32
 
 #### field: capacity
 
-[Source line 34](../../../stdlib/std/scope.lani#L34)
+[Source line 35](../../../stdlib/std/scope.lani#L35)
 
 ```lanius
 capacity: i32
@@ -338,7 +339,7 @@ capacity: i32
 
 ### function: new
 
-[Source line 39](../../../stdlib/std/scope.lani#L39)
+[Source line 40](../../../stdlib/std/scope.lani#L40)
 
 ```lanius
 pub fn new(capacity: usize) -> core::result::Result<Stack, Error>
@@ -346,7 +347,7 @@ pub fn new(capacity: usize) -> core::result::Result<Stack, Error>
 
 ### function: alloc_slice
 
-[Source line 89](../../../stdlib/std/scope.lani#L89)
+[Source line 90](../../../stdlib/std/scope.lani#L90)
 
 ```lanius
 pub fn alloc_slice<T>(stack: &Stack, count: i32, fill: T) -> core::result::Result<core::slice::View<T>, Error>
@@ -354,7 +355,7 @@ pub fn alloc_slice<T>(stack: &Stack, count: i32, fill: T) -> core::result::Resul
 
 ### function: copy_slice
 
-[Source line 100](../../../stdlib/std/scope.lani#L100)
+[Source line 101](../../../stdlib/std/scope.lani#L101)
 
 ```lanius
 pub fn copy_slice<T>(stack: &Stack, input: core::slice::View<T>) -> core::result::Result<core::slice::View<T>, Error>
@@ -362,7 +363,7 @@ pub fn copy_slice<T>(stack: &Stack, input: core::slice::View<T>) -> core::result
 
 ### function: place
 
-[Source line 112](../../../stdlib/std/scope.lani#L112)
+[Source line 113](../../../stdlib/std/scope.lani#L113)
 
 ```lanius
 pub fn place<T>(stack: &Stack, value: T) -> core::result::Result<ptr, Error>
@@ -370,7 +371,7 @@ pub fn place<T>(stack: &Stack, value: T) -> core::result::Result<ptr, Error>
 
 ### function: grow
 
-[Source line 122](../../../stdlib/std/scope.lani#L122)
+[Source line 123](../../../stdlib/std/scope.lani#L123)
 
 ```lanius
 pub fn grow<T>(stack: &Stack) -> Grow<T>
@@ -378,7 +379,7 @@ pub fn grow<T>(stack: &Stack) -> Grow<T>
 
 ### function: push
 
-[Source line 142](../../../stdlib/std/scope.lani#L142)
+[Source line 143](../../../stdlib/std/scope.lani#L143)
 
 ```lanius
 pub fn push<T>(stack: &Stack, values: &Grow<T>, item: T) -> core::result::Result<i32, Error>
@@ -386,7 +387,7 @@ pub fn push<T>(stack: &Stack, values: &Grow<T>, item: T) -> core::result::Result
 
 ### function: view
 
-[Source line 161](../../../stdlib/std/scope.lani#L161)
+[Source line 162](../../../stdlib/std/scope.lani#L162)
 
 ```lanius
 pub fn view<T>(stack: &Stack, values: Grow<T>) -> core::slice::View<T>
@@ -394,7 +395,7 @@ pub fn view<T>(stack: &Stack, values: Grow<T>) -> core::slice::View<T>
 
 ### function: soa2
 
-[Source line 166](../../../stdlib/std/scope.lani#L166)
+[Source line 167](../../../stdlib/std/scope.lani#L167)
 
 ```lanius
 pub fn soa2<A, B>(stack: &Stack, capacity: i32) -> core::result::Result<Soa2<A, B>, Error>
@@ -402,7 +403,7 @@ pub fn soa2<A, B>(stack: &Stack, capacity: i32) -> core::result::Result<Soa2<A, 
 
 ### function: soa3
 
-[Source line 184](../../../stdlib/std/scope.lani#L184)
+[Source line 185](../../../stdlib/std/scope.lani#L185)
 
 ```lanius
 pub fn soa3<A, B, C>(stack: &Stack, capacity: i32) -> core::result::Result<Soa3<A, B, C>, Error>
@@ -410,9 +411,9 @@ pub fn soa3<A, B, C>(stack: &Stack, capacity: i32) -> core::result::Result<Soa3<
 
 ## Implementation blocks and public methods
 
-### impl at line 54
+### impl at line 55
 
-[Source line 54](../../../stdlib/std/scope.lani#L54)
+[Source line 55](../../../stdlib/std/scope.lani#L55)
 
 ```lanius
 pub impl Stack
@@ -420,7 +421,7 @@ pub impl Stack
 
 #### method: borrow
 
-[Source line 55](../../../stdlib/std/scope.lani#L55)
+[Source line 56](../../../stdlib/std/scope.lani#L56)
 
 ```lanius
 pub fn borrow(&self) -> &Stack
@@ -428,7 +429,7 @@ pub fn borrow(&self) -> &Stack
 
 #### method: is_live
 
-[Source line 56](../../../stdlib/std/scope.lani#L56)
+[Source line 57](../../../stdlib/std/scope.lani#L57)
 
 ```lanius
 pub fn is_live(&self) -> bool
@@ -436,7 +437,7 @@ pub fn is_live(&self) -> bool
 
 #### method: mark
 
-[Source line 57](../../../stdlib/std/scope.lani#L57)
+[Source line 58](../../../stdlib/std/scope.lani#L58)
 
 ```lanius
 pub fn mark(&self) -> Mark
@@ -444,7 +445,7 @@ pub fn mark(&self) -> Mark
 
 #### method: used
 
-[Source line 58](../../../stdlib/std/scope.lani#L58)
+[Source line 59](../../../stdlib/std/scope.lani#L59)
 
 ```lanius
 pub fn used(&self) -> usize
@@ -452,7 +453,7 @@ pub fn used(&self) -> usize
 
 #### method: stats
 
-[Source line 59](../../../stdlib/std/scope.lani#L59)
+[Source line 60](../../../stdlib/std/scope.lani#L60)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -460,7 +461,7 @@ pub fn stats(&self) -> Stats
 
 #### method: release
 
-[Source line 62](../../../stdlib/std/scope.lani#L62)
+[Source line 63](../../../stdlib/std/scope.lani#L63)
 
 ```lanius
 pub fn release(&self, mark: Mark) -> core::result::Result<bool, Error>
@@ -468,7 +469,7 @@ pub fn release(&self, mark: Mark) -> core::result::Result<bool, Error>
 
 #### method: reset
 
-[Source line 69](../../../stdlib/std/scope.lani#L69)
+[Source line 70](../../../stdlib/std/scope.lani#L70)
 
 ```lanius
 pub fn reset(&self)
@@ -476,15 +477,15 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 70](../../../stdlib/std/scope.lani#L70)
+[Source line 71](../../../stdlib/std/scope.lani#L71)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 130
+### impl at line 131
 
-[Source line 130](../../../stdlib/std/scope.lani#L130)
+[Source line 131](../../../stdlib/std/scope.lani#L131)
 
 ```lanius
 pub impl<T> Grow<T>
@@ -492,7 +493,7 @@ pub impl<T> Grow<T>
 
 #### method: borrow
 
-[Source line 131](../../../stdlib/std/scope.lani#L131)
+[Source line 132](../../../stdlib/std/scope.lani#L132)
 
 ```lanius
 pub fn borrow(&self) -> &Grow<T>
@@ -500,15 +501,15 @@ pub fn borrow(&self) -> &Grow<T>
 
 #### method: len
 
-[Source line 132](../../../stdlib/std/scope.lani#L132)
+[Source line 133](../../../stdlib/std/scope.lani#L133)
 
 ```lanius
 pub fn len(&self) -> i32
 ```
 
-### impl at line 176
+### impl at line 177
 
-[Source line 176](../../../stdlib/std/scope.lani#L176)
+[Source line 177](../../../stdlib/std/scope.lani#L177)
 
 ```lanius
 pub impl<A, B> Soa2<A, B>
@@ -516,7 +517,7 @@ pub impl<A, B> Soa2<A, B>
 
 #### method: len
 
-[Source line 177](../../../stdlib/std/scope.lani#L177)
+[Source line 178](../../../stdlib/std/scope.lani#L178)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -524,15 +525,15 @@ pub fn len(&self) -> i32
 
 #### method: push
 
-[Source line 178](../../../stdlib/std/scope.lani#L178)
+[Source line 179](../../../stdlib/std/scope.lani#L179)
 
 ```lanius
 pub fn push(&self, a: A, b: B) -> bool
 ```
 
-### impl at line 194
+### impl at line 195
 
-[Source line 194](../../../stdlib/std/scope.lani#L194)
+[Source line 195](../../../stdlib/std/scope.lani#L195)
 
 ```lanius
 pub impl<A, B, C> Soa3<A, B, C>
@@ -540,7 +541,7 @@ pub impl<A, B, C> Soa3<A, B, C>
 
 #### method: len
 
-[Source line 195](../../../stdlib/std/scope.lani#L195)
+[Source line 196](../../../stdlib/std/scope.lani#L196)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -548,7 +549,7 @@ pub fn len(&self) -> i32
 
 #### method: push
 
-[Source line 196](../../../stdlib/std/scope.lani#L196)
+[Source line 197](../../../stdlib/std/scope.lani#L197)
 
 ```lanius
 pub fn push(&self, a: A, b: B, c: C) -> bool

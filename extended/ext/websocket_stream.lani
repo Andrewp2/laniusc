@@ -1,12 +1,28 @@
 // Borrowed, bounded transport adapter for the portable WebSocket wire engine.
 // The caller owns the inner transport and supplies every client masking key.
 module ext::websocket_stream;
+import core::lifecycle;
 import alloc::vec;
 import core::io;
 import core::option;
 import core::result;
 import core::slice;
 import ext::websocket;
+
+pub enum WriteEvent { Queued(bool), Flushed, Discarded }
+pub machine WritePhase on WriteEvent {
+    start Idle;
+    state Idle { WriteEvent::Queued(close) -> { if (close) { goto ClosePending; } goto Pending; }, WriteEvent::Flushed -> stay, WriteEvent::Discarded -> stay, }
+    state Pending { WriteEvent::Queued(_) -> stay, WriteEvent::Flushed -> goto Idle, WriteEvent::Discarded -> goto Idle, }
+    state ClosePending { WriteEvent::Queued(_) -> stay, WriteEvent::Flushed -> goto CloseSent, WriteEvent::Discarded -> goto Idle, }
+    state CloseSent { WriteEvent::Queued(_) -> goto AfterClosePending, WriteEvent::Flushed -> stay, WriteEvent::Discarded -> stay, }
+    state AfterClosePending { WriteEvent::Queued(_) -> stay, WriteEvent::Flushed -> goto CloseSent, WriteEvent::Discarded -> goto CloseSent, }
+}
+pub impl WritePhase {
+    pub fn pending(&self) -> bool { return match (self.state()) { WritePhaseState::Pending -> true, WritePhaseState::ClosePending -> true, WritePhaseState::AfterClosePending -> true, _ -> false }; }
+    pub fn close_sent(&self) -> bool { return match (self.state()) { WritePhaseState::CloseSent -> true, WritePhaseState::AfterClosePending -> true, _ -> false }; }
+}
+
 
 pub struct Limits {
     wire: ext::websocket::Limits,
@@ -40,10 +56,8 @@ pub struct Stream<T> {
     input_start: i32,
     output: alloc::vec::Vec<u8>,
     output_start: i32,
-    flush_pending: bool,
-    queued_close: bool,
-    flushed_close: bool,
-    active: bool,
+    write_phase: WritePhase,
+    lifetime: core::lifecycle::Lifetime,
     fault: core::option::Option<Failure>
 }
 
@@ -99,8 +113,7 @@ pub fn new<T>(inner: &T, role: ext::websocket::Role,
     return core::result::Ok(Stream {
         inner: inner, wire: wire, role: role, limits: limits,
         progress: empty_stats(), input: input, input_start: 0,
-        output: alloc::vec::new(), output_start: 0, flush_pending: false,
-        queued_close: false, flushed_close: false, active: true,
+        output: alloc::vec::new(), output_start: 0, write_phase: write_phase_start(), lifetime: core::lifecycle::lifetime_start(),
         fault: core::option::None()
     });
 }
@@ -108,14 +121,14 @@ pub fn new<T>(inner: &T, role: ext::websocket::Role,
 pub impl<T> Stream<T> {
     pub fn borrow(&self) -> &Stream<T> { return self; }
     pub fn stats(&self) -> Stats { return self.progress; }
-    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_active(&self) -> bool { return self.lifetime.is_active(); }
     pub fn is_failed(&self) -> bool {
-        return self.fault.is_some() || (self.active && self.wire.is_failed());
+        return self.fault.is_some() || (self.lifetime.is_active() && self.wire.is_failed());
     }
     pub fn close_received(&self) -> bool { return self.wire.close_received(); }
     // Encoding alone does not establish that a local Close left this layer.
-    pub fn close_sent(&self) -> bool { return self.flushed_close; }
-    pub fn is_closed(&self) -> bool { return self.wire.close_received() && self.flushed_close; }
+    pub fn close_sent(&self) -> bool { return self.write_phase.close_sent(); }
+    pub fn is_closed(&self) -> bool { return self.wire.close_received() && self.write_phase.close_sent(); }
     pub fn pending(&self) -> core::slice::View<u8> {
         return core::slice::View { values: self.output.as_slice(),
             start: self.output_start, length: self.output.len()-self.output_start };
@@ -129,7 +142,7 @@ pub impl<T> Stream<T> {
         return failed;
     }
     fn check(&self) -> core::result::Result<bool,Failure> {
-        if (!self.active) { return core::result::Err(self.failure(Cause::Inactive,0)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(self.failure(Cause::Inactive,0)); }
         if (self.fault.is_some()) { return core::result::Err(self.fault.unwrap()); }
         return core::result::Ok(true);
     }
@@ -229,7 +242,7 @@ pub impl<T> Stream<T> {
     pub fn send(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, mask: [u8;4])
         -> core::result::Result<i32,Failure> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        if (self.flush_pending) { return core::result::Err(self.failure(Cause::PendingWrite,0)); }
+        if (self.write_phase.pending()) { return core::result::Err(self.failure(Cause::PendingWrite,0)); }
         if (!valid(payload)) { return core::result::Err(self.failure(Cause::Bounds,0)); }
         let header: i32 = 2;
         if (payload.len() >= 126) { header = 4; }
@@ -243,7 +256,7 @@ pub impl<T> Stream<T> {
         let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = self.wire.send(fin,opcode,payload,mask);
         if (encoded.is_err()) { return core::result::Err(self.failure(Cause::Wire(encoded.unwrap_err()),0)); }
         self.output = encoded.unwrap(); self.output_start = 0;
-        self.flush_pending = true; self.queued_close = opcode == 8;
+        self.write_phase.step(WriteEvent::Queued(opcode == 8));
         return core::result::Ok(length);
     }
 
@@ -251,7 +264,7 @@ pub impl<T> Stream<T> {
     // WouldBlock, retaining exactly the unaccepted suffix and flush phase.
     pub fn flush(&self) -> core::result::Result<bool,Failure> where T: core::io::Write {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        if (!self.flush_pending) { return core::result::Ok(true); }
+        if (!self.write_phase.pending()) { return core::result::Ok(true); }
         let inner: &T = self.inner;
         while (self.output_start < self.output.len()) {
             let charged = self.call(self.output_start); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
@@ -283,9 +296,9 @@ pub impl<T> Stream<T> {
                 return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),self.output_start));
             }
             self.progress.frames_sent += 1;
-            if (self.queued_close) { self.flushed_close = true; }
+
             self.output.destroy(); self.output_start = 0;
-            self.flush_pending = false; self.queued_close = false;
+            self.write_phase.step(WriteEvent::Flushed);
             return core::result::Ok(true);
         }
         return core::result::Ok(false);
@@ -293,10 +306,10 @@ pub impl<T> Stream<T> {
 
     // Memory only: discard unread input and unsent output, never flush/close.
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
+        if (!self.lifetime.is_active()) { return false; }
         self.input.destroy(); self.output.destroy(); self.wire.destroy();
         self.input_start = 0; self.output_start = 0;
-        self.flush_pending = false; self.queued_close = false; self.active = false;
+        self.write_phase.step(WriteEvent::Discarded); self.lifetime.release();
         return true;
     }
 }

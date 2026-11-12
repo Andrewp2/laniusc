@@ -2,6 +2,8 @@
 // All eight major types, exact float bits, definite/indefinite containers.
 // No allocation, recursive descent, implicit map deduplication or tag semantics.
 module ext::cbor;
+import core::parse_state;
+import core::iter_state;
 import core::mem;
 import core::option;
 import core::result;
@@ -16,8 +18,8 @@ pub enum Event {
 pub enum ErrorKind { Bounds, InputLimit, OutputLimit, ScratchTooSmall, DepthLimit, ItemLimit, StringLimit, WorkLimit, UnexpectedEnd, InvalidHead, InvalidSimple, InvalidUtf8, UnexpectedBreak, ChunkType, OddMap, TrailingData, InvalidEvent }
 pub struct Error { kind: ErrorKind, offset: i32 }
 pub struct Limits { max_input: i32, max_output: i32, max_depth: i32, max_items: u64, max_string_bytes: i32, max_work: u64 }
-pub struct Frame { kind: i32, remaining: u64, odd: bool, bytes: u64 }
-pub fn empty_frame() -> Frame { return Frame { kind: 0, remaining: 0, odd: false, bytes: 0 }; }
+pub struct Frame { kind: i32, remaining: u64, pair: core::parse_state::PairPhase, bytes: u64 }
+pub fn empty_frame() -> Frame { return Frame { kind: 0, remaining: 0, pair: core::parse_state::pair_phase_start(), bytes: 0 }; }
 pub fn default_limits() -> Limits {
     return Limits { max_input: 67108864, max_output: 67108864, max_depth: 128, max_items: 1000000, max_string_bytes: 16777216, max_work: 134217728 };
 }
@@ -42,25 +44,25 @@ fn info(event: Event) -> Info {
     return Info { kind: kind, argument: argument, data: data };
 }
 fn open(kind: i32) -> bool { return (kind >= 4 && kind <= 6) || (kind >= 11 && kind <= 14); }
-fn automatic(frame: Frame) -> bool { return (frame.kind == 4 || frame.kind == 5 || frame.kind == 6) && frame.remaining == 0 && !frame.odd; }
-struct Machine { frames: core::slice::View<Frame>, limits: Limits, depth: i32, root_done: bool, items: u64, work: u64 }
-fn machine(frames: core::slice::View<Frame>, limits: Limits) -> Machine { return Machine { frames: frames, limits: limits, depth: 0, root_done: false, items: 0, work: limits.max_work }; }
+fn automatic(frame: Frame) -> bool { return (frame.kind == 4 || frame.kind == 5 || frame.kind == 6) && frame.remaining == 0 && !frame.pair.needs_value(); }
+struct Machine { frames: core::slice::View<Frame>, limits: Limits, depth: i32, completion: core::iter_state::Completion, items: u64, work: u64 }
+fn machine(frames: core::slice::View<Frame>, limits: Limits) -> Machine { return Machine { frames: frames, limits: limits, depth: 0, completion: core::iter_state::completion_start(), items: 0, work: limits.max_work }; }
 impl Machine {
     fn borrow(&self) -> &Machine { return self; }
     fn top(&self) -> Frame { return self.frames.values[self.frames.start+self.depth-1]; }
     fn set_top(&self, frame: Frame) { self.frames.values[self.frames.start+self.depth-1] = frame; }
     fn complete(&self) {
-        if (self.depth == 0) { self.root_done = true; return; }
+        if (self.depth == 0) { self.completion.finish(); return; }
         let frame: Frame = self.top();
         if (frame.kind == 4 || frame.kind == 6) { frame.remaining -= 1; }
         if (frame.kind == 5 || frame.kind == 14) {
-            if (frame.odd) { frame.odd = false; if (frame.kind == 5) { frame.remaining -= 1; } }
-            else { frame.odd = true; }
+            if (frame.pair.needs_value()) { frame.pair.advance(); if (frame.kind == 5) { frame.remaining -= 1; } }
+            else { frame.pair.advance(); }
         }
         self.set_top(frame);
     }
     fn accept(&self, item: Info, at: i32) -> core::result::Result<i32,Error> {
-        if (self.root_done) { return core::result::Err(error(ErrorKind::TrailingData,at)); }
+        if (self.completion.is_done()) { return core::result::Err(error(ErrorKind::TrailingData,at)); }
         if (item.kind == 2 || item.kind == 3) {
             if (!valid(item.data)) { return core::result::Err(error(ErrorKind::Bounds,at)); }
             if (item.data.length > self.limits.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit,at)); }
@@ -70,7 +72,7 @@ impl Machine {
         if (item.kind == 15) {
             if (self.depth == 0) { return core::result::Err(error(ErrorKind::UnexpectedBreak,at)); }
             let frame: Frame = self.top();
-            if (frame.kind == 14 && frame.odd) { return core::result::Err(error(ErrorKind::OddMap,at)); }
+            if (frame.kind == 14 && frame.pair.needs_value()) { return core::result::Err(error(ErrorKind::OddMap,at)); }
             if (frame.kind < 11 && !automatic(frame)) { return core::result::Err(error(ErrorKind::UnexpectedBreak,at)); }
             self.depth -= 1; self.complete(); return core::result::Ok(0);
         }
@@ -89,7 +91,7 @@ impl Machine {
         if (item.kind == 3 && core::result::is_err(core::text::from_utf8_range(item.data.values,item.data.start,item.data.length))) { return core::result::Err(error(ErrorKind::InvalidUtf8,at)); }
         if (open(item.kind)) {
             if (self.depth == self.limits.max_depth) { return core::result::Err(error(ErrorKind::DepthLimit,at)); }
-            let frame: Frame = Frame { kind: item.kind, remaining: item.argument, odd: false, bytes: 0 }; if (item.kind == 6) { frame.remaining = 1; }
+            let frame: Frame = Frame { kind: item.kind, remaining: item.argument, pair: core::parse_state::pair_phase_start(), bytes: 0 }; if (item.kind == 6) { frame.remaining = 1; }
             self.frames.values[self.frames.start+self.depth] = frame; self.depth += 1;
         } else { self.complete(); }
         return core::result::Ok(0);
@@ -106,7 +108,7 @@ impl Reader {
             let accepted: core::result::Result<i32,Error> = self.state.accept(info(Event::End),at);
             if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); } return core::result::Ok(core::option::Some(Event::End));
         }
-        if (self.state.root_done) {
+        if (self.state.completion.is_done()) {
             if (at != self.input.length) { return core::result::Err(error(ErrorKind::TrailingData,at)); } return core::result::Ok(core::option::None());
         }
         if (at == self.input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
@@ -188,7 +190,7 @@ fn encoded_count(events: core::slice::View<Event>, frames: core::slice::View<Fra
         total += event_width(item,closing) as u64; if (item.kind == 2 || item.kind == 3) { total += item.argument; }
         if (total > limits.max_output as u64) { return core::result::Err(error(ErrorKind::OutputLimit,position)); } position += 1;
     }
-    if (!state.root_done) { return core::result::Err(error(ErrorKind::UnexpectedEnd,events.length)); } return core::result::Ok(total as i32);
+    if (!state.completion.is_done()) { return core::result::Err(error(ErrorKind::UnexpectedEnd,events.length)); } return core::result::Ok(total as i32);
 }
 pub fn encoded_len(events: core::slice::View<Event>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> { return encoded_count(events,frames,limits); }
 fn put_head(output: core::slice::View<u8>, at: i32, major: i32, argument: u64) -> i32 {

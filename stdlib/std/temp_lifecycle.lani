@@ -1,0 +1,98 @@
+// Named temporary-resource lifecycle shared by files and directories.
+// CleanupPending records whether cleanup still owns the generated name;
+// keeping a name irrevocably gives up removal authority until a new creation.
+module std::temp_lifecycle;
+
+pub enum Event { Prepare, Allocated, Acquired, Opened, Closed, Keep, Removed, Retained, Released }
+
+pub machine Lifecycle on Event {
+    start Inactive;
+
+    state Inactive {
+        Event::Prepare -> stay,
+        Event::Allocated -> goto CleanupPending(false),
+        Event::Acquired -> stay,
+        Event::Opened -> stay,
+        Event::Closed -> stay,
+        Event::Keep -> stay,
+        Event::Removed -> stay,
+        Event::Retained -> stay,
+        Event::Released -> goto Released,
+    }
+
+    state Open {
+        Event::Prepare -> stay,
+        Event::Allocated -> stay,
+        Event::Acquired -> stay,
+        Event::Opened -> stay,
+        Event::Closed -> goto ClosedNamed,
+        Event::Keep -> goto Kept,
+        Event::Removed -> goto CleanupPending(false),
+        Event::Retained -> goto CleanupPending(true),
+        Event::Released -> goto Released,
+    }
+
+    state ClosedNamed {
+        Event::Prepare -> stay,
+        Event::Allocated -> stay,
+        Event::Acquired -> stay,
+        Event::Opened -> stay,
+        Event::Closed -> stay,
+        Event::Keep -> goto Kept,
+        Event::Removed -> goto CleanupPending(false),
+        Event::Retained -> goto CleanupPending(true),
+        Event::Released -> goto Released,
+    }
+
+    state Kept {
+        Event::Prepare -> stay,
+        Event::Allocated -> stay,
+        Event::Acquired -> stay,
+        Event::Opened -> stay,
+        Event::Closed -> stay,
+        Event::Keep -> stay,
+        Event::Removed -> stay,
+        Event::Retained -> stay,
+        Event::Released -> goto Released,
+    }
+
+    state CleanupPending(named: bool) {
+        Event::Prepare -> stay,
+        Event::Allocated -> stay,
+        Event::Acquired -> goto CleanupPending(true),
+        Event::Opened -> goto Open,
+        Event::Closed -> { if (named) { goto ClosedNamed; } stay; },
+        Event::Keep -> { if (named) { goto Kept; } stay; },
+        Event::Removed -> goto CleanupPending(false),
+        Event::Retained -> stay,
+        Event::Released -> goto Released,
+    }
+
+    state Released {
+        Event::Prepare -> goto Inactive,
+        Event::Allocated -> stay,
+        Event::Acquired -> stay,
+        Event::Opened -> stay,
+        Event::Closed -> stay,
+        Event::Keep -> stay,
+        Event::Removed -> stay,
+        Event::Retained -> stay,
+        Event::Released -> stay,
+    }
+}
+
+pub impl Lifecycle {
+    pub fn owns_name(&self) -> bool {
+        return match (self.state()) {
+            LifecycleState::Open -> true,
+            LifecycleState::ClosedNamed -> true,
+            LifecycleState::CleanupPending(named) -> named,
+            LifecycleState::Inactive -> false,
+            LifecycleState::Kept -> false,
+            LifecycleState::Released -> false,
+        };
+    }
+    pub fn is_kept(&self) -> bool {
+        return match (self.state()) { LifecycleState::Kept -> true, _ -> false };
+    }
+}

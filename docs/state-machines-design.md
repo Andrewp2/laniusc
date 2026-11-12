@@ -439,6 +439,11 @@ grammar changes.
 
 ## M0 result
 
+The following is the historical M0 result. The
+[library migration](library-state-machines.md) has since replaced SQLite's
+manual transition function with a native `Statement` machine and regenerated
+its Lean extraction and four proofs.
+
 Done 2026-10-28, with no compiler change.
 
 **The statement machine.** `extended/ext/sqlite_statement.lani` is

@@ -18,10 +18,11 @@ Declaration counts: enum: 2; field: 70; function: 8; impl: 8; method: 15; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/dns.lani#L3)
-- [core::option](../core/option.md) · [source](../../../extended/ext/dns.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/dns.lani#L5)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/dns.lani#L6)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/dns.lani#L3)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/dns.lani#L4)
+- [core::option](../core/option.md) · [source](../../../extended/ext/dns.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/dns.lani#L6)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/dns.lani#L7)
 
 ## Types, fields and variants
 
@@ -29,7 +30,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 pub enum Error
@@ -37,7 +38,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Bounds
@@ -45,7 +46,7 @@ Bounds
 
 #### variant: Truncated
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Truncated(i32)
@@ -53,7 +54,7 @@ Truncated(i32)
 
 #### variant: Malformed
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Malformed(i32)
@@ -61,7 +62,7 @@ Malformed(i32)
 
 #### variant: Unsupported
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Unsupported(i32)
@@ -69,7 +70,7 @@ Unsupported(i32)
 
 #### variant: Pointer
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Pointer(i32)
@@ -77,7 +78,7 @@ Pointer(i32)
 
 #### variant: NameLimit
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 NameLimit(i32)
@@ -85,7 +86,7 @@ NameLimit(i32)
 
 #### variant: Limit
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Limit(i32)
@@ -93,7 +94,7 @@ Limit(i32)
 
 #### variant: WorkLimit
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 WorkLimit(i32)
@@ -101,7 +102,7 @@ WorkLimit(i32)
 
 #### variant: OutputLimit
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 OutputLimit(i32)
@@ -109,7 +110,7 @@ OutputLimit(i32)
 
 #### variant: Capacity
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 Capacity
@@ -117,7 +118,7 @@ Capacity
 
 #### variant: AllocationFailed
 
-[Source line 8](../../../extended/ext/dns.lani#L8)
+[Source line 9](../../../extended/ext/dns.lani#L9)
 
 ```lanius
 AllocationFailed
@@ -125,7 +126,7 @@ AllocationFailed
 
 ### struct: Limits
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 pub struct Limits
@@ -133,7 +134,7 @@ pub struct Limits
 
 #### field: message_bytes
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 message_bytes: i32
@@ -141,7 +142,7 @@ message_bytes: i32
 
 #### field: records
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 records: i32
@@ -149,7 +150,7 @@ records: i32
 
 #### field: name_bytes
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 name_bytes: i32
@@ -157,7 +158,7 @@ name_bytes: i32
 
 #### field: pointer_hops
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 pointer_hops: i32
@@ -165,7 +166,7 @@ pointer_hops: i32
 
 #### field: options
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 options: i32
@@ -173,7 +174,7 @@ options: i32
 
 #### field: work
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 work: i32
@@ -181,7 +182,7 @@ work: i32
 
 #### field: output_bytes
 
-[Source line 9](../../../extended/ext/dns.lani#L9)
+[Source line 10](../../../extended/ext/dns.lani#L10)
 
 ```lanius
 output_bytes: i32
@@ -189,7 +190,7 @@ output_bytes: i32
 
 ### struct: Header
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 pub struct Header
@@ -197,7 +198,7 @@ pub struct Header
 
 #### field: id
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 id: i32
@@ -205,7 +206,7 @@ id: i32
 
 #### field: flags
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 flags: i32
@@ -213,7 +214,7 @@ flags: i32
 
 #### field: questions
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 questions: i32
@@ -221,7 +222,7 @@ questions: i32
 
 #### field: answers
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 answers: i32
@@ -229,7 +230,7 @@ answers: i32
 
 #### field: authorities
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 authorities: i32
@@ -237,7 +238,7 @@ authorities: i32
 
 #### field: additionals
 
-[Source line 10](../../../extended/ext/dns.lani#L10)
+[Source line 11](../../../extended/ext/dns.lani#L11)
 
 ```lanius
 additionals: i32
@@ -245,7 +246,7 @@ additionals: i32
 
 ### struct: Name
 
-[Source line 11](../../../extended/ext/dns.lani#L11)
+[Source line 12](../../../extended/ext/dns.lani#L12)
 
 ```lanius
 pub struct Name
@@ -253,7 +254,7 @@ pub struct Name
 
 #### field: packet
 
-[Source line 11](../../../extended/ext/dns.lani#L11)
+[Source line 12](../../../extended/ext/dns.lani#L12)
 
 ```lanius
 packet: core::slice::View<u8>
@@ -261,7 +262,7 @@ packet: core::slice::View<u8>
 
 #### field: offset
 
-[Source line 11](../../../extended/ext/dns.lani#L11)
+[Source line 12](../../../extended/ext/dns.lani#L12)
 
 ```lanius
 offset: i32
@@ -269,7 +270,7 @@ offset: i32
 
 #### field: end
 
-[Source line 11](../../../extended/ext/dns.lani#L11)
+[Source line 12](../../../extended/ext/dns.lani#L12)
 
 ```lanius
 end: i32
@@ -277,7 +278,7 @@ end: i32
 
 ### struct: Labels
 
-[Source line 12](../../../extended/ext/dns.lani#L12)
+[Source line 13](../../../extended/ext/dns.lani#L13)
 
 ```lanius
 pub struct Labels
@@ -285,7 +286,7 @@ pub struct Labels
 
 #### field: packet
 
-[Source line 12](../../../extended/ext/dns.lani#L12)
+[Source line 13](../../../extended/ext/dns.lani#L13)
 
 ```lanius
 packet: core::slice::View<u8>
@@ -293,23 +294,23 @@ packet: core::slice::View<u8>
 
 #### field: position
 
-[Source line 12](../../../extended/ext/dns.lani#L12)
+[Source line 13](../../../extended/ext/dns.lani#L13)
 
 ```lanius
 position: i32
 ```
 
-#### field: done
+#### field: completion
 
-[Source line 12](../../../extended/ext/dns.lani#L12)
+[Source line 13](../../../extended/ext/dns.lani#L13)
 
 ```lanius
-done: bool
+completion: core::iter_state::Completion
 ```
 
 ### struct: Question
 
-[Source line 13](../../../extended/ext/dns.lani#L13)
+[Source line 14](../../../extended/ext/dns.lani#L14)
 
 ```lanius
 pub struct Question
@@ -317,7 +318,7 @@ pub struct Question
 
 #### field: name
 
-[Source line 13](../../../extended/ext/dns.lani#L13)
+[Source line 14](../../../extended/ext/dns.lani#L14)
 
 ```lanius
 name: Name
@@ -325,7 +326,7 @@ name: Name
 
 #### field: qtype
 
-[Source line 13](../../../extended/ext/dns.lani#L13)
+[Source line 14](../../../extended/ext/dns.lani#L14)
 
 ```lanius
 qtype: i32
@@ -333,7 +334,7 @@ qtype: i32
 
 #### field: qclass
 
-[Source line 13](../../../extended/ext/dns.lani#L13)
+[Source line 14](../../../extended/ext/dns.lani#L14)
 
 ```lanius
 qclass: i32
@@ -341,7 +342,7 @@ qclass: i32
 
 ### struct: Record
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 pub struct Record
@@ -349,7 +350,7 @@ pub struct Record
 
 #### field: name
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 name: Name
@@ -357,7 +358,7 @@ name: Name
 
 #### field: rrtype
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 rrtype: i32
@@ -365,7 +366,7 @@ rrtype: i32
 
 #### field: rrclass
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 rrclass: i32
@@ -373,7 +374,7 @@ rrclass: i32
 
 #### field: ttl
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 ttl: u32
@@ -381,7 +382,7 @@ ttl: u32
 
 #### field: data
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 data: core::slice::View<u8>
@@ -389,7 +390,7 @@ data: core::slice::View<u8>
 
 #### field: offset
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 offset: i32
@@ -397,7 +398,7 @@ offset: i32
 
 #### field: section
 
-[Source line 14](../../../extended/ext/dns.lani#L14)
+[Source line 15](../../../extended/ext/dns.lani#L15)
 
 ```lanius
 section: i32
@@ -405,7 +406,7 @@ section: i32
 
 ### struct: Message
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 pub struct Message
@@ -413,7 +414,7 @@ pub struct Message
 
 #### field: raw
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 raw: core::slice::View<u8>
@@ -421,7 +422,7 @@ raw: core::slice::View<u8>
 
 #### field: header
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 header: Header
@@ -429,7 +430,7 @@ header: Header
 
 #### field: answer_start
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 answer_start: i32
@@ -437,7 +438,7 @@ answer_start: i32
 
 #### field: authority_start
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 authority_start: i32
@@ -445,7 +446,7 @@ authority_start: i32
 
 #### field: additional_start
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 additional_start: i32
@@ -453,7 +454,7 @@ additional_start: i32
 
 #### field: opt
 
-[Source line 15](../../../extended/ext/dns.lani#L15)
+[Source line 16](../../../extended/ext/dns.lani#L16)
 
 ```lanius
 opt: core::option::Option<Record>
@@ -461,7 +462,7 @@ opt: core::option::Option<Record>
 
 ### struct: Questions
 
-[Source line 16](../../../extended/ext/dns.lani#L16)
+[Source line 17](../../../extended/ext/dns.lani#L17)
 
 ```lanius
 pub struct Questions
@@ -469,7 +470,7 @@ pub struct Questions
 
 #### field: packet
 
-[Source line 16](../../../extended/ext/dns.lani#L16)
+[Source line 17](../../../extended/ext/dns.lani#L17)
 
 ```lanius
 packet: core::slice::View<u8>
@@ -477,7 +478,7 @@ packet: core::slice::View<u8>
 
 #### field: position
 
-[Source line 16](../../../extended/ext/dns.lani#L16)
+[Source line 17](../../../extended/ext/dns.lani#L17)
 
 ```lanius
 position: i32
@@ -485,7 +486,7 @@ position: i32
 
 #### field: remaining
 
-[Source line 16](../../../extended/ext/dns.lani#L16)
+[Source line 17](../../../extended/ext/dns.lani#L17)
 
 ```lanius
 remaining: i32
@@ -493,7 +494,7 @@ remaining: i32
 
 ### struct: Records
 
-[Source line 17](../../../extended/ext/dns.lani#L17)
+[Source line 18](../../../extended/ext/dns.lani#L18)
 
 ```lanius
 pub struct Records
@@ -501,7 +502,7 @@ pub struct Records
 
 #### field: packet
 
-[Source line 17](../../../extended/ext/dns.lani#L17)
+[Source line 18](../../../extended/ext/dns.lani#L18)
 
 ```lanius
 packet: core::slice::View<u8>
@@ -509,7 +510,7 @@ packet: core::slice::View<u8>
 
 #### field: position
 
-[Source line 17](../../../extended/ext/dns.lani#L17)
+[Source line 18](../../../extended/ext/dns.lani#L18)
 
 ```lanius
 position: i32
@@ -517,7 +518,7 @@ position: i32
 
 #### field: remaining
 
-[Source line 17](../../../extended/ext/dns.lani#L17)
+[Source line 18](../../../extended/ext/dns.lani#L18)
 
 ```lanius
 remaining: i32
@@ -525,7 +526,7 @@ remaining: i32
 
 #### field: section
 
-[Source line 17](../../../extended/ext/dns.lani#L17)
+[Source line 18](../../../extended/ext/dns.lani#L18)
 
 ```lanius
 section: i32
@@ -533,7 +534,7 @@ section: i32
 
 ### struct: Mx
 
-[Source line 18](../../../extended/ext/dns.lani#L18)
+[Source line 19](../../../extended/ext/dns.lani#L19)
 
 ```lanius
 pub struct Mx
@@ -541,7 +542,7 @@ pub struct Mx
 
 #### field: preference
 
-[Source line 18](../../../extended/ext/dns.lani#L18)
+[Source line 19](../../../extended/ext/dns.lani#L19)
 
 ```lanius
 preference: i32
@@ -549,7 +550,7 @@ preference: i32
 
 #### field: exchange
 
-[Source line 18](../../../extended/ext/dns.lani#L18)
+[Source line 19](../../../extended/ext/dns.lani#L19)
 
 ```lanius
 exchange: Name
@@ -557,7 +558,7 @@ exchange: Name
 
 ### struct: Soa
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 pub struct Soa
@@ -565,7 +566,7 @@ pub struct Soa
 
 #### field: primary
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 primary: Name
@@ -573,7 +574,7 @@ primary: Name
 
 #### field: mailbox
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 mailbox: Name
@@ -581,7 +582,7 @@ mailbox: Name
 
 #### field: serial
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 serial: u32
@@ -589,7 +590,7 @@ serial: u32
 
 #### field: refresh
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 refresh: u32
@@ -597,7 +598,7 @@ refresh: u32
 
 #### field: retry
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 retry: u32
@@ -605,7 +606,7 @@ retry: u32
 
 #### field: expire
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 expire: u32
@@ -613,7 +614,7 @@ expire: u32
 
 #### field: minimum
 
-[Source line 19](../../../extended/ext/dns.lani#L19)
+[Source line 20](../../../extended/ext/dns.lani#L20)
 
 ```lanius
 minimum: u32
@@ -621,7 +622,7 @@ minimum: u32
 
 ### struct: Strings
 
-[Source line 20](../../../extended/ext/dns.lani#L20)
+[Source line 21](../../../extended/ext/dns.lani#L21)
 
 ```lanius
 pub struct Strings
@@ -629,7 +630,7 @@ pub struct Strings
 
 #### field: raw
 
-[Source line 20](../../../extended/ext/dns.lani#L20)
+[Source line 21](../../../extended/ext/dns.lani#L21)
 
 ```lanius
 raw: core::slice::View<u8>
@@ -637,7 +638,7 @@ raw: core::slice::View<u8>
 
 #### field: position
 
-[Source line 20](../../../extended/ext/dns.lani#L20)
+[Source line 21](../../../extended/ext/dns.lani#L21)
 
 ```lanius
 position: i32
@@ -645,7 +646,7 @@ position: i32
 
 ### struct: Edns
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 pub struct Edns
@@ -653,7 +654,7 @@ pub struct Edns
 
 #### field: udp_size
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 udp_size: i32
@@ -661,7 +662,7 @@ udp_size: i32
 
 #### field: extended_rcode
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 extended_rcode: i32
@@ -669,7 +670,7 @@ extended_rcode: i32
 
 #### field: version
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 version: i32
@@ -677,7 +678,7 @@ version: i32
 
 #### field: flags
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 flags: i32
@@ -685,7 +686,7 @@ flags: i32
 
 #### field: options
 
-[Source line 21](../../../extended/ext/dns.lani#L21)
+[Source line 22](../../../extended/ext/dns.lani#L22)
 
 ```lanius
 options: core::slice::View<u8>
@@ -693,7 +694,7 @@ options: core::slice::View<u8>
 
 ### struct: EdnsOption
 
-[Source line 22](../../../extended/ext/dns.lani#L22)
+[Source line 23](../../../extended/ext/dns.lani#L23)
 
 ```lanius
 pub struct EdnsOption
@@ -701,7 +702,7 @@ pub struct EdnsOption
 
 #### field: code
 
-[Source line 22](../../../extended/ext/dns.lani#L22)
+[Source line 23](../../../extended/ext/dns.lani#L23)
 
 ```lanius
 code: i32
@@ -709,7 +710,7 @@ code: i32
 
 #### field: data
 
-[Source line 22](../../../extended/ext/dns.lani#L22)
+[Source line 23](../../../extended/ext/dns.lani#L23)
 
 ```lanius
 data: core::slice::View<u8>
@@ -717,7 +718,7 @@ data: core::slice::View<u8>
 
 ### struct: Options
 
-[Source line 23](../../../extended/ext/dns.lani#L23)
+[Source line 24](../../../extended/ext/dns.lani#L24)
 
 ```lanius
 pub struct Options
@@ -725,7 +726,7 @@ pub struct Options
 
 #### field: raw
 
-[Source line 23](../../../extended/ext/dns.lani#L23)
+[Source line 24](../../../extended/ext/dns.lani#L24)
 
 ```lanius
 raw: core::slice::View<u8>
@@ -733,7 +734,7 @@ raw: core::slice::View<u8>
 
 #### field: position
 
-[Source line 23](../../../extended/ext/dns.lani#L23)
+[Source line 24](../../../extended/ext/dns.lani#L24)
 
 ```lanius
 position: i32
@@ -741,7 +742,7 @@ position: i32
 
 ### enum: Data
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 pub enum Data
@@ -749,7 +750,7 @@ pub enum Data
 
 #### variant: A
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 A(core::slice::View<u8>)
@@ -757,7 +758,7 @@ A(core::slice::View<u8>)
 
 #### variant: Aaaa
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Aaaa(core::slice::View<u8>)
@@ -765,7 +766,7 @@ Aaaa(core::slice::View<u8>)
 
 #### variant: Domain
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Domain(Name)
@@ -773,7 +774,7 @@ Domain(Name)
 
 #### variant: Mail
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Mail(Mx)
@@ -781,7 +782,7 @@ Mail(Mx)
 
 #### variant: Authority
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Authority(Soa)
@@ -789,7 +790,7 @@ Authority(Soa)
 
 #### variant: Text
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Text(Strings)
@@ -797,7 +798,7 @@ Text(Strings)
 
 #### variant: Opt
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Opt(Edns)
@@ -805,7 +806,7 @@ Opt(Edns)
 
 #### variant: Unknown
 
-[Source line 24](../../../extended/ext/dns.lani#L24)
+[Source line 25](../../../extended/ext/dns.lani#L25)
 
 ```lanius
 Unknown(core::slice::View<u8>)
@@ -813,7 +814,7 @@ Unknown(core::slice::View<u8>)
 
 ### struct: OutQuestion
 
-[Source line 25](../../../extended/ext/dns.lani#L25)
+[Source line 26](../../../extended/ext/dns.lani#L26)
 
 ```lanius
 pub struct OutQuestion
@@ -821,7 +822,7 @@ pub struct OutQuestion
 
 #### field: name
 
-[Source line 25](../../../extended/ext/dns.lani#L25)
+[Source line 26](../../../extended/ext/dns.lani#L26)
 
 ```lanius
 name: core::slice::View<u8>
@@ -829,7 +830,7 @@ name: core::slice::View<u8>
 
 #### field: qtype
 
-[Source line 25](../../../extended/ext/dns.lani#L25)
+[Source line 26](../../../extended/ext/dns.lani#L26)
 
 ```lanius
 qtype: i32
@@ -837,7 +838,7 @@ qtype: i32
 
 #### field: qclass
 
-[Source line 25](../../../extended/ext/dns.lani#L25)
+[Source line 26](../../../extended/ext/dns.lani#L26)
 
 ```lanius
 qclass: i32
@@ -845,7 +846,7 @@ qclass: i32
 
 ### struct: OutRecord
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 pub struct OutRecord
@@ -853,7 +854,7 @@ pub struct OutRecord
 
 #### field: name
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 name: core::slice::View<u8>
@@ -861,7 +862,7 @@ name: core::slice::View<u8>
 
 #### field: rrtype
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 rrtype: i32
@@ -869,7 +870,7 @@ rrtype: i32
 
 #### field: rrclass
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 rrclass: i32
@@ -877,7 +878,7 @@ rrclass: i32
 
 #### field: ttl
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 ttl: u32
@@ -885,7 +886,7 @@ ttl: u32
 
 #### field: data
 
-[Source line 26](../../../extended/ext/dns.lani#L26)
+[Source line 27](../../../extended/ext/dns.lani#L27)
 
 ```lanius
 data: core::slice::View<u8>
@@ -895,7 +896,7 @@ data: core::slice::View<u8>
 
 ### function: default_limits
 
-[Source line 30](../../../extended/ext/dns.lani#L30)
+[Source line 31](../../../extended/ext/dns.lani#L31)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -903,7 +904,7 @@ pub fn default_limits() -> Limits
 
 ### function: parse_name
 
-[Source line 67](../../../extended/ext/dns.lani#L67)
+[Source line 68](../../../extended/ext/dns.lani#L68)
 
 ```lanius
 pub fn parse_name(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<Name,Error>
@@ -911,7 +912,7 @@ pub fn parse_name(bytes: core::slice::View<u8>, limits: Limits) -> core::result:
 
 ### function: equal_dns
 
-[Source line 84](../../../extended/ext/dns.lani#L84)
+[Source line 85](../../../extended/ext/dns.lani#L85)
 
 ```lanius
 pub fn equal_dns(left: Name, right: Name) -> bool
@@ -919,7 +920,7 @@ pub fn equal_dns(left: Name, right: Name) -> bool
 
 ### function: expand_into
 
-[Source line 85](../../../extended/ext/dns.lani#L85)
+[Source line 86](../../../extended/ext/dns.lani#L86)
 
 ```lanius
 pub fn expand_into(value: Name, destination: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -927,7 +928,7 @@ pub fn expand_into(value: Name, destination: core::slice::View<u8>) -> core::res
 
 ### function: data
 
-[Source line 100](../../../extended/ext/dns.lani#L100)
+[Source line 101](../../../extended/ext/dns.lani#L101)
 
 ```lanius
 pub fn data(r: Record) -> Data
@@ -935,7 +936,7 @@ pub fn data(r: Record) -> Data
 
 ### function: parse
 
-[Source line 153](../../../extended/ext/dns.lani#L153)
+[Source line 154](../../../extended/ext/dns.lani#L154)
 
 ```lanius
 pub fn parse(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<Message,Error>
@@ -943,7 +944,7 @@ pub fn parse(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Resu
 
 ### function: encode
 
-[Source line 167](../../../extended/ext/dns.lani#L167)
+[Source line 168](../../../extended/ext/dns.lani#L168)
 
 ```lanius
 pub fn encode(id: i32, flags: i32, questions: core::slice::View<OutQuestion>, answers: core::slice::View<OutRecord>, authorities: core::slice::View<OutRecord>, additionals: core::slice::View<OutRecord>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -951,7 +952,7 @@ pub fn encode(id: i32, flags: i32, questions: core::slice::View<OutQuestion>, an
 
 ### function: query
 
-[Source line 175](../../../extended/ext/dns.lani#L175)
+[Source line 176](../../../extended/ext/dns.lani#L176)
 
 ```lanius
 pub fn query(id: i32, qtype: i32, qclass: i32, canonical_name: core::slice::View<u8>, udp_size: i32, dnssec: bool, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -959,9 +960,9 @@ pub fn query(id: i32, qtype: i32, qclass: i32, canonical_name: core::slice::View
 
 ## Implementation blocks and public methods
 
-### impl at line 73
+### impl at line 74
 
-[Source line 73](../../../extended/ext/dns.lani#L73)
+[Source line 74](../../../extended/ext/dns.lani#L74)
 
 ```lanius
 pub impl Name
@@ -969,7 +970,7 @@ pub impl Name
 
 #### method: labels
 
-[Source line 74](../../../extended/ext/dns.lani#L74)
+[Source line 75](../../../extended/ext/dns.lani#L75)
 
 ```lanius
 pub fn labels(&self) -> Labels
@@ -977,7 +978,7 @@ pub fn labels(&self) -> Labels
 
 #### method: encoded
 
-[Source line 75](../../../extended/ext/dns.lani#L75)
+[Source line 76](../../../extended/ext/dns.lani#L76)
 
 ```lanius
 pub fn encoded(&self) -> core::slice::View<u8>
@@ -985,7 +986,7 @@ pub fn encoded(&self) -> core::slice::View<u8>
 
 #### method: wire_len
 
-[Source line 76](../../../extended/ext/dns.lani#L76)
+[Source line 77](../../../extended/ext/dns.lani#L77)
 
 ```lanius
 pub fn wire_len(&self) -> i32
@@ -993,15 +994,15 @@ pub fn wire_len(&self) -> i32
 
 #### method: is_root
 
-[Source line 77](../../../extended/ext/dns.lani#L77)
+[Source line 78](../../../extended/ext/dns.lani#L78)
 
 ```lanius
 pub fn is_root(&self) -> bool
 ```
 
-### impl at line 79
+### impl at line 80
 
-[Source line 79](../../../extended/ext/dns.lani#L79)
+[Source line 80](../../../extended/ext/dns.lani#L80)
 
 ```lanius
 pub impl Labels
@@ -1009,26 +1010,10 @@ pub impl Labels
 
 #### method: next
 
-[Source line 81](../../../extended/ext/dns.lani#L81)
+[Source line 82](../../../extended/ext/dns.lani#L82)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::slice::View<u8>>
-```
-
-### impl at line 88
-
-[Source line 88](../../../extended/ext/dns.lani#L88)
-
-```lanius
-pub impl Questions
-```
-
-#### method: next
-
-[Source line 88](../../../extended/ext/dns.lani#L88)
-
-```lanius
-pub fn next(&self) -> core::option::Option<Question>
 ```
 
 ### impl at line 89
@@ -1036,7 +1021,7 @@ pub fn next(&self) -> core::option::Option<Question>
 [Source line 89](../../../extended/ext/dns.lani#L89)
 
 ```lanius
-pub impl Records
+pub impl Questions
 ```
 
 #### method: next
@@ -1044,7 +1029,7 @@ pub impl Records
 [Source line 89](../../../extended/ext/dns.lani#L89)
 
 ```lanius
-pub fn next(&self) -> core::option::Option<Record>
+pub fn next(&self) -> core::option::Option<Question>
 ```
 
 ### impl at line 90
@@ -1052,12 +1037,28 @@ pub fn next(&self) -> core::option::Option<Record>
 [Source line 90](../../../extended/ext/dns.lani#L90)
 
 ```lanius
+pub impl Records
+```
+
+#### method: next
+
+[Source line 90](../../../extended/ext/dns.lani#L90)
+
+```lanius
+pub fn next(&self) -> core::option::Option<Record>
+```
+
+### impl at line 91
+
+[Source line 91](../../../extended/ext/dns.lani#L91)
+
+```lanius
 pub impl Message
 ```
 
 #### method: questions
 
-[Source line 91](../../../extended/ext/dns.lani#L91)
+[Source line 92](../../../extended/ext/dns.lani#L92)
 
 ```lanius
 pub fn questions(&self) -> Questions
@@ -1065,7 +1066,7 @@ pub fn questions(&self) -> Questions
 
 #### method: records
 
-[Source line 93](../../../extended/ext/dns.lani#L93)
+[Source line 94](../../../extended/ext/dns.lani#L94)
 
 ```lanius
 pub fn records(&self, section: i32) -> Records
@@ -1073,26 +1074,10 @@ pub fn records(&self, section: i32) -> Records
 
 #### method: rcode
 
-[Source line 94](../../../extended/ext/dns.lani#L94)
+[Source line 95](../../../extended/ext/dns.lani#L95)
 
 ```lanius
 pub fn rcode(&self) -> i32
-```
-
-### impl at line 96
-
-[Source line 96](../../../extended/ext/dns.lani#L96)
-
-```lanius
-pub impl Strings
-```
-
-#### method: next
-
-[Source line 96](../../../extended/ext/dns.lani#L96)
-
-```lanius
-pub fn next(&self) -> core::option::Option<core::slice::View<u8>>
 ```
 
 ### impl at line 97
@@ -1100,31 +1085,15 @@ pub fn next(&self) -> core::option::Option<core::slice::View<u8>>
 [Source line 97](../../../extended/ext/dns.lani#L97)
 
 ```lanius
-pub impl Edns
+pub impl Strings
 ```
 
-#### method: option_iter
+#### method: next
 
 [Source line 97](../../../extended/ext/dns.lani#L97)
 
 ```lanius
-pub fn option_iter(&self) -> Options
-```
-
-#### method: dnssec_ok
-
-[Source line 97](../../../extended/ext/dns.lani#L97)
-
-```lanius
-pub fn dnssec_ok(&self) -> bool
-```
-
-#### method: effective_udp_size
-
-[Source line 97](../../../extended/ext/dns.lani#L97)
-
-```lanius
-pub fn effective_udp_size(&self) -> i32
+pub fn next(&self) -> core::option::Option<core::slice::View<u8>>
 ```
 
 ### impl at line 98
@@ -1132,12 +1101,44 @@ pub fn effective_udp_size(&self) -> i32
 [Source line 98](../../../extended/ext/dns.lani#L98)
 
 ```lanius
+pub impl Edns
+```
+
+#### method: option_iter
+
+[Source line 98](../../../extended/ext/dns.lani#L98)
+
+```lanius
+pub fn option_iter(&self) -> Options
+```
+
+#### method: dnssec_ok
+
+[Source line 98](../../../extended/ext/dns.lani#L98)
+
+```lanius
+pub fn dnssec_ok(&self) -> bool
+```
+
+#### method: effective_udp_size
+
+[Source line 98](../../../extended/ext/dns.lani#L98)
+
+```lanius
+pub fn effective_udp_size(&self) -> i32
+```
+
+### impl at line 99
+
+[Source line 99](../../../extended/ext/dns.lani#L99)
+
+```lanius
 pub impl Options
 ```
 
 #### method: next
 
-[Source line 98](../../../extended/ext/dns.lani#L98)
+[Source line 99](../../../extended/ext/dns.lani#L99)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<EdnsOption>

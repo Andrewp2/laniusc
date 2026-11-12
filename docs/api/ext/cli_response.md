@@ -15,31 +15,72 @@ Opt-in owned response expansion over a generic Provider<H>, with copied argv, re
 - [extended-cli-response](../../extended-cli-response.md)
 - [library-response-files-plan](../../library-response-files-plan.md)
 
-Declaration counts: enum: 2; field: 32; function: 2; impl: 1; method: 10; struct: 5; trait: 1; trait member: 1; variant: 19.
+Declaration counts: enum: 3; field: 31; function: 2; impl: 2; machine: 1; method: 13; struct: 5; trait: 1; trait member: 1; variant: 22.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/cli_response.lani#L5)
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/cli_response.lani#L6)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_response.lani#L7)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/cli_response.lani#L8)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/cli_response.lani#L9)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_response.lani#L10)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_response.lani#L11)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_response.lani#L12)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/cli_response.lani#L13)
-- [ext::cli](cli.md) · [source](../../../extended/ext/cli_response.lani#L14)
-- [ext::response](response.md) · [source](../../../extended/ext/cli_response.lani#L15)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/cli_response.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/cli_response.lani#L6)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/cli_response.lani#L7)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_response.lani#L8)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/cli_response.lani#L9)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/cli_response.lani#L10)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_response.lani#L11)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_response.lani#L12)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_response.lani#L13)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/cli_response.lani#L14)
+- [ext::cli](cli.md) · [source](../../../extended/ext/cli_response.lani#L15)
+- [ext::response](response.md) · [source](../../../extended/ext/cli_response.lani#L16)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: PreparationEvent
+
+[Source line 18](../../../extended/ext/cli_response.lani#L18)
+
+```lanius
+pub enum PreparationEvent
+```
+
+#### variant: Begin
+
+[Source line 18](../../../extended/ext/cli_response.lani#L18)
+
+```lanius
+Begin
+```
+
+#### variant: Prepared
+
+[Source line 18](../../../extended/ext/cli_response.lani#L18)
+
+```lanius
+Prepared
+```
+
+#### variant: Reset
+
+[Source line 18](../../../extended/ext/cli_response.lani#L18)
+
+```lanius
+Reset
+```
+
+### machine: Preparation
+
+[Source line 19](../../../extended/ext/cli_response.lani#L19)
+
+```lanius
+pub machine Preparation on PreparationEvent
+```
+
 ### struct: Origin
 
-[Source line 20](../../../extended/ext/cli_response.lani#L20)
+[Source line 50](../../../extended/ext/cli_response.lani#L50)
 
 ```lanius
 pub struct Origin
@@ -47,7 +88,7 @@ pub struct Origin
 
 #### field: source
 
-[Source line 20](../../../extended/ext/cli_response.lani#L20)
+[Source line 50](../../../extended/ext/cli_response.lani#L50)
 
 ```lanius
 source: i32
@@ -55,7 +96,7 @@ source: i32
 
 #### field: argument
 
-[Source line 20](../../../extended/ext/cli_response.lani#L20)
+[Source line 50](../../../extended/ext/cli_response.lani#L50)
 
 ```lanius
 argument: i32
@@ -63,7 +104,7 @@ argument: i32
 
 #### field: start
 
-[Source line 20](../../../extended/ext/cli_response.lani#L20)
+[Source line 50](../../../extended/ext/cli_response.lani#L50)
 
 ```lanius
 start: i32
@@ -71,7 +112,7 @@ start: i32
 
 #### field: length
 
-[Source line 20](../../../extended/ext/cli_response.lani#L20)
+[Source line 50](../../../extended/ext/cli_response.lani#L50)
 
 ```lanius
 length: i32
@@ -79,7 +120,7 @@ length: i32
 
 ### struct: SourceInfo
 
-[Source line 21](../../../extended/ext/cli_response.lani#L21)
+[Source line 51](../../../extended/ext/cli_response.lani#L51)
 
 ```lanius
 pub struct SourceInfo
@@ -87,7 +128,7 @@ pub struct SourceInfo
 
 #### field: path
 
-[Source line 21](../../../extended/ext/cli_response.lani#L21)
+[Source line 51](../../../extended/ext/cli_response.lani#L51)
 
 ```lanius
 path: View<u8>
@@ -95,7 +136,7 @@ path: View<u8>
 
 #### field: included_at
 
-[Source line 21](../../../extended/ext/cli_response.lani#L21)
+[Source line 51](../../../extended/ext/cli_response.lani#L51)
 
 ```lanius
 included_at: Origin
@@ -103,7 +144,7 @@ included_at: Origin
 
 #### field: loaded
 
-[Source line 21](../../../extended/ext/cli_response.lani#L21)
+[Source line 51](../../../extended/ext/cli_response.lani#L51)
 
 ```lanius
 loaded: bool
@@ -111,7 +152,7 @@ loaded: bool
 
 ### struct: Limits
 
-[Source line 22](../../../extended/ext/cli_response.lani#L22)
+[Source line 52](../../../extended/ext/cli_response.lani#L52)
 
 ```lanius
 pub struct Limits
@@ -119,7 +160,7 @@ pub struct Limits
 
 #### field: max_arguments
 
-[Source line 23](../../../extended/ext/cli_response.lani#L23)
+[Source line 53](../../../extended/ext/cli_response.lani#L53)
 
 ```lanius
 max_arguments: i32
@@ -127,7 +168,7 @@ max_arguments: i32
 
 #### field: max_tokens
 
-[Source line 23](../../../extended/ext/cli_response.lani#L23)
+[Source line 53](../../../extended/ext/cli_response.lani#L53)
 
 ```lanius
 max_tokens: i32
@@ -135,7 +176,7 @@ max_tokens: i32
 
 #### field: max_argument_bytes
 
-[Source line 23](../../../extended/ext/cli_response.lani#L23)
+[Source line 53](../../../extended/ext/cli_response.lani#L53)
 
 ```lanius
 max_argument_bytes: i32
@@ -143,7 +184,7 @@ max_argument_bytes: i32
 
 #### field: max_output_bytes
 
-[Source line 24](../../../extended/ext/cli_response.lani#L24)
+[Source line 54](../../../extended/ext/cli_response.lani#L54)
 
 ```lanius
 max_output_bytes: i32
@@ -151,7 +192,7 @@ max_output_bytes: i32
 
 #### field: max_file_bytes
 
-[Source line 24](../../../extended/ext/cli_response.lani#L24)
+[Source line 54](../../../extended/ext/cli_response.lani#L54)
 
 ```lanius
 max_file_bytes: i32
@@ -159,7 +200,7 @@ max_file_bytes: i32
 
 #### field: max_source_bytes
 
-[Source line 24](../../../extended/ext/cli_response.lani#L24)
+[Source line 54](../../../extended/ext/cli_response.lani#L54)
 
 ```lanius
 max_source_bytes: i32
@@ -167,7 +208,7 @@ max_source_bytes: i32
 
 #### field: max_files
 
-[Source line 25](../../../extended/ext/cli_response.lani#L25)
+[Source line 55](../../../extended/ext/cli_response.lani#L55)
 
 ```lanius
 max_files: i32
@@ -175,7 +216,7 @@ max_files: i32
 
 #### field: max_depth
 
-[Source line 25](../../../extended/ext/cli_response.lani#L25)
+[Source line 55](../../../extended/ext/cli_response.lani#L55)
 
 ```lanius
 max_depth: i32
@@ -183,7 +224,7 @@ max_depth: i32
 
 #### field: max_path_bytes
 
-[Source line 25](../../../extended/ext/cli_response.lani#L25)
+[Source line 55](../../../extended/ext/cli_response.lani#L55)
 
 ```lanius
 max_path_bytes: i32
@@ -191,7 +232,7 @@ max_path_bytes: i32
 
 #### field: max_work
 
-[Source line 25](../../../extended/ext/cli_response.lani#L25)
+[Source line 55](../../../extended/ext/cli_response.lani#L55)
 
 ```lanius
 max_work: u64
@@ -199,7 +240,7 @@ max_work: u64
 
 ### enum: Cause
 
-[Source line 27](../../../extended/ext/cli_response.lani#L27)
+[Source line 57](../../../extended/ext/cli_response.lani#L57)
 
 ```lanius
 pub enum Cause<H>
@@ -207,7 +248,7 @@ pub enum Cause<H>
 
 #### variant: InvalidState
 
-[Source line 28](../../../extended/ext/cli_response.lani#L28)
+[Source line 58](../../../extended/ext/cli_response.lani#L58)
 
 ```lanius
 InvalidState
@@ -215,7 +256,7 @@ InvalidState
 
 #### variant: Bounds
 
-[Source line 28](../../../extended/ext/cli_response.lani#L28)
+[Source line 58](../../../extended/ext/cli_response.lani#L58)
 
 ```lanius
 Bounds
@@ -223,7 +264,7 @@ Bounds
 
 #### variant: SourceLimit
 
-[Source line 28](../../../extended/ext/cli_response.lani#L28)
+[Source line 58](../../../extended/ext/cli_response.lani#L58)
 
 ```lanius
 SourceLimit
@@ -231,7 +272,7 @@ SourceLimit
 
 #### variant: TokenLimit
 
-[Source line 28](../../../extended/ext/cli_response.lani#L28)
+[Source line 58](../../../extended/ext/cli_response.lani#L58)
 
 ```lanius
 TokenLimit
@@ -239,7 +280,7 @@ TokenLimit
 
 #### variant: ArgumentLimit
 
-[Source line 28](../../../extended/ext/cli_response.lani#L28)
+[Source line 58](../../../extended/ext/cli_response.lani#L58)
 
 ```lanius
 ArgumentLimit
@@ -247,7 +288,7 @@ ArgumentLimit
 
 #### variant: ArgumentBytes
 
-[Source line 29](../../../extended/ext/cli_response.lani#L29)
+[Source line 59](../../../extended/ext/cli_response.lani#L59)
 
 ```lanius
 ArgumentBytes
@@ -255,7 +296,7 @@ ArgumentBytes
 
 #### variant: OutputLimit
 
-[Source line 29](../../../extended/ext/cli_response.lani#L29)
+[Source line 59](../../../extended/ext/cli_response.lani#L59)
 
 ```lanius
 OutputLimit
@@ -263,7 +304,7 @@ OutputLimit
 
 #### variant: FileLimit
 
-[Source line 29](../../../extended/ext/cli_response.lani#L29)
+[Source line 59](../../../extended/ext/cli_response.lani#L59)
 
 ```lanius
 FileLimit
@@ -271,7 +312,7 @@ FileLimit
 
 #### variant: DepthLimit
 
-[Source line 29](../../../extended/ext/cli_response.lani#L29)
+[Source line 59](../../../extended/ext/cli_response.lani#L59)
 
 ```lanius
 DepthLimit
@@ -279,7 +320,7 @@ DepthLimit
 
 #### variant: PathLimit
 
-[Source line 29](../../../extended/ext/cli_response.lani#L29)
+[Source line 59](../../../extended/ext/cli_response.lani#L59)
 
 ```lanius
 PathLimit
@@ -287,7 +328,7 @@ PathLimit
 
 #### variant: WorkLimit
 
-[Source line 30](../../../extended/ext/cli_response.lani#L30)
+[Source line 60](../../../extended/ext/cli_response.lani#L60)
 
 ```lanius
 WorkLimit
@@ -295,7 +336,7 @@ WorkLimit
 
 #### variant: AllocationFailed
 
-[Source line 30](../../../extended/ext/cli_response.lani#L30)
+[Source line 60](../../../extended/ext/cli_response.lani#L60)
 
 ```lanius
 AllocationFailed
@@ -303,7 +344,7 @@ AllocationFailed
 
 #### variant: ProviderContract
 
-[Source line 30](../../../extended/ext/cli_response.lani#L30)
+[Source line 60](../../../extended/ext/cli_response.lani#L60)
 
 ```lanius
 ProviderContract
@@ -311,7 +352,7 @@ ProviderContract
 
 #### variant: Syntax
 
-[Source line 31](../../../extended/ext/cli_response.lani#L31)
+[Source line 61](../../../extended/ext/cli_response.lani#L61)
 
 ```lanius
 Syntax(ext::response::Error)
@@ -319,7 +360,7 @@ Syntax(ext::response::Error)
 
 #### variant: Provider
 
-[Source line 31](../../../extended/ext/cli_response.lani#L31)
+[Source line 61](../../../extended/ext/cli_response.lani#L61)
 
 ```lanius
 Provider(H)
@@ -327,7 +368,7 @@ Provider(H)
 
 ### struct: Failure
 
-[Source line 33](../../../extended/ext/cli_response.lani#L33)
+[Source line 63](../../../extended/ext/cli_response.lani#L63)
 
 ```lanius
 pub struct Failure<H>
@@ -335,7 +376,7 @@ pub struct Failure<H>
 
 #### field: cause
 
-[Source line 33](../../../extended/ext/cli_response.lani#L33)
+[Source line 63](../../../extended/ext/cli_response.lani#L63)
 
 ```lanius
 cause: Cause<H>
@@ -343,7 +384,7 @@ cause: Cause<H>
 
 #### field: at
 
-[Source line 33](../../../extended/ext/cli_response.lani#L33)
+[Source line 63](../../../extended/ext/cli_response.lani#L63)
 
 ```lanius
 at: Origin
@@ -351,7 +392,7 @@ at: Origin
 
 ### enum: LocateError
 
-[Source line 34](../../../extended/ext/cli_response.lani#L34)
+[Source line 64](../../../extended/ext/cli_response.lani#L64)
 
 ```lanius
 pub enum LocateError
@@ -359,7 +400,7 @@ pub enum LocateError
 
 #### variant: NotReady
 
-[Source line 34](../../../extended/ext/cli_response.lani#L34)
+[Source line 64](../../../extended/ext/cli_response.lani#L64)
 
 ```lanius
 NotReady
@@ -367,7 +408,7 @@ NotReady
 
 #### variant: Bounds
 
-[Source line 34](../../../extended/ext/cli_response.lani#L34)
+[Source line 64](../../../extended/ext/cli_response.lani#L64)
 
 ```lanius
 Bounds
@@ -375,7 +416,7 @@ Bounds
 
 #### variant: WorkLimit
 
-[Source line 34](../../../extended/ext/cli_response.lani#L34)
+[Source line 64](../../../extended/ext/cli_response.lani#L64)
 
 ```lanius
 WorkLimit
@@ -383,7 +424,7 @@ WorkLimit
 
 #### variant: Syntax
 
-[Source line 34](../../../extended/ext/cli_response.lani#L34)
+[Source line 64](../../../extended/ext/cli_response.lani#L64)
 
 ```lanius
 Syntax(ext::response::Error)
@@ -391,31 +432,23 @@ Syntax(ext::response::Error)
 
 ### struct: Expansion
 
-[Source line 43](../../../extended/ext/cli_response.lani#L43)
+[Source line 73](../../../extended/ext/cli_response.lani#L73)
 
 ```lanius
 pub struct Expansion
 ```
 
-#### field: started
+#### field: preparation
 
-[Source line 44](../../../extended/ext/cli_response.lani#L44)
-
-```lanius
-started: bool
-```
-
-#### field: ready
-
-[Source line 44](../../../extended/ext/cli_response.lani#L44)
+[Source line 74](../../../extended/ext/cli_response.lani#L74)
 
 ```lanius
-ready: bool
+preparation: Preparation
 ```
 
 #### field: limits
 
-[Source line 44](../../../extended/ext/cli_response.lani#L44)
+[Source line 74](../../../extended/ext/cli_response.lani#L74)
 
 ```lanius
 limits: Limits
@@ -423,7 +456,7 @@ limits: Limits
 
 #### field: work
 
-[Source line 44](../../../extended/ext/cli_response.lani#L44)
+[Source line 74](../../../extended/ext/cli_response.lani#L74)
 
 ```lanius
 work: u64
@@ -431,7 +464,7 @@ work: u64
 
 #### field: source_bytes
 
-[Source line 45](../../../extended/ext/cli_response.lani#L45)
+[Source line 75](../../../extended/ext/cli_response.lani#L75)
 
 ```lanius
 source_bytes: i32
@@ -439,7 +472,7 @@ source_bytes: i32
 
 #### field: tokens
 
-[Source line 45](../../../extended/ext/cli_response.lani#L45)
+[Source line 75](../../../extended/ext/cli_response.lani#L75)
 
 ```lanius
 tokens: i32
@@ -447,7 +480,7 @@ tokens: i32
 
 #### field: output_bytes
 
-[Source line 45](../../../extended/ext/cli_response.lani#L45)
+[Source line 75](../../../extended/ext/cli_response.lani#L75)
 
 ```lanius
 output_bytes: i32
@@ -455,7 +488,7 @@ output_bytes: i32
 
 #### field: position
 
-[Source line 45](../../../extended/ext/cli_response.lani#L45)
+[Source line 75](../../../extended/ext/cli_response.lani#L75)
 
 ```lanius
 position: i32
@@ -463,7 +496,7 @@ position: i32
 
 #### field: originals
 
-[Source line 46](../../../extended/ext/cli_response.lani#L46)
+[Source line 76](../../../extended/ext/cli_response.lani#L76)
 
 ```lanius
 originals: Vec<Vec<u8>>
@@ -471,7 +504,7 @@ originals: Vec<Vec<u8>>
 
 #### field: sources
 
-[Source line 46](../../../extended/ext/cli_response.lani#L46)
+[Source line 76](../../../extended/ext/cli_response.lani#L76)
 
 ```lanius
 sources: Vec<Source>
@@ -479,7 +512,7 @@ sources: Vec<Source>
 
 #### field: frames
 
-[Source line 46](../../../extended/ext/cli_response.lani#L46)
+[Source line 76](../../../extended/ext/cli_response.lani#L76)
 
 ```lanius
 frames: Vec<Frame>
@@ -487,7 +520,7 @@ frames: Vec<Frame>
 
 #### field: output
 
-[Source line 47](../../../extended/ext/cli_response.lani#L47)
+[Source line 77](../../../extended/ext/cli_response.lani#L77)
 
 ```lanius
 output: Vec<Output>
@@ -495,7 +528,7 @@ output: Vec<Output>
 
 #### field: views
 
-[Source line 47](../../../extended/ext/cli_response.lani#L47)
+[Source line 77](../../../extended/ext/cli_response.lani#L77)
 
 ```lanius
 views: Vec<View<u8>>
@@ -505,7 +538,7 @@ views: Vec<View<u8>>
 
 ### function: default_limits
 
-[Source line 50](../../../extended/ext/cli_response.lani#L50)
+[Source line 80](../../../extended/ext/cli_response.lani#L80)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -513,7 +546,7 @@ pub fn default_limits() -> Limits
 
 ### function: empty
 
-[Source line 58](../../../extended/ext/cli_response.lani#L58)
+[Source line 88](../../../extended/ext/cli_response.lani#L88)
 
 ```lanius
 pub fn empty() -> Expansion
@@ -523,7 +556,7 @@ pub fn empty() -> Expansion
 
 ### trait: Provider
 
-[Source line 17](../../../extended/ext/cli_response.lani#L17)
+[Source line 47](../../../extended/ext/cli_response.lani#L47)
 
 ```lanius
 pub trait Provider<H>
@@ -531,7 +564,7 @@ pub trait Provider<H>
 
 #### trait member: load
 
-[Source line 18](../../../extended/ext/cli_response.lani#L18)
+[Source line 48](../../../extended/ext/cli_response.lani#L48)
 
 ```lanius
 pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,H>;
@@ -539,9 +572,41 @@ pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,H>;
 
 ## Implementation blocks and public methods
 
-### impl at line 94
+### impl at line 40
 
-[Source line 94](../../../extended/ext/cli_response.lani#L94)
+[Source line 40](../../../extended/ext/cli_response.lani#L40)
+
+```lanius
+pub impl Preparation
+```
+
+#### method: is_empty
+
+[Source line 41](../../../extended/ext/cli_response.lani#L41)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: is_loading
+
+[Source line 42](../../../extended/ext/cli_response.lani#L42)
+
+```lanius
+pub fn is_loading(&self) -> bool
+```
+
+#### method: is_ready
+
+[Source line 43](../../../extended/ext/cli_response.lani#L43)
+
+```lanius
+pub fn is_ready(&self) -> bool
+```
+
+### impl at line 124
+
+[Source line 124](../../../extended/ext/cli_response.lani#L124)
 
 ```lanius
 pub impl Expansion
@@ -549,7 +614,7 @@ pub impl Expansion
 
 #### method: borrow
 
-[Source line 95](../../../extended/ext/cli_response.lani#L95)
+[Source line 125](../../../extended/ext/cli_response.lani#L125)
 
 ```lanius
 pub fn borrow(&self) -> &Expansion
@@ -557,7 +622,7 @@ pub fn borrow(&self) -> &Expansion
 
 #### method: is_ready
 
-[Source line 96](../../../extended/ext/cli_response.lani#L96)
+[Source line 126](../../../extended/ext/cli_response.lani#L126)
 
 ```lanius
 pub fn is_ready(&self) -> bool
@@ -565,7 +630,7 @@ pub fn is_ready(&self) -> bool
 
 #### method: arguments
 
-[Source line 97](../../../extended/ext/cli_response.lani#L97)
+[Source line 127](../../../extended/ext/cli_response.lani#L127)
 
 ```lanius
 pub fn arguments(&self) -> Option<View<View<u8>>>
@@ -573,7 +638,7 @@ pub fn arguments(&self) -> Option<View<View<u8>>>
 
 #### method: origin
 
-[Source line 101](../../../extended/ext/cli_response.lani#L101)
+[Source line 131](../../../extended/ext/cli_response.lani#L131)
 
 ```lanius
 pub fn origin(&self, index: i32) -> Option<Origin>
@@ -581,7 +646,7 @@ pub fn origin(&self, index: i32) -> Option<Origin>
 
 #### method: original
 
-[Source line 105](../../../extended/ext/cli_response.lani#L105)
+[Source line 135](../../../extended/ext/cli_response.lani#L135)
 
 ```lanius
 pub fn original(&self, index: i32) -> Option<View<u8>>
@@ -589,7 +654,7 @@ pub fn original(&self, index: i32) -> Option<View<u8>>
 
 #### method: source
 
-[Source line 109](../../../extended/ext/cli_response.lani#L109)
+[Source line 139](../../../extended/ext/cli_response.lani#L139)
 
 ```lanius
 pub fn source(&self, index: i32) -> Option<SourceInfo>
@@ -597,7 +662,7 @@ pub fn source(&self, index: i32) -> Option<SourceInfo>
 
 #### method: raw_source
 
-[Source line 114](../../../extended/ext/cli_response.lani#L114)
+[Source line 144](../../../extended/ext/cli_response.lani#L144)
 
 ```lanius
 pub fn raw_source(&self, index: i32) -> Option<View<u8>>
@@ -605,7 +670,7 @@ pub fn raw_source(&self, index: i32) -> Option<View<u8>>
 
 #### method: prepare
 
-[Source line 235](../../../extended/ext/cli_response.lani#L235)
+[Source line 265](../../../extended/ext/cli_response.lani#L265)
 
 ```lanius
 pub fn prepare<P,H>(&self, arguments: View<View<u8>>, provider: &P, limits: Limits) -> Result<i32,Failure<H>> where P: Provider<H>
@@ -613,7 +678,7 @@ pub fn prepare<P,H>(&self, arguments: View<View<u8>>, provider: &P, limits: Limi
 
 #### method: locate
 
-[Source line 296](../../../extended/ext/cli_response.lani#L296)
+[Source line 326](../../../extended/ext/cli_response.lani#L326)
 
 ```lanius
 pub fn locate(&self, location: ext::cli::Location, maximum_work: u64) -> Result<Origin,LocateError>
@@ -621,7 +686,7 @@ pub fn locate(&self, location: ext::cli::Location, maximum_work: u64) -> Result<
 
 #### method: destroy
 
-[Source line 318](../../../extended/ext/cli_response.lani#L318)
+[Source line 348](../../../extended/ext/cli_response.lani#L348)
 
 ```lanius
 pub fn destroy(&self)

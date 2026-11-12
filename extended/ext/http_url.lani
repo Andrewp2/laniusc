@@ -1,6 +1,7 @@
 // Owned HTTP(S) URL planning over canonical URI syntax. Host effects are only
 // allocator backing; no DNS, sockets, TLS or files. Keep one manual owner.
 module ext::http_url;
+import core::lifecycle;
 import alloc::vec;
 import alloc::vec::Vec;
 import core::net;
@@ -27,7 +28,7 @@ pub struct Url {
     storage:Vec<u8>, request_target:Vec<u8>, selected_scheme:Scheme,
     selected_kind:HostKind, address:Option<IpAddr>, selected_port:u16,
     host_start:i32, host_length:i32, authority_start:i32,
-    authority_length:i32, active:bool
+    authority_length:i32, lifetime: core::lifecycle::Lifetime
 }
 struct Profile {
     scheme:Scheme, kind:HostKind, address:Option<IpAddr>, port:u16,
@@ -215,28 +216,28 @@ pub fn parse(input:View<u8>, limits:Limits) -> Result<Url,Error> {
         selected_kind:profile.kind, address:profile.address, selected_port:profile.port,
         host_start:profile.host.start-input.start, host_length:profile.host.length,
         authority_start:profile.authority.start-input.start, authority_length:profile.authority.length,
-        active:true });
+        lifetime: core::lifecycle::lifetime_start() });
 }
 
 pub impl Url {
     pub fn borrow(&self) -> &Url { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
-    pub fn scheme(&self) -> Option<Scheme> { if (!self.active) { return None(); } return Some(self.selected_scheme); }
-    pub fn host_kind(&self) -> Option<HostKind> { if (!self.active) { return None(); } return Some(self.selected_kind); }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
+    pub fn scheme(&self) -> Option<Scheme> { if (!self.lifetime.is_active()) { return None(); } return Some(self.selected_scheme); }
+    pub fn host_kind(&self) -> Option<HostKind> { if (!self.lifetime.is_active()) { return None(); } return Some(self.selected_kind); }
     pub fn host(&self) -> Option<View<u8>> {
-        if (!self.active) { return None(); }
+        if (!self.lifetime.is_active()) { return None(); }
         return Some(self.storage.as_view().subview(self.host_start,self.host_start+self.host_length).unwrap());
     }
-    pub fn ip(&self) -> Option<IpAddr> { if (!self.active) { return None(); } return self.address; }
-    pub fn port(&self) -> Option<u16> { if (!self.active) { return None(); } return Some(self.selected_port); }
+    pub fn ip(&self) -> Option<IpAddr> { if (!self.lifetime.is_active()) { return None(); } return self.address; }
+    pub fn port(&self) -> Option<u16> { if (!self.lifetime.is_active()) { return None(); } return Some(self.selected_port); }
     pub fn authority(&self) -> Option<View<u8>> {
-        if (!self.active) { return None(); }
+        if (!self.lifetime.is_active()) { return None(); }
         return Some(self.storage.as_view().subview(self.authority_start,self.authority_start+self.authority_length).unwrap());
     }
-    pub fn target(&self) -> Option<View<u8>> { if (!self.active) { return None(); } return Some(self.request_target.as_view()); }
+    pub fn target(&self) -> Option<View<u8>> { if (!self.lifetime.is_active()) { return None(); } return Some(self.request_target.as_view()); }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.active = false;
+        if (!self.lifetime.is_active()) { return false; }
+        self.lifetime.release();
         self.request_target.destroy(); self.storage.destroy(); self.address = None();
         return true;
     }

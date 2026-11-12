@@ -2,6 +2,7 @@
 // Shortest significant decimal inside the exact nearest-even rounding interval.
 // No heap allocation or host float parser/formatter. See stdlib-float-decimal.md.
 module core::float_decimal;
+import core::lifecycle;
 import core::f32;
 import core::f64;
 import core::float_tables;
@@ -21,10 +22,10 @@ fn storage(scratch: core::slice::View<u32>) -> core::result::Result<i32,Error> {
     if (scratch.start < 0 || scratch.length < 0 || scratch.start > 2147483647-scratch.length) { return core::result::Err(Error::Bounds); }
     if (scratch.length < SCRATCH_LEN) { return core::result::Err(Error::ScratchTooSmall(SCRATCH_LEN)); } return core::result::Ok(0);
 }
-struct Budget { left: u64, failed: bool }
+struct Budget { left: u64, health: core::lifecycle::Health }
 impl Budget {
     fn borrow(&self) -> &Budget { return self; }
-    fn pay(&self, amount: u64) { if (amount > self.left) { self.failed = true; self.left = 0; } else { self.left -= amount; } }
+    fn pay(&self, amount: u64) { if (amount > self.left) { self.health.fail(); self.left = 0; } else { self.left -= amount; } }
 }
 struct Big { words: core::slice::View<u32>, length: i32 }
 fn big(scratch: core::slice::View<u32>, slot: i32) -> Big { return Big { words: core::result::unwrap(scratch.subview(slot*128,(slot+1)*128)), length: 0 }; }
@@ -84,7 +85,7 @@ impl Big {
         while (i > 0) { i -= 1; let value: u64 = (carry << 32) | (self.get(i) as u64); self.put(i,(value/(divisor as u64)) as u32); carry = value%(divisor as u64); } self.trim(); return carry as u32;
     }
     fn power(&self, factor: u32, exponent: i32, budget: &Budget) {
-        let i: i32 = 0; while (i < exponent && !budget.failed) { self.multiply_small(factor,budget); i += 1; }
+        let i: i32 = 0; while (i < exponent && !budget.health.is_failed()) { self.multiply_small(factor,budget); i += 1; }
     }
 }
 // The el_* fields are Eisel-Lemire parameters: minimum unbiased exponent,
@@ -248,7 +249,7 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     if (!valid(input) || limits.max_input < 0 || limits.max_digits < 0 || limits.max_digits > 768) { return core::result::Err(Error::Bounds); }
     let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
     if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); }
-    let budget: Budget = Budget { left: limits.max_work, failed: false }; budget.pay(input.length as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let budget: Budget = Budget { left: limits.max_work, health: core::lifecycle::health_start() }; budget.pay(input.length as u64); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     let at: i32 = 0; let sign: u64 = 0;
     if (at < input.length && (input.values[input.start+at] == 43 || input.values[input.start+at] == 45)) { if (input.values[input.start+at] == 45) { sign = cfg.sign; } at += 1; }
     let known: i32 = special(input,at); if (known == 1) { return core::result::Ok(sign | cfg.infinity); } if (known == 2) { return core::result::Ok(sign | cfg.nan); }
@@ -285,7 +286,7 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     exponent -= fraction; let order: i32 = exponent+significant-1;
     if (order > cfg.max_order) { return core::result::Ok(sign | cfg.infinity); } if (order < cfg.min_order) { return core::result::Ok(sign); }
     // Charged like a short exact step, so tiny budgets still report WorkLimit.
-    budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    budget.pay(100); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     if (significant <= 19) {
         // All significant digits fit in fast, so the value is fast * 10^exponent.
         let quick: u64 = eisel_lemire(exponent,fast,cfg.borrow());
@@ -300,20 +301,20 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     let index: i32 = mantissa_start;
     while (index < mantissa_end) {
         let byte: u8 = input.values[input.start+index];
-        if (byte != 46) { numerator.multiply_small(10,budget.borrow()); numerator.add_small((byte-48) as u32,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
+        if (byte != 46) { numerator.multiply_small(10,budget.borrow()); numerator.add_small((byte-48) as u32,budget.borrow()); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); } }
         index += 1;
     }
     denominator.set(1,budget.borrow()); if (exponent >= 0) { numerator.power(10,exponent,budget.borrow()); } else { denominator.power(10,0-exponent,budget.borrow()); }
-    if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     // Positive IEEE encodings are ordered by value. Find the floor, then compare
     // its upper midpoint; adding one also handles the max-finite/inf threshold.
     let low: u64 = 0; let high: u64 = cfg.max_finite;
     while (low < high) {
         let middle: u64 = low+(high-low+1)/2; let comparison: i32 = compare_dyadic(numerator,denominator,dyadic(middle,cfg),temporary,shifted,budget.borrow());
-        if (budget.failed) { return core::result::Err(Error::WorkLimit); } if (comparison >= 0) { low = middle; } else { high = middle-1; }
+        if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); } if (comparison >= 0) { low = middle; } else { high = middle-1; }
     }
     let value: Dyadic = dyadic(low,cfg); value.mantissa = value.mantissa*4+2; value.exponent -= 2;
-    let comparison: i32 = compare_dyadic(numerator,denominator,value,temporary,shifted,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let comparison: i32 = compare_dyadic(numerator,denominator,value,temporary,shifted,budget.borrow()); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     if (comparison > 0 || (comparison == 0 && (low & 1) != 0)) { low += 1; }
     return core::result::Ok(sign | low);
 }
@@ -341,11 +342,11 @@ fn decimal_digit(groups: core::slice::View<u32>, count: i32, first: i32, index: 
 }
 fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<Decimal,Error> {
     let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
-    let budget: Budget = Budget { left: work, failed: false }; budget.pay(1); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let budget: Budget = Budget { left: work, health: core::lifecycle::health_start() }; budget.pay(1); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     let negative: bool = (bits & cfg.sign) != 0; let absolute: u64 = bits & (cfg.sign-1);
     if (absolute >= cfg.infinity) { let kind: i32 = 1; if (absolute > cfg.infinity) { kind = 2; negative = false; } return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: kind }); }
     if (absolute == 0) { return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: 0 }); }
-    budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    budget.pay(100); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     let found: Shortest = shortest(absolute,cfg.fraction_bits,cfg.bias);
     return core::result::Ok(Decimal { coefficient: found.coefficient, exponent: found.exponent, negative: negative, special: 0 });
 }
@@ -512,7 +513,7 @@ fn precise_len(value: Precise) -> i32 {
 fn prepare_precision(bits: u64, cfg: Config, options: PrecisionOptions, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<Precise,Error> {
     if (options.precision < 0 || options.precision > MAX_PRECISION) { return core::result::Err(Error::Bounds); }
     let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
-    let budget: Budget = Budget { left: work, failed: false }; budget.pay(1); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let budget: Budget = Budget { left: work, health: core::lifecycle::health_start() }; budget.pay(1); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     let output_digits: core::slice::View<u32> = core::result::unwrap(scratch.subview(0,768));
     let negative: bool = (bits & cfg.sign) != 0; let absolute: u64 = bits & (cfg.sign-1); let special_kind: i32 = 0;
     let count: i32 = 1; let order: i32 = 0;
@@ -525,11 +526,11 @@ fn prepare_precision(bits: u64, cfg: Config, options: PrecisionOptions, scratch:
             let exact: Big = big(scratch,0); let value: Dyadic = dyadic(absolute,cfg); let scale: i32 = 0;
             exact.set(value.mantissa,budget.borrow());
             if (value.exponent < 0) { scale = 0-value.exponent; exact.power(5,scale,budget.borrow()); } else { exact.shift(value.exponent,budget.borrow()); }
-            if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+            if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
             let groups: core::slice::View<u32> = core::result::unwrap(scratch.subview(768,864)); let group_count: i32 = 0;
-            while (exact.length > 0) { assert(group_count < 96); groups.values[groups.start+group_count] = exact.divide(1000000000,budget.borrow()); group_count += 1; if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
+            while (exact.length > 0) { assert(group_count < 96); groups.values[groups.start+group_count] = exact.divide(1000000000,budget.borrow()); group_count += 1; if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); } }
             let first: i32 = digits(groups.values[groups.start+group_count-1] as u64); count = (group_count-1)*9+first; assert(count <= 768); order = count-scale-1;
-            budget.pay(count as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+            budget.pay(count as u64); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
             // The integer is dead before its storage becomes decimal digits.
             let i: i32 = 0; while (i < count) { output_digits.values[output_digits.start+i] = decimal_digit(groups,group_count,first,i) as u32; i += 1; }
             let style: i32 = precision_style(options.style); let precision: i32 = options.precision; if (style == 2 && precision == 0) { precision = 1; }
@@ -566,7 +567,7 @@ fn prepare_precision(bits: u64, cfg: Config, options: PrecisionOptions, scratch:
     }
     let converted: Precise = Precise { values: output_digits, count: count, order: order, negative: negative, special: special_kind, scientific: scientific_form, fraction: fraction, point: fraction > 0 || options.alternate, uppercase: options.uppercase };
     // Reserve rendering work before any caller output can be written.
-    budget.pay(precise_len(converted) as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    budget.pay(precise_len(converted) as u64); if (budget.health.is_failed()) { return core::result::Err(Error::WorkLimit); }
     return core::result::Ok(converted);
 }
 fn render_precision(value: Precise, output: core::slice::View<u8>) {

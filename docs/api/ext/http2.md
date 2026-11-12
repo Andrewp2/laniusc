@@ -16,19 +16,22 @@ I/O-free HTTP/2 client connection engine: the caller sends output() and feeds re
 - [extended-hpack](../../extended-hpack.md)
 - [extended-http-agent](../../extended-http-agent.md)
 
-Declaration counts: enum: 2; field: 43; function: 5; impl: 1; method: 36; struct: 3; variant: 13.
+Declaration counts: enum: 2; field: 42; function: 5; impl: 1; method: 36; struct: 3; variant: 13.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http2.lani#L11)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http2.lani#L12)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http2.lani#L13)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http2.lani#L14)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http2.lani#L15)
-- [ext::hpack](hpack.md) · [source](../../../extended/ext/http2.lani#L16)
-- [ext::http2_frame](http2_frame.md) · [source](../../../extended/ext/http2.lani#L17)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/http2.lani#L11)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/http2.lani#L12)
+- [ext::http2_lifecycle](http2_lifecycle.md) · [source](../../../extended/ext/http2.lani#L13)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http2.lani#L14)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http2.lani#L15)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http2.lani#L16)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http2.lani#L17)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http2.lani#L18)
+- [ext::hpack](hpack.md) · [source](../../../extended/ext/http2.lani#L19)
+- [ext::http2_frame](http2_frame.md) · [source](../../../extended/ext/http2.lani#L20)
 
 ## Types, fields and variants
 
@@ -36,7 +39,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Cause
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 pub enum Cause
@@ -44,7 +47,7 @@ pub enum Cause
 
 #### variant: Protocol
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Protocol
@@ -52,7 +55,7 @@ Protocol
 
 #### variant: Peer
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Peer
@@ -60,7 +63,7 @@ Peer
 
 #### variant: Refused
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Refused
@@ -68,7 +71,7 @@ Refused
 
 #### variant: Malformed
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Malformed
@@ -76,7 +79,7 @@ Malformed
 
 #### variant: Limit
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Limit
@@ -84,7 +87,7 @@ Limit
 
 #### variant: Busy
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Busy
@@ -92,7 +95,7 @@ Busy
 
 #### variant: Closed
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Closed
@@ -100,7 +103,7 @@ Closed
 
 #### variant: Cancelled
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 Cancelled
@@ -108,7 +111,7 @@ Cancelled
 
 #### variant: InvalidRequest
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 InvalidRequest
@@ -116,7 +119,7 @@ InvalidRequest
 
 #### variant: AllocationFailed
 
-[Source line 25](../../../extended/ext/http2.lani#L25)
+[Source line 28](../../../extended/ext/http2.lani#L28)
 
 ```lanius
 AllocationFailed
@@ -124,7 +127,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 26](../../../extended/ext/http2.lani#L26)
+[Source line 29](../../../extended/ext/http2.lani#L29)
 
 ```lanius
 pub struct Error
@@ -132,7 +135,7 @@ pub struct Error
 
 #### field: cause
 
-[Source line 26](../../../extended/ext/http2.lani#L26)
+[Source line 29](../../../extended/ext/http2.lani#L29)
 
 ```lanius
 cause: Cause
@@ -140,7 +143,7 @@ cause: Cause
 
 #### field: code
 
-[Source line 26](../../../extended/ext/http2.lani#L26)
+[Source line 29](../../../extended/ext/http2.lani#L29)
 
 ```lanius
 code: i32
@@ -148,7 +151,7 @@ code: i32
 
 #### field: stream
 
-[Source line 26](../../../extended/ext/http2.lani#L26)
+[Source line 29](../../../extended/ext/http2.lani#L29)
 
 ```lanius
 stream: i32
@@ -156,7 +159,7 @@ stream: i32
 
 ### enum: State
 
-[Source line 27](../../../extended/ext/http2.lani#L27)
+[Source line 30](../../../extended/ext/http2.lani#L30)
 
 ```lanius
 pub enum State
@@ -164,7 +167,7 @@ pub enum State
 
 #### variant: Open
 
-[Source line 27](../../../extended/ext/http2.lani#L27)
+[Source line 30](../../../extended/ext/http2.lani#L30)
 
 ```lanius
 Open
@@ -172,7 +175,7 @@ Open
 
 #### variant: Done
 
-[Source line 27](../../../extended/ext/http2.lani#L27)
+[Source line 30](../../../extended/ext/http2.lani#L30)
 
 ```lanius
 Done
@@ -180,7 +183,7 @@ Done
 
 #### variant: Failed
 
-[Source line 27](../../../extended/ext/http2.lani#L27)
+[Source line 30](../../../extended/ext/http2.lani#L30)
 
 ```lanius
 Failed
@@ -188,7 +191,7 @@ Failed
 
 ### struct: Options
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 pub struct Options
@@ -196,7 +199,7 @@ pub struct Options
 
 #### field: hpack
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 hpack: ext::hpack::Limits
@@ -204,7 +207,7 @@ hpack: ext::hpack::Limits
 
 #### field: encoder_table_bytes
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 encoder_table_bytes: i32
@@ -212,7 +215,7 @@ encoder_table_bytes: i32
 
 #### field: stream_window
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 stream_window: i32
@@ -220,7 +223,7 @@ stream_window: i32
 
 #### field: connection_window
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 connection_window: i32
@@ -228,7 +231,7 @@ connection_window: i32
 
 #### field: max_frame
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 max_frame: i32
@@ -236,7 +239,7 @@ max_frame: i32
 
 #### field: max_streams
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 max_streams: i32
@@ -244,7 +247,7 @@ max_streams: i32
 
 #### field: body_bytes
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 body_bytes: i32
@@ -252,7 +255,7 @@ body_bytes: i32
 
 #### field: block_bytes
 
-[Source line 34](../../../extended/ext/http2.lani#L34)
+[Source line 37](../../../extended/ext/http2.lani#L37)
 
 ```lanius
 block_bytes: i32
@@ -434,20 +437,20 @@ unacknowledged: i64
 settings_pending: i32
 ```
 
-#### field: settings_seen
+#### field: settings_seen_completion
 
 [Source line 57](../../../extended/ext/http2.lani#L57)
 
 ```lanius
-settings_seen: bool
+settings_seen_completion: core::iter_state::Completion
 ```
 
-#### field: goaway_received
+#### field: goaway
 
 [Source line 58](../../../extended/ext/http2.lani#L58)
 
 ```lanius
-goaway_received: bool
+goaway: ext::http2_lifecycle::Goaway
 ```
 
 #### field: goaway_last
@@ -466,20 +469,12 @@ goaway_last: i32
 goaway_code: i32
 ```
 
-#### field: goaway_sent
-
-[Source line 58](../../../extended/ext/http2.lani#L58)
-
-```lanius
-goaway_sent: bool
-```
-
-#### field: failed
+#### field: health
 
 [Source line 59](../../../extended/ext/http2.lani#L59)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 #### field: failure
@@ -514,19 +509,19 @@ pings_acked: i32
 frames: i64
 ```
 
-#### field: active
+#### field: lifetime
 
 [Source line 59](../../../extended/ext/http2.lani#L59)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 35](../../../extended/ext/http2.lani#L35)
+[Source line 38](../../../extended/ext/http2.lani#L38)
 
 ```lanius
 pub fn default_options() -> Options

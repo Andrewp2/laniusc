@@ -11,6 +11,6 @@ fn impossible() -> std::command::Child { assert(false); let args: [core::slice::
 fn main() -> i32 { let args: [core::slice::View<u8>;2] = [bytes("/bin/sleep",10),bytes("60",2)]; let request = std::command::request(args[0],core::slice::view(args,2).unwrap(),core::slice::view(args,0).unwrap()); request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
     let child = owned(std::command::spawn(request).unwrap()); let pid: i32 = core::option::unwrap(child.id()); let result = child.try_wait(); let code: i32 = 40;
     if (result.is_err()) { assert(result.unwrap_err().errno == 4); code = 41; } else { assert(core::option::is_none(result.unwrap())); }
-    assert(core::option::unwrap(child.id()) == pid && core::option::is_none(child.cached)); child.signal(0).unwrap(); assert(core::option::unwrap(child.cancel_and_wait().unwrap().signal) == 9); assert(core::option::is_none(child.id()) && child.signal(9).is_err()); assert(core::option::is_some(child.try_wait().unwrap()));
+    assert(core::option::unwrap(child.id()) == pid && core::option::is_none(child.lifecycle.cached())); child.signal(0).unwrap(); assert(core::option::unwrap(child.cancel_and_wait().unwrap().signal) == 9); assert(core::option::is_none(child.id()) && child.signal(9).is_err()); assert(core::option::is_some(child.try_wait().unwrap()));
     let status: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(status),true) == -10); return code;
 }

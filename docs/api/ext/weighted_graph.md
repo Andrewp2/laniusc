@@ -21,14 +21,15 @@ Declaration counts: enum: 1; field: 21; function: 8; impl: 3; method: 18; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::binary_heap](../alloc/binary_heap.md) · [source](../../../extended/ext/weighted_graph.lani#L4)
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/weighted_graph.lani#L5)
-- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/weighted_graph.lani#L6)
-- [core::i64](../core/i64.md) · [source](../../../extended/ext/weighted_graph.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/weighted_graph.lani#L8)
-- [core::option](../core/option.md) · [source](../../../extended/ext/weighted_graph.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/weighted_graph.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/weighted_graph.lani#L11)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/weighted_graph.lani#L4)
+- [alloc::binary_heap](../alloc/binary_heap.md) · [source](../../../extended/ext/weighted_graph.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/weighted_graph.lani#L6)
+- [core::cmp](../core/cmp.md) · [source](../../../extended/ext/weighted_graph.lani#L7)
+- [core::i64](../core/i64.md) · [source](../../../extended/ext/weighted_graph.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/weighted_graph.lani#L9)
+- [core::option](../core/option.md) · [source](../../../extended/ext/weighted_graph.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/weighted_graph.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/weighted_graph.lani#L12)
 
 ## Types, fields and variants
 
@@ -36,7 +37,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Edge
 
-[Source line 13](../../../extended/ext/weighted_graph.lani#L13)
+[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
 
 ```lanius
 pub struct Edge
@@ -44,7 +45,7 @@ pub struct Edge
 
 #### field: source
 
-[Source line 13](../../../extended/ext/weighted_graph.lani#L13)
+[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
 
 ```lanius
 source: i32
@@ -52,7 +53,7 @@ source: i32
 
 #### field: target
 
-[Source line 13](../../../extended/ext/weighted_graph.lani#L13)
+[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
 
 ```lanius
 target: i32
@@ -60,7 +61,7 @@ target: i32
 
 #### field: cost
 
-[Source line 13](../../../extended/ext/weighted_graph.lani#L13)
+[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
 
 ```lanius
 cost: i64
@@ -68,7 +69,7 @@ cost: i64
 
 ### struct: Arc
 
-[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
+[Source line 15](../../../extended/ext/weighted_graph.lani#L15)
 
 ```lanius
 pub struct Arc
@@ -76,7 +77,7 @@ pub struct Arc
 
 #### field: target
 
-[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
+[Source line 15](../../../extended/ext/weighted_graph.lani#L15)
 
 ```lanius
 target: i32
@@ -84,7 +85,7 @@ target: i32
 
 #### field: cost
 
-[Source line 14](../../../extended/ext/weighted_graph.lani#L14)
+[Source line 15](../../../extended/ext/weighted_graph.lani#L15)
 
 ```lanius
 cost: i64
@@ -92,7 +93,7 @@ cost: i64
 
 ### struct: View
 
-[Source line 15](../../../extended/ext/weighted_graph.lani#L15)
+[Source line 16](../../../extended/ext/weighted_graph.lani#L16)
 
 ```lanius
 pub struct View
@@ -100,7 +101,7 @@ pub struct View
 
 #### field: nodes
 
-[Source line 16](../../../extended/ext/weighted_graph.lani#L16)
+[Source line 17](../../../extended/ext/weighted_graph.lani#L17)
 
 ```lanius
 nodes: i32
@@ -108,7 +109,7 @@ nodes: i32
 
 #### field: offsets
 
-[Source line 16](../../../extended/ext/weighted_graph.lani#L16)
+[Source line 17](../../../extended/ext/weighted_graph.lani#L17)
 
 ```lanius
 offsets: core::slice::View<i32>
@@ -116,7 +117,7 @@ offsets: core::slice::View<i32>
 
 #### field: arcs
 
-[Source line 16](../../../extended/ext/weighted_graph.lani#L16)
+[Source line 17](../../../extended/ext/weighted_graph.lani#L17)
 
 ```lanius
 arcs: core::slice::View<Arc>
@@ -124,7 +125,7 @@ arcs: core::slice::View<Arc>
 
 ### struct: Limits
 
-[Source line 18](../../../extended/ext/weighted_graph.lani#L18)
+[Source line 19](../../../extended/ext/weighted_graph.lani#L19)
 
 ```lanius
 pub struct Limits
@@ -132,7 +133,7 @@ pub struct Limits
 
 #### field: max_nodes
 
-[Source line 18](../../../extended/ext/weighted_graph.lani#L18)
+[Source line 19](../../../extended/ext/weighted_graph.lani#L19)
 
 ```lanius
 max_nodes: i32
@@ -140,7 +141,7 @@ max_nodes: i32
 
 #### field: max_edges
 
-[Source line 18](../../../extended/ext/weighted_graph.lani#L18)
+[Source line 19](../../../extended/ext/weighted_graph.lani#L19)
 
 ```lanius
 max_edges: i32
@@ -148,7 +149,7 @@ max_edges: i32
 
 #### field: max_work
 
-[Source line 18](../../../extended/ext/weighted_graph.lani#L18)
+[Source line 19](../../../extended/ext/weighted_graph.lani#L19)
 
 ```lanius
 max_work: u64
@@ -156,7 +157,7 @@ max_work: u64
 
 ### enum: ErrorKind
 
-[Source line 19](../../../extended/ext/weighted_graph.lani#L19)
+[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
 
 ```lanius
 pub enum ErrorKind
@@ -164,7 +165,7 @@ pub enum ErrorKind
 
 #### variant: InvalidLimits
 
-[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
+[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
 
 ```lanius
 InvalidLimits
@@ -172,7 +173,7 @@ InvalidLimits
 
 #### variant: Bounds
 
-[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
+[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
 
 ```lanius
 Bounds
@@ -180,7 +181,7 @@ Bounds
 
 #### variant: NodeLimit
 
-[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
+[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
 
 ```lanius
 NodeLimit
@@ -188,7 +189,7 @@ NodeLimit
 
 #### variant: EdgeLimit
 
-[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
+[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
 
 ```lanius
 EdgeLimit
@@ -196,7 +197,7 @@ EdgeLimit
 
 #### variant: WorkLimit
 
-[Source line 20](../../../extended/ext/weighted_graph.lani#L20)
+[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
 
 ```lanius
 WorkLimit
@@ -204,7 +205,7 @@ WorkLimit
 
 #### variant: Offset
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 Offset
@@ -212,7 +213,7 @@ Offset
 
 #### variant: Source
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 Source
@@ -220,7 +221,7 @@ Source
 
 #### variant: Target
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 Target
@@ -228,7 +229,7 @@ Target
 
 #### variant: Order
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 Order
@@ -236,7 +237,7 @@ Order
 
 #### variant: NegativeEdge
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 NegativeEdge
@@ -244,7 +245,7 @@ NegativeEdge
 
 #### variant: Overflow
 
-[Source line 21](../../../extended/ext/weighted_graph.lani#L21)
+[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
 
 ```lanius
 Overflow
@@ -252,7 +253,7 @@ Overflow
 
 #### variant: NegativeCycle
 
-[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
+[Source line 23](../../../extended/ext/weighted_graph.lani#L23)
 
 ```lanius
 NegativeCycle
@@ -260,7 +261,7 @@ NegativeCycle
 
 #### variant: AllocationFailed
 
-[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
+[Source line 23](../../../extended/ext/weighted_graph.lani#L23)
 
 ```lanius
 AllocationFailed
@@ -268,7 +269,7 @@ AllocationFailed
 
 #### variant: Closed
 
-[Source line 22](../../../extended/ext/weighted_graph.lani#L22)
+[Source line 23](../../../extended/ext/weighted_graph.lani#L23)
 
 ```lanius
 Closed
@@ -276,7 +277,7 @@ Closed
 
 ### struct: Error
 
-[Source line 24](../../../extended/ext/weighted_graph.lani#L24)
+[Source line 25](../../../extended/ext/weighted_graph.lani#L25)
 
 ```lanius
 pub struct Error
@@ -284,7 +285,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 24](../../../extended/ext/weighted_graph.lani#L24)
+[Source line 25](../../../extended/ext/weighted_graph.lani#L25)
 
 ```lanius
 kind: ErrorKind
@@ -292,7 +293,7 @@ kind: ErrorKind
 
 #### field: node
 
-[Source line 24](../../../extended/ext/weighted_graph.lani#L24)
+[Source line 25](../../../extended/ext/weighted_graph.lani#L25)
 
 ```lanius
 node: i32
@@ -300,7 +301,7 @@ node: i32
 
 #### field: edge
 
-[Source line 24](../../../extended/ext/weighted_graph.lani#L24)
+[Source line 25](../../../extended/ext/weighted_graph.lani#L25)
 
 ```lanius
 edge: i32
@@ -308,7 +309,7 @@ edge: i32
 
 ### struct: Graph
 
-[Source line 25](../../../extended/ext/weighted_graph.lani#L25)
+[Source line 26](../../../extended/ext/weighted_graph.lani#L26)
 
 ```lanius
 pub struct Graph
@@ -316,7 +317,7 @@ pub struct Graph
 
 #### field: offsets
 
-[Source line 26](../../../extended/ext/weighted_graph.lani#L26)
+[Source line 27](../../../extended/ext/weighted_graph.lani#L27)
 
 ```lanius
 offsets: alloc::vec::Vec<i32>
@@ -324,7 +325,7 @@ offsets: alloc::vec::Vec<i32>
 
 #### field: arcs
 
-[Source line 26](../../../extended/ext/weighted_graph.lani#L26)
+[Source line 27](../../../extended/ext/weighted_graph.lani#L27)
 
 ```lanius
 arcs: alloc::vec::Vec<Arc>
@@ -332,23 +333,23 @@ arcs: alloc::vec::Vec<Arc>
 
 #### field: count
 
-[Source line 27](../../../extended/ext/weighted_graph.lani#L27)
+[Source line 28](../../../extended/ext/weighted_graph.lani#L28)
 
 ```lanius
 count: i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 27](../../../extended/ext/weighted_graph.lani#L27)
+[Source line 28](../../../extended/ext/weighted_graph.lani#L28)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### struct: Paths
 
-[Source line 30](../../../extended/ext/weighted_graph.lani#L30)
+[Source line 31](../../../extended/ext/weighted_graph.lani#L31)
 
 ```lanius
 pub struct Paths
@@ -356,7 +357,7 @@ pub struct Paths
 
 #### field: labels
 
-[Source line 31](../../../extended/ext/weighted_graph.lani#L31)
+[Source line 32](../../../extended/ext/weighted_graph.lani#L32)
 
 ```lanius
 labels: alloc::vec::Vec<Label>
@@ -364,25 +365,25 @@ labels: alloc::vec::Vec<Label>
 
 #### field: selected_source
 
-[Source line 31](../../../extended/ext/weighted_graph.lani#L31)
+[Source line 32](../../../extended/ext/weighted_graph.lani#L32)
 
 ```lanius
 selected_source: i32
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 31](../../../extended/ext/weighted_graph.lani#L31)
+[Source line 32](../../../extended/ext/weighted_graph.lani#L32)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 35](../../../extended/ext/weighted_graph.lani#L35)
+[Source line 36](../../../extended/ext/weighted_graph.lani#L36)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -392,7 +393,7 @@ Returns 1,048,576 nodes, 1,048,576 edges and 100,000,000 work units without allo
 
 ### function: validate
 
-[Source line 157](../../../extended/ext/weighted_graph.lani#L157)
+[Source line 158](../../../extended/ext/weighted_graph.lani#L158)
 
 ```lanius
 pub fn validate(value: View, limits: Limits) -> core::result::Result<i32,Error>
@@ -402,7 +403,7 @@ Admits limits, logical metadata, size_of capacities, offset length and work befo
 
 ### function: view
 
-[Source line 161](../../../extended/ext/weighted_graph.lani#L161)
+[Source line 162](../../../extended/ext/weighted_graph.lani#L162)
 
 ```lanius
 pub fn view(nodes: i32, offsets: core::slice::View<i32>, arcs: core::slice::View<Arc>, limits: Limits)
@@ -413,7 +414,7 @@ Returns a borrowed View after complete validation; physical backing and lifetime
 
 ### function: neighbors
 
-[Source line 167](../../../extended/ext/weighted_graph.lani#L167)
+[Source line 168](../../../extended/ext/weighted_graph.lani#L168)
 
 ```lanius
 pub fn neighbors(value: View, node: i32, limits: Limits)
@@ -424,7 +425,7 @@ Validates the complete graph before requested-node Bounds, then returns the borr
 
 ### function: from_view
 
-[Source line 222](../../../extended/ext/weighted_graph.lani#L222)
+[Source line 223](../../../extended/ext/weighted_graph.lani#L223)
 
 ```lanius
 pub fn from_view(input: View, limits: Limits) -> core::result::Result<Graph,Error>
@@ -434,7 +435,7 @@ Admits full validation/copy work before adjacency reads, then returns an indepen
 
 ### function: from_edges
 
-[Source line 242](../../../extended/ext/weighted_graph.lani#L242)
+[Source line 243](../../../extended/ext/weighted_graph.lani#L243)
 
 ```lanius
 pub fn from_edges(nodes: i32, edges: core::slice::View<Edge>, limits: Limits)
@@ -445,7 +446,7 @@ Checks raw endpoints in original order, then copies and sorts by (source,target,
 
 ### function: dijkstra
 
-[Source line 406](../../../extended/ext/weighted_graph.lani#L406)
+[Source line 407](../../../extended/ext/weighted_graph.lani#L407)
 
 ```lanius
 pub fn dijkstra(graph: View, source: i32, limits: Limits) -> core::result::Result<Paths,Error>
@@ -455,7 +456,7 @@ Validates, checks source/workspace/work admission, then rejects the first global
 
 ### function: bellman_ford
 
-[Source line 470](../../../extended/ext/weighted_graph.lani#L470)
+[Source line 471](../../../extended/ext/weighted_graph.lani#L471)
 
 ```lanius
 pub fn bellman_ford(graph: View, source: i32, limits: Limits) -> core::result::Result<Paths,Error>
@@ -465,9 +466,9 @@ Canonical in-place strict relaxation for at most n-1 passes, followed by a reach
 
 ## Implementation blocks and public methods
 
-### impl at line 178
+### impl at line 179
 
-[Source line 178](../../../extended/ext/weighted_graph.lani#L178)
+[Source line 179](../../../extended/ext/weighted_graph.lani#L179)
 
 ```lanius
 pub impl Graph
@@ -475,7 +476,7 @@ pub impl Graph
 
 #### method: borrow
 
-[Source line 179](../../../extended/ext/weighted_graph.lani#L179)
+[Source line 180](../../../extended/ext/weighted_graph.lani#L180)
 
 ```lanius
 pub fn borrow(&self) -> &Graph
@@ -483,7 +484,7 @@ pub fn borrow(&self) -> &Graph
 
 #### method: is_open
 
-[Source line 180](../../../extended/ext/weighted_graph.lani#L180)
+[Source line 181](../../../extended/ext/weighted_graph.lani#L181)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -491,7 +492,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 181](../../../extended/ext/weighted_graph.lani#L181)
+[Source line 182](../../../extended/ext/weighted_graph.lani#L182)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -499,7 +500,7 @@ pub fn node_count(&self) -> i32
 
 #### method: edge_count
 
-[Source line 182](../../../extended/ext/weighted_graph.lani#L182)
+[Source line 183](../../../extended/ext/weighted_graph.lani#L183)
 
 ```lanius
 pub fn edge_count(&self) -> i32
@@ -507,7 +508,7 @@ pub fn edge_count(&self) -> i32
 
 #### method: view
 
-[Source line 183](../../../extended/ext/weighted_graph.lani#L183)
+[Source line 184](../../../extended/ext/weighted_graph.lani#L184)
 
 ```lanius
 pub fn view(&self) -> core::option::Option<View>
@@ -515,15 +516,15 @@ pub fn view(&self) -> core::option::Option<View>
 
 #### method: destroy
 
-[Source line 189](../../../extended/ext/weighted_graph.lani#L189)
+[Source line 190](../../../extended/ext/weighted_graph.lani#L190)
 
 ```lanius
 pub fn destroy(&self) -> bool
 ```
 
-### impl at line 236
+### impl at line 237
 
-[Source line 236](../../../extended/ext/weighted_graph.lani#L236)
+[Source line 237](../../../extended/ext/weighted_graph.lani#L237)
 
 ```lanius
 pub impl core::cmp::Ord<Edge> for Edge
@@ -531,7 +532,7 @@ pub impl core::cmp::Ord<Edge> for Edge
 
 #### method: lt
 
-[Source line 237](../../../extended/ext/weighted_graph.lani#L237)
+[Source line 238](../../../extended/ext/weighted_graph.lani#L238)
 
 ```lanius
 pub fn lt(left: Edge, right: Edge) -> bool
@@ -539,7 +540,7 @@ pub fn lt(left: Edge, right: Edge) -> bool
 
 #### method: le
 
-[Source line 238](../../../extended/ext/weighted_graph.lani#L238)
+[Source line 239](../../../extended/ext/weighted_graph.lani#L239)
 
 ```lanius
 pub fn le(left: Edge, right: Edge) -> bool
@@ -547,7 +548,7 @@ pub fn le(left: Edge, right: Edge) -> bool
 
 #### method: gt
 
-[Source line 239](../../../extended/ext/weighted_graph.lani#L239)
+[Source line 240](../../../extended/ext/weighted_graph.lani#L240)
 
 ```lanius
 pub fn gt(left: Edge, right: Edge) -> bool
@@ -555,15 +556,15 @@ pub fn gt(left: Edge, right: Edge) -> bool
 
 #### method: ge
 
-[Source line 240](../../../extended/ext/weighted_graph.lani#L240)
+[Source line 241](../../../extended/ext/weighted_graph.lani#L241)
 
 ```lanius
 pub fn ge(left: Edge, right: Edge) -> bool
 ```
 
-### impl at line 292
+### impl at line 293
 
-[Source line 292](../../../extended/ext/weighted_graph.lani#L292)
+[Source line 293](../../../extended/ext/weighted_graph.lani#L293)
 
 ```lanius
 pub impl Paths
@@ -571,7 +572,7 @@ pub impl Paths
 
 #### method: borrow
 
-[Source line 293](../../../extended/ext/weighted_graph.lani#L293)
+[Source line 294](../../../extended/ext/weighted_graph.lani#L294)
 
 ```lanius
 pub fn borrow(&self) -> &Paths
@@ -579,7 +580,7 @@ pub fn borrow(&self) -> &Paths
 
 #### method: is_open
 
-[Source line 294](../../../extended/ext/weighted_graph.lani#L294)
+[Source line 295](../../../extended/ext/weighted_graph.lani#L295)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -587,7 +588,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 295](../../../extended/ext/weighted_graph.lani#L295)
+[Source line 296](../../../extended/ext/weighted_graph.lani#L296)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -595,7 +596,7 @@ pub fn node_count(&self) -> i32
 
 #### method: source
 
-[Source line 299](../../../extended/ext/weighted_graph.lani#L299)
+[Source line 300](../../../extended/ext/weighted_graph.lani#L300)
 
 ```lanius
 pub fn source(&self) -> core::option::Option<i32>
@@ -603,7 +604,7 @@ pub fn source(&self) -> core::option::Option<i32>
 
 #### method: distance
 
-[Source line 303](../../../extended/ext/weighted_graph.lani#L303)
+[Source line 304](../../../extended/ext/weighted_graph.lani#L304)
 
 ```lanius
 pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i64>,Error>
@@ -611,7 +612,7 @@ pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i
 
 #### method: predecessor
 
-[Source line 312](../../../extended/ext/weighted_graph.lani#L312)
+[Source line 313](../../../extended/ext/weighted_graph.lani#L313)
 
 ```lanius
 pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Option<Edge>,Error>
@@ -619,7 +620,7 @@ pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Optio
 
 #### method: path_to
 
-[Source line 325](../../../extended/ext/weighted_graph.lani#L325)
+[Source line 326](../../../extended/ext/weighted_graph.lani#L326)
 
 ```lanius
 pub fn path_to(&self, node: i32, limits: Limits)
@@ -628,7 +629,7 @@ pub fn path_to(&self, node: i32, limits: Limits)
 
 #### method: destroy
 
-[Source line 367](../../../extended/ext/weighted_graph.lani#L367)
+[Source line 368](../../../extended/ext/weighted_graph.lani#L368)
 
 ```lanius
 pub fn destroy(&self) -> bool

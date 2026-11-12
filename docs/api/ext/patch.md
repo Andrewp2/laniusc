@@ -18,12 +18,14 @@ Declaration counts: enum: 1; field: 10; function: 3; impl: 1; method: 5; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/patch.lani#L3)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/patch.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/patch.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/patch.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/patch.lani#L7)
-- [ext::diff](diff.md) · [source](../../../extended/ext/patch.lani#L8)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/patch.lani#L3)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/patch.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/patch.lani#L5)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/patch.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/patch.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/patch.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/patch.lani#L9)
+- [ext::diff](diff.md) · [source](../../../extended/ext/patch.lani#L10)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 pub enum ErrorKind
@@ -39,7 +41,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 Bounds
@@ -47,7 +49,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 InvalidLimits
@@ -55,7 +57,7 @@ InvalidLimits
 
 #### variant: Malformed
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 Malformed
@@ -63,7 +65,7 @@ Malformed
 
 #### variant: Unsupported
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 Unsupported
@@ -71,7 +73,7 @@ Unsupported
 
 #### variant: Conflict
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 Conflict
@@ -79,7 +81,7 @@ Conflict
 
 #### variant: LineLimit
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 LineLimit
@@ -87,7 +89,7 @@ LineLimit
 
 #### variant: WorkLimit
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 WorkLimit
@@ -95,7 +97,7 @@ WorkLimit
 
 #### variant: OutputLimit
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 OutputLimit
@@ -103,7 +105,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 9](../../../extended/ext/patch.lani#L9)
+[Source line 11](../../../extended/ext/patch.lani#L11)
 
 ```lanius
 AllocationFailed
@@ -111,7 +113,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 10](../../../extended/ext/patch.lani#L10)
+[Source line 12](../../../extended/ext/patch.lani#L12)
 
 ```lanius
 pub struct Error
@@ -119,7 +121,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 10](../../../extended/ext/patch.lani#L10)
+[Source line 12](../../../extended/ext/patch.lani#L12)
 
 ```lanius
 kind: ErrorKind
@@ -127,7 +129,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 10](../../../extended/ext/patch.lani#L10)
+[Source line 12](../../../extended/ext/patch.lani#L12)
 
 ```lanius
 offset: i32
@@ -135,7 +137,7 @@ offset: i32
 
 ### struct: Hunk
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 pub struct Hunk
@@ -143,7 +145,7 @@ pub struct Hunk
 
 #### field: before
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 before: i32
@@ -151,7 +153,7 @@ before: i32
 
 #### field: before_count
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 before_count: i32
@@ -159,7 +161,7 @@ before_count: i32
 
 #### field: after
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 after: i32
@@ -167,7 +169,7 @@ after: i32
 
 #### field: after_count
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 after_count: i32
@@ -175,7 +177,7 @@ after_count: i32
 
 #### field: first
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 first: i32
@@ -183,7 +185,7 @@ first: i32
 
 #### field: count
 
-[Source line 11](../../../extended/ext/patch.lani#L11)
+[Source line 13](../../../extended/ext/patch.lani#L13)
 
 ```lanius
 count: i32
@@ -191,7 +193,7 @@ count: i32
 
 ### struct: Patch
 
-[Source line 13](../../../extended/ext/patch.lani#L13)
+[Source line 15](../../../extended/ext/patch.lani#L15)
 
 ```lanius
 pub struct Patch
@@ -199,7 +201,7 @@ pub struct Patch
 
 #### field: hunks
 
-[Source line 13](../../../extended/ext/patch.lani#L13)
+[Source line 15](../../../extended/ext/patch.lani#L15)
 
 ```lanius
 hunks: alloc::vec::Vec<Hunk>
@@ -207,7 +209,7 @@ hunks: alloc::vec::Vec<Hunk>
 
 #### field: lines
 
-[Source line 13](../../../extended/ext/patch.lani#L13)
+[Source line 15](../../../extended/ext/patch.lani#L15)
 
 ```lanius
 lines: alloc::vec::Vec<Line>
@@ -217,7 +219,7 @@ lines: alloc::vec::Vec<Line>
 
 ### function: parse
 
-[Source line 63](../../../extended/ext/patch.lani#L63)
+[Source line 65](../../../extended/ext/patch.lani#L65)
 
 ```lanius
 pub fn parse(input:core::slice::View<u8>,limits:ext::diff::Limits) -> core::result::Result<Patch,Error>
@@ -225,7 +227,7 @@ pub fn parse(input:core::slice::View<u8>,limits:ext::diff::Limits) -> core::resu
 
 ### function: apply
 
-[Source line 162](../../../extended/ext/patch.lani#L162)
+[Source line 164](../../../extended/ext/patch.lani#L164)
 
 ```lanius
 pub fn apply(base:core::slice::View<u8>,value:&Patch,limits:ext::diff::Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -233,7 +235,7 @@ pub fn apply(base:core::slice::View<u8>,value:&Patch,limits:ext::diff::Limits) -
 
 ### function: apply_unified
 
-[Source line 180](../../../extended/ext/patch.lani#L180)
+[Source line 182](../../../extended/ext/patch.lani#L182)
 
 ```lanius
 pub fn apply_unified(base:core::slice::View<u8>,input:core::slice::View<u8>,limits:ext::diff::Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -241,9 +243,9 @@ pub fn apply_unified(base:core::slice::View<u8>,input:core::slice::View<u8>,limi
 
 ## Implementation blocks and public methods
 
-### impl at line 20
+### impl at line 22
 
-[Source line 20](../../../extended/ext/patch.lani#L20)
+[Source line 22](../../../extended/ext/patch.lani#L22)
 
 ```lanius
 pub impl Patch
@@ -251,7 +253,7 @@ pub impl Patch
 
 #### method: borrow
 
-[Source line 21](../../../extended/ext/patch.lani#L21)
+[Source line 23](../../../extended/ext/patch.lani#L23)
 
 ```lanius
 pub fn borrow(&self) -> &Patch
@@ -259,7 +261,7 @@ pub fn borrow(&self) -> &Patch
 
 #### method: hunk_count
 
-[Source line 22](../../../extended/ext/patch.lani#L22)
+[Source line 24](../../../extended/ext/patch.lani#L24)
 
 ```lanius
 pub fn hunk_count(&self) -> i32
@@ -267,7 +269,7 @@ pub fn hunk_count(&self) -> i32
 
 #### method: line_count
 
-[Source line 23](../../../extended/ext/patch.lani#L23)
+[Source line 25](../../../extended/ext/patch.lani#L25)
 
 ```lanius
 pub fn line_count(&self) -> i32
@@ -275,7 +277,7 @@ pub fn line_count(&self) -> i32
 
 #### method: hunk
 
-[Source line 24](../../../extended/ext/patch.lani#L24)
+[Source line 26](../../../extended/ext/patch.lani#L26)
 
 ```lanius
 pub fn hunk(&self,index:i32) -> core::result::Result<Hunk,Error>
@@ -283,7 +285,7 @@ pub fn hunk(&self,index:i32) -> core::result::Result<Hunk,Error>
 
 #### method: destroy
 
-[Source line 25](../../../extended/ext/patch.lani#L25)
+[Source line 27](../../../extended/ext/patch.lani#L27)
 
 ```lanius
 pub fn destroy(&self)

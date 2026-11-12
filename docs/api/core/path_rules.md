@@ -24,7 +24,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 ### type alias: PathCapability
 
-[Source line 6](../../../stdlib/core/path_rules.lani#L6)
+[Source line 16](../../../stdlib/core/path_rules.lani#L16)
 
 ```lanius
 pub type PathCapability = bool;
@@ -32,7 +32,7 @@ pub type PathCapability = bool;
 
 ### type alias: PathByte
 
-[Source line 7](../../../stdlib/core/path_rules.lani#L7)
+[Source line 17](../../../stdlib/core/path_rules.lani#L17)
 
 ```lanius
 pub type PathByte = u8;
@@ -40,7 +40,7 @@ pub type PathByte = u8;
 
 ### type alias: PathComponentLength
 
-[Source line 8](../../../stdlib/core/path_rules.lani#L8)
+[Source line 18](../../../stdlib/core/path_rules.lani#L18)
 
 ```lanius
 pub type PathComponentLength = u32;
@@ -48,7 +48,7 @@ pub type PathComponentLength = u32;
 
 ### type alias: PathSeparatorKind
 
-[Source line 9](../../../stdlib/core/path_rules.lani#L9)
+[Source line 19](../../../stdlib/core/path_rules.lani#L19)
 
 ```lanius
 pub type PathSeparatorKind = u32;
@@ -58,7 +58,7 @@ pub type PathSeparatorKind = u32;
 
 ### constant: PATH_SEPARATOR_NONE
 
-[Source line 11](../../../stdlib/core/path_rules.lani#L11)
+[Source line 21](../../../stdlib/core/path_rules.lani#L21)
 
 ```lanius
 pub const PATH_SEPARATOR_NONE: PathSeparatorKind = 0;
@@ -66,7 +66,7 @@ pub const PATH_SEPARATOR_NONE: PathSeparatorKind = 0;
 
 ### constant: PATH_SEPARATOR_UNIX_KIND
 
-[Source line 12](../../../stdlib/core/path_rules.lani#L12)
+[Source line 22](../../../stdlib/core/path_rules.lani#L22)
 
 ```lanius
 pub const PATH_SEPARATOR_UNIX_KIND: PathSeparatorKind = 1;
@@ -74,7 +74,7 @@ pub const PATH_SEPARATOR_UNIX_KIND: PathSeparatorKind = 1;
 
 ### constant: PATH_SEPARATOR_WINDOWS_KIND
 
-[Source line 13](../../../stdlib/core/path_rules.lani#L13)
+[Source line 23](../../../stdlib/core/path_rules.lani#L23)
 
 ```lanius
 pub const PATH_SEPARATOR_WINDOWS_KIND: PathSeparatorKind = 2;
@@ -82,7 +82,7 @@ pub const PATH_SEPARATOR_WINDOWS_KIND: PathSeparatorKind = 2;
 
 ### constant: PATH_SEPARATOR_UNIX
 
-[Source line 15](../../../stdlib/core/path_rules.lani#L15)
+[Source line 25](../../../stdlib/core/path_rules.lani#L25)
 
 ```lanius
 pub const PATH_SEPARATOR_UNIX: PathByte = 47;
@@ -90,7 +90,7 @@ pub const PATH_SEPARATOR_UNIX: PathByte = 47;
 
 ### constant: PATH_SEPARATOR_WINDOWS
 
-[Source line 16](../../../stdlib/core/path_rules.lani#L16)
+[Source line 26](../../../stdlib/core/path_rules.lani#L26)
 
 ```lanius
 pub const PATH_SEPARATOR_WINDOWS: PathByte = 92;
@@ -98,7 +98,7 @@ pub const PATH_SEPARATOR_WINDOWS: PathByte = 92;
 
 ### constant: PATH_EXTENSION_SEPARATOR
 
-[Source line 17](../../../stdlib/core/path_rules.lani#L17)
+[Source line 27](../../../stdlib/core/path_rules.lani#L27)
 
 ```lanius
 pub const PATH_EXTENSION_SEPARATOR: PathByte = 46;
@@ -106,7 +106,7 @@ pub const PATH_EXTENSION_SEPARATOR: PathByte = 46;
 
 ### constant: PATH_DRIVE_SEPARATOR
 
-[Source line 18](../../../stdlib/core/path_rules.lani#L18)
+[Source line 28](../../../stdlib/core/path_rules.lani#L28)
 
 ```lanius
 pub const PATH_DRIVE_SEPARATOR: PathByte = 58;
@@ -114,7 +114,7 @@ pub const PATH_DRIVE_SEPARATOR: PathByte = 58;
 
 ### constant: PATH_NUL
 
-[Source line 19](../../../stdlib/core/path_rules.lani#L19)
+[Source line 29](../../../stdlib/core/path_rules.lani#L29)
 
 ```lanius
 pub const PATH_NUL: PathByte = 0;
@@ -122,7 +122,7 @@ pub const PATH_NUL: PathByte = 0;
 
 ### constant: PATH_ASCII_DELETE
 
-[Source line 20](../../../stdlib/core/path_rules.lani#L20)
+[Source line 30](../../../stdlib/core/path_rules.lani#L30)
 
 ```lanius
 pub const PATH_ASCII_DELETE: PathByte = 127;
@@ -130,7 +130,7 @@ pub const PATH_ASCII_DELETE: PathByte = 127;
 
 ### constant: PATH_WINDOWS_RESERVED_DOUBLE_QUOTE
 
-[Source line 21](../../../stdlib/core/path_rules.lani#L21)
+[Source line 31](../../../stdlib/core/path_rules.lani#L31)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_DOUBLE_QUOTE: PathByte = 34;
@@ -138,7 +138,7 @@ pub const PATH_WINDOWS_RESERVED_DOUBLE_QUOTE: PathByte = 34;
 
 ### constant: PATH_WINDOWS_RESERVED_ASTERISK
 
-[Source line 22](../../../stdlib/core/path_rules.lani#L22)
+[Source line 32](../../../stdlib/core/path_rules.lani#L32)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_ASTERISK: PathByte = 42;
@@ -146,7 +146,7 @@ pub const PATH_WINDOWS_RESERVED_ASTERISK: PathByte = 42;
 
 ### constant: PATH_WINDOWS_RESERVED_LESS_THAN
 
-[Source line 23](../../../stdlib/core/path_rules.lani#L23)
+[Source line 33](../../../stdlib/core/path_rules.lani#L33)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_LESS_THAN: PathByte = 60;
@@ -154,7 +154,7 @@ pub const PATH_WINDOWS_RESERVED_LESS_THAN: PathByte = 60;
 
 ### constant: PATH_WINDOWS_RESERVED_GREATER_THAN
 
-[Source line 24](../../../stdlib/core/path_rules.lani#L24)
+[Source line 34](../../../stdlib/core/path_rules.lani#L34)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_GREATER_THAN: PathByte = 62;
@@ -162,7 +162,7 @@ pub const PATH_WINDOWS_RESERVED_GREATER_THAN: PathByte = 62;
 
 ### constant: PATH_WINDOWS_RESERVED_QUESTION_MARK
 
-[Source line 25](../../../stdlib/core/path_rules.lani#L25)
+[Source line 35](../../../stdlib/core/path_rules.lani#L35)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_QUESTION_MARK: PathByte = 63;
@@ -170,7 +170,7 @@ pub const PATH_WINDOWS_RESERVED_QUESTION_MARK: PathByte = 63;
 
 ### constant: PATH_WINDOWS_RESERVED_PIPE
 
-[Source line 26](../../../stdlib/core/path_rules.lani#L26)
+[Source line 36](../../../stdlib/core/path_rules.lani#L36)
 
 ```lanius
 pub const PATH_WINDOWS_RESERVED_PIPE: PathByte = 124;
@@ -178,7 +178,7 @@ pub const PATH_WINDOWS_RESERVED_PIPE: PathByte = 124;
 
 ### constant: PATH_HAS_ALLOCATION_API
 
-[Source line 28](../../../stdlib/core/path_rules.lani#L28)
+[Source line 38](../../../stdlib/core/path_rules.lani#L38)
 
 ```lanius
 pub const PATH_HAS_ALLOCATION_API: PathCapability = false;
@@ -186,7 +186,7 @@ pub const PATH_HAS_ALLOCATION_API: PathCapability = false;
 
 ### constant: PATH_HAS_HOST_NORMALIZATION
 
-[Source line 29](../../../stdlib/core/path_rules.lani#L29)
+[Source line 39](../../../stdlib/core/path_rules.lani#L39)
 
 ```lanius
 pub const PATH_HAS_HOST_NORMALIZATION: PathCapability = false;
@@ -196,7 +196,7 @@ pub const PATH_HAS_HOST_NORMALIZATION: PathCapability = false;
 
 ### function: path_byte_is_unix_separator
 
-[Source line 31](../../../stdlib/core/path_rules.lani#L31)
+[Source line 41](../../../stdlib/core/path_rules.lani#L41)
 
 ```lanius
 pub fn path_byte_is_unix_separator(value: PathByte) -> PathCapability
@@ -204,7 +204,7 @@ pub fn path_byte_is_unix_separator(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_windows_separator
 
-[Source line 35](../../../stdlib/core/path_rules.lani#L35)
+[Source line 45](../../../stdlib/core/path_rules.lani#L45)
 
 ```lanius
 pub fn path_byte_is_windows_separator(value: PathByte) -> PathCapability
@@ -212,7 +212,7 @@ pub fn path_byte_is_windows_separator(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_separator
 
-[Source line 39](../../../stdlib/core/path_rules.lani#L39)
+[Source line 49](../../../stdlib/core/path_rules.lani#L49)
 
 ```lanius
 pub fn path_byte_is_separator(value: PathByte) -> PathCapability
@@ -220,7 +220,7 @@ pub fn path_byte_is_separator(value: PathByte) -> PathCapability
 
 ### function: path_separator_kind
 
-[Source line 47](../../../stdlib/core/path_rules.lani#L47)
+[Source line 57](../../../stdlib/core/path_rules.lani#L57)
 
 ```lanius
 pub fn path_separator_kind(value: PathByte) -> PathSeparatorKind
@@ -228,7 +228,7 @@ pub fn path_separator_kind(value: PathByte) -> PathSeparatorKind
 
 ### function: path_byte_is_extension_separator
 
-[Source line 59](../../../stdlib/core/path_rules.lani#L59)
+[Source line 69](../../../stdlib/core/path_rules.lani#L69)
 
 ```lanius
 pub fn path_byte_is_extension_separator(value: PathByte) -> PathCapability
@@ -236,7 +236,7 @@ pub fn path_byte_is_extension_separator(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_drive_separator
 
-[Source line 63](../../../stdlib/core/path_rules.lani#L63)
+[Source line 73](../../../stdlib/core/path_rules.lani#L73)
 
 ```lanius
 pub fn path_byte_is_drive_separator(value: PathByte) -> PathCapability
@@ -244,7 +244,7 @@ pub fn path_byte_is_drive_separator(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_ascii_letter
 
-[Source line 67](../../../stdlib/core/path_rules.lani#L67)
+[Source line 77](../../../stdlib/core/path_rules.lani#L77)
 
 ```lanius
 pub fn path_byte_is_ascii_letter(value: PathByte) -> PathCapability
@@ -252,7 +252,7 @@ pub fn path_byte_is_ascii_letter(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_windows_drive_letter
 
-[Source line 71](../../../stdlib/core/path_rules.lani#L71)
+[Source line 81](../../../stdlib/core/path_rules.lani#L81)
 
 ```lanius
 pub fn path_byte_is_windows_drive_letter(value: PathByte) -> PathCapability
@@ -260,7 +260,7 @@ pub fn path_byte_is_windows_drive_letter(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_ascii_digit
 
-[Source line 75](../../../stdlib/core/path_rules.lani#L75)
+[Source line 85](../../../stdlib/core/path_rules.lani#L85)
 
 ```lanius
 pub fn path_byte_is_ascii_digit(value: PathByte) -> PathCapability
@@ -268,7 +268,7 @@ pub fn path_byte_is_ascii_digit(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_ascii_control
 
-[Source line 79](../../../stdlib/core/path_rules.lani#L79)
+[Source line 89](../../../stdlib/core/path_rules.lani#L89)
 
 ```lanius
 pub fn path_byte_is_ascii_control(value: PathByte) -> PathCapability
@@ -276,7 +276,7 @@ pub fn path_byte_is_ascii_control(value: PathByte) -> PathCapability
 
 ### function: path_byte_is_windows_component_reserved_punctuation
 
-[Source line 83](../../../stdlib/core/path_rules.lani#L83)
+[Source line 93](../../../stdlib/core/path_rules.lani#L93)
 
 ```lanius
 pub fn path_byte_is_windows_component_reserved_punctuation(value: PathByte) -> PathCapability
@@ -284,7 +284,7 @@ pub fn path_byte_is_windows_component_reserved_punctuation(value: PathByte) -> P
 
 ### function: path_byte_is_windows_component_reserved
 
-[Source line 93](../../../stdlib/core/path_rules.lani#L93)
+[Source line 103](../../../stdlib/core/path_rules.lani#L103)
 
 ```lanius
 pub fn path_byte_is_windows_component_reserved(value: PathByte) -> PathCapability
@@ -292,7 +292,7 @@ pub fn path_byte_is_windows_component_reserved(value: PathByte) -> PathCapabilit
 
 ### function: path_byte_is_nul
 
-[Source line 106](../../../stdlib/core/path_rules.lani#L106)
+[Source line 116](../../../stdlib/core/path_rules.lani#L116)
 
 ```lanius
 pub fn path_byte_is_nul(value: PathByte) -> PathCapability
@@ -300,7 +300,7 @@ pub fn path_byte_is_nul(value: PathByte) -> PathCapability
 
 ### function: path_component_is_current_dir
 
-[Source line 110](../../../stdlib/core/path_rules.lani#L110)
+[Source line 120](../../../stdlib/core/path_rules.lani#L120)
 
 ```lanius
 pub fn path_component_is_current_dir(first: PathByte, length: PathComponentLength) -> PathCapability
@@ -308,7 +308,7 @@ pub fn path_component_is_current_dir(first: PathByte, length: PathComponentLengt
 
 ### function: path_component_is_parent_dir
 
-[Source line 114](../../../stdlib/core/path_rules.lani#L114)
+[Source line 124](../../../stdlib/core/path_rules.lani#L124)
 
 ```lanius
 pub fn path_component_is_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -316,7 +316,7 @@ pub fn path_component_is_parent_dir(first: PathByte, second: PathByte, length: P
 
 ### function: path_component_is_current_or_parent_dir
 
-[Source line 118](../../../stdlib/core/path_rules.lani#L118)
+[Source line 128](../../../stdlib/core/path_rules.lani#L128)
 
 ```lanius
 pub fn path_component_is_current_or_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -324,7 +324,7 @@ pub fn path_component_is_current_or_parent_dir(first: PathByte, second: PathByte
 
 ### function: path_component_is_unix_hidden
 
-[Source line 126](../../../stdlib/core/path_rules.lani#L126)
+[Source line 136](../../../stdlib/core/path_rules.lani#L136)
 
 ```lanius
 pub fn path_component_is_unix_hidden(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -332,7 +332,7 @@ pub fn path_component_is_unix_hidden(first: PathByte, second: PathByte, length: 
 
 ### function: path_component_is_root_separator
 
-[Source line 139](../../../stdlib/core/path_rules.lani#L139)
+[Source line 149](../../../stdlib/core/path_rules.lani#L149)
 
 ```lanius
 pub fn path_component_is_root_separator(first: PathByte, length: PathComponentLength) -> PathCapability
@@ -340,7 +340,7 @@ pub fn path_component_is_root_separator(first: PathByte, length: PathComponentLe
 
 ### function: path_component_is_windows_drive_prefix
 
-[Source line 147](../../../stdlib/core/path_rules.lani#L147)
+[Source line 157](../../../stdlib/core/path_rules.lani#L157)
 
 ```lanius
 pub fn path_component_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -348,7 +348,7 @@ pub fn path_component_is_windows_drive_prefix(first: PathByte, second: PathByte,
 
 ### function: path_header_is_windows_drive_prefix
 
-[Source line 160](../../../stdlib/core/path_rules.lani#L160)
+[Source line 170](../../../stdlib/core/path_rules.lani#L170)
 
 ```lanius
 pub fn path_header_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -356,7 +356,7 @@ pub fn path_header_is_windows_drive_prefix(first: PathByte, second: PathByte, le
 
 ### function: path_header_is_windows_drive_root
 
-[Source line 172](../../../stdlib/core/path_rules.lani#L172)
+[Source line 182](../../../stdlib/core/path_rules.lani#L182)
 
 ```lanius
 pub fn path_header_is_windows_drive_root(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability
@@ -364,7 +364,7 @@ pub fn path_header_is_windows_drive_root(first: PathByte, second: PathByte, thir
 
 ### function: path_header_is_lexically_rooted
 
-[Source line 184](../../../stdlib/core/path_rules.lani#L184)
+[Source line 194](../../../stdlib/core/path_rules.lani#L194)
 
 ```lanius
 pub fn path_header_is_lexically_rooted(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability
@@ -372,7 +372,7 @@ pub fn path_header_is_lexically_rooted(first: PathByte, second: PathByte, third:
 
 ### function: path_header_is_absolute
 
-[Source line 196](../../../stdlib/core/path_rules.lani#L196)
+[Source line 206](../../../stdlib/core/path_rules.lani#L206)
 
 ```lanius
 pub fn path_header_is_absolute(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability
@@ -380,7 +380,7 @@ pub fn path_header_is_absolute(first: PathByte, second: PathByte, third: PathByt
 
 ### function: path_header_is_windows_drive_relative
 
-[Source line 208](../../../stdlib/core/path_rules.lani#L208)
+[Source line 218](../../../stdlib/core/path_rules.lani#L218)
 
 ```lanius
 pub fn path_header_is_windows_drive_relative(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability
@@ -388,7 +388,7 @@ pub fn path_header_is_windows_drive_relative(first: PathByte, second: PathByte, 
 
 ### function: path_byte_is_component_boundary
 
-[Source line 220](../../../stdlib/core/path_rules.lani#L220)
+[Source line 230](../../../stdlib/core/path_rules.lani#L230)
 
 ```lanius
 pub fn path_byte_is_component_boundary(value: PathByte) -> PathCapability
@@ -396,7 +396,7 @@ pub fn path_byte_is_component_boundary(value: PathByte) -> PathCapability
 
 ### function: path_byte_can_start_relative_component
 
-[Source line 228](../../../stdlib/core/path_rules.lani#L228)
+[Source line 238](../../../stdlib/core/path_rules.lani#L238)
 
 ```lanius
 pub fn path_byte_can_start_relative_component(value: PathByte) -> PathCapability
@@ -404,7 +404,7 @@ pub fn path_byte_can_start_relative_component(value: PathByte) -> PathCapability
 
 ### function: path_byte_can_continue_relative_component
 
-[Source line 232](../../../stdlib/core/path_rules.lani#L232)
+[Source line 242](../../../stdlib/core/path_rules.lani#L242)
 
 ```lanius
 pub fn path_byte_can_continue_relative_component(value: PathByte) -> PathCapability
@@ -412,7 +412,7 @@ pub fn path_byte_can_continue_relative_component(value: PathByte) -> PathCapabil
 
 ### function: path_byte_can_start_windows_component
 
-[Source line 236](../../../stdlib/core/path_rules.lani#L236)
+[Source line 246](../../../stdlib/core/path_rules.lani#L246)
 
 ```lanius
 pub fn path_byte_can_start_windows_component(value: PathByte) -> PathCapability
@@ -420,7 +420,7 @@ pub fn path_byte_can_start_windows_component(value: PathByte) -> PathCapability
 
 ### function: path_byte_can_continue_windows_component
 
-[Source line 240](../../../stdlib/core/path_rules.lani#L240)
+[Source line 250](../../../stdlib/core/path_rules.lani#L250)
 
 ```lanius
 pub fn path_byte_can_continue_windows_component(value: PathByte) -> PathCapability
@@ -428,7 +428,7 @@ pub fn path_byte_can_continue_windows_component(value: PathByte) -> PathCapabili
 
 ### function: path_component_header_is_normal_relative
 
-[Source line 246](../../../stdlib/core/path_rules.lani#L246)
+[Source line 256](../../../stdlib/core/path_rules.lani#L256)
 
 ```lanius
 pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -436,7 +436,7 @@ pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByt
 
 ### function: path_component_header_is_normal_windows_relative
 
-[Source line 275](../../../stdlib/core/path_rules.lani#L275)
+[Source line 285](../../../stdlib/core/path_rules.lani#L285)
 
 ```lanius
 pub fn path_component_header_is_normal_windows_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability
@@ -444,7 +444,7 @@ pub fn path_component_header_is_normal_windows_relative(first: PathByte, second:
 
 ### function: path_component_is_normal_relative_bytes
 
-[Source line 308](../../../stdlib/core/path_rules.lani#L308)
+[Source line 318](../../../stdlib/core/path_rules.lani#L318)
 
 ```lanius
 pub fn path_component_is_normal_relative_bytes(bytes: [PathByte], length: i32) -> PathCapability
@@ -452,7 +452,7 @@ pub fn path_component_is_normal_relative_bytes(bytes: [PathByte], length: i32) -
 
 ### function: path_component_matches_windows_relative_byte_rules
 
-[Source line 335](../../../stdlib/core/path_rules.lani#L335)
+[Source line 345](../../../stdlib/core/path_rules.lani#L345)
 
 ```lanius
 pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], length: i32) -> PathCapability
@@ -460,7 +460,7 @@ pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], len
 
 ### function: path_component_is_windows_portable_utf8
 
-[Source line 393](../../../stdlib/core/path_rules.lani#L393)
+[Source line 403](../../../stdlib/core/path_rules.lani#L403)
 
 ```lanius
 pub fn path_component_is_windows_portable_utf8(bytes: [PathByte], length: i32) -> PathCapability
@@ -468,7 +468,7 @@ pub fn path_component_is_windows_portable_utf8(bytes: [PathByte], length: i32) -
 
 ### function: path_last_component_start_or
 
-[Source line 415](../../../stdlib/core/path_rules.lani#L415)
+[Source line 425](../../../stdlib/core/path_rules.lani#L425)
 
 ```lanius
 pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32
@@ -476,7 +476,7 @@ pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i3
 
 ### function: path_last_component_end_or
 
-[Source line 445](../../../stdlib/core/path_rules.lani#L445)
+[Source line 455](../../../stdlib/core/path_rules.lani#L455)
 
 ```lanius
 pub fn path_last_component_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32
@@ -484,7 +484,7 @@ pub fn path_last_component_end_or(bytes: [PathByte], length: i32, fallback: i32)
 
 ### function: path_extension_start_or
 
-[Source line 471](../../../stdlib/core/path_rules.lani#L471)
+[Source line 481](../../../stdlib/core/path_rules.lani#L481)
 
 ```lanius
 pub fn path_extension_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32
@@ -492,7 +492,7 @@ pub fn path_extension_start_or(bytes: [PathByte], length: i32, fallback: i32) ->
 
 ### function: path_stem_end_or
 
-[Source line 493](../../../stdlib/core/path_rules.lani#L493)
+[Source line 503](../../../stdlib/core/path_rules.lani#L503)
 
 ```lanius
 pub fn path_stem_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32

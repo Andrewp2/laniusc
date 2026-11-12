@@ -1,6 +1,7 @@
 // Immutable directed simple graphs in canonical integer adjacency storage.
 // Copies alias one cleanup authority; borrowed views expire on destruction.
 module ext::graph;
+import core::lifecycle;
 import alloc::vec;
 import core::cmp;
 import core::mem;
@@ -20,7 +21,7 @@ pub enum ErrorKind {
 pub struct Error { kind: ErrorKind, node: i32, edge: i32 }
 pub struct Graph {
     offsets: alloc::vec::Vec<i32>, targets: alloc::vec::Vec<i32>,
-    count: i32, active: bool
+    count: i32, lifetime: core::lifecycle::Lifetime
 }
 
 pub fn default_limits() -> Limits {
@@ -142,22 +143,22 @@ pub fn neighbors(value: View, node: i32, limits: Limits)
 
 pub impl Graph {
     pub fn borrow(&self) -> &Graph { return self; }
-    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn is_open(&self) -> bool { return self.lifetime.is_active(); }
     pub fn node_count(&self) -> i32 { return self.count; }
     pub fn edge_count(&self) -> i32 { return self.targets.len(); }
     // Read-only borrow. End it before destruction; ownership is not copied.
     pub fn view(&self) -> core::option::Option<View> {
-        if (!self.active) { return core::option::None(); }
+        if (!self.lifetime.is_active()) { return core::option::None(); }
         return core::option::Some(View {
             nodes: self.count, offsets: self.offsets.as_view(), targets: self.targets.as_view()
         });
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
+        if (!self.lifetime.is_active()) { return false; }
         self.offsets.destroy();
         self.targets.destroy();
         self.count = 0;
-        self.active = false;
+        self.lifetime.release();
         return true;
     }
 }
@@ -174,7 +175,7 @@ fn allocation_error(cause: alloc::vec::Error, capacity: ErrorKind) -> Error {
 // Caller admitted input and every capacity. Even nodes=0 allocates offsets[0].
 fn allocated(nodes: i32, edges: i32) -> core::result::Result<Graph,Error> {
     let out: Graph = Graph {
-        offsets: alloc::vec::new(), targets: alloc::vec::new(), count: nodes, active: true
+        offsets: alloc::vec::new(), targets: alloc::vec::new(), count: nodes, lifetime: core::lifecycle::lifetime_start()
     };
     let offsets: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes+1);
     if (offsets.is_err()) {

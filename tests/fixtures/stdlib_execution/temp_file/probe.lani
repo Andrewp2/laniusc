@@ -4,6 +4,7 @@
 // 5 fake-file-close repair,6 fake-dir-close repair,7 anchor rename,8 absent,
 // 9 active-create rejection,10 large kept file,11 empty kept file.
 module app::main;
+import std::temp_lifecycle;
 import core::io;
 import core::mem;
 import core::option;
@@ -25,7 +26,7 @@ fn optional(error:core::option::Option<core::io::Error>)->u64{if(core::option::i
 fn entropy(error:std::entropy::Error)->u64{return match(error){std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+code as u64};}
 fn cause(error:std::temp_file::Error)->u64{return match(error){std::temp_file::Error::InvalidState->1,std::temp_file::Error::InvalidLimits->2,std::temp_file::Error::InvalidName->3,std::temp_file::Error::AllocationFailed->4,std::temp_file::Error::UnavailableMetadata->5,std::temp_file::Error::NotDirectory->6,std::temp_file::Error::UnsupportedDescriptor->7,std::temp_file::Error::NameLimit->8,std::temp_file::Error::Io(error)->1000+io(error),std::temp_file::Error::Entropy(failure)->2000+entropy(failure.cause)};}
 fn stage(value:std::temp_file::Stage)->u64{return match(value){std::temp_file::Stage::Validate->1,std::temp_file::Stage::Allocate->2,std::temp_file::Stage::Duplicate->3,std::temp_file::Stage::Metadata->4,std::temp_file::Stage::Flags->5,std::temp_file::Stage::Entropy->6,std::temp_file::Stage::Create->7,std::temp_file::Stage::CloseFile->8,std::temp_file::Stage::Remove->9,std::temp_file::Stage::CloseDirectory->10};}
-fn state(value:std::temp_file::State)->u64{return match(value){std::temp_file::State::Inactive->0,std::temp_file::State::Open->1,std::temp_file::State::ClosedNamed->2,std::temp_file::State::Kept->3,std::temp_file::State::CleanupPending->4,std::temp_file::State::Released->5};}
+fn state(value:std::temp_lifecycle::LifecycleState)->u64{return match(value){std::temp_lifecycle::LifecycleState::Inactive->0,std::temp_lifecycle::LifecycleState::Open->1,std::temp_lifecycle::LifecycleState::ClosedNamed->2,std::temp_lifecycle::LifecycleState::Kept->3,std::temp_lifecycle::LifecycleState::CleanupPending(_) ->4,std::temp_lifecycle::LifecycleState::Released->5};}
 fn removal(value:std::temp_file::Removal)->u64{return match(value){std::temp_file::Removal::NotOwned->0,std::temp_file::Removal::Removed->1,std::temp_file::Removal::AlreadyAbsent->2,std::temp_file::Removal::Unconfirmed->3};}
 fn fd(file:&std::file::File)->u64{let value:core::option::Option<i32> = file.raw_handle();if(core::option::is_none(value)){return 18446744073709551615;}return core::option::unwrap(value) as u64;}
 fn mark(value:u8){let byte:[u8;1]=[value];let stderr:std::stream::Descriptor=std::stream::stderr();assert(core::io::write_all(stderr.borrow(),byte,0,1).is_ok());}

@@ -3,6 +3,7 @@
 // duplicate object keys rejected) into an arena of nodes and written back
 // through an ext::json_stream::Writer. See docs/extended-json-patch.md.
 module ext::json_tree;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -85,14 +86,14 @@ const INDEXED: i32 = 8;
 pub struct Tree {
     store: alloc::vec::Vec<i32>, cells: [i32], nodes: i32, cell_cap: i32,
     bytes: alloc::vec::Vec<u8>, pool: [u8], pool_used: i32, pool_cap: i32,
-    table: alloc::vec::Vec<i32>, slots: [i32], slot_cap: i32, slot_used: i32, slot_live: i32, broken: bool,
+    table: alloc::vec::Vec<i32>, slots: [i32], slot_cap: i32, slot_used: i32, slot_live: i32, health: core::lifecycle::Health,
     root: i32, max_nodes: i32, fault: ErrorKind,
 }
 fn empty(limits: Limits) -> Tree {
     let store: alloc::vec::Vec<i32> = alloc::vec::new(); let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
     let table: alloc::vec::Vec<i32> = alloc::vec::new();
     return Tree { store: store, cells: store.as_slice(), nodes: 0, cell_cap: 0, bytes: bytes, pool: bytes.as_slice(), pool_used: 0, pool_cap: 0,
-        table: table, slots: table.as_slice(), slot_cap: 0, slot_used: 0, slot_live: 0, broken: false,
+        table: table, slots: table.as_slice(), slot_cap: 0, slot_used: 0, slot_live: 0, health: core::lifecycle::health_start(),
         root: -1, max_nodes: limits.max_nodes, fault: ErrorKind::AllocationFailed };
 }
 
@@ -136,7 +137,7 @@ pub impl Tree {
     }
     // Object member with this key, or -1.
     pub fn member(&self, node: i32, key: core::text::Text) -> i32 {
-        if (!self.broken && self.get(node, COUNT) >= INDEXED) {
+        if (!self.health.is_failed() && self.get(node, COUNT) >= INDEXED) {
             let mask: i32 = self.slot_cap - 1;
             let slot: i32 = (key_hash(node, key.bytes, key.start, key.length) as i32) & mask;
             let slots: [i32] = self.slots;
@@ -240,8 +241,8 @@ pub impl Tree {
         return true;
     }
     fn index_add(&self, node: i32) {
-        if (self.broken) { return; }
-        if (!self.reserve_slots()) { self.broken = true; return; }
+        if (self.health.is_failed()) { return; }
+        if (!self.reserve_slots()) { self.health.fail(); return; }
         let mask: i32 = self.slot_cap - 1; let slots: [i32] = self.slots;
         let slot: i32 = (self.node_hash(node) as i32) & mask;
         while (slots[slot] >= 0) { slot = (slot + 1) & mask; }
@@ -249,7 +250,7 @@ pub impl Tree {
         slots[slot] = node; self.slot_live += 1;
     }
     fn index_remove(&self, node: i32) {
-        if (self.broken) { return; }
+        if (self.health.is_failed()) { return; }
         let mask: i32 = self.slot_cap - 1; let slots: [i32] = self.slots;
         let slot: i32 = (self.node_hash(node) as i32) & mask;
         while (slots[slot] != -1) {
@@ -368,7 +369,7 @@ pub impl Tree {
         self.store = alloc::vec::new(); self.bytes = alloc::vec::new(); self.table = alloc::vec::new();
         self.cells = self.store.as_slice(); self.pool = self.bytes.as_slice(); self.slots = self.table.as_slice();
         self.nodes = 0; self.cell_cap = 0; self.pool_used = 0; self.pool_cap = 0; self.root = -1;
-        self.slot_cap = 0; self.slot_used = 0; self.slot_live = 0; self.broken = false;
+        self.slot_cap = 0; self.slot_used = 0; self.slot_live = 0; self.health.reset();
     }
 }
 

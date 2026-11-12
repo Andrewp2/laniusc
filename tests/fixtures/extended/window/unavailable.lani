@@ -1,0 +1,9 @@
+module app::main;
+import core::result;
+import ext::window;
+fn main() -> i32 {
+    let error=ext::window::init().unwrap_err();
+    assert(match(error.cause) { ext::window::Cause::NoDisplay -> true, _ -> false });
+    assert(match(error.stage) { ext::window::Stage::Init -> true, _ -> false });
+    return 0;
+}

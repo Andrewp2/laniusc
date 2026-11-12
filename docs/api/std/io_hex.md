@@ -16,15 +16,16 @@ Declaration counts: function: 9.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::hex](../core/hex.md) · [source](../../../stdlib/std/io_hex.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex.lani#L4)
-- [std::io](io.md) · [source](../../../stdlib/std/io_hex.lani#L5)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_hex.lani#L3)
+- [core::hex](../core/hex.md) · [source](../../../stdlib/std/io_hex.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_hex.lani#L5)
+- [std::io](io.md) · [source](../../../stdlib/std/io_hex.lani#L6)
 
 ## Free functions and extern declarations
 
 ### function: write_lower_u32
 
-[Source line 33](../../../stdlib/std/io_hex.lani#L33)
+[Source line 34](../../../stdlib/std/io_hex.lani#L34)
 
 ```lanius
 pub fn write_lower_u32(handle: i32, value: u32) -> i32
@@ -32,7 +33,7 @@ pub fn write_lower_u32(handle: i32, value: u32) -> i32
 
 ### function: write_upper_u32
 
-[Source line 37](../../../stdlib/std/io_hex.lani#L37)
+[Source line 38](../../../stdlib/std/io_hex.lani#L38)
 
 ```lanius
 pub fn write_upper_u32(handle: i32, value: u32) -> i32
@@ -40,7 +41,7 @@ pub fn write_upper_u32(handle: i32, value: u32) -> i32
 
 ### function: write_lower_u8
 
-[Source line 41](../../../stdlib/std/io_hex.lani#L41)
+[Source line 42](../../../stdlib/std/io_hex.lani#L42)
 
 ```lanius
 pub fn write_lower_u8(handle: i32, value: u8) -> i32
@@ -48,7 +49,7 @@ pub fn write_lower_u8(handle: i32, value: u8) -> i32
 
 ### function: write_upper_u8
 
-[Source line 46](../../../stdlib/std/io_hex.lani#L46)
+[Source line 47](../../../stdlib/std/io_hex.lani#L47)
 
 ```lanius
 pub fn write_upper_u8(handle: i32, value: u8) -> i32
@@ -56,7 +57,7 @@ pub fn write_upper_u8(handle: i32, value: u8) -> i32
 
 ### function: write_lower_u16
 
-[Source line 51](../../../stdlib/std/io_hex.lani#L51)
+[Source line 52](../../../stdlib/std/io_hex.lani#L52)
 
 ```lanius
 pub fn write_lower_u16(handle: i32, value: u16) -> i32
@@ -64,7 +65,7 @@ pub fn write_lower_u16(handle: i32, value: u16) -> i32
 
 ### function: write_upper_u16
 
-[Source line 56](../../../stdlib/std/io_hex.lani#L56)
+[Source line 57](../../../stdlib/std/io_hex.lani#L57)
 
 ```lanius
 pub fn write_upper_u16(handle: i32, value: u16) -> i32
@@ -72,7 +73,7 @@ pub fn write_upper_u16(handle: i32, value: u16) -> i32
 
 ### function: read_u32_stdin_or
 
-[Source line 65](../../../stdlib/std/io_hex.lani#L65)
+[Source line 66](../../../stdlib/std/io_hex.lani#L66)
 
 ```lanius
 pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
@@ -80,7 +81,7 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
 
 ### function: read_u8_stdin_or
 
-[Source line 134](../../../stdlib/std/io_hex.lani#L134)
+[Source line 133](../../../stdlib/std/io_hex.lani#L133)
 
 ```lanius
 pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8
@@ -88,7 +89,7 @@ pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8
 
 ### function: read_u16_stdin_or
 
-[Source line 143](../../../stdlib/std/io_hex.lani#L143)
+[Source line 142](../../../stdlib/std/io_hex.lani#L142)
 
 ```lanius
 pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16

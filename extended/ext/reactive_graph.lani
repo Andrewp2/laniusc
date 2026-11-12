@@ -1,0 +1,278 @@
+// Callback-representation-independent reactive graph kernel. Values and typed
+// capture ownership belong to the higher-level reactive API, not this module.
+module ext::reactive_graph;
+import alloc::allocator;
+import core::mem;
+import core::result;
+
+pub enum Error {
+    Closed, Stale, DifferentGraph, WrongKind, Busy, Capacity,
+    AllocationFailed, Cycle, Depth, Budget, Exhausted,
+    WriteDuringEvaluation, Evaluation(i32)
+}
+pub enum Kind { Scope, Source, Memo, Effect }
+pub struct Id { owner:ptr, slot:i32, generation:u64 }
+pub struct Stats {
+    evaluations:u64, invalidated:u64, dependency_checks:u64, tracked_reads:u64,
+    propagation_edges:u64, tracking_edges:u64
+}
+// A single manual owner. Do not copy it or use a borrowed reference after close.
+pub struct Graph { storage:ptr }
+// true reports a changed memo output. Effects return false. Evaluate must not
+// publish reactive state; on Err, it must leave its externally stored value intact.
+pub trait Evaluate { pub fn evaluate(&self,id:Id,graph:&Graph) -> core::result::Result<bool,Error>; }
+// state: 0 = clean, 1 = check source versions, 2 = evaluate unconditionally.
+// kind: 0 = scope, 1 = source, 2 = memo, 3 = effect (see code).
+struct Node {
+    generation:u64, live:bool, kind:i32,
+    parent:i32, first:i32, previous:i32, next:i32,
+    sources:i32, subscribers:i32,
+    state:i32, version:u64, epoch:u64, visiting:bool,
+    queued:bool, qprevious:i32, qnext:i32
+}
+// Each edge belongs to both its source's subscriber list and its observer's
+// dependency list. seen/added implement transactional dependency replacement.
+struct Edge {
+    source:i32, observer:i32,
+    snext:i32, sprevious:i32, onext:i32, oprevious:i32,
+    version:u64, seen:u64, added:u64
+}
+struct State {
+    nodes:ptr, edges:ptr, stack:ptr,
+    node_capacity:i32, edge_capacity:i32, free_node:i32, free_edge:i32,
+    head:i32, tail:i32, active:i32, depth:i32, remaining:i32,
+    settling:bool, stats:Stats
+}
+fn state(p:ptr) -> [State] { return core::mem::typed_slice_from_storage<State>(p,1); }
+fn nodes(p:ptr) -> [Node] { return core::mem::typed_slice_from_storage<Node>(state(p)[0].nodes,state(p)[0].node_capacity); }
+fn edges(p:ptr) -> [Edge] { return core::mem::typed_slice_from_storage<Edge>(state(p)[0].edges,state(p)[0].edge_capacity); }
+fn stack(p:ptr) -> [i32] { return core::mem::typed_slice_from_raw_parts<i32>(state(p)[0].stack,state(p)[0].node_capacity); }
+fn nil() -> ptr { let p:ptr=0; return p; }
+fn zero_stats() -> Stats { return Stats {evaluations:0,invalidated:0,dependency_checks:0,tracked_reads:0,propagation_edges:0,tracking_edges:0}; }
+fn empty_node(generation:u64,next:i32) -> Node { return Node {generation:generation,live:false,kind:0,parent:-1,first:-1,previous:-1,next:next,sources:-1,subscribers:-1,state:0,version:0,epoch:0,visiting:false,queued:false,qprevious:-1,qnext:-1}; }
+fn empty_edge(next:i32) -> Edge { return Edge {source:-1,observer:-1,snext:next,sprevious:-1,onext:-1,oprevious:-1,version:0,seen:0,added:0}; }
+fn code(kind:Kind) -> i32 { return match(kind) { Kind::Scope -> 0, Kind::Source -> 1, Kind::Memo -> 2, Kind::Effect -> 3 }; }
+fn identity(p:ptr,index:i32) -> Id { return Id {owner:p,slot:index,generation:nodes(p)[index].generation}; }
+fn admit(p:ptr,id:Id) -> core::result::Result<i32,Error> {
+    if(p==0) { return core::result::Err(Error::Closed); }
+    if(id.owner!=p) { return core::result::Err(Error::DifferentGraph); }
+    if(id.slot<0 || id.slot>=state(p)[0].node_capacity) { return core::result::Err(Error::Stale); }
+    if(!nodes(p)[id.slot].live || nodes(p)[id.slot].generation!=id.generation) { return core::result::Err(Error::Stale); }
+    return core::result::Ok(id.slot);
+}
+fn mutable(p:ptr) -> core::result::Result<i32,Error> {
+    if(p==0) { return core::result::Err(Error::Closed); }
+    if(state(p)[0].settling) { return core::result::Err(Error::Busy); } return core::result::Ok(0);
+}
+fn release(p:ptr) {
+    let s=state(p)[0];
+    if(s.nodes!=0) { alloc::allocator::dealloc(s.nodes,(s.node_capacity as usize)*core::mem::size_of<Node>(),8); }
+    if(s.edges!=0) { alloc::allocator::dealloc(s.edges,(s.edge_capacity as usize)*core::mem::size_of<Edge>(),8); }
+    if(s.stack!=0) { alloc::allocator::dealloc(s.stack,(s.node_capacity as usize)*4,8); }
+    alloc::allocator::dealloc(p,core::mem::size_of<State>(),8);
+}
+// Fixed budgets reserve graph storage up front. No allocation during settling.
+pub fn create(node_capacity:i32,edge_capacity:i32) -> core::result::Result<Graph,Error> {
+    if(node_capacity<2 || node_capacity>65536 || edge_capacity<1 || edge_capacity>1048576) { return core::result::Err(Error::Capacity); }
+    let p=alloc::allocator::alloc(core::mem::size_of<State>(),8); if(p==0) { return core::result::Err(Error::AllocationFailed); }
+    state(p)[0]=State {nodes:nil(),edges:nil(),stack:nil(),node_capacity:node_capacity,edge_capacity:edge_capacity,free_node:1,free_edge:0,head:-1,tail:-1,active:-1,depth:0,remaining:0,settling:false,stats:zero_stats()};
+    state(p)[0].nodes=alloc::allocator::alloc((node_capacity as usize)*core::mem::size_of<Node>(),8);
+    state(p)[0].edges=alloc::allocator::alloc((edge_capacity as usize)*core::mem::size_of<Edge>(),8);
+    state(p)[0].stack=alloc::allocator::alloc((node_capacity as usize)*4,8);
+    if(state(p)[0].nodes==0 || state(p)[0].edges==0 || state(p)[0].stack==0) { release(p); return core::result::Err(Error::AllocationFailed); }
+    let i:i32=0; while(i<node_capacity) { nodes(p)[i]=empty_node(1,i+1); i+=1; } nodes(p)[node_capacity-1].next=-1;
+    i=0; while(i<edge_capacity) { edges(p)[i]=empty_edge(i+1); i+=1; } edges(p)[edge_capacity-1].snext=-1;
+    nodes(p)[0]=empty_node(1,-1); nodes(p)[0].live=true;
+    return core::result::Ok(Graph {storage:p});
+}
+fn enqueue(p:ptr,index:i32) {
+    let n=nodes(p); let s=state(p); if(n[index].queued) { return; }
+    n[index].queued=true; n[index].qprevious=s[0].tail; n[index].qnext=-1;
+    if(s[0].tail>=0) { n[s[0].tail].qnext=index; } else { s[0].head=index; } s[0].tail=index;
+}
+fn dequeue(p:ptr,index:i32) {
+    let n=nodes(p); let s=state(p); if(!n[index].queued) { return; }
+    let previous=n[index].qprevious; let next=n[index].qnext;
+    if(previous>=0) { n[previous].qnext=next; } else { s[0].head=next; }
+    if(next>=0) { n[next].qprevious=previous; } else { s[0].tail=previous; }
+    n[index].queued=false; n[index].qprevious=-1; n[index].qnext=-1;
+}
+fn unlink_edge(p:ptr,index:i32) {
+    let e=edges(p); let n=nodes(p); let edge=e[index];
+    if(edge.sprevious>=0) { e[edge.sprevious].snext=edge.snext; } else { n[edge.source].subscribers=edge.snext; }
+    if(edge.snext>=0) { e[edge.snext].sprevious=edge.sprevious; }
+    if(edge.oprevious>=0) { e[edge.oprevious].onext=edge.onext; } else { n[edge.observer].sources=edge.onext; }
+    if(edge.onext>=0) { e[edge.onext].oprevious=edge.oprevious; }
+    e[index]=empty_edge(state(p)[0].free_edge); state(p)[0].free_edge=index;
+}
+fn track(p:ptr,source:i32) -> core::result::Result<i32,Error> {
+    let observer=state(p)[0].active; if(observer<0) { return core::result::Ok(0); }
+    let n=nodes(p); let e=edges(p); let at=n[observer].sources;
+    state(p)[0].stats.tracked_reads+=1;
+    while(at>=0) {
+        state(p)[0].stats.tracking_edges+=1;
+        if(e[at].source==source) { e[at].seen=n[observer].epoch; e[at].version=n[source].version; return core::result::Ok(0); } at=e[at].onext;
+    }
+    let free=state(p)[0].free_edge; if(free<0) { return core::result::Err(Error::Capacity); }
+    state(p)[0].free_edge=e[free].snext;
+    e[free]=Edge {source:source,observer:observer,snext:n[source].subscribers,sprevious:-1,onext:n[observer].sources,oprevious:-1,version:n[source].version,seen:n[observer].epoch,added:n[observer].epoch};
+    if(n[source].subscribers>=0) { e[n[source].subscribers].sprevious=free; }
+    if(n[observer].sources>=0) { e[n[observer].sources].oprevious=free; }
+    n[source].subscribers=free; n[observer].sources=free; return core::result::Ok(0);
+}
+// All downstream consumers are checked; an unchanged memo may stop evaluation.
+fn invalidate(p:ptr,source:i32,disposed:bool) {
+    let n=nodes(p); let e=edges(p); let work=stack(p); let count:i32=0; let edge=n[source].subscribers;
+    while(edge>=0) {
+        state(p)[0].stats.propagation_edges+=1;
+        let next=e[edge].observer;
+        if(n[next].state==0) { work[count]=next; count+=1; n[next].state=1; state(p)[0].stats.invalidated+=1; }
+        if(disposed) { n[next].state=2; }
+        if(n[next].kind==3) { enqueue(p,next); } edge=e[edge].snext;
+    }
+    while(count>0) {
+        count-=1; let index=work[count]; edge=n[index].subscribers;
+        while(edge>=0) { let next=e[edge].observer;
+            state(p)[0].stats.propagation_edges+=1;
+            if(n[next].state==0) { work[count]=next; count+=1; n[next].state=1; state(p)[0].stats.invalidated+=1; }
+            if(n[next].kind==3) { enqueue(p,next); } edge=e[edge].snext;
+        }
+    }
+}
+fn evaluate<D>(g:&Graph,index:i32,driver:&D) -> core::result::Result<i32,Error> where D:Evaluate {
+    let p=g.storage; let n=nodes(p); let s=state(p);
+    if(s[0].remaining<=0) { return core::result::Err(Error::Budget); }
+    if(n[index].epoch==18446744073709551615 || n[index].version==18446744073709551615) {
+        return core::result::Err(Error::Exhausted);
+    }
+    s[0].remaining-=1;
+    n[index].epoch+=1;
+    let previous=s[0].active;
+    s[0].active=index;
+    s[0].stats.evaluations+=1;
+    let ran=driver.evaluate(identity(p,index),g);
+    s[0].active=previous;
+
+    // Keep the previous set until success. A failed attempt releases only the
+    // edges it added, and refresh leaves this observer dirty for a full retry.
+    let e=edges(p); let at=n[index].sources;
+    while(at>=0) {
+        let next=e[at].onext;
+        if(ran.is_ok()) {
+            if(e[at].seen!=n[index].epoch) { unlink_edge(p,at); }
+        } else {
+            if(e[at].added==n[index].epoch) { unlink_edge(p,at); }
+        }
+        at=next;
+    }
+    if(ran.is_err()) { return core::result::Err(ran.unwrap_err()); }
+    if(n[index].kind==2 && ran.unwrap()) { n[index].version+=1; }
+    n[index].state=0; return core::result::Ok(0);
+}
+fn refresh_inner<D>(g:&Graph,index:i32,driver:&D) -> core::result::Result<i32,Error> where D:Evaluate {
+    let p=g.storage; let n=nodes(p); let e=edges(p);
+    if(n[index].state==1) {
+        let at=n[index].sources;
+        while(at>=0) {
+            let source=e[at].source;
+            refresh(g,source,driver)?;
+            state(p)[0].stats.dependency_checks+=1;
+            if(n[source].version!=e[at].version) { n[index].state=2; break; }
+            at=e[at].onext;
+        }
+        if(n[index].state==1) { n[index].state=0; }
+    }
+    if(n[index].state==2) { evaluate(g,index,driver)?; } return core::result::Ok(0);
+}
+fn refresh<D>(g:&Graph,index:i32,driver:&D) -> core::result::Result<i32,Error> where D:Evaluate {
+    let p=g.storage; let n=nodes(p);
+    if(n[index].visiting) { return core::result::Err(Error::Cycle); }
+    if(n[index].state==0) { return core::result::Ok(0); }
+    if(state(p)[0].depth>=256) { return core::result::Err(Error::Depth); }
+    n[index].visiting=true;
+    state(p)[0].depth+=1;
+    let finished=refresh_inner(g,index,driver);
+    state(p)[0].depth-=1;
+    n[index].visiting=false;
+    if(finished.is_err()) { n[index].state=2; }
+    return finished;
+}
+fn read<D>(g:&Graph,id:Id,driver:&D,tracked:bool) -> core::result::Result<u64,Error> where D:Evaluate {
+    let index=admit(g.storage,id)?; let p=g.storage;
+    if(nodes(p)[index].kind!=1 && nodes(p)[index].kind!=2) { return core::result::Err(Error::WrongKind); }
+    let entered=!state(p)[0].settling;
+    if(entered) { state(p)[0].settling=true; state(p)[0].remaining=state(p)[0].node_capacity; }
+    let updated=refresh(g,index,driver); if(entered) { state(p)[0].settling=false; }
+    if(updated.is_err()) { return core::result::Err(updated.unwrap_err()); }
+    if(tracked) { track(p,index)?; } return core::result::Ok(nodes(p)[index].version);
+}
+fn remove_node(p:ptr,index:i32) {
+    let n=nodes(p); invalidate(p,index,true); dequeue(p,index);
+    while(n[index].sources>=0) { unlink_edge(p,n[index].sources); }
+    while(n[index].subscribers>=0) { unlink_edge(p,n[index].subscribers); }
+    let parent=n[index].parent; let previous=n[index].previous; let next=n[index].next;
+    if(previous>=0) { n[previous].next=next; } else { if(parent>=0) { n[parent].first=next; } }
+    if(next>=0) { n[next].previous=previous; }
+    let generation=n[index].generation;
+    if(generation==18446744073709551615) { n[index]=empty_node(generation,-1); }
+    else { n[index]=empty_node(generation+1,state(p)[0].free_node); state(p)[0].free_node=index; }
+}
+pub impl Graph {
+    pub fn borrow(&self) -> &Graph { return self; }
+    pub fn root(&self) -> core::result::Result<Id,Error> { if(self.storage==0) { return core::result::Err(Error::Closed); } return core::result::Ok(identity(self.storage,0)); }
+    pub fn create_node(&self,scope:Id,kind:Kind) -> core::result::Result<Id,Error> {
+        mutable(self.storage)?; let parent=admit(self.storage,scope)?; let p=self.storage; let n=nodes(p);
+        if(n[parent].kind!=0) { return core::result::Err(Error::WrongKind); }
+        let depth:i32=0; let ancestor=parent; while(ancestor>=0) { depth+=1; if(depth>=256) { return core::result::Err(Error::Depth); } ancestor=n[ancestor].parent; }
+        let index=state(p)[0].free_node; if(index<0) { return core::result::Err(Error::Capacity); }
+        state(p)[0].free_node=n[index].next; n[index]=empty_node(n[index].generation,n[parent].first); n[index].live=true; n[index].kind=code(kind); n[index].parent=parent;
+        if(n[parent].first>=0) { n[n[parent].first].previous=index; } n[parent].first=index;
+        if(n[index].kind>=2) { n[index].state=2; } if(n[index].kind==3) { enqueue(p,index); }
+        return core::result::Ok(identity(p,index));
+    }
+    // Publish after the value layer has admitted its mutation. changed=false is
+    // an explicit equality decision by that layer, not inferred by this kernel.
+    pub fn publish(&self,id:Id,changed:bool) -> core::result::Result<bool,Error> {
+        let index=admit(self.storage,id)?; let p=self.storage;
+        if(state(p)[0].settling) { return core::result::Err(Error::WriteDuringEvaluation); }
+        if(nodes(p)[index].kind!=1) { return core::result::Err(Error::WrongKind); }
+        if(!changed) { return core::result::Ok(false); }
+        if(nodes(p)[index].version==18446744073709551615) { return core::result::Err(Error::Exhausted); }
+        nodes(p)[index].version+=1; invalidate(p,index,false); return core::result::Ok(true);
+    }
+    pub fn read<D>(&self,id:Id,driver:&D) -> core::result::Result<u64,Error> where D:Evaluate { return read(self,id,driver,true); }
+    pub fn read_untracked<D>(&self,id:Id,driver:&D) -> core::result::Result<u64,Error> where D:Evaluate { return read(self,id,driver,false); }
+    // The budget counts callback evaluations, including nested memos. On error
+    // queued work remains owned and can be retried or disposed.
+    pub fn flush<D>(&self,driver:&D,budget:i32) -> core::result::Result<i32,Error> where D:Evaluate {
+        mutable(self.storage)?; if(budget<1) { return core::result::Err(Error::Budget); }
+        let p=self.storage; state(p)[0].settling=true; state(p)[0].remaining=budget; let completed:i32=0;
+        while(state(p)[0].head>=0) {
+            let index=state(p)[0].head; let done=refresh(self,index,driver);
+            if(done.is_err()) { state(p)[0].settling=false; return core::result::Err(done.unwrap_err()); }
+            dequeue(p,index); completed+=1;
+        }
+        state(p)[0].settling=false; return core::result::Ok(completed);
+    }
+    pub fn dispose(&self,id:Id) -> core::result::Result<i32,Error> {
+        mutable(self.storage)?; let index=admit(self.storage,id)?; if(index==0) { return core::result::Err(Error::WrongKind); }
+        // Iterative postorder follows scope links. Invalidation uses the separate
+        // scratch stack, so no traversal state is stored in it here.
+        let at=index; let count:i32=0;
+        while(true) {
+            if(nodes(self.storage)[at].first>=0) { at=nodes(self.storage)[at].first; }
+            else {
+                let parent=nodes(self.storage)[at].parent;
+                let last=at==index;
+                remove_node(self.storage,at);
+                count+=1;
+                if(last) { return core::result::Ok(count); }
+                at=parent;
+            }
+        }
+        return core::result::Ok(count);
+    }
+    pub fn stats(&self) -> core::result::Result<Stats,Error> { if(self.storage==0) { return core::result::Err(Error::Closed); } return core::result::Ok(state(self.storage)[0].stats); }
+    pub fn reset_stats(&self) -> core::result::Result<i32,Error> { mutable(self.storage)?; state(self.storage)[0].stats=zero_stats(); return core::result::Ok(0); }
+    pub fn close(&self) -> core::result::Result<bool,Error> { if(self.storage==0) { return core::result::Ok(false); } mutable(self.storage)?; release(self.storage); self.storage=nil(); return core::result::Ok(true); }
+}

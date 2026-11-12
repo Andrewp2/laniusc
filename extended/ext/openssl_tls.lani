@@ -9,6 +9,35 @@ import core::text;
 import ext::host_name;
 import ext::openssl_tls_lifecycle;
 
+pub enum ShutdownPhaseEvent { Begin, NotifySent, Reset }
+pub machine ShutdownPhase on ShutdownPhaseEvent {
+    start Idle;
+
+    state Idle {
+        ShutdownPhaseEvent::Begin -> goto Started,
+        ShutdownPhaseEvent::NotifySent -> stay,
+        ShutdownPhaseEvent::Reset -> stay,
+    }
+
+    state Started {
+        ShutdownPhaseEvent::Begin -> stay,
+        ShutdownPhaseEvent::NotifySent -> goto Sent,
+        ShutdownPhaseEvent::Reset -> goto Idle,
+    }
+
+    state Sent {
+        ShutdownPhaseEvent::Begin -> stay,
+        ShutdownPhaseEvent::NotifySent -> stay,
+        ShutdownPhaseEvent::Reset -> goto Idle,
+    }
+}
+pub impl ShutdownPhase {
+    pub fn is_idle(&self) -> bool { return match (self.state()) { ShutdownPhaseState::Idle -> true, _ -> false }; }
+    pub fn is_started(&self) -> bool { return match (self.state()) { ShutdownPhaseState::Started -> true, _ -> false }; }
+    pub fn is_sent(&self) -> bool { return match (self.state()) { ShutdownPhaseState::Sent -> true, _ -> false }; }
+}
+
+
 pub enum Trust { DefaultPaths, CaFile(core::slice::View<u8>) }
 pub enum Identity { Dns(core::slice::View<u8>), Ip(core::slice::View<u8>) }
 pub enum Role { Client, Server }
@@ -29,7 +58,7 @@ pub struct Context { handle: ptr, limits: Limits }
 pub struct ServerContext { handle: ptr, limits: Limits, peer_required: bool, alpn: ptr, alpn_bytes: i32 }
 // One active manual owner. No owner-field edits, copies or concurrent calls.
 // reader/writer/counts remain allocated at fixed addresses through retries.
-pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, lifecycle: Lifecycle, reading: i32, writing: i32, read_requirement: Need, write_requirement: Need, shutdown_requirement: Need, shutdown_started: bool, local_notify_sent: bool, endpoint_role: Role, peer_required: bool }
+pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, lifecycle: Lifecycle, reading: i32, writing: i32, read_requirement: Need, write_requirement: Need, shutdown_requirement: Need, shutdown_phase: ShutdownPhase, endpoint_role: Role, peer_required: bool }
 struct Packed { storage: ptr, length: i32 }
 struct Credentials { certificate: Packed, key: Packed, passphrase: Packed }
 
@@ -325,7 +354,7 @@ fn allocate_session(context: ptr, limits: Limits, role: Role, peer_required: boo
     let handle: ptr = SSL_new(context);
     if (handle == 0) { return core::result::Err(queued(Phase::Session, 0, 0, 0)); }
     let nowhere: ptr = 0;
-    let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: limits, lifecycle: lifecycle_start(), reading: 0, writing: 0, read_requirement: Need::None, write_requirement: Need::None, shutdown_requirement: Need::None, shutdown_started: false, local_notify_sent: false, endpoint_role: role, peer_required: peer_required };
+    let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: limits, lifecycle: lifecycle_start(), reading: 0, writing: 0, read_requirement: Need::None, write_requirement: Need::None, shutdown_requirement: Need::None, shutdown_phase: shutdown_phase_start(), endpoint_role: role, peer_required: peer_required };
     owner.reader = alloc::allocator::alloc(limits.io_bytes as usize, 8);
     if (owner.reader != 0) { owner.writer = alloc::allocator::alloc(limits.io_bytes as usize, 8); }
     if (owner.writer != 0) { owner.counts = alloc::allocator::alloc(16, 8); }
@@ -456,8 +485,8 @@ fn needs_write(need: Need) -> bool { return match (need) { Need::Write -> true, 
 fn open_for_io(session: &Session, phase: Phase) -> core::result::Result<i32, Error> {
     if (!session.is_open()) { return core::result::Err(local(Cause::Closed, phase)); }
     let reading: bool = match (phase) { Phase::Read -> true, _ -> false };
-    let receiving: bool = reading && session.local_notify_sent && needs_none(session.shutdown_requirement);
-    let open: bool = match (session.state()) { State::Open -> !session.shutdown_started, State::Closing -> receiving, _ -> false };
+    let receiving: bool = reading && session.shutdown_phase.is_sent() && needs_none(session.shutdown_requirement);
+    let open: bool = match (session.state()) { State::Open -> session.shutdown_phase.is_idle(), State::Closing -> receiving, _ -> false };
     if (!open) { return core::result::Err(local(Cause::InvalidState, phase)); }
     return core::result::Ok(0);
 }
@@ -471,7 +500,7 @@ fn shutdown_step(session: &Session) -> core::result::Result<Shutdown, Error> {
     if (!session.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Shutdown)); }
     let allowed: bool = match (session.state()) { State::Open -> true, State::PeerClosed -> true, State::Closing -> true, _ -> false };
     if (!allowed || session.reading != 0 || session.writing != 0) { return core::result::Err(local(Cause::InvalidState, Phase::Shutdown)); }
-    session.shutdown_started = true; session.lifecycle.step(Signal::Shutdown);
+    session.shutdown_phase.step(ShutdownPhaseEvent::Begin); session.lifecycle.step(Signal::Shutdown);
     let system_pointer: ptr = __errno_location();
     let system_cell: [i32] = core::mem::typed_slice_from_raw_parts(system_pointer, 1);
     ERR_clear_error(); system_cell[0] = 0;
@@ -479,7 +508,7 @@ fn shutdown_step(session: &Session) -> core::result::Result<Shutdown, Error> {
     let system: i32 = system_cell[0];
     if (result == 1) { session.destroy(); return core::result::Ok(Shutdown::Complete); }
     // Zero confirms local close_notify. It is not a failed TLS call.
-    if (result == 0) { session.local_notify_sent = true; session.shutdown_requirement = Need::None; return core::result::Ok(Shutdown::Sent); }
+    if (result == 0) { session.shutdown_phase.step(ShutdownPhaseEvent::NotifySent); session.shutdown_requirement = Need::None; return core::result::Ok(Shutdown::Sent); }
     let ssl_error: i32 = SSL_get_error(session.handle, result);
     if (ssl_error == 2) { session.shutdown_requirement = Need::Read; return core::result::Ok(Shutdown::WantRead); }
     if (ssl_error == 3) { session.shutdown_requirement = Need::Write; return core::result::Ok(Shutdown::WantWrite); }
@@ -559,7 +588,7 @@ pub impl Session {
         let nowhere: ptr = 0;
         self.handle = nowhere; self.reader = nowhere; self.writer = nowhere; self.counts = nowhere;
         self.reading = 0; self.writing = 0; self.read_requirement = Need::None; self.write_requirement = Need::None; self.shutdown_requirement = Need::None;
-        self.shutdown_started = false; self.local_notify_sent = false; self.lifecycle.step(Signal::Destroyed);
+        self.shutdown_phase.step(ShutdownPhaseEvent::Reset); self.lifecycle.step(Signal::Destroyed);
         if (handle != 0) { SSL_free(handle); }
         if (reader != 0) { OPENSSL_cleanse(reader, self.limits.io_bytes as usize); alloc::allocator::dealloc(reader, self.limits.io_bytes as usize, 8); }
         if (writer != 0) { OPENSSL_cleanse(writer, self.limits.io_bytes as usize); alloc::allocator::dealloc(writer, self.limits.io_bytes as usize, 8); }
@@ -567,7 +596,7 @@ pub impl Session {
     }
     pub fn handshake(&self) -> core::result::Result<Handshake, Error> {
         if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Handshake)); }
-        if (self.reading != 0 || self.writing != 0 || self.shutdown_started) { return core::result::Err(local(Cause::InvalidState, Phase::Handshake)); }
+        if (self.reading != 0 || self.writing != 0 || !self.shutdown_phase.is_idle()) { return core::result::Err(local(Cause::InvalidState, Phase::Handshake)); }
         let complete: bool = match (self.state()) { State::Open -> true, _ -> false };
         if (complete) { return core::result::Ok(Handshake::Complete); }
         let allowed: bool = match (self.state()) { State::Handshake -> true, _ -> false };
@@ -687,7 +716,7 @@ pub impl Session {
     // no SSL_shutdown call that might consume/reject remaining application data.
     pub fn shutdown_write(&self) -> core::result::Result<Shutdown, Error> {
         if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Shutdown)); }
-        if (self.local_notify_sent && needs_none(self.shutdown_requirement)) { return core::result::Ok(Shutdown::Sent); }
+        if (self.shutdown_phase.is_sent() && needs_none(self.shutdown_requirement)) { return core::result::Ok(Shutdown::Sent); }
         return shutdown_step(self);
     }
 }

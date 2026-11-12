@@ -1,0 +1,104 @@
+// An interactive RGB canvas: Space pauses, a pointer button changes colors,
+// Escape/window close exits. --frames N (1..600) runs a bounded demonstration.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::window;
+import std::process;
+import std::stream;
+
+struct Animation { stopped:bool, paused:bool, palette:bool, tick:i32 }
+impl Animation { fn borrow(&self) -> &Animation { return self; } }
+fn event(animation:&Animation,window:u64,value:ext::window::Event) {
+    match(value) {
+        ext::window::Event::Close(id) -> { if(id==window) { animation.stopped=true; } return; },
+        ext::window::Event::Key(key) -> {
+            if(key.window==window && key.down) {
+                match(key.key) {
+                    ext::window::Key::Escape -> { animation.stopped=true; return; },
+                    ext::window::Key::Space -> { animation.paused=!animation.paused; return; },
+                    _ -> { return; }
+                };
+            }
+            return;
+        },
+        ext::window::Event::Button(button) -> { if(button.window==window && button.down) { animation.palette=!animation.palette; } return; },
+        _ -> { return; }
+    };
+}
+fn draw(pixels:core::slice::View<u32>,animation:&Animation) {
+    let phase=animation.tick%480; let center=phase;
+    if(phase>240) { center=480-phase; } center+=40;
+    let y:i32=0;
+    while(y<200) {
+        let x:i32=0;
+        while(x<320) {
+            let red:u8=(20+x*90/320) as u8; let green:u8=(30+y*90/200) as u8; let blue:u8=100;
+            let dx=x-center; let dy=y-100;
+            if(dx*dx+dy*dy<900) { red=250; green=190; blue=70; }
+            if(animation.palette) { let saved=red; red=blue; blue=saved; }
+            pixels.values[pixels.start+y*320+x]=ext::window::rgb(red,green,blue); x+=1;
+        }
+        y+=1;
+    }
+}
+fn animate(context:&ext::window::Context,window:&ext::window::Window,pixels:core::slice::View<u32>,limit:i32) -> core::result::Result<i32,ext::window::Failure> {
+    let animation=Animation { stopped:false,paused:false,palette:false,tick:0 }; let frames:i32=0;
+    while(!animation.stopped) {
+        // Bound queue draining so input floods cannot starve presentation.
+        let drained:i32=0;
+        while(drained<256) {
+            let pending=context.poll()?; if(pending.is_none()) { break; }
+            event(animation.borrow(),window.id(),pending.unwrap()); drained+=1;
+        }
+        if(animation.stopped) { break; }
+        draw(pixels,animation.borrow()); window.present(pixels)?;
+        if(limit>0) { frames+=1; if(frames>=limit) { break; } }
+        if(!animation.paused) { animation.tick=(animation.tick+2)%480; }
+        let pending=context.wait(16)?;
+        if(pending.is_some()) { event(animation.borrow(),window.id(),pending.unwrap()); }
+    }
+    return core::result::Ok(0);
+}
+fn message(value:str) {
+    let text=core::text::from_str(value); let sink=std::stream::stderr();
+    core::io::write_all(sink.borrow(),text.bytes,text.start,text.length);
+}
+fn arguments() -> i32 {
+    if(std::process::argc()==1) { return 0; }
+    if(std::process::argc()!=3 || std::process::arg_len(1)!=8) { return -1; }
+    let words:[i32;2]=[0;2]; let pointer=core::mem::i32_array_data_ptr(words);
+    let flag=core::mem::typed_slice_from_raw_parts<u8>(pointer,8);
+    if(std::process::arg_read(1,pointer,8)!=8) { return -1; }
+    let expected=core::text::from_str("--frames"); let i:i32=0;
+    while(i<8) { if(flag[i]!=expected.bytes[expected.start+i]) { return -1; } i+=1; }
+    let length=std::process::arg_len(2); if(length<1 || length>3) { return -1; }
+    if(std::process::arg_read(2,pointer,8)!=length) { return -1; }
+    let parsed=core::decimal::parse_u32(flag,length); if(parsed.is_err()) { return -1; }
+    let limit=parsed.unwrap(); if(limit<1 || limit>600) { return -1; } return limit as i32;
+}
+fn main() -> i32 {
+    let limit=arguments();
+    if(limit<0) { message("Usage: window-demo [--frames N], N = 1..600\n"); return 2; }
+    let opened=ext::window::init();
+    if(opened.is_err()) { message("Could not connect to a supported X11 display.\n"); return 3; }
+    let context=opened.unwrap();
+    let created=context.create(core::text::from_str("Pixel canvas - Space pauses, Esc closes"),320,200,true);
+    if(created.is_err()) { context.close(); message("Could not create the window.\n"); return 3; }
+    let window=created.unwrap(); let allocated=alloc::vec::with_capacity<u32>(64000);
+    if(allocated.is_err()) { window.close(); context.close(); message("Could not allocate the canvas.\n"); return 4; }
+    let pixels=allocated.unwrap(); let status:i32=0;
+    if(pixels.try_resize(64000,0).is_err()) { status=4; }
+    else { if(animate(context.borrow(),window.borrow(),pixels.as_view(),limit).is_err()) { status=3; } }
+    pixels.destroy();
+    if(window.close().is_err()) { status=3; }
+    if(context.close().is_err()) { status=3; }
+    if(status!=0) { message("Canvas stopped after a window or allocation failure.\n"); }
+    return status;
+}

@@ -18,11 +18,12 @@ Declaration counts: enum: 1; field: 9; function: 3; impl: 1; method: 1; struct: 
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_words.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_words.lani#L5)
-- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_words.lani#L6)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_words.lani#L7)
-- [ext::unicode_words_data](unicode_words_data.md) · [source](../../../extended/ext/unicode_words.lani#L8)
+- [ext::unicode_break_state](unicode_break_state.md) · [source](../../../extended/ext/unicode_words.lani#L4)
+- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_words.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_words.lani#L6)
+- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_words.lani#L7)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_words.lani#L8)
+- [ext::unicode_words_data](unicode_words_data.md) · [source](../../../extended/ext/unicode_words.lani#L9)
 
 ## Types, fields and variants
 
@@ -30,7 +31,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 10](../../../extended/ext/unicode_words.lani#L10)
+[Source line 11](../../../extended/ext/unicode_words.lani#L11)
 
 ```lanius
 pub enum Error
@@ -38,7 +39,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 10](../../../extended/ext/unicode_words.lani#L10)
+[Source line 11](../../../extended/ext/unicode_words.lani#L11)
 
 ```lanius
 Bounds
@@ -46,7 +47,7 @@ Bounds
 
 ### struct: Segment
 
-[Source line 11](../../../extended/ext/unicode_words.lani#L11)
+[Source line 12](../../../extended/ext/unicode_words.lani#L12)
 
 ```lanius
 pub struct Segment
@@ -54,7 +55,7 @@ pub struct Segment
 
 #### field: start
 
-[Source line 11](../../../extended/ext/unicode_words.lani#L11)
+[Source line 12](../../../extended/ext/unicode_words.lani#L12)
 
 ```lanius
 start: i32
@@ -62,7 +63,7 @@ start: i32
 
 #### field: end
 
-[Source line 11](../../../extended/ext/unicode_words.lani#L11)
+[Source line 12](../../../extended/ext/unicode_words.lani#L12)
 
 ```lanius
 end: i32
@@ -70,7 +71,7 @@ end: i32
 
 #### field: text
 
-[Source line 11](../../../extended/ext/unicode_words.lani#L11)
+[Source line 12](../../../extended/ext/unicode_words.lani#L12)
 
 ```lanius
 text: core::text::Text
@@ -78,7 +79,7 @@ text: core::text::Text
 
 ### struct: Cursor
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 pub struct Cursor
@@ -86,7 +87,7 @@ pub struct Cursor
 
 #### field: text
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 text: core::text::Text
@@ -94,7 +95,7 @@ text: core::text::Text
 
 #### field: position
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 position: i32
@@ -102,7 +103,7 @@ position: i32
 
 #### field: raw
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 raw: u32
@@ -110,7 +111,7 @@ raw: u32
 
 #### field: previous
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 previous: u32
@@ -118,25 +119,25 @@ previous: u32
 
 #### field: before
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
 before: u32
 ```
 
-#### field: ri_odd
+#### field: regional
 
-[Source line 14](../../../extended/ext/unicode_words.lani#L14)
+[Source line 15](../../../extended/ext/unicode_words.lani#L15)
 
 ```lanius
-ri_odd: bool
+regional: ext::unicode_break_state::RegionalRun
 ```
 
 ## Free functions and extern declarations
 
 ### function: cursor
 
-[Source line 18](../../../extended/ext/unicode_words.lani#L18)
+[Source line 19](../../../extended/ext/unicode_words.lani#L19)
 
 ```lanius
 pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error>
@@ -160,9 +161,9 @@ pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<b
 
 ## Implementation blocks and public methods
 
-### impl at line 36
+### impl at line 37
 
-[Source line 36](../../../extended/ext/unicode_words.lani#L36)
+[Source line 37](../../../extended/ext/unicode_words.lani#L37)
 
 ```lanius
 pub impl Cursor

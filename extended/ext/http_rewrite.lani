@@ -7,6 +7,7 @@
 // HTTP/1.1 heads (Host from :authority, cookies joined with "; "), and
 // HTTP/1.1 responses become lowercase HTTP/2 field lists. No I/O.
 module ext::http_rewrite;
+import core::iter_state;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -201,12 +202,12 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
     if (cookies > 0) {
         // HTTP/2 may split Cookie into several fields; HTTP/1.1 wants one (RFC 9113 8.2.3).
         if (!put_str(out, "Cookie: ", 8)) { return false; }
-        let first: bool = true; i = 0;
+        let first_phase = core::iter_state::finished_completion(); i = 0;
         while (i < fields.len()) {
             let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1;
             if (kind(f.name) != K_COOKIE) { continue; }
-            if (!first && !put_str(out, "; ", 2)) { return false; }
-            if (!put(out, f.value)) { return false; } first = false;
+            if (!first_phase.is_done() && !put_str(out, "; ", 2)) { return false; }
+            if (!put(out, f.value)) { return false; } first_phase = core::iter_state::completion_start();
         }
         if (!put_str(out, "\r\n", 2)) { return false; }
     }

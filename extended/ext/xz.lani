@@ -2,30 +2,278 @@
 // probability, staging and dictionary storage, plus a stored-chunk xz writer.
 // No allocation and no host services. See docs/extended-xz.md.
 module ext::xz;
+import core::iter_state;
+import core::lifecycle;
 import core::crc32;
 import core::result;
 import core::slice;
+
+pub enum DictionaryContextEvent { Reset, DictionaryReset, PropertiesRead }
+pub machine DictionaryContext on DictionaryContextEvent {
+    start NeedDictionary;
+
+    state NeedDictionary {
+        DictionaryContextEvent::Reset -> stay,
+        DictionaryContextEvent::DictionaryReset -> goto NeedProperties,
+        DictionaryContextEvent::PropertiesRead -> goto Ready,
+    }
+
+    state NeedProperties {
+        DictionaryContextEvent::Reset -> goto NeedDictionary,
+        DictionaryContextEvent::DictionaryReset -> stay,
+        DictionaryContextEvent::PropertiesRead -> goto Ready,
+    }
+
+    state Ready {
+        DictionaryContextEvent::Reset -> goto NeedDictionary,
+        DictionaryContextEvent::DictionaryReset -> goto NeedProperties,
+        DictionaryContextEvent::PropertiesRead -> stay,
+    }
+}
+pub impl DictionaryContext {
+    pub fn is_need_dictionary(&self) -> bool { return match (self.state()) { DictionaryContextState::NeedDictionary -> true, _ -> false }; }
+    pub fn is_need_properties(&self) -> bool { return match (self.state()) { DictionaryContextState::NeedProperties -> true, _ -> false }; }
+    pub fn is_ready(&self) -> bool { return match (self.state()) { DictionaryContextState::Ready -> true, _ -> false }; }
+}
+
+
+pub enum ChunkContextEvent { Stored, Compressed }
+pub machine ChunkContext on ChunkContextEvent {
+    start First;
+
+    state First {
+        ChunkContextEvent::Stored -> goto NeedProps,
+        ChunkContextEvent::Compressed -> goto Ready,
+    }
+
+    state NeedProps {
+        ChunkContextEvent::Stored -> stay,
+        ChunkContextEvent::Compressed -> goto Ready,
+    }
+
+    state NeedState {
+        ChunkContextEvent::Stored -> stay,
+        ChunkContextEvent::Compressed -> goto Ready,
+    }
+
+    state Ready {
+        ChunkContextEvent::Stored -> goto NeedState,
+        ChunkContextEvent::Compressed -> stay,
+    }
+}
+pub impl ChunkContext {
+    pub fn is_first(&self) -> bool { return match (self.state()) { ChunkContextState::First -> true, _ -> false }; }
+    pub fn is_need_props(&self) -> bool { return match (self.state()) { ChunkContextState::NeedProps -> true, _ -> false }; }
+    pub fn is_need_state(&self) -> bool { return match (self.state()) { ChunkContextState::NeedState -> true, _ -> false }; }
+    pub fn is_ready(&self) -> bool { return match (self.state()) { ChunkContextState::Ready -> true, _ -> false }; }
+}
+
+
+pub enum EncodingEvent { HeaderWritten, FooterWritten }
+pub machine Encoding on EncodingEvent {
+    start Header;
+
+    state Header {
+        EncodingEvent::HeaderWritten -> goto Blocks,
+        EncodingEvent::FooterWritten -> stay,
+    }
+
+    state Blocks {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::FooterWritten -> goto Ended,
+    }
+
+    final state Ended {
+        EncodingEvent::HeaderWritten -> stay,
+        EncodingEvent::FooterWritten -> stay,
+    }
+}
+pub impl Encoding {
+    pub fn is_header(&self) -> bool { return match (self.state()) { EncodingState::Header -> true, _ -> false }; }
+    pub fn is_blocks(&self) -> bool { return match (self.state()) { EncodingState::Blocks -> true, _ -> false }; }
+    pub fn is_ended(&self) -> bool { return match (self.state()) { EncodingState::Ended -> true, _ -> false }; }
+}
+
+
+pub enum IndexPhaseEvent { CountRead, SizeRead, RecordRead, RecordsRead, PaddingRead }
+pub machine IndexPhase on IndexPhaseEvent {
+    start Count;
+
+    state Count {
+        IndexPhaseEvent::CountRead -> goto Unpadded,
+        IndexPhaseEvent::SizeRead -> stay,
+        IndexPhaseEvent::RecordRead -> stay,
+        IndexPhaseEvent::RecordsRead -> stay,
+        IndexPhaseEvent::PaddingRead -> stay,
+    }
+
+    state Unpadded {
+        IndexPhaseEvent::CountRead -> stay,
+        IndexPhaseEvent::SizeRead -> goto Uncompressed,
+        IndexPhaseEvent::RecordRead -> stay,
+        IndexPhaseEvent::RecordsRead -> goto Padding,
+        IndexPhaseEvent::PaddingRead -> stay,
+    }
+
+    state Uncompressed {
+        IndexPhaseEvent::CountRead -> stay,
+        IndexPhaseEvent::SizeRead -> stay,
+        IndexPhaseEvent::RecordRead -> goto Unpadded,
+        IndexPhaseEvent::RecordsRead -> stay,
+        IndexPhaseEvent::PaddingRead -> stay,
+    }
+
+    state Padding {
+        IndexPhaseEvent::CountRead -> stay,
+        IndexPhaseEvent::SizeRead -> stay,
+        IndexPhaseEvent::RecordRead -> stay,
+        IndexPhaseEvent::RecordsRead -> stay,
+        IndexPhaseEvent::PaddingRead -> goto Crc,
+    }
+
+    final state Crc {
+        IndexPhaseEvent::CountRead -> stay,
+        IndexPhaseEvent::SizeRead -> stay,
+        IndexPhaseEvent::RecordRead -> stay,
+        IndexPhaseEvent::RecordsRead -> stay,
+        IndexPhaseEvent::PaddingRead -> stay,
+    }
+}
+pub impl IndexPhase {
+    pub fn is_count(&self) -> bool { return match (self.state()) { IndexPhaseState::Count -> true, _ -> false }; }
+    pub fn is_unpadded(&self) -> bool { return match (self.state()) { IndexPhaseState::Unpadded -> true, _ -> false }; }
+    pub fn is_uncompressed(&self) -> bool { return match (self.state()) { IndexPhaseState::Uncompressed -> true, _ -> false }; }
+    pub fn is_padding(&self) -> bool { return match (self.state()) { IndexPhaseState::Padding -> true, _ -> false }; }
+    pub fn is_crc(&self) -> bool { return match (self.state()) { IndexPhaseState::Crc -> true, _ -> false }; }
+}
+
 
 pub enum Format { Xz, Lzma }
 pub enum Error { Bounds, Header, Options, UnsupportedCheck, UnsupportedFilter, Corrupt, Checksum, Index, Footer, SizeMismatch, Truncated, TrailingData, Failed }
 pub enum Status { NeedInput, NeedOutput, NeedDictionary, Done }
 pub struct Step { read: i32, written: i32, status: Status }
+// LZMA probability-context state; index() is the format-defined table index.
+pub enum ContextEvent { Literal, Match, Repeat, ShortRepeat, Reset }
+pub machine Context on ContextEvent {
+    start Literal;
+
+    state Literal {
+        ContextEvent::Literal -> goto Literal,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state MatchLiteral2 {
+        ContextEvent::Literal -> goto Literal,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state RepeatLiteral2 {
+        ContextEvent::Literal -> goto Literal,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state ShortRepeatLiteral2 {
+        ContextEvent::Literal -> goto Literal,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state MatchLiteral1 {
+        ContextEvent::Literal -> goto MatchLiteral2,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state RepeatLiteral1 {
+        ContextEvent::Literal -> goto RepeatLiteral2,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state ShortRepeatLiteral1 {
+        ContextEvent::Literal -> goto ShortRepeatLiteral2,
+        ContextEvent::Match -> goto Match,
+        ContextEvent::Repeat -> goto Repeat,
+        ContextEvent::ShortRepeat -> goto ShortRepeat,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state Match {
+        ContextEvent::Literal -> goto MatchLiteral1,
+        ContextEvent::Match -> goto MatchAfterNonliteral,
+        ContextEvent::Repeat -> goto RepeatAfterNonliteral,
+        ContextEvent::ShortRepeat -> goto RepeatAfterNonliteral,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state Repeat {
+        ContextEvent::Literal -> goto RepeatLiteral1,
+        ContextEvent::Match -> goto MatchAfterNonliteral,
+        ContextEvent::Repeat -> goto RepeatAfterNonliteral,
+        ContextEvent::ShortRepeat -> goto RepeatAfterNonliteral,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state ShortRepeat {
+        ContextEvent::Literal -> goto ShortRepeatLiteral1,
+        ContextEvent::Match -> goto MatchAfterNonliteral,
+        ContextEvent::Repeat -> goto RepeatAfterNonliteral,
+        ContextEvent::ShortRepeat -> goto RepeatAfterNonliteral,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state MatchAfterNonliteral {
+        ContextEvent::Literal -> goto MatchLiteral1,
+        ContextEvent::Match -> goto MatchAfterNonliteral,
+        ContextEvent::Repeat -> goto RepeatAfterNonliteral,
+        ContextEvent::ShortRepeat -> goto RepeatAfterNonliteral,
+        ContextEvent::Reset -> goto Literal,
+    }
+
+    state RepeatAfterNonliteral {
+        ContextEvent::Literal -> goto RepeatLiteral1,
+        ContextEvent::Match -> goto MatchAfterNonliteral,
+        ContextEvent::Repeat -> goto RepeatAfterNonliteral,
+        ContextEvent::ShortRepeat -> goto RepeatAfterNonliteral,
+        ContextEvent::Reset -> goto Literal,
+    }
+}
+
+pub impl Context {
+    pub fn index(&self) -> i32 { return match (self.state()) { ContextState::Literal -> 0, ContextState::MatchLiteral2 -> 1, ContextState::RepeatLiteral2 -> 2, ContextState::ShortRepeatLiteral2 -> 3, ContextState::MatchLiteral1 -> 4, ContextState::RepeatLiteral1 -> 5, ContextState::ShortRepeatLiteral1 -> 6, ContextState::Match -> 7, ContextState::Repeat -> 8, ContextState::ShortRepeat -> 9, ContextState::MatchAfterNonliteral -> 10, ContextState::RepeatAfterNonliteral -> 11 }; }
+}
+
 pub struct Decoder {
     lzma1: bool, probs: core::slice::View<i32>, stage: core::slice::View<u8>, dict: core::slice::View<u8>,
-    phase: i32, need: i32, have: i32, failed: bool,
+    phase: Decoding, need: i32, have: i32, health: core::lifecycle::Health,
     check: i32, check_size: i32, crc: u32, crc64: u64, flag0: u8, flag1: u8,
     header_size: i32, declared_packed: u64, has_packed: bool, declared_unpacked: u64, has_unpacked: bool, block_packed: u64, block_out: u64,
-    blocks: u64, record_hash: u32, index_hash: u32, index_crc: u32, index_size: u64, index_left: u64, index_field: i32, index_unpadded: u64, varint: u64, shift: i32, pad: i32,
-    need_dict_reset: bool, need_props: bool, control: i32, reset: i32, packed: i32,
-    lc: i32, lp: i32, pb: i32, state: i32, rep0: u32, rep1: u32, rep2: u32, rep3: u32,
-    range: u32, code: u32, in_pos: i32, in_end: i32, bad: bool, rc_ready: bool, end_marker: bool,
+    blocks: u64, record_hash: u32, index_hash: u32, index_crc: u32, index_size: u64, index_left: u64, index_phase: IndexPhase, index_unpadded: u64, varint: u64, shift: i32, pad: i32,
+    dictionary_context: DictionaryContext, control: i32, reset: i32, packed: i32,
+    lc: i32, lp: i32, pb: i32, context: Context, rep0: u32, rep1: u32, rep2: u32, rep3: u32,
+    range: u32, code: u32, in_pos: i32, in_end: i32, range_health: core::lifecycle::Health, rc_ready_completion: core::iter_state::Completion, end_marker_completion: core::iter_state::Completion,
     pending: i32, limited: bool, left: u64, dict_size: i32, dict_want: i32, dict_pos: i32, dict_full: i32, position: u64,
     read_total: u64, written_total: u64 }
 pub struct Encoder {
     probs: core::slice::View<i32>, heads: core::slice::View<i32>, chain: core::slice::View<i32>, window: core::slice::View<u8>, stage: core::slice::View<u8>,
     depth: i32, nice: i32, lazy: bool, dict_size: i32, dict_code: u8, fill: i32, pos: i32, hashed: i32, base: u64,
-    stage_pos: i32, stage_len: i32, started: bool, ended: bool, failed: bool, first: bool, state_reset: bool, props_needed: bool,
-    state: i32, rep0: i32, rep1: i32, rep2: i32, rep3: i32, low: u64, range: u32, cache: u8, cache_size: i32, out: i32, found_len: i32, found_dist: i32,
+    stage_pos: i32, stage_len: i32, encoding: Encoding, health: core::lifecycle::Health, chunk_context: ChunkContext,
+    context: Context, rep0: i32, rep1: i32, rep2: i32, rep3: i32, low: u64, range: u32, cache: u8, cache_size: i32, out: i32, found_len: i32, found_dist: i32,
     crc64: u64, packed: u64, unpacked: u64, read_total: u64, written_total: u64 }
 pub struct StoreEncoder { table: core::slice::View<i32>, crc64: u64, packed: u64, unpacked: u64, chunks: u64 }
 
@@ -49,25 +297,389 @@ const LITERAL: i32 = 1846;
 const CRC64_POLY: u64 = 14514072000185962306;
 const ALL64: u64 = 18446744073709551615;
 const ALL32: u32 = 4294967295;
-// Phases.
-const STREAM_HEADER: i32 = 0;
-const BLOCK_START: i32 = 1;
-const BLOCK_HEADER: i32 = 2;
-const DICTIONARY: i32 = 3;
-const CONTROL: i32 = 4;
-const CHUNK_HEADER: i32 = 5;
-const CHUNK_DATA: i32 = 6;
-const DECODE: i32 = 7;
-const COPY: i32 = 8;
-const BLOCK_PAD: i32 = 9;
-const CHECK: i32 = 10;
-const INDEX: i32 = 11;
-const FOOTER: i32 = 12;
-const STREAM_PAD: i32 = 13;
-const ALONE_HEADER: i32 = 20;
-const ALONE_DICTIONARY: i32 = 21;
-const ALONE_STREAM: i32 = 22;
-const DONE: i32 = 30;
+pub enum DecodeEvent { NextStream, NextBlock, BlockFound, BlockHeaderRead, NextChunk, ChunkFound, CompressedChunk, ChunkRead, StoredChunk, BlockRead, PaddingRead, IndexFound, IndexRead, FooterRead, AloneStarted, AloneHeaderRead, DictionaryReady, Finished }
+
+pub machine Decoding on DecodeEvent {
+    start StreamHeader;
+
+    state StreamHeader {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> goto BlockStart,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> goto AloneHeader,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state BlockStart {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> goto BlockHeader,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> goto Index,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state BlockHeader {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> goto Dictionary,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Dictionary {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> goto Control,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Control {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> goto ChunkHeader,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> goto BlockPad,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state ChunkHeader {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> goto ChunkData,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> goto Copy,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state ChunkData {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> goto Decode,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Decode {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> goto Control,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Copy {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> goto Control,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state BlockPad {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> goto Check,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Check {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> goto BlockStart,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Index {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> goto Index,
+        DecodeEvent::IndexRead -> goto Footer,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state Footer {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> goto StreamPad,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state StreamPad {
+        DecodeEvent::NextStream -> goto StreamHeader,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> goto Done,
+    }
+
+    state AloneHeader {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> goto AloneDictionary,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state AloneDictionary {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> goto AloneStream,
+        DecodeEvent::Finished -> stay,
+    }
+
+    state AloneStream {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> goto Done,
+    }
+
+    final state Done {
+        DecodeEvent::NextStream -> stay,
+        DecodeEvent::NextBlock -> stay,
+        DecodeEvent::BlockFound -> stay,
+        DecodeEvent::BlockHeaderRead -> stay,
+        DecodeEvent::NextChunk -> stay,
+        DecodeEvent::ChunkFound -> stay,
+        DecodeEvent::CompressedChunk -> stay,
+        DecodeEvent::ChunkRead -> stay,
+        DecodeEvent::StoredChunk -> stay,
+        DecodeEvent::BlockRead -> stay,
+        DecodeEvent::PaddingRead -> stay,
+        DecodeEvent::IndexFound -> stay,
+        DecodeEvent::IndexRead -> stay,
+        DecodeEvent::FooterRead -> stay,
+        DecodeEvent::AloneStarted -> stay,
+        DecodeEvent::AloneHeaderRead -> stay,
+        DecodeEvent::DictionaryReady -> stay,
+        DecodeEvent::Finished -> stay,
+    }
+}
 
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
 fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
@@ -128,14 +740,14 @@ pub fn stage_len() -> i32 { return STAGE; }
 pub fn decoder(probabilities: core::slice::View<i32>, stage: core::slice::View<u8>, format: Format) -> core::result::Result<Decoder,Error> {
     if (probabilities.start < 0 || probabilities.length < PROBABILITIES || probabilities.start > 2147483647-probabilities.length || !valid(stage) || stage.length < STAGE) { return core::result::Err(Error::Bounds); }
     let lzma1: bool = match (format) { Format::Lzma -> true, Format::Xz -> false };
-    let phase: i32 = STREAM_HEADER; let need: i32 = 12; if (lzma1) { phase = ALONE_HEADER; need = 13; }
+    let phase = decoding_start(); let need: i32 = 12; if (lzma1) { phase.step(DecodeEvent::AloneStarted); need = 13; }
     let empty: core::slice::View<u8> = stage; empty.length = 0;
     tables(probabilities);
-    return core::result::Ok(Decoder { lzma1: lzma1, probs: probabilities, stage: stage, dict: empty, phase: phase, need: need, have: 0, failed: false,
+    return core::result::Ok(Decoder { lzma1: lzma1, probs: probabilities, stage: stage, dict: empty, phase: phase, need: need, have: 0, health: core::lifecycle::health_start(),
         check: 0, check_size: 0, crc: 0, crc64: 0, flag0: 0, flag1: 0, header_size: 0, declared_packed: 0, has_packed: false, declared_unpacked: 0, has_unpacked: false, block_packed: 0, block_out: 0,
-        blocks: 0, record_hash: core::crc32::INITIAL, index_hash: core::crc32::INITIAL, index_crc: 0, index_size: 0, index_left: 0, index_field: 0, index_unpadded: 0, varint: 0, shift: 0, pad: 0,
-        need_dict_reset: true, need_props: true, control: 0, reset: 0, packed: 0, lc: 0, lp: 0, pb: 0, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
-        range: 0, code: 0, in_pos: 0, in_end: 0, bad: false, rc_ready: false, end_marker: false, pending: 0, limited: false, left: 0, dict_size: 0, dict_want: 0, dict_pos: 0, dict_full: 0, position: 0,
+        blocks: 0, record_hash: core::crc32::INITIAL, index_hash: core::crc32::INITIAL, index_crc: 0, index_size: 0, index_left: 0, index_phase: index_phase_start(), index_unpadded: 0, varint: 0, shift: 0, pad: 0,
+        dictionary_context: dictionary_context_start(), control: 0, reset: 0, packed: 0, lc: 0, lp: 0, pb: 0, context: context_start(), rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        range: 0, code: 0, in_pos: 0, in_end: 0, range_health: core::lifecycle::health_start(), rc_ready_completion: core::iter_state::completion_start(), end_marker_completion: core::iter_state::completion_start(), pending: 0, limited: false, left: 0, dict_size: 0, dict_want: 0, dict_pos: 0, dict_full: 0, position: 0,
         read_total: 0, written_total: 0 });
 }
 
@@ -145,7 +757,7 @@ fn set_prob(d: &Decoder, index: i32, value: u32) { d.probs.values[d.probs.start+
 fn normalize(d: &Decoder) {
     if (d.range < 16777216) {
         d.range = d.range << 8;
-        if (d.in_pos >= d.in_end) { d.bad = true; d.code = d.code << 8; return; }
+        if (d.in_pos >= d.in_end) { d.range_health.fail(); d.code = d.code << 8; return; }
         d.code = (d.code << 8) | (byte(d.stage,d.in_pos) as u32); d.in_pos += 1;
     }
 }
@@ -187,16 +799,16 @@ fn distance(d: &Decoder, len: i32) -> u32 {
 // After a known LZMA1 size: the next symbol must be the end marker.
 fn marker(d: &Decoder) -> bool {
     let pos_state: i32 = (d.position & (((1 << d.pb)-1) as u64)) as i32;
-    if (bit(d,IS_MATCH+(d.state << 4)+pos_state) == 0) { return false; }
-    if (bit(d,IS_REP+d.state) != 0) { return false; }
+    if (bit(d,IS_MATCH+(d.context.index() << 4)+pos_state) == 0) { return false; }
+    if (bit(d,IS_REP+d.context.index()) != 0) { return false; }
     let len: i32 = length(d,LEN_CODER,pos_state);
-    if (distance(d,len) != ALL32 || d.bad) { return false; }
-    normalize(d); return !d.bad;
+    if (distance(d,len) != ALL32 || d.range_health.is_failed()) { return false; }
+    normalize(d); return !d.range_health.is_failed();
 }
 fn reset_state(d: &Decoder) {
     let count: i32 = LITERAL+(768 << (d.lc+d.lp)); let index: i32 = 0;
     while (index < count) { d.probs.values[d.probs.start+index] = 1024; index += 1; }
-    d.state = 0; d.rep0 = 0; d.rep1 = 0; d.rep2 = 0; d.rep3 = 0; d.pending = 0;
+    d.context.step(ContextEvent::Reset); d.rep0 = 0; d.rep1 = 0; d.rep2 = 0; d.rep3 = 0; d.pending = 0;
 }
 fn reset_dictionary(d: &Decoder) { d.dict_pos = 0; d.dict_full = 0; d.position = 0; }
 fn set_properties(d: &Decoder, value: u8) -> bool {
@@ -224,7 +836,7 @@ fn back(d: &Decoder, distance: u32) -> u8 {
 }
 // Decode symbols into output from `at`. Stops when output is full, the
 // limit is reached, LZMA1 needs more input, an end marker appears or on error
-// (d.bad). Returns the new output position.
+// (d.range_health.is_failed()). Returns the new output position.
 fn run(d: &Decoder, output: core::slice::View<u8>, at: i32, final_input: bool) -> i32 {
     let out: i32 = symbols(d,output,at,final_input); checksum(d,output,at,out); return out;
 }
@@ -248,17 +860,17 @@ fn symbols(d: &Decoder, output: core::slice::View<u8>, at: i32, final_input: boo
     while (true) {
         if (d.pending > 0) { out = copy_match(d,output,out); }
         if (room(d) == 0) { want_more(d); return out; }
-        if (d.pending > 0 || out >= output.length || d.end_marker) { return out; }
+        if (d.pending > 0 || out >= output.length || d.end_marker_completion.is_done()) { return out; }
         if (d.limited && d.left == 0) { return out; }
         if (d.lzma1 && !final_input && d.in_end-d.in_pos < 20) { return out; }
         let pos_state: i32 = (d.position & (((1 << d.pb)-1) as u64)) as i32;
-        if (bit(d,IS_MATCH+(d.state << 4)+pos_state) == 0) {
+        if (bit(d,IS_MATCH+(d.context.index() << 4)+pos_state) == 0) {
             let previous: i32 = 0; if (d.dict_full > 0) { previous = back(d,0) as i32; }
             let low: i32 = (d.position & (((1 << d.lp)-1) as u64)) as i32;
             let base: i32 = LITERAL+768*((low << d.lc)+(previous >> (8-d.lc)));
             let symbol: i32 = 1;
-            if (d.state >= 7) {
-                if ((d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
+            if (d.context.index() >= 7) {
+                if ((d.rep0 as i64) >= (d.dict_full as i64)) { d.range_health.fail(); return out; }
                 let matched: i32 = back(d,d.rep0) as i32;
                 while (symbol < 256) {
                     let match_bit: i32 = (matched >> 7) & 1; matched = matched << 1;
@@ -267,44 +879,44 @@ fn symbols(d: &Decoder, output: core::slice::View<u8>, at: i32, final_input: boo
                 }
             }
             while (symbol < 256) { symbol = (symbol << 1) | bit(d,base+symbol); }
-            if (d.bad) { return out; }
+            if (d.range_health.is_failed()) { return out; }
             emit(d,output,out,(symbol-256) as u8); out += 1;
-            if (d.state < 4) { d.state = 0; } else { if (d.state < 10) { d.state -= 3; } else { d.state -= 6; } }
+            d.context.step(ContextEvent::Literal);
             continue;
         }
         let len: i32 = 0;
-        if (bit(d,IS_REP+d.state) == 0) {
+        if (bit(d,IS_REP+d.context.index()) == 0) {
             d.rep3 = d.rep2; d.rep2 = d.rep1; d.rep1 = d.rep0;
             len = length(d,LEN_CODER,pos_state);
-            if (d.state < 7) { d.state = 7; } else { d.state = 10; }
+            d.context.step(ContextEvent::Match);
             d.rep0 = distance(d,len);
             if (d.rep0 == ALL32) {
                 // End-of-payload marker: LZMA1 only, and only with an unknown size.
-                if (!d.lzma1 || d.limited || d.bad) { d.bad = true; return out; }
-                normalize(d); d.end_marker = true; return out;
+                if (!d.lzma1 || d.limited || d.range_health.is_failed()) { d.range_health.fail(); return out; }
+                normalize(d); d.end_marker_completion.finish(); return out;
             }
         } else {
-            if (bit(d,IS_REP_G0+d.state) == 0) {
-                if (bit(d,IS_REP0_LONG+(d.state << 4)+pos_state) == 0) {
-                    if (d.bad || (d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
-                    if (d.state < 7) { d.state = 9; } else { d.state = 11; }
+            if (bit(d,IS_REP_G0+d.context.index()) == 0) {
+                if (bit(d,IS_REP0_LONG+(d.context.index() << 4)+pos_state) == 0) {
+                    if (d.range_health.is_failed() || (d.rep0 as i64) >= (d.dict_full as i64)) { d.range_health.fail(); return out; }
+                    d.context.step(ContextEvent::ShortRepeat);
                     emit(d,output,out,back(d,d.rep0)); out += 1; continue;
                 }
             } else {
                 let chosen: u32 = 0;
-                if (bit(d,IS_REP_G1+d.state) == 0) { chosen = d.rep1; }
+                if (bit(d,IS_REP_G1+d.context.index()) == 0) { chosen = d.rep1; }
                 else {
-                    if (bit(d,IS_REP_G2+d.state) == 0) { chosen = d.rep2; } else { chosen = d.rep3; d.rep3 = d.rep2; }
+                    if (bit(d,IS_REP_G2+d.context.index()) == 0) { chosen = d.rep2; } else { chosen = d.rep3; d.rep3 = d.rep2; }
                     d.rep2 = d.rep1;
                 }
                 d.rep1 = d.rep0; d.rep0 = chosen;
             }
             len = length(d,REP_LEN_CODER,pos_state);
-            if (d.state < 7) { d.state = 8; } else { d.state = 11; }
+            d.context.step(ContextEvent::Repeat);
         }
-        if (d.bad || (d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
+        if (d.range_health.is_failed() || (d.rep0 as i64) >= (d.dict_full as i64)) { d.range_health.fail(); return out; }
         d.pending = len+2;
-        if (d.limited && (d.pending as u64) > d.left) { d.bad = true; return out; }
+        if (d.limited && (d.pending as u64) > d.left) { d.range_health.fail(); return out; }
     } return out;
 }
 
@@ -314,7 +926,7 @@ fn gather(d: &Decoder, input: core::slice::View<u8>, at: i32) -> i32 {
     let index: i32 = 0; while (index < count) { put(d.stage,d.have+index,byte(input,at+index)); index += 1; }
     d.have += count; d.read_total += count as u64; return at+count;
 }
-fn begin(d: &Decoder, phase: i32, need: i32) { d.phase = phase; d.need = need; d.have = 0; }
+fn begin(d: &Decoder, event: DecodeEvent, need: i32) { d.phase.step(event); d.need = need; d.have = 0; }
 // Minimal xz varint inside the staged block header.
 fn varint(d: &Decoder, at: i32, end: i32) -> i64 {
     let value: u64 = 0; let shift: i32 = 0; let position: i32 = at;
@@ -335,7 +947,7 @@ fn stream_header(d: &Decoder) -> core::result::Result<bool,Error> {
     if (check != 0 && check != 1 && check != 4) { return core::result::Err(Error::UnsupportedCheck); }
     d.check = check; d.check_size = 0; if (check == 1) { d.check_size = 4; } if (check == 4) { d.check_size = 8; }
     d.flag0 = byte(s,6); d.flag1 = byte(s,7); d.blocks = 0; d.record_hash = core::crc32::INITIAL; d.index_hash = core::crc32::INITIAL;
-    begin(d,BLOCK_START,1); return core::result::Ok(true);
+    begin(d,DecodeEvent::NextBlock,1); return core::result::Ok(true);
 }
 fn block_header(d: &Decoder) -> core::result::Result<bool,Error> {
     let s: core::slice::View<u8> = d.stage; let size: i32 = d.header_size;
@@ -357,8 +969,8 @@ fn block_header(d: &Decoder) -> core::result::Result<bool,Error> {
     if (d.dict_size < 4096) { d.dict_size = 4096; }
     first_window(d);
     d.block_packed = 0; d.block_out = 0; d.crc = core::crc32::INITIAL; d.crc64 = ALL64;
-    d.need_dict_reset = true; d.need_props = true; d.limited = false; d.end_marker = false;
-    begin(d,DICTIONARY,0); return core::result::Ok(true);
+    d.dictionary_context.step(DictionaryContextEvent::Reset); d.limited = false; d.end_marker_completion = core::iter_state::completion_start();
+    begin(d,DecodeEvent::BlockHeaderRead,0); return core::result::Ok(true);
 }
 fn chunk_header(d: &Decoder) -> core::result::Result<bool,Error> {
     let s: core::slice::View<u8> = d.stage; let control: i32 = d.control;
@@ -366,34 +978,34 @@ fn chunk_header(d: &Decoder) -> core::result::Result<bool,Error> {
     d.block_packed += d.need as u64;
     if (control < 128) {
         // A dictionary reset obliges the next LZMA chunk to set properties.
-        if (control == 1) { reset_dictionary(d); d.need_dict_reset = false; d.need_props = true; }
-        d.limited = true; d.left = size as u64; begin(d,COPY,0); return core::result::Ok(true);
+        if (control == 1) { reset_dictionary(d); d.dictionary_context.step(DictionaryContextEvent::DictionaryReset); }
+        d.limited = true; d.left = size as u64; begin(d,DecodeEvent::StoredChunk,0); return core::result::Ok(true);
     }
     let reset: i32 = (control >> 5) & 3;
     let unpacked: i32 = ((control & 31) << 16)+size; let packed: i32 = ((byte(s,3) as i32) << 8)+(byte(s,4) as i32)+1;
-    if (reset == 3) { reset_dictionary(d); d.need_dict_reset = false; }
-    if (reset >= 2) { if (!set_properties(d,byte(s,5))) { return core::result::Err(Error::Options); } d.need_props = false; }
+    if (reset == 3) { reset_dictionary(d); d.dictionary_context.step(DictionaryContextEvent::DictionaryReset); }
+    if (reset >= 2) { if (!set_properties(d,byte(s,5))) { return core::result::Err(Error::Options); } d.dictionary_context.step(DictionaryContextEvent::PropertiesRead); }
     if (reset >= 1) { reset_state(d); }
-    d.limited = true; d.left = unpacked as u64; d.packed = packed; begin(d,CHUNK_DATA,packed); return core::result::Ok(true);
+    d.limited = true; d.left = unpacked as u64; d.packed = packed; begin(d,DecodeEvent::CompressedChunk,packed); return core::result::Ok(true);
 }
 fn finish_index(d: &Decoder) -> core::result::Result<bool,Error> {
     if (core::crc32::finish(d.index_crc) != le32(d.stage,0) || d.index_hash != d.record_hash) { return core::result::Err(Error::Index); }
-    d.index_size += 4; begin(d,FOOTER,12); return core::result::Ok(true);
+    d.index_size += 4; begin(d,DecodeEvent::IndexRead,12); return core::result::Ok(true);
 }
 fn index_byte(d: &Decoder, value: u8) -> core::result::Result<bool,Error> {
     d.index_crc = core::crc32::update_byte(d.index_crc,value); d.index_size += 1;
-    if (d.index_field == 3) { if (value != 0) { return core::result::Err(Error::Index); } d.pad -= 1; if (d.pad == 0) { d.index_field = 4; begin(d,INDEX,4); } return core::result::Ok(true); }
+    if (d.index_phase.is_padding()) { if (value != 0) { return core::result::Err(Error::Index); } d.pad -= 1; if (d.pad == 0) { d.index_phase.step(IndexPhaseEvent::PaddingRead); begin(d,DecodeEvent::IndexFound,4); } return core::result::Ok(true); }
     if (value == 0 && d.shift > 0) { return core::result::Err(Error::Index); }
     if (d.shift >= 63) { return core::result::Err(Error::Index); }
     d.varint = d.varint | (((value & 127) as u64) << d.shift);
     if ((value & 128) != 0) { d.shift += 7; return core::result::Ok(true); }
     let number: u64 = d.varint; d.varint = 0; d.shift = 0;
-    if (d.index_field == 0) { if (number != d.blocks) { return core::result::Err(Error::Index); } d.index_left = number; d.index_field = 1; }
-    else { if (d.index_field == 1) { d.index_unpadded = number; d.index_field = 2; }
-    else { d.index_hash = hash_u64(hash_u64(d.index_hash,d.index_unpadded),number); d.index_left -= 1; d.index_field = 1; } }
-    if (d.index_field == 1 && d.index_left == 0) {
-        d.index_field = 3; d.pad = ((4-(d.index_size % 4)) % 4) as i32;
-        if (d.pad == 0) { d.index_field = 4; begin(d,INDEX,4); }
+    if (d.index_phase.is_count()) { if (number != d.blocks) { return core::result::Err(Error::Index); } d.index_left = number; d.index_phase.step(IndexPhaseEvent::CountRead); }
+    else { if (d.index_phase.is_unpadded()) { d.index_unpadded = number; d.index_phase.step(IndexPhaseEvent::SizeRead); }
+    else { d.index_hash = hash_u64(hash_u64(d.index_hash,d.index_unpadded),number); d.index_left -= 1; d.index_phase.step(IndexPhaseEvent::RecordRead); } }
+    if (d.index_phase.is_unpadded() && d.index_left == 0) {
+        d.index_phase.step(IndexPhaseEvent::RecordsRead); d.pad = ((4-(d.index_size % 4)) % 4) as i32;
+        if (d.pad == 0) { d.index_phase.step(IndexPhaseEvent::PaddingRead); begin(d,DecodeEvent::IndexFound,4); }
     }
     return core::result::Ok(true);
 }
@@ -401,7 +1013,7 @@ fn footer(d: &Decoder) -> core::result::Result<bool,Error> {
     let s: core::slice::View<u8> = d.stage;
     if (crc_range(s,4,10) != le32(s,0) || byte(s,10) != 89 || byte(s,11) != 90 || byte(s,8) != d.flag0 || byte(s,9) != d.flag1) { return core::result::Err(Error::Footer); }
     if (((le32(s,4) as u64)+1)*4 != d.index_size) { return core::result::Err(Error::Footer); }
-    d.pad = 0; begin(d,STREAM_PAD,0); return core::result::Ok(true);
+    d.pad = 0; begin(d,DecodeEvent::FooterRead,0); return core::result::Ok(true);
 }
 // Like xz, a .lzma header must give a dictionary size of 2^n, 2^n+2^(n-1)
 // or 0xffffffff, and a known uncompressed size below 256 GiB: other values
@@ -421,7 +1033,7 @@ fn alone_header(d: &Decoder) -> core::result::Result<bool,Error> {
     if (d.limited && size < needed) { needed = size; if (needed == 0) { needed = 1; } }
     if (needed > 2147483647) { needed = 2147483647; }
     d.dict_size = needed as i32; first_window(d); d.check = 0; reset_state(d); reset_dictionary(d);
-    d.in_pos = 0; d.in_end = 0; d.rc_ready = false; begin(d,ALONE_DICTIONARY,0); return core::result::Ok(true);
+    d.in_pos = 0; d.in_end = 0; d.rc_ready_completion = core::iter_state::completion_start(); begin(d,DecodeEvent::AloneHeaderRead,0); return core::result::Ok(true);
 }
 
 pub impl Decoder {
@@ -440,42 +1052,42 @@ pub impl Decoder {
     }
     pub fn total_read(&self) -> u64 { return self.read_total; }
     pub fn total_written(&self) -> u64 { return self.written_total; }
-    pub fn is_done(&self) -> bool { return self.phase == DONE; }
-    pub fn is_failed(&self) -> bool { return self.failed; }
+    pub fn is_done(&self) -> bool { return (match (self.phase.state()) { DecodingState::Done -> true, _ -> false }); }
+    pub fn is_failed(&self) -> bool { return self.health.is_failed(); }
     // Consume input and produce output. final_input says no input follows
     // this call's span. Errors are sticky; bytes already written stay written.
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
         if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
-        if (self.failed) { return core::result::Err(Error::Failed); }
+        if (self.health.is_failed()) { return core::result::Err(Error::Failed); }
         let result: core::result::Result<Step,Error> = advance(self,input,output,final_input);
-        if (core::result::is_err(result)) { self.failed = true; } return result;
+        if (core::result::is_err(result)) { self.health.fail(); } return result;
     }
 }
 fn done(read: i32, written: i32, status: Status) -> core::result::Result<Step,Error> { return core::result::Ok(Step { read: read, written: written, status: status }); }
 fn advance(d: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
     let ip: i32 = 0; let op: i32 = 0;
     while (true) {
-        let phase: i32 = d.phase;
-        if (phase == DONE) {
+        let phase: DecodingState = d.phase.state();
+        if ((match (phase) { DecodingState::Done -> true, _ -> false })) {
             if (ip < input.length) { return core::result::Err(Error::TrailingData); }
             return done(ip,op,Status::Done);
         }
-        if (phase == DICTIONARY || phase == ALONE_DICTIONARY) {
+        if ((match (phase) { DecodingState::Dictionary -> true, _ -> false }) || (match (phase) { DecodingState::AloneDictionary -> true, _ -> false })) {
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
-            if (phase == DICTIONARY) { begin(d,CONTROL,1); } else { begin(d,ALONE_STREAM,0); }
+            if ((match (phase) { DecodingState::Dictionary -> true, _ -> false })) { begin(d,DecodeEvent::NextChunk,1); } else { begin(d,DecodeEvent::DictionaryReady,0); }
             continue;
         }
-        if (phase == DECODE) {
+        if ((match (phase) { DecodingState::Decode -> true, _ -> false })) {
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
             op = run(d,output,op,true);
-            if (d.bad) { return core::result::Err(Error::Corrupt); }
+            if (d.range_health.is_failed()) { return core::result::Err(Error::Corrupt); }
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
             if (d.pending > 0 || d.left > 0) { return done(ip,op,Status::NeedOutput); }
             normalize(d);
-            if (d.bad || d.in_pos != d.in_end || d.code != 0) { return core::result::Err(Error::Corrupt); }
-            begin(d,CONTROL,1); continue;
+            if (d.range_health.is_failed() || d.in_pos != d.in_end || d.code != 0) { return core::result::Err(Error::Corrupt); }
+            begin(d,DecodeEvent::NextChunk,1); continue;
         }
-        if (phase == COPY) {
+        if ((match (phase) { DecodingState::Copy -> true, _ -> false })) {
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
             let from: i32 = op;
             let count: i32 = input.length-ip; if (count > output.length-op) { count = output.length-op; }
@@ -489,29 +1101,29 @@ fn advance(d: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             op += count; ip += count; d.left -= count as u64; d.position += count as u64; d.block_out += count as u64; d.written_total += count as u64;
             d.read_total += count as u64; d.block_packed += count as u64;
             checksum(d,output,from,op);
-            if (d.left == 0) { begin(d,CONTROL,1); continue; }
+            if (d.left == 0) { begin(d,DecodeEvent::NextChunk,1); continue; }
             if (room(d) == 0) { want_more(d); continue; }
             if (op >= output.length) { return done(ip,op,Status::NeedOutput); }
             if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput);
         }
-        if (phase == INDEX && d.index_field < 4) {
+        if ((match (phase) { DecodingState::Index -> true, _ -> false }) && !d.index_phase.is_crc()) {
             if (ip >= input.length) { if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
             let value: u8 = byte(input,ip); ip += 1; d.read_total += 1;
             let accepted: core::result::Result<bool,Error> = index_byte(d,value);
             if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); }
             continue;
         }
-        if (phase == STREAM_PAD) {
+        if ((match (phase) { DecodingState::StreamPad -> true, _ -> false })) {
             while (ip < input.length && byte(input,ip) == 0) { d.pad += 1; ip += 1; d.read_total += 1; }
             if (ip < input.length) {
                 if (d.pad % 4 != 0 || byte(input,ip) != 253) { return core::result::Err(Error::TrailingData); }
-                d.pad = 0; begin(d,STREAM_HEADER,12); continue;
+                d.pad = 0; begin(d,DecodeEvent::NextStream,12); continue;
             }
             if (!final_input) { return done(ip,op,Status::NeedInput); }
             if (d.pad % 4 != 0) { return core::result::Err(Error::TrailingData); }
-            begin(d,DONE,0); continue;
+            begin(d,DecodeEvent::Finished,0); continue;
         }
-        if (phase == ALONE_STREAM) {
+        if ((match (phase) { DecodingState::AloneStream -> true, _ -> false })) {
             // Slide unread bytes to the front, then top the stage up from input.
             if (d.in_pos >= d.stage.length/2 || (d.in_pos > 0 && d.in_end-d.in_pos < 20)) {
                 let count: i32 = d.in_end-d.in_pos; let index: i32 = 0;
@@ -520,29 +1132,29 @@ fn advance(d: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             }
             while (d.in_end < d.stage.length && ip < input.length) { put(d.stage,d.in_end,byte(input,ip)); d.in_end += 1; ip += 1; d.read_total += 1; }
             let last: bool = final_input && ip == input.length;
-            if (!d.rc_ready) {
+            if (!d.rc_ready_completion.is_done()) {
                 if (d.in_end < 5) { if (last) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
                 if (byte(d.stage,0) != 0) { return core::result::Err(Error::Corrupt); }
                 d.code = ((byte(d.stage,1) as u32) << 24) | ((byte(d.stage,2) as u32) << 16) | ((byte(d.stage,3) as u32) << 8) | (byte(d.stage,4) as u32);
-                d.range = ALL32; d.in_pos = 5; d.rc_ready = true;
+                d.range = ALL32; d.in_pos = 5; d.rc_ready_completion.finish();
                 if (d.code == ALL32) { return core::result::Err(Error::Corrupt); }
             }
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
             op = run(d,output,op,last);
-            if (d.bad) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
+            if (d.range_health.is_failed()) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
             let reached: bool = d.limited && d.left == 0 && d.pending == 0;
-            if (reached && !d.end_marker && (last || d.in_end-d.in_pos >= 20)) {
+            if (reached && !d.end_marker_completion.is_done() && (last || d.in_end-d.in_pos >= 20)) {
                 // Known size reached: the range coder must be flushed, or an
                 // end marker may follow (as liblzma accepts).
                 normalize(d);
-                if (!d.bad && d.code != 0) { if (!marker(d)) { d.bad = true; } }
-                if (d.bad) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
-                d.end_marker = true;
+                if (!d.range_health.is_failed() && d.code != 0) { if (!marker(d)) { d.range_health.fail(); } }
+                if (d.range_health.is_failed()) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
+                d.end_marker_completion.finish();
             }
-            if (d.end_marker) {
+            if (d.end_marker_completion.is_done()) {
                 if (d.code != 0) { return core::result::Err(Error::Corrupt); }
                 if (d.in_pos != d.in_end || ip < input.length) { return core::result::Err(Error::TrailingData); }
-                begin(d,DONE,0); continue;
+                begin(d,DecodeEvent::Finished,0); continue;
             }
             if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
             if (op >= output.length && !reached) { return done(ip,op,Status::NeedOutput); }
@@ -554,52 +1166,52 @@ fn advance(d: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
         ip = gather(d,input,ip);
         if (d.have < d.need) { if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
         let handled: core::result::Result<bool,Error> = core::result::Ok(true);
-        if (phase == STREAM_HEADER) { handled = stream_header(d); }
-        if (phase == ALONE_HEADER) { handled = alone_header(d); }
-        if (phase == BLOCK_START) {
+        if ((match (phase) { DecodingState::StreamHeader -> true, _ -> false })) { handled = stream_header(d); }
+        if ((match (phase) { DecodingState::AloneHeader -> true, _ -> false })) { handled = alone_header(d); }
+        if ((match (phase) { DecodingState::BlockStart -> true, _ -> false })) {
             let first: u8 = byte(d.stage,0);
-            if (first == 0) { d.index_crc = core::crc32::update_byte(core::crc32::INITIAL,0); d.index_size = 1; d.index_field = 0; d.varint = 0; d.shift = 0; d.phase = INDEX; }
-            else { d.header_size = ((first as i32)+1)*4; d.need = d.header_size; d.phase = BLOCK_HEADER; }
+            if (first == 0) { d.index_crc = core::crc32::update_byte(core::crc32::INITIAL,0); d.index_size = 1; d.index_phase = index_phase_start(); d.varint = 0; d.shift = 0; d.phase.step(DecodeEvent::IndexFound); }
+            else { d.header_size = ((first as i32)+1)*4; d.need = d.header_size; d.phase.step(DecodeEvent::BlockFound); }
         }
-        if (phase == BLOCK_HEADER) { handled = block_header(d); }
-        if (phase == CONTROL) {
+        if ((match (phase) { DecodingState::BlockHeader -> true, _ -> false })) { handled = block_header(d); }
+        if ((match (phase) { DecodingState::Control -> true, _ -> false })) {
             let control: i32 = byte(d.stage,0) as i32; d.control = control;
             if (control == 0) {
                 d.block_packed += 1; d.pad = ((4-((d.header_size as u64+d.block_packed) % 4)) % 4) as i32;
                 if (d.has_packed && d.declared_packed != d.block_packed) { return core::result::Err(Error::SizeMismatch); }
                 if (d.has_unpacked && d.declared_unpacked != d.block_out) { return core::result::Err(Error::SizeMismatch); }
-                begin(d,BLOCK_PAD,d.pad);
+                begin(d,DecodeEvent::BlockRead,d.pad);
             } else {
                 if (control > 2 && control < 128) { return core::result::Err(Error::Corrupt); }
                 let reset: i32 = (control >> 5) & 3;
-                if (d.need_dict_reset && control != 1 && (control < 128 || reset != 3)) { return core::result::Err(Error::Corrupt); }
-                if (control >= 128 && d.need_props && reset < 2) { return core::result::Err(Error::Corrupt); }
+                if (d.dictionary_context.is_need_dictionary() && control != 1 && (control < 128 || reset != 3)) { return core::result::Err(Error::Corrupt); }
+                if (control >= 128 && !d.dictionary_context.is_ready() && reset < 2) { return core::result::Err(Error::Corrupt); }
                 d.need = 3; if (control >= 128) { d.need = 5; if (reset >= 2) { d.need = 6; } }
-                d.phase = CHUNK_HEADER;
+                d.phase.step(DecodeEvent::ChunkFound);
             }
         }
-        if (phase == CHUNK_HEADER) { handled = chunk_header(d); }
-        if (phase == CHUNK_DATA) {
+        if ((match (phase) { DecodingState::ChunkHeader -> true, _ -> false })) { handled = chunk_header(d); }
+        if ((match (phase) { DecodingState::ChunkData -> true, _ -> false })) {
             d.block_packed += d.packed as u64;
             if (d.packed < 5 || byte(d.stage,0) != 0) { return core::result::Err(Error::Corrupt); }
             d.code = ((byte(d.stage,1) as u32) << 24) | ((byte(d.stage,2) as u32) << 16) | ((byte(d.stage,3) as u32) << 8) | (byte(d.stage,4) as u32);
-            d.range = ALL32; d.in_pos = 5; d.in_end = d.packed; d.bad = false; d.phase = DECODE;
+            d.range = ALL32; d.in_pos = 5; d.in_end = d.packed; d.range_health.reset(); d.phase.step(DecodeEvent::ChunkRead);
         }
-        if (phase == BLOCK_PAD) {
+        if ((match (phase) { DecodingState::BlockPad -> true, _ -> false })) {
             let index: i32 = 0; while (index < d.need) { if (byte(d.stage,index) != 0) { return core::result::Err(Error::Corrupt); } index += 1; }
-            begin(d,CHECK,d.check_size);
+            begin(d,DecodeEvent::PaddingRead,d.check_size);
         }
-        if (phase == CHECK) {
+        if ((match (phase) { DecodingState::Check -> true, _ -> false })) {
             let matches: bool = true;
             if (d.check == 1) { matches = le32(d.stage,0) == core::crc32::finish(d.crc); }
             if (d.check == 4) { matches = le64(d.stage,0) == (d.crc64 ^ ALL64); }
             if (!matches) { return core::result::Err(Error::Checksum); }
             let unpadded: u64 = (d.header_size as u64)+d.block_packed+(d.check_size as u64);
             d.record_hash = hash_u64(hash_u64(d.record_hash,unpadded),d.block_out); d.blocks += 1;
-            begin(d,BLOCK_START,1);
+            begin(d,DecodeEvent::NextBlock,1);
         }
-        if (phase == INDEX) { handled = finish_index(d); }
-        if (phase == FOOTER) { handled = footer(d); }
+        if ((match (phase) { DecodingState::Index -> true, _ -> false })) { handled = finish_index(d); }
+        if ((match (phase) { DecodingState::Footer -> true, _ -> false })) { handled = footer(d); }
         if (core::result::is_err(handled)) { return core::result::Err(core::result::unwrap_err(handled)); }
     } return done(ip,op,Status::NeedInput);
 }
@@ -709,8 +1321,8 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
     let depth: i32 = 4; let nice: i32 = 32;
     if (level == 1) { depth = 8; nice = 64; } if (level == 2) { depth = 16; nice = 128; } if (level == 3) { depth = 48; nice = 192; }
     return core::result::Ok(Encoder { probs: probs, heads: heads, chain: chain, window: used, stage: stage, depth: depth, nice: nice, lazy: level >= 1,
-        dict_size: dictionary, dict_code: code as u8, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, started: false, ended: false, failed: false,
-        first: true, state_reset: true, props_needed: true, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        dict_size: dictionary, dict_code: code as u8, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, encoding: encoding_start(), health: core::lifecycle::health_start(),
+        chunk_context: chunk_context_start(), context: context_start(), rep0: 0, rep1: 0, rep2: 0, rep3: 0,
         low: 0, range: ALL32, cache: 0, cache_size: 1, out: 0, found_len: 0, found_dist: 0,
         crc64: ALL64, packed: 0, unpacked: 0, read_total: 0, written_total: 0 });
 }
@@ -719,8 +1331,8 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
 pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32>) -> Encoder {
     let b: core::slice::View<u8> = bytes; b.length = 0; let w: core::slice::View<i32> = words; w.length = 0;
     return Encoder { probs: w, heads: w, chain: w, window: b, stage: b, depth: 0, nice: 0, lazy: false,
-        dict_size: 0, dict_code: 0, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, started: false, ended: false, failed: true,
-        first: true, state_reset: true, props_needed: true, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        dict_size: 0, dict_code: 0, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, encoding: encoding_start(), health: core::lifecycle::failed_health(),
+        chunk_context: chunk_context_start(), context: context_start(), rep0: 0, rep1: 0, rep2: 0, rep3: 0,
         low: 0, range: ALL32, cache: 0, cache_size: 1, out: 0, found_len: 0, found_dist: 0,
         crc64: ALL64, packed: 0, unpacked: 0, read_total: 0, written_total: 0 };
 }
@@ -777,10 +1389,10 @@ fn edistance(e: &Encoder, distance: i32, length: i32) {
 }
 fn pos_state(e: &Encoder) -> i32 { return ((e.base+(e.pos as u64)) & 3) as i32; }
 fn eliteral(e: &Encoder) {
-    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,0);
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.context.index() << 4)+ps,0);
     let previous: i32 = 0; if (e.base+(e.pos as u64) > 0) { previous = ewin(e,e.pos-1); }
     let base: i32 = LITERAL+768*(previous >> 5); let value: i32 = ewin(e,e.pos); let symbol: i32 = 1; let index: i32 = 7;
-    if (e.state >= 7) {
+    if (e.context.index() >= 7) {
         let matched: i32 = ewin(e,e.pos-e.rep0-1); let same: bool = true;
         while (index >= 0) {
             let b: i32 = (value >> index) & 1;
@@ -798,34 +1410,34 @@ fn eliteral(e: &Encoder) {
         }
         e.range = range; e.low = low;
     }
-    if (e.state < 4) { e.state = 0; } else { if (e.state < 10) { e.state -= 3; } else { e.state -= 6; } }
+    e.context.step(ContextEvent::Literal);
     e.pos += 1;
 }
 fn ematch(e: &Encoder, length: i32, distance: i32) {
-    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,1); ebit(e,IS_REP+e.state,0);
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.context.index() << 4)+ps,1); ebit(e,IS_REP+e.context.index(),0);
     elength(e,LEN_CODER,length,ps); edistance(e,distance,length);
     e.rep3 = e.rep2; e.rep2 = e.rep1; e.rep1 = e.rep0; e.rep0 = distance;
-    if (e.state < 7) { e.state = 7; } else { e.state = 10; }
+    e.context.step(ContextEvent::Match);
     e.pos += length;
 }
 fn erep(e: &Encoder, which: i32, length: i32) {
-    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,1); ebit(e,IS_REP+e.state,1);
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.context.index() << 4)+ps,1); ebit(e,IS_REP+e.context.index(),1);
     if (which == 0) {
-        ebit(e,IS_REP_G0+e.state,0);
-        if (length == 1) { ebit(e,IS_REP0_LONG+(e.state << 4)+ps,0); if (e.state < 7) { e.state = 9; } else { e.state = 11; } e.pos += 1; return; }
-        ebit(e,IS_REP0_LONG+(e.state << 4)+ps,1);
+        ebit(e,IS_REP_G0+e.context.index(),0);
+        if (length == 1) { ebit(e,IS_REP0_LONG+(e.context.index() << 4)+ps,0); e.context.step(ContextEvent::ShortRepeat); e.pos += 1; return; }
+        ebit(e,IS_REP0_LONG+(e.context.index() << 4)+ps,1);
     } else {
-        ebit(e,IS_REP_G0+e.state,1); let chosen: i32 = e.rep1;
-        if (which == 1) { ebit(e,IS_REP_G1+e.state,0); }
+        ebit(e,IS_REP_G0+e.context.index(),1); let chosen: i32 = e.rep1;
+        if (which == 1) { ebit(e,IS_REP_G1+e.context.index(),0); }
         else {
-            ebit(e,IS_REP_G1+e.state,1);
-            if (which == 2) { ebit(e,IS_REP_G2+e.state,0); chosen = e.rep2; } else { ebit(e,IS_REP_G2+e.state,1); chosen = e.rep3; e.rep3 = e.rep2; }
+            ebit(e,IS_REP_G1+e.context.index(),1);
+            if (which == 2) { ebit(e,IS_REP_G2+e.context.index(),0); chosen = e.rep2; } else { ebit(e,IS_REP_G2+e.context.index(),1); chosen = e.rep3; e.rep3 = e.rep2; }
             e.rep2 = e.rep1;
         }
         e.rep1 = e.rep0; e.rep0 = chosen;
     }
     elength(e,REP_LEN_CODER,length,ps);
-    if (e.state < 7) { e.state = 8; } else { e.state = 11; }
+    e.context.step(ContextEvent::Repeat);
     e.pos += length;
 }
 fn hash(e: &Encoder, at: i32) -> i32 {
@@ -900,13 +1512,13 @@ fn literal_or_short(e: &Encoder, seen: u64) {
 fn reset_encoder_state(e: &Encoder) {
     let index: i32 = 0; let count: i32 = LITERAL+(768 << 3);
     while (index < count) { e.probs.values[e.probs.start+index] = 1024; index += 1; }
-    e.state = 0; e.rep0 = 0; e.rep1 = 0; e.rep2 = 0; e.rep3 = 0;
+    e.context.step(ContextEvent::Reset); e.rep0 = 0; e.rep1 = 0; e.rep2 = 0; e.rep3 = 0;
 }
 // Encode one LZMA2 chunk (or its stored fallback) into the stage.
 fn encode_chunk(e: &Encoder, last: bool) {
     let limit: i32 = e.fill; if (!last) { limit = e.fill-MAX_LEN; }
     let control: i32 = 128; let header: i32 = 5;
-    if (e.first) { control = 224; header = 6; } else { if (e.state_reset) { control = 160; if (e.props_needed) { control = 192; header = 6; } } }
+    if (e.chunk_context.is_first()) { control = 224; header = 6; } else { if (!e.chunk_context.is_ready()) { control = 160; if ((e.chunk_context.is_first() || e.chunk_context.is_need_props())) { control = 192; header = 6; } } }
     if (control >= 160) { reset_encoder_state(e); }
     e.low = 0; e.range = ALL32; e.cache = 0; e.cache_size = 1; e.out = 6;
     let start: i32 = e.pos;
@@ -914,18 +1526,18 @@ fn encode_chunk(e: &Encoder, last: bool) {
     let flush: i32 = 0; while (flush < 5) { shift_low(e); flush += 1; }
     let packed: i32 = e.out-6; let unpacked: i32 = e.pos-start; let s: core::slice::View<u8> = e.stage;
     if (packed > unpacked) {
-        let stored: i32 = 2; if (e.first) { stored = 1; e.props_needed = true; }
+        let stored: i32 = 2; if (e.chunk_context.is_first()) { stored = 1;  }
         put(s,0,stored as u8); put(s,1,(((unpacked-1) >> 8) & 255) as u8); put(s,2,((unpacked-1) & 255) as u8);
         let index: i32 = 0; while (index < unpacked) { put(s,3+index,e.window.values[e.window.start+start+index]); index += 1; }
-        e.stage_pos = 0; e.stage_len = 3+unpacked; e.state_reset = true;
+        e.stage_pos = 0; e.stage_len = 3+unpacked; e.chunk_context.step(ChunkContextEvent::Stored);
     } else {
         let at: i32 = 6-header; let size: i32 = unpacked-1;
         put(s,at,(control | (size >> 16)) as u8); put(s,at+1,((size >> 8) & 255) as u8); put(s,at+2,(size & 255) as u8);
         put(s,at+3,(((packed-1) >> 8) & 255) as u8); put(s,at+4,((packed-1) & 255) as u8);
         if (header == 6) { put(s,at+5,93); }
-        e.stage_pos = at; e.stage_len = 6+packed; e.state_reset = false; e.props_needed = false;
+        e.stage_pos = at; e.stage_len = 6+packed; e.chunk_context.step(ChunkContextEvent::Compressed);
     }
-    e.first = false; e.packed += (e.stage_len-e.stage_pos) as u64;
+     e.packed += (e.stage_len-e.stage_pos) as u64;
 }
 // Keep the last dict_size bytes before pos; rebase window, heads and chains.
 fn slide(e: &Encoder) {
@@ -944,12 +1556,12 @@ pub impl Encoder {
     pub fn borrow(&self) -> &Encoder { return self; }
     pub fn total_read(&self) -> u64 { return self.read_total; }
     pub fn total_written(&self) -> u64 { return self.written_total; }
-    pub fn is_done(&self) -> bool { return self.ended && self.stage_pos == self.stage_len; }
+    pub fn is_done(&self) -> bool { return self.encoding.is_ended() && self.stage_pos == self.stage_len; }
     // Consume input and produce xz output; final_input says no input follows
     // this call's span. Status::Done once the footer has been written.
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
         if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
-        if (self.failed) { return core::result::Err(Error::Failed); }
+        if (self.health.is_failed()) { return core::result::Err(Error::Failed); }
         let ip: i32 = 0; let op: i32 = 0;
         while (true) {
             if (self.stage_pos < self.stage_len) {
@@ -959,8 +1571,8 @@ pub impl Encoder {
                 if (self.stage_pos < self.stage_len) { return done(ip,op,Status::NeedOutput); }
                 continue;
             }
-            if (self.ended) { return done(ip,op,Status::Done); }
-            if (!self.started) { self.stage_len = stream_start(self.stage,self.dict_code); self.stage_pos = 0; self.started = true; continue; }
+            if (self.encoding.is_ended()) { return done(ip,op,Status::Done); }
+            if (self.encoding.is_header()) { self.stage_len = stream_start(self.stage,self.dict_code); self.stage_pos = 0; self.encoding.step(EncodingEvent::HeaderWritten); continue; }
             if (ip < input.length && self.fill < self.window.length) {
                 let count: i32 = input.length-ip; if (count > self.window.length-self.fill) { count = self.window.length-self.fill; }
                 let w: core::slice::View<u8> = self.window; let index: i32 = 0;
@@ -972,7 +1584,7 @@ pub impl Encoder {
             let full: bool = self.fill == self.window.length;
             if (self.pos < self.fill && ((full && self.fill-self.pos > MAX_LEN) || last)) { encode_chunk(self,last); continue; }
             if (full && !last) { slide(self); continue; }
-            if (last && self.pos == self.fill) { self.stage_len = stream_end(self.stage,self.packed,self.unpacked,self.crc64); self.stage_pos = 0; self.ended = true; continue; }
+            if (last && self.pos == self.fill) { self.stage_len = stream_end(self.stage,self.packed,self.unpacked,self.crc64); self.stage_pos = 0; self.encoding.step(EncodingEvent::FooterWritten); continue; }
             return done(ip,op,Status::NeedInput);
         } return done(ip,op,Status::NeedInput);
     }

@@ -1,6 +1,7 @@
 // Borrowed POSIX ustar byte archives, with checked caller-buffer writing.
 // This module reads metadata and data; it never extracts filesystem objects.
 module ext::tar;
+import core::iter_state;
 import core::mem;
 import core::option;
 import core::result;
@@ -14,8 +15,8 @@ pub struct Entry { name: core::slice::View<u8>, prefix: core::slice::View<u8>, l
 // GNU prefix/atime area. headers_only parses one header without its data, for
 // streaming callers that read data separately (Entry.data is then empty).
 pub struct ReadOptions { full_uname: bool, full_gname: bool, gnu: bool, headers_only: bool }
-pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, options: ReadOptions }
-pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, completion: core::iter_state::Completion, options: ReadOptions }
+pub struct Writer { output: core::slice::View<u8>, cursor: i32, completion: core::iter_state::Completion }
 
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
 fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
@@ -74,14 +75,14 @@ pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata {
     return Metadata { path: path, link_name: empty, uname: empty, gname: empty, kind: kind, mode: mode, uid: 0, gid: 0, mtime: 0, dev_major: 0, dev_minor: 0 };
 }
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> {
-    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false, options: read_options() });
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, completion: core::iter_state::completion_start(), options: read_options() });
 }
 pub fn read_options() -> ReadOptions { return ReadOptions { full_uname: false, full_gname: false, gnu: false, headers_only: false }; }
 // Resume reading at a record-aligned offset (used by ext::pax after extension
 // headers). full_uname/full_gname accept an unterminated 32-byte name field,
 // which pax writers such as Python tarfile emit when a pax record replaces it.
 pub fn reader_with(input: core::slice::View<u8>, cursor: i32, options: ReadOptions) -> core::result::Result<Reader,Error> {
-    if (!valid(input) || cursor < 0 || cursor > input.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: cursor, ended: false, options: options });
+    if (!valid(input) || cursor < 0 || cursor > input.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: cursor, completion: core::iter_state::completion_start(), options: options });
 }
 pub impl Entry {
     pub fn path_len(&self) -> i32 { if (self.prefix.length == 0) { return self.name.length; } return self.prefix.length+1+self.name.length; }
@@ -96,11 +97,11 @@ pub impl Entry {
 }
 pub impl Reader {
     pub fn position(&self) -> i32 { return self.cursor; }
-    pub fn is_finished(&self) -> bool { return self.ended; }
+    pub fn is_finished(&self) -> bool { return self.completion.is_done(); }
     // Errors preserve this cursor. None certifies footer and trailing padding.
     pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error> {
         if (!valid(self.input) || self.cursor < 0 || self.cursor > self.input.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
-        if (self.ended) { return core::result::Ok(core::option::None()); }
+        if (self.completion.is_done()) { return core::result::Ok(core::option::None()); }
         let remaining: i32 = self.input.length-self.cursor;
         if (remaining == 0) { return core::result::Err(Error::MissingFooter); }
         if (remaining < 512) { return core::result::Err(Error::UnexpectedEof); }
@@ -110,7 +111,7 @@ pub impl Reader {
             if (!zeros(self.input,self.cursor+512,self.cursor+1024)) { return core::result::Err(Error::MissingFooter); }
             if (remaining % 512 != 0) { return core::result::Err(Error::UnexpectedEof); }
             if (!zeros(self.input,self.cursor+1024,self.input.length)) { return core::result::Err(Error::TrailingData); }
-            self.cursor = self.input.length; self.ended = true; return core::result::Ok(core::option::None());
+            self.cursor = self.input.length; self.completion.finish(); return core::result::Ok(core::option::None());
         }
         let stored: core::result::Result<u64,Error> = number(header,148,8,262143);
         if (core::result::is_err(stored)) { return core::result::Err(core::result::unwrap_err(stored)); }
@@ -173,15 +174,15 @@ fn octal(output: core::slice::View<u8>, start: i32, width: i32, value: u64) {
     while (index >= start) { put(output,index,48+(rest & 7) as u8); rest = rest >> 3; index -= 1; }
 }
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error> {
-    if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, ended: false });
+    if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, completion: core::iter_state::completion_start() });
 }
 // Resume writing at a record-aligned offset whose prefix the caller already wrote.
 pub fn writer_at(output: core::slice::View<u8>, cursor: i32) -> core::result::Result<Writer,Error> {
-    if (!valid(output) || cursor < 0 || cursor > output.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: cursor, ended: false });
+    if (!valid(output) || cursor < 0 || cursor > output.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: cursor, completion: core::iter_state::completion_start() });
 }
 pub impl Writer {
     pub fn position(&self) -> i32 { return self.cursor; }
-    pub fn is_finished(&self) -> bool { return self.ended; }
+    pub fn is_finished(&self) -> bool { return self.completion.is_done(); }
     // Rebind a grown/copy-preserved buffer to retry an unchanged operation.
     pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool,Error> {
         if (!valid(self.output) || !valid(output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor > output.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
@@ -198,7 +199,7 @@ pub impl Writer {
     }
     fn member(&self, meta: Metadata, data: core::slice::View<u8>, size: i32, with_data: bool) -> core::result::Result<i32,Error> {
         if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0 || !valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || !valid(data)) { return core::result::Err(Error::Bounds); }
-        if (self.ended) { return core::result::Err(Error::Finished); }
+        if (self.completion.is_done()) { return core::result::Err(Error::Finished); }
         if (meta.path.length > 256) { return core::result::Err(Error::PathTooLong); }
         if (meta.link_name.length > 100) { return core::result::Err(Error::LinkTooLong); }
         if (meta.uname.length > 31 || meta.gname.length > 31) { return core::result::Err(Error::NameTooLong); }
@@ -231,9 +232,9 @@ pub impl Writer {
     }
     pub fn finish(&self) -> core::result::Result<i32,Error> {
         if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
-        if (self.ended) { return core::result::Ok(self.cursor); }
+        if (self.completion.is_done()) { return core::result::Ok(self.cursor); }
         if (self.output.length-self.cursor < 1024) { return core::result::Err(Error::OutputTooSmall); }
         let next: i32 = self.cursor+1024; let index: i32 = self.cursor; while (index < next) { put(self.output,index,0); index += 1; }
-        self.cursor = next; self.ended = true; return core::result::Ok(next);
+        self.cursor = next; self.completion.finish(); return core::result::Ok(next);
     }
 }

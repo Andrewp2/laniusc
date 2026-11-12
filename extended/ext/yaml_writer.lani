@@ -4,6 +4,8 @@
 // a literal block scalar when they span lines, and are double-quoted
 // otherwise. See docs/extended-yaml.md.
 module ext::yaml_writer;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::result;
@@ -104,13 +106,13 @@ fn literal_ok(t: core::text::Text) -> bool {
 }
 fn hex_digit(value: i32) -> u8 { if (value < 10) { return (value + 48) as u8; } return (value + 87) as u8; }
 
-struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, ok: bool }
+struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, health: core::lifecycle::Health }
 
 impl Emitter {
     fn borrow(&self) -> &Emitter { return self; }
-    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.ok = false; } }
+    fn byte(&self, value: u8) { if ((!self.health.is_failed()) && self.out.try_push(value).is_err()) { self.health.fail(); } }
     fn run(&self, bytes: [u8], start: i32, length: i32) {
-        if (length > 0 && self.ok && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.ok = false; }
+        if (length > 0 && (!self.health.is_failed()) && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.health.fail(); }
     }
     fn text(&self, t: core::text::Text) { self.run(t.bytes, t.start, t.length); }
     fn word(&self, value: str, count: i32) { self.run(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count); }
@@ -221,9 +223,9 @@ impl Emitter {
     fn block(&self, node: i32, column: i32, inline_first: bool) {
         let tree: &ext::json_tree::Tree = self.tree;
         let sequence: bool = tree.code(node) == 5;
-        let child: i32 = tree.first_child(node); let first: bool = true;
-        while (child >= 0 && self.ok) {
-            if (!first || !inline_first) { self.spaces(column); }
+        let child: i32 = tree.first_child(node); let first_phase = core::iter_state::finished_completion();
+        while (child >= 0 && (!self.health.is_failed())) {
+            if (!first_phase.is_done() || !inline_first) { self.spaces(column); }
             if (sequence) {
                 self.byte(45); self.value(child, column, 2);
             } else {
@@ -234,7 +236,7 @@ impl Emitter {
                 } else { self.key(name); self.byte(58); }
                 self.value(child, column, 1);
             }
-            first = false;
+            first_phase = core::iter_state::completion_start();
             child = tree.next_sibling(child);
         }
     }
@@ -244,8 +246,8 @@ impl Emitter {
 // On AllocationFailed, out holds a partial document.
 pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, ErrorKind> {
     let before: i32 = out.len();
-    let emitter: Emitter = Emitter { tree: tree, out: out, ok: true };
+    let emitter: Emitter = Emitter { tree: tree, out: out, health: core::lifecycle::health_start() };
     emitter.value(node, 0, 0);
-    if (!emitter.ok) { return core::result::Err(ErrorKind::AllocationFailed); }
+    if (!(!emitter.health.is_failed())) { return core::result::Err(ErrorKind::AllocationFailed); }
     return core::result::Ok(out.len() - before);
 }

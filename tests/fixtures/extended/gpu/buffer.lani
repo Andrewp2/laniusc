@@ -1,0 +1,13 @@
+module app::main;
+import ext::gpu;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let device=ext::gpu::open(0).unwrap();
+    let source=device.create_buffer(1024).unwrap(); let target=device.create_buffer(1024).unwrap();
+    let input:[u8;1024]=[0;1024]; let output:[u8;1024]=[255;1024]; let i:i32=0;
+    target.read(0,core::slice::whole(output)).unwrap(); while(i<1024) { assert(output[i]==0); input[i]=((i*17+9)%256) as u8; i+=1; }
+    source.write(0,core::slice::whole(input)).unwrap(); device.copy_buffer(source.borrow(),0,target.borrow(),0,1024).unwrap(); target.read(0,core::slice::whole(output)).unwrap();
+    i=0; while(i<1024) { assert(input[i]==output[i]); i+=1; }
+    assert(device.close().is_err()); assert(source.close().unwrap()); assert(target.close().unwrap()); assert(device.close().unwrap()); return 0;
+}

@@ -3,6 +3,7 @@
 // (1..10), the first negative host error, or -1 if a byte write does not
 // report exactly one byte. An error can leave a decimal prefix on the handle.
 module std::io_decimal;
+import core::parse_state;
 import core::decimal;
 import core::mem;
 import core::result;
@@ -118,9 +119,8 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
     let data: ptr = core::mem::i32_array_data_ptr(cell);
     let consumed: u32 = 0;
     let value: u32 = 0;
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     while (true) {
         cell[0] = 0;
         let received: i32 = std::io::read_stdin(data, 1);
@@ -133,27 +133,26 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) {
+            if (progress.started() && !progress.has_digits()) {
                 return fallback;
             }
-            if (digits) {
-                trailing = true;
+            if (progress.has_digits()) {
+                progress.step(core::parse_state::IntegerEvent::Whitespace);
             }
             continue;
         }
         if (byte == 43) {
-            if (started || trailing) {
+            if (progress.started() || progress.trailing()) {
                 return fallback;
             }
-            started = true;
+            progress.step(core::parse_state::IntegerEvent::Started);
             continue;
         }
         if (byte >= 48 && byte <= 57) {
-            if (trailing) {
+            if (progress.trailing()) {
                 return fallback;
             }
-            started = true;
-            digits = true;
+            progress.step(core::parse_state::IntegerEvent::Digit);
             let ascii: u8 = byte as u8;
             let limit: u32 = 4294967295;
             if (!core::decimal::can_append_ascii_digit_u32(value, ascii, limit)) {
@@ -164,7 +163,7 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
         }
         return fallback;
     }
-    if (!digits) {
+    if (!progress.has_digits()) {
         return fallback;
     }
     return value;
@@ -180,9 +179,8 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
     let data: ptr = core::mem::i32_array_data_ptr(cell);
     let consumed: u32 = 0;
     let magnitude: u32 = 0;
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     let negative: bool = false;
     while (true) {
         cell[0] = 0;
@@ -196,28 +194,27 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) {
+            if (progress.started() && !progress.has_digits()) {
                 return fallback;
             }
-            if (digits) {
-                trailing = true;
+            if (progress.has_digits()) {
+                progress.step(core::parse_state::IntegerEvent::Whitespace);
             }
             continue;
         }
         if (byte == 43 || byte == 45) {
-            if (started || trailing) {
+            if (progress.started() || progress.trailing()) {
                 return fallback;
             }
-            started = true;
+            progress.step(core::parse_state::IntegerEvent::Started);
             negative = byte == 45;
             continue;
         }
         if (byte >= 48 && byte <= 57) {
-            if (trailing) {
+            if (progress.trailing()) {
                 return fallback;
             }
-            started = true;
-            digits = true;
+            progress.step(core::parse_state::IntegerEvent::Digit);
             let ascii: u8 = byte as u8;
             let limit: u32 = 2147483647;
             if (negative) {
@@ -231,7 +228,7 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
         }
         return fallback;
     }
-    if (!digits) {
+    if (!progress.has_digits()) {
         return fallback;
     }
     if (negative) {
@@ -264,9 +261,8 @@ pub fn read_wide_u64_stdin_or(
     let value: core::wide_u64::WideU64 = core::wide_u64::zero();
     let threshold: core::wide_u64::WideU64 =
         core::wide_u64::from_words(429496729, 2576980377); // u64::MAX / 10
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     while (true) {
         cell[0] = 0;
         let received: i32 = std::io::read_stdin(data, 1);
@@ -275,19 +271,18 @@ pub fn read_wide_u64_stdin_or(
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) { return fallback; }
-            if (digits) { trailing = true; }
+            if (progress.started() && !progress.has_digits()) { return fallback; }
+            if (progress.has_digits()) { progress.step(core::parse_state::IntegerEvent::Whitespace); }
             continue;
         }
         if (byte == 43) {
-            if (started || trailing) { return fallback; }
-            started = true;
+            if (progress.started() || progress.trailing()) { return fallback; }
+            progress.step(core::parse_state::IntegerEvent::Started);
             continue;
         }
         if (byte >= 48 && byte <= 57) {
-            if (trailing) { return fallback; }
-            started = true;
-            digits = true;
+            if (progress.trailing()) { return fallback; }
+            progress.step(core::parse_state::IntegerEvent::Digit);
             let digit_i32: i32 = byte - 48;
             let digit: u32 = digit_i32 as u32;
             let order: i32 = core::wide_u64::compare(value, threshold);
@@ -297,7 +292,7 @@ pub fn read_wide_u64_stdin_or(
         }
         return fallback;
     }
-    if (!digits) { return fallback; }
+    if (!progress.has_digits()) { return fallback; }
     return value;
 }
 
@@ -313,9 +308,8 @@ pub fn read_wide_i64_stdin_or(
     let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
     let threshold: core::wide_u64::WideU64 =
         core::wide_u64::from_words(214748364, 3435973836); // 2^63 / 10
-    let started: bool = false;
-    let digits: bool = false;
-    let trailing: bool = false;
+    let progress = core::parse_state::integer_progress_start();
+
     let negative: bool = false;
     while (true) {
         cell[0] = 0;
@@ -325,20 +319,19 @@ pub fn read_wide_i64_stdin_or(
         consumed += 1;
         let byte: i32 = cell[0];
         if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-            if (started && !digits) { return fallback; }
-            if (digits) { trailing = true; }
+            if (progress.started() && !progress.has_digits()) { return fallback; }
+            if (progress.has_digits()) { progress.step(core::parse_state::IntegerEvent::Whitespace); }
             continue;
         }
         if (byte == 43 || byte == 45) {
-            if (started || trailing) { return fallback; }
-            started = true;
+            if (progress.started() || progress.trailing()) { return fallback; }
+            progress.step(core::parse_state::IntegerEvent::Started);
             negative = byte == 45;
             continue;
         }
         if (byte >= 48 && byte <= 57) {
-            if (trailing) { return fallback; }
-            started = true;
-            digits = true;
+            if (progress.trailing()) { return fallback; }
+            progress.step(core::parse_state::IntegerEvent::Digit);
             let digit_i32: i32 = byte - 48;
             let digit: u32 = digit_i32 as u32;
             let last_digit: u32 = 7;
@@ -352,7 +345,7 @@ pub fn read_wide_i64_stdin_or(
         }
         return fallback;
     }
-    if (!digits) { return fallback; }
+    if (!progress.has_digits()) { return fallback; }
     let value: core::wide_i64::WideI64 = core::wide_i64::from_words(
         core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));
     if (negative) { return core::wide_i64::wrapping_neg(value); }

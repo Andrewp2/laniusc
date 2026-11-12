@@ -5,6 +5,7 @@
 // Programs using it link OpenSSL (--native-link --native-library ssl
 // --native-library crypto).
 module ext::http_proxy_tls;
+import core::lifecycle;
 import core::net;
 import core::option;
 import core::result;
@@ -17,7 +18,7 @@ import ext::tls_clients;
 import std::socket;
 
 pub enum Error { Proxy(ext::http_proxy::Error), AllocationFailed, InvalidState }
-pub struct TlsProxy { proxy: ext::http_proxy::Proxy, tls: ext::tls_clients::TlsClients, closed: bool }
+pub struct TlsProxy { proxy: ext::http_proxy::Proxy, tls: ext::tls_clients::TlsClients, lifetime: core::lifecycle::Lifetime }
 
 // Like ext::http_proxy::proxy, with clients served over TLS by context,
 // which the caller keeps (and destroys after close). Give it an ALPN list
@@ -29,7 +30,7 @@ pub fn proxy(listener: &std::socket::Socket, options: ext::http_proxy::Options, 
     let p: ext::http_proxy::Proxy = made.unwrap(); p.wrap_clients(true);
     let tls: core::option::Option<ext::tls_clients::TlsClients> = ext::tls_clients::clients(context, max_clients);
     if (tls.is_none()) { p.close(); return core::result::Err(Error::AllocationFailed); }
-    return core::result::Ok(TlsProxy { proxy: p, tls: tls.unwrap(), closed: false });
+    return core::result::Ok(TlsProxy { proxy: p, tls: tls.unwrap(), lifetime: core::lifecycle::lifetime_start() });
 }
 
 pub impl TlsProxy {
@@ -41,7 +42,7 @@ pub impl TlsProxy {
     pub fn route(&self, prefix: core::slice::View<u8>, upstream: i32) -> core::result::Result<i32,ext::http_proxy::Error> { return self.proxy.route(prefix, upstream); }
     // One round of the proxy's loop, then the TLS work it reported.
     pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
-        if (self.closed) { return core::result::Err(Error::InvalidState); }
+        if (self.lifetime.is_released()) { return core::result::Err(Error::InvalidState); }
         let wake: core::time::Deadline = self.tls.wake(self.proxy.borrow(), deadline);
         let got: core::result::Result<i32,ext::http_proxy::Error> = self.proxy.poll(wake);
         if (got.is_err()) { return core::result::Err(Error::Proxy(got.unwrap_err())); }
@@ -50,8 +51,8 @@ pub impl TlsProxy {
     }
     // Free the sessions, then close the proxy (and with it the sockets).
     pub fn close(&self) -> core::result::Result<i32,Error> {
-        if (self.closed) { return core::result::Ok(0); }
-        self.closed = true; self.tls.close();
+        if (self.lifetime.is_released()) { return core::result::Ok(0); }
+        self.lifetime.release(); self.tls.close();
         let closed: core::result::Result<i32,ext::http_proxy::Error> = self.proxy.close();
         if (closed.is_err()) { return core::result::Err(Error::Proxy(closed.unwrap_err())); }
         return core::result::Ok(0);

@@ -1,6 +1,7 @@
 // Bounded content-only extraction in a cooperative stable directory namespace.
 // One in-place manual owner; no rollback, replacement, or implicit continuation.
 module ext::archive_extract;
+import core::lifecycle;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -25,7 +26,47 @@ pub struct Limits {
     max_write_calls:u64, max_sync_calls:u64, max_entropy_calls:u64,
     max_name_attempts:u64, max_zip_output:i32, max_steps:u64
 }
-pub enum State { Empty, Running, Complete, Failed, Destroyed }
+pub enum LifecycleEvent { Begin, Complete, Fail, Destroy }
+
+pub machine Lifecycle on LifecycleEvent {
+    start Empty;
+
+    state Empty {
+        LifecycleEvent::Begin -> goto Running,
+        LifecycleEvent::Complete -> stay,
+        LifecycleEvent::Fail -> stay,
+        LifecycleEvent::Destroy -> goto Destroyed,
+    }
+
+    state Running {
+        LifecycleEvent::Begin -> stay,
+        LifecycleEvent::Complete -> goto Complete,
+        LifecycleEvent::Fail -> goto Failed,
+        LifecycleEvent::Destroy -> goto Destroyed,
+    }
+
+    state Complete {
+        LifecycleEvent::Begin -> stay,
+        LifecycleEvent::Complete -> stay,
+        LifecycleEvent::Fail -> stay,
+        LifecycleEvent::Destroy -> goto Destroyed,
+    }
+
+    state Failed {
+        LifecycleEvent::Begin -> stay,
+        LifecycleEvent::Complete -> stay,
+        LifecycleEvent::Fail -> stay,
+        LifecycleEvent::Destroy -> goto Destroyed,
+    }
+
+    final state Destroyed {
+        LifecycleEvent::Begin -> stay,
+        LifecycleEvent::Complete -> stay,
+        LifecycleEvent::Fail -> stay,
+        LifecycleEvent::Destroy -> stay,
+    }
+}
+
 pub enum Stage { Validate, Reserve, Root, Decode, Walk, CreateDirectory, OpenDirectory, SyncChild, SyncParent, CreateFile, Write, Commit, Close, Cleanup, RetrySync, Keep, Transfer, Destroy }
 pub enum Cause { InvalidState, InvalidLimits, InvalidPrepared, OwnedLimit, DepthLimit, HostLimit, CleanupLimit, WriteLimit, SyncLimit, EntropyLimit, NameLimit, StepLimit, AllocationFailed, UnavailableMetadata, NotDirectory, UnsupportedDescriptor, NamespaceChanged, Retained, Bounds, Io(core::io::Error), Zip(ext::zip::Error), Atomic(std::atomic_file::Failure) }
 pub struct Failure { cause:Cause, stage:Stage, ordinal:i32, node:i32 }
@@ -46,13 +87,13 @@ pub struct NodeStatus {
 }
 struct Frame { file:std::file::File, node:i32 }
 pub struct Run {
-    current:State, limits:Limits, counters:Stats, first:Option<Failure>, cleanup_first:Option<Failure>,
+    lifecycle:Lifecycle, limits:Limits, counters:Stats, first:Option<Failure>, cleanup_first:Option<Failure>,
     root_error:Option<core::io::Error>, stage:Stage, ordinal:i32, node:i32,
     statuses:alloc::vec::Vec<NodeStatus>, stack:alloc::vec::Vec<Frame>, chain:alloc::vec::Vec<i32>,
-    root:std::file::File, root_credit:bool, atomic:std::atomic_file::AtomicFile,
-    atomic_active:bool, atomic_node:i32, atomic_ordinal:i32, atomic_credit:bool,
+    root:std::file::File, root_credit_lifetime: core::lifecycle::Lifetime, atomic:std::atomic_file::AtomicFile,
+    atomic_active_lifetime: core::lifecycle::Lifetime, atomic_node:i32, atomic_ordinal:i32, atomic_credit_lifetime: core::lifecycle::Lifetime,
     previous:std::atomic_file::Stats, previous_temp:std::temp_file::Stats,
-    recovery:alloc::vec::Vec<u8>, recovery_length:i32, kept_duty:bool
+    recovery:alloc::vec::Vec<u8>, recovery_length:i32, kept_duty_lifetime: core::lifecycle::Lifetime
 }
 
 pub fn default_limits() -> Limits {
@@ -63,11 +104,11 @@ pub fn default_limits() -> Limits {
 fn zero_atomic() -> std::atomic_file::Stats { return std::atomic_file::Stats { bytes:0,writes:0,file_syncs:0,renames:0,directory_syncs:0 }; }
 fn zero_temp() -> std::temp_file::Stats { return std::temp_file::Stats { name_attempts:0,open_attempts:0,collisions:0,excluded:0,entropy_calls:0 }; }
 pub fn empty() -> Run {
-    return Run { current:State::Empty,limits:default_limits(),counters:Stats { entries_seen:0,entries_completed:0,created_directories:0,published_files:0,bytes:0,writes:0,name_attempts:0,entropy_calls:0,syncs:0,host_charged:0,cleanup_reserved:0,cleanup_charged:0,namespace_closes:0,cleanup_errors:0,steps:0,owned_bytes:0,peak_fds:0 },
+    return Run { lifecycle:lifecycle_start(),limits:default_limits(),counters:Stats { entries_seen:0,entries_completed:0,created_directories:0,published_files:0,bytes:0,writes:0,name_attempts:0,entropy_calls:0,syncs:0,host_charged:0,cleanup_reserved:0,cleanup_charged:0,namespace_closes:0,cleanup_errors:0,steps:0,owned_bytes:0,peak_fds:0 },
         first:None(),cleanup_first:None(),root_error:None(),stage:Stage::Validate,ordinal:-1,node:-1,
-        statuses:alloc::vec::new(),stack:alloc::vec::new(),chain:alloc::vec::new(),root:std::file::File { handle:-1 },root_credit:false,
-        atomic:std::atomic_file::empty(),atomic_active:false,atomic_node:-1,atomic_ordinal:-1,atomic_credit:false,
-        previous:zero_atomic(),previous_temp:zero_temp(),recovery:alloc::vec::new(),recovery_length:0,kept_duty:false };
+        statuses:alloc::vec::new(),stack:alloc::vec::new(),chain:alloc::vec::new(),root:std::file::File { handle:-1 },root_credit_lifetime: core::lifecycle::released_lifetime(),
+        atomic:std::atomic_file::empty(),atomic_active_lifetime: core::lifecycle::released_lifetime(),atomic_node:-1,atomic_ordinal:-1,atomic_credit_lifetime: core::lifecycle::released_lifetime(),
+        previous:zero_atomic(),previous_temp:zero_temp(),recovery:alloc::vec::new(),recovery_length:0,kept_duty_lifetime: core::lifecycle::released_lifetime() };
 }
 fn directory(kind:ext::archive_plan::Kind) -> bool { return match(kind) { ext::archive_plan::Kind::Directory->true,_ ->false }; }
 fn published(receipt:std::atomic_file::Receipt) -> bool { return match(receipt.visibility) { std::atomic_file::Visibility::Published->true,_ ->false }; }
@@ -78,20 +119,20 @@ fn path(component:View<u8>) -> core::path::Path { return core::path::from_view(c
 
 pub impl Run {
     pub fn borrow(&self) -> &Run { return self; }
-    pub fn state(&self) -> State { return self.current; }
+    pub fn state(&self) -> LifecycleState { return self.lifecycle.state(); }
     pub fn last_failure(&self) -> Option<Failure> { return self.first; }
     pub fn cleanup_failure(&self) -> Option<Failure> { return self.cleanup_first; }
     pub fn root_close_error(&self) -> Option<core::io::Error> { return self.root_error; }
     pub fn stats(&self) -> Stats { return self.counters; }
     pub fn node_status(&self,index:i32) -> Option<NodeStatus> { return self.statuses.get(index); }
-    pub fn current_node(&self) -> i32 { if(self.atomic_active) { return self.atomic_node; } return self.node; }
-    pub fn current_ordinal(&self) -> i32 { if(self.atomic_active) { return self.atomic_ordinal; } return self.ordinal; }
-    pub fn current_receipt(&self) -> Option<std::atomic_file::Receipt> { if(!self.atomic_active) { return None(); } return Some(self.atomic.receipt()); }
+    pub fn current_node(&self) -> i32 { if(self.atomic_active_lifetime.is_active()) { return self.atomic_node; } return self.node; }
+    pub fn current_ordinal(&self) -> i32 { if(self.atomic_active_lifetime.is_active()) { return self.atomic_ordinal; } return self.ordinal; }
+    pub fn current_receipt(&self) -> Option<std::atomic_file::Receipt> { if(!self.atomic_active_lifetime.is_active()) { return None(); } return Some(self.atomic.receipt()); }
     pub fn recovery_name(&self) -> View<u8> { return View { values:self.recovery.as_slice(),start:0,length:self.recovery_length }; }
-    pub fn resources_remaining(&self) -> bool { return self.root.is_open() || self.stack.len()!=0 || (self.atomic_active && self.atomic.receipt().retained) || self.kept_duty; }
+    pub fn resources_remaining(&self) -> bool { return self.root.is_open() || self.stack.len()!=0 || (self.atomic_active_lifetime.is_active() && self.atomic.receipt().retained) || self.kept_duty_lifetime.is_active(); }
     fn problem(&self,cause:Cause) -> Failure {
         let value:Failure=Failure { cause:cause,stage:self.stage,ordinal:self.ordinal,node:self.node };
-        if(match(self.current) { State::Running->true,_ ->false }) { if(self.first.is_none()) { self.first=Some(value); } }
+        if(match(self.lifecycle.state()) { LifecycleState::Running->true,_ ->false }) { if(self.first.is_none()) { self.first=Some(value); } }
         return value;
     }
     fn cleanup_problem(&self,value:Failure) {
@@ -115,7 +156,7 @@ pub impl Run {
     }
     fn peak(&self) {
         let current:u64=self.stack.len() as u64; if(self.root.is_open()) { current+=1; }
-        if(self.atomic_active) { let receipt=self.atomic.receipt(); if(receipt.file_open) { current+=1; } if(receipt.directory_open) { current+=1; } }
+        if(self.atomic_active_lifetime.is_active()) { let receipt=self.atomic.receipt(); if(receipt.file_open) { current+=1; } if(receipt.directory_open) { current+=1; } }
         if(current>self.counters.peak_fds) { self.counters.peak_fds=current; }
     }
     fn status(&self,index:i32) -> NodeStatus { return self.statuses.at(index); }
@@ -167,7 +208,7 @@ pub impl Run {
     fn anchor(&self,root:&std::file::File) -> Result<bool,Failure> {
         self.stage=Stage::Root; self.reserve_cleanup(1)?; self.charge(1)?;
         let duplicated=std::file_ops::duplicate(root,0,true); if(duplicated.is_err()) { return Err(self.problem(Cause::Io(duplicated.unwrap_err()))); }
-        self.root=duplicated.unwrap(); self.root_credit=true; self.peak(); self.metadata(self.root.borrow())?;
+        self.root=duplicated.unwrap(); self.root_credit_lifetime = core::lifecycle::lifetime_start(); self.peak(); self.metadata(self.root.borrow())?;
         self.charge(1)?; let flags=std::file_ops::status_flags(self.root.borrow()); if(flags.is_err()) { return Err(self.problem(Cause::Io(flags.unwrap_err()))); }
         if((flags.unwrap()&2097152)!=0) { return Err(self.problem(Cause::UnsupportedDescriptor)); } return Ok(true);
     }
@@ -185,7 +226,7 @@ pub impl Run {
     }
     fn close_root(&self,cleanup:bool) -> Result<bool,Failure> {
         if(!self.root.is_open()) { return Ok(false); } self.node=-1; if(!cleanup) { self.charge(1)?; }
-        if(cleanup && self.root_credit) { self.counters.cleanup_charged+=1; } self.root_credit=false; self.counters.namespace_closes+=1;
+        if(cleanup && self.root_credit_lifetime.is_active()) { self.counters.cleanup_charged+=1; } self.root_credit_lifetime.release(); self.counters.namespace_closes+=1;
         let closed=self.root.close(); if(closed.is_err()) { self.close_error(-1,closed.unwrap_err()); return Err(self.problem(Cause::Io(closed.unwrap_err()))); } return Ok(true);
     }
     fn close_stack(&self) -> Result<bool,Failure> { self.stage=Stage::Close; while(self.stack.len()>0) { self.step()?; self.close_top(false)?; } return Ok(true); }
@@ -265,16 +306,16 @@ pub impl Run {
         let name=self.atomic.temporary_name(); if(name.length==37 && self.recovery.len()==37) { let at:i32=0; while(at<37) { self.recovery.set(at,name.values[name.start+at]).unwrap(); at+=1; } self.recovery_length=37; }
     }
     fn cleanup_atomic(&self) -> Result<bool,Failure> {
-        if(!self.atomic_active || !self.atomic.receipt().retained) { return Ok(false); }
+        if(!self.atomic_active_lifetime.is_active() || !self.atomic.receipt().retained) { return Ok(false); }
         self.stage=Stage::Cleanup; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
-        if(!self.atomic_credit) { let reserved=self.reserve_cleanup(3); if(reserved.is_err()) { self.cleanup_problem(reserved.unwrap_err()); return Err(reserved.unwrap_err()); } } self.atomic_credit=false; self.counters.cleanup_charged+=3;
+        if(!self.atomic_credit_lifetime.is_active()) { let reserved=self.reserve_cleanup(3); if(reserved.is_err()) { self.cleanup_problem(reserved.unwrap_err()); return Err(reserved.unwrap_err()); } } self.atomic_credit_lifetime.release(); self.counters.cleanup_charged+=3;
         self.save_name(); let cleaned=self.atomic.cleanup(); self.settle();
-        if(!self.atomic.receipt().temporary_owned && !self.kept_duty) { self.recovery_length=0; }
+        if(!self.atomic.receipt().temporary_owned && !self.kept_duty_lifetime.is_active()) { self.recovery_length=0; }
         if(cleaned.is_err()) { let failure=self.problem(Cause::Atomic(self.atomic_failure())); self.cleanup_problem(failure); return Err(failure); } return Ok(true);
     }
     fn cleanup_all(&self,preserve:bool) -> Option<Failure> {
         let first:Option<Failure> =None();
-        let hold:bool=false; if(self.atomic_active) { let receipt=self.atomic.receipt(); hold=preserve && published(receipt) && !receipt.directory_synced; }
+        let hold:bool=false; if(self.atomic_active_lifetime.is_active()) { let receipt=self.atomic.receipt(); hold=preserve && published(receipt) && !receipt.directory_synced; }
         if(!hold) { let cleaned=self.cleanup_atomic(); if(cleaned.is_err()) { first=Some(cleaned.unwrap_err()); } }
         while(self.stack.len()>0) { self.stage=Stage::Close; let closed=self.close_top(true); if(closed.is_err() && first.is_none()) { first=Some(closed.unwrap_err()); } }
         self.stage=Stage::Close; let root=self.close_root(true); if(root.is_err() && first.is_none()) { first=Some(root.unwrap_err()); } return first;
@@ -289,11 +330,11 @@ pub impl Run {
         if(self.limits.max_sync_calls-self.counters.syncs<2) { return Err(self.problem(Cause::SyncLimit)); }
         let names:u64=self.limits.max_name_attempts-self.counters.name_attempts; if(names>32) { names=32; }
         let entropy:u64=self.limits.max_entropy_calls-self.counters.entropy_calls; if(entropy>128) { entropy=128; }
-        self.reserve_cleanup(3)?; self.atomic_credit=true; self.charge(3+names+entropy)?;
+        self.reserve_cleanup(3)?; self.atomic_credit_lifetime = core::lifecycle::lifetime_start(); self.charge(3+names+entropy)?;
         let options=std::atomic_file::default_options(); options.policy=std::file_ops::RenamePolicy::NoReplace;
         options.max_bytes=data.length as u64; options.write_calls=self.limits.max_write_calls-self.counters.writes;
         options.directory_sync_calls=self.limits.max_sync_calls-self.counters.syncs-1; options.temporary.name_attempts=names as u32; options.temporary.entropy_calls=entropy;
-        self.atomic_active=true; self.atomic_node=member.node; self.atomic_ordinal=self.ordinal; self.previous=zero_atomic(); self.previous_temp=zero_temp(); self.recovery_length=0;
+        self.atomic_active_lifetime = core::lifecycle::lifetime_start(); self.atomic_node=member.node; self.atomic_ordinal=self.ordinal; self.previous=zero_atomic(); self.previous_temp=zero_temp(); self.recovery_length=0;
         let parent=self.parent(); let created=self.atomic.create_in(parent.borrow(),path(source.plan().component(member.node).unwrap()),options); self.settle();
         if(created.is_err()) { return Err(self.problem(Cause::Atomic(created.unwrap_err()))); }
         let offset:i32=0; self.stage=Stage::Write;
@@ -306,15 +347,15 @@ pub impl Run {
             } else { offset+=written.unwrap(); }
         }
         self.stage=Stage::Commit; if(self.limits.max_sync_calls-self.counters.syncs<2) { return Err(self.problem(Cause::SyncLimit)); } self.charge(5)?;
-        let committed=self.atomic.commit(); self.settle(); if(!self.atomic.receipt().retained) { self.atomic_credit=false; }
+        let committed=self.atomic.commit(); self.settle(); if(!self.atomic.receipt().retained) { self.atomic_credit_lifetime.release(); }
         if(committed.is_err()) { return Err(self.problem(Cause::Atomic(committed.unwrap_err()))); } return Ok(true);
     }
     fn perform(&self,source:&ext::archive_source::Prepared,root:&std::file::File) -> Result<bool,Failure> {
         self.preflight(source)?; self.anchor(root)?;
         let ordinal:i32=0; while(ordinal<source.len()) {
             self.step()?; self.ordinal=ordinal; let member=source.member(ordinal).unwrap(); self.node=member.node; self.counters.entries_seen+=1;
-            if(self.atomic_active && self.atomic.receipt().retained) { return Err(self.problem(Cause::Retained)); }
-            self.atomic_active=false; self.stage=Stage::Decode; let decoded:alloc::vec::Vec<u8> =alloc::vec::new();
+            if(self.atomic_active_lifetime.is_active() && self.atomic.receipt().retained) { return Err(self.problem(Cause::Retained)); }
+            self.atomic_active_lifetime.release(); self.stage=Stage::Decode; let decoded:alloc::vec::Vec<u8> =alloc::vec::new();
             let data:View<u8> =match(member.payload) { ext::archive_source::Payload::Tar(value)->value,_ ->View { values:decoded.as_slice(),start:0,length:0 } };
             let zipped:Option<ext::zip::Entry> =match(member.payload) { ext::archive_source::Payload::Zip(value)->Some(value),_ ->None() };
             if(zipped.is_some()) {
@@ -327,38 +368,38 @@ pub impl Run {
         self.close_stack()?; self.stage=Stage::Close; self.close_root(false)?; return Ok(true);
     }
     pub fn execute(&self,source:&ext::archive_source::Prepared,root:&std::file::File,limits:Limits) -> Result<bool,Failure> {
-        if(match(self.current) { State::Complete->true,_ ->false }) { return Ok(false); }
-        if(!match(self.current) { State::Empty->true,_ ->false }) { if(self.first.is_some()) { return Err(self.first.unwrap()); } return Err(self.problem(Cause::InvalidState)); }
-        self.current=State::Running; self.stage=Stage::Validate; self.ordinal=-1; self.node=-1; self.limits=limits; let completed=self.perform(source,root);
-        if(completed.is_err()) { let primary=completed.unwrap_err(); if(self.first.is_none()) { self.first=Some(primary); } self.current=State::Failed; self.cleanup_all(true); return Err(self.first.unwrap()); }
-        self.current=State::Complete; return Ok(true);
+        if(match(self.lifecycle.state()) { LifecycleState::Complete->true,_ ->false }) { return Ok(false); }
+        if(!match(self.lifecycle.state()) { LifecycleState::Empty->true,_ ->false }) { if(self.first.is_some()) { return Err(self.first.unwrap()); } return Err(self.problem(Cause::InvalidState)); }
+        self.lifecycle.step(LifecycleEvent::Begin); self.stage=Stage::Validate; self.ordinal=-1; self.node=-1; self.limits=limits; let completed=self.perform(source,root);
+        if(completed.is_err()) { let primary=completed.unwrap_err(); if(self.first.is_none()) { self.first=Some(primary); } self.lifecycle.step(LifecycleEvent::Fail); self.cleanup_all(true); return Err(self.first.unwrap()); }
+        self.lifecycle.step(LifecycleEvent::Complete); return Ok(true);
     }
     pub fn retry_current_directory_sync(&self) -> Result<bool,Failure> {
         self.stage=Stage::RetrySync; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
-        if(!self.atomic_active || !published(self.atomic.receipt()) || self.atomic.receipt().directory_synced || !self.atomic.receipt().directory_open) { return Err(self.problem(Cause::InvalidState)); }
+        if(!self.atomic_active_lifetime.is_active() || !published(self.atomic.receipt()) || self.atomic.receipt().directory_synced || !self.atomic.receipt().directory_open) { return Err(self.problem(Cause::InvalidState)); }
         if(self.counters.syncs==self.limits.max_sync_calls) { return Err(self.problem(Cause::SyncLimit)); }
-        self.charge(2)?; if(!self.atomic_credit) { self.reserve_cleanup(3)?; } self.atomic_credit=false; self.counters.cleanup_charged+=3;
+        self.charge(2)?; if(!self.atomic_credit_lifetime.is_active()) { self.reserve_cleanup(3)?; } self.atomic_credit_lifetime.release(); self.counters.cleanup_charged+=3;
         let retried=self.atomic.retry_directory_sync(); self.settle();
         if(retried.is_err()) { let failure=self.problem(Cause::Atomic(self.atomic_failure())); self.cleanup_problem(failure); return Err(failure); } return Ok(self.atomic.receipt().directory_synced);
     }
     pub fn keep_current(&self) -> Result<bool,Failure> {
         self.stage=Stage::Keep; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
-        if(!self.atomic_active || !self.atomic.receipt().temporary_owned) { return Err(self.problem(Cause::InvalidState)); }
+        if(!self.atomic_active_lifetime.is_active() || !self.atomic.receipt().temporary_owned) { return Err(self.problem(Cause::InvalidState)); }
         self.save_name(); let kept=self.atomic.keep(); self.settle();
         if(kept.is_err()) { return Err(self.problem(Cause::Atomic(self.atomic_failure()))); }
-        self.kept_duty=true; let status=self.status(self.atomic_node); status.kept=true; self.put(status); self.cleanup_atomic()?; return Ok(true);
+        self.kept_duty_lifetime = core::lifecycle::lifetime_start(); let status=self.status(self.atomic_node); status.kept=true; self.put(status); self.cleanup_atomic()?; return Ok(true);
     }
     pub fn take_kept_name(&self,destination:View<u8>) -> Result<i32,Failure> {
         self.stage=Stage::Transfer;
-        if(!self.kept_duty || self.recovery_length!=37) { return Err(self.problem(Cause::InvalidState)); }
+        if(!self.kept_duty_lifetime.is_active() || self.recovery_length!=37) { return Err(self.problem(Cause::InvalidState)); }
         if(destination.start<0 || destination.length<37 || destination.start>2147483647-destination.length) { return Err(self.problem(Cause::Bounds)); }
         let at:i32=0; while(at<37) { destination.values[destination.start+at]=self.recovery.at(at); at+=1; }
-        self.kept_duty=false; self.recovery_length=0; return Ok(37);
+        self.kept_duty_lifetime.release(); self.recovery_length=0; return Ok(37);
     }
     pub fn cleanup(&self) -> Result<bool,Failure> { let active=self.resources_remaining(); let failure=self.cleanup_all(false); if(failure.is_some()) { return Err(failure.unwrap()); } return Ok(active); }
     pub fn destroy(&self) -> Result<bool,Failure> {
-        if(match(self.current) { State::Destroyed->true,_ ->false }) { return Ok(false); }
+        if(match(self.lifecycle.state()) { LifecycleState::Destroyed->true,_ ->false }) { return Ok(false); }
         self.stage=Stage::Destroy; if(self.resources_remaining()) { return Err(self.problem(Cause::Retained)); }
-        self.statuses.destroy(); self.stack.destroy(); self.chain.destroy(); self.recovery.destroy(); self.recovery_length=0; self.current=State::Destroyed; return Ok(true);
+        self.statuses.destroy(); self.stack.destroy(); self.chain.destroy(); self.recovery.destroy(); self.recovery_length=0; self.lifecycle.step(LifecycleEvent::Destroy); return Ok(true);
     }
 }

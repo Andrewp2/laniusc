@@ -18,12 +18,13 @@ Declaration counts: enum: 1; field: 14; function: 7; impl: 2; method: 6; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/diffstat.lani#L4)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/diffstat.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/diffstat.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/diffstat.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/diffstat.lani#L8)
-- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/diffstat.lani#L9)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/diffstat.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/diffstat.lani#L5)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/diffstat.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/diffstat.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/diffstat.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/diffstat.lani#L9)
+- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/diffstat.lani#L10)
 
 ## Types, fields and variants
 
@@ -31,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 pub enum Error
@@ -39,7 +40,7 @@ pub enum Error
 
 #### variant: InvalidInput
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 InvalidInput
@@ -47,7 +48,7 @@ InvalidInput
 
 #### variant: Unsupported
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 Unsupported
@@ -55,7 +56,7 @@ Unsupported
 
 #### variant: FileLimit
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 FileLimit
@@ -63,7 +64,7 @@ FileLimit
 
 #### variant: OutputLimit
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 OutputLimit
@@ -71,7 +72,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 11](../../../extended/ext/diffstat.lani#L11)
+[Source line 12](../../../extended/ext/diffstat.lani#L12)
 
 ```lanius
 AllocationFailed
@@ -79,7 +80,7 @@ AllocationFailed
 
 ### struct: FileStat
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 pub struct FileStat
@@ -87,7 +88,7 @@ pub struct FileStat
 
 #### field: name_start
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 name_start: i32
@@ -95,7 +96,7 @@ name_start: i32
 
 #### field: name_length
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 name_length: i32
@@ -103,7 +104,7 @@ name_length: i32
 
 #### field: added
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 added: i32
@@ -111,7 +112,7 @@ added: i32
 
 #### field: deleted
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 deleted: i32
@@ -119,7 +120,7 @@ deleted: i32
 
 #### field: interesting
 
-[Source line 13](../../../extended/ext/diffstat.lani#L13)
+[Source line 14](../../../extended/ext/diffstat.lani#L14)
 
 ```lanius
 interesting: bool
@@ -127,7 +128,7 @@ interesting: bool
 
 ### struct: Stats
 
-[Source line 14](../../../extended/ext/diffstat.lani#L14)
+[Source line 15](../../../extended/ext/diffstat.lani#L15)
 
 ```lanius
 pub struct Stats
@@ -135,7 +136,7 @@ pub struct Stats
 
 #### field: files
 
-[Source line 14](../../../extended/ext/diffstat.lani#L14)
+[Source line 15](../../../extended/ext/diffstat.lani#L15)
 
 ```lanius
 files: alloc::vec::Vec<FileStat>
@@ -143,7 +144,7 @@ files: alloc::vec::Vec<FileStat>
 
 #### field: names
 
-[Source line 14](../../../extended/ext/diffstat.lani#L14)
+[Source line 15](../../../extended/ext/diffstat.lani#L15)
 
 ```lanius
 names: alloc::vec::Vec<u8>
@@ -151,7 +152,7 @@ names: alloc::vec::Vec<u8>
 
 ### struct: StatOptions
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 pub struct StatOptions
@@ -159,7 +160,7 @@ pub struct StatOptions
 
 #### field: width
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 width: i32
@@ -167,7 +168,7 @@ width: i32
 
 #### field: name_width
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 name_width: i32
@@ -175,7 +176,7 @@ name_width: i32
 
 #### field: graph_width
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 graph_width: i32
@@ -183,7 +184,7 @@ graph_width: i32
 
 #### field: count
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 count: i32
@@ -191,7 +192,7 @@ count: i32
 
 #### field: max_output
 
-[Source line 17](../../../extended/ext/diffstat.lani#L17)
+[Source line 18](../../../extended/ext/diffstat.lani#L18)
 
 ```lanius
 max_output: i32
@@ -199,7 +200,7 @@ max_output: i32
 
 ### struct: Counts
 
-[Source line 18](../../../extended/ext/diffstat.lani#L18)
+[Source line 19](../../../extended/ext/diffstat.lani#L19)
 
 ```lanius
 pub struct Counts
@@ -207,7 +208,7 @@ pub struct Counts
 
 #### field: added
 
-[Source line 18](../../../extended/ext/diffstat.lani#L18)
+[Source line 19](../../../extended/ext/diffstat.lani#L19)
 
 ```lanius
 added: i32
@@ -215,7 +216,7 @@ added: i32
 
 #### field: deleted
 
-[Source line 18](../../../extended/ext/diffstat.lani#L18)
+[Source line 19](../../../extended/ext/diffstat.lani#L19)
 
 ```lanius
 deleted: i32
@@ -225,7 +226,7 @@ deleted: i32
 
 ### function: default_stat_options
 
-[Source line 19](../../../extended/ext/diffstat.lani#L19)
+[Source line 20](../../../extended/ext/diffstat.lani#L20)
 
 ```lanius
 pub fn default_stat_options() -> StatOptions
@@ -233,7 +234,7 @@ pub fn default_stat_options() -> StatOptions
 
 ### function: new_stats
 
-[Source line 21](../../../extended/ext/diffstat.lani#L21)
+[Source line 22](../../../extended/ext/diffstat.lani#L22)
 
 ```lanius
 pub fn new_stats() -> Stats
@@ -241,7 +242,7 @@ pub fn new_stats() -> Stats
 
 ### function: count_script
 
-[Source line 35](../../../extended/ext/diffstat.lani#L35)
+[Source line 36](../../../extended/ext/diffstat.lani#L36)
 
 ```lanius
 pub fn count_script(script: &ext::seqdiff::Script) -> Counts
@@ -249,7 +250,7 @@ pub fn count_script(script: &ext::seqdiff::Script) -> Counts
 
 ### function: add_file
 
-[Source line 98](../../../extended/ext/diffstat.lani#L98)
+[Source line 99](../../../extended/ext/diffstat.lani#L99)
 
 ```lanius
 pub fn add_file(stats: &Stats, name: core::slice::View<u8>, added: i32, deleted: i32) -> core::result::Result<i32, Error>
@@ -257,7 +258,7 @@ pub fn add_file(stats: &Stats, name: core::slice::View<u8>, added: i32, deleted:
 
 ### function: add_pair
 
-[Source line 104](../../../extended/ext/diffstat.lani#L104)
+[Source line 105](../../../extended/ext/diffstat.lani#L105)
 
 ```lanius
 pub fn add_pair(stats: &Stats, old_path: core::slice::View<u8>, new_path: core::slice::View<u8>, added: i32, deleted: i32) -> core::result::Result<i32, Error>
@@ -265,7 +266,7 @@ pub fn add_pair(stats: &Stats, old_path: core::slice::View<u8>, new_path: core::
 
 ### function: write_stat
 
-[Source line 128](../../../extended/ext/diffstat.lani#L128)
+[Source line 129](../../../extended/ext/diffstat.lani#L129)
 
 ```lanius
 pub fn write_stat(stats: &Stats, options: StatOptions) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -273,7 +274,7 @@ pub fn write_stat(stats: &Stats, options: StatOptions) -> core::result::Result<a
 
 ### function: parse_patch
 
-[Source line 329](../../../extended/ext/diffstat.lani#L329)
+[Source line 330](../../../extended/ext/diffstat.lani#L330)
 
 ```lanius
 pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> core::result::Result<Stats, Error>
@@ -281,9 +282,9 @@ pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> c
 
 ## Implementation blocks and public methods
 
-### impl at line 20
+### impl at line 21
 
-[Source line 20](../../../extended/ext/diffstat.lani#L20)
+[Source line 21](../../../extended/ext/diffstat.lani#L21)
 
 ```lanius
 pub impl StatOptions
@@ -291,15 +292,15 @@ pub impl StatOptions
 
 #### method: borrow
 
-[Source line 20](../../../extended/ext/diffstat.lani#L20)
+[Source line 21](../../../extended/ext/diffstat.lani#L21)
 
 ```lanius
 pub fn borrow(&self) -> &StatOptions
 ```
 
-### impl at line 23
+### impl at line 24
 
-[Source line 23](../../../extended/ext/diffstat.lani#L23)
+[Source line 24](../../../extended/ext/diffstat.lani#L24)
 
 ```lanius
 pub impl Stats
@@ -307,7 +308,7 @@ pub impl Stats
 
 #### method: borrow
 
-[Source line 24](../../../extended/ext/diffstat.lani#L24)
+[Source line 25](../../../extended/ext/diffstat.lani#L25)
 
 ```lanius
 pub fn borrow(&self) -> &Stats
@@ -315,7 +316,7 @@ pub fn borrow(&self) -> &Stats
 
 #### method: len
 
-[Source line 25](../../../extended/ext/diffstat.lani#L25)
+[Source line 26](../../../extended/ext/diffstat.lani#L26)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -323,7 +324,7 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 26](../../../extended/ext/diffstat.lani#L26)
+[Source line 27](../../../extended/ext/diffstat.lani#L27)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<FileStat>
@@ -331,7 +332,7 @@ pub fn get(&self, index: i32) -> core::option::Option<FileStat>
 
 #### method: name
 
-[Source line 27](../../../extended/ext/diffstat.lani#L27)
+[Source line 28](../../../extended/ext/diffstat.lani#L28)
 
 ```lanius
 pub fn name(&self, index: i32) -> core::slice::View<u8>
@@ -339,7 +340,7 @@ pub fn name(&self, index: i32) -> core::slice::View<u8>
 
 #### method: destroy
 
-[Source line 31](../../../extended/ext/diffstat.lani#L31)
+[Source line 32](../../../extended/ext/diffstat.lani#L32)
 
 ```lanius
 pub fn destroy(&self)

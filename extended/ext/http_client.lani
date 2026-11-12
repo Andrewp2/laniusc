@@ -1,5 +1,8 @@
 // One checked HTTP/1 exchange over an explicit numeric endpoint.
 module ext::http_client;
+import core::iter_state;
+import core::io_state;
+import core::lifecycle;
 import alloc::vec;
 import core::clone;
 import core::io;
@@ -27,12 +30,12 @@ pub impl core::clone::Destroy<Failure> for Failure {
 pub struct Readiness { readable: bool, writable: bool, hangup: bool, error: bool }
 pub struct Interest { readable: bool, writable: bool, immediate: bool }
 pub enum Status { Active, Complete, Failed, Aborted }
-pub struct Prepared { owner: Owners, state: State, track: Track, active: bool }
+pub struct Prepared { owner: Owners, state: State, track: Track, lifetime: core::lifecycle::Lifetime }
 pub enum Need { Local, Transfer, StopUpload, FinishTransport, Complete(Response) }
-pub struct Protocol { owner: Owners, state: State, track: Track, phase: ProtocolPhase, status: Status, failure: core::option::Option<Failure>, owned: bool, sending: i32 }
-pub struct Exchange { protocol: Protocol, socket: std::socket::Socket, endpoint: core::net::SocketAddr, phase: Phase, status: Status, read_blocked: bool, write_blocked: bool, send_turn: bool, failure: core::option::Option<Failure> }
-enum ProtocolPhase { Scan, Transfer, StopUpload, Decode, FinishTransport, Publish }
-enum Phase { ConnectStart, WaitConnect, ConnectError, ConnectPeer, Protocol, Receive, Send, Shutdown, Close }
+pub struct Protocol { owner: Owners, state: State, track: Track, phase: ProtocolPhase, status: Status, failure: core::option::Option<Failure>, ownership: core::lifecycle::Lifetime, sending: i32 }
+pub struct Exchange { protocol: Protocol, socket: std::socket::Socket, endpoint: core::net::SocketAddr, phase: Phase, status: Status, read_readiness: core::io_state::Readiness, write_readiness: core::io_state::Readiness, turn: core::io_state::DuplexTurn, failure: core::option::Option<Failure> }
+
+
 pub struct Response { wire: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, interim: alloc::vec::Vec<ext::http::Head>, validated: ext::http::Message, final_offset: i32, stats: Stats }
 struct Span { offset: i32, length: i32 }
 struct Owners { request: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, wire: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<Span>, heads: alloc::vec::Vec<ext::http::Head> }
@@ -40,6 +43,171 @@ impl Owners {
     fn borrow(&self) -> &Owners { return self; }
     fn destroy(&self) { self.request.destroy(); self.method.destroy(); self.wire.destroy(); self.decoded.destroy(); self.spans.destroy(); self.heads.destroy(); }
 }
+pub enum ProtocolPhaseEvent { NeedInput, ResponseReceived, Framed, Resume, Decoded, TransportFinished }
+pub machine ProtocolPhase on ProtocolPhaseEvent {
+    start Scan;
+
+    state Scan {
+        ProtocolPhaseEvent::NeedInput -> goto Transfer,
+        ProtocolPhaseEvent::ResponseReceived -> goto StopUpload,
+        ProtocolPhaseEvent::Framed -> goto Decode,
+        ProtocolPhaseEvent::Resume -> stay,
+        ProtocolPhaseEvent::Decoded -> stay,
+        ProtocolPhaseEvent::TransportFinished -> stay,
+    }
+
+    state Transfer {
+        ProtocolPhaseEvent::NeedInput -> stay,
+        ProtocolPhaseEvent::ResponseReceived -> stay,
+        ProtocolPhaseEvent::Framed -> stay,
+        ProtocolPhaseEvent::Resume -> goto Scan,
+        ProtocolPhaseEvent::Decoded -> stay,
+        ProtocolPhaseEvent::TransportFinished -> stay,
+    }
+
+    state StopUpload {
+        ProtocolPhaseEvent::NeedInput -> stay,
+        ProtocolPhaseEvent::ResponseReceived -> stay,
+        ProtocolPhaseEvent::Framed -> stay,
+        ProtocolPhaseEvent::Resume -> goto Scan,
+        ProtocolPhaseEvent::Decoded -> stay,
+        ProtocolPhaseEvent::TransportFinished -> stay,
+    }
+
+    state Decode {
+        ProtocolPhaseEvent::NeedInput -> stay,
+        ProtocolPhaseEvent::ResponseReceived -> stay,
+        ProtocolPhaseEvent::Framed -> stay,
+        ProtocolPhaseEvent::Resume -> stay,
+        ProtocolPhaseEvent::Decoded -> goto FinishTransport,
+        ProtocolPhaseEvent::TransportFinished -> stay,
+    }
+
+    state FinishTransport {
+        ProtocolPhaseEvent::NeedInput -> stay,
+        ProtocolPhaseEvent::ResponseReceived -> stay,
+        ProtocolPhaseEvent::Framed -> stay,
+        ProtocolPhaseEvent::Resume -> stay,
+        ProtocolPhaseEvent::Decoded -> stay,
+        ProtocolPhaseEvent::TransportFinished -> goto Publish,
+    }
+
+    final state Publish {
+        ProtocolPhaseEvent::NeedInput -> stay,
+        ProtocolPhaseEvent::ResponseReceived -> stay,
+        ProtocolPhaseEvent::Framed -> stay,
+        ProtocolPhaseEvent::Resume -> stay,
+        ProtocolPhaseEvent::Decoded -> stay,
+        ProtocolPhaseEvent::TransportFinished -> stay,
+    }
+}
+
+pub enum PhaseEvent { Connecting, Resume, Signaled, Checked, Send, Receive, StopUpload, Finish }
+pub machine Phase on PhaseEvent {
+    start ConnectStart;
+
+    state ConnectStart {
+        PhaseEvent::Connecting -> goto WaitConnect,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state WaitConnect {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> goto ConnectError,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state ConnectError {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> goto ConnectPeer,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state ConnectPeer {
+        PhaseEvent::Connecting -> goto WaitConnect,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state Protocol {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> goto Receive,
+        PhaseEvent::StopUpload -> goto Shutdown,
+        PhaseEvent::Finish -> goto Close,
+    }
+
+    state Receive {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> goto Send,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state Send {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> goto Receive,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state Shutdown {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+
+    state Close {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Send -> stay,
+        PhaseEvent::Receive -> stay,
+        PhaseEvent::StopUpload -> stay,
+        PhaseEvent::Finish -> stay,
+    }
+}
+
+fn connected_phase() -> Phase { let phase = phase_start(); phase.step(PhaseEvent::Resume); return phase; }
+
 struct State { options: Options, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, message_offset: i32, stats: Stats }
 impl State { fn borrow(&self) -> &State { return self; } }
 pub fn default_options() -> Options { return Options { trailing:Trailing::Discard,wire:ext::http::default_limits(),request_bytes:17825792,response_bytes:18874368,interim_count:8,interim_bytes:65536,io_calls:1048576,work:268435456 }; }
@@ -102,14 +270,14 @@ fn canonical(s: &State, bytes: core::slice::View<u8>, method: core::slice::View<
     let message: ext::http::Message = parsed.unwrap(); if (message.consumed != bytes.len() || message.decoded_length != decoded) { return core::result::Err(Cause::BoundaryMismatch); }
     let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(message);
 }
-struct Track { cursor: ext::http::Cursor, charged: u64, close: bool, eof: bool, status: i32, head_end: i32, validated: core::option::Option<ext::http::Message> }
+struct Track { cursor: ext::http::Cursor, charged: u64, close: bool, eof_completion: core::iter_state::Completion, status: i32, head_end: i32, validated: core::option::Option<ext::http::Message> }
 impl Track { fn borrow(&self) -> &Track { return self; } }
 // One cursor event. A boundary is canonically validated before it is accepted.
 // Only spans survive interim scanning; retained Head views are built after freeze.
 fn scan_once(s: &State, owner: &Owners, track: &Track) -> core::result::Result<i32,Cause> {
     s.stage = Stage::Receive; let before = active(s); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
     let bytes: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,owner.wire.len()).unwrap();
-    let got = track.cursor.advance(bytes,owner.method.as_view(),track.eof);
+    let got = track.cursor.advance(bytes,owner.method.as_view(),track.eof_completion.is_done());
     let spent: u64 = track.cursor.work(); let paid = charge(s,spent-track.charged); track.charged = spent;
     if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); } if (got.is_err()) { return core::result::Err(Cause::Http(got.unwrap_err())); }
     let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
@@ -132,7 +300,7 @@ fn scan_once(s: &State, owner: &Owners, track: &Track) -> core::result::Result<i
     let selected: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
     if (track.status < 200) {
         if (s.stats.interim_count == s.options.interim_count || end > s.options.interim_bytes) { return core::result::Err(Cause::InterimLimit); }
-        let parsed = canonical(s,selected,owner.method.as_view(),boundary.decoded_length,false,track.eof); if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+        let parsed = canonical(s,selected,owner.method.as_view(),boundary.decoded_length,false,track.eof_completion.is_done()); if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
         if (owner.spans.try_push(Span { offset:s.message_offset,length:boundary.consumed }).is_err()) { return core::result::Err(Cause::AllocationFailed); }
         s.stats.interim_count += 1; s.message_offset = end;
         let next = ext::http::cursor(ext::http::CursorMode::Response,s.options.wire,s.options.response_bytes-end,s.options.work-s.stats.work);
@@ -145,7 +313,7 @@ fn scan_once(s: &State, owner: &Owners, track: &Track) -> core::result::Result<i
     if (extra > 0 && reject) { return core::result::Err(Cause::Http(ext::http::Error::Malformed(boundary.consumed))); }
     s.stats.discarded_bytes = extra; owner.wire.try_resize(end,0 as u8).unwrap();
     let exact: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
-    let parsed = canonical(s,exact,owner.method.as_view(),boundary.decoded_length,true,track.eof);
+    let parsed = canonical(s,exact,owner.method.as_view(),boundary.decoded_length,true,track.eof_completion.is_done());
     if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
     track.validated = core::option::Some(parsed.unwrap()); return core::result::Ok(3);
 }
@@ -179,8 +347,8 @@ pub fn prepare_until(request: Request, options: Options, deadline: core::time::D
     let prepared = prepare(state.borrow(),request,owner.borrow()); if (prepared.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),prepared.unwrap_err(),core::option::None())); }
     let made = ext::http::cursor(ext::http::CursorMode::Response,options.wire,options.response_bytes,options.work-state.stats.work);
     if (made.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Http(made.unwrap_err()),core::option::None())); }
-    let track: Track = Track { cursor:made.unwrap(),charged:0,close:false,eof:false,status:0,head_end:0,validated:core::option::None() };
-    return core::result::Ok(Prepared { owner:owner,state:state,track:track,active:true });
+    let track: Track = Track { cursor:made.unwrap(),charged:0,close:false,eof_completion: core::iter_state::completion_start(),status:0,head_end:0,validated:core::option::None() };
+    return core::result::Ok(Prepared { owner:owner,state:state,track:track,lifetime: core::lifecycle::lifetime_start() });
 }
 fn adoption_failure(protocol: &Protocol, socket: &std::socket::Socket, failure: Failure) -> Failure {
     let closed = socket.close(); if (closed.is_err()) { failure.cleanup = core::option::Some(closed.unwrap_err()); }
@@ -189,14 +357,14 @@ fn adoption_failure(protocol: &Protocol, socket: &std::socket::Socket, failure: 
 pub impl Prepared {
     pub fn borrow(&self) -> &Prepared { return self; }
     pub fn stats(&self) -> Stats { return self.state.stats; }
-    pub fn is_active(&self) -> bool { return self.active; }
-    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.owner.destroy(); return true; }
+    pub fn is_active(&self) -> bool { return self.lifetime.is_active(); }
+    pub fn destroy(&self) -> bool { if (!self.lifetime.is_active()) { return false; } self.lifetime.release(); self.owner.destroy(); return true; }
     // Transfer actual HTTP ownership before any fallible driver work.
     pub fn into_protocol(&self) -> core::result::Result<Protocol,Failure> {
-        if (!self.active) { return core::result::Err(inactive(self.state.borrow())); }
+        if (!self.lifetime.is_active()) { return core::result::Err(inactive(self.state.borrow())); }
         let owner: Owners = self.owner; let state: State = self.state; let track: Track = self.track;
-        self.active = false; self.owner = empty_owners(); self.track.validated = core::option::None();
-        return core::result::Ok(Protocol { owner:owner,state:state,track:track,phase:ProtocolPhase::Scan,status:Status::Active,failure:core::option::None(),owned:true,sending:0 });
+        self.lifetime.release(); self.owner = empty_owners(); self.track.validated = core::option::None();
+        return core::result::Ok(Protocol { owner:owner,state:state,track:track,phase: protocol_phase_start(),status:Status::Active,failure:core::option::None(),ownership: core::lifecycle::lifetime_start(),sending:0 });
     }
     pub fn begin(&self, endpoint: core::net::SocketAddr) -> core::result::Result<Exchange,Failure> {
         let moved = self.into_protocol(); if (moved.is_err()) { return core::result::Err(moved.unwrap_err()); }
@@ -209,7 +377,7 @@ pub impl Prepared {
             let failure: Failure = after.unwrap_err(); let closed = socket.close(); if (closed.is_err()) { failure.cleanup = core::option::Some(closed.unwrap_err()); }
             protocol.abort(); return core::result::Err(failure);
         }
-        return core::result::Ok(Exchange { protocol:protocol,socket:socket,endpoint:endpoint,phase:Phase::ConnectStart,status:Status::Active,read_blocked:false,write_blocked:false,send_turn:false,failure:core::option::None() });
+        return core::result::Ok(Exchange { protocol:protocol,socket:socket,endpoint:endpoint,phase: phase_start(),status:Status::Active,read_readiness: core::io_state::readiness_start(),write_readiness: core::io_state::readiness_start(),turn: core::io_state::duplex_turn_start(),failure:core::option::None() });
     }
     // Consume both inputs before admission. Only the transferred descriptor is
     // queried; no socket is opened, connected or used for request I/O here.
@@ -240,7 +408,7 @@ pub impl Prepared {
         let peer = owned.peer_addr(); let peer_after = protocol.check();
         if (peer_after.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),peer_after.unwrap_err())); }
         if (peer.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),protocol.failure(Cause::Io(peer.unwrap_err())))); }
-        return core::result::Ok(Exchange { protocol:protocol,socket:owned,endpoint:peer.unwrap(),phase:Phase::Protocol,status:Status::Active,read_blocked:false,write_blocked:false,send_turn:false,failure:core::option::None() });
+        return core::result::Ok(Exchange { protocol:protocol,socket:owned,endpoint:peer.unwrap(),phase: connected_phase(),status:Status::Active,read_readiness: core::io_state::readiness_start(),write_readiness: core::io_state::readiness_start(),turn: core::io_state::duplex_turn_start(),failure:core::option::None() });
     }
 }
 pub impl Protocol {
@@ -277,34 +445,34 @@ pub impl Protocol {
     }
     pub fn advance(&self) -> core::result::Result<Need,Failure> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        let scanning: bool = match(self.phase) { ProtocolPhase::Scan -> true, _ -> false };
+        let scanning: bool = match(self.phase.state()) { ProtocolPhaseState::Scan -> true, _ -> false };
         if (scanning) {
             let scanned = scan_once(self.state.borrow(),self.owner.borrow(),self.track.borrow()); if (scanned.is_err()) { return core::result::Err(self.failure(scanned.unwrap_err())); }
             let event: i32 = scanned.unwrap();
-            if (event == 0) { self.phase = ProtocolPhase::Transfer; return core::result::Ok(Need::Transfer); }
-            if (event == 2) { self.phase = ProtocolPhase::StopUpload; return core::result::Ok(Need::StopUpload); }
-            if (event == 3) { self.phase = ProtocolPhase::Decode; }
+            if (event == 0) { self.phase.step(ProtocolPhaseEvent::NeedInput); return core::result::Ok(Need::Transfer); }
+            if (event == 2) { self.phase.step(ProtocolPhaseEvent::ResponseReceived); return core::result::Ok(Need::StopUpload); }
+            if (event == 3) { self.phase.step(ProtocolPhaseEvent::Framed); }
             return core::result::Ok(Need::Local);
         }
-        let decoding: bool = match(self.phase) { ProtocolPhase::Decode -> true, _ -> false };
+        let decoding: bool = match(self.phase.state()) { ProtocolPhaseState::Decode -> true, _ -> false };
         if (decoding) {
             let decoded = decode(self.state.borrow(),self.owner.borrow(),self.track.validated.unwrap()); if (decoded.is_err()) { return core::result::Err(self.failure(decoded.unwrap_err())); }
-            self.phase = ProtocolPhase::FinishTransport; self.state.stage = Stage::Close; return core::result::Ok(Need::FinishTransport);
+            self.phase.step(ProtocolPhaseEvent::Decoded); self.state.stage = Stage::Close; return core::result::Ok(Need::FinishTransport);
         }
-        let publishing: bool = match(self.phase) { ProtocolPhase::Publish -> true, _ -> false };
+        let publishing: bool = match(self.phase.state()) { ProtocolPhaseState::Publish -> true, _ -> false };
         if (publishing) {
             self.owner.request.destroy(); self.owner.spans.destroy(); self.state.stage = Stage::Publish;
             let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
             let response: Response = Response { wire:self.owner.wire,method:self.owner.method,decoded:self.owner.decoded,interim:self.owner.heads,validated:self.track.validated.unwrap(),final_offset:self.state.message_offset,stats:self.state.stats };
-            self.owner = empty_owners(); self.track.validated = core::option::None(); self.owned = false; self.status = Status::Complete;
+            self.owner = empty_owners(); self.track.validated = core::option::None(); self.ownership.release(); self.status = Status::Complete;
             return core::result::Ok(Need::Complete(response));
         }
-        return match(self.phase) { ProtocolPhase::Transfer -> core::result::Ok(Need::Transfer), ProtocolPhase::StopUpload -> core::result::Ok(Need::StopUpload), ProtocolPhase::FinishTransport -> core::result::Ok(Need::FinishTransport), _ -> core::result::Ok(Need::Local) };
+        return match(self.phase.state()) { ProtocolPhaseState::Transfer -> core::result::Ok(Need::Transfer), ProtocolPhaseState::StopUpload -> core::result::Ok(Need::StopUpload), ProtocolPhaseState::FinishTransport -> core::result::Ok(Need::FinishTransport), _ -> core::result::Ok(Need::Local) };
     }
     pub fn receive_limit(&self) -> core::result::Result<i32,Failure> {
         let guard = protocol_guard(self); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
-        let transfer: bool = match(self.phase) { ProtocolPhase::Transfer -> true, _ -> false };
-        if (!transfer || self.track.eof) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+        let transfer: bool = match(self.phase.state()) { ProtocolPhaseState::Transfer -> true, _ -> false };
+        if (!transfer || self.track.eof_completion.is_done()) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
         let raw: i32 = self.state.options.response_bytes-self.owner.wire.len(); let capacity: i32 = raw;
         if (self.track.close) { let body: i32 = self.state.options.wire.body_bytes-(self.owner.wire.len()-self.state.message_offset-self.track.head_end); if (body < capacity) { capacity = body; } }
         if (capacity < 0 || (capacity == 0 && !self.track.close)) { return core::result::Err(self.failure(Cause::ResponseLimit)); }
@@ -321,16 +489,16 @@ pub impl Protocol {
         if (raw == 0) { return core::result::Err(self.failure(Cause::ResponseLimit)); }
         if (self.track.close && self.state.options.wire.body_bytes == self.owner.wire.len()-self.state.message_offset-self.track.head_end) { return core::result::Err(self.failure(Cause::BodyLimit)); }
         if (self.owner.wire.try_extend(bytes).is_err()) { return core::result::Err(self.failure(Cause::AllocationFailed)); }
-        self.phase = ProtocolPhase::Scan; return core::result::Ok(true);
+        self.phase.step(ProtocolPhaseEvent::Resume); return core::result::Ok(true);
     }
     pub fn feed_eof(&self) -> core::result::Result<bool,Failure> {
         let limit = self.receive_limit(); if (limit.is_err()) { return core::result::Err(limit.unwrap_err()); }
         let checked = self.check(); if (checked.is_err()) { return checked; }
-        self.track.eof = true; self.phase = ProtocolPhase::Scan; return core::result::Ok(true);
+        self.track.eof_completion = core::iter_state::completed_if( true); self.phase.step(ProtocolPhaseEvent::Resume); return core::result::Ok(true);
     }
     pub fn start_send(&self) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Failure> {
         let guard = protocol_guard(self); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
-        let transfer: bool = match(self.phase) { ProtocolPhase::Transfer -> true, _ -> false };
+        let transfer: bool = match(self.phase.state()) { ProtocolPhaseState::Transfer -> true, _ -> false };
         if (!transfer || self.sending != 0) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
         if (self.state.stats.upload_stopped || self.state.stats.request_sent == self.state.stats.request_bytes) { return core::result::Ok(core::option::None()); }
         let count: i32 = self.state.stats.request_bytes-self.state.stats.request_sent; if (count > 1024) { count = 1024; }
@@ -351,9 +519,9 @@ pub impl Protocol {
     }
     pub fn acknowledge_stop(&self) -> core::result::Result<bool,Failure> {
         let guard = protocol_guard(self); if (guard.is_err()) { return guard; }
-        let stopping: bool = match(self.phase) { ProtocolPhase::StopUpload -> true, _ -> false };
+        let stopping: bool = match(self.phase.state()) { ProtocolPhaseState::StopUpload -> true, _ -> false };
         if (!stopping) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
-        self.phase = ProtocolPhase::Scan; return core::result::Ok(true);
+        self.phase.step(ProtocolPhaseEvent::Resume); return core::result::Ok(true);
     }
     pub fn record_write_shutdown(&self) -> core::result::Result<bool,Failure> {
         let guard = protocol_guard(self); if (guard.is_err()) { return guard; }
@@ -362,13 +530,13 @@ pub impl Protocol {
     // Driver acknowledges completed transport cleanup, never merely HTTP EOF.
     pub fn transport_finished(&self) -> core::result::Result<bool,Failure> {
         let guard = protocol_guard(self); if (guard.is_err()) { return guard; }
-        let finishing: bool = match(self.phase) { ProtocolPhase::FinishTransport -> true, _ -> false };
+        let finishing: bool = match(self.phase.state()) { ProtocolPhaseState::FinishTransport -> true, _ -> false };
         if (!finishing || self.sending != 0) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
         self.state.stage = Stage::Close; let checked = self.check(); if (checked.is_err()) { return checked; }
-        self.phase = ProtocolPhase::Publish; return core::result::Ok(true);
+        self.phase.step(ProtocolPhaseEvent::TransportFinished); return core::result::Ok(true);
     }
     pub fn abort(&self) -> bool {
-        if (!self.owned) { return false; } self.owned = false; self.owner.destroy(); self.track.validated = core::option::None(); self.sending = 0;
+        if (!self.ownership.is_active()) { return false; } self.ownership.release(); self.owner.destroy(); self.track.validated = core::option::None(); self.sending = 0;
         if (running(self.status)) { self.status = Status::Aborted; } return true;
     }
 }
@@ -384,34 +552,34 @@ fn retire(x: &Exchange, failure: Failure, closed: core::result::Result<i32,core:
 fn stop(x: &Exchange, failure: Failure) -> Failure { let closed = x.socket.close(); return retire(x,failure,closed); }
 // One transport action, with at most one active network leaf.
 fn advance(x: &Exchange, ready: Readiness) -> core::result::Result<bool,Failure> {
-    let is_connect_start: bool = match(x.phase) { Phase::ConnectStart -> true, _ -> false };
+    let is_connect_start: bool = match(x.phase.state()) { PhaseState::ConnectStart -> true, _ -> false };
     if (is_connect_start) {
         let before = x.protocol.before_io(Stage::Connect); if (before.is_err()) { return before; }
         let started = x.socket.connect(x.endpoint); let after = x.protocol.check(); if (after.is_err()) { return after; }
         if (started.is_err()) { return core::result::Err(x.protocol.failure(Cause::Io(started.unwrap_err()))); }
         let connected: bool = match(started.unwrap()) { std::socket::Connection::Connected -> true, _ -> false };
-        x.phase = Phase::WaitConnect; if (connected) { x.phase = Phase::Protocol; } return core::result::Ok(true);
+        x.phase.step(PhaseEvent::Connecting); if (connected) { x.phase.step(PhaseEvent::Resume); } return core::result::Ok(true);
     }
-    let is_wait_connect: bool = match(x.phase) { Phase::WaitConnect -> true, _ -> false };
-    if (is_wait_connect) { if (ready.writable || ready.error || ready.hangup) { x.phase = Phase::ConnectError; } return core::result::Ok(true); }
-    let is_connect_error: bool = match(x.phase) { Phase::ConnectError -> true, _ -> false };
+    let is_wait_connect: bool = match(x.phase.state()) { PhaseState::WaitConnect -> true, _ -> false };
+    if (is_wait_connect) { if (ready.writable || ready.error || ready.hangup) { x.phase.step(PhaseEvent::Signaled); } return core::result::Ok(true); }
+    let is_connect_error: bool = match(x.phase.state()) { PhaseState::ConnectError -> true, _ -> false };
     if (is_connect_error) {
         let before = x.protocol.before_io(Stage::Connect); if (before.is_err()) { return before; }
         let error = x.socket.take_error(); let after = x.protocol.check(); if (after.is_err()) { return after; }
         if (error.is_err()) { return core::result::Err(x.protocol.failure(Cause::Io(error.unwrap_err()))); }
         if (error.unwrap().is_some()) { return core::result::Err(x.protocol.failure(Cause::Io(core::io::Error::Host(error.unwrap().unwrap())))); }
-        x.phase = Phase::ConnectPeer; return core::result::Ok(true);
+        x.phase.step(PhaseEvent::Checked); return core::result::Ok(true);
     }
-    let is_connect_peer: bool = match(x.phase) { Phase::ConnectPeer -> true, _ -> false };
+    let is_connect_peer: bool = match(x.phase.state()) { PhaseState::ConnectPeer -> true, _ -> false };
     if (is_connect_peer) {
         let before = x.protocol.before_io(Stage::Connect); if (before.is_err()) { return before; }
         let peer = x.socket.peer_addr(); let after = x.protocol.check(); if (after.is_err()) { return after; }
-        if (peer.is_err()) { let pending: bool = match(peer.unwrap_err()) { core::io::Error::Host(code) -> code == 107, _ -> false }; if (!pending) { return core::result::Err(x.protocol.failure(Cause::Io(peer.unwrap_err()))); } x.phase = Phase::WaitConnect; }
-        else { x.phase = Phase::Protocol; } return core::result::Ok(true);
+        if (peer.is_err()) { let pending: bool = match(peer.unwrap_err()) { core::io::Error::Host(code) -> code == 107, _ -> false }; if (!pending) { return core::result::Err(x.protocol.failure(Cause::Io(peer.unwrap_err()))); } x.phase.step(PhaseEvent::Connecting); }
+        else { x.phase.step(PhaseEvent::Resume); } return core::result::Ok(true);
     }
-    let is_receive: bool = match(x.phase) { Phase::Receive -> true, _ -> false };
+    let is_receive: bool = match(x.phase.state()) { PhaseState::Receive -> true, _ -> false };
     if (is_receive) {
-        if (x.read_blocked) { if (upload(x) && !x.write_blocked) { x.phase = Phase::Send; } return core::result::Ok(true); }
+        if (x.read_readiness.blocked()) { if (upload(x) && !x.write_readiness.blocked()) { x.phase.step(PhaseEvent::Send); } return core::result::Ok(true); }
         let limit = x.protocol.receive_limit(); if (limit.is_err()) { return core::result::Err(limit.unwrap_err()); }
         let count: i32 = limit.unwrap(); let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
         let before = x.protocol.before_io(Stage::Receive); if (before.is_err()) { return before; }
@@ -421,36 +589,36 @@ fn advance(x: &Exchange, ready: Readiness) -> core::result::Result<bool,Failure>
             let fed: core::result::Result<bool,Failure> = core::result::Ok(true);
             if (got == 0) { fed = x.protocol.feed_eof(); } else { fed = x.protocol.feed(core::slice::view(scratch,got).unwrap()); }
             if (fed.is_err()) { return fed; }
-            x.send_turn = true; x.write_blocked = false; x.phase = Phase::Protocol; return core::result::Ok(true);
+            x.turn.step(core::io_state::TransferEvent::Read); x.write_readiness.step(core::io_state::ReadinessEvent::Ready); x.phase.step(PhaseEvent::Resume); return core::result::Ok(true);
         }
         let after = x.protocol.check(); if (after.is_err()) { return after; }
         let error: core::io::Error = result.unwrap_err(); if (core::io::is_interrupted(error)) { return core::result::Ok(true); }
         let blocked: bool = match(error) { core::io::Error::WouldBlock -> true, _ -> false }; if (!blocked) { return core::result::Err(x.protocol.failure(Cause::Io(error))); }
-        x.read_blocked = true; x.phase = Phase::Send; return core::result::Ok(true);
+        x.read_readiness.step(core::io_state::ReadinessEvent::WouldBlock); x.phase.step(PhaseEvent::Send); return core::result::Ok(true);
     }
-    let is_send: bool = match(x.phase) { Phase::Send -> true, _ -> false };
+    let is_send: bool = match(x.phase.state()) { PhaseState::Send -> true, _ -> false };
     if (is_send) {
-        if (!upload(x) || x.write_blocked) { x.phase = Phase::Receive; return core::result::Ok(true); }
+        if (!upload(x) || x.write_readiness.blocked()) { x.phase.step(PhaseEvent::Receive); return core::result::Ok(true); }
         let staged = x.protocol.start_send(); if (staged.is_err()) { return core::result::Err(staged.unwrap_err()); }
-        if (staged.unwrap().is_none()) { x.phase = Phase::Receive; return core::result::Ok(true); }
+        if (staged.unwrap().is_none()) { x.phase.step(PhaseEvent::Receive); return core::result::Ok(true); }
         let bytes: core::slice::View<u8> = staged.unwrap().unwrap(); let before = x.protocol.before_io(Stage::Send); if (before.is_err()) { return before; }
         let sent = x.socket.send(bytes);
-        if (sent.is_ok()) { let committed = x.protocol.commit_send(sent.unwrap()); if (committed.is_err()) { return committed; } x.read_blocked = false; }
+        if (sent.is_ok()) { let committed = x.protocol.commit_send(sent.unwrap()); if (committed.is_err()) { return committed; } x.read_readiness.step(core::io_state::ReadinessEvent::Ready); }
         else {
             let cancelled = x.protocol.cancel_send(); if (cancelled.is_err()) { return cancelled; } let after = x.protocol.check(); if (after.is_err()) { return after; }
             let error: core::io::Error = sent.unwrap_err(); if (core::io::is_interrupted(error)) { return core::result::Ok(true); }
-            let blocked: bool = match(error) { core::io::Error::WouldBlock -> true, _ -> false }; if (!blocked) { return core::result::Err(x.protocol.failure(Cause::Io(error))); } x.write_blocked = true;
+            let blocked: bool = match(error) { core::io::Error::WouldBlock -> true, _ -> false }; if (!blocked) { return core::result::Err(x.protocol.failure(Cause::Io(error))); } x.write_readiness.step(core::io_state::ReadinessEvent::WouldBlock);
         }
-        x.send_turn = false; x.phase = Phase::Receive; return core::result::Ok(true);
+        x.turn.step(core::io_state::TransferEvent::Written); x.phase.step(PhaseEvent::Receive); return core::result::Ok(true);
     }
-    let is_shutdown: bool = match(x.phase) { Phase::Shutdown -> true, _ -> false };
+    let is_shutdown: bool = match(x.phase.state()) { PhaseState::Shutdown -> true, _ -> false };
     if (is_shutdown) {
         let before = x.protocol.before_io(Stage::Shutdown); if (before.is_err()) { return before; }
         let stopped = x.socket.shutdown(std::socket::Shutdown::Write);
         if (stopped.is_err()) { let after = x.protocol.check(); if (after.is_err()) { return after; } return core::result::Err(x.protocol.failure(Cause::Io(stopped.unwrap_err()))); }
         let recorded = x.protocol.record_write_shutdown(); if (recorded.is_err()) { return recorded; }
         let acknowledged = x.protocol.acknowledge_stop(); if (acknowledged.is_err()) { return acknowledged; }
-        x.phase = Phase::Protocol; return core::result::Ok(true);
+        x.phase.step(PhaseEvent::Resume); return core::result::Ok(true);
     }
     return core::result::Ok(true);
 }
@@ -462,10 +630,10 @@ pub impl Exchange {
     pub fn raw_handle(&self) -> core::option::Option<i32> { if (!running(self.status)) { return core::option::None(); } return self.socket.raw_handle(); }
     pub fn interest(&self) -> Interest {
         if (!running(self.status)) { return Interest { readable:false,writable:false,immediate:false }; }
-        return match(self.phase) {
-            Phase::WaitConnect -> Interest { readable:false,writable:true,immediate:false },
-            Phase::Receive -> Interest { readable:true,writable:upload(self),immediate:!self.read_blocked || (upload(self) && !self.write_blocked) },
-            Phase::Send -> Interest { readable:true,writable:upload(self),immediate:!self.read_blocked || (upload(self) && !self.write_blocked) },
+        return match(self.phase.state()) {
+            PhaseState::WaitConnect -> Interest { readable:false,writable:true,immediate:false },
+            PhaseState::Receive -> Interest { readable:true,writable:upload(self),immediate:!self.read_readiness.blocked() || (upload(self) && !self.write_readiness.blocked()) },
+            PhaseState::Send -> Interest { readable:true,writable:upload(self),immediate:!self.read_readiness.blocked() || (upload(self) && !self.write_readiness.blocked()) },
             _ -> Interest { readable:false,writable:false,immediate:true }
         };
     }
@@ -480,26 +648,26 @@ pub impl Exchange {
         let failed: bool = match(self.status) { Status::Failed -> true, _ -> false }; if (failed) { return core::result::Err(self.failure.unwrap()); }
         if (!running(self.status)) { return core::result::Err(inactive(self.protocol.state.borrow())); }
         let observed = self.protocol.check(); if (observed.is_err()) { return core::result::Err(stop(self,observed.unwrap_err())); }
-        if (ready.readable || ready.hangup || ready.error) { self.read_blocked = false; let sending: bool = match(self.phase) { Phase::Send -> true, _ -> false }; if (sending) { self.phase = Phase::Receive; } }
-        if (ready.writable || ready.hangup || ready.error) { self.write_blocked = false; }
-        let closing: bool = match(self.phase) { Phase::Close -> true, _ -> false };
+        if (ready.readable || ready.hangup || ready.error) { self.read_readiness.step(core::io_state::ReadinessEvent::Ready); let sending: bool = match(self.phase.state()) { PhaseState::Send -> true, _ -> false }; if (sending) { self.phase.step(PhaseEvent::Receive); } }
+        if (ready.writable || ready.hangup || ready.error) { self.write_readiness.step(core::io_state::ReadinessEvent::Ready); }
+        let closing: bool = match(self.phase.state()) { PhaseState::Close -> true, _ -> false };
         if (closing) {
             let checked = self.protocol.check(); let closed = self.socket.close();
             if (checked.is_err()) { return core::result::Err(retire(self,checked.unwrap_err(),closed)); }
             if (closed.is_err()) { let failure: Failure = self.protocol.failure(Cause::Io(closed.unwrap_err())); return core::result::Err(retire(self,failure,core::result::Ok(0))); }
             let finished = self.protocol.transport_finished(); if (finished.is_err()) { return core::result::Err(retire(self,finished.unwrap_err(),core::result::Ok(0))); }
-            self.phase = Phase::Protocol; return core::result::Ok(core::option::None());
+            self.phase.step(PhaseEvent::Resume); return core::result::Ok(core::option::None());
         }
-        let local: bool = match(self.phase) { Phase::Protocol -> true, _ -> false };
+        let local: bool = match(self.phase.state()) { PhaseState::Protocol -> true, _ -> false };
         if (local) {
             let advanced = self.protocol.advance(); if (advanced.is_err()) { return core::result::Err(stop(self,advanced.unwrap_err())); }
             let need: Need = advanced.unwrap();
             let complete: core::option::Option<Response> = match(need) { Need::Complete(response) -> core::option::Some(response), _ -> core::option::None() };
             if (complete.is_some()) { self.status = Status::Complete; return core::result::Ok(complete); }
             let transfer: bool = match(need) { Need::Transfer -> true, _ -> false };
-            if (transfer) { self.phase = Phase::Receive; if (self.send_turn && upload(self)) { self.phase = Phase::Send; } }
-            let stopping: bool = match(need) { Need::StopUpload -> true, _ -> false }; if (stopping) { self.phase = Phase::Shutdown; }
-            let finishing: bool = match(need) { Need::FinishTransport -> true, _ -> false }; if (finishing) { self.phase = Phase::Close; }
+            if (transfer) { self.phase.step(PhaseEvent::Receive); if (self.turn.send() && upload(self)) { self.phase.step(PhaseEvent::Send); } }
+            let stopping: bool = match(need) { Need::StopUpload -> true, _ -> false }; if (stopping) { self.phase.step(PhaseEvent::StopUpload); }
+            let finishing: bool = match(need) { Need::FinishTransport -> true, _ -> false }; if (finishing) { self.phase.step(PhaseEvent::Finish); }
             return core::result::Ok(core::option::None());
         }
         let progressed = advance(self,ready); if (progressed.is_err()) { return core::result::Err(stop(self,progressed.unwrap_err())); } return core::result::Ok(core::option::None());

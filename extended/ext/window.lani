@@ -1,0 +1,254 @@
+// Lanius-owned windows, events and RGB presentation. The first native backend
+// uses X11/XWayland via libX11; no SDL or application framework is involved.
+module ext::window;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub enum Cause { InvalidSize, InvalidTitle, InvalidPixels, InvalidTimeout, AllocationFailed, NoDisplay, UnsupportedDisplay, Closed, Busy, WrongThread, Native, System(i32), Disconnected }
+pub enum Stage { Init, Create, Image, Poll, Size, Present, Close }
+pub struct Failure { cause:Cause, stage:Stage }
+pub struct Size { width:i32, height:i32 }
+pub enum Key { Escape, Enter, Tab, Backspace, Space, Left, Right, Up, Down, Other(u64) }
+pub struct ResizeEvent { window:u64, width:i32, height:i32 }
+pub struct KeyEvent { window:u64, key:Key, scan:u32, modifiers:u32, down:bool }
+pub struct MotionEvent { window:u64, x:i32, y:i32, buttons:u32 }
+pub struct ButtonEvent { window:u64, button:u32, down:bool, x:i32, y:i32 }
+pub struct FocusEvent { window:u64, gained:bool }
+pub enum Event { Close(u64), Exposed(u64), Resized(ResizeEvent), Key(KeyEvent), Motion(MotionEvent), Button(ButtonEvent), Focus(FocusEvent), Other(i32) }
+
+struct State { display:ptr, visual:ptr, root:u64, thread:u64, windows:i32, protocols:u64, delete_window:u64, utf8:u64, net_name:u64 }
+// Each Context owns one independent X connection; all use is on its creating
+// thread. Copies are inactive aliases, not additional cleanup authorities.
+pub struct Context { storage:ptr }
+pub struct Window { context:ptr, handle:u64, gc:ptr, image:ptr, width:i32, height:i32, image_width:i32, image_height:i32, gpu:bool }
+// Backend lease: keep the actual Window owner alive until release_gpu().
+pub struct NativeWindow { display:ptr, window:u64 }
+
+fn failure(cause:Cause,stage:Stage) -> Failure { return Failure { cause:cause,stage:stage }; }
+fn state(storage:ptr) -> [State] { return core::mem::typed_slice_from_storage<State>(storage,1); }
+fn admit(storage:ptr,stage:Stage) -> core::result::Result<i32,Failure> {
+    if(storage==0) { return core::result::Err(failure(Cause::Closed,stage)); }
+    if(state(storage)[0].thread!=pthread_self()) { return core::result::Err(failure(Cause::WrongThread,stage)); }
+    return core::result::Ok(0);
+}
+fn c_word(pointer:ptr,offset:usize) -> i32 { return core::mem::typed_slice_from_raw_parts<i32>(pointer+offset,1)[0]; }
+fn c_long(pointer:ptr,offset:usize) -> u64 { return core::mem::typed_slice_from_raw_parts<u64>(pointer+offset,1)[0]; }
+fn c_pointer(pointer:ptr,offset:usize) -> ptr { return core::mem::typed_slice_from_raw_parts<ptr>(pointer+offset,1)[0]; }
+fn atom(display:ptr,name:str) -> u64 {
+    let text=core::text::from_str(name); let words:[i32;16]=[0;16]; let pointer=core::mem::i32_array_data_ptr(words);
+    let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,64); let i:i32=0;
+    while(i<text.length) { bytes[i]=text.bytes[text.start+i]; i+=1; } bytes[i]=0;
+    return XInternAtom(display,pointer,0);
+}
+pub fn rgb(red:u8,green:u8,blue:u8) -> u32 { return ((red as u32)<<16)|((green as u32)<<8)|(blue as u32); }
+
+pub fn init() -> core::result::Result<Context,Failure> {
+    let storage=alloc::allocator::alloc(core::mem::size_of<State>(),8);
+    if(storage==0) { return core::result::Err(failure(Cause::AllocationFailed,Stage::Init)); }
+    let nowhere:ptr=0; let display=XOpenDisplay(nowhere);
+    if(display==0) { alloc::allocator::dealloc(storage,core::mem::size_of<State>(),8); return core::result::Err(failure(Cause::NoDisplay,Stage::Init)); }
+    let screen=XDefaultScreen(display); let visual=XDefaultVisual(display,screen);
+    // First backend profile: TrueColor, depth 24, ordinary RGB masks.
+    if(visual==0 || XDefaultDepth(display,screen)!=24) {
+        XCloseDisplay(display); alloc::allocator::dealloc(storage,core::mem::size_of<State>(),8);
+        return core::result::Err(failure(Cause::UnsupportedDisplay,Stage::Init));
+    }
+    if(c_word(visual,16)!=4 || c_long(visual,24)!=16711680 || c_long(visual,32)!=65280 || c_long(visual,40)!=255) {
+        XCloseDisplay(display); alloc::allocator::dealloc(storage,core::mem::size_of<State>(),8);
+        return core::result::Err(failure(Cause::UnsupportedDisplay,Stage::Init));
+    }
+    let protocols=atom(display,"WM_PROTOCOLS"); let delete_window=atom(display,"WM_DELETE_WINDOW");
+    let utf8=atom(display,"UTF8_STRING"); let net_name=atom(display,"_NET_WM_NAME");
+    if(protocols==0 || delete_window==0 || utf8==0 || net_name==0) {
+        XCloseDisplay(display); alloc::allocator::dealloc(storage,core::mem::size_of<State>(),8);
+        return core::result::Err(failure(Cause::Native,Stage::Init));
+    }
+    state(storage)[0]=State { display:display,visual:visual,root:XRootWindow(display,screen),thread:pthread_self(),windows:0,protocols:protocols,delete_window:delete_window,utf8:utf8,net_name:net_name };
+    return core::result::Ok(Context { storage:storage });
+}
+
+// XDestroyImage owns both its Xlib record and this libc-allocated byte block.
+// Lanius allocations must never be passed to that native destructor.
+fn image(control:State,width:i32,height:i32) -> core::result::Result<ptr,Failure> {
+    let bytes=calloc((width as usize)*(height as usize),4);
+    if(bytes==0) { return core::result::Err(failure(Cause::AllocationFailed,Stage::Image)); }
+    let made=XCreateImage(control.display,control.visual,24,2,0,bytes,width as u32,height as u32,32,width*4);
+    if(made==0) { free(bytes); return core::result::Err(failure(Cause::AllocationFailed,Stage::Image)); }
+    if(c_word(made,24)!=0 || c_word(made,44)!=width*4 || c_word(made,48)!=32 || c_long(made,56)!=16711680 || c_long(made,64)!=65280 || c_long(made,72)!=255) {
+        XDestroyImage(made); return core::result::Err(failure(Cause::UnsupportedDisplay,Stage::Image));
+    }
+    return core::result::Ok(made);
+}
+
+pub impl Context {
+    pub fn borrow(&self) -> &Context { return self; }
+    pub fn is_open(&self) -> bool { return self.storage!=0; }
+    pub fn create(&self,title:core::text::Text,width:i32,height:i32,resizable:bool) -> core::result::Result<Window,Failure> {
+        admit(self.storage,Stage::Create)?;
+        if(width<=0 || height<=0 || width>16384 || height>16384 || state(self.storage)[0].windows==2147483647) { return core::result::Err(failure(Cause::InvalidSize,Stage::Create)); }
+        if(title.start<0 || title.length<0 || title.length>4095 || title.start>2147483647-title.length) { return core::result::Err(failure(Cause::InvalidTitle,Stage::Create)); }
+        if((title.start as usize)+(title.length as usize)>core::mem::slice_len(title.bytes)) { return core::result::Err(failure(Cause::InvalidTitle,Stage::Create)); }
+        if(core::text::from_utf8_range(title.bytes,title.start,title.length).is_err()) { return core::result::Err(failure(Cause::InvalidTitle,Stage::Create)); }
+        let title_words:[i32;1024]=[0;1024]; let title_pointer=core::mem::i32_array_data_ptr(title_words);
+        let title_bytes=core::mem::typed_slice_from_raw_parts<u8>(title_pointer,4096); let i:i32=0;
+        while(i<title.length) { let byte=title.bytes[title.start+i]; if(byte==0) { return core::result::Err(failure(Cause::InvalidTitle,Stage::Create)); } title_bytes[i]=byte; i+=1; } title_bytes[i]=0;
+        let control=state(self.storage)[0]; let prepared=image(control,width,height)?;
+        let handle=XCreateSimpleWindow(control.display,control.root,0,0,width as u32,height as u32,0,0,0);
+        if(handle==0) { XDestroyImage(prepared); return core::result::Err(failure(Cause::Native,Stage::Create)); }
+        let nowhere:ptr=0; let gc=XCreateGC(control.display,handle,0,nowhere);
+        if(gc==0) { XDestroyWindow(control.display,handle); XDestroyImage(prepared); return core::result::Err(failure(Cause::AllocationFailed,Stage::Create)); }
+        let atoms:[i32;2]=[0;2]; atoms[0]=control.delete_window as i32; atoms[1]=(control.delete_window>>32) as i32;
+        if(XSetWMProtocols(control.display,handle,core::mem::i32_array_data_ptr(atoms),1)==0) {
+            XFreeGC(control.display,gc); XDestroyWindow(control.display,handle); XDestroyImage(prepared);
+            return core::result::Err(failure(Cause::Native,Stage::Create));
+        }
+        XStoreName(control.display,handle,title_pointer);
+        XChangeProperty(control.display,handle,control.net_name,control.utf8,8,0,title_pointer,title.length);
+        // Advisory WM hints: PMinSize | PMaxSize. Bounds are also checked here.
+        let hints:[i32;20]=[0;20]; hints[0]=48;
+        hints[6]=1; hints[7]=1; hints[8]=16384; hints[9]=16384;
+        if(!resizable) { hints[6]=width; hints[7]=height; hints[8]=width; hints[9]=height; }
+        XSetWMNormalHints(control.display,handle,core::mem::i32_array_data_ptr(hints));
+        // Key, button, pointer motion, exposure, structure and focus events.
+        XSelectInput(control.display,handle,2261071);
+        XMapWindow(control.display,handle); XSync(control.display,0);
+        let shared=state(self.storage); shared[0].windows+=1;
+        return core::result::Ok(Window { context:self.storage,handle:handle,gc:gc,image:prepared,width:width,height:height,image_width:width,image_height:height,gpu:false });
+    }
+    pub fn poll(&self) -> core::result::Result<core::option::Option<Event>,Failure> {
+        admit(self.storage,Stage::Poll)?;
+        let control=state(self.storage)[0];
+        if(XPending(control.display)==0) { return core::result::Ok(core::option::None()); }
+        let words:[i32;48]=[0;48]; let pointer=core::mem::i32_array_data_ptr(words);
+        XNextEvent(control.display,pointer); return core::result::Ok(core::option::Some(decode(control,pointer)));
+    }
+    // One bounded poll of the connection. EINTR is returned as System(4),
+    // never retried indefinitely. Spurious readiness may return None early.
+    pub fn wait(&self,milliseconds:i32) -> core::result::Result<core::option::Option<Event>,Failure> {
+        admit(self.storage,Stage::Poll)?;
+        if(milliseconds<0) { return core::result::Err(failure(Cause::InvalidTimeout,Stage::Poll)); }
+        let ready=self.poll()?; if(ready.is_some() || milliseconds==0) { return core::result::Ok(ready); }
+        let words:[i32;2]=[0;2]; words[0]=XConnectionNumber(state(self.storage)[0].display); words[1]=1;
+        let found=poll(core::mem::i32_array_data_ptr(words),1,milliseconds);
+        if(found<0) { return core::result::Err(failure(Cause::System(c_word(__errno_location(),0)),Stage::Poll)); }
+        if(found==0) { return core::result::Ok(core::option::None()); }
+        if(((words[1] as u32)>>16 & 56)!=0) { return core::result::Err(failure(Cause::Disconnected,Stage::Poll)); }
+        return self.poll();
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.storage==0) { return core::result::Ok(false); }
+        admit(self.storage,Stage::Close)?;
+        if(state(self.storage)[0].windows!=0) { return core::result::Err(failure(Cause::Busy,Stage::Close)); }
+        let storage=self.storage; XCloseDisplay(state(storage)[0].display);
+        let nowhere:ptr=0; self.storage=nowhere; alloc::allocator::dealloc(storage,core::mem::size_of<State>(),8);
+        return core::result::Ok(true);
+    }
+}
+
+pub impl Window {
+    pub fn borrow(&self) -> &Window { return self; }
+    pub fn acquire_gpu(&self) -> core::result::Result<NativeWindow,Failure> {
+        admit(self.context,Stage::Present)?;
+        if(self.gpu) { return core::result::Err(failure(Cause::Busy,Stage::Present)); }
+        self.gpu=true;
+        return core::result::Ok(NativeWindow { display:state(self.context)[0].display,window:self.handle });
+    }
+    pub fn release_gpu(&self) -> core::result::Result<bool,Failure> {
+        admit(self.context,Stage::Present)?;
+        let owned=self.gpu; self.gpu=false; return core::result::Ok(owned);
+    }
+    pub fn is_open(&self) -> bool { return self.handle!=0; }
+    pub fn id(&self) -> u64 { return self.handle; }
+    pub fn canvas_size(&self) -> Size { return Size { width:self.width,height:self.height }; }
+    pub fn size(&self) -> core::result::Result<Size,Failure> {
+        admit(self.context,Stage::Size)?;
+        let words:[i32;8]=[0;8]; let pointer=core::mem::i32_array_data_ptr(words);
+        if(XGetGeometry(state(self.context)[0].display,self.handle,pointer,pointer+8,pointer+12,pointer+16,pointer+20,pointer+24,pointer+28)==0) { return core::result::Err(failure(Cause::Native,Stage::Size)); }
+        if(words[4]<1 || words[5]<1 || words[4]>16384 || words[5]>16384) { return core::result::Err(failure(Cause::InvalidSize,Stage::Size)); }
+        return core::result::Ok(Size { width:words[4],height:words[5] });
+    }
+    // Opaque 0x00RRGGBB, row-major. Nearest-neighbor resize is implemented in
+    // Lanius; native images only carry the already packed output pixels.
+    pub fn present(&self,input:core::slice::View<u32>) -> core::result::Result<i32,Failure> {
+        admit(self.context,Stage::Present)?;
+        if(self.gpu) { return core::result::Err(failure(Cause::Busy,Stage::Present)); }
+        let count:i32=self.width*self.height;
+        if(input.start<0 || input.length!=count || input.start>2147483647-input.length) { return core::result::Err(failure(Cause::InvalidPixels,Stage::Present)); }
+        if((input.start as usize)+(input.length as usize)>core::mem::slice_len(input.values)) { return core::result::Err(failure(Cause::InvalidPixels,Stage::Present)); }
+        let size=self.size()?; let control=state(self.context)[0];
+        if(size.width!=self.image_width || size.height!=self.image_height) {
+            let replacement=image(control,size.width,size.height)?;
+            XDestroyImage(self.image); self.image=replacement; self.image_width=size.width; self.image_height=size.height;
+        }
+        let target=core::mem::typed_slice_from_raw_parts<i32>(c_pointer(self.image,16),size.width*size.height);
+        let y:i32=0;
+        while(y<size.height) {
+            let source_y:i32=(y*self.height)/size.height; let x:i32=0;
+            while(x<size.width) { let source_x:i32=(x*self.width)/size.width; target[y*size.width+x]=(input.values[input.start+source_y*self.width+source_x]&16777215) as i32; x+=1; }
+            y+=1;
+        }
+        XPutImage(control.display,self.handle,self.gc,self.image,0,0,0,0,size.width as u32,size.height as u32);
+        // Establish server processing, not monitor/compositor presentation.
+        // Xlib protocol/I/O failures use its fatal handler (see the guide).
+        XSync(control.display,0); return core::result::Ok(count);
+    }
+    pub fn close(&self) -> core::result::Result<bool,Failure> {
+        if(self.handle==0) { return core::result::Ok(false); }
+        admit(self.context,Stage::Close)?;
+        if(self.gpu) { return core::result::Err(failure(Cause::Busy,Stage::Close)); }
+        let control=state(self.context); XFreeGC(control[0].display,self.gc); XDestroyWindow(control[0].display,self.handle); XDestroyImage(self.image); XSync(control[0].display,0);
+        control[0].windows-=1; let nowhere:ptr=0; self.context=nowhere; self.handle=0; self.gc=nowhere; self.image=nowhere;
+        return core::result::Ok(true);
+    }
+}
+
+fn key(symbol:u64) -> Key {
+    return match(symbol) { 65307 -> Key::Escape, 65293 -> Key::Enter, 65289 -> Key::Tab, 65288 -> Key::Backspace, 32 -> Key::Space, 65361 -> Key::Left, 65363 -> Key::Right, 65362 -> Key::Up, 65364 -> Key::Down, _ -> Key::Other(symbol) };
+}
+fn decode(control:State,pointer:ptr) -> Event {
+    let kind=c_word(pointer,0); let window=c_long(pointer,32);
+    if(kind==33 && c_long(pointer,40)==control.protocols && c_word(pointer,48)==32 && c_long(pointer,56)==control.delete_window) { return Event::Close(window); }
+    if(kind==12) { return Event::Exposed(window); }
+    if(kind==22) { return Event::Resized(ResizeEvent { window:c_long(pointer,40),width:c_word(pointer,56),height:c_word(pointer,60) }); }
+    if(kind==2 || kind==3) { return Event::Key(KeyEvent { window:window,key:key(XLookupKeysym(pointer,0)),scan:c_word(pointer,84) as u32,modifiers:c_word(pointer,80) as u32,down:kind==2 }); }
+    if(kind==6) { return Event::Motion(MotionEvent { window:window,x:c_word(pointer,64),y:c_word(pointer,68),buttons:c_word(pointer,80) as u32 }); }
+    if(kind==4 || kind==5) { return Event::Button(ButtonEvent { window:window,button:c_word(pointer,84) as u32,down:kind==4,x:c_word(pointer,64),y:c_word(pointer,68) }); }
+    if(kind==9 || kind==10) { return Event::Focus(FocusEvent { window:window,gained:kind==9 }); }
+    return Event::Other(kind);
+}
+
+extern "C" fn pthread_self() -> u64;
+extern "C" fn calloc(count:usize,size:usize) -> ptr;
+extern "C" fn free(memory:ptr);
+extern "C" fn poll(fds:ptr,count:usize,milliseconds:i32) -> i32;
+extern "C" fn __errno_location() -> ptr;
+extern "C" fn XOpenDisplay(name:ptr) -> ptr;
+extern "C" fn XCloseDisplay(display:ptr) -> i32;
+extern "C" fn XDefaultScreen(display:ptr) -> i32;
+extern "C" fn XDefaultVisual(display:ptr,screen:i32) -> ptr;
+extern "C" fn XDefaultDepth(display:ptr,screen:i32) -> i32;
+extern "C" fn XRootWindow(display:ptr,screen:i32) -> u64;
+extern "C" fn XInternAtom(display:ptr,name:ptr,only_if_exists:i32) -> u64;
+extern "C" fn XConnectionNumber(display:ptr) -> i32;
+extern "C" fn XCreateSimpleWindow(display:ptr,parent:u64,x:i32,y:i32,width:u32,height:u32,border_width:u32,border:u64,background:u64) -> u64;
+extern "C" fn XDestroyWindow(display:ptr,window:u64) -> i32;
+extern "C" fn XCreateGC(display:ptr,window:u64,mask:u64,values:ptr) -> ptr;
+extern "C" fn XFreeGC(display:ptr,gc:ptr) -> i32;
+extern "C" fn XSetWMProtocols(display:ptr,window:u64,protocols:ptr,count:i32) -> i32;
+extern "C" fn XSetWMNormalHints(display:ptr,window:u64,hints:ptr);
+extern "C" fn XStoreName(display:ptr,window:u64,name:ptr) -> i32;
+extern "C" fn XChangeProperty(display:ptr,window:u64,property:u64,kind:u64,format:i32,mode:i32,data:ptr,length:i32) -> i32;
+extern "C" fn XSelectInput(display:ptr,window:u64,mask:i64) -> i32;
+extern "C" fn XMapWindow(display:ptr,window:u64) -> i32;
+extern "C" fn XSync(display:ptr,discard:i32) -> i32;
+extern "C" fn XCreateImage(display:ptr,visual:ptr,depth:u32,format:i32,offset:i32,data:ptr,width:u32,height:u32,pad:i32,pitch:i32) -> ptr;
+extern "C" fn XDestroyImage(image:ptr) -> i32;
+extern "C" fn XGetGeometry(display:ptr,drawable:u64,root:ptr,x:ptr,y:ptr,width:ptr,height:ptr,border:ptr,depth:ptr) -> i32;
+extern "C" fn XPutImage(display:ptr,drawable:u64,gc:ptr,image:ptr,src_x:i32,src_y:i32,dst_x:i32,dst_y:i32,width:u32,height:u32) -> i32;
+extern "C" fn XPending(display:ptr) -> i32;
+extern "C" fn XNextEvent(display:ptr,event:ptr) -> i32;
+extern "C" fn XLookupKeysym(event:ptr,index:i32) -> u64;

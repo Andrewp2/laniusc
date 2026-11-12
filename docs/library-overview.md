@@ -1,5 +1,41 @@
 # Standard and extended library overview
 
+The [native state-machine migration](library-state-machines.md) moves library
+lifecycles, iterator phases, parsers, codecs and protocol drivers into Lanius
+`machine` declarations. Shared helpers cover completion, ownership, faults,
+UTF-8 and I/O readiness; atomic protocols retain native synchronization.
+The guide records source API changes, audit boundaries, focused execution and
+proof receipts, and the remaining oracle/profile failures.
+
+The [reactive UI plan](extended-ui-plan.md) starts with an executable
+[dependency graph kernel](extended-reactive-graph.md): dynamic tracking, memo
+equality, batching, scope disposal and bounded error recovery. Native tests
+compare 1,000 batches against full evaluation and assert sparse scheduling with
+10,000 source/effect pairs. Owned `move` closures and `alloc::callback` now
+supply stored callback invocation. Integrating them with typed signal ownership
+and scope cleanup, retained widgets, layout, text and accessibility remains work.
+
+[Native GPU rendering and compute](extended-gpu.md) now provide Lanius-owned
+buffers, RGBA8 textures, uniform/storage/image bindings, trusted SPIR-V graphics
+and compute pipelines, asynchronous command submissions and window presentation.
+Eight focused tests pass on an RTX 3090 with mandatory Vulkan synchronization
+validation, exact shader/pixel readback and retained-owner failure checks. The
+computed-texture application exercises all four additions. The first target is
+Linux x86_64 with Vulkan and X11/XWayland; portability, shader safety, performance
+optimization and formal verification remain open. The guide records limits,
+manual ownership and the separate compiler-harness observation.
+
+[Game of Life](extended-gpu-life.md) uses the GPU library to alternate two
+textures for each generation, with asynchronous compute and presentation,
+pause/step/reset controls, and a CPU-reference test for 120 GPU generations.
+
+[Native windows](extended-window.md) now provide Lanius-owned window lifetimes,
+events and software RGB canvases through direct libX11 calls. The first
+backend executes on Linux x86_64 with X11/XWayland, with a resizable interactive
+example, native pixel readback, event delivery and reached failure tests.
+Native Wayland and other platforms remain open; the guide
+records manual ownership and Xlib's process-fatal error boundary.
+
 Text literals and whole slices no longer need a byte or element count.
 `core::text::from_str(text)` returns the bytes of a `str` as a `Text` without a
 UTF-8 check, because every `str` is source text. `Text::equals_str`,
@@ -778,8 +814,8 @@ the matching `core::function` trait (`Mapper`, `Producer`, `Consumer`,
 generated entries call. They run on x86-64 Linux; the Wasm target rejects the
 call through an address. Receipt:
 `tests/fixtures/language/closure_stored.lani` in
-`language_ergonomics_execution`. The generated pages under `docs/api/` do not
-list these declarations yet.
+`language_ergonomics_execution`. Generated declarations and the execution
+contract are linked from the [callback reference](api/alloc/callback.md).
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,

@@ -12,26 +12,67 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: constant: 1; enum: 1; field: 21; function: 4; impl: 1; method: 2; struct: 2; variant: 1.
+Declaration counts: constant: 1; enum: 2; field: 20; function: 4; impl: 2; machine: 1; method: 5; struct: 2; variant: 4.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_uniq.lani#L11)
-- [core::io](../core/io.md) · [source](../../../extended/ext/text_uniq.lani#L12)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_uniq.lani#L13)
-- [core::result](../core/result.md) · [source](../../../extended/ext/text_uniq.lani#L14)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_uniq.lani#L15)
-- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_uniq.lani#L16)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/text_uniq.lani#L11)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/text_uniq.lani#L12)
+- [core::io](../core/io.md) · [source](../../../extended/ext/text_uniq.lani#L13)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/text_uniq.lani#L14)
+- [core::result](../core/result.md) · [source](../../../extended/ext/text_uniq.lani#L15)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/text_uniq.lani#L16)
+- [ext::text_lines](text_lines.md) · [source](../../../extended/ext/text_uniq.lani#L17)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: GroupPhaseEvent
+
+[Source line 19](../../../extended/ext/text_uniq.lani#L19)
+
+```lanius
+pub enum GroupPhaseEvent
+```
+
+#### variant: Opened
+
+[Source line 19](../../../extended/ext/text_uniq.lani#L19)
+
+```lanius
+Opened
+```
+
+#### variant: Retained
+
+[Source line 19](../../../extended/ext/text_uniq.lani#L19)
+
+```lanius
+Retained
+```
+
+#### variant: Flushed
+
+[Source line 19](../../../extended/ext/text_uniq.lani#L19)
+
+```lanius
+Flushed
+```
+
+### machine: GroupPhase
+
+[Source line 20](../../../extended/ext/text_uniq.lani#L20)
+
+```lanius
+pub machine GroupPhase on GroupPhaseEvent
+```
+
 ### enum: Error
 
-[Source line 18](../../../extended/ext/text_uniq.lani#L18)
+[Source line 48](../../../extended/ext/text_uniq.lani#L48)
 
 ```lanius
 pub enum Error
@@ -39,7 +80,7 @@ pub enum Error
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/text_uniq.lani#L18)
+[Source line 48](../../../extended/ext/text_uniq.lani#L48)
 
 ```lanius
 AllocationFailed
@@ -47,7 +88,7 @@ AllocationFailed
 
 ### struct: Options
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 pub struct Options
@@ -55,7 +96,7 @@ pub struct Options
 
 #### field: count
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 count: bool
@@ -63,7 +104,7 @@ count: bool
 
 #### field: unique
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 unique: bool
@@ -71,7 +112,7 @@ unique: bool
 
 #### field: repeated
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 repeated: bool
@@ -79,7 +120,7 @@ repeated: bool
 
 #### field: skip_fields
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 skip_fields: u64
@@ -87,7 +128,7 @@ skip_fields: u64
 
 #### field: skip_chars
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 skip_chars: u64
@@ -95,7 +136,7 @@ skip_chars: u64
 
 #### field: check_chars
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 check_chars: u64
@@ -103,7 +144,7 @@ check_chars: u64
 
 #### field: ignore_case
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 ignore_case: bool
@@ -111,7 +152,7 @@ ignore_case: bool
 
 #### field: eol
 
-[Source line 21](../../../extended/ext/text_uniq.lani#L21)
+[Source line 51](../../../extended/ext/text_uniq.lani#L51)
 
 ```lanius
 eol: u8
@@ -119,7 +160,7 @@ eol: u8
 
 ### struct: Uniq
 
-[Source line 29](../../../extended/ext/text_uniq.lani#L29)
+[Source line 59](../../../extended/ext/text_uniq.lani#L59)
 
 ```lanius
 pub struct Uniq
@@ -127,31 +168,23 @@ pub struct Uniq
 
 #### field: o
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 o: Options
 ```
 
-#### field: open
+#### field: group
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
-
-```lanius
-open: bool
-```
-
-#### field: held
-
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
-held: bool
+group: GroupPhase
 ```
 
 #### field: first
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 first: i32
@@ -159,7 +192,7 @@ first: i32
 
 #### field: first_end
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 first_end: i32
@@ -167,7 +200,7 @@ first_end: i32
 
 #### field: key
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 key: i32
@@ -175,7 +208,7 @@ key: i32
 
 #### field: key_len
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 key_len: i32
@@ -183,7 +216,7 @@ key_len: i32
 
 #### field: count
 
-[Source line 30](../../../extended/ext/text_uniq.lani#L30)
+[Source line 60](../../../extended/ext/text_uniq.lani#L60)
 
 ```lanius
 count: u64
@@ -191,7 +224,7 @@ count: u64
 
 #### field: hold
 
-[Source line 31](../../../extended/ext/text_uniq.lani#L31)
+[Source line 61](../../../extended/ext/text_uniq.lani#L61)
 
 ```lanius
 hold: alloc::io::Buffer
@@ -199,7 +232,7 @@ hold: alloc::io::Buffer
 
 #### field: hold_p
 
-[Source line 31](../../../extended/ext/text_uniq.lani#L31)
+[Source line 61](../../../extended/ext/text_uniq.lani#L61)
 
 ```lanius
 hold_p: ptr
@@ -207,7 +240,7 @@ hold_p: ptr
 
 #### field: hold_cap
 
-[Source line 31](../../../extended/ext/text_uniq.lani#L31)
+[Source line 61](../../../extended/ext/text_uniq.lani#L61)
 
 ```lanius
 hold_cap: i32
@@ -215,25 +248,25 @@ hold_cap: i32
 
 #### field: hold_len
 
-[Source line 31](../../../extended/ext/text_uniq.lani#L31)
+[Source line 61](../../../extended/ext/text_uniq.lani#L61)
 
 ```lanius
 hold_len: i32
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 31](../../../extended/ext/text_uniq.lani#L31)
+[Source line 61](../../../extended/ext/text_uniq.lani#L61)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
 ## Constants
 
 ### constant: MAX
 
-[Source line 19](../../../extended/ext/text_uniq.lani#L19)
+[Source line 49](../../../extended/ext/text_uniq.lani#L49)
 
 ```lanius
 pub const MAX: u64 = 18446744073709551615;
@@ -243,7 +276,7 @@ pub const MAX: u64 = 18446744073709551615;
 
 ### function: default_options
 
-[Source line 23](../../../extended/ext/text_uniq.lani#L23)
+[Source line 53](../../../extended/ext/text_uniq.lani#L53)
 
 ```lanius
 pub fn default_options() -> Options
@@ -251,7 +284,7 @@ pub fn default_options() -> Options
 
 ### function: uniq
 
-[Source line 37](../../../extended/ext/text_uniq.lani#L37)
+[Source line 67](../../../extended/ext/text_uniq.lani#L67)
 
 ```lanius
 pub fn uniq(o: Options) -> core::result::Result<Uniq, Error>
@@ -259,7 +292,7 @@ pub fn uniq(o: Options) -> core::result::Result<Uniq, Error>
 
 ### function: feed
 
-[Source line 114](../../../extended/ext/text_uniq.lani#L114)
+[Source line 144](../../../extended/ext/text_uniq.lani#L144)
 
 ```lanius
 pub fn feed(u: &Uniq, v: core::slice::View<u8>, out: &ext::text_lines::Out) -> core::result::Result<i32, Error>
@@ -267,7 +300,7 @@ pub fn feed(u: &Uniq, v: core::slice::View<u8>, out: &ext::text_lines::Out) -> c
 
 ### function: finish
 
-[Source line 207](../../../extended/ext/text_uniq.lani#L207)
+[Source line 237](../../../extended/ext/text_uniq.lani#L237)
 
 ```lanius
 pub fn finish(u: &Uniq, out: &ext::text_lines::Out)
@@ -275,9 +308,41 @@ pub fn finish(u: &Uniq, out: &ext::text_lines::Out)
 
 ## Implementation blocks and public methods
 
-### impl at line 33
+### impl at line 41
 
-[Source line 33](../../../extended/ext/text_uniq.lani#L33)
+[Source line 41](../../../extended/ext/text_uniq.lani#L41)
+
+```lanius
+pub impl GroupPhase
+```
+
+#### method: is_empty
+
+[Source line 42](../../../extended/ext/text_uniq.lani#L42)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: is_borrowed
+
+[Source line 43](../../../extended/ext/text_uniq.lani#L43)
+
+```lanius
+pub fn is_borrowed(&self) -> bool
+```
+
+#### method: is_held
+
+[Source line 44](../../../extended/ext/text_uniq.lani#L44)
+
+```lanius
+pub fn is_held(&self) -> bool
+```
+
+### impl at line 63
+
+[Source line 63](../../../extended/ext/text_uniq.lani#L63)
 
 ```lanius
 pub impl Uniq
@@ -285,7 +350,7 @@ pub impl Uniq
 
 #### method: borrow
 
-[Source line 34](../../../extended/ext/text_uniq.lani#L34)
+[Source line 64](../../../extended/ext/text_uniq.lani#L64)
 
 ```lanius
 pub fn borrow(&self) -> &Uniq
@@ -293,7 +358,7 @@ pub fn borrow(&self) -> &Uniq
 
 #### method: destroy
 
-[Source line 35](../../../extended/ext/text_uniq.lani#L35)
+[Source line 65](../../../extended/ext/text_uniq.lani#L65)
 
 ```lanius
 pub fn destroy(&self)

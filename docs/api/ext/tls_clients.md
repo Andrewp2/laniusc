@@ -10,21 +10,22 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: field: 10; function: 2; impl: 1; method: 5; struct: 2.
+Declaration counts: enum: 1; field: 10; function: 2; impl: 2; machine: 1; method: 7; struct: 2; variant: 3.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/tls_clients.lani#L10)
-- [core::option](../core/option.md) · [source](../../../extended/ext/tls_clients.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/tls_clients.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_clients.lani#L13)
-- [core::time](../core/time.md) · [source](../../../extended/ext/tls_clients.lani#L14)
-- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/tls_clients.lani#L15)
-- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/tls_clients.lani#L16)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/tls_clients.lani#L17)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/tls_clients.lani#L18)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/tls_clients.lani#L10)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/tls_clients.lani#L11)
+- [core::option](../core/option.md) · [source](../../../extended/ext/tls_clients.lani#L12)
+- [core::result](../core/result.md) · [source](../../../extended/ext/tls_clients.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_clients.lani#L14)
+- [core::time](../core/time.md) · [source](../../../extended/ext/tls_clients.lani#L15)
+- [ext::client_transport](client_transport.md) · [source](../../../extended/ext/tls_clients.lani#L16)
+- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/tls_clients.lani#L17)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/tls_clients.lani#L18)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/tls_clients.lani#L19)
 
 ## Types, fields and variants
 
@@ -32,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Stats
 
-[Source line 22](../../../extended/ext/tls_clients.lani#L22)
+[Source line 23](../../../extended/ext/tls_clients.lani#L23)
 
 ```lanius
 pub struct Stats
@@ -40,7 +41,7 @@ pub struct Stats
 
 #### field: handshakes
 
-[Source line 22](../../../extended/ext/tls_clients.lani#L22)
+[Source line 23](../../../extended/ext/tls_clients.lani#L23)
 
 ```lanius
 handshakes: i32
@@ -48,7 +49,7 @@ handshakes: i32
 
 #### field: h2
 
-[Source line 22](../../../extended/ext/tls_clients.lani#L22)
+[Source line 23](../../../extended/ext/tls_clients.lani#L23)
 
 ```lanius
 h2: i32
@@ -56,7 +57,7 @@ h2: i32
 
 #### field: failures
 
-[Source line 22](../../../extended/ext/tls_clients.lani#L22)
+[Source line 23](../../../extended/ext/tls_clients.lani#L23)
 
 ```lanius
 failures: i32
@@ -64,7 +65,7 @@ failures: i32
 
 #### field: truncated
 
-[Source line 22](../../../extended/ext/tls_clients.lani#L22)
+[Source line 23](../../../extended/ext/tls_clients.lani#L23)
 
 ```lanius
 truncated: i32
@@ -72,7 +73,7 @@ truncated: i32
 
 ### struct: TlsClients
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
 pub struct TlsClients
@@ -80,7 +81,7 @@ pub struct TlsClients
 
 #### field: context
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
 context: ext::openssl_tls::ServerContext
@@ -88,7 +89,7 @@ context: ext::openssl_tls::ServerContext
 
 #### field: sessions
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
 sessions: alloc::vec::Vec<core::option::Option<ext::openssl_tls::Session>>
@@ -96,15 +97,15 @@ sessions: alloc::vec::Vec<core::option::Option<ext::openssl_tls::Session>>
 
 #### field: phases
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
-phases: alloc::vec::Vec<i32>
+phases: alloc::vec::Vec<SessionPhase>
 ```
 
 #### field: more
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
 more: alloc::vec::Vec<i32>
@@ -112,25 +113,65 @@ more: alloc::vec::Vec<i32>
 
 #### field: stats
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
 stats: Stats
 ```
 
-#### field: closed
+#### field: lifetime
 
-[Source line 23](../../../extended/ext/tls_clients.lani#L23)
+[Source line 24](../../../extended/ext/tls_clients.lani#L24)
 
 ```lanius
-closed: bool
+lifetime: core::lifecycle::Lifetime
+```
+
+### enum: SessionEvent
+
+[Source line 26](../../../extended/ext/tls_clients.lani#L26)
+
+```lanius
+pub enum SessionEvent
+```
+
+#### variant: Accepted
+
+[Source line 26](../../../extended/ext/tls_clients.lani#L26)
+
+```lanius
+Accepted
+```
+
+#### variant: Handshaken
+
+[Source line 26](../../../extended/ext/tls_clients.lani#L26)
+
+```lanius
+Handshaken
+```
+
+#### variant: Dropped
+
+[Source line 26](../../../extended/ext/tls_clients.lani#L26)
+
+```lanius
+Dropped
+```
+
+### machine: SessionPhase
+
+[Source line 27](../../../extended/ext/tls_clients.lani#L27)
+
+```lanius
+pub machine SessionPhase on SessionEvent
 ```
 
 ## Free functions and extern declarations
 
 ### function: alpn_protocols
 
-[Source line 33](../../../extended/ext/tls_clients.lani#L33)
+[Source line 59](../../../extended/ext/tls_clients.lani#L59)
 
 ```lanius
 pub fn alpn_protocols(out: &alloc::vec::Vec<u8>, h2: bool) -> bool
@@ -138,7 +179,7 @@ pub fn alpn_protocols(out: &alloc::vec::Vec<u8>, h2: bool) -> bool
 
 ### function: clients
 
-[Source line 44](../../../extended/ext/tls_clients.lani#L44)
+[Source line 70](../../../extended/ext/tls_clients.lani#L70)
 
 ```lanius
 pub fn clients(context: ext::openssl_tls::ServerContext, max_clients: i32) -> core::option::Option<TlsClients>
@@ -146,9 +187,33 @@ pub fn clients(context: ext::openssl_tls::ServerContext, max_clients: i32) -> co
 
 ## Implementation blocks and public methods
 
-### impl at line 57
+### impl at line 49
 
-[Source line 57](../../../extended/ext/tls_clients.lani#L57)
+[Source line 49](../../../extended/ext/tls_clients.lani#L49)
+
+```lanius
+pub impl SessionPhase
+```
+
+#### method: open
+
+[Source line 50](../../../extended/ext/tls_clients.lani#L50)
+
+```lanius
+pub fn open(&self) -> bool
+```
+
+#### method: handshaking
+
+[Source line 51](../../../extended/ext/tls_clients.lani#L51)
+
+```lanius
+pub fn handshaking(&self) -> bool
+```
+
+### impl at line 83
+
+[Source line 83](../../../extended/ext/tls_clients.lani#L83)
 
 ```lanius
 pub impl TlsClients
@@ -156,7 +221,7 @@ pub impl TlsClients
 
 #### method: borrow
 
-[Source line 58](../../../extended/ext/tls_clients.lani#L58)
+[Source line 84](../../../extended/ext/tls_clients.lani#L84)
 
 ```lanius
 pub fn borrow(&self) -> &TlsClients
@@ -164,7 +229,7 @@ pub fn borrow(&self) -> &TlsClients
 
 #### method: stats
 
-[Source line 59](../../../extended/ext/tls_clients.lani#L59)
+[Source line 85](../../../extended/ext/tls_clients.lani#L85)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -172,7 +237,7 @@ pub fn stats(&self) -> Stats
 
 #### method: wake
 
-[Source line 63](../../../extended/ext/tls_clients.lani#L63)
+[Source line 89](../../../extended/ext/tls_clients.lani#L89)
 
 ```lanius
 pub fn wake<P>(&self, p: &P, deadline: core::time::Deadline) -> core::time::Deadline where P: ext::client_transport::Clients
@@ -180,7 +245,7 @@ pub fn wake<P>(&self, p: &P, deadline: core::time::Deadline) -> core::time::Dead
 
 #### method: serve
 
-[Source line 72](../../../extended/ext/tls_clients.lani#L72)
+[Source line 98](../../../extended/ext/tls_clients.lani#L98)
 
 ```lanius
 pub fn serve<P>(&self, p: &P) where P: ext::client_transport::Clients
@@ -188,7 +253,7 @@ pub fn serve<P>(&self, p: &P) where P: ext::client_transport::Clients
 
 #### method: close
 
-[Source line 87](../../../extended/ext/tls_clients.lani#L87)
+[Source line 113](../../../extended/ext/tls_clients.lani#L113)
 
 ```lanius
 pub fn close(&self)

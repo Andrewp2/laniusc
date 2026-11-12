@@ -1,0 +1,257 @@
+// Conway B3/S23: two GPU textures, asynchronous compute and presentation.
+// Space pauses; Right pauses and steps once; R restores the initial seed.
+// Escape/close exits. --frames N bounds presented frames, not generations.
+module app::main;
+import core::result;
+import core::option;
+import core::slice;
+import core::text;
+import core::mem;
+import core::decimal;
+import core::io;
+import std::process;
+import std::stream;
+import ext::window;
+import ext::gpu;
+import shaders::life_shaders;
+import std::clock;
+import core::time;
+const WIDTH:i32=256;
+const HEIGHT:i32=160;
+const BYTES:i32=163840;
+struct Scene {
+    surface:core::option::Option<ext::gpu::Surface>,
+    a:core::option::Option<ext::gpu::Texture>,
+    b:core::option::Option<ext::gpu::Texture>,
+    seed:core::option::Option<ext::gpu::Buffer>,
+    compute_layout:core::option::Option<ext::gpu::BindingLayout>,
+    ab:core::option::Option<ext::gpu::BindGroup>,
+    ba:core::option::Option<ext::gpu::BindGroup>,
+    compute:core::option::Option<ext::gpu::ComputePipeline>,
+    sample_layout:core::option::Option<ext::gpu::BindingLayout>,
+    sample_a:core::option::Option<ext::gpu::BindGroup>,
+    sample_b:core::option::Option<ext::gpu::BindGroup>,
+    graphics:core::option::Option<ext::gpu::Pipeline>,
+    encoder:core::option::Option<ext::gpu::CommandEncoder>,
+    work:core::option::Option<ext::gpu::Submission>,
+    frame:core::option::Option<ext::gpu::Submission>,
+    front_b:bool,
+}
+fn empty_scene() -> Scene { return Scene {
+    surface:core::option::None(),
+    a:core::option::None(),
+    b:core::option::None(),
+    seed:core::option::None(),
+    compute_layout:core::option::None(),
+    ab:core::option::None(),
+    ba:core::option::None(),
+    compute:core::option::None(),
+    sample_layout:core::option::None(),
+    sample_a:core::option::None(),
+    sample_b:core::option::None(),
+    graphics:core::option::None(),
+    encoder:core::option::None(),
+    work:core::option::None(),
+    frame:core::option::None(),
+    front_b:false
+}; }
+impl Scene { fn borrow(&self) -> &Scene { return self; } }
+struct Controls { paused:bool,step:bool,reset:bool,quit:bool }
+impl Controls { fn borrow(&self) -> &Controls { return self; } }
+fn setup(s:&Scene,d:&ext::gpu::Device,window:&ext::window::Window) -> core::result::Result<i32,ext::gpu::Failure> {
+    s.surface=core::option::Some(d.create_surface(window)?);
+    s.a=core::option::Some(d.create_texture(WIDTH,HEIGHT)?);
+    s.b=core::option::Some(d.create_texture(WIDTH,HEIGHT)?);
+    s.seed=core::option::Some(d.create_buffer(BYTES)?);
+    let a=s.a.unwrap(); let b=s.b.unwrap(); let seed=s.seed.unwrap();
+    // Only the starting board is generated on the CPU. Every Life step is a shader.
+    let packed:[i32;40960]=[0;40960]; let bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),BYTES);
+    let random:u32=1831565813; let i:i32=0;
+    while(i<WIDTH*HEIGHT) {
+        random=random^(random<<13); random=random^(random>>17); random=random^(random<<5);
+        if(random%100<30) { bytes[i*4]=255; } bytes[i*4+3]=255; i+=1;
+    }
+    seed.write(0,core::slice::whole(bytes))?;
+    let kinds:[ext::gpu::BindingKind;2]=[ext::gpu::BindingKind::StorageTexture,ext::gpu::BindingKind::StorageTexture];
+    s.compute_layout=core::option::Some(d.create_binding_layout(core::slice::whole(kinds))?); let layout=s.compute_layout.unwrap();
+    let ab:[ext::gpu::Binding;2]=[ext::gpu::Binding::StorageTexture(a.borrow()),ext::gpu::Binding::StorageTexture(b.borrow())];
+    let ba:[ext::gpu::Binding;2]=[ext::gpu::Binding::StorageTexture(b.borrow()),ext::gpu::Binding::StorageTexture(a.borrow())];
+    s.ab=core::option::Some(d.create_bind_group(layout.borrow(),core::slice::whole(ab))?);
+    s.ba=core::option::Some(d.create_bind_group(layout.borrow(),core::slice::whole(ba))?);
+    let shader=shaders::life_shaders::comp(); s.compute=core::option::Some(d.create_compute_pipeline(core::slice::whole(shader),layout.borrow())?);
+    let sampling:[ext::gpu::BindingKind;1]=[ext::gpu::BindingKind::SampledTexture];
+    s.sample_layout=core::option::Some(d.create_binding_layout(core::slice::whole(sampling))?); let sample_layout=s.sample_layout.unwrap();
+    let sample_a:[ext::gpu::Binding;1]=[ext::gpu::Binding::SampledTexture(a.borrow())];
+    let sample_b:[ext::gpu::Binding;1]=[ext::gpu::Binding::SampledTexture(b.borrow())];
+    s.sample_a=core::option::Some(d.create_bind_group(sample_layout.borrow(),core::slice::whole(sample_a))?);
+    s.sample_b=core::option::Some(d.create_bind_group(sample_layout.borrow(),core::slice::whole(sample_b))?);
+    let vertex=shaders::life_shaders::vert(); let fragment=shaders::life_shaders::frag(); let surface=s.surface.unwrap();
+    s.graphics=core::option::Some(d.create_bound_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format()?,sample_layout.borrow())?);
+    return reset(s,d);
+}
+fn submit_work(s:&Scene) -> core::result::Result<i32,ext::gpu::Failure> {
+    // Transfer authority out of the option; retain it on submission failure.
+    let encoder=s.encoder.unwrap(); s.encoder=core::option::None();
+    let submitted=encoder.submit();
+    if(submitted.is_err()) { s.encoder=core::option::Some(encoder); return core::result::Err(submitted.unwrap_err()); }
+    s.work=core::option::Some(submitted.unwrap()); return core::result::Ok(0);
+}
+fn reset(s:&Scene,d:&ext::gpu::Device) -> core::result::Result<i32,ext::gpu::Failure> {
+    s.encoder=core::option::Some(d.create_encoder()?); let encoder=s.encoder.unwrap();
+    let a=s.a.unwrap(); let b=s.b.unwrap(); let seed=s.seed.unwrap();
+    encoder.upload_texture(a.borrow(),seed.borrow(),0)?; encoder.clear_texture(b.borrow())?;
+    submit_work(s)?; s.front_b=false; return core::result::Ok(0);
+}
+fn advance(s:&Scene,d:&ext::gpu::Device) -> core::result::Result<i32,ext::gpu::Failure> {
+    s.encoder=core::option::Some(d.create_encoder()?); let encoder=s.encoder.unwrap();
+    let pipeline=s.compute.unwrap(); let group=s.ab.unwrap(); if(s.front_b) { group=s.ba.unwrap(); }
+    encoder.dispatch(pipeline.borrow(),group.borrow(),(WIDTH+7)/8,(HEIGHT+7)/8,1)?;
+    submit_work(s)?; s.front_b=!s.front_b; return core::result::Ok(0);
+}
+fn key_action(key:ext::window::Key) -> i32 {
+    return match(key) { ext::window::Key::Escape -> 1, ext::window::Key::Space -> 2, ext::window::Key::Right -> 3, ext::window::Key::Other(code) -> { if(code==114 || code==82) { return 4; } return 0; }, _ -> 0 };
+}
+fn event(c:&Controls,value:ext::window::Event,id:u64) {
+    let action=match(value) {
+        ext::window::Event::Close(window) -> { if(window==id) { return quit(c); } return; },
+        ext::window::Event::Key(key) -> { if(key.window!=id || !key.down) { return; } return apply(c,key_action(key.key)); },
+        _ -> 0
+    };
+}
+fn quit(c:&Controls) { c.quit=true; }
+fn apply(c:&Controls,action:i32) {
+    if(action==1) { c.quit=true; }
+    if(action==2) { c.paused=!c.paused; }
+    if(action==3) { c.paused=true; c.step=true; }
+    if(action==4) { c.reset=true; c.step=false; }
+}
+fn now_ms() -> core::result::Result<u64,std::clock::Error> {
+    let now=std::clock::monotonic_now()?; let millis=now.ticks.as_millis();
+    if(millis.is_err()) { return core::result::Err(std::clock::Error::Overflow); }
+    return core::result::Ok(millis.unwrap());
+}
+fn animate(s:&Scene,d:&ext::gpu::Device,context:&ext::window::Context,window:&ext::window::Window,limit:i32) -> i32 {
+    let controls=Controls {paused:false,step:false,reset:false,quit:false}; let frames:i32=0;
+    let surface=s.surface.unwrap(); let pipeline=s.graphics.unwrap(); let next_step:u64=0;
+    while(!controls.quit) {
+        let events:i32=0;
+        while(events<256) {
+            let next=context.poll(); if(next.is_err()) { return 3; }
+            if(next.unwrap().is_none()) { break; }
+            event(controls.borrow(),next.unwrap().unwrap(),window.id()); events+=1;
+        }
+        if(controls.quit) { break; }
+        if(s.frame.is_some()) {
+            let ticket=s.frame.unwrap(); let done=ticket.poll(); if(done.is_err()) { return 3; }
+            if(done.unwrap()) {
+                let outcome=ticket.frame(); if(outcome.is_err()) { return 3; }
+                s.frame=core::option::None(); if(ticket.close().is_err()) { s.frame=core::option::Some(ticket); return 3; }
+                if(match(outcome.unwrap()) { ext::gpu::Frame::Presented(size) -> true, _ -> false }) { frames+=1; }
+                if(limit>0 && frames>=limit) { return 0; }
+            }
+        }
+        if(s.work.is_some()) {
+            let work=s.work.unwrap(); let done=work.poll(); if(done.is_err()) { return 3; }
+            if(done.unwrap()) { s.work=core::option::None(); if(work.close().is_err()) { s.work=core::option::Some(work); return 3; } }
+        }
+        if(s.frame.is_none()) {
+            let clock=now_ms(); if(clock.is_err()) { return 3; } let now=clock.unwrap();
+            if(s.work.is_none()) {
+                if(controls.reset) {
+                    if(reset(s,d).is_err()) { return 3; } controls.reset=false; next_step=now+50;
+                } else {
+                    if(controls.step || (!controls.paused && now>=next_step)) {
+                        if(advance(s,d).is_err()) { return 3; } controls.step=false; next_step=now+50;
+                    }
+                }
+            }
+            let group=s.sample_a.unwrap(); if(s.front_b) { group=s.sample_b.unwrap(); }
+            // Same-queue ordering makes the computed texture visible without a CPU wait.
+            let submitted=surface.submit_bound(pipeline.borrow(),group.borrow(),3); if(submitted.is_err()) { return 3; }
+            s.frame=match(submitted.unwrap()) { ext::gpu::FrameSubmission::Submitted(ticket) -> core::option::Some(ticket), _ -> core::option::None() };
+        }
+        let next=context.wait(8); if(next.is_err()) { return 3; }
+        if(next.unwrap().is_some()) { event(controls.borrow(),next.unwrap().unwrap(),window.id()); }
+    }
+    return 0;
+}
+fn cleanup(s:&Scene) -> bool {
+    if(s.frame.is_some()) { let owner=s.frame.unwrap();
+        let waited=owner.wait(10000000000); if(waited.is_ok() && !waited.unwrap()) { return false; }
+        s.frame=core::option::None(); if(owner.close().is_err()) { s.frame=core::option::Some(owner); return false; }
+    }
+    if(s.work.is_some()) { let owner=s.work.unwrap();
+        let waited=owner.wait(10000000000); if(waited.is_ok() && !waited.unwrap()) { return false; }
+        s.work=core::option::None(); if(owner.close().is_err()) { s.work=core::option::Some(owner); return false; }
+    }
+    if(s.encoder.is_some()) { let owner=s.encoder.unwrap();
+        s.encoder=core::option::None(); if(owner.close().is_err()) { s.encoder=core::option::Some(owner); return false; }
+    }
+    if(s.graphics.is_some()) { let owner=s.graphics.unwrap();
+        s.graphics=core::option::None(); if(owner.close().is_err()) { s.graphics=core::option::Some(owner); return false; }
+    }
+    if(s.sample_a.is_some()) { let owner=s.sample_a.unwrap();
+        s.sample_a=core::option::None(); if(owner.close().is_err()) { s.sample_a=core::option::Some(owner); return false; }
+    }
+    if(s.sample_b.is_some()) { let owner=s.sample_b.unwrap();
+        s.sample_b=core::option::None(); if(owner.close().is_err()) { s.sample_b=core::option::Some(owner); return false; }
+    }
+    if(s.sample_layout.is_some()) { let owner=s.sample_layout.unwrap();
+        s.sample_layout=core::option::None(); if(owner.close().is_err()) { s.sample_layout=core::option::Some(owner); return false; }
+    }
+    if(s.compute.is_some()) { let owner=s.compute.unwrap();
+        s.compute=core::option::None(); if(owner.close().is_err()) { s.compute=core::option::Some(owner); return false; }
+    }
+    if(s.ab.is_some()) { let owner=s.ab.unwrap();
+        s.ab=core::option::None(); if(owner.close().is_err()) { s.ab=core::option::Some(owner); return false; }
+    }
+    if(s.ba.is_some()) { let owner=s.ba.unwrap();
+        s.ba=core::option::None(); if(owner.close().is_err()) { s.ba=core::option::Some(owner); return false; }
+    }
+    if(s.compute_layout.is_some()) { let owner=s.compute_layout.unwrap();
+        s.compute_layout=core::option::None(); if(owner.close().is_err()) { s.compute_layout=core::option::Some(owner); return false; }
+    }
+    if(s.a.is_some()) { let owner=s.a.unwrap();
+        s.a=core::option::None(); if(owner.close().is_err()) { s.a=core::option::Some(owner); return false; }
+    }
+    if(s.b.is_some()) { let owner=s.b.unwrap();
+        s.b=core::option::None(); if(owner.close().is_err()) { s.b=core::option::Some(owner); return false; }
+    }
+    if(s.seed.is_some()) { let owner=s.seed.unwrap();
+        s.seed=core::option::None(); if(owner.close().is_err()) { s.seed=core::option::Some(owner); return false; }
+    }
+    if(s.surface.is_some()) { let owner=s.surface.unwrap();
+        s.surface=core::option::None(); if(owner.close().is_err()) { s.surface=core::option::Some(owner); return false; }
+    }
+    return true;
+}
+fn run(context:&ext::window::Context,window:&ext::window::Window,device:&ext::gpu::Device,limit:i32) -> i32 {
+    let scene=empty_scene(); let initialized=setup(scene.borrow(),device,window); let status:i32=3;
+    if(initialized.is_ok()) { status=animate(scene.borrow(),device,context,window,limit); }
+    if(!cleanup(scene.borrow())) { status=3; } return status;
+}
+fn arguments() -> i32 {
+    if(std::process::argc()==1) { return 0; }
+    if(std::process::argc()!=3 || std::process::arg_len(1)!=8) { return -1; }
+    let words:[i32;2]=[0;2]; let pointer=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,8);
+    if(std::process::arg_read(1,pointer,8)!=8) { return -1; } let expected=core::text::from_str("--frames"); let i:i32=0;
+    while(i<8) { if(bytes[i]!=expected.bytes[expected.start+i]) { return -1; } i+=1; }
+    let length=std::process::arg_len(2); if(length<1 || length>3) { return -1; }
+    if(std::process::arg_read(2,pointer,8)!=length) { return -1; }
+    let parsed=core::decimal::parse_u32(bytes,length); if(parsed.is_err()) { return -1; }
+    let count=parsed.unwrap(); if(count<1 || count>600) { return -1; } return count as i32;
+}
+fn message(value:str) { let text=core::text::from_str(value); let sink=std::stream::stderr(); core::io::write_all(sink.borrow(),text.bytes,text.start,text.length); }
+fn main() -> i32 {
+    let limit=arguments(); if(limit<0) { message("Usage: gpu-life [--frames N], N = 1..600\n"); return 2; }
+    let opened=ext::window::init(); if(opened.is_err()) { message("Could not open an X11 window context.\n"); return 3; } let context=opened.unwrap();
+    let created=context.create(core::text::from_str("Game of Life | Space: pause | Right: step | R: reset"),1024,640,true);
+    if(created.is_err()) { context.close(); message("Could not create the window.\n"); return 3; } let window=created.unwrap();
+    let gpu=ext::gpu::open(0);
+    if(gpu.is_err()) { window.close(); context.close(); message("Vulkan 1.1 with swapchain maintenance is required.\n"); return 3; } let device=gpu.unwrap();
+    let status=run(context.borrow(),window.borrow(),device.borrow(),limit);
+    if(device.close().is_err()) { status=3; }
+    if(window.close().is_err()) { status=3; }
+    if(context.close().is_err()) { status=3; }
+    if(status!=0) { message("GPU rendering stopped after a native failure.\n"); } return status;
+}

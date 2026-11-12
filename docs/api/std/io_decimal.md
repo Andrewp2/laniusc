@@ -16,18 +16,19 @@ Declaration counts: function: 20.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::decimal](../core/decimal.md) · [source](../../../stdlib/std/io_decimal.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_decimal.lani#L7)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/io_decimal.lani#L8)
-- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/io_decimal.lani#L9)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_decimal.lani#L10)
-- [std::io](io.md) · [source](../../../stdlib/std/io_decimal.lani#L11)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/io_decimal.lani#L6)
+- [core::decimal](../core/decimal.md) · [source](../../../stdlib/std/io_decimal.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_decimal.lani#L8)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/io_decimal.lani#L9)
+- [core::wide_i64](../core/wide_i64.md) · [source](../../../stdlib/std/io_decimal.lani#L10)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/io_decimal.lani#L11)
+- [std::io](io.md) · [source](../../../stdlib/std/io_decimal.lani#L12)
 
 ## Free functions and extern declarations
 
 ### function: write_u32
 
-[Source line 23](../../../stdlib/std/io_decimal.lani#L23)
+[Source line 24](../../../stdlib/std/io_decimal.lani#L24)
 
 ```lanius
 pub fn write_u32(handle: i32, value: u32) -> i32
@@ -35,7 +36,7 @@ pub fn write_u32(handle: i32, value: u32) -> i32
 
 ### function: write_i32
 
-[Source line 32](../../../stdlib/std/io_decimal.lani#L32)
+[Source line 33](../../../stdlib/std/io_decimal.lani#L33)
 
 ```lanius
 pub fn write_i32(handle: i32, value: i32) -> i32
@@ -43,7 +44,7 @@ pub fn write_i32(handle: i32, value: i32) -> i32
 
 ### function: write_u64
 
-[Source line 41](../../../stdlib/std/io_decimal.lani#L41)
+[Source line 42](../../../stdlib/std/io_decimal.lani#L42)
 
 ```lanius
 pub fn write_u64(handle: i32, value: u64) -> i32
@@ -51,7 +52,7 @@ pub fn write_u64(handle: i32, value: u64) -> i32
 
 ### function: write_i64
 
-[Source line 46](../../../stdlib/std/io_decimal.lani#L46)
+[Source line 47](../../../stdlib/std/io_decimal.lani#L47)
 
 ```lanius
 pub fn write_i64(handle: i32, value: i64) -> i32
@@ -59,7 +60,7 @@ pub fn write_i64(handle: i32, value: i64) -> i32
 
 ### function: write_usize
 
-[Source line 51](../../../stdlib/std/io_decimal.lani#L51)
+[Source line 52](../../../stdlib/std/io_decimal.lani#L52)
 
 ```lanius
 pub fn write_usize(handle: i32, value: usize) -> i32
@@ -67,7 +68,7 @@ pub fn write_usize(handle: i32, value: usize) -> i32
 
 ### function: write_isize
 
-[Source line 52](../../../stdlib/std/io_decimal.lani#L52)
+[Source line 53](../../../stdlib/std/io_decimal.lani#L53)
 
 ```lanius
 pub fn write_isize(handle: i32, value: isize) -> i32
@@ -75,7 +76,7 @@ pub fn write_isize(handle: i32, value: isize) -> i32
 
 ### function: write_wide_u64
 
-[Source line 57](../../../stdlib/std/io_decimal.lani#L57)
+[Source line 58](../../../stdlib/std/io_decimal.lani#L58)
 
 ```lanius
 pub fn write_wide_u64(handle: i32, value: core::wide_u64::WideU64) -> i32
@@ -83,7 +84,7 @@ pub fn write_wide_u64(handle: i32, value: core::wide_u64::WideU64) -> i32
 
 ### function: write_wide_i64
 
-[Source line 73](../../../stdlib/std/io_decimal.lani#L73)
+[Source line 74](../../../stdlib/std/io_decimal.lani#L74)
 
 ```lanius
 pub fn write_wide_i64(handle: i32, value: core::wide_i64::WideI64) -> i32
@@ -91,7 +92,7 @@ pub fn write_wide_i64(handle: i32, value: core::wide_i64::WideI64) -> i32
 
 ### function: write_u8
 
-[Source line 89](../../../stdlib/std/io_decimal.lani#L89)
+[Source line 90](../../../stdlib/std/io_decimal.lani#L90)
 
 ```lanius
 pub fn write_u8(handle: i32, value: u8) -> i32
@@ -99,7 +100,7 @@ pub fn write_u8(handle: i32, value: u8) -> i32
 
 ### function: write_u16
 
-[Source line 94](../../../stdlib/std/io_decimal.lani#L94)
+[Source line 95](../../../stdlib/std/io_decimal.lani#L95)
 
 ```lanius
 pub fn write_u16(handle: i32, value: u16) -> i32
@@ -107,7 +108,7 @@ pub fn write_u16(handle: i32, value: u16) -> i32
 
 ### function: write_i8
 
-[Source line 99](../../../stdlib/std/io_decimal.lani#L99)
+[Source line 100](../../../stdlib/std/io_decimal.lani#L100)
 
 ```lanius
 pub fn write_i8(handle: i32, value: i8) -> i32
@@ -115,7 +116,7 @@ pub fn write_i8(handle: i32, value: i8) -> i32
 
 ### function: write_i16
 
-[Source line 104](../../../stdlib/std/io_decimal.lani#L104)
+[Source line 105](../../../stdlib/std/io_decimal.lani#L105)
 
 ```lanius
 pub fn write_i16(handle: i32, value: i16) -> i32
@@ -123,7 +124,7 @@ pub fn write_i16(handle: i32, value: i16) -> i32
 
 ### function: read_u32_stdin_or
 
-[Source line 113](../../../stdlib/std/io_decimal.lani#L113)
+[Source line 114](../../../stdlib/std/io_decimal.lani#L114)
 
 ```lanius
 pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
@@ -131,7 +132,7 @@ pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32
 
 ### function: read_i32_stdin_or
 
-[Source line 175](../../../stdlib/std/io_decimal.lani#L175)
+[Source line 174](../../../stdlib/std/io_decimal.lani#L174)
 
 ```lanius
 pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32
@@ -139,7 +140,7 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32
 
 ### function: read_wide_u64_stdin_or
 
-[Source line 257](../../../stdlib/std/io_decimal.lani#L257)
+[Source line 254](../../../stdlib/std/io_decimal.lani#L254)
 
 ```lanius
 pub fn read_wide_u64_stdin_or(
@@ -149,7 +150,7 @@ pub fn read_wide_u64_stdin_or(
 
 ### function: read_wide_i64_stdin_or
 
-[Source line 306](../../../stdlib/std/io_decimal.lani#L306)
+[Source line 301](../../../stdlib/std/io_decimal.lani#L301)
 
 ```lanius
 pub fn read_wide_i64_stdin_or(
@@ -159,7 +160,7 @@ pub fn read_wide_i64_stdin_or(
 
 ### function: read_u8_stdin_or
 
-[Source line 365](../../../stdlib/std/io_decimal.lani#L365)
+[Source line 358](../../../stdlib/std/io_decimal.lani#L358)
 
 ```lanius
 pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8
@@ -167,7 +168,7 @@ pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8
 
 ### function: read_u16_stdin_or
 
-[Source line 374](../../../stdlib/std/io_decimal.lani#L374)
+[Source line 367](../../../stdlib/std/io_decimal.lani#L367)
 
 ```lanius
 pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16
@@ -175,7 +176,7 @@ pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16
 
 ### function: read_i8_stdin_or
 
-[Source line 383](../../../stdlib/std/io_decimal.lani#L383)
+[Source line 376](../../../stdlib/std/io_decimal.lani#L376)
 
 ```lanius
 pub fn read_i8_stdin_or(max_bytes: u32, fallback: i8) -> i8
@@ -183,7 +184,7 @@ pub fn read_i8_stdin_or(max_bytes: u32, fallback: i8) -> i8
 
 ### function: read_i16_stdin_or
 
-[Source line 392](../../../stdlib/std/io_decimal.lani#L392)
+[Source line 385](../../../stdlib/std/io_decimal.lani#L385)
 
 ```lanius
 pub fn read_i16_stdin_or(max_bytes: u32, fallback: i16) -> i16

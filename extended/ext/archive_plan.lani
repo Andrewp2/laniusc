@@ -1,5 +1,7 @@
 // Pure bounded extraction namespace. One manual owner; no archive or host I/O.
 module ext::archive_plan;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -19,7 +21,7 @@ pub struct Node {
 }
 pub struct Plan {
     nodes: alloc::vec::Vec<Node>, paths: alloc::vec::Vec<u8>, entries: alloc::vec::Vec<i32>,
-    limits: Limits, work: u64, sealed: bool, active: bool, failure: core::option::Option<Error>
+    limits: Limits, work: u64, sealed_completion: core::iter_state::Completion, lifetime: core::lifecycle::Lifetime, failure: core::option::Option<Error>
 }
 struct Prepared { first_missing: i32, parent: i32, target: i32, nodes: i32, paths: i32 }
 
@@ -53,7 +55,7 @@ pub fn new(limits: Limits) -> core::result::Result<Plan,Error> {
     let entries: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity(limits.max_entries);
     if (entries.is_err()) { owned_paths.destroy(); owned_nodes.destroy(); return core::result::Err(error(ErrorKind::Allocation,-1,-1)); }
     return core::result::Ok(Plan { nodes:owned_nodes,paths:owned_paths,entries:entries.unwrap(),limits:limits,
-        work:0,sealed:false,active:true,failure:core::option::None() });
+        work:0,sealed_completion: core::iter_state::completion_start(),lifetime: core::lifecycle::lifetime_start(),failure:core::option::None() });
 }
 fn part(bytes: core::slice::View<u8>, start: i32, length: i32) -> core::slice::View<u8> {
     return core::slice::View { values:bytes.values,start:bytes.start+start,length:length };
@@ -65,16 +67,16 @@ pub impl Plan {
     pub fn node_count(&self) -> i32 { return self.nodes.len(); }
     pub fn entry_count(&self) -> i32 { return self.entries.len(); }
     pub fn work_used(&self) -> u64 { return self.work; }
-    pub fn is_sealed(&self) -> bool { return self.active && self.sealed && self.failure.is_none(); }
+    pub fn is_sealed(&self) -> bool { return self.lifetime.is_active() && self.sealed_completion.is_done() && self.failure.is_none(); }
     pub fn reserved_bytes(&self) -> u64 {
         return (self.nodes.capacity() as u64)*(core::mem::size_of<Node>() as u64)
             +(self.paths.capacity() as u64)+(self.entries.capacity() as u64)*(core::mem::size_of<i32>() as u64);
     }
     pub fn node(&self, index: i32) -> core::option::Option<Node> {
-        if (!self.active) { return core::option::None(); } return self.nodes.get(index);
+        if (!self.lifetime.is_active()) { return core::option::None(); } return self.nodes.get(index);
     }
     pub fn entry(&self, index: i32) -> core::option::Option<i32> {
-        if (!self.active) { return core::option::None(); } return self.entries.get(index);
+        if (!self.lifetime.is_active()) { return core::option::None(); } return self.entries.get(index);
     }
     pub fn path(&self, index: i32) -> core::option::Option<core::slice::View<u8>> {
         let found = self.node(index); if (found.is_none()) { return core::option::None(); }
@@ -178,7 +180,7 @@ pub impl Plan {
     }
     pub fn add(&self, path: core::slice::View<u8>, kind: Kind, ordinal: i32) -> core::result::Result<i32,Error> {
         if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
-        if (!self.active || self.sealed || ordinal != self.entries.len()) { return core::result::Err(self.fail(ErrorKind::InvalidState,ordinal,-1)); }
+        if (!self.lifetime.is_active() || self.sealed_completion.is_done() || ordinal != self.entries.len()) { return core::result::Err(self.fail(ErrorKind::InvalidState,ordinal,-1)); }
         if (self.entries.len() == self.limits.max_entries) { return core::result::Err(self.fail(ErrorKind::Entries,ordinal,-1)); }
         let length = self.validate(path,kind,ordinal)?;
         let ready = self.prepare(path,length,kind,ordinal)?;
@@ -204,9 +206,9 @@ pub impl Plan {
     }
     pub fn seal(&self) -> core::result::Result<i32,Error> {
         if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
-        if (!self.active) { return core::result::Err(self.fail(ErrorKind::InvalidState,-1,-1)); }
-        if (!self.sealed) { self.charge(1,self.entries.len(),-1)?; self.sealed = true; }
+        if (!self.lifetime.is_active()) { return core::result::Err(self.fail(ErrorKind::InvalidState,-1,-1)); }
+        if (!self.sealed_completion.is_done()) { self.charge(1,self.entries.len(),-1)?; self.sealed_completion.finish(); }
         return core::result::Ok(self.entries.len());
     }
-    pub fn destroy(&self) { self.nodes.destroy(); self.paths.destroy(); self.entries.destroy(); self.active = false; self.sealed = false; }
+    pub fn destroy(&self) { self.nodes.destroy(); self.paths.destroy(); self.entries.destroy(); self.lifetime.release(); self.sealed_completion = core::iter_state::completion_start(); }
 }

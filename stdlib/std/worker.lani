@@ -6,11 +6,25 @@
 // Linux x86_64/glibc; link with --native-link --native-library atomic.
 // See docs/stdlib-concurrency.md.
 module std::worker;
+import core::lifecycle;
 import core::mem;
 import core::result;
 import core::slice;
 import std::linux;
 import std::sync;
+
+pub enum WorkerEvent { Spawned(i64), Joined }
+pub machine WorkerSlot on WorkerEvent {
+    start Empty;
+    state Empty { WorkerEvent::Spawned(pid) -> goto Running(pid), WorkerEvent::Joined -> stay, }
+    state Running(pid: i64) { WorkerEvent::Spawned(_) -> stay, WorkerEvent::Joined -> goto Joined(pid), }
+    final state Joined(pid: i64) { WorkerEvent::Spawned(_) -> stay, WorkerEvent::Joined -> stay, }
+}
+pub impl WorkerSlot {
+    pub fn running(&self) -> bool { return match (self.state()) { WorkerSlotState::Running(_) -> true, _ -> false }; }
+    pub fn pid(&self) -> i64 { return match (self.state()) { WorkerSlotState::Running(pid) -> pid, WorkerSlotState::Joined(pid) -> pid, _ -> 0 }; }
+}
+
 
 pub const MAX_WORKERS: i32 = 1024;
 
@@ -25,7 +39,6 @@ extern "C" fn _exit(status: i32);
 extern "C" fn __errno_location() -> ptr;
 
 fn word_arg(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
-fn load_i64(slot: ptr) -> i64 { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); return view[0]; }
 fn store_i64(slot: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); view[0] = value; }
 fn errno() -> i32 { let view: [i32] = core::mem::typed_slice_from_raw_parts<i32>(__errno_location(), 1); return view[0]; }
 
@@ -33,18 +46,21 @@ fn errno() -> i32 { let view: [i32] = core::mem::typed_slice_from_raw_parts<i32>
 // caller's frames or running the parent's exit path. Never returns.
 pub fn finish(status: i32) -> i32 { _exit(status & 255); return status; }
 
-// Pid table, private to the creating process: one i64 per slot, 0 unspawned,
-// negative after a successful join.
-pub struct Pool { table: ptr, capacity: i32, count: i32, joined: i32, live: bool }
+// Worker lifecycle table, private to the creating process. A joined slot
+// retains its pid for diagnostics but cannot be joined or signalled again.
+pub struct Pool { table: ptr, capacity: i32, count: i32, joined: i32, lifetime: core::lifecycle::Lifetime }
 pub fn pool(capacity: i32) -> core::result::Result<Pool, Error> {
     if (capacity <= 0 || capacity > MAX_WORKERS) { return core::result::Err(Error::InvalidCapacity); }
     let nowhere: ptr = 0;
-    let bytes: i64 = ((capacity as i64) * 8 + 4095) / 4096 * 4096;
+    let bytes: i64 = ((capacity as i64) * (core::mem::size_of<WorkerSlot>() as i64) + 4095) / 4096 * 4096;
     // MAP_PRIVATE|MAP_ANONYMOUS
     let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(nowhere), word_arg(bytes), word_arg(3), word_arg(34), word_arg(-1), word_arg(0)];
     let done: core::result::Result<i64, std::linux::Error> = std::linux::call(9, core::slice::view(args, 6).unwrap());
     if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
-    return core::result::Ok(Pool { table: nowhere + (done.unwrap() as usize), capacity: capacity, count: 0, joined: 0, live: true });
+    let table: ptr = nowhere + (done.unwrap() as usize);
+    let slots: [WorkerSlot] = core::mem::typed_slice_from_storage<WorkerSlot>(table,capacity);
+    let index: i32 = 0; while (index < capacity) { slots[index] = worker_slot_start(); index += 1; }
+    return core::result::Ok(Pool { table: table, capacity: capacity, count: 0, joined: 0, lifetime: core::lifecycle::lifetime_start() });
 }
 fn host(error: std::linux::Error) -> Error { return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::Host(22) }; }
 fn decode(status: i32) -> Exit {
@@ -57,26 +73,27 @@ pub impl Pool {
     pub fn borrow(&self) -> &Pool { return self; }
     pub fn len(&self) -> i32 { return self.count; }
     pub fn joined(&self) -> i32 { return self.joined; }
-    fn slot(&self, index: i32) -> ptr { return self.table + (index as usize) * 8; }
+    fn slot(&self, index: i32) -> WorkerSlot { let slots: [WorkerSlot] = core::mem::typed_slice_from_storage<WorkerSlot>(self.table,self.capacity); return slots[index]; }
+    fn transition(&self, index: i32, event: WorkerEvent) { let slots: [WorkerSlot] = core::mem::typed_slice_from_storage<WorkerSlot>(self.table,self.capacity); let slot: WorkerSlot = slots[index]; slot.step(event); slots[index] = slot; }
     // Parent(index) in the caller, Child(index) in the new worker. The child
     // must not use this Pool and must end with finish.
     pub fn spawn(&self) -> core::result::Result<Role, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         if (self.count == self.capacity) { return core::result::Err(Error::Full); }
         let index: i32 = self.count;
         let pid: i32 = fork();
         if (pid < 0) { return core::result::Err(Error::Host(errno())); }
         if (pid == 0) { return core::result::Ok(Role::Child(index)); }
-        store_i64(self.slot(index), pid as i64);
+        self.transition(index,WorkerEvent::Spawned(pid as i64));
         self.count += 1;
         return core::result::Ok(Role::Parent(index));
     }
     // Block until worker index ends. Retries EINTR. Each worker joins once.
     pub fn join(&self, index: i32) -> core::result::Result<Exit, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         if (index < 0 || index >= self.count) { return core::result::Err(Error::NotSpawned); }
-        let pid: i64 = load_i64(self.slot(index));
-        if (pid < 0) { return core::result::Err(Error::AlreadyJoined); }
+        let slot: WorkerSlot = self.slot(index); let pid: i64 = slot.pid();
+        if (!slot.running()) { return core::result::Err(Error::AlreadyJoined); }
         let storage: [i32; 2] = [0; 2];
         let status: ptr = core::mem::i32_array_data_ptr(storage);
         let nowhere: ptr = 0;
@@ -84,7 +101,7 @@ pub impl Pool {
             let args: [std::linux::Argument; 4] = [word_arg(pid), std::linux::Argument::Address(status), word_arg(0), std::linux::Argument::Address(nowhere)];
             let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
             if (done.is_ok()) {
-                store_i64(self.slot(index), 0 - pid);
+                self.transition(index,WorkerEvent::Joined);
                 self.joined += 1;
                 return core::result::Ok(decode(storage[0]));
             }
@@ -97,10 +114,10 @@ pub impl Pool {
     // Like join, but Err(TimedOut) once deadline passes with the worker still
     // running; it stays unjoined. Polls every millisecond.
     pub fn join_until(&self, index: i32, deadline: std::sync::Deadline) -> core::result::Result<Exit, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         if (index < 0 || index >= self.count) { return core::result::Err(Error::NotSpawned); }
-        let pid: i64 = load_i64(self.slot(index));
-        if (pid < 0) { return core::result::Err(Error::AlreadyJoined); }
+        let slot: WorkerSlot = self.slot(index); let pid: i64 = slot.pid();
+        if (!slot.running()) { return core::result::Err(Error::AlreadyJoined); }
         let storage: [i32; 2] = [0; 2];
         let status: ptr = core::mem::i32_array_data_ptr(storage);
         let nowhere: ptr = 0;
@@ -108,7 +125,7 @@ pub impl Pool {
             let args: [std::linux::Argument; 4] = [word_arg(pid), std::linux::Argument::Address(status), word_arg(1), std::linux::Argument::Address(nowhere)];
             let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
             if (done.is_ok() && done.unwrap() == pid) {
-                store_i64(self.slot(index), 0 - pid);
+                self.transition(index,WorkerEvent::Joined);
                 self.joined += 1;
                 return core::result::Ok(decode(storage[0]));
             }
@@ -132,8 +149,8 @@ pub impl Pool {
     pub fn signal_all(&self, signal: i32) -> core::result::Result<i32, Error> {
         let index: i32 = 0; let sent: i32 = 0;
         while (index < self.count) {
-            let pid: i64 = load_i64(self.slot(index));
-            if (pid > 0) {
+            let slot: WorkerSlot = self.slot(index); let pid: i64 = slot.pid();
+            if (slot.running()) {
                 let args: [std::linux::Argument; 2] = [word_arg(pid), word_arg(signal as i64)];
                 let done: core::result::Result<i64, std::linux::Error> = std::linux::call(62, core::slice::view(args, 2).unwrap());
                 if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
@@ -148,7 +165,7 @@ pub impl Pool {
         let failed: i32 = 0; let first: i32 = -1; let first_exit: Exit = Exit::Code(0);
         let index: i32 = 0;
         while (index < self.count) {
-            if (load_i64(self.slot(index)) > 0) {
+            if (self.slot(index).running()) {
                 let joined: core::result::Result<Exit, Error> = self.join(index);
                 if (joined.is_err()) { return core::result::Err(joined.unwrap_err()); }
                 let exit: Exit = joined.unwrap();
@@ -161,13 +178,13 @@ pub impl Pool {
     // Err(Unjoined) while any spawned worker is unjoined: the scope must end
     // with every worker joined, before shared Regions are unmapped.
     pub fn destroy(&self) -> core::result::Result<i32, Error> {
-        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (!self.lifetime.is_active()) { return core::result::Err(Error::Destroyed); }
         if (self.joined != self.count) { return core::result::Err(Error::Unjoined); }
-        let bytes: i64 = ((self.capacity as i64) * 8 + 4095) / 4096 * 4096;
+        let bytes: i64 = ((self.capacity as i64) * (core::mem::size_of<WorkerSlot>() as i64) + 4095) / 4096 * 4096;
         let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(self.table), word_arg(bytes)];
         let done: core::result::Result<i64, std::linux::Error> = std::linux::call(11, core::slice::view(args, 2).unwrap());
         if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
-        self.live = false;
+        self.lifetime.release();
         return core::result::Ok(self.count);
     }
 }

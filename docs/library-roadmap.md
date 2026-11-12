@@ -5,6 +5,14 @@ with Lanius interfaces and explicit native bindings for host and third-party
 services. This document tracks the whole scope. Completing the first
 milestone does not complete the goal.
 
+The [native state-machine migration](library-state-machines.md) converts the
+tracked libraries' hand-written lifecycle, iterator, parser, codec and protocol
+control. Its current receipts include process ownership, archive extraction,
+integer readers, Unicode and structured-data streaming. Allocation-profile,
+compiler-fixture and independent-oracle failures remain recorded separately;
+this migration does not establish a clean workspace-wide test run or general
+ownership safety.
+
 The [native thread consolidation](stdlib-thread-lifecycle.md) moves the
 implemented glibc interface into canonical `std::thread` and removes
 `std::pthread` and ID-based joining. Actual `Thread` owners retain join state;
@@ -487,6 +495,29 @@ FFT/inverse, windows, convolution and spectral bins. The
 [WAVE spectrum program](extended-wave-spectrum.md) combines downmixing, optional
 FIR smoothing and windowed FFT into CSV. Color management, other image/audio
 formats, playback and additional signal algorithms remain work.
+
+The [reactive native UI plan](extended-ui-plan.md) separates dependency tracking,
+ownership scopes, retained elements and the paint scene. Its
+[graph kernel](extended-reactive-graph.md) has executable dynamic-dependency,
+memo-equality, failure-recovery, lifetime and sparse-update tests. The next gate
+is typed signal/value ownership and scoped callback registration/cleanup.
+Owned `move` closures and `alloc::callback` now provide the required storage and
+invocation mechanism. Widgets, incremental layout/paint, shaped text, input
+routing and accessibility remain unimplemented.
+
+[Native windowing](extended-window.md) implements window creation, events,
+software RGB presentation, resizing and cleanup in Lanius over libX11.
+The Linux x86_64 X11/XWayland profile has executable library and interactive
+canvas tests. Native Wayland, other operating systems, text/IME and clipboard
+input, recoverable connection failure and formal ownership verification
+remain open. The [Vulkan increment](extended-gpu.md) now includes buffer
+transfers, RGBA8 textures, uniform/storage/sampled-image bindings, trusted
+SPIR-V graphics and compute pipelines, and asynchronous command and window
+submissions. Recorded and pending work retains resources; completion checks
+include presentation fences. Eight focused tests pass on an RTX 3090, with
+exact compute and pixel oracles, reached failures and an interactive computed-
+texture program. Additional formats, vertex/index input, shader safety,
+portable backends, performance optimization and formal verification remain work.
 
 [HTTP/1 wire processing](extended-http.md) implements requests/responses,
 framing, chunk extensions/trailers, exact boundaries and checked writers. Its

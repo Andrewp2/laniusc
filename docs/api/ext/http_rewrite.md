@@ -16,12 +16,13 @@ Declaration counts: constant: 2; field: 3; function: 7; struct: 1.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_rewrite.lani#L10)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_rewrite.lani#L11)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_rewrite.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_rewrite.lani#L13)
-- [ext::hpack](hpack.md) · [source](../../../extended/ext/http_rewrite.lani#L14)
-- [ext::http](http.md) · [source](../../../extended/ext/http_rewrite.lani#L15)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/http_rewrite.lani#L10)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_rewrite.lani#L11)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_rewrite.lani#L12)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_rewrite.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_rewrite.lani#L14)
+- [ext::hpack](hpack.md) · [source](../../../extended/ext/http_rewrite.lani#L15)
+- [ext::http](http.md) · [source](../../../extended/ext/http_rewrite.lani#L16)
 
 ## Types, fields and variants
 
@@ -29,7 +30,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Forward
 
-[Source line 19](../../../extended/ext/http_rewrite.lani#L19)
+[Source line 20](../../../extended/ext/http_rewrite.lani#L20)
 
 ```lanius
 pub struct Forward
@@ -37,7 +38,7 @@ pub struct Forward
 
 #### field: client
 
-[Source line 19](../../../extended/ext/http_rewrite.lani#L19)
+[Source line 20](../../../extended/ext/http_rewrite.lani#L20)
 
 ```lanius
 client: core::slice::View<u8>
@@ -45,7 +46,7 @@ client: core::slice::View<u8>
 
 #### field: via
 
-[Source line 19](../../../extended/ext/http_rewrite.lani#L19)
+[Source line 20](../../../extended/ext/http_rewrite.lani#L20)
 
 ```lanius
 via: core::slice::View<u8>
@@ -53,7 +54,7 @@ via: core::slice::View<u8>
 
 #### field: proto
 
-[Source line 19](../../../extended/ext/http_rewrite.lani#L19)
+[Source line 20](../../../extended/ext/http_rewrite.lani#L20)
 
 ```lanius
 proto: core::slice::View<u8>
@@ -63,7 +64,7 @@ proto: core::slice::View<u8>
 
 ### constant: CHUNKED
 
-[Source line 21](../../../extended/ext/http_rewrite.lani#L21)
+[Source line 22](../../../extended/ext/http_rewrite.lani#L22)
 
 ```lanius
 pub const CHUNKED: i64 = -1;
@@ -71,7 +72,7 @@ pub const CHUNKED: i64 = -1;
 
 ### constant: NO_BODY
 
-[Source line 22](../../../extended/ext/http_rewrite.lani#L22)
+[Source line 23](../../../extended/ext/http_rewrite.lani#L23)
 
 ```lanius
 pub const NO_BODY: i64 = -2;
@@ -81,7 +82,7 @@ pub const NO_BODY: i64 = -2;
 
 ### function: lists
 
-[Source line 29](../../../extended/ext/http_rewrite.lani#L29)
+[Source line 30](../../../extended/ext/http_rewrite.lani#L30)
 
 ```lanius
 pub fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool
@@ -89,7 +90,7 @@ pub fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool
 
 ### function: hop_by_hop
 
-[Source line 40](../../../extended/ext/http_rewrite.lani#L40)
+[Source line 41](../../../extended/ext/http_rewrite.lani#L41)
 
 ```lanius
 pub fn hop_by_hop(name: core::slice::View<u8>) -> bool
@@ -97,7 +98,7 @@ pub fn hop_by_hop(name: core::slice::View<u8>) -> bool
 
 ### function: drops
 
-[Source line 44](../../../extended/ext/http_rewrite.lani#L44)
+[Source line 45](../../../extended/ext/http_rewrite.lani#L45)
 
 ```lanius
 pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool
@@ -105,7 +106,7 @@ pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool
 
 ### function: request_head
 
-[Source line 152](../../../extended/ext/http_rewrite.lani#L152)
+[Source line 153](../../../extended/ext/http_rewrite.lani#L153)
 
 ```lanius
 pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: Forward) -> bool
@@ -113,7 +114,7 @@ pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: F
 
 ### function: response_head
 
-[Source line 170](../../../extended/ext/http_rewrite.lani#L170)
+[Source line 171](../../../extended/ext/http_rewrite.lani#L171)
 
 ```lanius
 pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_alive: bool, forward: Forward) -> bool
@@ -121,7 +122,7 @@ pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_aliv
 
 ### function: h2_request_head
 
-[Source line 189](../../../extended/ext/http_rewrite.lani#L189)
+[Source line 190](../../../extended/ext/http_rewrite.lani#L190)
 
 ```lanius
 pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>, path: core::slice::View<u8>, authority: core::slice::View<u8>, fields: core::slice::View<ext::hpack::Header>, length: i64, forward: Forward) -> bool
@@ -129,7 +130,7 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
 
 ### function: h2_response_fields
 
-[Source line 229](../../../extended/ext/http_rewrite.lani#L229)
+[Source line 230](../../../extended/ext/http_rewrite.lani#L230)
 
 ```lanius
 pub fn h2_response_fields(head: ext::http::Head, fields: &alloc::vec::Vec<ext::hpack::Header>, scratch: &alloc::vec::Vec<u8>, forward: Forward) -> bool

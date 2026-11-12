@@ -32,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Limits
 
-[Source line 11](../../../extended/ext/png.lani#L11)
+[Source line 23](../../../extended/ext/png.lani#L23)
 
 ```lanius
 pub struct Limits
@@ -40,7 +40,7 @@ pub struct Limits
 
 #### field: max_input
 
-[Source line 11](../../../extended/ext/png.lani#L11)
+[Source line 23](../../../extended/ext/png.lani#L23)
 
 ```lanius
 max_input: i32
@@ -48,7 +48,7 @@ max_input: i32
 
 #### field: max_pixels
 
-[Source line 11](../../../extended/ext/png.lani#L11)
+[Source line 23](../../../extended/ext/png.lani#L23)
 
 ```lanius
 max_pixels: i32
@@ -56,7 +56,7 @@ max_pixels: i32
 
 #### field: max_inflated
 
-[Source line 11](../../../extended/ext/png.lani#L11)
+[Source line 23](../../../extended/ext/png.lani#L23)
 
 ```lanius
 max_inflated: i32
@@ -64,7 +64,7 @@ max_inflated: i32
 
 #### field: max_chunks
 
-[Source line 11](../../../extended/ext/png.lani#L11)
+[Source line 23](../../../extended/ext/png.lani#L23)
 
 ```lanius
 max_chunks: i32
@@ -72,7 +72,7 @@ max_chunks: i32
 
 ### enum: Error
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 pub enum Error
@@ -80,7 +80,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Bounds
@@ -88,7 +88,7 @@ Bounds
 
 #### variant: InputLimit
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 InputLimit
@@ -96,7 +96,7 @@ InputLimit
 
 #### variant: PixelLimit
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 PixelLimit
@@ -104,7 +104,7 @@ PixelLimit
 
 #### variant: InflatedLimit
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 InflatedLimit
@@ -112,7 +112,7 @@ InflatedLimit
 
 #### variant: ChunkLimit
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 ChunkLimit
@@ -120,7 +120,7 @@ ChunkLimit
 
 #### variant: OutputLimit
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 OutputLimit
@@ -128,7 +128,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 AllocationFailed
@@ -136,7 +136,7 @@ AllocationFailed
 
 #### variant: SizeOverflow
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 SizeOverflow
@@ -144,7 +144,7 @@ SizeOverflow
 
 #### variant: Signature
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Signature
@@ -152,7 +152,7 @@ Signature
 
 #### variant: Truncated
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Truncated
@@ -160,7 +160,7 @@ Truncated
 
 #### variant: ChunkType
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 ChunkType
@@ -168,7 +168,7 @@ ChunkType
 
 #### variant: ChunkOrder
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 ChunkOrder
@@ -176,7 +176,7 @@ ChunkOrder
 
 #### variant: Crc
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Crc
@@ -184,7 +184,7 @@ Crc
 
 #### variant: Header
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Header
@@ -192,7 +192,7 @@ Header
 
 #### variant: Palette
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Palette
@@ -200,7 +200,7 @@ Palette
 
 #### variant: Transparency
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Transparency
@@ -208,7 +208,7 @@ Transparency
 
 #### variant: UnknownCritical
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 UnknownCritical
@@ -216,7 +216,7 @@ UnknownCritical
 
 #### variant: DataSize
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 DataSize
@@ -224,7 +224,7 @@ DataSize
 
 #### variant: Filter
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Filter
@@ -232,7 +232,7 @@ Filter
 
 #### variant: TrailingData
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 TrailingData
@@ -240,7 +240,7 @@ TrailingData
 
 #### variant: Compression
 
-[Source line 12](../../../extended/ext/png.lani#L12)
+[Source line 24](../../../extended/ext/png.lani#L24)
 
 ```lanius
 Compression(ext::compression::Error)
@@ -250,7 +250,7 @@ Compression(ext::compression::Error)
 
 ### function: default_limits
 
-[Source line 13](../../../extended/ext/png.lani#L13)
+[Source line 25](../../../extended/ext/png.lani#L25)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -258,7 +258,7 @@ pub fn default_limits() -> Limits
 
 ### function: decode
 
-[Source line 192](../../../extended/ext/png.lani#L192)
+[Source line 204](../../../extended/ext/png.lani#L204)
 
 ```lanius
 pub fn decode(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<ext::image::Image,Error>
@@ -266,7 +266,7 @@ pub fn decode(input: core::slice::View<u8>, limits: Limits) -> core::result::Res
 
 ### function: encode
 
-[Source line 222](../../../extended/ext/png.lani#L222)
+[Source line 234](../../../extended/ext/png.lani#L234)
 
 ```lanius
 pub fn encode(source: ext::image::View, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>

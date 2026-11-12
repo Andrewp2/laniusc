@@ -1,0 +1,26 @@
+// Shared fused-iterator lifecycle. Exhaustion is irreversible, including
+// when an adapter's underlying source would produce another item after None.
+module core::iter_state;
+
+pub enum Event { Exhausted }
+
+pub machine Completion on Event {
+    start Active;
+    state Active {
+        Event::Exhausted -> goto Done,
+    }
+    final state Done {
+        Event::Exhausted -> stay,
+    }
+}
+
+pub impl Completion {
+    pub fn is_done(&self) -> bool {
+        return match (self.state()) { CompletionState::Active -> false, CompletionState::Done -> true };
+    }
+    pub fn finish(&self) { self.step(Event::Exhausted); }
+}
+
+pub fn finished_completion() -> Completion { let completion = completion_start(); completion.finish(); return completion; }
+
+pub fn completed_if(done: bool) -> Completion { let completion = completion_start(); if (done) { completion.finish(); } return completion; }

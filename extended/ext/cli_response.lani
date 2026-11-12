@@ -2,6 +2,7 @@
 // option parsing lives here. One manual Expansion owner retains diagnostics;
 // copies alias its authority and cannot be prepared/destroyed independently.
 module ext::cli_response;
+import core::iter_state;
 import alloc::vec;
 import alloc::vec::Vec;
 import core::option::Option;
@@ -13,6 +14,35 @@ import core::result::Err;
 import core::slice::View;
 import ext::cli;
 import ext::response;
+
+pub enum PreparationEvent { Begin, Prepared, Reset }
+pub machine Preparation on PreparationEvent {
+    start Empty;
+
+    state Empty {
+        PreparationEvent::Begin -> goto Loading,
+        PreparationEvent::Prepared -> stay,
+        PreparationEvent::Reset -> stay,
+    }
+
+    state Loading {
+        PreparationEvent::Begin -> stay,
+        PreparationEvent::Prepared -> goto Ready,
+        PreparationEvent::Reset -> goto Empty,
+    }
+
+    state Ready {
+        PreparationEvent::Begin -> stay,
+        PreparationEvent::Prepared -> stay,
+        PreparationEvent::Reset -> goto Empty,
+    }
+}
+pub impl Preparation {
+    pub fn is_empty(&self) -> bool { return match (self.state()) { PreparationState::Empty -> true, _ -> false }; }
+    pub fn is_loading(&self) -> bool { return match (self.state()) { PreparationState::Loading -> true, _ -> false }; }
+    pub fn is_ready(&self) -> bool { return match (self.state()) { PreparationState::Ready -> true, _ -> false }; }
+}
+
 
 pub trait Provider<H> {
     pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,H>;
@@ -34,14 +64,14 @@ pub struct Failure<H> { cause: Cause<H>, at: Origin }
 pub enum LocateError { NotReady, Bounds, WorkLimit, Syntax(ext::response::Error) }
 
 struct Source {
-    path: Vec<u8>, included_at: Origin, loaded: bool,
+    path: Vec<u8>, included_at: Origin, loading: core::iter_state::Completion,
     raw: Vec<u8>, decoded: Vec<u8>, spans: Vec<ext::response::Span>
 }
 struct Frame { source: i32, position: i32 }
 struct Token { at: Origin, start: i32, length: i32 }
 struct Output { at: Origin, start: i32, length: i32, removed: i32 }
 pub struct Expansion {
-    started: bool, ready: bool, limits: Limits, work: u64,
+    preparation: Preparation, limits: Limits, work: u64,
     source_bytes: i32, tokens: i32, output_bytes: i32, position: i32,
     originals: Vec<Vec<u8>>, sources: Vec<Source>, frames: Vec<Frame>,
     output: Vec<Output>, views: Vec<View<u8>>
@@ -57,7 +87,7 @@ pub fn default_limits() -> Limits {
 }
 pub fn empty() -> Expansion {
     return Expansion {
-        started: false, ready: false, limits: default_limits(), work: 0,
+        preparation: preparation_start(), limits: default_limits(), work: 0,
         source_bytes: 0, tokens: 0, output_bytes: 0, position: 0,
         originals: alloc::vec::new<Vec<u8>>(), sources: alloc::vec::new<Source>(),
         frames: alloc::vec::new<Frame>(), output: alloc::vec::new<Output>(), views: alloc::vec::new<View<u8>>()
@@ -93,13 +123,13 @@ fn syntax_origin(source: i32, length: i32, error: ext::response::Error) -> Origi
 
 pub impl Expansion {
     pub fn borrow(&self) -> &Expansion { return self; }
-    pub fn is_ready(&self) -> bool { return self.ready; }
+    pub fn is_ready(&self) -> bool { return self.preparation.is_ready(); }
     pub fn arguments(&self) -> Option<View<View<u8>>> {
-        if (!self.ready) { return None(); }
+        if (!self.preparation.is_ready()) { return None(); }
         return Some(self.views.as_view());
     }
     pub fn origin(&self, index: i32) -> Option<Origin> {
-        if (!self.ready || index < 0 || index >= self.output.len()) { return None(); }
+        if (!self.preparation.is_ready() || index < 0 || index >= self.output.len()) { return None(); }
         return Some(self.output.at(index).at);
     }
     pub fn original(&self, index: i32) -> Option<View<u8>> {
@@ -109,12 +139,12 @@ pub impl Expansion {
     pub fn source(&self, index: i32) -> Option<SourceInfo> {
         if (index < 0 || index >= self.sources.len()) { return None(); }
         let source: Source = self.sources.at(index);
-        return Some(SourceInfo { path: source.path.as_view(), included_at: source.included_at, loaded: source.loaded });
+        return Some(SourceInfo { path: source.path.as_view(), included_at: source.included_at, loaded: source.loading.is_done() });
     }
     pub fn raw_source(&self, index: i32) -> Option<View<u8>> {
         if (index < 0 || index >= self.sources.len()) { return None(); }
         let source: Source = self.sources.at(index);
-        if (!source.loaded) { return None(); }
+        if (!source.loading.is_done()) { return None(); }
         return Some(source.raw.as_view());
     }
     fn charge(&self, amount: u64) -> bool {
@@ -174,7 +204,7 @@ pub impl Expansion {
         if (self.frames.try_reserve(1).is_err() || self.sources.try_reserve(1).is_err()) { return Err(issue<H>(Cause::AllocationFailed,token.at)); }
         let copied: Vec<u8> = alloc::vec::new();
         if (copied.try_extend(path).is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,token.at)); }
-        let source: Source = Source { path: copied, included_at: token.at, loaded: false, raw: alloc::vec::new<u8>(), decoded: alloc::vec::new<u8>(), spans: alloc::vec::new<ext::response::Span>() };
+        let source: Source = Source { path: copied, included_at: token.at, loading: core::iter_state::completion_start(), raw: alloc::vec::new<u8>(), decoded: alloc::vec::new<u8>(), spans: alloc::vec::new<ext::response::Span>() };
         let index: i32 = self.sources.len();
         let added = self.sources.try_push(source);
         if (added.is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,token.at)); }
@@ -188,7 +218,7 @@ pub impl Expansion {
         if (loaded.is_err()) { return Err(issue<H>(Cause::Provider(loaded.unwrap_err()),requested)); }
         let raw: Vec<u8> = loaded.unwrap();
         if (raw.len() > grant) { raw.destroy(); return Err(issue<H>(Cause::ProviderContract,requested)); }
-        source.raw = raw; source.loaded = true; self.sources.set(index,source).unwrap();
+        source.raw = raw; source.loading.finish(); self.sources.set(index,source).unwrap();
         // The admitted grant proves these two additions fit their allowances.
         assert(self.charge((raw.len() as u64)*4)); self.source_bytes += raw.len();
         let measured: Result<ext::response::Shape,ext::response::Error> = ext::response::measure(raw.as_view());
@@ -233,8 +263,8 @@ pub impl Expansion {
     // Initial admission and copying precede every provider call. Errors retain
     // acquired expansion storage but never retain an H or publish partial argv.
     pub fn prepare<P,H>(&self, arguments: View<View<u8>>, provider: &P, limits: Limits) -> Result<i32,Failure<H>> where P: Provider<H> {
-        if (self.started) { return Err(issue<H>(Cause::InvalidState,sentinel())); }
-        self.started = true; self.limits = limits;
+        if (!self.preparation.is_empty()) { return Err(issue<H>(Cause::InvalidState,sentinel())); }
+        self.preparation.step(PreparationEvent::Begin); self.limits = limits;
         if (!valid_limits(limits) || !valid(arguments)) { return Err(issue<H>(Cause::Bounds,sentinel())); }
         if (arguments.length > limits.max_tokens) { return Err(issue<H>(Cause::TokenLimit,sentinel())); }
         let total: i32 = 0; let index: i32 = 0;
@@ -290,11 +320,11 @@ pub impl Expansion {
             if (self.views.try_push(bytes).is_err()) { return Err(issue<H>(Cause::AllocationFailed,argument.at)); }
             index += 1;
         }
-        self.ready = true; return Ok(self.views.len());
+        self.preparation.step(PreparationEvent::Prepared); return Ok(self.views.len());
     }
 
     pub fn locate(&self, location: ext::cli::Location, maximum_work: u64) -> Result<Origin,LocateError> {
-        if (!self.ready) { return Err(LocateError::NotReady); }
+        if (!self.preparation.is_ready()) { return Err(LocateError::NotReady); }
         if (location.argument < 0 || location.argument >= self.output.len()) { return Err(LocateError::Bounds); }
         let output: Output = self.output.at(location.argument);
         if (location.byte < 0 || location.byte > output.length) { return Err(LocateError::Bounds); }
@@ -316,7 +346,7 @@ pub impl Expansion {
     // Only nested byte/metadata owners belong to this object. An arbitrary H
     // previously returned by prepare remains solely the caller's responsibility.
     pub fn destroy(&self) {
-        self.ready = false;
+        self.preparation.step(PreparationEvent::Reset);
         self.views.destroy(); self.output.destroy(); self.frames.destroy();
         let index: i32 = 0;
         while (index < self.sources.len()) {
@@ -326,7 +356,7 @@ pub impl Expansion {
         }
         self.sources.destroy(); index = 0;
         while (index < self.originals.len()) { let bytes: Vec<u8> = self.originals.at(index); bytes.destroy(); index += 1; }
-        self.originals.destroy(); self.started = false; self.limits = default_limits();
+        self.originals.destroy();  self.limits = default_limits();
         self.work = 0; self.source_bytes = 0; self.tokens = 0; self.output_bytes = 0; self.position = 0;
     }
 }

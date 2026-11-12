@@ -16,17 +16,18 @@ Declaration counts: function: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L3)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L4)
-- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L5)
-- [std::fs](fs.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L6)
-- [std::io_hex_wide_u64](io_hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L7)
+- [core::parse_state](../core/parse_state.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L3)
+- [core::hex_wide_u64](../core/hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L5)
+- [core::wide_u64](../core/wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L6)
+- [std::fs](fs.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L7)
+- [std::io_hex_wide_u64](io_hex_wide_u64.md) · [source](../../../stdlib/std/file_hex_wide_u64.lani#L8)
 
 ## Free functions and extern declarations
 
 ### function: write_lower
 
-[Source line 25](../../../stdlib/std/file_hex_wide_u64.lani#L25)
+[Source line 26](../../../stdlib/std/file_hex_wide_u64.lani#L26)
 
 ```lanius
 pub fn write_lower(path: str, value: core::wide_u64::WideU64) -> bool
@@ -34,7 +35,7 @@ pub fn write_lower(path: str, value: core::wide_u64::WideU64) -> bool
 
 ### function: write_upper
 
-[Source line 28](../../../stdlib/std/file_hex_wide_u64.lani#L28)
+[Source line 29](../../../stdlib/std/file_hex_wide_u64.lani#L29)
 
 ```lanius
 pub fn write_upper(path: str, value: core::wide_u64::WideU64) -> bool
@@ -42,7 +43,7 @@ pub fn write_upper(path: str, value: core::wide_u64::WideU64) -> bool
 
 ### function: read_or
 
-[Source line 36](../../../stdlib/std/file_hex_wide_u64.lani#L36)
+[Source line 37](../../../stdlib/std/file_hex_wide_u64.lani#L37)
 
 ```lanius
 pub fn read_or(path: str, max_bytes: u32, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64

@@ -8,6 +8,8 @@
 // services. Output depends only on the input bytes, never on how they are
 // split across calls. See docs/extended-zstd.md.
 module ext::zstd_encode;
+import core::lifecycle;
+import core::iter_state;
 import core::mem;
 import core::result;
 import core::slice;
@@ -107,14 +109,48 @@ fn ml_code(ml: i32) -> i32 {
     if (b < 40) { return 32+((b-32) >> 1); } if (b < 48) { return 36+((b-40) >> 2); } if (b < 64) { return 38+((b-48) >> 3); } if (b < 96) { return 40+((b-64) >> 4); } return 42;
 }
 
+pub enum EncodeEvent { Reset, HeaderWritten, BlocksWritten, ChecksumWritten }
+
+pub machine Encoding on EncodeEvent {
+    start Header;
+
+    state Header {
+        EncodeEvent::Reset -> stay,
+        EncodeEvent::HeaderWritten -> goto Blocks,
+        EncodeEvent::BlocksWritten -> stay,
+        EncodeEvent::ChecksumWritten -> stay,
+    }
+
+    state Blocks {
+        EncodeEvent::Reset -> stay,
+        EncodeEvent::HeaderWritten -> stay,
+        EncodeEvent::BlocksWritten -> goto Checksum,
+        EncodeEvent::ChecksumWritten -> stay,
+    }
+
+    state Checksum {
+        EncodeEvent::Reset -> stay,
+        EncodeEvent::HeaderWritten -> stay,
+        EncodeEvent::BlocksWritten -> stay,
+        EncodeEvent::ChecksumWritten -> goto Done,
+    }
+
+    final state Done {
+        EncodeEvent::Reset -> stay,
+        EncodeEvent::HeaderWritten -> stay,
+        EncodeEvent::BlocksWritten -> stay,
+        EncodeEvent::ChecksumWritten -> stay,
+    }
+}
+
 pub struct Encoder {
     ws: core::slice::View<i32>, win: [u8], win_ptr: ptr, win_len: i32, units: i32, lit: [u8], lit_ptr: ptr, stage: [u8], stage_ptr: ptr, stage_cap: i32,
     level: i32, wlog: i32, wsize: i32, hlog: i32, chain: i32, lazy: bool, nice: i32, head_at: i32, prev_at: i32,
-    origin: i32, filled: i32, start: i32, hashed: i32, cleared: bool,
+    origin: i32, filled: i32, start: i32, hashed: i32, cleared_completion: core::iter_state::Completion,
     rep0: i32, rep1: i32, rep2: i32, nseq: i32, nlit: i32,
-    bw_acc: u64, bw_bits: i32, bw_pos: i32, bw_over: bool,
+    bw_acc: u64, bw_bits: i32, bw_pos: i32, bit_health: core::lifecycle::Health,
     ll_log: i32, of_log: i32, ml_log: i32, ll_rle: bool, of_rle: bool, ml_rle: bool,
-    hash: ext::xxhash::State, phase: i32, out_len: i32, out_pos: i32 }
+    hash: ext::xxhash::State, phase: Encoding, out_len: i32, out_pos: i32 }
 
 pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>, literals: core::slice::View<u8>, stage: core::slice::View<u8>, level: i32) -> core::result::Result<Encoder,Error> {
     if (level < 1 || level > 3) { return core::result::Err(Error::Level); }
@@ -129,16 +165,16 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
     let e: Encoder = Encoder { ws: workspace, win: core::mem::typed_slice_from_raw_parts<u8>(wp,span+16), win_ptr: wp, win_len: span, units: (span+16) >> 3,
         lit: core::mem::typed_slice_from_raw_parts<u8>(lp,literals_len()), lit_ptr: lp, stage: core::mem::typed_slice_from_raw_parts<u8>(sp,stage_len()), stage_ptr: sp, stage_cap: stage_len(),
         level: level, wlog: wl, wsize: 1 << wl, hlog: hlog(level), chain: chain, lazy: lazy, nice: nice, head_at: TABLES_END, prev_at: TABLES_END+(1 << hlog(level)),
-        origin: 1 << wl, filled: 0, start: 0, hashed: 0, cleared: false, rep0: 1, rep1: 4, rep2: 8, nseq: 0, nlit: 0,
-        bw_acc: 0, bw_bits: 0, bw_pos: 0, bw_over: false, ll_log: 0, of_log: 0, ml_log: 0, ll_rle: false, of_rle: false, ml_rle: false,
-        hash: ext::xxhash::state(0), phase: 0, out_len: 0, out_pos: 0 };
+        origin: 1 << wl, filled: 0, start: 0, hashed: 0, cleared_completion: core::iter_state::completion_start(), rep0: 1, rep1: 4, rep2: 8, nseq: 0, nlit: 0,
+        bw_acc: 0, bw_bits: 0, bw_pos: 0, bit_health: core::lifecycle::health_start(), ll_log: 0, of_log: 0, ml_log: 0, ll_rle: false, of_rle: false, ml_rle: false,
+        hash: ext::xxhash::state(0), phase: encoding_start(), out_len: 0, out_pos: 0 };
     e.borrow().init_tables();
     return core::result::Ok(e);
 }
 
 pub impl Encoder {
     pub fn borrow(&self) -> &Encoder { return self; }
-    pub fn is_done(&self) -> bool { return self.phase == 3; }
+    pub fn is_done(&self) -> bool { return ((match (self.phase.state()) { EncodingState::Done -> true, _ -> false })); }
     fn w(&self, at: i32) -> i32 { return self.ws.values[self.ws.start+at]; }
     fn set(&self, at: i32, value: i32) { self.ws.values[self.ws.start+at] = value; }
     fn init_tables(&self) {
@@ -159,7 +195,7 @@ pub impl Encoder {
     // the stage sets bw_over; the block then falls back to raw.
     fn flush(&self) {
         let nb: i32 = self.bw_bits >> 3;
-        if (self.bw_pos+8 > self.stage_cap) { self.bw_over = true; } else { let x: [u64] = words(self.stage_ptr,self.bw_pos,1); x[0] = self.bw_acc; }
+        if (self.bw_pos+8 > self.stage_cap) { self.bit_health.fail(); } else { let x: [u64] = words(self.stage_ptr,self.bw_pos,1); x[0] = self.bw_acc; }
         self.bw_pos += nb; self.bw_acc = self.bw_acc >> ((nb << 3) as u64); self.bw_bits = self.bw_bits & 7;
     }
     fn bits(&self, value: i32, n: i32) {
@@ -171,7 +207,7 @@ pub impl Encoder {
     // Pad to a byte (forward fields) or add the end mark (backward streams).
     fn end_bits(&self) { self.flush(); if (self.bw_bits > 0) { self.bw_pos += 1; } self.bw_acc = 0; self.bw_bits = 0; }
     fn close(&self) { self.bits(1,1); self.end_bits(); }
-    fn byte(&self, value: i32) { if (self.bw_pos >= self.stage_cap) { self.bw_over = true; } else { self.stage[self.bw_pos] = value as u8; } self.bw_pos += 1; }
+    fn byte(&self, value: i32) { if (self.bw_pos >= self.stage_cap) { self.bit_health.fail(); } else { self.stage[self.bw_pos] = value as u8; } self.bw_pos += 1; }
     fn poke(&self, at: i32, value: i32) { self.stage[at] = value as u8; }
 
     // ------------------------------------------------ FSE
@@ -390,7 +426,7 @@ pub impl Encoder {
         while (k > 0) { k -= 1; s2 = self.state_put(CT_W,TT_W,s2,self.w(HCODE+k)); k -= 1; s1 = self.state_put(CT_W,TT_W,s1,self.w(HCODE+k)); }
         self.bits(s2,log); self.bits(s1,log); self.close();
         let size: i32 = self.bw_pos-size_at-1;
-        if (size >= 128 || self.bw_over) { return false; }
+        if (size >= 128 || self.bit_health.is_failed()) { return false; }
         self.poke(size_at,size); return true;
     }
     fn raw_literals(&self, n: i32, kind: i32) {
@@ -400,7 +436,7 @@ pub impl Encoder {
             else { self.byte(kind | 12 | ((n & 15) << 4)); self.byte((n >> 4) & 255); self.byte(n >> 12); }
         }
         if (kind == 1) { self.byte(self.lit[0] as i32); return; }
-        if (self.bw_pos+n > self.stage_cap) { self.bw_over = true; self.bw_pos += n; return; }
+        if (self.bw_pos+n > self.stage_cap) { self.bit_health.fail(); self.bw_pos += n; return; }
         copy_disjoint(self.stage_ptr,self.bw_pos,self.lit_ptr,0,n); self.bw_pos += n;
     }
     // One Huffman stream: literals [from, to), last first.
@@ -440,7 +476,7 @@ pub impl Encoder {
             while (i < top) { let a: i32 = self.w(HCODE+i); let b: i32 = 0; if (i+1 < top) { b = self.w(HCODE+i+1); } self.byte((a << 4) | b); i += 2; }
         } else {
             let ok: bool = self.fse_weights(top);
-            if (!ok) { self.bw_pos = mark; self.bw_over = false; self.raw_literals(n,0); return; }
+            if (!ok) { self.bw_pos = mark; self.bit_health.reset(); self.raw_literals(n,0); return; }
         }
         // Codes: entry = code << 4 | length.
         i = 0;
@@ -456,12 +492,12 @@ pub impl Encoder {
             while (s < 4) {
                 let to: i32 = (s+1)*part; if (s == 3) { to = n; }
                 self.huffman_stream(s*part,to);
-                if (s < 3 && !self.bw_over) { let size: i32 = self.bw_pos-prev; self.poke(jump+2*s,size & 255); self.poke(jump+2*s+1,size >> 8); }
+                if (s < 3 && !self.bit_health.is_failed()) { let size: i32 = self.bw_pos-prev; self.poke(jump+2*s,size & 255); self.poke(jump+2*s+1,size >> 8); }
                 prev = self.bw_pos; s += 1;
             }
         }
         let compressed: i32 = self.bw_pos-tree;
-        if (self.bw_over || compressed+header >= n+3) { self.bw_pos = mark; self.bw_over = false; self.raw_literals(n,0); return; }
+        if (self.bit_health.is_failed() || compressed+header >= n+3) { self.bw_pos = mark; self.bit_health.reset(); self.raw_literals(n,0); return; }
         let packed_header: u64 = 2 | ((format << 2) as u64) | ((n as u64) << 4) | ((compressed as u64) << ((4+width) as u64));
         k = 0; while (k < header) { self.poke(mark+k,((packed_header >> ((8*k) as u64)) & 255) as i32); k += 1; }
     }
@@ -481,7 +517,7 @@ pub impl Encoder {
         }
         let modes_at: i32 = self.bw_pos; self.byte(0);
         let a: i32 = self.choose(0); let b: i32 = self.choose(1); let c: i32 = self.choose(2);
-        if (!self.bw_over) { self.poke(modes_at,(a << 6) | (b << 4) | (c << 2)); }
+        if (!self.bit_health.is_failed()) { self.poke(modes_at,(a << 6) | (b << 4) | (c << 2)); }
         self.begin_bits();
         let last: i32 = s0+SEQ+4*(n-1); let codes: i32 = t[last+3];
         let llc: i32 = codes & 255; let ofc: i32 = (codes >> 8) & 255; let mlc: i32 = codes >> 16;
@@ -530,7 +566,7 @@ pub impl Encoder {
         let wmask: i32 = self.wsize-1; let hshift: u64 = (32-self.hlog) as u64;
         let whole: [u64] = words(self.win_ptr,0,self.units); let units: i32 = self.units; let bytes: [u8] = self.win;
         let origin: i32 = self.origin; let limit_span: i32 = self.wsize-1; let chain: i32 = self.chain; let nice: i32 = self.nice; let lazy: bool = self.lazy;
-        if (!self.cleared) { let k: i32 = 0; while (k < (1 << self.hlog)) { w[head+k] = -1; k += 1; } self.cleared = true; }
+        if (!self.cleared_completion.is_done()) { let k: i32 = 0; while (k < (1 << self.hlog)) { w[head+k] = -1; k += 1; } self.cleared_completion.finish(); }
         let hashing: i32 = end-4;
         // Positions that lacked lookahead at the previous block's end.
         let q: i32 = self.hashed-origin; if (q < 0) { q = 0; }
@@ -601,7 +637,7 @@ pub impl Encoder {
     // Encode window[begin..end) as one block into the stage.
     fn block(&self, begin: i32, end: i32, last: bool) {
         let n: i32 = end-begin; let flag: i32 = 0; if (last) { flag = 1; }
-        self.bw_pos = 3; self.bw_over = false; let kind: i32 = 0; let size: i32 = n;
+        self.bw_pos = 3; self.bit_health.reset(); let kind: i32 = 0; let size: i32 = n;
         if (n > 0) {
             let bytes: [u8] = self.win; let first: u8 = bytes[begin]; let same: bool = true; let i: i32 = begin+1;
             while (i < end && same) { same = bytes[i] == first; i += 1; }
@@ -609,7 +645,7 @@ pub impl Encoder {
             else {
                 let r0: i32 = self.rep0; let r1: i32 = self.rep1; let r2: i32 = self.rep2;
                 self.parse(begin,end); self.literals(); self.sequences();
-                if (!self.bw_over && self.bw_pos-3 < n) { kind = 2; size = self.bw_pos-3; }
+                if (!self.bit_health.is_failed() && self.bw_pos-3 < n) { kind = 2; size = self.bw_pos-3; }
                 // Raw blocks leave a decoder's repeat offsets unchanged.
                 else { self.rep0 = r0; self.rep1 = r1; self.rep2 = r2; }
             }
@@ -643,16 +679,16 @@ pub impl Encoder {
                 written += chunk; self.out_pos += chunk;
                 if (self.out_pos < self.out_len) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
             }
-            if (self.phase == 3) { return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
-            if (self.phase == 2) {
+            if (((match (self.phase.state()) { EncodingState::Done -> true, _ -> false }))) { return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+            if (((match (self.phase.state()) { EncodingState::Checksum -> true, _ -> false }))) {
                 let digest: u64 = self.hash.borrow().digest(); let k: i32 = 0;
                 while (k < 4) { self.poke(k,((digest >> ((8*k) as u64)) & 255) as i32); k += 1; }
-                self.out_len = 4; self.out_pos = 0; self.phase = 3; continue;
+                self.out_len = 4; self.out_pos = 0; self.phase.step(EncodeEvent::ChecksumWritten); continue;
             }
-            if (self.phase == 0) {
+            if (((match (self.phase.state()) { EncodingState::Header -> true, _ -> false }))) {
                 // Magic, a descriptor with the checksum flag, the window.
                 self.poke(0,40); self.poke(1,181); self.poke(2,47); self.poke(3,253); self.poke(4,4); self.poke(5,(self.wlog-10) << 3);
-                self.out_len = 6; self.out_pos = 0; self.phase = 1; continue;
+                self.out_len = 6; self.out_pos = 0; self.phase.step(EncodeEvent::HeaderWritten); continue;
             }
             let more: bool = read < input.length;
             if (more && self.filled-self.start < BLOCK) {
@@ -666,7 +702,7 @@ pub impl Encoder {
             }
             if (more) { self.block(self.start,self.filled,false); self.start = self.filled; continue; }
             if (!final_input) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput }); }
-            self.block(self.start,self.filled,true); self.start = self.filled; self.phase = 2;
+            self.block(self.start,self.filled,true); self.start = self.filled; self.phase.step(EncodeEvent::BlocksWritten);
         }
         return core::result::Ok(Step { read: read, written: written, status: Status::Done });
     }

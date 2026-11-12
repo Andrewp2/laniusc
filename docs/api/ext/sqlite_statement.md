@@ -4,17 +4,18 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/sqlite_statement.lani#L12)
+[All modules](../README.md) · [Source](../../../extended/ext/sqlite_statement.lani#L3)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-The pure transition function of an ext::sqlite prepared statement: every (state, event) pair in one place, with no wildcard. ext::sqlite changes a statement's state only through it. formal/tools/extract.py translates it to Lean (formal/Lanius/Machines/SqliteStatement.lean), where SqliteStatementCorrect.lean proves that columns are read only on a row and that nothing but another finalize is allowed after finalize.
+Native prepared-statement machine: Statement.step returns whether an operation is permitted and updates generated StatementState. ext::sqlite owns and steps that machine. formal/tools/lani_extract.py extracts it for SqliteStatementCorrect.lean, which proves row-only column access and finalized-state trace properties. See the library migration guide for current verification and API changes.
 
 ## Contract and evidence guides
 
+- [library-state-machines](../../library-state-machines.md)
 - [state-machines-design](../../state-machines-design.md)
 
-Declaration counts: enum: 2; field: 2; function: 2; struct: 1; variant: 15.
+Declaration counts: enum: 1; machine: 1; variant: 10.
 
 ## Declared imports
 
@@ -24,57 +25,9 @@ None.
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### enum: State
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-pub enum State
-```
-
-#### variant: Ready
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-Ready
-```
-
-#### variant: Row
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-Row
-```
-
-#### variant: Done
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-Done
-```
-
-#### variant: Failed
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-Failed
-```
-
-#### variant: Finalized
-
-[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
-
-```lanius
-Finalized
-```
-
 ### enum: Event
 
-[Source line 16](../../../extended/ext/sqlite_statement.lani#L16)
+[Source line 5](../../../extended/ext/sqlite_statement.lani#L5)
 
 ```lanius
 pub enum Event
@@ -82,7 +35,7 @@ pub enum Event
 
 #### variant: Bind
 
-[Source line 17](../../../extended/ext/sqlite_statement.lani#L17)
+[Source line 6](../../../extended/ext/sqlite_statement.lani#L6)
 
 ```lanius
 Bind
@@ -90,7 +43,7 @@ Bind
 
 #### variant: ClearBindings
 
-[Source line 18](../../../extended/ext/sqlite_statement.lani#L18)
+[Source line 7](../../../extended/ext/sqlite_statement.lani#L7)
 
 ```lanius
 ClearBindings
@@ -98,7 +51,7 @@ ClearBindings
 
 #### variant: Step
 
-[Source line 20](../../../extended/ext/sqlite_statement.lani#L20)
+[Source line 9](../../../extended/ext/sqlite_statement.lani#L9)
 
 ```lanius
 Step
@@ -106,7 +59,7 @@ Step
 
 #### variant: StepRow
 
-[Source line 21](../../../extended/ext/sqlite_statement.lani#L21)
+[Source line 10](../../../extended/ext/sqlite_statement.lani#L10)
 
 ```lanius
 StepRow
@@ -114,7 +67,7 @@ StepRow
 
 #### variant: StepDone
 
-[Source line 22](../../../extended/ext/sqlite_statement.lani#L22)
+[Source line 11](../../../extended/ext/sqlite_statement.lani#L11)
 
 ```lanius
 StepDone
@@ -122,7 +75,7 @@ StepDone
 
 #### variant: StepFailed
 
-[Source line 24](../../../extended/ext/sqlite_statement.lani#L24)
+[Source line 13](../../../extended/ext/sqlite_statement.lani#L13)
 
 ```lanius
 StepFailed
@@ -130,7 +83,7 @@ StepFailed
 
 #### variant: Column
 
-[Source line 25](../../../extended/ext/sqlite_statement.lani#L25)
+[Source line 14](../../../extended/ext/sqlite_statement.lani#L14)
 
 ```lanius
 Column
@@ -138,7 +91,7 @@ Column
 
 #### variant: ColumnFailed
 
-[Source line 27](../../../extended/ext/sqlite_statement.lani#L27)
+[Source line 16](../../../extended/ext/sqlite_statement.lani#L16)
 
 ```lanius
 ColumnFailed
@@ -146,7 +99,7 @@ ColumnFailed
 
 #### variant: Reset
 
-[Source line 28](../../../extended/ext/sqlite_statement.lani#L28)
+[Source line 17](../../../extended/ext/sqlite_statement.lani#L17)
 
 ```lanius
 Reset
@@ -154,50 +107,16 @@ Reset
 
 #### variant: Finalize
 
-[Source line 29](../../../extended/ext/sqlite_statement.lani#L29)
+[Source line 18](../../../extended/ext/sqlite_statement.lani#L18)
 
 ```lanius
 Finalize
 ```
 
-### struct: Move
+### machine: Statement
 
-[Source line 33](../../../extended/ext/sqlite_statement.lani#L33)
-
-```lanius
-pub struct Move
-```
-
-#### field: next
-
-[Source line 34](../../../extended/ext/sqlite_statement.lani#L34)
+[Source line 21](../../../extended/ext/sqlite_statement.lani#L21)
 
 ```lanius
-next: State
-```
-
-#### field: allowed
-
-[Source line 35](../../../extended/ext/sqlite_statement.lani#L35)
-
-```lanius
-allowed: bool
-```
-
-## Free functions and extern declarations
-
-### function: start
-
-[Source line 38](../../../extended/ext/sqlite_statement.lani#L38)
-
-```lanius
-pub fn start() -> State
-```
-
-### function: transition
-
-[Source line 130](../../../extended/ext/sqlite_statement.lani#L130)
-
-```lanius
-pub fn transition(state: State, event: Event) -> Move
+pub machine Statement on Event -> bool
 ```

@@ -20,12 +20,14 @@ Declaration counts: enum: 1; field: 2; function: 2; struct: 1; variant: 4.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/toml_writer.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/toml_writer.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/toml_writer.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/toml_writer.lani#L10)
-- [core::text](../core/text.md) · [source](../../../extended/ext/toml_writer.lani#L11)
-- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/toml_writer.lani#L12)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/toml_writer.lani#L7)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/toml_writer.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/toml_writer.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/toml_writer.lani#L10)
+- [core::result](../core/result.md) · [source](../../../extended/ext/toml_writer.lani#L11)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/toml_writer.lani#L12)
+- [core::text](../core/text.md) · [source](../../../extended/ext/toml_writer.lani#L13)
+- [ext::json_tree](json_tree.md) · [source](../../../extended/ext/toml_writer.lani#L14)
 
 ## Types, fields and variants
 
@@ -33,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 16](../../../extended/ext/toml_writer.lani#L16)
+[Source line 18](../../../extended/ext/toml_writer.lani#L18)
 
 ```lanius
 pub enum ErrorKind
@@ -41,7 +43,7 @@ pub enum ErrorKind
 
 #### variant: NotTable
 
-[Source line 16](../../../extended/ext/toml_writer.lani#L16)
+[Source line 18](../../../extended/ext/toml_writer.lani#L18)
 
 ```lanius
 NotTable
@@ -49,7 +51,7 @@ NotTable
 
 #### variant: NullValue
 
-[Source line 16](../../../extended/ext/toml_writer.lani#L16)
+[Source line 18](../../../extended/ext/toml_writer.lani#L18)
 
 ```lanius
 NullValue
@@ -57,7 +59,7 @@ NullValue
 
 #### variant: IntegerRange
 
-[Source line 16](../../../extended/ext/toml_writer.lani#L16)
+[Source line 18](../../../extended/ext/toml_writer.lani#L18)
 
 ```lanius
 IntegerRange
@@ -65,7 +67,7 @@ IntegerRange
 
 #### variant: AllocationFailed
 
-[Source line 16](../../../extended/ext/toml_writer.lani#L16)
+[Source line 18](../../../extended/ext/toml_writer.lani#L18)
 
 ```lanius
 AllocationFailed
@@ -73,7 +75,7 @@ AllocationFailed
 
 ### struct: Error
 
-[Source line 18](../../../extended/ext/toml_writer.lani#L18)
+[Source line 20](../../../extended/ext/toml_writer.lani#L20)
 
 ```lanius
 pub struct Error
@@ -81,7 +83,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 18](../../../extended/ext/toml_writer.lani#L18)
+[Source line 20](../../../extended/ext/toml_writer.lani#L20)
 
 ```lanius
 kind: ErrorKind
@@ -89,7 +91,7 @@ kind: ErrorKind
 
 #### field: node
 
-[Source line 18](../../../extended/ext/toml_writer.lani#L18)
+[Source line 20](../../../extended/ext/toml_writer.lani#L20)
 
 ```lanius
 node: i32
@@ -99,7 +101,7 @@ node: i32
 
 ### function: kind_name
 
-[Source line 24](../../../extended/ext/toml_writer.lani#L24)
+[Source line 26](../../../extended/ext/toml_writer.lani#L26)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -107,7 +109,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: write
 
-[Source line 171](../../../extended/ext/toml_writer.lani#L171)
+[Source line 173](../../../extended/ext/toml_writer.lani#L173)
 
 ```lanius
 pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error>

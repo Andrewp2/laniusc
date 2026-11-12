@@ -1,0 +1,12 @@
+// Context recognizers shared by Unicode boundary algorithms.
+module ext::unicode_break_state;
+pub enum RegionalEvent { Classified(bool) }
+pub machine RegionalRun on RegionalEvent {
+    start Even;
+    state Even { RegionalEvent::Classified(regional) -> { if (regional) { goto Odd; } stay; }, }
+    state Odd { RegionalEvent::Classified(_) -> goto Even, }
+}
+pub impl RegionalRun {
+    pub fn classify(&self, regional: bool) { self.step(RegionalEvent::Classified(regional)); }
+    pub fn odd(&self) -> bool { return match (self.state()) { RegionalRunState::Odd -> true, _ -> false }; }
+}

@@ -17,7 +17,7 @@ SQLite database and prepared-statement owners execute on Linux x86_64/glibc thro
 - [extended-sqlite-kv](../../extended-sqlite-kv.md)
 - [extended-sqlite-allocation](../../extended-sqlite-allocation.md)
 
-Declaration counts: enum: 7; extern function: 28; field: 21; function: 5; impl: 2; method: 31; struct: 4; variant: 47.
+Declaration counts: enum: 6; extern function: 28; field: 21; function: 5; impl: 2; method: 31; struct: 4; variant: 42.
 
 ## Declared imports
 
@@ -123,57 +123,9 @@ Row
 Done
 ```
 
-### enum: State
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-pub enum State
-```
-
-#### variant: Ready
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-Ready
-```
-
-#### variant: Row
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-Row
-```
-
-#### variant: Done
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-Done
-```
-
-#### variant: Failed
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-Failed
-```
-
-#### variant: Finalized
-
-[Source line 15](../../../extended/ext/sqlite.lani#L15)
-
-```lanius
-Finalized
-```
-
 ### enum: ColumnType
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 pub enum ColumnType
@@ -181,7 +133,7 @@ pub enum ColumnType
 
 #### variant: Null
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 Null
@@ -189,7 +141,7 @@ Null
 
 #### variant: Integer
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 Integer
@@ -197,7 +149,7 @@ Integer
 
 #### variant: Real
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 Real
@@ -205,7 +157,7 @@ Real
 
 #### variant: Text
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 Text
@@ -213,7 +165,7 @@ Text
 
 #### variant: Blob
 
-[Source line 16](../../../extended/ext/sqlite.lani#L16)
+[Source line 15](../../../extended/ext/sqlite.lani#L15)
 
 ```lanius
 Blob
@@ -221,7 +173,7 @@ Blob
 
 ### enum: Phase
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 pub enum Phase
@@ -229,7 +181,7 @@ pub enum Phase
 
 #### variant: Open
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Open
@@ -237,7 +189,7 @@ Open
 
 #### variant: Configure
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Configure
@@ -245,7 +197,7 @@ Configure
 
 #### variant: Prepare
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Prepare
@@ -253,7 +205,7 @@ Prepare
 
 #### variant: Bind
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Bind
@@ -261,7 +213,7 @@ Bind
 
 #### variant: Step
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Step
@@ -269,7 +221,7 @@ Step
 
 #### variant: Reset
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Reset
@@ -277,7 +229,7 @@ Reset
 
 #### variant: ClearBindings
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 ClearBindings
@@ -285,7 +237,7 @@ ClearBindings
 
 #### variant: Column
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Column
@@ -293,7 +245,7 @@ Column
 
 #### variant: Finalize
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Finalize
@@ -301,7 +253,7 @@ Finalize
 
 #### variant: Close
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Close
@@ -309,7 +261,7 @@ Close
 
 #### variant: Transaction
 
-[Source line 17](../../../extended/ext/sqlite.lani#L17)
+[Source line 16](../../../extended/ext/sqlite.lani#L16)
 
 ```lanius
 Transaction
@@ -317,7 +269,7 @@ Transaction
 
 ### enum: Cause
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 pub enum Cause
@@ -325,7 +277,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Bounds
@@ -333,7 +285,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 InvalidLimits
@@ -341,7 +293,7 @@ InvalidLimits
 
 #### variant: Limit
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Limit
@@ -349,7 +301,7 @@ Limit
 
 #### variant: Closed
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Closed
@@ -357,7 +309,7 @@ Closed
 
 #### variant: InvalidState
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 InvalidState
@@ -365,7 +317,7 @@ InvalidState
 
 #### variant: Parameter
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Parameter
@@ -373,7 +325,7 @@ Parameter
 
 #### variant: Column
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Column
@@ -381,7 +333,7 @@ Column
 
 #### variant: Type
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Type
@@ -389,7 +341,7 @@ Type
 
 #### variant: Utf8
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Utf8
@@ -397,7 +349,7 @@ Utf8
 
 #### variant: Nul
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Nul
@@ -405,7 +357,7 @@ Nul
 
 #### variant: EmptySql
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 EmptySql
@@ -413,7 +365,7 @@ EmptySql
 
 #### variant: TrailingSql
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 TrailingSql
@@ -421,7 +373,7 @@ TrailingSql
 
 #### variant: OutputTooSmall
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 OutputTooSmall
@@ -429,7 +381,7 @@ OutputTooSmall
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 AllocationFailed
@@ -437,7 +389,7 @@ AllocationFailed
 
 #### variant: UnexpectedNative
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 UnexpectedNative
@@ -445,7 +397,7 @@ UnexpectedNative
 
 #### variant: ReadOnly
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 ReadOnly
@@ -453,7 +405,7 @@ ReadOnly
 
 #### variant: NotANumber
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 NotANumber
@@ -461,7 +413,7 @@ NotANumber
 
 #### variant: Native
 
-[Source line 18](../../../extended/ext/sqlite.lani#L18)
+[Source line 17](../../../extended/ext/sqlite.lani#L17)
 
 ```lanius
 Native
@@ -469,7 +421,7 @@ Native
 
 ### struct: Error
 
-[Source line 19](../../../extended/ext/sqlite.lani#L19)
+[Source line 18](../../../extended/ext/sqlite.lani#L18)
 
 ```lanius
 pub struct Error
@@ -477,7 +429,7 @@ pub struct Error
 
 #### field: cause
 
-[Source line 19](../../../extended/ext/sqlite.lani#L19)
+[Source line 18](../../../extended/ext/sqlite.lani#L18)
 
 ```lanius
 cause: Cause
@@ -485,7 +437,7 @@ cause: Cause
 
 #### field: phase
 
-[Source line 19](../../../extended/ext/sqlite.lani#L19)
+[Source line 18](../../../extended/ext/sqlite.lani#L18)
 
 ```lanius
 phase: Phase
@@ -493,7 +445,7 @@ phase: Phase
 
 #### field: code
 
-[Source line 19](../../../extended/ext/sqlite.lani#L19)
+[Source line 18](../../../extended/ext/sqlite.lani#L18)
 
 ```lanius
 code: i32
@@ -501,7 +453,7 @@ code: i32
 
 ### struct: Limits
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 pub struct Limits
@@ -509,7 +461,7 @@ pub struct Limits
 
 #### field: path_bytes
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 path_bytes: i32
@@ -517,7 +469,7 @@ path_bytes: i32
 
 #### field: sql_bytes
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 sql_bytes: i32
@@ -525,7 +477,7 @@ sql_bytes: i32
 
 #### field: value_bytes
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 value_bytes: i32
@@ -533,7 +485,7 @@ value_bytes: i32
 
 #### field: column_bytes
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 column_bytes: i32
@@ -541,7 +493,7 @@ column_bytes: i32
 
 #### field: variables
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 variables: i32
@@ -549,7 +501,7 @@ variables: i32
 
 #### field: columns
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 columns: i32
@@ -557,7 +509,7 @@ columns: i32
 
 #### field: expression_depth
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 expression_depth: i32
@@ -565,7 +517,7 @@ expression_depth: i32
 
 #### field: compound_selects
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 compound_selects: i32
@@ -573,7 +525,7 @@ compound_selects: i32
 
 #### field: vm_ops
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 vm_ops: i32
@@ -581,7 +533,7 @@ vm_ops: i32
 
 #### field: busy_timeout_ms
 
-[Source line 22](../../../extended/ext/sqlite.lani#L22)
+[Source line 21](../../../extended/ext/sqlite.lani#L21)
 
 ```lanius
 busy_timeout_ms: i32
@@ -589,7 +541,7 @@ busy_timeout_ms: i32
 
 ### struct: Database
 
-[Source line 24](../../../extended/ext/sqlite.lani#L24)
+[Source line 23](../../../extended/ext/sqlite.lani#L23)
 
 ```lanius
 pub struct Database
@@ -597,7 +549,7 @@ pub struct Database
 
 #### field: handle
 
-[Source line 24](../../../extended/ext/sqlite.lani#L24)
+[Source line 23](../../../extended/ext/sqlite.lani#L23)
 
 ```lanius
 handle: ptr
@@ -605,7 +557,7 @@ handle: ptr
 
 #### field: limits
 
-[Source line 24](../../../extended/ext/sqlite.lani#L24)
+[Source line 23](../../../extended/ext/sqlite.lani#L23)
 
 ```lanius
 limits: Limits
@@ -613,7 +565,7 @@ limits: Limits
 
 ### struct: Statement
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 pub struct Statement
@@ -621,7 +573,7 @@ pub struct Statement
 
 #### field: handle
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 handle: ptr
@@ -629,7 +581,7 @@ handle: ptr
 
 #### field: database
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 database: ptr
@@ -637,7 +589,7 @@ database: ptr
 
 #### field: limits
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 limits: Limits
@@ -645,15 +597,15 @@ limits: Limits
 
 #### field: current
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
-current: ext::sqlite_statement::State
+current: ext::sqlite_statement::Statement
 ```
 
 #### field: parameters
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 parameters: i32
@@ -661,7 +613,7 @@ parameters: i32
 
 #### field: columns
 
-[Source line 30](../../../extended/ext/sqlite.lani#L30)
+[Source line 29](../../../extended/ext/sqlite.lani#L29)
 
 ```lanius
 columns: i32
@@ -671,7 +623,7 @@ columns: i32
 
 ### function: default_limits
 
-[Source line 34](../../../extended/ext/sqlite.lani#L34)
+[Source line 33](../../../extended/ext/sqlite.lani#L33)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -679,7 +631,7 @@ pub fn default_limits() -> Limits
 
 ### function: primary_code
 
-[Source line 37](../../../extended/ext/sqlite.lani#L37)
+[Source line 36](../../../extended/ext/sqlite.lani#L36)
 
 ```lanius
 pub fn primary_code(error: Error) -> i32
@@ -687,7 +639,7 @@ pub fn primary_code(error: Error) -> i32
 
 ### function: is_busy
 
-[Source line 38](../../../extended/ext/sqlite.lani#L38)
+[Source line 37](../../../extended/ext/sqlite.lani#L37)
 
 ```lanius
 pub fn is_busy(error: Error) -> bool
@@ -695,7 +647,7 @@ pub fn is_busy(error: Error) -> bool
 
 ### function: open
 
-[Source line 109](../../../extended/ext/sqlite.lani#L109)
+[Source line 108](../../../extended/ext/sqlite.lani#L108)
 
 ```lanius
 pub fn open(path: core::slice::View<u8>, mode: Mode, limits: Limits) -> core::result::Result<Database, Error>
@@ -703,7 +655,7 @@ pub fn open(path: core::slice::View<u8>, mode: Mode, limits: Limits) -> core::re
 
 ### function: memory
 
-[Source line 139](../../../extended/ext/sqlite.lani#L139)
+[Source line 138](../../../extended/ext/sqlite.lani#L138)
 
 ```lanius
 pub fn memory(limits: Limits) -> core::result::Result<Database, Error>
@@ -711,7 +663,7 @@ pub fn memory(limits: Limits) -> core::result::Result<Database, Error>
 
 ### extern function: sqlite3_open_v2
 
-[Source line 408](../../../extended/ext/sqlite.lani#L408)
+[Source line 395](../../../extended/ext/sqlite.lani#L395)
 
 ```lanius
 pub extern "C" fn sqlite3_open_v2(filename: ptr, database: ptr, flags: i32, vfs: ptr) -> i32;
@@ -721,7 +673,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_close
 
-[Source line 409](../../../extended/ext/sqlite.lani#L409)
+[Source line 396](../../../extended/ext/sqlite.lani#L396)
 
 ```lanius
 pub extern "C" fn sqlite3_close(database: ptr) -> i32;
@@ -731,7 +683,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_extended_result_codes
 
-[Source line 410](../../../extended/ext/sqlite.lani#L410)
+[Source line 397](../../../extended/ext/sqlite.lani#L397)
 
 ```lanius
 pub extern "C" fn sqlite3_extended_result_codes(database: ptr, enabled: i32) -> i32;
@@ -741,7 +693,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_limit
 
-[Source line 411](../../../extended/ext/sqlite.lani#L411)
+[Source line 398](../../../extended/ext/sqlite.lani#L398)
 
 ```lanius
 pub extern "C" fn sqlite3_limit(database: ptr, category: i32, value: i32) -> i32;
@@ -751,7 +703,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_busy_timeout
 
-[Source line 412](../../../extended/ext/sqlite.lani#L412)
+[Source line 399](../../../extended/ext/sqlite.lani#L399)
 
 ```lanius
 pub extern "C" fn sqlite3_busy_timeout(database: ptr, milliseconds: i32) -> i32;
@@ -761,7 +713,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_db_readonly
 
-[Source line 413](../../../extended/ext/sqlite.lani#L413)
+[Source line 400](../../../extended/ext/sqlite.lani#L400)
 
 ```lanius
 pub extern "C" fn sqlite3_db_readonly(database: ptr, schema: ptr) -> i32;
@@ -771,7 +723,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_prepare_v3
 
-[Source line 414](../../../extended/ext/sqlite.lani#L414)
+[Source line 401](../../../extended/ext/sqlite.lani#L401)
 
 ```lanius
 pub extern "C" fn sqlite3_prepare_v3(database: ptr, sql: ptr, count: i32, flags: u32, statement: ptr, tail: ptr) -> i32;
@@ -781,7 +733,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_parameter_count
 
-[Source line 415](../../../extended/ext/sqlite.lani#L415)
+[Source line 402](../../../extended/ext/sqlite.lani#L402)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_parameter_count(statement: ptr) -> i32;
@@ -791,7 +743,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_count
 
-[Source line 416](../../../extended/ext/sqlite.lani#L416)
+[Source line 403](../../../extended/ext/sqlite.lani#L403)
 
 ```lanius
 pub extern "C" fn sqlite3_column_count(statement: ptr) -> i32;
@@ -801,7 +753,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_null
 
-[Source line 417](../../../extended/ext/sqlite.lani#L417)
+[Source line 404](../../../extended/ext/sqlite.lani#L404)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_null(statement: ptr, index: i32) -> i32;
@@ -811,7 +763,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_int64
 
-[Source line 418](../../../extended/ext/sqlite.lani#L418)
+[Source line 405](../../../extended/ext/sqlite.lani#L405)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_int64(statement: ptr, index: i32, value: i64) -> i32;
@@ -821,7 +773,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_double
 
-[Source line 419](../../../extended/ext/sqlite.lani#L419)
+[Source line 406](../../../extended/ext/sqlite.lani#L406)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_double(statement: ptr, index: i32, value: f64) -> i32;
@@ -831,7 +783,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_text
 
-[Source line 420](../../../extended/ext/sqlite.lani#L420)
+[Source line 407](../../../extended/ext/sqlite.lani#L407)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_text(statement: ptr, index: i32, bytes: ptr, count: i32, destructor: ptr) -> i32;
@@ -841,7 +793,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_bind_blob
 
-[Source line 421](../../../extended/ext/sqlite.lani#L421)
+[Source line 408](../../../extended/ext/sqlite.lani#L408)
 
 ```lanius
 pub extern "C" fn sqlite3_bind_blob(statement: ptr, index: i32, bytes: ptr, count: i32, destructor: ptr) -> i32;
@@ -851,7 +803,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_step
 
-[Source line 422](../../../extended/ext/sqlite.lani#L422)
+[Source line 409](../../../extended/ext/sqlite.lani#L409)
 
 ```lanius
 pub extern "C" fn sqlite3_step(statement: ptr) -> i32;
@@ -861,7 +813,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_reset
 
-[Source line 423](../../../extended/ext/sqlite.lani#L423)
+[Source line 410](../../../extended/ext/sqlite.lani#L410)
 
 ```lanius
 pub extern "C" fn sqlite3_reset(statement: ptr) -> i32;
@@ -871,7 +823,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_clear_bindings
 
-[Source line 424](../../../extended/ext/sqlite.lani#L424)
+[Source line 411](../../../extended/ext/sqlite.lani#L411)
 
 ```lanius
 pub extern "C" fn sqlite3_clear_bindings(statement: ptr) -> i32;
@@ -881,7 +833,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_finalize
 
-[Source line 425](../../../extended/ext/sqlite.lani#L425)
+[Source line 412](../../../extended/ext/sqlite.lani#L412)
 
 ```lanius
 pub extern "C" fn sqlite3_finalize(statement: ptr) -> i32;
@@ -891,7 +843,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_type
 
-[Source line 426](../../../extended/ext/sqlite.lani#L426)
+[Source line 413](../../../extended/ext/sqlite.lani#L413)
 
 ```lanius
 pub extern "C" fn sqlite3_column_type(statement: ptr, index: i32) -> i32;
@@ -901,7 +853,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_int64
 
-[Source line 427](../../../extended/ext/sqlite.lani#L427)
+[Source line 414](../../../extended/ext/sqlite.lani#L414)
 
 ```lanius
 pub extern "C" fn sqlite3_column_int64(statement: ptr, index: i32) -> i64;
@@ -911,7 +863,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_double
 
-[Source line 428](../../../extended/ext/sqlite.lani#L428)
+[Source line 415](../../../extended/ext/sqlite.lani#L415)
 
 ```lanius
 pub extern "C" fn sqlite3_column_double(statement: ptr, index: i32) -> f64;
@@ -921,7 +873,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_text
 
-[Source line 429](../../../extended/ext/sqlite.lani#L429)
+[Source line 416](../../../extended/ext/sqlite.lani#L416)
 
 ```lanius
 pub extern "C" fn sqlite3_column_text(statement: ptr, index: i32) -> ptr;
@@ -931,7 +883,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_blob
 
-[Source line 430](../../../extended/ext/sqlite.lani#L430)
+[Source line 417](../../../extended/ext/sqlite.lani#L417)
 
 ```lanius
 pub extern "C" fn sqlite3_column_blob(statement: ptr, index: i32) -> ptr;
@@ -941,7 +893,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_column_bytes
 
-[Source line 431](../../../extended/ext/sqlite.lani#L431)
+[Source line 418](../../../extended/ext/sqlite.lani#L418)
 
 ```lanius
 pub extern "C" fn sqlite3_column_bytes(statement: ptr, index: i32) -> i32;
@@ -951,7 +903,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_errcode
 
-[Source line 432](../../../extended/ext/sqlite.lani#L432)
+[Source line 419](../../../extended/ext/sqlite.lani#L419)
 
 ```lanius
 pub extern "C" fn sqlite3_errcode(database: ptr) -> i32;
@@ -961,7 +913,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_changes64
 
-[Source line 433](../../../extended/ext/sqlite.lani#L433)
+[Source line 420](../../../extended/ext/sqlite.lani#L420)
 
 ```lanius
 pub extern "C" fn sqlite3_changes64(database: ptr) -> i64;
@@ -971,7 +923,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_last_insert_rowid
 
-[Source line 434](../../../extended/ext/sqlite.lani#L434)
+[Source line 421](../../../extended/ext/sqlite.lani#L421)
 
 ```lanius
 pub extern "C" fn sqlite3_last_insert_rowid(database: ptr) -> i64;
@@ -981,7 +933,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: sqlite3_get_autocommit
 
-[Source line 435](../../../extended/ext/sqlite.lani#L435)
+[Source line 422](../../../extended/ext/sqlite.lani#L422)
 
 ```lanius
 pub extern "C" fn sqlite3_get_autocommit(database: ptr) -> i32;
@@ -991,9 +943,9 @@ Extern declaration; binding availability is not inferred.
 
 ## Implementation blocks and public methods
 
-### impl at line 141
+### impl at line 140
 
-[Source line 141](../../../extended/ext/sqlite.lani#L141)
+[Source line 140](../../../extended/ext/sqlite.lani#L140)
 
 ```lanius
 pub impl Database
@@ -1001,7 +953,7 @@ pub impl Database
 
 #### method: borrow
 
-[Source line 142](../../../extended/ext/sqlite.lani#L142)
+[Source line 141](../../../extended/ext/sqlite.lani#L141)
 
 ```lanius
 pub fn borrow(&self) -> &Database
@@ -1009,7 +961,7 @@ pub fn borrow(&self) -> &Database
 
 #### method: is_open
 
-[Source line 143](../../../extended/ext/sqlite.lani#L143)
+[Source line 142](../../../extended/ext/sqlite.lani#L142)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1017,7 +969,7 @@ pub fn is_open(&self) -> bool
 
 #### method: close
 
-[Source line 146](../../../extended/ext/sqlite.lani#L146)
+[Source line 145](../../../extended/ext/sqlite.lani#L145)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32, Error>
@@ -1025,7 +977,7 @@ pub fn close(&self) -> core::result::Result<i32, Error>
 
 #### method: changes
 
-[Source line 153](../../../extended/ext/sqlite.lani#L153)
+[Source line 152](../../../extended/ext/sqlite.lani#L152)
 
 ```lanius
 pub fn changes(&self) -> core::result::Result<i64, Error>
@@ -1033,7 +985,7 @@ pub fn changes(&self) -> core::result::Result<i64, Error>
 
 #### method: last_insert_rowid
 
-[Source line 157](../../../extended/ext/sqlite.lani#L157)
+[Source line 156](../../../extended/ext/sqlite.lani#L156)
 
 ```lanius
 pub fn last_insert_rowid(&self) -> core::result::Result<i64, Error>
@@ -1041,7 +993,7 @@ pub fn last_insert_rowid(&self) -> core::result::Result<i64, Error>
 
 #### method: autocommit
 
-[Source line 161](../../../extended/ext/sqlite.lani#L161)
+[Source line 160](../../../extended/ext/sqlite.lani#L160)
 
 ```lanius
 pub fn autocommit(&self) -> core::result::Result<bool, Error>
@@ -1049,7 +1001,7 @@ pub fn autocommit(&self) -> core::result::Result<bool, Error>
 
 #### method: prepare
 
-[Source line 165](../../../extended/ext/sqlite.lani#L165)
+[Source line 164](../../../extended/ext/sqlite.lani#L164)
 
 ```lanius
 pub fn prepare(&self, sql: core::slice::View<u8>) -> core::result::Result<Statement, Error>
@@ -1057,7 +1009,7 @@ pub fn prepare(&self, sql: core::slice::View<u8>) -> core::result::Result<Statem
 
 #### method: begin
 
-[Source line 210](../../../extended/ext/sqlite.lani#L210)
+[Source line 209](../../../extended/ext/sqlite.lani#L209)
 
 ```lanius
 pub fn begin(&self, mode: Transaction) -> core::result::Result<i32, Error>
@@ -1065,7 +1017,7 @@ pub fn begin(&self, mode: Transaction) -> core::result::Result<i32, Error>
 
 #### method: commit
 
-[Source line 214](../../../extended/ext/sqlite.lani#L214)
+[Source line 213](../../../extended/ext/sqlite.lani#L213)
 
 ```lanius
 pub fn commit(&self) -> core::result::Result<i32, Error>
@@ -1073,15 +1025,15 @@ pub fn commit(&self) -> core::result::Result<i32, Error>
 
 #### method: rollback
 
-[Source line 215](../../../extended/ext/sqlite.lani#L215)
+[Source line 214](../../../extended/ext/sqlite.lani#L214)
 
 ```lanius
 pub fn rollback(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 270
+### impl at line 257
 
-[Source line 270](../../../extended/ext/sqlite.lani#L270)
+[Source line 257](../../../extended/ext/sqlite.lani#L257)
 
 ```lanius
 pub impl Statement
@@ -1089,7 +1041,7 @@ pub impl Statement
 
 #### method: borrow
 
-[Source line 271](../../../extended/ext/sqlite.lani#L271)
+[Source line 258](../../../extended/ext/sqlite.lani#L258)
 
 ```lanius
 pub fn borrow(&self) -> &Statement
@@ -1097,7 +1049,7 @@ pub fn borrow(&self) -> &Statement
 
 #### method: is_open
 
-[Source line 272](../../../extended/ext/sqlite.lani#L272)
+[Source line 259](../../../extended/ext/sqlite.lani#L259)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1105,15 +1057,15 @@ pub fn is_open(&self) -> bool
 
 #### method: state
 
-[Source line 273](../../../extended/ext/sqlite.lani#L273)
+[Source line 260](../../../extended/ext/sqlite.lani#L260)
 
 ```lanius
-pub fn state(&self) -> State
+pub fn state(&self) -> ext::sqlite_statement::StatementState
 ```
 
 #### method: parameter_count
 
-[Source line 274](../../../extended/ext/sqlite.lani#L274)
+[Source line 261](../../../extended/ext/sqlite.lani#L261)
 
 ```lanius
 pub fn parameter_count(&self) -> i32
@@ -1121,7 +1073,7 @@ pub fn parameter_count(&self) -> i32
 
 #### method: column_count
 
-[Source line 275](../../../extended/ext/sqlite.lani#L275)
+[Source line 262](../../../extended/ext/sqlite.lani#L262)
 
 ```lanius
 pub fn column_count(&self) -> i32
@@ -1129,7 +1081,7 @@ pub fn column_count(&self) -> i32
 
 #### method: bind_null
 
-[Source line 276](../../../extended/ext/sqlite.lani#L276)
+[Source line 263](../../../extended/ext/sqlite.lani#L263)
 
 ```lanius
 pub fn bind_null(&self, index: i32) -> core::result::Result<i32, Error>
@@ -1137,7 +1089,7 @@ pub fn bind_null(&self, index: i32) -> core::result::Result<i32, Error>
 
 #### method: bind_i64
 
-[Source line 280](../../../extended/ext/sqlite.lani#L280)
+[Source line 267](../../../extended/ext/sqlite.lani#L267)
 
 ```lanius
 pub fn bind_i64(&self, index: i32, value: i64) -> core::result::Result<i32, Error>
@@ -1145,7 +1097,7 @@ pub fn bind_i64(&self, index: i32, value: i64) -> core::result::Result<i32, Erro
 
 #### method: bind_f64
 
-[Source line 286](../../../extended/ext/sqlite.lani#L286)
+[Source line 273](../../../extended/ext/sqlite.lani#L273)
 
 ```lanius
 pub fn bind_f64(&self, index: i32, value: f64) -> core::result::Result<i32, Error>
@@ -1153,7 +1105,7 @@ pub fn bind_f64(&self, index: i32, value: f64) -> core::result::Result<i32, Erro
 
 #### method: bind_text
 
-[Source line 293](../../../extended/ext/sqlite.lani#L293)
+[Source line 280](../../../extended/ext/sqlite.lani#L280)
 
 ```lanius
 pub fn bind_text(&self, index: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1161,7 +1113,7 @@ pub fn bind_text(&self, index: i32, bytes: core::slice::View<u8>) -> core::resul
 
 #### method: bind_blob
 
-[Source line 294](../../../extended/ext/sqlite.lani#L294)
+[Source line 281](../../../extended/ext/sqlite.lani#L281)
 
 ```lanius
 pub fn bind_blob(&self, index: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1169,7 +1121,7 @@ pub fn bind_blob(&self, index: i32, bytes: core::slice::View<u8>) -> core::resul
 
 #### method: step
 
-[Source line 295](../../../extended/ext/sqlite.lani#L295)
+[Source line 282](../../../extended/ext/sqlite.lani#L282)
 
 ```lanius
 pub fn step(&self) -> core::result::Result<Step, Error>
@@ -1177,7 +1129,7 @@ pub fn step(&self) -> core::result::Result<Step, Error>
 
 #### method: reset
 
-[Source line 311](../../../extended/ext/sqlite.lani#L311)
+[Source line 298](../../../extended/ext/sqlite.lani#L298)
 
 ```lanius
 pub fn reset(&self) -> core::result::Result<i32, Error>
@@ -1185,7 +1137,7 @@ pub fn reset(&self) -> core::result::Result<i32, Error>
 
 #### method: clear_bindings
 
-[Source line 317](../../../extended/ext/sqlite.lani#L317)
+[Source line 304](../../../extended/ext/sqlite.lani#L304)
 
 ```lanius
 pub fn clear_bindings(&self) -> core::result::Result<i32, Error>
@@ -1193,7 +1145,7 @@ pub fn clear_bindings(&self) -> core::result::Result<i32, Error>
 
 #### method: finalize
 
-[Source line 324](../../../extended/ext/sqlite.lani#L324)
+[Source line 311](../../../extended/ext/sqlite.lani#L311)
 
 ```lanius
 pub fn finalize(&self) -> core::result::Result<i32, Error>
@@ -1201,7 +1153,7 @@ pub fn finalize(&self) -> core::result::Result<i32, Error>
 
 #### method: column_type
 
-[Source line 330](../../../extended/ext/sqlite.lani#L330)
+[Source line 317](../../../extended/ext/sqlite.lani#L317)
 
 ```lanius
 pub fn column_type(&self, index: i32) -> core::result::Result<ColumnType, Error>
@@ -1209,7 +1161,7 @@ pub fn column_type(&self, index: i32) -> core::result::Result<ColumnType, Error>
 
 #### method: column_i64
 
-[Source line 342](../../../extended/ext/sqlite.lani#L342)
+[Source line 329](../../../extended/ext/sqlite.lani#L329)
 
 ```lanius
 pub fn column_i64(&self, index: i32) -> core::result::Result<i64, Error>
@@ -1217,7 +1169,7 @@ pub fn column_i64(&self, index: i32) -> core::result::Result<i64, Error>
 
 #### method: column_f64
 
-[Source line 348](../../../extended/ext/sqlite.lani#L348)
+[Source line 335](../../../extended/ext/sqlite.lani#L335)
 
 ```lanius
 pub fn column_f64(&self, index: i32) -> core::result::Result<f64, Error>
@@ -1225,7 +1177,7 @@ pub fn column_f64(&self, index: i32) -> core::result::Result<f64, Error>
 
 #### method: column_text_len
 
-[Source line 354](../../../extended/ext/sqlite.lani#L354)
+[Source line 341](../../../extended/ext/sqlite.lani#L341)
 
 ```lanius
 pub fn column_text_len(&self, index: i32) -> core::result::Result<i32, Error>
@@ -1233,7 +1185,7 @@ pub fn column_text_len(&self, index: i32) -> core::result::Result<i32, Error>
 
 #### method: column_blob_len
 
-[Source line 358](../../../extended/ext/sqlite.lani#L358)
+[Source line 345](../../../extended/ext/sqlite.lani#L345)
 
 ```lanius
 pub fn column_blob_len(&self, index: i32) -> core::result::Result<i32, Error>
@@ -1241,7 +1193,7 @@ pub fn column_blob_len(&self, index: i32) -> core::result::Result<i32, Error>
 
 #### method: column_text_copy
 
-[Source line 362](../../../extended/ext/sqlite.lani#L362)
+[Source line 349](../../../extended/ext/sqlite.lani#L349)
 
 ```lanius
 pub fn column_text_copy(&self, index: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1249,7 +1201,7 @@ pub fn column_text_copy(&self, index: i32, output: core::slice::View<u8>) -> cor
 
 #### method: column_blob_copy
 
-[Source line 363](../../../extended/ext/sqlite.lani#L363)
+[Source line 350](../../../extended/ext/sqlite.lani#L350)
 
 ```lanius
 pub fn column_blob_copy(&self, index: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error>

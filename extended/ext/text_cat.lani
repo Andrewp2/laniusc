@@ -10,17 +10,68 @@ import core::result;
 import core::slice;
 import ext::text_lines;
 
+pub enum CarriageEvent { Held, Written }
+pub machine Carriage on CarriageEvent {
+    start Clear;
+
+    state Clear {
+        CarriageEvent::Held -> goto Pending,
+        CarriageEvent::Written -> stay,
+    }
+
+    state Pending {
+        CarriageEvent::Held -> stay,
+        CarriageEvent::Written -> goto Clear,
+    }
+}
+pub impl Carriage {
+    pub fn is_clear(&self) -> bool { return match (self.state()) { CarriageState::Clear -> true, _ -> false }; }
+    pub fn is_pending(&self) -> bool { return match (self.state()) { CarriageState::Pending -> true, _ -> false }; }
+}
+
+
+pub enum LineRunEvent { Content, Newline }
+pub machine LineRun on LineRunEvent {
+    start Between;
+
+    state Between {
+        LineRunEvent::Content -> goto Content,
+        LineRunEvent::Newline -> goto Blank,
+    }
+
+    state Content {
+        LineRunEvent::Content -> stay,
+        LineRunEvent::Newline -> goto Between,
+    }
+
+
+    state Blank {
+        LineRunEvent::Content -> goto Content,
+        LineRunEvent::Newline -> goto BlankRun,
+    }
+
+    state BlankRun {
+        LineRunEvent::Content -> goto Content,
+        LineRunEvent::Newline -> stay,
+    }
+}
+pub impl LineRun {
+    pub fn is_content(&self) -> bool { return match (self.state()) { LineRunState::Content -> true, _ -> false }; }
+    pub fn is_blank(&self) -> bool { return match (self.state()) { LineRunState::Blank -> true, _ -> false }; }
+    pub fn is_blank_run(&self) -> bool { return match (self.state()) { LineRunState::BlankRun -> true, _ -> false }; }
+}
+
+
 pub struct Options { number: bool, nonblank: bool, squeeze: bool, ends: bool, tabs: bool, nonprinting: bool }
 pub impl Options { pub fn borrow(&self) -> &Options { return self; } }
 pub fn default_options() -> Options { return Options { number: false, nonblank: false, squeeze: false, ends: false, tabs: false, nonprinting: false }; }
 // True when no option changes the bytes (GNU's simple_cat).
 pub fn plain(o: Options) -> bool { return !(o.number || o.nonblank || o.squeeze || o.ends || o.tabs || o.nonprinting); }
 
-// newlines is GNU's counter: -1 inside a line, otherwise the number of
-// line ends since the last non-empty line (at most 2).
-pub struct State { newlines: i32, line: i64, pending: bool }
+// Blank-line phase and held CR carry across chunks and input files.
+pub struct State { lines: LineRun, line: i64, carriage: Carriage }
 pub impl State { pub fn borrow(&self) -> &State { return self; } }
-pub fn start() -> State { return State { newlines: 0, line: 0, pending: false }; }
+pub fn start() -> State { return State { lines: line_run_start(), line: 0, carriage: carriage_start() }; }
 
 const CHUNK: i32 = 262144;
 
@@ -40,7 +91,7 @@ pub fn copy(fd: i32, o: &Options, st: &State, out: &ext::text_lines::Out) -> i32
         let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
         tc_chunk(w.borrow(), got, o, st, out);
         w.destroy();
-        if (out.failed) { status = 2; break; }
+        if (out.health.is_failed()) { status = 2; break; }
     }
     mem.destroy();
     return status;
@@ -49,7 +100,7 @@ pub fn copy(fd: i32, o: &Options, st: &State, out: &ext::text_lines::Out) -> i32
 // Write what is still held (a CR at the very end) and flush; false when a
 // write failed.
 pub fn finish(st: &State, out: &ext::text_lines::Out) -> bool {
-    if (st.pending) { ext::text_lines::put_byte(out, 13); st.pending = false; }
+    if (st.carriage.is_pending()) { ext::text_lines::put_byte(out, 13); st.carriage.step(CarriageEvent::Written); }
     return ext::text_lines::finish(out);
 }
 
@@ -81,23 +132,23 @@ fn tc_number(st: &State, out: &ext::text_lines::Out) {
 // Bytes [s, e) of a line, then its line end when `ended`.
 fn tc_segment(w: &ext::text_lines::Words, s: i32, e: i32, ended: bool, o: &Options, st: &State, out: &ext::text_lines::Out) {
     if (e > s) {
-        if (st.pending) { ext::text_lines::put_byte(out, 13); st.pending = false; }
-        if (st.newlines >= 0) { if (o.number || o.nonblank) { tc_number(st, out); } st.newlines = -1; }
+        if (st.carriage.is_pending()) { ext::text_lines::put_byte(out, 13); st.carriage.step(CarriageEvent::Written); }
+        if (!st.lines.is_content()) { if (o.number || o.nonblank) { tc_number(st, out); } st.lines.step(LineRunEvent::Content); }
         let stop: i32 = e;
         // -E shows a CR just before a line end as ^M; one at a chunk's end
         // waits for the next byte.
-        if (o.ends && !o.nonprinting && w.byte(e - 1) == 13) { stop = e - 1; st.pending = true; }
+        if (o.ends && !o.nonprinting && w.byte(e - 1) == 13) { stop = e - 1; st.carriage.step(CarriageEvent::Held); }
         if (o.nonprinting || o.tabs) { tc_shown(w, s, stop, o, out); }
         else { ext::text_lines::put_span(out, w, s, stop - s); }
     }
     if (!ended) { return; }
-    st.newlines += 1;
-    if (st.newlines > 0) {
-        if (st.newlines >= 2) { st.newlines = 2; if (o.squeeze) { return; } }
+    st.lines.step(LineRunEvent::Newline);
+    if ((st.lines.is_blank() || st.lines.is_blank_run())) {
+        if (st.lines.is_blank_run()) {  if (o.squeeze) { return; } }
         if (o.number && !o.nonblank) { tc_number(st, out); }
     }
     if (o.ends) {
-        if (st.pending) { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 77); st.pending = false; }
+        if (st.carriage.is_pending()) { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 77); st.carriage.step(CarriageEvent::Written); }
         ext::text_lines::put_byte(out, 36);
     }
     ext::text_lines::put_byte(out, 10);

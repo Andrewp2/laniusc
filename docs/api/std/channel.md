@@ -21,17 +21,18 @@ Declaration counts: constant: 2; enum: 4; field: 10; function: 9; impl: 7; metho
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/channel.lani#L22)
-- [core::layout](../core/layout.md) · [source](../../../stdlib/std/channel.lani#L23)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/channel.lani#L24)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/channel.lani#L25)
-- [core::panic](../core/panic.md) · [source](../../../stdlib/std/channel.lani#L26)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/channel.lani#L27)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/channel.lani#L28)
-- [core::u64](../core/u64.md) · [source](../../../stdlib/std/channel.lani#L29)
-- [std::atomic](atomic.md) · [source](../../../stdlib/std/channel.lani#L30)
-- [std::linux](linux.md) · [source](../../../stdlib/std/channel.lani#L31)
-- [std::sync](sync.md) · [source](../../../stdlib/std/channel.lani#L32)
+- [std::sync_state](sync_state.md) · [source](../../../stdlib/std/channel.lani#L22)
+- [alloc::allocator](../alloc/allocator.md) · [source](../../../stdlib/std/channel.lani#L23)
+- [core::layout](../core/layout.md) · [source](../../../stdlib/std/channel.lani#L24)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/channel.lani#L25)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/channel.lani#L26)
+- [core::panic](../core/panic.md) · [source](../../../stdlib/std/channel.lani#L27)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/channel.lani#L28)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/channel.lani#L29)
+- [core::u64](../core/u64.md) · [source](../../../stdlib/std/channel.lani#L30)
+- [std::atomic](atomic.md) · [source](../../../stdlib/std/channel.lani#L31)
+- [std::linux](linux.md) · [source](../../../stdlib/std/channel.lani#L32)
+- [std::sync](sync.md) · [source](../../../stdlib/std/channel.lani#L33)
 
 ## Types, fields and variants
 
@@ -39,7 +40,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: SendError
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 pub enum SendError<T>
@@ -47,7 +48,7 @@ pub enum SendError<T>
 
 #### variant: Full
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 Full(T)
@@ -55,7 +56,7 @@ Full(T)
 
 #### variant: Disconnected
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 Disconnected(T)
@@ -63,7 +64,7 @@ Disconnected(T)
 
 #### variant: TimedOut
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 TimedOut(T)
@@ -71,7 +72,7 @@ TimedOut(T)
 
 #### variant: AllocationFailed
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 AllocationFailed(T)
@@ -79,7 +80,7 @@ AllocationFailed(T)
 
 #### variant: Sync
 
-[Source line 38](../../../stdlib/std/channel.lani#L38)
+[Source line 39](../../../stdlib/std/channel.lani#L39)
 
 ```lanius
 Sync(std::sync::Error)
@@ -87,7 +88,7 @@ Sync(std::sync::Error)
 
 ### enum: RecvError
 
-[Source line 39](../../../stdlib/std/channel.lani#L39)
+[Source line 40](../../../stdlib/std/channel.lani#L40)
 
 ```lanius
 pub enum RecvError
@@ -95,7 +96,7 @@ pub enum RecvError
 
 #### variant: Empty
 
-[Source line 39](../../../stdlib/std/channel.lani#L39)
+[Source line 40](../../../stdlib/std/channel.lani#L40)
 
 ```lanius
 Empty
@@ -103,7 +104,7 @@ Empty
 
 #### variant: Disconnected
 
-[Source line 39](../../../stdlib/std/channel.lani#L39)
+[Source line 40](../../../stdlib/std/channel.lani#L40)
 
 ```lanius
 Disconnected
@@ -111,7 +112,7 @@ Disconnected
 
 #### variant: TimedOut
 
-[Source line 39](../../../stdlib/std/channel.lani#L39)
+[Source line 40](../../../stdlib/std/channel.lani#L40)
 
 ```lanius
 TimedOut
@@ -119,7 +120,7 @@ TimedOut
 
 #### variant: Sync
 
-[Source line 39](../../../stdlib/std/channel.lani#L39)
+[Source line 40](../../../stdlib/std/channel.lani#L40)
 
 ```lanius
 Sync(std::sync::Error)
@@ -127,7 +128,7 @@ Sync(std::sync::Error)
 
 ### enum: Error
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 pub enum Error
@@ -135,7 +136,7 @@ pub enum Error
 
 #### variant: InvalidCapacity
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 InvalidCapacity
@@ -143,7 +144,7 @@ InvalidCapacity
 
 #### variant: NoEndpoint
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 NoEndpoint
@@ -151,7 +152,7 @@ NoEndpoint
 
 #### variant: SizeOverflow
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 SizeOverflow
@@ -159,7 +160,7 @@ SizeOverflow
 
 #### variant: AllocationFailed
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 AllocationFailed
@@ -167,7 +168,7 @@ AllocationFailed
 
 #### variant: Sync
 
-[Source line 40](../../../stdlib/std/channel.lani#L40)
+[Source line 41](../../../stdlib/std/channel.lani#L41)
 
 ```lanius
 Sync(std::sync::Error)
@@ -175,7 +176,7 @@ Sync(std::sync::Error)
 
 ### struct: Channel
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 pub struct Channel<T>
@@ -183,7 +184,7 @@ pub struct Channel<T>
 
 #### field: lock
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 lock: std::sync::Mutex
@@ -191,7 +192,7 @@ lock: std::sync::Mutex
 
 #### field: readable
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 readable: std::sync::Condvar
@@ -199,7 +200,7 @@ readable: std::sync::Condvar
 
 #### field: writable
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 writable: std::sync::Condvar
@@ -207,7 +208,7 @@ writable: std::sync::Condvar
 
 #### field: header
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 header: ptr
@@ -215,7 +216,7 @@ header: ptr
 
 #### field: slots
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 slots: ptr
@@ -223,7 +224,7 @@ slots: ptr
 
 #### field: capacity
 
-[Source line 43](../../../stdlib/std/channel.lani#L43)
+[Source line 44](../../../stdlib/std/channel.lani#L44)
 
 ```lanius
 capacity: u64
@@ -231,7 +232,7 @@ capacity: u64
 
 ### struct: Sender
 
-[Source line 44](../../../stdlib/std/channel.lani#L44)
+[Source line 45](../../../stdlib/std/channel.lani#L45)
 
 ```lanius
 pub struct Sender<T>
@@ -239,7 +240,7 @@ pub struct Sender<T>
 
 #### field: channel
 
-[Source line 44](../../../stdlib/std/channel.lani#L44)
+[Source line 45](../../../stdlib/std/channel.lani#L45)
 
 ```lanius
 channel: Channel<T>
@@ -247,7 +248,7 @@ channel: Channel<T>
 
 ### struct: Receiver
 
-[Source line 45](../../../stdlib/std/channel.lani#L45)
+[Source line 46](../../../stdlib/std/channel.lani#L46)
 
 ```lanius
 pub struct Receiver<T>
@@ -255,7 +256,7 @@ pub struct Receiver<T>
 
 #### field: channel
 
-[Source line 45](../../../stdlib/std/channel.lani#L45)
+[Source line 46](../../../stdlib/std/channel.lani#L46)
 
 ```lanius
 channel: Channel<T>
@@ -263,7 +264,7 @@ channel: Channel<T>
 
 ### struct: Ring
 
-[Source line 293](../../../stdlib/std/channel.lani#L293)
+[Source line 294](../../../stdlib/std/channel.lani#L294)
 
 ```lanius
 pub struct Ring<T>
@@ -271,7 +272,7 @@ pub struct Ring<T>
 
 #### field: block
 
-[Source line 293](../../../stdlib/std/channel.lani#L293)
+[Source line 294](../../../stdlib/std/channel.lani#L294)
 
 ```lanius
 block: ptr
@@ -279,7 +280,7 @@ block: ptr
 
 ### struct: Mpsc
 
-[Source line 516](../../../stdlib/std/channel.lani#L516)
+[Source line 517](../../../stdlib/std/channel.lani#L517)
 
 ```lanius
 pub struct Mpsc<T>
@@ -287,7 +288,7 @@ pub struct Mpsc<T>
 
 #### field: block
 
-[Source line 516](../../../stdlib/std/channel.lani#L516)
+[Source line 517](../../../stdlib/std/channel.lani#L517)
 
 ```lanius
 block: ptr
@@ -295,7 +296,7 @@ block: ptr
 
 ### enum: Selected
 
-[Source line 696](../../../stdlib/std/channel.lani#L696)
+[Source line 699](../../../stdlib/std/channel.lani#L699)
 
 ```lanius
 pub enum Selected<A, B>
@@ -303,7 +304,7 @@ pub enum Selected<A, B>
 
 #### variant: First
 
-[Source line 696](../../../stdlib/std/channel.lani#L696)
+[Source line 699](../../../stdlib/std/channel.lani#L699)
 
 ```lanius
 First(A)
@@ -311,7 +312,7 @@ First(A)
 
 #### variant: Second
 
-[Source line 696](../../../stdlib/std/channel.lani#L696)
+[Source line 699](../../../stdlib/std/channel.lani#L699)
 
 ```lanius
 Second(B)
@@ -321,7 +322,7 @@ Second(B)
 
 ### constant: MAX_CAPACITY
 
-[Source line 34](../../../stdlib/std/channel.lani#L34)
+[Source line 35](../../../stdlib/std/channel.lani#L35)
 
 ```lanius
 pub const MAX_CAPACITY: i32 = 1048576;
@@ -329,7 +330,7 @@ pub const MAX_CAPACITY: i32 = 1048576;
 
 ### constant: SPINS
 
-[Source line 232](../../../stdlib/std/channel.lani#L232)
+[Source line 233](../../../stdlib/std/channel.lani#L233)
 
 ```lanius
 pub const SPINS: i32 = 200;
@@ -339,7 +340,7 @@ pub const SPINS: i32 = 200;
 
 ### function: bounded
 
-[Source line 47](../../../stdlib/std/channel.lani#L47)
+[Source line 48](../../../stdlib/std/channel.lani#L48)
 
 ```lanius
 pub fn bounded<T>(region: &std::sync::Region, capacity: i32) -> core::result::Result<Channel<T>, Error>
@@ -347,7 +348,7 @@ pub fn bounded<T>(region: &std::sync::Region, capacity: i32) -> core::result::Re
 
 ### function: ring
 
-[Source line 297](../../../stdlib/std/channel.lani#L297)
+[Source line 298](../../../stdlib/std/channel.lani#L298)
 
 ```lanius
 pub fn ring<T>(capacity: i32, senders: i32, receivers: i32) -> core::result::Result<Ring<T>, Error>
@@ -355,7 +356,7 @@ pub fn ring<T>(capacity: i32, senders: i32, receivers: i32) -> core::result::Res
 
 ### function: ring_at
 
-[Source line 327](../../../stdlib/std/channel.lani#L327)
+[Source line 328](../../../stdlib/std/channel.lani#L328)
 
 ```lanius
 pub fn ring_at<T>(handle: ptr) -> Ring<T>
@@ -363,7 +364,7 @@ pub fn ring_at<T>(handle: ptr) -> Ring<T>
 
 ### function: mpsc
 
-[Source line 520](../../../stdlib/std/channel.lani#L520)
+[Source line 521](../../../stdlib/std/channel.lani#L521)
 
 ```lanius
 pub fn mpsc<T>(senders: i32) -> core::result::Result<Mpsc<T>, Error>
@@ -371,7 +372,7 @@ pub fn mpsc<T>(senders: i32) -> core::result::Result<Mpsc<T>, Error>
 
 ### function: mpsc_at
 
-[Source line 542](../../../stdlib/std/channel.lani#L542)
+[Source line 544](../../../stdlib/std/channel.lani#L544)
 
 ```lanius
 pub fn mpsc_at<T>(handle: ptr) -> Mpsc<T>
@@ -379,7 +380,7 @@ pub fn mpsc_at<T>(handle: ptr) -> Mpsc<T>
 
 ### function: select
 
-[Source line 765](../../../stdlib/std/channel.lani#L765)
+[Source line 768](../../../stdlib/std/channel.lani#L768)
 
 ```lanius
 pub fn select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B>
@@ -387,7 +388,7 @@ pub fn select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Selecte
 
 ### function: try_select
 
-[Source line 768](../../../stdlib/std/channel.lani#L768)
+[Source line 771](../../../stdlib/std/channel.lani#L771)
 
 ```lanius
 pub fn try_select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B>
@@ -395,7 +396,7 @@ pub fn try_select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Sel
 
 ### function: select_until
 
-[Source line 771](../../../stdlib/std/channel.lani#L771)
+[Source line 774](../../../stdlib/std/channel.lani#L774)
 
 ```lanius
 pub fn select_until<A, B, P, Q>(first: &P, second: &Q, deadline: std::sync::Deadline) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B>
@@ -403,7 +404,7 @@ pub fn select_until<A, B, P, Q>(first: &P, second: &Q, deadline: std::sync::Dead
 
 ### function: select_timeout_ms
 
-[Source line 774](../../../stdlib/std/channel.lani#L774)
+[Source line 777](../../../stdlib/std/channel.lani#L777)
 
 ```lanius
 pub fn select_timeout_ms<A, B, P, Q>(first: &P, second: &Q, milliseconds: i64) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B>
@@ -413,7 +414,7 @@ pub fn select_timeout_ms<A, B, P, Q>(first: &P, second: &Q, milliseconds: i64) -
 
 ### trait: Receive
 
-[Source line 673](../../../stdlib/std/channel.lani#L673)
+[Source line 676](../../../stdlib/std/channel.lani#L676)
 
 ```lanius
 pub trait Receive<T>
@@ -421,7 +422,7 @@ pub trait Receive<T>
 
 #### trait member: take_one
 
-[Source line 675](../../../stdlib/std/channel.lani#L675)
+[Source line 678](../../../stdlib/std/channel.lani#L678)
 
 ```lanius
 pub fn take_one(&self) -> core::option::Option<T>;
@@ -429,7 +430,7 @@ pub fn take_one(&self) -> core::option::Option<T>;
 
 #### trait member: senders_closed
 
-[Source line 677](../../../stdlib/std/channel.lani#L677)
+[Source line 680](../../../stdlib/std/channel.lani#L680)
 
 ```lanius
 pub fn senders_closed(&self) -> bool;
@@ -437,7 +438,7 @@ pub fn senders_closed(&self) -> bool;
 
 #### trait member: signal_block
 
-[Source line 679](../../../stdlib/std/channel.lani#L679)
+[Source line 682](../../../stdlib/std/channel.lani#L682)
 
 ```lanius
 pub fn signal_block(&self) -> ptr;
@@ -445,9 +446,9 @@ pub fn signal_block(&self) -> ptr;
 
 ## Implementation blocks and public methods
 
-### impl at line 69
+### impl at line 70
 
-[Source line 69](../../../stdlib/std/channel.lani#L69)
+[Source line 70](../../../stdlib/std/channel.lani#L70)
 
 ```lanius
 pub impl<T> Channel<T>
@@ -455,7 +456,7 @@ pub impl<T> Channel<T>
 
 #### method: borrow
 
-[Source line 70](../../../stdlib/std/channel.lani#L70)
+[Source line 71](../../../stdlib/std/channel.lani#L71)
 
 ```lanius
 pub fn borrow(&self) -> &Channel<T>
@@ -463,7 +464,7 @@ pub fn borrow(&self) -> &Channel<T>
 
 #### method: capacity
 
-[Source line 73](../../../stdlib/std/channel.lani#L73)
+[Source line 74](../../../stdlib/std/channel.lani#L74)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -471,7 +472,7 @@ pub fn capacity(&self) -> i32
 
 #### method: open_sender
 
-[Source line 80](../../../stdlib/std/channel.lani#L80)
+[Source line 81](../../../stdlib/std/channel.lani#L81)
 
 ```lanius
 pub fn open_sender(&self) -> core::result::Result<Sender<T>, Error>
@@ -479,7 +480,7 @@ pub fn open_sender(&self) -> core::result::Result<Sender<T>, Error>
 
 #### method: open_receiver
 
-[Source line 88](../../../stdlib/std/channel.lani#L88)
+[Source line 89](../../../stdlib/std/channel.lani#L89)
 
 ```lanius
 pub fn open_receiver(&self) -> core::result::Result<Receiver<T>, Error>
@@ -487,7 +488,7 @@ pub fn open_receiver(&self) -> core::result::Result<Receiver<T>, Error>
 
 #### method: len
 
-[Source line 97](../../../stdlib/std/channel.lani#L97)
+[Source line 98](../../../stdlib/std/channel.lani#L98)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -495,7 +496,7 @@ pub fn len(&self) -> i32
 
 #### method: sender_count
 
-[Source line 98](../../../stdlib/std/channel.lani#L98)
+[Source line 99](../../../stdlib/std/channel.lani#L99)
 
 ```lanius
 pub fn sender_count(&self) -> i32
@@ -503,15 +504,15 @@ pub fn sender_count(&self) -> i32
 
 #### method: receiver_count
 
-[Source line 99](../../../stdlib/std/channel.lani#L99)
+[Source line 100](../../../stdlib/std/channel.lani#L100)
 
 ```lanius
 pub fn receiver_count(&self) -> i32
 ```
 
-### impl at line 186
+### impl at line 187
 
-[Source line 186](../../../stdlib/std/channel.lani#L186)
+[Source line 187](../../../stdlib/std/channel.lani#L187)
 
 ```lanius
 pub impl<T> Sender<T>
@@ -519,7 +520,7 @@ pub impl<T> Sender<T>
 
 #### method: borrow
 
-[Source line 187](../../../stdlib/std/channel.lani#L187)
+[Source line 188](../../../stdlib/std/channel.lani#L188)
 
 ```lanius
 pub fn borrow(&self) -> &Sender<T>
@@ -527,7 +528,7 @@ pub fn borrow(&self) -> &Sender<T>
 
 #### method: send
 
-[Source line 189](../../../stdlib/std/channel.lani#L189)
+[Source line 190](../../../stdlib/std/channel.lani#L190)
 
 ```lanius
 pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
@@ -535,7 +536,7 @@ pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
 
 #### method: try_send
 
-[Source line 190](../../../stdlib/std/channel.lani#L190)
+[Source line 191](../../../stdlib/std/channel.lani#L191)
 
 ```lanius
 pub fn try_send(&self, value: T) -> core::result::Result<i32, SendError<T>>
@@ -543,7 +544,7 @@ pub fn try_send(&self, value: T) -> core::result::Result<i32, SendError<T>>
 
 #### method: send_until
 
-[Source line 191](../../../stdlib/std/channel.lani#L191)
+[Source line 192](../../../stdlib/std/channel.lani#L192)
 
 ```lanius
 pub fn send_until(&self, value: T, deadline: std::sync::Deadline) -> core::result::Result<i32, SendError<T>>
@@ -551,7 +552,7 @@ pub fn send_until(&self, value: T, deadline: std::sync::Deadline) -> core::resul
 
 #### method: send_timeout_ms
 
-[Source line 192](../../../stdlib/std/channel.lani#L192)
+[Source line 193](../../../stdlib/std/channel.lani#L193)
 
 ```lanius
 pub fn send_timeout_ms(&self, value: T, milliseconds: i64) -> core::result::Result<i32, SendError<T>>
@@ -559,15 +560,15 @@ pub fn send_timeout_ms(&self, value: T, milliseconds: i64) -> core::result::Resu
 
 #### method: close
 
-[Source line 198](../../../stdlib/std/channel.lani#L198)
+[Source line 199](../../../stdlib/std/channel.lani#L199)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 201
+### impl at line 202
 
-[Source line 201](../../../stdlib/std/channel.lani#L201)
+[Source line 202](../../../stdlib/std/channel.lani#L202)
 
 ```lanius
 pub impl<T> Receiver<T>
@@ -575,7 +576,7 @@ pub impl<T> Receiver<T>
 
 #### method: borrow
 
-[Source line 202](../../../stdlib/std/channel.lani#L202)
+[Source line 203](../../../stdlib/std/channel.lani#L203)
 
 ```lanius
 pub fn borrow(&self) -> &Receiver<T>
@@ -583,7 +584,7 @@ pub fn borrow(&self) -> &Receiver<T>
 
 #### method: recv
 
-[Source line 205](../../../stdlib/std/channel.lani#L205)
+[Source line 206](../../../stdlib/std/channel.lani#L206)
 
 ```lanius
 pub fn recv(&self) -> core::result::Result<T, RecvError>
@@ -591,7 +592,7 @@ pub fn recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: try_recv
 
-[Source line 206](../../../stdlib/std/channel.lani#L206)
+[Source line 207](../../../stdlib/std/channel.lani#L207)
 
 ```lanius
 pub fn try_recv(&self) -> core::result::Result<T, RecvError>
@@ -599,7 +600,7 @@ pub fn try_recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: recv_until
 
-[Source line 207](../../../stdlib/std/channel.lani#L207)
+[Source line 208](../../../stdlib/std/channel.lani#L208)
 
 ```lanius
 pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<T, RecvError>
@@ -607,7 +608,7 @@ pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<
 
 #### method: recv_timeout_ms
 
-[Source line 208](../../../stdlib/std/channel.lani#L208)
+[Source line 209](../../../stdlib/std/channel.lani#L209)
 
 ```lanius
 pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, RecvError>
@@ -615,15 +616,15 @@ pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, Recv
 
 #### method: close
 
-[Source line 213](../../../stdlib/std/channel.lani#L213)
+[Source line 214](../../../stdlib/std/channel.lani#L214)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 329
+### impl at line 330
 
-[Source line 329](../../../stdlib/std/channel.lani#L329)
+[Source line 330](../../../stdlib/std/channel.lani#L330)
 
 ```lanius
 pub impl<T> Ring<T>
@@ -631,7 +632,7 @@ pub impl<T> Ring<T>
 
 #### method: borrow
 
-[Source line 330](../../../stdlib/std/channel.lani#L330)
+[Source line 331](../../../stdlib/std/channel.lani#L331)
 
 ```lanius
 pub fn borrow(&self) -> &Ring<T>
@@ -639,7 +640,7 @@ pub fn borrow(&self) -> &Ring<T>
 
 #### method: handle
 
-[Source line 331](../../../stdlib/std/channel.lani#L331)
+[Source line 332](../../../stdlib/std/channel.lani#L332)
 
 ```lanius
 pub fn handle(&self) -> ptr
@@ -647,7 +648,7 @@ pub fn handle(&self) -> ptr
 
 #### method: capacity
 
-[Source line 332](../../../stdlib/std/channel.lani#L332)
+[Source line 333](../../../stdlib/std/channel.lani#L333)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -655,7 +656,7 @@ pub fn capacity(&self) -> i32
 
 #### method: len
 
-[Source line 334](../../../stdlib/std/channel.lani#L334)
+[Source line 335](../../../stdlib/std/channel.lani#L335)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -663,7 +664,7 @@ pub fn len(&self) -> i32
 
 #### method: sender_count
 
-[Source line 343](../../../stdlib/std/channel.lani#L343)
+[Source line 344](../../../stdlib/std/channel.lani#L344)
 
 ```lanius
 pub fn sender_count(&self) -> i32
@@ -671,7 +672,7 @@ pub fn sender_count(&self) -> i32
 
 #### method: receiver_count
 
-[Source line 344](../../../stdlib/std/channel.lani#L344)
+[Source line 345](../../../stdlib/std/channel.lani#L345)
 
 ```lanius
 pub fn receiver_count(&self) -> i32
@@ -679,7 +680,7 @@ pub fn receiver_count(&self) -> i32
 
 #### method: send
 
-[Source line 464](../../../stdlib/std/channel.lani#L464)
+[Source line 465](../../../stdlib/std/channel.lani#L465)
 
 ```lanius
 pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
@@ -687,7 +688,7 @@ pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
 
 #### method: try_send
 
-[Source line 465](../../../stdlib/std/channel.lani#L465)
+[Source line 466](../../../stdlib/std/channel.lani#L466)
 
 ```lanius
 pub fn try_send(&self, value: T) -> core::result::Result<i32, SendError<T>>
@@ -695,7 +696,7 @@ pub fn try_send(&self, value: T) -> core::result::Result<i32, SendError<T>>
 
 #### method: send_until
 
-[Source line 466](../../../stdlib/std/channel.lani#L466)
+[Source line 467](../../../stdlib/std/channel.lani#L467)
 
 ```lanius
 pub fn send_until(&self, value: T, deadline: std::sync::Deadline) -> core::result::Result<i32, SendError<T>>
@@ -703,7 +704,7 @@ pub fn send_until(&self, value: T, deadline: std::sync::Deadline) -> core::resul
 
 #### method: send_timeout_ms
 
-[Source line 467](../../../stdlib/std/channel.lani#L467)
+[Source line 468](../../../stdlib/std/channel.lani#L468)
 
 ```lanius
 pub fn send_timeout_ms(&self, value: T, milliseconds: i64) -> core::result::Result<i32, SendError<T>>
@@ -711,7 +712,7 @@ pub fn send_timeout_ms(&self, value: T, milliseconds: i64) -> core::result::Resu
 
 #### method: recv
 
-[Source line 473](../../../stdlib/std/channel.lani#L473)
+[Source line 474](../../../stdlib/std/channel.lani#L474)
 
 ```lanius
 pub fn recv(&self) -> core::result::Result<T, RecvError>
@@ -719,7 +720,7 @@ pub fn recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: try_recv
 
-[Source line 474](../../../stdlib/std/channel.lani#L474)
+[Source line 475](../../../stdlib/std/channel.lani#L475)
 
 ```lanius
 pub fn try_recv(&self) -> core::result::Result<T, RecvError>
@@ -727,7 +728,7 @@ pub fn try_recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: recv_until
 
-[Source line 475](../../../stdlib/std/channel.lani#L475)
+[Source line 476](../../../stdlib/std/channel.lani#L476)
 
 ```lanius
 pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<T, RecvError>
@@ -735,7 +736,7 @@ pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<
 
 #### method: recv_timeout_ms
 
-[Source line 476](../../../stdlib/std/channel.lani#L476)
+[Source line 477](../../../stdlib/std/channel.lani#L477)
 
 ```lanius
 pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, RecvError>
@@ -743,7 +744,7 @@ pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, Recv
 
 #### method: close_sender
 
-[Source line 482](../../../stdlib/std/channel.lani#L482)
+[Source line 483](../../../stdlib/std/channel.lani#L483)
 
 ```lanius
 pub fn close_sender(&self) -> core::result::Result<i32, Error>
@@ -751,7 +752,7 @@ pub fn close_sender(&self) -> core::result::Result<i32, Error>
 
 #### method: close_receiver
 
-[Source line 483](../../../stdlib/std/channel.lani#L483)
+[Source line 484](../../../stdlib/std/channel.lani#L484)
 
 ```lanius
 pub fn close_receiver(&self) -> core::result::Result<i32, Error>
@@ -759,7 +760,7 @@ pub fn close_receiver(&self) -> core::result::Result<i32, Error>
 
 #### method: drain
 
-[Source line 486](../../../stdlib/std/channel.lani#L486)
+[Source line 487](../../../stdlib/std/channel.lani#L487)
 
 ```lanius
 pub fn drain(&self, out: [T], limit: i32) -> i32
@@ -767,15 +768,15 @@ pub fn drain(&self, out: [T], limit: i32) -> i32
 
 #### method: destroy
 
-[Source line 499](../../../stdlib/std/channel.lani#L499)
+[Source line 500](../../../stdlib/std/channel.lani#L500)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 545
+### impl at line 547
 
-[Source line 545](../../../stdlib/std/channel.lani#L545)
+[Source line 547](../../../stdlib/std/channel.lani#L547)
 
 ```lanius
 pub impl<T> Mpsc<T>
@@ -783,7 +784,7 @@ pub impl<T> Mpsc<T>
 
 #### method: borrow
 
-[Source line 546](../../../stdlib/std/channel.lani#L546)
+[Source line 548](../../../stdlib/std/channel.lani#L548)
 
 ```lanius
 pub fn borrow(&self) -> &Mpsc<T>
@@ -791,7 +792,7 @@ pub fn borrow(&self) -> &Mpsc<T>
 
 #### method: handle
 
-[Source line 547](../../../stdlib/std/channel.lani#L547)
+[Source line 549](../../../stdlib/std/channel.lani#L549)
 
 ```lanius
 pub fn handle(&self) -> ptr
@@ -799,7 +800,7 @@ pub fn handle(&self) -> ptr
 
 #### method: sender_count
 
-[Source line 548](../../../stdlib/std/channel.lani#L548)
+[Source line 550](../../../stdlib/std/channel.lani#L550)
 
 ```lanius
 pub fn sender_count(&self) -> i32
@@ -807,7 +808,7 @@ pub fn sender_count(&self) -> i32
 
 #### method: receiver_open
 
-[Source line 549](../../../stdlib/std/channel.lani#L549)
+[Source line 551](../../../stdlib/std/channel.lani#L551)
 
 ```lanius
 pub fn receiver_open(&self) -> bool
@@ -815,7 +816,7 @@ pub fn receiver_open(&self) -> bool
 
 #### method: send
 
-[Source line 551](../../../stdlib/std/channel.lani#L551)
+[Source line 553](../../../stdlib/std/channel.lani#L553)
 
 ```lanius
 pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
@@ -823,7 +824,7 @@ pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>>
 
 #### method: recv
 
-[Source line 615](../../../stdlib/std/channel.lani#L615)
+[Source line 617](../../../stdlib/std/channel.lani#L617)
 
 ```lanius
 pub fn recv(&self) -> core::result::Result<T, RecvError>
@@ -831,7 +832,7 @@ pub fn recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: try_recv
 
-[Source line 616](../../../stdlib/std/channel.lani#L616)
+[Source line 618](../../../stdlib/std/channel.lani#L618)
 
 ```lanius
 pub fn try_recv(&self) -> core::result::Result<T, RecvError>
@@ -839,7 +840,7 @@ pub fn try_recv(&self) -> core::result::Result<T, RecvError>
 
 #### method: recv_until
 
-[Source line 617](../../../stdlib/std/channel.lani#L617)
+[Source line 619](../../../stdlib/std/channel.lani#L619)
 
 ```lanius
 pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<T, RecvError>
@@ -847,7 +848,7 @@ pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<
 
 #### method: recv_timeout_ms
 
-[Source line 618](../../../stdlib/std/channel.lani#L618)
+[Source line 620](../../../stdlib/std/channel.lani#L620)
 
 ```lanius
 pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, RecvError>
@@ -855,7 +856,7 @@ pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, Recv
 
 #### method: drain
 
-[Source line 624](../../../stdlib/std/channel.lani#L624)
+[Source line 626](../../../stdlib/std/channel.lani#L626)
 
 ```lanius
 pub fn drain(&self, out: [T], limit: i32) -> i32
@@ -863,7 +864,7 @@ pub fn drain(&self, out: [T], limit: i32) -> i32
 
 #### method: close_sender
 
-[Source line 635](../../../stdlib/std/channel.lani#L635)
+[Source line 637](../../../stdlib/std/channel.lani#L637)
 
 ```lanius
 pub fn close_sender(&self) -> core::result::Result<i32, Error>
@@ -871,7 +872,7 @@ pub fn close_sender(&self) -> core::result::Result<i32, Error>
 
 #### method: close_receiver
 
-[Source line 637](../../../stdlib/std/channel.lani#L637)
+[Source line 639](../../../stdlib/std/channel.lani#L639)
 
 ```lanius
 pub fn close_receiver(&self) -> core::result::Result<i32, Error>
@@ -879,15 +880,15 @@ pub fn close_receiver(&self) -> core::result::Result<i32, Error>
 
 #### method: destroy
 
-[Source line 643](../../../stdlib/std/channel.lani#L643)
+[Source line 646](../../../stdlib/std/channel.lani#L646)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 681
+### impl at line 684
 
-[Source line 681](../../../stdlib/std/channel.lani#L681)
+[Source line 684](../../../stdlib/std/channel.lani#L684)
 
 ```lanius
 pub impl<T> Receive<T> for Ring<T>
@@ -895,7 +896,7 @@ pub impl<T> Receive<T> for Ring<T>
 
 #### method: take_one
 
-[Source line 682](../../../stdlib/std/channel.lani#L682)
+[Source line 685](../../../stdlib/std/channel.lani#L685)
 
 ```lanius
 pub fn take_one(&self) -> core::option::Option<T>
@@ -903,7 +904,7 @@ pub fn take_one(&self) -> core::option::Option<T>
 
 #### method: senders_closed
 
-[Source line 687](../../../stdlib/std/channel.lani#L687)
+[Source line 690](../../../stdlib/std/channel.lani#L690)
 
 ```lanius
 pub fn senders_closed(&self) -> bool
@@ -911,15 +912,15 @@ pub fn senders_closed(&self) -> bool
 
 #### method: signal_block
 
-[Source line 688](../../../stdlib/std/channel.lani#L688)
+[Source line 691](../../../stdlib/std/channel.lani#L691)
 
 ```lanius
 pub fn signal_block(&self) -> ptr
 ```
 
-### impl at line 690
+### impl at line 693
 
-[Source line 690](../../../stdlib/std/channel.lani#L690)
+[Source line 693](../../../stdlib/std/channel.lani#L693)
 
 ```lanius
 pub impl<T> Receive<T> for Mpsc<T>
@@ -927,7 +928,7 @@ pub impl<T> Receive<T> for Mpsc<T>
 
 #### method: take_one
 
-[Source line 691](../../../stdlib/std/channel.lani#L691)
+[Source line 694](../../../stdlib/std/channel.lani#L694)
 
 ```lanius
 pub fn take_one(&self) -> core::option::Option<T>
@@ -935,7 +936,7 @@ pub fn take_one(&self) -> core::option::Option<T>
 
 #### method: senders_closed
 
-[Source line 692](../../../stdlib/std/channel.lani#L692)
+[Source line 695](../../../stdlib/std/channel.lani#L695)
 
 ```lanius
 pub fn senders_closed(&self) -> bool
@@ -943,7 +944,7 @@ pub fn senders_closed(&self) -> bool
 
 #### method: signal_block
 
-[Source line 693](../../../stdlib/std/channel.lani#L693)
+[Source line 696](../../../stdlib/std/channel.lani#L696)
 
 ```lanius
 pub fn signal_block(&self) -> ptr

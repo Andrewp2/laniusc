@@ -16,29 +16,71 @@ Bounded sequential publication implemented in Lanius over TempFile and existing 
 - [stdlib-temp-files](../../stdlib-temp-files.md)
 - [extended-kv](../../extended-kv.md)
 
-Declaration counts: enum: 4; field: 42; function: 2; impl: 1; method: 16; struct: 6; variant: 33.
+Declaration counts: enum: 5; field: 42; function: 2; impl: 2; machine: 2; method: 17; struct: 6; variant: 36.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/atomic_file.lani#L5)
-- [core::io](../core/io.md) · [source](../../../stdlib/std/atomic_file.lani#L6)
-- [core::option](../core/option.md) · [source](../../../stdlib/std/atomic_file.lani#L7)
-- [core::path](../core/path.md) · [source](../../../stdlib/std/atomic_file.lani#L8)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/atomic_file.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/atomic_file.lani#L10)
-- [std::file](file.md) · [source](../../../stdlib/std/atomic_file.lani#L11)
-- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/atomic_file.lani#L12)
-- [std::temp_file](temp_file.md) · [source](../../../stdlib/std/atomic_file.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/atomic_file.lani#L5)
+- [alloc::vec](../alloc/vec.md) · [source](../../../stdlib/std/atomic_file.lani#L6)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/atomic_file.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/atomic_file.lani#L8)
+- [core::path](../core/path.md) · [source](../../../stdlib/std/atomic_file.lani#L9)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/atomic_file.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/atomic_file.lani#L11)
+- [std::file](file.md) · [source](../../../stdlib/std/atomic_file.lani#L12)
+- [std::file_ops](file_ops.md) · [source](../../../stdlib/std/atomic_file.lani#L13)
+- [std::temp_file](temp_file.md) · [source](../../../stdlib/std/atomic_file.lani#L14)
+- [std::temp_lifecycle](temp_lifecycle.md) · [source](../../../stdlib/std/atomic_file.lani#L15)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: PublicationEvent
+
+[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+
+```lanius
+pub enum PublicationEvent
+```
+
+#### variant: Renamed
+
+[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+
+```lanius
+Renamed
+```
+
+#### variant: RenameFailed
+
+[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+
+```lanius
+RenameFailed(Visibility)
+```
+
+#### variant: Reset
+
+[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+
+```lanius
+Reset
+```
+
+### machine: Publication
+
+[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+
+```lanius
+pub machine Publication on PublicationEvent
+```
+
 ### struct: Options
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 pub struct Options
@@ -46,7 +88,7 @@ pub struct Options
 
 #### field: temporary
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 temporary:std::temp_file::Limits
@@ -54,7 +96,7 @@ temporary:std::temp_file::Limits
 
 #### field: policy
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 policy:std::file_ops::RenamePolicy
@@ -62,7 +104,7 @@ policy:std::file_ops::RenamePolicy
 
 #### field: max_bytes
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 max_bytes:u64
@@ -70,7 +112,7 @@ max_bytes:u64
 
 #### field: write_calls
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 write_calls:u64
@@ -78,39 +120,39 @@ write_calls:u64
 
 #### field: directory_sync_calls
 
-[Source line 15](../../../stdlib/std/atomic_file.lani#L15)
+[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
 
 ```lanius
 directory_sync_calls:u64
 ```
 
-### enum: State
+### enum: LifecycleEvent
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
-pub enum State
+pub enum LifecycleEvent
 ```
 
-#### variant: Inactive
+#### variant: Prepare
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
-Inactive
+Prepare
 ```
 
-#### variant: Writing
+#### variant: Created
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
-Writing
+Created
 ```
 
 #### variant: Failed
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
 Failed
@@ -118,7 +160,7 @@ Failed
 
 #### variant: Published
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
 Published
@@ -126,7 +168,7 @@ Published
 
 #### variant: Kept
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
 Kept
@@ -134,15 +176,23 @@ Kept
 
 #### variant: Released
 
-[Source line 16](../../../stdlib/std/atomic_file.lani#L16)
+[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
 
 ```lanius
 Released
 ```
 
+### machine: Lifecycle
+
+[Source line 36](../../../stdlib/std/atomic_file.lani#L36)
+
+```lanius
+pub machine Lifecycle on LifecycleEvent
+```
+
 ### enum: Visibility
 
-[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+[Source line 94](../../../stdlib/std/atomic_file.lani#L94)
 
 ```lanius
 pub enum Visibility
@@ -150,7 +200,7 @@ pub enum Visibility
 
 #### variant: NotPublished
 
-[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+[Source line 94](../../../stdlib/std/atomic_file.lani#L94)
 
 ```lanius
 NotPublished
@@ -158,7 +208,7 @@ NotPublished
 
 #### variant: Published
 
-[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+[Source line 94](../../../stdlib/std/atomic_file.lani#L94)
 
 ```lanius
 Published
@@ -166,7 +216,7 @@ Published
 
 #### variant: Unconfirmed
 
-[Source line 17](../../../stdlib/std/atomic_file.lani#L17)
+[Source line 94](../../../stdlib/std/atomic_file.lani#L94)
 
 ```lanius
 Unconfirmed
@@ -174,7 +224,7 @@ Unconfirmed
 
 ### enum: Stage
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 pub enum Stage
@@ -182,7 +232,7 @@ pub enum Stage
 
 #### variant: Validate
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Validate
@@ -190,7 +240,7 @@ Validate
 
 #### variant: Allocate
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Allocate
@@ -198,7 +248,7 @@ Allocate
 
 #### variant: Create
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Create
@@ -206,7 +256,7 @@ Create
 
 #### variant: Write
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Write
@@ -214,7 +264,7 @@ Write
 
 #### variant: SyncFile
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 SyncFile
@@ -222,7 +272,7 @@ SyncFile
 
 #### variant: CloseFile
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 CloseFile
@@ -230,7 +280,7 @@ CloseFile
 
 #### variant: Rename
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Rename
@@ -238,7 +288,7 @@ Rename
 
 #### variant: Disarm
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Disarm
@@ -246,7 +296,7 @@ Disarm
 
 #### variant: SyncDirectory
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 SyncDirectory
@@ -254,7 +304,7 @@ SyncDirectory
 
 #### variant: Cleanup
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Cleanup
@@ -262,7 +312,7 @@ Cleanup
 
 #### variant: Keep
 
-[Source line 18](../../../stdlib/std/atomic_file.lani#L18)
+[Source line 95](../../../stdlib/std/atomic_file.lani#L95)
 
 ```lanius
 Keep
@@ -270,7 +320,7 @@ Keep
 
 ### enum: Error
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 pub enum Error
@@ -278,7 +328,7 @@ pub enum Error
 
 #### variant: InvalidState
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 InvalidState
@@ -286,7 +336,7 @@ InvalidState
 
 #### variant: InvalidOptions
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 InvalidOptions
@@ -294,7 +344,7 @@ InvalidOptions
 
 #### variant: InvalidDestination
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 InvalidDestination
@@ -302,7 +352,7 @@ InvalidDestination
 
 #### variant: AllocationFailed
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 AllocationFailed
@@ -310,7 +360,7 @@ AllocationFailed
 
 #### variant: Bounds
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 Bounds
@@ -318,7 +368,7 @@ Bounds
 
 #### variant: ByteLimit
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 ByteLimit
@@ -326,7 +376,7 @@ ByteLimit
 
 #### variant: WriteLimit
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 WriteLimit
@@ -334,7 +384,7 @@ WriteLimit
 
 #### variant: DirectorySyncLimit
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 DirectorySyncLimit
@@ -342,7 +392,7 @@ DirectorySyncLimit
 
 #### variant: NoProgress
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 NoProgress
@@ -350,7 +400,7 @@ NoProgress
 
 #### variant: InvalidCount
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 InvalidCount
@@ -358,7 +408,7 @@ InvalidCount
 
 #### variant: Io
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 Io(core::io::Error)
@@ -366,7 +416,7 @@ Io(core::io::Error)
 
 #### variant: Temporary
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 Temporary(std::temp_file::Failure)
@@ -374,7 +424,7 @@ Temporary(std::temp_file::Failure)
 
 #### variant: Ownership
 
-[Source line 19](../../../stdlib/std/atomic_file.lani#L19)
+[Source line 96](../../../stdlib/std/atomic_file.lani#L96)
 
 ```lanius
 Ownership(std::temp_file::Error)
@@ -382,7 +432,7 @@ Ownership(std::temp_file::Error)
 
 ### struct: Stats
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 pub struct Stats
@@ -390,7 +440,7 @@ pub struct Stats
 
 #### field: bytes
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 bytes:u64
@@ -398,7 +448,7 @@ bytes:u64
 
 #### field: writes
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 writes:u64
@@ -406,7 +456,7 @@ writes:u64
 
 #### field: file_syncs
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 file_syncs:u64
@@ -414,7 +464,7 @@ file_syncs:u64
 
 #### field: renames
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 renames:u64
@@ -422,7 +472,7 @@ renames:u64
 
 #### field: directory_syncs
 
-[Source line 20](../../../stdlib/std/atomic_file.lani#L20)
+[Source line 97](../../../stdlib/std/atomic_file.lani#L97)
 
 ```lanius
 directory_syncs:u64
@@ -430,7 +480,7 @@ directory_syncs:u64
 
 ### struct: Diagnostic
 
-[Source line 21](../../../stdlib/std/atomic_file.lani#L21)
+[Source line 98](../../../stdlib/std/atomic_file.lani#L98)
 
 ```lanius
 pub struct Diagnostic
@@ -438,7 +488,7 @@ pub struct Diagnostic
 
 #### field: stage
 
-[Source line 21](../../../stdlib/std/atomic_file.lani#L21)
+[Source line 98](../../../stdlib/std/atomic_file.lani#L98)
 
 ```lanius
 stage:Stage
@@ -446,7 +496,7 @@ stage:Stage
 
 #### field: cause
 
-[Source line 21](../../../stdlib/std/atomic_file.lani#L21)
+[Source line 98](../../../stdlib/std/atomic_file.lani#L98)
 
 ```lanius
 cause:Error
@@ -454,7 +504,7 @@ cause:Error
 
 #### field: completed
 
-[Source line 21](../../../stdlib/std/atomic_file.lani#L21)
+[Source line 98](../../../stdlib/std/atomic_file.lani#L98)
 
 ```lanius
 completed:u64
@@ -462,7 +512,7 @@ completed:u64
 
 ### struct: Receipt
 
-[Source line 22](../../../stdlib/std/atomic_file.lani#L22)
+[Source line 99](../../../stdlib/std/atomic_file.lani#L99)
 
 ```lanius
 pub struct Receipt
@@ -470,15 +520,15 @@ pub struct Receipt
 
 #### field: state
 
-[Source line 23](../../../stdlib/std/atomic_file.lani#L23)
+[Source line 100](../../../stdlib/std/atomic_file.lani#L100)
 
 ```lanius
-state:State
+state:LifecycleState
 ```
 
 #### field: visibility
 
-[Source line 23](../../../stdlib/std/atomic_file.lani#L23)
+[Source line 100](../../../stdlib/std/atomic_file.lani#L100)
 
 ```lanius
 visibility:Visibility
@@ -486,7 +536,7 @@ visibility:Visibility
 
 #### field: stats
 
-[Source line 23](../../../stdlib/std/atomic_file.lani#L23)
+[Source line 100](../../../stdlib/std/atomic_file.lani#L100)
 
 ```lanius
 stats:Stats
@@ -494,7 +544,7 @@ stats:Stats
 
 #### field: temporary_stats
 
-[Source line 23](../../../stdlib/std/atomic_file.lani#L23)
+[Source line 100](../../../stdlib/std/atomic_file.lani#L100)
 
 ```lanius
 temporary_stats:std::temp_file::Stats
@@ -502,7 +552,7 @@ temporary_stats:std::temp_file::Stats
 
 #### field: file_synced
 
-[Source line 24](../../../stdlib/std/atomic_file.lani#L24)
+[Source line 101](../../../stdlib/std/atomic_file.lani#L101)
 
 ```lanius
 file_synced:bool
@@ -510,7 +560,7 @@ file_synced:bool
 
 #### field: directory_synced
 
-[Source line 24](../../../stdlib/std/atomic_file.lani#L24)
+[Source line 101](../../../stdlib/std/atomic_file.lani#L101)
 
 ```lanius
 directory_synced:bool
@@ -518,7 +568,7 @@ directory_synced:bool
 
 #### field: file_open
 
-[Source line 24](../../../stdlib/std/atomic_file.lani#L24)
+[Source line 101](../../../stdlib/std/atomic_file.lani#L101)
 
 ```lanius
 file_open:bool
@@ -526,7 +576,7 @@ file_open:bool
 
 #### field: directory_open
 
-[Source line 24](../../../stdlib/std/atomic_file.lani#L24)
+[Source line 101](../../../stdlib/std/atomic_file.lani#L101)
 
 ```lanius
 directory_open:bool
@@ -534,7 +584,7 @@ directory_open:bool
 
 #### field: temporary_owned
 
-[Source line 25](../../../stdlib/std/atomic_file.lani#L25)
+[Source line 102](../../../stdlib/std/atomic_file.lani#L102)
 
 ```lanius
 temporary_owned:bool
@@ -542,7 +592,7 @@ temporary_owned:bool
 
 #### field: retained
 
-[Source line 25](../../../stdlib/std/atomic_file.lani#L25)
+[Source line 102](../../../stdlib/std/atomic_file.lani#L102)
 
 ```lanius
 retained:bool
@@ -550,7 +600,7 @@ retained:bool
 
 #### field: cleanup
 
-[Source line 25](../../../stdlib/std/atomic_file.lani#L25)
+[Source line 102](../../../stdlib/std/atomic_file.lani#L102)
 
 ```lanius
 cleanup:std::temp_file::Cleanup
@@ -558,7 +608,7 @@ cleanup:std::temp_file::Cleanup
 
 #### field: last_error
 
-[Source line 26](../../../stdlib/std/atomic_file.lani#L26)
+[Source line 103](../../../stdlib/std/atomic_file.lani#L103)
 
 ```lanius
 last_error:core::option::Option<Diagnostic>
@@ -566,7 +616,7 @@ last_error:core::option::Option<Diagnostic>
 
 ### struct: Failure
 
-[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+[Source line 105](../../../stdlib/std/atomic_file.lani#L105)
 
 ```lanius
 pub struct Failure
@@ -574,7 +624,7 @@ pub struct Failure
 
 #### field: stage
 
-[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+[Source line 105](../../../stdlib/std/atomic_file.lani#L105)
 
 ```lanius
 stage:Stage
@@ -582,7 +632,7 @@ stage:Stage
 
 #### field: cause
 
-[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+[Source line 105](../../../stdlib/std/atomic_file.lani#L105)
 
 ```lanius
 cause:Error
@@ -590,7 +640,7 @@ cause:Error
 
 #### field: completed
 
-[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+[Source line 105](../../../stdlib/std/atomic_file.lani#L105)
 
 ```lanius
 completed:u64
@@ -598,7 +648,7 @@ completed:u64
 
 #### field: receipt
 
-[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+[Source line 105](../../../stdlib/std/atomic_file.lani#L105)
 
 ```lanius
 receipt:Receipt
@@ -606,7 +656,7 @@ receipt:Receipt
 
 ### struct: AtomicFile
 
-[Source line 29](../../../stdlib/std/atomic_file.lani#L29)
+[Source line 106](../../../stdlib/std/atomic_file.lani#L106)
 
 ```lanius
 pub struct AtomicFile
@@ -614,7 +664,7 @@ pub struct AtomicFile
 
 #### field: temporary
 
-[Source line 30](../../../stdlib/std/atomic_file.lani#L30)
+[Source line 107](../../../stdlib/std/atomic_file.lani#L107)
 
 ```lanius
 temporary:std::temp_file::TempFile
@@ -622,7 +672,7 @@ temporary:std::temp_file::TempFile
 
 #### field: destination_bytes
 
-[Source line 30](../../../stdlib/std/atomic_file.lani#L30)
+[Source line 107](../../../stdlib/std/atomic_file.lani#L107)
 
 ```lanius
 destination_bytes:alloc::vec::Vec<u8>
@@ -630,55 +680,55 @@ destination_bytes:alloc::vec::Vec<u8>
 
 #### field: options
 
-[Source line 30](../../../stdlib/std/atomic_file.lani#L30)
+[Source line 107](../../../stdlib/std/atomic_file.lani#L107)
 
 ```lanius
 options:Options
 ```
 
-#### field: current
+#### field: lifecycle
 
-[Source line 31](../../../stdlib/std/atomic_file.lani#L31)
+[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
 
 ```lanius
-current:State
+lifecycle:Lifecycle
 ```
 
-#### field: visible
+#### field: publication
 
-[Source line 31](../../../stdlib/std/atomic_file.lani#L31)
+[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
 
 ```lanius
-visible:Visibility
+publication:Publication
 ```
 
 #### field: counters
 
-[Source line 31](../../../stdlib/std/atomic_file.lani#L31)
+[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
 
 ```lanius
 counters:Stats
 ```
 
-#### field: file_synced
+#### field: file_sync
 
-[Source line 31](../../../stdlib/std/atomic_file.lani#L31)
+[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
 
 ```lanius
-file_synced:bool
+file_sync:core::iter_state::Completion
 ```
 
-#### field: directory_synced
+#### field: directory_sync
 
-[Source line 31](../../../stdlib/std/atomic_file.lani#L31)
+[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
 
 ```lanius
-directory_synced:bool
+directory_sync:core::iter_state::Completion
 ```
 
 #### field: cleanup_record
 
-[Source line 32](../../../stdlib/std/atomic_file.lani#L32)
+[Source line 109](../../../stdlib/std/atomic_file.lani#L109)
 
 ```lanius
 cleanup_record:std::temp_file::Cleanup
@@ -686,7 +736,7 @@ cleanup_record:std::temp_file::Cleanup
 
 #### field: latest_cleanup
 
-[Source line 32](../../../stdlib/std/atomic_file.lani#L32)
+[Source line 109](../../../stdlib/std/atomic_file.lani#L109)
 
 ```lanius
 latest_cleanup:std::temp_file::Cleanup
@@ -694,7 +744,7 @@ latest_cleanup:std::temp_file::Cleanup
 
 #### field: primary
 
-[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
+[Source line 110](../../../stdlib/std/atomic_file.lani#L110)
 
 ```lanius
 primary:core::option::Option<Diagnostic>
@@ -702,7 +752,7 @@ primary:core::option::Option<Diagnostic>
 
 #### field: latest_error
 
-[Source line 33](../../../stdlib/std/atomic_file.lani#L33)
+[Source line 110](../../../stdlib/std/atomic_file.lani#L110)
 
 ```lanius
 latest_error:core::option::Option<Diagnostic>
@@ -710,7 +760,7 @@ latest_error:core::option::Option<Diagnostic>
 
 #### field: committed
 
-[Source line 34](../../../stdlib/std/atomic_file.lani#L34)
+[Source line 111](../../../stdlib/std/atomic_file.lani#L111)
 
 ```lanius
 committed:core::option::Option<core::result::Result<Receipt,Failure>>
@@ -720,7 +770,7 @@ committed:core::option::Option<core::result::Result<Receipt,Failure>>
 
 ### function: default_options
 
-[Source line 37](../../../stdlib/std/atomic_file.lani#L37)
+[Source line 114](../../../stdlib/std/atomic_file.lani#L114)
 
 ```lanius
 pub fn default_options() -> Options
@@ -728,7 +778,7 @@ pub fn default_options() -> Options
 
 ### function: empty
 
-[Source line 44](../../../stdlib/std/atomic_file.lani#L44)
+[Source line 121](../../../stdlib/std/atomic_file.lani#L121)
 
 ```lanius
 pub fn empty() -> AtomicFile
@@ -736,9 +786,25 @@ pub fn empty() -> AtomicFile
 
 ## Implementation blocks and public methods
 
-### impl at line 66
+### impl at line 28
 
-[Source line 66](../../../stdlib/std/atomic_file.lani#L66)
+[Source line 28](../../../stdlib/std/atomic_file.lani#L28)
+
+```lanius
+pub impl Publication
+```
+
+#### method: visibility
+
+[Source line 29](../../../stdlib/std/atomic_file.lani#L29)
+
+```lanius
+pub fn visibility(&self) -> Visibility
+```
+
+### impl at line 143
+
+[Source line 143](../../../stdlib/std/atomic_file.lani#L143)
 
 ```lanius
 pub impl AtomicFile
@@ -746,7 +812,7 @@ pub impl AtomicFile
 
 #### method: borrow
 
-[Source line 67](../../../stdlib/std/atomic_file.lani#L67)
+[Source line 144](../../../stdlib/std/atomic_file.lani#L144)
 
 ```lanius
 pub fn borrow(&self) -> &AtomicFile
@@ -754,7 +820,7 @@ pub fn borrow(&self) -> &AtomicFile
 
 #### method: temporary_name
 
-[Source line 70](../../../stdlib/std/atomic_file.lani#L70)
+[Source line 147](../../../stdlib/std/atomic_file.lani#L147)
 
 ```lanius
 pub fn temporary_name(&self) -> core::slice::View<u8>
@@ -762,7 +828,7 @@ pub fn temporary_name(&self) -> core::slice::View<u8>
 
 #### method: destination
 
-[Source line 71](../../../stdlib/std/atomic_file.lani#L71)
+[Source line 148](../../../stdlib/std/atomic_file.lani#L148)
 
 ```lanius
 pub fn destination(&self) -> core::slice::View<u8>
@@ -770,7 +836,7 @@ pub fn destination(&self) -> core::slice::View<u8>
 
 #### method: file_handle
 
-[Source line 73](../../../stdlib/std/atomic_file.lani#L73)
+[Source line 150](../../../stdlib/std/atomic_file.lani#L150)
 
 ```lanius
 pub fn file_handle(&self) -> core::option::Option<i32>
@@ -778,7 +844,7 @@ pub fn file_handle(&self) -> core::option::Option<i32>
 
 #### method: directory_handle
 
-[Source line 74](../../../stdlib/std/atomic_file.lani#L74)
+[Source line 151](../../../stdlib/std/atomic_file.lani#L151)
 
 ```lanius
 pub fn directory_handle(&self) -> core::option::Option<i32>
@@ -786,7 +852,7 @@ pub fn directory_handle(&self) -> core::option::Option<i32>
 
 #### method: last_cleanup
 
-[Source line 75](../../../stdlib/std/atomic_file.lani#L75)
+[Source line 152](../../../stdlib/std/atomic_file.lani#L152)
 
 ```lanius
 pub fn last_cleanup(&self) -> std::temp_file::Cleanup
@@ -794,7 +860,7 @@ pub fn last_cleanup(&self) -> std::temp_file::Cleanup
 
 #### method: receipt
 
-[Source line 76](../../../stdlib/std/atomic_file.lani#L76)
+[Source line 153](../../../stdlib/std/atomic_file.lani#L153)
 
 ```lanius
 pub fn receipt(&self) -> Receipt
@@ -802,7 +868,7 @@ pub fn receipt(&self) -> Receipt
 
 #### method: last_failure
 
-[Source line 80](../../../stdlib/std/atomic_file.lani#L80)
+[Source line 157](../../../stdlib/std/atomic_file.lani#L157)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -810,7 +876,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: create_in
 
-[Source line 108](../../../stdlib/std/atomic_file.lani#L108)
+[Source line 185](../../../stdlib/std/atomic_file.lani#L185)
 
 ```lanius
 pub fn create_in(&self,parent:&std::file::File,destination:core::path::Path,options:Options) -> core::result::Result<bool,Failure>
@@ -818,7 +884,7 @@ pub fn create_in(&self,parent:&std::file::File,destination:core::path::Path,opti
 
 #### method: write
 
-[Source line 149](../../../stdlib/std/atomic_file.lani#L149)
+[Source line 226](../../../stdlib/std/atomic_file.lani#L226)
 
 ```lanius
 pub fn write(&self,input:core::slice::View<u8>) -> core::result::Result<i32,Failure>
@@ -826,7 +892,7 @@ pub fn write(&self,input:core::slice::View<u8>) -> core::result::Result<i32,Fail
 
 #### method: write_all
 
-[Source line 154](../../../stdlib/std/atomic_file.lani#L154)
+[Source line 231](../../../stdlib/std/atomic_file.lani#L231)
 
 ```lanius
 pub fn write_all(&self,input:core::slice::View<u8>) -> core::result::Result<u64,Failure>
@@ -834,7 +900,7 @@ pub fn write_all(&self,input:core::slice::View<u8>) -> core::result::Result<u64,
 
 #### method: commit
 
-[Source line 171](../../../stdlib/std/atomic_file.lani#L171)
+[Source line 248](../../../stdlib/std/atomic_file.lani#L248)
 
 ```lanius
 pub fn commit(&self) -> core::result::Result<Receipt,Failure>
@@ -842,7 +908,7 @@ pub fn commit(&self) -> core::result::Result<Receipt,Failure>
 
 #### method: retry_directory_sync
 
-[Source line 201](../../../stdlib/std/atomic_file.lani#L201)
+[Source line 278](../../../stdlib/std/atomic_file.lani#L278)
 
 ```lanius
 pub fn retry_directory_sync(&self) -> core::result::Result<Receipt,Failure>
@@ -850,7 +916,7 @@ pub fn retry_directory_sync(&self) -> core::result::Result<Receipt,Failure>
 
 #### method: keep
 
-[Source line 208](../../../stdlib/std/atomic_file.lani#L208)
+[Source line 285](../../../stdlib/std/atomic_file.lani#L285)
 
 ```lanius
 pub fn keep(&self) -> core::result::Result<bool,Failure>
@@ -858,7 +924,7 @@ pub fn keep(&self) -> core::result::Result<bool,Failure>
 
 #### method: cleanup
 
-[Source line 215](../../../stdlib/std/atomic_file.lani#L215)
+[Source line 292](../../../stdlib/std/atomic_file.lani#L292)
 
 ```lanius
 pub fn cleanup(&self) -> core::result::Result<Receipt,Failure>
@@ -866,7 +932,7 @@ pub fn cleanup(&self) -> core::result::Result<Receipt,Failure>
 
 #### method: destroy
 
-[Source line 226](../../../stdlib/std/atomic_file.lani#L226)
+[Source line 303](../../../stdlib/std/atomic_file.lani#L303)
 
 ```lanius
 pub fn destroy(&self) -> core::result::Result<Receipt,Failure>

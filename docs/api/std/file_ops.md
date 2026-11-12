@@ -30,17 +30,17 @@ Declaration counts: constant: 3; enum: 7; field: 38; function: 37; impl: 4; meth
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::io](../core/io.md) · [source](../../../stdlib/std/file_ops.lani#L3)
-- [core::io::Error](../core/io.md) (item: enum) · [declaration](../../../stdlib/core/io.lani#L8) · [source](../../../stdlib/std/file_ops.lani#L4)
+- [core::io::Error](../core/io.md) (item: enum) · [declaration](../../../stdlib/core/io.lani#L10) · [source](../../../stdlib/std/file_ops.lani#L4)
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_ops.lani#L5)
 - [core::option](../core/option.md) · [source](../../../stdlib/std/file_ops.lani#L6)
 - [core::path](../core/path.md) · [source](../../../stdlib/std/file_ops.lani#L7)
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/std/file_ops.lani#L8)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/std/file_ops.lani#L9)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/std/file_ops.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../stdlib/std/file_ops.lani#L11)
-- [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L45) · [source](../../../stdlib/std/file_ops.lani#L12)
-- [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L26) · [source](../../../stdlib/std/file_ops.lani#L13)
-- [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L63) · [source](../../../stdlib/std/file_ops.lani#L14)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../stdlib/std/file_ops.lani#L11)
+- [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L55) · [source](../../../stdlib/std/file_ops.lani#L12)
+- [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L27) · [source](../../../stdlib/std/file_ops.lani#L13)
+- [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L64) · [source](../../../stdlib/std/file_ops.lani#L14)
 - [std::linux](linux.md) · [source](../../../stdlib/std/file_ops.lani#L15)
 
 ## Types, fields and variants

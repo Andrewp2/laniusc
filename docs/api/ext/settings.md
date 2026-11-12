@@ -18,16 +18,17 @@ Declaration counts: enum: 6; field: 20; function: 10; impl: 5; method: 22; struc
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/settings.lani#L4)
-- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/settings.lani#L5)
-- [core::decimal_number](../core/decimal_number.md) · [source](../../../extended/ext/settings.lani#L6)
-- [core::option](../core/option.md) · [source](../../../extended/ext/settings.lani#L7)
-- [core::result](../core/result.md) · [source](../../../extended/ext/settings.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/settings.lani#L9)
-- [core::text](../core/text.md) · [source](../../../extended/ext/settings.lani#L10)
-- [ext::config](config.md) · [source](../../../extended/ext/settings.lani#L11)
-- [ext::json](json.md) · [source](../../../extended/ext/settings.lani#L12)
-- [ext::toml](toml.md) · [source](../../../extended/ext/settings.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/settings.lani#L4)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/settings.lani#L5)
+- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/settings.lani#L6)
+- [core::decimal_number](../core/decimal_number.md) · [source](../../../extended/ext/settings.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/settings.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/settings.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/settings.lani#L10)
+- [core::text](../core/text.md) · [source](../../../extended/ext/settings.lani#L11)
+- [ext::config](config.md) · [source](../../../extended/ext/settings.lani#L12)
+- [ext::json](json.md) · [source](../../../extended/ext/settings.lani#L13)
+- [ext::toml](toml.md) · [source](../../../extended/ext/settings.lani#L14)
 
 ## Types, fields and variants
 
@@ -35,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Kind
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 pub enum Kind
@@ -43,7 +44,7 @@ pub enum Kind
 
 #### variant: Null
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Null
@@ -51,7 +52,7 @@ Null
 
 #### variant: Boolean
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Boolean
@@ -59,7 +60,7 @@ Boolean
 
 #### variant: Text
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Text
@@ -67,7 +68,7 @@ Text
 
 #### variant: Array
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Array
@@ -75,7 +76,7 @@ Array
 
 #### variant: Table
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Table
@@ -83,7 +84,7 @@ Table
 
 #### variant: ExactDecimal
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 ExactDecimal
@@ -91,7 +92,7 @@ ExactDecimal
 
 #### variant: Integer
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Integer
@@ -99,7 +100,7 @@ Integer
 
 #### variant: UnsignedInteger
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 UnsignedInteger
@@ -107,7 +108,7 @@ UnsignedInteger
 
 #### variant: Float64
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 Float64
@@ -115,7 +116,7 @@ Float64
 
 #### variant: OffsetDateTime
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 OffsetDateTime
@@ -123,7 +124,7 @@ OffsetDateTime
 
 #### variant: LocalDateTime
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 LocalDateTime
@@ -131,7 +132,7 @@ LocalDateTime
 
 #### variant: LocalDate
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 LocalDate
@@ -139,7 +140,7 @@ LocalDate
 
 #### variant: LocalTime
 
-[Source line 15](../../../extended/ext/settings.lani#L15)
+[Source line 16](../../../extended/ext/settings.lani#L16)
 
 ```lanius
 LocalTime
@@ -147,7 +148,7 @@ LocalTime
 
 ### enum: Error
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 pub enum Error
@@ -155,7 +156,7 @@ pub enum Error
 
 #### variant: InvalidLimits
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 InvalidLimits
@@ -163,7 +164,7 @@ InvalidLimits
 
 #### variant: Bounds
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 Bounds
@@ -171,7 +172,7 @@ Bounds
 
 #### variant: SourceLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 SourceLimit
@@ -179,7 +180,7 @@ SourceLimit
 
 #### variant: BindingLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 BindingLimit
@@ -187,7 +188,7 @@ BindingLimit
 
 #### variant: NodeLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 NodeLimit
@@ -195,7 +196,7 @@ NodeLimit
 
 #### variant: DepthLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 DepthLimit
@@ -203,7 +204,7 @@ DepthLimit
 
 #### variant: KeyLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 KeyLimit
@@ -211,7 +212,7 @@ KeyLimit
 
 #### variant: TextLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 TextLimit
@@ -219,7 +220,7 @@ TextLimit
 
 #### variant: PathLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 PathLimit
@@ -227,7 +228,7 @@ PathLimit
 
 #### variant: WorkLimit
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 WorkLimit
@@ -235,7 +236,7 @@ WorkLimit
 
 #### variant: DuplicateKey
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 DuplicateKey(i32)
@@ -243,7 +244,7 @@ DuplicateKey(i32)
 
 #### variant: WrongKind
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 WrongKind
@@ -251,7 +252,7 @@ WrongKind
 
 #### variant: NumberOutOfRange
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 NumberOutOfRange
@@ -259,7 +260,7 @@ NumberOutOfRange
 
 #### variant: NotInteger
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 NotInteger
@@ -267,7 +268,7 @@ NotInteger
 
 #### variant: InvalidScalar
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 InvalidScalar
@@ -275,7 +276,7 @@ InvalidScalar
 
 #### variant: Json
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 Json(ext::json::Error)
@@ -283,7 +284,7 @@ Json(ext::json::Error)
 
 #### variant: Toml
 
-[Source line 16](../../../extended/ext/settings.lani#L16)
+[Source line 17](../../../extended/ext/settings.lani#L17)
 
 ```lanius
 Toml(ext::toml::Error)
@@ -291,7 +292,7 @@ Toml(ext::toml::Error)
 
 ### struct: Limits
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 pub struct Limits
@@ -299,7 +300,7 @@ pub struct Limits
 
 #### field: max_sources
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_sources: i32
@@ -307,7 +308,7 @@ max_sources: i32
 
 #### field: max_bindings
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_bindings: i32
@@ -315,7 +316,7 @@ max_bindings: i32
 
 #### field: max_nodes
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_nodes: i32
@@ -323,7 +324,7 @@ max_nodes: i32
 
 #### field: max_depth
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_depth: i32
@@ -331,7 +332,7 @@ max_depth: i32
 
 #### field: max_key_bytes
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_key_bytes: i32
@@ -339,7 +340,7 @@ max_key_bytes: i32
 
 #### field: max_text_bytes
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_text_bytes: i32
@@ -347,7 +348,7 @@ max_text_bytes: i32
 
 #### field: max_path
 
-[Source line 17](../../../extended/ext/settings.lani#L17)
+[Source line 18](../../../extended/ext/settings.lani#L18)
 
 ```lanius
 max_path: i32
@@ -355,7 +356,7 @@ max_path: i32
 
 ### struct: Budget
 
-[Source line 18](../../../extended/ext/settings.lani#L18)
+[Source line 19](../../../extended/ext/settings.lani#L19)
 
 ```lanius
 pub struct Budget
@@ -363,7 +364,7 @@ pub struct Budget
 
 #### field: remaining
 
-[Source line 18](../../../extended/ext/settings.lani#L18)
+[Source line 19](../../../extended/ext/settings.lani#L19)
 
 ```lanius
 remaining: u64
@@ -371,7 +372,7 @@ remaining: u64
 
 ### enum: Scalar
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 pub enum Scalar
@@ -379,7 +380,7 @@ pub enum Scalar
 
 #### variant: Null
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 Null
@@ -387,7 +388,7 @@ Null
 
 #### variant: Boolean
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 Boolean(bool)
@@ -395,7 +396,7 @@ Boolean(bool)
 
 #### variant: Text
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 Text(core::text::Text)
@@ -403,7 +404,7 @@ Text(core::text::Text)
 
 #### variant: Integer
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 Integer(i64)
@@ -411,7 +412,7 @@ Integer(i64)
 
 #### variant: UnsignedInteger
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 UnsignedInteger(u64)
@@ -419,7 +420,7 @@ UnsignedInteger(u64)
 
 #### variant: Float64
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 Float64(f64)
@@ -427,7 +428,7 @@ Float64(f64)
 
 #### variant: ExactDecimal
 
-[Source line 19](../../../extended/ext/settings.lani#L19)
+[Source line 20](../../../extended/ext/settings.lani#L20)
 
 ```lanius
 ExactDecimal(core::text::Text)
@@ -435,7 +436,7 @@ ExactDecimal(core::text::Text)
 
 ### struct: TomlValue
 
-[Source line 20](../../../extended/ext/settings.lani#L20)
+[Source line 21](../../../extended/ext/settings.lani#L21)
 
 ```lanius
 pub struct TomlValue
@@ -443,7 +444,7 @@ pub struct TomlValue
 
 #### field: document
 
-[Source line 20](../../../extended/ext/settings.lani#L20)
+[Source line 21](../../../extended/ext/settings.lani#L21)
 
 ```lanius
 document: ext::toml::Document
@@ -451,7 +452,7 @@ document: ext::toml::Document
 
 #### field: node
 
-[Source line 20](../../../extended/ext/settings.lani#L20)
+[Source line 21](../../../extended/ext/settings.lani#L21)
 
 ```lanius
 node: ext::toml::NodeId
@@ -459,7 +460,7 @@ node: ext::toml::NodeId
 
 ### enum: Data
 
-[Source line 21](../../../extended/ext/settings.lani#L21)
+[Source line 22](../../../extended/ext/settings.lani#L22)
 
 ```lanius
 pub enum Data
@@ -467,7 +468,7 @@ pub enum Data
 
 #### variant: Json
 
-[Source line 21](../../../extended/ext/settings.lani#L21)
+[Source line 22](../../../extended/ext/settings.lani#L22)
 
 ```lanius
 Json(ext::config::Value)
@@ -475,7 +476,7 @@ Json(ext::config::Value)
 
 #### variant: Toml
 
-[Source line 21](../../../extended/ext/settings.lani#L21)
+[Source line 22](../../../extended/ext/settings.lani#L22)
 
 ```lanius
 Toml(TomlValue)
@@ -483,7 +484,7 @@ Toml(TomlValue)
 
 #### variant: Scalar
 
-[Source line 21](../../../extended/ext/settings.lani#L21)
+[Source line 22](../../../extended/ext/settings.lani#L22)
 
 ```lanius
 Scalar(Scalar)
@@ -491,7 +492,7 @@ Scalar(Scalar)
 
 ### struct: Value
 
-[Source line 22](../../../extended/ext/settings.lani#L22)
+[Source line 23](../../../extended/ext/settings.lani#L23)
 
 ```lanius
 pub struct Value
@@ -499,7 +500,7 @@ pub struct Value
 
 #### field: data
 
-[Source line 22](../../../extended/ext/settings.lani#L22)
+[Source line 23](../../../extended/ext/settings.lani#L23)
 
 ```lanius
 data: Data
@@ -507,7 +508,7 @@ data: Data
 
 ### struct: Binding
 
-[Source line 23](../../../extended/ext/settings.lani#L23)
+[Source line 24](../../../extended/ext/settings.lani#L24)
 
 ```lanius
 pub struct Binding
@@ -515,7 +516,7 @@ pub struct Binding
 
 #### field: key
 
-[Source line 23](../../../extended/ext/settings.lani#L23)
+[Source line 24](../../../extended/ext/settings.lani#L24)
 
 ```lanius
 key: core::text::Text
@@ -523,7 +524,7 @@ key: core::text::Text
 
 #### field: value
 
-[Source line 23](../../../extended/ext/settings.lani#L23)
+[Source line 24](../../../extended/ext/settings.lani#L24)
 
 ```lanius
 value: Value
@@ -531,7 +532,7 @@ value: Value
 
 ### enum: Source
 
-[Source line 24](../../../extended/ext/settings.lani#L24)
+[Source line 25](../../../extended/ext/settings.lani#L25)
 
 ```lanius
 pub enum Source
@@ -539,7 +540,7 @@ pub enum Source
 
 #### variant: Json
 
-[Source line 24](../../../extended/ext/settings.lani#L24)
+[Source line 25](../../../extended/ext/settings.lani#L25)
 
 ```lanius
 Json(ext::config::Config)
@@ -547,7 +548,7 @@ Json(ext::config::Config)
 
 #### variant: Toml
 
-[Source line 24](../../../extended/ext/settings.lani#L24)
+[Source line 25](../../../extended/ext/settings.lani#L25)
 
 ```lanius
 Toml(ext::toml::Document)
@@ -555,7 +556,7 @@ Toml(ext::toml::Document)
 
 #### variant: Bindings
 
-[Source line 24](../../../extended/ext/settings.lani#L24)
+[Source line 25](../../../extended/ext/settings.lani#L25)
 
 ```lanius
 Bindings(core::slice::View<Binding>)
@@ -563,7 +564,7 @@ Bindings(core::slice::View<Binding>)
 
 ### struct: Layers
 
-[Source line 25](../../../extended/ext/settings.lani#L25)
+[Source line 26](../../../extended/ext/settings.lani#L26)
 
 ```lanius
 pub struct Layers
@@ -571,7 +572,7 @@ pub struct Layers
 
 #### field: sources
 
-[Source line 25](../../../extended/ext/settings.lani#L25)
+[Source line 26](../../../extended/ext/settings.lani#L26)
 
 ```lanius
 sources: core::slice::View<Source>
@@ -579,7 +580,7 @@ sources: core::slice::View<Source>
 
 #### field: limits
 
-[Source line 25](../../../extended/ext/settings.lani#L25)
+[Source line 26](../../../extended/ext/settings.lani#L26)
 
 ```lanius
 limits: Limits
@@ -587,7 +588,7 @@ limits: Limits
 
 ### struct: Resolved
 
-[Source line 26](../../../extended/ext/settings.lani#L26)
+[Source line 27](../../../extended/ext/settings.lani#L27)
 
 ```lanius
 pub struct Resolved
@@ -595,7 +596,7 @@ pub struct Resolved
 
 #### field: value
 
-[Source line 26](../../../extended/ext/settings.lani#L26)
+[Source line 27](../../../extended/ext/settings.lani#L27)
 
 ```lanius
 value: Value
@@ -603,7 +604,7 @@ value: Value
 
 #### field: source_index
 
-[Source line 26](../../../extended/ext/settings.lani#L26)
+[Source line 27](../../../extended/ext/settings.lani#L27)
 
 ```lanius
 source_index: i32
@@ -611,7 +612,7 @@ source_index: i32
 
 ### enum: ChildState
 
-[Source line 27](../../../extended/ext/settings.lani#L27)
+[Source line 28](../../../extended/ext/settings.lani#L28)
 
 ```lanius
 pub enum ChildState
@@ -619,7 +620,7 @@ pub enum ChildState
 
 #### variant: Json
 
-[Source line 27](../../../extended/ext/settings.lani#L27)
+[Source line 28](../../../extended/ext/settings.lani#L28)
 
 ```lanius
 Json(ext::config::Children)
@@ -627,7 +628,7 @@ Json(ext::config::Children)
 
 #### variant: Toml
 
-[Source line 27](../../../extended/ext/settings.lani#L27)
+[Source line 28](../../../extended/ext/settings.lani#L28)
 
 ```lanius
 Toml(TomlChildren)
@@ -635,7 +636,7 @@ Toml(TomlChildren)
 
 #### variant: Empty
 
-[Source line 27](../../../extended/ext/settings.lani#L27)
+[Source line 28](../../../extended/ext/settings.lani#L28)
 
 ```lanius
 Empty
@@ -643,7 +644,7 @@ Empty
 
 ### struct: TomlChildren
 
-[Source line 28](../../../extended/ext/settings.lani#L28)
+[Source line 29](../../../extended/ext/settings.lani#L29)
 
 ```lanius
 pub struct TomlChildren
@@ -651,7 +652,7 @@ pub struct TomlChildren
 
 #### field: document
 
-[Source line 28](../../../extended/ext/settings.lani#L28)
+[Source line 29](../../../extended/ext/settings.lani#L29)
 
 ```lanius
 document: ext::toml::Document
@@ -659,7 +660,7 @@ document: ext::toml::Document
 
 #### field: next_node
 
-[Source line 28](../../../extended/ext/settings.lani#L28)
+[Source line 29](../../../extended/ext/settings.lani#L29)
 
 ```lanius
 next_node: core::option::Option<ext::toml::NodeId>
@@ -667,7 +668,7 @@ next_node: core::option::Option<ext::toml::NodeId>
 
 ### struct: Children
 
-[Source line 29](../../../extended/ext/settings.lani#L29)
+[Source line 30](../../../extended/ext/settings.lani#L30)
 
 ```lanius
 pub struct Children
@@ -675,7 +676,7 @@ pub struct Children
 
 #### field: state
 
-[Source line 29](../../../extended/ext/settings.lani#L29)
+[Source line 30](../../../extended/ext/settings.lani#L30)
 
 ```lanius
 state: ChildState
@@ -685,7 +686,7 @@ state: ChildState
 
 ### function: default_limits
 
-[Source line 31](../../../extended/ext/settings.lani#L31)
+[Source line 32](../../../extended/ext/settings.lani#L32)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -693,7 +694,7 @@ pub fn default_limits() -> Limits
 
 ### function: budget
 
-[Source line 32](../../../extended/ext/settings.lani#L32)
+[Source line 33](../../../extended/ext/settings.lani#L33)
 
 ```lanius
 pub fn budget(max_work: u64) -> Budget
@@ -701,7 +702,7 @@ pub fn budget(max_work: u64) -> Budget
 
 ### function: scalar
 
-[Source line 35](../../../extended/ext/settings.lani#L35)
+[Source line 36](../../../extended/ext/settings.lani#L36)
 
 ```lanius
 pub fn scalar(value: Scalar) -> Value
@@ -709,7 +710,7 @@ pub fn scalar(value: Scalar) -> Value
 
 ### function: json
 
-[Source line 36](../../../extended/ext/settings.lani#L36)
+[Source line 37](../../../extended/ext/settings.lani#L37)
 
 ```lanius
 pub fn json(value: ext::config::Value) -> Value
@@ -717,7 +718,7 @@ pub fn json(value: ext::config::Value) -> Value
 
 ### function: toml
 
-[Source line 37](../../../extended/ext/settings.lani#L37)
+[Source line 38](../../../extended/ext/settings.lani#L38)
 
 ```lanius
 pub fn toml(document: ext::toml::Document, node: ext::toml::NodeId) -> core::result::Result<Value,Error>
@@ -725,7 +726,7 @@ pub fn toml(document: ext::toml::Document, node: ext::toml::NodeId) -> core::res
 
 ### function: kind_text
 
-[Source line 55](../../../extended/ext/settings.lani#L55)
+[Source line 56](../../../extended/ext/settings.lani#L56)
 
 ```lanius
 pub fn kind_text(value: Kind) -> core::text::Text
@@ -733,7 +734,7 @@ pub fn kind_text(value: Kind) -> core::text::Text
 
 ### function: exact_decimal
 
-[Source line 193](../../../extended/ext/settings.lani#L193)
+[Source line 194](../../../extended/ext/settings.lani#L194)
 
 ```lanius
 pub fn exact_decimal(text: core::text::Text, maximum_bytes: i32, work: &Budget) -> core::result::Result<Value,Error>
@@ -741,7 +742,7 @@ pub fn exact_decimal(text: core::text::Text, maximum_bytes: i32, work: &Budget) 
 
 ### function: parse_boolean
 
-[Source line 201](../../../extended/ext/settings.lani#L201)
+[Source line 202](../../../extended/ext/settings.lani#L202)
 
 ```lanius
 pub fn parse_boolean(text: core::text::Text, work: &Budget) -> core::result::Result<Value,Error>
@@ -749,7 +750,7 @@ pub fn parse_boolean(text: core::text::Text, work: &Budget) -> core::result::Res
 
 ### function: parse_integer
 
-[Source line 206](../../../extended/ext/settings.lani#L206)
+[Source line 207](../../../extended/ext/settings.lani#L207)
 
 ```lanius
 pub fn parse_integer(text: core::text::Text, work: &Budget) -> core::result::Result<Value,Error>
@@ -757,7 +758,7 @@ pub fn parse_integer(text: core::text::Text, work: &Budget) -> core::result::Res
 
 ### function: layers
 
-[Source line 255](../../../extended/ext/settings.lani#L255)
+[Source line 256](../../../extended/ext/settings.lani#L256)
 
 ```lanius
 pub fn layers(sources: core::slice::View<Source>, limits: Limits, work: &Budget) -> core::result::Result<Layers,Error>
@@ -765,9 +766,9 @@ pub fn layers(sources: core::slice::View<Source>, limits: Limits, work: &Budget)
 
 ## Implementation blocks and public methods
 
-### impl at line 33
+### impl at line 34
 
-[Source line 33](../../../extended/ext/settings.lani#L33)
+[Source line 34](../../../extended/ext/settings.lani#L34)
 
 ```lanius
 pub impl Budget
@@ -775,7 +776,7 @@ pub impl Budget
 
 #### method: borrow
 
-[Source line 33](../../../extended/ext/settings.lani#L33)
+[Source line 34](../../../extended/ext/settings.lani#L34)
 
 ```lanius
 pub fn borrow(&self) -> &Budget
@@ -783,7 +784,7 @@ pub fn borrow(&self) -> &Budget
 
 #### method: remaining_work
 
-[Source line 33](../../../extended/ext/settings.lani#L33)
+[Source line 34](../../../extended/ext/settings.lani#L34)
 
 ```lanius
 pub fn remaining_work(&self) -> u64
@@ -791,15 +792,15 @@ pub fn remaining_work(&self) -> u64
 
 #### method: charge
 
-[Source line 33](../../../extended/ext/settings.lani#L33)
+[Source line 34](../../../extended/ext/settings.lani#L34)
 
 ```lanius
 pub fn charge(&self, amount: u64) -> core::result::Result<bool,Error>
 ```
 
-### impl at line 41
+### impl at line 42
 
-[Source line 41](../../../extended/ext/settings.lani#L41)
+[Source line 42](../../../extended/ext/settings.lani#L42)
 
 ```lanius
 pub impl Value
@@ -807,15 +808,15 @@ pub impl Value
 
 #### method: kind
 
-[Source line 42](../../../extended/ext/settings.lani#L42)
+[Source line 43](../../../extended/ext/settings.lani#L43)
 
 ```lanius
 pub fn kind(&self) -> Kind
 ```
 
-### impl at line 75
+### impl at line 76
 
-[Source line 75](../../../extended/ext/settings.lani#L75)
+[Source line 76](../../../extended/ext/settings.lani#L76)
 
 ```lanius
 pub impl Value
@@ -823,7 +824,7 @@ pub impl Value
 
 #### method: is_null
 
-[Source line 76](../../../extended/ext/settings.lani#L76)
+[Source line 77](../../../extended/ext/settings.lani#L77)
 
 ```lanius
 pub fn is_null(&self) -> bool
@@ -831,7 +832,7 @@ pub fn is_null(&self) -> bool
 
 #### method: boolean
 
-[Source line 77](../../../extended/ext/settings.lani#L77)
+[Source line 78](../../../extended/ext/settings.lani#L78)
 
 ```lanius
 pub fn boolean(&self) -> core::result::Result<bool,Error>
@@ -839,7 +840,7 @@ pub fn boolean(&self) -> core::result::Result<bool,Error>
 
 #### method: text
 
-[Source line 81](../../../extended/ext/settings.lani#L81)
+[Source line 82](../../../extended/ext/settings.lani#L82)
 
 ```lanius
 pub fn text(&self) -> core::result::Result<core::text::Text,Error>
@@ -847,7 +848,7 @@ pub fn text(&self) -> core::result::Result<core::text::Text,Error>
 
 #### method: decimal_text
 
-[Source line 86](../../../extended/ext/settings.lani#L86)
+[Source line 87](../../../extended/ext/settings.lani#L87)
 
 ```lanius
 pub fn decimal_text(&self) -> core::result::Result<core::text::Text,Error>
@@ -855,7 +856,7 @@ pub fn decimal_text(&self) -> core::result::Result<core::text::Text,Error>
 
 #### method: float64
 
-[Source line 90](../../../extended/ext/settings.lani#L90)
+[Source line 91](../../../extended/ext/settings.lani#L91)
 
 ```lanius
 pub fn float64(&self) -> core::result::Result<f64,Error>
@@ -863,7 +864,7 @@ pub fn float64(&self) -> core::result::Result<f64,Error>
 
 #### method: temporal_text
 
-[Source line 94](../../../extended/ext/settings.lani#L94)
+[Source line 95](../../../extended/ext/settings.lani#L95)
 
 ```lanius
 pub fn temporal_text(&self) -> core::result::Result<core::text::Text,Error>
@@ -871,7 +872,7 @@ pub fn temporal_text(&self) -> core::result::Result<core::text::Text,Error>
 
 #### method: temporal
 
-[Source line 98](../../../extended/ext/settings.lani#L98)
+[Source line 99](../../../extended/ext/settings.lani#L99)
 
 ```lanius
 pub fn temporal(&self, work: &Budget) -> core::result::Result<ext::toml::Temporal,Error>
@@ -879,7 +880,7 @@ pub fn temporal(&self, work: &Budget) -> core::result::Result<ext::toml::Tempora
 
 #### method: key
 
-[Source line 103](../../../extended/ext/settings.lani#L103)
+[Source line 104](../../../extended/ext/settings.lani#L104)
 
 ```lanius
 pub fn key(&self) -> core::result::Result<core::text::Text,Error>
@@ -887,7 +888,7 @@ pub fn key(&self) -> core::result::Result<core::text::Text,Error>
 
 #### method: len
 
-[Source line 106](../../../extended/ext/settings.lani#L106)
+[Source line 107](../../../extended/ext/settings.lani#L107)
 
 ```lanius
 pub fn len(&self) -> core::result::Result<i32,Error>
@@ -895,7 +896,7 @@ pub fn len(&self) -> core::result::Result<i32,Error>
 
 #### method: children
 
-[Source line 110](../../../extended/ext/settings.lani#L110)
+[Source line 111](../../../extended/ext/settings.lani#L111)
 
 ```lanius
 pub fn children(&self) -> core::result::Result<Children,Error>
@@ -903,7 +904,7 @@ pub fn children(&self) -> core::result::Result<Children,Error>
 
 #### method: member
 
-[Source line 115](../../../extended/ext/settings.lani#L115)
+[Source line 116](../../../extended/ext/settings.lani#L116)
 
 ```lanius
 pub fn member(&self, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error>
@@ -911,7 +912,7 @@ pub fn member(&self, key: core::text::Text, work: &Budget) -> core::result::Resu
 
 #### method: element
 
-[Source line 128](../../../extended/ext/settings.lani#L128)
+[Source line 129](../../../extended/ext/settings.lani#L129)
 
 ```lanius
 pub fn element(&self, index: i32, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error>
@@ -919,7 +920,7 @@ pub fn element(&self, index: i32, work: &Budget) -> core::result::Result<core::o
 
 #### method: integer_i64
 
-[Source line 139](../../../extended/ext/settings.lani#L139)
+[Source line 140](../../../extended/ext/settings.lani#L140)
 
 ```lanius
 pub fn integer_i64(&self, work: &Budget) -> core::result::Result<i64,Error>
@@ -927,15 +928,15 @@ pub fn integer_i64(&self, work: &Budget) -> core::result::Result<i64,Error>
 
 #### method: integer_u64
 
-[Source line 150](../../../extended/ext/settings.lani#L150)
+[Source line 151](../../../extended/ext/settings.lani#L151)
 
 ```lanius
 pub fn integer_u64(&self, work: &Budget) -> core::result::Result<u64,Error>
 ```
 
-### impl at line 171
+### impl at line 172
 
-[Source line 171](../../../extended/ext/settings.lani#L171)
+[Source line 172](../../../extended/ext/settings.lani#L172)
 
 ```lanius
 pub impl Children
@@ -943,15 +944,15 @@ pub impl Children
 
 #### method: next
 
-[Source line 173](../../../extended/ext/settings.lani#L173)
+[Source line 174](../../../extended/ext/settings.lani#L174)
 
 ```lanius
 pub fn next(&self, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error>
 ```
 
-### impl at line 282
+### impl at line 283
 
-[Source line 282](../../../extended/ext/settings.lani#L282)
+[Source line 283](../../../extended/ext/settings.lani#L283)
 
 ```lanius
 pub impl Layers
@@ -959,7 +960,7 @@ pub impl Layers
 
 #### method: len
 
-[Source line 283](../../../extended/ext/settings.lani#L283)
+[Source line 284](../../../extended/ext/settings.lani#L284)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -967,7 +968,7 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 284](../../../extended/ext/settings.lani#L284)
+[Source line 285](../../../extended/ext/settings.lani#L285)
 
 ```lanius
 pub fn get(&self, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Resolved>,Error>
@@ -975,7 +976,7 @@ pub fn get(&self, key: core::text::Text, work: &Budget) -> core::result::Result<
 
 #### method: lookup
 
-[Source line 296](../../../extended/ext/settings.lani#L296)
+[Source line 297](../../../extended/ext/settings.lani#L297)
 
 ```lanius
 pub fn lookup(&self, path: core::slice::View<core::text::Text>, work: &Budget) -> core::result::Result<core::option::Option<Resolved>,Error>

@@ -21,18 +21,19 @@ Declaration counts: constant: 2; enum: 1; field: 13; function: 9; struct: 2; var
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::cmp](../core/cmp.md) · [source](../../../stdlib/std/par.lani#L12)
-- [core::function](../core/function.md) · [source](../../../stdlib/std/par.lani#L13)
-- [core::iter](../core/iter.md) · [source](../../../stdlib/std/par.lani#L14)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/par.lani#L15)
-- [core::panic](../core/panic.md) · [source](../../../stdlib/std/par.lani#L16)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/par.lani#L17)
-- [std::atomic](atomic.md) · [source](../../../stdlib/std/par.lani#L18)
-- [std::parallel](parallel.md) · [source](../../../stdlib/std/par.lani#L19)
-- [std::thread](thread.md) · [source](../../../stdlib/std/par.lani#L20)
-- [std::steal](steal.md) · [source](../../../stdlib/std/par.lani#L21)
-- [std::sync](sync.md) · [source](../../../stdlib/std/par.lani#L22)
-- [std::worker](worker.md) · [source](../../../stdlib/std/par.lani#L23)
+- [core::iter_state](../core/iter_state.md) · [source](../../../stdlib/std/par.lani#L12)
+- [core::cmp](../core/cmp.md) · [source](../../../stdlib/std/par.lani#L13)
+- [core::function](../core/function.md) · [source](../../../stdlib/std/par.lani#L14)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/std/par.lani#L15)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/par.lani#L16)
+- [core::panic](../core/panic.md) · [source](../../../stdlib/std/par.lani#L17)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/par.lani#L18)
+- [std::atomic](atomic.md) · [source](../../../stdlib/std/par.lani#L19)
+- [std::parallel](parallel.md) · [source](../../../stdlib/std/par.lani#L20)
+- [std::thread](thread.md) · [source](../../../stdlib/std/par.lani#L21)
+- [std::steal](steal.md) · [source](../../../stdlib/std/par.lani#L22)
+- [std::sync](sync.md) · [source](../../../stdlib/std/par.lani#L23)
+- [std::worker](worker.md) · [source](../../../stdlib/std/par.lani#L24)
 
 ## Types, fields and variants
 
@@ -40,7 +41,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 pub enum Error
@@ -48,7 +49,7 @@ pub enum Error
 
 #### variant: InvalidPlan
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 InvalidPlan
@@ -56,7 +57,7 @@ InvalidPlan
 
 #### variant: LengthMismatch
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 LengthMismatch
@@ -64,7 +65,7 @@ LengthMismatch
 
 #### variant: Failed
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 Failed
@@ -72,7 +73,7 @@ Failed
 
 #### variant: Steal
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 Steal(std::steal::Error)
@@ -80,7 +81,7 @@ Steal(std::steal::Error)
 
 #### variant: Sync
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 Sync(std::sync::Error)
@@ -88,7 +89,7 @@ Sync(std::sync::Error)
 
 #### variant: Worker
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 Worker(std::worker::Error)
@@ -96,7 +97,7 @@ Worker(std::worker::Error)
 
 #### variant: Thread
 
-[Source line 28](../../../stdlib/std/par.lani#L28)
+[Source line 29](../../../stdlib/std/par.lani#L29)
 
 ```lanius
 Thread(std::thread::Error)
@@ -104,7 +105,7 @@ Thread(std::thread::Error)
 
 ### struct: Job
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 pub struct Job
@@ -112,7 +113,7 @@ pub struct Job
 
 #### field: kind
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 kind: i32
@@ -120,7 +121,7 @@ kind: i32
 
 #### field: from_scratch
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 from_scratch: bool
@@ -128,7 +129,7 @@ from_scratch: bool
 
 #### field: stable
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 stable: bool
@@ -136,7 +137,7 @@ stable: bool
 
 #### field: a0
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 a0: i32
@@ -144,7 +145,7 @@ a0: i32
 
 #### field: a1
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 a1: i32
@@ -152,7 +153,7 @@ a1: i32
 
 #### field: b0
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 b0: i32
@@ -160,7 +161,7 @@ b0: i32
 
 #### field: b1
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 b1: i32
@@ -168,7 +169,7 @@ b1: i32
 
 #### field: out
 
-[Source line 35](../../../stdlib/std/par.lani#L35)
+[Source line 36](../../../stdlib/std/par.lani#L36)
 
 ```lanius
 out: i32
@@ -176,7 +177,7 @@ out: i32
 
 ### struct: Plan
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 pub struct Plan
@@ -184,7 +185,7 @@ pub struct Plan
 
 #### field: workers
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 workers: i32
@@ -192,7 +193,7 @@ workers: i32
 
 #### field: grain
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 grain: i32
@@ -200,7 +201,7 @@ grain: i32
 
 #### field: queues
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 queues: std::steal::Queues<Job>
@@ -208,7 +209,7 @@ queues: std::steal::Queues<Job>
 
 #### field: control
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 control: ptr
@@ -216,7 +217,7 @@ control: ptr
 
 #### field: crew
 
-[Source line 40](../../../stdlib/std/par.lani#L40)
+[Source line 41](../../../stdlib/std/par.lani#L41)
 
 ```lanius
 crew: ptr
@@ -226,7 +227,7 @@ crew: ptr
 
 ### constant: MAX_WORKERS
 
-[Source line 25](../../../stdlib/std/par.lani#L25)
+[Source line 26](../../../stdlib/std/par.lani#L26)
 
 ```lanius
 pub const MAX_WORKERS: i32 = 256;
@@ -234,7 +235,7 @@ pub const MAX_WORKERS: i32 = 256;
 
 ### constant: DEQUE_CAPACITY
 
-[Source line 26](../../../stdlib/std/par.lani#L26)
+[Source line 27](../../../stdlib/std/par.lani#L27)
 
 ```lanius
 pub const DEQUE_CAPACITY: i32 = 1024;
@@ -244,7 +245,7 @@ pub const DEQUE_CAPACITY: i32 = 1024;
 
 ### function: plan
 
-[Source line 44](../../../stdlib/std/par.lani#L44)
+[Source line 45](../../../stdlib/std/par.lani#L45)
 
 ```lanius
 pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::result::Result<Plan, Error>
@@ -252,7 +253,7 @@ pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::resul
 
 ### function: crew_entry
 
-[Source line 403](../../../stdlib/std/par.lani#L403)
+[Source line 404](../../../stdlib/std/par.lani#L404)
 
 ```lanius
 pub fn crew_entry<T>(arg: ptr) -> ptr where T: core::cmp::Ord<T>
@@ -260,7 +261,7 @@ pub fn crew_entry<T>(arg: ptr) -> ptr where T: core::cmp::Ord<T>
 
 ### function: sort_unstable_threads
 
-[Source line 461](../../../stdlib/std/par.lani#L461)
+[Source line 462](../../../stdlib/std/par.lani#L462)
 
 ```lanius
 pub fn sort_unstable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, entry: ptr) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -268,7 +269,7 @@ pub fn sort_unstable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scra
 
 ### function: sort_stable_threads
 
-[Source line 464](../../../stdlib/std/par.lani#L464)
+[Source line 465](../../../stdlib/std/par.lani#L465)
 
 ```lanius
 pub fn sort_stable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, entry: ptr) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -276,7 +277,7 @@ pub fn sort_stable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratc
 
 ### function: sort_unstable
 
-[Source line 470](../../../stdlib/std/par.lani#L470)
+[Source line 471](../../../stdlib/std/par.lani#L471)
 
 ```lanius
 pub fn sort_unstable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -284,7 +285,7 @@ pub fn sort_unstable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std
 
 ### function: sort_stable
 
-[Source line 474](../../../stdlib/std/par.lani#L474)
+[Source line 475](../../../stdlib/std/par.lani#L475)
 
 ```lanius
 pub fn sort_stable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -292,7 +293,7 @@ pub fn sort_stable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::
 
 ### function: map
 
-[Source line 479](../../../stdlib/std/par.lani#L479)
+[Source line 480](../../../stdlib/std/par.lani#L480)
 
 ```lanius
 pub fn map<T, U, M>(plan: Plan, input: std::parallel::Shared<T>, output: std::parallel::Shared<U>, mapper: &M) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U>
@@ -300,7 +301,7 @@ pub fn map<T, U, M>(plan: Plan, input: std::parallel::Shared<T>, output: std::pa
 
 ### function: reduce
 
-[Source line 519](../../../stdlib/std/par.lani#L519)
+[Source line 520](../../../stdlib/std/par.lani#L520)
 
 ```lanius
 pub fn reduce<T, A, F, C>(plan: Plan, input: std::parallel::Shared<T>, partials: std::parallel::Shared<A>, identity: A, fold: &F, combine: &C) -> core::result::Result<A, Error>
@@ -309,7 +310,7 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: std::parallel::Shared<T>, partials:
 
 ### function: scan
 
-[Source line 597](../../../stdlib/std/par.lani#L597)
+[Source line 598](../../../stdlib/std/par.lani#L598)
 
 ```lanius
 pub fn scan<T, C>(plan: Plan, data: std::parallel::Shared<T>, partials: std::parallel::Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T>

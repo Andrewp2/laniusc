@@ -14,6 +14,9 @@
 // peer may use context takeover and any window size; a 32 KiB history is
 // kept per codec.
 module ext::ws_deflate;
+import core::parse_state;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -31,7 +34,7 @@ pub struct Params { server_no_context: bool, client_no_context: bool, server_bit
 // messages are compressed; reset_out: whether each starts without history
 // (see the module comment).
 pub struct Codec { server: bool, params: Params, compress_out: bool, reset_out: bool, history: alloc::vec::Vec<u8>, tables: alloc::vec::Vec<i32>, decoder: ext::inflate::Decoder,
-    block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder_ready: bool, encoder: core::option::Option<ext::deflate::Encoder>, active: bool }
+    block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder_ready_completion: core::iter_state::Completion, encoder: core::option::Option<ext::deflate::Encoder>, lifetime: core::lifecycle::Lifetime }
 
 fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::View { values: raw, start: 0, length: n }; }
 fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start + i]; }
@@ -55,9 +58,9 @@ fn extension_at(v: core::slice::View<u8>, at: i32) -> Ext {
     while (i < v.len() && tchar(byte(v,i))) { i += 1; }
     let bad: Ext = Ext { name: part(v,0,0), params: part(v,0,0), next: -2 };
     if (i == start) { return bad; }
-    let name: core::slice::View<u8> = part(v,start,i); let params_start: i32 = i; let quoted: bool = false;
-    while (i < v.len()) { let c: u8 = byte(v,i); if (c == 34) { quoted = !quoted; } if (c == 44 && !quoted) { break; } i += 1; }
-    if (quoted) { return bad; }
+    let name: core::slice::View<u8> = part(v,start,i); let params_start: i32 = i; let quoting = core::parse_state::quoting_start();
+    while (i < v.len()) { let c: u8 = byte(v,i); if (c == 34) { quoting.step(c); } if (c == 44 && quoting.unquoted()) { break; } i += 1; }
+    if (!quoting.unquoted()) { return bad; }
     let next: i32 = -1; if (i < v.len()) { next = i + 1; }
     return Ext { name: name, params: part(v,params_start,i), next: next };
 }
@@ -183,7 +186,7 @@ pub fn codec(role: ext::websocket::Role, params: Params) -> core::result::Result
     let out: bool = true;
     let reset: bool = (server && params.server_no_context) || (!server && params.client_no_context);
     return core::result::Ok(Codec { server: server, params: params, compress_out: out, reset_out: reset, history: h, tables: t, decoder: made.unwrap(),
-        block: alloc::vec::new<u8>(), pending: alloc::vec::new<u8>(), scratch: alloc::vec::new<i32>(), encoder_ready: false, encoder: core::option::None(), active: true });
+        block: alloc::vec::new<u8>(), pending: alloc::vec::new<u8>(), scratch: alloc::vec::new<i32>(), encoder_ready_completion: core::iter_state::completion_start(), encoder: core::option::None(), lifetime: core::lifecycle::lifetime_start() });
 }
 
 pub impl Codec {
@@ -198,7 +201,7 @@ pub impl Codec {
     // The agreed window bits for this side's compression.
     fn own_bits(&self) -> i32 { if (self.server) { return self.params.server_bits; } return self.params.client_bits; }
     fn ready_encoder(&self) -> bool {
-        if (self.encoder_ready) { return true; }
+        if (self.encoder_ready_completion.is_done()) { return true; }
         let b: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::level_window_len());
         let p: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::level_pending_len());
         let s: core::result::Result<alloc::vec::Vec<i32>,Error> = words(ext::deflate::level_scratch_len());
@@ -210,7 +213,7 @@ pub impl Codec {
         let e: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::level_encoder(self.block.as_view(),self.pending.as_view(),self.scratch.as_view(),1);
         if (e.is_err()) { return false; }
         let made: ext::deflate::Encoder = e.unwrap(); made.limit_window(self.own_bits());
-        self.encoder = core::option::Some(made); self.encoder_ready = true; return true;
+        self.encoder = core::option::Some(made); self.encoder_ready_completion.finish(); return true;
     }
     // Append the compressed payload of message to out: raw DEFLATE ended
     // with a sync flush, without its 00 00 FF FF tail. With context takeover
@@ -225,7 +228,7 @@ pub impl Codec {
     // emits a block per 32 KiB of input; send each result as one fragment,
     // RSV1 on the first. Failures are as for compress.
     pub fn compress_part(&self, piece: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, first: bool, last: bool) -> core::result::Result<i32,Error> {
-        if (!self.active || piece.start < 0 || piece.length < 0) { return core::result::Err(Error::Bounds); }
+        if (!self.lifetime.is_active() || piece.start < 0 || piece.length < 0) { return core::result::Err(Error::Bounds); }
         if (!self.ready_encoder()) { return core::result::Err(Error::AllocationFailed); }
         let e: ext::deflate::Encoder = self.encoder.unwrap(); if (first && self.reset_out) { e.reset(); }
         let base: i32 = out.len(); let read: i32 = 0;
@@ -251,10 +254,10 @@ pub impl Codec {
     // limit bytes; a text message must also be UTF-8 (check it with
     // ext::websocket::valid_text).
     pub fn inflate(&self, compressed: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, limit: i32) -> core::result::Result<i32,Error> {
-        if (!self.active || compressed.start < 0 || compressed.length < 0) { return core::result::Err(Error::Bounds); }
+        if (!self.lifetime.is_active() || compressed.start < 0 || compressed.length < 0) { return core::result::Err(Error::Bounds); }
         let tail: [u8;4] = [0,0,255,255]; let base: i32 = out.len(); let produced: i32 = 0;
-        let pieces: i32 = 0; let finished: bool = false;
-        while (pieces < 2 && !finished) {
+        let pieces: i32 = 0; let finished_phase = core::iter_state::completion_start();
+        while (pieces < 2 && !finished_phase.is_done()) {
             let input: core::slice::View<u8> = compressed; if (pieces == 1) { input = core::slice::View { values: tail, start: 0, length: 4 }; }
             let read: i32 = 0;
             while (true) {
@@ -267,19 +270,19 @@ pub impl Codec {
                 let st: ext::inflate::Step = stepped.unwrap(); read += st.read; produced += st.written; out.length = at + st.written;
                 if (produced > limit) { out.length = base; self.restart(); return core::result::Err(Error::TooLarge); }
                 let kind: i32 = match (st.status) { ext::inflate::Status::NeedInput -> 0, ext::inflate::Status::NeedOutput -> 1, ext::inflate::Status::Done -> 2 };
-                if (kind == 2) { finished = true; break; }
+                if (kind == 2) { finished_phase.finish(); break; }
                 if (kind == 0 && read >= input.len()) { break; }
             }
             pieces += 1;
         }
         // A final block ends the peer's stream; context resets either way
         // when the peer said it would not use it.
-        if (finished || self.peer_resets()) { self.restart(); }
+        if (finished_phase.is_done() || self.peer_resets()) { self.restart(); }
         return core::result::Ok(produced);
     }
     fn restart(&self) { let r: core::result::Result<bool,ext::inflate::Error> = self.decoder.reset(32768); }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; } self.active = false;
+        if (!self.lifetime.is_active()) { return false; } self.lifetime.release();
         self.history.destroy(); self.tables.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); return true;
     }
 }

@@ -1,0 +1,15 @@
+module app::main;
+import ext::gpu;
+import ext::window;
+import core::result;
+import core::slice;
+import core::text;
+import shaders::triangle_shaders;
+fn main() -> i32 {
+    let context=ext::window::init().unwrap(); let window=context.create(core::text::from_str("GPU triangle"),320,240,true).unwrap();
+    let device=ext::gpu::open(0).unwrap(); let surface=device.create_surface(window.borrow()).unwrap();
+    let vertex=shaders::triangle_shaders::vert(); let fragment=shaders::triangle_shaders::frag();
+    let pipeline=device.create_pipeline(core::slice::whole(vertex),core::slice::whole(fragment),surface.format().unwrap()).unwrap();
+    let frame:i32=0; while(frame<3) { surface.render(pipeline.borrow(),3).unwrap(); frame+=1; }
+    pipeline.close().unwrap(); surface.close().unwrap(); device.close().unwrap(); window.close().unwrap(); context.close().unwrap(); return 0;
+}

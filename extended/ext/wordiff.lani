@@ -1,6 +1,7 @@
 // Word and character diff in git's --word-diff=plain form, built on ext::seqdiff.
 // See docs/extended-wordiff.md.
 module ext::wordiff;
+import core::lifecycle;
 import alloc::vec;
 import core::slice;
 import core::option;
@@ -18,17 +19,17 @@ pub enum Error { InvalidInput, ItemLimit, WorkLimit, OutputLimit, AllocationFail
 pub struct Options { mode: Mode, function_names: bool, max_output: i32, limits: ext::seqdiff::Limits }
 pub fn default_options(mode: Mode) -> Options { return Options { mode: mode, function_names: true, max_output: 268435456, limits: ext::seqdiff::default_limits() }; }
 
-struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, failed: bool, full: bool, error: Error }
+struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, health: core::lifecycle::Health, full: bool, error: Error }
 impl Out { fn borrow(&self) -> &Out { return self; } }
 fn wd_byte(o: &Out, byte: u8) {
-    if (o.failed) { return; }
-    if (o.bytes.len() >= o.limit) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_push(byte))) { o.failed = true; }
+    if (o.health.is_failed()) { return; }
+    if (o.bytes.len() >= o.limit) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_push(byte))) { o.health.fail(); }
 }
 fn wd_bytes(o: &Out, v: core::slice::View<u8>) {
-    if (o.failed || v.length == 0) { return; }
-    if (v.length > o.limit - o.bytes.len()) { o.failed = true; o.full = true; return; }
-    if (core::result::is_err(o.bytes.try_extend(v))) { o.failed = true; }
+    if (o.health.is_failed() || v.length == 0) { return; }
+    if (v.length > o.limit - o.bytes.len()) { o.health.fail(); o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_extend(v))) { o.health.fail(); }
 }
 fn wd_text(o: &Out, text: str, count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count); let i: i32 = 0; while (i < count) { wd_byte(o, raw[i]); i += 1; } }
 fn wd_number(o: &Out, number: i32) {
@@ -41,7 +42,7 @@ fn wd_range(o: &Out, start: i32, count: i32) {
     if (count == 0) { wd_number(o, start); wd_text(o, ",0", 2); return; }
     wd_number(o, start + 1); if (count != 1) { wd_byte(o, 44); wd_number(o, count); }
 }
-fn wd_fail(o: &Out, error: Error) { if (!o.failed) { o.failed = true; o.error = error; } }
+fn wd_fail(o: &Out, error: Error) { if (!o.health.is_failed()) { o.health.fail(); o.error = error; } }
 fn wd_space(c: u8) -> bool { return c == 32 || c == 9 || c == 10 || c == 13; }
 fn wd_sub(v: core::slice::View<u8>, from: i32, to: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start + from, length: to - from }; }
 fn wd_map(e: ext::seqdiff::Error) -> Error {
@@ -96,7 +97,7 @@ pub fn split_words(text: core::slice::View<u8>, mode: Mode, limits: ext::seqdiff
 // style's markers; LFs are copied between segments. style 0 context, 1 old, 2 new.
 fn wd_chunk(o: &Out, v: core::slice::View<u8>, style: i32) {
     let i: i32 = 0;
-    while (i < v.length && !o.failed) {
+    while (i < v.length && !o.health.is_failed()) {
         let j: i32 = i; while (j < v.length && v.values[v.start+j] != 10) { j += 1; }
         if (j > i) {
             if (style == 1) { wd_text(o, "[-", 2); } if (style == 2) { wd_text(o, "{+", 2); }
@@ -129,7 +130,7 @@ fn wd_group(o: &Out, minus: core::slice::View<u8>, plus: core::slice::View<u8>, 
     let wa: core::slice::View<ext::seqdiff::Line> = a.as_view(); let wb: core::slice::View<ext::seqdiff::Line> = b.as_view();
     let steps: [ext::seqdiff::Edit] = script.steps.as_slice(); let total: i32 = script.steps.len();
     let current: i32 = 0; let s: i32 = 0;
-    while (s < total && !o.failed) {
+    while (s < total && !o.health.is_failed()) {
         if (steps[s].kind == 0) { s += 1; }
         else {
             let bi: i32 = steps[s].before; let ai: i32 = steps[s].after; let dc: i32 = 0; let ic: i32 = 0;
@@ -151,12 +152,12 @@ fn wd_group(o: &Out, minus: core::slice::View<u8>, plus: core::slice::View<u8>, 
 // Word diff of two texts that are each a run of whole lines (git's per-group step).
 pub fn write_group(minus: core::slice::View<u8>, plus: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
     if (minus.start < 0 || minus.length < 0 || plus.start < 0 || plus.length < 0 || options.max_output < 0) { return core::result::Err(Error::InvalidInput); }
-    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, failed: false, full: false, error: Error::AllocationFailed };
+    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, health: core::lifecycle::health_start(), full: false, error: Error::AllocationFailed };
     if (minus.length > 0 || plus.length > 0) { wd_group(o.borrow(), minus, plus, options.mode, options.limits); }
     return wd_finish(o);
 }
 fn wd_finish(o: Out) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
-    if (o.failed) { o.bytes.destroy(); if (o.full) { return core::result::Err(Error::OutputLimit); } return core::result::Err(o.error); }
+    if (o.health.is_failed()) { o.bytes.destroy(); if (o.full) { return core::result::Err(Error::OutputLimit); } return core::result::Err(o.error); }
     return core::result::Ok(o.bytes);
 }
 fn wd_append_line(o: &Out, buffer: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) {
@@ -200,12 +201,12 @@ pub fn write_word_diff_split(split: &ext::seqdiff::Split, script: &ext::seqdiff:
 }
 fn wd_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
     if (l.na != script.before_len() || l.nb != script.after_len() || options.max_output < 0) { return core::result::Err(Error::InvalidInput); }
-    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, failed: false, full: false, error: Error::AllocationFailed };
+    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, health: core::lifecycle::health_start(), full: false, error: Error::AllocationFailed };
     if (hunks.length == 0) { return core::result::Ok(o.bytes); }
     wd_text(o.borrow(), "--- ", 4); wd_bytes(o.borrow(), old_name); wd_text(o.borrow(), "\n+++ ", 5); wd_bytes(o.borrow(), new_name); wd_byte(o.borrow(), 10);
     let minus: alloc::vec::Vec<u8> = alloc::vec::new(); let plus: alloc::vec::Vec<u8> = alloc::vec::new();
     let func_line: i32 = -1; let func_len: i32 = 0; let previous: i32 = -1; let h: i32 = 0;
-    while (h < hunks.length && !o.failed) {
+    while (h < hunks.length && !o.health.is_failed()) {
         let hunk: ext::seqdiff::Hunk = hunks.values[hunks.start+h];
         if (hunk.first < 0 || hunk.count < 0 || hunk.first + hunk.count > script.len() || hunk.before < 0 || hunk.before > l.na) { wd_fail(o.borrow(), Error::InvalidInput); break; }
         if (options.function_names) {
@@ -217,7 +218,7 @@ fn wd_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Scrip
         if (func_line >= 0 && func_len > 0) { wd_byte(o.borrow(), 32); wd_bytes(o.borrow(), wd_sub(wd_get(l, split, 0, func_line), 0, func_len)); }
         wd_byte(o.borrow(), 10);
         let at: i32 = hunk.first;
-        while (at < hunk.first + hunk.count && !o.failed) {
+        while (at < hunk.first + hunk.count && !o.health.is_failed()) {
             let step: ext::seqdiff::Edit = core::result::unwrap(script.step(at));
             if (step.kind == 2) { wd_append_line(o.borrow(), plus.borrow(), wd_get(l, split, 1, step.after)); }
             else { if (step.kind == 1) { wd_append_line(o.borrow(), minus.borrow(), wd_get(l, split, 0, step.before)); }

@@ -6,6 +6,7 @@
 // LF, CR and FF end a line). Input arrives in chunks of any size. Lines and
 // words are counted eight bytes at a time. See docs/extended-textutils.md.
 module ext::text_wc;
+import core::iter_state;
 import alloc::io;
 import core::io;
 import core::mem;
@@ -13,9 +14,18 @@ import core::result;
 import core::slice;
 import ext::text_lines;
 
-pub struct Counter { lines: i64, words: i64, bytes: i64, longest: i64, pos: i64, space: bool }
+pub enum WordEvent { Space, Printable, Classified(bool) }
+pub machine WordPhase on WordEvent {
+    start Space;
+    state Space { WordEvent::Space -> stay, WordEvent::Printable -> goto Word, WordEvent::Classified(space) -> { if (space) { stay; } goto Word; }, }
+    state Word { WordEvent::Space -> goto Space, WordEvent::Printable -> stay, WordEvent::Classified(space) -> { if (space) { goto Space; } stay; }, }
+}
+pub impl WordPhase { pub fn space(&self) -> bool { return match (self.state()) { WordPhaseState::Space -> true, _ -> false }; } }
+
+
+pub struct Counter { lines: i64, words: i64, bytes: i64, longest: i64, pos: i64, phase: WordPhase }
 pub impl Counter { pub fn borrow(&self) -> &Counter { return self; } }
-pub fn counter() -> Counter { return Counter { lines: 0, words: 0, bytes: 0, longest: 0, pos: 0, space: true }; }
+pub fn counter() -> Counter { return Counter { lines: 0, words: 0, bytes: 0, longest: 0, pos: 0, phase: word_phase_start() }; }
 // Which counts to print, in wc's column order.
 pub struct Select { lines: bool, words: bool, chars: bool, bytes: bool, longest: bool }
 pub fn default_select() -> Select { return Select { lines: true, words: true, chars: false, bytes: true, longest: false }; }
@@ -27,17 +37,17 @@ fn wc_space(b: u8) -> bool { return b == 32 || (b >= 9 && b <= 13); }
 
 // Every count, one byte at a time, over bytes [from, to) of w.
 fn wc_bytes(c: &Counter, w: &ext::text_lines::Words, from: i32, to: i32) {
-    let pos: i64 = c.pos; let longest: i64 = c.longest; let space: bool = c.space; let lines: i64 = c.lines; let words: i64 = c.words;
+    let pos: i64 = c.pos; let longest: i64 = c.longest; let phase: WordPhase = c.phase; let lines: i64 = c.lines; let words: i64 = c.words;
     let j: i32 = from;
     while (j < to) {
         let b: u8 = w.byte(j); j += 1;
-        if (b == 10 || b == 13 || b == 12) { if (b == 10) { lines += 1; } if (pos > longest) { longest = pos; } pos = 0; space = true; }
-        else { if (b == 9) { pos += 8 - pos % 8; space = true; }
-        else { if (b == 32) { pos += 1; space = true; }
-        else { if (b == 11) { space = true; }
-        else { if (b > 32 && b < 127) { pos += 1; if (space) { words += 1; } space = false; } } } } }
+        if (b == 10 || b == 13 || b == 12) { if (b == 10) { lines += 1; } if (pos > longest) { longest = pos; } pos = 0; phase.step(WordEvent::Space); }
+        else { if (b == 9) { pos += 8 - pos % 8; phase.step(WordEvent::Space); }
+        else { if (b == 32) { pos += 1; phase.step(WordEvent::Space); }
+        else { if (b == 11) { phase.step(WordEvent::Space); }
+        else { if (b > 32 && b < 127) { pos += 1; if (phase.space()) { words += 1; } phase.step(WordEvent::Printable); } } } } }
     }
-    c.pos = pos; c.longest = longest; c.space = space; c.lines = lines; c.words = words;
+    c.pos = pos; c.longest = longest; c.phase = phase; c.lines = lines; c.words = words;
 }
 
 // LFs in the first nw words, in byte lanes folded every 248 words.
@@ -88,7 +98,7 @@ pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: boo
     let c9: u64 = 8608480567731124087; let c14: u64 = 8246779703540740722; let sp: u64 = 2314885530818453536;
     // y + 95 reaches bit 7 from 33 (!) up, y + 1 only at 127 (DEL).
     let c33: u64 = 6872316419617283935;
-    let carry: u64 = 0; if (c.space) { carry = 128; }
+    let carry: u64 = 0; if (c.phase.space()) { carry = 128; }
     let count: i64 = 0; let lfs: i64 = 0; let k: i32 = 0; let base: i32 = nw - 1;
     while (k < nw) {
         let x: u64 = ws[base-k]; k += 1;
@@ -114,7 +124,7 @@ pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: boo
         let l: u64 = x ^ nl;
         lfs += 8 - ((((((((l & low) + low) | l) >> 7) & ones) * ones) >> 56) as i64);
     }
-    c.words += count; c.lines += lfs; c.space = carry != 0;
+    c.words += count; c.lines += lfs; c.phase.step(WordEvent::Classified(carry != 0));
     if (full < n) {
         let pos: i64 = c.pos; let longest_now: i64 = c.longest;
         wc_bytes(c, w.borrow(), full, n);
@@ -129,12 +139,12 @@ pub fn done(c: &Counter) { if (c.pos > c.longest) { c.longest = c.pos; } c.pos =
 // One output row: the selected counts, each right-aligned in `width`
 // columns and separated by one space, then " NAME" when `named`.
 pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, name: core::slice::View<u8>, named: bool) {
-    let first: bool = true;
-    if (s.lines) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.lines, width); first = false; }
-    if (s.words) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.words, width); first = false; }
-    if (s.chars) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first = false; }
-    if (s.bytes) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first = false; }
-    if (s.longest) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.longest, width); first = false; }
+    let first_phase = core::iter_state::finished_completion();
+    if (s.lines) { if (!first_phase.is_done()) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.lines, width); first_phase = core::iter_state::completion_start(); }
+    if (s.words) { if (!first_phase.is_done()) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.words, width); first_phase = core::iter_state::completion_start(); }
+    if (s.chars) { if (!first_phase.is_done()) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first_phase = core::iter_state::completion_start(); }
+    if (s.bytes) { if (!first_phase.is_done()) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first_phase = core::iter_state::completion_start(); }
+    if (s.longest) { if (!first_phase.is_done()) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.longest, width); first_phase = core::iter_state::completion_start(); }
     if (named) { ext::text_lines::put_byte(o, 32); let i: i32 = 0; while (i < name.length) { ext::text_lines::put_byte(o, name.values[name.start+i]); i += 1; } }
     ext::text_lines::put_byte(o, 10);
 }

@@ -16,30 +16,31 @@ Content-only materializer over sealed archive_source::Prepared and the canonical
 - [extended-unpack](../../extended-unpack.md)
 - [library-archive-extraction-plan](../../library-archive-extraction-plan.md)
 
-Declaration counts: enum: 3; field: 77; function: 2; impl: 1; method: 18; struct: 5; variant: 45.
+Declaration counts: enum: 3; field: 77; function: 2; impl: 1; machine: 1; method: 18; struct: 5; variant: 44.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_extract.lani#L4)
-- [core::io](../core/io.md) · [source](../../../extended/ext/archive_extract.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_extract.lani#L6)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_extract.lani#L7)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_extract.lani#L8)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/archive_extract.lani#L9)
-- [core::path](../core/path.md) · [source](../../../extended/ext/archive_extract.lani#L10)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_extract.lani#L11)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_extract.lani#L12)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_extract.lani#L13)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/archive_extract.lani#L14)
-- [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_extract.lani#L15)
-- [ext::archive_source](archive_source.md) · [source](../../../extended/ext/archive_extract.lani#L16)
-- [ext::zip](zip.md) · [source](../../../extended/ext/archive_extract.lani#L17)
-- [std::atomic_file](../std/atomic_file.md) · [source](../../../extended/ext/archive_extract.lani#L18)
-- [std::file](../std/file.md) · [source](../../../extended/ext/archive_extract.lani#L19)
-- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/archive_extract.lani#L20)
-- [std::temp_file](../std/temp_file.md) · [source](../../../extended/ext/archive_extract.lani#L21)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/archive_extract.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/archive_extract.lani#L5)
+- [core::io](../core/io.md) · [source](../../../extended/ext/archive_extract.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_extract.lani#L7)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_extract.lani#L8)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_extract.lani#L9)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/archive_extract.lani#L10)
+- [core::path](../core/path.md) · [source](../../../extended/ext/archive_extract.lani#L11)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_extract.lani#L12)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_extract.lani#L13)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_extract.lani#L14)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L26) · [source](../../../extended/ext/archive_extract.lani#L15)
+- [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_extract.lani#L16)
+- [ext::archive_source](archive_source.md) · [source](../../../extended/ext/archive_extract.lani#L17)
+- [ext::zip](zip.md) · [source](../../../extended/ext/archive_extract.lani#L18)
+- [std::atomic_file](../std/atomic_file.md) · [source](../../../extended/ext/archive_extract.lani#L19)
+- [std::file](../std/file.md) · [source](../../../extended/ext/archive_extract.lani#L20)
+- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/archive_extract.lani#L21)
+- [std::temp_file](../std/temp_file.md) · [source](../../../extended/ext/archive_extract.lani#L22)
 
 ## Types, fields and variants
 
@@ -47,7 +48,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Limits
 
-[Source line 23](../../../extended/ext/archive_extract.lani#L23)
+[Source line 24](../../../extended/ext/archive_extract.lani#L24)
 
 ```lanius
 pub struct Limits
@@ -55,7 +56,7 @@ pub struct Limits
 
 #### field: max_owned_bytes
 
-[Source line 24](../../../extended/ext/archive_extract.lani#L24)
+[Source line 25](../../../extended/ext/archive_extract.lani#L25)
 
 ```lanius
 max_owned_bytes:u64
@@ -63,7 +64,7 @@ max_owned_bytes:u64
 
 #### field: max_depth
 
-[Source line 24](../../../extended/ext/archive_extract.lani#L24)
+[Source line 25](../../../extended/ext/archive_extract.lani#L25)
 
 ```lanius
 max_depth:i32
@@ -71,7 +72,7 @@ max_depth:i32
 
 #### field: max_host_calls
 
-[Source line 24](../../../extended/ext/archive_extract.lani#L24)
+[Source line 25](../../../extended/ext/archive_extract.lani#L25)
 
 ```lanius
 max_host_calls:u64
@@ -79,7 +80,7 @@ max_host_calls:u64
 
 #### field: max_cleanup_calls
 
-[Source line 24](../../../extended/ext/archive_extract.lani#L24)
+[Source line 25](../../../extended/ext/archive_extract.lani#L25)
 
 ```lanius
 max_cleanup_calls:u64
@@ -87,7 +88,7 @@ max_cleanup_calls:u64
 
 #### field: max_write_calls
 
-[Source line 25](../../../extended/ext/archive_extract.lani#L25)
+[Source line 26](../../../extended/ext/archive_extract.lani#L26)
 
 ```lanius
 max_write_calls:u64
@@ -95,7 +96,7 @@ max_write_calls:u64
 
 #### field: max_sync_calls
 
-[Source line 25](../../../extended/ext/archive_extract.lani#L25)
+[Source line 26](../../../extended/ext/archive_extract.lani#L26)
 
 ```lanius
 max_sync_calls:u64
@@ -103,7 +104,7 @@ max_sync_calls:u64
 
 #### field: max_entropy_calls
 
-[Source line 25](../../../extended/ext/archive_extract.lani#L25)
+[Source line 26](../../../extended/ext/archive_extract.lani#L26)
 
 ```lanius
 max_entropy_calls:u64
@@ -111,7 +112,7 @@ max_entropy_calls:u64
 
 #### field: max_name_attempts
 
-[Source line 26](../../../extended/ext/archive_extract.lani#L26)
+[Source line 27](../../../extended/ext/archive_extract.lani#L27)
 
 ```lanius
 max_name_attempts:u64
@@ -119,7 +120,7 @@ max_name_attempts:u64
 
 #### field: max_zip_output
 
-[Source line 26](../../../extended/ext/archive_extract.lani#L26)
+[Source line 27](../../../extended/ext/archive_extract.lani#L27)
 
 ```lanius
 max_zip_output:i32
@@ -127,202 +128,42 @@ max_zip_output:i32
 
 #### field: max_steps
 
-[Source line 26](../../../extended/ext/archive_extract.lani#L26)
+[Source line 27](../../../extended/ext/archive_extract.lani#L27)
 
 ```lanius
 max_steps:u64
 ```
 
-### enum: State
+### enum: LifecycleEvent
 
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
+[Source line 29](../../../extended/ext/archive_extract.lani#L29)
 
 ```lanius
-pub enum State
+pub enum LifecycleEvent
 ```
 
-#### variant: Empty
+#### variant: Begin
 
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
-
-```lanius
-Empty
-```
-
-#### variant: Running
-
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
+[Source line 29](../../../extended/ext/archive_extract.lani#L29)
 
 ```lanius
-Running
+Begin
 ```
 
 #### variant: Complete
 
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
+[Source line 29](../../../extended/ext/archive_extract.lani#L29)
 
 ```lanius
 Complete
 ```
 
-#### variant: Failed
-
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
-
-```lanius
-Failed
-```
-
-#### variant: Destroyed
-
-[Source line 28](../../../extended/ext/archive_extract.lani#L28)
-
-```lanius
-Destroyed
-```
-
-### enum: Stage
+#### variant: Fail
 
 [Source line 29](../../../extended/ext/archive_extract.lani#L29)
 
 ```lanius
-pub enum Stage
-```
-
-#### variant: Validate
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Validate
-```
-
-#### variant: Reserve
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Reserve
-```
-
-#### variant: Root
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Root
-```
-
-#### variant: Decode
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Decode
-```
-
-#### variant: Walk
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Walk
-```
-
-#### variant: CreateDirectory
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-CreateDirectory
-```
-
-#### variant: OpenDirectory
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-OpenDirectory
-```
-
-#### variant: SyncChild
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-SyncChild
-```
-
-#### variant: SyncParent
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-SyncParent
-```
-
-#### variant: CreateFile
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-CreateFile
-```
-
-#### variant: Write
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Write
-```
-
-#### variant: Commit
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Commit
-```
-
-#### variant: Close
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Close
-```
-
-#### variant: Cleanup
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Cleanup
-```
-
-#### variant: RetrySync
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-RetrySync
-```
-
-#### variant: Keep
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Keep
-```
-
-#### variant: Transfer
-
-[Source line 29](../../../extended/ext/archive_extract.lani#L29)
-
-```lanius
-Transfer
+Fail
 ```
 
 #### variant: Destroy
@@ -333,9 +174,169 @@ Transfer
 Destroy
 ```
 
+### machine: Lifecycle
+
+[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+
+```lanius
+pub machine Lifecycle on LifecycleEvent
+```
+
+### enum: Stage
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+pub enum Stage
+```
+
+#### variant: Validate
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Validate
+```
+
+#### variant: Reserve
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Reserve
+```
+
+#### variant: Root
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Root
+```
+
+#### variant: Decode
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Decode
+```
+
+#### variant: Walk
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Walk
+```
+
+#### variant: CreateDirectory
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+CreateDirectory
+```
+
+#### variant: OpenDirectory
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+OpenDirectory
+```
+
+#### variant: SyncChild
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+SyncChild
+```
+
+#### variant: SyncParent
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+SyncParent
+```
+
+#### variant: CreateFile
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+CreateFile
+```
+
+#### variant: Write
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Write
+```
+
+#### variant: Commit
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Commit
+```
+
+#### variant: Close
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Close
+```
+
+#### variant: Cleanup
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Cleanup
+```
+
+#### variant: RetrySync
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+RetrySync
+```
+
+#### variant: Keep
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Keep
+```
+
+#### variant: Transfer
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Transfer
+```
+
+#### variant: Destroy
+
+[Source line 70](../../../extended/ext/archive_extract.lani#L70)
+
+```lanius
+Destroy
+```
+
 ### enum: Cause
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 pub enum Cause
@@ -343,7 +344,7 @@ pub enum Cause
 
 #### variant: InvalidState
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 InvalidState
@@ -351,7 +352,7 @@ InvalidState
 
 #### variant: InvalidLimits
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 InvalidLimits
@@ -359,7 +360,7 @@ InvalidLimits
 
 #### variant: InvalidPrepared
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 InvalidPrepared
@@ -367,7 +368,7 @@ InvalidPrepared
 
 #### variant: OwnedLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 OwnedLimit
@@ -375,7 +376,7 @@ OwnedLimit
 
 #### variant: DepthLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 DepthLimit
@@ -383,7 +384,7 @@ DepthLimit
 
 #### variant: HostLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 HostLimit
@@ -391,7 +392,7 @@ HostLimit
 
 #### variant: CleanupLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 CleanupLimit
@@ -399,7 +400,7 @@ CleanupLimit
 
 #### variant: WriteLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 WriteLimit
@@ -407,7 +408,7 @@ WriteLimit
 
 #### variant: SyncLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 SyncLimit
@@ -415,7 +416,7 @@ SyncLimit
 
 #### variant: EntropyLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 EntropyLimit
@@ -423,7 +424,7 @@ EntropyLimit
 
 #### variant: NameLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 NameLimit
@@ -431,7 +432,7 @@ NameLimit
 
 #### variant: StepLimit
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 StepLimit
@@ -439,7 +440,7 @@ StepLimit
 
 #### variant: AllocationFailed
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 AllocationFailed
@@ -447,7 +448,7 @@ AllocationFailed
 
 #### variant: UnavailableMetadata
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 UnavailableMetadata
@@ -455,7 +456,7 @@ UnavailableMetadata
 
 #### variant: NotDirectory
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 NotDirectory
@@ -463,7 +464,7 @@ NotDirectory
 
 #### variant: UnsupportedDescriptor
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 UnsupportedDescriptor
@@ -471,7 +472,7 @@ UnsupportedDescriptor
 
 #### variant: NamespaceChanged
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 NamespaceChanged
@@ -479,7 +480,7 @@ NamespaceChanged
 
 #### variant: Retained
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 Retained
@@ -487,7 +488,7 @@ Retained
 
 #### variant: Bounds
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 Bounds
@@ -495,7 +496,7 @@ Bounds
 
 #### variant: Io
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 Io(core::io::Error)
@@ -503,7 +504,7 @@ Io(core::io::Error)
 
 #### variant: Zip
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 Zip(ext::zip::Error)
@@ -511,7 +512,7 @@ Zip(ext::zip::Error)
 
 #### variant: Atomic
 
-[Source line 30](../../../extended/ext/archive_extract.lani#L30)
+[Source line 71](../../../extended/ext/archive_extract.lani#L71)
 
 ```lanius
 Atomic(std::atomic_file::Failure)
@@ -519,7 +520,7 @@ Atomic(std::atomic_file::Failure)
 
 ### struct: Failure
 
-[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+[Source line 72](../../../extended/ext/archive_extract.lani#L72)
 
 ```lanius
 pub struct Failure
@@ -527,7 +528,7 @@ pub struct Failure
 
 #### field: cause
 
-[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+[Source line 72](../../../extended/ext/archive_extract.lani#L72)
 
 ```lanius
 cause:Cause
@@ -535,7 +536,7 @@ cause:Cause
 
 #### field: stage
 
-[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+[Source line 72](../../../extended/ext/archive_extract.lani#L72)
 
 ```lanius
 stage:Stage
@@ -543,7 +544,7 @@ stage:Stage
 
 #### field: ordinal
 
-[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+[Source line 72](../../../extended/ext/archive_extract.lani#L72)
 
 ```lanius
 ordinal:i32
@@ -551,7 +552,7 @@ ordinal:i32
 
 #### field: node
 
-[Source line 31](../../../extended/ext/archive_extract.lani#L31)
+[Source line 72](../../../extended/ext/archive_extract.lani#L72)
 
 ```lanius
 node:i32
@@ -559,7 +560,7 @@ node:i32
 
 ### struct: Stats
 
-[Source line 32](../../../extended/ext/archive_extract.lani#L32)
+[Source line 73](../../../extended/ext/archive_extract.lani#L73)
 
 ```lanius
 pub struct Stats
@@ -567,7 +568,7 @@ pub struct Stats
 
 #### field: entries_seen
 
-[Source line 33](../../../extended/ext/archive_extract.lani#L33)
+[Source line 74](../../../extended/ext/archive_extract.lani#L74)
 
 ```lanius
 entries_seen:u64
@@ -575,7 +576,7 @@ entries_seen:u64
 
 #### field: entries_completed
 
-[Source line 33](../../../extended/ext/archive_extract.lani#L33)
+[Source line 74](../../../extended/ext/archive_extract.lani#L74)
 
 ```lanius
 entries_completed:u64
@@ -583,7 +584,7 @@ entries_completed:u64
 
 #### field: created_directories
 
-[Source line 33](../../../extended/ext/archive_extract.lani#L33)
+[Source line 74](../../../extended/ext/archive_extract.lani#L74)
 
 ```lanius
 created_directories:u64
@@ -591,7 +592,7 @@ created_directories:u64
 
 #### field: published_files
 
-[Source line 33](../../../extended/ext/archive_extract.lani#L33)
+[Source line 74](../../../extended/ext/archive_extract.lani#L74)
 
 ```lanius
 published_files:u64
@@ -599,7 +600,7 @@ published_files:u64
 
 #### field: bytes
 
-[Source line 34](../../../extended/ext/archive_extract.lani#L34)
+[Source line 75](../../../extended/ext/archive_extract.lani#L75)
 
 ```lanius
 bytes:u64
@@ -607,7 +608,7 @@ bytes:u64
 
 #### field: writes
 
-[Source line 34](../../../extended/ext/archive_extract.lani#L34)
+[Source line 75](../../../extended/ext/archive_extract.lani#L75)
 
 ```lanius
 writes:u64
@@ -615,7 +616,7 @@ writes:u64
 
 #### field: name_attempts
 
-[Source line 34](../../../extended/ext/archive_extract.lani#L34)
+[Source line 75](../../../extended/ext/archive_extract.lani#L75)
 
 ```lanius
 name_attempts:u64
@@ -623,7 +624,7 @@ name_attempts:u64
 
 #### field: entropy_calls
 
-[Source line 34](../../../extended/ext/archive_extract.lani#L34)
+[Source line 75](../../../extended/ext/archive_extract.lani#L75)
 
 ```lanius
 entropy_calls:u64
@@ -631,7 +632,7 @@ entropy_calls:u64
 
 #### field: syncs
 
-[Source line 34](../../../extended/ext/archive_extract.lani#L34)
+[Source line 75](../../../extended/ext/archive_extract.lani#L75)
 
 ```lanius
 syncs:u64
@@ -639,7 +640,7 @@ syncs:u64
 
 #### field: host_charged
 
-[Source line 35](../../../extended/ext/archive_extract.lani#L35)
+[Source line 76](../../../extended/ext/archive_extract.lani#L76)
 
 ```lanius
 host_charged:u64
@@ -647,7 +648,7 @@ host_charged:u64
 
 #### field: cleanup_reserved
 
-[Source line 35](../../../extended/ext/archive_extract.lani#L35)
+[Source line 76](../../../extended/ext/archive_extract.lani#L76)
 
 ```lanius
 cleanup_reserved:u64
@@ -655,7 +656,7 @@ cleanup_reserved:u64
 
 #### field: cleanup_charged
 
-[Source line 35](../../../extended/ext/archive_extract.lani#L35)
+[Source line 76](../../../extended/ext/archive_extract.lani#L76)
 
 ```lanius
 cleanup_charged:u64
@@ -663,7 +664,7 @@ cleanup_charged:u64
 
 #### field: namespace_closes
 
-[Source line 36](../../../extended/ext/archive_extract.lani#L36)
+[Source line 77](../../../extended/ext/archive_extract.lani#L77)
 
 ```lanius
 namespace_closes:u64
@@ -671,7 +672,7 @@ namespace_closes:u64
 
 #### field: cleanup_errors
 
-[Source line 36](../../../extended/ext/archive_extract.lani#L36)
+[Source line 77](../../../extended/ext/archive_extract.lani#L77)
 
 ```lanius
 cleanup_errors:u64
@@ -679,7 +680,7 @@ cleanup_errors:u64
 
 #### field: steps
 
-[Source line 36](../../../extended/ext/archive_extract.lani#L36)
+[Source line 77](../../../extended/ext/archive_extract.lani#L77)
 
 ```lanius
 steps:u64
@@ -687,7 +688,7 @@ steps:u64
 
 #### field: owned_bytes
 
-[Source line 36](../../../extended/ext/archive_extract.lani#L36)
+[Source line 77](../../../extended/ext/archive_extract.lani#L77)
 
 ```lanius
 owned_bytes:u64
@@ -695,7 +696,7 @@ owned_bytes:u64
 
 #### field: peak_fds
 
-[Source line 36](../../../extended/ext/archive_extract.lani#L36)
+[Source line 77](../../../extended/ext/archive_extract.lani#L77)
 
 ```lanius
 peak_fds:u64
@@ -703,7 +704,7 @@ peak_fds:u64
 
 ### struct: NodeStatus
 
-[Source line 38](../../../extended/ext/archive_extract.lani#L38)
+[Source line 79](../../../extended/ext/archive_extract.lani#L79)
 
 ```lanius
 pub struct NodeStatus
@@ -711,7 +712,7 @@ pub struct NodeStatus
 
 #### field: node
 
-[Source line 39](../../../extended/ext/archive_extract.lani#L39)
+[Source line 80](../../../extended/ext/archive_extract.lani#L80)
 
 ```lanius
 node:i32
@@ -719,7 +720,7 @@ node:i32
 
 #### field: ordinal
 
-[Source line 39](../../../extended/ext/archive_extract.lani#L39)
+[Source line 80](../../../extended/ext/archive_extract.lani#L80)
 
 ```lanius
 ordinal:i32
@@ -727,7 +728,7 @@ ordinal:i32
 
 #### field: kind
 
-[Source line 39](../../../extended/ext/archive_extract.lani#L39)
+[Source line 80](../../../extended/ext/archive_extract.lani#L80)
 
 ```lanius
 kind:ext::archive_plan::Kind
@@ -735,7 +736,7 @@ kind:ext::archive_plan::Kind
 
 #### field: explicit
 
-[Source line 39](../../../extended/ext/archive_extract.lani#L39)
+[Source line 80](../../../extended/ext/archive_extract.lani#L80)
 
 ```lanius
 explicit:bool
@@ -743,7 +744,7 @@ explicit:bool
 
 #### field: visited
 
-[Source line 40](../../../extended/ext/archive_extract.lani#L40)
+[Source line 81](../../../extended/ext/archive_extract.lani#L81)
 
 ```lanius
 visited:bool
@@ -751,7 +752,7 @@ visited:bool
 
 #### field: created
 
-[Source line 40](../../../extended/ext/archive_extract.lani#L40)
+[Source line 81](../../../extended/ext/archive_extract.lani#L81)
 
 ```lanius
 created:bool
@@ -759,7 +760,7 @@ created:bool
 
 #### field: created_ordinal
 
-[Source line 40](../../../extended/ext/archive_extract.lani#L40)
+[Source line 81](../../../extended/ext/archive_extract.lani#L81)
 
 ```lanius
 created_ordinal:i32
@@ -767,7 +768,7 @@ created_ordinal:i32
 
 #### field: open_attempts
 
-[Source line 40](../../../extended/ext/archive_extract.lani#L40)
+[Source line 81](../../../extended/ext/archive_extract.lani#L81)
 
 ```lanius
 open_attempts:u64
@@ -775,7 +776,7 @@ open_attempts:u64
 
 #### field: opened
 
-[Source line 40](../../../extended/ext/archive_extract.lani#L40)
+[Source line 81](../../../extended/ext/archive_extract.lani#L81)
 
 ```lanius
 opened:bool
@@ -783,7 +784,7 @@ opened:bool
 
 #### field: child_sync_attempts
 
-[Source line 41](../../../extended/ext/archive_extract.lani#L41)
+[Source line 82](../../../extended/ext/archive_extract.lani#L82)
 
 ```lanius
 child_sync_attempts:u64
@@ -791,7 +792,7 @@ child_sync_attempts:u64
 
 #### field: child_synced
 
-[Source line 41](../../../extended/ext/archive_extract.lani#L41)
+[Source line 82](../../../extended/ext/archive_extract.lani#L82)
 
 ```lanius
 child_synced:bool
@@ -799,7 +800,7 @@ child_synced:bool
 
 #### field: child_sync_error
 
-[Source line 41](../../../extended/ext/archive_extract.lani#L41)
+[Source line 82](../../../extended/ext/archive_extract.lani#L82)
 
 ```lanius
 child_sync_error:Option<core::io::Error>
@@ -807,7 +808,7 @@ child_sync_error:Option<core::io::Error>
 
 #### field: parent_sync_attempts
 
-[Source line 42](../../../extended/ext/archive_extract.lani#L42)
+[Source line 83](../../../extended/ext/archive_extract.lani#L83)
 
 ```lanius
 parent_sync_attempts:u64
@@ -815,7 +816,7 @@ parent_sync_attempts:u64
 
 #### field: parent_synced
 
-[Source line 42](../../../extended/ext/archive_extract.lani#L42)
+[Source line 83](../../../extended/ext/archive_extract.lani#L83)
 
 ```lanius
 parent_synced:bool
@@ -823,7 +824,7 @@ parent_synced:bool
 
 #### field: parent_sync_error
 
-[Source line 42](../../../extended/ext/archive_extract.lani#L42)
+[Source line 83](../../../extended/ext/archive_extract.lani#L83)
 
 ```lanius
 parent_sync_error:Option<core::io::Error>
@@ -831,7 +832,7 @@ parent_sync_error:Option<core::io::Error>
 
 #### field: close_attempts
 
-[Source line 43](../../../extended/ext/archive_extract.lani#L43)
+[Source line 84](../../../extended/ext/archive_extract.lani#L84)
 
 ```lanius
 close_attempts:u64
@@ -839,7 +840,7 @@ close_attempts:u64
 
 #### field: close_error
 
-[Source line 43](../../../extended/ext/archive_extract.lani#L43)
+[Source line 84](../../../extended/ext/archive_extract.lani#L84)
 
 ```lanius
 close_error:Option<core::io::Error>
@@ -847,7 +848,7 @@ close_error:Option<core::io::Error>
 
 #### field: file_attempted
 
-[Source line 44](../../../extended/ext/archive_extract.lani#L44)
+[Source line 85](../../../extended/ext/archive_extract.lani#L85)
 
 ```lanius
 file_attempted:bool
@@ -855,7 +856,7 @@ file_attempted:bool
 
 #### field: published
 
-[Source line 44](../../../extended/ext/archive_extract.lani#L44)
+[Source line 85](../../../extended/ext/archive_extract.lani#L85)
 
 ```lanius
 published:bool
@@ -863,7 +864,7 @@ published:bool
 
 #### field: kept
 
-[Source line 44](../../../extended/ext/archive_extract.lani#L44)
+[Source line 85](../../../extended/ext/archive_extract.lani#L85)
 
 ```lanius
 kept:bool
@@ -871,7 +872,7 @@ kept:bool
 
 #### field: receipt
 
-[Source line 45](../../../extended/ext/archive_extract.lani#L45)
+[Source line 86](../../../extended/ext/archive_extract.lani#L86)
 
 ```lanius
 receipt:Option<std::atomic_file::Receipt>
@@ -879,7 +880,7 @@ receipt:Option<std::atomic_file::Receipt>
 
 #### field: identity
 
-[Source line 45](../../../extended/ext/archive_extract.lani#L45)
+[Source line 86](../../../extended/ext/archive_extract.lani#L86)
 
 ```lanius
 identity:Option<std::file_ops::Identity>
@@ -887,23 +888,23 @@ identity:Option<std::file_ops::Identity>
 
 ### struct: Run
 
-[Source line 48](../../../extended/ext/archive_extract.lani#L48)
+[Source line 89](../../../extended/ext/archive_extract.lani#L89)
 
 ```lanius
 pub struct Run
 ```
 
-#### field: current
+#### field: lifecycle
 
-[Source line 49](../../../extended/ext/archive_extract.lani#L49)
+[Source line 90](../../../extended/ext/archive_extract.lani#L90)
 
 ```lanius
-current:State
+lifecycle:Lifecycle
 ```
 
 #### field: limits
 
-[Source line 49](../../../extended/ext/archive_extract.lani#L49)
+[Source line 90](../../../extended/ext/archive_extract.lani#L90)
 
 ```lanius
 limits:Limits
@@ -911,7 +912,7 @@ limits:Limits
 
 #### field: counters
 
-[Source line 49](../../../extended/ext/archive_extract.lani#L49)
+[Source line 90](../../../extended/ext/archive_extract.lani#L90)
 
 ```lanius
 counters:Stats
@@ -919,7 +920,7 @@ counters:Stats
 
 #### field: first
 
-[Source line 49](../../../extended/ext/archive_extract.lani#L49)
+[Source line 90](../../../extended/ext/archive_extract.lani#L90)
 
 ```lanius
 first:Option<Failure>
@@ -927,7 +928,7 @@ first:Option<Failure>
 
 #### field: cleanup_first
 
-[Source line 49](../../../extended/ext/archive_extract.lani#L49)
+[Source line 90](../../../extended/ext/archive_extract.lani#L90)
 
 ```lanius
 cleanup_first:Option<Failure>
@@ -935,7 +936,7 @@ cleanup_first:Option<Failure>
 
 #### field: root_error
 
-[Source line 50](../../../extended/ext/archive_extract.lani#L50)
+[Source line 91](../../../extended/ext/archive_extract.lani#L91)
 
 ```lanius
 root_error:Option<core::io::Error>
@@ -943,7 +944,7 @@ root_error:Option<core::io::Error>
 
 #### field: stage
 
-[Source line 50](../../../extended/ext/archive_extract.lani#L50)
+[Source line 91](../../../extended/ext/archive_extract.lani#L91)
 
 ```lanius
 stage:Stage
@@ -951,7 +952,7 @@ stage:Stage
 
 #### field: ordinal
 
-[Source line 50](../../../extended/ext/archive_extract.lani#L50)
+[Source line 91](../../../extended/ext/archive_extract.lani#L91)
 
 ```lanius
 ordinal:i32
@@ -959,7 +960,7 @@ ordinal:i32
 
 #### field: node
 
-[Source line 50](../../../extended/ext/archive_extract.lani#L50)
+[Source line 91](../../../extended/ext/archive_extract.lani#L91)
 
 ```lanius
 node:i32
@@ -967,7 +968,7 @@ node:i32
 
 #### field: statuses
 
-[Source line 51](../../../extended/ext/archive_extract.lani#L51)
+[Source line 92](../../../extended/ext/archive_extract.lani#L92)
 
 ```lanius
 statuses:alloc::vec::Vec<NodeStatus>
@@ -975,7 +976,7 @@ statuses:alloc::vec::Vec<NodeStatus>
 
 #### field: stack
 
-[Source line 51](../../../extended/ext/archive_extract.lani#L51)
+[Source line 92](../../../extended/ext/archive_extract.lani#L92)
 
 ```lanius
 stack:alloc::vec::Vec<Frame>
@@ -983,7 +984,7 @@ stack:alloc::vec::Vec<Frame>
 
 #### field: chain
 
-[Source line 51](../../../extended/ext/archive_extract.lani#L51)
+[Source line 92](../../../extended/ext/archive_extract.lani#L92)
 
 ```lanius
 chain:alloc::vec::Vec<i32>
@@ -991,39 +992,39 @@ chain:alloc::vec::Vec<i32>
 
 #### field: root
 
-[Source line 52](../../../extended/ext/archive_extract.lani#L52)
+[Source line 93](../../../extended/ext/archive_extract.lani#L93)
 
 ```lanius
 root:std::file::File
 ```
 
-#### field: root_credit
+#### field: root_credit_lifetime
 
-[Source line 52](../../../extended/ext/archive_extract.lani#L52)
+[Source line 93](../../../extended/ext/archive_extract.lani#L93)
 
 ```lanius
-root_credit:bool
+root_credit_lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: atomic
 
-[Source line 52](../../../extended/ext/archive_extract.lani#L52)
+[Source line 93](../../../extended/ext/archive_extract.lani#L93)
 
 ```lanius
 atomic:std::atomic_file::AtomicFile
 ```
 
-#### field: atomic_active
+#### field: atomic_active_lifetime
 
-[Source line 53](../../../extended/ext/archive_extract.lani#L53)
+[Source line 94](../../../extended/ext/archive_extract.lani#L94)
 
 ```lanius
-atomic_active:bool
+atomic_active_lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: atomic_node
 
-[Source line 53](../../../extended/ext/archive_extract.lani#L53)
+[Source line 94](../../../extended/ext/archive_extract.lani#L94)
 
 ```lanius
 atomic_node:i32
@@ -1031,23 +1032,23 @@ atomic_node:i32
 
 #### field: atomic_ordinal
 
-[Source line 53](../../../extended/ext/archive_extract.lani#L53)
+[Source line 94](../../../extended/ext/archive_extract.lani#L94)
 
 ```lanius
 atomic_ordinal:i32
 ```
 
-#### field: atomic_credit
+#### field: atomic_credit_lifetime
 
-[Source line 53](../../../extended/ext/archive_extract.lani#L53)
+[Source line 94](../../../extended/ext/archive_extract.lani#L94)
 
 ```lanius
-atomic_credit:bool
+atomic_credit_lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: previous
 
-[Source line 54](../../../extended/ext/archive_extract.lani#L54)
+[Source line 95](../../../extended/ext/archive_extract.lani#L95)
 
 ```lanius
 previous:std::atomic_file::Stats
@@ -1055,7 +1056,7 @@ previous:std::atomic_file::Stats
 
 #### field: previous_temp
 
-[Source line 54](../../../extended/ext/archive_extract.lani#L54)
+[Source line 95](../../../extended/ext/archive_extract.lani#L95)
 
 ```lanius
 previous_temp:std::temp_file::Stats
@@ -1063,7 +1064,7 @@ previous_temp:std::temp_file::Stats
 
 #### field: recovery
 
-[Source line 55](../../../extended/ext/archive_extract.lani#L55)
+[Source line 96](../../../extended/ext/archive_extract.lani#L96)
 
 ```lanius
 recovery:alloc::vec::Vec<u8>
@@ -1071,25 +1072,25 @@ recovery:alloc::vec::Vec<u8>
 
 #### field: recovery_length
 
-[Source line 55](../../../extended/ext/archive_extract.lani#L55)
+[Source line 96](../../../extended/ext/archive_extract.lani#L96)
 
 ```lanius
 recovery_length:i32
 ```
 
-#### field: kept_duty
+#### field: kept_duty_lifetime
 
-[Source line 55](../../../extended/ext/archive_extract.lani#L55)
+[Source line 96](../../../extended/ext/archive_extract.lani#L96)
 
 ```lanius
-kept_duty:bool
+kept_duty_lifetime: core::lifecycle::Lifetime
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 58](../../../extended/ext/archive_extract.lani#L58)
+[Source line 99](../../../extended/ext/archive_extract.lani#L99)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -1097,7 +1098,7 @@ pub fn default_limits() -> Limits
 
 ### function: empty
 
-[Source line 65](../../../extended/ext/archive_extract.lani#L65)
+[Source line 106](../../../extended/ext/archive_extract.lani#L106)
 
 ```lanius
 pub fn empty() -> Run
@@ -1105,9 +1106,9 @@ pub fn empty() -> Run
 
 ## Implementation blocks and public methods
 
-### impl at line 79
+### impl at line 120
 
-[Source line 79](../../../extended/ext/archive_extract.lani#L79)
+[Source line 120](../../../extended/ext/archive_extract.lani#L120)
 
 ```lanius
 pub impl Run
@@ -1115,7 +1116,7 @@ pub impl Run
 
 #### method: borrow
 
-[Source line 80](../../../extended/ext/archive_extract.lani#L80)
+[Source line 121](../../../extended/ext/archive_extract.lani#L121)
 
 ```lanius
 pub fn borrow(&self) -> &Run
@@ -1123,15 +1124,15 @@ pub fn borrow(&self) -> &Run
 
 #### method: state
 
-[Source line 81](../../../extended/ext/archive_extract.lani#L81)
+[Source line 122](../../../extended/ext/archive_extract.lani#L122)
 
 ```lanius
-pub fn state(&self) -> State
+pub fn state(&self) -> LifecycleState
 ```
 
 #### method: last_failure
 
-[Source line 82](../../../extended/ext/archive_extract.lani#L82)
+[Source line 123](../../../extended/ext/archive_extract.lani#L123)
 
 ```lanius
 pub fn last_failure(&self) -> Option<Failure>
@@ -1139,7 +1140,7 @@ pub fn last_failure(&self) -> Option<Failure>
 
 #### method: cleanup_failure
 
-[Source line 83](../../../extended/ext/archive_extract.lani#L83)
+[Source line 124](../../../extended/ext/archive_extract.lani#L124)
 
 ```lanius
 pub fn cleanup_failure(&self) -> Option<Failure>
@@ -1147,7 +1148,7 @@ pub fn cleanup_failure(&self) -> Option<Failure>
 
 #### method: root_close_error
 
-[Source line 84](../../../extended/ext/archive_extract.lani#L84)
+[Source line 125](../../../extended/ext/archive_extract.lani#L125)
 
 ```lanius
 pub fn root_close_error(&self) -> Option<core::io::Error>
@@ -1155,7 +1156,7 @@ pub fn root_close_error(&self) -> Option<core::io::Error>
 
 #### method: stats
 
-[Source line 85](../../../extended/ext/archive_extract.lani#L85)
+[Source line 126](../../../extended/ext/archive_extract.lani#L126)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -1163,7 +1164,7 @@ pub fn stats(&self) -> Stats
 
 #### method: node_status
 
-[Source line 86](../../../extended/ext/archive_extract.lani#L86)
+[Source line 127](../../../extended/ext/archive_extract.lani#L127)
 
 ```lanius
 pub fn node_status(&self,index:i32) -> Option<NodeStatus>
@@ -1171,7 +1172,7 @@ pub fn node_status(&self,index:i32) -> Option<NodeStatus>
 
 #### method: current_node
 
-[Source line 87](../../../extended/ext/archive_extract.lani#L87)
+[Source line 128](../../../extended/ext/archive_extract.lani#L128)
 
 ```lanius
 pub fn current_node(&self) -> i32
@@ -1179,7 +1180,7 @@ pub fn current_node(&self) -> i32
 
 #### method: current_ordinal
 
-[Source line 88](../../../extended/ext/archive_extract.lani#L88)
+[Source line 129](../../../extended/ext/archive_extract.lani#L129)
 
 ```lanius
 pub fn current_ordinal(&self) -> i32
@@ -1187,7 +1188,7 @@ pub fn current_ordinal(&self) -> i32
 
 #### method: current_receipt
 
-[Source line 89](../../../extended/ext/archive_extract.lani#L89)
+[Source line 130](../../../extended/ext/archive_extract.lani#L130)
 
 ```lanius
 pub fn current_receipt(&self) -> Option<std::atomic_file::Receipt>
@@ -1195,7 +1196,7 @@ pub fn current_receipt(&self) -> Option<std::atomic_file::Receipt>
 
 #### method: recovery_name
 
-[Source line 90](../../../extended/ext/archive_extract.lani#L90)
+[Source line 131](../../../extended/ext/archive_extract.lani#L131)
 
 ```lanius
 pub fn recovery_name(&self) -> View<u8>
@@ -1203,7 +1204,7 @@ pub fn recovery_name(&self) -> View<u8>
 
 #### method: resources_remaining
 
-[Source line 91](../../../extended/ext/archive_extract.lani#L91)
+[Source line 132](../../../extended/ext/archive_extract.lani#L132)
 
 ```lanius
 pub fn resources_remaining(&self) -> bool
@@ -1211,7 +1212,7 @@ pub fn resources_remaining(&self) -> bool
 
 #### method: execute
 
-[Source line 329](../../../extended/ext/archive_extract.lani#L329)
+[Source line 370](../../../extended/ext/archive_extract.lani#L370)
 
 ```lanius
 pub fn execute(&self,source:&ext::archive_source::Prepared,root:&std::file::File,limits:Limits) -> Result<bool,Failure>
@@ -1219,7 +1220,7 @@ pub fn execute(&self,source:&ext::archive_source::Prepared,root:&std::file::File
 
 #### method: retry_current_directory_sync
 
-[Source line 336](../../../extended/ext/archive_extract.lani#L336)
+[Source line 377](../../../extended/ext/archive_extract.lani#L377)
 
 ```lanius
 pub fn retry_current_directory_sync(&self) -> Result<bool,Failure>
@@ -1227,7 +1228,7 @@ pub fn retry_current_directory_sync(&self) -> Result<bool,Failure>
 
 #### method: keep_current
 
-[Source line 344](../../../extended/ext/archive_extract.lani#L344)
+[Source line 385](../../../extended/ext/archive_extract.lani#L385)
 
 ```lanius
 pub fn keep_current(&self) -> Result<bool,Failure>
@@ -1235,7 +1236,7 @@ pub fn keep_current(&self) -> Result<bool,Failure>
 
 #### method: take_kept_name
 
-[Source line 351](../../../extended/ext/archive_extract.lani#L351)
+[Source line 392](../../../extended/ext/archive_extract.lani#L392)
 
 ```lanius
 pub fn take_kept_name(&self,destination:View<u8>) -> Result<i32,Failure>
@@ -1243,7 +1244,7 @@ pub fn take_kept_name(&self,destination:View<u8>) -> Result<i32,Failure>
 
 #### method: cleanup
 
-[Source line 358](../../../extended/ext/archive_extract.lani#L358)
+[Source line 399](../../../extended/ext/archive_extract.lani#L399)
 
 ```lanius
 pub fn cleanup(&self) -> Result<bool,Failure>
@@ -1251,7 +1252,7 @@ pub fn cleanup(&self) -> Result<bool,Failure>
 
 #### method: destroy
 
-[Source line 359](../../../extended/ext/archive_extract.lani#L359)
+[Source line 400](../../../extended/ext/archive_extract.lani#L400)
 
 ```lanius
 pub fn destroy(&self) -> Result<bool,Failure>

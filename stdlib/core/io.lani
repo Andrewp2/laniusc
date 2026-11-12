@@ -1,6 +1,8 @@
 // Allocation-free stream and positional I/O contracts and operations.
 // See docs/stdlib-streams.md and docs/stdlib-positional-io.md.
 module core::io;
+import core::lifecycle;
+import core::iter_state;
 import core::mem;
 import core::result;
 import core::slice;
@@ -35,7 +37,7 @@ pub struct CopyStepFailure { cause: Error, read: u64, written: u64, calls: u64, 
 // scratch.start; read-written is the tracked pending length in valid states.
 pub struct Copier<R,W> {
     reader: &R, writer: &W, scratch: core::slice::View<u8>, begin: i32, end: i32,
-    read: u64, written: u64, active: bool, eof: bool, faulted: bool
+    read: u64, written: u64, lifetime: core::lifecycle::Lifetime, completion: core::iter_state::Completion, health: core::lifecycle::Health
 }
 
 pub trait Read {
@@ -171,7 +173,7 @@ pub fn copier<R,W>(reader: &R, writer: &W, scratch: core::slice::View<u8>)
     }
     let value: Copier<R,W> = Copier {
         reader: reader, writer: writer, scratch: scratch, begin: 0, end: 0,
-        read: 0, written: 0, active: true, eof: false, faulted: false
+        read: 0, written: 0, lifetime: core::lifecycle::lifetime_start(), completion: core::iter_state::completion_start(), health: core::lifecycle::health_start()
     };
     return core::result::Ok(value);
 }
@@ -180,9 +182,9 @@ pub impl<R,W> Copier<R,W> {
     pub fn borrow(&self) -> &Copier<R,W> { return self; }
     pub fn read_count(&self) -> u64 { return self.read; }
     pub fn written_count(&self) -> u64 { return self.written; }
-    pub fn is_active(&self) -> bool { return self.active; }
-    pub fn is_done(&self) -> bool { return self.eof; }
-    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn is_active(&self) -> bool { return self.lifetime.is_active(); }
+    pub fn is_done(&self) -> bool { return self.completion.is_done(); }
+    pub fn is_faulted(&self) -> bool { return self.health.is_failed(); }
     // Read-only borrow until the next state operation or caller scratch reuse.
     // After a malformed success this is last acknowledged bookkeeping only:
     // a nonconforming provider may already have caused unknown effects.
@@ -192,7 +194,7 @@ pub impl<R,W> Copier<R,W> {
     // Permanently inactivate without cleanup or discard. Repeated abort keeps
     // the same span and historical counters/flags; no ownership is transferred.
     pub fn abort(&self) -> core::slice::View<u8> {
-        self.active = false;
+        self.lifetime.release();
         return self.pending();
     }
     fn stopped(&self, calls: u64, stop: CopyStop) -> core::result::Result<CopyStep,CopyStepFailure> {
@@ -206,9 +208,9 @@ pub impl<R,W> Copier<R,W> {
     // Provider-internal work/blocking time is outside this direct-call bound.
     pub fn step(&self, read_limit: u64, max_calls: u64)
         -> core::result::Result<CopyStep,CopyStepFailure> where R: Read, W: Write {
-        if (!self.active) { return self.failed(0,Error::InvalidInput,CopySide::State); }
-        if (self.faulted) { return self.failed(0,Error::InvalidCount,CopySide::State); }
-        if (self.eof) { return self.stopped(0,CopyStop::Eof); }
+        if (!self.lifetime.is_active()) { return self.failed(0,Error::InvalidInput,CopySide::State); }
+        if (self.health.is_failed()) { return self.failed(0,Error::InvalidCount,CopySide::State); }
+        if (self.completion.is_done()) { return self.stopped(0,CopyStop::Eof); }
         let calls: u64 = 0;
         let received_here: u64 = 0;
         while (true) {
@@ -227,7 +229,7 @@ pub impl<R,W> Copier<R,W> {
                 }
                 let written: i32 = result.unwrap();
                 if (written < 0 || written > count) {
-                    self.faulted = true;
+                    self.health.fail();
                     return self.failed(calls,Error::InvalidCount,CopySide::Write);
                 }
                 if (written == 0) { return self.failed(calls,Error::WriteZero,CopySide::Write); }
@@ -257,10 +259,10 @@ pub impl<R,W> Copier<R,W> {
             }
             let received: i32 = result.unwrap();
             if (received < 0 || received > count) {
-                self.faulted = true;
+                self.health.fail();
                 return self.failed(calls,Error::InvalidCount,CopySide::Read);
             }
-            if (received == 0) { self.eof = true; return self.stopped(calls,CopyStop::Eof); }
+            if (received == 0) { self.completion.finish(); return self.stopped(calls,CopyStop::Eof); }
             self.read += received as u64;
             received_here += received as u64;
             self.begin = 0;
@@ -617,24 +619,24 @@ pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
 // handle, all providers and their backing alive; copied handles share sources.
 // Buffered views expire before any adapter/provider mutation, including a
 // quota reset. These adapters never close, destroy, seek or retry a provider.
-pub struct Take<R> { inner: &R, remaining: u64, faulted: bool }
-pub struct Chain<A,B> { first: &A, second: &B, first_done: bool, faulted: bool }
+pub struct Take<R> { inner: &R, remaining: u64, health: core::lifecycle::Health }
+pub struct Chain<A,B> { first: &A, second: &B, first_completion: core::iter_state::Completion, health: core::lifecycle::Health }
 
 // Construction is inert. Read and BufRead are independent conditional bounds.
 pub fn take<R>(inner: &R, limit: u64) -> Take<R> {
-    return Take { inner: inner, remaining: limit, faulted: false };
+    return Take { inner: inner, remaining: limit, health: core::lifecycle::health_start() };
 }
 
 pub fn chain<A,B>(first: &A, second: &B) -> Chain<A,B> {
-    return Chain { first: first, second: second, first_done: false, faulted: false };
+    return Chain { first: first, second: second, first_completion: core::iter_state::completion_start(), health: core::lifecycle::health_start() };
 }
 
 pub impl<R> Take<R> {
     pub fn borrow(&self) -> &Take<R> { return self; }
     pub fn limit(&self) -> u64 { return self.remaining; }
-    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn is_faulted(&self) -> bool { return self.health.is_failed(); }
     pub fn set_limit(&self, limit: u64) -> core::result::Result<u64,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         self.remaining = limit;
         return core::result::Ok(limit);
     }
@@ -642,13 +644,13 @@ pub impl<R> Take<R> {
 
 pub impl<A,B> Chain<A,B> {
     pub fn borrow(&self) -> &Chain<A,B> { return self; }
-    pub fn is_first_done(&self) -> bool { return self.first_done; }
-    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn is_first_done(&self) -> bool { return self.first_completion.is_done(); }
+    pub fn is_faulted(&self) -> bool { return self.health.is_failed(); }
 }
 
 pub impl<R> Read for Take<R> where R: Read {
     pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
         if (count == 0 || self.remaining == 0) { return core::result::Ok(0); }
         let requested: i32 = count;
@@ -659,7 +661,7 @@ pub impl<R> Read for Take<R> where R: Read {
         if (received.is_err()) { return received; }
         let actual: i32 = received.unwrap();
         if (actual < 0 || actual > requested) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         // EOF spends nothing and is not cached. Broken-provider effects are
@@ -671,7 +673,7 @@ pub impl<R> Read for Take<R> where R: Read {
 
 pub impl<R> BufRead for Take<R> where R: BufRead {
     pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         if (self.remaining == 0) {
             let empty: ptr = 0;
             let values: [u8] = core::mem::typed_slice_from_raw_parts<u8>(empty,0);
@@ -684,14 +686,14 @@ pub impl<R> BufRead for Take<R> where R: BufRead {
         // Validate the full provider range before limiting exposure. Preserve
         // values/start and the actual physical descriptor, including stride.
         if (!valid_range(view.start,view.length)) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         if (self.remaining < (view.length as u64)) { view.length = self.remaining as i32; }
         return core::result::Ok(view);
     }
     pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         if (count < 0) { return core::result::Err(Error::InvalidInput); }
         if ((count as u64) > self.remaining) { return core::result::Err(Error::InvalidInput); }
         if (count == 0) { return core::result::Ok(0); }
@@ -699,7 +701,7 @@ pub impl<R> BufRead for Take<R> where R: BufRead {
         let consumed: core::result::Result<i32,Error> = inner.consume(count);
         if (consumed.is_err()) { return consumed; }
         if (consumed.unwrap() != count) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         self.remaining -= count as u64;
@@ -709,29 +711,29 @@ pub impl<R> BufRead for Take<R> where R: BufRead {
 
 pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read {
     pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
         if (count == 0) { return core::result::Ok(0); }
-        if (!self.first_done) {
+        if (!self.first_completion.is_done()) {
             let first: &A = self.first;
             let received: core::result::Result<i32,Error> = first.read(destination,offset,count);
             if (received.is_err()) { return received; }
             let actual: i32 = received.unwrap();
             if (actual < 0 || actual > count) {
-                self.faulted = true;
+                self.health.fail();
                 return core::result::Err(Error::InvalidCount);
             }
             if (actual > 0) { return core::result::Ok(actual); }
             // This actual first EOF commits the handoff even if the second
             // provider errors. A short positive read never reaches second.
-            self.first_done = true;
+            self.first_completion.finish();
         }
         let second: &B = self.second;
         let received: core::result::Result<i32,Error> = second.read(destination,offset,count);
         if (received.is_err()) { return received; }
         let actual: i32 = received.unwrap();
         if (actual < 0 || actual > count) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         // Second EOF is observational; future operations still consult it.
@@ -741,37 +743,37 @@ pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read {
 
 pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead {
     pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
-        if (!self.first_done) {
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
+        if (!self.first_completion.is_done()) {
             let first: &A = self.first;
             let filled: core::result::Result<core::slice::View<u8>,Error> = first.fill_buf();
             if (filled.is_err()) { return filled; }
             let view: core::slice::View<u8> = filled.unwrap();
             if (!valid_range(view.start,view.length)) {
-                self.faulted = true;
+                self.health.fail();
                 return core::result::Err(Error::InvalidCount);
             }
             if (view.length > 0) { return core::result::Ok(view); }
-            self.first_done = true;
+            self.first_completion.finish();
         }
         let second: &B = self.second;
         let filled: core::result::Result<core::slice::View<u8>,Error> = second.fill_buf();
         if (filled.is_err()) { return filled; }
         let view: core::slice::View<u8> = filled.unwrap();
         if (!valid_range(view.start,view.length)) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         return core::result::Ok(view);
     }
     pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
-        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.health.is_failed()) { return core::result::Err(Error::InvalidCount); }
         if (count < 0) { return core::result::Err(Error::InvalidInput); }
         if (count == 0) { return core::result::Ok(0); }
         // Consumption does not refill or discover EOF. Read and BufRead use
         // this same committed selection state, without a last-fill cache.
         let consumed: core::result::Result<i32,Error> = core::result::Ok(0);
-        if (self.first_done) {
+        if (self.first_completion.is_done()) {
             let second: &B = self.second;
             consumed = second.consume(count);
         } else {
@@ -780,7 +782,7 @@ pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead {
         }
         if (consumed.is_err()) { return consumed; }
         if (consumed.unwrap() != count) {
-            self.faulted = true;
+            self.health.fail();
             return core::result::Err(Error::InvalidCount);
         }
         return core::result::Ok(count);

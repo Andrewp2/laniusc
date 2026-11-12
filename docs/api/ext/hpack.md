@@ -21,11 +21,14 @@ Declaration counts: constant: 2; enum: 3; field: 22; function: 11; impl: 2; meth
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/hpack.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/hpack.lani#L7)
-- [core::option](../core/option.md) · [source](../../../extended/ext/hpack.lani#L8)
-- [core::result](../core/result.md) · [source](../../../extended/ext/hpack.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/hpack.lani#L10)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/hpack.lani#L6)
+- [core::io_state](../core/io_state.md) · [source](../../../extended/ext/hpack.lani#L7)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/hpack.lani#L8)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/hpack.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/hpack.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/hpack.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/hpack.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/hpack.lani#L13)
 
 ## Types, fields and variants
 
@@ -33,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 pub enum Error
@@ -41,7 +44,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Bounds
@@ -49,7 +52,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 InvalidLimits
@@ -57,7 +60,7 @@ InvalidLimits
 
 #### variant: Integer
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Integer
@@ -65,7 +68,7 @@ Integer
 
 #### variant: Index
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Index
@@ -73,7 +76,7 @@ Index
 
 #### variant: Huffman
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Huffman
@@ -81,7 +84,7 @@ Huffman
 
 #### variant: Truncated
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Truncated
@@ -89,7 +92,7 @@ Truncated
 
 #### variant: TableSize
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 TableSize
@@ -97,7 +100,7 @@ TableSize
 
 #### variant: SizeUpdate
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 SizeUpdate
@@ -105,7 +108,7 @@ SizeUpdate
 
 #### variant: TooLong
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 TooLong
@@ -113,7 +116,7 @@ TooLong
 
 #### variant: Limit
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Limit
@@ -121,7 +124,7 @@ Limit
 
 #### variant: Failed
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 Failed
@@ -129,7 +132,7 @@ Failed
 
 #### variant: AllocationFailed
 
-[Source line 12](../../../extended/ext/hpack.lani#L12)
+[Source line 15](../../../extended/ext/hpack.lani#L15)
 
 ```lanius
 AllocationFailed
@@ -137,7 +140,7 @@ AllocationFailed
 
 ### enum: Indexing
 
-[Source line 14](../../../extended/ext/hpack.lani#L14)
+[Source line 17](../../../extended/ext/hpack.lani#L17)
 
 ```lanius
 pub enum Indexing
@@ -145,7 +148,7 @@ pub enum Indexing
 
 #### variant: Incremental
 
-[Source line 14](../../../extended/ext/hpack.lani#L14)
+[Source line 17](../../../extended/ext/hpack.lani#L17)
 
 ```lanius
 Incremental
@@ -153,7 +156,7 @@ Incremental
 
 #### variant: Without
 
-[Source line 14](../../../extended/ext/hpack.lani#L14)
+[Source line 17](../../../extended/ext/hpack.lani#L17)
 
 ```lanius
 Without
@@ -161,7 +164,7 @@ Without
 
 #### variant: Never
 
-[Source line 14](../../../extended/ext/hpack.lani#L14)
+[Source line 17](../../../extended/ext/hpack.lani#L17)
 
 ```lanius
 Never
@@ -169,7 +172,7 @@ Never
 
 ### enum: Huffman
 
-[Source line 16](../../../extended/ext/hpack.lani#L16)
+[Source line 19](../../../extended/ext/hpack.lani#L19)
 
 ```lanius
 pub enum Huffman
@@ -177,7 +180,7 @@ pub enum Huffman
 
 #### variant: Shortest
 
-[Source line 16](../../../extended/ext/hpack.lani#L16)
+[Source line 19](../../../extended/ext/hpack.lani#L19)
 
 ```lanius
 Shortest
@@ -185,7 +188,7 @@ Shortest
 
 #### variant: Always
 
-[Source line 16](../../../extended/ext/hpack.lani#L16)
+[Source line 19](../../../extended/ext/hpack.lani#L19)
 
 ```lanius
 Always
@@ -193,7 +196,7 @@ Always
 
 #### variant: Never
 
-[Source line 16](../../../extended/ext/hpack.lani#L16)
+[Source line 19](../../../extended/ext/hpack.lani#L19)
 
 ```lanius
 Never
@@ -201,7 +204,7 @@ Never
 
 ### struct: Header
 
-[Source line 19](../../../extended/ext/hpack.lani#L19)
+[Source line 22](../../../extended/ext/hpack.lani#L22)
 
 ```lanius
 pub struct Header
@@ -209,7 +212,7 @@ pub struct Header
 
 #### field: name
 
-[Source line 19](../../../extended/ext/hpack.lani#L19)
+[Source line 22](../../../extended/ext/hpack.lani#L22)
 
 ```lanius
 name: core::slice::View<u8>
@@ -217,7 +220,7 @@ name: core::slice::View<u8>
 
 #### field: value
 
-[Source line 19](../../../extended/ext/hpack.lani#L19)
+[Source line 22](../../../extended/ext/hpack.lani#L22)
 
 ```lanius
 value: core::slice::View<u8>
@@ -225,7 +228,7 @@ value: core::slice::View<u8>
 
 #### field: never_indexed
 
-[Source line 19](../../../extended/ext/hpack.lani#L19)
+[Source line 22](../../../extended/ext/hpack.lani#L22)
 
 ```lanius
 never_indexed: bool
@@ -233,7 +236,7 @@ never_indexed: bool
 
 ### struct: Limits
 
-[Source line 25](../../../extended/ext/hpack.lani#L25)
+[Source line 28](../../../extended/ext/hpack.lani#L28)
 
 ```lanius
 pub struct Limits
@@ -241,7 +244,7 @@ pub struct Limits
 
 #### field: table_bytes
 
-[Source line 25](../../../extended/ext/hpack.lani#L25)
+[Source line 28](../../../extended/ext/hpack.lani#L28)
 
 ```lanius
 table_bytes: i32
@@ -249,7 +252,7 @@ table_bytes: i32
 
 #### field: list_bytes
 
-[Source line 25](../../../extended/ext/hpack.lani#L25)
+[Source line 28](../../../extended/ext/hpack.lani#L28)
 
 ```lanius
 list_bytes: i32
@@ -257,7 +260,7 @@ list_bytes: i32
 
 #### field: fields
 
-[Source line 25](../../../extended/ext/hpack.lani#L25)
+[Source line 28](../../../extended/ext/hpack.lani#L28)
 
 ```lanius
 fields: i32
@@ -265,7 +268,7 @@ fields: i32
 
 #### field: string_bytes
 
-[Source line 25](../../../extended/ext/hpack.lani#L25)
+[Source line 28](../../../extended/ext/hpack.lani#L28)
 
 ```lanius
 string_bytes: i32
@@ -273,7 +276,7 @@ string_bytes: i32
 
 ### struct: Integer
 
-[Source line 151](../../../extended/ext/hpack.lani#L151)
+[Source line 154](../../../extended/ext/hpack.lani#L154)
 
 ```lanius
 pub struct Integer
@@ -281,7 +284,7 @@ pub struct Integer
 
 #### field: value
 
-[Source line 151](../../../extended/ext/hpack.lani#L151)
+[Source line 154](../../../extended/ext/hpack.lani#L154)
 
 ```lanius
 value: i32
@@ -289,7 +292,7 @@ value: i32
 
 #### field: used
 
-[Source line 151](../../../extended/ext/hpack.lani#L151)
+[Source line 154](../../../extended/ext/hpack.lani#L154)
 
 ```lanius
 used: i32
@@ -297,7 +300,7 @@ used: i32
 
 ### struct: Decoder
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 pub struct Decoder
@@ -305,7 +308,7 @@ pub struct Decoder
 
 #### field: table
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 table: Table
@@ -313,7 +316,7 @@ table: Table
 
 #### field: limits
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 limits: Limits
@@ -321,7 +324,7 @@ limits: Limits
 
 #### field: maximum
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 maximum: i32
@@ -329,7 +332,7 @@ maximum: i32
 
 #### field: out
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 out: alloc::vec::Vec<u8>
@@ -337,31 +340,31 @@ out: alloc::vec::Vec<u8>
 
 #### field: slots
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
 slots: alloc::vec::Vec<Slot>
 ```
 
-#### field: failed
+#### field: health
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
-failed: bool
+health: core::lifecycle::Health
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 229](../../../extended/ext/hpack.lani#L229)
+[Source line 232](../../../extended/ext/hpack.lani#L232)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ### struct: Encoder
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
 pub struct Encoder
@@ -369,7 +372,7 @@ pub struct Encoder
 
 #### field: table
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
 table: Table
@@ -377,7 +380,7 @@ table: Table
 
 #### field: own
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
 own: i32
@@ -385,41 +388,41 @@ own: i32
 
 #### field: smallest
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
 smallest: i32
 ```
 
-#### field: pending
+#### field: pending_work
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
-pending: bool
+pending_work: core::io_state::PendingWork
 ```
 
 #### field: mode
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
 mode: Huffman
 ```
 
-#### field: active
+#### field: lifetime
 
-[Source line 355](../../../extended/ext/hpack.lani#L355)
+[Source line 358](../../../extended/ext/hpack.lani#L358)
 
 ```lanius
-active: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 ## Constants
 
 ### constant: DEFAULT_TABLE_BYTES
 
-[Source line 28](../../../extended/ext/hpack.lani#L28)
+[Source line 31](../../../extended/ext/hpack.lani#L31)
 
 ```lanius
 pub const DEFAULT_TABLE_BYTES: i32 = 4096;
@@ -427,7 +430,7 @@ pub const DEFAULT_TABLE_BYTES: i32 = 4096;
 
 ### constant: STATIC_ENTRIES
 
-[Source line 29](../../../extended/ext/hpack.lani#L29)
+[Source line 32](../../../extended/ext/hpack.lani#L32)
 
 ```lanius
 pub const STATIC_ENTRIES: i32 = 61;
@@ -437,7 +440,7 @@ pub const STATIC_ENTRIES: i32 = 61;
 
 ### function: default_limits
 
-[Source line 26](../../../extended/ext/hpack.lani#L26)
+[Source line 29](../../../extended/ext/hpack.lani#L29)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -445,7 +448,7 @@ pub fn default_limits() -> Limits
 
 ### function: static_name
 
-[Source line 56](../../../extended/ext/hpack.lani#L56)
+[Source line 59](../../../extended/ext/hpack.lani#L59)
 
 ```lanius
 pub fn static_name(index: i32) -> core::slice::View<u8>
@@ -453,7 +456,7 @@ pub fn static_name(index: i32) -> core::slice::View<u8>
 
 ### function: static_value
 
-[Source line 60](../../../extended/ext/hpack.lani#L60)
+[Source line 63](../../../extended/ext/hpack.lani#L63)
 
 ```lanius
 pub fn static_value(index: i32) -> core::slice::View<u8>
@@ -461,7 +464,7 @@ pub fn static_value(index: i32) -> core::slice::View<u8>
 
 ### function: huffman_length
 
-[Source line 88](../../../extended/ext/hpack.lani#L88)
+[Source line 91](../../../extended/ext/hpack.lani#L91)
 
 ```lanius
 pub fn huffman_length(value: core::slice::View<u8>) -> i32
@@ -469,7 +472,7 @@ pub fn huffman_length(value: core::slice::View<u8>) -> i32
 
 ### function: huffman_encode
 
-[Source line 94](../../../extended/ext/hpack.lani#L94)
+[Source line 97](../../../extended/ext/hpack.lani#L97)
 
 ```lanius
 pub fn huffman_encode(value: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -477,7 +480,7 @@ pub fn huffman_encode(value: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -
 
 ### function: huffman_decode
 
-[Source line 110](../../../extended/ext/hpack.lani#L110)
+[Source line 113](../../../extended/ext/hpack.lani#L113)
 
 ```lanius
 pub fn huffman_decode(input: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, maximum: i32) -> core::result::Result<i32,Error>
@@ -485,7 +488,7 @@ pub fn huffman_decode(input: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, m
 
 ### function: encode_integer
 
-[Source line 140](../../../extended/ext/hpack.lani#L140)
+[Source line 143](../../../extended/ext/hpack.lani#L143)
 
 ```lanius
 pub fn encode_integer(value: i32, prefix: i32, flags: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -493,7 +496,7 @@ pub fn encode_integer(value: i32, prefix: i32, flags: i32, out: &alloc::vec::Vec
 
 ### function: decode_integer
 
-[Source line 154](../../../extended/ext/hpack.lani#L154)
+[Source line 157](../../../extended/ext/hpack.lani#L157)
 
 ```lanius
 pub fn decode_integer(input: core::slice::View<u8>, prefix: i32) -> core::result::Result<Integer,Error>
@@ -501,7 +504,7 @@ pub fn decode_integer(input: core::slice::View<u8>, prefix: i32) -> core::result
 
 ### function: encode_string
 
-[Source line 173](../../../extended/ext/hpack.lani#L173)
+[Source line 176](../../../extended/ext/hpack.lani#L176)
 
 ```lanius
 pub fn encode_string(value: core::slice::View<u8>, mode: Huffman, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -509,7 +512,7 @@ pub fn encode_string(value: core::slice::View<u8>, mode: Huffman, out: &alloc::v
 
 ### function: decoder
 
-[Source line 230](../../../extended/ext/hpack.lani#L230)
+[Source line 233](../../../extended/ext/hpack.lani#L233)
 
 ```lanius
 pub fn decoder(limits: Limits) -> core::result::Result<Decoder,Error>
@@ -517,7 +520,7 @@ pub fn decoder(limits: Limits) -> core::result::Result<Decoder,Error>
 
 ### function: encoder
 
-[Source line 356](../../../extended/ext/hpack.lani#L356)
+[Source line 359](../../../extended/ext/hpack.lani#L359)
 
 ```lanius
 pub fn encoder(table_bytes: i32) -> core::result::Result<Encoder,Error>
@@ -525,9 +528,9 @@ pub fn encoder(table_bytes: i32) -> core::result::Result<Encoder,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 238
+### impl at line 241
 
-[Source line 238](../../../extended/ext/hpack.lani#L238)
+[Source line 241](../../../extended/ext/hpack.lani#L241)
 
 ```lanius
 pub impl Decoder
@@ -535,7 +538,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 239](../../../extended/ext/hpack.lani#L239)
+[Source line 242](../../../extended/ext/hpack.lani#L242)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -543,7 +546,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: count
 
-[Source line 240](../../../extended/ext/hpack.lani#L240)
+[Source line 243](../../../extended/ext/hpack.lani#L243)
 
 ```lanius
 pub fn count(&self) -> i32
@@ -551,7 +554,7 @@ pub fn count(&self) -> i32
 
 #### method: header
 
-[Source line 242](../../../extended/ext/hpack.lani#L242)
+[Source line 245](../../../extended/ext/hpack.lani#L245)
 
 ```lanius
 pub fn header(&self, index: i32) -> Header
@@ -559,7 +562,7 @@ pub fn header(&self, index: i32) -> Header
 
 #### method: table_size
 
-[Source line 246](../../../extended/ext/hpack.lani#L246)
+[Source line 249](../../../extended/ext/hpack.lani#L249)
 
 ```lanius
 pub fn table_size(&self) -> i32
@@ -567,7 +570,7 @@ pub fn table_size(&self) -> i32
 
 #### method: table_capacity
 
-[Source line 247](../../../extended/ext/hpack.lani#L247)
+[Source line 250](../../../extended/ext/hpack.lani#L250)
 
 ```lanius
 pub fn table_capacity(&self) -> i32
@@ -575,7 +578,7 @@ pub fn table_capacity(&self) -> i32
 
 #### method: table_entries
 
-[Source line 248](../../../extended/ext/hpack.lani#L248)
+[Source line 251](../../../extended/ext/hpack.lani#L251)
 
 ```lanius
 pub fn table_entries(&self) -> i32
@@ -583,7 +586,7 @@ pub fn table_entries(&self) -> i32
 
 #### method: table_name
 
-[Source line 249](../../../extended/ext/hpack.lani#L249)
+[Source line 252](../../../extended/ext/hpack.lani#L252)
 
 ```lanius
 pub fn table_name(&self, index: i32) -> core::slice::View<u8>
@@ -591,7 +594,7 @@ pub fn table_name(&self, index: i32) -> core::slice::View<u8>
 
 #### method: table_value
 
-[Source line 250](../../../extended/ext/hpack.lani#L250)
+[Source line 253](../../../extended/ext/hpack.lani#L253)
 
 ```lanius
 pub fn table_value(&self, index: i32) -> core::slice::View<u8>
@@ -599,7 +602,7 @@ pub fn table_value(&self, index: i32) -> core::slice::View<u8>
 
 #### method: set_maximum
 
-[Source line 253](../../../extended/ext/hpack.lani#L253)
+[Source line 256](../../../extended/ext/hpack.lani#L256)
 
 ```lanius
 pub fn set_maximum(&self, bytes: i32) -> core::result::Result<i32,Error>
@@ -607,7 +610,7 @@ pub fn set_maximum(&self, bytes: i32) -> core::result::Result<i32,Error>
 
 #### method: decode
 
-[Source line 285](../../../extended/ext/hpack.lani#L285)
+[Source line 288](../../../extended/ext/hpack.lani#L288)
 
 ```lanius
 pub fn decode(&self, block: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -615,15 +618,15 @@ pub fn decode(&self, block: core::slice::View<u8>) -> core::result::Result<i32,E
 
 #### method: destroy
 
-[Source line 349](../../../extended/ext/hpack.lani#L349)
+[Source line 352](../../../extended/ext/hpack.lani#L352)
 
 ```lanius
 pub fn destroy(&self) -> bool
 ```
 
-### impl at line 366
+### impl at line 369
 
-[Source line 366](../../../extended/ext/hpack.lani#L366)
+[Source line 369](../../../extended/ext/hpack.lani#L369)
 
 ```lanius
 pub impl Encoder
@@ -631,7 +634,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 367](../../../extended/ext/hpack.lani#L367)
+[Source line 370](../../../extended/ext/hpack.lani#L370)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -639,7 +642,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: set_huffman
 
-[Source line 368](../../../extended/ext/hpack.lani#L368)
+[Source line 371](../../../extended/ext/hpack.lani#L371)
 
 ```lanius
 pub fn set_huffman(&self, mode: Huffman)
@@ -647,7 +650,7 @@ pub fn set_huffman(&self, mode: Huffman)
 
 #### method: table_size
 
-[Source line 369](../../../extended/ext/hpack.lani#L369)
+[Source line 372](../../../extended/ext/hpack.lani#L372)
 
 ```lanius
 pub fn table_size(&self) -> i32
@@ -655,7 +658,7 @@ pub fn table_size(&self) -> i32
 
 #### method: table_capacity
 
-[Source line 370](../../../extended/ext/hpack.lani#L370)
+[Source line 373](../../../extended/ext/hpack.lani#L373)
 
 ```lanius
 pub fn table_capacity(&self) -> i32
@@ -663,7 +666,7 @@ pub fn table_capacity(&self) -> i32
 
 #### method: table_entries
 
-[Source line 371](../../../extended/ext/hpack.lani#L371)
+[Source line 374](../../../extended/ext/hpack.lani#L374)
 
 ```lanius
 pub fn table_entries(&self) -> i32
@@ -671,7 +674,7 @@ pub fn table_entries(&self) -> i32
 
 #### method: set_peer_maximum
 
-[Source line 373](../../../extended/ext/hpack.lani#L373)
+[Source line 376](../../../extended/ext/hpack.lani#L376)
 
 ```lanius
 pub fn set_peer_maximum(&self, bytes: i32) -> core::result::Result<i32,Error>
@@ -679,7 +682,7 @@ pub fn set_peer_maximum(&self, bytes: i32) -> core::result::Result<i32,Error>
 
 #### method: start_block
 
-[Source line 382](../../../extended/ext/hpack.lani#L382)
+[Source line 385](../../../extended/ext/hpack.lani#L385)
 
 ```lanius
 pub fn start_block(&self, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -687,7 +690,7 @@ pub fn start_block(&self, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32
 
 #### method: encode_field
 
-[Source line 403](../../../extended/ext/hpack.lani#L403)
+[Source line 406](../../../extended/ext/hpack.lani#L406)
 
 ```lanius
 pub fn encode_field(&self, name: core::slice::View<u8>, value: core::slice::View<u8>, indexing: Indexing, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -695,7 +698,7 @@ pub fn encode_field(&self, name: core::slice::View<u8>, value: core::slice::View
 
 #### method: encode
 
-[Source line 431](../../../extended/ext/hpack.lani#L431)
+[Source line 434](../../../extended/ext/hpack.lani#L434)
 
 ```lanius
 pub fn encode(&self, fields: core::slice::View<Header>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error>
@@ -703,7 +706,7 @@ pub fn encode(&self, fields: core::slice::View<Header>, out: &alloc::vec::Vec<u8
 
 #### method: destroy
 
-[Source line 445](../../../extended/ext/hpack.lani#L445)
+[Source line 448](../../../extended/ext/hpack.lani#L448)
 
 ```lanius
 pub fn destroy(&self) -> bool

@@ -2,6 +2,7 @@
 // A streaming decoder borrows its history and Huffman workspace; step does
 // not retain input/output views. All backing must remain live and disjoint.
 module ext::inflate;
+import core::iter_state;
 import core::mem;
 import core::result;
 import core::slice;
@@ -33,36 +34,261 @@ const DISTANCE_SYMBOLS: i32 = 640;
 const CODE_COUNTS: i32 = 672;
 const CODE_SYMBOLS: i32 = 688;
 
-const HEADER_FINAL: i32 = 0;
-const HEADER_KIND: i32 = 1;
-const STORED_LENGTH: i32 = 2;
-const STORED_INVERTED: i32 = 3;
-const STORED_COPY: i32 = 4;
-const DYNAMIC_LITERAL_COUNT: i32 = 5;
-const DYNAMIC_DISTANCE_COUNT: i32 = 6;
-const DYNAMIC_CODE_COUNT: i32 = 7;
-const DYNAMIC_CODE_LENGTHS: i32 = 8;
-const DYNAMIC_LENGTHS: i32 = 9;
-const DYNAMIC_REPEAT: i32 = 10;
-const BUILD_TREES: i32 = 11;
-const LITERAL_SYMBOL: i32 = 12;
-const EMIT_LITERAL: i32 = 13;
-const LENGTH_EXTRA: i32 = 14;
-const DISTANCE_SYMBOL: i32 = 15;
-const DISTANCE_EXTRA: i32 = 16;
-const MATCH_COPY: i32 = 17;
-const FINISHED: i32 = 18;
-const FAILED: i32 = 19;
+pub enum DecodeEvent { Read, Block(i32), Repeat, TreesReady, Literal, Match, End(bool), Fail, Reset }
+
+pub machine Decoding on DecodeEvent {
+    start HeaderFinal;
+
+    state HeaderFinal {
+        DecodeEvent::Read -> goto HeaderKind,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state HeaderKind {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> { if (kind == 0) { goto StoredLength; } if (kind == 1) { goto BuildTrees; } goto DynamicLiteralCount; },
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state StoredLength {
+        DecodeEvent::Read -> goto StoredInverted,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state StoredInverted {
+        DecodeEvent::Read -> goto StoredCopy,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state StoredCopy {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> { if (last) { goto Finished; } goto HeaderFinal; },
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicLiteralCount {
+        DecodeEvent::Read -> goto DynamicDistanceCount,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicDistanceCount {
+        DecodeEvent::Read -> goto DynamicCodeCount,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicCodeCount {
+        DecodeEvent::Read -> goto DynamicCodeLengths,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicCodeLengths {
+        DecodeEvent::Read -> goto DynamicLengths,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicLengths {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> goto DynamicRepeat,
+        DecodeEvent::TreesReady -> goto BuildTrees,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DynamicRepeat {
+        DecodeEvent::Read -> goto DynamicLengths,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state BuildTrees {
+        DecodeEvent::Read -> goto LiteralSymbol,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state LiteralSymbol {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> goto EmitLiteral,
+        DecodeEvent::Match -> goto LengthExtra,
+        DecodeEvent::End(last) -> { if (last) { goto Finished; } goto HeaderFinal; },
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state EmitLiteral {
+        DecodeEvent::Read -> goto LiteralSymbol,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state LengthExtra {
+        DecodeEvent::Read -> goto DistanceSymbol,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DistanceSymbol {
+        DecodeEvent::Read -> goto DistanceExtra,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state DistanceExtra {
+        DecodeEvent::Read -> goto MatchCopy,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state MatchCopy {
+        DecodeEvent::Read -> goto LiteralSymbol,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state Finished {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+
+    state Failed {
+        DecodeEvent::Read -> stay,
+        DecodeEvent::Block(kind) -> stay,
+        DecodeEvent::Repeat -> stay,
+        DecodeEvent::TreesReady -> stay,
+        DecodeEvent::Literal -> stay,
+        DecodeEvent::Match -> stay,
+        DecodeEvent::End(last) -> stay,
+        DecodeEvent::Fail -> goto Failed,
+        DecodeEvent::Reset -> goto HeaderFinal,
+    }
+}
 
 pub struct Decoder {
     history: core::slice::View<u8>, workspace: core::slice::View<i32>,
     max_distance: i32, ring: bool, history_head: i32, history_filled: i32,
-    phase: i32, failure: Error, buffer: i32, available: i32,
+    phase: Decoding, failure: Error, buffer: i32, available: i32,
     final_block: i32, kind: i32, remaining: i32, distance: i32,
     literal_count: i32, distance_count: i32, code_count: i32, index: i32,
     literal_maximum: i32, distance_maximum: i32, code_maximum: i32,
     symbol: i32, code: i32, first: i32, offset: i32, size: i32,
-    fast: bool, fast_ready: bool
+    fast: bool, fast_ready_completion: core::iter_state::Completion
 }
 // Per-call descriptors and progress never escape the engine invocation.
 struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
@@ -82,12 +308,12 @@ fn put_entry(view: core::slice::View<i32>, index: i32, value: i32) { view.values
 fn initial(history: core::slice::View<u8>, workspace: core::slice::View<i32>, max_distance: i32, ring: bool) -> Decoder {
     return Decoder {
         history: history, workspace: workspace, max_distance: max_distance, ring: ring,
-        history_head: 0, history_filled: 0, phase: HEADER_FINAL, failure: Error::Bounds,
+        history_head: 0, history_filled: 0, phase: decoding_start(), failure: Error::Bounds,
         buffer: 0, available: 0, final_block: 0, kind: 0, remaining: 0, distance: 0,
         literal_count: 0, distance_count: 0, code_count: 0, index: 0,
         literal_maximum: 0, distance_maximum: 0, code_maximum: 0,
         symbol: 0, code: 0, first: 0, offset: 0, size: 1,
-        fast: workspace.length >= FAST_END, fast_ready: false
+        fast: workspace.length >= FAST_END, fast_ready_completion: core::iter_state::completion_start()
     };
 }
 
@@ -104,7 +330,7 @@ fn progress(call: &Call, status: Status) -> core::result::Result<Step,Failure> {
     return core::result::Ok(Step { read: call.read, written: call.written, status: status });
 }
 fn fail(state: &Decoder, call: &Call, error: Error) -> core::result::Result<Step,Failure> {
-    state.phase = FAILED; state.failure = error;
+    state.phase.step(DecodeEvent::Fail); state.failure = error;
     return core::result::Err(Failure { error: error, read: call.read, written: call.written });
 }
 fn missing_input(state: &Decoder, call: &Call, final_input: bool) -> core::result::Result<Step,Failure> {
@@ -173,7 +399,7 @@ fn distance_base(symbol: i32) -> i32 { if (symbol < 4) { return symbol+1; } let 
 fn code_order(index: i32) -> i32 {
     let order: [i32;19] = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]; return order[index];
 }
-fn end_block(state: &Decoder) { state.fast_ready = false; if (state.final_block != 0) { state.phase = FINISHED; } else { state.phase = HEADER_FINAL; } }
+fn end_block(state: &Decoder) { state.fast_ready_completion = core::iter_state::completion_start(); state.phase.step(DecodeEvent::End(state.final_block != 0)); }
 
 // Append before the next distance lookup, so overlapping copies work even
 // across output chunks and ring wrap. Logical history never exceeds window.
@@ -358,19 +584,19 @@ fn append_history(state: &Decoder, out_base: ptr, end: i32, produced: i32) {
 fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
     if (!valid_bytes(input) || !valid_bytes(output)) { return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 }); }
     let call: Call = Call { input: input, output: output, read: 0, written: 0 };
-    if (state.phase == FAILED) { return core::result::Err(Failure { error: state.failure, read: 0, written: 0 }); }
+    if (((match (state.phase.state()) { DecodingState::Failed -> true, _ -> false }))) { return core::result::Err(Failure { error: state.failure, read: 0, written: 0 }); }
     let fast: bool = state.fast && packed(input) && packed(output) && packed(state.history);
     while (true) {
-        if (state.phase == FINISHED) { return progress(call.borrow(),Status::Done); }
-        if (state.phase == HEADER_FINAL) {
+        if (((match (state.phase.state()) { DecodingState::Finished -> true, _ -> false }))) { return progress(call.borrow(),Status::Done); }
+        if (((match (state.phase.state()) { DecodingState::HeaderFinal -> true, _ -> false }))) {
             let last: i32 = bits(state,call.borrow(),1); if (last < 0) { return missing_input(state,call.borrow(),final_input); }
-            state.final_block = last; state.phase = HEADER_KIND;
+            state.final_block = last; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == HEADER_KIND) {
+        if (((match (state.phase.state()) { DecodingState::HeaderKind -> true, _ -> false }))) {
             let kind: i32 = bits(state,call.borrow(),2); if (kind < 0) { return missing_input(state,call.borrow(),final_input); }
             if (kind == 3) { return fail(state,call.borrow(),Error::InvalidBlockType); }
-            state.kind = kind; state.fast_ready = false;
-            if (kind == 0) { state.buffer = 0; state.available = 0; state.phase = STORED_LENGTH; }
+            state.kind = kind; state.fast_ready_completion = core::iter_state::completion_start();
+            if (kind == 0) { state.buffer = 0; state.available = 0; state.phase.step(DecodeEvent::Block(0)); }
             else {
                 if (kind == 1) {
                     let index: i32 = 0;
@@ -379,20 +605,20 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
                     while (index < 280) { put_entry(state.workspace,index,7); index += 1; }
                     while (index < 288) { put_entry(state.workspace,index,8); index += 1; }
                     while (index < 320) { put_entry(state.workspace,index,5); index += 1; }
-                    state.literal_count = 288; state.distance_count = 32; state.phase = BUILD_TREES;
-                } else { state.phase = DYNAMIC_LITERAL_COUNT; }
+                    state.literal_count = 288; state.distance_count = 32; state.phase.step(DecodeEvent::Block(1));
+                } else { state.phase.step(DecodeEvent::Block(2)); }
             }
         }
-        if (state.phase == STORED_LENGTH) {
+        if (((match (state.phase.state()) { DecodingState::StoredLength -> true, _ -> false }))) {
             let length: i32 = bits(state,call.borrow(),16); if (length < 0) { return missing_input(state,call.borrow(),final_input); }
-            state.remaining = length; state.phase = STORED_INVERTED;
+            state.remaining = length; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == STORED_INVERTED) {
+        if (((match (state.phase.state()) { DecodingState::StoredInverted -> true, _ -> false }))) {
             let inverted: i32 = bits(state,call.borrow(),16); if (inverted < 0) { return missing_input(state,call.borrow(),final_input); }
             if ((state.remaining ^ inverted) != 65535) { return fail(state,call.borrow(),Error::InvalidStoredLength); }
-            state.phase = STORED_COPY;
+            state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == STORED_COPY) {
+        if (((match (state.phase.state()) { DecodingState::StoredCopy -> true, _ -> false }))) {
             if (fast) {
                 let run: i32 = state.remaining; let room: i32 = input.length-call.read; if (run > room) { run = room; }
                 room = output.length-call.written; if (run > room) { run = room; }
@@ -411,48 +637,48 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             }
             end_block(state);
         }
-        if (state.phase == DYNAMIC_LITERAL_COUNT) {
+        if (((match (state.phase.state()) { DecodingState::DynamicLiteralCount -> true, _ -> false }))) {
             let value: i32 = bits(state,call.borrow(),5); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
-            state.literal_count = value+257; state.phase = DYNAMIC_DISTANCE_COUNT;
+            state.literal_count = value+257; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DYNAMIC_DISTANCE_COUNT) {
+        if (((match (state.phase.state()) { DecodingState::DynamicDistanceCount -> true, _ -> false }))) {
             let value: i32 = bits(state,call.borrow(),5); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
-            state.distance_count = value+1; state.phase = DYNAMIC_CODE_COUNT;
+            state.distance_count = value+1; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DYNAMIC_CODE_COUNT) {
+        if (((match (state.phase.state()) { DecodingState::DynamicCodeCount -> true, _ -> false }))) {
             let value: i32 = bits(state,call.borrow(),4); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
             // All three fields arrive before HLIT validation, as in one-shot.
             if (state.literal_count > 286) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
             state.code_count = value+4; state.index = 0;
             while (state.index < 19) { put_entry(state.workspace,state.index,0); state.index += 1; }
-            state.index = 0; state.phase = DYNAMIC_CODE_LENGTHS;
+            state.index = 0; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DYNAMIC_CODE_LENGTHS) {
+        if (((match (state.phase.state()) { DecodingState::DynamicCodeLengths -> true, _ -> false }))) {
             while (state.index < state.code_count) {
                 let value: i32 = bits(state,call.borrow(),3); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
                 put_entry(state.workspace,code_order(state.index),value); state.index += 1;
             }
             if (construct(state.workspace,0,19,CODE_COUNTS,CODE_SYMBOLS) != 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
             state.code_maximum = maximum(state.workspace,CODE_COUNTS); state.index = 0;
-            reset_code(state); state.phase = DYNAMIC_LENGTHS;
+            reset_code(state); state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DYNAMIC_LENGTHS) {
-            while (state.index < state.literal_count+state.distance_count && state.phase == DYNAMIC_LENGTHS) {
+        if (((match (state.phase.state()) { DecodingState::DynamicLengths -> true, _ -> false }))) {
+            while (state.index < state.literal_count+state.distance_count && ((match (state.phase.state()) { DecodingState::DynamicLengths -> true, _ -> false }))) {
                 let symbol: i32 = decode_symbol(state,call.borrow(),CODE_COUNTS,CODE_SYMBOLS,state.code_maximum);
                 if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
                 if (symbol < 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
                 if (symbol < 16) { put_entry(state.workspace,state.index,symbol); state.index += 1; }
                 else {
                     if (symbol == 16 && state.index == 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
-                    state.symbol = symbol; state.phase = DYNAMIC_REPEAT;
+                    state.symbol = symbol; state.phase.step(DecodeEvent::Repeat);
                 }
             }
             if (state.index == state.literal_count+state.distance_count) {
                 if (entry(state.workspace,256) == 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
-                state.phase = BUILD_TREES;
+                state.phase.step(DecodeEvent::TreesReady);
             }
         }
-        if (state.phase == DYNAMIC_REPEAT) {
+        if (((match (state.phase.state()) { DecodingState::DynamicRepeat -> true, _ -> false }))) {
             let width: i32 = 7; let base: i32 = 11; let value: i32 = 0;
             if (state.symbol == 16) { width = 2; base = 3; value = entry(state.workspace,state.index-1); }
             if (state.symbol == 17) { width = 3; base = 3; }
@@ -461,9 +687,9 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             if (repeat > state.literal_count+state.distance_count-state.index) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
             let end: i32 = state.index+repeat;
             while (state.index < end) { put_entry(state.workspace,state.index,value); state.index += 1; }
-            state.phase = DYNAMIC_LENGTHS;
+            state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == BUILD_TREES) {
+        if (((match (state.phase.state()) { DecodingState::BuildTrees -> true, _ -> false }))) {
             let literal_left: i32 = construct(state.workspace,0,state.literal_count,LITERAL_COUNTS,LITERAL_SYMBOLS);
             if (literal_left < 0 || (state.kind == 2 && literal_left != 0 && state.literal_count-entry(state.workspace,LITERAL_COUNTS) != entry(state.workspace,LITERAL_COUNTS+1))) {
                 return fail(state,call.borrow(),Error::InvalidCodeLengths);
@@ -477,48 +703,48 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             if (state.fast) {
                 build_table(state.workspace,0,state.literal_count,FAST_LITERAL,LITERAL_ROOT,true);
                 build_table(state.workspace,state.literal_count,state.distance_count,FAST_DISTANCE,DISTANCE_ROOT,false);
-                state.fast_ready = true;
+                state.fast_ready_completion.finish();
             }
-            reset_code(state); state.phase = LITERAL_SYMBOL;
+            reset_code(state); state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == LITERAL_SYMBOL && fast && state.fast_ready && state.size == 1 && call.read+8 <= input.length && call.written+258 <= output.length) {
+        if (((match (state.phase.state()) { DecodingState::LiteralSymbol -> true, _ -> false })) && fast && state.fast_ready_completion.is_done() && state.size == 1 && call.read+8 <= input.length && call.written+258 <= output.length) {
             // A rewind leaves the symbol to the bit-serial path, which fails on it.
             if (fast_loop(state,call.borrow())) { fast = false; }
         }
-        if (state.phase == LITERAL_SYMBOL) {
+        if (((match (state.phase.state()) { DecodingState::LiteralSymbol -> true, _ -> false }))) {
             let symbol: i32 = decode_symbol(state,call.borrow(),LITERAL_COUNTS,LITERAL_SYMBOLS,state.literal_maximum);
             if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
             if (symbol < 0 || symbol > 285) { return fail(state,call.borrow(),Error::InvalidSymbol); }
             state.symbol = symbol;
-            if (symbol < 256) { state.phase = EMIT_LITERAL; }
-            else { if (symbol == 256) { end_block(state); } else { state.phase = LENGTH_EXTRA; } }
+            if (symbol < 256) { state.phase.step(DecodeEvent::Literal); }
+            else { if (symbol == 256) { end_block(state); } else { state.phase.step(DecodeEvent::Match); } }
         }
-        if (state.phase == EMIT_LITERAL) {
+        if (((match (state.phase.state()) { DecodingState::EmitLiteral -> true, _ -> false }))) {
             if (call.written == output.length) { return progress(call.borrow(),Status::NeedOutput); }
-            emit(state,call.borrow(),state.symbol as u8); state.phase = LITERAL_SYMBOL;
+            emit(state,call.borrow(),state.symbol as u8); state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == LENGTH_EXTRA) {
+        if (((match (state.phase.state()) { DecodingState::LengthExtra -> true, _ -> false }))) {
             let extra: i32 = bits(state,call.borrow(),length_extra(state.symbol)); if (extra < 0) { return missing_input(state,call.borrow(),final_input); }
-            state.remaining = length_base(state.symbol)+extra; state.phase = DISTANCE_SYMBOL;
+            state.remaining = length_base(state.symbol)+extra; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DISTANCE_SYMBOL) {
+        if (((match (state.phase.state()) { DecodingState::DistanceSymbol -> true, _ -> false }))) {
             let symbol: i32 = decode_symbol(state,call.borrow(),DISTANCE_COUNTS,DISTANCE_SYMBOLS,state.distance_maximum);
             if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
             if (symbol < 0 || symbol >= 30) { return fail(state,call.borrow(),Error::InvalidSymbol); }
-            state.symbol = symbol; state.phase = DISTANCE_EXTRA;
+            state.symbol = symbol; state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == DISTANCE_EXTRA) {
+        if (((match (state.phase.state()) { DecodingState::DistanceExtra -> true, _ -> false }))) {
             let extra: i32 = bits(state,call.borrow(),distance_extra(state.symbol)); if (extra < 0) { return missing_input(state,call.borrow(),final_input); }
             state.distance = distance_base(state.symbol)+extra;
             if (state.distance > state.history_filled || state.distance > state.max_distance) { return fail(state,call.borrow(),Error::InvalidDistance); }
-            state.phase = MATCH_COPY;
+            state.phase.step(DecodeEvent::Read);
         }
-        if (state.phase == MATCH_COPY) {
+        if (((match (state.phase.state()) { DecodingState::MatchCopy -> true, _ -> false }))) {
             while (state.remaining > 0) {
                 if (call.written == output.length) { return progress(call.borrow(),Status::NeedOutput); }
                 emit(state,call.borrow(),previous(state,call.borrow())); state.remaining -= 1;
             }
-            state.phase = LITERAL_SYMBOL;
+            state.phase.step(DecodeEvent::Read);
         }
     }
     return progress(call.borrow(),Status::Done);
@@ -529,8 +755,8 @@ pub impl Decoder {
     pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
         return run(self,input,output,final_input);
     }
-    pub fn is_done(&self) -> bool { return self.phase == FINISHED; }
-    pub fn is_failed(&self) -> bool { return self.phase == FAILED; }
+    pub fn is_done(&self) -> bool { return ((match (self.phase.state()) { DecodingState::Finished -> true, _ -> false })); }
+    pub fn is_failed(&self) -> bool { return ((match (self.phase.state()) { DecodingState::Failed -> true, _ -> false })); }
     // A valid reset changes only scalar state; stale table/history bytes are
     // initialized before use. Invalid reset preserves even terminal state.
     pub fn reset(&self, max_distance: i32) -> core::result::Result<bool,Error> {
@@ -538,11 +764,11 @@ pub impl Decoder {
             return core::result::Err(Error::Bounds);
         }
         self.max_distance = max_distance; self.history_head = 0; self.history_filled = 0;
-        self.phase = HEADER_FINAL; self.failure = Error::Bounds; self.buffer = 0; self.available = 0;
+        self.phase.step(DecodeEvent::Reset); self.failure = Error::Bounds; self.buffer = 0; self.available = 0;
         self.final_block = 0; self.kind = 0; self.remaining = 0; self.distance = 0;
         self.literal_count = 0; self.distance_count = 0; self.code_count = 0; self.index = 0;
         self.literal_maximum = 0; self.distance_maximum = 0; self.code_maximum = 0; self.symbol = 0;
-        self.fast_ready = false; reset_code(self); return core::result::Ok(true);
+        self.fast_ready_completion = core::iter_state::completion_start(); reset_code(self); return core::result::Ok(true);
     }
 }
 

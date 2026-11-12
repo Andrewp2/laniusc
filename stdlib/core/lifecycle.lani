@@ -1,0 +1,32 @@
+// Small ownership and fault lifecycles shared by resource controllers.
+module core::lifecycle;
+
+pub enum Release { Release }
+pub machine Lifetime on Release {
+    start Active;
+    state Active { Release::Release -> goto Released, }
+    final state Released { Release::Release -> stay, }
+}
+pub impl Lifetime {
+    pub fn is_active(&self) -> bool { return match (self.state()) { LifetimeState::Active -> true, _ -> false }; }
+    pub fn is_released(&self) -> bool { return !self.is_active(); }
+    pub fn release(&self) { self.step(Release::Release); }
+}
+
+pub enum Fault { Fail, Reset }
+pub machine Health on Fault {
+    start Healthy;
+    state Healthy { Fault::Fail -> goto Failed, Fault::Reset -> stay, }
+    state Failed { Fault::Fail -> stay, Fault::Reset -> goto Healthy, }
+}
+pub impl Health {
+    pub fn is_failed(&self) -> bool { return match (self.state()) { HealthState::Failed -> true, _ -> false }; }
+    pub fn fail(&self) { self.step(Fault::Fail); }
+    pub fn reset(&self) { self.step(Fault::Reset); }
+}
+
+pub fn released_lifetime() -> Lifetime { let lifetime = lifetime_start(); lifetime.release(); return lifetime; }
+
+pub fn failed_health() -> Health { let health = health_start(); health.fail(); return health; }
+
+pub fn lifetime_if(active: bool) -> Lifetime { let lifetime = lifetime_start(); if (!active) { lifetime.release(); } return lifetime; }

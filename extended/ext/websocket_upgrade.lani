@@ -1,6 +1,7 @@
 // Borrowed client opening handshake. HTTP framing and WebSocket handshake
 // semantics remain with their existing wire authorities; no host service here.
 module ext::websocket_upgrade;
+import core::lifecycle;
 import alloc::vec;
 import core::base64;
 import core::io;
@@ -29,7 +30,76 @@ pub enum Cause {
 }
 pub struct Failure { cause: Cause, stats: Stats, completed: i32 }
 pub enum Progress { Again, NeedRead, NeedWrite, Ready }
-enum Phase { Sending, Flushing, Receiving, Ready }
+
+
+pub enum PhaseEvent { Sent, Flushed, Validated }
+pub machine Phase on PhaseEvent {
+    start Sending;
+
+    state Sending {
+        PhaseEvent::Sent -> goto Flushing,
+        PhaseEvent::Flushed -> stay,
+        PhaseEvent::Validated -> stay,
+    }
+
+    state Flushing {
+        PhaseEvent::Sent -> stay,
+        PhaseEvent::Flushed -> goto Receiving,
+        PhaseEvent::Validated -> stay,
+    }
+
+    state Receiving {
+        PhaseEvent::Sent -> stay,
+        PhaseEvent::Flushed -> stay,
+        PhaseEvent::Validated -> goto Ready,
+    }
+
+    final state Ready {
+        PhaseEvent::Sent -> stay,
+        PhaseEvent::Flushed -> stay,
+        PhaseEvent::Validated -> stay,
+    }
+}
+
+pub enum ServerPhaseEvent { Validated, Accepted, Sent, Flushed }
+pub machine ServerPhase on ServerPhaseEvent {
+    start Receiving;
+
+    state Receiving {
+        ServerPhaseEvent::Validated -> goto Request,
+        ServerPhaseEvent::Accepted -> stay,
+        ServerPhaseEvent::Sent -> stay,
+        ServerPhaseEvent::Flushed -> stay,
+    }
+
+    state Request {
+        ServerPhaseEvent::Validated -> stay,
+        ServerPhaseEvent::Accepted -> goto Sending,
+        ServerPhaseEvent::Sent -> stay,
+        ServerPhaseEvent::Flushed -> stay,
+    }
+
+    state Sending {
+        ServerPhaseEvent::Validated -> stay,
+        ServerPhaseEvent::Accepted -> stay,
+        ServerPhaseEvent::Sent -> goto Flushing,
+        ServerPhaseEvent::Flushed -> stay,
+    }
+
+    state Flushing {
+        ServerPhaseEvent::Validated -> stay,
+        ServerPhaseEvent::Accepted -> stay,
+        ServerPhaseEvent::Sent -> stay,
+        ServerPhaseEvent::Flushed -> goto Ready,
+    }
+
+    final state Ready {
+        ServerPhaseEvent::Validated -> stay,
+        ServerPhaseEvent::Accepted -> stay,
+        ServerPhaseEvent::Sent -> stay,
+        ServerPhaseEvent::Flushed -> stay,
+    }
+}
 
 // Copies alias one active owner. The caller keeps the exclusive borrowed
 // transport alive and closes it after use; destroy only releases our storage.
@@ -42,7 +112,7 @@ pub struct Client<T> {
     head: alloc::vec::Vec<u8>,
     cursor: ext::http::Cursor,
     phase: Phase,
-    active: bool,
+    lifetime: core::lifecycle::Lifetime,
     fault: core::option::Option<Failure>,
     response: core::option::Option<ext::websocket::Response>
 }
@@ -124,7 +194,7 @@ pub fn client<T>(inner: &T, request: core::slice::View<u8>,
     return core::result::Ok(Client {
         inner: inner, limits: limits, progress: empty_stats(), request: owned,
         expected: expected, head: alloc::vec::new(), cursor: made.unwrap(),
-        phase: Phase::Sending, active: true, fault: core::option::None(),
+        phase: phase_start(), lifetime: core::lifecycle::lifetime_start(), fault: core::option::None(),
         response: core::option::None()
     });
 }
@@ -132,10 +202,10 @@ pub fn client<T>(inner: &T, request: core::slice::View<u8>,
 pub impl<T> Client<T> {
     pub fn borrow(&self) -> &Client<T> { return self; }
     pub fn stats(&self) -> Stats { return self.progress; }
-    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_active(&self) -> bool { return self.lifetime.is_active(); }
     pub fn is_ready(&self) -> bool {
-        return self.active && self.fault.is_none()
-            && match(self.phase) { Phase::Ready -> true, _ -> false };
+        return self.lifetime.is_active() && self.fault.is_none()
+            && match(self.phase.state()) { PhaseState::Ready -> true, _ -> false };
     }
     fn failure(&self, cause: Cause, completed: i32) -> Failure {
         return Failure { cause: cause, stats: self.progress, completed: completed };
@@ -145,7 +215,7 @@ pub impl<T> Client<T> {
         self.fault = core::option::Some(failure); return failure;
     }
     fn check(&self) -> core::result::Result<bool,Failure> {
-        if (!self.active) { return core::result::Err(self.failure(Cause::Inactive,0)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(self.failure(Cause::Inactive,0)); }
         if (self.fault.is_some()) { return core::result::Err(self.fault.unwrap()); }
         return core::result::Ok(true);
     }
@@ -179,7 +249,7 @@ pub impl<T> Client<T> {
         if (response.is_err()) {
             return core::result::Err(self.stop(Cause::Wire(response.unwrap_err()),self.head.len()));
         }
-        self.response = core::option::Some(response.unwrap()); self.phase = Phase::Ready;
+        self.response = core::option::Some(response.unwrap()); self.phase.step(PhaseEvent::Validated);
         return core::result::Ok(true);
     }
     // Perform at most one inner read, write or flush. Successful progress and
@@ -189,7 +259,7 @@ pub impl<T> Client<T> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
         if (self.is_ready()) { return core::result::Ok(Progress::Ready); }
         let inner: &T = self.inner;
-        let sending: bool = match(self.phase) { Phase::Sending -> true, _ -> false };
+        let sending: bool = match(self.phase.state()) { PhaseState::Sending -> true, _ -> false };
         if (sending) {
             let offset: i32 = self.progress.accepted_bytes as i32;
             let paid = self.call(offset); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
@@ -207,10 +277,10 @@ pub impl<T> Client<T> {
             }
             if (amount == 0) { return core::result::Err(self.stop(Cause::Io(core::io::Error::WriteZero),offset)); }
             self.progress.accepted_bytes += amount as u64;
-            if (self.progress.accepted_bytes == (self.request.len() as u64)) { self.phase = Phase::Flushing; }
+            if (self.progress.accepted_bytes == (self.request.len() as u64)) { self.phase.step(PhaseEvent::Sent); }
             return core::result::Ok(Progress::Again);
         }
-        let flushing: bool = match(self.phase) { Phase::Flushing -> true, _ -> false };
+        let flushing: bool = match(self.phase.state()) { PhaseState::Flushing -> true, _ -> false };
         if (flushing) {
             let paid = self.call(self.progress.accepted_bytes as i32); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
             let flushed: core::result::Result<i32,core::io::Error> = inner.flush();
@@ -223,7 +293,7 @@ pub impl<T> Client<T> {
             if (flushed.unwrap() != 0) {
                 return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),self.progress.accepted_bytes as i32));
             }
-            self.phase = Phase::Receiving; return core::result::Ok(Progress::Again);
+            self.phase.step(PhaseEvent::Flushed); return core::result::Ok(Progress::Again);
         }
         if (self.progress.io_calls == self.limits.io_calls) {
             return core::result::Err(self.stop(Cause::IoLimit,self.head.len()));
@@ -290,8 +360,8 @@ pub impl<T> Client<T> {
         self.destroy(); return core::result::Ok(stream.unwrap());
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.active = false; self.response = core::option::None();
+        if (!self.lifetime.is_active()) { return false; }
+        self.lifetime.release(); self.response = core::option::None();
         self.request.destroy(); self.head.destroy(); return true;
     }
 }
@@ -305,7 +375,7 @@ pub struct ServerLimits {
     work: u64
 }
 pub enum ServerProgress { Again, NeedRead, NeedWrite, Request, Ready }
-enum ServerPhase { Receiving, Request, Sending, Flushing, Ready }
+
 pub struct Server<T> {
     inner: &T,
     limits: ServerLimits,
@@ -314,7 +384,7 @@ pub struct Server<T> {
     output: alloc::vec::Vec<u8>,
     cursor: ext::http::Cursor,
     phase: ServerPhase,
-    active: bool,
+    lifetime: core::lifecycle::Lifetime,
     fault: core::option::Option<Failure>,
     request_info: core::option::Option<ext::websocket::Request>
 }
@@ -344,7 +414,7 @@ pub fn server<T>(inner: &T, limits: ServerLimits)
     return core::result::Ok(Server {
         inner: inner, limits: limits, progress: empty_stats(),
         head: alloc::vec::new(), output: alloc::vec::new(), cursor: cursor.unwrap(),
-        phase: ServerPhase::Receiving, active: true, fault: core::option::None(),
+        phase: server_phase_start(), lifetime: core::lifecycle::lifetime_start(), fault: core::option::None(),
         request_info: core::option::None()
     });
 }
@@ -352,13 +422,13 @@ pub fn server<T>(inner: &T, limits: ServerLimits)
 pub impl<T> Server<T> {
     pub fn borrow(&self) -> &Server<T> { return self; }
     pub fn stats(&self) -> Stats { return self.progress; }
-    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_active(&self) -> bool { return self.lifetime.is_active(); }
     pub fn has_request(&self) -> bool {
-        return self.active && self.fault.is_none() && self.request_info.is_some();
+        return self.lifetime.is_active() && self.fault.is_none() && self.request_info.is_some();
     }
     pub fn is_ready(&self) -> bool {
-        return self.active && self.fault.is_none()
-            && match(self.phase) { ServerPhase::Ready -> true, _ -> false };
+        return self.lifetime.is_active() && self.fault.is_none()
+            && match(self.phase.state()) { ServerPhaseState::Ready -> true, _ -> false };
     }
     fn failure(&self, cause: Cause, completed: i32) -> Failure {
         return Failure { cause: cause, stats: self.progress, completed: completed };
@@ -368,7 +438,7 @@ pub impl<T> Server<T> {
         self.fault = core::option::Some(failure); return failure;
     }
     fn check(&self) -> core::result::Result<bool,Failure> {
-        if (!self.active) { return core::result::Err(self.failure(Cause::Inactive,0)); }
+        if (!self.lifetime.is_active()) { return core::result::Err(self.failure(Cause::Inactive,0)); }
         if (self.fault.is_some()) { return core::result::Err(self.fault.unwrap()); }
         return core::result::Ok(true);
     }
@@ -399,7 +469,7 @@ pub impl<T> Server<T> {
             return core::result::Err(self.stop(Cause::Wire(ext::websocket::Error::Handshake),self.head.len()));
         }
         self.request_info = core::option::Some(request.unwrap());
-        self.phase = ServerPhase::Request; return core::result::Ok(true);
+        self.phase.step(ServerPhaseEvent::Validated); return core::result::Ok(true);
     }
     pub fn request(&self) -> core::result::Result<ext::websocket::Request,Failure> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
@@ -413,23 +483,23 @@ pub impl<T> Server<T> {
         accept: core::slice::View<u8>, protocol: core::option::Option<core::slice::View<u8>>)
         -> core::result::Result<i32,Failure> {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        let awaiting: bool = match(self.phase) { ServerPhase::Request -> true, _ -> false };
+        let awaiting: bool = match(self.phase.state()) { ServerPhaseState::Request -> true, _ -> false };
         if (!awaiting) { return core::result::Err(self.failure(Cause::NotReady,0)); }
         let wire: ext::websocket::Limits = self.limits.wire;
         if (wire.http.head_bytes > self.limits.response_bytes) { wire.http.head_bytes = self.limits.response_bytes; }
         let encoded = ext::websocket::encode_response(self.request_info.unwrap(),fields,accept,protocol,wire);
         if (encoded.is_err()) { return core::result::Err(self.failure(Cause::Wire(encoded.unwrap_err()),0)); }
-        self.output = encoded.unwrap(); self.phase = ServerPhase::Sending;
+        self.output = encoded.unwrap(); self.phase.step(ServerPhaseEvent::Accepted);
         return core::result::Ok(self.output.len());
     }
     pub fn step(&self) -> core::result::Result<ServerProgress,Failure>
         where T: core::io::Read, T: core::io::Write {
         let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        let awaiting: bool = match(self.phase) { ServerPhase::Request -> true, _ -> false };
+        let awaiting: bool = match(self.phase.state()) { ServerPhaseState::Request -> true, _ -> false };
         if (awaiting) { return core::result::Ok(ServerProgress::Request); }
         if (self.is_ready()) { return core::result::Ok(ServerProgress::Ready); }
         let inner: &T = self.inner;
-        let receiving: bool = match(self.phase) { ServerPhase::Receiving -> true, _ -> false };
+        let receiving: bool = match(self.phase.state()) { ServerPhaseState::Receiving -> true, _ -> false };
         if (receiving) {
             if (self.progress.io_calls == self.limits.io_calls) {
                 return core::result::Err(self.stop(Cause::IoLimit,self.head.len()));
@@ -473,7 +543,7 @@ pub impl<T> Server<T> {
             if (scanned.is_err()) { return core::result::Err(scanned.unwrap_err()); }
             return core::result::Ok(ServerProgress::Again);
         }
-        let sending: bool = match(self.phase) { ServerPhase::Sending -> true, _ -> false };
+        let sending: bool = match(self.phase.state()) { ServerPhaseState::Sending -> true, _ -> false };
         if (sending) {
             let offset: i32 = self.progress.accepted_bytes as i32;
             let paid = self.call(offset); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
@@ -491,7 +561,7 @@ pub impl<T> Server<T> {
             }
             if (amount == 0) { return core::result::Err(self.stop(Cause::Io(core::io::Error::WriteZero),offset)); }
             self.progress.accepted_bytes += amount as u64;
-            if (self.progress.accepted_bytes == (self.output.len() as u64)) { self.phase = ServerPhase::Flushing; }
+            if (self.progress.accepted_bytes == (self.output.len() as u64)) { self.phase.step(ServerPhaseEvent::Sent); }
             return core::result::Ok(ServerProgress::Again);
         }
         let paid = self.call(self.progress.accepted_bytes as i32); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
@@ -505,7 +575,7 @@ pub impl<T> Server<T> {
         if (flushed.unwrap() != 0) {
             return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),self.progress.accepted_bytes as i32));
         }
-        self.phase = ServerPhase::Ready; return core::result::Ok(ServerProgress::Again);
+        self.phase.step(ServerPhaseEvent::Flushed); return core::result::Ok(ServerProgress::Again);
     }
     pub fn into_stream(&self, limits: ext::websocket_stream::Limits)
         -> core::result::Result<ext::websocket_stream::Stream<T>,Failure> {
@@ -517,8 +587,8 @@ pub impl<T> Server<T> {
         self.destroy(); return core::result::Ok(stream.unwrap());
     }
     pub fn destroy(&self) -> bool {
-        if (!self.active) { return false; }
-        self.active = false; self.request_info = core::option::None();
+        if (!self.lifetime.is_active()) { return false; }
+        self.lifetime.release(); self.request_info = core::option::None();
         self.head.destroy(); self.output.destroy(); return true;
     }
 }

@@ -20,12 +20,13 @@ Declaration counts: enum: 2; field: 18; function: 8; impl: 6; method: 8; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](../core/io.md) · [source](../../../extended/ext/form.lani#L4)
-- [core::iter](../core/iter.md) · [source](../../../extended/ext/form.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/form.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/form.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/form.lani#L8)
-- [core::text](../core/text.md) · [source](../../../extended/ext/form.lani#L9)
+- [core::parse_state](../core/parse_state.md) · [source](../../../extended/ext/form.lani#L4)
+- [core::io](../core/io.md) · [source](../../../extended/ext/form.lani#L5)
+- [core::iter](../core/iter.md) · [source](../../../extended/ext/form.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/form.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/form.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/form.lani#L9)
+- [core::text](../core/text.md) · [source](../../../extended/ext/form.lani#L10)
 
 ## Types, fields and variants
 
@@ -33,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Pair
 
-[Source line 11](../../../extended/ext/form.lani#L11)
+[Source line 12](../../../extended/ext/form.lani#L12)
 
 ```lanius
 pub struct Pair
@@ -41,7 +42,7 @@ pub struct Pair
 
 #### field: name
 
-[Source line 11](../../../extended/ext/form.lani#L11)
+[Source line 12](../../../extended/ext/form.lani#L12)
 
 ```lanius
 name: core::slice::View<u8>
@@ -49,7 +50,7 @@ name: core::slice::View<u8>
 
 #### field: value
 
-[Source line 11](../../../extended/ext/form.lani#L11)
+[Source line 12](../../../extended/ext/form.lani#L12)
 
 ```lanius
 value: core::slice::View<u8>
@@ -57,7 +58,7 @@ value: core::slice::View<u8>
 
 ### struct: EncodedPair
 
-[Source line 12](../../../extended/ext/form.lani#L12)
+[Source line 13](../../../extended/ext/form.lani#L13)
 
 ```lanius
 pub struct EncodedPair
@@ -65,7 +66,7 @@ pub struct EncodedPair
 
 #### field: name
 
-[Source line 12](../../../extended/ext/form.lani#L12)
+[Source line 13](../../../extended/ext/form.lani#L13)
 
 ```lanius
 name: core::slice::View<u8>
@@ -73,7 +74,7 @@ name: core::slice::View<u8>
 
 #### field: value
 
-[Source line 12](../../../extended/ext/form.lani#L12)
+[Source line 13](../../../extended/ext/form.lani#L13)
 
 ```lanius
 value: core::slice::View<u8>
@@ -81,7 +82,7 @@ value: core::slice::View<u8>
 
 ### struct: PairSpan
 
-[Source line 13](../../../extended/ext/form.lani#L13)
+[Source line 14](../../../extended/ext/form.lani#L14)
 
 ```lanius
 pub struct PairSpan
@@ -89,7 +90,7 @@ pub struct PairSpan
 
 #### field: name_start
 
-[Source line 13](../../../extended/ext/form.lani#L13)
+[Source line 14](../../../extended/ext/form.lani#L14)
 
 ```lanius
 name_start: i32
@@ -97,7 +98,7 @@ name_start: i32
 
 #### field: name_length
 
-[Source line 13](../../../extended/ext/form.lani#L13)
+[Source line 14](../../../extended/ext/form.lani#L14)
 
 ```lanius
 name_length: i32
@@ -105,7 +106,7 @@ name_length: i32
 
 #### field: value_length
 
-[Source line 13](../../../extended/ext/form.lani#L13)
+[Source line 14](../../../extended/ext/form.lani#L14)
 
 ```lanius
 value_length: i32
@@ -113,7 +114,7 @@ value_length: i32
 
 ### enum: PairSource
 
-[Source line 14](../../../extended/ext/form.lani#L14)
+[Source line 15](../../../extended/ext/form.lani#L15)
 
 ```lanius
 pub enum PairSource
@@ -121,7 +122,7 @@ pub enum PairSource
 
 #### variant: Views
 
-[Source line 15](../../../extended/ext/form.lani#L15)
+[Source line 16](../../../extended/ext/form.lani#L16)
 
 ```lanius
 Views(core::slice::View<Pair>)
@@ -129,7 +130,7 @@ Views(core::slice::View<Pair>)
 
 #### variant: Packed
 
-[Source line 16](../../../extended/ext/form.lani#L16)
+[Source line 17](../../../extended/ext/form.lani#L17)
 
 ```lanius
 Packed(core::slice::View<u8>, core::slice::View<PairSpan>)
@@ -137,7 +138,7 @@ Packed(core::slice::View<u8>, core::slice::View<PairSpan>)
 
 ### struct: Limits
 
-[Source line 18](../../../extended/ext/form.lani#L18)
+[Source line 19](../../../extended/ext/form.lani#L19)
 
 ```lanius
 pub struct Limits
@@ -145,7 +146,7 @@ pub struct Limits
 
 #### field: max_input_bytes
 
-[Source line 18](../../../extended/ext/form.lani#L18)
+[Source line 19](../../../extended/ext/form.lani#L19)
 
 ```lanius
 max_input_bytes: i32
@@ -153,7 +154,7 @@ max_input_bytes: i32
 
 #### field: max_pairs
 
-[Source line 18](../../../extended/ext/form.lani#L18)
+[Source line 19](../../../extended/ext/form.lani#L19)
 
 ```lanius
 max_pairs: i32
@@ -161,7 +162,7 @@ max_pairs: i32
 
 #### field: max_component_bytes
 
-[Source line 18](../../../extended/ext/form.lani#L18)
+[Source line 19](../../../extended/ext/form.lani#L19)
 
 ```lanius
 max_component_bytes: i32
@@ -169,7 +170,7 @@ max_component_bytes: i32
 
 #### field: max_decoded_bytes
 
-[Source line 18](../../../extended/ext/form.lani#L18)
+[Source line 19](../../../extended/ext/form.lani#L19)
 
 ```lanius
 max_decoded_bytes: i32
@@ -177,7 +178,7 @@ max_decoded_bytes: i32
 
 ### enum: Error
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 pub enum Error
@@ -185,7 +186,7 @@ pub enum Error
 
 #### variant: InvalidLimits
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 InvalidLimits
@@ -193,7 +194,7 @@ InvalidLimits
 
 #### variant: Bounds
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 Bounds
@@ -201,7 +202,7 @@ Bounds
 
 #### variant: InputLimit
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 InputLimit
@@ -209,7 +210,7 @@ InputLimit
 
 #### variant: PairLimit
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 PairLimit
@@ -217,7 +218,7 @@ PairLimit
 
 #### variant: ComponentLimit
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 ComponentLimit
@@ -225,7 +226,7 @@ ComponentLimit
 
 #### variant: DecodedLimit
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 DecodedLimit
@@ -233,7 +234,7 @@ DecodedLimit
 
 #### variant: SizeOverflow
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 SizeOverflow
@@ -241,7 +242,7 @@ SizeOverflow
 
 #### variant: Capacity
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 Capacity(u64)
@@ -249,7 +250,7 @@ Capacity(u64)
 
 #### variant: OutputLimit
 
-[Source line 19](../../../extended/ext/form.lani#L19)
+[Source line 20](../../../extended/ext/form.lani#L20)
 
 ```lanius
 OutputLimit
@@ -257,7 +258,7 @@ OutputLimit
 
 ### struct: Parsed
 
-[Source line 20](../../../extended/ext/form.lani#L20)
+[Source line 21](../../../extended/ext/form.lani#L21)
 
 ```lanius
 pub struct Parsed
@@ -265,7 +266,7 @@ pub struct Parsed
 
 #### field: input
 
-[Source line 20](../../../extended/ext/form.lani#L20)
+[Source line 21](../../../extended/ext/form.lani#L21)
 
 ```lanius
 input: core::slice::View<u8>
@@ -273,7 +274,7 @@ input: core::slice::View<u8>
 
 #### field: pair_count
 
-[Source line 20](../../../extended/ext/form.lani#L20)
+[Source line 21](../../../extended/ext/form.lani#L21)
 
 ```lanius
 pair_count: i32
@@ -281,7 +282,7 @@ pair_count: i32
 
 #### field: decoded_bytes
 
-[Source line 20](../../../extended/ext/form.lani#L20)
+[Source line 21](../../../extended/ext/form.lani#L21)
 
 ```lanius
 decoded_bytes: i32
@@ -289,7 +290,7 @@ decoded_bytes: i32
 
 ### struct: Pairs
 
-[Source line 22](../../../extended/ext/form.lani#L22)
+[Source line 23](../../../extended/ext/form.lani#L23)
 
 ```lanius
 pub struct Pairs
@@ -297,7 +298,7 @@ pub struct Pairs
 
 #### field: input
 
-[Source line 22](../../../extended/ext/form.lani#L22)
+[Source line 23](../../../extended/ext/form.lani#L23)
 
 ```lanius
 input: core::slice::View<u8>
@@ -305,7 +306,7 @@ input: core::slice::View<u8>
 
 #### field: position
 
-[Source line 22](../../../extended/ext/form.lani#L22)
+[Source line 23](../../../extended/ext/form.lani#L23)
 
 ```lanius
 position: i32
@@ -313,7 +314,7 @@ position: i32
 
 ### struct: Encoding
 
-[Source line 253](../../../extended/ext/form.lani#L253)
+[Source line 254](../../../extended/ext/form.lani#L254)
 
 ```lanius
 pub struct Encoding
@@ -321,7 +322,7 @@ pub struct Encoding
 
 #### field: machine
 
-[Source line 253](../../../extended/ext/form.lani#L253)
+[Source line 254](../../../extended/ext/form.lani#L254)
 
 ```lanius
 machine: EncodingMachine
@@ -329,7 +330,7 @@ machine: EncodingMachine
 
 #### field: remaining_bytes
 
-[Source line 253](../../../extended/ext/form.lani#L253)
+[Source line 254](../../../extended/ext/form.lani#L254)
 
 ```lanius
 remaining_bytes: u64
@@ -339,7 +340,7 @@ remaining_bytes: u64
 
 ### function: default_limits
 
-[Source line 24](../../../extended/ext/form.lani#L24)
+[Source line 25](../../../extended/ext/form.lani#L25)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -349,7 +350,7 @@ Defaults: 1 MiB encoded input, 65536 nonempty pairs, 1 MiB per decoded component
 
 ### function: parse
 
-[Source line 102](../../../extended/ext/form.lani#L102)
+[Source line 103](../../../extended/ext/form.lani#L103)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Parsed,Error>
@@ -359,7 +360,7 @@ Rejects negative limits, logical bounds and encoded input cap before scanning; t
 
 ### function: component_encoded_len
 
-[Source line 127](../../../extended/ext/form.lani#L127)
+[Source line 128](../../../extended/ext/form.lani#L128)
 
 ```lanius
 pub fn component_encoded_len(input: core::slice::View<u8>) -> core::result::Result<u64,Error>
@@ -369,7 +370,7 @@ Exact u64 form component size: ASCII alphanumerics and *-._ remain literal, spac
 
 ### function: component_decoded_len
 
-[Source line 133](../../../extended/ext/form.lani#L133)
+[Source line 134](../../../extended/ext/form.lani#L134)
 
 ```lanius
 pub fn component_decoded_len(input: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -379,7 +380,7 @@ Exact decoded i32 size under plus-as-space and forgiving single-pass percent con
 
 ### function: encode_component_into
 
-[Source line 139](../../../extended/ext/form.lani#L139)
+[Source line 140](../../../extended/ext/form.lani#L140)
 
 ```lanius
 pub fn encode_component_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -389,7 +390,7 @@ Validates both descriptors and exact size before writing; returns the written pr
 
 ### function: decode_component_into
 
-[Source line 155](../../../extended/ext/form.lani#L155)
+[Source line 156](../../../extended/ext/form.lani#L156)
 
 ```lanius
 pub fn decode_component_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -399,7 +400,7 @@ Validates both descriptors and exact size before forward decoding; original plus
 
 ### function: encoded_len
 
-[Source line 208](../../../extended/ext/form.lani#L208)
+[Source line 209](../../../extended/ext/form.lani#L209)
 
 ```lanius
 pub fn encoded_len(source: PairSource) -> core::result::Result<u64,Error>
@@ -409,7 +410,7 @@ Validates all Views or Packed source and field/span metadata, including complete
 
 ### function: encoding
 
-[Source line 254](../../../extended/ext/form.lani#L254)
+[Source line 255](../../../extended/ext/form.lani#L255)
 
 ```lanius
 pub fn encoding(source: PairSource, max_output: u64) -> core::result::Result<Encoding,Error>
@@ -419,9 +420,9 @@ Runs complete sizing before max_output admission and returns a borrowed core::io
 
 ## Implementation blocks and public methods
 
-### impl at line 70
+### impl at line 71
 
-[Source line 70](../../../extended/ext/form.lani#L70)
+[Source line 71](../../../extended/ext/form.lani#L71)
 
 ```lanius
 pub impl Pair
@@ -429,7 +430,7 @@ pub impl Pair
 
 #### method: name_text
 
-[Source line 71](../../../extended/ext/form.lani#L71)
+[Source line 72](../../../extended/ext/form.lani#L72)
 
 ```lanius
 pub fn name_text(&self) -> core::result::Result<core::text::Text,core::text::Error>
@@ -437,15 +438,15 @@ pub fn name_text(&self) -> core::result::Result<core::text::Text,core::text::Err
 
 #### method: value_text
 
-[Source line 74](../../../extended/ext/form.lani#L74)
+[Source line 75](../../../extended/ext/form.lani#L75)
 
 ```lanius
 pub fn value_text(&self) -> core::result::Result<core::text::Text,core::text::Error>
 ```
 
-### impl at line 78
+### impl at line 79
 
-[Source line 78](../../../extended/ext/form.lani#L78)
+[Source line 79](../../../extended/ext/form.lani#L79)
 
 ```lanius
 pub impl Parsed
@@ -453,15 +454,15 @@ pub impl Parsed
 
 #### method: pairs
 
-[Source line 79](../../../extended/ext/form.lani#L79)
+[Source line 80](../../../extended/ext/form.lani#L80)
 
 ```lanius
 pub fn pairs(&self) -> Pairs
 ```
 
-### impl at line 81
+### impl at line 82
 
-[Source line 81](../../../extended/ext/form.lani#L81)
+[Source line 82](../../../extended/ext/form.lani#L82)
 
 ```lanius
 pub impl Pairs
@@ -469,15 +470,15 @@ pub impl Pairs
 
 #### method: borrow
 
-[Source line 82](../../../extended/ext/form.lani#L82)
+[Source line 83](../../../extended/ext/form.lani#L83)
 
 ```lanius
 pub fn borrow(&self) -> &Pairs
 ```
 
-### impl at line 84
+### impl at line 85
 
-[Source line 84](../../../extended/ext/form.lani#L84)
+[Source line 85](../../../extended/ext/form.lani#L85)
 
 ```lanius
 pub impl core::iter::Iterator<EncodedPair> for Pairs
@@ -485,15 +486,15 @@ pub impl core::iter::Iterator<EncodedPair> for Pairs
 
 #### method: next
 
-[Source line 85](../../../extended/ext/form.lani#L85)
+[Source line 86](../../../extended/ext/form.lani#L86)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<EncodedPair>
 ```
 
-### impl at line 262
+### impl at line 263
 
-[Source line 262](../../../extended/ext/form.lani#L262)
+[Source line 263](../../../extended/ext/form.lani#L263)
 
 ```lanius
 pub impl Encoding
@@ -501,7 +502,7 @@ pub impl Encoding
 
 #### method: borrow
 
-[Source line 263](../../../extended/ext/form.lani#L263)
+[Source line 264](../../../extended/ext/form.lani#L264)
 
 ```lanius
 pub fn borrow(&self) -> &Encoding
@@ -509,15 +510,15 @@ pub fn borrow(&self) -> &Encoding
 
 #### method: remaining
 
-[Source line 264](../../../extended/ext/form.lani#L264)
+[Source line 265](../../../extended/ext/form.lani#L265)
 
 ```lanius
 pub fn remaining(&self) -> u64
 ```
 
-### impl at line 266
+### impl at line 267
 
-[Source line 266](../../../extended/ext/form.lani#L266)
+[Source line 267](../../../extended/ext/form.lani#L267)
 
 ```lanius
 pub impl core::io::Read for Encoding
@@ -525,7 +526,7 @@ pub impl core::io::Read for Encoding
 
 #### method: read
 
-[Source line 269](../../../extended/ext/form.lani#L269)
+[Source line 270](../../../extended/ext/form.lani#L270)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>

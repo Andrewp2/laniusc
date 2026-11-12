@@ -1,6 +1,7 @@
 // Bounded split and replacement over the canonical ext::regex Search cursor.
 // Workspace ownership and empty-match progression stay in the regex engine.
 module ext::regex_text;
+import core::iter_state;
 import alloc::string;
 import alloc::vec;
 import core::option;
@@ -14,10 +15,10 @@ pub struct Usage { matches: i32, calls: i32, reserved_work: i64 }
 pub enum Error { InvalidLimits, Text(core::text::Error), Regex(ext::regex::Error), Template(i32), Capture(i32,i32), SearchCallLimit, SearchWorkLimit, OutputLimit, ReplacementLimit, AllocationFailed }
 // One active cursor borrows the Regex and input backing. Copies must not be
 // advanced independently. One lazy regex workspace is retained between calls.
-pub struct Split { search: Search, text: core::text::Text, field_start: i32, done: bool }
+pub struct Split { search: Search, text: core::text::Text, field_start: i32, completion: core::iter_state::Completion }
 // One owner of independent String bytes. Old copies are inactive aliases.
 pub struct Replacement { output: alloc::string::String, usage: Usage }
-struct Search { regex: &ext::regex::Regex, input: ext::regex::Input, cursor: core::option::Option<ext::regex::Search>, captures: bool, limits: SearchLimits, used: Usage, allowance: i64, text_length: i32, terminal: bool }
+struct Search { regex: &ext::regex::Regex, input: ext::regex::Input, cursor: core::option::Option<ext::regex::Search>, captures: bool, limits: SearchLimits, used: Usage, allowance: i64, text_length: i32, search_completion: core::iter_state::Completion }
 struct Token { start: i32, end: i32, group: i32, next: i32 }
 struct Output { value: alloc::string::String }
 impl Output {
@@ -47,7 +48,7 @@ fn checked(text: core::text::Text) -> core::result::Result<core::text::Text,Erro
 fn search(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLimits, captures: bool) -> core::result::Result<Search,Error> {
     let result = ext::regex::input(text);
     if (result.is_err()) { return core::result::Err(Error::Regex(result.unwrap_err())); }
-    return core::result::Ok(Search { regex: regex, input: result.unwrap(), cursor: core::option::None(), captures: captures, limits: limits, used: empty_usage(), allowance: regex.search_work_limit() as i64, text_length: text.length, terminal: false });
+    return core::result::Ok(Search { regex: regex, input: result.unwrap(), cursor: core::option::None(), captures: captures, limits: limits, used: empty_usage(), allowance: regex.search_work_limit() as i64, text_length: text.length, search_completion: core::iter_state::completion_start() });
 }
 fn make_cursor(regex: &ext::regex::Regex, input: ext::regex::Input, captures: bool) -> core::result::Result<ext::regex::Search,ext::regex::Error> {
     if (captures) { return regex.capture_iter(input); }
@@ -56,7 +57,7 @@ fn make_cursor(regex: &ext::regex::Regex, input: ext::regex::Input, captures: bo
 impl Search {
     fn borrow(&self) -> &Search { return self; }
     fn destroy(&self) {
-        self.terminal = true;
+        self.search_completion.finish();
         if (self.cursor.is_some()) {
             let cursor: ext::regex::Search = self.cursor.unwrap();
             self.cursor = core::option::None(); cursor.destroy();
@@ -68,7 +69,7 @@ impl Search {
         return cursor.span(group);
     }
     fn next(&self) -> core::result::Result<core::option::Option<ext::regex::Span>,Error> {
-        if (self.terminal) { self.destroy(); return core::result::Ok(core::option::None()); }
+        if (self.search_completion.is_done()) { self.destroy(); return core::result::Ok(core::option::None()); }
         if (self.used.matches == self.limits.max_matches) { self.destroy(); return core::result::Ok(core::option::None()); }
         if (self.used.calls == self.limits.max_calls) { self.destroy(); return core::result::Err(Error::SearchCallLimit); }
         if (self.allowance > self.limits.max_work - self.used.reserved_work) { self.destroy(); return core::result::Err(Error::SearchWorkLimit); }
@@ -94,7 +95,7 @@ impl Search {
         self.used.matches += 1;
         // The final empty match has no successor search. Keep its workspace
         // captures live until the consumer finishes expansion or destroys us.
-        if (span.start == span.end && span.end == self.text_length) { self.terminal = true; }
+        if (span.start == span.end && span.end == self.text_length) { self.search_completion.finish(); }
         return core::result::Ok(core::option::Some(span));
     }
 }
@@ -105,14 +106,14 @@ pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLi
     if (!valid_search(limits)) { return core::result::Err(Error::InvalidLimits); }
     let validated = checked(text); if (validated.is_err()) { return core::result::Err(validated.unwrap_err()); }
     let made = search(regex,validated.unwrap(),limits,false); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
-    return core::result::Ok(Split { search: made.unwrap(), text: validated.unwrap(), field_start: 0, done: false });
+    return core::result::Ok(Split { search: made.unwrap(), text: validated.unwrap(), field_start: 0, completion: core::iter_state::completion_start() });
 }
 pub impl Split {
     pub fn borrow(&self) -> &Split { return self; }
     pub fn usage(&self) -> Usage { return self.search.used; }
-    pub fn destroy(&self) { self.done = true; self.search.destroy(); }
+    pub fn destroy(&self) { self.completion.finish(); self.search.destroy(); }
     pub fn next(&self) -> core::result::Result<core::option::Option<core::text::Text>,Error> {
-        if (self.done) { return core::result::Ok(core::option::None()); }
+        if (self.completion.is_done()) { return core::result::Ok(core::option::None()); }
         let result = self.search.next();
         if (result.is_err()) { self.destroy(); return core::result::Err(result.unwrap_err()); }
         let found = result.unwrap();

@@ -20,16 +20,17 @@ Declaration counts: enum: 1; field: 29; function: 3; impl: 1; method: 20; struct
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/kv_log.lani#L7)
-- [core::io](../core/io.md) · [source](../../../extended/ext/kv_log.lani#L8)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/kv_log.lani#L9)
-- [core::option](../core/option.md) · [source](../../../extended/ext/kv_log.lani#L10)
-- [core::path](../core/path.md) · [source](../../../extended/ext/kv_log.lani#L11)
-- [core::result](../core/result.md) · [source](../../../extended/ext/kv_log.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/kv_log.lani#L13)
-- [std::file](../std/file.md) · [source](../../../extended/ext/kv_log.lani#L14)
-- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/kv_log.lani#L15)
-- [std::linux](../std/linux.md) · [source](../../../extended/ext/kv_log.lani#L16)
+- [core::lifecycle](../core/lifecycle.md) · [source](../../../extended/ext/kv_log.lani#L7)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/kv_log.lani#L8)
+- [core::io](../core/io.md) · [source](../../../extended/ext/kv_log.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/kv_log.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/kv_log.lani#L11)
+- [core::path](../core/path.md) · [source](../../../extended/ext/kv_log.lani#L12)
+- [core::result](../core/result.md) · [source](../../../extended/ext/kv_log.lani#L13)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/kv_log.lani#L14)
+- [std::file](../std/file.md) · [source](../../../extended/ext/kv_log.lani#L15)
+- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/kv_log.lani#L16)
+- [std::linux](../std/linux.md) · [source](../../../extended/ext/kv_log.lani#L17)
 
 ## Types, fields and variants
 
@@ -37,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 pub enum ErrorKind
@@ -45,7 +46,7 @@ pub enum ErrorKind
 
 #### variant: Io
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 Io
@@ -53,7 +54,7 @@ Io
 
 #### variant: NotKvLog
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 NotKvLog
@@ -61,7 +62,7 @@ NotKvLog
 
 #### variant: KeyLimit
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 KeyLimit
@@ -69,7 +70,7 @@ KeyLimit
 
 #### variant: ValueLimit
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 ValueLimit
@@ -77,7 +78,7 @@ ValueLimit
 
 #### variant: AllocationFailed
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 AllocationFailed
@@ -85,7 +86,7 @@ AllocationFailed
 
 #### variant: Closed
 
-[Source line 18](../../../extended/ext/kv_log.lani#L18)
+[Source line 19](../../../extended/ext/kv_log.lani#L19)
 
 ```lanius
 Closed
@@ -93,7 +94,7 @@ Closed
 
 ### struct: Error
 
-[Source line 20](../../../extended/ext/kv_log.lani#L20)
+[Source line 21](../../../extended/ext/kv_log.lani#L21)
 
 ```lanius
 pub struct Error
@@ -101,7 +102,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 20](../../../extended/ext/kv_log.lani#L20)
+[Source line 21](../../../extended/ext/kv_log.lani#L21)
 
 ```lanius
 kind: ErrorKind
@@ -109,7 +110,7 @@ kind: ErrorKind
 
 #### field: host
 
-[Source line 20](../../../extended/ext/kv_log.lani#L20)
+[Source line 21](../../../extended/ext/kv_log.lani#L21)
 
 ```lanius
 host: i32
@@ -117,7 +118,7 @@ host: i32
 
 ### struct: Options
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 pub struct Options
@@ -125,7 +126,7 @@ pub struct Options
 
 #### field: max_key
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 max_key: i32
@@ -133,7 +134,7 @@ max_key: i32
 
 #### field: max_value
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 max_value: i32
@@ -141,7 +142,7 @@ max_value: i32
 
 #### field: buffer
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 buffer: i32
@@ -149,7 +150,7 @@ buffer: i32
 
 #### field: sync_every
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 sync_every: bool
@@ -157,7 +158,7 @@ sync_every: bool
 
 #### field: auto_compact
 
-[Source line 24](../../../extended/ext/kv_log.lani#L24)
+[Source line 25](../../../extended/ext/kv_log.lani#L25)
 
 ```lanius
 auto_compact: i64
@@ -165,7 +166,7 @@ auto_compact: i64
 
 ### struct: Recovery
 
-[Source line 29](../../../extended/ext/kv_log.lani#L29)
+[Source line 30](../../../extended/ext/kv_log.lani#L30)
 
 ```lanius
 pub struct Recovery
@@ -173,7 +174,7 @@ pub struct Recovery
 
 #### field: records
 
-[Source line 29](../../../extended/ext/kv_log.lani#L29)
+[Source line 30](../../../extended/ext/kv_log.lani#L30)
 
 ```lanius
 records: i64
@@ -181,7 +182,7 @@ records: i64
 
 #### field: truncated
 
-[Source line 29](../../../extended/ext/kv_log.lani#L29)
+[Source line 30](../../../extended/ext/kv_log.lani#L30)
 
 ```lanius
 truncated: i64
@@ -189,7 +190,7 @@ truncated: i64
 
 ### struct: Store
 
-[Source line 140](../../../extended/ext/kv_log.lani#L140)
+[Source line 141](../../../extended/ext/kv_log.lani#L141)
 
 ```lanius
 pub struct Store
@@ -197,23 +198,23 @@ pub struct Store
 
 #### field: file
 
-[Source line 141](../../../extended/ext/kv_log.lani#L141)
+[Source line 142](../../../extended/ext/kv_log.lani#L142)
 
 ```lanius
 file: std::file::File
 ```
 
-#### field: open
+#### field: lifetime
 
-[Source line 141](../../../extended/ext/kv_log.lani#L141)
+[Source line 142](../../../extended/ext/kv_log.lani#L142)
 
 ```lanius
-open: bool
+lifetime: core::lifecycle::Lifetime
 ```
 
 #### field: path
 
-[Source line 141](../../../extended/ext/kv_log.lani#L141)
+[Source line 142](../../../extended/ext/kv_log.lani#L142)
 
 ```lanius
 path: alloc::vec::Vec<u8>
@@ -221,7 +222,7 @@ path: alloc::vec::Vec<u8>
 
 #### field: options
 
-[Source line 141](../../../extended/ext/kv_log.lani#L141)
+[Source line 142](../../../extended/ext/kv_log.lani#L142)
 
 ```lanius
 options: Options
@@ -229,7 +230,7 @@ options: Options
 
 #### field: entries
 
-[Source line 142](../../../extended/ext/kv_log.lani#L142)
+[Source line 143](../../../extended/ext/kv_log.lani#L143)
 
 ```lanius
 entries: alloc::vec::Vec<Entry>
@@ -237,7 +238,7 @@ entries: alloc::vec::Vec<Entry>
 
 #### field: keys
 
-[Source line 142](../../../extended/ext/kv_log.lani#L142)
+[Source line 143](../../../extended/ext/kv_log.lani#L143)
 
 ```lanius
 keys: alloc::vec::Vec<u8>
@@ -245,7 +246,7 @@ keys: alloc::vec::Vec<u8>
 
 #### field: slots
 
-[Source line 143](../../../extended/ext/kv_log.lani#L143)
+[Source line 144](../../../extended/ext/kv_log.lani#L144)
 
 ```lanius
 slots: alloc::vec::Vec<i32>
@@ -253,7 +254,7 @@ slots: alloc::vec::Vec<i32>
 
 #### field: slot_cap
 
-[Source line 143](../../../extended/ext/kv_log.lani#L143)
+[Source line 144](../../../extended/ext/kv_log.lani#L144)
 
 ```lanius
 slot_cap: i32
@@ -261,7 +262,7 @@ slot_cap: i32
 
 #### field: slot_used
 
-[Source line 143](../../../extended/ext/kv_log.lani#L143)
+[Source line 144](../../../extended/ext/kv_log.lani#L144)
 
 ```lanius
 slot_used: i32
@@ -269,7 +270,7 @@ slot_used: i32
 
 #### field: live
 
-[Source line 143](../../../extended/ext/kv_log.lani#L143)
+[Source line 144](../../../extended/ext/kv_log.lani#L144)
 
 ```lanius
 live: i32
@@ -277,7 +278,7 @@ live: i32
 
 #### field: pending
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 pending: alloc::vec::Vec<u8>
@@ -285,7 +286,7 @@ pending: alloc::vec::Vec<u8>
 
 #### field: pending_len
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 pending_len: i32
@@ -293,7 +294,7 @@ pending_len: i32
 
 #### field: keys_len
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 keys_len: i32
@@ -301,7 +302,7 @@ keys_len: i32
 
 #### field: map
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 map: ptr
@@ -309,7 +310,7 @@ map: ptr
 
 #### field: map_len
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 map_len: i64
@@ -317,7 +318,7 @@ map_len: i64
 
 #### field: flushed
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 flushed: i64
@@ -325,7 +326,7 @@ flushed: i64
 
 #### field: synced
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 synced: i64
@@ -333,7 +334,7 @@ synced: i64
 
 #### field: live_bytes
 
-[Source line 146](../../../extended/ext/kv_log.lani#L146)
+[Source line 147](../../../extended/ext/kv_log.lani#L147)
 
 ```lanius
 live_bytes: i64
@@ -341,7 +342,7 @@ live_bytes: i64
 
 #### field: table
 
-[Source line 147](../../../extended/ext/kv_log.lani#L147)
+[Source line 148](../../../extended/ext/kv_log.lani#L148)
 
 ```lanius
 table: alloc::vec::Vec<u32>
@@ -349,7 +350,7 @@ table: alloc::vec::Vec<u32>
 
 #### field: recovery
 
-[Source line 147](../../../extended/ext/kv_log.lani#L147)
+[Source line 148](../../../extended/ext/kv_log.lani#L148)
 
 ```lanius
 recovery: Recovery
@@ -359,7 +360,7 @@ recovery: Recovery
 
 ### function: default_options
 
-[Source line 25](../../../extended/ext/kv_log.lani#L25)
+[Source line 26](../../../extended/ext/kv_log.lani#L26)
 
 ```lanius
 pub fn default_options() -> Options
@@ -367,7 +368,7 @@ pub fn default_options() -> Options
 
 ### function: open
 
-[Source line 152](../../../extended/ext/kv_log.lani#L152)
+[Source line 153](../../../extended/ext/kv_log.lani#L153)
 
 ```lanius
 pub fn open(path: core::slice::View<u8>, options: Options) -> core::result::Result<Store, Error>
@@ -375,7 +376,7 @@ pub fn open(path: core::slice::View<u8>, options: Options) -> core::result::Resu
 
 ### function: kind_name
 
-[Source line 597](../../../extended/ext/kv_log.lani#L597)
+[Source line 598](../../../extended/ext/kv_log.lani#L598)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8>
@@ -383,9 +384,9 @@ pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 172
+### impl at line 173
 
-[Source line 172](../../../extended/ext/kv_log.lani#L172)
+[Source line 173](../../../extended/ext/kv_log.lani#L173)
 
 ```lanius
 pub impl Store
@@ -393,7 +394,7 @@ pub impl Store
 
 #### method: borrow
 
-[Source line 173](../../../extended/ext/kv_log.lani#L173)
+[Source line 174](../../../extended/ext/kv_log.lani#L174)
 
 ```lanius
 pub fn borrow(&self) -> &Store
@@ -401,7 +402,7 @@ pub fn borrow(&self) -> &Store
 
 #### method: len
 
-[Source line 174](../../../extended/ext/kv_log.lani#L174)
+[Source line 175](../../../extended/ext/kv_log.lani#L175)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -409,7 +410,7 @@ pub fn len(&self) -> i32
 
 #### method: recovery
 
-[Source line 175](../../../extended/ext/kv_log.lani#L175)
+[Source line 176](../../../extended/ext/kv_log.lani#L176)
 
 ```lanius
 pub fn recovery(&self) -> Recovery
@@ -417,7 +418,7 @@ pub fn recovery(&self) -> Recovery
 
 #### method: file_bytes
 
-[Source line 177](../../../extended/ext/kv_log.lani#L177)
+[Source line 178](../../../extended/ext/kv_log.lani#L178)
 
 ```lanius
 pub fn file_bytes(&self) -> i64
@@ -425,7 +426,7 @@ pub fn file_bytes(&self) -> i64
 
 #### method: synced_bytes
 
-[Source line 178](../../../extended/ext/kv_log.lani#L178)
+[Source line 179](../../../extended/ext/kv_log.lani#L179)
 
 ```lanius
 pub fn synced_bytes(&self) -> i64
@@ -433,7 +434,7 @@ pub fn synced_bytes(&self) -> i64
 
 #### method: live_bytes
 
-[Source line 179](../../../extended/ext/kv_log.lani#L179)
+[Source line 180](../../../extended/ext/kv_log.lani#L180)
 
 ```lanius
 pub fn live_bytes(&self) -> i64
@@ -441,7 +442,7 @@ pub fn live_bytes(&self) -> i64
 
 #### method: dead_bytes
 
-[Source line 180](../../../extended/ext/kv_log.lani#L180)
+[Source line 181](../../../extended/ext/kv_log.lani#L181)
 
 ```lanius
 pub fn dead_bytes(&self) -> i64
@@ -449,7 +450,7 @@ pub fn dead_bytes(&self) -> i64
 
 #### method: flush
 
-[Source line 398](../../../extended/ext/kv_log.lani#L398)
+[Source line 399](../../../extended/ext/kv_log.lani#L399)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, Error>
@@ -457,7 +458,7 @@ pub fn flush(&self) -> core::result::Result<i32, Error>
 
 #### method: sync
 
-[Source line 409](../../../extended/ext/kv_log.lani#L409)
+[Source line 410](../../../extended/ext/kv_log.lani#L410)
 
 ```lanius
 pub fn sync(&self) -> core::result::Result<i32, Error>
@@ -465,7 +466,7 @@ pub fn sync(&self) -> core::result::Result<i32, Error>
 
 #### method: put
 
-[Source line 424](../../../extended/ext/kv_log.lani#L424)
+[Source line 425](../../../extended/ext/kv_log.lani#L425)
 
 ```lanius
 pub fn put(&self, key: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -473,7 +474,7 @@ pub fn put(&self, key: core::slice::View<u8>, value: core::slice::View<u8>) -> c
 
 #### method: delete
 
-[Source line 438](../../../extended/ext/kv_log.lani#L438)
+[Source line 439](../../../extended/ext/kv_log.lani#L439)
 
 ```lanius
 pub fn delete(&self, key: core::slice::View<u8>) -> core::result::Result<bool, Error>
@@ -481,7 +482,7 @@ pub fn delete(&self, key: core::slice::View<u8>) -> core::result::Result<bool, E
 
 #### method: contains
 
-[Source line 448](../../../extended/ext/kv_log.lani#L448)
+[Source line 449](../../../extended/ext/kv_log.lani#L449)
 
 ```lanius
 pub fn contains(&self, key: core::slice::View<u8>) -> bool
@@ -489,7 +490,7 @@ pub fn contains(&self, key: core::slice::View<u8>) -> bool
 
 #### method: get
 
-[Source line 452](../../../extended/ext/kv_log.lani#L452)
+[Source line 453](../../../extended/ext/kv_log.lani#L453)
 
 ```lanius
 pub fn get(&self, key: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<bool, Error>
@@ -497,7 +498,7 @@ pub fn get(&self, key: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core
 
 #### method: first
 
-[Source line 482](../../../extended/ext/kv_log.lani#L482)
+[Source line 483](../../../extended/ext/kv_log.lani#L483)
 
 ```lanius
 pub fn first(&self) -> i32
@@ -505,7 +506,7 @@ pub fn first(&self) -> i32
 
 #### method: next
 
-[Source line 483](../../../extended/ext/kv_log.lani#L483)
+[Source line 484](../../../extended/ext/kv_log.lani#L484)
 
 ```lanius
 pub fn next(&self, position: i32) -> i32
@@ -513,7 +514,7 @@ pub fn next(&self, position: i32) -> i32
 
 #### method: key
 
-[Source line 488](../../../extended/ext/kv_log.lani#L488)
+[Source line 489](../../../extended/ext/kv_log.lani#L489)
 
 ```lanius
 pub fn key(&self, position: i32) -> core::slice::View<u8>
@@ -521,7 +522,7 @@ pub fn key(&self, position: i32) -> core::slice::View<u8>
 
 #### method: value
 
-[Source line 492](../../../extended/ext/kv_log.lani#L492)
+[Source line 493](../../../extended/ext/kv_log.lani#L493)
 
 ```lanius
 pub fn value(&self, position: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error>
@@ -529,7 +530,7 @@ pub fn value(&self, position: i32, out: &alloc::vec::Vec<u8>) -> core::result::R
 
 #### method: compact
 
-[Source line 500](../../../extended/ext/kv_log.lani#L500)
+[Source line 501](../../../extended/ext/kv_log.lani#L501)
 
 ```lanius
 pub fn compact(&self) -> core::result::Result<i32, Error>
@@ -537,7 +538,7 @@ pub fn compact(&self) -> core::result::Result<i32, Error>
 
 #### method: close
 
-[Source line 586](../../../extended/ext/kv_log.lani#L586)
+[Source line 587](../../../extended/ext/kv_log.lani#L587)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32, Error>
@@ -545,7 +546,7 @@ pub fn close(&self) -> core::result::Result<i32, Error>
 
 #### method: destroy
 
-[Source line 594](../../../extended/ext/kv_log.lani#L594)
+[Source line 595](../../../extended/ext/kv_log.lani#L595)
 
 ```lanius
 pub fn destroy(&self)

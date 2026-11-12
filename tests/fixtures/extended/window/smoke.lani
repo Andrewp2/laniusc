@@ -1,0 +1,16 @@
+module app::main;
+import core::text;
+import core::slice;
+import core::result;
+import ext::window;
+fn main() -> i32 {
+    let context=ext::window::init().unwrap();
+    let window=context.create(core::text::from_str("Window test"),64,48,true).unwrap();
+    let pixels:[u32;3072]=[0x003060c0;3072];
+    assert(window.present(core::slice::view(pixels,3072).unwrap()).unwrap()==3072);
+    assert(context.close().is_err());
+    let size=window.size().unwrap(); assert(size.width==64 && size.height==48);
+    assert(window.close().unwrap() && !window.close().unwrap());
+    assert(context.close().unwrap() && !context.close().unwrap());
+    return 0;
+}

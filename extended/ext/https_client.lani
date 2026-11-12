@@ -1,6 +1,8 @@
 // Resumable verified TLS transport for the canonical HTTP Protocol owner.
 // One active manual owner. The caller supplies readiness and SIGPIPE policy.
 module ext::https_client;
+import core::iter_state;
+import core::io_state;
 import alloc::vec;
 import core::clone;
 import core::io;
@@ -21,16 +23,122 @@ pub enum Cause { Http(ext::http_client::Failure), Tls(ext::openssl_tls::Error), 
 pub struct Failure { cause: Cause, stage: Stage, stats: ext::http_client::Stats, tls: TlsStats, cleanup: core::option::Option<core::io::Error> }
 // Diagnostic records contain no active HTTP, TLS, allocation or descriptor owner.
 pub impl core::clone::Destroy<Failure> for Failure { pub fn destroy_value(owned: Failure) {} }
-enum Phase { ConnectStart, WaitConnect, ConnectError, ConnectPeer, Attach, Handshake, Protocol, Notify, Close }
+
 enum Action { Local, Transfer, Finish }
+pub enum PhaseEvent { Connecting, Connected, Signaled, Checked, Attached, Resume, Shutdown, Notified }
+pub machine Phase on PhaseEvent {
+    start ConnectStart;
+
+    state ConnectStart {
+        PhaseEvent::Connecting -> goto WaitConnect,
+        PhaseEvent::Connected -> goto Attach,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state WaitConnect {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> goto Attach,
+        PhaseEvent::Signaled -> goto ConnectError,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state ConnectError {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> goto ConnectPeer,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state ConnectPeer {
+        PhaseEvent::Connecting -> goto WaitConnect,
+        PhaseEvent::Connected -> goto Attach,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state Attach {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> goto Handshake,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state Handshake {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+
+    state Protocol {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> stay,
+        PhaseEvent::Shutdown -> goto Notify,
+        PhaseEvent::Notified -> goto Close,
+    }
+
+    state Notify {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> goto Close,
+    }
+
+    state Close {
+        PhaseEvent::Connecting -> stay,
+        PhaseEvent::Connected -> stay,
+        PhaseEvent::Signaled -> stay,
+        PhaseEvent::Checked -> stay,
+        PhaseEvent::Attached -> stay,
+        PhaseEvent::Resume -> goto Protocol,
+        PhaseEvent::Shutdown -> stay,
+        PhaseEvent::Notified -> stay,
+    }
+}
+
+fn connected_phase() -> Phase { let phase = phase_start(); phase.step(PhaseEvent::Connected); return phase; }
+
 pub struct Exchange {
     protocol: ext::http_client::Protocol, socket: std::socket::Socket,
     context: core::option::Option<ext::openssl_tls::Context>, session: core::option::Option<ext::openssl_tls::Session>,
     identity: alloc::vec::Vec<u8>, dns: bool, endpoint: core::net::SocketAddr, options: Options,
     tls: TlsStats, stage: Stage, phase: Phase, action: Action, current: ext::http_client::Status,
-    read_blocked: bool, write_blocked: bool, send_turn: bool, wait_blocked: bool, wait_need: ext::openssl_tls::Need,
+    read_readiness: core::io_state::Readiness, write_readiness: core::io_state::Readiness, turn: core::io_state::DuplexTurn, wait_readiness: core::io_state::Readiness, wait_need: ext::openssl_tls::Need,
     read_amount: i32, write_amount: i32, maximum_io: i32, version: i32,
-    stopped_upload: bool, notified: bool, peer_closed: bool, failure: core::option::Option<Failure>
+    stopped_upload_completion: core::iter_state::Completion, notified_completion: core::iter_state::Completion, peer_closed_completion: core::iter_state::Completion, failure: core::option::Option<Failure>
 }
 pub fn default_options() -> Options { return Options { tls_calls: 1048576 }; }
 fn zero_tls() -> TlsStats { return TlsStats { calls: 0, handshakes: 0, reads: 0, writes: 0, shutdowns: 0 }; }
@@ -106,9 +214,9 @@ pub fn begin_with_context_until(prepared: &ext::http_client::Prepared, endpoint:
     if (opened.is_err()) { return core::result::Err(setup_failure(protocol.borrow(),core::option::Some(held),name.borrow(),Stage::Open,Cause::Io(opened.unwrap_err()))); }
     let owner: Exchange = Exchange { protocol: protocol, socket: opened.unwrap(), context: core::option::Some(held), session: core::option::None(), identity: name,
         dns: match(identity) { ext::openssl_tls::Identity::Dns(value) -> true, _ -> false }, endpoint: endpoint, options: options,
-        tls: zero_tls(), stage: Stage::Open, phase: Phase::ConnectStart, action: Action::Local, current: ext::http_client::Status::Active,
-        read_blocked: false, write_blocked: false, send_turn: false, wait_blocked: false, wait_need: ext::openssl_tls::Need::None,
-        read_amount: 0, write_amount: 0, maximum_io: context.io_bytes(), version: 0, stopped_upload: false, notified: false, peer_closed: false, failure: core::option::None() };
+        tls: zero_tls(), stage: Stage::Open, phase: phase_start(), action: Action::Local, current: ext::http_client::Status::Active,
+        read_readiness: core::io_state::readiness_start(), write_readiness: core::io_state::readiness_start(), turn: core::io_state::duplex_turn_start(), wait_readiness: core::io_state::readiness_start(), wait_need: ext::openssl_tls::Need::None,
+        read_amount: 0, write_amount: 0, maximum_io: context.io_bytes(), version: 0, stopped_upload_completion: core::iter_state::completion_start(), notified_completion: core::iter_state::completion_start(), peer_closed_completion: core::iter_state::completion_start(), failure: core::option::None() };
     let after = checked(owner.borrow()); if (after.is_err()) { return core::result::Err(stop(owner.borrow(),after.unwrap_err())); }
     return core::result::Ok(owner);
 }
@@ -152,11 +260,11 @@ pub fn adopt_connected_with_context_until(prepared: &ext::http_client::Prepared,
     if (peer.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Io(peer.unwrap_err()))); }
     return core::result::Ok(Exchange { protocol:protocol,socket:owned,context:core::option::Some(held),session:core::option::None(),identity:name,
         dns:match(identity) { ext::openssl_tls::Identity::Dns(value) -> true, _ -> false },endpoint:peer.unwrap(),options:options,
-        tls:zero_tls(),stage:Stage::Attach,phase:Phase::Attach,action:Action::Local,current:ext::http_client::Status::Active,
-        read_blocked:false,write_blocked:false,send_turn:false,wait_blocked:false,wait_need:ext::openssl_tls::Need::None,
-        read_amount:0,write_amount:0,maximum_io:context.io_bytes(),version:0,stopped_upload:false,notified:false,peer_closed:false,failure:core::option::None() });
+        tls:zero_tls(),stage:Stage::Attach,phase: connected_phase(),action:Action::Local,current:ext::http_client::Status::Active,
+        read_readiness: core::io_state::readiness_start(),write_readiness: core::io_state::readiness_start(),turn: core::io_state::duplex_turn_start(),wait_readiness: core::io_state::readiness_start(),wait_need:ext::openssl_tls::Need::None,
+        read_amount:0,write_amount:0,maximum_io:context.io_bytes(),version:0,stopped_upload_completion: core::iter_state::completion_start(),notified_completion: core::iter_state::completion_start(),peer_closed_completion: core::iter_state::completion_start(),failure:core::option::None() });
 }
-fn upload(exchange: &Exchange) -> bool { let stats: ext::http_client::Stats = exchange.protocol.stats(); return !exchange.notified && !stats.upload_stopped && stats.request_sent < stats.request_bytes; }
+fn upload(exchange: &Exchange) -> bool { let stats: ext::http_client::Stats = exchange.protocol.stats(); return !exchange.notified_completion.is_done() && !stats.upload_stopped && stats.request_sent < stats.request_bytes; }
 fn pending_write(exchange: &Exchange) -> i32 { if (exchange.session.is_none()) { return 0; } return exchange.session.unwrap().pending_write_bytes(); }
 fn write_need(exchange: &Exchange) -> ext::openssl_tls::Need { if (exchange.session.is_none()) { return ext::openssl_tls::Need::None; } return exchange.session.unwrap().write_need(); }
 fn read_need(exchange: &Exchange) -> ext::openssl_tls::Need { if (exchange.session.is_none()) { return ext::openssl_tls::Need::None; } return exchange.session.unwrap().read_need(); }
@@ -165,13 +273,13 @@ fn take_session(exchange: &Exchange) -> ext::openssl_tls::Session { let owner: e
 fn native_write(session: &ext::openssl_tls::Session, bytes: core::option::Option<core::slice::View<u8>>, retry: bool) -> core::result::Result<ext::openssl_tls::Write,ext::openssl_tls::Error> {
     if (retry) { return session.retry_write(); } return session.write(bytes.unwrap());
 }
-fn early_notify(exchange: &Exchange) -> bool { return exchange.stopped_upload && exchange.version == 772 && !exchange.notified && pending_write(exchange) == 0 && (pending_read(exchange) == 0 || reads(read_need(exchange))); }
+fn early_notify(exchange: &Exchange) -> bool { return exchange.stopped_upload_completion.is_done() && exchange.version == 772 && !exchange.notified_completion.is_done() && pending_write(exchange) == 0 && (pending_read(exchange) == 0 || reads(read_need(exchange))); }
 fn begin_notify(exchange: &Exchange) -> core::result::Result<bool,Cause> {
     if (pending_write(exchange) != 0) { return core::result::Err(Cause::InvalidEngine); }
     let session: ext::openssl_tls::Session = take_session(exchange);
     let quiet: core::result::Result<bool,ext::openssl_tls::Error> = session.quiesce_read(); exchange.session = core::option::Some(session);
     if (quiet.is_err()) { return core::result::Err(Cause::Tls(quiet.unwrap_err())); }
-    exchange.read_amount = 0; exchange.wait_need = ext::openssl_tls::Need::None; exchange.wait_blocked = false; exchange.phase = Phase::Notify; return core::result::Ok(true);
+    exchange.read_amount = 0; exchange.wait_need = ext::openssl_tls::Need::None; exchange.wait_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.phase.step(PhaseEvent::Shutdown); return core::result::Ok(true);
 }
 fn tls_read(exchange: &Exchange) -> core::result::Result<bool,Cause> {
     let transfer: bool = match(exchange.action) { Action::Transfer -> true, _ -> false };
@@ -194,17 +302,17 @@ fn tls_read(exchange: &Exchange) -> core::result::Result<bool,Cause> {
         if (received == 0 || received > amount || !transfer) { return core::result::Err(Cause::Http(exchange.protocol.failure(ext::http_client::Cause::BoundaryMismatch))); }
         let fed: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.feed(core::slice::view<u8>(scratch,received).unwrap());
         if (fed.is_err()) { return core::result::Err(Cause::Http(fed.unwrap_err())); }
-        exchange.action = Action::Local; exchange.read_blocked = false; exchange.write_blocked = false; exchange.send_turn = true; return core::result::Ok(true);
+        exchange.action = Action::Local; exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.write_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.turn.step(core::io_state::TransferEvent::Read); return core::result::Ok(true);
     }
     let closed: bool = match(event) { ext::openssl_tls::Read::Closed -> true, _ -> false };
     if (closed) {
-        exchange.read_amount = 0; exchange.peer_closed = true;
+        exchange.read_amount = 0; exchange.peer_closed_completion = core::iter_state::completed_if( true);
         if (pending_write(exchange) != 0) { return core::result::Err(Cause::PeerClosed); }
         if (!transfer) { return core::result::Err(Cause::InvalidEngine); }
         let fed: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.feed_eof();
         if (fed.is_err()) { return core::result::Err(Cause::Http(fed.unwrap_err())); } exchange.action = Action::Local; return core::result::Ok(true);
     }
-    exchange.read_blocked = true; exchange.send_turn = true; return checked(exchange);
+    exchange.read_readiness.step(core::io_state::ReadinessEvent::WouldBlock); exchange.turn.step(core::io_state::TransferEvent::Read); return checked(exchange);
 }
 fn tls_write(exchange: &Exchange) -> core::result::Result<bool,Cause> {
     let retry: bool = pending_write(exchange) != 0;
@@ -228,58 +336,58 @@ fn tls_write(exchange: &Exchange) -> core::result::Result<bool,Cause> {
         exchange.write_amount = 0;
         let committed: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.commit_send(count);
         if (committed.is_err()) { return core::result::Err(Cause::Http(committed.unwrap_err())); }
-        exchange.write_blocked = false; exchange.read_blocked = false; exchange.send_turn = false; return core::result::Ok(true);
+        exchange.write_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.turn.step(core::io_state::TransferEvent::Written); return core::result::Ok(true);
     }
-    exchange.write_blocked = true; exchange.send_turn = false;
-    if (reads(write_need(exchange))) { exchange.read_blocked = false; } return checked(exchange);
+    exchange.write_readiness.step(core::io_state::ReadinessEvent::WouldBlock); exchange.turn.step(core::io_state::TransferEvent::Written);
+    if (reads(write_need(exchange))) { exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); } return checked(exchange);
 }
 fn transfer(exchange: &Exchange) -> core::result::Result<bool,Cause> {
     if (exchange.tls.calls == exchange.options.tls_calls) { return core::result::Err(Cause::TlsLimit); }
     // WANT_WRITE from a staged write is exclusive. Never read or replace it.
     if (pending_write(exchange) != 0 && writes(write_need(exchange))) {
-        if (exchange.write_blocked) { return core::result::Ok(true); } return tls_write(exchange);
+        if (exchange.write_readiness.blocked()) { return core::result::Ok(true); } return tls_write(exchange);
     }
     if (early_notify(exchange)) { return begin_notify(exchange); }
-    let can_write: bool = !exchange.write_blocked && (pending_write(exchange) != 0 || upload(exchange));
-    let can_read: bool = !exchange.peer_closed && !exchange.read_blocked;
-    if (can_read && (!can_write || !exchange.send_turn)) { return tls_read(exchange); }
+    let can_write: bool = !exchange.write_readiness.blocked() && (pending_write(exchange) != 0 || upload(exchange));
+    let can_read: bool = !exchange.peer_closed_completion.is_done() && !exchange.read_readiness.blocked();
+    if (can_read && (!can_write || !exchange.turn.send())) { return tls_read(exchange); }
     if (can_write) { return tls_write(exchange); }
     if (can_read) { return tls_read(exchange); } return core::result::Ok(true);
 }
 fn wake(exchange: &Exchange, ready: ext::http_client::Readiness) {
     let all: bool = ready.error || ready.hangup;
-    if (all || (ready.readable && !writes(exchange.wait_need)) || (ready.writable && writes(exchange.wait_need))) { exchange.wait_blocked = false; }
-    if (all || (ready.readable && !writes(read_need(exchange))) || (ready.writable && writes(read_need(exchange)))) { exchange.read_blocked = false; }
+    if (all || (ready.readable && !writes(exchange.wait_need)) || (ready.writable && writes(exchange.wait_need))) { exchange.wait_readiness.step(core::io_state::ReadinessEvent::Ready); }
+    if (all || (ready.readable && !writes(read_need(exchange))) || (ready.writable && writes(read_need(exchange)))) { exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready); }
     let pending: bool = pending_write(exchange) != 0;
-    if (all || (ready.readable && pending && reads(write_need(exchange))) || (ready.writable && (!pending || writes(write_need(exchange))))) { exchange.write_blocked = false; }
+    if (all || (ready.readable && pending && reads(write_need(exchange))) || (ready.writable && (!pending || writes(write_need(exchange))))) { exchange.write_readiness.step(core::io_state::ReadinessEvent::Ready); }
 }
 fn advance(exchange: &Exchange, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,Cause> {
-    let connected_start: bool = match(exchange.phase) { Phase::ConnectStart -> true, _ -> false };
+    let connected_start: bool = match(exchange.phase.state()) { PhaseState::ConnectStart -> true, _ -> false };
     if (connected_start) {
         exchange.stage = Stage::Connect; let before = before_io(exchange,ext::http_client::Stage::Connect); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         let result: core::result::Result<std::socket::Connection,core::io::Error> = exchange.socket.connect(exchange.endpoint);
         if (result.is_err()) { return core::result::Err(Cause::Io(result.unwrap_err())); }
-        exchange.phase = Phase::WaitConnect; if (match(result.unwrap()) { std::socket::Connection::Connected -> true, _ -> false }) { exchange.phase = Phase::Attach; }
+        exchange.phase.step(PhaseEvent::Connecting); if (match(result.unwrap()) { std::socket::Connection::Connected -> true, _ -> false }) { exchange.phase.step(PhaseEvent::Connected); }
         let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::WaitConnect -> true, _ -> false }) {
-        if (ready.writable || ready.error || ready.hangup) { exchange.phase = Phase::ConnectError; } return core::result::Ok(core::option::None());
+    if (match(exchange.phase.state()) { PhaseState::WaitConnect -> true, _ -> false }) {
+        if (ready.writable || ready.error || ready.hangup) { exchange.phase.step(PhaseEvent::Signaled); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::ConnectError -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::ConnectError -> true, _ -> false }) {
         exchange.stage = Stage::Connect; let before = before_io(exchange,ext::http_client::Stage::Connect); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         let result: core::result::Result<core::option::Option<i32>,core::io::Error> = exchange.socket.take_error();
         if (result.is_err()) { return core::result::Err(Cause::Io(result.unwrap_err())); }
         if (result.unwrap().is_some()) { return core::result::Err(Cause::Io(core::io::Error::Host(result.unwrap().unwrap()))); }
-        exchange.phase = Phase::ConnectPeer; let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
+        exchange.phase.step(PhaseEvent::Checked); let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::ConnectPeer -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::ConnectPeer -> true, _ -> false }) {
         exchange.stage = Stage::Connect; let before = before_io(exchange,ext::http_client::Stage::Connect); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         let result: core::result::Result<core::net::SocketAddr,core::io::Error> = exchange.socket.peer_addr();
-        if (result.is_err()) { let error: core::io::Error = result.unwrap_err(); let unconnected: bool = match(error) { core::io::Error::Host(code) -> code == 107, _ -> false }; if (!unconnected) { return core::result::Err(Cause::Io(error)); } exchange.phase = Phase::WaitConnect; }
-        else { exchange.phase = Phase::Attach; }
+        if (result.is_err()) { let error: core::io::Error = result.unwrap_err(); let unconnected: bool = match(error) { core::io::Error::Host(code) -> code == 107, _ -> false }; if (!unconnected) { return core::result::Err(Cause::Io(error)); } exchange.phase.step(PhaseEvent::Connecting); }
+        else { exchange.phase.step(PhaseEvent::Connected); }
         let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::Attach -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::Attach -> true, _ -> false }) {
         exchange.stage = Stage::Attach;
         let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Ip(exchange.identity.as_view());
         if (exchange.dns) { identity = ext::openssl_tls::Identity::Dns(exchange.identity.as_view()); }
@@ -287,51 +395,51 @@ fn advance(exchange: &Exchange, ready: ext::http_client::Readiness) -> core::res
         let result: core::result::Result<ext::openssl_tls::Session,ext::openssl_tls::Error> = context.session(exchange.socket.raw_handle().unwrap(),identity);
         if (result.is_err()) { return core::result::Err(Cause::Tls(result.unwrap_err())); }
         exchange.session = core::option::Some(result.unwrap()); release_context(exchange); exchange.identity.destroy();
-        exchange.phase = Phase::Handshake; let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
+        exchange.phase.step(PhaseEvent::Attached); let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::Handshake -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::Handshake -> true, _ -> false }) {
         exchange.stage = Stage::Handshake;
         if (exchange.tls.calls == exchange.options.tls_calls) { return core::result::Err(Cause::TlsLimit); }
-        if (exchange.wait_blocked) { return core::result::Ok(core::option::None()); }
+        if (exchange.wait_readiness.blocked()) { return core::result::Ok(core::option::None()); }
         let before = before_tls(exchange,ext::http_client::Stage::Connect,1); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         let session: ext::openssl_tls::Session = take_session(exchange);
         let result: core::result::Result<ext::openssl_tls::Handshake,ext::openssl_tls::Error> = session.handshake(); exchange.session = core::option::Some(session);
         if (result.is_err()) { return core::result::Err(Cause::Tls(result.unwrap_err())); }
         let done: bool = match(result.unwrap()) { ext::openssl_tls::Handshake::Complete -> true, _ -> false };
-        if (done) { exchange.version = session.negotiated_version(); exchange.phase = Phase::Protocol; exchange.wait_need = ext::openssl_tls::Need::None; exchange.wait_blocked = false; }
-        else { exchange.wait_need = ext::openssl_tls::Need::Write; if (match(result.unwrap()) { ext::openssl_tls::Handshake::WantRead -> true, _ -> false }) { exchange.wait_need = ext::openssl_tls::Need::Read; } exchange.wait_blocked = true; }
+        if (done) { exchange.version = session.negotiated_version(); exchange.phase.step(PhaseEvent::Resume); exchange.wait_need = ext::openssl_tls::Need::None; exchange.wait_readiness.step(core::io_state::ReadinessEvent::Ready); }
+        else { exchange.wait_need = ext::openssl_tls::Need::Write; if (match(result.unwrap()) { ext::openssl_tls::Handshake::WantRead -> true, _ -> false }) { exchange.wait_need = ext::openssl_tls::Need::Read; } exchange.wait_readiness.step(core::io_state::ReadinessEvent::WouldBlock); }
         let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::Notify -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::Notify -> true, _ -> false }) {
         exchange.stage = Stage::Shutdown;
         if (exchange.tls.calls == exchange.options.tls_calls) { return core::result::Err(Cause::TlsLimit); }
-        if (exchange.wait_blocked) { return core::result::Ok(core::option::None()); }
+        if (exchange.wait_readiness.blocked()) { return core::result::Ok(core::option::None()); }
         let before = before_tls(exchange,ext::http_client::Stage::Shutdown,4); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         let session: ext::openssl_tls::Session = take_session(exchange);
         let result: core::result::Result<ext::openssl_tls::Shutdown,ext::openssl_tls::Error> = session.shutdown_write(); exchange.session = core::option::Some(session);
         if (result.is_err()) { return core::result::Err(Cause::Tls(result.unwrap_err())); }
         let done: bool = match(result.unwrap()) { ext::openssl_tls::Shutdown::Sent -> true, ext::openssl_tls::Shutdown::Complete -> true, _ -> false };
         if (done) {
-            exchange.notified = true; exchange.wait_blocked = false; exchange.wait_need = ext::openssl_tls::Need::None;
+            exchange.notified_completion = core::iter_state::completed_if( true); exchange.wait_readiness.step(core::io_state::ReadinessEvent::Ready); exchange.wait_need = ext::openssl_tls::Need::None;
             let recorded: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.record_write_shutdown(); if (recorded.is_err()) { return core::result::Err(Cause::Http(recorded.unwrap_err())); }
-            if (match(exchange.action) { Action::Finish -> true, _ -> false }) { exchange.phase = Phase::Close; }
+            if (match(exchange.action) { Action::Finish -> true, _ -> false }) { exchange.phase.step(PhaseEvent::Notified); }
             else {
-                exchange.phase = Phase::Protocol; exchange.read_blocked = false;
+                exchange.phase.step(PhaseEvent::Resume); exchange.read_readiness.step(core::io_state::ReadinessEvent::Ready);
                 if (match(result.unwrap()) { ext::openssl_tls::Shutdown::Complete -> true, _ -> false }) {
-                    exchange.peer_closed = true; let eof: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.feed_eof(); if (eof.is_err()) { return core::result::Err(Cause::Http(eof.unwrap_err())); } exchange.action = Action::Local;
+                    exchange.peer_closed_completion = core::iter_state::completed_if( true); let eof: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.feed_eof(); if (eof.is_err()) { return core::result::Err(Cause::Http(eof.unwrap_err())); } exchange.action = Action::Local;
                 }
             }
         } else {
-            exchange.wait_need = ext::openssl_tls::Need::Write; if (match(result.unwrap()) { ext::openssl_tls::Shutdown::WantRead -> true, _ -> false }) { exchange.wait_need = ext::openssl_tls::Need::Read; } exchange.wait_blocked = true;
+            exchange.wait_need = ext::openssl_tls::Need::Write; if (match(result.unwrap()) { ext::openssl_tls::Shutdown::WantRead -> true, _ -> false }) { exchange.wait_need = ext::openssl_tls::Need::Read; } exchange.wait_readiness.step(core::io_state::ReadinessEvent::WouldBlock);
         }
         let after = checked(exchange); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(core::option::None());
     }
-    if (match(exchange.phase) { Phase::Close -> true, _ -> false }) {
+    if (match(exchange.phase.state()) { PhaseState::Close -> true, _ -> false }) {
         exchange.stage = Stage::Close; let before = before_io(exchange,ext::http_client::Stage::Close); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
         release_session(exchange); release_context(exchange); exchange.identity.destroy();
         let closed: core::result::Result<i32,core::io::Error> = exchange.socket.close(); if (closed.is_err()) { return core::result::Err(Cause::Io(closed.unwrap_err())); }
         let finished: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.transport_finished(); if (finished.is_err()) { return core::result::Err(Cause::Http(finished.unwrap_err())); }
-        exchange.stage = Stage::Publish; exchange.phase = Phase::Protocol; exchange.action = Action::Local; return core::result::Ok(core::option::None());
+        exchange.stage = Stage::Publish; exchange.phase.step(PhaseEvent::Resume); exchange.action = Action::Local; return core::result::Ok(core::option::None());
     }
     exchange.stage = Stage::Transfer;
     let progress: core::result::Result<ext::http_client::Need,ext::http_client::Failure> = exchange.protocol.advance();
@@ -341,13 +449,13 @@ fn advance(exchange: &Exchange, ready: ext::http_client::Readiness) -> core::res
     if (complete.is_some()) { exchange.current = ext::http_client::Status::Complete; exchange.stage = Stage::Publish; return core::result::Ok(complete); }
     if (match(event) { ext::http_client::Need::Local -> true, _ -> false }) { exchange.action = Action::Local; return core::result::Ok(core::option::None()); }
     if (match(event) { ext::http_client::Need::StopUpload -> true, _ -> false }) {
-        exchange.stopped_upload = true; let accepted: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.acknowledge_stop(); if (accepted.is_err()) { return core::result::Err(Cause::Http(accepted.unwrap_err())); }
+        exchange.stopped_upload_completion = core::iter_state::completed_if( true); let accepted: core::result::Result<bool,ext::http_client::Failure> = exchange.protocol.acknowledge_stop(); if (accepted.is_err()) { return core::result::Err(Cause::Http(accepted.unwrap_err())); }
         exchange.action = Action::Local; return core::result::Ok(core::option::None());
     }
     if (match(event) { ext::http_client::Need::FinishTransport -> true, _ -> false }) {
         exchange.action = Action::Finish;
-        if (pending_write(exchange) != 0) { if (exchange.tls.calls == exchange.options.tls_calls) { return core::result::Err(Cause::TlsLimit); } if (!exchange.write_blocked) { let sent = tls_write(exchange); if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); } } return core::result::Ok(core::option::None()); }
-        if (exchange.notified) { exchange.phase = Phase::Close; return core::result::Ok(core::option::None()); }
+        if (pending_write(exchange) != 0) { if (exchange.tls.calls == exchange.options.tls_calls) { return core::result::Err(Cause::TlsLimit); } if (!exchange.write_readiness.blocked()) { let sent = tls_write(exchange); if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); } } return core::result::Ok(core::option::None()); }
+        if (exchange.notified_completion.is_done()) { exchange.phase.step(PhaseEvent::Notified); return core::result::Ok(core::option::None()); }
         let notified = begin_notify(exchange); if (notified.is_err()) { return core::result::Err(notified.unwrap_err()); } return core::result::Ok(core::option::None());
     }
     exchange.action = Action::Transfer;
@@ -356,28 +464,28 @@ fn advance(exchange: &Exchange, ready: ext::http_client::Readiness) -> core::res
 fn driver_interest(exchange: &Exchange) -> ext::http_client::Interest {
     let result: ext::http_client::Interest = ext::http_client::Interest { readable: false, writable: false, immediate: false };
     if (!running(exchange.current)) { return result; }
-    if (match(exchange.phase) { Phase::WaitConnect -> true, _ -> false }) { result.writable = true; return result; }
-    if (match(exchange.phase) { Phase::Handshake -> true, Phase::Notify -> true, _ -> false }) {
-        result.immediate = !exchange.wait_blocked || exchange.tls.calls == exchange.options.tls_calls;
+    if (match(exchange.phase.state()) { PhaseState::WaitConnect -> true, _ -> false }) { result.writable = true; return result; }
+    if (match(exchange.phase.state()) { PhaseState::Handshake -> true, PhaseState::Notify -> true, _ -> false }) {
+        result.immediate = !exchange.wait_readiness.blocked() || exchange.tls.calls == exchange.options.tls_calls;
         result.writable = writes(exchange.wait_need); result.readable = !result.writable; return result;
     }
-    let protocol: bool = match(exchange.phase) { Phase::Protocol -> true, _ -> false };
+    let protocol: bool = match(exchange.phase.state()) { PhaseState::Protocol -> true, _ -> false };
     if (!protocol) { result.immediate = true; return result; }
     if (match(exchange.action) { Action::Local -> true, _ -> false }) { result.immediate = true; return result; }
     if (exchange.tls.calls == exchange.options.tls_calls) { result.immediate = true; return result; }
     if (match(exchange.action) { Action::Finish -> true, _ -> false }) {
         if (pending_write(exchange) == 0) { result.immediate = true; return result; }
-        result.immediate = !exchange.write_blocked; result.readable = reads(write_need(exchange)); result.writable = !result.readable; return result;
+        result.immediate = !exchange.write_readiness.blocked(); result.readable = reads(write_need(exchange)); result.writable = !result.readable; return result;
     }
-    if (pending_write(exchange) != 0 && writes(write_need(exchange))) { result.writable = true; result.immediate = !exchange.write_blocked; return result; }
+    if (pending_write(exchange) != 0 && writes(write_need(exchange))) { result.writable = true; result.immediate = !exchange.write_readiness.blocked(); return result; }
     if (early_notify(exchange)) { result.immediate = true; return result; }
-    if (!exchange.peer_closed) {
+    if (!exchange.peer_closed_completion.is_done()) {
         if (writes(read_need(exchange))) { result.writable = true; } else { result.readable = true; }
-        if (!exchange.read_blocked) { result.immediate = true; }
+        if (!exchange.read_readiness.blocked()) { result.immediate = true; }
     }
     if (pending_write(exchange) != 0 || upload(exchange)) {
         if (pending_write(exchange) != 0 && reads(write_need(exchange))) { result.readable = true; } else { result.writable = true; }
-        if (!exchange.write_blocked) { result.immediate = true; }
+        if (!exchange.write_readiness.blocked()) { result.immediate = true; }
     }
     return result;
 }

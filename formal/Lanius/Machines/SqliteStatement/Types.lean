@@ -7,14 +7,6 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
-inductive State where
-  | ready : State
-  | row : State
-  | done : State
-  | failed : State
-  | finalized : State
-  deriving DecidableEq, Repr
-
 inductive Event where
   | bind : Event
   | clearBindings : Event
@@ -31,10 +23,18 @@ inductive Event where
   | finalize : Event
   deriving DecidableEq, Repr
 
-/-- The state after an event, and whether the operation may go ahead. -/
-structure Move where
-  next : State
-  allowed : Bool
+/-- The states of Statement. -/
+inductive StatementState where
+  | ready : StatementState
+  | row : StatementState
+  | done : StatementState
+  | failed : StatementState
+  | finalized : StatementState
+  deriving DecidableEq, Repr
+
+structure Statement where
+  /-- The current state (laniusc's `state()`). -/
+  state : StatementState
   deriving DecidableEq, Repr
 
 end Lanius.Mini

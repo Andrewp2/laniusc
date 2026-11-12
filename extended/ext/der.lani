@@ -1,11 +1,38 @@
 // Borrowed X.690 DER framing and explicitly requested primitive validation.
 // No recursive/schema validation, allocation, SET ordering or owner retention.
 module ext::der;
+import core::iter_state;
 import core::calendar;
 import core::option;
 import core::result;
 import core::slice;
 import core::text;
+
+pub enum ArcPhaseEvent { CombinedRead, SecondRead }
+pub machine ArcPhase on ArcPhaseEvent {
+    start Combined;
+
+    state Combined {
+        ArcPhaseEvent::CombinedRead -> goto Second,
+        ArcPhaseEvent::SecondRead -> stay,
+    }
+
+    state Second {
+        ArcPhaseEvent::CombinedRead -> stay,
+        ArcPhaseEvent::SecondRead -> goto Rest,
+    }
+
+    final state Rest {
+        ArcPhaseEvent::CombinedRead -> stay,
+        ArcPhaseEvent::SecondRead -> stay,
+    }
+}
+pub impl ArcPhase {
+    pub fn is_combined(&self) -> bool { return match (self.state()) { ArcPhaseState::Combined -> true, _ -> false }; }
+    pub fn is_second(&self) -> bool { return match (self.state()) { ArcPhaseState::Second -> true, _ -> false }; }
+    pub fn is_rest(&self) -> bool { return match (self.state()) { ArcPhaseState::Rest -> true, _ -> false }; }
+}
+
 
 pub enum Class { Universal, Application, Context, Private }
 pub struct Tag { class: Class, constructed: bool, number: u32 }
@@ -22,7 +49,7 @@ pub struct Element { tag: Tag, encoded: core::slice::View<u8>, content: core::sl
 pub struct Reader { input: core::slice::View<u8>, position: i32 }
 pub struct BitString { bytes: core::slice::View<u8>, unused_bits: u8 }
 pub struct Oid { bytes: core::slice::View<u8> }
-pub struct OidArcs { input: core::slice::View<u8>, position: i32, first: bool, pending: bool, second: u64 }
+pub struct OidArcs { input: core::slice::View<u8>, position: i32, phase: ArcPhase, second: u64 }
 pub struct X509Time { year: i32, month: i32, day: i32, hour: i32, minute: i32, second: i32 }
 
 fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
@@ -56,13 +83,13 @@ fn parse_at(input: core::slice::View<u8>, at: i32) -> core::result::Result<Eleme
     let first: u8 = byte(input, cursor); cursor += 1;
     let number: u32 = (first & 31) as u32;
     if (number == 31) {
-        number = 0; let initial: bool = true;
+        number = 0; let initial_phase = core::iter_state::finished_completion();
         while (true) {
             if (cursor == input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd, cursor)); }
             let value: u8 = byte(input, cursor); let digit: u32 = (value & 127) as u32;
-            if (initial && digit == 0) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
+            if (initial_phase.is_done() && digit == 0) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
             if (number > (4294967295 - digit) / 128) { return core::result::Err(error(ErrorKind::TagOverflow, cursor)); }
-            number = number * 128 + digit; cursor += 1; initial = false;
+            number = number * 128 + digit; cursor += 1; initial_phase = core::iter_state::completion_start();
             if (value < 128) { break; }
         }
         if (number < 31) { return core::result::Err(error(ErrorKind::NonCanonical, at)); }
@@ -134,13 +161,13 @@ fn integer(content: core::slice::View<u8>) -> core::result::Result<core::slice::
 fn oid_bytes(content: core::slice::View<u8>) -> core::result::Result<i32, Error> {
     if (!valid(content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
     if (content.length == 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
-    let at: i32 = 0; let initial: bool = true;
+    let at: i32 = 0; let initial_phase = core::iter_state::finished_completion();
     while (at < content.length) {
         let value: u8 = byte(content, at);
-        if (initial && value == 128) { return core::result::Err(error(ErrorKind::NonCanonical, at)); }
-        initial = value < 128; at += 1;
+        if (initial_phase.is_done() && value == 128) { return core::result::Err(error(ErrorKind::NonCanonical, at)); }
+        initial_phase = core::iter_state::completed_if(value < 128); at += 1;
     }
-    if (!initial) { return core::result::Err(error(ErrorKind::UnexpectedEnd, content.length)); }
+    if (!initial_phase.is_done()) { return core::result::Err(error(ErrorKind::UnexpectedEnd, content.length)); }
     return core::result::Ok(content.length);
 }
 fn digits(content: core::slice::View<u8>, at: i32, count: i32) -> i32 {
@@ -266,7 +293,7 @@ pub impl Oid {
     pub fn arcs(&self) -> core::result::Result<OidArcs, Error> {
         let checked: core::result::Result<i32, Error> = oid_bytes(self.bytes);
         if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-        return core::result::Ok(OidArcs { input: self.bytes, position: 0, first: true, pending: false, second: 0 });
+        return core::result::Ok(OidArcs { input: self.bytes, position: 0, phase: arc_phase_start(), second: 0 });
     }
 }
 pub impl OidArcs {
@@ -274,7 +301,7 @@ pub impl OidArcs {
     pub fn position(&self) -> i32 { return self.position; }
     pub fn next(&self) -> core::result::Result<core::option::Option<u64>, Error> {
         if (!valid(self.input) || self.position < 0 || self.position > self.input.length) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
-        if (self.pending) { self.pending = false; return core::result::Ok(core::option::Some(self.second)); }
+        if (self.phase.is_second()) { self.phase.step(ArcPhaseEvent::SecondRead); return core::result::Ok(core::option::Some(self.second)); }
         if (self.position == self.input.length) { return core::result::Ok(core::option::None()); }
         let at: i32 = self.position; let cursor: i32 = at; let low: u64 = 0; let high: u64 = 0;
         while (true) {
@@ -283,15 +310,15 @@ pub impl OidArcs {
             if (cursor == at && value == 128) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
             if (high != 0) { return core::result::Err(error(ErrorKind::ArcOverflow, cursor)); }
             high = low >> 57; low = (low << 7) | ((value & 127) as u64);
-            if (high > 1 || (!self.first && high != 0) || (high == 1 && low > 79)) { return core::result::Err(error(ErrorKind::ArcOverflow, cursor)); }
+            if (high > 1 || (!self.phase.is_combined() && high != 0) || (high == 1 && low > 79)) { return core::result::Err(error(ErrorKind::ArcOverflow, cursor)); }
             cursor += 1; if (value < 128) { break; }
         }
         self.position = cursor;
-        if (self.first) {
+        if (self.phase.is_combined()) {
             let root: u64 = 2; let second: u64 = 0;
             if (high == 1) { second = 18446744073709551536 + low; }
             else { if (low < 40) { root = 0; second = low; } else { if (low < 80) { root = 1; second = low - 40; } else { second = low - 80; } } }
-            self.first = false; self.second = second; self.pending = true;
+            self.second = second; self.phase.step(ArcPhaseEvent::CombinedRead);
             return core::result::Ok(core::option::Some(root));
         }
         return core::result::Ok(core::option::Some(low));

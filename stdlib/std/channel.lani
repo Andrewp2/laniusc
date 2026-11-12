@@ -19,6 +19,7 @@
 // Linux x86_64; link with --native-link --native-library atomic.
 // See docs/stdlib-concurrency.md for endpoint counting and disconnection.
 module std::channel;
+import std::sync_state;
 import alloc::allocator;
 import core::layout;
 import core::mem;
@@ -534,8 +535,9 @@ pub fn mpsc<T>(senders: i32) -> core::result::Result<Mpsc<T>, Error> {
     let word: usize = 0;
     while (word < MPSC_BLOCK) { set(block + word, 0); word += 8; }
     set(stub, 0);
+    let endpoint = std::sync_state::endpoint_start();
     pset(block, stub); pset(block + 64, stub);
-    set(block + 192, senders as u64); set(block + 200, 1); set(block + 208, node_bytes as u64);
+    set(block + 192, senders as u64); set(block + 200, endpoint.word()); set(block + 208, node_bytes as u64);
     std::atomic::at64(block + 192).fetch_add(0, std::atomic::Ordering::SeqCst);
     return core::result::Ok(Mpsc { block: block });
 }
@@ -546,10 +548,10 @@ pub impl<T> Mpsc<T> {
     pub fn borrow(&self) -> &Mpsc<T> { return self; }
     pub fn handle(&self) -> ptr { return self.block; }
     pub fn sender_count(&self) -> i32 { return cell(self.block + 192).load(std::atomic::Load::Acquire) as i32; }
-    pub fn receiver_open(&self) -> bool { return cell(self.block + 200).load(std::atomic::Load::Acquire) != 0; }
+    pub fn receiver_open(&self) -> bool { return std::sync_state::observed_endpoint(cell(self.block + 200).load(std::atomic::Load::Acquire)).is_open(); }
     // No queue-capacity wait; allocation and notification may call the host.
     pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>> {
-        if (cell(self.block + 200).load(std::atomic::Load::Acquire) == 0) { return core::result::Err(SendError::Disconnected(value)); }
+        if (!self.receiver_open()) { return core::result::Err(SendError::Disconnected(value)); }
         let node: ptr = alloc::allocator::alloc(get(self.block + 208) as usize, 8);
         // Before tail publication, the caller retains the rejected value and
         // the existing queue is unchanged, so allocation failure is recoverable.
@@ -635,8 +637,9 @@ pub impl<T> Mpsc<T> {
     pub fn close_sender(&self) -> core::result::Result<i32, Error> { return close_count(self.block + 192, self.block + 128); }
     // After this, sends return Disconnected(value). Queued messages stay until destroy.
     pub fn close_receiver(&self) -> core::result::Result<i32, Error> {
-        let open: u64 = cell(self.block + 200).swap(0, std::atomic::Ordering::SeqCst);
-        if (open == 0) { return core::result::Err(Error::NoEndpoint); }
+        let endpoint = std::sync_state::endpoint_start(); endpoint.step(std::sync_state::EndpointEvent::Close);
+        let previous = std::sync_state::observed_endpoint(cell(self.block + 200).swap(endpoint.word(), std::atomic::Ordering::SeqCst));
+        if (!previous.is_open()) { return core::result::Err(Error::NoEndpoint); }
         return core::result::Ok(0);
     }
     // Free every node and the block. Messages still queued are dropped.

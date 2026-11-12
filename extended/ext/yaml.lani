@@ -2,12 +2,26 @@
 // flow collections, plain, quoted and block scalars, anchors and aliases,
 // comments and multiple documents. See docs/extended-yaml.md.
 module ext::yaml;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::result;
 import core::slice;
 import core::text;
 import ext::json_tree;
+
+pub enum KeyContextEvent { Allowed, Forbidden }
+pub machine KeyContext on KeyContextEvent {
+    start Allowed;
+    state Allowed { KeyContextEvent::Allowed -> stay, KeyContextEvent::Forbidden -> goto Forbidden, }
+    state Forbidden { KeyContextEvent::Allowed -> goto Allowed, KeyContextEvent::Forbidden -> stay, }
+}
+pub impl KeyContext {
+    pub fn allowed(&self) -> bool { return match (self.state()) { KeyContextState::Allowed -> true, _ -> false }; }
+    pub fn restrict(&self, allowed: bool) { if (allowed) { self.step(KeyContextEvent::Allowed); } else { self.step(KeyContextEvent::Forbidden); } }
+}
+
 
 pub enum ErrorKind {
     Syntax, InvalidCharacter, InvalidEscape, Unsupported, UnknownAlias, RecursiveAlias, AliasLimit,
@@ -82,11 +96,11 @@ const KEY_WORDS: i32 = 7;
 
 struct Reader {
     src: [u8], base: i32, at: i32, end: i32, line: i32, column: i32, index: i32, has_cr: bool,
-    flow: i32, indent: i32, indents: alloc::vec::Vec<i32>, allow: bool, done: bool,
+    flow: i32, indent: i32, indents: alloc::vec::Vec<i32>, key_context: KeyContext, done_completion: core::iter_state::Completion,
     key_store: alloc::vec::Vec<i32>, keys: [i32], key_levels: i32,
     token_store: alloc::vec::Vec<i32>, toks: [i32], count: i32, token_cap: i32,
     value_store: alloc::vec::Vec<u8>, vals: [u8], used: i32, value_cap: i32,
-    failed: bool, error: Error,
+    health: core::lifecycle::Health, error: Error,
     pos: i32, tree: ext::json_tree::Tree, depth: i32, limits: Limits,
     anchors: alloc::vec::Vec<i32>, open: alloc::vec::Vec<i32>, alias_nodes: i64,
     numbers: alloc::vec::Vec<u8>, digits: alloc::vec::Vec<u8>, key_stack: alloc::vec::Vec<u8>,
@@ -95,7 +109,7 @@ struct Reader {
 impl Reader {
     fn borrow(&self) -> &Reader { return self; }
     fn fail_at(&self, kind: ErrorKind, line: i32, column: i32, offset: i32) -> bool {
-        if (!self.failed) { self.failed = true; self.error = Error { kind: kind, line: line, column: column, offset: offset }; }
+        if (!self.health.is_failed()) { self.health.fail(); self.error = Error { kind: kind, line: line, column: column, offset: offset }; }
         return false;
     }
     fn fail(&self, kind: ErrorKind) -> bool { return self.fail_at(kind, self.line, self.column, self.at - self.base); }
@@ -219,7 +233,7 @@ impl Reader {
         return self.fail_at(ErrorKind::Syntax, keys[base + 4], keys[base + 5], keys[base + 6]);
     }
     fn save_key(&self) -> bool {
-        if (!self.allow) { return true; }
+        if (!self.key_context.allowed()) { return true; }
         if (!self.remove_key()) { return false; }
         let base: i32 = self.key_base(self.flow);
         if (base < 0) { return false; }
@@ -272,7 +286,7 @@ impl Reader {
 
     fn scan(&self) -> bool {
         if (self.peek(0) == 239 && self.peek(1) == 187 && self.peek(2) == 191) { self.forward(); }
-        while (!self.done) { if (!self.fetch()) { return false; } }
+        while (!self.done_completion.is_done()) { if (!self.fetch()) { return false; } }
         return true;
     }
     // Skips spaces, tabs, comments and line breaks. Tabs may separate tokens
@@ -282,7 +296,7 @@ impl Reader {
             let leading: bool = self.line_head(); let tab: bool = false;
             while (self.peek(0) == 32 || self.peek(0) == 9) { if (self.peek(0) == 9) { tab = true; } self.forward(); }
             if (self.peek(0) == 35) { self.skip_line(); }
-            if (self.line_break()) { if (self.flow == 0) { self.allow = true; } continue; }
+            if (self.line_break()) { if (self.flow == 0) { self.key_context.step(KeyContextEvent::Allowed); } continue; }
             if (leading && tab && self.flow == 0 && self.at < self.end) { return self.fail(ErrorKind::Syntax); }
             return true;
         }
@@ -295,14 +309,14 @@ impl Reader {
         if (ch == 37 && self.column == 0) { return self.directive(); }
         if ((ch == 45 || ch == 46) && self.separator()) {
             if (!self.unwind(-1) || !self.remove_key()) { return false; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             let kind: i32 = T_DOC_END; if (ch == 45) { kind = T_DOC_START; }
             if (!self.emit_here(kind)) { return false; }
             self.advance(3); return true;
         }
         if (ch == 91 || ch == 123) {
             if (!self.save_key()) { return false; }
-            self.flow += 1; self.allow = true;
+            self.flow += 1; self.key_context.step(KeyContextEvent::Allowed);
             let kind: i32 = T_FLOW_SEQ; if (ch == 123) { kind = T_FLOW_MAP; }
             if (!self.emit_here(kind)) { return false; }
             self.forward(); return true;
@@ -310,13 +324,13 @@ impl Reader {
         if (ch == 93 || ch == 125) {
             if (!self.remove_key()) { return false; }
             if (self.flow > 0) { self.flow -= 1; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             let kind: i32 = T_FLOW_SEQ_END; if (ch == 125) { kind = T_FLOW_MAP_END; }
             if (!self.emit_here(kind)) { return false; }
             self.forward(); return true;
         }
         if (ch == 44) {
-            self.allow = true;
+            self.key_context.step(KeyContextEvent::Allowed);
             if (!self.remove_key() || !self.emit_here(T_FLOW_ENTRY)) { return false; }
             self.forward(); return true;
         }
@@ -325,27 +339,27 @@ impl Reader {
         if (ch == 58 && (self.flow > 0 || blank(next))) { return self.value(); }
         if (ch == 42 || ch == 38) {
             if (!self.save_key()) { return false; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             return self.anchor(ch == 42);
         }
         if (ch == 33) {
             if (!self.save_key()) { return false; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             return self.tag();
         }
         if ((ch == 124 || ch == 62) && self.flow == 0) {
-            self.allow = true;
+            self.key_context.step(KeyContextEvent::Allowed);
             if (!self.remove_key()) { return false; }
             return self.block_scalar(ch == 62);
         }
         if (ch == 39 || ch == 34) {
             if (!self.save_key()) { return false; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             return self.flow_scalar(ch == 34);
         }
         if (self.plain_start(ch, next)) {
             if (!self.save_key()) { return false; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             return self.plain();
         }
         return self.fail(ErrorKind::Syntax);
@@ -358,28 +372,28 @@ impl Reader {
     }
     fn stream_end(&self) -> bool {
         if (!self.unwind(-1) || !self.remove_key()) { return false; }
-        self.allow = false;
+        self.key_context.step(KeyContextEvent::Forbidden);
         let level: i32 = 0; while (level < self.key_levels) { self.keys[level * KEY_WORDS] = 0; level += 1; }
-        self.done = true;
+        self.done_completion.finish();
         return self.emit_here(T_STREAM_END);
     }
     fn block_entry(&self) -> bool {
         if (self.flow == 0) {
-            if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+            if (!self.key_context.allowed()) { return self.fail(ErrorKind::Syntax); }
             let grew: i32 = self.add_indent(self.column);
             if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_SEQ))) { return false; }
         }
-        self.allow = true;
+        self.key_context.step(KeyContextEvent::Allowed);
         if (!self.remove_key() || !self.emit_here(T_ENTRY)) { return false; }
         self.forward(); return true;
     }
     fn explicit_key(&self) -> bool {
         if (self.flow == 0) {
-            if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+            if (!self.key_context.allowed()) { return self.fail(ErrorKind::Syntax); }
             let grew: i32 = self.add_indent(self.column);
             if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_MAP))) { return false; }
         }
-        self.allow = self.flow == 0;
+        self.key_context.restrict(self.flow == 0);
         if (!self.remove_key() || !self.emit_here(T_KEY)) { return false; }
         self.forward(); return true;
     }
@@ -394,14 +408,14 @@ impl Reader {
                 let grew: i32 = self.add_indent(column);
                 if (grew < 0 || (grew == 1 && !self.insert_token(number, T_BLOCK_MAP, line, column, offset))) { return false; }
             }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
         } else {
             if (self.flow == 0) {
-                if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+                if (!self.key_context.allowed()) { return self.fail(ErrorKind::Syntax); }
                 let grew: i32 = self.add_indent(self.column);
                 if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_MAP))) { return false; }
             }
-            self.allow = self.flow == 0;
+            self.key_context.restrict(self.flow == 0);
             if (!self.remove_key()) { return false; }
         }
         if (!self.emit_here(T_VALUE)) { return false; }
@@ -410,7 +424,7 @@ impl Reader {
     // %YAML 1.x is accepted, %TAG is unsupported, other directives are ignored.
     fn directive(&self) -> bool {
         if (!self.unwind(-1) || !self.remove_key()) { return false; }
-        self.allow = false;
+        self.key_context.step(KeyContextEvent::Forbidden);
         let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
         self.forward();
         let start: i32 = self.at;
@@ -470,7 +484,7 @@ impl Reader {
                 length += 1;
             }
             if (length == 0) { break; }
-            self.allow = false;
+            self.key_context.step(KeyContextEvent::Forbidden);
             if (!self.put_source(self.at, length)) { return false; }
             self.advance(length); content = self.used;
             let spaces: i32 = self.plain_spaces(indent);
@@ -494,7 +508,7 @@ impl Reader {
         while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
         let spaces: i32 = self.at - start;
         if (self.peek(0) == 10 || self.peek(0) == 13) {
-            self.line_break(); self.allow = true;
+            self.line_break(); self.key_context.step(KeyContextEvent::Allowed);
             if (self.separator()) { return 0; }
             let breaks: i32 = 0;
             while (self.peek(0) == 32 || self.peek(0) == 9 || self.peek(0) == 10 || self.peek(0) == 13) {
@@ -979,15 +993,15 @@ impl Reader {
     }
     fn flow_sequence(&self, sequence: i32) -> bool {
         self.pos += 1;
-        let first: bool = true;
+        let first_phase = core::iter_state::finished_completion();
         while (true) {
             if (self.kind() == T_FLOW_SEQ_END) { self.pos += 1; return true; }
-            if (!first) {
+            if (!first_phase.is_done()) {
                 if (self.kind() != T_FLOW_ENTRY) { self.token_fail(ErrorKind::Syntax); return false; }
                 self.pos += 1;
                 if (self.kind() == T_FLOW_SEQ_END) { self.pos += 1; return true; }
             }
-            first = false;
+            first_phase = core::iter_state::completion_start();
             if (self.kind() == T_KEY) {
                 // A single-pair mapping.
                 if (self.depth >= self.limits.max_depth) { self.token_fail(ErrorKind::DepthLimit); return false; }
@@ -1009,15 +1023,15 @@ impl Reader {
     }
     fn flow_mapping(&self, map: i32) -> bool {
         self.pos += 1;
-        let first: bool = true;
+        let first_phase = core::iter_state::finished_completion();
         while (true) {
             if (self.kind() == T_FLOW_MAP_END) { self.pos += 1; return true; }
-            if (!first) {
+            if (!first_phase.is_done()) {
                 if (self.kind() != T_FLOW_ENTRY) { self.token_fail(ErrorKind::Syntax); return false; }
                 self.pos += 1;
                 if (self.kind() == T_FLOW_MAP_END) { self.pos += 1; return true; }
             }
-            first = false;
+            first_phase = core::iter_state::completion_start();
             if (self.kind() == T_KEY) {
                 self.pos += 1;
                 if (!self.entry(map, false, true, self.at_any(T_VALUE, T_FLOW_ENTRY, T_FLOW_MAP_END), T_FLOW_ENTRY, T_FLOW_MAP_END, T_FLOW_MAP_END)) { return false; }
@@ -1079,11 +1093,11 @@ fn read(source: [u8], start: i32, count: i32, limits: Limits, all: bool) -> core
     let token_store: alloc::vec::Vec<i32> = alloc::vec::new(); let value_store: alloc::vec::Vec<u8> = alloc::vec::new();
     let reader: Reader = Reader {
         src: source, base: start, at: start, end: end, line: 0, column: 0, index: 0, has_cr: core::slice::memchr_from(source, start, end, 13) >= 0,
-        flow: 0, indent: -1, indents: indents, allow: true, done: false,
+        flow: 0, indent: -1, indents: indents, key_context: key_context_start(), done_completion: core::iter_state::completion_start(),
         key_store: key_store, keys: key_store.as_slice(), key_levels: 0,
         token_store: token_store, toks: token_store.as_slice(), count: 0, token_cap: 0,
         value_store: value_store, vals: value_store.as_slice(), used: 0, value_cap: 0,
-        failed: false, error: Error { kind: ErrorKind::Syntax, line: 0, column: 0, offset: 0 },
+        health: core::lifecycle::health_start(), error: Error { kind: ErrorKind::Syntax, line: 0, column: 0, offset: 0 },
         pos: 0, tree: ext::json_tree::new_tree(tree_limits), depth: 0, limits: limits,
         anchors: alloc::vec::new(), open: alloc::vec::new(), alias_nodes: 0,
         numbers: alloc::vec::new(), digits: alloc::vec::new(), key_stack: alloc::vec::new(),

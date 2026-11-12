@@ -25,9 +25,10 @@ Declaration counts: field: 17; function: 4; impl: 8; method: 25; struct: 3.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](io.md) · [source](../../../stdlib/core/buffered.lani#L5)
-- [core::result](result.md) · [source](../../../stdlib/core/buffered.lani#L6)
-- [core::slice](slice.md) · [source](../../../stdlib/core/buffered.lani#L7)
+- [core::lifecycle](lifecycle.md) · [source](../../../stdlib/core/buffered.lani#L5)
+- [core::io](io.md) · [source](../../../stdlib/core/buffered.lani#L6)
+- [core::result](result.md) · [source](../../../stdlib/core/buffered.lani#L7)
+- [core::slice](slice.md) · [source](../../../stdlib/core/buffered.lani#L8)
 
 ## Types, fields and variants
 
@@ -35,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Parts
 
-[Source line 13](../../../stdlib/core/buffered.lani#L13)
+[Source line 14](../../../stdlib/core/buffered.lani#L14)
 
 ```lanius
 pub struct Parts<I>
@@ -43,7 +44,7 @@ pub struct Parts<I>
 
 #### field: inner
 
-[Source line 14](../../../stdlib/core/buffered.lani#L14)
+[Source line 15](../../../stdlib/core/buffered.lani#L15)
 
 ```lanius
 inner: &I
@@ -51,7 +52,7 @@ inner: &I
 
 #### field: buffer
 
-[Source line 15](../../../stdlib/core/buffered.lani#L15)
+[Source line 16](../../../stdlib/core/buffered.lani#L16)
 
 ```lanius
 buffer: core::slice::View<u8>
@@ -59,7 +60,7 @@ buffer: core::slice::View<u8>
 
 #### field: start
 
-[Source line 16](../../../stdlib/core/buffered.lani#L16)
+[Source line 17](../../../stdlib/core/buffered.lani#L17)
 
 ```lanius
 start: i32
@@ -67,7 +68,7 @@ start: i32
 
 #### field: length
 
-[Source line 17](../../../stdlib/core/buffered.lani#L17)
+[Source line 18](../../../stdlib/core/buffered.lani#L18)
 
 ```lanius
 length: i32
@@ -75,7 +76,7 @@ length: i32
 
 #### field: faulted
 
-[Source line 18](../../../stdlib/core/buffered.lani#L18)
+[Source line 19](../../../stdlib/core/buffered.lani#L19)
 
 ```lanius
 faulted: bool
@@ -83,7 +84,7 @@ faulted: bool
 
 ### struct: Reader
 
-[Source line 21](../../../stdlib/core/buffered.lani#L21)
+[Source line 22](../../../stdlib/core/buffered.lani#L22)
 
 ```lanius
 pub struct Reader<R>
@@ -91,7 +92,7 @@ pub struct Reader<R>
 
 #### field: inner
 
-[Source line 22](../../../stdlib/core/buffered.lani#L22)
+[Source line 23](../../../stdlib/core/buffered.lani#L23)
 
 ```lanius
 inner: &R
@@ -99,7 +100,7 @@ inner: &R
 
 #### field: buffer
 
-[Source line 23](../../../stdlib/core/buffered.lani#L23)
+[Source line 24](../../../stdlib/core/buffered.lani#L24)
 
 ```lanius
 buffer: core::slice::View<u8>
@@ -107,7 +108,7 @@ buffer: core::slice::View<u8>
 
 #### field: start
 
-[Source line 24](../../../stdlib/core/buffered.lani#L24)
+[Source line 25](../../../stdlib/core/buffered.lani#L25)
 
 ```lanius
 start: i32
@@ -115,31 +116,31 @@ start: i32
 
 #### field: end
 
-[Source line 25](../../../stdlib/core/buffered.lani#L25)
+[Source line 26](../../../stdlib/core/buffered.lani#L26)
 
 ```lanius
 end: i32
 ```
 
-#### field: active
-
-[Source line 26](../../../stdlib/core/buffered.lani#L26)
-
-```lanius
-active: bool
-```
-
-#### field: faulted
+#### field: lifetime
 
 [Source line 27](../../../stdlib/core/buffered.lani#L27)
 
 ```lanius
-faulted: bool
+lifetime: core::lifecycle::Lifetime
+```
+
+#### field: health
+
+[Source line 28](../../../stdlib/core/buffered.lani#L28)
+
+```lanius
+health: core::lifecycle::Health
 ```
 
 ### struct: Writer
 
-[Source line 30](../../../stdlib/core/buffered.lani#L30)
+[Source line 31](../../../stdlib/core/buffered.lani#L31)
 
 ```lanius
 pub struct Writer<W>
@@ -147,7 +148,7 @@ pub struct Writer<W>
 
 #### field: inner
 
-[Source line 31](../../../stdlib/core/buffered.lani#L31)
+[Source line 32](../../../stdlib/core/buffered.lani#L32)
 
 ```lanius
 inner: &W
@@ -155,7 +156,7 @@ inner: &W
 
 #### field: buffer
 
-[Source line 32](../../../stdlib/core/buffered.lani#L32)
+[Source line 33](../../../stdlib/core/buffered.lani#L33)
 
 ```lanius
 buffer: core::slice::View<u8>
@@ -163,7 +164,7 @@ buffer: core::slice::View<u8>
 
 #### field: start
 
-[Source line 33](../../../stdlib/core/buffered.lani#L33)
+[Source line 34](../../../stdlib/core/buffered.lani#L34)
 
 ```lanius
 start: i32
@@ -171,33 +172,33 @@ start: i32
 
 #### field: end
 
-[Source line 34](../../../stdlib/core/buffered.lani#L34)
+[Source line 35](../../../stdlib/core/buffered.lani#L35)
 
 ```lanius
 end: i32
 ```
 
-#### field: active
-
-[Source line 35](../../../stdlib/core/buffered.lani#L35)
-
-```lanius
-active: bool
-```
-
-#### field: faulted
+#### field: lifetime
 
 [Source line 36](../../../stdlib/core/buffered.lani#L36)
 
 ```lanius
-faulted: bool
+lifetime: core::lifecycle::Lifetime
+```
+
+#### field: health
+
+[Source line 37](../../../stdlib/core/buffered.lani#L37)
+
+```lanius
+health: core::lifecycle::Health
 ```
 
 ## Free functions and extern declarations
 
 ### function: reader
 
-[Source line 52](../../../stdlib/core/buffered.lani#L52)
+[Source line 53](../../../stdlib/core/buffered.lani#L53)
 
 ```lanius
 pub fn reader<R>(inner:&R, buffer:core::slice::View<u8>) -> core::result::Result<Reader<R>,core::io::Error>
@@ -208,7 +209,7 @@ R:Read. Borrow a positive View without allocation or initialization. Invalid met
 
 ### function: writer
 
-[Source line 57](../../../stdlib/core/buffered.lani#L57)
+[Source line 58](../../../stdlib/core/buffered.lani#L58)
 
 ```lanius
 pub fn writer<W>(inner:&W, buffer:core::slice::View<u8>) -> core::result::Result<Writer<W>,core::io::Error>
@@ -219,7 +220,7 @@ W:Write. Borrow a positive View without allocation or initialization. Keep scrat
 
 ### function: reader_from_parts
 
-[Source line 64](../../../stdlib/core/buffered.lani#L64)
+[Source line 65](../../../stdlib/core/buffered.lani#L65)
 
 ```lanius
 pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,core::io::Error>
@@ -230,7 +231,7 @@ R:Read. Consume valid Parts after positive-capacity and retained-interval admiss
 
 ### function: writer_from_parts
 
-[Source line 71](../../../stdlib/core/buffered.lani#L71)
+[Source line 72](../../../stdlib/core/buffered.lani#L72)
 
 ```lanius
 pub fn writer_from_parts<W>(parts:&Parts<W>) -> core::result::Result<Writer<W>,core::io::Error>
@@ -241,9 +242,9 @@ W:Write. Consume valid Parts after positive-capacity and retained-interval admis
 
 ## Implementation blocks and public methods
 
-### impl at line 79
+### impl at line 80
 
-[Source line 79](../../../stdlib/core/buffered.lani#L79)
+[Source line 80](../../../stdlib/core/buffered.lani#L80)
 
 ```lanius
 pub impl<I> Parts<I>
@@ -251,7 +252,7 @@ pub impl<I> Parts<I>
 
 #### method: borrow
 
-[Source line 80](../../../stdlib/core/buffered.lani#L80)
+[Source line 81](../../../stdlib/core/buffered.lani#L81)
 
 ```lanius
 pub fn borrow(&self) -> &Parts<I>
@@ -259,7 +260,7 @@ pub fn borrow(&self) -> &Parts<I>
 
 #### method: bytes
 
-[Source line 82](../../../stdlib/core/buffered.lani#L82)
+[Source line 83](../../../stdlib/core/buffered.lani#L83)
 
 ```lanius
 pub fn bytes(&self) -> core::slice::View<u8>
@@ -267,15 +268,15 @@ pub fn bytes(&self) -> core::slice::View<u8>
 
 #### method: discard
 
-[Source line 87](../../../stdlib/core/buffered.lani#L87)
+[Source line 88](../../../stdlib/core/buffered.lani#L88)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 94
+### impl at line 95
 
-[Source line 94](../../../stdlib/core/buffered.lani#L94)
+[Source line 95](../../../stdlib/core/buffered.lani#L95)
 
 ```lanius
 pub impl<R> Reader<R>
@@ -283,7 +284,7 @@ pub impl<R> Reader<R>
 
 #### method: borrow
 
-[Source line 95](../../../stdlib/core/buffered.lani#L95)
+[Source line 96](../../../stdlib/core/buffered.lani#L96)
 
 ```lanius
 pub fn borrow(&self) -> &Reader<R>
@@ -291,7 +292,7 @@ pub fn borrow(&self) -> &Reader<R>
 
 #### method: is_active
 
-[Source line 96](../../../stdlib/core/buffered.lani#L96)
+[Source line 97](../../../stdlib/core/buffered.lani#L97)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -299,7 +300,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 97](../../../stdlib/core/buffered.lani#L97)
+[Source line 98](../../../stdlib/core/buffered.lani#L98)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -307,7 +308,7 @@ pub fn is_faulted(&self) -> bool
 
 #### method: capacity
 
-[Source line 98](../../../stdlib/core/buffered.lani#L98)
+[Source line 99](../../../stdlib/core/buffered.lani#L99)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -315,7 +316,7 @@ pub fn capacity(&self) -> i32
 
 #### method: buffered
 
-[Source line 99](../../../stdlib/core/buffered.lani#L99)
+[Source line 100](../../../stdlib/core/buffered.lani#L100)
 
 ```lanius
 pub fn buffered(&self) -> core::slice::View<u8>
@@ -323,7 +324,7 @@ pub fn buffered(&self) -> core::slice::View<u8>
 
 #### method: take_parts
 
-[Source line 102](../../../stdlib/core/buffered.lani#L102)
+[Source line 103](../../../stdlib/core/buffered.lani#L103)
 
 ```lanius
 pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error>
@@ -331,15 +332,15 @@ pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error>
 
 #### method: discard
 
-[Source line 108](../../../stdlib/core/buffered.lani#L108)
+[Source line 109](../../../stdlib/core/buffered.lani#L109)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 115
+### impl at line 116
 
-[Source line 115](../../../stdlib/core/buffered.lani#L115)
+[Source line 116](../../../stdlib/core/buffered.lani#L116)
 
 ```lanius
 pub impl<R> core::io::BufRead for Reader<R> where R: core::io::Read
@@ -347,7 +348,7 @@ pub impl<R> core::io::BufRead for Reader<R> where R: core::io::Read
 
 #### method: fill_buf
 
-[Source line 116](../../../stdlib/core/buffered.lani#L116)
+[Source line 117](../../../stdlib/core/buffered.lani#L117)
 
 ```lanius
 pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error>
@@ -355,15 +356,15 @@ pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::
 
 #### method: consume
 
-[Source line 133](../../../stdlib/core/buffered.lani#L133)
+[Source line 134](../../../stdlib/core/buffered.lani#L134)
 
 ```lanius
 pub fn consume(&self, count: i32) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 143
+### impl at line 144
 
-[Source line 143](../../../stdlib/core/buffered.lani#L143)
+[Source line 144](../../../stdlib/core/buffered.lani#L144)
 
 ```lanius
 pub impl<R> core::io::Read for Reader<R> where R: core::io::Read
@@ -371,15 +372,15 @@ pub impl<R> core::io::Read for Reader<R> where R: core::io::Read
 
 #### method: read
 
-[Source line 144](../../../stdlib/core/buffered.lani#L144)
+[Source line 145](../../../stdlib/core/buffered.lani#L145)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 169
+### impl at line 170
 
-[Source line 169](../../../stdlib/core/buffered.lani#L169)
+[Source line 170](../../../stdlib/core/buffered.lani#L170)
 
 ```lanius
 pub impl<R> core::io::Seek for Reader<R> where R: core::io::Read, R: core::io::Seek
@@ -387,15 +388,15 @@ pub impl<R> core::io::Seek for Reader<R> where R: core::io::Read, R: core::io::S
 
 #### method: seek
 
-[Source line 170](../../../stdlib/core/buffered.lani#L170)
+[Source line 171](../../../stdlib/core/buffered.lani#L171)
 
 ```lanius
 pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error>
 ```
 
-### impl at line 215
+### impl at line 216
 
-[Source line 215](../../../stdlib/core/buffered.lani#L215)
+[Source line 216](../../../stdlib/core/buffered.lani#L216)
 
 ```lanius
 pub impl<W> Writer<W>
@@ -403,7 +404,7 @@ pub impl<W> Writer<W>
 
 #### method: borrow
 
-[Source line 216](../../../stdlib/core/buffered.lani#L216)
+[Source line 217](../../../stdlib/core/buffered.lani#L217)
 
 ```lanius
 pub fn borrow(&self) -> &Writer<W>
@@ -411,7 +412,7 @@ pub fn borrow(&self) -> &Writer<W>
 
 #### method: is_active
 
-[Source line 217](../../../stdlib/core/buffered.lani#L217)
+[Source line 218](../../../stdlib/core/buffered.lani#L218)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -419,7 +420,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 218](../../../stdlib/core/buffered.lani#L218)
+[Source line 219](../../../stdlib/core/buffered.lani#L219)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -427,7 +428,7 @@ pub fn is_faulted(&self) -> bool
 
 #### method: capacity
 
-[Source line 219](../../../stdlib/core/buffered.lani#L219)
+[Source line 220](../../../stdlib/core/buffered.lani#L220)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -435,7 +436,7 @@ pub fn capacity(&self) -> i32
 
 #### method: pending
 
-[Source line 220](../../../stdlib/core/buffered.lani#L220)
+[Source line 221](../../../stdlib/core/buffered.lani#L221)
 
 ```lanius
 pub fn pending(&self) -> core::slice::View<u8>
@@ -443,7 +444,7 @@ pub fn pending(&self) -> core::slice::View<u8>
 
 #### method: finish
 
-[Source line 244](../../../stdlib/core/buffered.lani#L244)
+[Source line 245](../../../stdlib/core/buffered.lani#L245)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core::io::Write
@@ -451,7 +452,7 @@ pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core
 
 #### method: take_parts
 
-[Source line 250](../../../stdlib/core/buffered.lani#L250)
+[Source line 251](../../../stdlib/core/buffered.lani#L251)
 
 ```lanius
 pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error>
@@ -459,15 +460,15 @@ pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error>
 
 #### method: discard
 
-[Source line 256](../../../stdlib/core/buffered.lani#L256)
+[Source line 257](../../../stdlib/core/buffered.lani#L257)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 263
+### impl at line 264
 
-[Source line 263](../../../stdlib/core/buffered.lani#L263)
+[Source line 264](../../../stdlib/core/buffered.lani#L264)
 
 ```lanius
 pub impl<W> core::io::Write for Writer<W> where W: core::io::Write
@@ -475,7 +476,7 @@ pub impl<W> core::io::Write for Writer<W> where W: core::io::Write
 
 #### method: write
 
-[Source line 264](../../../stdlib/core/buffered.lani#L264)
+[Source line 265](../../../stdlib/core/buffered.lani#L265)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
@@ -483,15 +484,15 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 283](../../../stdlib/core/buffered.lani#L283)
+[Source line 284](../../../stdlib/core/buffered.lani#L284)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 297
+### impl at line 298
 
-[Source line 297](../../../stdlib/core/buffered.lani#L297)
+[Source line 298](../../../stdlib/core/buffered.lani#L298)
 
 ```lanius
 pub impl<W> core::io::Seek for Writer<W> where W: core::io::Write, W: core::io::Seek
@@ -499,7 +500,7 @@ pub impl<W> core::io::Seek for Writer<W> where W: core::io::Write, W: core::io::
 
 #### method: seek
 
-[Source line 298](../../../stdlib/core/buffered.lani#L298)
+[Source line 299](../../../stdlib/core/buffered.lani#L299)
 
 ```lanius
 pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error>

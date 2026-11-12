@@ -1,5 +1,8 @@
 // TOML 1.1.0 owned documents. See docs/extended-toml.md.
 module ext::toml;
+import core::iter_state;
+import core::lifecycle;
+import core::parse_state;
 import alloc::io;
 import alloc::string;
 import alloc::vec;
@@ -13,6 +16,57 @@ import core::float_decimal;
 import core::calendar;
 import core::mem;
 import core::io;
+
+fn table_definition(event: TableDefinitionEvent) -> TableDefinition { let definition = table_definition_start(); definition.step(event); return definition; }
+
+
+pub enum TableDefinitionEvent { Declare, DottedKey, InlineValue, ArrayHeader }
+pub machine TableDefinition on TableDefinitionEvent {
+    start Implicit;
+
+    state Implicit {
+        TableDefinitionEvent::Declare -> goto Declared,
+        TableDefinitionEvent::DottedKey -> goto Dotted,
+        TableDefinitionEvent::InlineValue -> goto Inline,
+        TableDefinitionEvent::ArrayHeader -> goto ArrayTables,
+    }
+
+    final state Declared {
+        TableDefinitionEvent::Declare -> stay,
+        TableDefinitionEvent::DottedKey -> stay,
+        TableDefinitionEvent::InlineValue -> stay,
+        TableDefinitionEvent::ArrayHeader -> stay,
+    }
+
+    final state Dotted {
+        TableDefinitionEvent::Declare -> stay,
+        TableDefinitionEvent::DottedKey -> stay,
+        TableDefinitionEvent::InlineValue -> stay,
+        TableDefinitionEvent::ArrayHeader -> stay,
+    }
+
+    final state Inline {
+        TableDefinitionEvent::Declare -> stay,
+        TableDefinitionEvent::DottedKey -> stay,
+        TableDefinitionEvent::InlineValue -> stay,
+        TableDefinitionEvent::ArrayHeader -> stay,
+    }
+
+    final state ArrayTables {
+        TableDefinitionEvent::Declare -> stay,
+        TableDefinitionEvent::DottedKey -> stay,
+        TableDefinitionEvent::InlineValue -> stay,
+        TableDefinitionEvent::ArrayHeader -> stay,
+    }
+}
+pub impl TableDefinition {
+    pub fn is_implicit(&self) -> bool { return match (self.state()) { TableDefinitionState::Implicit -> true, _ -> false }; }
+    pub fn is_declared(&self) -> bool { return match (self.state()) { TableDefinitionState::Declared -> true, _ -> false }; }
+    pub fn is_dotted(&self) -> bool { return match (self.state()) { TableDefinitionState::Dotted -> true, _ -> false }; }
+    pub fn is_inline(&self) -> bool { return match (self.state()) { TableDefinitionState::Inline -> true, _ -> false }; }
+    pub fn is_array_tables(&self) -> bool { return match (self.state()) { TableDefinitionState::ArrayTables -> true, _ -> false }; }
+}
+
 
 pub type NodeId = i32;
 pub enum Kind { Table, Array, String, Integer, Float, Boolean, OffsetDateTime, LocalDateTime, LocalDate, LocalTime }
@@ -55,12 +109,12 @@ pub fn error_kind_text(value: ErrorKind) -> core::text::Text { return match (val
     Bounds -> literal("bounds",6),
     WrongKind -> literal("wrong kind",10),
 }; }
-fn tag(kind: Kind) -> i32 { return match (kind) { Table -> 0, Array -> 1, String -> 2, Integer -> 3, Float -> 4, Boolean -> 5, OffsetDateTime -> 6, LocalDateTime -> 7, LocalDate -> 8, LocalTime -> 9 }; }
+fn tag(kind: Kind) -> i32 { return match (kind) { Kind::Table -> 0, Kind::Array -> 1, Kind::String -> 2, Kind::Integer -> 3, Kind::Float -> 4, Kind::Boolean -> 5, Kind::OffsetDateTime -> 6, Kind::LocalDateTime -> 7, Kind::LocalDate -> 8, Kind::LocalTime -> 9 }; }
 fn valid_options(o: Options) -> bool { return o.max_input_bytes >= 0 && o.max_nodes >= 0 && o.max_depth >= 0 && o.max_string_bytes >= 0 && o.max_number_bytes >= 0 && o.max_output_bytes >= 0; }
 struct Node {
     kind: Kind, key: alloc::string::String, text: alloc::string::String,
     integer: i64, floating: f64, flag: bool, parent: NodeId, first: NodeId,
-    last: NodeId, next: NodeId, count: i32, depth: i32, state: i32, context: NodeId,
+    last: NodeId, next: NodeId, count: i32, depth: i32, definition: TableDefinition, context: NodeId,
 }
 pub struct Temporal {
     date: core::option::Option<core::calendar::Date>,
@@ -132,7 +186,7 @@ fn horizontal(b: u8) -> bool { return b == 32 || b == 9; }
 fn delim(b: u8) -> bool { return horizontal(b) || b == 10 || b == 13 || b == 35 || b == 44 || b == 93 || b == 125; }
 struct Buffer { value: alloc::string::String }
 impl Buffer { fn borrow(&self) -> &Buffer { return self; } }
-struct Frame { node: NodeId, phase: i32 }
+struct Frame { node: NodeId, sequence: core::parse_state::Sequence }
 struct Target { parent: NodeId, key: alloc::string::String }
 struct Parser { input: alloc::string::String, document: Document, frames: alloc::vec::Vec<Frame>, position: i32, failure: Error, work: u64 }
 impl Parser {
@@ -197,11 +251,11 @@ impl Parser {
         let made: core::result::Result<alloc::string::String,alloc::string::Error> = self.input.try_substring(start,self.position); if (core::result::is_err(made)) { return core::result::Err(error(ErrorKind::AllocationFailed,start)); } return core::result::Ok(core::result::unwrap(made));
     }
     // Consumes key/text, including on failure.
-    fn insert(&self, parent: NodeId, key: alloc::string::String, kind: Kind, text: alloc::string::String, state: i32, context: NodeId) -> NodeId {
+    fn insert(&self, parent: NodeId, key: alloc::string::String, kind: Kind, text: alloc::string::String, definition: TableDefinition, context: NodeId) -> NodeId {
         if (!self.pay(1)) { key.destroy(); text.destroy(); return -1; } let depth: i32 = 0; if (parent >= 0) { depth = self.document.node(parent).depth+1; }
         if (depth > self.document.options.max_depth) { key.destroy(); text.destroy(); self.fail(ErrorKind::DepthLimit,self.position); return -1; }
         if (self.document.nodes.len() >= self.document.options.max_nodes) { key.destroy(); text.destroy(); self.fail(ErrorKind::NodeLimit,self.position); return -1; }
-        let node: Node = Node { kind: kind, key: key, text: text, integer: 0, floating: 0.0, flag: false, parent: parent, first: -1, last: -1, next: -1, count: 0, depth: depth, state: state, context: context };
+        let node: Node = Node { kind: kind, key: key, text: text, integer: 0, floating: 0.0, flag: false, parent: parent, first: -1, last: -1, next: -1, count: 0, depth: depth, definition: definition, context: context };
         let id: NodeId = self.document.nodes.len(); if (core::result::is_err(self.document.nodes.try_push(node))) { key.destroy(); text.destroy(); self.fail(ErrorKind::AllocationFailed,self.position); return -1; }
         if (parent >= 0) { let p: Node = self.document.node(parent); if (p.last < 0) { p.first = id; } else { let last: Node = self.document.node(p.last); last.next = id; self.document.put(p.last,last); } p.last = id; p.count += 1; self.document.put(parent,p); } return id;
     }
@@ -216,23 +270,23 @@ impl Parser {
             if (self.position >= self.input.byte_len() || self.byte() != 46) { return core::result::Ok(Target { parent: parent, key: key }); }
             if (!self.advance() || !self.hspace()) { key.destroy(); return core::result::Err(self.failure); }
             let found: NodeId = self.find(parent,key); if (found == -2) { key.destroy(); return core::result::Err(self.failure); }
-            if (found < 0) { let state: i32 = 2; if (header) { state = 0; } parent = self.insert(parent,key,Kind::Table,alloc::string::new(),state,base); if (parent < 0) { return core::result::Err(self.failure); } }
+            if (found < 0) { let definition: TableDefinition = table_definition_start(); if (!header) { definition.step(TableDefinitionEvent::DottedKey); } parent = self.insert(parent,key,Kind::Table,alloc::string::new(),definition,base); if (parent < 0) { return core::result::Err(self.failure); } }
             else { key.destroy(); let n: Node = self.document.node(found);
-                if (header && tag(n.kind) == 1 && n.state == 4) { parent = n.last; }
-                else { if (tag(n.kind) != 0 || n.state == 3 || (!header && (n.state == 1 || (n.state == 2 && n.context != base)))) { return core::result::Err(error(ErrorKind::TableRedefinition,self.position)); }
-                    if (!header && n.state == 0) { n.state = 2; n.context = base; self.document.put(found,n); } parent = found;
+                if (header && tag(n.kind) == 1 && n.definition.is_array_tables()) { parent = n.last; }
+                else { if (tag(n.kind) != 0 || n.definition.is_inline() || (!header && (n.definition.is_declared() || (n.definition.is_dotted() && n.context != base)))) { return core::result::Err(error(ErrorKind::TableRedefinition,self.position)); }
+                    if (!header && n.definition.is_implicit()) { n.definition.step(TableDefinitionEvent::DottedKey); n.context = base; self.document.put(found,n); } parent = found;
                 }
             }
         }
         return core::result::Err(error(ErrorKind::UnexpectedEnd,self.position));
     }
     fn digits(&self, base: i32) -> bool {
-        let start: i32 = self.position; let previous: bool = false;
+        let start: i32 = self.position; let previous_phase = core::iter_state::completion_start();
         while (self.position < self.input.byte_len()) { let b: u8 = self.byte(); let d: i32 = hex(b);
-            if (d >= 0 && d < base) { previous = true; if (!self.advance()) { return false; } }
-            else { if (b == 95) { if (!previous) { return self.fail(ErrorKind::InvalidNumber,self.position); } previous = false; if (!self.advance()) { return false; } } else { break; } }
+            if (d >= 0 && d < base) { previous_phase.finish(); if (!self.advance()) { return false; } }
+            else { if (b == 95) { if (!previous_phase.is_done()) { return self.fail(ErrorKind::InvalidNumber,self.position); } previous_phase = core::iter_state::completion_start(); if (!self.advance()) { return false; } } else { break; } }
         }
-        if (self.position == start || !previous) { return self.fail(ErrorKind::InvalidNumber,self.position); } return true;
+        if (self.position == start || !previous_phase.is_done()) { return self.fail(ErrorKind::InvalidNumber,self.position); } return true;
     }
     fn number(&self) -> core::result::Result<Node,Error> {
         let start: i32 = self.position; let negative: bool = false; let signed: bool = false; let base: i32 = 10; let is_float: bool = false;
@@ -281,7 +335,7 @@ impl Parser {
             let written: core::result::Result<i32,alloc::string::Error> = text.try_append_i64(integer); if (core::result::is_err(written)) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); }
         }
         let kind: Kind = Kind::Integer; if (is_float) { kind = Kind::Float; } let empty: alloc::string::String = alloc::string::new();
-        return core::result::Ok(Node { kind: kind, key: empty, text: text, integer: integer, floating: floating, flag: false, parent: -1, first: -1, last: -1, next: -1, count: 0, depth: 0, state: 0, context: -1 });
+        return core::result::Ok(Node { kind: kind, key: empty, text: text, integer: integer, floating: floating, flag: false, parent: -1, first: -1, last: -1, next: -1, count: 0, depth: 0, definition: table_definition_start(), context: -1 });
     }
     fn temporal(&self) -> core::result::Result<Kind,Error> {
         let start: i32 = self.position; let bytes: [u8] = self.input.as_bytes(); let length: i32 = self.input.byte_len();
@@ -292,9 +346,9 @@ impl Parser {
     }
     fn value(&self, parent: NodeId, key: alloc::string::String) -> bool {
         let start: i32 = self.position; if (start >= self.input.byte_len()) { key.destroy(); return self.fail(ErrorKind::UnexpectedEnd,start); }
-        let first: u8 = self.byte(); let kind: Kind = Kind::String; let text: alloc::string::String = alloc::string::new(); let flag: bool = false; let integer: i64 = 0; let floating: f64 = 0.0; let state: i32 = 0;
+        let first: u8 = self.byte(); let kind: Kind = Kind::String; let text: alloc::string::String = alloc::string::new(); let flag: bool = false; let integer: i64 = 0; let floating: f64 = 0.0; let definition: TableDefinition = table_definition_start();
         if (first == 34 || first == 39) { let q: core::result::Result<alloc::string::String,Error> = self.quoted(false); if (core::result::is_err(q)) { key.destroy(); self.failure = core::result::unwrap_err(q); return false; } text = core::result::unwrap(q); }
-        else { if (first == 91 || first == 123) { kind = Kind::Array; if (first == 123) { kind = Kind::Table; state = 3; } if (!self.advance()) { key.destroy(); return false; } }
+        else { if (first == 91 || first == 123) { kind = Kind::Array; if (first == 123) { kind = Kind::Table; definition.step(TableDefinitionEvent::InlineValue); } if (!self.advance()) { key.destroy(); return false; } }
         else { if (first == 116 || first == 102) {
             let word: str = "true"; let count: i32 = 4; flag = first == 116; if (!flag) { word = "false"; count = 5; }
             let expected: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(word),count); let i: i32 = 0; while (i < count) { if (self.position >= self.input.byte_len() || self.byte() != expected[i]) { key.destroy(); return self.fail(ErrorKind::UnexpectedByte,self.position); } if (!self.advance()) { key.destroy(); return false; } i += 1; }
@@ -304,8 +358,8 @@ impl Parser {
             if (temporal) { let parsed: core::result::Result<Kind,Error> = self.temporal(); if (core::result::is_err(parsed)) { key.destroy(); self.failure = core::result::unwrap_err(parsed); return false; } kind = core::result::unwrap(parsed); let made: core::result::Result<alloc::string::String,alloc::string::Error> = self.input.try_substring(start,self.position); if (core::result::is_err(made)) { key.destroy(); return self.fail(ErrorKind::AllocationFailed,start); } text = core::result::unwrap(made); }
             else { let parsed: core::result::Result<Node,Error> = self.number(); if (core::result::is_err(parsed)) { key.destroy(); self.failure = core::result::unwrap_err(parsed); return false; } let n: Node = core::result::unwrap(parsed); kind = n.kind; text = n.text; integer = n.integer; floating = n.floating; }
         } } }
-        let id: NodeId = self.insert(parent,key,kind,text,state,parent); if (id < 0) { return false; } let n: Node = self.document.node(id); n.integer = integer; n.floating = floating; n.flag = flag; self.document.put(id,n);
-        if (tag(kind) < 2) { let frame: Frame = Frame { node: id, phase: 0 }; if (core::result::is_err(self.frames.try_push(frame))) { return self.fail(ErrorKind::AllocationFailed,start); } } return true;
+        let id: NodeId = self.insert(parent,key,kind,text,definition,parent); if (id < 0) { return false; } let n: Node = self.document.node(id); n.integer = integer; n.floating = floating; n.flag = flag; self.document.put(id,n);
+        if (tag(kind) < 2) { let frame: Frame = Frame { node: id, sequence: core::parse_state::sequence_start() }; if (core::result::is_err(self.frames.try_push(frame))) { return self.fail(ErrorKind::AllocationFailed,start); } } return true;
     }
     fn assignment(&self, base: NodeId) -> bool {
         let parsed: core::result::Result<Target,Error> = self.target(base,false); if (core::result::is_err(parsed)) { self.failure = core::result::unwrap_err(parsed); return false; } let target: Target = core::result::unwrap(parsed);
@@ -318,8 +372,8 @@ impl Parser {
             if (!self.trivia()) { return false; } if (self.position >= self.input.byte_len()) { return self.fail(ErrorKind::UnexpectedEnd,self.position); }
             let top: i32 = self.frames.len()-1; let values: [Frame] = self.frames.as_slice(); let frame: Frame = values[top]; let n: Node = self.document.node(frame.node); let closing: u8 = 93; if (tag(n.kind) == 0) { closing = 125; }
             if (self.byte() == closing) { self.frames.pop(); if (!self.advance()) { return false; } continue; }
-            if (frame.phase == 1) { if (self.byte() != 44) { return self.fail(ErrorKind::UnexpectedByte,self.position); } frame.phase = 0; values[top] = frame; if (!self.advance()) { return false; } continue; }
-            frame.phase = 1; values[top] = frame;
+            if (frame.sequence.needs_separator()) { if (self.byte() != 44) { return self.fail(ErrorKind::UnexpectedByte,self.position); } frame.sequence.step(core::parse_state::SequenceEvent::CommaRead); values[top] = frame; if (!self.advance()) { return false; } continue; }
+            frame.sequence.step(core::parse_state::SequenceEvent::ValueRead); values[top] = frame;
             if (tag(n.kind) == 0) { if (!self.assignment(frame.node)) { return false; } } else { if (!self.value(frame.node,alloc::string::new())) { return false; } }
         } return true;
     }
@@ -329,14 +383,14 @@ impl Parser {
         if (self.position >= self.input.byte_len() || self.byte() != 93) { target.key.destroy(); self.fail(ErrorKind::UnexpectedByte,self.position); return -1; }
         if (!self.advance()) { target.key.destroy(); return -1; } if (array) { if (self.position >= self.input.byte_len() || self.byte() != 93) { target.key.destroy(); self.fail(ErrorKind::UnexpectedByte,self.position); return -1; } if (!self.advance()) { target.key.destroy(); return -1; } }
         let found: NodeId = self.find(target.parent,target.key); if (found == -2) { target.key.destroy(); return -1; }
-        if (array) { let list: NodeId = found; if (found < 0) { list = self.insert(target.parent,target.key,Kind::Array,alloc::string::new(),4,-1); if (list < 0) { return -1; } } else { target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 1 || n.state != 4) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } }
-            return self.insert(list,alloc::string::new(),Kind::Table,alloc::string::new(),1,-1);
+        if (array) { let list: NodeId = found; if (found < 0) { list = self.insert(target.parent,target.key,Kind::Array,alloc::string::new(),table_definition(TableDefinitionEvent::ArrayHeader),-1); if (list < 0) { return -1; } } else { target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 1 || !n.definition.is_array_tables()) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } }
+            return self.insert(list,alloc::string::new(),Kind::Table,alloc::string::new(),table_definition(TableDefinitionEvent::Declare),-1);
         }
-        if (found < 0) { return self.insert(target.parent,target.key,Kind::Table,alloc::string::new(),1,-1); }
-        target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 0 || n.state != 0) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } n.state = 1; self.document.put(found,n); return found;
+        if (found < 0) { return self.insert(target.parent,target.key,Kind::Table,alloc::string::new(),table_definition(TableDefinitionEvent::Declare),-1); }
+        target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 0 || !n.definition.is_implicit()) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } n.definition.step(TableDefinitionEvent::Declare); self.document.put(found,n); return found;
     }
     fn run(&self) -> bool {
-        if (self.insert(-1,alloc::string::new(),Kind::Table,alloc::string::new(),1,-1) < 0) { return false; } let current: NodeId = 0;
+        if (self.insert(-1,alloc::string::new(),Kind::Table,alloc::string::new(),table_definition(TableDefinitionEvent::Declare),-1) < 0) { return false; } let current: NodeId = 0;
         while (self.position < self.input.byte_len()) {
             if (!self.trivia()) { return false; } if (self.position >= self.input.byte_len()) { break; }
             if (self.byte() == 91) { current = self.header(); if (current < 0) { return false; } } else { if (!self.assignment(current) || !self.containers()) { return false; } }
@@ -411,36 +465,329 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 // Parent/first/next links provide the traversal stack. A byte or escape is
 // advanced once; temporal fraction bounds are retained across short reads.
-const ENCODE_NODE: i32 = 0;
-const ENCODE_KEY: i32 = 1;
-const ENCODE_EQUALS: i32 = 2;
-const ENCODE_VALUE: i32 = 3;
-const ENCODE_TEXT: i32 = 4;
-const ENCODE_RAW: i32 = 5;
-const ENCODE_BOOLEAN: i32 = 6;
-const ENCODE_CHILDREN: i32 = 7;
-const ENCODE_AFTER: i32 = 8;
-const ENCODE_DATE: i32 = 9;
-const ENCODE_TIME: i32 = 10;
-const ENCODE_SECONDS: i32 = 11;
-const ENCODE_INSERT_SECONDS: i32 = 12;
-const ENCODE_FRACTION: i32 = 13;
-const ENCODE_FRACTION_BYTES: i32 = 14;
-const ENCODE_ZONE: i32 = 15;
+pub enum EmissionEvent { NextNode, KeyStarted, EqualsStarted, ValueStarted, TextStarted, RawStarted, BooleanStarted, ChildrenStarted, ValueWritten, DateStarted, TimeStarted, SecondsStarted, InsertSecondsStarted, FractionStarted, FractionBytesStarted, ZoneStarted }
+
+pub machine Emission on EmissionEvent {
+    start Node;
+
+    state Node {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> goto Value,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Key {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> goto Equals,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Equals {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> goto Value,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Value {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> goto Key,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> goto Text,
+        EmissionEvent::RawStarted -> goto Raw,
+        EmissionEvent::BooleanStarted -> goto Boolean,
+        EmissionEvent::ChildrenStarted -> goto Children,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> goto Time,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Text {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Raw {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Boolean {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Children {
+        EmissionEvent::NextNode -> goto Node,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state After {
+        EmissionEvent::NextNode -> goto Node,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Date {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> goto Time,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Time {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> goto Date,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> goto Seconds,
+        EmissionEvent::InsertSecondsStarted -> goto InsertSeconds,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Seconds {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> goto Fraction,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state InsertSeconds {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> goto Fraction,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+
+    state Fraction {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> goto FractionBytes,
+        EmissionEvent::ZoneStarted -> goto Zone,
+    }
+
+    state FractionBytes {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> stay,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> goto Zone,
+    }
+
+    state Zone {
+        EmissionEvent::NextNode -> stay,
+        EmissionEvent::KeyStarted -> stay,
+        EmissionEvent::EqualsStarted -> stay,
+        EmissionEvent::ValueStarted -> stay,
+        EmissionEvent::TextStarted -> stay,
+        EmissionEvent::RawStarted -> stay,
+        EmissionEvent::BooleanStarted -> stay,
+        EmissionEvent::ChildrenStarted -> stay,
+        EmissionEvent::ValueWritten -> goto After,
+        EmissionEvent::DateStarted -> stay,
+        EmissionEvent::TimeStarted -> stay,
+        EmissionEvent::SecondsStarted -> stay,
+        EmissionEvent::InsertSecondsStarted -> stay,
+        EmissionEvent::FractionStarted -> stay,
+        EmissionEvent::FractionBytesStarted -> stay,
+        EmissionEvent::ZoneStarted -> stay,
+    }
+}
 
 struct EncodingMachine {
-    document: &Document, current: NodeId, phase: i32, offset: i32,
+    document: &Document, current: NodeId, phase: Emission, offset: i32,
     escaped: u8, escape_offset: i32, escape_length: i32,
     time_start: i32, temporal_end: i32, zone_start: i32, inserted: i32,
-    count: i32, maximum: i32, work: u64, failed: bool, failure: Error,
+    count: i32, maximum: i32, work: u64, health: core::lifecycle::Health, failure: Error,
 }
 fn encoding_machine(document: &Document) -> EncodingMachine {
     return EncodingMachine {
-        document: document, current: document.node(0).first, phase: ENCODE_NODE, offset: 0,
+        document: document, current: document.node(0).first, phase: emission_start(), offset: 0,
         escaped: 0, escape_offset: 0, escape_length: 0,
         time_start: 0, temporal_end: 0, zone_start: 0, inserted: 0,
         count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work,
-        failed: false, failure: error(ErrorKind::Bounds,-1),
+        health: core::lifecycle::health_start(), failure: error(ErrorKind::Bounds,-1),
     };
 }
 fn encoding_hex(value: u8) -> u8 { if (value < 10) { return 48+value; } return 87+value; }
@@ -452,13 +799,13 @@ fn encoding_boolean(flag: bool, offset: i32) -> u8 {
 impl EncodingMachine {
     fn pay(&self, amount: u64) -> bool {
         if (amount > self.work) {
-            self.failed = true; self.failure = error(ErrorKind::WorkLimit,-1); return false;
+            self.health.fail(); self.failure = error(ErrorKind::WorkLimit,-1); return false;
         }
         self.work -= amount; return true;
     }
     fn emit(&self, byte: u8) -> core::option::Option<u8> {
         if (self.count == self.maximum) {
-            self.failed = true; self.failure = error(ErrorKind::OutputLimit,-1); return core::option::None();
+            self.health.fail(); self.failure = error(ErrorKind::OutputLimit,-1); return core::option::None();
         }
         if (!self.pay(1)) { return core::option::None(); }
         self.count += 1; return core::option::Some(byte);
@@ -466,21 +813,21 @@ impl EncodingMachine {
     // Only valid, immutable Documents enter this machine. Shallow Node/String
     // descriptors are borrowed observations and never acquire cleanup authority.
     fn pull(&self) -> core::option::Option<u8> {
-        if (self.failed) { return core::option::None(); }
+        if (self.health.is_failed()) { return core::option::None(); }
         while (self.current >= 0) {
             let node: Node = self.document.node(self.current);
-            if (self.phase == ENCODE_NODE) {
+            if ((match (self.phase.state()) { EmissionState::Node -> true, _ -> false })) {
                 if (!self.pay(1)) { return core::option::None(); }
-                self.phase = ENCODE_VALUE;
+                self.phase.step(EmissionEvent::ValueStarted);
                 let parent: Node = self.document.node(node.parent);
                 if (tag(parent.kind) == 0) {
-                    self.phase = ENCODE_KEY; self.offset = 0;
+                    self.phase.step(EmissionEvent::KeyStarted); self.offset = 0;
                     self.escape_offset = 0; self.escape_length = 0;
                     return self.emit(34);
                 }
                 continue;
             }
-            if (self.phase == ENCODE_KEY || self.phase == ENCODE_TEXT) {
+            if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false }) || (match (self.phase.state()) { EmissionState::Text -> true, _ -> false })) {
                 if (self.escape_offset < self.escape_length) {
                     let byte: u8 = self.escaped;
                     if (self.escape_length == 6) {
@@ -492,10 +839,10 @@ impl EncodingMachine {
                     self.escape_offset += 1; return self.emit(byte);
                 }
                 let text: core::text::Text = node.text.as_text();
-                if (self.phase == ENCODE_KEY) { text = node.key.as_text(); }
+                if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false })) { text = node.key.as_text(); }
                 if (self.offset == text.length) {
-                    if (self.phase == ENCODE_KEY) { self.phase = ENCODE_EQUALS; }
-                    else { self.phase = ENCODE_AFTER; }
+                    if ((match (self.phase.state()) { EmissionState::Key -> true, _ -> false })) { self.phase.step(EmissionEvent::EqualsStarted); }
+                    else { self.phase.step(EmissionEvent::ValueWritten); }
                     return self.emit(34);
                 }
                 let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
@@ -507,76 +854,76 @@ impl EncodingMachine {
                 // UTF-8 continuation bytes cannot equal ASCII escape bytes.
                 return self.emit(byte);
             }
-            if (self.phase == ENCODE_EQUALS) {
-                self.phase = ENCODE_VALUE; return self.emit(61);
+            if ((match (self.phase.state()) { EmissionState::Equals -> true, _ -> false })) {
+                self.phase.step(EmissionEvent::ValueStarted); return self.emit(61);
             }
-            if (self.phase == ENCODE_VALUE) {
+            if ((match (self.phase.state()) { EmissionState::Value -> true, _ -> false })) {
                 let kind: i32 = tag(node.kind); self.offset = 0;
                 if (kind < 2) {
-                    self.phase = ENCODE_CHILDREN;
+                    self.phase.step(EmissionEvent::ChildrenStarted);
                     if (kind == 0) { return self.emit(123); } return self.emit(91);
                 }
                 if (kind == 2) {
-                    self.phase = ENCODE_TEXT; self.escape_offset = 0; self.escape_length = 0;
+                    self.phase.step(EmissionEvent::TextStarted); self.escape_offset = 0; self.escape_length = 0;
                     return self.emit(34);
                 }
-                if (kind == 3 || kind == 4) { self.phase = ENCODE_RAW; continue; }
-                if (kind == 5) { self.phase = ENCODE_BOOLEAN; continue; }
+                if (kind == 3 || kind == 4) { self.phase.step(EmissionEvent::RawStarted); continue; }
+                if (kind == 5) { self.phase.step(EmissionEvent::BooleanStarted); continue; }
                 let text: core::text::Text = node.text.as_text();
-                self.time_start = 0; self.phase = ENCODE_TIME;
+                self.time_start = 0; self.phase.step(EmissionEvent::TimeStarted);
                 if (text.length >= 10 && text.bytes[text.start+4] == 45) {
-                    self.time_start = 11; self.phase = ENCODE_DATE;
+                    self.time_start = 11; self.phase.step(EmissionEvent::DateStarted);
                 }
                 continue;
             }
-            if (self.phase == ENCODE_RAW) {
+            if ((match (self.phase.state()) { EmissionState::Raw -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
-                if (self.offset == text.length) { self.phase = ENCODE_AFTER; }
+                if (self.offset == text.length) { self.phase.step(EmissionEvent::ValueWritten); }
                 return self.emit(byte);
             }
-            if (self.phase == ENCODE_BOOLEAN) {
+            if ((match (self.phase.state()) { EmissionState::Boolean -> true, _ -> false })) {
                 let byte: u8 = encoding_boolean(node.flag,self.offset); self.offset += 1;
                 let length: i32 = 5; if (node.flag) { length = 4; }
-                if (self.offset == length) { self.phase = ENCODE_AFTER; }
+                if (self.offset == length) { self.phase.step(EmissionEvent::ValueWritten); }
                 return self.emit(byte);
             }
-            if (self.phase == ENCODE_DATE) {
+            if ((match (self.phase.state()) { EmissionState::Date -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 if (self.offset < 10) {
                     let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
                     return self.emit(byte);
                 }
-                if (text.length == 10) { self.phase = ENCODE_AFTER; continue; }
-                self.offset = 11; self.phase = ENCODE_TIME; return self.emit(84);
+                if (text.length == 10) { self.phase.step(EmissionEvent::ValueWritten); continue; }
+                self.offset = 11; self.phase.step(EmissionEvent::TimeStarted); return self.emit(84);
             }
-            if (self.phase == ENCODE_TIME) {
+            if ((match (self.phase.state()) { EmissionState::Time -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 if (self.offset < self.time_start+5) {
                     let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
                     return self.emit(byte);
                 }
                 if (self.offset < text.length && text.bytes[text.start+self.offset] == 58) {
-                    self.temporal_end = self.offset+3; self.phase = ENCODE_SECONDS;
-                } else { self.inserted = 0; self.phase = ENCODE_INSERT_SECONDS; }
+                    self.temporal_end = self.offset+3; self.phase.step(EmissionEvent::SecondsStarted);
+                } else { self.inserted = 0; self.phase.step(EmissionEvent::InsertSecondsStarted); }
                 continue;
             }
-            if (self.phase == ENCODE_SECONDS) {
+            if ((match (self.phase.state()) { EmissionState::Seconds -> true, _ -> false })) {
                 if (self.offset < self.temporal_end) {
                     let text: core::text::Text = node.text.as_text();
                     let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
                     return self.emit(byte);
                 }
-                self.phase = ENCODE_FRACTION; continue;
+                self.phase.step(EmissionEvent::FractionStarted); continue;
             }
-            if (self.phase == ENCODE_INSERT_SECONDS) {
+            if ((match (self.phase.state()) { EmissionState::InsertSeconds -> true, _ -> false })) {
                 if (self.inserted < 3) {
                     let byte: u8 = 48; if (self.inserted == 0) { byte = 58; }
                     self.inserted += 1; return self.emit(byte);
                 }
-                self.phase = ENCODE_FRACTION; continue;
+                self.phase.step(EmissionEvent::FractionStarted); continue;
             }
-            if (self.phase == ENCODE_FRACTION) {
+            if ((match (self.phase.state()) { EmissionState::Fraction -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 if (self.offset < text.length && text.bytes[text.start+self.offset] == 46) {
                     let first: i32 = self.offset+1; let end: i32 = first;
@@ -588,45 +935,45 @@ impl EncodingMachine {
                         if (!self.pay(1)) { return core::option::None(); } end -= 1;
                     }
                     self.offset = first; self.temporal_end = end;
-                    if (end > first) { self.phase = ENCODE_FRACTION_BYTES; return self.emit(46); }
+                    if (end > first) { self.phase.step(EmissionEvent::FractionBytesStarted); return self.emit(46); }
                     self.offset = self.zone_start;
                 }
-                self.phase = ENCODE_ZONE; continue;
+                self.phase.step(EmissionEvent::ZoneStarted); continue;
             }
-            if (self.phase == ENCODE_FRACTION_BYTES) {
+            if ((match (self.phase.state()) { EmissionState::FractionBytes -> true, _ -> false })) {
                 if (self.offset < self.temporal_end) {
                     let text: core::text::Text = node.text.as_text();
                     let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
                     return self.emit(byte);
                 }
-                self.offset = self.zone_start; self.phase = ENCODE_ZONE; continue;
+                self.offset = self.zone_start; self.phase.step(EmissionEvent::ZoneStarted); continue;
             }
-            if (self.phase == ENCODE_ZONE) {
+            if ((match (self.phase.state()) { EmissionState::Zone -> true, _ -> false })) {
                 let text: core::text::Text = node.text.as_text();
                 if (text.length-self.offset == 6 && text.bytes[text.start+self.offset] == 43
                     && text.bytes[text.start+self.offset+1] == 48 && text.bytes[text.start+self.offset+2] == 48
                     && text.bytes[text.start+self.offset+4] == 48 && text.bytes[text.start+self.offset+5] == 48) {
-                    self.phase = ENCODE_AFTER; return self.emit(90);
+                    self.phase.step(EmissionEvent::ValueWritten); return self.emit(90);
                 }
                 if (self.offset < text.length) {
                     let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
                     if (byte == 122) { byte = 90; } return self.emit(byte);
                 }
-                self.phase = ENCODE_AFTER; continue;
+                self.phase.step(EmissionEvent::ValueWritten); continue;
             }
-            if (self.phase == ENCODE_CHILDREN) {
-                if (node.first >= 0) { self.current = node.first; self.phase = ENCODE_NODE; continue; }
-                self.phase = ENCODE_AFTER; return self.emit(encoding_close(node.kind));
+            if ((match (self.phase.state()) { EmissionState::Children -> true, _ -> false })) {
+                if (node.first >= 0) { self.current = node.first; self.phase.step(EmissionEvent::NextNode); continue; }
+                self.phase.step(EmissionEvent::ValueWritten); return self.emit(encoding_close(node.kind));
             }
             // Root members end in LF. Nested siblings use commas; a completed
             // final child emits one parent close per pull without recursion.
             if (node.parent == 0) {
-                self.current = node.next; self.phase = ENCODE_NODE; return self.emit(10);
+                self.current = node.next; self.phase.step(EmissionEvent::NextNode); return self.emit(10);
             }
             if (node.next >= 0) {
-                self.current = node.next; self.phase = ENCODE_NODE; return self.emit(44);
+                self.current = node.next; self.phase.step(EmissionEvent::NextNode); return self.emit(44);
             }
-            self.current = node.parent; self.phase = ENCODE_AFTER;
+            self.current = node.parent; self.phase.step(EmissionEvent::ValueWritten);
             return self.emit(encoding_close(self.document.node(self.current).kind));
         }
         return core::option::None();
@@ -641,7 +988,7 @@ fn encoding_preflight(document: &Document) -> core::result::Result<EncodingPlan,
         let byte: core::option::Option<u8> = machine.pull();
         if (core::option::is_none(byte)) { break; }
     }
-    if (machine.failed) { return core::result::Err(machine.failure); }
+    if (machine.health.is_failed()) { return core::result::Err(machine.failure); }
     return core::result::Ok(EncodingPlan {
         length: machine.count as u64, work: document.options.max_work-machine.work,
     });

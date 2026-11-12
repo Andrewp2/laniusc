@@ -3,6 +3,9 @@
 // Non-ASCII domains go through UTS #46 ToASCII (ext::idna). See
 // docs/extended-url.md.
 module ext::url;
+import core::io_state;
+import core::iter_state;
+import core::lifecycle;
 import alloc::vec;
 import core::mem;
 import core::option;
@@ -27,10 +30,451 @@ const E_HOST: i32 = 7; const E_PORT: i32 = 8; const E_IPV4: i32 = 9; const E_IPV
 const K_NONE: i32 = 0; const K_EMPTY: i32 = 1; const K_DOMAIN: i32 = 2; const K_IPV4: i32 = 3; const K_IPV6: i32 = 4; const K_OPAQUE: i32 = 5;
 const F_SCHEME: i32 = 0; const F_USER: i32 = 1; const F_PASS: i32 = 2; const F_HOST: i32 = 3; const F_PATH: i32 = 4; const F_QUERY: i32 = 5; const F_FRAG: i32 = 6; const F_BUF: i32 = 7; const F_TMP: i32 = 8;
 const SET_C0: i32 = 0; const SET_FRAGMENT: i32 = 1; const SET_QUERY: i32 = 2; const SET_SPECIAL_QUERY: i32 = 3; const SET_PATH: i32 = 4; const SET_USERINFO: i32 = 5;
-const S_SCHEME_START: i32 = 0; const S_SCHEME: i32 = 1; const S_NO_SCHEME: i32 = 2; const S_SPECIAL_RELATIVE_OR_AUTHORITY: i32 = 3; const S_PATH_OR_AUTHORITY: i32 = 4;
-const S_RELATIVE: i32 = 5; const S_RELATIVE_SLASH: i32 = 6; const S_SPECIAL_AUTHORITY_SLASHES: i32 = 7; const S_SPECIAL_AUTHORITY_IGNORE_SLASHES: i32 = 8; const S_AUTHORITY: i32 = 9;
-const S_HOST: i32 = 10; const S_PORT: i32 = 11; const S_FILE: i32 = 12; const S_FILE_SLASH: i32 = 13; const S_FILE_HOST: i32 = 14; const S_PATH_START: i32 = 15;
-const S_PATH: i32 = 16; const S_OPAQUE_PATH: i32 = 17; const S_QUERY: i32 = 18; const S_FRAGMENT: i32 = 19;
+pub enum ParseEvent { SchemeLetter, SchemeMissing, SpecialRelativeOrAuthorityStarted, PathOrAuthorityStarted, RelativeStarted, RelativeSlashStarted, SpecialAuthoritySlashesStarted, SpecialAuthorityIgnoreSlashesStarted, AuthorityStarted, AuthorityRead, PortDelimiter, FileStarted, FileSlashStarted, FileHostStarted, HostRead, PathStarted, OpaquePathStarted, QueryDelimiter, FragmentDelimiter }
+
+pub machine Parsing on ParseEvent {
+    start SchemeStart;
+
+    state SchemeStart {
+        ParseEvent::SchemeLetter -> goto Scheme,
+        ParseEvent::SchemeMissing -> goto NoScheme,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state Scheme {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> goto NoScheme,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> goto SpecialRelativeOrAuthority,
+        ParseEvent::PathOrAuthorityStarted -> goto PathOrAuthority,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> goto SpecialAuthoritySlashes,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> goto File,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> goto OpaquePath,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state NoScheme {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> goto Relative,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> goto File,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state SpecialRelativeOrAuthority {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> goto Relative,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> goto SpecialAuthorityIgnoreSlashes,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state PathOrAuthority {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> goto Authority,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state Relative {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> goto RelativeSlash,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> goto Query,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state RelativeSlash {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> goto SpecialAuthorityIgnoreSlashes,
+        ParseEvent::AuthorityStarted -> goto Authority,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state SpecialAuthoritySlashes {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> goto SpecialAuthorityIgnoreSlashes,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state SpecialAuthorityIgnoreSlashes {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> goto Authority,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state Authority {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> goto Host,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state Host {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> goto Port,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> goto PathStart,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state Port {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> goto PathStart,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state File {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> goto FileSlash,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> goto Query,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state FileSlash {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> goto FileHost,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state FileHost {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> goto PathStart,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+
+    state PathStart {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> goto Path,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> goto Query,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state Path {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> goto Query,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state OpaquePath {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> goto Query,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    state Query {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> goto Fragment,
+    }
+
+    final state Fragment {
+        ParseEvent::SchemeLetter -> stay,
+        ParseEvent::SchemeMissing -> stay,
+        ParseEvent::SpecialRelativeOrAuthorityStarted -> stay,
+        ParseEvent::PathOrAuthorityStarted -> stay,
+        ParseEvent::RelativeStarted -> stay,
+        ParseEvent::RelativeSlashStarted -> stay,
+        ParseEvent::SpecialAuthoritySlashesStarted -> stay,
+        ParseEvent::SpecialAuthorityIgnoreSlashesStarted -> stay,
+        ParseEvent::AuthorityStarted -> stay,
+        ParseEvent::AuthorityRead -> stay,
+        ParseEvent::PortDelimiter -> stay,
+        ParseEvent::FileStarted -> stay,
+        ParseEvent::FileSlashStarted -> stay,
+        ParseEvent::FileHostStarted -> stay,
+        ParseEvent::HostRead -> stay,
+        ParseEvent::PathStarted -> stay,
+        ParseEvent::OpaquePathStarted -> stay,
+        ParseEvent::QueryDelimiter -> stay,
+        ParseEvent::FragmentDelimiter -> stay,
+    }
+}
 
 fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
 fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
@@ -127,8 +571,8 @@ fn ends_in_number(view: core::slice::View<u8>) -> bool {
 }
 
 struct Parser {
-    input: alloc::vec::Vec<u8>, n: i32, p: i32, state: i32, buf: alloc::vec::Vec<u8>, tmp: alloc::vec::Vec<u8>, ascii: alloc::vec::Vec<u8>,
-    at_seen: bool, password_seen: bool, inside_brackets: bool, special: bool, oom: bool,
+    input: alloc::vec::Vec<u8>, n: i32, p: i32, phase: Parsing, buf: alloc::vec::Vec<u8>, tmp: alloc::vec::Vec<u8>, ascii: alloc::vec::Vec<u8>,
+    at_seen_completion: core::iter_state::Completion, password_seen_completion: core::iter_state::Completion, brackets: core::io_state::PendingWork, special: bool, health: core::lifecycle::Health,
     scheme: alloc::vec::Vec<u8>, username: alloc::vec::Vec<u8>, password: alloc::vec::Vec<u8>, kind: i32, host: alloc::vec::Vec<u8>, port: i32,
     opaque: bool, path: alloc::vec::Vec<u8>, ends: alloc::vec::Vec<i32>, query: alloc::vec::Vec<u8>, has_query: bool, fragment: alloc::vec::Vec<u8>, has_fragment: bool
 }
@@ -142,7 +586,7 @@ impl Parser {
         if (field == F_PATH) { ok = self.path.try_push(value).is_ok(); } if (field == F_QUERY) { ok = self.query.try_push(value).is_ok(); }
         if (field == F_FRAG) { ok = self.fragment.try_push(value).is_ok(); } if (field == F_BUF) { ok = self.buf.try_push(value).is_ok(); }
         if (field == F_TMP) { ok = self.tmp.try_push(value).is_ok(); }
-        if (!ok) { self.oom = true; }
+        if (!ok) { self.health.fail(); }
     }
     fn extend(&self, field: i32, view: core::slice::View<u8>) {
         if (view.length == 0) { return; } let ok: bool = true;
@@ -151,7 +595,7 @@ impl Parser {
         if (field == F_PATH) { ok = self.path.try_extend(view).is_ok(); } if (field == F_QUERY) { ok = self.query.try_extend(view).is_ok(); }
         if (field == F_FRAG) { ok = self.fragment.try_extend(view).is_ok(); } if (field == F_BUF) { ok = self.buf.try_extend(view).is_ok(); }
         if (field == F_TMP) { ok = self.tmp.try_extend(view).is_ok(); }
-        if (!ok) { self.oom = true; }
+        if (!ok) { self.health.fail(); }
     }
     // Copy the run of input bytes from p that need no encoding and are not one
     // of the state's delimiters, leaving p on its last byte. Returns false
@@ -180,7 +624,7 @@ impl Parser {
         let start: i32 = 0; if (index > 0) { start = self.ends.at(index - 1); }
         return part(self.path.as_view(),start,self.ends.at(index));
     }
-    fn push_segment(&self, view: core::slice::View<u8>) { self.extend(F_PATH,view); if (self.ends.try_push(self.path.len()).is_err()) { self.oom = true; } }
+    fn push_segment(&self, view: core::slice::View<u8>) { self.extend(F_PATH,view); if (self.ends.try_push(self.path.len()).is_err()) { self.health.fail(); } }
     fn shorten(&self) {
         let count: i32 = self.ends.len();
         if (self.is_file() && count == 1 && normalized_drive(self.segment(0))) { return; }
@@ -188,8 +632,8 @@ impl Parser {
         let start: i32 = 0; if (count > 1) { start = self.ends.at(count - 2); }
         self.ends.pop(); self.path.truncate(start);
     }
-    fn begin_query(&self) { self.has_query = true; self.query.clear(); self.state = S_QUERY; }
-    fn begin_fragment(&self) { self.has_fragment = true; self.fragment.clear(); self.state = S_FRAGMENT; }
+    fn begin_query(&self) { self.has_query = true; self.query.clear(); self.phase.step(ParseEvent::QueryDelimiter); }
+    fn begin_fragment(&self) { self.has_fragment = true; self.fragment.clear(); self.phase.step(ParseEvent::FragmentDelimiter); }
     fn starts_with_drive(&self, index: i32) -> bool {
         if (self.n - index < 2 || !alpha(self.ch(index)) || (self.ch(index+1) != 58 && self.ch(index+1) != 124)) { return false; }
         if (self.n - index == 2) { return true; }
@@ -238,7 +682,7 @@ impl Parser {
                 self.put(F_TMP,hex_value(at(view,i+1) as i32) * 16 + hex_value(at(view,i+2) as i32)); i += 3;
             } else { self.put(F_TMP,c); i += 1; }
         }
-        if (self.oom) { return E_OOM; }
+        if (self.health.is_failed()) { return E_OOM; }
         // domain to ASCII: ext::idna lowercases an all-ASCII domain and runs
         // UTS #46 ToASCII on any other.
         let converted: core::result::Result<i32, ext::idna::Error> = ext::idna::to_ascii(self.tmp.as_view(),self.ascii.borrow());
@@ -352,72 +796,72 @@ impl Parser {
     }
 
     fn step(&self, c: i32, base: &Url, has_base: bool) -> i32 {
-        let st: i32 = self.state;
-        if (st == S_SCHEME_START) {
-            if (alpha(c)) { self.put(F_BUF,lower(c)); self.state = S_SCHEME; } else { self.state = S_NO_SCHEME; self.p -= 1; }
+        let st: ParsingState = self.phase.state();
+        if ((match (st) { ParsingState::SchemeStart -> true, _ -> false })) {
+            if (alpha(c)) { self.put(F_BUF,lower(c)); self.phase.step(ParseEvent::SchemeLetter); } else { self.phase.step(ParseEvent::SchemeMissing); self.p -= 1; }
             return 0;
         }
-        if (st == S_SCHEME) {
+        if ((match (st) { ParsingState::Scheme -> true, _ -> false })) {
             if (alpha(c) || digit(c) || c == 43 || c == 45 || c == 46) { self.put(F_BUF,lower(c)); return 0; }
-            if (c != 58) { self.buf.clear(); self.state = S_NO_SCHEME; self.p = -1; return 0; }
+            if (c != 58) { self.buf.clear(); self.phase.step(ParseEvent::SchemeMissing); self.p = -1; return 0; }
             self.set_scheme(self.buf.as_view()); self.buf.clear();
-            if (self.is_file()) { self.state = S_FILE; return 0; }
-            if (self.special && has_base && same(base.scheme(),self.scheme.as_view())) { self.state = S_SPECIAL_RELATIVE_OR_AUTHORITY; return 0; }
-            if (self.special) { self.state = S_SPECIAL_AUTHORITY_SLASHES; return 0; }
-            if (self.ch(self.p + 1) == 47) { self.state = S_PATH_OR_AUTHORITY; self.p += 1; return 0; }
-            self.opaque = true; self.state = S_OPAQUE_PATH; return 0;
+            if (self.is_file()) { self.phase.step(ParseEvent::FileStarted); return 0; }
+            if (self.special && has_base && same(base.scheme(),self.scheme.as_view())) { self.phase.step(ParseEvent::SpecialRelativeOrAuthorityStarted); return 0; }
+            if (self.special) { self.phase.step(ParseEvent::SpecialAuthoritySlashesStarted); return 0; }
+            if (self.ch(self.p + 1) == 47) { self.phase.step(ParseEvent::PathOrAuthorityStarted); self.p += 1; return 0; }
+            self.opaque = true; self.phase.step(ParseEvent::OpaquePathStarted); return 0;
         }
-        if (st == S_NO_SCHEME) {
+        if ((match (st) { ParsingState::NoScheme -> true, _ -> false })) {
             if (!has_base) { return E_SCHEME; }
             if (base.opaque) {
                 if (c != 35) { return E_SCHEME; }
                 self.set_scheme(base.scheme()); self.copy_path(base); self.copy_query(base); self.begin_fragment(); return 0;
             }
-            if (is(base.scheme(),"file",4)) { self.state = S_FILE; } else { self.state = S_RELATIVE; }
+            if (is(base.scheme(),"file",4)) { self.phase.step(ParseEvent::FileStarted); } else { self.phase.step(ParseEvent::RelativeStarted); }
             self.p -= 1; return 0;
         }
-        if (st == S_SPECIAL_RELATIVE_OR_AUTHORITY) {
-            if (c == 47 && self.ch(self.p + 1) == 47) { self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; self.p += 1; }
-            else { self.state = S_RELATIVE; self.p -= 1; }
+        if ((match (st) { ParsingState::SpecialRelativeOrAuthority -> true, _ -> false })) {
+            if (c == 47 && self.ch(self.p + 1) == 47) { self.phase.step(ParseEvent::SpecialAuthorityIgnoreSlashesStarted); self.p += 1; }
+            else { self.phase.step(ParseEvent::RelativeStarted); self.p -= 1; }
             return 0;
         }
-        if (st == S_PATH_OR_AUTHORITY) { if (c == 47) { self.state = S_AUTHORITY; } else { self.state = S_PATH; self.p -= 1; } return 0; }
-        if (st == S_RELATIVE) {
+        if ((match (st) { ParsingState::PathOrAuthority -> true, _ -> false })) { if (c == 47) { self.phase.step(ParseEvent::AuthorityStarted); } else { self.phase.step(ParseEvent::PathStarted); self.p -= 1; } return 0; }
+        if ((match (st) { ParsingState::Relative -> true, _ -> false })) {
             self.set_scheme(base.scheme());
-            if (c == 47 || (self.special && c == 92)) { self.state = S_RELATIVE_SLASH; return 0; }
+            if (c == 47 || (self.special && c == 92)) { self.phase.step(ParseEvent::RelativeSlashStarted); return 0; }
             self.copy_authority(base); self.copy_path(base); self.copy_query(base);
             if (c == 63) { self.begin_query(); return 0; }
             if (c == 35) { self.begin_fragment(); return 0; }
-            if (c != -1) { self.has_query = false; self.query.clear(); self.shorten(); self.state = S_PATH; self.p -= 1; }
+            if (c != -1) { self.has_query = false; self.query.clear(); self.shorten(); self.phase.step(ParseEvent::PathStarted); self.p -= 1; }
             return 0;
         }
-        if (st == S_RELATIVE_SLASH) {
-            if (self.special && (c == 47 || c == 92)) { self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; return 0; }
-            if (c == 47) { self.state = S_AUTHORITY; return 0; }
-            self.copy_authority(base); self.state = S_PATH; self.p -= 1; return 0;
+        if ((match (st) { ParsingState::RelativeSlash -> true, _ -> false })) {
+            if (self.special && (c == 47 || c == 92)) { self.phase.step(ParseEvent::SpecialAuthorityIgnoreSlashesStarted); return 0; }
+            if (c == 47) { self.phase.step(ParseEvent::AuthorityStarted); return 0; }
+            self.copy_authority(base); self.phase.step(ParseEvent::PathStarted); self.p -= 1; return 0;
         }
-        if (st == S_SPECIAL_AUTHORITY_SLASHES) {
+        if ((match (st) { ParsingState::SpecialAuthoritySlashes -> true, _ -> false })) {
             if (c == 47 && self.ch(self.p + 1) == 47) { self.p += 1; } else { self.p -= 1; }
-            self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; return 0;
+            self.phase.step(ParseEvent::SpecialAuthorityIgnoreSlashesStarted); return 0;
         }
-        if (st == S_SPECIAL_AUTHORITY_IGNORE_SLASHES) { if (c != 47 && c != 92) { self.state = S_AUTHORITY; self.p -= 1; } return 0; }
-        if (st == S_AUTHORITY) { return self.authority(c); }
-        if (st == S_HOST) {
-            if (c == 58 && !self.inside_brackets) {
+        if ((match (st) { ParsingState::SpecialAuthorityIgnoreSlashes -> true, _ -> false })) { if (c != 47 && c != 92) { self.phase.step(ParseEvent::AuthorityStarted); self.p -= 1; } return 0; }
+        if ((match (st) { ParsingState::Authority -> true, _ -> false })) { return self.authority(c); }
+        if ((match (st) { ParsingState::Host -> true, _ -> false })) {
+            if (c == 58 && !self.brackets.pending()) {
                 if (self.buf.len() == 0) { return E_MISSING_HOST; }
                 let failed: i32 = self.parse_host(!self.special); if (failed != 0) { return failed; }
-                self.buf.clear(); self.state = S_PORT; return 0;
+                self.buf.clear(); self.phase.step(ParseEvent::PortDelimiter); return 0;
             }
             if (self.delimiter(c)) {
                 self.p -= 1;
                 if (self.special && self.buf.len() == 0) { return E_MISSING_HOST; }
                 let failed: i32 = self.parse_host(!self.special); if (failed != 0) { return failed; }
-                self.buf.clear(); self.state = S_PATH_START; return 0;
+                self.buf.clear(); self.phase.step(ParseEvent::HostRead); return 0;
             }
-            if (c == 91) { self.inside_brackets = true; } if (c == 93) { self.inside_brackets = false; }
+            if (c == 91) { self.brackets.step(core::io_state::PendingEvent::Queued); } if (c == 93) { self.brackets.step(core::io_state::PendingEvent::Consumed); }
             self.put(F_BUF,c); return 0;
         }
-        if (st == S_PORT) {
+        if ((match (st) { ParsingState::Port -> true, _ -> false })) {
             if (digit(c)) { self.put(F_BUF,c); return 0; }
             if (!self.delimiter(c)) { return E_PORT; }
             if (self.buf.len() > 0) {
@@ -426,11 +870,11 @@ impl Parser {
                 if (value == default_port(self.scheme.as_view())) { self.port = -1; } else { self.port = value; }
                 self.buf.clear();
             }
-            self.state = S_PATH_START; self.p -= 1; return 0;
+            self.phase.step(ParseEvent::HostRead); self.p -= 1; return 0;
         }
-        if (st == S_FILE) {
+        if ((match (st) { ParsingState::File -> true, _ -> false })) {
             self.set_scheme(literal("file",4)); self.host.clear(); self.kind = K_EMPTY;
-            if (c == 47 || c == 92) { self.state = S_FILE_SLASH; return 0; }
+            if (c == 47 || c == 92) { self.phase.step(ParseEvent::FileSlashStarted); return 0; }
             if (has_base && is(base.scheme(),"file",4)) {
                 self.copy_host(base); self.copy_path(base); self.copy_query(base);
                 if (c == 63) { self.begin_query(); return 0; }
@@ -438,14 +882,14 @@ impl Parser {
                 if (c != -1) {
                     self.has_query = false; self.query.clear();
                     if (!self.starts_with_drive(self.p)) { self.shorten(); } else { self.path.clear(); self.ends.clear(); }
-                    self.state = S_PATH; self.p -= 1;
+                    self.phase.step(ParseEvent::PathStarted); self.p -= 1;
                 }
                 return 0;
             }
-            self.state = S_PATH; self.p -= 1; return 0;
+            self.phase.step(ParseEvent::PathStarted); self.p -= 1; return 0;
         }
-        if (st == S_FILE_SLASH) {
-            if (c == 47 || c == 92) { self.state = S_FILE_HOST; return 0; }
+        if ((match (st) { ParsingState::FileSlash -> true, _ -> false })) {
+            if (c == 47 || c == 92) { self.phase.step(ParseEvent::FileHostStarted); return 0; }
             if (has_base && is(base.scheme(),"file",4)) {
                 self.copy_host(base);
                 if (!self.starts_with_drive(self.p) && !base.opaque) {
@@ -453,28 +897,28 @@ impl Parser {
                     if (normalized_drive(first)) { self.push_segment(first); }
                 }
             }
-            self.state = S_PATH; self.p -= 1; return 0;
+            self.phase.step(ParseEvent::PathStarted); self.p -= 1; return 0;
         }
-        if (st == S_FILE_HOST) {
+        if ((match (st) { ParsingState::FileHost -> true, _ -> false })) {
             if (c == -1 || c == 47 || c == 92 || c == 63 || c == 35) {
                 self.p -= 1;
-                if (drive(self.buf.as_view())) { self.state = S_PATH; return 0; }
-                if (self.buf.len() == 0) { self.host.clear(); self.kind = K_EMPTY; self.state = S_PATH_START; return 0; }
+                if (drive(self.buf.as_view())) { self.phase.step(ParseEvent::PathStarted); return 0; }
+                if (self.buf.len() == 0) { self.host.clear(); self.kind = K_EMPTY; self.phase.step(ParseEvent::HostRead); return 0; }
                 let failed: i32 = self.parse_host(false); if (failed != 0) { return failed; }
                 if (is(self.host.as_view(),"localhost",9)) { self.host.clear(); self.kind = K_EMPTY; }
-                self.buf.clear(); self.state = S_PATH_START; return 0;
+                self.buf.clear(); self.phase.step(ParseEvent::HostRead); return 0;
             }
             self.put(F_BUF,c); return 0;
         }
-        if (st == S_PATH_START) {
-            if (self.special) { self.state = S_PATH; if (c != 47 && c != 92) { self.p -= 1; } return 0; }
+        if ((match (st) { ParsingState::PathStart -> true, _ -> false })) {
+            if (self.special) { self.phase.step(ParseEvent::PathStarted); if (c != 47 && c != 92) { self.p -= 1; } return 0; }
             if (c == 63) { self.begin_query(); return 0; }
             if (c == 35) { self.begin_fragment(); return 0; }
-            if (c != -1) { self.state = S_PATH; if (c != 47) { self.p -= 1; } }
+            if (c != -1) { self.phase.step(ParseEvent::PathStarted); if (c != 47) { self.p -= 1; } }
             return 0;
         }
-        if (st == S_PATH) { return self.path_state(c); }
-        if (st == S_OPAQUE_PATH) {
+        if ((match (st) { ParsingState::Path -> true, _ -> false })) { return self.path_state(c); }
+        if ((match (st) { ParsingState::OpaquePath -> true, _ -> false })) {
             if (c == 63) { self.begin_query(); return 0; }
             if (c == 35) { self.begin_fragment(); return 0; }
             if (c == 32) {
@@ -485,7 +929,7 @@ impl Parser {
             if (c != -1 && !self.plain_run(F_PATH,SET_C0,false,true,true)) { self.encode(F_PATH,c,SET_C0); }
             return 0;
         }
-        if (st == S_QUERY) {
+        if ((match (st) { ParsingState::Query -> true, _ -> false })) {
             if (c == 35) { self.begin_fragment(); return 0; }
             let set: i32 = SET_QUERY; if (self.special) { set = SET_SPECIAL_QUERY; }
             if (c != -1 && !self.plain_run(F_QUERY,set,false,false,false)) { self.encode(F_QUERY,c,set); }
@@ -496,19 +940,19 @@ impl Parser {
     }
     fn authority(&self, c: i32) -> i32 {
         if (c == 64) {
-            if (self.at_seen) { let field: i32 = F_USER; if (self.password_seen) { field = F_PASS; } self.extend(field,literal("%40",3)); }
-            self.at_seen = true; let i: i32 = 0;
+            if (self.at_seen_completion.is_done()) { let field: i32 = F_USER; if (self.password_seen_completion.is_done()) { field = F_PASS; } self.extend(field,literal("%40",3)); }
+            self.at_seen_completion.finish(); let i: i32 = 0;
             while (i < self.buf.len()) {
                 let b: i32 = self.buf.at(i) as i32;
-                if (b == 58 && !self.password_seen) { self.password_seen = true; }
-                else { if (self.password_seen) { self.encode(F_PASS,b,SET_USERINFO); } else { self.encode(F_USER,b,SET_USERINFO); } }
+                if (b == 58 && !self.password_seen_completion.is_done()) { self.password_seen_completion.finish(); }
+                else { if (self.password_seen_completion.is_done()) { self.encode(F_PASS,b,SET_USERINFO); } else { self.encode(F_USER,b,SET_USERINFO); } }
                 i += 1;
             }
             self.buf.clear(); return 0;
         }
         if (self.delimiter(c)) {
-            if (self.at_seen && self.buf.len() == 0) { return E_MISSING_HOST; }
-            self.p -= self.buf.len() + 1; self.buf.clear(); self.state = S_HOST; return 0;
+            if (self.at_seen_completion.is_done() && self.buf.len() == 0) { return E_MISSING_HOST; }
+            self.p -= self.buf.len() + 1; self.buf.clear(); self.phase.step(ParseEvent::AuthorityRead); return 0;
         }
         self.put(F_BUF,c); return 0;
     }
@@ -535,7 +979,7 @@ impl Parser {
         while (true) {
             let failed: i32 = self.step(self.ch(self.p),base,has_base);
             if (failed != 0) { return failed; }
-            if (self.oom) { return E_OOM; }
+            if (self.health.is_failed()) { return E_OOM; }
             if (self.p >= self.n) { return 0; }
             self.p += 1;
         }
@@ -595,8 +1039,8 @@ fn parse_from(input: core::slice::View<u8>, base: &Url, has_base: bool) -> core:
     let start: i32 = 0; let end: i32 = input.length;
     while (start < end && at(input,start) <= 32) { start += 1; }
     while (end > start && at(input,end-1) <= 32) { end -= 1; }
-    let parser = Parser { input: alloc::vec::new(), n: 0, p: 0, state: S_SCHEME_START, buf: alloc::vec::new(), tmp: alloc::vec::new(), ascii: alloc::vec::new(),
-        at_seen: false, password_seen: false, inside_brackets: false, special: false, oom: false,
+    let parser = Parser { input: alloc::vec::new(), n: 0, p: 0, phase: parsing_start(), buf: alloc::vec::new(), tmp: alloc::vec::new(), ascii: alloc::vec::new(),
+        at_seen_completion: core::iter_state::completion_start(), password_seen_completion: core::iter_state::completion_start(), brackets: core::io_state::pending_work_start(), special: false, health: core::lifecycle::health_start(),
         scheme: alloc::vec::new(), username: alloc::vec::new(), password: alloc::vec::new(), kind: K_NONE, host: alloc::vec::new(), port: -1,
         opaque: false, path: alloc::vec::new(), ends: alloc::vec::new(), query: alloc::vec::new(), has_query: false, fragment: alloc::vec::new(), has_fragment: false };
     if (parser.input.try_reserve(end - start).is_err()) { parser.destroy(); return core::result::Err(Error::AllocationFailed); }

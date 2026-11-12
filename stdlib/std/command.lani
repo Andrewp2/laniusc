@@ -1,6 +1,7 @@
 // Linux x86_64 subprocesses. One manual owner per child and descriptor.
 // Single-threaded callers only; see docs/stdlib-command.md for signal/FD rules.
 module std::command;
+import core::iter_state;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -37,7 +38,27 @@ pub struct Usage { user: core::time::Duration, system: core::time::Duration, max
 // own descendants that it (transitively) waited for.
 pub struct Reaped { status: ExitStatus, usage: Usage }
 pub enum UsageTarget { Process, Children, Thread }
-pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, cached: core::option::Option<ExitStatus>, group_policy: Group, group_confirmed: bool, observed: core::option::Option<ExitStatus> }
+pub enum ProcessEvent { Observed(ExitStatus), Reaped(ExitStatus), Lost }
+pub machine ProcessLifecycle on ProcessEvent {
+    start Running;
+    state Running {
+        ProcessEvent::Observed(status) -> goto Observed(status),
+        ProcessEvent::Reaped(status) -> goto Reaped(status),
+        ProcessEvent::Lost -> goto Lost,
+    }
+    state Observed(status: ExitStatus) {
+        ProcessEvent::Observed(_) -> stay,
+        ProcessEvent::Reaped(result) -> goto Reaped(result),
+        ProcessEvent::Lost -> goto Lost,
+    }
+    final state Reaped(status: ExitStatus) { ProcessEvent::Observed(_) -> stay, ProcessEvent::Reaped(_) -> stay, ProcessEvent::Lost -> stay, }
+    final state Lost { ProcessEvent::Observed(_) -> stay, ProcessEvent::Reaped(_) -> stay, ProcessEvent::Lost -> stay, }
+}
+pub impl ProcessLifecycle {
+    pub fn cached(&self) -> core::option::Option<ExitStatus> { return match(self.state()) { ProcessLifecycleState::Reaped(status) -> core::option::Some(status), _ -> core::option::None() }; }
+    pub fn observed(&self) -> core::option::Option<ExitStatus> { return match(self.state()) { ProcessLifecycleState::Observed(status) -> core::option::Some(status), _ -> core::option::None() }; }
+}
+pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, lifecycle: ProcessLifecycle, group_policy: Group, group_confirmation: core::iter_state::Completion }
 pub struct FailedStart { failure: Failure, status: ExitStatus }
 pub struct UnknownStart { child: Child, failure: Failure }
 pub enum Spawn { Child(Child), Failed(FailedStart), Unknown(UnknownStart) }
@@ -88,7 +109,7 @@ fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     return core::result::Ok(Prepared { bytes: bytes, pointers: pointers, paths: path_offsets, cwd: cwd, env_at: env_at });
 }
 fn owned(fd: i32) -> core::option::Option<std::file::File> { if (fd < 0) { return core::option::None(); } return core::option::Some(std::file::from_owned_handle(fd).unwrap()); }
-fn make_child(pid: i32, fds: [i32], state: Startup, group: Group) -> Child { return Child { pid: pid, input: owned(fds[0]), output: owned(fds[1]), error: owned(fds[2]), startup_state: state, cached: core::option::None(), group_policy: group, group_confirmed: false, observed: core::option::None() }; }
+fn make_child(pid: i32, fds: [i32], state: Startup, group: Group) -> Child { return Child { pid: pid, input: owned(fds[0]), output: owned(fds[1]), error: owned(fds[2]), startup_state: state, lifecycle: process_lifecycle_start(), group_policy: group, group_confirmation: core::iter_state::completion_start() }; }
 fn close_fds(fds: [i32]) { let i: i32 = 0; while (i < 3) { std::command_raw::close(fds[i]); fds[i] = -1; i += 1; } }
 fn child_failure(fd: i32, stage: i32, errno: i32) {
     let packet: [i32;4] = [0;4]; packet[0] = 1279479108; packet[1] = stage; packet[2] = errno; packet[3] = packet[0] ^ stage ^ errno;
@@ -154,7 +175,7 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
     let new_group: bool = match(request.group) { Group::New -> true, _ -> false };
     if (new_group) {
         let grouped: i64 = std::command_raw::set_group(pid as i32,pid as i32);
-        if (grouped == 0) { child.group_confirmed = true; }
+        if (grouped == 0) { child.group_confirmation.finish(); }
         else {
             if (grouped == -13) { let confirmed: core::result::Result<i32,Failure> = child.confirm_group(); if (confirmed.is_err()) { group_error = core::option::Some(confirmed.unwrap_err()); } }
             else { if (grouped < 0) { group_error = core::option::Some(host(Stage::ProcessGroup,grouped)); } else { group_error = core::option::Some(failure(Error::Host,Stage::ProcessGroup,5)); } }
@@ -183,20 +204,20 @@ pub impl Child {
     // Requested policy is independent of proven, currently anchored authority.
     pub fn group(&self) -> Group { return self.group_policy; }
     pub fn group_id(&self) -> core::option::Option<i32> {
-        if (!self.group_confirmed || self.pid <= 1 || self.cached.is_some()) { return core::option::None(); }
+        if (!self.group_confirmation.is_done() || self.pid <= 1 || self.lifecycle.cached().is_some()) { return core::option::None(); }
         return core::option::Some(self.pid);
     }
     // Retry uncertain setup with one kernel query. The owned unreaped leader
     // pins its numeric identity; an arbitrary positive PGID is never accepted.
     pub fn confirm_group(&self) -> core::result::Result<i32,Failure> {
-        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::ProcessGroup,0)); }
+        if (self.pid <= 1 || self.lifecycle.cached().is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::ProcessGroup,0)); }
         let requested: bool = match(self.group_policy) { Group::New -> true, _ -> false };
         if (!requested) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
-        if (self.group_confirmed) { return core::result::Ok(self.pid); }
+        if (self.group_confirmation.is_done()) { return core::result::Ok(self.pid); }
         let actual: i64 = std::command_raw::get_group(self.pid);
         if (actual < 0) { return core::result::Err(host(Stage::ProcessGroup,actual)); }
         if (actual != self.pid as i64) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
-        self.group_confirmed = true; return core::result::Ok(self.pid);
+        self.group_confirmation.finish(); return core::result::Ok(self.pid);
     }
     pub fn take_stdin(&self) -> core::option::Option<std::file::File> { let value = self.input; self.input = core::option::None(); return value; }
     pub fn take_stdout(&self) -> core::option::Option<std::file::File> { let value = self.output; self.output = core::option::None(); return value; }
@@ -209,7 +230,7 @@ pub impl Child {
         if (core::option::is_some(error)) { return core::result::Err(core::option::unwrap(error)); } return core::result::Ok(0);
     }
     pub fn try_wait(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
-        if (core::option::is_some(self.cached)) { return core::result::Ok(self.cached); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        if (core::option::is_some(self.lifecycle.cached())) { return core::result::Ok(self.lifecycle.cached()); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),true); if (n == 0) { return core::result::Ok(core::option::None()); }
         return self.record_wait(n,status[0]);
     }
@@ -227,9 +248,9 @@ pub impl Child {
         return core::result::Ok(observed.unwrap().unwrap());
     }
     fn observe(&self, blocking: bool) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
-        if (self.cached.is_some()) { return core::result::Ok(self.cached); }
+        if (self.lifecycle.cached().is_some()) { return core::result::Ok(self.lifecycle.cached()); }
         if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
-        if (self.observed.is_some()) { return core::result::Ok(self.observed); }
+        if (self.lifecycle.observed().is_some()) { return core::result::Ok(self.lifecycle.observed()); }
         // Native Linux x86_64 siginfo_t: 128 bytes, child pid at byte16,
         // status at byte24, si_code at byte8. Initialize the no-event sentinel.
         let info: [i32;32] = [0;32];
@@ -237,7 +258,7 @@ pub impl Child {
         if (blocking) { while (n == -4) { n = std::command_raw::observe_exit_blocking(self.pid,core::mem::i32_array_data_ptr(info)); } }
         else { n = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info)); }
         if (n < 0) {
-            if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+            if (n == -10) { self.pid = 0; self.group_confirmation = core::iter_state::completion_start(); self.lifecycle.step(ProcessEvent::Lost); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
             return core::result::Err(host(Stage::Wait,n));
         }
         if (n != 0) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
@@ -251,19 +272,19 @@ pub impl Child {
         }
         let code: core::option::Option<i32> = core::option::None(); let signal: core::option::Option<i32> = core::option::None();
         if (info[2] == 1) { code = core::option::Some(info[6]); } else { signal = core::option::Some(info[6]); }
-        self.observed = core::option::Some(ExitStatus { raw: raw, code: code, signal: signal, core_dumped: info[2] == 3 });
-        return core::result::Ok(self.observed);
+        self.lifecycle.step(ProcessEvent::Observed(ExitStatus { raw: raw, code: code, signal: signal, core_dumped: info[2] == 3 }));
+        return core::result::Ok(self.lifecycle.observed());
     }
     fn record_wait(&self, n: i64, raw: i32) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
-        if (n < 0) { if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); } return core::result::Err(host(Stage::Wait,n)); }
+        if (n < 0) { if (n == -10) { self.pid = 0; self.group_confirmation = core::iter_state::completion_start(); self.lifecycle.step(ProcessEvent::Lost); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); } return core::result::Err(host(Stage::Wait,n)); }
         if (n != self.pid as i64 || (raw & 127) == 127) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
         let code: core::option::Option<i32> = core::option::None(); let signal: core::option::Option<i32> = core::option::None(); let dumped: bool = false;
         if ((raw & 127) == 0) { code = core::option::Some((raw >> 8) & 255); } else { signal = core::option::Some(raw & 127); dumped = (raw & 128) != 0; }
-        let status: ExitStatus = ExitStatus { raw: raw, code: code, signal: signal, core_dumped: dumped }; self.cached = core::option::Some(status); self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Ok(self.cached);
+        let status: ExitStatus = ExitStatus { raw: raw, code: code, signal: signal, core_dumped: dumped }; self.lifecycle.step(ProcessEvent::Reaped(status)); self.pid = 0; self.group_confirmation = core::iter_state::completion_start(); return core::result::Ok(self.lifecycle.cached());
     }
     pub fn wait(&self) -> core::result::Result<ExitStatus,Failure> {
         let input = self.take_stdin(); if (core::option::is_some(input)) { core::option::unwrap(input).close(); }
-        if (core::option::is_some(self.cached)) { return core::result::Ok(core::option::unwrap(self.cached)); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        if (core::option::is_some(self.lifecycle.cached())) { return core::result::Ok(core::option::unwrap(self.lifecycle.cached())); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),false); let result = self.record_wait(n,status[0]); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } return core::result::Ok(core::option::unwrap(result.unwrap()));
     }
     // wait4 with rusage. Usage exists only at the reap itself: after any other
@@ -280,7 +301,7 @@ pub impl Child {
     // One wait4(WNOHANG) attempt; None while running, Host errno 4 on EINTR.
     pub fn try_wait_with_usage(&self) -> core::result::Result<core::option::Option<Reaped>,Failure> { return self.reap_with_usage(true); }
     fn reap_with_usage(&self, nonblocking: bool) -> core::result::Result<core::option::Option<Reaped>,Failure> {
-        if (self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Wait,0)); }
+        if (self.lifecycle.cached().is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Wait,0)); }
         if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         let status: [i32;1] = [0;1]; let words: [i32;36] = [0;36];
         let n: i64 = std::command_raw::wait_usage(self.pid,core::mem::i32_array_data_ptr(status),core::mem::i32_array_data_ptr(words),nonblocking);
@@ -292,14 +313,14 @@ pub impl Child {
         return core::result::Ok(core::option::Some(Reaped { status: recorded.unwrap().unwrap(), usage: decoded.unwrap() }));
     }
     pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure> {
-        if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); } if (self.pid <= 0 || core::option::is_some(self.cached)) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); } if (self.pid <= 0 || core::option::is_some(self.lifecycle.cached())) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
         let n = std::command_raw::word(62,self.pid as i64,signal as i64,0); if (n < 0) { return core::result::Err(host(Stage::Signal,n)); } return core::result::Ok(0);
     }
     // Signal the original confirmed group, never a freshly queried arbitrary
     // group. Success proves delivery to at least one permitted member only.
     pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure> {
         if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); }
-        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        if (self.pid <= 1 || self.lifecycle.cached().is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
         if (self.group_id().is_none()) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
         let target: i64 = 0-(self.pid as i64);
         let n: i64 = std::command_raw::word(62,target,signal as i64,0);
@@ -311,7 +332,7 @@ pub impl Child {
     // leaves the unreaped Child owner for retry; only the final wait reaps it.
     // The positive leader fallback also covers a leader that left its group.
     pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure> {
-        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        if (self.pid <= 1 || self.lifecycle.cached().is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
         if (self.group_id().is_none()) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
         let first: core::option::Option<Failure> = core::option::None();
         let closed: core::result::Result<i32,Failure> = self.close_pipes(); if (closed.is_err()) { first = core::option::Some(closed.unwrap_err()); }

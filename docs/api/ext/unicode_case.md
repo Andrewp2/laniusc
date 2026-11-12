@@ -13,29 +13,78 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 - [extended-unicode-case](../../extended-unicode-case.md)
 - [extended-unicode-uconv](../../extended-unicode-uconv.md)
 
-Declaration counts: enum: 3; field: 3; function: 2; struct: 1; variant: 12.
+Declaration counts: enum: 5; field: 3; function: 2; impl: 2; machine: 2; method: 3; struct: 1; variant: 14.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_case.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_case.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/unicode_case.lani#L7)
-- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_case.lani#L8)
-- [core::unicode](../core/unicode.md) · [source](../../../extended/ext/unicode_case.lani#L9)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_case.lani#L10)
-- [ext::unicode_case_data](unicode_case_data.md) · [source](../../../extended/ext/unicode_case.lani#L11)
-- [ext::unicode_case_fast_data](unicode_case_fast_data.md) · [source](../../../extended/ext/unicode_case.lani#L12)
-- [ext::unicode_words](unicode_words.md) · [source](../../../extended/ext/unicode_case.lani#L13)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/unicode_case.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/unicode_case.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/unicode_case.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/unicode_case.lani#L8)
+- [core::text](../core/text.md) · [source](../../../extended/ext/unicode_case.lani#L9)
+- [core::unicode](../core/unicode.md) · [source](../../../extended/ext/unicode_case.lani#L10)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_case.lani#L11)
+- [ext::unicode_case_data](unicode_case_data.md) · [source](../../../extended/ext/unicode_case.lani#L12)
+- [ext::unicode_case_fast_data](unicode_case_fast_data.md) · [source](../../../extended/ext/unicode_case.lani#L13)
+- [ext::unicode_words](unicode_words.md) · [source](../../../extended/ext/unicode_case.lani#L14)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: CaseEvent
+
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+
+```lanius
+pub enum CaseEvent
+```
+
+#### variant: Classified
+
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+
+```lanius
+Classified(bool,bool)
+```
+
+### machine: CaseSuffix
+
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+
+```lanius
+pub machine CaseSuffix on CaseEvent
+```
+
+### enum: DotEvent
+
+[Source line 23](../../../extended/ext/unicode_case.lani#L23)
+
+```lanius
+pub enum DotEvent
+```
+
+#### variant: Classified
+
+[Source line 23](../../../extended/ext/unicode_case.lani#L23)
+
+```lanius
+Classified(bool,bool,bool)
+```
+
+### machine: DotSuffix
+
+[Source line 24](../../../extended/ext/unicode_case.lani#L24)
+
+```lanius
+pub machine DotSuffix on DotEvent
+```
+
 ### enum: Kind
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 50](../../../extended/ext/unicode_case.lani#L50)
 
 ```lanius
 pub enum Kind
@@ -43,7 +92,7 @@ pub enum Kind
 
 #### variant: Lower
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 50](../../../extended/ext/unicode_case.lani#L50)
 
 ```lanius
 Lower
@@ -51,7 +100,7 @@ Lower
 
 #### variant: Upper
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 50](../../../extended/ext/unicode_case.lani#L50)
 
 ```lanius
 Upper
@@ -59,7 +108,7 @@ Upper
 
 #### variant: Title
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 50](../../../extended/ext/unicode_case.lani#L50)
 
 ```lanius
 Title
@@ -67,7 +116,7 @@ Title
 
 #### variant: Fold
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 50](../../../extended/ext/unicode_case.lani#L50)
 
 ```lanius
 Fold
@@ -75,7 +124,7 @@ Fold
 
 ### enum: Locale
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 51](../../../extended/ext/unicode_case.lani#L51)
 
 ```lanius
 pub enum Locale
@@ -83,7 +132,7 @@ pub enum Locale
 
 #### variant: Root
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 51](../../../extended/ext/unicode_case.lani#L51)
 
 ```lanius
 Root
@@ -91,7 +140,7 @@ Root
 
 #### variant: Turkic
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 51](../../../extended/ext/unicode_case.lani#L51)
 
 ```lanius
 Turkic
@@ -99,7 +148,7 @@ Turkic
 
 #### variant: Lithuanian
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 51](../../../extended/ext/unicode_case.lani#L51)
 
 ```lanius
 Lithuanian
@@ -107,7 +156,7 @@ Lithuanian
 
 ### enum: Error
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 pub enum Error
@@ -115,7 +164,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 Bounds
@@ -123,7 +172,7 @@ Bounds
 
 #### variant: InvalidUtf8
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 InvalidUtf8(i32)
@@ -131,7 +180,7 @@ InvalidUtf8(i32)
 
 #### variant: SizeOverflow
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 SizeOverflow
@@ -139,7 +188,7 @@ SizeOverflow
 
 #### variant: OutputCapacity
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 OutputCapacity(i32)
@@ -147,7 +196,7 @@ OutputCapacity(i32)
 
 #### variant: WorkLimit
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 52](../../../extended/ext/unicode_case.lani#L52)
 
 ```lanius
 WorkLimit(u64)
@@ -155,7 +204,7 @@ WorkLimit(u64)
 
 ### struct: Report
 
-[Source line 18](../../../extended/ext/unicode_case.lani#L18)
+[Source line 53](../../../extended/ext/unicode_case.lani#L53)
 
 ```lanius
 pub struct Report
@@ -163,7 +212,7 @@ pub struct Report
 
 #### field: bytes
 
-[Source line 18](../../../extended/ext/unicode_case.lani#L18)
+[Source line 53](../../../extended/ext/unicode_case.lani#L53)
 
 ```lanius
 bytes: i32
@@ -171,7 +220,7 @@ bytes: i32
 
 #### field: scalars
 
-[Source line 18](../../../extended/ext/unicode_case.lani#L18)
+[Source line 53](../../../extended/ext/unicode_case.lani#L53)
 
 ```lanius
 scalars: i32
@@ -179,7 +228,7 @@ scalars: i32
 
 #### field: work
 
-[Source line 18](../../../extended/ext/unicode_case.lani#L18)
+[Source line 53](../../../extended/ext/unicode_case.lani#L53)
 
 ```lanius
 work: u64
@@ -189,7 +238,7 @@ work: u64
 
 ### function: measure
 
-[Source line 225](../../../extended/ext/unicode_case.lani#L225)
+[Source line 258](../../../extended/ext/unicode_case.lani#L258)
 
 ```lanius
 pub fn measure(input: core::text::Text, kind: Kind, locale: Locale, work_limit: u64) -> core::result::Result<Report, Error>
@@ -197,8 +246,50 @@ pub fn measure(input: core::text::Text, kind: Kind, locale: Locale, work_limit: 
 
 ### function: transform_into
 
-[Source line 230](../../../extended/ext/unicode_case.lani#L230)
+[Source line 263](../../../extended/ext/unicode_case.lani#L263)
 
 ```lanius
 pub fn transform_into(input: core::text::Text, kind: Kind, locale: Locale, output: core::slice::View<u8>, work_limit: u64) -> core::result::Result<Report, Error>
+```
+
+## Implementation blocks and public methods
+
+### impl at line 22
+
+[Source line 22](../../../extended/ext/unicode_case.lani#L22)
+
+```lanius
+pub impl CaseSuffix
+```
+
+#### method: cased
+
+[Source line 22](../../../extended/ext/unicode_case.lani#L22)
+
+```lanius
+pub fn cased(&self) -> bool
+```
+
+### impl at line 43
+
+[Source line 43](../../../extended/ext/unicode_case.lani#L43)
+
+```lanius
+pub impl DotSuffix
+```
+
+#### method: soft
+
+[Source line 44](../../../extended/ext/unicode_case.lani#L44)
+
+```lanius
+pub fn soft(&self) -> bool
+```
+
+#### method: capital_i
+
+[Source line 45](../../../extended/ext/unicode_case.lani#L45)
+
+```lanius
+pub fn capital_i(&self) -> bool
 ```

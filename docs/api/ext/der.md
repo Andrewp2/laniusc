@@ -12,25 +12,58 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-der](../../extended-der.md)
 
-Declaration counts: enum: 2; field: 24; function: 10; impl: 5; method: 25; struct: 8; variant: 18.
+Declaration counts: enum: 3; field: 23; function: 10; impl: 6; machine: 1; method: 28; struct: 8; variant: 20.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/der.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/der.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/der.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/der.lani#L7)
-- [core::text](../core/text.md) · [source](../../../extended/ext/der.lani#L8)
+- [core::iter_state](../core/iter_state.md) · [source](../../../extended/ext/der.lani#L4)
+- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/der.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/der.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/der.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/der.lani#L8)
+- [core::text](../core/text.md) · [source](../../../extended/ext/der.lani#L9)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
+### enum: ArcPhaseEvent
+
+[Source line 11](../../../extended/ext/der.lani#L11)
+
+```lanius
+pub enum ArcPhaseEvent
+```
+
+#### variant: CombinedRead
+
+[Source line 11](../../../extended/ext/der.lani#L11)
+
+```lanius
+CombinedRead
+```
+
+#### variant: SecondRead
+
+[Source line 11](../../../extended/ext/der.lani#L11)
+
+```lanius
+SecondRead
+```
+
+### machine: ArcPhase
+
+[Source line 12](../../../extended/ext/der.lani#L12)
+
+```lanius
+pub machine ArcPhase on ArcPhaseEvent
+```
+
 ### enum: Class
 
-[Source line 10](../../../extended/ext/der.lani#L10)
+[Source line 37](../../../extended/ext/der.lani#L37)
 
 ```lanius
 pub enum Class
@@ -38,7 +71,7 @@ pub enum Class
 
 #### variant: Universal
 
-[Source line 10](../../../extended/ext/der.lani#L10)
+[Source line 37](../../../extended/ext/der.lani#L37)
 
 ```lanius
 Universal
@@ -46,7 +79,7 @@ Universal
 
 #### variant: Application
 
-[Source line 10](../../../extended/ext/der.lani#L10)
+[Source line 37](../../../extended/ext/der.lani#L37)
 
 ```lanius
 Application
@@ -54,7 +87,7 @@ Application
 
 #### variant: Context
 
-[Source line 10](../../../extended/ext/der.lani#L10)
+[Source line 37](../../../extended/ext/der.lani#L37)
 
 ```lanius
 Context
@@ -62,7 +95,7 @@ Context
 
 #### variant: Private
 
-[Source line 10](../../../extended/ext/der.lani#L10)
+[Source line 37](../../../extended/ext/der.lani#L37)
 
 ```lanius
 Private
@@ -70,7 +103,7 @@ Private
 
 ### struct: Tag
 
-[Source line 11](../../../extended/ext/der.lani#L11)
+[Source line 38](../../../extended/ext/der.lani#L38)
 
 ```lanius
 pub struct Tag
@@ -78,7 +111,7 @@ pub struct Tag
 
 #### field: class
 
-[Source line 11](../../../extended/ext/der.lani#L11)
+[Source line 38](../../../extended/ext/der.lani#L38)
 
 ```lanius
 class: Class
@@ -86,7 +119,7 @@ class: Class
 
 #### field: constructed
 
-[Source line 11](../../../extended/ext/der.lani#L11)
+[Source line 38](../../../extended/ext/der.lani#L38)
 
 ```lanius
 constructed: bool
@@ -94,7 +127,7 @@ constructed: bool
 
 #### field: number
 
-[Source line 11](../../../extended/ext/der.lani#L11)
+[Source line 38](../../../extended/ext/der.lani#L38)
 
 ```lanius
 number: u32
@@ -102,7 +135,7 @@ number: u32
 
 ### enum: ErrorKind
 
-[Source line 12](../../../extended/ext/der.lani#L12)
+[Source line 39](../../../extended/ext/der.lani#L39)
 
 ```lanius
 pub enum ErrorKind
@@ -110,7 +143,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 13](../../../extended/ext/der.lani#L13)
+[Source line 40](../../../extended/ext/der.lani#L40)
 
 ```lanius
 Bounds
@@ -118,7 +151,7 @@ Bounds
 
 #### variant: UnexpectedEnd
 
-[Source line 13](../../../extended/ext/der.lani#L13)
+[Source line 40](../../../extended/ext/der.lani#L40)
 
 ```lanius
 UnexpectedEnd
@@ -126,7 +159,7 @@ UnexpectedEnd
 
 #### variant: InvalidTag
 
-[Source line 13](../../../extended/ext/der.lani#L13)
+[Source line 40](../../../extended/ext/der.lani#L40)
 
 ```lanius
 InvalidTag
@@ -134,7 +167,7 @@ InvalidTag
 
 #### variant: TagOverflow
 
-[Source line 13](../../../extended/ext/der.lani#L13)
+[Source line 40](../../../extended/ext/der.lani#L40)
 
 ```lanius
 TagOverflow
@@ -142,7 +175,7 @@ TagOverflow
 
 #### variant: InvalidLength
 
-[Source line 13](../../../extended/ext/der.lani#L13)
+[Source line 40](../../../extended/ext/der.lani#L40)
 
 ```lanius
 InvalidLength
@@ -150,7 +183,7 @@ InvalidLength
 
 #### variant: LengthOverflow
 
-[Source line 14](../../../extended/ext/der.lani#L14)
+[Source line 41](../../../extended/ext/der.lani#L41)
 
 ```lanius
 LengthOverflow
@@ -158,7 +191,7 @@ LengthOverflow
 
 #### variant: IndefiniteLength
 
-[Source line 14](../../../extended/ext/der.lani#L14)
+[Source line 41](../../../extended/ext/der.lani#L41)
 
 ```lanius
 IndefiniteLength
@@ -166,7 +199,7 @@ IndefiniteLength
 
 #### variant: NonCanonical
 
-[Source line 14](../../../extended/ext/der.lani#L14)
+[Source line 41](../../../extended/ext/der.lani#L41)
 
 ```lanius
 NonCanonical
@@ -174,7 +207,7 @@ NonCanonical
 
 #### variant: TrailingData
 
-[Source line 14](../../../extended/ext/der.lani#L14)
+[Source line 41](../../../extended/ext/der.lani#L41)
 
 ```lanius
 TrailingData
@@ -182,7 +215,7 @@ TrailingData
 
 #### variant: UnexpectedTag
 
-[Source line 15](../../../extended/ext/der.lani#L15)
+[Source line 42](../../../extended/ext/der.lani#L42)
 
 ```lanius
 UnexpectedTag
@@ -190,7 +223,7 @@ UnexpectedTag
 
 #### variant: InvalidValue
 
-[Source line 15](../../../extended/ext/der.lani#L15)
+[Source line 42](../../../extended/ext/der.lani#L42)
 
 ```lanius
 InvalidValue
@@ -198,7 +231,7 @@ InvalidValue
 
 #### variant: IntegerOverflow
 
-[Source line 15](../../../extended/ext/der.lani#L15)
+[Source line 42](../../../extended/ext/der.lani#L42)
 
 ```lanius
 IntegerOverflow
@@ -206,7 +239,7 @@ IntegerOverflow
 
 #### variant: ArcOverflow
 
-[Source line 15](../../../extended/ext/der.lani#L15)
+[Source line 42](../../../extended/ext/der.lani#L42)
 
 ```lanius
 ArcOverflow
@@ -214,7 +247,7 @@ ArcOverflow
 
 #### variant: OutputTooSmall
 
-[Source line 15](../../../extended/ext/der.lani#L15)
+[Source line 42](../../../extended/ext/der.lani#L42)
 
 ```lanius
 OutputTooSmall
@@ -222,7 +255,7 @@ OutputTooSmall
 
 ### struct: Error
 
-[Source line 20](../../../extended/ext/der.lani#L20)
+[Source line 47](../../../extended/ext/der.lani#L47)
 
 ```lanius
 pub struct Error
@@ -230,7 +263,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 20](../../../extended/ext/der.lani#L20)
+[Source line 47](../../../extended/ext/der.lani#L47)
 
 ```lanius
 kind: ErrorKind
@@ -238,7 +271,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 20](../../../extended/ext/der.lani#L20)
+[Source line 47](../../../extended/ext/der.lani#L47)
 
 ```lanius
 offset: i32
@@ -246,7 +279,7 @@ offset: i32
 
 ### struct: Element
 
-[Source line 21](../../../extended/ext/der.lani#L21)
+[Source line 48](../../../extended/ext/der.lani#L48)
 
 ```lanius
 pub struct Element
@@ -254,7 +287,7 @@ pub struct Element
 
 #### field: tag
 
-[Source line 21](../../../extended/ext/der.lani#L21)
+[Source line 48](../../../extended/ext/der.lani#L48)
 
 ```lanius
 tag: Tag
@@ -262,7 +295,7 @@ tag: Tag
 
 #### field: encoded
 
-[Source line 21](../../../extended/ext/der.lani#L21)
+[Source line 48](../../../extended/ext/der.lani#L48)
 
 ```lanius
 encoded: core::slice::View<u8>
@@ -270,7 +303,7 @@ encoded: core::slice::View<u8>
 
 #### field: content
 
-[Source line 21](../../../extended/ext/der.lani#L21)
+[Source line 48](../../../extended/ext/der.lani#L48)
 
 ```lanius
 content: core::slice::View<u8>
@@ -278,7 +311,7 @@ content: core::slice::View<u8>
 
 ### struct: Reader
 
-[Source line 22](../../../extended/ext/der.lani#L22)
+[Source line 49](../../../extended/ext/der.lani#L49)
 
 ```lanius
 pub struct Reader
@@ -286,7 +319,7 @@ pub struct Reader
 
 #### field: input
 
-[Source line 22](../../../extended/ext/der.lani#L22)
+[Source line 49](../../../extended/ext/der.lani#L49)
 
 ```lanius
 input: core::slice::View<u8>
@@ -294,7 +327,7 @@ input: core::slice::View<u8>
 
 #### field: position
 
-[Source line 22](../../../extended/ext/der.lani#L22)
+[Source line 49](../../../extended/ext/der.lani#L49)
 
 ```lanius
 position: i32
@@ -302,7 +335,7 @@ position: i32
 
 ### struct: BitString
 
-[Source line 23](../../../extended/ext/der.lani#L23)
+[Source line 50](../../../extended/ext/der.lani#L50)
 
 ```lanius
 pub struct BitString
@@ -310,7 +343,7 @@ pub struct BitString
 
 #### field: bytes
 
-[Source line 23](../../../extended/ext/der.lani#L23)
+[Source line 50](../../../extended/ext/der.lani#L50)
 
 ```lanius
 bytes: core::slice::View<u8>
@@ -318,7 +351,7 @@ bytes: core::slice::View<u8>
 
 #### field: unused_bits
 
-[Source line 23](../../../extended/ext/der.lani#L23)
+[Source line 50](../../../extended/ext/der.lani#L50)
 
 ```lanius
 unused_bits: u8
@@ -326,7 +359,7 @@ unused_bits: u8
 
 ### struct: Oid
 
-[Source line 24](../../../extended/ext/der.lani#L24)
+[Source line 51](../../../extended/ext/der.lani#L51)
 
 ```lanius
 pub struct Oid
@@ -334,7 +367,7 @@ pub struct Oid
 
 #### field: bytes
 
-[Source line 24](../../../extended/ext/der.lani#L24)
+[Source line 51](../../../extended/ext/der.lani#L51)
 
 ```lanius
 bytes: core::slice::View<u8>
@@ -342,7 +375,7 @@ bytes: core::slice::View<u8>
 
 ### struct: OidArcs
 
-[Source line 25](../../../extended/ext/der.lani#L25)
+[Source line 52](../../../extended/ext/der.lani#L52)
 
 ```lanius
 pub struct OidArcs
@@ -350,7 +383,7 @@ pub struct OidArcs
 
 #### field: input
 
-[Source line 25](../../../extended/ext/der.lani#L25)
+[Source line 52](../../../extended/ext/der.lani#L52)
 
 ```lanius
 input: core::slice::View<u8>
@@ -358,31 +391,23 @@ input: core::slice::View<u8>
 
 #### field: position
 
-[Source line 25](../../../extended/ext/der.lani#L25)
+[Source line 52](../../../extended/ext/der.lani#L52)
 
 ```lanius
 position: i32
 ```
 
-#### field: first
+#### field: phase
 
-[Source line 25](../../../extended/ext/der.lani#L25)
-
-```lanius
-first: bool
-```
-
-#### field: pending
-
-[Source line 25](../../../extended/ext/der.lani#L25)
+[Source line 52](../../../extended/ext/der.lani#L52)
 
 ```lanius
-pending: bool
+phase: ArcPhase
 ```
 
 #### field: second
 
-[Source line 25](../../../extended/ext/der.lani#L25)
+[Source line 52](../../../extended/ext/der.lani#L52)
 
 ```lanius
 second: u64
@@ -390,7 +415,7 @@ second: u64
 
 ### struct: X509Time
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 pub struct X509Time
@@ -398,7 +423,7 @@ pub struct X509Time
 
 #### field: year
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 year: i32
@@ -406,7 +431,7 @@ year: i32
 
 #### field: month
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 month: i32
@@ -414,7 +439,7 @@ month: i32
 
 #### field: day
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 day: i32
@@ -422,7 +447,7 @@ day: i32
 
 #### field: hour
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 hour: i32
@@ -430,7 +455,7 @@ hour: i32
 
 #### field: minute
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 minute: i32
@@ -438,7 +463,7 @@ minute: i32
 
 #### field: second
 
-[Source line 26](../../../extended/ext/der.lani#L26)
+[Source line 53](../../../extended/ext/der.lani#L53)
 
 ```lanius
 second: i32
@@ -448,7 +473,7 @@ second: i32
 
 ### function: reader
 
-[Source line 91](../../../extended/ext/der.lani#L91)
+[Source line 118](../../../extended/ext/der.lani#L118)
 
 ```lanius
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader, Error>
@@ -456,7 +481,7 @@ pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader, Erro
 
 ### function: parse_one
 
-[Source line 95](../../../extended/ext/der.lani#L95)
+[Source line 122](../../../extended/ext/der.lani#L122)
 
 ```lanius
 pub fn parse_one(input: core::slice::View<u8>) -> core::result::Result<Element, Error>
@@ -464,7 +489,7 @@ pub fn parse_one(input: core::slice::View<u8>) -> core::result::Result<Element, 
 
 ### function: header_len
 
-[Source line 301](../../../extended/ext/der.lani#L301)
+[Source line 328](../../../extended/ext/der.lani#L328)
 
 ```lanius
 pub fn header_len(tag: Tag, length: i32) -> core::result::Result<i32, Error>
@@ -472,7 +497,7 @@ pub fn header_len(tag: Tag, length: i32) -> core::result::Result<i32, Error>
 
 ### function: encoded_len
 
-[Source line 309](../../../extended/ext/der.lani#L309)
+[Source line 336](../../../extended/ext/der.lani#L336)
 
 ```lanius
 pub fn encoded_len(tag: Tag, length: i32) -> core::result::Result<i32, Error>
@@ -480,7 +505,7 @@ pub fn encoded_len(tag: Tag, length: i32) -> core::result::Result<i32, Error>
 
 ### function: write_header
 
-[Source line 332](../../../extended/ext/der.lani#L332)
+[Source line 359](../../../extended/ext/der.lani#L359)
 
 ```lanius
 pub fn write_header(tag: Tag, length: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -488,7 +513,7 @@ pub fn write_header(tag: Tag, length: i32, output: core::slice::View<u8>) -> cor
 
 ### function: write_tlv
 
-[Source line 340](../../../extended/ext/der.lani#L340)
+[Source line 367](../../../extended/ext/der.lani#L367)
 
 ```lanius
 pub fn write_tlv(tag: Tag, content: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -496,7 +521,7 @@ pub fn write_tlv(tag: Tag, content: core::slice::View<u8>, output: core::slice::
 
 ### function: write_boolean
 
-[Source line 348](../../../extended/ext/der.lani#L348)
+[Source line 375](../../../extended/ext/der.lani#L375)
 
 ```lanius
 pub fn write_boolean(value: bool, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -504,7 +529,7 @@ pub fn write_boolean(value: bool, output: core::slice::View<u8>) -> core::result
 
 ### function: write_integer
 
-[Source line 352](../../../extended/ext/der.lani#L352)
+[Source line 379](../../../extended/ext/der.lani#L379)
 
 ```lanius
 pub fn write_integer(content: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -512,7 +537,7 @@ pub fn write_integer(content: core::slice::View<u8>, output: core::slice::View<u
 
 ### function: write_i64
 
-[Source line 358](../../../extended/ext/der.lani#L358)
+[Source line 385](../../../extended/ext/der.lani#L385)
 
 ```lanius
 pub fn write_i64(value: i64, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -520,7 +545,7 @@ pub fn write_i64(value: i64, output: core::slice::View<u8>) -> core::result::Res
 
 ### function: write_u64
 
-[Source line 365](../../../extended/ext/der.lani#L365)
+[Source line 392](../../../extended/ext/der.lani#L392)
 
 ```lanius
 pub fn write_u64(value: u64, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -528,9 +553,41 @@ pub fn write_u64(value: u64, output: core::slice::View<u8>) -> core::result::Res
 
 ## Implementation blocks and public methods
 
-### impl at line 46
+### impl at line 30
 
-[Source line 46](../../../extended/ext/der.lani#L46)
+[Source line 30](../../../extended/ext/der.lani#L30)
+
+```lanius
+pub impl ArcPhase
+```
+
+#### method: is_combined
+
+[Source line 31](../../../extended/ext/der.lani#L31)
+
+```lanius
+pub fn is_combined(&self) -> bool
+```
+
+#### method: is_second
+
+[Source line 32](../../../extended/ext/der.lani#L32)
+
+```lanius
+pub fn is_second(&self) -> bool
+```
+
+#### method: is_rest
+
+[Source line 33](../../../extended/ext/der.lani#L33)
+
+```lanius
+pub fn is_rest(&self) -> bool
+```
+
+### impl at line 73
+
+[Source line 73](../../../extended/ext/der.lani#L73)
 
 ```lanius
 pub impl Tag
@@ -538,15 +595,15 @@ pub impl Tag
 
 #### method: matches
 
-[Source line 47](../../../extended/ext/der.lani#L47)
+[Source line 74](../../../extended/ext/der.lani#L74)
 
 ```lanius
 pub fn matches(&self, class: Class, constructed: bool, number: u32) -> bool
 ```
 
-### impl at line 102
+### impl at line 129
 
-[Source line 102](../../../extended/ext/der.lani#L102)
+[Source line 129](../../../extended/ext/der.lani#L129)
 
 ```lanius
 pub impl Reader
@@ -554,7 +611,7 @@ pub impl Reader
 
 #### method: borrow
 
-[Source line 103](../../../extended/ext/der.lani#L103)
+[Source line 130](../../../extended/ext/der.lani#L130)
 
 ```lanius
 pub fn borrow(&self) -> &Reader
@@ -562,7 +619,7 @@ pub fn borrow(&self) -> &Reader
 
 #### method: position
 
-[Source line 104](../../../extended/ext/der.lani#L104)
+[Source line 131](../../../extended/ext/der.lani#L131)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -570,7 +627,7 @@ pub fn position(&self) -> i32
 
 #### method: remaining
 
-[Source line 105](../../../extended/ext/der.lani#L105)
+[Source line 132](../../../extended/ext/der.lani#L132)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -578,7 +635,7 @@ pub fn remaining(&self) -> i32
 
 #### method: next
 
-[Source line 106](../../../extended/ext/der.lani#L106)
+[Source line 133](../../../extended/ext/der.lani#L133)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Element>, Error>
@@ -586,15 +643,15 @@ pub fn next(&self) -> core::result::Result<core::option::Option<Element>, Error>
 
 #### method: finish
 
-[Source line 114](../../../extended/ext/der.lani#L114)
+[Source line 141](../../../extended/ext/der.lani#L141)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 151
+### impl at line 178
 
-[Source line 151](../../../extended/ext/der.lani#L151)
+[Source line 178](../../../extended/ext/der.lani#L178)
 
 ```lanius
 pub impl Element
@@ -602,7 +659,7 @@ pub impl Element
 
 #### method: children
 
-[Source line 152](../../../extended/ext/der.lani#L152)
+[Source line 179](../../../extended/ext/der.lani#L179)
 
 ```lanius
 pub fn children(&self) -> core::result::Result<Reader, Error>
@@ -610,7 +667,7 @@ pub fn children(&self) -> core::result::Result<Reader, Error>
 
 #### method: as_sequence
 
-[Source line 157](../../../extended/ext/der.lani#L157)
+[Source line 184](../../../extended/ext/der.lani#L184)
 
 ```lanius
 pub fn as_sequence(&self) -> core::result::Result<Reader, Error>
@@ -618,7 +675,7 @@ pub fn as_sequence(&self) -> core::result::Result<Reader, Error>
 
 #### method: as_set
 
-[Source line 162](../../../extended/ext/der.lani#L162)
+[Source line 189](../../../extended/ext/der.lani#L189)
 
 ```lanius
 pub fn as_set(&self) -> core::result::Result<Reader, Error>
@@ -626,7 +683,7 @@ pub fn as_set(&self) -> core::result::Result<Reader, Error>
 
 #### method: as_boolean
 
-[Source line 167](../../../extended/ext/der.lani#L167)
+[Source line 194](../../../extended/ext/der.lani#L194)
 
 ```lanius
 pub fn as_boolean(&self) -> core::result::Result<bool, Error>
@@ -634,7 +691,7 @@ pub fn as_boolean(&self) -> core::result::Result<bool, Error>
 
 #### method: as_integer
 
-[Source line 176](../../../extended/ext/der.lani#L176)
+[Source line 203](../../../extended/ext/der.lani#L203)
 
 ```lanius
 pub fn as_integer(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -642,7 +699,7 @@ pub fn as_integer(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: as_i64
 
-[Source line 180](../../../extended/ext/der.lani#L180)
+[Source line 207](../../../extended/ext/der.lani#L207)
 
 ```lanius
 pub fn as_i64(&self) -> core::result::Result<i64, Error>
@@ -650,7 +707,7 @@ pub fn as_i64(&self) -> core::result::Result<i64, Error>
 
 #### method: as_u64
 
-[Source line 190](../../../extended/ext/der.lani#L190)
+[Source line 217](../../../extended/ext/der.lani#L217)
 
 ```lanius
 pub fn as_u64(&self) -> core::result::Result<u64, Error>
@@ -658,7 +715,7 @@ pub fn as_u64(&self) -> core::result::Result<u64, Error>
 
 #### method: as_bit_string
 
-[Source line 199](../../../extended/ext/der.lani#L199)
+[Source line 226](../../../extended/ext/der.lani#L226)
 
 ```lanius
 pub fn as_bit_string(&self) -> core::result::Result<BitString, Error>
@@ -666,7 +723,7 @@ pub fn as_bit_string(&self) -> core::result::Result<BitString, Error>
 
 #### method: as_octets
 
-[Source line 210](../../../extended/ext/der.lani#L210)
+[Source line 237](../../../extended/ext/der.lani#L237)
 
 ```lanius
 pub fn as_octets(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -674,7 +731,7 @@ pub fn as_octets(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: as_null
 
-[Source line 211](../../../extended/ext/der.lani#L211)
+[Source line 238](../../../extended/ext/der.lani#L238)
 
 ```lanius
 pub fn as_null(&self) -> core::result::Result<i32, Error>
@@ -682,7 +739,7 @@ pub fn as_null(&self) -> core::result::Result<i32, Error>
 
 #### method: as_oid
 
-[Source line 216](../../../extended/ext/der.lani#L216)
+[Source line 243](../../../extended/ext/der.lani#L243)
 
 ```lanius
 pub fn as_oid(&self) -> core::result::Result<Oid, Error>
@@ -690,7 +747,7 @@ pub fn as_oid(&self) -> core::result::Result<Oid, Error>
 
 #### method: as_utf8
 
-[Source line 222](../../../extended/ext/der.lani#L222)
+[Source line 249](../../../extended/ext/der.lani#L249)
 
 ```lanius
 pub fn as_utf8(&self) -> core::result::Result<core::text::Text, Error>
@@ -698,7 +755,7 @@ pub fn as_utf8(&self) -> core::result::Result<core::text::Text, Error>
 
 #### method: as_printable
 
-[Source line 229](../../../extended/ext/der.lani#L229)
+[Source line 256](../../../extended/ext/der.lani#L256)
 
 ```lanius
 pub fn as_printable(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -706,7 +763,7 @@ pub fn as_printable(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: as_ia5
 
-[Source line 240](../../../extended/ext/der.lani#L240)
+[Source line 267](../../../extended/ext/der.lani#L267)
 
 ```lanius
 pub fn as_ia5(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -714,15 +771,15 @@ pub fn as_ia5(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: as_x509_time
 
-[Source line 250](../../../extended/ext/der.lani#L250)
+[Source line 277](../../../extended/ext/der.lani#L277)
 
 ```lanius
 pub fn as_x509_time(&self) -> core::result::Result<X509Time, Error>
 ```
 
-### impl at line 265
+### impl at line 292
 
-[Source line 265](../../../extended/ext/der.lani#L265)
+[Source line 292](../../../extended/ext/der.lani#L292)
 
 ```lanius
 pub impl Oid
@@ -730,15 +787,15 @@ pub impl Oid
 
 #### method: arcs
 
-[Source line 266](../../../extended/ext/der.lani#L266)
+[Source line 293](../../../extended/ext/der.lani#L293)
 
 ```lanius
 pub fn arcs(&self) -> core::result::Result<OidArcs, Error>
 ```
 
-### impl at line 272
+### impl at line 299
 
-[Source line 272](../../../extended/ext/der.lani#L272)
+[Source line 299](../../../extended/ext/der.lani#L299)
 
 ```lanius
 pub impl OidArcs
@@ -746,7 +803,7 @@ pub impl OidArcs
 
 #### method: borrow
 
-[Source line 273](../../../extended/ext/der.lani#L273)
+[Source line 300](../../../extended/ext/der.lani#L300)
 
 ```lanius
 pub fn borrow(&self) -> &OidArcs
@@ -754,7 +811,7 @@ pub fn borrow(&self) -> &OidArcs
 
 #### method: position
 
-[Source line 274](../../../extended/ext/der.lani#L274)
+[Source line 301](../../../extended/ext/der.lani#L301)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -762,7 +819,7 @@ pub fn position(&self) -> i32
 
 #### method: next
 
-[Source line 275](../../../extended/ext/der.lani#L275)
+[Source line 302](../../../extended/ext/der.lani#L302)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<u64>, Error>

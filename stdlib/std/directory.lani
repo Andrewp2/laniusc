@@ -1,5 +1,7 @@
 // Owned raw-byte directory iteration and bounded, descriptor-anchored walks.
 module std::directory;
+import core::lifecycle;
+import core::iter_state;
 import alloc::vec;
 import core::io;
 import core::mem;
@@ -12,7 +14,7 @@ import std::file_ops;
 import std::linux;
 pub enum Error { Bounds, Limit, Malformed(i32), Closed, Failed, Changed, UnavailableMetadata, AllocationFailed, Io(core::io::Error) }
 pub struct Entry { name:core::slice::View<u8>, inode:u64, cookie:i64, kind:std::file_ops::Kind, consumed:i32 }
-pub struct Reader { file:std::file::File, buffer:alloc::vec::Vec<u8>, position:i32, filled:i32, eof:bool, failed:bool, work:u64 }
+pub struct Reader { file:std::file::File, buffer:alloc::vec::Vec<u8>, position:i32, filled:i32, completion: core::iter_state::Completion, health: core::lifecycle::Health, work:u64 }
 pub struct Limits { max_depth:i32, max_entries:i32, max_path_bytes:i32, max_bytes:i32, max_work:u64, buffer_bytes:i32 }
 struct Row { start:i32, length:i32, depth:i32, metadata:std::file_ops::Metadata }
 struct Level { directory:Reader, parent_length:i32, depth:i32 }
@@ -38,7 +40,7 @@ pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Res
 }
 fn linux_error(error:std::linux::Error) -> Error { return match(error) { std::linux::Error::System(value)->Error::Io(io_error(value)), _->Error::Bounds }; }
 fn io_error(value:i32) -> core::io::Error { if(value==4) { return core::io::Error::Interrupted; } if(value==11) { return core::io::Error::WouldBlock; } return core::io::Error::Host(value); }
-pub fn empty_directory() -> Reader { return Reader { file:std::file::File { handle:-1 },buffer:alloc::vec::new(),position:0,filled:0,eof:false,failed:false,work:0 }; }
+pub fn empty_directory() -> Reader { return Reader { file:std::file::File { handle:-1 },buffer:alloc::vec::new(),position:0,filled:0,completion: core::iter_state::completion_start(),health: core::lifecycle::health_start(),work:0 }; }
 pub fn open(path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error> { return std::directory::open_at(std::file_ops::AT_FDCWD,path,buffer_bytes); }
 pub fn open_at(directory_fd:i32,path:core::path::Path,buffer_bytes:i32) -> core::result::Result<Reader,Error> { let reader:Reader=empty_directory(); let opened=std::directory::open_at_into(directory_fd,path,buffer_bytes,reader.borrow()); if(core::result::is_err(opened)) { return core::result::Err(core::result::unwrap_err(opened)); } return core::result::Ok(reader); }
 pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error> { return std::directory::open_at_into(std::file_ops::AT_FDCWD,path,buffer_bytes,output); }
@@ -50,37 +52,37 @@ pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,outp
     let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(buffer_bytes); if(core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); } let buffer:alloc::vec::Vec<u8> =core::result::unwrap(made); core::result::unwrap(buffer.try_resize(buffer_bytes,0));
     let options:std::file_ops::OpenOptions=std::file_ops::options(); options.directory=true; options.no_follow=true;
     let opened=std::file_ops::open_at(directory_fd,path,options); if(core::result::is_err(opened)) { buffer.destroy(); return core::result::Err(Error::Io(core::result::unwrap_err(opened))); }
-    output.file=core::result::unwrap(opened); output.buffer=buffer; output.position=0; output.filled=0; output.eof=false; output.failed=false; output.work=0; return core::result::Ok(0);
+    output.file=core::result::unwrap(opened); output.buffer=buffer; output.position=0; output.filled=0; output.completion = core::iter_state::completion_start(); output.health.reset(); output.work=0; return core::result::Ok(0);
 }
 pub impl Reader {
     pub fn borrow(&self) -> &Reader { return self; }
     pub fn raw_handle(&self) -> core::option::Option<i32> { return self.file.raw_handle(); }
     pub fn work_done(&self) -> u64 { return self.work; }
-    fn charge(&self,amount:u64) -> bool { if(amount>18446744073709551615-self.work) { self.failed=true; return false; } self.work+=amount; return true; }
+    fn charge(&self,amount:u64) -> bool { if(amount>18446744073709551615-self.work) { self.health.fail(); return false; } self.work+=amount; return true; }
     pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error> {
-        if(!self.file.is_open()) { return core::result::Err(Error::Closed); } if(self.failed) { return core::result::Err(Error::Failed); } let refills:i32=0;
+        if(!self.file.is_open()) { return core::result::Err(Error::Closed); } if(self.health.is_failed()) { return core::result::Err(Error::Failed); } let refills:i32=0;
         while(true) {
             if(self.position==self.filled) {
-                if(self.eof) { return core::result::Ok(core::option::None()); }
-                if(refills==3 || !self.charge(1)) { self.failed=true; return core::result::Err(Error::Limit); } refills+=1;
+                if(self.completion.is_done()) { return core::result::Ok(core::option::None()); }
+                if(refills==3 || !self.charge(1)) { self.health.fail(); return core::result::Err(Error::Limit); } refills+=1;
                 let args:[std::linux::Argument;3]=[std::linux::Argument::Word(core::option::unwrap(self.file.raw_handle()) as i64),std::linux::Argument::Address(self.buffer.storage),std::linux::Argument::Word(self.buffer.len() as i64)];
                 let result=std::linux::call(217,core::result::unwrap(core::slice::view(args,3)));
                 if(core::result::is_err(result)) { return core::result::Err(linux_error(core::result::unwrap_err(result))); }
                 let received:i64=core::result::unwrap(result);
-                if(received < 0) { self.failed=true; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
-                if(received > (self.buffer.len() as i64)) { self.failed=true; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+                if(received < 0) { self.health.fail(); return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+                if(received > (self.buffer.len() as i64)) { self.health.fail(); return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
                 if(!self.charge(received as u64)) { return core::result::Err(Error::Limit); } self.position=0; self.filled=received as i32;
-                if(received==0) { self.eof=true; return core::result::Ok(core::option::None()); }
+                if(received==0) { self.completion.finish(); return core::result::Ok(core::option::None()); }
             }
             let input:core::slice::View<u8> =core::result::unwrap(self.buffer.as_view().subview(0,self.filled)); let parsed=decode_entry(input,self.position);
-            if(core::result::is_err(parsed)) { self.failed=true; return core::result::Err(core::result::unwrap_err(parsed)); } let entry:Entry=core::result::unwrap(parsed); self.position+=entry.consumed;
+            if(core::result::is_err(parsed)) { self.health.fail(); return core::result::Err(core::result::unwrap_err(parsed)); } let entry:Entry=core::result::unwrap(parsed); self.position+=entry.consumed;
             if(!self.charge((entry.consumed as u64)+1)) { return core::result::Err(Error::Limit); }
             let dot:bool=entry.name.len()==1 && byte(entry.name,0)==46; let parent:bool=entry.name.len()==2 && byte(entry.name,0)==46 && byte(entry.name,1)==46;
             if(!dot && !parent) { return core::result::Ok(core::option::Some(entry)); }
         }
         return core::result::Ok(core::option::None());
     }
-    pub fn close(&self) -> core::result::Result<i32,Error> { self.buffer.destroy(); self.position=0; self.filled=0; self.eof=true; let result=self.file.close(); if(core::result::is_err(result)) { return core::result::Err(Error::Io(core::result::unwrap_err(result))); } return core::result::Ok(0); }
+    pub fn close(&self) -> core::result::Result<i32,Error> { self.buffer.destroy(); self.position=0; self.filled=0; self.completion.finish(); let result=self.file.close(); if(core::result::is_err(result)) { return core::result::Err(Error::Io(core::result::unwrap_err(result))); } return core::result::Ok(0); }
 }
 pub fn empty_entry() -> WalkEntry { let empty:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts(empty,0); return WalkEntry { path:core::result::unwrap(core::slice::view(bytes,0)),depth:0,metadata:std::file_ops::empty_metadata() }; }
 pub impl WalkEntry { pub fn borrow(&self) -> &WalkEntry { return self; } }
