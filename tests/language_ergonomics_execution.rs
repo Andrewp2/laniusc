@@ -86,6 +86,11 @@ fn try_binds_a_slice_payload_to_a_local() {
 }
 
 #[test]
+fn try_and_other_tails_follow_a_closing_brace_or_parenthesis() {
+    assert_exit("try_braced_operand.lani", 32);
+}
+
+#[test]
 fn try_needs_a_result_or_option_operand() {
     assert_rejected(
         "try_not_result.lani",

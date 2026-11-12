@@ -551,6 +551,15 @@ uint index_base_node(uint index_node)
         previous_kind == HIR_MATCH_EXPR || previous_kind == HIR_TRY_EXPR;
     if (previous_is_expression)
         return previous;
+    // `(value)[i]` and `(value)?`: the operand is the expression inside the
+    // parentheses. The group has no HIR kind, and the enclosing postfix
+    // forwards to this operator, so it would name the operator itself.
+    if (valid_node(previous) && node_kind[previous] == PROD_GROUP)
+    {
+        uint grouped_expr = first_child_node(previous);
+        if (valid_node(grouped_expr))
+            return grouped_expr;
+    }
 
     uint parent_kind = valid_node(p) ? hir_kind[p] : 0u;
     bool parent_is_expression =

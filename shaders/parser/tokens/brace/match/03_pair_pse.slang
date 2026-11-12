@@ -120,7 +120,8 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
 
     brace_semantic_kind[close_i] = close_kind_for_open_kind(brace_semantic_kind[open_i]);
-    uint context_i = open_i == 0u ? 0u : open_i - 1u;
+    // The context of a token is the last statement event before it, so the
+    // context of the `{` covers a `;` or a `}` directly before the brace.
     braced_rhs_statement_kind[close_i] =
-        statement_kind_for_context(statement_context_kind[context_i]);
+        statement_kind_for_context(statement_context_kind[open_i]);
 }

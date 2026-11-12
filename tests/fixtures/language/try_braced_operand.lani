@@ -1,0 +1,45 @@
+module app::main;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+struct Pair { left: i32, right: i32 }
+
+fn good() -> Result<i32, i32> { return Ok(7); }
+fn bad() -> Result<i32, i32> { return Err(3); }
+
+// `?` directly after a match's closing brace.
+fn direct(value: bool) -> Result<i32, i32> {
+    let number = match (value) { true -> good(), false -> bad() }?;
+    return Ok(number + 1);
+}
+
+// `?` after a parenthesized operand.
+fn grouped(value: bool) -> Result<i32, i32> {
+    let seven = (good())?;
+    let number = (match (value) { true -> good(), false -> bad() })?;
+    return Ok(number + seven);
+}
+
+// A method call, an operator and a field after a closing brace. The block
+// and the `if` end in a brace that belongs to no `let`.
+fn tails(value: bool) -> i32 {
+    let fallback = match (value) { true -> good(), false -> bad() }.unwrap_or(40);
+    let sum = match (value) { true -> 1, false -> 2 } + 10;
+    let left = Pair { left: 5, right: 6 }.left;
+    { let inner = sum; assert(inner > 0); }
+    if (value) { assert(fallback == 7); }
+    assert(sum > 0);
+    return fallback + sum + left;
+}
+
+fn main() -> i32 {
+    assert(direct(true).unwrap() == 8);
+    assert(direct(false).unwrap_err() == 3);
+    assert(grouped(true).unwrap() == 14);
+    assert(grouped(false).unwrap_err() == 3);
+    assert(tails(true) == 23); // 7 + 11 + 5
+    assert(tails(false) == 57); // 40 + 12 + 5
+    let values = [4, 9];
+    return (values)[1] + tails(true); // 32
+}

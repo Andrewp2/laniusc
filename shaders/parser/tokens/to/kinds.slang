@@ -122,8 +122,14 @@ bool semantic_token_before_ends_primary(uint parser_i, uint count)
         return false;
 
     uint prev_token_i = prev_parser_i - 1u;
-    return prev_token_i < gParams.token_capacity &&
-           brace_semantic_kind[prev_token_i] == TK_STRUCT_LIT_RBRACE;
+    if (prev_token_i >= gParams.token_capacity)
+        return false;
+    if (brace_semantic_kind[prev_token_i] == TK_STRUCT_LIT_RBRACE)
+        return true;
+    // A `}` that closes the value of a `let`, `const` or `return` is an
+    // operand: `let n = match (v) { ... } + 1;`.
+    uint rhs = braced_rhs_statement_kind[prev_token_i];
+    return rhs == TK_LET || rhs == TK_CONST || rhs == TK_RETURN;
 }
 
 uint raw_token_kind(uint token_i)
@@ -481,10 +487,14 @@ uint semantic_semicolon_kind_for(uint parser_i, uint count)
     uint recorded = semicolon_kind_for_statement_context(statement_context_token_kind(token_i));
     if (recorded != 0u)
         return recorded;
-    if (token_i > 0u && raw_token_kind(token_i - 1u) == TK_RBRACE)
+    // A `}` resets the statement context. When that `}` is the last event
+    // before this `;`, the statement is the one the brace's value belongs
+    // to: `let n = match (v) { ... }?;`.
+    uint event_i = statement_event_token_at(token_i);
+    if (event_i != INVALID && (statement_context_kind[token_i] & 0xffu) == 0u &&
+        raw_token_kind(event_i) == TK_RBRACE)
     {
-        uint braced = semicolon_kind_for_statement_context(
-            braced_rhs_statement_kind[token_i - 1u]);
+        uint braced = semicolon_kind_for_statement_context(braced_rhs_statement_kind[event_i]);
         if (braced != 0u)
             return braced;
     }
