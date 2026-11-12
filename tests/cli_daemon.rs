@@ -279,6 +279,103 @@ fn cli_daemon_accepts_a_unix_socket_session() {
 }
 
 #[test]
+fn cli_daemon_links_a_native_executable_from_several_source_roots() {
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cli_daemon/native_roots");
+    let artifact = common::TempArtifact::new("laniusc_daemon_native", "artifact", None);
+    let requests = common::TempArtifact::new("laniusc_daemon_native", "requests", Some("jsonl"));
+    let compile = |id: &str| {
+        serde_json::json!({
+            "id": id,
+            "command": "compile",
+            "emit": "x86_64",
+            "input": fixture.join("app/main.lani"),
+            "output": artifact.path(),
+            "source_roots": [fixture.join("first_root"), fixture.join("second_root")],
+            "native_link": true,
+            "native_libraries": ["m"],
+        })
+    };
+    let unknown = serde_json::json!({
+        "id": "unknown",
+        "command": "compile",
+        "emit": "x86_64",
+        "input": fixture.join("app/main.lani"),
+        "output": artifact.path(),
+        "linker_flags": ["-s"],
+    });
+    let both_roots = serde_json::json!({
+        "id": "both_roots",
+        "command": "compile",
+        "emit": "x86_64",
+        "input": fixture.join("app/main.lani"),
+        "output": artifact.path(),
+        "source_root": fixture.join("first_root"),
+        "source_roots": [fixture.join("second_root")],
+    });
+    let shutdown = serde_json::json!({"id": "shutdown", "command": "shutdown"});
+    fs::write(
+        requests.path(),
+        format!(
+            "{unknown}\n{both_roots}\n{}\n{}\n{shutdown}\n",
+            compile("native"),
+            compile("repeat")
+        ),
+    )
+    .expect("write native daemon request fixture");
+
+    let stdin = fs::File::open(requests.path()).expect("open native daemon request fixture");
+    let mut command = Command::new(laniusc_bin());
+    command
+        .arg("daemon")
+        .arg("--stdio")
+        .arg("--backend")
+        .arg("x86_64")
+        .arg("--stdlib-root")
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+        .stdin(Stdio::from(stdin));
+    let output =
+        common::codegen_command_output_with_timeout("laniusc daemon native job", &mut command);
+    common::assert_command_success("laniusc daemon native job", &output);
+    let responses = String::from_utf8(output.stdout)
+        .expect("daemon stdout should be UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("daemon response JSON"))
+        .collect::<Vec<_>>();
+    assert_eq!(responses.len(), 6, "{responses:#?}");
+    assert_eq!(responses[0]["event"], "ready");
+
+    assert_eq!(responses[1]["id"], "unknown");
+    assert_eq!(responses[1]["ok"], false);
+    let message = responses[1]["protocol_error"]
+        .as_str()
+        .expect("an unknown request field is a protocol error");
+    assert!(message.contains("unknown field `linker_flags`"), "{message}");
+
+    assert_eq!(responses[2]["id"], "both_roots");
+    assert_eq!(responses[2]["ok"], false);
+    let message = responses[2]["job_error"]
+        .as_str()
+        .expect("two root fields are a job error");
+    assert!(message.contains("source_root and source_roots"), "{message}");
+
+    for (response, id) in responses[3..5].iter().zip(["native", "repeat"]) {
+        assert_eq!(response["id"], id);
+        assert_eq!(response["ok"], true, "{response:#}");
+        assert_eq!(response["native_link"], true);
+        assert_eq!(response["source_roots"].as_array().map(Vec::len), Some(2));
+        assert!(response["output_bytes"].as_u64().is_some_and(|bytes| bytes > 0));
+    }
+    assert_eq!(responses[5]["id"], "shutdown");
+
+    // `abs` comes from libc, so the program runs only when it was linked.
+    let status = Command::new(artifact.path())
+        .status()
+        .expect("run the daemon's native executable");
+    assert_eq!(status.code(), Some(42));
+}
+
+#[test]
 fn cli_daemon_reuses_one_process_to_emit_runnable_x86_artifact() {
     let source = common::temp_artifact_path("laniusc_daemon", "source", Some("lani"));
     let second_source = common::temp_artifact_path("laniusc_daemon", "second_source", Some("lani"));

@@ -1,0 +1,7 @@
+module app::main;
+import first::value;
+import second::scale;
+extern "C" fn abs(value: i32) -> i32;
+fn main() -> i32 {
+    return abs(first::value::get()) * second::scale::factor();
+}

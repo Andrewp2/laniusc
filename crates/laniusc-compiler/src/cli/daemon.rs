@@ -17,6 +17,7 @@ use std::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::args::canonicalize_native_link_options;
 use super::common::{
     CliError,
     missing_cli_option_value_error,
@@ -26,12 +27,13 @@ use super::common::{
 use crate::{
     codegen::unit::SourcePackArtifactTarget,
     compiler::{
+        EntrySourceRoots,
         ExplicitSourcePack,
         ExplicitSourcePackPathManifest,
         GpuCompiler,
         GpuCompilerBackends,
-        load_entry_path_manifest_with_source_root_and_stdlib,
-        load_entry_path_manifest_with_stdlib,
+        NativeLinkOptions,
+        load_entry_path_manifest_with_source_roots,
         load_explicit_source_pack_from_path_manifest,
     },
     gpu::{
@@ -116,7 +118,10 @@ enum DaemonTransport {
     UnixSocket(PathBuf),
 }
 
-#[derive(Clone, Deserialize)]
+/// One request line. A field the daemon does not know is a protocol error,
+/// so a client learns that an option was not applied.
+#[derive(Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DaemonRequest {
     #[serde(default)]
     id: Value,
@@ -129,8 +134,53 @@ struct DaemonRequest {
     output: Option<PathBuf>,
     #[serde(default)]
     stdlib_root: Option<PathBuf>,
+    /// One user source root. `source_roots` lists several; a request names
+    /// its roots through one of the two fields.
     #[serde(default)]
     source_root: Option<PathBuf>,
+    #[serde(default)]
+    source_roots: Vec<PathBuf>,
+    /// Links the executable through the C compiler driver, as `--native-link`
+    /// does. Any other `native_` field selects native linking as well.
+    #[serde(default)]
+    native_link: bool,
+    #[serde(default)]
+    native_libraries: Vec<String>,
+    #[serde(default)]
+    native_objects: Vec<PathBuf>,
+    #[serde(default)]
+    native_library_paths: Vec<PathBuf>,
+    #[serde(default)]
+    native_linker: Option<PathBuf>,
+}
+
+impl DaemonRequest {
+    /// The user source roots of a compile request, in import search order.
+    fn user_source_roots(&self) -> Result<Vec<PathBuf>, String> {
+        match (&self.source_root, self.source_roots.is_empty()) {
+            (Some(_), false) => {
+                Err("compile request names both source_root and source_roots; use one".into())
+            }
+            (Some(root), true) => Ok(vec![root.clone()]),
+            (None, _) => Ok(self.source_roots.clone()),
+        }
+    }
+
+    /// The native link inputs of a compile request, as written by the client.
+    fn native_link_options(&self) -> Option<NativeLinkOptions> {
+        let requested = self.native_link
+            || !self.native_libraries.is_empty()
+            || !self.native_objects.is_empty()
+            || !self.native_library_paths.is_empty()
+            || self.native_linker.is_some();
+        requested.then(|| NativeLinkOptions {
+            libraries: self.native_libraries.clone(),
+            objects: self.native_objects.clone(),
+            library_paths: self.native_library_paths.clone(),
+            linker: self.native_linker.clone(),
+            ..NativeLinkOptions::default()
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -143,7 +193,9 @@ struct SourceFileStamp {
 struct CachedSourcePack {
     input: PathBuf,
     stdlib_root: PathBuf,
-    source_root: Option<PathBuf>,
+    source_roots: Vec<PathBuf>,
+    /// A native link reads the pack through its path manifest.
+    path_backed: bool,
     source_pack: CachedCompileInput,
     file_stamps: Vec<SourceFileStamp>,
     directory_snapshots: Vec<SourceDirectorySnapshot>,
@@ -189,13 +241,15 @@ impl SourcePackCache {
         &'a mut self,
         input: &Path,
         stdlib_root: &Path,
-        source_root: Option<&Path>,
+        source_roots: &[PathBuf],
+        path_backed: bool,
         resident_limits: crate::codegen::unit::CompilationUnitLimits,
     ) -> Result<&'a CachedCompileInput, crate::compiler::CompileError> {
         let same_project = self.entry.as_ref().is_some_and(|entry| {
             entry.input == input
                 && entry.stdlib_root == stdlib_root
-                && entry.source_root.as_deref() == source_root
+                && entry.source_roots == source_roots
+                && entry.path_backed == path_backed
         });
         if same_project && self.reuse_or_refresh_file_contents(resident_limits) {
             return Ok(&self
@@ -210,14 +264,13 @@ impl SourcePackCache {
 
         let path_manifest = {
             let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.discover");
-            match source_root {
-                Some(source_root) => load_entry_path_manifest_with_source_root_and_stdlib(
-                    input,
-                    source_root,
-                    stdlib_root,
-                )?,
-                None => load_entry_path_manifest_with_stdlib(input, stdlib_root)?,
-            }
+            load_entry_path_manifest_with_source_roots(
+                input,
+                &EntrySourceRoots {
+                    stdlib_root: Some(stdlib_root.to_path_buf()),
+                    user_roots: source_roots.to_vec(),
+                },
+            )?
         };
         let file_stamps = {
             let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.stamps");
@@ -226,17 +279,18 @@ impl SourcePackCache {
         let directory_snapshots = {
             let _span =
                 crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.snapshots");
-            source_directory_snapshots(&path_manifest, input, stdlib_root, source_root)
+            source_directory_snapshots(&path_manifest, input, stdlib_root, source_roots)
         };
         let source_pack = {
             let _span = crate::gpu::trace::HostSpan::new("host.daemon", "daemon.source_pack.read");
-            cached_compile_input(path_manifest, resident_limits)?
+            cached_compile_input(path_manifest, path_backed, resident_limits)?
         };
         if let (Some(file_stamps), Some(directory_snapshots)) = (file_stamps, directory_snapshots) {
             self.entry = Some(CachedSourcePack {
                 input: input.to_path_buf(),
                 stdlib_root: stdlib_root.to_path_buf(),
-                source_root: source_root.map(Path::to_path_buf),
+                source_roots: source_roots.to_vec(),
+                path_backed,
                 source_pack,
                 file_stamps,
                 directory_snapshots,
@@ -354,6 +408,7 @@ fn refresh_resident_sources(
 
 fn cached_compile_input(
     path_manifest: ExplicitSourcePackPathManifest,
+    path_backed: bool,
     resident_limits: crate::codegen::unit::CompilationUnitLimits,
 ) -> Result<CachedCompileInput, crate::compiler::CompileError> {
     let library_count = path_manifest
@@ -362,7 +417,9 @@ fn cached_compile_input(
         .map(|file| file.library_id)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    if library_count > 1 || path_manifest.requires_bounded_compilation_with_limits(resident_limits)
+    if path_backed
+        || library_count > 1
+        || path_manifest.requires_bounded_compilation_with_limits(resident_limits)
     {
         Ok(CachedCompileInput::Bounded(path_manifest))
     } else {
@@ -423,11 +480,12 @@ fn source_directory_snapshots(
     source_pack: &ExplicitSourcePackPathManifest,
     input: &Path,
     stdlib_root: &Path,
-    source_root: Option<&Path>,
+    source_roots: &[PathBuf],
 ) -> Option<Vec<SourceDirectorySnapshot>> {
-    let roots = [input.parent(), Some(stdlib_root), source_root]
+    let roots = [input.parent(), Some(stdlib_root)]
         .into_iter()
         .flatten()
+        .chain(source_roots.iter().map(PathBuf::as_path))
         .flat_map(|root| {
             let canonical = fs::canonicalize(root).ok();
             std::iter::once(root.to_path_buf()).chain(canonical)
@@ -500,7 +558,11 @@ fn print_help() {
         "Usage: laniusc daemon (--stdio | --unix-socket path) [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds] [--warmup source [--warmup-source-root dir]]...\n\
          Starts one GPU-resident compiler and accepts newline-delimited JSON compile, trim, status, and shutdown requests.\n\
          --warmup compiles a source for every selected target before reporting ready, discarding the output and the\n\
-         project's cached units, so resident buffers are already sized for the largest declared workload."
+         project's cached units, so resident buffers are already sized for the largest declared workload.\n\
+         A compile request has the fields id, emit, input, output, stdlib_root, and source_root or source_roots.\n\
+         native_link, native_libraries, native_objects, native_library_paths and native_linker link the executable\n\
+         through the C compiler driver, as the --native-link, --native-library, --native-object, --native-library-path\n\
+         and --native-linker flags do. A request field the daemon does not know is a protocol error."
     );
 }
 
@@ -783,13 +845,10 @@ async fn run_session(
             )?;
             continue;
         }
-        let request = match serde_json::from_str::<DaemonRequest>(&line) {
+        let request = match parse_request(&line) {
             Ok(request) => request,
-            Err(err) => {
-                write_response(
-                    &mut output,
-                    &protocol_error(Value::Null, &format!("invalid request JSON: {err}")),
-                )?;
+            Err(response) => {
+                write_response(&mut output, &response)?;
                 continue;
             }
         };
@@ -1321,8 +1380,8 @@ async fn run_warmups(
                 emit: Some((*emit).to_string()),
                 input: Some(warmup.input.clone()),
                 output: Some(output.clone()),
-                stdlib_root: None,
                 source_root: warmup.source_root.clone(),
+                ..DaemonRequest::default()
             };
             let response = compile_request(compiler, options, source_pack_cache, request).await;
             let _ = fs::remove_file(&output);
@@ -1353,6 +1412,16 @@ async fn run_warmups(
     }))
 }
 
+/// Reads one request line. A rejected request keeps its `id`, so a client
+/// that pipelines requests can match the error to the request.
+fn parse_request(line: &str) -> Result<DaemonRequest, Value> {
+    let value = serde_json::from_str::<Value>(line)
+        .map_err(|err| protocol_error(Value::Null, &format!("invalid request JSON: {err}")))?;
+    let id = value.get("id").cloned().unwrap_or(Value::Null);
+    serde_json::from_value(value)
+        .map_err(|err| protocol_error(id, &format!("invalid request: {err}")))
+}
+
 async fn compile_request(
     compiler: &GpuCompiler<'_>,
     options: &DaemonOptions,
@@ -1360,6 +1429,9 @@ async fn compile_request(
     request: DaemonRequest,
 ) -> Value {
     let started = Instant::now();
+    let source_roots = request.user_source_roots();
+    let native_link = request.native_link_options();
+    let source_root = request.source_root;
     let id = request.id;
     let emit = request.emit.unwrap_or_default();
     if !options.backend.supports(&emit) {
@@ -1382,13 +1454,39 @@ async fn compile_request(
             "compile request needs stdlib_root or daemon --stdlib-root".into(),
         );
     };
-    let source_root = request.source_root;
+    let source_roots = match source_roots {
+        Ok(source_roots) => source_roots,
+        Err(message) => return job_error(id, started, message),
+    };
+    let native_link = match native_link {
+        Some(_) if emit != "x86_64" => {
+            return job_error(
+                id,
+                started,
+                format!("native linking needs emit \"x86_64\", but the request has emit {emit:?}"),
+            );
+        }
+        Some(options) => match canonicalize_native_link_options(options) {
+            Ok(options) => Some(options),
+            Err(err) => {
+                return json!({
+                    "schema": DAEMON_SCHEMA,
+                    "id": id,
+                    "ok": false,
+                    "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
+                    "diagnostic": err.into_public_diagnostic(),
+                });
+            }
+        },
+        None => None,
+    };
 
     let load_started = Instant::now();
     let source_pack = match source_pack_cache.load(
         &input,
         &stdlib_root,
-        source_root.as_deref(),
+        &source_roots,
+        native_link.is_some(),
         compiler.resident_source_unit_limits(),
     ) {
         Ok(source_pack) => source_pack,
@@ -1406,6 +1504,14 @@ async fn compile_request(
     }
 
     let emitted = match (emit.as_str(), source_pack) {
+        ("x86_64", CachedCompileInput::Bounded(source_pack)) if native_link.is_some() => compiler
+            .compile_path_manifest_with_native_link_to_file(
+                source_pack,
+                native_link.as_ref().expect("native link options were checked above"),
+                &output,
+            )
+            .await
+            .map(EmittedArtifact::File),
         ("wasm", CachedCompileInput::Resident(source_pack)) => compiler
             .compile_source_pack_manifest_to_wasm(source_pack)
             .await
@@ -1458,6 +1564,8 @@ async fn compile_request(
         "emit": emit,
         "input": input,
         "source_root": source_root,
+        "source_roots": source_roots,
+        "native_link": native_link.is_some(),
         "output": output,
         "output_bytes": output_bytes,
         "load_ms": load_ms,
@@ -1696,6 +1804,65 @@ mod tests {
         )
         .expect("daemon compile request with source root should deserialize");
         assert_eq!(request.source_root, Some(PathBuf::from("src")));
+        assert_eq!(request.user_source_roots(), Ok(vec![PathBuf::from("src")]));
+        assert_eq!(request.native_link_options(), None);
+    }
+
+    #[test]
+    fn daemon_compile_request_accepts_several_source_roots() {
+        let request = parse_request(
+            r#"{"command":"compile","input":"main.lani","output":"app","source_roots":["app","ui"]}"#,
+        )
+        .expect("daemon compile request with source roots should deserialize");
+        assert_eq!(
+            request.user_source_roots(),
+            Ok(vec![PathBuf::from("app"), PathBuf::from("ui")])
+        );
+
+        let both = parse_request(
+            r#"{"command":"compile","source_root":"app","source_roots":["ui"]}"#,
+        )
+        .expect("both root fields deserialize");
+        let error = both.user_source_roots().expect_err("one request names its roots once");
+        assert!(error.contains("source_root and source_roots"), "{error}");
+    }
+
+    #[test]
+    fn daemon_compile_request_accepts_native_link_inputs() {
+        let plain = parse_request(r#"{"command":"compile","native_link":true}"#)
+            .expect("native link request should deserialize");
+        assert_eq!(plain.native_link_options(), Some(NativeLinkOptions::default()));
+
+        let request = parse_request(
+            r#"{"command":"compile","native_libraries":["xcb","m"],"native_objects":["/tmp/shim.o"],"native_library_paths":["/opt/lib"],"native_linker":"cc"}"#,
+        )
+        .expect("native link inputs should deserialize");
+        assert_eq!(
+            request.native_link_options(),
+            Some(NativeLinkOptions {
+                libraries: vec!["xcb".into(), "m".into()],
+                objects: vec![PathBuf::from("/tmp/shim.o")],
+                library_paths: vec![PathBuf::from("/opt/lib")],
+                linker: Some(PathBuf::from("cc")),
+                ..NativeLinkOptions::default()
+            })
+        );
+    }
+
+    #[test]
+    fn daemon_rejects_a_request_field_it_does_not_know() {
+        let response = parse_request(
+            r#"{"id":"job-7","command":"compile","input":"main.lani","linker_flags":["-s"]}"#,
+        )
+        .err()
+        .expect("an unknown field is a protocol error");
+        assert_eq!(response["id"], "job-7");
+        assert_eq!(response["ok"], false);
+        let message = response["protocol_error"].as_str().expect("protocol error text");
+        assert!(message.contains("unknown field `linker_flags`"), "{message}");
+
+        let response = parse_request("{").err().expect("truncated JSON is a protocol error");
+        assert_eq!(response["id"], Value::Null);
     }
 
     #[test]
@@ -1826,7 +1993,7 @@ mod tests {
         let mut cache = SourcePackCache::default();
         let resident_limits = crate::codegen::unit::CompilationUnitLimits::default();
         let first = cache
-            .load(&entry, &stdlib_root, None, resident_limits)
+            .load(&entry, &stdlib_root, &[], false, resident_limits)
             .expect("load initial cached source pack");
         assert!(first.resident().is_some_and(|source_pack| {
             source_pack
@@ -1838,7 +2005,7 @@ mod tests {
         fs::write(&entry, "fn main() { print(17); return; }\n")
             .expect("change cached entry fixture");
         let second = cache
-            .load(&entry, &stdlib_root, None, resident_limits)
+            .load(&entry, &stdlib_root, &[], false, resident_limits)
             .expect("reload changed source pack");
         assert!(second.resident().is_some_and(|source_pack| {
             source_pack
@@ -1879,7 +2046,7 @@ mod tests {
         let limits = crate::codegen::unit::CompilationUnitLimits::default();
         let texts = |cache: &mut SourcePackCache| {
             cache
-                .load(&entry, &stdlib_root, Some(&source_root), limits)
+                .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
                 .expect("load resident source pack")
                 .resident()
                 .expect("default limits keep this project resident")
@@ -1934,7 +2101,7 @@ mod tests {
             max_source_files: 1,
         };
         let initial_count = cache
-            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
             .expect("load initial bounded source pack")
             .bounded()
             .expect("tiny limits should select bounded input")
@@ -1944,7 +2111,7 @@ mod tests {
         let changed_source = "module unit;\nfn unit() { print(123456); return; }\n";
         fs::write(&unit, changed_source).expect("change bounded cache unit");
         let refreshed = cache
-            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
             .expect("incrementally refresh bounded source pack")
             .bounded()
             .expect("refreshed input should remain bounded");
@@ -1973,7 +2140,7 @@ mod tests {
         )
         .expect("import added bounded cache source");
         let rediscovered_count = cache
-            .load(&entry, &stdlib_root, Some(&source_root), limits)
+            .load(&entry, &stdlib_root, std::slice::from_ref(&source_root), false, limits)
             .expect("rediscover bounded source pack after source addition")
             .bounded()
             .expect("rediscovered input should remain bounded")
@@ -2005,7 +2172,7 @@ mod tests {
         };
 
         assert!(matches!(
-            cached_compile_input(path_manifest, limits),
+            cached_compile_input(path_manifest, false, limits),
             Ok(CachedCompileInput::Bounded(_))
         ));
     }
@@ -2038,7 +2205,7 @@ mod tests {
         };
 
         assert!(matches!(
-            cached_compile_input(path_manifest, limits),
+            cached_compile_input(path_manifest, false, limits),
             Ok(CachedCompileInput::Bounded(_))
         ));
     }

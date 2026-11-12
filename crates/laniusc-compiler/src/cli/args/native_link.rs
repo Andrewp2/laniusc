@@ -50,7 +50,7 @@ where
 }
 
 /// Resolves CLI paths while preserving the order of supplied link inputs.
-pub(super) fn canonicalize_options(
+pub(in crate::cli) fn canonicalize_options(
     mut options: NativeLinkOptions,
 ) -> Result<NativeLinkOptions, CliError> {
     options.objects = options

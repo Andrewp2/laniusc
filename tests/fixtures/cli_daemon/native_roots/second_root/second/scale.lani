@@ -1,0 +1,2 @@
+module second::scale;
+pub fn factor() -> i32 { return 6; }

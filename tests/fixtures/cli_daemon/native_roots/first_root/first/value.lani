@@ -1,0 +1,2 @@
+module first::value;
+pub fn get() -> i32 { return 0 - 7; }
