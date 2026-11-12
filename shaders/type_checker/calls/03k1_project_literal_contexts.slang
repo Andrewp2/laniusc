@@ -111,6 +111,24 @@ uint match_literal_role(uint node, out uint match)
     return MATCH_ROLE_NONE;
 }
 
+// The checked numeric type of an arm result of `match`. Every arm has the
+// type of the match, so a literal arm takes the type another arm fixes:
+// `match (wide) { Some(value) -> value, None -> 0 }`.
+uint match_arm_peer(uint match, bool floating)
+{
+    HirPayload value = compact_hir_payload[match];
+    uint count = min(compact_match_arm_count[0u], active_hir_count());
+    if (value.b >= count || value.c > count - value.b) return 0u;
+    for (uint row = value.b; row < value.b + value.c; row++)
+    {
+        HirMatchArm arm = compact_match_arms[row];
+        if (arm.owner != match) continue;
+        uint peer = checked_numeric_peer(arm.result, floating);
+        if (peer != 0u) return peer;
+    }
+    return 0u;
+}
+
 // A lexical const annotation owns exactly its initializer's value root.
 uint const_annotation_context(uint current, bool floating)
 {
@@ -294,6 +312,8 @@ uint checked_literal_context(uint literal)
         // climb on from the match, e.g. when it is itself an arm result.
         if (mode == QUERY_MATCH)
         {
+            uint sibling = match_arm_peer(query, floating);
+            if (sibling != 0u) return sibling;
             mode = QUERY_OPERAND; current = query;
             continue;
         }

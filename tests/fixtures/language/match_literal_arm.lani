@@ -1,0 +1,33 @@
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+fn half(value: f64) -> f64 { return value / 2.0; }
+fn narrow(value: i64) -> i32 { return value as i32; }
+
+fn main() -> i32 {
+    let left: Option<i64> = Some(40);
+    let small: Option<i32> = Some(40);
+    let ratio: Option<f64> = Some(4.0);
+    let short: u8 = 3;
+
+    // A literal arm takes the type another arm fixes.
+    let wide = match (left) { Some(inner) -> inner, None -> 0 };
+    let sum: i64 = wide + 2;
+    let byte = match (left) { None -> short, Some(inner) -> 1 };
+    let scaled = half(match (ratio) { None -> 1.5, Some(inner) -> inner });
+    let nested = match (left) {
+        None -> match (left) { None -> 0, Some(other) -> other },
+        Some(inner) -> match (left) { None -> 5, Some(other) -> other - 1 + inner - other },
+    };
+    // The arms fix the operand type of a cast and of an argument.
+    let cast: i64 = match (small) { Some(inner) -> inner, None -> 0 } as i64;
+    let passed = narrow(match (left) { None -> 0, Some(inner) -> inner } + 2);
+    // Arms that are all literals take the cast's type.
+    let both: i64 = match (short == 3) { true -> 2, false -> 1 } as i64;
+
+    if (scaled != 2.0) { return 1; }
+    if (sum != 42 || cast != 40 || passed != 42 || both != 2) { return 2; }
+    return (nested as i32) + (byte as i32) + 2;
+}

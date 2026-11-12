@@ -1,0 +1,10 @@
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+fn main() -> i32 {
+    let left: Option<i64> = Some(40);
+    let wide = match (left) { Some(inner) -> inner, None -> 1.5 };
+    return wide as i32;
+}

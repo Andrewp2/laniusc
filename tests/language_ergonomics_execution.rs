@@ -188,6 +188,16 @@ fn try_and_other_tails_follow_a_closing_brace_or_parenthesis() {
 }
 
 #[test]
+fn a_literal_arm_takes_the_type_of_another_arm() {
+    assert_exit("match_literal_arm.lani", 42);
+}
+
+#[test]
+fn a_literal_arm_needs_the_type_of_the_other_arms() {
+    assert_rejected("match_literal_arm_mismatch.lani", &["LNC0006"]);
+}
+
+#[test]
 fn one_statement_holds_several_match_values() {
     assert_exit("match_chain.lani", 2);
 }
