@@ -137,11 +137,13 @@ pub use semantic_interface::{
 pub use crate::codegen::x86::native::NativeLinkOptions;
 pub(crate) use crate::codegen::x86::native::NativeMainBridge;
 pub(crate) use semantic_interface::{
+    ENCODED_RECORDS_WORD,
+    IMPLEMENTATION_OWNER_TAG,
     IMPLEMENTATION_METHOD_BINDING_U32S,
     IMPLEMENTATION_U32S,
     MEMBER_U32S,
     PREDICATE_U32S,
-    dependency_batch::GpuSemanticInterfaceDependencyBatch,
+    ResidentInterfaceBytes,
     stable_name_hash,
 };
 

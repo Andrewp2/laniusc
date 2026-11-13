@@ -1320,6 +1320,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         )
         .await?
         .semantic_interface
+        .map(crate::compiler::GpuSemanticInterfaceArtifact::detached)
         .ok_or_else(|| {
             CompileError::GpuFrontend(
                 "semantic-interface export did not produce an artifact".to_string(),
@@ -1343,6 +1344,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             dependency_interfaces,
         )
         .await
+        .map(crate::compiler::GpuSemanticInterfaceArtifact::detached)
     }
 
     /// Exports one bounded frontend unit with its source-pack-global unit id.

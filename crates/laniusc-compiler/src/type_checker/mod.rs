@@ -62,6 +62,9 @@ pub(crate) use generic_calls::{
 #[cfg(test)]
 pub(crate) use generic_calls::dependency_method_requirements;
 mod dependency_interface;
+mod dependency_pack;
+#[cfg(test)]
+pub(crate) use dependency_pack::gpu_packed_dependency_page;
 mod module_path;
 mod operations;
 mod params;

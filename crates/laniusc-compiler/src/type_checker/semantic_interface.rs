@@ -2119,7 +2119,7 @@ impl GpuTypeChecker {
             byte_len,
             "semantic-interface artifact",
         )?;
-        let artifact = GpuSemanticInterfaceArtifact::from_bytes(&bytes)
+        let mut artifact = GpuSemanticInterfaceArtifact::from_bytes(&bytes)
             .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;
         if artifact.library_id != recorded.expected_library_id
             || artifact.unit_id != recorded.expected_unit_id
@@ -2132,8 +2132,43 @@ impl GpuTypeChecker {
                 artifact.unit_id,
             ));
         }
+        artifact.resident_bytes = retain_resident_bytes(device, queue, &recorded._artifact_words, byte_len);
         Ok(artifact)
     }
+}
+
+/// Copies an exported interface's bytes out of the export output, which the
+/// next export reuses, into a buffer of their own. Dependents of the unit
+/// pack their dependency pages from it on the GPU (`dependency_pack`).
+fn retain_resident_bytes(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    artifact_words: &LaniusBuffer<u32>,
+    byte_len: usize,
+) -> crate::compiler::ResidentInterfaceBytes {
+    let copy_len = byte_len.next_multiple_of(4) as u64;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("semantic_interface.resident_bytes"),
+        size: copy_len.max(4),
+        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("semantic_interface.resident_bytes"),
+    });
+    encoder.copy_buffer_to_buffer(
+        &artifact_words.buffer,
+        artifact_words.absolute_offset(0),
+        &buffer,
+        0,
+        copy_len,
+    );
+    crate::gpu::passes_core::submit_with_progress(
+        queue,
+        "semantic_interface.resident_bytes",
+        encoder.finish(),
+    );
+    crate::compiler::ResidentInterfaceBytes::new(buffer, byte_len)
 }
 
 /// The byte length of each unit's last exported artifact, by library and
