@@ -2545,6 +2545,17 @@ impl OriginalUnitFacts {
         interface.check_encoded_len()
     }
 
+    /// The interface's native C bindings. An interface validated earlier in
+    /// this job is not validated again.
+    pub(super) fn native_c_functions(&self) -> Result<Vec<crate::compiler::NativeCFunction>, String> {
+        let interface = &self.snapshot.interface;
+        if self.interface_validated_in_this_job {
+            interface.validated_native_c_functions()
+        } else {
+            interface.native_c_functions()
+        }
+    }
+
     /// The unit's own GPU job left nothing for the whole-program trait solver.
     pub(super) fn solver_closed(&self) -> bool {
         self.snapshot.solver_closed

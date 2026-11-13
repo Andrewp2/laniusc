@@ -178,7 +178,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         let mut native_functions = Vec::new();
         if self.target == SourcePackArtifactTarget::X86_64 {
             for pending in &self.pending_originals {
-                native_functions.extend(pending.facts().interface().native_c_functions()
+                native_functions.extend(pending.facts().native_c_functions()
                     .map_err(source_pack_artifact_store_error)?);
             }
             if self.native_link.is_none() && !native_functions.is_empty() {
