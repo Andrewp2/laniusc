@@ -1,0 +1,28 @@
+module app::main;
+import core::mem;
+import std::process;
+
+extern "C" fn strlen(text: ptr) -> usize;
+extern "C" fn puts(text: ptr) -> i32;
+extern "C" fn sqrt(value: f64) -> f64;
+extern "C" fn ilogb(value: f64) -> i32;
+
+fn main() -> i32 {
+    let words: [i32; 4] = [0; 4];
+    let text: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(text, 16);
+    // "lani"
+    bytes[0] = 108; bytes[1] = 97; bytes[2] = 110; bytes[3] = 105;
+    if (strlen(text) != 4) { return 1; }
+    if (sqrt(81.0 as f64) != 9.0 as f64) { return 2; }
+    if (ilogb(1024.0 as f64) != 10) { return 3; }
+    // Piped stdout is fully buffered: the text appears only if the exit
+    // path flushes stdio.
+    if (puts(text) < 0) { return 4; }
+    let count: i32 = std::process::argc();
+    if (count < 1) { return 5; }
+    if (count > 1) {
+        return 40 + count * 10 + std::process::arg_len(count - 1);
+    }
+    return 40;
+}

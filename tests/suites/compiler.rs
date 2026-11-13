@@ -96,6 +96,8 @@ mod module_visibility;
 mod native_c_callback_execution;
 #[path = "../native_c_contract.rs"]
 mod native_c_contract;
+#[path = "../native_c_dynamic_link_execution.rs"]
+mod native_c_dynamic_link_execution;
 #[path = "../native_c_execution.rs"]
 mod native_c_execution;
 #[path = "../native_c_float_execution.rs"]

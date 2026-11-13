@@ -1,0 +1,7 @@
+module app::main;
+
+extern "C" fn lanius_absent_native_symbol(value: i32) -> i32;
+
+fn main() -> i32 {
+    return lanius_absent_native_symbol(3);
+}

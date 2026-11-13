@@ -1,0 +1,11 @@
+module app::main;
+
+extern "C" fn compressBound(length: u64) -> u64;
+extern "C" fn XInitThreads() -> i32;
+
+fn main() -> i32 {
+    if (XInitThreads() == 0) { return 1; }
+    // 100 + (100 >> 12) + (100 >> 14) + (100 >> 25) + 13
+    if (compressBound(100) != 113) { return 2; }
+    return 0;
+}

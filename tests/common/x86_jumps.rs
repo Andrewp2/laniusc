@@ -223,7 +223,16 @@ fn code_segment(elf: &[u8]) -> Result<CodeSegment<'_>, String> {
     let program_headers = read_u64(elf, 32).ok_or_else(|| header("program header offset"))?;
     let entry_size = read_u16(elf, 54).ok_or_else(|| header("program header size"))? as u64;
     let count = read_u16(elf, 56).ok_or_else(|| header("program header count"))? as u64;
-    let headers_end = program_headers + entry_size * count;
+    let header_size = read_u16(elf, 52).ok_or_else(|| header("header size"))? as u64;
+    // The code follows the ELF header, and the program headers when they come
+    // right after it. A dynamic executable written by the GPU linker keeps
+    // its program headers after `.rodata`, so its code starts at the end of
+    // the ELF header.
+    let headers_end = if program_headers <= header_size {
+        program_headers + entry_size * count
+    } else {
+        header_size
+    };
     for index in 0..count {
         let base = (program_headers + index * entry_size) as usize;
         let segment_type = read_u32(elf, base).ok_or_else(|| header("program header"))?;
