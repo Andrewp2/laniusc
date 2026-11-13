@@ -206,6 +206,53 @@ unit scheduling and imported generic replay as the ordinary compiler. A native
 symbol must resolve from supplied objects/libraries or the system driver;
 declaring it alone supplies no implementation.
 
+### GPU dynamic link
+
+When every native input is a shared library, the GPU x86 linker writes the
+final executable. No `cc`, `ld` or `mold` process runs. The host step reads
+library headers only:
+
+1. It searches each `-lNAME` in the `-L` directories, then in GNU ld's default
+   directories. In each directory a `.so` is preferred over a `.a`.
+2. It follows GNU ld scripts that contain only `OUTPUT_FORMAT`, `OUTPUT_ARCH`,
+   `GROUP`, `INPUT` and `AS_NEEDED`.
+3. It adds the implicit `-lc` and reads each library's `DT_SONAME`, dynamic
+   symbols and default symbol versions.
+4. It names a library in `DT_NEEDED` only when that library is the first
+   definer of an imported symbol, as `--as-needed` does.
+
+An imported symbol that no library defines fails the build with `LNC0017`.
+The message lists each missing symbol as `undefined symbol: NAME`.
+
+The shaders `elf/write.slang` and `elf/dynamic_write.slang` write these parts
+of the executable:
+
+| Part | Contents |
+| --- | --- |
+| Program headers | `PT_PHDR`, `PT_INTERP` (`/lib64/ld-linux-x86-64.so.2`), one read-execute `PT_LOAD`, one read-write `PT_LOAD`, `PT_DYNAMIC`, `PT_GNU_STACK` |
+| Dynamic section | `DT_NEEDED` entries, `DT_HASH`, `DT_SYMTAB`, `DT_STRTAB`, `DT_RELA`, `DT_VERSYM`, `DT_VERNEED`, `DT_FLAGS=BIND_NOW` and `DT_FLAGS_1=NOW` |
+| Imports | One `R_X86_64_GLOB_DAT` GOT slot per imported function, and one 8-byte `jmp [GOT]` stub that Lanius calls resolve to |
+| Entry | `_start` passes `main`, argc, argv and envp to `__libc_start_main`; the return from `main` reaches `exit`, which flushes stdio |
+| Symbols | `.symtab` with `_start`, `main` and the sized `__lanius_*` functions, and section headers |
+
+The C driver remains the link path in these cases:
+
+- A `--native-object` input is an object file or archive.
+- `--native-linker` is given.
+- A library is found only in the C driver's private directories.
+- A static archive defines an imported symbol.
+- A library cannot be found on the default search path.
+- An ld script contains an unsupported element.
+
+The trace records the reason as `codegen.x86.native.link.driver`.
+
+The executable has no canonical PLT addresses. A C function address taken in
+Lanius code, if one is taken, is the import stub. C code that compares it with
+the library's own address sees two different values.
+
+Tests: `tests/native_c_dynamic_link_execution.rs` and the `native::resolve` and
+`link::dynamic` unit tests.
+
 ## C callbacks
 
 A non-generic free function named as a value is a `ptr` to a System V entry
