@@ -524,6 +524,11 @@ static const uint INTRINSIC_F64_TO_BITS = 12u;
 static const uint INTRINSIC_F64_FROM_BITS = 13u;
 static const uint INTRINSIC_F32_TO_BITS = 14u;
 static const uint INTRINSIC_F32_FROM_BITS = 15u;
+// slice_from_storage(storage, length): the view of `length` elements held
+// in the `length * size` bytes at `storage`. A packed element type (i32, u8)
+// starts at `storage`. Any other type runs in descending words, so its
+// element zero is the last one in the storage.
+static const uint INTRINSIC_SLICE_FROM_STORAGE = 16u;
 
 bool intrinsic_bit_cast(uint tag)
 {
@@ -540,10 +545,12 @@ bool intrinsic_argument_word(uint tag)
         intrinsic_bit_cast(tag);
 }
 
+// The intrinsics whose result is a new data, length and stride descriptor.
 bool intrinsic_slice_from_raw_parts(uint tag)
 {
     return tag == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ||
-        tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS;
+        tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ||
+        tag == INTRINSIC_SLICE_FROM_STORAGE;
 }
 // IR_OPCODE
 static const uint HOST_SERVICE_FILL_SECURE_BYTES = 53u;
@@ -968,6 +975,8 @@ static const uint WASM_LIR_OP_CALL = 0x10u;
 static const uint WASM_LIR_OP_DROP = 0x1au;
 // IR_OPCODE
 static const uint WASM_LIR_OP_LOCAL_GET = 0x20u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_SELECT = 0x1bu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_LOCAL_SET = 0x21u;
 // IR_OPCODE

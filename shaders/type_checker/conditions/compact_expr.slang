@@ -106,6 +106,7 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+static const uint INTRINSIC_SLICE_FROM_STORAGE = 16u;
 static const uint INTRINSIC_CALL_PTR = 11u;
 
 [ForceInline]
@@ -163,8 +164,8 @@ uint raw_parts_argument(uint call, uint ordinal)
     return row < active_hir_count() ? call_arg_row_node[row] : INVALID;
 }
 
-// slice_from_raw_parts(data, length): data is a ptr (or the null constant 0)
-// and length an integer. The intrinsics have no parameter types to check
+// slice_from_raw_parts(data, length) and slice_from_storage(storage, length):
+// data is a ptr (or the null constant 0) and length an integer. The intrinsics have no parameter types to check
 // against, so a bool length or an integer address otherwise compiles.
 void validate_raw_parts_call(uint node, HirCore core)
 {
@@ -191,7 +192,8 @@ void validate_raw_parts_call(uint node, HirCore core)
         return;
     }
     if (intrinsic != INTRINSIC_I32_SLICE_FROM_RAW_PARTS &&
-        intrinsic != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
+        intrinsic != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS &&
+        intrinsic != INTRINSIC_SLICE_FROM_STORAGE)
         return;
     uint data = raw_parts_argument(node, 0u);
     uint data_ty = scalar_type(data);

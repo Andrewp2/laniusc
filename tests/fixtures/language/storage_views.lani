@@ -1,0 +1,63 @@
+//@ exit 0
+// `slice_from_storage(storage, length)` against raw views built by hand.
+// Packed i32 and u8 elements start at the storage address. Every other type
+// runs in descending words, so element zero is the last one in the storage.
+// A nonzero exit code names the failing check.
+module app::main;
+import alloc::allocator;
+import core::mem;
+
+struct Pair { left: u64, right: u64 }
+
+fn generic_view<T>(storage: ptr, length: i32) -> [T] {
+    return core::mem::typed_slice_from_storage(storage, length);
+}
+
+fn main() -> i32 {
+    let storage: ptr = alloc::allocator::alloc(64, 8);
+
+    let packed: [i32] = slice_from_storage(storage, 4);
+    packed[0] = 11; packed[1] = 12; packed[2] = 13; packed[3] = 14;
+    let packed_raw: [i32] = slice_from_raw_parts(storage, 4);
+    if (packed_raw[0] != 11 || packed_raw[3] != 14) { return 1; }
+    let packed_stride: isize = slice_stride(packed);
+    if (packed_stride != 4) { return 2; }
+
+    let bytes: [u8] = slice_from_storage(storage, 8);
+    bytes[0] = 7; bytes[7] = 9;
+    let bytes_raw: [u8] = slice_from_raw_parts(storage, 8);
+    if (bytes_raw[0] != 7 || bytes_raw[7] != 9) { return 3; }
+
+    let words: [u64] = slice_from_storage(storage, 4);
+    words[0] = 100; words[1] = 101; words[2] = 102; words[3] = 103;
+    let word_stride: isize = slice_stride(words);
+    if (word_stride + 8 != 0) { return 4; }
+    if (slice_len(words) != 4) { return 5; }
+    let words_raw: [u64] = slice_from_raw_parts(storage + 24, 4);
+    if (words_raw[0] != 100 || words_raw[3] != 103) { return 6; }
+    let lowest: [u64] = slice_from_raw_parts(storage, 1);
+    if (lowest[0] != 103) { return 7; }
+
+    let pairs: [Pair] = slice_from_storage(storage, 2);
+    pairs[0] = Pair { left: 1, right: 2 };
+    pairs[1] = Pair { left: 3, right: 4 };
+    let pairs_raw: [Pair] = slice_from_raw_parts(storage + 24, 2);
+    let first: Pair = pairs_raw[0];
+    let second: Pair = pairs_raw[1];
+    if (first.left != 1 || first.right != 2) { return 8; }
+    if (second.left != 3 || second.right != 4) { return 9; }
+
+    let empty: [u64] = slice_from_storage(storage, 0);
+    if (slice_len(empty) != 0) { return 10; }
+
+    let generic: [Pair] = generic_view(storage, 2);
+    let again: Pair = generic[1];
+    if (again.left != 3 || again.right != 4) { return 11; }
+    let generic_packed: [i32] = generic_view(storage + 32, 2);
+    generic_packed[1] = 21;
+    let tail: [i32] = slice_from_raw_parts(storage + 36, 1);
+    if (tail[0] != 21) { return 12; }
+
+    alloc::allocator::dealloc(storage, 64, 8);
+    return 0;
+}

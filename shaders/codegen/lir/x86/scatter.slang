@@ -1151,7 +1151,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
              intrinsic_slice_from_raw_parts(args.a))
     {
         op = X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS;
-        a = semantic_lir_layout_word_offset[semantic_row]; b = 0u; c = NATIVE_SLICE_WORDS;
+        // Operand a is the byte stride. Operand b = 1 selects the storage
+        // view, whose data pointer depends on the stride and the length.
+        a = semantic_lir_layout_word_offset[semantic_row];
+        b = args.a == INTRINSIC_SLICE_FROM_STORAGE ? 1u : 0u; c = NATIVE_SLICE_WORDS;
         if (a == INVALID) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         metadata |= X86_LIR_METADATA_AGGREGATE |
             X86_LIR_METADATA_ARRAY_PAIR;

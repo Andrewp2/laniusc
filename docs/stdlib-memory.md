@@ -54,6 +54,7 @@ They are separate from the 11 source helpers and from the host allocator:
 | `core::mem::string_data_ptr(text)` | `ptr` to the string's borrowed byte data, not its descriptor |
 | `core::mem::i32_slice_from_raw_parts(data, length)` | Canonical packed `[i32]` raw view |
 | `slice_from_raw_parts(data, length)` | Contextually typed `[T]` raw view; the complete receiving type determines `T` |
+| `slice_from_storage(storage, length)` | Contextually typed `[T]` view of `length` elements stored at `storage`; element zero of a word-sized type is the last element in the storage. `typed_slice_from_storage<T>` wraps it and checks the length |
 | `core::mem::slice_stride(view)` | `isize` signed byte stride stored in that particular slice descriptor |
 | `core::mem::slice_len(view)` | `usize` element count of a slice, or of an array passed as one |
 | `core::mem::string_len(text)` | `usize` byte count of a `str` |

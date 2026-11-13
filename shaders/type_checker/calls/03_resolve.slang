@@ -85,6 +85,15 @@ static const uint INTRINSIC_CALL_PTR = 11u;
 static const uint INTRINSIC_F64_TO_BITS = 12u;
 static const uint INTRINSIC_F32_FROM_BITS = 15u;
 static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+static const uint INTRINSIC_SLICE_FROM_STORAGE = 16u;
+
+// `slice_from_raw_parts` and `slice_from_storage` take their element type
+// from the receiving context.
+bool intrinsic_typed_view(uint intrinsic)
+{
+    return intrinsic == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ||
+        intrinsic == INTRINSIC_SLICE_FROM_STORAGE;
+}
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -335,7 +344,7 @@ void resolve_callee_token(uint callee_i, uint call_node)
         return;
     }
     if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE &&
-        call_intrinsic_tag[callee_i] != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
+        !intrinsic_typed_view(call_intrinsic_tag[callee_i]))
         return;
 
     uint fn_i = INVALID;
@@ -364,7 +373,7 @@ void resolve_callee_token(uint callee_i, uint call_node)
         }
     }
 
-    if (call_intrinsic_tag[callee_i] == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
+    if (intrinsic_typed_view(call_intrinsic_tag[callee_i]))
     {
         uint return_instance = call_return_type_token[fn_i];
         if (!valid_token(return_instance) ||

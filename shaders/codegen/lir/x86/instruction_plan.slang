@@ -1644,8 +1644,19 @@ uint plan_specialized(X86PlanInput input)
         // Normalize the signed-i32 length to an unsigned machine word before
         // publishing the native pointer-and-length pair.
         uint storage_slot = x86_location_payload(locations.result) + 1u;
-        plan_store64(7u, storage_slot);
         plan_bytes(2u, 0xf689u); // mov esi, esi
+        if (operands.b == 1u && int(operands.a) < 0)
+        {
+            // A storage view of descending words: element zero is the last
+            // element in the storage, at storage + length * size - 8. An
+            // empty view keeps the storage address.
+            plan_bytes_word(3u, 0xc66948u, 0u - operands.a); // imul rax, rsi, size
+            plan_bytes(4u, 0x07448d48u); // lea rax, [rdi + rax - 8]
+            plan_bytes(1u, 0xf8u);
+            plan_bytes(3u, 0xf68548u); // test rsi, rsi
+            plan_bytes(4u, 0xf8450f48u); // cmovnz rdi, rax
+        }
+        plan_store64(7u, storage_slot);
         plan_store64(6u, storage_slot + 1u);
         plan_bytes_word(3u, 0xc0c748u, operands.a);
         plan_store64(0u, storage_slot + NATIVE_SLICE_STRIDE);

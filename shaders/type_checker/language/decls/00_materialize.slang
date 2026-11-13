@@ -21,9 +21,9 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-static const uint LANGUAGE_NAME_COUNT = 86u;
-static const uint LANGUAGE_SYMBOL_COUNT = 86u;
-static const uint LANGUAGE_DECL_COUNT = 33u;
+static const uint LANGUAGE_NAME_COUNT = 87u;
+static const uint LANGUAGE_SYMBOL_COUNT = 87u;
+static const uint LANGUAGE_DECL_COUNT = 34u;
 static const uint LANGUAGE_DECL_KIND_ENTRYPOINT = 1u;
 static const uint LANGUAGE_DECL_KIND_INTRINSIC = 2u;
 static const uint LANGUAGE_DECL_KIND_PRIMITIVE_TYPE = 3u;

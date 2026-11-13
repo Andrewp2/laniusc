@@ -163,7 +163,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             InterlockedAnd(semantic_function_flag[method.node], 0u);
     }
     if (row < count && compact_hir_core[row].kind == 19u &&
-        semantic_calls_by_hir[row].intrinsic_tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS &&
+        (semantic_calls_by_hir[row].intrinsic_tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ||
+         semantic_calls_by_hir[row].intrinsic_tag == INTRINSIC_SLICE_FROM_STORAGE) &&
         unclosed_type_layout(row, count))
     {
         // Constructing a raw view needs its element layout to publish stride.

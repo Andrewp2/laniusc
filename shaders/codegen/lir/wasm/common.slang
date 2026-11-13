@@ -1184,6 +1184,24 @@ void wasm_plan_raw_slice(WasmPlanRow row)
     if (row.layout == WASM_LIR_INVALID) wasm_plan_unsupported = true;
     wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_INDEX_TEMP);
     wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_TEMP);
+    if (row.operands.a == INTRINSIC_SLICE_FROM_STORAGE &&
+        row.layout != WASM_LIR_INVALID && int(row.layout) < 0)
+    {
+        // A storage view of descending words: element zero is the last
+        // element in the storage, at storage + length * size - 8. An empty
+        // view keeps the storage address.
+        wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_TEMP);
+        wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_INDEX_TEMP);
+        wasm_emit(WASM_LIR_OP_I32_CONST, 0u - row.layout);
+        wasm_emit(WASM_LIR_OP_I32_MUL, 0u);
+        wasm_emit(WASM_LIR_OP_I32_ADD, 0u);
+        wasm_emit(WASM_LIR_OP_I32_CONST, 8u);
+        wasm_emit(WASM_LIR_OP_I32_SUB, 0u);
+        wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_TEMP);
+        wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_INDEX_TEMP);
+        wasm_emit(WASM_LIR_OP_SELECT, 0u);
+        wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_TEMP);
+    }
     wasm_emit_store_frame(row.slot, SCALAR_PTR, WASM_SYNTHETIC_I32_TEMP);
     wasm_emit_store_frame(row.slot + wasm_word_delta(NATIVE_SLICE_LENGTH), SCALAR_PTR,
                           WASM_SYNTHETIC_I32_INDEX_TEMP);

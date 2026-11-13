@@ -140,7 +140,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind != 19u) return;
     uint call = node;
     uint callee = callee_token(call);
-    bool raw_view = valid_token(callee) && call_intrinsic_tag[callee] == 7u;
+    // 7 is `slice_from_raw_parts` and 16 is `slice_from_storage`.
+    bool raw_view = valid_token(callee) &&
+        (call_intrinsic_tag[callee] == 7u || call_intrinsic_tag[callee] == 16u);
     uint function = valid_token(callee) ? call_fn_index[callee] : INVALID;
     if (!raw_view && (!valid_token(function) || fn_return_ref_tag[function] == 0u || fn_return_ref_tag[function] == 1u)) return;
     uint2 reference;

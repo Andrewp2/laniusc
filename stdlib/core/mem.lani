@@ -84,14 +84,7 @@ pub fn size_of<T>() -> usize {
 // at least that size. A negative length traps.
 pub fn typed_slice_from_storage<T>(storage: ptr, length: i32) -> [T] {
     assert(length >= 0);
-    let nowhere: ptr = 0;
-    let probe: [T] = slice_from_raw_parts(nowhere, 0);
-    let stride: isize = slice_stride(probe);
-    if (stride >= 0 || length == 0) {
-        return slice_from_raw_parts(storage, length);
-    }
-    let top: usize = ((0 - stride) as usize) * (length as usize) - 8;
-    return slice_from_raw_parts(storage + top, length);
+    return slice_from_storage(storage, length);
 }
 
 // View the first `length` of the `capacity` elements that
@@ -128,6 +121,9 @@ pub fn typed_prefix_from_storage<T>(storage: ptr, capacity: i32, length: i32) ->
 // do the same between f32 and u32. No value is converted, so a NaN keeps its
 // payload. Each rejects an argument of any other type. core::f64 and
 // core::f32 wrap them as to_bits and from_bits.
+// slice_from_storage(storage, length) builds the view that
+// typed_slice_from_storage documents, with the element type of the receiving
+// context. It does not check the length; typed_slice_from_storage does.
 // call_ptr(entry, a, b, c) calls the function at the address `entry` with
 // three ptr arguments and has no result. `entry` must be the value of a
 // function name whose parameters are pointers; the compiler cannot check
