@@ -102,8 +102,11 @@ void collect_at_depth(uint token, bool dotted, uint tag, uint payload, uint actu
 {
     uint name = name_id_by_token[token];
     if (name == INVALID || name >= gParams.visible_capacity) return;
-    for (uint row = 0u; row < dependency_member_count(); row++)
+    uint hash = dependency_method_name_hash(name_hash_lo[name], name_hash_hi[name]);
+    for (uint probe = 0u; ; probe++)
     {
+        uint row = dependency_method_named(hash, probe);
+        if (row == INVALID) break;
         uint base = row * MEMBER_WORDS;
         if (!dependency_public_implementation_method(row) ||
             dependency_member_word(base + 3u) != name_hash_lo[name] ||

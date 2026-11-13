@@ -7,6 +7,7 @@
 import hir_records;
 import status;
 import dependency_interface;
+import dependency_method_index;
 import semantic_interface_layout;
 import hir_match_patterns;
 import type_checker.mutable_checked_type_graph;

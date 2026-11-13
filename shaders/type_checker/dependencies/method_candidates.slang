@@ -1,6 +1,7 @@
 import type_checker.constant_parameter_slots;
 import semantic_interface_layout;
 import dependency_interface;
+import dependency_method_index;
 import hir_records;
 import gpu_index;
 import type_checker.instance_arguments;

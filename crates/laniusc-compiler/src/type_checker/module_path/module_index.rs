@@ -15,6 +15,8 @@ pub(in crate::type_checker) struct ModuleIndex {
     pub(in crate::type_checker) clear_dependency_module_lookup: Option<ComputeOperation>,
     pub(in crate::type_checker) build_dependency_module_lookup: Option<ComputeOperation>,
     pub(in crate::type_checker) resolve_dependency_imports: Option<ComputeOperation>,
+    /// Clears, then builds, the method index of the page in the slot.
+    pub(in crate::type_checker) dependency_method_lookup: Option<[ComputeOperation; 2]>,
     pub(in crate::type_checker) clear_dependency_module_lookup_call_collection:
         Option<ComputeInvocation>,
     pub(in crate::type_checker) build_dependency_module_lookup_call_collection:
@@ -206,6 +208,29 @@ pub(in crate::type_checker) fn create_module_index(
         )?),
         _ => None,
     };
+    let dependency_method_lookup = inputs
+        .dependency_interfaces
+        .map(|dependencies| {
+            Ok::<_, anyhow::Error>([
+                ComputeOperation::direct_spec(
+                    device,
+                    graph,
+                    resources,
+                    passes,
+                    DEPENDENCY_METHOD_LOOKUP_CLEAR,
+                    dependencies.method_lookup.count as u32,
+                )?,
+                ComputeOperation::direct_spec(
+                    device,
+                    graph,
+                    resources,
+                    passes,
+                    DEPENDENCY_METHOD_LOOKUP_BUILD,
+                    dependencies.member_count.max(1),
+                )?,
+            ])
+        })
+        .transpose()?;
     let resolve_dependency_imports = match (
         inputs.dependency_interfaces,
         dependency_operation_resources.as_ref(),
@@ -278,6 +303,7 @@ pub(in crate::type_checker) fn create_module_index(
         clear_dependency_module_lookup,
         build_dependency_module_lookup,
         resolve_dependency_imports,
+        dependency_method_lookup,
         clear_dependency_module_lookup_call_collection,
         build_dependency_module_lookup_call_collection,
         resolve_dependency_imports_call_collection,

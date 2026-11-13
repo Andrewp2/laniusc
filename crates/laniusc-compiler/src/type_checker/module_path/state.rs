@@ -34,6 +34,8 @@ pub(in crate::type_checker) struct BindGroups {
     pub(in crate::type_checker) clear_dependency_module_lookup: Option<ComputeOperation>,
     pub(in crate::type_checker) build_dependency_module_lookup: Option<ComputeOperation>,
     pub(in crate::type_checker) resolve_dependency_imports: Option<ComputeOperation>,
+    /// Clears, then builds, the method index of the page in the slot.
+    pub(in crate::type_checker) dependency_method_lookup: Option<[ComputeOperation; 2]>,
     pub(in crate::type_checker) clear_dependency_module_lookup_call_collection:
         Option<ComputeInvocation>,
     pub(in crate::type_checker) build_dependency_module_lookup_call_collection:

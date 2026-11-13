@@ -427,9 +427,11 @@ impl GpuTypeChecker {
         if let Some(dependencies) = dependency_interfaces {
             resources.buffer("dependency_words", &dependencies.words);
             resources.buffer("dependency_module_lookup", &dependencies.module_lookup);
+            resources.buffer("dependency_method_lookup", &dependencies.method_lookup);
         } else {
             resources.buffer("dependency_words", &self.empty_dependency_words);
             resources.buffer("dependency_module_lookup", &self.empty_dependency_words);
+            resources.buffer("dependency_method_lookup", &self.empty_dependency_words);
         }
         allocation_stamp!("resources");
         let hir_active_dispatch = ComputeOperation::direct(

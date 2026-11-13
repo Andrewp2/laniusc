@@ -199,6 +199,23 @@ pub(in crate::type_checker) const DEPENDENCY_MODULE_LOOKUP_BUILD: ReflectedCompu
     "type_checker/dependencies/00_build_module_lookup"
 );
 
+/// The method index of the page in the dependency slot
+/// (`shaders/dependency_method_index.slang`), cleared and rebuilt each time a
+/// page enters the slot.
+pub(in crate::type_checker) const DEPENDENCY_METHOD_LOOKUP_CLEAR: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.dependencies.clear_method_lookup",
+        Declarations,
+        "type_checker/dependencies/00b_clear_method_lookup"
+    )
+    .initializer();
+
+pub(in crate::type_checker) const DEPENDENCY_METHOD_LOOKUP_BUILD: ReflectedComputeSpec = typecheck_pass!(
+    "type_check.dependencies.build_method_lookup",
+    Declarations,
+    "type_checker/dependencies/00c_build_method_lookup"
+);
+
 pub(in crate::type_checker) const DEPENDENCY_IMPORTS_RESOLVE: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.resolve_imports",

@@ -1035,8 +1035,6 @@ impl GpuTypeChecker {
             let module_path = &bind_groups.module_path;
             let canonical_scale = bind_groups.cache_key.canonical_scale;
             let pattern_pages = DependencyPatternReplay {
-                device,
-                queue,
                 pages: dependency_pages,
                 passes: &self.passes,
                 state: module_path,
@@ -1153,7 +1151,7 @@ impl GpuTypeChecker {
                     )
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, project_types)?;
+                    record_each_dependency_page(module_path, encoder, pages, project_types)?;
                 } else {
                     project_types(encoder)?;
                 }
@@ -1255,7 +1253,7 @@ impl GpuTypeChecker {
                     intern_page(encoder)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, record_projection)?;
+                    record_each_dependency_page(module_path, encoder, pages, record_projection)?;
                 } else {
                     dependency_visibility
                         .project_type_instances_group
@@ -1316,7 +1314,7 @@ impl GpuTypeChecker {
                     dependency_visibility.materialize_alias_targets_group.record(encoder)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, materialize_alias_targets)?;
+                    record_each_dependency_page(module_path, encoder, pages, materialize_alias_targets)?;
                 } else {
                     materialize_alias_targets(encoder)?;
                 }
@@ -1364,7 +1362,7 @@ impl GpuTypeChecker {
             bind_groups.calls.record_primary_prefix(encoder)?;
             if let Some(visibility) = &module_path.dependency_visibility {
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                    record_each_dependency_page(module_path, encoder, pages, |encoder| {
                         record_dependency_page(
                             &self.passes,
                             encoder,
@@ -1390,7 +1388,7 @@ impl GpuTypeChecker {
             bind_groups.calls.record_primary_scan(encoder)?;
             if let Some(visibility) = &module_path.dependency_visibility {
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                    record_each_dependency_page(module_path, encoder, pages, |encoder| {
                         record_dependency_type_index(
                             &self.passes,
                             encoder,
@@ -1530,7 +1528,7 @@ impl GpuTypeChecker {
                             .record(encoder)
                     };
                     if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                        record_each_dependency_page(device, queue, encoder, pages, project)?;
+                        record_each_dependency_page(module_path, encoder, pages, project)?;
                     } else {
                         dependency_visibility
                             .project_struct_literals_group
@@ -1641,7 +1639,7 @@ impl GpuTypeChecker {
                     record_dependency_methods(encoder, module_path, stage, collect)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, page)
+                    record_each_dependency_page(module_path, encoder, pages, page)
                 } else {
                     page(encoder)
                 }
@@ -1863,8 +1861,7 @@ impl GpuTypeChecker {
                         };
                     if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                         record_each_dependency_page(
-                            device,
-                            queue,
+                            module_path,
                             encoder,
                             pages,
                             contextual_results,
@@ -1944,8 +1941,7 @@ impl GpuTypeChecker {
                 regenerate_call_claims(encoder)?;
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                     record_each_dependency_page(
-                        device,
-                        queue,
+                        module_path,
                         encoder,
                         pages,
                         &materialize_returns,
@@ -2002,7 +1998,7 @@ impl GpuTypeChecker {
                             )
                         };
                         if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                            record_each_dependency_page(device, queue, encoder, pages, project)?;
+                            record_each_dependency_page(module_path, encoder, pages, project)?;
                         } else {
                             project(encoder)?;
                         }
@@ -2036,7 +2032,7 @@ impl GpuTypeChecker {
                     // exact element type while their declaration page is resident.
                     // Nonresident pages do not clear another page's publication.
                     if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                        record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                        record_each_dependency_page(module_path, encoder, pages, |encoder| {
                             infer.record(encoder)
                         })?;
                     } else {
@@ -2423,7 +2419,7 @@ impl GpuTypeChecker {
                     predicates.validate_imported_methods.record(encoder)
                 };
                 if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                    record_each_dependency_page(device, queue, encoder, pages, validate)?;
+                    record_each_dependency_page(module_path, encoder, pages, validate)?;
                 } else {
                     validate(encoder)?;
                 }
@@ -2452,7 +2448,7 @@ impl GpuTypeChecker {
                 bind_groups.calls.validation_call_envs.record(encoder)?;
             }
             if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
-                record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                record_each_dependency_page(module_path, encoder, pages, |encoder| {
                     record_dependency_call_validation(
                         &self.passes,
                         encoder,

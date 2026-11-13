@@ -10,6 +10,7 @@ import type_checker.calls.checked_constant_environment;
 // compound graph larger than its declaration-side spelling.
 
 import dependency_interface;
+import dependency_method_index;
 import type_checker.concrete_type_equality;
 import type_checker.mutable_checked_type_graph;
 import type_checker.scoped_type_equality;

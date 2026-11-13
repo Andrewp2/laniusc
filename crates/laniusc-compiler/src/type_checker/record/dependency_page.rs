@@ -4,8 +4,6 @@ use super::*;
 /// Operations keep initialization, scans and indexes outside this replay;
 /// only readers of page-local patterns execute once per immutable page.
 pub(in crate::type_checker) struct DependencyPatternReplay<'a> {
-    pub device: &'a wgpu::Device,
-    pub queue: &'a wgpu::Queue,
     pub pages: Option<&'a GpuDependencyInterfacePages>,
     pub passes: &'a TypeCheckPasses,
     pub state: &'a ModulePathState,
@@ -18,7 +16,7 @@ impl DependencyPatternReplay<'_> {
         mut pattern_reader: impl FnMut(&mut wgpu::CommandEncoder) -> Result<()>,
     ) -> Result<()> {
         if let Some(pages) = self.pages.filter(|pages| pages.len() > 1) {
-            record_each_dependency_page(self.device, self.queue, encoder, pages, |encoder| {
+            record_each_dependency_page(self.state, encoder, pages, |encoder| {
                 record_dependency_type_index(self.passes, encoder, self.state,
                     DEPENDENCY_TYPE_INDEX_CALL_PARAM_SCATTER)?;
                 pattern_reader(encoder)
@@ -41,26 +39,38 @@ pub(in crate::type_checker) fn record_dependency_pages(
     passes: &TypeCheckPasses,
     state: &ModulePathState,
 ) -> Result<()> {
-    record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+    let _ = (device, queue);
+    record_each_dependency_page(state, encoder, pages, |encoder| {
         record_dependency_page(passes, encoder, state, DEPENDENCY_PAGE_MODULE_PATHS)
     })
 }
 
 /// Records an arbitrary page-local operation over every dependency page while
 /// keeping the upload/submission ordering in one place.
+///
+/// A page that enters the slot gets its method index rebuilt before the
+/// operation reads it. A job with one page keeps that page in the slot, so
+/// its callers pass it here once, for the module path stage, and record
+/// later operations directly.
 pub(in crate::type_checker) fn record_each_dependency_page(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    state: &ModulePathState,
     encoder: &mut wgpu::CommandEncoder,
     pages: &GpuDependencyInterfacePages,
     mut record: impl FnMut(&mut wgpu::CommandEncoder) -> Result<()>,
 ) -> Result<()> {
-    let _ = (device, queue);
+    let index_methods = |encoder: &mut wgpu::CommandEncoder| {
+        for operation in state.bind_groups.dependency_method_lookup.iter().flatten() {
+            operation.record(encoder)?;
+        }
+        Ok::<_, anyhow::Error>(())
+    };
     if pages.len() == 1 {
+        index_methods(encoder)?;
         return record(encoder);
     }
     for page in 0..pages.len() {
         pages.record_page(encoder, page)?;
+        index_methods(encoder)?;
         record(encoder)?;
     }
     Ok(())

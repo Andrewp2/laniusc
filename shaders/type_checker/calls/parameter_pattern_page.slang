@@ -1,4 +1,5 @@
 import dependency_interface;
+import dependency_method_index;
 
 // Parameter rows retain canonical indexes into their callable's immutable
 // page. A reader must own that page before interpreting the pattern. Local

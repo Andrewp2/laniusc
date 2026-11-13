@@ -7,6 +7,7 @@
 import hir_records;
 import status;
 import dependency_interface;
+import dependency_method_index;
 import type_checker.argument_context;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_dependency;

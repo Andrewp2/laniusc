@@ -488,29 +488,21 @@ bool dependency_trait_requirement(uint member)
         member >= start && member - start < count;
 }
 
-// Only public implementation methods use their lexical interface symbol as
-// their native target. Private trait methods require their explicit binding;
-// this direct-call lookup must not create a public alias for that symbol.
-// A trait's required member is found by the same identity; its signature
-// serves calls through a bound, never a native call.
-uint dependency_find_method(uint library_id, uint unit_id, uint method_symbol)
+// Slot hashes of the page's method index (dependency_method_index), which
+// type_checker/dependencies/00c builds: by callable identity and by name.
+uint dependency_method_identity_hash(uint library_id, uint unit_id, uint method_symbol)
 {
-    if (method_symbol == 0xffffffffu || (method_symbol & 0xc0000000u) != 0x80000000u)
-        return 0xffffffffu;
-    uint found = 0xffffffffu;
-    for (uint row = 0u; row < dependency_member_count(); row += 1u)
-    {
-        uint base = row * SEMANTIC_INTERFACE_MEMBER_WORDS;
-        if (dependency_member_word(base + 9u) != method_symbol ||
-            (!dependency_public_implementation_method(row) &&
-             !dependency_trait_requirement(row))) continue;
-        uint library; uint unit; uint local;
-        if (!dependency_contract_owner_identity(dependency_member_word(base), library, unit, local) ||
-            library != library_id || unit != unit_id) continue;
-        if (found != 0xffffffffu) return 0xffffffffu;
-        found = row;
-    }
-    return found;
+    uint hash = (2166136261u ^ library_id) * 16777619u;
+    hash = (hash ^ unit_id) * 16777619u;
+    hash = (hash ^ method_symbol) * 16777619u;
+    return hash ^ (hash >> 15u);
+}
+
+uint dependency_method_name_hash(uint name_lo, uint name_hi)
+{
+    uint hash = (2166136261u ^ name_lo) * 16777619u;
+    hash = (hash ^ name_hi) * 16777619u;
+    return hash ^ (hash >> 15u);
 }
 
 // Parameters belong to the exact implementation (or trait) owner and callable
@@ -568,25 +560,6 @@ uint dependency_method_argument_type(uint method, uint ordinal, bool dotted, out
 }
 uint dependency_method_type_count(uint method) { return (dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) >> 16u) & 63u; }
 uint dependency_method_constant_count(uint method) { return (dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) >> 22u) & 63u; }
-
-uint dependency_callable_return_type(uint library, uint unit, uint symbol)
-{
-    uint declaration = dependency_find_declaration(library, unit, symbol);
-    if (declaration != 0xffffffffu)
-    {
-        uint signature = dependency_declaration_word(declaration * 14u + 7u);
-        if (signature >= dependency_type_count()) return 0xffffffffu;
-        uint base = signature * 9u;
-        uint count = dependency_type_word(base + 4u);
-        uint start = dependency_type_word(base + 3u);
-        uint edges = dependency_count(5u);
-        if (dependency_type_word(base) != 7u || count == 0u || start > edges || count > edges - start)
-            return 0xffffffffu;
-        return dependency_type_edge_word(start + count - 1u);
-    }
-    uint method = dependency_find_method(library, unit, symbol);
-    return method == 0xffffffffu ? 0xffffffffu : dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u);
-}
 
 // Source order is independent of member position and type/constant slot.
 uint dependency_generic_parameter_ordinal(uint member)

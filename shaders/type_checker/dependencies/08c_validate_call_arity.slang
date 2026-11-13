@@ -2,6 +2,7 @@
 // cannot detect missing arguments because a zero-argument call has no rows.
 
 import dependency_interface;
+import dependency_method_index;
 import hir_records;
 import gpu_index;
 import status;

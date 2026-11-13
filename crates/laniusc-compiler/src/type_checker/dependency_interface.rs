@@ -23,6 +23,10 @@ pub(crate) struct GpuDependencyInterfaceState {
     pub(crate) module_lookup_capacity: u32,
     pub(crate) words: LaniusBuffer<u32>,
     pub(crate) module_lookup: LaniusBuffer<u32>,
+    /// The method index of the page in the slot: two open-address tables of
+    /// member rows, rebuilt on the GPU for each page loaded into the slot
+    /// (`method_lookup_rows`).
+    pub(crate) method_lookup: LaniusBuffer<u32>,
     /// Every page of the job, back to back, resident for the whole job. A
     /// page enters the fixed slot by a GPU copy recorded in order with the
     /// passes that read it, so streaming pages needs neither a host upload
@@ -119,6 +123,13 @@ impl GpuDependencyInterfaceCapacities {
             module_lookup: self.module_lookup.max(required.module_lookup),
         }
     }
+}
+
+/// The rows of the method index of a slot whose pages hold up to `members`
+/// member rows: two tables, each a power of two of at least twice that many
+/// slots. The kernels read the table size from the buffer.
+fn method_lookup_rows(members: u32) -> usize {
+    2 * (members.max(1) as usize * 2).next_power_of_two()
 }
 
 /// CPU-packed contents of one dependency page. Packing is separate from GPU
@@ -662,6 +673,14 @@ impl GpuDependencyInterfaceState {
             wgpu::BufferUsages::empty(),
         );
 
+        let method_lookup = typed_storage_u32_fill_rw(
+            device,
+            "type_check.dependencies.method_lookup",
+            method_lookup_rows(capacities.members),
+            u32::MAX,
+            wgpu::BufferUsages::empty(),
+        );
+
         Self {
             module_count: capacities.modules,
             declaration_count: capacities.declarations,
@@ -676,6 +695,7 @@ impl GpuDependencyInterfaceState {
             module_lookup_capacity: capacities.module_lookup,
             words,
             module_lookup,
+            method_lookup,
             page_store: None,
         }
     }

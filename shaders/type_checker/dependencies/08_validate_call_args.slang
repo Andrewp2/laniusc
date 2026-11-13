@@ -7,6 +7,7 @@ import type_checker.constant_atoms_identity;
 // exact. Portable constant children do not align with source HIR ordinals.
 
 import dependency_interface;
+import dependency_method_index;
 import type_checker.dependencies.method_receiver;
 import hir_records;
 import gpu_index;

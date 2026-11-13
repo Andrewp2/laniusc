@@ -1,6 +1,7 @@
 // Scatter dependency parameter rows from compact call-argument rows.
 
 import dependency_interface;
+import dependency_method_index;
 import hir_records;
 import gpu_index;
 

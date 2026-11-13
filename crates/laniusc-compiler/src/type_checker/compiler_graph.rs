@@ -3728,6 +3728,12 @@ fn build_graph(
         ResourceClass::External,
         4,
     )?;
+    let _dependency_method_lookup = graph.add_storage(
+        "dependency_method_lookup",
+        ResourceDomain::Declarations,
+        ResourceClass::External,
+        4,
+    )?;
     let dependency_identity = |graph: &mut CompilerGraphBuilder, name| {
         graph.add_storage(
             name,
@@ -4426,6 +4432,8 @@ fn build_graph(
     DEPENDENCY_WORKSPACE_CLEAR.register_kernel(&mut graph, kernels)?;
     DEPENDENCY_MODULE_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
     DEPENDENCY_MODULE_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
+    DEPENDENCY_METHOD_LOOKUP_CLEAR.register_kernel(&mut graph, kernels)?;
+    DEPENDENCY_METHOD_LOOKUP_BUILD.register_kernel(&mut graph, kernels)?;
     DEPENDENCY_IMPORTS_RESOLVE.register_kernel(&mut graph, kernels)?;
     DEPENDENCY_IMPORT_VISIBILITY_COUNT.register_kernel(&mut graph, kernels)?;
     DEPENDENCY_VISIBLE_SCAN.register(&mut graph, record_scan_levels)?;
