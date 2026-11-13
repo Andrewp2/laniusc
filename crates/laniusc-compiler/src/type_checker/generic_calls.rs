@@ -23,11 +23,9 @@ use super::{
     },
     compiler_graph,
 };
+#[cfg(test)]
+use crate::compiler::{GpuSemanticInterfaceArtifact, GpuSemanticInterfaceMemberKind};
 use crate::{
-    compiler::{
-        GpuSemanticInterfaceArtifact,
-        GpuSemanticInterfaceMemberKind,
-    },
     gpu::{
         buffers::{LaniusBuffer, TrackedBufferView},
         compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
@@ -57,8 +55,8 @@ const INVALID: u32 = u32::MAX;
 const CALL_WORDS: usize = std::mem::size_of::<super::GpuCheckedCallArtifact>() / 4;
 const RETAINED_CALLABLE_WORDS: usize = 3;
 /// Words of a checked call record the unit snapshot reads: target token
-/// through callable kind.
-const CALL_RECORD_READ_WORDS: usize = 12;
+/// through the dependency callee's generic requirements.
+const CALL_RECORD_READ_WORDS: usize = 13;
 const _: () = assert!(CALL_RECORD_READ_WORDS <= CALL_WORDS);
 const MAX_RETAINED_TYPE_DEPTH: usize = 256;
 const TYPE_INSTANCE_COLUMNS: [&str; 13] = [
@@ -882,6 +880,10 @@ pub(crate) struct CheckedGenericCall {
     pub constants: Vec<CheckedGenericConstant>,
     pub required_constant_parameters: Option<u32>,
     pub required_generic_parameters: Option<u32>,
+    /// The target is a required member of an imported trait. Body
+    /// specialization routes such a call to the selected implementation per
+    /// instance, so the call has no instance of its own.
+    pub trait_requirement: bool,
 }
 
 impl CheckedGenericCall {
@@ -944,7 +946,9 @@ impl CheckedGenericCall {
     }
 }
 
-/// Add declaration-owned requirements from the admitted portable interface.
+/// Apply the routed implementations' arities to the calls and drop the calls
+/// that have no instance. The type checker already read each dependency
+/// callee's declared arity from the admitted portable interface.
 /// The GPU has already solved the receiver's complete structural pattern and
 /// published its accepted substitution. Do not reconstruct bindings from a
 /// nominal receiver's positional arguments here.
@@ -954,7 +958,6 @@ impl CheckedGenericCall {
 /// environment here. The GPU route owns the exact per-entry environment.
 pub(crate) fn resolve_generic_requirements(
     calls: &mut Vec<CheckedGenericCall>,
-    dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
     impl_bindings: &[BodyImplBinding],
 ) -> Result<()> {
     let mut binding_arities = BTreeMap::new();
@@ -967,58 +970,31 @@ pub(crate) fn resolve_generic_requirements(
                 "one implementation target {:?} has conflicting declaration arities", binding.target);
         }
     }
+    for call in calls.iter_mut() {
+        let target = match call.target {
+            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
+            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol: symbol } =>
+                [library_id, unit_id, symbol],
+            CheckedGenericTarget::Local { .. } => continue,
+        };
+        let Some(&binding) = binding_arities.get(&target) else { continue };
+        // The type checker read the declared arity from the frozen interface
+        // (`CheckedCallArtifact::generic_requirements`).
+        if let (false, Some(types), Some(constants)) =
+            (call.trait_requirement, call.required_generic_parameters, call.required_constant_parameters)
+        {
+            ensure!(binding == (types, constants),
+                "implementation target {target:?} arity differs from its frozen interface");
+        }
+        call.required_generic_parameters = Some(binding.0);
+        call.required_constant_parameters = Some(binding.1);
+        call.trait_requirement = false;
+    }
     // A call through a bound on an imported trait targets the trait's
     // required member, which body specialization routes to the selected
     // implementation per instance; it has no instance of its own.
-    let mut requirement_calls = BTreeSet::new();
-    for call in calls.iter_mut() {
-        let (library_id, unit_id, symbol) = match call.target {
-            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
-            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol: symbol } =>
-                (library_id, unit_id, symbol),
-            CheckedGenericTarget::Local { .. } => continue,
-        };
-        let binding_arity = binding_arities.get(&[library_id, unit_id, symbol]).copied();
-        let interface = dependency_pages.iter().flatten()
-            .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id);
-        if let (None, Some(interface), CheckedGenericTarget::DependencyMethod { method_symbol, .. }) =
-            (binding_arity, interface, call.target)
-        {
-            if interface.members.iter().any(|member| {
-                member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
-                    && member.value_hi == method_symbol
-            }) {
-                requirement_calls.insert(call.call_hir);
-                continue;
-            }
-        }
-        let interface_arity = interface
-            .and_then(|interface| match call.target {
-                CheckedGenericTarget::Dependency { declaration_index, .. } => {
-                    let declaration = interface.declarations.get(declaration_index as usize)?;
-                    let start = declaration.first_member as usize;
-                    let end = start.checked_add(declaration.member_count as usize)?;
-                    let members = interface.members.get(start..end)?;
-                    let count = |kind: GpuSemanticInterfaceMemberKind| members.iter()
-                        .filter(|member| member.kind == kind as u32 && member.value_hi == 0)
-                        .count() as u32;
-                    Some((count(GpuSemanticInterfaceMemberKind::GenericTypeParameter),
-                          count(GpuSemanticInterfaceMemberKind::GenericConstParameter)))
-                }
-                CheckedGenericTarget::DependencyMethod { method_symbol, .. } =>
-                    dependency_method_requirements(interface, method_symbol),
-                CheckedGenericTarget::Local { .. } => unreachable!(),
-            });
-        if let (Some(binding), Some(interface)) = (binding_arity, interface_arity) {
-            ensure!(binding == interface,
-                "implementation target {:?} arity differs from its frozen interface", [library_id, unit_id, symbol]);
-        }
-        let requirements = binding_arity.or(interface_arity);
-        call.required_generic_parameters = requirements.map(|counts| counts.0);
-        call.required_constant_parameters = requirements.map(|counts| counts.1);
-    }
     calls.retain(|call| {
-        !requirement_calls.contains(&call.call_hir)
+        !call.trait_requirement
             && (!call.arguments.is_empty()
                 || !call.constants.is_empty()
                 || call.required_generic_parameters != Some(0)
@@ -1030,6 +1006,7 @@ pub(crate) fn resolve_generic_requirements(
 /// Callable header counts include the exact impl and method domains, even for
 /// parameters absent from the signature. The owner may be structural and must
 /// never be interpreted as a nominal declaration index.
+#[cfg(test)]
 pub(crate) fn dependency_method_requirements(
     interface: &GpuSemanticInterfaceArtifact,
     method_symbol: u32,
@@ -2858,6 +2835,17 @@ pub(super) fn read_unit_facts(
         .zip(&call_spans)
         .zip(call_records.chunks_exact(CALL_RECORD_READ_WORDS))
     {
+        // The type checker published a dependency callee's declared arity
+        // with its call target (`CheckedCallArtifact::generic_requirements`).
+        let dependency_requirements = record[12];
+        let dependency_counts = (dependency_requirements != INVALID).then_some((
+            dependency_requirements & 0xffff,
+            (dependency_requirements >> 16) & 0x7fff,
+        ));
+        if let Some((types, constants)) = dependency_counts {
+            ensure!(types <= 32 && constants <= 32,
+                "dependency callee at call {call_hir} has invalid parameter counts ({types}, {constants})");
+        }
         let (target, required_constant_parameters) = match record[11] {
             1 if !local_lookups => {
                 calls.push(None);
@@ -2897,7 +2885,7 @@ pub(super) fn read_unit_facts(
                     unit_id: record[2],
                     method_symbol: record[3],
                 },
-                None,
+                dependency_counts.map(|counts| counts.1),
             ),
             3 if record[4] == INVALID => (
                 CheckedGenericTarget::Dependency {
@@ -2905,7 +2893,7 @@ pub(super) fn read_unit_facts(
                     unit_id: record[2],
                     declaration_index: record[3],
                 },
-                None,
+                dependency_counts.map(|counts| counts.1),
             ),
             _ => {
                 calls.push(None);
@@ -2918,7 +2906,7 @@ pub(super) fn read_unit_facts(
                 ..
             } => Some(generic_parameter_count),
             CheckedGenericTarget::Dependency { .. }
-            | CheckedGenericTarget::DependencyMethod { .. } => None,
+            | CheckedGenericTarget::DependencyMethod { .. } => dependency_counts.map(|counts| counts.0),
         };
         calls.push(Some(CheckedGenericCall {
             call_hir,
@@ -2928,6 +2916,9 @@ pub(super) fn read_unit_facts(
             constants: Vec::new(),
             required_constant_parameters,
             required_generic_parameters,
+            trait_requirement: matches!(target, CheckedGenericTarget::DependencyMethod { .. })
+                && dependency_requirements != INVALID
+                && dependency_requirements >> 31 != 0,
         }));
     }
     timer.stamp("targets");
@@ -3208,6 +3199,7 @@ fn routed_closure_template(call_hir: u32, source_span: [u32; 2], target: [u32; 4
         constants: Vec::new(),
         required_constant_parameters: Some(constants),
         required_generic_parameters: Some(types),
+        trait_requirement: false,
     }
 }
 
@@ -3932,6 +3924,7 @@ mod tests {
             constants: vec![CheckedGenericConstant { slot: 0, value }],
             required_generic_parameters: Some(1),
             required_constant_parameters: Some(1),
+            trait_requirement: false,
         }
     }
 
@@ -3969,7 +3962,7 @@ mod tests {
         // Arity retention cannot copy either binding's environment onto a call.
         let bindings = [routed_binding(0, CheckedGenericType::Scalar(8)),
             routed_binding(1, CheckedGenericType::Slice(Box::new(CheckedGenericType::Scalar(8))))];
-        resolve_generic_requirements(&mut calls, &[], &bindings).unwrap();
+        resolve_generic_requirements(&mut calls, &bindings).unwrap();
         assert_eq!(calls, expected);
     }
 
@@ -3981,11 +3974,11 @@ mod tests {
         let expected = vec![call(CheckedGenericType::Scalar(3),
             CheckedGenericConstantValue::count_literal(7))];
         let mut calls = expected.clone();
-        assert!(resolve_generic_requirements(&mut calls, &[], &bindings).unwrap_err()
+        assert!(resolve_generic_requirements(&mut calls, &bindings).unwrap_err()
             .to_string().contains("conflicting declaration arities"));
         assert_eq!(calls, expected);
         bindings[1].required_constants = 33;
-        assert!(resolve_generic_requirements(&mut calls, &[], &bindings).unwrap_err()
+        assert!(resolve_generic_requirements(&mut calls, &bindings).unwrap_err()
             .to_string().contains("invalid parameter counts"));
         assert_eq!(calls, expected);
     }
@@ -4003,8 +3996,10 @@ mod tests {
         };
         ordinary.arguments.clear();
         ordinary.constants.clear();
+        ordinary.required_generic_parameters = Some(0);
+        ordinary.required_constant_parameters = Some(0);
         let mut calls = vec![ordinary];
-        resolve_generic_requirements(&mut calls, &[], &[binding]).unwrap();
+        resolve_generic_requirements(&mut calls, &[binding]).unwrap();
         assert!(calls.is_empty());
     }
 

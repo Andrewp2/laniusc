@@ -2988,7 +2988,6 @@ fn finish_source_pack_unit(
         .scope_source_unit(library_id, unit_id);
     gpu_type_checker::resolve_generic_requirements(
         &mut artifacts.generic_calls,
-        template_dependency_pages.as_ref(),
         impl_bindings,
     ).map_err(|error| CompileError::GpuFrontend(format!(
         "generic declaration arity retention failed: {error:#}"

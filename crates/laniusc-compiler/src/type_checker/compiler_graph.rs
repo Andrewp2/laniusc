@@ -6589,6 +6589,7 @@ fn build_graph(
             "call_dependency_unit_id" => _call_dependency_unit_id: Read,
             "call_dependency_local_index" => _call_dependency_local_index: Read,
             "call_dependency_host_service" => _call_dependency_host_service: Read,
+            "call_dependency_generic_requirements" => _call_dependency_generic_requirements: Read,
             "call_intrinsic_tag" => _call_intrinsic_tag: Read,
             "call_return_type" => _call_return_type: Read,
             "call_return_type_token" => _call_return_type_token: Read,

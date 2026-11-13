@@ -91,7 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint token = callee_token(row);
         demand = call.dependency_host_service == INVALID &&
-            (token == INVALID || call_dependency_generic_requirements[token] != 0u);
+            (token == INVALID ||
+             (call_dependency_generic_requirements[token] & 0x7fffffffu) != 0u);
     }
     else if (call.callable_kind == CALLABLE_FUNCTION)
     {

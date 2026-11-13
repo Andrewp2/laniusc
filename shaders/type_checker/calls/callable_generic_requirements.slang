@@ -10,7 +10,8 @@ uint2 required_callable_generic_counts(uint callee)
     if (call_dependency_library_id[callee] != INVALID)
     {
         uint packed = call_dependency_generic_requirements[callee];
-        return uint2(packed & 0xffffu, packed >> 16u);
+        // Bit 31 marks a trait's required member (dependencies/15).
+        return uint2(packed & 0xffffu, (packed >> 16u) & 0x7fffu);
     }
     uint function = call_fn_index[callee];
     uint header = callable_header_token(function);

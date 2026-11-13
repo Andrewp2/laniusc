@@ -1645,6 +1645,7 @@ mod tests {
             source_span: [0, 1],
             constants: Vec::new(),
             required_constant_parameters: Some(0),
+            trait_requirement: false,
             target: CheckedGenericTarget::Local {
                 function_start_token: 3,
                 generic_parameter_count: 512,
@@ -1685,6 +1686,7 @@ mod tests {
             source_span: [0, 1],
             constants: Vec::new(),
             required_constant_parameters: Some(0),
+            trait_requirement: false,
             target: CheckedGenericTarget::DependencyMethod {
                 library_id: 1,
                 unit_id: 0,

@@ -1758,6 +1758,7 @@ mod tests {
             },
             required_generic_parameters: Some(types.len() as u32),
             required_constant_parameters: Some(0),
+            trait_requirement: false,
             arguments: types
                 .into_iter()
                 .enumerate()

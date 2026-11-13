@@ -19,6 +19,10 @@ struct CheckedCallArtifact
     // from call-shaped language constructs such as enum constructors before
     // target-independent lowering sees the record.
     uint callable_kind;
+    // A dependency callee's declared arity as `types | constants << 16`, with
+    // bit 31 set when the callee is a required member of a trait. INVALID
+    // when the callable is not a dependency.
+    uint generic_requirements;
     // Dense local declaration-family HIR row and declaration-specific
     // ordinal. Both are INVALID when the callable is not a local declaration.
     uint callable_hir;

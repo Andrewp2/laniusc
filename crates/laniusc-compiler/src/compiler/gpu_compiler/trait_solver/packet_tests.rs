@@ -177,6 +177,7 @@ fn bound_unit() -> CompiledSourcePackUnit {
         constants: vec![CheckedGenericConstant::literal(0, 7)],
         required_constant_parameters: Some(1),
         required_generic_parameters: Some(2),
+        trait_requirement: false,
     }]
     .into();
     unit.checked_call_owners = vec![CheckedCallOwner {

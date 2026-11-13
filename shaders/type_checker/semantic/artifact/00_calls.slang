@@ -41,6 +41,7 @@ StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> call_dependency_host_service;
+StructuredBuffer<uint> call_dependency_generic_requirements;
 StructuredBuffer<uint> call_dependency_native_abi;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
@@ -183,6 +184,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call.return_ref_tag = 0u;
     call.return_ref_payload = INVALID;
     call.callable_kind = CALLABLE_NONE;
+    call.generic_requirements = INVALID;
     call.callable_hir = INVALID;
     call.callable_ordinal = INVALID;
     call.receiver_adjustment_kind = 0u;
@@ -209,6 +211,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.dependency_unit_id = call_dependency_unit_id[callee_token];
                 call.dependency_local_index = call_dependency_local_index[callee_token];
                 call.dependency_host_service = call_dependency_host_service[callee_token];
+                call.generic_requirements = call_dependency_generic_requirements[callee_token];
             }
             call.intrinsic_tag = call_intrinsic_tag[callee_token];
             if (call.intrinsic_tag != 0u)

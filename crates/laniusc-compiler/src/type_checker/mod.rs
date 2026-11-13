@@ -896,6 +896,7 @@ pub(crate) struct GpuCheckedCallArtifact {
     pub return_ref_tag: u32,
     pub return_ref_payload: u32,
     pub callable_kind: u32,
+    pub generic_requirements: u32,
     pub callable_hir: u32,
     pub callable_ordinal: u32,
     pub receiver_adjustment_kind: u32,

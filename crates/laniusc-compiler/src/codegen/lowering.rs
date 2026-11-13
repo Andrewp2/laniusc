@@ -2315,6 +2315,7 @@ mod tests {
             callable_kind: if r[0] != u32::MAX { 1 }
                 else if r[1..4].iter().all(|&v| v != u32::MAX) { 3 }
                 else if r[5] != 0 { 2 } else { 0 },
+            generic_requirements: u32::MAX,
             callable_hir: u32::MAX,
             callable_ordinal: u32::MAX,
             receiver_adjustment_kind: 0,

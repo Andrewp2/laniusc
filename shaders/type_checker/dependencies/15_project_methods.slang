@@ -56,9 +56,11 @@ void publish_method_result(
     call_dependency_local_index[method_token] = method_local_index;
     call_dependency_host_service[method_token] = INVALID;
     call_dependency_native_abi[method_token] = 0u;
+    // Bit 31 marks a trait's required member, which has no instance of its own.
     call_dependency_generic_requirements[method_token] =
         dependency_method_type_count(member_i) |
-        (dependency_method_constant_count(member_i) << 16u);
+        (dependency_method_constant_count(member_i) << 16u) |
+        (dependency_trait_requirement(member_i) ? 0x80000000u : 0u);
     call_param_count[method_token] = dependency_method_parameter_count(member_i);
     if (dotted_call && call_param_count[method_token] != 0u &&
         dependency_method_parameter_type(member_i, 0u) != INVALID)

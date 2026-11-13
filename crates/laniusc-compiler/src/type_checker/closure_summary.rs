@@ -623,6 +623,7 @@ mod tests {
             constants: length.into_iter().map(|value| CheckedGenericConstant { slot: 0, value }).collect(),
             required_generic_parameters: Some(1),
             required_constant_parameters: Some(0),
+            trait_requirement: false,
         }
     }
 

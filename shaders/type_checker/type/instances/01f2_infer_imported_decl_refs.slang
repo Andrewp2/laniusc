@@ -105,7 +105,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // 07_project_calls publishes the callee's type and constant arity with
     // its declared result; calls/01 clears the word on every token.
     if (compact_hir_core[stmt.c].kind == HIR_CALL_EXPR &&
-        call_dependency_generic_requirements[source] != 0u) return;
+        (call_dependency_generic_requirements[source] & 0x7fffffffu) != 0u) return;
     decl_type_ref_tag[stmt.b] = TYPE_REF_EXTERNAL_CANONICAL;
     decl_type_ref_payload[stmt.b] = decl_type_ref_payload[source];
     decl_imported_type_token[stmt.b] = source;
