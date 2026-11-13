@@ -11,6 +11,9 @@
 pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 17;
 const GPU_SEMANTIC_INTERFACE_MAGIC: [u8; 8] = *b"LNSIFACE";
 const HEADER_U32S: usize = 16;
+/// The word of an encoded interface where its records start: after the
+/// 8-byte magic and the header.
+pub(crate) const ENCODED_RECORDS_WORD: u32 = 2 + HEADER_U32S as u32;
 const MODULE_U32S: usize = 2;
 const MODULE_SEGMENT_U32S: usize = 4;
 const DECLARATION_U32S: usize = 14;
@@ -79,9 +82,10 @@ pub struct NativeCFunction {
     pub signature: NativeCSignature,
 }
 
-pub(crate) mod dependency_batch;
+#[cfg(test)]
+mod dependency_page_tests;
 mod implementation_evidence;
-use implementation_evidence::{ContractOwner, validate_contract_owner, validate_contract_owner_capacity, rebase_contract_owner};
+use implementation_evidence::{ContractOwner, validate_contract_owner, validate_contract_owner_capacity};
 
 /// Stable kind tag for a typed interface node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -386,6 +390,7 @@ impl GpuSemanticInterfaceIdentityArtifact {
             implementation_method_bindings: Vec::new(),
             name_bytes: self.name_bytes.clone(),
             closure_summary: None,
+            resident_bytes: Default::default(),
         };
         partial.validate_identities()
     }
@@ -415,9 +420,54 @@ pub struct GpuSemanticInterfaceArtifact {
     /// find their instances' deeper library bodies. It is no part of the
     /// encoded interface, its identity or its version.
     pub(crate) closure_summary: Option<std::sync::Arc<crate::type_checker::ClosureSummary>>,
+    /// The encoded interface, kept on the GPU by the export that produced
+    /// it, so dependents pack their dependency pages from it on the GPU.
+    /// Valid only while the records are unchanged: interfaces handed to
+    /// callers, who may edit them, are [`Self::detached`].
+    pub(crate) resident_bytes: ResidentInterfaceBytes,
+}
+
+/// An exported interface's encoded bytes in a GPU buffer of their own. Not
+/// part of the interface: equality ignores it, and interfaces read from
+/// disk have none.
+#[derive(Clone, Default)]
+pub(crate) struct ResidentInterfaceBytes(Option<(wgpu::Buffer, usize)>);
+
+impl ResidentInterfaceBytes {
+    pub(crate) fn new(buffer: wgpu::Buffer, byte_len: usize) -> Self {
+        Self(Some((buffer, byte_len)))
+    }
+
+    /// The buffer and the encoded byte length at its start.
+    pub(crate) fn get(&self) -> Option<(&wgpu::Buffer, usize)> {
+        self.0.as_ref().map(|(buffer, byte_len)| (buffer, *byte_len))
+    }
+}
+
+impl PartialEq for ResidentInterfaceBytes {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ResidentInterfaceBytes {}
+
+impl std::fmt::Debug for ResidentInterfaceBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ResidentInterfaceBytes")
+            .field(&self.0.as_ref().map(|(_, byte_len)| byte_len))
+            .finish()
+    }
 }
 
 impl GpuSemanticInterfaceArtifact {
+    /// The interface without its resident GPU bytes, for callers that may
+    /// edit its records.
+    pub(crate) fn detached(mut self) -> Self {
+        self.resident_bytes = ResidentInterfaceBytes::default();
+        self
+    }
+
     /// Resolves native bindings from validated interface records. Names and
     /// signatures are GPU-produced facts; the host does not inspect source.
     pub fn native_c_functions(&self) -> Result<Vec<NativeCFunction>, String> {
@@ -1712,6 +1762,7 @@ impl GpuSemanticInterfaceArtifact {
             implementation_method_bindings,
             name_bytes,
             closure_summary: None,
+            resident_bytes: Default::default(),
         };
         artifact.validate()?;
         Ok(artifact)
@@ -2057,6 +2108,7 @@ mod tests {
             implementation_method_bindings: Vec::new(),
             name_bytes,
             closure_summary: None,
+            resident_bytes: Default::default(),
         }
     }
 
@@ -2207,7 +2259,7 @@ mod tests {
         second.predicates[0].trait_unit_id = second.unit_id;
         let type_base = first.types.len() as u32;
         let member_base = first.members.len() as u32;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+        let batch = crate::type_checker::gpu_packed_dependency_page(
             99, 99, &[second.clone(), first.clone()],
         ).unwrap();
         assert_eq!(batch.predicate_library_id, [7, 7]);
@@ -2304,7 +2356,7 @@ mod tests {
         );
         let mut another = interface.clone();
         another.unit_id += 1;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+        let batch = crate::type_checker::gpu_packed_dependency_page(
             99,
             99,
             &[interface.clone(), another],
@@ -2407,7 +2459,7 @@ mod tests {
             let mut second = first.clone();
             second.unit_id += 1;
             second.types[5].nominal_unit_id = second.unit_id;
-            let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+            let batch = crate::type_checker::gpu_packed_dependency_page(
                 99, 99, &[second, first],
             ).expect("batch nominal operands");
             assert_eq!(batch.types[2].length_lo, value);
@@ -2479,7 +2531,7 @@ mod tests {
             assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), first);
             let mut second = first.clone();
             second.unit_id += 1;
-            let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+            let batch = crate::type_checker::gpu_packed_dependency_page(
                 88, 99, &[second, first]).unwrap();
             for row in [2, 8] {
                 let atom = batch.types[row];
@@ -2573,7 +2625,7 @@ mod tests {
         assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), first);
         let mut second = first.clone();
         second.unit_id += 1;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+        let batch = crate::type_checker::gpu_packed_dependency_page(
             88, 99, &[second, first]).unwrap();
         assert_eq!(batch.types[9].payload_lo, crate::primitive_types::SCALAR_U8);
         assert_eq!(batch.types[9].first_edge, 5);

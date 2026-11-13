@@ -1366,6 +1366,7 @@ mod tests {
                 implementation_method_bindings: Vec::new(),
                 name_bytes: Vec::new(),
                 closure_summary: None,
+                resident_bytes: Default::default(),
             },
             object: CompiledSourcePackObject::X86_64(
                 crate::codegen::x86::GpuX86RelocatableObject {

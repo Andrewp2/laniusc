@@ -36,29 +36,6 @@ pub(super) fn validate_contract_owner(
     }
 }
 
-pub(super) fn rebase_contract_owner(
-    owner_ref: u32,
-    declaration_base: u32,
-    implementation_base: u32,
-) -> Result<u32, String> {
-    if owner_ref == INVALID {
-        return Err("semantic-interface contract owner is invalid".into());
-    }
-    let tag = owner_ref & IMPLEMENTATION_OWNER_TAG;
-    let base = if tag == 0 {
-        declaration_base
-    } else {
-        implementation_base
-    };
-    let index = base
-        .checked_add(owner_ref & !IMPLEMENTATION_OWNER_TAG)
-        .filter(|&index| index < IMPLEMENTATION_OWNER_TAG - 1)
-        .ok_or_else(|| {
-            "semantic-interface rebased owner exceeds contract owner domain".to_string()
-        })?;
-    Ok(tag | index)
-}
-
 /// Row indexes that validate_implementations builds once, so that no
 /// implementation, method or binding has to scan a whole table.
 struct ImplementationIndexes {
@@ -839,7 +816,7 @@ mod tests {
         assert_eq!(GpuSemanticInterfaceArtifact::from_bytes(&bytes).unwrap(), first);
         let mut second = first.clone();
         second.unit_id += 1;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+        let batch = crate::type_checker::gpu_packed_dependency_page(
             99, 999, &[first, second]).unwrap();
         assert_eq!(batch.members[4].owner_ref, IMPLEMENTATION_OWNER_TAG | 1);
         assert_eq!(batch.members[5].value_hi, 0xc000_0007);
@@ -972,7 +949,7 @@ mod tests {
         bounds_only.validate().expect("predicate-only inherited parameters retain their owner");
         let mut second = first.clone();
         second.unit_id += 1;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(99, 999, &[second, first]).unwrap();
+        let batch = crate::type_checker::gpu_packed_dependency_page(99, 999, &[second, first]).unwrap();
         assert_eq!(batch.members[7].owner_ref, IMPLEMENTATION_OWNER_TAG | 1);
         assert_eq!(batch.members[7].value_hi, 0xc000_0007);
         assert_eq!(batch.members[11].value_hi, 0x8000_0003);
@@ -1316,7 +1293,7 @@ mod tests {
         second.implementation_method_bindings[0].target_unit_id = second.unit_id;
         let member_base = first.members.len() as u32;
         let type_base = first.types.len() as u32;
-        let batch = dependency_batch::GpuSemanticInterfaceDependencyBatch::from_interfaces(
+        let batch = crate::type_checker::gpu_packed_dependency_page(
             99,
             99,
             &[second.clone(), first.clone()],
@@ -1350,12 +1327,6 @@ mod tests {
                 ..second.implementation_method_bindings[0]
             }
         );
-        assert_eq!(
-            rebase_contract_owner(IMPLEMENTATION_OWNER_TAG, 17, 3).unwrap(),
-            IMPLEMENTATION_OWNER_TAG | 3
-        );
-        assert!(rebase_contract_owner(INVALID, 0, 0).is_err());
-        assert!(rebase_contract_owner(1, IMPLEMENTATION_OWNER_TAG - 1, 0).is_err());
     }
 
     #[test]

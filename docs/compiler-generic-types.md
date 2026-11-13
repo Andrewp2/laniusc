@@ -1215,6 +1215,27 @@ is retained as `page-layout-nested-match-before.lani`; the successful nested
 layout test uses sequential matches. Ordinary string comparison remains a
 separate dependency. The broader [generics goal](#remaining-work) remains open.
 
+## Dependency pages packed on the GPU (2026-11-13)
+
+A job's dependency pages are packed by two kernels in
+`shaders/type_checker/dependency_pack/`. The host lays out each page from the
+row counts of its interfaces alone (`GpuDependencyPageLayout`): the 46-word
+header with every table offset, and per interface its identity, its first row
+in each flattened table and where its sections start in the encoded bytes.
+`rows` writes every page word except the module declaration index. It writes
+the identity columns, copies records with their flattened-storage references
+rebased, and repacks the name bytes. `module_index` writes the stable
+per-module declaration grouping.
+
+The kernels read the interfaces' encoded bytes, copied back to back into one
+source buffer. An interface exported earlier in the build is copied on the GPU:
+`finish_semantic_interface` keeps each export's bytes in a buffer of their own
+(`ResidentInterfaceBytes`). An interface read from disk is uploaded once. Those
+bytes are valid only while the records are unchanged, so the public
+`semantic_interface_for_source_pack*` methods return interfaces without them.
+The host no longer flattens interfaces, builds the module index, revalidates
+every dependency interface per job, or uploads packed page words.
+
 ## Qualified enum variants and method parameter rows (2026-10-10)
 
 Local and imported enum variants retain their parent declaration. `A::Value`
