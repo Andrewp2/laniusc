@@ -422,6 +422,12 @@ impl GpuSemanticInterfaceArtifact {
     /// signatures are GPU-produced facts; the host does not inspect source.
     pub fn native_c_functions(&self) -> Result<Vec<NativeCFunction>, String> {
         self.validate()?;
+        self.validated_native_c_functions()
+    }
+
+    /// [`Self::native_c_functions`] of an interface whose validate already
+    /// passed.
+    pub(crate) fn validated_native_c_functions(&self) -> Result<Vec<NativeCFunction>, String> {
         self.declarations.iter().enumerate()
             .filter(|(_, declaration)| declaration.flags & DECL_FLAG_NATIVE_C != 0)
             .map(|(index, declaration)| self.native_c_function(index, declaration))
