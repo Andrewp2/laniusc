@@ -2976,6 +2976,13 @@ fn finish_source_pack_unit(
             unit_id,
         );
     }
+    for instance in &mut artifacts.instance_closure.dependency_instances {
+        gpu_type_checker::scope_generic_type_identities(
+            std::slice::from_mut(&mut instance.call),
+            library_id,
+            unit_id,
+        );
+    }
     artifacts
         .checked_contracts
         .scope_source_unit(library_id, unit_id);

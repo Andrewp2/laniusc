@@ -538,27 +538,6 @@ impl CheckedGenericType {
         }
     }
 
-    /// Every nominal is a public type of a unit other than `current` (a
-    /// dependency's type, which that dependency can name too) without a
-    /// local replay anchor.
-    pub(crate) fn names_only_dependencies(&self, current: [u32; 2]) -> bool {
-        match self {
-            Self::Unresolved { .. } | Self::Parameter(_) => false,
-            Self::Scalar(_) => true,
-            Self::Slice(element) | Self::Reference(element) => element.names_only_dependencies(current),
-            Self::Array { element, .. } => element.names_only_dependencies(current),
-            Self::Nominal { identity, arguments, local_replay, .. } => {
-                matches!(identity, CheckedNominalIdentity::Public([library, unit, _])
-                    if [*library, *unit] != current && *library != INVALID && *unit != INVALID)
-                    && local_replay.is_none()
-                    && arguments.iter().all(|argument| match argument {
-                        CheckedGenericApplicationArgument::Type(ty) => ty.names_only_dependencies(current),
-                        CheckedGenericApplicationArgument::Constant(_) => true,
-                    })
-            }
-        }
-    }
-
     pub(crate) fn is_native_ready(&self) -> bool {
         self.is_closed()
             && match self {
@@ -3358,12 +3337,8 @@ fn read_instance_closure(
             closure.instances.push(CheckedClosureInstance { depth, call });
             continue;
         };
-        // A library body instantiated with this job's own types needs them
-        // in the library's replay: left to the replays (fail closed).
-        let current = summaries.map_or([INVALID, INVALID], super::JobClosureSummaries::current_unit);
-        if !call.arguments.iter().all(|argument| argument.ty.names_only_dependencies(current)) {
-            continue;
-        }
+        // The arguments may name this job's own types. The caller scopes
+        // them to this unit before the library snapshot admits the call.
         closure.dependency_instances.push(CheckedDependencyClosureInstance { unit, depth, call });
     }
     // The table is in lane order; admission and its packet rows must not be.

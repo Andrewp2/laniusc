@@ -428,8 +428,6 @@ impl ClosureSummary {
 /// edge callees resolved to job-wide function indices, node and argument
 /// indices made job-wide.
 pub(crate) struct JobClosureSummaries {
-    /// The dependent job's own (library, unit).
-    current_unit: [u32; 2],
     summaries: Vec<Arc<ClosureSummary>>,
     /// (summary, first edge) of each summary, in job edge order.
     edge_starts: Vec<(usize, u32)>,
@@ -494,7 +492,6 @@ impl JobClosureSummaries {
         }
         let keys = rows.keys().copied().collect::<Vec<_>>();
         let mut job = Self {
-            current_unit,
             summaries: Vec::new(),
             edge_starts: Vec::new(),
             header: vec![0; SUMMARY_HEADER_WORDS],
@@ -561,10 +558,6 @@ impl JobClosureSummaries {
     /// Import rounds: the deepest node's height.
     pub(crate) fn rounds(&self) -> u32 {
         self.rounds
-    }
-
-    pub(crate) fn current_unit(&self) -> [u32; 2] {
-        self.current_unit
     }
 
     /// The library unit and retained template call of job edge `edge`.
