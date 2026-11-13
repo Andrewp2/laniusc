@@ -1,0 +1,24 @@
+//@ source-root ..
+//@ exit 42
+// A generic trait impl in a file other than the one that declares its self
+// type. Each instance of its methods resolves names in the impl's module.
+module app::main;
+
+import app::read;
+import app::slot;
+
+fn first<T>(reader: &app::slot::Slot<T>) -> T {
+    return reader.read();
+}
+
+fn weigh<T>(reader: &app::slot::Slot<T>) -> i32 {
+    return reader.weight();
+}
+
+fn main() -> i32 {
+    let small: app::slot::Slot<i32> = app::slot::slot(30, 1);
+    let wide: app::slot::Slot<i64> = app::slot::slot(4, 3);
+    // 30 + 4 + 2 + 6 = 42
+    return first(small.borrow()) + (first(wide.borrow()) as i32) +
+        weigh(small.borrow()) + weigh(wide.borrow());
+}

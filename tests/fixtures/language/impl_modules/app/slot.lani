@@ -1,0 +1,11 @@
+module app::slot;
+
+pub struct Slot<T> { value: T, hits: i32 }
+
+pub impl<T> Slot<T> {
+    pub fn borrow(&self) -> &Slot<T> { return self; }
+}
+
+pub fn slot<T>(value: T, hits: i32) -> Slot<T> {
+    return Slot { value: value, hits: hits };
+}

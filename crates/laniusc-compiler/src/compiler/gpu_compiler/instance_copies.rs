@@ -78,10 +78,10 @@ impl InstanceSources {
     /// Where a body's copy goes, as the order of a run's entries: 0 for a
     /// body of the template's last file, whose copy is appended to it, and
     /// 1 + the file index for a body of an earlier file, whose copy goes to
-    /// that file's continuation. None when the body cannot replay as a copy
-    /// and replays in its original scope: it crosses a file, or it is a
-    /// trait-impl method whose self type is declared in another file (its
-    /// inherent copy must be in the type's module).
+    /// that file's continuation. None when the body crosses a file: it
+    /// cannot replay as a copy and replays in its original scope. A
+    /// trait-impl method's inherent copy stays in the impl's file, whichever
+    /// file declares its self type, so its names resolve in the impl's module.
     pub(super) fn copy_rank(template: &[String], span: &CheckedOwnerSpan) -> Option<u32> {
         let first = span.first_byte() as usize;
         let mut file_start = 0usize;
@@ -95,14 +95,7 @@ impl InstanceSources {
             file_start = file_end;
         }
         let (file, file_end) = found?;
-        let in_file = |byte: u32| (byte as usize) >= file_start && (byte as usize) < file_end;
         if (span.end_byte as usize) > file_end {
-            return None;
-        }
-        if !span.enclosing_impl
-            .and_then(|header| header.trait_cut)
-            .is_none_or(|cut| in_file(cut.self_declaration_byte))
-        {
             return None;
         }
         if file + 1 == template.len() {
@@ -513,12 +506,7 @@ mod tests {
         assert_eq!(instance.continuations, vec![0]);
 
         let type_first = vec![TRAIT_TEMPLATE[..split_at].to_string(), TRAIT_TEMPLATE[split_at..].to_string()];
-        assert_eq!(rank(&type_first, &span), None, "self type declared in another file");
-        let mut local_type = span;
-        if let Some(header) = local_type.enclosing_impl.as_mut() {
-            header.trait_cut.as_mut().unwrap().self_declaration_byte = split_at as u32 + 2;
-        }
-        assert_eq!(rank(&type_first, &local_type), Some(0));
+        assert_eq!(rank(&type_first, &span), Some(0), "self type declared in another file");
 
         // A top-level function or inherent method copies by its own bytes.
         let spans = spans();

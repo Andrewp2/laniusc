@@ -1,0 +1,22 @@
+module app::read;
+
+import app::slot;
+
+pub trait Read<T> {
+    pub fn read(&self) -> T;
+    pub fn weight(&self) -> i32;
+}
+
+// Visible only in this module.
+fn doubled(value: i32) -> i32 {
+    return value * 2;
+}
+
+pub impl<T> Read<T> for app::slot::Slot<T> {
+    pub fn read(&self) -> T {
+        return self.value;
+    }
+    pub fn weight(&self) -> i32 {
+        return doubled(self.hits);
+    }
+}
