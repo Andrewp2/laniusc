@@ -130,9 +130,15 @@ fn main() {{
 }
 
 #[test]
-fn type_checker_accepts_generic_parameter_list_beyond_stale_record_limit() {
-    let src = generated_generic_declaration_source(129);
-    assert_gpu_type_check_ok(&src);
+fn type_checker_enforces_the_32_type_parameter_declaration_boundary() {
+    // Declaration environments admit 32 type parameters independently of
+    // whether any application uses the declaration (compiler-generic-types.md).
+    assert_gpu_type_check_ok(&generated_generic_declaration_source(32));
+    assert_gpu_type_check_diagnostic(
+        &generated_generic_declaration_source(33),
+        "LNC0047",
+        &[],
+    );
 }
 
 #[test]
@@ -1047,8 +1053,12 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_reused_wide_instance_argument_mismatch_after_claim_capacity() {
-    let src = generated_reused_wide_instance_call_source(96, 160);
+fn type_checker_rejects_reused_wide_instance_argument_mismatch_after_many_calls() {
+    // The 160 valid calls still contain 5,120 aggregate argument positions,
+    // but each declaration stays within the supported 32-parameter boundary.
+    // The final call must reject a differing last argument of the same nominal
+    // declaration after all those repeated applications.
+    let src = generated_reused_wide_instance_call_source(32, 160);
     assert_gpu_type_check_diagnostic(
         &src,
         "LNC0006",
