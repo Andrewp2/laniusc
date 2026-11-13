@@ -3020,6 +3020,66 @@ fn main() -> i32 {{ return checksum(5); }}
 }
 
 #[test]
+fn generated_x86_large_slice_loop_preserves_header_and_scalar_registers() {
+    const STEPS: usize = 289;
+    let checksum = |values: &[i32], seed: i32| {
+        values.iter().fold(seed, |mut sum, value| {
+            for step in 0..STEPS {
+                sum = (sum * 3 + value + (step % 17) as i32) % 251;
+            }
+            sum
+        })
+    };
+    let first = checksum(&[2, 7, 19], 5);
+    let second = checksum(&[11, 0, 4, 29, 6], 17);
+    let expected = (first * 3 + second) % 251;
+    let mut source = String::from(
+        r#"
+fn checksum(values: [i32], count: i32, seed: i32) -> i32 {
+    let sum: i32 = seed;
+    let index: i32 = 0;
+    while (index < count) {
+"#,
+    );
+    // Keep the slice immutable and the scalar state small while the body
+    // spans many allocation segments. Every indexed read needs the same
+    // slice descriptor to survive the surrounding scalar temporaries.
+    for step in 0..STEPS {
+        source.push_str(&format!(
+            "        sum = (sum * 3 + values[index] + {}) % 251;\n",
+            step % 17
+        ));
+    }
+    source.push_str(&format!(
+        r#"
+        index += 1;
+    }}
+    return sum;
+}}
+fn main() -> i32 {{
+    let first_values: [i32; 3] = [2, 7, 19];
+    let second_values: [i32; 5] = [11, 0, 4, 29, 6];
+    let first: i32 = checksum(first_values, 3, 5);
+    let second: i32 = checksum(second_values, 5, 17);
+    if (first != {first}) {{ return 251; }}
+    if (second != {second}) {{ return 252; }}
+    return (first * 3 + second) % 251;
+}}
+"#,
+    ));
+    let name = "large_slice_loop_header_and_scalar_registers";
+    let bytes = compile_source(name, &source);
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(name, name, &bytes);
+        assert_eq!(output.status.code(), Some(expected), "{name} differs from the model");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = expected;
+}
+
+#[test]
 fn generated_x86_loop_assignment_calls_are_name_independent() {
     for case in generated_x86_loop_contained_call_cases() {
         let bytes = compile_source(case.name, &case.source);

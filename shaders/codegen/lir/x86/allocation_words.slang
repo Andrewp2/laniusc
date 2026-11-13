@@ -51,8 +51,9 @@ StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_stack_words_by_position;
 RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
-// walk_function adds loop weight to read_count (only ever tested for zero
-// elsewhere), so decl_slots gives registers to the most-read locals.
+// walk_function adds loop weights for small functions; optimize_init has
+// already added them for segmented functions. decl_slots uses those weights
+// to give registers to the most-read locals.
 RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<uint4> semantic_place_storage_by_token;
 
@@ -350,8 +351,6 @@ static const uint TEMP_REGISTER_ORDER = 0xedc3ba98u;
 static const uint NEAR_MASK = 0xffffu;
 // decl_slots_scatter looks at most this many locals for a register slot.
 static const uint LOCAL_SLOT_SCAN_LIMIT = 256u;
-static const uint ALLOCATION_SEGMENT_SIZE = 256u;
-static const uint SERIAL_FUNCTION_LIMIT = 512u;
 
 struct RegisterEnds
 {
@@ -780,9 +779,9 @@ void walk_function(uint function_id, uint start, uint end, uint total,
 //
 // Within a segment we retain greedy allocation, callee-saved registers across
 // calls, coalesced declaration reads, and direct writes to declaration homes.
-// Large functions use the existing unweighted declaration read counts and do
-// not cache a slice header; neither optimization changes a declaration's
-// reserved-register contract.
+// optimize_init has already published loop-weighted declaration reads. Every
+// segment makes the same slice-header decision from immutable function
+// analysis, so its three registers stay reserved for the entire function.
 void walk_segment(uint function_id, uint start, uint end, uint total,
                   uint function_total)
 {
@@ -800,16 +799,21 @@ void walk_segment(uint function_id, uint start, uint end, uint total,
         if (control_label(op)) next_label = cursor;
     }
 
-    bool has_call =
-        x86_register_analysis_by_function[function_id].first_call != INVALID;
-    uint reserved = declaration_register_mask(
-        semantic_lir_functions[function_id], has_call, false);
+    X86FunctionRegisterAnalysis analysis = x86_register_analysis_by_function[function_id];
+    bool has_call = analysis.first_call != INVALID;
+    bool has_loop = (analysis.flags & X86_ALLOCATION_HAS_LOOP) != 0u;
+    SemanticLirFunction function = semantic_lir_functions[function_id];
+    uint plain_free = countbits((TEMP_CALLER_REGISTERS | TEMP_CALLEE_REGISTERS) &
+        ~declaration_register_mask(function, has_call, false));
+    bool header = has_loop && plain_free >= 5u && header_parameter(function) != INVALID;
+    uint reserved = declaration_register_mask(function, has_call, header);
+    if (header) reserved |= X86_HEADER_REGISTERS;
     uint caller_free = TEMP_CALLER_REGISTERS & ~reserved;
     uint callee_free = TEMP_CALLEE_REGISTERS & ~reserved;
     RegisterEnds ends;
     ends.rbx = 0u; ends.r8 = 0u; ends.r9 = 0u; ends.r10 = 0u;
     ends.r11 = 0u; ends.r12 = 0u; ends.r13 = 0u; ends.r14 = 0u;
-    uint saved = 0u;
+    uint saved = header ? X86_HEADER_REGISTERS | X86_HEADER_CACHE_FLAG : 0u;
 
     for (uint position = start; position < end; position += 1u)
     {
@@ -881,11 +885,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint start = x86_function_start[function_id];
         uint end = min(x86_function_end[function_id], total);
-        if (end > start && end - start > SERIAL_FUNCTION_LIMIT)
+        if (end > start && end - start > X86_ALLOCATION_SERIAL_FUNCTION_LIMIT)
         {
-            if ((position - start) % ALLOCATION_SEGMENT_SIZE == 0u)
+            if ((position - start) % X86_ALLOCATION_SEGMENT_SIZE == 0u)
                 walk_segment(function_id, position,
-                    min(position + ALLOCATION_SEGMENT_SIZE, end), total, function_total);
+                    min(position + X86_ALLOCATION_SEGMENT_SIZE, end), total, function_total);
         }
         else if (start == position && start < end)
             walk_function(function_id, start, end, total, function_total);

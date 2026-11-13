@@ -8440,6 +8440,8 @@ fn lowering_compiler_graph_builder(
             accesses: vec![
                 PassAccess::read("opt_ir_block_total", opt_block_total),
                 PassAccess::read("opt_ir_control", opt_control),
+                PassAccess::read("opt_ir_region_total", opt_region_total),
+                PassAccess::read("opt_ir_regions", opt_regions),
                 PassAccess::read("opt_ir_reachable", opt_reachable),
                 PassAccess::read("opt_ir_total", opt_total),
                 PassAccess::read("opt_ir_core", opt_core),
@@ -8481,6 +8483,22 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("opt_ir_total", opt_total),
                 PassAccess::read("opt_ir_core", opt_core),
                 PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("opt_ir_control", opt_control),
+                PassAccess::read("opt_ir_region_total", opt_region_total),
+                PassAccess::read("opt_ir_regions", opt_regions),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read(
+                    "x86_position_by_semantic",
+                    x86_position_by_semantic.unwrap(),
+                ),
+                PassAccess::read("x86_function_start", x86_function_start.unwrap()),
+                PassAccess::read("x86_function_end", x86_function_end.unwrap()),
+                PassAccess::read_write(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.unwrap(),
+                ),
                 PassAccess::write("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
             ],
         })?;

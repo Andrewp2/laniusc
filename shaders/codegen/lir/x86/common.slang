@@ -3,6 +3,13 @@ import native_value_layout;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 
+// Allocation policy shared by per-node analysis and the bounded allocator.
+// HAS_LOOP is temporary: allocation_functions replaces the analysis flags
+// with the declaration-home contract after every segment has finished.
+static const uint X86_ALLOCATION_SEGMENT_SIZE = 256u;
+static const uint X86_ALLOCATION_SERIAL_FUNCTION_LIMIT = 512u;
+static const uint X86_ALLOCATION_HAS_LOOP = 4u;
+
 bool x86_semantic_type_is_aggregate(OptIrNodeCore core)
 {
     // TYPE_REF_SCALAR means a fully concrete type reference, not necessarily

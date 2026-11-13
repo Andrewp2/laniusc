@@ -1,6 +1,7 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
+import codegen.lir.x86.common;
 import gpu_index;
 import hir_records;
 
@@ -24,6 +25,8 @@ StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<uint> opt_ir_region_total;
+StructuredBuffer<OptIrRegion> opt_ir_regions;
 RWStructuredBuffer<uint> x86_position_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_function_start;
@@ -113,6 +116,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint ignored;
     InterlockedMin(x86_function_start[function_id], position, ignored);
     InterlockedMax(x86_function_end[function_id], position + 1u, ignored);
+    if (executable && op == SEMANTIC_LIR_OP_LOOP_BEGIN)
+    {
+        // Structured ownership is complete before x86 analysis. Only a valid
+        // loop opener enables the function-wide slice-header reservation.
+        uint region_id = opt_ir_control[row].region_id;
+        uint region_capacity;
+        uint region_stride;
+        opt_ir_regions.GetDimensions(region_capacity, region_stride);
+        if (region_id < min(opt_ir_region_total[0u], region_capacity))
+        {
+            OptIrRegion region = opt_ir_regions[region_id];
+            if (region.function_id == function_id &&
+                region.position_start == position &&
+                region.position_end > position && region.position_end < total &&
+                (region.parent_region == INVALID || region.parent_region < region_id))
+                InterlockedOr(x86_register_analysis_by_function[function_id].flags,
+                    X86_ALLOCATION_HAS_LOOP, ignored);
+        }
+    }
     if (executable && semantic_lir_is_call(op))
         InterlockedMin(
             x86_register_analysis_by_function[function_id].first_call,
