@@ -70,15 +70,18 @@ static CALL_INFERENCE_ROUNDS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<(u32, u32), CallInferenceMemory>>,
 > = std::sync::LazyLock::new(Default::default);
 
-/// How many rounds the next inference batch records: the rounds the last
-/// converged inference of this workspace shape needed (the round that
-/// changed nothing included), or two for a new shape.
-fn call_inference_batch(key: (u32, u32)) -> u32 {
+/// How many rounds the next inference batch records after `round` rounds:
+/// the rounds the last converged inference of this workspace shape needed
+/// (the round that changed nothing included) less the rounds already run,
+/// or two for a new shape. A round recorded past convergence costs a full
+/// sweep, so an inference that needs more than one batch does not repeat
+/// the whole count in its last batch.
+fn call_inference_batch(key: (u32, u32), round: u32) -> u32 {
     CALL_INFERENCE_ROUNDS
         .lock()
         .expect("call inference round memory poisoned")
         .get(&key)
-        .map_or(2, |memory| memory.rounds)
+        .map_or(2, |memory| memory.rounds.saturating_sub(round))
         .clamp(1, CALL_INFERENCE_MAX_BATCH)
 }
 
@@ -2116,7 +2119,7 @@ impl GpuTypeChecker {
                     } else if first_error_round.is_some() {
                         1
                     } else {
-                        call_inference_batch(batch_key)
+                        call_inference_batch(batch_key, round)
                     }
                     .min(round_limit - round)
                     .max(1);
