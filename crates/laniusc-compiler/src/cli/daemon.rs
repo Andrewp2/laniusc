@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 use super::args::canonicalize_native_link_options;
 use super::common::{
     CliError,
+    DiagnosticFormat,
+    diagnostic_format_from_value,
     missing_cli_option_value_error,
     unknown_cli_option_error,
     unsupported_cli_option_value_error,
@@ -58,13 +60,29 @@ use crate::{
     },
 };
 
-const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
+pub(super) const DAEMON_SCHEMA: &str = "lanius.compiler-daemon.v1";
 /// Request features a client can test for in the ready and status events. A
 /// daemon older than this list accepts an unknown field and ignores it, so a
 /// client must not send such a field unless its name is listed here.
-const DAEMON_CAPABILITIES: &[&str] = &["strict_request_fields", "source_roots", "native_link"];
+const DAEMON_CAPABILITIES: &[&str] = &[
+    "strict_request_fields",
+    "source_roots",
+    "native_link",
+    RENDERED_DIAGNOSTICS_CAPABILITY,
+    WORKING_DIRECTORY_CAPABILITY,
+];
+/// The `working_directory` request field.
+pub(super) const WORKING_DIRECTORY_CAPABILITY: &str = "working_directory";
+/// The `diagnostic_format` request field and the `rendered_diagnostic`
+/// response field.
+pub(super) const RENDERED_DIAGNOSTICS_CAPABILITY: &str = "rendered_diagnostics";
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const DEFAULT_IDLE_BUFFER_TIMEOUT_MS: u64 = 30_000;
+/// How long a `--shared` daemon waits for a request before it exits.
+const DEFAULT_IDLE_EXIT_MS: u64 = 15 * 60 * 1000;
+/// How often an idle `--shared` daemon checks whether it should exit.
+#[cfg(unix)]
+const SHARED_LIFETIME_TICK: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug)]
 enum BackendSelection {
@@ -113,6 +131,9 @@ struct SessionOptions {
     idle_buffer_timeout: Option<Duration>,
     /// Sources compiled once before the session reports ready.
     warmups: Vec<DaemonWarmup>,
+    /// Ends the session after a job whose retry also raised a device error.
+    /// A `--shared` daemon sets this, so the next client starts a new one.
+    exit_after_device_failure: bool,
 }
 
 /// A declared largest workload. Compiling it before the first request sizes
@@ -128,6 +149,10 @@ enum DaemonTransport {
     Stdio,
     #[cfg(unix)]
     UnixSocket(PathBuf),
+    /// A socket that outlives its clients. One-shot compiles of this build
+    /// find it by name and start it when it is missing.
+    #[cfg(unix)]
+    SharedUnixSocket { path: PathBuf, idle_exit: Duration },
 }
 
 /// One request line. A field the daemon does not know is a protocol error,
@@ -164,6 +189,16 @@ struct DaemonRequest {
     native_library_paths: Vec<PathBuf>,
     #[serde(default)]
     native_linker: Option<PathBuf>,
+    /// `text`, `json` or `lsp-json`. A failed compile then also carries
+    /// `rendered_diagnostic`: the text `laniusc --diagnostic-format` prints.
+    #[serde(default)]
+    diagnostic_format: Option<String>,
+    /// An absolute directory. Relative paths of the request resolve against
+    /// it and diagnostics print them as written, because the daemon changes
+    /// to this directory for the job. Without the field the job runs in the
+    /// directory the daemon started in.
+    #[serde(default)]
+    working_directory: Option<PathBuf>,
 }
 
 impl DaemonRequest {
@@ -246,9 +281,38 @@ impl CachedCompileInput {
 struct SourcePackCache {
     entry: Option<CachedSourcePack>,
     transient: Option<CachedCompileInput>,
+    /// The directory the daemon started in, once a job has asked for it.
+    start_directory: Option<PathBuf>,
+    /// The directory the last job ran in, when a job has changed it.
+    job_directory: Option<PathBuf>,
 }
 
 impl SourcePackCache {
+    /// Changes to the directory a job runs in. The cached project is keyed
+    /// by paths as the client wrote them, so it is dropped when the directory
+    /// changes.
+    fn enter_job_directory(&mut self, requested: Option<&Path>) -> Result<(), String> {
+        if self.start_directory.is_none() {
+            self.start_directory = std::env::current_dir().ok();
+        }
+        let Some(target) = requested.or(self.start_directory.as_deref()) else {
+            return Ok(());
+        };
+        if !target.is_absolute() {
+            return Err(format!("working_directory {} is not absolute", target.display()));
+        }
+        let current = self.job_directory.as_deref().or(self.start_directory.as_deref());
+        if current == Some(target) {
+            return Ok(());
+        }
+        std::env::set_current_dir(target)
+            .map_err(|err| format!("enter working_directory {}: {err}", target.display()))?;
+        self.job_directory = Some(target.to_path_buf());
+        self.entry = None;
+        self.transient = None;
+        Ok(())
+    }
+
     fn load<'a>(
         &'a mut self,
         input: &Path,
@@ -562,22 +626,55 @@ pub(super) fn run(args: Vec<String>) -> Result<(), CliError> {
         return Ok(());
     }
     let options = parse_options(args)?;
+    #[cfg(unix)]
+    if matches!(options.transport, DaemonTransport::SharedUnixSocket { .. }) {
+        close_inherited_descriptors();
+    }
     pollster::block_on(run_daemon(options))
+}
+
+/// Closes every descriptor above standard error. A shared daemon outlives
+/// the command that started it, and a descriptor that command inherited (a
+/// lock, the write end of a pipe someone reads to its end) must not live as
+/// long as the daemon. Nothing in this process has opened a file yet.
+#[cfg(unix)]
+fn close_inherited_descriptors() {
+    use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+    let Ok(entries) = fs::read_dir("/proc/self/fd").or_else(|_| fs::read_dir("/dev/fd")) else {
+        return;
+    };
+    let inherited: Vec<RawFd> = entries
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .filter(|descriptor| *descriptor > 2)
+        .collect();
+    for descriptor in inherited {
+        // SAFETY: no value in this process owns a descriptor above 2 yet.
+        // The list also names the descriptor of the directory read above,
+        // which is closed by now; closing it again fails without effect.
+        drop(unsafe { OwnedFd::from_raw_fd(descriptor) });
+    }
 }
 
 fn print_help() {
     eprintln!(
-        "Usage: laniusc daemon (--stdio | --unix-socket path) [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds] [--warmup source [--warmup-source-root dir]]...\n\
+        "Usage: laniusc daemon (--stdio | --unix-socket path) [--shared [--idle-exit-ms milliseconds]] [--backend both|x86_64|wasm] [--stdlib-root dir] [--idle-buffer-timeout-ms milliseconds] [--warmup source [--warmup-source-root dir]]...\n\
          Starts one GPU-resident compiler and accepts newline-delimited JSON compile, trim, status, and shutdown requests.\n\
          --unix-socket serves every client that connects. Each client receives the ready event and the responses to\n\
          its own requests. Requests run one at a time in the order they arrive. The daemon exits on a shutdown\n\
          request or when its last client disconnects.\n\
+         --shared keeps the daemon after its last client disconnects. It exits when no request arrives for\n\
+         --idle-exit-ms (15 minutes by default) or when its executable is replaced. A second --shared daemon on\n\
+         the same socket exits at once with status 0. `laniusc` starts this daemon itself for a one-shot compile;\n\
+         see `laniusc --help`.\n\
          --warmup compiles a source for every selected target before reporting ready, discarding the output and the\n\
          project's cached units, so resident buffers are already sized for the largest declared workload.\n\
          A compile request has the fields id, emit, input, output, stdlib_root, and source_root or source_roots.\n\
          native_link, native_libraries, native_objects, native_library_paths and native_linker link the executable\n\
          through the C compiler driver, as the --native-link, --native-library, --native-object, --native-library-path\n\
-         and --native-linker flags do. A request field the daemon does not know is a protocol error.\n\
+         and --native-linker flags do. diagnostic_format (text, json or lsp-json) adds rendered_diagnostic to a\n\
+         failed compile: the text `laniusc --diagnostic-format` prints. working_directory is an absolute directory\n\
+         that the request's relative paths resolve against. A request field the daemon does not know is a protocol\n\
+         error.\n\
          The ready and status events list the supported request features under capabilities."
     );
 }
@@ -588,6 +685,8 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
     let mut stdio = false;
     let mut unix_socket = None;
     let mut idle_buffer_timeout_ms = DEFAULT_IDLE_BUFFER_TIMEOUT_MS;
+    let mut shared = false;
+    let mut idle_exit_ms = DEFAULT_IDLE_EXIT_MS;
     let mut warmups: Vec<DaemonWarmup> = Vec::new();
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -616,6 +715,15 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
                             "a non-negative integer",
                         )
                     })?)?;
+            }
+            "--shared" => shared = true,
+            "--idle-exit-ms" => {
+                idle_exit_ms = parse_milliseconds(
+                    "--idle-exit-ms",
+                    args.next().ok_or_else(|| {
+                        missing_cli_option_value_error("--idle-exit-ms", "a positive integer")
+                    })?,
+                )?;
             }
             "--warmup" => {
                 warmups.push(DaemonWarmup {
@@ -655,17 +763,31 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
                     value.trim_start_matches("--idle-buffer-timeout-ms="),
                 )?;
             }
+            value if value.starts_with("--idle-exit-ms=") => {
+                idle_exit_ms = parse_milliseconds(
+                    "--idle-exit-ms",
+                    value.trim_start_matches("--idle-exit-ms="),
+                )?;
+            }
             flag => {
                 return Err(unknown_cli_option_error(
                     "laniusc daemon",
                     flag,
-                    "--stdio, --unix-socket, --backend, --stdlib-root, --idle-buffer-timeout-ms, --warmup, --warmup-source-root",
+                    "--stdio, --unix-socket, --shared, --idle-exit-ms, --backend, --stdlib-root, --idle-buffer-timeout-ms, --warmup, --warmup-source-root",
                 ));
             }
         }
     }
+    if shared && (stdio || unix_socket.is_none()) {
+        return Err(CliError::from("laniusc daemon --shared needs --unix-socket"));
+    }
     let transport = match (stdio, unix_socket) {
         (true, None) => DaemonTransport::Stdio,
+        #[cfg(unix)]
+        (false, Some(path)) if shared => DaemonTransport::SharedUnixSocket {
+            path,
+            idle_exit: Duration::from_millis(idle_exit_ms.max(1)),
+        },
         #[cfg(unix)]
         (false, Some(path)) => DaemonTransport::UnixSocket(path),
         #[cfg(not(unix))]
@@ -692,6 +814,7 @@ fn parse_options(args: Vec<String>) -> Result<DaemonOptions, CliError> {
             idle_buffer_timeout: (idle_buffer_timeout_ms != 0)
                 .then(|| Duration::from_millis(idle_buffer_timeout_ms)),
             warmups,
+            exit_after_device_failure: shared,
         },
         transport,
     })
@@ -703,6 +826,18 @@ fn set_warmup_source_root(warmups: &mut [DaemonWarmup], root: PathBuf) -> Result
     };
     warmup.source_root = Some(root);
     Ok(())
+}
+
+fn parse_milliseconds(flag: &'static str, value: impl AsRef<str>) -> Result<u64, CliError> {
+    let value = value.as_ref();
+    value.parse::<u64>().map_err(|err| {
+        unsupported_cli_option_value_error(
+            flag,
+            value,
+            "a positive integer of milliseconds",
+            Some(err.to_string()),
+        )
+    })
 }
 
 fn parse_idle_buffer_timeout_ms(value: impl AsRef<str>) -> Result<u64, CliError> {
@@ -746,6 +881,7 @@ pub(super) fn run_in_process(stdlib_root: PathBuf, clients: impl Clients) -> Res
         stdlib_root: Some(stdlib_root),
         idle_buffer_timeout: None,
         warmups: Vec::new(),
+        exit_after_device_failure: false,
     };
     pollster::block_on(async {
         let (compiler, startup_ms) = start_compiler(options.backend).await?;
@@ -754,6 +890,34 @@ pub(super) fn run_in_process(stdlib_root: PathBuf, clients: impl Clients) -> Res
 }
 
 async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
+    #[cfg(unix)]
+    if let DaemonTransport::SharedUnixSocket { path, idle_exit } = &options.transport {
+        // One daemon per socket. The lock is free as soon as its holder ends,
+        // however it ends, so a socket file left by a killed daemon is stale.
+        let lock_path = path.with_extension("lock");
+        let lock = fs::File::create(&lock_path).map_err(|err| {
+            CliError::from(format!("create daemon lock {}: {err}", lock_path.display()))
+        })?;
+        if lock.try_lock().is_err() {
+            return Ok(());
+        }
+        let _ = fs::remove_file(path);
+        let listener = UnixListener::bind(path).map_err(|err| {
+            CliError::from(format!("bind daemon socket {}: {err}", path.display()))
+        })?;
+        // Dropped before `lock`: a client that finds the lock free never
+        // connects to a socket this daemon still owns.
+        let _socket_cleanup = UnixSocketCleanup(path.clone());
+        // Listening before the compiler exists lets clients wait on this
+        // daemon instead of starting another one.
+        let mut clients = SocketClients::listen(listener);
+        clients.lifetime = Some(SharedLifetime {
+            idle_exit: *idle_exit,
+            executable: ExecutableStamp::of_this_process(),
+        });
+        let (compiler, startup_ms) = start_compiler(options.session.backend).await?;
+        return run_session(compiler, &options.session, startup_ms, clients).await;
+    }
     let (compiler, startup_ms) = start_compiler(options.session.backend).await?;
     match &options.transport {
         DaemonTransport::Stdio => {
@@ -772,6 +936,8 @@ async fn run_daemon(options: DaemonOptions) -> Result<(), CliError> {
             let clients = SocketClients::listen(listener);
             run_session(compiler, &options.session, startup_ms, clients).await
         }
+        #[cfg(unix)]
+        DaemonTransport::SharedUnixSocket { .. } => unreachable!("handled above"),
     }
 }
 
@@ -886,6 +1052,38 @@ struct SocketClients {
     current: Option<Arc<UnixStream>>,
     /// The bytes of the response being written, sent whole on flush.
     response: Vec<u8>,
+    /// Set for a `--shared` daemon. Without it the daemon exits when its
+    /// last client disconnects.
+    lifetime: Option<SharedLifetime>,
+}
+
+/// When a `--shared` daemon exits without being asked to.
+#[cfg(unix)]
+struct SharedLifetime {
+    idle_exit: Duration,
+    executable: Option<ExecutableStamp>,
+}
+
+/// The file a daemon was started from. A build replaces it, and one-shot
+/// compiles of the new build look for a daemon under another socket name.
+#[cfg(unix)]
+struct ExecutableStamp {
+    path: PathBuf,
+    len: u64,
+    modified: SystemTime,
+}
+
+#[cfg(unix)]
+impl ExecutableStamp {
+    fn of_this_process() -> Option<Self> {
+        let path = std::env::current_exe().ok()?;
+        let (len, modified) = source_file_stamp_values(&path)?;
+        Some(Self { path, len, modified })
+    }
+
+    fn replaced(&self) -> bool {
+        source_file_stamp_values(&self.path) != Some((self.len, self.modified))
+    }
 }
 
 #[cfg(unix)]
@@ -913,6 +1111,7 @@ impl SocketClients {
             connected: 0,
             current: None,
             response: Vec::new(),
+            lifetime: None,
         }
     }
 }
@@ -984,21 +1183,37 @@ impl Clients for SocketClients {
 
     fn next_request(&mut self, line: &mut String) -> Result<bool, CliError> {
         self.current = None;
+        let idle_since = Instant::now();
         loop {
-            match self.events.recv() {
-                Ok(SocketEvent::Connected) => self.connected += 1,
-                Ok(SocketEvent::Disconnected) => {
+            let event = match &self.lifetime {
+                None => self.events.recv().ok(),
+                Some(lifetime) => match self.events.recv_timeout(SHARED_LIFETIME_TICK) {
+                    Ok(event) => Some(event),
+                    Err(RecvTimeoutError::Timeout) => {
+                        let replaced =
+                            lifetime.executable.as_ref().is_some_and(ExecutableStamp::replaced);
+                        if replaced || idle_since.elapsed() >= lifetime.idle_exit {
+                            return Ok(false);
+                        }
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => None,
+                },
+            };
+            match event {
+                Some(SocketEvent::Connected) => self.connected += 1,
+                Some(SocketEvent::Disconnected) => {
                     self.connected -= 1;
-                    if self.connected == 0 {
+                    if self.connected == 0 && self.lifetime.is_none() {
                         return Ok(false);
                     }
                 }
-                Ok(SocketEvent::Request(request, client)) => {
+                Some(SocketEvent::Request(request, client)) => {
                     *line = request;
                     self.current = Some(client);
                     return Ok(true);
                 }
-                Err(_) => return Ok(false),
+                None => return Ok(false),
             }
         }
     }
@@ -1209,6 +1424,7 @@ async fn run_session(
             crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);
         let request_id = request.id.clone();
         let retry_request = request.clone();
+        let mut device_failed = false;
         let gpu_errors_before = device::uncaptured_error_count();
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
@@ -1228,6 +1444,9 @@ async fn run_session(
             if retry_errors != 0 {
                 compiler.clear_compiled_unit_cache();
                 compiler.release_resident_job_buffers().await;
+                device_failed = true;
+                // No `rendered_diagnostic`: a shared-daemon client then
+                // compiles in its own process, on its own device.
                 response = json!({
                     "schema": DAEMON_SCHEMA,
                     "id": request_id,
@@ -1403,6 +1622,9 @@ async fn run_session(
         compiler.clear_job_storage_for_next_job().await;
         // A daemon killed later keeps pipelines this job created lazily.
         device::persist_created_pipelines_in_background();
+        if device_failed && options.exit_after_device_failure {
+            break;
+        }
         reaper.arm();
     }
     crate::gpu::trace::flush();
@@ -1661,6 +1883,23 @@ async fn compile_request(
     let native_link = request.native_link_options();
     let source_root = request.source_root;
     let id = request.id;
+    let diagnostic_format = match request.diagnostic_format.as_deref() {
+        None => None,
+        Some(value) => match diagnostic_format_from_value(value) {
+            Some(format) => Some(format),
+            None => {
+                return job_error(
+                    id,
+                    started,
+                    format!("diagnostic_format {value:?} is not text, json or lsp-json"),
+                );
+            }
+        },
+    };
+    if let Err(message) = source_pack_cache.enter_job_directory(request.working_directory.as_deref())
+    {
+        return job_error(id, started, message);
+    }
     let emit = request.emit.unwrap_or_default();
     if !options.backend.supports(&emit) {
         return job_error(
@@ -1697,13 +1936,12 @@ async fn compile_request(
         Some(options) => match canonicalize_native_link_options(options) {
             Ok(options) => Some(options),
             Err(err) => {
-                return json!({
-                    "schema": DAEMON_SCHEMA,
-                    "id": id,
-                    "ok": false,
-                    "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
-                    "diagnostic": err.into_public_diagnostic(),
-                });
+                return diagnostic_response(
+                    id,
+                    started,
+                    err.into_public_diagnostic(),
+                    diagnostic_format,
+                );
             }
         },
         None => None,
@@ -1718,7 +1956,14 @@ async fn compile_request(
         compiler.resident_source_unit_limits(),
     ) {
         Ok(source_pack) => source_pack,
-        Err(err) => return compile_error_response(id, started, err),
+        Err(err) => {
+            return diagnostic_response(
+                id,
+                started,
+                err.into_public_diagnostic(),
+                diagnostic_format,
+            );
+        }
     };
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
@@ -1771,7 +2016,14 @@ async fn compile_request(
     let instance_cache_after = compiler.library_instance_cache_stats();
     let emitted = match emitted {
         Ok(emitted) => emitted,
-        Err(err) => return compile_error_response(id, started, err),
+        Err(err) => {
+            return diagnostic_response(
+                id,
+                started,
+                err.into_public_diagnostic(),
+                diagnostic_format,
+            );
+        }
     };
     let write_started = Instant::now();
     let output_bytes = match emitted {
@@ -1918,18 +2170,26 @@ fn wgpu_resource_metrics() -> Value {
     })
 }
 
-fn compile_error_response(
+/// The response to a compile that a diagnostic stopped. `format` adds the
+/// text the CLI prints for that diagnostic.
+fn diagnostic_response(
     id: Value,
     started: Instant,
-    err: crate::compiler::CompileError,
+    diagnostic: crate::compiler::Diagnostic,
+    format: Option<DiagnosticFormat>,
 ) -> Value {
-    json!({
+    let mut response = json!({
         "schema": DAEMON_SCHEMA,
         "id": id,
         "ok": false,
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
-        "diagnostic": err.into_public_diagnostic(),
-    })
+        "diagnostic": &diagnostic,
+    });
+    if let Some(format) = format {
+        response["rendered_diagnostic"] =
+            super::entry::render_error(format, CliError::Diagnostic(diagnostic)).into();
+    }
+    response
 }
 
 fn protocol_error(id: Value, message: &str) -> Value {

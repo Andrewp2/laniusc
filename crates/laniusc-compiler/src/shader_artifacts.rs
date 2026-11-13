@@ -115,6 +115,11 @@ fn value(key: &str) -> Option<String> {
     })
 }
 
+/// The digest of the kernels this binary was built with, or `unknown`.
+pub(crate) fn built_kernel_digest() -> &'static str {
+    env!("LANIUS_SHADER_BUILT_DIGEST")
+}
+
 /// Why the kernels this process loads may not be the ones it was built with,
 /// or `None` when nothing indicates that. Kernels are read from disk at run
 /// time, so a rebuild that replaces them while an older binary runs pairs that

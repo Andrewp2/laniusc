@@ -14,6 +14,17 @@ pub(crate) enum DiagnosticFormat {
     LspJson,
 }
 
+impl DiagnosticFormat {
+    /// The value of `--diagnostic-format` that selects this format.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+            Self::LspJson => "lsp-json",
+        }
+    }
+}
+
 /// Extracts the first diagnostic-format selector from raw CLI arguments.
 pub(crate) fn diagnostic_format_from_args(
     args: impl IntoIterator<Item = String>,
@@ -49,7 +60,8 @@ pub(crate) fn validate_diagnostic_format(value: &str) -> Result<(), CliError> {
     }
 }
 
-fn diagnostic_format_from_value(value: &str) -> Option<DiagnosticFormat> {
+/// The format `value` names, as `--diagnostic-format` spells it.
+pub(crate) fn diagnostic_format_from_value(value: &str) -> Option<DiagnosticFormat> {
     match value {
         "text" => Some(DiagnosticFormat::Text),
         "json" => Some(DiagnosticFormat::Json),

@@ -33,6 +33,7 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
         native_link,
         source_pack,
         uses_source_pack,
+        shared_daemon: _,
     } = request;
 
     let emitted = match source_pack::dispatch(

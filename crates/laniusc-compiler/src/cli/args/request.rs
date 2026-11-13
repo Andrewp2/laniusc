@@ -50,6 +50,7 @@ pub(super) struct CompileRequestBuilder {
     pub(super) native_link: Option<NativeLinkOptions>,
     pub(super) source_pack: source_pack::Options,
     pub(super) source_pack_options_requested: bool,
+    pub(super) no_daemon: bool,
 }
 
 impl Default for CompileRequestBuilder {
@@ -69,6 +70,7 @@ impl Default for CompileRequestBuilder {
             native_link: None,
             source_pack: source_pack::Options::default(),
             source_pack_options_requested: false,
+            no_daemon: false,
         }
     }
 }
@@ -91,6 +93,7 @@ impl CompileRequestBuilder {
             native_link,
             source_pack,
             source_pack_options_requested,
+            no_daemon,
         } = self;
 
         validate_emit_and_target(&emit, target_triple.as_deref())?;
@@ -211,6 +214,7 @@ impl CompileRequestBuilder {
             native_link,
             source_pack,
             uses_source_pack,
+            shared_daemon: !no_daemon && !source_pack_options_requested,
         })
     }
 }

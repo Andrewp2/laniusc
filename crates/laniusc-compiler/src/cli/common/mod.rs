@@ -53,6 +53,7 @@ pub(crate) use constants::{
 pub(crate) use diagnostic_format::{
     DiagnosticFormat,
     diagnostic_format_from_args,
+    diagnostic_format_from_value,
     validate_diagnostic_format,
 };
 pub(crate) use error::{

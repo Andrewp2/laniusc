@@ -44,4 +44,7 @@ pub(crate) struct CompileRequest {
     pub(crate) native_link: Option<NativeLinkOptions>,
     pub(crate) source_pack: source_pack::Options,
     pub(crate) uses_source_pack: bool,
+    /// False after `--no-daemon` or a source-pack option: the compile runs
+    /// in this process.
+    pub(crate) shared_daemon: bool,
 }

@@ -18,6 +18,16 @@
 //! - `LANIUS_DRIVER_SHADER_CACHE=0`: turn NVIDIA's own shader cache off.
 //! - `LANIUS_READBACK_TIMEOUT_MS`: how long a readback may take.
 //! - `LANIUS_SHADER_ARTIFACT_ROOT`: load kernels from another directory.
+//! - `LANIUS_DAEMON=0`: a one-shot compile never uses the shared daemon.
+//! - `LANIUS_GPU_PROCESS_SLOTS`: read by `gpu/process_slot.rs`, the one
+//!   exception to the rule above.
+//!
+//! A shared daemon has its own environment. The variables of a person above
+//! configure the device and its caches: a daemon is started with the ones
+//! its first client has, and clients that have other values use another
+//! daemon. See [`device_environment`]. The variables of a developer below ask
+//! for output from one compile, so a compile with one of them set runs in
+//! its own process. See [`environment_asks_for_diagnostics`].
 //!
 //! A developer diagnosing the compiler. Each takes a comma-separated list:
 //! - `LANIUS_TRACE`: lines on stderr. See [`Trace`].
@@ -72,6 +82,58 @@ pub struct Options {
     pub dump: Option<Dump>,
     /// `LANIUS_OPERATION_LIMIT`.
     pub operation_limit: Option<u64>,
+    /// False when `LANIUS_DAEMON=0`.
+    pub shared_daemon: bool,
+}
+
+/// The variables that configure the device, its kernels and its caches.
+/// `LANIUS_CHECK` is here for `indirect-dispatch`, which is a setting of the
+/// device. Its other words keep a compile in its own process: see
+/// [`environment_asks_for_diagnostics`].
+const DEVICE_VARIABLES: &[&str] = &[
+    "LANIUS_BACKEND",
+    "LANIUS_CHECK",
+    "LANIUS_ALLOW_SOFTWARE_ADAPTER",
+    "LANIUS_PIPELINE_CACHE_DIR",
+    "LANIUS_DRIVER_SHADER_CACHE",
+    "LANIUS_READBACK_TIMEOUT_MS",
+    "LANIUS_SHADER_ARTIFACT_ROOT",
+];
+
+/// The variables that ask one compile for traces, reports or dumps.
+const DIAGNOSTIC_VARIABLES: &[&str] = &[
+    "LANIUS_TRACE",
+    "LANIUS_REPORT",
+    "LANIUS_EXPERIMENT",
+    "LANIUS_PERFETTO_TRACE",
+    "LANIUS_CAPTURE",
+    "LANIUS_DUMP",
+    "LANIUS_OPERATION_LIMIT",
+];
+
+/// Whether this process has a variable set that asks its compile for output
+/// a compile in another process would not give. Such a compile cannot be
+/// handed to the shared daemon.
+pub fn environment_asks_for_diagnostics() -> bool {
+    DIAGNOSTIC_VARIABLES
+        .iter()
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+        || !get().check.only_configures_the_device()
+}
+
+/// The device configuration of this process, as `NAME=value` lines. A shared
+/// daemon serves the processes whose configuration equals its own.
+pub fn device_environment() -> Vec<u8> {
+    let mut configuration = Vec::new();
+    for name in DEVICE_VARIABLES {
+        if let Some(value) = std::env::var_os(name).filter(|value| !value.is_empty()) {
+            configuration.extend_from_slice(name.as_bytes());
+            configuration.push(b'=');
+            configuration.extend_from_slice(value.as_encoded_bytes());
+            configuration.push(b'\n');
+        }
+    }
+    configuration
 }
 
 /// The wgpu backend to request.
@@ -257,6 +319,7 @@ impl Options {
             capture: text("LANIUS_CAPTURE").and_then(Capture::parse),
             dump: text("LANIUS_DUMP").and_then(Dump::parse),
             operation_limit: number("LANIUS_OPERATION_LIMIT", text("LANIUS_OPERATION_LIMIT")),
+            shared_daemon: switch("LANIUS_DAEMON", text("LANIUS_DAEMON"), true),
         }
     }
 }
@@ -383,6 +446,16 @@ impl Report {
 }
 
 impl Check {
+    /// True when no check is on except `indirect-dispatch`. The other checks
+    /// validate one compile and report on the stderr of its process.
+    fn only_configures_the_device(&self) -> bool {
+        *self
+            == Self {
+                indirect_dispatch: self.indirect_dispatch,
+                ..Self::default()
+            }
+    }
+
     /// The words `LANIUS_CHECK` accepts.
     pub const WORDS: &'static [&'static str] = &[
         "validation-scopes",

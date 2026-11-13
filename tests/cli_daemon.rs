@@ -955,3 +955,134 @@ fn cli_daemon_first_jobs_after_a_trim_emit_identical_artifacts() {
         }
     }
 }
+
+/// The daemons that one-shot compiles started under a private runtime
+/// directory. Dropping this asks each one to shut down and removes the
+/// directory.
+struct OneShotDaemons {
+    runtime: PathBuf,
+}
+
+impl OneShotDaemons {
+    fn sockets(&self) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(self.runtime.join("laniusc-daemons")) else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|entry| Some(entry.ok()?.path()))
+            .filter(|path| path.extension().is_some_and(|extension| extension == "sock"))
+            .collect()
+    }
+
+    /// Connects to the daemon on `socket` and returns its process id.
+    fn pid(socket: &Path) -> u64 {
+        let stream = UnixStream::connect(socket).expect("connect to the shared daemon");
+        let mut ready = String::new();
+        BufReader::new(&stream).read_line(&mut ready).expect("read the ready event");
+        let ready: serde_json::Value = serde_json::from_str(&ready).expect("parse the ready event");
+        ready["pid"].as_u64().expect("the ready event names the daemon's process")
+    }
+}
+
+impl Drop for OneShotDaemons {
+    fn drop(&mut self) {
+        for socket in self.sockets() {
+            if let Ok(stream) = UnixStream::connect(&socket) {
+                let mut lines = BufReader::new(&stream);
+                let mut line = String::new();
+                let _ = lines.read_line(&mut line);
+                let _ = (&stream).write_all(b"{\"id\":\"end\",\"command\":\"shutdown\"}\n");
+                let _ = lines.read_line(&mut line);
+            }
+        }
+        let _ = fs::remove_dir_all(&self.runtime);
+    }
+}
+
+#[test]
+fn cli_compile_runs_in_the_shared_daemon_of_its_build() {
+    // A runtime directory of this test's own. A developer's compiles do not
+    // reach the daemon started here, and `systemd-run --user` finds no bus
+    // under it, so the daemon is a plain child that the test can stop. The
+    // name is short: a socket path holds about 100 bytes.
+    let daemons = OneShotDaemons {
+        runtime: env::temp_dir().join(format!("lsd-{}", std::process::id())),
+    };
+    let project = daemons.runtime.join("project");
+    fs::create_dir_all(&project).expect("create the project directory");
+    fs::write(project.join("good.lani"), "fn main() -> i32 { return 42; }\n")
+        .expect("write the source that compiles");
+    fs::write(project.join("other.lani"), "fn main() -> i32 { return 7; }\n")
+        .expect("write the second source that compiles");
+    fs::write(project.join("bad.lani"), "fn main() -> i32 { return 41 }\n")
+        .expect("write the source with a syntax error");
+    let compile = |flags: &[&str], input: &str, output: &str| {
+        let mut command = Command::new(laniusc_bin());
+        command
+            .current_dir(&project)
+            .env("XDG_RUNTIME_DIR", &daemons.runtime)
+            .args(flags)
+            .args(["--emit", "x86_64", "--stdlib-root"])
+            .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+            .args(["-o", output, input]);
+        // A diagnostic option keeps a compile in its own process.
+        for name in [
+            "LANIUS_DAEMON",
+            "LANIUS_TRACE",
+            "LANIUS_REPORT",
+            "LANIUS_CHECK",
+            "LANIUS_EXPERIMENT",
+            "LANIUS_PERFETTO_TRACE",
+            "LANIUS_CAPTURE",
+            "LANIUS_DUMP",
+            "LANIUS_OPERATION_LIMIT",
+        ] {
+            command.env_remove(name);
+        }
+        common::command_output_with_timeout("one-shot compile", &mut command)
+    };
+    let exit_code = |artifact: &str| {
+        common::short_process_output_with_timeout(
+            "run a one-shot compile's artifact",
+            &mut Command::new(project.join(artifact)),
+        )
+        .status
+        .code()
+    };
+
+    // The first compile starts the daemon. The second one finds it.
+    let first = compile(&[], "good.lani", "good");
+    common::assert_command_success("first one-shot compile", &first);
+    assert_eq!(exit_code("good"), Some(42));
+    let sockets = daemons.sockets();
+    assert_eq!(sockets.len(), 1, "one daemon serves x86_64 for this build: {sockets:?}");
+    let daemon = OneShotDaemons::pid(&sockets[0]);
+    let second = compile(&[], "other.lani", "other");
+    common::assert_command_success("second one-shot compile", &second);
+    assert_eq!(exit_code("other"), Some(7));
+    assert_eq!(daemons.sockets(), sockets);
+    assert_eq!(OneShotDaemons::pid(&sockets[0]), daemon, "the second compile reused the daemon");
+
+    // The daemon and a compile in the client's own process agree on the
+    // artifact and on the diagnostic, including the path as it was typed.
+    let local = compile(&["--no-daemon"], "good.lani", "good_local");
+    common::assert_command_success("compile in the client's process", &local);
+    assert_eq!(
+        fs::read(project.join("good")).expect("read the daemon's artifact"),
+        fs::read(project.join("good_local")).expect("read the local artifact"),
+    );
+    let rejected = compile(&[], "bad.lani", "bad");
+    let rejected_locally = compile(&["--no-daemon"], "bad.lani", "bad_local");
+    assert_eq!(rejected.status.code(), Some(1));
+    assert_eq!(rejected_locally.status.code(), Some(1));
+    let diagnostic = String::from_utf8_lossy(&rejected.stderr);
+    assert!(diagnostic.contains("--> bad.lani:1:30"), "{diagnostic}");
+    assert_eq!(diagnostic, String::from_utf8_lossy(&rejected_locally.stderr));
+    let json = compile(&["--diagnostic-format", "json"], "bad.lani", "bad");
+    let json_locally = compile(&["--no-daemon", "--diagnostic-format", "json"], "bad.lani", "bad");
+    assert_eq!(
+        String::from_utf8_lossy(&json.stderr),
+        String::from_utf8_lossy(&json_locally.stderr),
+    );
+    assert_eq!(OneShotDaemons::pid(&sockets[0]), daemon, "a rejected compile keeps the daemon");
+}

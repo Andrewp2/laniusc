@@ -19,6 +19,8 @@ mod help;
 mod lsp;
 mod output;
 mod package;
+#[cfg(unix)]
+mod shared_daemon;
 mod source_pack;
 mod test_command;
 

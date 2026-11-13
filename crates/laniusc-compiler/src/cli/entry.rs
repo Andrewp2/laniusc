@@ -2,7 +2,7 @@ use std::{env, process::ExitCode};
 
 use super::{
     common::{CliError, DiagnosticFormat, diagnostic_format_from_args},
-    dispatch,
+    dispatch::{self, Completion},
     fallback::cli_operation_failed_diagnostic,
 };
 use crate::compiler::Diagnostic;
@@ -29,7 +29,8 @@ pub fn run_from_env() -> ExitCode {
         return ExitCode::FAILURE;
     }
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(Completion::Success) => ExitCode::SUCCESS,
+        Ok(Completion::ReportedFailure) => ExitCode::FAILURE,
         Err(err) => {
             report_error(diagnostic_format, err);
             ExitCode::FAILURE
@@ -41,7 +42,8 @@ fn report_error(diagnostic_format: DiagnosticFormat, err: CliError) {
     eprintln!("{}", render_error(diagnostic_format, err));
 }
 
-fn render_error(diagnostic_format: DiagnosticFormat, err: CliError) -> String {
+/// The text `report_error` prints for `err`.
+pub(super) fn render_error(diagnostic_format: DiagnosticFormat, err: CliError) -> String {
     let diagnostic = err.into_public_diagnostic();
     match diagnostic_format {
         DiagnosticFormat::Json => render_json_diagnostic(diagnostic),

@@ -43,6 +43,7 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
         match arg.as_str() {
             "-h" | "--help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
+            "--no-daemon" => request.no_daemon = true,
             "--emit" => {
                 request.emit = args.next().ok_or_else(|| {
                     missing_cli_option_value_error(
@@ -151,7 +152,7 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
                 return Err(unknown_cli_option_error(
                     "laniusc",
                     flag,
-                    "--version, --edition, --emit, --target, --diagnostic-format, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --native-link, --native-library, --native-object, --native-library-path, --native-linker, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --emit-contract, -o/--out",
+                    "--version, --edition, --emit, --target, --diagnostic-format, --no-daemon, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --native-link, --native-library, --native-object, --native-library-path, --native-linker, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --emit-contract, -o/--out",
                 ));
             }
             path => {
