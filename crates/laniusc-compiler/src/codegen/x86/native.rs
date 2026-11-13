@@ -855,9 +855,79 @@ pub(crate) fn link_native_file_executable(
     let directory = NativeTempDirectory::create()?;
     let object_paths = emit_native_elf_objects(objects, bindings, main, &directory)?;
     let output_path = directory.path.join("program");
-    let response_path = directory.path.join("link.rsp");
-    write_link_response(options, &object_paths, &output_path, &response_path)?;
-    let diagnostics_path = directory.path.join("link.stderr");
+    let fast = fast_linker(options);
+    let fast_failed = match fast {
+        Some(linker) => {
+            match run_linker(options, &object_paths, &output_path, &directory, Some(linker)) {
+                Ok(()) => false,
+                // The default linker decides whether the inputs link at all.
+                Err(error) if error.is::<NativeLinkerFailed>() => {
+                    let _ = fs::remove_file(&output_path);
+                    true
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        None => true,
+    };
+    if fast_failed {
+        run_linker(options, &object_paths, &output_path, &directory, None)?;
+        if fast.is_some() {
+            // This driver or these inputs do not work with the fast linker.
+            FAST_LINKER_REJECTED.store(true, Ordering::Relaxed);
+        }
+    }
+    let metadata = fs::metadata(&output_path).context("stat native linked executable")?;
+    ensure!(
+        metadata.is_file(),
+        "native linker output is not a regular file"
+    );
+    let byte_len = metadata.len();
+    ensure!(
+        byte_len != 0 && byte_len <= options.max_output_bytes as u64,
+        "native linked executable size {byte_len} exceeds the admitted range 1..={}",
+        options.max_output_bytes
+    );
+    Ok(NativeLinkedExecutable {
+        directory,
+        byte_len,
+        max_output_bytes: options.max_output_bytes as u64,
+    })
+}
+
+/// Set once a link that failed with the fast linker succeeded with the
+/// driver's default one. Later links of this process use the default.
+static FAST_LINKER_REJECTED: AtomicBool = AtomicBool::new(false);
+
+/// A system linker faster than the driver's default (`-fuse-ld=<name>`), when
+/// one is installed and the caller left the driver to this module. The default
+/// GNU linker takes several times as long on the same inputs.
+fn fast_linker(options: &NativeLinkOptions) -> Option<&'static str> {
+    static FOUND: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    if options.linker.is_some() || FAST_LINKER_REJECTED.load(Ordering::Relaxed) {
+        return None;
+    }
+    *FOUND.get_or_init(|| {
+        [("mold", "mold"), ("ld.lld", "lld")]
+            .into_iter()
+            .find_map(|(executable, name)| which::which(executable).is_ok().then_some(name))
+    })
+}
+
+/// Run the C driver once over the emitted objects. `fuse` names the linker
+/// the driver runs in place of its default. A driver that exits unsuccessfully
+/// is a `NativeLinkerFailed`.
+fn run_linker(
+    options: &NativeLinkOptions,
+    object_paths: &[PathBuf],
+    output_path: &Path,
+    directory: &NativeTempDirectory,
+    fuse: Option<&str>,
+) -> Result<()> {
+    let stem = if fuse.is_some() { "link-fast" } else { "link" };
+    let response_path = directory.path.join(format!("{stem}.rsp"));
+    write_link_response(options, object_paths, output_path, &response_path, fuse)?;
+    let diagnostics_path = directory.path.join(format!("{stem}.stderr"));
     let diagnostics = create_private_file(&diagnostics_path)?;
     let mut command = link_command(options, &response_path)?;
     command
@@ -896,7 +966,7 @@ pub(crate) fn link_native_file_executable(
                 Some(status) => return Ok(status),
                 None => {}
             }
-            if let Ok(metadata) = fs::metadata(&output_path) {
+            if let Ok(metadata) = fs::metadata(output_path) {
                 ensure!(
                     metadata.len() <= options.max_output_bytes as u64,
                     "native linked executable exceeds its {} byte output limit",
@@ -910,8 +980,11 @@ pub(crate) fn link_native_file_executable(
                     read_diagnostics(&diagnostics_path)
                 );
             }
+            // A link takes tens of milliseconds; a coarse poll would add
+            // most of its own interval to each one.
+            let poll = if started.elapsed() < Duration::from_millis(250) { 1 } else { 10 };
             thread::sleep(
-                Duration::from_millis(10).min(options.timeout.saturating_sub(started.elapsed())),
+                Duration::from_millis(poll).min(options.timeout.saturating_sub(started.elapsed())),
             );
         }
     })();
@@ -934,22 +1007,8 @@ pub(crate) fn link_native_file_executable(
         }
         .into());
     }
-    let metadata = fs::metadata(&output_path).context("stat native linked executable")?;
-    ensure!(
-        metadata.is_file(),
-        "native linker output is not a regular file"
-    );
-    let byte_len = metadata.len();
-    ensure!(
-        byte_len != 0 && byte_len <= options.max_output_bytes as u64,
-        "native linked executable size {byte_len} exceeds the admitted range 1..={}",
-        options.max_output_bytes
-    );
-    Ok(NativeLinkedExecutable {
-        directory,
-        byte_len,
-        max_output_bytes: options.max_output_bytes as u64,
-    })
+
+    Ok(())
 }
 
 pub(crate) fn validate_options(options: &NativeLinkOptions) -> Result<()> {
@@ -1051,11 +1110,15 @@ fn write_link_response(
     object_paths: &[PathBuf],
     output: &Path,
     response: &Path,
+    fuse: Option<&str>,
 ) -> Result<()> {
     let mut response = LinkResponse {
         file: BufWriter::new(create_private_file(response)?),
         byte_len: 0,
     };
+    if let Some(linker) = fuse {
+        response.argument(format!("-fuse-ld={linker}").as_ref())?;
+    }
     for option in ["-no-pie", "-Wl,-z,noexecstack", "-o"] {
         response.argument(option.as_ref())?;
     }

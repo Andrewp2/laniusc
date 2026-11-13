@@ -845,8 +845,8 @@ fn actual_cc_response_grammar_preserves_quotes_backslashes_whitespace_and_many_p
     .unwrap_err();
     assert!(error.to_string().contains("newline"), "{error:#}");
     let rejected = directory.path.join("rejected.rsp");
-    assert!(write_link_response(&options, &[newline], &output, &rejected).is_err());
-    write_link_response(&options, &[main_object], &output, &response).unwrap();
+    assert!(write_link_response(&options, &[newline], &output, &rejected, None).is_err());
+    write_link_response(&options, &[main_object], &output, &response, None).unwrap();
     assert!(fs::metadata(&response).unwrap().len() > 2 * 1024 * 1024);
     let status = link_command(&options, &response).unwrap().status().unwrap();
     assert!(status.success());
