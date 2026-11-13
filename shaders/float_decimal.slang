@@ -320,8 +320,13 @@ uint float_decimal_convert(inout FloatDecimalState state,
     RWStructuredBuffer<uint> workspace, uint base, uint scalar, out uint2 bits)
 {
     bits = uint2(0u, 0u);
-    if (state.count == 0u || state.point < -324) return FLOAT_DECIMAL_OK;
-    if (state.point >= 310) return FLOAT_DECIMAL_OVERFLOW;
+    // A nonzero value with decimal point p is in [10^(p-1), 10^p).
+    // For f32, values below 1e-46 round to zero and values at least 1e39
+    // overflow. Keep the adjacent decades on the exact rounding path.
+    int minimum_point = scalar == SCALAR_F32 ? -45 : -324;
+    int overflow_point = scalar == SCALAR_F32 ? 40 : 310;
+    if (state.count == 0u || state.point < minimum_point) return FLOAT_DECIMAL_OK;
+    if (state.point >= overflow_point) return FLOAT_DECIMAL_OVERFLOW;
     uint fraction_bits = scalar == SCALAR_F32 ? 23u : 52u;
     int minimum_exponent = scalar == SCALAR_F32 ? -126 : -1022;
     int infinite_power = scalar == SCALAR_F32 ? 255 : 2047;

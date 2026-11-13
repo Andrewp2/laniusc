@@ -240,6 +240,19 @@ fn fixture() -> Fixture {
     ] {
         f.valid(text);
     }
+    // The binary32 range guards leave the neighboring decimal decades on
+    // the exact path, including values that round to a nonzero subnormal.
+    // Check both formats and signs against the native parser.
+    for text in [
+        "9.999999999999999999999999999999999e-47",
+        "1e-46",
+        "9e-46",
+        "1e38",
+        "9.999999999999999999999999999999999e38",
+        "1e39",
+    ] {
+        f.valid(text);
+    }
     f.valid(&format!("{}1.{}25e+0", "0".repeat(850), "0".repeat(850)));
     f.valid(&format!("0.{}1", "0".repeat(850)));
     f.valid(&format!("1{}e-850", "0".repeat(850)));
@@ -295,6 +308,8 @@ fn fixture() -> Fixture {
         "1.0e2_",
         "1.0e2__3",
         "1.0x",
+        "1e39_",
+        "1e-47_",
         "1e99999999999999999999999999x",
         "1.0\0",
     ] {
