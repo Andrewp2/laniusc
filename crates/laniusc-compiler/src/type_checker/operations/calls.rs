@@ -224,6 +224,7 @@ pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_INDEX_BUILD: ReflectedComp
         typecheck_resource!("claim_slot" => "call_generic_claim_slot", Read),
         typecheck_resource!("claim_lookup_head" => "call_generic_claim_lookup_head", ReadWrite),
         typecheck_resource!("claim_lookup_next" => "call_generic_claim_lookup_next", Write),
+        typecheck_resource!("claim_slot_mask" => "call_generic_claim_slot_mask", ReadWrite),
     ])
     .with_indirect_dispatch("call_generic_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_GENERIC_CLAIM_VALIDATE: ReflectedComputeSpec = call_pass!(
@@ -282,6 +283,7 @@ pub(in crate::type_checker) const CALLS_CONST_CLAIM_INDEX_BUILD: ReflectedComput
     typecheck_resource!("claim_slot" => "call_const_claim_slot", Read),
     typecheck_resource!("claim_lookup_head" => "call_const_claim_lookup_head", ReadWrite),
     typecheck_resource!("claim_lookup_next" => "call_const_claim_lookup_next", Write),
+    typecheck_resource!("claim_slot_mask" => "call_const_claim_slot_mask", ReadWrite),
 ])
 .with_indirect_dispatch("call_const_claim_index_dispatch_args");
 pub(in crate::type_checker) const CALLS_ARRAY_STATE_CONSUME: ReflectedComputeSpec = call_pass!(

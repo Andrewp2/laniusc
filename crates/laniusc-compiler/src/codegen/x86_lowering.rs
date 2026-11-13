@@ -88,6 +88,7 @@ pub(crate) struct GpuX86LirStage {
     analysis_clear: ComputeOperation,
     analysis_index: ComputeOperation,
     optimize_init: ComputeOperation,
+    optimize_dependencies: ComputeOperation,
     optimize_close: ComputeOperation,
     if_convert: ComputeOperation,
     allocation_words: ComputeOperation,
@@ -242,6 +243,11 @@ impl GpuX86LirStage {
             kernels,
             "lir.x86.optimize.init",
             "codegen/lir/x86/optimize_init",
+        )?;
+        let optimize_dependencies_pass = load(
+            kernels,
+            "lir.x86.optimize.dependencies",
+            "codegen/lir/x86/optimize_dependencies",
         )?;
         let optimize_close_pass = load(
             kernels,
@@ -577,6 +583,15 @@ impl GpuX86LirStage {
             &analysis_params,
             semantic_capacity,
         )?;
+        let optimize_dependencies = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.optimize.dependencies",
+            &optimize_dependencies_pass,
+            &analysis_params,
+            semantic_capacity,
+        )?;
         let optimize_close = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -698,6 +713,7 @@ impl GpuX86LirStage {
             analysis_clear,
             analysis_index,
             optimize_init,
+            optimize_dependencies,
             optimize_close,
             if_convert,
             allocation_words,
@@ -785,10 +801,12 @@ impl GpuX86LirStage {
                 Some(job) => {
                     let rows = job.semantic_instructions.max(1);
                     self.optimize_init.record_elements(encoder, rows)?;
+                    self.optimize_dependencies.record_elements(encoder, rows)?;
                     self.optimize_close.record_elements(encoder, rows)?;
                 }
                 None => {
                     self.optimize_init.record(encoder)?;
+                    self.optimize_dependencies.record(encoder)?;
                     self.optimize_close.record(encoder)?;
                 }
             }

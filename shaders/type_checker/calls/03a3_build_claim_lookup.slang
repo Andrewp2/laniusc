@@ -18,6 +18,7 @@ StructuredBuffer<uint> claim_callee;
 StructuredBuffer<uint> claim_slot;
 RWStructuredBuffer<uint> claim_lookup_head;
 RWStructuredBuffer<uint> claim_lookup_next;
+RWStructuredBuffer<uint> claim_slot_mask;
 
 static const uint INVALID = 0xffffffffu;
 static const uint MAX_GROUPS_X = 65535u;
@@ -42,6 +43,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint slot = claim_slot[row];
     if (callee == INVALID || slot == INVALID)
         return;
+
+    // A conservative per-call summary avoids probing slots that no claim
+    // has ever used in this compile. Retaining bits across inference rounds
+    // is safe: consumers still read the current exact index. Slot 32 is an
+    // error marker, not a binding; it remains in the index below.
+    uint token_capacity; uint stride;
+    claim_slot_mask.GetDimensions(token_capacity, stride);
+    if (callee < token_capacity && slot < 32u)
+    {
+        uint ignored;
+        InterlockedOr(claim_slot_mask[callee], 1u << slot, ignored);
+    }
 
     uint bucket = call_claim_lookup_bucket(callee, slot, count);
     for (;;)

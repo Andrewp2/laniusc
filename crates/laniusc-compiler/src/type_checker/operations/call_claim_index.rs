@@ -59,13 +59,14 @@ impl CallClaimIndexOperation {
         input: CallClaimIndexBuild<'_>,
     ) -> Result<Self> {
         let mut resources = input.resources.clone();
-        let (count, callee, slot, head, next) = match input.kind {
+        let (count, callee, slot, head, next, mask) = match input.kind {
             CallClaimKind::Generic => (
                 "call_generic_claim_count_out",
                 "call_generic_claim_callee",
                 "call_generic_claim_slot",
                 "call_generic_claim_lookup_head",
                 "call_generic_claim_lookup_next",
+                "call_generic_claim_slot_mask",
             ),
             CallClaimKind::Const => (
                 "call_const_claim_count_out",
@@ -73,6 +74,7 @@ impl CallClaimIndexOperation {
                 "call_const_claim_slot",
                 "call_const_claim_lookup_head",
                 "call_const_claim_lookup_next",
+                "call_const_claim_slot_mask",
             ),
         };
         for (binding, resource) in [
@@ -81,6 +83,7 @@ impl CallClaimIndexOperation {
             ("claim_slot", slot),
             ("claim_lookup_head", head),
             ("claim_lookup_next", next),
+            ("claim_slot_mask", mask),
         ] {
             resources.alias(binding, resource)?;
         }

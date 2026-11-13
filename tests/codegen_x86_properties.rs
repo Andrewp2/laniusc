@@ -2896,6 +2896,130 @@ fn generated_x86_regalloc_chunk_boundary_executes_across_recorded_capacity_span(
 }
 
 #[test]
+fn generated_x86_large_loop_bodies_match_reference_model() {
+    for steps in [17usize, 289] {
+        let mut source = String::from(
+            r#"
+fn adjust(value: i32, salt: i32) -> i32 {
+    if (value > 125) { return (value + salt) % 251; }
+    return (value * 2 + salt) % 251;
+}
+fn work(seed: i32, salt: i32) -> i32 {
+    let value: i32 = seed;
+    let round: i32 = 0;
+    while (round < 4) {
+        let previous: i32 = value;
+"#,
+        );
+        for step in 0..steps {
+            source.push_str(&format!(
+                "        value = (value * 3 + salt + round + {}) % 251;\n",
+                step % 17
+            ));
+            if step % 31 == 0 {
+                source.push_str(
+                    "        value = adjust(adjust(value, salt), previous + round);\n",
+                );
+            }
+        }
+        source.push_str(
+            r#"
+        if (round % 2 == 0) {
+            value = (value + previous + seed) % 251;
+        } else {
+            value = (value + previous * 2 + salt) % 251;
+        }
+        round += 1;
+    }
+    return value;
+}
+fn main() -> i32 { return work(7, 11); }
+"#,
+        );
+        let adjust = |value: i32, salt: i32| {
+            if value > 125 { (value + salt) % 251 } else { (value * 2 + salt) % 251 }
+        };
+        let mut expected = 7;
+        for round in 0..4 {
+            let previous = expected;
+            for step in 0..steps {
+                expected = (expected * 3 + 11 + round + (step % 17) as i32) % 251;
+                if step % 31 == 0 {
+                    expected = adjust(adjust(expected, 11), previous + round);
+                }
+            }
+            expected = if round % 2 == 0 {
+                (expected + previous + 7) % 251
+            } else {
+                (expected + previous * 2 + 11) % 251
+            };
+        }
+        let name = format!("large_loop_body_{steps}");
+        let bytes = compile_source(&name, &source);
+        assert_x86_64_elf_header(&bytes);
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(&name, &name, &bytes);
+            assert_eq!(output.status.code(), Some(expected), "{name} differs from the model");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = expected;
+    }
+}
+
+#[test]
+fn generated_x86_wide_nested_aggregate_dependencies_match_reference_model() {
+    for width in [17usize, 257] {
+        let elements = (0..width)
+            .map(|index| {
+                format!(
+                    "Pair {{ left: seed + {index}, right: seed * 3 + {} }}",
+                    index % 11
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            r#"
+struct Pair {{ left: i32, right: i32 }}
+fn checksum(seed: i32) -> i32 {{
+    let original: [Pair; {width}] = [{elements}];
+    let values: [Pair; {width}] = original;
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index < {width}) {{
+        let divisor: i32 = index % 7 + 1;
+        let term: i32 = values[index].left * 3 + values[index].right / divisor;
+        if (!(term < 100)) {{
+            total = (total + term + index) % 251;
+        }} else {{
+            total = (total + term * 2) % 251;
+        }}
+        index += 1;
+    }}
+    return total;
+}}
+fn main() -> i32 {{ return checksum(5); }}
+"#,
+        );
+        let expected = (0..width as i32).fold(0, |total, index| {
+            let term = (5 + index) * 3 + (15 + index % 11) / (index % 7 + 1);
+            if term >= 100 { (total + term + index) % 251 } else { (total + term * 2) % 251 }
+        });
+        let name = format!("nested_aggregate_dependencies_{width}");
+        let bytes = compile_source(&name, &source);
+        assert_x86_64_elf_header(&bytes);
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(&name, &name, &bytes);
+            assert_eq!(output.status.code(), Some(expected), "{name} differs from the model");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = expected;
+    }
+}
+
+#[test]
 fn generated_x86_loop_assignment_calls_are_name_independent() {
     for case in generated_x86_loop_contained_call_cases() {
         let bytes = compile_source(case.name, &case.source);

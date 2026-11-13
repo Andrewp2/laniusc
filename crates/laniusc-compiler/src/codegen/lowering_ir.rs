@@ -5034,6 +5034,16 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
+    let x86_liveness_dependencies = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.liveness_dependencies",
+            ResourceDomain::SemanticInstructions,
+            // X86LivenessDependencies in lir/x86/liveness_dependencies.slang.
+            LoweringCapacities::bytes::<[u32; 9]>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
     let x86_liveness_walk = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
             "lir.x86.liveness_walk",
@@ -8475,7 +8485,7 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.optimize.close",
+            name: "lir.x86.optimize.dependencies",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
@@ -8495,14 +8505,9 @@ fn lowering_compiler_graph_builder(
                     "semantic_lir_call_arg_start_by_hir",
                     semantic_call_arg_prefix_by_hir,
                 ),
-                PassAccess::read("semantic_lir_call_args", semantic_call_args),
                 PassAccess::read(
                     "semantic_lir_aggregate_element_total",
                     semantic_aggregate_element_total,
-                ),
-                PassAccess::read(
-                    "semantic_lir_aggregate_elements",
-                    semantic_aggregate_elements,
                 ),
                 PassAccess::read(
                     "x86_position_by_semantic",
@@ -8513,6 +8518,37 @@ fn lowering_compiler_graph_builder(
                     x86_decl_analysis_by_token.unwrap(),
                 ),
                 PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+                PassAccess::read_write(
+                    "x86_last_use_by_semantic",
+                    x86_last_use_by_semantic.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_liveness_dependencies",
+                    x86_liveness_dependencies.unwrap(),
+                ),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.x86.optimize.close",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("opt_ir_block_total", opt_block_total),
+                PassAccess::read("opt_ir_control", opt_control),
+                PassAccess::read("opt_ir_reachable", opt_reachable),
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("semantic_lir_call_args", semantic_call_args),
+                PassAccess::read(
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements,
+                ),
+                PassAccess::read(
+                    "x86_liveness_dependencies",
+                    x86_liveness_dependencies.unwrap(),
+                ),
                 PassAccess::read_write(
                     "x86_last_use_by_semantic",
                     x86_last_use_by_semantic.unwrap(),
@@ -12574,6 +12610,10 @@ mod tests {
             ("lir.x86.analysis.clear", "codegen/lir/x86/analysis_clear"),
             ("lir.x86.analysis.index", "codegen/lir/x86/analysis_index"),
             ("lir.x86.optimize.init", "codegen/lir/x86/optimize_init"),
+            (
+                "lir.x86.optimize.dependencies",
+                "codegen/lir/x86/optimize_dependencies",
+            ),
             ("lir.x86.optimize.close", "codegen/lir/x86/optimize_close"),
             ("lir.x86.if_convert", "codegen/lir/x86/if_convert"),
             (

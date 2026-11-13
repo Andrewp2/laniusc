@@ -125,6 +125,23 @@ struct SummaryParams {
 }
 
 #[derive(encase::ShaderType)]
+struct DepthTreeParams {
+    n_blocks: u32,
+    leaf_base: u32,
+    start_node: u32,
+    node_count: u32,
+    mode: u32,
+    levels: u32,
+    reserved0: u32,
+    reserved1: u32,
+}
+
+#[derive(encase::ShaderType)]
+struct RoleParams {
+    leaf_base: u32,
+}
+
+#[derive(encase::ShaderType)]
 struct LayoutParams {
     file_count: u32,
     closure_count: u32,
@@ -465,10 +482,10 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     let scan_kernel = gpu.kernel("closures/scan")?;
     let summary_kernel = gpu.kernel("closures/summary")?;
 
-    // Depth and closure starts per token.
+    // Depth changes and closure starts per token. The mark kernel counts
+    // starts in the freshly cleared summary; the existing readback then
+    // gates all depth/role work for packs without closures.
     let marks = gpu.rows("closures.marks", total, 4);
-    let roles = gpu.rows("closures.roles", total, 1);
-    let depth_work = [gpu.rows("closures.depth.a", total, 4), gpu.rows("closures.depth.b", total, 4)];
     let summary = gpu.rows("closures.summary", 4, 1);
     let mut encoder = gpu.encoder("closures.mark");
     gpu.dispatch(
@@ -481,12 +498,10 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
             ("token_file_id", bufs.token_file_id.as_entire_binding()),
             ("in_bytes", bufs.in_bytes.as_entire_binding()),
             ("marks", marks.as_entire_binding()),
-            ("roles", roles.as_entire_binding()),
+            ("summary", summary.as_entire_binding()),
         ],
         total_u32,
     )?;
-    let depth_scan = gpu.scan(&mut encoder, &scan_kernel, &marks, &depth_work, total_u32)?;
-    gpu.summary(&mut encoder, &summary_kernel, bufs, depth_scan, &summary, 1, 1)?;
     let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
     let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
     gpu.submit("closures.mark", encoder);
@@ -502,6 +517,71 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     let capture_marks = gpu.rows("closures.capture_marks", total, 4);
     let capture_work = [gpu.rows("closures.capture.a", total, 4), gpu.rows("closures.capture.b", total, 4)];
     let mut encoder = gpu.encoder("closures.records");
+    let depth_work = [gpu.rows("closures.depth.a", total, 4), gpu.rows("closures.depth.b", total, 4)];
+    let depth_scan = gpu.scan(&mut encoder, &scan_kernel, &marks, &depth_work, total_u32)?;
+    // Capture discovery needs binder roles only when a closure exists. Its
+    // enclosing-bracket queries search minimum heaps over the depth scan,
+    // keeping long parameter lists and struct literals parallel.
+    let roles = gpu.rows("closures.roles", total, 1);
+    let n_blocks = total_u32.div_ceil(256);
+    let leaf_base = n_blocks.next_power_of_two();
+    let depth_local_min = gpu.rows("closures.depth.local_min", n_blocks as usize * 256, 1);
+    let depth_min_tree = gpu.rows("closures.depth.min_tree", leaf_base as usize * 2, 1);
+    gpu.dispatch(
+        &mut encoder,
+        &gpu.kernel("closures/depth_blocks")?,
+        "closures.depth.blocks",
+        &[
+            ("token_count", bufs.token_count.as_entire_binding()),
+            ("depth_scan", depth_scan.as_entire_binding()),
+            ("depth_local_min", depth_local_min.as_entire_binding()),
+        ],
+        total_u32,
+    )?;
+    let depth_tree_kernel = gpu.kernel("closures/depth_tree")?;
+    for (mode, start_node, levels) in crate::gpu::scan::heap_build_levels(leaf_base) {
+        let params = gpu.uniform(
+            "closures.depth.tree.params",
+            &DepthTreeParams {
+                n_blocks,
+                leaf_base,
+                start_node,
+                node_count: start_node,
+                mode,
+                levels,
+                reserved0: 0,
+                reserved1: 0,
+            },
+        );
+        gpu.dispatch(
+            &mut encoder,
+            &depth_tree_kernel,
+            "closures.depth.tree",
+            &[
+                ("gMinTree", params.as_entire_binding()),
+                ("depth_local_min", depth_local_min.as_entire_binding()),
+                ("depth_min_tree", depth_min_tree.as_entire_binding()),
+            ],
+            start_node,
+        )?;
+    }
+    let role_params = gpu.uniform("closures.roles.params", &RoleParams { leaf_base });
+    gpu.dispatch(
+        &mut encoder,
+        &gpu.kernel("closures/roles")?,
+        "closures.roles",
+        &[
+            ("gRoles", role_params.as_entire_binding()),
+            ("token_count", bufs.token_count.as_entire_binding()),
+            ("tokens_out", bufs.tokens_out.as_entire_binding()),
+            ("token_file_id", bufs.token_file_id.as_entire_binding()),
+            ("depth_scan", depth_scan.as_entire_binding()),
+            ("depth_local_min", depth_local_min.as_entire_binding()),
+            ("depth_min_tree", depth_min_tree.as_entire_binding()),
+            ("roles", roles.as_entire_binding()),
+        ],
+        total_u32,
+    )?;
     gpu.dispatch(
         &mut encoder,
         &gpu.kernel("closures/records")?,

@@ -1,9 +1,10 @@
 import native_value_layout;
 import primitive_types;
 // Assigns value locations and spill widths for every scheduled OptIR node.
-// One invocation per function walks its schedule (positions are contiguous
-// per function) and linear-scans general-purpose registers over the values'
-// [definition, last use] intervals; see walk_function. The subsequent global
+// Small functions use one invocation to linear-scan general-purpose registers
+// over the values' [definition, last use] intervals; see walk_function. Large
+// functions use independent, bounded schedule segments; see walk_segment.
+// The subsequent global
 // prefix scan turns the spill widths into function-relative stack offsets.
 
 import codegen.lowering_ir;
@@ -349,6 +350,8 @@ static const uint TEMP_REGISTER_ORDER = 0xedc3ba98u;
 static const uint NEAR_MASK = 0xffffu;
 // decl_slots_scatter looks at most this many locals for a register slot.
 static const uint LOCAL_SLOT_SCAN_LIMIT = 256u;
+static const uint ALLOCATION_SEGMENT_SIZE = 256u;
+static const uint SERIAL_FUNCTION_LIMIT = 512u;
 
 struct RegisterEnds
 {
@@ -767,6 +770,102 @@ void walk_function(uint function_id, uint start, uint end, uint total,
     }
 }
 
+// Independent segments bound the allocation critical path for large functions.
+// Declaration homes are reserved for the entire function exactly as in the
+// serial allocator. Temporary intervals may use a register only when they end
+// in this segment and do not cross a control label. In particular, a value
+// defined before a loop header keeps a stack home: a back edge in another
+// segment cannot extend an interval into a register reused here. Thus no
+// segment reads or writes another segment's temporary allocation state.
+//
+// Within a segment we retain greedy allocation, callee-saved registers across
+// calls, coalesced declaration reads, and direct writes to declaration homes.
+// Large functions use the existing unweighted declaration read counts and do
+// not cache a slice header; neither optimization changes a declaration's
+// reserved-register contract.
+void walk_segment(uint function_id, uint start, uint end, uint total,
+                  uint function_total)
+{
+    uint next_call = INVALID;
+    uint next_label = INVALID;
+    for (uint cursor = end; cursor > start; )
+    {
+        cursor -= 1u;
+        uint row = semantic_schedule_order[cursor];
+        if (row >= total || function_for_node(row) != function_id) continue;
+        uint op = opt_ir_op(opt_ir_core[row]);
+        x86_location_by_semantic[row] = near_distance(cursor, next_call) |
+            (near_distance(cursor, next_label) << 16u);
+        if (semantic_lir_is_call(op)) next_call = cursor;
+        if (control_label(op)) next_label = cursor;
+    }
+
+    bool has_call =
+        x86_register_analysis_by_function[function_id].first_call != INVALID;
+    uint reserved = declaration_register_mask(
+        semantic_lir_functions[function_id], has_call, false);
+    uint caller_free = TEMP_CALLER_REGISTERS & ~reserved;
+    uint callee_free = TEMP_CALLEE_REGISTERS & ~reserved;
+    RegisterEnds ends;
+    ends.rbx = 0u; ends.r8 = 0u; ends.r9 = 0u; ends.r10 = 0u;
+    ends.r11 = 0u; ends.r12 = 0u; ends.r13 = 0u; ends.r14 = 0u;
+    uint saved = 0u;
+
+    for (uint position = start; position < end; position += 1u)
+    {
+        uint row = semantic_schedule_order[position];
+        if (row >= total || function_for_node(row) != function_id) continue;
+        uint location = INVALID;
+        uint words = 0u;
+        if (x86_live_by_semantic[row] != 0u)
+        {
+            uint op = opt_ir_op(opt_ir_core[row]);
+            uint pending = x86_location_by_semantic[row];
+            uint last = x86_last_use_by_semantic[row];
+            bool contained = last < end &&
+                !event_inside(position, pending >> 16u, last, true);
+            // Outside this segment, either a call or a loop back edge may
+            // reach the parameter's last use. Keep its ordinary stack copy
+            // unless if_convert already proved the read a coalesced alias.
+            bool across = has_call && (!contained ||
+                event_inside(position, pending & NEAR_MASK, last, false));
+            bool gpr;
+            bool argument;
+            location = parallel_register_location(row, position, total, gpr, argument);
+            bool in_place = gpr && in_place_read(row, op, across);
+            uint home = gpr && !in_place && !control_label(op)
+                ? store_home(row, op, position, last, total) : INVALID;
+            if (home != INVALID)
+            {
+                location = X86_LOCATION_DECLARATION | home;
+                in_place = true;
+            }
+            if (gpr && contained && !control_label(op) && !in_place)
+            {
+                uint allowed = across ? callee_free : caller_free | callee_free;
+                if (argument) allowed &= ~(1u << 8u);
+                uint physical = free_register(ends, allowed, position);
+                if (physical != INVALID)
+                {
+                    set_register_end(ends, physical, last + 1u);
+                    if ((TEMP_CALLEE_REGISTERS & (1u << physical)) != 0u)
+                        saved |= 1u << physical;
+                    location = X86_LOCATION_REGISTER | physical;
+                }
+            }
+            if (location == INVALID && !in_place)
+                words = spill_word_count(row, total, function_total);
+        }
+        x86_location_by_semantic[row] = location;
+        x86_stack_words_by_position[position] = words;
+    }
+    if (saved != 0u)
+    {
+        uint ignored;
+        InterlockedOr(x86_saved_gpr_mask_by_function[function_id], saved, ignored);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -780,10 +879,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint function_id = row < total ? function_for_node(row) : INVALID;
     if (function_id < function_total)
     {
-        // The invocation at the function's first position places all of it.
         uint start = x86_function_start[function_id];
         uint end = min(x86_function_end[function_id], total);
-        if (start == position && start < end)
+        if (end > start && end - start > SERIAL_FUNCTION_LIMIT)
+        {
+            if ((position - start) % ALLOCATION_SEGMENT_SIZE == 0u)
+                walk_segment(function_id, position,
+                    min(position + ALLOCATION_SEGMENT_SIZE, end), total, function_total);
+        }
+        else if (start == position && start < end)
             walk_function(function_id, start, end, total, function_total);
         return;
     }

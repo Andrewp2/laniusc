@@ -38,6 +38,8 @@ StructuredBuffer<uint> call_arg_row_literal_context_mask;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> type_decl_generic_param_count;
+StructuredBuffer<uint> call_generic_claim_slot_mask;
+StructuredBuffer<uint> call_const_claim_slot_mask;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -65,19 +67,43 @@ uint2 context_masks(uint token)
     return uint2(types, constants);
 }
 
+// Slots with possible evidence. The claim indexes accumulate their slot
+// masks during this compile; a bit may remain after a claim disappears, but
+// every current claim has its bit set. Explicit and contextual producers
+// own the other two binding sources. These are candidate masks only: the
+// ordinary selectors below still check each binding and its precedence.
+uint2 evidence_masks(uint token, uint2 context)
+{
+    uint2 masks = uint2(call_generic_claim_slot_mask[token], call_const_claim_slot_mask[token]) | context;
+    uint capacity; uint stride;
+    call_explicit_application_owner_by_token.GetDimensions(capacity, stride);
+    if (token >= capacity) return masks;
+    uint owner = call_explicit_application_owner_by_token[token];
+    call_explicit_environment.GetDimensions(capacity, stride);
+    if (owner < capacity)
+    {
+        uint4 explicit_environment = call_explicit_environment[owner];
+        masks |= uint2(explicit_environment.z, explicit_environment.w);
+    }
+    return masks;
+}
+
 // The candidate type and constant slots of a call: its callee's composed
 // arity (a method's own parameters and its impl's) once the callee is
-// resolved, else every slot. A non-generic call then publishes the empty
-// environment without visiting a slot. A trait's required member reached
-// through a bound (methods/07a, dependencies/15b) also has the trait's
+// resolved, restricted to slots that can have evidence. In particular, an
+// unresolved primitive operator no longer probes all 64 empty slots. A
+// trait's required member reached through a bound (methods/07a,
+// dependencies/15b) also has the trait's
 // slots, which its header does not declare: the bound's trait arguments
 // are its context.
 uint2 candidate_masks(uint token)
 {
+    uint2 context = context_masks(token);
+    uint2 evidence = evidence_masks(token, context);
     if (call_dependency_library_id[token] == INVALID && !valid_token(call_fn_index[token]))
-        return uint2(0xffffffffu, 0xffffffffu);
+        return evidence;
     uint2 counts = required_callable_generic_counts(token);
-    return uint2(low_bits(counts.x), low_bits(counts.y)) | context_masks(token);
+    return (uint2(low_bits(counts.x), low_bits(counts.y)) | context) & evidence;
 }
 
 // Numeric literals can receive context within their category; named values,
@@ -187,14 +213,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bindings.token = token;
     bindings.spare = CT_NONE;
     uint2 masks = candidate_masks(token);
-    for (uint which = 0u; which < 2u; which++)
+    bool empty = masks.x == 0u && masks.y == 0u;
+    for (uint which = 0u; which < (empty ? 1u : 2u); which++)
     {
         bindings.which = which;
         uint prior = which == 0u ? published.x : published.y;
         // An unbound candidate slot is a hole.
         uint environment = ct_env_publish(bindings, masks.x, masks.y,
             CT_ENV_PARTIAL, prior, spare);
-        if (!ct_is_resolved(environment) || environment == prior) continue;
+        if (!ct_is_resolved(environment)) continue;
+        // With no candidates the value and expected views are identical.
+        if (empty)
+        {
+            if (published.x != environment || published.y != environment)
+                call_env_ct[token] = uint2(environment, environment);
+            continue;
+        }
+        if (environment == prior) continue;
         if (which == 0u) call_env_ct[token].x = environment;
         else call_env_ct[token].y = environment;
     }

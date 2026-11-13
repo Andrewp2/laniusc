@@ -144,6 +144,8 @@ pub(super) fn register_substitution_state(
     storage(graph, "ct_subst_counts", SUBSTITUTION_COUNT_WORDS * 4)?;
     storage(graph, "ct_row_of", records.max(1) * 4)?;
     storage(graph, "call_env_ct", token_rows.max(1) * 8)?;
+    storage(graph, "call_generic_claim_slot_mask", token_rows.max(1) * 4)?;
+    storage(graph, "call_const_claim_slot_mask", token_rows.max(1) * 4)?;
     // The field closure: a mark bit per ID, and a queue in which an ID
     // appears once per job plus deferred and retried entries.
     let records = records.max(1);
