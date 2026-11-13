@@ -493,7 +493,7 @@ pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 pub(super) const CALLS_INFERENCE_ROUND_RESET_PASS: &str = "type_check.calls.inference.round_reset";
 /// Inference rounds one submission can carry; the readback keeps one slot of
 /// `CALL_INFERENCE_READBACK_SLOT_BYTES` per round.
-pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = 8;
+pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = 16;
 /// Words 0-1: inference state after the round (word 1 counts the round's
 /// changes); words 2-5: the status words after the round.
 pub(super) const CALL_INFERENCE_READBACK_SLOT_BYTES: u64 = 24;
