@@ -156,6 +156,10 @@ static const uint INTRINSIC_NONE = 0u;
 static const uint INTRINSIC_PRINT = 1u;
 static const uint INTRINSIC_SLICE_LEN = 9u;
 static const uint INTRINSIC_STRING_LEN = 10u;
+static const uint INTRINSIC_F64_TO_BITS = 12u;
+static const uint INTRINSIC_F64_FROM_BITS = 13u;
+static const uint INTRINSIC_F32_TO_BITS = 14u;
+static const uint INTRINSIC_F32_FROM_BITS = 15u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -267,27 +271,23 @@ void claim_generic_slot(
     // are not diagnostics.
 }
 
+// The intrinsics with one argument of a fixed kind have no declaration to
+// check it against, so the strict pass checks it here, as it does a
+// parameter. The argument is resolved once for all of them.
+//
 // `print` writes the decimal digits of a 32-bit signed value. It accepts the
 // integer types that convert to one without loss. Any other argument (text,
-// a float, a wider integer, an aggregate) would print an unrelated number,
-// so it is a type error. The strict pass checks it, as it does a parameter.
-void check_print_argument(uint node, uint callee)
-{
-    if (call_inference_state[0u] != 0u) return;
-    uint tag; uint payload;
-    bool known = argument_result_reference(resolve_expr(node), tag, payload);
-    if (known && type_ref_is_never(tag, payload)) return;
-    bool scalar = known && tag == TYPE_REF_SCALAR;
-    if (scalar && (payload == SCALAR_I32 || payload == SCALAR_I8 || payload == SCALAR_I16 ||
-        payload == SCALAR_U8 || payload == SCALAR_U16)) return;
-    record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH,
-        PRINT_ARGUMENT_TYPE | (scalar ? payload : 0u));
-}
-
+// a float, a wider integer, an aggregate) would print an unrelated number.
+//
 // `slice_len` reads the length word of a slice or of an array passed as one.
 // `string_len` reads the length word of a `str`. Any other argument has no
-// such word, so it is a type error. The strict pass checks it.
-void check_length_argument(uint node, uint callee, bool text)
+// such word.
+//
+// A bit cast copies the bits of its argument into a value of the other type
+// of the same width: `f64_to_bits` takes an f64, `f64_from_bits` a u64,
+// `f32_to_bits` an f32 and `f32_from_bits` a u32. Any other argument has a
+// different width or no such bits.
+void check_intrinsic_argument(uint node, uint callee, uint intrinsic)
 {
     if (call_inference_state[0u] != 0u) return;
     uint tag; uint payload;
@@ -295,21 +295,41 @@ void check_length_argument(uint node, uint callee, bool text)
     if (known && type_ref_is_never(tag, payload)) return;
     bool scalar = known && tag == TYPE_REF_SCALAR;
     bool accepted = false;
-    if (text)
-        accepted = scalar && payload == SCALAR_STR;
-    else if (known && tag == TYPE_REF_INSTANCE && payload < parameter_type_capacity())
-        accepted = type_instance_kind[payload] == TYPE_INSTANCE_SLICE ||
-            type_instance_kind[payload] == TYPE_INSTANCE_ARRAY;
-    else if (known && tag == TYPE_REF_EXTERNAL_CANONICAL)
+    uint detail;
+    if (intrinsic == INTRINSIC_PRINT)
     {
-        uint count = dependency_type_count();
-        uint root = payload < count ? canonical_type_roots[payload] : INVALID;
-        uint kind = root < count ? dependency_type_word(root * 9u) : 0u;
-        accepted = kind == 4u || kind == 5u;
+        accepted = scalar && (payload == SCALAR_I32 || payload == SCALAR_I8 ||
+            payload == SCALAR_I16 || payload == SCALAR_U8 || payload == SCALAR_U16);
+        detail = PRINT_ARGUMENT_TYPE;
+    }
+    else if (intrinsic >= INTRINSIC_F64_TO_BITS)
+    {
+        uint expected = intrinsic == INTRINSIC_F64_TO_BITS ? SCALAR_F64 :
+            intrinsic == INTRINSIC_F64_FROM_BITS ? SCALAR_U64 :
+            intrinsic == INTRINSIC_F32_TO_BITS ? SCALAR_F32 : SCALAR_U32;
+        accepted = scalar && payload == expected;
+        detail = BIT_CAST_ARGUMENT_TYPE | ((intrinsic - INTRINSIC_F64_TO_BITS) << 8u);
+    }
+    else
+    {
+        bool text = intrinsic == INTRINSIC_STRING_LEN;
+        if (text)
+            accepted = scalar && payload == SCALAR_STR;
+        else if (known && tag == TYPE_REF_INSTANCE && payload < parameter_type_capacity())
+            accepted = type_instance_kind[payload] == TYPE_INSTANCE_SLICE ||
+                type_instance_kind[payload] == TYPE_INSTANCE_ARRAY;
+        else if (known && tag == TYPE_REF_EXTERNAL_CANONICAL)
+        {
+            uint count = dependency_type_count();
+            uint root = payload < count ? canonical_type_roots[payload] : INVALID;
+            uint kind = root < count ? dependency_type_word(root * 9u) : 0u;
+            accepted = kind == 4u || kind == 5u;
+        }
+        detail = LENGTH_ARGUMENT_TYPE | (text ? 0x100u : 0u);
     }
     if (accepted) return;
     record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH,
-        LENGTH_ARGUMENT_TYPE | (text ? 0x100u : 0u) | (scalar ? payload : 0u));
+        detail | (scalar ? payload : 0u));
 }
 
 void collect_row_argument(uint row)
@@ -320,15 +340,12 @@ void collect_row_argument(uint row)
     uint callee = callee_token_for_hir_call(call);
     uint param = call_arg_param_row[row];
     if (!valid_node(call) || !valid_node(node) || !valid_token(callee)) return;
-    if (call_intrinsic_tag[callee] == INTRINSIC_PRINT)
+    uint intrinsic = call_intrinsic_tag[callee];
+    if (intrinsic == INTRINSIC_PRINT || intrinsic == INTRINSIC_SLICE_LEN ||
+        intrinsic == INTRINSIC_STRING_LEN ||
+        (intrinsic >= INTRINSIC_F64_TO_BITS && intrinsic <= INTRINSIC_F32_FROM_BITS))
     {
-        check_print_argument(node, callee);
-        return;
-    }
-    if (call_intrinsic_tag[callee] == INTRINSIC_SLICE_LEN ||
-        call_intrinsic_tag[callee] == INTRINSIC_STRING_LEN)
-    {
-        check_length_argument(node, callee, call_intrinsic_tag[callee] == INTRINSIC_STRING_LEN);
+        check_intrinsic_argument(node, callee, intrinsic);
         return;
     }
     if (call_intrinsic_tag[callee] != INTRINSIC_NONE || param == INVALID) return;

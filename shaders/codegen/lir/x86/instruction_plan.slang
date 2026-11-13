@@ -1468,11 +1468,15 @@ uint plan_specialized(X86PlanInput input)
         plan_bytes(2u, 0xd0ffu); // call rax
     }
     else if (op == X86_LIR_OP_INTRINSIC_IDENTITY)
+    {
         // The preceding CALL_ARG rows placed the argument's words in RDI,
         // RSI and RDX. Operand a = 1 selects a length in RSI and a = 2 a
-        // view's stride in RDX.
-        plan_move64(X86_REG | (operands.a == 2u ? 2u : operands.a == 1u ? 6u : 7u),
-            locations.result);
+        // view's stride in RDX. A float result (`f64_from_bits`,
+        // `f32_from_bits`) takes the bits in RDI without conversion.
+        uint source = X86_REG | (operands.a == 2u ? 2u : operands.a == 1u ? 6u : 7u);
+        if (is_float) plan_value_move(true, f64, source, locations.result);
+        else plan_move64(source, locations.result);
+    }
     else if (op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL)
     {
         // Strings occupy direct pointer/length value slots. The native pair

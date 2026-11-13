@@ -1,7 +1,6 @@
 // IEEE binary32 value utilities. Exact bits and integer algorithms;
 // no allocation, host math calls or assumed floating-point rounding mode.
 module core::f32;
-import core::mem;
 import core::result;
 
 pub const ZERO: f32 = 0.0;
@@ -21,18 +20,10 @@ const MAGNITUDE_MASK: u32 = 2147483647;
 pub enum FpCategory { Nan, Infinite, Zero, Subnormal, Normal }
 pub enum ClampError { InvalidBounds }
 
-// Stack storage is 8-aligned and covers one native word. Both views use the
-// same complete extent; transfers preserve NaN payloads without arithmetic.
-pub fn to_bits(value: f32) -> u32 {
-    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
-    let floats: [f32] = core::mem::typed_slice_from_storage<f32>(storage,1); floats[0] = value;
-    let integers: [u32] = core::mem::typed_slice_from_storage<u32>(storage,1); return integers[0];
-}
-pub fn from_bits(value: u32) -> f32 {
-    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
-    let integers: [u32] = core::mem::typed_slice_from_storage<u32>(storage,1); integers[0] = value;
-    let floats: [f32] = core::mem::typed_slice_from_storage<f32>(storage,1); return floats[0];
-}
+// The compiler's bit casts copy all 32 bits and convert nothing, so a NaN
+// keeps its payload.
+pub fn to_bits(value: f32) -> u32 { return f32_to_bits(value); }
+pub fn from_bits(value: u32) -> f32 { return f32_from_bits(value); }
 pub fn infinity() -> f32 { return from_bits(INFINITY_BITS); }
 pub fn neg_infinity() -> f32 { return from_bits(INFINITY_BITS | SIGN_MASK); }
 pub fn nan() -> f32 { return from_bits(NAN_BITS); }

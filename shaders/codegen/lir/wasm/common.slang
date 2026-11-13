@@ -533,6 +533,7 @@ bool wasm_intrinsic_supported(uint intrinsic)
         intrinsic == INTRINSIC_I32_ARRAY_DATA_PTR || intrinsic == INTRINSIC_I32_SLICE_DATA_PTR ||
         intrinsic == INTRINSIC_STRING_DATA_PTR || intrinsic == INTRINSIC_SLICE_STRIDE ||
         intrinsic == INTRINSIC_SLICE_LEN || intrinsic == INTRINSIC_STRING_LEN ||
+        intrinsic_bit_cast(intrinsic) ||
         intrinsic_slice_from_raw_parts(intrinsic);
 }
 
@@ -1320,6 +1321,15 @@ void wasm_plan_body(WasmPlanRow row,
         if (operands.a == INTRINSIC_STRING_DATA_PTR)
         {
             wasm_emit(WASM_LIR_OP_DROP, 0u);
+            return;
+        }
+        // A bit cast is one reinterpretation of the argument on the stack.
+        if (intrinsic_bit_cast(operands.a))
+        {
+            wasm_emit(operands.a == INTRINSIC_F64_TO_BITS ? WASM_LIR_OP_I64_REINTERPRET_F64 :
+                operands.a == INTRINSIC_F64_FROM_BITS ? WASM_LIR_OP_F64_REINTERPRET_I64 :
+                operands.a == INTRINSIC_F32_TO_BITS ? WASM_LIR_OP_I32_REINTERPRET_F32 :
+                WASM_LIR_OP_F32_REINTERPRET_I32, 0u);
             return;
         }
         // An array's address is its element 0.

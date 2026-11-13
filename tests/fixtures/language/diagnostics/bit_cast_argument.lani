@@ -1,0 +1,9 @@
+//@ error LNC0006
+//@ error `f64_to_bits` takes an `f64`; this value is `i32`
+//@ error bit_cast_argument.lani:7:21
+module app::main;
+
+fn main() -> i32 {
+    if (f64_to_bits(1) == 0) { return 1; }
+    return 0;
+}

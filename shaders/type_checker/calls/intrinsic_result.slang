@@ -13,10 +13,31 @@ public static const uint INTRINSIC_SLICE_STRIDE = 8u;
 public static const uint INTRINSIC_SLICE_LEN = 9u;
 public static const uint INTRINSIC_STRING_LEN = 10u;
 public static const uint INTRINSIC_CALL_PTR = 11u;
+// The four bit casts are consecutive: f64_to_bits, f64_from_bits,
+// f32_to_bits, f32_from_bits.
+public static const uint INTRINSIC_F64_TO_BITS = 12u;
+public static const uint INTRINSIC_F64_FROM_BITS = 13u;
+public static const uint INTRINSIC_F32_TO_BITS = 14u;
+public static const uint INTRINSIC_F32_FROM_BITS = 15u;
+
+public bool intrinsic_is_bit_cast(uint intrinsic)
+{
+    return intrinsic >= INTRINSIC_F64_TO_BITS && intrinsic <= INTRINSIC_F32_FROM_BITS;
+}
+
+// The scalar a bit cast takes: the float for `*_to_bits`, the unsigned
+// integer of the same width for `*_from_bits`.
+public uint bit_cast_argument_type(uint intrinsic)
+{
+    return intrinsic == INTRINSIC_F64_TO_BITS ? 15u :
+        intrinsic == INTRINSIC_F64_FROM_BITS ? 10u :
+        intrinsic == INTRINSIC_F32_TO_BITS ? 5u : 4u;
+}
 
 // The legacy result code of an intrinsic: ptr for the data pointers, the
 // i32 slice code for i32_slice_from_raw_parts, isize for slice_stride,
-// usize for slice_len and string_len,
+// usize for slice_len and string_len, the other type of the pair for a bit
+// cast (u64 and f64, u32 and f32),
 // unknown for the typed slice (its element comes from the caller) and void
 // for the rest.
 public uint intrinsic_result_type(uint intrinsic)
@@ -26,6 +47,8 @@ public uint intrinsic_result_type(uint intrinsic)
     if (intrinsic == INTRINSIC_I32_SLICE_FROM_RAW_PARTS) return 128u + 3u;
     if (intrinsic == INTRINSIC_SLICE_STRIDE) return 16u;
     if (intrinsic == INTRINSIC_SLICE_LEN || intrinsic == INTRINSIC_STRING_LEN) return 17u;
+    if (intrinsic_is_bit_cast(intrinsic))
+        return bit_cast_argument_type(intrinsic ^ 1u);
     return intrinsic == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS ? 0u : 1u;
 }
 

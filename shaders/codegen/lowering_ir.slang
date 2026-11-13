@@ -518,13 +518,26 @@ static const uint INTRINSIC_STRING_LEN = 10u;
 // call_ptr(entry, a, b, c): calls the System V entry at `entry` with three
 // pointer arguments. It has no result.
 static const uint INTRINSIC_CALL_PTR = 11u;
+// Bit casts: the result has the bits of the argument and the other type of
+// the same width (f64 and u64, f32 and u32). No value is converted.
+static const uint INTRINSIC_F64_TO_BITS = 12u;
+static const uint INTRINSIC_F64_FROM_BITS = 13u;
+static const uint INTRINSIC_F32_TO_BITS = 14u;
+static const uint INTRINSIC_F32_FROM_BITS = 15u;
 
-// An intrinsic whose result is one word of its argument.
+bool intrinsic_bit_cast(uint tag)
+{
+    return tag >= INTRINSIC_F64_TO_BITS && tag <= INTRINSIC_F32_FROM_BITS;
+}
+
+// An intrinsic whose result is one word of its argument. A bit cast is the
+// only word of its scalar argument.
 bool intrinsic_argument_word(uint tag)
 {
     return tag == INTRINSIC_I32_ARRAY_DATA_PTR || tag == INTRINSIC_I32_SLICE_DATA_PTR ||
         tag == INTRINSIC_STRING_DATA_PTR || tag == INTRINSIC_SLICE_STRIDE ||
-        tag == INTRINSIC_SLICE_LEN || tag == INTRINSIC_STRING_LEN;
+        tag == INTRINSIC_SLICE_LEN || tag == INTRINSIC_STRING_LEN ||
+        intrinsic_bit_cast(tag);
 }
 
 bool intrinsic_slice_from_raw_parts(uint tag)
@@ -1163,6 +1176,13 @@ static const uint WASM_LIR_OP_F64_CONVERT_I64_U = 0xbau;
 static const uint WASM_LIR_OP_F64_PROMOTE_F32 = 0xbbu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F64_REINTERPRET_I64 = 0xbfu;
+// The other three bit casts between a float and the integer of its width.
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_REINTERPRET_F32 = 0xbcu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_REINTERPRET_F64 = 0xbdu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F32_REINTERPRET_I32 = 0xbeu;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F64_LOAD = 0x2bu;
 // IR_OPCODE

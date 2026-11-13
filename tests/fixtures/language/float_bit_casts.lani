@@ -1,0 +1,47 @@
+//@ exit 0
+// A bit cast copies the bits of a float into the integer of the same width,
+// or back. It converts nothing: 1.0 is not the integer 1, the sign of -0.0
+// survives and so does the payload of a NaN.
+module app::main;
+import core::f64;
+import core::f32;
+
+fn round_trip(bits: u64) -> u64 {
+    return f64_to_bits(f64_from_bits(bits));
+}
+
+fn narrow_round_trip(bits: u32) -> u32 {
+    return f32_to_bits(f32_from_bits(bits));
+}
+
+fn main() -> i32 {
+    let one: f64 = 1.0;
+    let negative_zero: f64 = -0.0;
+    assert(f64_to_bits(one) == 4607182418800017408);
+    assert(f64_to_bits(negative_zero) == 9223372036854775808);
+    let two_bits: u64 = 4611686018427387904;
+    assert(f64_from_bits(two_bits) == 2.0);
+    // A NaN with a payload in its low bits.
+    let nan_bits: u64 = 9221120237041090561;
+    assert(round_trip(nan_bits) == nan_bits);
+    assert(round_trip(1) == 1);
+
+    let narrow_one: f32 = 1.0;
+    assert(f32_to_bits(narrow_one) == 1065353216);
+    let narrow_two_bits: u32 = 1073741824;
+    assert(f32_from_bits(narrow_two_bits) == 2.0);
+    let narrow_nan_bits: u32 = 2143289345;
+    assert(narrow_round_trip(narrow_nan_bits) == narrow_nan_bits);
+    let high_bit: u32 = 2147483648;
+    assert(narrow_round_trip(high_bit) == high_bit);
+
+    // The library spellings are the same casts.
+    assert(core::f64::to_bits(one) == 4607182418800017408);
+    assert(core::f64::from_bits(two_bits) == 2.0);
+    assert(core::f64::is_finite(one));
+    assert(!core::f64::is_finite(core::f64::infinity()));
+    assert(core::f64::is_nan(core::f64::nan()));
+    assert(core::f32::to_bits(narrow_one) == 1065353216);
+    assert(core::f32::is_nan(core::f32::nan()));
+    return 0;
+}

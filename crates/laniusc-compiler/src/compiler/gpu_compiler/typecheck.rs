@@ -4291,6 +4291,16 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
             )
         }
         GpuTypeCheckCode::AssignMismatch
+            if detail & 0xffff_fc00 == crate::primitive_types::BIT_CAST_ARGUMENT_TYPE =>
+        {
+            let (label, note) = bit_cast_argument_text((detail >> 8) & 3, detail & 0xff);
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+                    .with_note(note),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {
             invalid_member_access_diagnostic(path, source, start, len, u32::MAX)
@@ -5073,6 +5083,28 @@ fn length_argument_text(text: bool, scalar: u32) -> (String, &'static str) {
     }
 }
 
+/// Label and note for a bit cast argument of the wrong type. `cast` counts
+/// from `f64_to_bits`: 0 and 1 are the f64 pair, 2 and 3 the f32 pair.
+fn bit_cast_argument_text(cast: u32, scalar: u32) -> (String, &'static str) {
+    use crate::primitive_types::*;
+    let (name, takes) = match cast {
+        0 => ("f64_to_bits", "an `f64`"),
+        1 => ("f64_from_bits", "a `u64`"),
+        2 => ("f32_to_bits", "an `f32`"),
+        _ => ("f32_from_bits", "a `u32`"),
+    };
+    let found = match crate::primitive_types::name(scalar) {
+        Some(found) if scalar != SCALAR_UNKNOWN => format!("this value is `{found}`"),
+        _ => "this value is not a number".to_string(),
+    };
+    let note = if cast < 2 {
+        "`core::f64::to_bits(value)` and `core::f64::from_bits(bits)` declare these types"
+    } else {
+        "`core::f32::to_bits(value)` and `core::f32::from_bits(bits)` declare these types"
+    };
+    (format!("`{name}` takes {takes}; {found}"), note)
+}
+
 fn call_mismatch_diagnostic(
     path: &Path,
     source: &str,
@@ -5119,7 +5151,7 @@ fn call_mismatch_diagnostic(
         ),
         CALL_MISMATCH_INTRINSIC_ARITY => (
             "this built-in function takes exactly one argument",
-            "`print(count)`, `assert(condition)`, `slice_len(values)` and `string_len(text)` each take one value",
+            "`print(count)`, `assert(condition)`, `slice_len(values)`, `string_len(text)` and the bit casts such as `f64_to_bits(value)` each take one value",
         ),
         CALL_MISMATCH_CALL_PTR_ARITY => (
             "`call_ptr` takes exactly four arguments",

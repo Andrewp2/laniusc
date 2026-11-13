@@ -130,6 +130,13 @@ public static const uint PRINT_ARGUMENT_TYPE = 0x21000000u;
 // not a scalar.
 // PRIMITIVE_CONSTANT
 public static const uint LENGTH_ARGUMENT_TYPE = 0x22000000u;
+// LNC0006 detail base of a bit cast argument of the wrong type
+// (calls/03a_collect_row_args.slang). Bits 8 and 9 select the cast: 0 for
+// `f64_to_bits`, 1 for `f64_from_bits`, 2 for `f32_to_bits` and 3 for
+// `f32_from_bits`. The low byte holds the argument's scalar code, or 0 for
+// a type that is not a scalar.
+// PRIMITIVE_CONSTANT
+public static const uint BIT_CAST_ARGUMENT_TYPE = 0x23000000u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]
