@@ -346,22 +346,25 @@ public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R root
     count_mask = 0u;
     uint type_mask = 0u;
     uint const_mask = 0u;
+    uint pending_types = 0u;
+    uint pending_constants = 0u;
     CtKey key = ct_key_begin(0u, 0u, 0u, uint3(0u, 0u, 0u));
     uint index = 0u;
-    // Item 0 is the shape pass, 1..32 the type slots, 33..64 the constant
-    // slots: one pass site, one fold site.
-    for (uint item = 0u; item <= 2u * SLOTS; item++)
+    // Item 0 is the shape pass. Then visit only its populated slots, types
+    // before constants and each in ascending order, at one pass/fold site.
+    for (uint step = 0u; step <= 2u * SLOTS; step++)
     {
-        bool constant = item > SLOTS;
-        uint slot = (item - 1u) & (SLOTS - 1u);
+        bool shape = step == 0u;
+        if (!shape && pending_types == 0u && pending_constants == 0u) break;
+        bool constant = !shape && pending_types == 0u;
+        uint slot = shape ? 0u : firstbitlow(constant ? pending_constants : pending_types);
+        uint item = shape ? 0u : (constant ? SLOTS + 1u : 1u) + slot;
         uint bit = 1u << slot;
-        if (item == 1u && intern)
+        if (!shape)
         {
-            key = ct_key_begin(CT_KIND_ENV, countbits(type_mask) + countbits(const_mask),
-                countbits(type_mask), uint3(0u, type_mask, const_mask));
-            if (!ct_spare_reserve(spare, key)) return CT_MATCH_OVERFLOW;
+            if (constant) pending_constants &= pending_constants - 1u;
+            else pending_types &= pending_types - 1u;
         }
-        if (item != 0u && ((constant ? const_mask : type_mask) & bit) == 0u) continue;
         SlotClaims claims;
         claims.binding = item == 0u ? CT_UNKNOWN : ct_env_binding(prior, slot, constant);
         if (!ct_is_resolved(claims.binding)) claims.binding = CT_NONE;
@@ -381,7 +384,19 @@ public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R root
                 return CT_MATCH_FAILED;
             }
         }
-        if (item == 0u) continue;
+        if (shape)
+        {
+            // Even an empty shape publishes the ordinary empty environment.
+            if (intern)
+            {
+                key = ct_key_begin(CT_KIND_ENV, countbits(type_mask) + countbits(const_mask),
+                    countbits(type_mask), uint3(0u, type_mask, const_mask));
+                if (!ct_spare_reserve(spare, key)) return CT_MATCH_OVERFLOW;
+            }
+            pending_types = type_mask;
+            pending_constants = const_mask;
+            continue;
+        }
         uint binding = claims.binding;
         if (constant && claims.exact && typed_scalar<S>(slots, binding) != claims.scalar) return CT_MATCH_FAILED;
         if (constant && !claims.exact)

@@ -186,12 +186,18 @@ uint ct_publish_context_tracked<C : ICtClaims, let TRACK : bool>(uint call, uint
     uint written_constants = 0u;
     for (uint pass = 0u; pass < 2u; pass++)
     {
-        for (uint item = 0u; item < 64u; item++)
+        uint pending_types = types;
+        uint pending_constants = constants;
+        // Preserve type-before-constant and ascending slot order, including
+        // the first failing/requested prior, without probing absent slots.
+        while (pending_types != 0u || pending_constants != 0u)
         {
-            bool constant = item >= 32u;
-            uint slot = item & 31u;
+            bool constant = pending_types == 0u;
+            uint slot = firstbitlow(constant ? pending_constants : pending_types);
+            if (constant) pending_constants &= pending_constants - 1u;
+            else pending_types &= pending_types - 1u;
+            uint item = (constant ? 32u : 0u) + slot;
             uint bit = 1u << slot;
-            if (((constant ? constants : types) & bit) == 0u) continue;
             uint retained = ct_env_binding(env, slot, constant);
             if (!ct_is_resolved(retained)) return CT_PUBLISH_REJECTED;
             uint mode = constant && (count_mask & bit) != 0u ? 1u : 0u;

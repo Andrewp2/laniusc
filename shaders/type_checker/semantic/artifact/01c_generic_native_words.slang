@@ -115,6 +115,20 @@ uint local_enum_owner(uint tag, uint payload)
 uint local_struct_owner(uint tag, uint payload)
 { return local_nominal_owner(tag, payload, HIR_STRUCT_ITEM); }
 
+// canonical/variants/mark and scatter compact by name-token anchor, not
+// owner ID. A local declaration's variants lie in its source-token span.
+uint first_local_enum_variant(uint token, uint count)
+{
+    uint lo = 0u; uint hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_variants[mid].name_token < token) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo;
+}
+
 bool known_empty_enum(uint tag, uint payload)
 {
     uint owner = local_enum_owner(tag, payload);
@@ -123,16 +137,8 @@ bool known_empty_enum(uint tag, uint payload)
         HirCore declaration = compact_hir_core[owner];
         if (declaration.token_start >= declaration.token_end ||
             declaration.token_end > gParams.n_tokens) return false;
-        // canonical/variants/mark and scatter compact by name-token anchor,
-        // not owner ID. Search that source order within this exact declaration.
         uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
-        uint lo = 0u; uint hi = count;
-        while (lo < hi)
-        {
-            uint mid = lo + (hi - lo) / 2u;
-            if (compact_variants[mid].name_token < declaration.token_start) lo = mid + 1u;
-            else hi = mid;
-        }
+        uint lo = first_local_enum_variant(declaration.token_start, count);
         // An owned row outside the declaration span cannot prove emptiness.
         if (lo != 0u && compact_variants[lo - 1u].owner == owner) return false;
         if (lo < count && (compact_variants[lo].owner == owner ||
@@ -412,9 +418,25 @@ uint layout_step(uint node)
             layout_publish(node, INVALID);
             return LAYOUT_STEP_DONE;
         }
+        // Restrict local enums to their own source span. Group indices stay
+        // absolute, and payload_count still checks the exact owner. Other
+        // layouts keep their existing group domain; malformed source spans
+        // retain the full scan rather than establishing an empty layout.
+        uint first_group = 0u;
+        uint enum_owner = local_enum_owner(tag, payload);
+        if (enum_owner != INVALID)
+        {
+            HirCore declaration = compact_hir_core[enum_owner];
+            if (declaration.token_start < declaration.token_end &&
+                declaration.token_end <= gParams.n_tokens)
+            {
+                first_group = first_local_enum_variant(declaration.token_start, groups);
+                groups = first_local_enum_variant(declaration.token_end, groups);
+            }
+        }
         // Groups sum their payload widths; the value uses the largest group.
         words = 0u;
-        for (uint group = 0u; group < groups; group++)
+        for (uint group = first_group; group < groups; group++)
         {
             uint count = CheckedConcreteValueLayout.payload_count(tag, payload, group);
             if (count == INVALID) continue;
