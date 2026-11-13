@@ -189,10 +189,41 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         if let Some(options) = &self.native_link {
             let objects = self.compiler.specialize_spilled_native_objects(pending).await?;
             let bridge = super::native_codegen::native_main_bridge(&objects)?;
+            let _span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.link");
+            let link_error = |context| move |error| super::x86_codegen::x86_source_pack_link_error(context, error);
+            let plan = x86::native::plan_native_link(&objects, &native_functions, bridge, options)
+                .map_err(link_error("link native C executable"))?;
+            if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {
+                let linker = self.compiler.x86_linker().map_err(|reason| {
+                    source_pack_artifact_store_error(format!(
+                        "initialize resident x86_64 native linker: {reason}"))
+                })?;
+                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
+                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
+                return match &self.output_file {
+                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                        path, self.target, |file| linker
+                            .link_dynamic_executable_to_writer(device, queue, input, image, file)
+                            .map(|len| len as u64)
+                            .map_err(link_error("execute resident x86_64 native linker")),
+                    ).map(ResidentLinkedOutput::File),
+                    None => linker.link_dynamic_executable(device, queue, input, image)
+                        .map(ResidentLinkedOutput::Bytes)
+                        .map_err(link_error("execute resident x86_64 native linker")),
+                };
+            }
+            if let x86::native::NativeLinkPlan::Driver(reason) = &plan
+                && crate::gpu::trace::enabled()
+            {
+                crate::gpu::trace::record_instant(
+                    "host.compiler",
+                    &format!("codegen.x86.native.link.driver: {reason}"),
+                    std::time::Instant::now(),
+                );
+            }
             let executable = x86::native::link_native_file_executable(
                 &objects, &native_functions, bridge, options,
-            ).map_err(|error| super::x86_codegen::x86_source_pack_link_error(
-                "link native C executable", error))?;
+            ).map_err(link_error("link native C executable"))?;
             return match &self.output_file {
                 Some(path) => super::bounded_path_codegen::write_output_file_atomically(
                     path, self.target, |file| executable.write_to(file).map_err(|error|

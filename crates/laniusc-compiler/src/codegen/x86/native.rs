@@ -1,9 +1,13 @@
-//! ELF packaging for the opt-in Linux x86_64 C-library profile.
+//! Linking for the opt-in Linux x86_64 C-library profile.
 //!
 //! Machine instructions and the CRT-facing bridge are emitted by the GPU.
-//! This module copies those sections unchanged, translates recorded relocation
-//! metadata, and delegates ordinary native linking and startup to the system C
-//! driver. It neither decodes nor patches generated instructions.
+//! When every native input is a shared library, `plan_native_link` resolves
+//! the imported C functions against them (`resolve.rs`) and the GPU linker
+//! writes the whole dynamically linked executable (`link/dynamic.rs`).
+//! Otherwise this module copies the GPU sections unchanged into ELF objects,
+//! translates recorded relocation metadata, and delegates linking and startup
+//! to the system C driver. It neither decodes nor patches generated
+//! instructions.
 
 use std::{
     collections::BTreeMap,
@@ -21,8 +25,14 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
+pub(crate) mod resolve;
+pub(crate) use resolve::{NativeDynamicImports, NativeResolution};
+
 use super::{
     GpuX86FileObject,
+    GpuX86LinkInput,
+    X86DynamicImage,
+    X86DynamicMain,
     link::{X86LinkTextPlan, shared_runtime_text_plans},
     GpuX86ObjectSection,
     GpuX86ObjectSymbolRecord,
@@ -833,6 +843,94 @@ impl NativeLinkedExecutable {
         );
         Ok(())
     }
+}
+
+/// How a native C program links.
+pub(crate) enum NativeLinkPlan {
+    /// Every input is a shared library: the GPU linker writes the executable.
+    Gpu {
+        input: GpuX86LinkInput,
+        image: X86DynamicImage,
+    },
+    /// An input needs the system C driver, for the reason given
+    /// (`resolve.rs` lists the rules); `link_native_file_executable` links it.
+    Driver(String),
+}
+
+/// Validate the program's objects and C bindings and choose its link. An
+/// imported function that no library defines is an `Err` diagnostic.
+pub(crate) fn plan_native_link(
+    objects: &[GpuX86FileObject],
+    bindings: &[NativeCFunction],
+    main: NativeMainBridge,
+    options: &NativeLinkOptions,
+) -> Result<NativeLinkPlan> {
+    ensure!(
+        cfg!(all(
+            target_os = "linux",
+            target_arch = "x86_64",
+            target_env = "gnu"
+        )),
+        "native C linking currently supports Linux x86_64/glibc hosts"
+    );
+    validate_options(options)?;
+    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.validate");
+    let symbols = NativeSymbols::validate(objects, bindings, main)?;
+    drop(span);
+    // Only foreign functions the objects reference are imported, as only
+    // those reach the C driver's link as undefined symbols.
+    let mut referenced = BTreeMap::<Identity, &str>::new();
+    for object in objects {
+        for symbol in &object.symbols {
+            if symbol.section != GpuX86ObjectSection::Undefined {
+                continue;
+            }
+            let identity = symbol_identity(object, symbol)?;
+            if let Some(binding) = symbols.foreign.get(&identity) {
+                referenced.insert(identity, binding.name.as_str());
+            }
+        }
+    }
+    let mut names = referenced.values().copied().collect::<Vec<_>>();
+    names.sort_unstable();
+    names.dedup();
+    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.resolve");
+    let imports = match resolve::resolve_native_imports(&names, options)? {
+        NativeResolution::Dynamic(imports) => imports,
+        NativeResolution::Driver(reason) => return Ok(NativeLinkPlan::Driver(reason)),
+    };
+    drop(span);
+    let import_index = imports
+        .imports
+        .iter()
+        .enumerate()
+        .map(|(index, import)| (import.name.as_str(), index as u32))
+        .collect::<BTreeMap<_, _>>();
+    let identities = referenced
+        .iter()
+        .map(|(identity, name)| (*identity, import_index[name]))
+        .collect::<Vec<_>>();
+    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.input");
+    let input = GpuX86LinkInput::for_native_dynamic(objects, &identities, imports.imports.len())
+        .map_err(anyhow::Error::msg)?;
+    drop(span);
+    // The entry object keeps its whole text, so the bridge keeps its offset.
+    let image = X86DynamicImage::new(
+        &imports,
+        checked_u32(objects.len(), "native object count")?,
+        X86DynamicMain {
+            object_index: checked_u32(main.object_index, "native main object index")?,
+            text_offset: main.text_offset,
+            byte_len: main.byte_len,
+        },
+    )?;
+    let byte_len = image.output_len(&input)?;
+    ensure!(
+        byte_len <= options.max_output_bytes,
+        "native linked executable size {byte_len} exceeds the admitted range 1..={}",
+        options.max_output_bytes
+    );
+    Ok(NativeLinkPlan::Gpu { input, image })
 }
 
 /// Link exact GPU-generated file payloads using the system C driver.

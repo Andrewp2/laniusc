@@ -2,7 +2,11 @@ use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, bail};
 
-use super::{GpuX86LinkInput, paged::GpuX86PagedExecutablePlan};
+use super::{
+    GpuX86LinkInput,
+    dynamic::{X86DynamicImage, X86DynamicRows},
+    paged::GpuX86PagedExecutablePlan,
+};
 use crate::{
     codegen::x86::{GpuX86Linker, support::u32_words_bytes},
     gpu::{
@@ -45,40 +49,46 @@ pub(crate) struct X86ExecutablePageGraph {
     rodata_capacity: usize,
     relocation_capacity: usize,
     batch_capacity: usize,
+    dynamic_word_capacity: usize,
+    dynamic_string_capacity: usize,
     materialized: MaterializedCompilerGraph,
 }
 
+/// Page capacities a link needs from the retained page graph.
+#[derive(Clone, Copy)]
+struct X86PageGraphNeeds {
+    output: usize,
+    text: usize,
+    rodata: usize,
+    relocations: usize,
+    batches: usize,
+    dynamic_words: usize,
+    dynamic_strings: usize,
+}
+
 impl X86ExecutablePageGraph {
-    fn covers(
-        &self,
-        output: usize,
-        text: usize,
-        rodata: usize,
-        relocations: usize,
-        batches: usize,
-    ) -> bool {
-        self.output_capacity >= output
-            && self.text_capacity >= text
-            && self.rodata_capacity >= rodata
-            && self.relocation_capacity >= relocations
-            && self.batch_capacity >= batches
+    fn covers(&self, needs: X86PageGraphNeeds) -> bool {
+        self.output_capacity >= needs.output
+            && self.text_capacity >= needs.text
+            && self.rodata_capacity >= needs.rodata
+            && self.relocation_capacity >= needs.relocations
+            && self.batch_capacity >= needs.batches
+            && self.dynamic_word_capacity >= needs.dynamic_words
+            && self.dynamic_string_capacity >= needs.dynamic_strings
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn new(
         generator: &GpuX86Linker,
         device: &wgpu::Device,
-        output_capacity: usize,
-        text_capacity: usize,
-        rodata_capacity: usize,
-        relocation_capacity: usize,
-        batch_capacity: usize,
+        needs: X86PageGraphNeeds,
     ) -> Result<Self> {
-        let output_capacity = output_capacity.max(4).next_multiple_of(4);
-        let text_capacity = text_capacity.max(4).next_multiple_of(4);
-        let rodata_capacity = rodata_capacity.max(4).next_multiple_of(4);
-        let relocation_capacity = relocation_capacity.max(1);
-        let batch_capacity = batch_capacity.max(1);
+        let output_capacity = needs.output.max(4).next_multiple_of(4);
+        let text_capacity = needs.text.max(4).next_multiple_of(4);
+        let rodata_capacity = needs.rodata.max(4).next_multiple_of(4);
+        let relocation_capacity = needs.relocations.max(1);
+        let batch_capacity = needs.batches.max(1);
+        let dynamic_word_capacity = needs.dynamic_words.max(4).next_multiple_of(4);
+        let dynamic_string_capacity = needs.dynamic_strings.max(4).next_multiple_of(4);
         let mut graph = CompilerGraphBuilder::new();
         let mut add = |name: &'static str, class: ResourceClass, bytes: usize| -> Result<()> {
             graph
@@ -112,6 +122,8 @@ impl X86ExecutablePageGraph {
             relocation_capacity * RELOCATION_RECORD_BYTES_PER_COLUMN,
         )?;
         add("link_relocation_status", ResourceClass::External, 16)?;
+        add("dynamic_words", ResourceClass::External, dynamic_word_capacity)?;
+        add("dynamic_strings", ResourceClass::External, dynamic_string_capacity)?;
         add("out_words", ResourceClass::Workspace, output_capacity)?;
         add("status", ResourceClass::Workspace, 16)?;
         add(
@@ -150,6 +162,10 @@ impl X86ExecutablePageGraph {
             (
                 "codegen.x86.link.page.copy_sections",
                 &generator.link_copy_sections_pass,
+            ),
+            (
+                "codegen.x86.link.page.dynamic_write",
+                &generator.elf_dynamic_write_pass,
             ),
             (
                 "codegen.x86.link.page.relocate",
@@ -211,6 +227,8 @@ impl X86ExecutablePageGraph {
             rodata_capacity,
             relocation_capacity,
             batch_capacity,
+            dynamic_word_capacity,
+            dynamic_string_capacity,
             materialized,
         })
     }
@@ -233,7 +251,7 @@ impl GpuX86Linker {
         input: &GpuX86LinkInput,
     ) -> Result<Vec<u8>> {
         let mut bytes = Vec::new();
-        self.link_executable_pages(device, queue, input, |output_base, page| {
+        self.link_executable_pages(device, queue, input, None, |output_base, page| {
             if output_base as usize != bytes.len() {
                 bail!(
                     "x86 output pages are not dense: next base {output_base}, current length {}",
@@ -253,11 +271,46 @@ impl GpuX86Linker {
         input: &GpuX86LinkInput,
         output: &mut W,
     ) -> Result<usize> {
-        self.link_executable_pages(device, queue, input, |output_base, page| {
+        self.link_executable_pages(device, queue, input, None, |output_base, page| {
             output.seek(SeekFrom::Start(output_base as u64))?;
             output.write_all(page)?;
             Ok(())
         })
+    }
+
+    /// Links a native C program into a dynamically linked executable whose
+    /// dynamic sections, symbol tables and headers the GPU writes as well.
+    pub(crate) fn link_dynamic_executable_to_writer<W: Write + Seek>(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input: &GpuX86LinkInput,
+        image: &X86DynamicImage,
+        output: &mut W,
+    ) -> Result<usize> {
+        self.link_executable_pages(device, queue, input, Some(image), |output_base, page| {
+            output.seek(SeekFrom::Start(output_base as u64))?;
+            output.write_all(page)?;
+            Ok(())
+        })
+    }
+
+    pub(crate) fn link_dynamic_executable(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        input: &GpuX86LinkInput,
+        image: &X86DynamicImage,
+    ) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.link_executable_pages(device, queue, input, Some(image), |output_base, page| {
+            if output_base as usize != bytes.len() {
+                bail!("x86 output pages are not dense");
+            }
+            bytes.extend_from_slice(page);
+            Ok(())
+        })?;
+        Ok(bytes)
     }
 
     fn link_executable_pages(
@@ -265,15 +318,24 @@ impl GpuX86Linker {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         input: &GpuX86LinkInput,
+        dynamic: Option<&X86DynamicImage>,
         consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
         let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.symbols");
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
         drop(span);
         let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.plan");
+        let dynamic_len = match dynamic {
+            Some(image) => {
+                let layout = image.layout(input)?;
+                Some(layout.total as usize)
+            }
+            None => None,
+        };
         let output_plan = GpuX86PagedExecutablePlan::new(
             input,
             device.limits().max_storage_buffer_binding_size as u64,
+            dynamic_len,
         )
         .map_err(anyhow::Error::msg)?;
         drop(span);
@@ -286,6 +348,9 @@ impl GpuX86Linker {
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
         drop(span);
+        let dynamic_rows = dynamic
+            .map(|image| image.rows(input, &object_layout.object_bases))
+            .transpose()?;
         let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.pages");
         let result = self.emit_executable_pages(
             device,
@@ -293,6 +358,7 @@ impl GpuX86Linker {
             input,
             &resolved_relocations,
             &output_plan,
+            dynamic_rows.as_ref(),
             X86ResolvedLinkBuffers {
                 object_bases: &object_layout.object_bases,
                 elf_layout: &object_layout.elf_layout,
@@ -311,12 +377,29 @@ impl GpuX86Linker {
         input: &GpuX86LinkInput,
         relocations: &[super::GpuX86LinkRelocationRecord],
         plan: &GpuX86PagedExecutablePlan,
+        dynamic: Option<&X86DynamicRows>,
         resolved: X86ResolvedLinkBuffers<'_>,
         mut consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
         let output_capacity = plan.output_len.div_ceil(4) * 4;
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
+        // The section link ends after .rodata; a dynamic link writes the rest.
+        let section_end = 0x78 + input.text_len() + input.rodata_len();
+        let dynamic_extra_len = u32::try_from(plan.output_len - section_end)
+            .map_err(|_| anyhow::anyhow!("x86 dynamic tail exceeds u32"))?;
+        let dynamic_inputs = dynamic.map(|rows| {
+            (
+                self.reusable_input_u32(device, queue, "codegen.x86.link.dynamic.words", &rows.words),
+                self.reusable_input_bytes_with_capacity(
+                    device,
+                    queue,
+                    "codegen.x86.link.dynamic.strings",
+                    &rows.strings,
+                    rows.strings.len().next_multiple_of(PAGE_BYTE_CAPACITY_GRANULE),
+                ),
+            )
+        });
         let mut emitted_len = 0usize;
         let splices =
             super::splice::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
@@ -354,7 +437,7 @@ impl GpuX86Linker {
                 device,
                 queue,
                 "codegen.x86.link.page.elf_params",
-                &[page.output_base, page.output_len, output_capacity_u32, 0],
+                &[page.output_base, page.output_len, output_capacity_u32, dynamic_extra_len],
             );
             let copy_params = self.reusable_uniform_u32(
                 device,
@@ -423,35 +506,30 @@ impl GpuX86Linker {
                 .executable_page_graph
                 .lock()
                 .expect("x86 executable-page graph cache poisoned");
-            if !graph_guard.as_ref().is_some_and(|graph| {
-                graph.covers(
-                    page_capacity,
-                    text_bytes.len(),
-                    rodata_bytes.len(),
-                    max_relocations_per_batch,
-                    relocation_batch_count,
-                )
-            }) {
+            let needs = X86PageGraphNeeds {
+                output: page_capacity,
+                text: text_bytes.len(),
+                rodata: rodata_bytes.len(),
+                relocations: max_relocations_per_batch,
+                batches: relocation_batch_count,
+                dynamic_words: dynamic.map_or(0, |rows| rows.words.len() * 4),
+                dynamic_strings: dynamic.map_or(0, |rows| rows.strings.len()),
+            };
+            if !graph_guard.as_ref().is_some_and(|graph| graph.covers(needs)) {
+                let retained = |bytes| {
+                    retained_page_capacity(bytes, PAGE_BYTE_CAPACITY_GRANULE, binding_limit)
+                };
                 *graph_guard = Some(X86ExecutablePageGraph::new(
                     self,
                     device,
-                    retained_page_capacity(
-                        page_capacity,
-                        PAGE_BYTE_CAPACITY_GRANULE,
-                        binding_limit,
-                    ),
-                    retained_page_capacity(
-                        text_bytes.len(),
-                        PAGE_BYTE_CAPACITY_GRANULE,
-                        binding_limit,
-                    ),
-                    retained_page_capacity(
-                        rodata_bytes.len(),
-                        PAGE_BYTE_CAPACITY_GRANULE,
-                        binding_limit,
-                    ),
-                    max_relocations_per_batch,
-                    relocation_batch_count,
+                    X86PageGraphNeeds {
+                        output: retained(needs.output),
+                        text: retained(needs.text),
+                        rodata: retained(needs.rodata),
+                        dynamic_words: retained(needs.dynamic_words),
+                        dynamic_strings: retained(needs.dynamic_strings),
+                        ..needs
+                    },
                 )?);
             }
             let graph_state = graph_guard
@@ -478,6 +556,25 @@ impl GpuX86Linker {
             resources.buffer("link_relocation_c", &relocation_c);
             resources.buffer("link_relocation_status", &relocation_status);
             resources.buffer("page_readback", &readback);
+            let empty_dynamic;
+            let (dynamic_words, dynamic_strings) = match &dynamic_inputs {
+                Some((words, strings)) => (words, strings),
+                None => {
+                    empty_dynamic = (
+                        self.reusable_input_u32(device, queue, "codegen.x86.link.dynamic.words", &[]),
+                        self.reusable_input_bytes_with_capacity(
+                            device,
+                            queue,
+                            "codegen.x86.link.dynamic.strings",
+                            &[],
+                            4,
+                        ),
+                    );
+                    (&empty_dynamic.0, &empty_dynamic.1)
+                }
+            };
+            resources.buffer("dynamic_words", dynamic_words);
+            resources.buffer("dynamic_strings", dynamic_strings);
 
             let output_clear = ClearBufferOperation::entire(
                 graph,
@@ -513,6 +610,33 @@ impl GpuX86Linker {
                 u32::try_from(graph_state.text_capacity.max(graph_state.rodata_capacity))
                     .map_err(|_| anyhow::anyhow!("x86 section input capacity exceeds u32"))?,
             )?;
+            let dynamic_write = match dynamic {
+                Some(rows) => {
+                    let mut params = rows.params;
+                    params[0] = page.output_base;
+                    params[1] = page.output_len;
+                    let mut dynamic_resources = resources.clone();
+                    let params = self.reusable_uniform_u32(
+                        device,
+                        queue,
+                        "codegen.x86.link.page.dynamic_params",
+                        &params,
+                    );
+                    dynamic_resources.buffer("gDyn", &params);
+                    Some((
+                        ComputeOperation::direct(
+                            device,
+                            graph,
+                            &dynamic_resources,
+                            "codegen.x86.link.page.dynamic_write",
+                            &self.elf_dynamic_write_pass,
+                            rows.element_count,
+                        )?,
+                        rows.element_count,
+                    ))
+                }
+                None => None,
+            };
             let mut relocation_resources = resources.clone();
             relocation_resources.buffer("gReloc", &relocation_params);
             let relocate = ComputeOperation::direct(
@@ -565,6 +689,9 @@ impl GpuX86Linker {
             elf_write.record_elements(&mut encoder, (page_capacity / 4) as u32)?;
             let copy_count = page.text_input.len().max(page.rodata_input.len()).max(1) as u32;
             copy_sections.record_elements(&mut encoder, copy_count)?;
+            if let Some((dynamic_write, elements)) = &dynamic_write {
+                dynamic_write.record_elements(&mut encoder, *elements)?;
+            }
             crate::gpu::passes_core::submit_with_progress(
                 queue,
                 "codegen.x86.link.page.initialize",

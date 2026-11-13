@@ -15,7 +15,13 @@ use crate::gpu::{
 };
 
 mod link;
-pub(crate) use link::{GpuX86LinkInput, GpuX86MissingSymbolDefinition, X86_LINK_NO_ENTRY_OBJECT};
+pub(crate) use link::{
+    GpuX86LinkInput,
+    GpuX86MissingSymbolDefinition,
+    X86_LINK_NO_ENTRY_OBJECT,
+    X86DynamicImage,
+    X86DynamicMain,
+};
 
 mod object;
 mod file_object;
@@ -52,6 +58,7 @@ pub struct GpuX86Linker {
     link_symbol_partition_resolve_pass: PassData,
     link_relocate_pass: PassData,
     elf_write_pass: PassData,
+    elf_dynamic_write_pass: PassData,
     job_buffers: CapacityBufferCache,
     executable_page_graph: Mutex<Option<link::X86ExecutablePageGraph>>,
     layout_chunk_graph: Mutex<Option<link::X86LayoutChunkGraph>>,
@@ -127,6 +134,11 @@ impl GpuX86Linker {
                 "elf_write",
                 "codegen/x86/elf/write.spv",
                 "codegen/x86/elf/write.reflect.json"
+            ),
+            elf_dynamic_write_pass: load_x86_pass!(
+                "elf_dynamic_write",
+                "codegen/x86/elf/dynamic_write.spv",
+                "codegen/x86/elf/dynamic_write.reflect.json"
             ),
             job_buffers: CapacityBufferCache::default(),
             executable_page_graph: Mutex::new(None),

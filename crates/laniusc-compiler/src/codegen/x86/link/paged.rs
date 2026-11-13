@@ -23,7 +23,13 @@ pub(super) struct GpuX86PagedExecutablePlan {
 }
 
 impl GpuX86PagedExecutablePlan {
-    pub(super) fn new(input: &GpuX86LinkInput, max_page_bytes: u64) -> Result<Self, String> {
+    /// `dynamic_len` is the whole file length of a dynamic link, whose
+    /// dynamic sections follow .rodata (`super::dynamic`).
+    pub(super) fn new(
+        input: &GpuX86LinkInput,
+        max_page_bytes: u64,
+        dynamic_len: Option<usize>,
+    ) -> Result<Self, String> {
         let page_capacity =
             usize::try_from(max_page_bytes.min(u32::MAX as u64)).unwrap_or(usize::MAX) & !3usize;
         if page_capacity < 4 {
@@ -35,14 +41,21 @@ impl GpuX86PagedExecutablePlan {
         let rodata_start = text_start
             .checked_add(input.text_len())
             .ok_or_else(|| "x86 text output end overflows".to_string())?;
-        let output_len = rodata_start
+        let section_end = rodata_start
             .checked_add(input.rodata_len())
             .ok_or_else(|| "x86 output length overflows".to_string())?;
+        let output_len = match dynamic_len {
+            Some(len) if len < section_end => {
+                return Err(format!("x86 dynamic output {len} ends before its sections {section_end}"));
+            }
+            Some(len) => len,
+            None => section_end,
+        };
         u32::try_from(output_len)
             .map_err(|_| format!("x86 output length {output_len} exceeds the current u32 model"))?;
 
         let text_output = text_start..rodata_start;
-        let rodata_output = rodata_start..output_len;
+        let rodata_output = rodata_start..section_end;
         let mut pages = Vec::with_capacity(output_len.div_ceil(page_capacity));
         for output_start in (0..output_len).step_by(page_capacity) {
             let output_end = output_len.min(output_start + page_capacity);
@@ -162,7 +175,7 @@ mod tests {
     #[test]
     fn page_geometry_covers_output_and_reads_only_intersecting_sections() {
         let input = input(None);
-        let plan = GpuX86PagedExecutablePlan::new(&input, 32).expect("x86 page plan");
+        let plan = GpuX86PagedExecutablePlan::new(&input, 32, None).expect("x86 page plan");
         assert_eq!(plan.output_len, 0x78 + 40 + 12);
         assert_eq!(
             plan.pages.iter().map(|page| page.output_len).sum::<u32>(),
@@ -188,7 +201,7 @@ mod tests {
     fn relocation_crossing_page_boundary_is_assigned_to_both_pages() {
         // Text starts at 120; site offset 6 starts at 126 and crosses 128.
         let input = input(Some(6));
-        let plan = GpuX86PagedExecutablePlan::new(&input, 32).expect("x86 page plan");
+        let plan = GpuX86PagedExecutablePlan::new(&input, 32, None).expect("x86 page plan");
         assert_eq!(
             plan.pages
                 .iter()

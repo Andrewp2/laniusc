@@ -10,7 +10,9 @@ struct Params
     uint output_page_base;
     uint output_page_len;
     uint out_capacity;
-    uint reserved;
+    // Bytes a dynamic link adds after .rodata (dynamic_write.slang), or 0.
+    // That pass also writes the ELF header, so this one leaves it zero.
+    uint dynamic_extra_len;
 };
 
 ConstantBuffer<Params> gParams;
@@ -98,6 +100,8 @@ uint program_header_byte(uint pos, uint file_len)
 
 uint file_byte(uint pos, uint file_len)
 {
+    if (gParams.dynamic_extra_len != 0u)
+        return 0u;
     if (pos < 64u)
         return elf_header_byte(pos);
     if (pos < x86_elf_layout[LAYOUT_TEXT_OFFSET])
@@ -120,12 +124,14 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint file_len = x86_elf_layout[LAYOUT_FILE_LEN];
     bool rodata_ok = rodata_offset == text_offset + text_len &&
                      file_len == rodata_offset + rodata_len;
+    uint output_len = file_len + gParams.dynamic_extra_len;
     bool ok = layout_ok && layout_status[3u] == file_len && rodata_ok &&
-              text_len > 0u && file_len <= gParams.out_capacity;
+              text_len > 0u && output_len >= file_len &&
+              output_len <= gParams.out_capacity;
 
     if (tid.x == 0u && tid.y == 0u)
     {
-        status[0u] = ok ? file_len : 0u;
+        status[0u] = ok ? output_len : 0u;
         status[1u] = ok ? X86_OK_PACKED : 0u;
         status[2u] = ok ? 0u : error_code;
         status[3u] = ok ? 0xffffffffu : error_detail;

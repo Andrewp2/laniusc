@@ -4,6 +4,8 @@
 //! arrays into upload buffers. Final section placement, symbol resolution,
 //! byte movement, and relocation application remain GPU work.
 
+mod dynamic;
+pub(crate) use dynamic::{X86DynamicImage, X86DynamicMain};
 mod executable;
 pub(super) use executable::X86ExecutablePageGraph;
 mod layout_chunks;
@@ -33,12 +35,14 @@ use super::support::{
 };
 use super::{
     GPU_X86_CRT_MAIN_BRIDGE_BYTES,
+    GpuX86FileObject,
     GpuX86LinkObjectMetadata,
     GpuX86Linker,
     GpuX86ObjectBodyRange,
     GpuX86ObjectSection,
     GpuX86RelocatableObject,
     GpuX86RelocatableObjectLayout,
+    GpuX86RelocationKind,
     GpuX86RelocationTargetKind,
 };
 use crate::codegen::{GpuLinkByteSource, retained_column_with_capacity};
@@ -321,6 +325,102 @@ impl GpuX86LinkInput {
         Ok(input)
     }
 
+    /// The native C profile's dynamic link: Lanius objects read from their
+    /// private payload files, then the import object (`dynamic.rs`), whose
+    /// stubs define each foreign identity in `imports` (identity, import
+    /// index). A C entry loads the process vector that the CRT bridge maps,
+    /// so the relocations only a raw executable applies are left out.
+    pub(crate) fn for_native_dynamic(
+        source_objects: &[GpuX86FileObject],
+        imports: &[([u32; 3], u32)],
+        import_count: usize,
+    ) -> Result<Self, String> {
+        if source_objects.is_empty() {
+            return Err("x86 link requires at least one object".to_string());
+        }
+        let plans = shared_runtime_text_plans(
+            &source_objects
+                .iter()
+                .map(|object| {
+                    (object.layout.entry_offset, object.layout.body, object.layout.text_byte_len)
+                })
+                .collect::<Vec<_>>(),
+            |index, range| {
+                let mut bytes = Vec::with_capacity(range.len());
+                source_objects[index].copy_text_range_to(range, &mut bytes)?;
+                Ok(std::borrow::Cow::Owned(bytes))
+            },
+        )?;
+        let import_text = X86DynamicImage::import_text_len(import_count).map_err(|error| error.to_string())?;
+        let text_len = plans.iter().map(|plan| plan.copy.len()).sum::<usize>() + import_text as usize;
+        let rodata_len = source_objects
+            .iter()
+            .map(|object| object.layout.rodata_byte_len as usize)
+            .sum::<usize>();
+        let mut text = retained_column_with_capacity(text_len);
+        let mut rodata = retained_column_with_capacity(rodata_len);
+        let mut input = Self::empty(
+            GpuLinkByteSource::resident("x86 link text bytes", Vec::new()),
+            GpuLinkByteSource::resident("x86 link rodata bytes", Vec::new()),
+        );
+        input.objects.reserve(source_objects.len() + 1);
+        for (object_index, object) in source_objects.iter().enumerate() {
+            let plan = &plans[object_index];
+            let relocations = object
+                .relocations
+                .iter()
+                .filter(|relocation| relocation.kind != GpuX86RelocationKind::RawRel32)
+                .copied()
+                .collect::<Vec<_>>();
+            input.append_object_columns_at(
+                (text.len(), rodata.len()),
+                object_index,
+                object.layout.entry_offset,
+                plan,
+                object.layout.rodata_byte_len,
+                &relocations,
+                &object.symbols,
+                &object.identity_bytes,
+            )?;
+            object.copy_text_range_to(plan.copy.clone(), &mut text)?;
+            object.copy_rodata_to(&mut rodata)?;
+        }
+        let import_object = checked_u32_count("object", source_objects.len())?;
+        let symbol_start = checked_u32_count("flat symbol", input.symbols.len())?;
+        for &(identity, import) in imports {
+            if import as usize >= import_count {
+                return Err(format!("x86 import {import} exceeds {import_count} imports"));
+            }
+            input.symbols.push(GpuX86LinkSymbolRecord {
+                object_index: import_object,
+                identity,
+                section: GpuX86ObjectSection::Text as u32,
+                offset: dynamic::X86_DYNAMIC_START_BYTES + import * dynamic::X86_DYNAMIC_STUB_BYTES,
+                size: dynamic::X86_DYNAMIC_STUB_BYTES,
+                flags: 0,
+            });
+        }
+        input.objects.push(GpuX86LinkObjectRecord {
+            text_input_start: checked_u32_count("flat text byte", text.len())?,
+            text_len: import_text,
+            rodata_input_start: checked_u32_count("flat rodata byte", rodata.len())?,
+            rodata_len: 0,
+            relocation_start: checked_u32_count("flat relocation", input.relocations.len())?,
+            relocation_count: 0,
+            symbol_start,
+            symbol_count: checked_u32_count("import symbol", imports.len())?,
+            entry_offset: u32::MAX,
+        });
+        text.resize(text.len() + import_text as usize, 0);
+        checked_u32_count("flat text byte", text.len())?;
+        checked_u32_count("flat rodata byte", rodata.len())?;
+        checked_u32_count("flat symbol", input.symbols.len())?;
+        input.text = GpuLinkByteSource::resident("x86 link text bytes", text);
+        input.rodata = GpuLinkByteSource::resident("x86 link rodata bytes", rodata);
+        input.finish_validation()?;
+        Ok(input)
+    }
+
     fn empty(text: GpuLinkByteSource, rodata: GpuLinkByteSource) -> Self {
         Self {
             objects: Vec::new(),
@@ -360,9 +460,35 @@ impl GpuX86LinkInput {
         symbols: &[super::GpuX86ObjectSymbolRecord],
         identity_bytes: &[u8],
     ) -> Result<(), String> {
+        self.append_object_columns_at(
+            (self.text_len(), self.rodata_len()),
+            object_index,
+            entry_offset,
+            plan,
+            rodata_len,
+            relocations,
+            symbols,
+            identity_bytes,
+        )
+    }
+
+    /// As `append_object_columns`, for an object whose sections start at
+    /// `flat_starts` (text, rodata) in columns the caller fills.
+    #[allow(clippy::too_many_arguments)]
+    fn append_object_columns_at(
+        &mut self,
+        flat_starts: (usize, usize),
+        object_index: usize,
+        entry_offset: Option<u32>,
+        plan: &X86LinkTextPlan,
+        rodata_len: u32,
+        relocations: &[super::GpuX86RelocationRecord],
+        symbols: &[super::GpuX86ObjectSymbolRecord],
+        identity_bytes: &[u8],
+    ) -> Result<(), String> {
         let object_index = checked_u32_count("object", object_index)?;
-        let text_input_start = checked_u32_count("flat text byte", self.text_len())?;
-        let rodata_input_start = checked_u32_count("flat rodata byte", self.rodata_len())?;
+        let text_input_start = checked_u32_count("flat text byte", flat_starts.0)?;
+        let rodata_input_start = checked_u32_count("flat rodata byte", flat_starts.1)?;
         let relocation_start = checked_u32_count("flat relocation", self.relocations.len())?;
         let symbol_start = checked_u32_count("flat symbol", self.symbols.len())?;
         if let Some(entry_offset) = entry_offset {
