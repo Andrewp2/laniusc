@@ -990,43 +990,27 @@ impl ReplayRun {
                 return Ok(false);
             }
         }
-        if self.copies && self.batch.impl_bindings().is_empty() && incoming_bindings.is_empty() {
-            // Keep the existing no-binding copy path linear: try_push itself
-            // rolls back capacity failures without cloning the growing run.
-            if !self.batch.try_push(entry)? {
-                return Ok(false);
-            }
-        } else {
-            // A staged aggregate preflights entry AND binding-only pools.
-            // Capacity closes this run; invalid environments remain errors.
-            let mut batch = self.batch.clone();
-            let added = batch.entries().len();
-            if !batch.try_push(entry)? {
-                return Ok(false);
-            }
-            let mut bindings = self.batch.impl_bindings().to_vec();
-            bindings.extend(incoming_bindings.iter().cloned().map(|mut binding| {
-                binding.instance = added as u32;
-                binding
-            }));
-            if !batch.try_set_impl_bindings(bindings)? {
-                return Ok(false);
-            }
-            if !self.copies {
-                for (index, other) in self.scopes.iter().enumerate() {
-                    for (owner, parameters) in &scope.owners {
-                        if !other.owners.iter().any(|(shared, _)| shared == owner) {
-                            continue;
-                        }
-                        if !parameters.iter().all(|&(slot, domain)| {
-                            batch.binds_identically(index, added, slot, domain)
-                        }) {
-                            return Ok(false);
-                        }
-                    }
-                }
-            }
-            self.batch = batch;
+        // The batch adds the entry and its bindings in place and undoes both
+        // when a pool is full, an environment is invalid or an owner shared
+        // with another scope binds differently.
+        let (scopes, copies) = (&self.scopes, self.copies);
+        let shares_owners_identically = |batch: &gpu_type_checker::CheckedBodySpecializationBatch,
+                                         added: usize| {
+            copies
+                || scopes.iter().enumerate().all(|(index, other)| {
+                    scope.owners.iter().all(|(owner, parameters)| {
+                        !other.owners.iter().any(|(shared, _)| shared == owner)
+                            || parameters.iter().all(|&(slot, domain)| {
+                                batch.binds_identically(index, added, slot, domain)
+                            })
+                    })
+                })
+        };
+        if !self
+            .batch
+            .try_push_bound(entry, incoming_bindings, shares_owners_identically)?
+        {
+            return Ok(false);
         }
         self.keys.push(key.to_vec());
         self.scopes.push(scope.clone());

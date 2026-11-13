@@ -471,9 +471,9 @@ pub(crate) struct CheckedBodySpecializationBatch {
     /// Per binding: its type graph's local ordinal -> shared ordinal. Direct
     /// literal constants have shared roots but carry no native width witness.
     impl_shared_by_local: Vec<Vec<u32>>,
-    /// Sparse V2 sections, relative to BODY_IMPL_BINDING_ROW. Built only after
-    /// every environment, graph and pool bound has been checked.
-    impl_binding_uploads: Vec<(usize, Vec<u32>)>,
+    /// The used prefixes of the V2 pools, one binding at a time in binding
+    /// order.
+    impl_pools: ImplBindingPools,
     /// The file id of the first continuation file, and per continuation the
     /// template file it continues (set_continuation_files).
     continuation_first_file: u32,
@@ -498,7 +498,7 @@ impl CheckedBodySpecializationBatch {
             shared_by_local: Vec::new(),
             impl_bindings: Vec::new(),
             impl_shared_by_local: Vec::new(),
-            impl_binding_uploads: empty_impl_binding_sections(),
+            impl_pools: ImplBindingPools::default(),
             continuation_first_file: 0,
             continued_files: Vec::new(),
             declarations_only: None,
@@ -579,7 +579,25 @@ impl CheckedBodySpecializationBatch {
     fn install_impl_bindings(&mut self, mut bindings: Vec<BodyImplBinding>) -> Result<()> {
         bindings.sort_unstable_by_key(BodyImplBinding::key);
         bindings.dedup();
-        for binding in &bindings {
+        // Check every environment before an aggregate capacity outcome:
+        // a later symbolic or noncontiguous slot is an invalid request,
+        // never evidence that the planner should split otherwise valid work.
+        self.validate_impl_bindings(&bindings)?;
+        ensure!(bindings.len() <= MAX_BODY_IMPL_BINDINGS, BodyReplayCapacityError {
+            pool: "implementation bindings", required: bindings.len(), limit: MAX_BODY_IMPL_BINDINGS,
+        });
+        let mut staged = self.clone();
+        staged.rebuild_entry_graph()?;
+        staged.append_impl_bindings(bindings, &mut Vec::new())?;
+        *self = staged;
+        Ok(())
+    }
+
+    /// Each binding names an entry of this batch and one of its type slots,
+    /// with a closed environment of the declared size. `bindings` are sorted
+    /// by key; one key has one contract.
+    fn validate_impl_bindings(&self, bindings: &[BodyImplBinding]) -> Result<()> {
+        for binding in bindings {
             ensure!((binding.instance as usize) < self.entries.len()
                 && (binding.slot as usize) < self.entries[binding.instance as usize].arguments.len()
                 && binding.required_symbol != u32::MAX
@@ -592,29 +610,31 @@ impl CheckedBodySpecializationBatch {
                 && (binding.trait_unit == [u32::MAX; 2]
                     || binding.trait_unit.iter().all(|&word| word != u32::MAX)),
                 "invalid implementation binding {binding:?}");
-            // Check every environment before an aggregate capacity outcome:
-            // a later symbolic or noncontiguous slot is an invalid request,
-            // never evidence that the planner should split otherwise valid work.
             if !binding.environment.is_empty() {
                 binding.environment.specialization().graph()?;
             }
         }
         ensure!(bindings.windows(2).all(|pair| pair[0].key() != pair[1].key()),
             "one bound member of an instance has conflicting implementation contracts");
-        ensure!(bindings.len() <= MAX_BODY_IMPL_BINDINGS, BodyReplayCapacityError {
-            pool: "implementation bindings", required: bindings.len(), limit: MAX_BODY_IMPL_BINDINGS,
-        });
-        let mut staged = self.clone();
-        staged.rebuild_entry_graph()?;
+        Ok(())
+    }
+
+    /// Intern the environments of validated `bindings`, which sort after
+    /// every installed binding, then append their pool rows. A failure leaves
+    /// graph nodes and pool rows behind for the caller to discard; `witnesses`
+    /// logs each width witness an interned node replaced.
+    fn append_impl_bindings(&mut self, bindings: Vec<BodyImplBinding>,
+        witnesses: &mut Vec<(usize, u32)>) -> Result<()> {
         let mut roots = Vec::with_capacity(bindings.len());
         for binding in &bindings {
-            let (types, constants, shared) = staged.intern_impl_environment(&binding.environment)?;
+            let (types, constants, shared) = self.intern_impl_environment(&binding.environment, witnesses)?;
             roots.push((types, constants));
-            staged.impl_shared_by_local.push(shared);
+            self.impl_shared_by_local.push(shared);
         }
-        staged.impl_binding_uploads = impl_binding_sections(&bindings, &roots)?;
-        staged.impl_bindings = bindings;
-        *self = staged;
+        for (binding, (types, constants)) in bindings.iter().zip(&roots) {
+            self.impl_pools.push(binding, types, constants)?;
+        }
+        self.impl_bindings.extend(bindings);
         Ok(())
     }
 
@@ -625,7 +645,7 @@ impl CheckedBodySpecializationBatch {
     /// Used V2 table prefixes as (relative uint4 row, words). The two header
     /// rows are always written; unused fixed-capacity pools are never uploaded.
     pub(crate) fn impl_binding_sections(&self) -> Vec<(usize, Vec<u32>)> {
-        self.impl_binding_uploads.clone()
+        self.impl_pools.sections()
     }
 
     /// Canonical environment semantics and retained input layout witnesses in
@@ -646,21 +666,20 @@ impl CheckedBodySpecializationBatch {
         self.shared_by_local.clear();
         self.impl_bindings.clear();
         self.impl_shared_by_local.clear();
-        self.impl_binding_uploads = empty_impl_binding_sections();
+        self.impl_pools = ImplBindingPools::default();
         for entry in entries {
             ensure!(self.try_push(entry)?, "body entry graph exceeds the packet capacity");
         }
         Ok(())
     }
 
-    fn intern_impl_environment(&mut self, environment: &BodyImplEnvironment)
-        -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    fn intern_impl_environment(&mut self, environment: &BodyImplEnvironment,
+        witnesses: &mut Vec<(usize, u32)>) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
         if environment.is_empty() {
             return Ok((Vec::new(), Vec::new(), Vec::new()));
         }
         let (nodes, edges, roots) = environment.specialization().graph()?;
         let mut shared = Vec::with_capacity(nodes.len());
-        let mut witnesses = Vec::new();
         for mut node in nodes {
             let mut children = Vec::new();
             match node[0] {
@@ -669,12 +688,12 @@ impl CheckedBodySpecializationBatch {
                     .iter().map(|&child| shared[child as usize])),
                 _ => {}
             }
-            shared.push(self.intern_shared(node, &children, &mut witnesses)?);
+            shared.push(self.intern_shared(node, &children, witnesses)?);
         }
         let mut constants = Vec::with_capacity(environment.constants.len());
         for argument in &environment.constants {
             let [scalar, lo, hi] = argument.value.literal().expect("graph validated literal constants").words();
-            constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut witnesses)?);
+            constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], witnesses)?);
         }
         Ok((roots.iter().map(|&root| shared[root as usize]).collect(), constants, shared))
     }
@@ -812,7 +831,25 @@ impl CheckedBodySpecializationBatch {
     /// leaves the batch unchanged when it does not fit; an entry that is
     /// invalid on its own, or that belongs to another unit, is an error.
     pub(crate) fn try_push(&mut self, entry: CheckedBodySpecialization) -> Result<bool> {
-        let (local_nodes, local_edges, local_roots) = entry.graph()?;
+        self.try_push_bound(entry, &[], |_, _| true)
+    }
+
+    /// Add one entry and the impl bindings of its instance (their `instance`
+    /// is replaced by the entry's index) if the shared graph and the V2
+    /// pools have room for both and `accept` takes the batch with the entry
+    /// at the index it is given. `false` means only that the aggregate does
+    /// not fit or was refused; an invalid entry or environment is an error.
+    /// The batch is unchanged unless the result is `true`.
+    ///
+    /// The cost is that of the entry and its bindings, not of the batch: a
+    /// planner adds thousands of bodies to one run this way.
+    pub(crate) fn try_push_bound(
+        &mut self,
+        entry: CheckedBodySpecialization,
+        bindings: &[BodyImplBinding],
+        accept: impl FnOnce(&Self, usize) -> bool,
+    ) -> Result<bool> {
+        let graph = entry.graph()?;
         if let Some(first) = self.entries.first() {
             ensure!(first.source_unit == entry.source_unit,
                 "batched body specializations belong to different source units");
@@ -820,54 +857,92 @@ impl CheckedBodySpecializationBatch {
         if self.entries.len() >= MAX_BODY_ENTRIES {
             return Ok(false);
         }
-        // Intern in place and undo on failure: nodes and edges only grow, and
-        // a refined witness is logged with its previous value.
-        let mark = (self.nodes.len(), self.edges.len());
+        // Intern in place and undo on failure: every pool only grows, and a
+        // refined witness is logged with its previous value.
+        let mark = BatchMark {
+            entries: self.entries.len(),
+            nodes: self.nodes.len(),
+            edges: self.edges.len(),
+            bindings: self.impl_bindings.len(),
+            pools: self.impl_pools.mark(),
+        };
         let mut witnesses = Vec::new();
-        let mut shared = Vec::with_capacity(local_nodes.len());
-        let mut constants = Vec::new();
-        let interned = (|| {
-            for node in &local_nodes {
-                let mut copy = *node;
-                let mut children = Vec::new();
-                match node[0] {
-                    2 | 3 | 4 => copy[1] = shared[node[1] as usize],
-                    9 => children.extend(local_edges[node[1] as usize..(node[1] + node[2]) as usize]
-                        .iter().map(|&child| shared[child as usize])),
-                    _ => {}
-                }
-                shared.push(self.intern_shared(copy, &children, &mut witnesses)?);
-            }
-            if !self.entries.is_empty() {
-                for argument in &entry.constants {
-                    let [scalar, lo, hi] = argument.value.literal()
-                        .expect("validated literal constant").words();
-                    constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut witnesses)?);
-                }
-            }
-            Ok::<(), anyhow::Error>(())
-        })();
-        if let Err(error) = interned {
-            for node in &self.nodes[mark.0..] {
-                self.node_index.remove(&node_key(node, &self.edges));
-            }
-            self.nodes.truncate(mark.0);
-            self.edges.truncate(mark.1);
-            // Refinements of nodes this push added left with them.
-            for (index, witness) in witnesses.into_iter().rev().filter(|&(index, _)| index < mark.0) {
-                self.nodes[index][3] = witness;
-            }
-            return if error.downcast_ref::<BodyReplayCapacityError>().is_some() {
-                Ok(false)
-            } else {
-                Err(error)
-            };
+        let added = self.push_bound(entry, graph, bindings, &mut witnesses)
+            .map(|()| accept(self, mark.entries));
+        if matches!(added, Ok(true)) {
+            return Ok(true);
         }
+        for node in &self.nodes[mark.nodes..] {
+            self.node_index.remove(&node_key(node, &self.edges));
+        }
+        self.nodes.truncate(mark.nodes);
+        self.edges.truncate(mark.edges);
+        // Refinements of nodes this push added left with them.
+        for (index, witness) in witnesses.into_iter().rev().filter(|&(index, _)| index < mark.nodes) {
+            self.nodes[index][3] = witness;
+        }
+        self.entries.truncate(mark.entries);
+        self.roots.truncate(mark.entries);
+        self.constant_nodes.truncate(mark.entries);
+        self.shared_by_local.truncate(mark.entries);
+        self.impl_bindings.truncate(mark.bindings);
+        self.impl_shared_by_local.truncate(mark.bindings);
+        self.impl_pools.truncate(mark.pools);
+        match added {
+            Err(error) if error.downcast_ref::<BodyReplayCapacityError>().is_none() => Err(error),
+            _ => Ok(false),
+        }
+    }
+
+    /// `try_push_bound` without the undo: the entry first, then its bindings.
+    fn push_bound(
+        &mut self,
+        entry: CheckedBodySpecialization,
+        (local_nodes, local_edges, local_roots): (Vec<[u32; 8]>, Vec<u32>, Vec<u32>),
+        bindings: &[BodyImplBinding],
+        witnesses: &mut Vec<(usize, u32)>,
+    ) -> Result<()> {
+        let mut shared = Vec::with_capacity(local_nodes.len());
+        for node in &local_nodes {
+            let mut copy = *node;
+            let mut children = Vec::new();
+            match node[0] {
+                2 | 3 | 4 => copy[1] = shared[node[1] as usize],
+                9 => children.extend(local_edges[node[1] as usize..(node[1] + node[2]) as usize]
+                    .iter().map(|&child| shared[child as usize])),
+                _ => {}
+            }
+            shared.push(self.intern_shared(copy, &children, witnesses)?);
+        }
+        let mut constants = Vec::new();
+        if !self.entries.is_empty() {
+            for argument in &entry.constants {
+                let [scalar, lo, hi] = argument.value.literal()
+                    .expect("validated literal constant").words();
+                constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], witnesses)?);
+            }
+        }
+        let added = self.entries.len() as u32;
         self.roots.push(local_roots.iter().map(|&root| shared[root as usize]).collect());
         self.constant_nodes.push(constants);
         self.shared_by_local.push(shared);
         self.entries.push(entry);
-        Ok(true)
+        if bindings.is_empty() {
+            return Ok(());
+        }
+        // Installed bindings name earlier entries, so these sort after them.
+        let mut bindings = bindings.to_vec();
+        for binding in &mut bindings {
+            binding.instance = added;
+        }
+        bindings.sort_unstable_by_key(BodyImplBinding::key);
+        bindings.dedup();
+        self.validate_impl_bindings(&bindings)?;
+        let required = self.impl_bindings.len() + bindings.len();
+        ensure!(required <= MAX_BODY_IMPL_BINDINGS, BodyReplayCapacityError {
+            pool: "implementation bindings", required, limit: MAX_BODY_IMPL_BINDINGS,
+        });
+        self.append_impl_bindings(bindings, witnesses)
     }
 
     /// Intern one node of the shared graph (whose children are already
@@ -999,56 +1074,92 @@ pub(crate) fn empty_impl_binding_sections() -> Vec<(usize, Vec<u32>)> {
     vec![(0, vec![BODY_IMPL_BINDING_MAGIC, BODY_IMPL_BINDING_VERSION, 0, 0, 0, 0, 0, 0])]
 }
 
+/// The sizes of a batch before `try_push_bound` adds to it.
+struct BatchMark {
+    entries: usize,
+    nodes: usize,
+    edges: usize,
+    bindings: usize,
+    pools: [usize; 3],
+}
+
 /// Three used prefixes of fixed pools. Environment identity here is the exact
 /// ordered shared roots, including constant scalar/value identity; shared graph
 /// interning has already reconciled native layout witnesses.
-fn impl_binding_sections(
-    bindings: &[BodyImplBinding],
-    roots: &[(Vec<u32>, Vec<u32>)],
-) -> Result<Vec<(usize, Vec<u32>)>> {
-    ensure!(bindings.len() == roots.len(), "implementation environment count differs from bindings");
-    let mut words = vec![BODY_IMPL_BINDING_MAGIC, BODY_IMPL_BINDING_VERSION,
-        bindings.len() as u32, 0, 0, 0, 0, 0];
-    let mut environments = Vec::new();
-    let mut arguments = Vec::new();
-    let mut environment_index = BTreeMap::new();
-    for (binding, (types, constants)) in bindings.iter().zip(roots) {
+#[derive(Clone, Debug, Default)]
+struct ImplBindingPools {
+    /// 12 words per binding, in binding order.
+    bindings: Vec<u32>,
+    /// 4 words per distinct nonempty environment, in first use order.
+    environments: Vec<u32>,
+    /// 4 words per argument reference of an environment.
+    arguments: Vec<u32>,
+    /// (type roots, constant roots) -> environment row.
+    environment_index: HashMap<(Vec<u32>, Vec<u32>), u32>,
+}
+
+impl ImplBindingPools {
+    /// Append one binding whose environment has these shared roots. A full
+    /// pool is a `BodyReplayCapacityError` and changes nothing.
+    fn push(&mut self, binding: &BodyImplBinding, types: &[u32], constants: &[u32]) -> Result<()> {
         let environment = if types.is_empty() && constants.is_empty() {
             u32::MAX
-        } else if let Some(&index) = environment_index.get(&(types.clone(), constants.clone())) {
+        } else if let Some(&index) = self.environment_index.get(&(types.to_vec(), constants.to_vec())) {
             index
         } else {
-            let index = environments.len() / 4;
+            let index = self.environments.len() / 4;
             ensure!(index < MAX_BODY_IMPL_ENVIRONMENTS, BodyReplayCapacityError {
                 pool: "implementation environments", required: index + 1, limit: MAX_BODY_IMPL_ENVIRONMENTS,
             });
-            let first = arguments.len() / 4;
+            let first = self.arguments.len() / 4;
             ensure!(types.len() + constants.len() <= MAX_BODY_IMPL_ARGUMENTS - first, BodyReplayCapacityError {
                 pool: "implementation argument references", required: first + types.len() + constants.len(), limit: MAX_BODY_IMPL_ARGUMENTS,
             });
-            environments.extend([first as u32, types.len() as u32, constants.len() as u32, 0]);
+            self.environments.extend([first as u32, types.len() as u32, constants.len() as u32, 0]);
             for (domain, domain_roots) in [(0, types), (1, constants)] {
                 for (slot, &root) in domain_roots.iter().enumerate() {
-                    arguments.extend([domain, slot as u32, root, 0]);
+                    self.arguments.extend([domain, slot as u32, root, 0]);
                 }
             }
-            environment_index.insert((types.clone(), constants.clone()), index as u32);
+            self.environment_index.insert((types.to_vec(), constants.to_vec()), index as u32);
             index as u32
         };
-        words.extend([binding.instance, binding.slot, binding.required_symbol, binding.trait_unit[0],
+        self.bindings.extend([binding.instance, binding.slot, binding.required_symbol, binding.trait_unit[0],
             binding.trait_unit[1], binding.target[0], binding.target[1], binding.target[2],
             environment, binding.required_types, binding.required_constants, binding.receiver_mode]);
+        Ok(())
     }
-    words[3] = (environments.len() / 4) as u32;
-    words[4] = (arguments.len() / 4) as u32;
-    let mut sections = vec![(0, words)];
-    if !environments.is_empty() {
-        sections.push((BODY_IMPL_ENVIRONMENT_ROW - BODY_IMPL_BINDING_ROW, environments));
+
+    fn mark(&self) -> [usize; 3] {
+        [self.bindings.len(), self.environments.len(), self.arguments.len()]
     }
-    if !arguments.is_empty() {
-        sections.push((BODY_IMPL_ARGUMENT_ROW - BODY_IMPL_BINDING_ROW, arguments));
+
+    /// Drop every row pushed after `mark`.
+    fn truncate(&mut self, [bindings, environments, arguments]: [usize; 3]) {
+        self.bindings.truncate(bindings);
+        self.arguments.truncate(arguments);
+        if self.environments.len() > environments {
+            self.environments.truncate(environments);
+            self.environment_index.retain(|_, index| (*index as usize) < environments / 4);
+        }
     }
-    Ok(sections)
+
+    /// The header rows, then each nonempty pool, as (relative uint4 row,
+    /// words).
+    fn sections(&self) -> Vec<(usize, Vec<u32>)> {
+        let mut words = vec![BODY_IMPL_BINDING_MAGIC, BODY_IMPL_BINDING_VERSION,
+            (self.bindings.len() / 12) as u32, (self.environments.len() / 4) as u32,
+            (self.arguments.len() / 4) as u32, 0, 0, 0];
+        words.extend_from_slice(&self.bindings);
+        let mut sections = vec![(0, words)];
+        if !self.environments.is_empty() {
+            sections.push((BODY_IMPL_ENVIRONMENT_ROW - BODY_IMPL_BINDING_ROW, self.environments.clone()));
+        }
+        if !self.arguments.is_empty() {
+            sections.push((BODY_IMPL_ARGUMENT_ROW - BODY_IMPL_BINDING_ROW, self.arguments.clone()));
+        }
+        sections
+    }
 }
 
 /// See `CheckedBodySpecializationBatch::continuation_words`: the header
