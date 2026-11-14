@@ -51,6 +51,7 @@ public static const uint IT_COUNT_WORDS = 4u;
 public static const uint IT_FLAG_ROWS = 1u;       // the virtual rows exceed the row table
 public static const uint IT_FLAG_COLLISION = 2u;  // two entries share a key
 public static const uint IT_FLAG_ENTRIES = 4u;    // too many entries to rank
+public static const uint IT_FLAG_CLOSURE = 8u;    // the closure is incomplete (IC_COUNT_FLAGS)
 
 public static const uint IT_ROW_FAILED = 0xffffffffu;
 public static const uint IT_NO_ENTRY = 0xffffffffu;  // it_find_entry: no such entry

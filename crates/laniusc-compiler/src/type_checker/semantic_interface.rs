@@ -673,12 +673,15 @@ impl GpuTypeChecker {
             COUNT_WORDS,
             wgpu::BufferUsages::COPY_DST,
         );
+        // Words 0..3: failure flags and first failing rows (read back).
+        // Word 4: one past the largest module a published declaration or
+        // implementation names, so unnamed modules are published too.
         let status = initialized_u32_buffer(
             &self.semantic_interface_buffers,
             device,
             queue,
             "type_check.interface.status",
-            &[0, u32::MAX, u32::MAX, u32::MAX],
+            &[0, u32::MAX, u32::MAX, u32::MAX, 0],
             wgpu::BufferUsages::STORAGE,
         );
         host_phase.end("semantic_interface.host.name_scans");

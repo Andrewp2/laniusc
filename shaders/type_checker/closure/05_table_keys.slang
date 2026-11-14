@@ -2,7 +2,8 @@
 // instance. An exported instance of a local function row enters the table
 // with its key (function row, ct_shash of its tagged environment) and the
 // row count of the function's subtree; every other instance gets an INVALID
-// key. Lanes count the entries and their rows.
+// key. Lanes count the entries and their rows. An incomplete closure
+// (any IC_FLAG_*) leaves the table flagged, so no entry is lowered.
 import hir_records;
 import type_checker.canonical.canonical_api;
 import type_checker.closure.instance_closure;
@@ -28,6 +29,7 @@ uint hir_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint index = dtid.x + dtid.y * 16776960u;
+    if (index == 0u && instance_closure_counts[IC_COUNT_FLAGS] != 0u) it_flag(IT_FLAG_CLOSURE);
     if (index >= it_instances()) return;
     uint4 instance = instance_closure_instances[2u * index];
     uint4 extra = instance_closure_instances[2u * index + 1u];

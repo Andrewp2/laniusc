@@ -77,6 +77,18 @@ const TABLE_KEYS_KERNEL: &str = "type_checker/closure/05_table_keys";
 const TABLE_RANK_KERNEL: &str = "type_checker/closure/05b_table_rank";
 const TABLE_ARGS_KERNEL: &str = "type_checker/closure/05c_table_args";
 const TABLE_ROWS_KERNEL: &str = "type_checker/closure/06_table_rows";
+/// The field closure of the types the table realized (06b), so 01c finds
+/// the widths of their fields' and payloads' types for the execution rows.
+pub(super) const TABLE_FIELD_CLOSURE: super::substitution_passes::FieldClosurePasses =
+    super::substitution_passes::FieldClosurePasses {
+        roots: "type_check.instance_table.expand.roots",
+        roots_kernel: "type_checker/closure/06b_table_expand_roots",
+        advance: "type_check.instance_table.expand.advance",
+        levels: [
+            "type_check.instance_table.expand.level.a_to_b",
+            "type_check.instance_table.expand.level.b_to_a",
+        ],
+    };
 const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final";
 const TABLE_CALLS_KERNEL: &str = "type_checker/closure/07_table_calls";
 /// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
@@ -85,6 +97,7 @@ pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
 pub(super) const INSTANCE_EXEC_CLEAR_PASS: &str = "type_check.instance_exec.clear";
 pub(super) const INSTANCE_EXEC_SELECT_PASS: &str = "type_check.instance_exec.select";
 pub(super) const INSTANCE_EXEC_MEMBERS_PASS: &str = "type_check.instance_exec.members";
+pub(super) const INSTANCE_EXEC_CALLEES_PASS: &str = "type_check.instance_exec.callees";
 pub(super) const INSTANCE_EXEC_LAYOUT_PASS: &str = "type_check.instance_exec.layout";
 pub(super) const INSTANCE_EXEC_NATIVE_WORDS_CLEAR_PASS: &str =
     "type_check.instance_exec.native_words.clear";
@@ -94,7 +107,12 @@ pub(super) const INSTANCE_EXEC_TABLES_PASS: &str = "type_check.instance_exec.tab
 pub(super) const INSTANCE_EXEC_COUNTS_PASS: &str = "type_check.instance_exec.counts";
 const EXEC_SELECT_KERNEL: &str = "type_checker/closure/08_exec_select";
 const EXEC_MEMBERS_KERNEL: &str = "type_checker/closure/08a_exec_members";
+const EXEC_CALLEES_KERNEL: &str = "type_checker/closure/08c_exec_callees";
 const EXEC_LAYOUT_KERNEL: &str = "type_checker/closure/08b_exec_layout";
+/// Runs of 08c_exec_callees: each moves a rejected callee's rejection at
+/// least one caller up, so a chain of up to this many callers replays
+/// together (one more than the closure's levels).
+const EXEC_CALLEE_ROUNDS: usize = 17;
 const EXEC_ROWS_KERNEL: &str = "type_checker/closure/09_exec_rows";
 const EXEC_TABLES_KERNEL: &str = "type_checker/closure/09b_exec_tables";
 const EXEC_COUNTS_KERNEL: &str = "type_checker/closure/09c_exec_counts";
@@ -135,7 +153,7 @@ const CLOSURE_SUMMARY_CT: &str = "closure_summary_ct";
 
 /// Expansion rounds (`IC_LEVELS` in instance_closure.slang): instances up
 /// to depth `INSTANCE_CLOSURE_LEVELS + 1` are found.
-pub(super) const INSTANCE_CLOSURE_LEVELS: usize = 6;
+pub(super) const INSTANCE_CLOSURE_LEVELS: usize = 16;
 /// Export dispatches ahead of the final one. A lane that meets a row another
 /// lane is realizing stops for the dispatch (CT_REALIZE_BUSY), so nested
 /// arguments shared along a chain realize about one level per dispatch: one
@@ -404,6 +422,7 @@ pub(super) fn register_instance_table_passes(
     kernels: &impl crate::gpu::kernels::KernelReflections,
     hir_rows: u64,
     realize_bindings: &[ReflectedResourceBinding],
+    expand_level_bindings: &[ReflectedResourceBinding],
 ) -> Result<(), String> {
     // Off (the default), the passes are never recorded: the table keeps
     // one row of each buffer so the graph holds no workspace for it.
@@ -467,6 +486,15 @@ pub(super) fn register_instance_table_passes(
         )?;
         graph.add_indirect_dispatch(name, "instance_table_args")?;
     }
+    // The field closure of the realized row types, for their widths.
+    super::substitution_passes::register_field_closure_passes(
+        graph,
+        kernels,
+        &TABLE_FIELD_CLOSURE,
+        ResourceDomain::Types,
+        "instance_table_args",
+        expand_level_bindings,
+    )?;
     // The callee of each virtual call row (D3), once the table is ranked.
     graph.add_kernel_pass_by_name(
         INSTANCE_TABLE_CALLS_PASS,
@@ -559,6 +587,15 @@ pub(super) fn register_instance_exec_passes(
     )?;
     graph.add_indirect_dispatch(INSTANCE_EXEC_MEMBERS_PASS, "instance_table_args")?;
     graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_CALLEES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXEC_CALLEES_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_CALLEES_PASS, "instance_closure_args")?;
+    graph.add_kernel_pass_by_name(
         INSTANCE_EXEC_LAYOUT_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::Types,
@@ -616,10 +653,12 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     args: ComputeOperation,
     rows: ComputeOperation,
     rows_final: ComputeOperation,
+    field_closure: super::substitution_passes::FieldClosureOperations,
     calls: ComputeOperation,
     exec_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_select: ComputeOperation,
     exec_members: ComputeOperation,
+    exec_callees: ComputeOperation,
     exec_layout: ComputeOperation,
     exec_native_words_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_native_words: ComputeOperation,
@@ -667,6 +706,14 @@ impl InstanceTableOperations {
             )?,
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
+            field_closure: super::substitution_passes::FieldClosureOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
+                &TABLE_FIELD_CLOSURE,
+                &table_args,
+            )?,
             calls: indirect(INSTANCE_TABLE_CALLS_PASS, TABLE_CALLS_KERNEL, &table_args)?,
             exec_clear: crate::gpu::operations::ClearBuffersOperation::new(
                 graph,
@@ -675,6 +722,7 @@ impl InstanceTableOperations {
             )?,
             exec_select: indirect(INSTANCE_EXEC_SELECT_PASS, EXEC_SELECT_KERNEL, &closure_args)?,
             exec_members: indirect(INSTANCE_EXEC_MEMBERS_PASS, EXEC_MEMBERS_KERNEL, &table_args)?,
+            exec_callees: indirect(INSTANCE_EXEC_CALLEES_PASS, EXEC_CALLEES_KERNEL, &closure_args)?,
             exec_layout: ComputeOperation::direct(
                 device,
                 graph,
@@ -727,6 +775,9 @@ impl InstanceTableOperations {
             self.exec_native_words_clear.record(encoder);
             self.exec_native_words.record(encoder)?;
             self.exec_members.record(encoder)?;
+            for _ in 0..EXEC_CALLEE_ROUNDS {
+                self.exec_callees.record(encoder)?;
+            }
             self.exec_layout.record(encoder)?;
             self.exec_rows.record(encoder)?;
             self.exec_tables.record(encoder)?;
@@ -743,6 +794,7 @@ impl InstanceTableOperations {
             self.rows.record(encoder)?;
         }
         self.rows_final.record(encoder)?;
+        self.field_closure.record(encoder)?;
         self.calls.record(encoder)
     }
 }

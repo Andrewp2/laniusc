@@ -41,6 +41,7 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> token_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> call_arg_row_count_out;
@@ -267,6 +268,35 @@ void publish_generic_return_type(
         atomic_u32_compare_exchange(call_return_type, callee_i, prior, arg_ty);
 }
 
+// Whether generic parameter `token` names a type at token `site`: the
+// innermost row declaring generic parameters whose tokens cover `token` (the
+// parameter's item) also covers the site. An argument typed only through
+// another item's parameter, such as `B::No` typed `B<K>` from the callee's
+// own parameter pattern, says nothing about the slot, so it claims nothing.
+bool generic_param_in_scope(uint token, uint site)
+{
+    uint count = active_hir_node_count();
+    uint lo = 0u;
+    uint hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_hir_core[mid].token_start <= token) lo = mid + 1u;
+        else hi = mid;
+    }
+    uint row = lo - 1u;
+    for (uint depth = 0u; depth < count && row < count; depth++)
+    {
+        HirCore core = compact_hir_core[row];
+        if (compact_generic_param_ranges[row].count != 0u &&
+            core.token_start <= token && token < core.token_end)
+            return core.token_start <= site && site < core.token_end;
+        if (core.parent >= row) break;
+        row = core.parent;
+    }
+    return true;
+}
+
 void emit_argument_claims(uint arg_row)
 {
     if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
@@ -429,6 +459,9 @@ void emit_argument_claims(uint arg_row)
             }
             // A row another lane is writing settles in a later round.
             if (failure == 0u) ref = uint2(operand.x & ~CT_ROW_CONSTANT_TAG, operand.y);
+            if (!constant && ref.x == TYPE_REF_GENERIC_PARAM && valid_node(call) &&
+                !generic_param_in_scope(ref.y, compact_hir_core[call].token_start))
+                ref = uint2(0u, INVALID);
         }
         if (!constant)
         {

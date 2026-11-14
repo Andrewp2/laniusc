@@ -763,7 +763,7 @@ pub(crate) struct CheckedInstanceExec {
     /// Every instance table entry, in table order.
     pub entries: Vec<CheckedExecEntry>,
     /// (virtual call row, callee table entry) of each IT_CALL_ENTRY call in a
-    /// selected entry, by row.
+    /// selected entry whose callee is not selected, by row.
     pub calls: Vec<(u32, u32)>,
 }
 
@@ -3511,6 +3511,10 @@ fn read_instance_exec(
             }
         }
     }
+    // A call of a selected entry targets that entry's copy (09_exec_rows);
+    // only calls of the other entries route through the host.
+    let statuses = heads.chunks_exact(8).map(|head| head[0]).collect::<Vec<_>>();
+    exec.calls.retain(|&(_, callee)| statuses[callee as usize] != CheckedExecEntry::SELECTED);
     exec.calls.sort_unstable();
     if trace {
         let selected = exec.entries.iter().filter(|entry| entry.selected()).count();

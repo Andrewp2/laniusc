@@ -2,7 +2,8 @@
 // have been published. Dependency pages are no longer available here, so the
 // projector's stable nominal identity and checked ordinal are authoritative.
 // A literal arm pattern is validated here too: it is compared with the
-// scrutinee, so the scrutinee must have the literal's kind of type.
+// scrutinee, so the scrutinee must have the literal's kind of type. So is a
+// local variant arm: the scrutinee must be a value of the variant's enum.
 
 import hir_records;
 import hir_expr_semantics;
@@ -27,6 +28,11 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> decl_kind;
+StructuredBuffer<uint> decl_parent_type_decl;
+StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> resolved_dependency_variant_payload_records;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -57,6 +63,11 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TY_ENUM_BASE = 6144u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -126,6 +137,29 @@ bool literal_fits_scrutinee(uint match_node, uint pattern)
     return tag == 1u && (integer ? scalar_is_integer(payload) : payload == SCALAR_BOOL);
 }
 
+// Whether arm pattern path `path`, when it names a local variant, fits the
+// scrutinee of `match_node`: a value of that variant's enum, generic (an
+// instance of it) or not (its nominal scalar). A scrutinee without a type
+// yet has its own diagnostic.
+bool local_variant_fits_scrutinee(uint match_node, uint path)
+{
+    if (resolved_value_status[path] != PATH_RESOLVE_STATUS_OK) return true;
+    uint decl = resolved_value_decl[path];
+    if (decl >= gParams.n_hir_nodes || decl_kind[decl] != HIR_ITEM_KIND_ENUM_VARIANT) return true;
+    uint enum_decl = decl_parent_type_decl[decl];
+    if (enum_decl >= gParams.n_hir_nodes || decl_kind[enum_decl] != HIR_ITEM_KIND_ENUM) return true;
+    uint enum_token = decl_name_token[enum_decl];
+    uint tag; uint payload; uint reference_depth;
+    if (!valid_hir(match_node) || !valid_token(enum_token) ||
+        !inference_value_reference(compact_hir_payload[match_node].a, tag, payload) ||
+        !checked_referent_reference(tag, payload, reference_depth)) return true;
+    if (tag == TYPE_REF_INSTANCE)
+        return payload >= checked_type_capacity() ||
+            (type_instance_kind[payload] == 1u && type_instance_decl_token[payload] == enum_token);
+    if (tag == TYPE_REF_SCALAR) return payload == TY_ENUM_BASE + enum_token;
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -148,7 +182,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind != IMPORTED_UNIT_VARIANT &&
         kind != IMPORTED_GENERIC_UNIT_VARIANT &&
         kind != IMPORTED_PAYLOAD_VARIANT)
+    {
+        if (!local_variant_fits_scrutinee(arm.owner, path))
+            record_min_token_error(status, compact_hir_core[arm.pattern].token_start,
+                ERR_ASSIGN_MISMATCH, 0u);
         return;
+    }
     uint pattern_token = compact_hir_core[arm.pattern].token_start;
     if (!valid_token(pattern_token) || path_owner_token[path] != pattern_token)
         return;

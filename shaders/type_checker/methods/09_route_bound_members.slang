@@ -59,6 +59,7 @@ import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.constant_parameter_slots;
 import type_checker.predicates.trait_reference;
+import callable_identity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -231,6 +232,16 @@ bool external_target(uint token, uint4 required, MethodCandidate candidate,
     uint mode = method_call_receiver_hir[token] == INVALID ? 0u
         : environment.w == 3u ? 1u : environment.w;
     return mode == candidate.receiver_mode;
+}
+
+// Whether local implementation member `candidate` (its declaration token) is
+// the native symbol `symbol` an evidence target names (callable_identity).
+bool evidence_names(uint candidate, uint symbol)
+{
+    uint member = fn_hir_by_decl_token[candidate];
+    if (!valid_hir(member)) return false;
+    return symbol == interface_method_symbol(member) ||
+        symbol == (0x40000000u | compact_hir_core[member].token_start);
 }
 
 // The method token of call expression `call`, or INVALID: its callee member's
@@ -568,6 +579,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint2 written = uint2(0u, 0u);
     uint2 published = uint2(0u, 0u);
     bool rebound = false;
+    // Several nongeneric implementations in this unit can match the receiver
+    // when the trait's other arguments tell them apart (TryClone<i32,E> for
+    // i32 with two E). The instance's evidence names the one that proved the
+    // bound; it selects among them.
+    uint3 evidence = uint3(INVALID, INVALID, INVALID);
+    uint4 evidence_environment;
+    bool has_evidence = external_target(token, required, method_candidate[token], evidence, evidence_environment);
+    uint evidence_pick = INVALID;
+    uint evidence_picks = 0u;
     if (count != 0u && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
         checked_type_capacity(), gParams.n_tokens, head))
     {
@@ -621,11 +641,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 if (rebound) { published = matched ? bound : uint2(0u, 0u); break; }
             }
             if (!matched) continue;
+            if (!generic && has_evidence && evidence_names(candidate, evidence.z))
+            {
+                if (evidence_pick != candidate) evidence_picks++;
+                evidence_pick = candidate;
+            }
             if (selected != candidate) matches++;
             selected = candidate;
             selected_row = row;
             selected_generic = generic;
         }
+    }
+    if (matches > 1u && evidence_picks == 1u)
+    {
+        matches = 1u;
+        selected = evidence_pick;
+        selected_generic = false;
     }
     // The accepted selection and its callee are one fact for call artifacts.
     // An imported trait's member was verified as the candidate above.

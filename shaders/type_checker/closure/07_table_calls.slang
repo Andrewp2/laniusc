@@ -13,8 +13,8 @@
 //   which runs earlier; host retention reads the same words): an imported
 //   enum's constructor, an intrinsic or a host service keeps its callee.
 //
-// Every other row, and a call of a nongeneric function, keeps the template's
-// callee (IT_CALL_NONE). A call the table cannot name is IT_CALL_UNRESOLVED:
+// Every other row, a call of a nongeneric function and a variant constructor
+// keep the template's callee (IT_CALL_NONE). A call the table cannot name is IT_CALL_UNRESOLVED:
 // lowering an instance over the table needs every call named.
 import hir_records;
 import type_checker.canonical.canonical_api;
@@ -38,6 +38,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint CALLABLE_DEPENDENCY = 3u;
+static const uint CALLABLE_ENUM_VARIANT = 4u;
 
 #include "closure_calls.slang"
 #include "bound_route.slang"
@@ -101,8 +102,10 @@ uint2 row_call(uint call, uint caller)
     if (!valid_token(token)) return uint2(IT_CALL_NONE, 0u);
     uint2 counts = required_callable_generic_counts(token);
     if ((counts.x | counts.y) == 0u) return uint2(IT_CALL_NONE, 0u);
-    if (call_dependency_library_id[token] == INVALID) return uint2(IT_CALL_UNRESOLVED, 0u);
     CheckedCallArtifact record = semantic_calls_by_hir[call];
+    // A variant constructor builds a value of the call's realized type.
+    if (record.callable_kind == CALLABLE_ENUM_VARIANT) return uint2(IT_CALL_NONE, 0u);
+    if (call_dependency_library_id[token] == INVALID) return uint2(IT_CALL_UNRESOLVED, 0u);
     return record.callable_kind == CALLABLE_DEPENDENCY && record.dependency_host_service == INVALID
         ? uint2(IT_CALL_DEPENDENCY, 0u) : uint2(IT_CALL_NONE, 0u);
 }

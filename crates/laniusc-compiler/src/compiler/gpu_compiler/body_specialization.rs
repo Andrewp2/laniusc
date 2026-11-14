@@ -848,10 +848,12 @@ impl GpuCompiler<'_> {
 /// The instances an original unit lowered in its own job
 /// (CheckedInstanceExec). A selected instance whose origin call the trait
 /// solver admitted, and whose virtual function the object defines, is the
-/// body of its environment key: no replay compiles it. Every generic call
-/// in a selected body is routed through its callee's admitted origin, to
-/// another selected body or to a replay; a callee without one fails the
-/// unit, since the object already calls it.
+/// body of its environment key: no replay compiles it. A selected body
+/// calls selected callees' copies directly (09_exec_rows), and an entry that
+/// calls a rejected entry is rejected (08c_exec_callees). A call of a
+/// rejected entry left in a selected body is routed through that entry's
+/// admitted origin to a replay; a callee without one fails the unit, since
+/// the object already calls it.
 struct ExecRoutes {
     /// Admitted origin of each table entry, when it has one.
     origins: Vec<Option<AdmittedCall>>,

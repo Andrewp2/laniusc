@@ -49,6 +49,8 @@ impl GpuCompiler<'_> {
             .map_err(|error| super::x86_codegen::x86_source_pack_link_error(
                 "validate native link inputs", error))?;
         let limits = self.resident_source_unit_limits();
+        let whole_program = super::bounded_path_codegen::whole_program_manifest(source_pack, limits);
+        let source_pack = whole_program.as_ref().unwrap_or(source_pack);
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let units = self.stable_frontend_unit_plan(source_pack, limits);
         let plan = source_pack.bounded_frontend_build_plan_with_units(units);

@@ -6755,6 +6755,11 @@ fn build_graph(
             "type_native_word_count" => _type_native_word_count: Write,
             "type_native_scalar_identity" => _type_native_scalar_identity: Write,
         ],
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
     )?;
     graph.add_kernel_pass_by_name(
         SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,

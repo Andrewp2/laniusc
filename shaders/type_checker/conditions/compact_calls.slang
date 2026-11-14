@@ -38,6 +38,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
+static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
 static const uint PATH_RESOLVE_STATUS_MISSING_ASSOCIATED_ITEM = 8u;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint ERR_CALL_MISMATCH = 10u;
@@ -185,11 +186,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     // A name which belongs to a declaration family but has no free-function
     // target is a call-resolution failure. A spelling absent from every value
-    // declaration family remains an unresolved identifier.
-    uint code = known_non_free_declaration_name(error_token) ||
+    // declaration family remains an unresolved identifier, and so does a
+    // name two module imports provide: its report is the ambiguity, even
+    // when a method shares the spelling.
+    uint code = path_status != PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT && (
+                known_non_free_declaration_name(error_token) ||
                 known_non_free_declaration_name(direct) ||
                 known_non_free_declaration_name(owner) ||
-                known_non_free_declaration_name(leaf)
+                known_non_free_declaration_name(leaf))
                     ? ERR_CALL_MISMATCH
                     : ERR_UNRESOLVED_IDENT;
     // `Type::name(..)` where the type has no such associated item: the same

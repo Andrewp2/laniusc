@@ -1,10 +1,11 @@
 # GPU generic instantiation
 
 This is the implementation contract for removing source replay from full
-compilation. Replay elimination is partial. An original unit compile now lowers
-closed local instances itself (see [Execution rows](#execution-rows)). The
-compiler still constructs source copies of every other generic body and runs
-the frontend again for them.
+compilation. Replay elimination is partial. A program compiles as one unit
+(see [One program, one unit](#one-program-one-unit)), and the original compile
+lowers closed local instances itself (see [Execution rows](#execution-rows)).
+The compiler still constructs source copies of every other generic body and
+runs the frontend again for them.
 
 The performance target is about 160 ms for a warm resident-daemon rebuild of
 the settings application, with every unit compiled on every request. Reusing
@@ -82,6 +83,18 @@ lowering reads type rows and tokens in one id space. The type checker therefore
 sizes its token tables for the job's tokens plus the copies' share, and
 `08b_exec_layout` never places a copy's token at or past the first type row.
 
+A method copy's receiver parameter has no written type. Its realized type is
+the impl's self type under the environment, which the table stores at the
+function row (`template_expr_ref` in `table_rows.slang`). Native lowering
+reads it as the parameter type, so the copy's signature is closed and
+`function_templates` emits it.
+
+The table's realized types can name aggregates that no checked row names, such
+as `Entry<i32, i32>` inside `Node<i32, i32>`. After the table rows are final,
+`06b_table_expand_roots` pushes every closed realized aggregate into the field
+closure that dependency summaries use (`ct_expand`). The closure creates rows
+for its field types, so native widths derive for nested fields.
+
 ### Selection and fallback
 
 `08_exec_select` admits an entry only when every rule holds. Any other entry
@@ -90,13 +103,13 @@ reports each entry's first failed rule.
 
 | Status | Rule that failed |
 | --- | --- |
-| `0x100` table | The table is complete (no capacity flags) and the body is this job's. |
-| `0x101` owner | The template is a top-level function and is not instantiated in place. |
+| `0x100` table | The table and the closure are complete (no capacity, depth or closure flags) and the body is this job's. |
+| `0x101` owner | The template is a file-level function or a method of an impl declared outside a trait or function, and is not instantiated in place. |
 | `0x102` constants | The template has no constant parameters. |
 | `0x103` syntax | The body declares no nested item or function. |
 | `0x104` row | Every row's type realized under the environment. |
-| `0x105` call | Every call is routed: a call of a local generic body names its callee's table entry, and every other call keeps the template's callee and needs no type argument from the environment. Method, bound-member, dependency-generic and unresolved calls fail. |
-| `0x106` fact | No index, iteration or array row and no function result changes to an array type. A member's receiver is a row of the body, and its layout under a changed receiver derives in `08a_exec_members`. |
+| `0x105` call | Every call is routed. A call of a local generic body, or a bound-member call whose receiver selects a generic method, names its callee's table entry. A method call's receiver dereferences under the environment as the template's did. Every other call keeps the template's callee and needs no type argument from the environment, as a variant constructor does. A call routed to a nongeneric method, a dependency-generic call and an unresolved call fail. |
+| `0x106` fact | No index, iteration or array row and no function result changes to an array type. A member's receiver is a row of the body, and its layout under a changed receiver derives in `08a_exec_members`. A method call's callee member needs no layout. A raw view's realized element has a native width, and a struct literal's realized struct has no application-typed field (`08a_exec_members`). |
 | `0x107` block | Each side-table block of the body is contiguous. |
 | `0x108` capacity | The rows, tokens and side-table rows fit. An entry that does not fit, and every later entry, replays. |
 
@@ -107,10 +120,13 @@ passes the same admission as a replay request. The origin must target this
 unit, `checked_replay_environment` must close its environment, and the
 copy's symbol must be defined in the unit's object. The copy is then
 registered as that environment's specialization, with the origin's layout
-witnesses, so no replay is requested for it. A call row inside a copy routes
-through its callee entry's admitted origin. A routed call whose callee entry has
-no admitted origin is a compile error, not a fallback. Selected entries that do
-not route still replay. Their copies stay in the object as unreferenced
+witnesses, so no replay is requested for it. A call row inside a copy calls a
+selected callee entry's copy directly (`09_exec_rows`). An entry that calls a
+rejected entry is rejected too (`08c_exec_callees`, and `08b_exec_layout` after
+a capacity rejection), so a copy calls only copies. A call of a rejected entry
+that the 17 rounds leave in a copy routes through that entry's admitted origin,
+and an entry without one is a compile error, not a fallback. Selected entries
+that do not route still replay. Their copies stay in the object as unreferenced
 definitions.
 
 Nothing in this path is retained between builds. The table, the copies and
@@ -146,6 +162,132 @@ expand dependency edges inside local generic bodies. `07_table_calls` must then
 record the dependency instance, and the host must route `IT_CALL_DEPENDENCY`
 calls in a copy through the library snapshot's closure origin. That removes
 the app unit's replay compile.
+
+## One program, one unit
+
+Decision: a program compiles as one unit. `whole_program_manifest` in
+[`bounded_path_codegen.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/bounded_path_codegen.rs)
+merges the entry and every library it imports into one manifest when the
+merged sources fit the resident limits. Type checking, the instance closure,
+the instance table and the execution rows then see every generic body of the
+program as local. A cross-unit instance becomes a local one. No typed
+template, summary or instance is kept between builds or between units.
+
+Reasons:
+
+- The closure and the table already instantiate local bodies on the GPU.
+  One unit gives them the library bodies without a second template format.
+- A library unit cannot enumerate the environments its callers need
+  ([Settings diagnostic](#settings-diagnostic-2026-11-13)). In one unit,
+  every caller is in the same closure.
+- Trait evidence and layout admission stay as they are. The host admits each
+  copy through its closure origin, as before.
+- Each replay compile runs the whole frontend again. Merging the units
+  removes one replay compile from every multi-unit program.
+
+Limits:
+
+- A program above the resident limits stays multi-unit. Its cross-unit
+  instances still replay. Deleting replay requires an explicit compile error
+  for this case.
+- Library code is now checked through the local path. The local path had gaps
+  that the dependency path did not have. This change fixes the ones the test
+  suites reach:
+
+| Gap | Fix |
+| --- | --- |
+| A bare match-arm variant that two imports provide, or that name lookup binds to another module's enum | `10m2` resolves it from the scrutinee's enum when that enum has a variant of the name. |
+| A pattern variant of another local enum | `10m3` reports a mismatch. |
+| A name that two module imports provide | `compact_calls` reports the ambiguity. |
+| An unbound generic parameter of a bound call | `02_obligations` keeps the `03a7` report. |
+| A payload-free variant argument ahead of the argument that binds its parameter | `03a1` drops a claim whose binding is a generic parameter out of scope at the call. |
+| An entry file without a `module` line next to library modules | The semantic interface publishes an empty-path module for each unnamed module a declaration or implementation names (`interface_status` word 4, `01_identity_records`). |
+| Two local implementations of one trait for one receiver, told apart by the trait's other arguments (`TryClone<i32,E>` for `i32`) | `09_route_bound_members` routes a replayed bound call to the one that the instance's evidence names. |
+| A local struct literal with a missing or repeated field | `08_validate_aggregate_access` reports it (LNC0042), as `16_project_struct_literals` does for an imported record. |
+
+Execution-row fixes found by the one-unit programs:
+
+- A copy's token span ends at the next declaration's first token. Only a
+  row's token end maps that boundary (`ex_token_end`). Before this, a call of
+  the next declaration had no target.
+- An incomplete closure (any `IC_FLAG_*`) flags the table (`IT_FLAG_CLOSURE`),
+  so no entry is lowered from it. The closure runs 16 levels.
+- `08a_exec_members` rejects a raw view whose realized element has no native
+  width, and a struct literal whose realized struct has an application-typed
+  field. Both replay.
+
+### One-unit results, 2026-11-13
+
+Replay compiles and bodies, from `LANIUS_TRACE=instance-table`, with every
+compiled-unit and library-instance cache cleared:
+
+| Workload | Baseline `80f2f4908` | One unit |
+| --- | --- | --- |
+| Settings units | 2 | 1 |
+| Settings replay compiles | 2 | 1 |
+| Settings replay bodies | 1,044 | 964 |
+| Settings dispatches | 10,853 | 6,285 |
+| Language fixtures, replay compiles | 46 | 35 |
+| Language fixtures, replay bodies | 273 | 203 |
+
+On settings, 367 of 1,338 table entries are lowered in the job. The other 971
+are 729 owner rejections (`0x101`, mostly methods), 191 call rejections and
+51 fact rejections.
+
+### Method instances, 2026-11-13
+
+Methods of file-level impls are lowered as execution rows. Measured as above:
+
+| Workload | One unit | Method instances |
+| --- | --- | --- |
+| Settings entries selected and routed | 367 | 993 |
+| Settings replay compiles | 1 | 1 |
+| Settings replay bodies | 964 | 338 |
+| Language fixtures, replay compiles | 35 | 25 |
+| Language fixtures, replay bodies | 203 | 104 |
+
+On settings, the other 345 of 1,338 entries are 7 owner rejections (in-place
+instances), 279 call rejections and 59 fact rejections. 268 of the call
+rejections are calls of generic variant constructors, such as `Some(x)`.
+
+### Calls inside copies, 2026-11-13
+
+A copy's calls of generic methods and constructors are lowered with it:
+
+- A generic variant constructor keeps its callee. Its value has the call's
+  realized type.
+- A call routed to a selected table entry targets that entry's copy: its
+  virtual function row and first token. The template's target cannot be
+  kept: a bound-member call's template names the trait's member, and a
+  recursive call's target is inside the template's own tokens.
+- An entry that calls a rejected entry is rejected too (`0x105`), since its
+  copy would call a body that only a replay defines. `08c_exec_callees`
+  moves these rejections one caller up per run and runs 17 times, one more
+  than the closure's levels. `08b_exec_layout` repeats it after a capacity
+  rejection.
+- A method call's receiver parameter is the callee entry's realized
+  receiver type. Its matched receiver is the copy's realized receiver after
+  the template's dereferences.
+- A call that the template leaves untyped, such as a method returning its
+  impl's parameter, is typed by the callee's declared return type under the
+  callee's instance environment (`untyped_call_result` in `table_rows.slang`).
+- A method call's callee member names no field, so a changed receiver needs
+  no member layout for it.
+
+| Workload | Method instances | Calls inside copies |
+| --- | --- | --- |
+| Settings entries selected and routed | 993 | 1,136 |
+| Settings replay compiles | 1 | 1 |
+| Settings replay bodies | 338 | 195 |
+| Language fixtures, replay compiles | 25 | 22 |
+| Language fixtures, replay bodies | 104 | 104 |
+
+On settings, the other 202 entries are 7 owner rejections (in-place
+instances), 97 call rejections and 98 fact rejections. 85 of the fact
+rejections are index rows whose element type the environment changes. 85 of
+the call rejections are callers of a rejected entry. 10 are bound-member calls
+routed to a nongeneric method. The fixtures lower more bodies than before but
+replay as many, for the same reason.
 
 ## Complete instance contract
 
@@ -237,7 +379,8 @@ does not complete a milestone.
    and return contracts in the audit; their row-cache differences are currently
    reported separately.
 2. **Lower local closed instances.** Implemented for file-level functions
-   without constant parameters (see [Execution rows](#execution-rows)).
+   and methods of file-level impls without constant parameters (see
+   [Execution rows](#execution-rows)).
    Introduce execution rows and complete the
    per-instance semantic projection. Start with local bodies whose calls and
    layouts close in the current unit. Emit two distinct environments of the
@@ -245,8 +388,11 @@ does not complete a milestone.
    compile. Compare execution and admitted facts against the existing replay
    path; do not bypass trait or layout admission.
 3. **Close local instance graphs.** Calls between local function instances,
-   including finite recursion, are routed. Generic methods, bound-member
-   selection and dependency generics called from local bodies still replay.
+   including finite recursion, are routed. Methods of generic impls are
+   lowered as instances, and so are method calls and bound-member calls
+   that select a generic method. A bound-member call that selects a
+   nongeneric method, and dependency generics called from a copy, still
+   replay.
    Route calls between instances, including
    finite recursion, generic methods, and bound-member selection. Preserve
    implementation evidence and constant environments at every edge. Emit the

@@ -212,6 +212,11 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
         return Ok(None);
     }
 
+    // False when a file that does not lex or parse stopped the rewrites
+    // before they read every file. The frontend then reports the error, and
+    // no file is recorded as unchanged: a later build must read them again.
+    let mut read = true;
+
     // Closures, for the files that can hold one. The parser does not read a
     // closure, so they go before the machines.
     let candidates: Vec<usize> =
@@ -227,7 +232,8 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
         })?;
         match outcome {
             Some(closures::Outcome::Unlexed) if batch_limit.is_some() => return Ok(None),
-            None | Some(closures::Outcome::Unlexed) => {}
+            Some(closures::Outcome::Unlexed) => read = false,
+            None => {}
             Some(closures::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
                 let (text, start, len) = file.source_span(invalid.start, invalid.len);
@@ -265,7 +271,11 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
         })?;
         let (outputs, flag) = match outcome {
             Some(machines::Outcome::Unparsed) if batch_limit.is_some() => return Ok(None),
-            None | Some(machines::Outcome::Unparsed) => break,
+            Some(machines::Outcome::Unparsed) => {
+                read = false;
+                break;
+            }
+            None => break,
             Some(machines::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
                 let (text, start, len) = file.source_span(invalid.start, invalid.len);
@@ -296,7 +306,7 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
     for file in files {
         texts.push(match file.stages {
             None => {
-                if !file.known && let Ok(mut unchanged) = unchanged().lock() {
+                if read && !file.known && let Ok(mut unchanged) = unchanged().lock() {
                     unchanged.insert(blake3::hash(file.source.as_bytes()));
                 }
                 file.source
