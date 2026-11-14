@@ -9,7 +9,7 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Reusable hierarchical scanner for semantic-HIR and compact-family block
+/// Reusable one-workgroup scanner for semantic-HIR and compact-family block
 /// sums. Its output remains inclusive to preserve the parser scatter ABI.
 pub struct HirSemanticPrefixBlocksPass {
     scan: InclusiveBlockScanKernels,
@@ -22,13 +22,8 @@ impl HirSemanticPrefixBlocksPass {
         })
     }
 
-    pub(in crate::parser) fn graph_passes(
-        &self,
-    ) -> (
-        &crate::gpu::passes_core::PassData,
-        &crate::gpu::passes_core::PassData,
-    ) {
-        self.scan.graph_passes()
+    pub(in crate::parser) fn graph_pass(&self) -> &crate::gpu::passes_core::PassData {
+        self.scan.graph_pass()
     }
 
     /// Records the semantic-HIR compaction block-prefix scan.
@@ -47,9 +42,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
-            &buffers.hir_semantic_block_prefix_b,
-            crate::parser::compiler_graph::HIR_SEMANTIC_SCAN_UP,
-            crate::parser::compiler_graph::HIR_SEMANTIC_SCAN_DOWN,
+            crate::parser::compiler_graph::HIR_SEMANTIC_SCAN,
         )
     }
 
@@ -61,8 +54,7 @@ impl HirSemanticPrefixBlocksPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
         self.record_scan_inner(
             device,
@@ -72,9 +64,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
-            &buffers.hir_semantic_block_prefix_b,
-            up_label,
-            down_label,
+            label,
         )
     }
 
@@ -85,8 +75,7 @@ impl HirSemanticPrefixBlocksPass {
         encoder: &mut wgpu::CommandEncoder,
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
         self.record_scan_inner(
             device,
@@ -96,9 +85,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_canonical_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
-            &buffers.hir_semantic_block_prefix_b,
-            up_label,
-            down_label,
+            label,
         )
     }
 
@@ -118,9 +105,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_semantic_block_count,
             &buffers.hir_semantic_block_prefix_a,
-            &buffers.hir_semantic_block_prefix_b,
-            crate::parser::compiler_graph::HIR_CANONICAL_IDENTITY_SCAN_UP,
-            crate::parser::compiler_graph::HIR_CANONICAL_IDENTITY_SCAN_DOWN,
+            crate::parser::compiler_graph::HIR_CANONICAL_IDENTITY_SCAN,
         )
     }
 
@@ -140,9 +125,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_struct_rank_block_sum,
             &buffers.hir_struct_rank_block_prefix_a,
-            &buffers.hir_struct_rank_block_prefix_b,
-            crate::parser::compiler_graph::HIR_STRUCT_RANK_SCAN_UP,
-            crate::parser::compiler_graph::HIR_STRUCT_RANK_SCAN_DOWN,
+            crate::parser::compiler_graph::HIR_STRUCT_RANK_SCAN,
         )
     }
 
@@ -155,7 +138,7 @@ impl HirSemanticPrefixBlocksPass {
         cache: &mut BindGroupCache,
         invocation: crate::parser::passes::hir::list::rank::ListRankInvocation,
     ) -> Result<()> {
-        let (up, down) = invocation.scan_labels();
+        let label = invocation.scan_label();
         self.record_scan_inner(
             device,
             encoder,
@@ -164,9 +147,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_list_rank_block_sum,
             &buffers.hir_list_rank_block_prefix_a,
-            &buffers.hir_list_rank_block_prefix_b,
-            up,
-            down,
+            label,
         )
     }
 
@@ -186,9 +167,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_enum_rank_block_sum,
             &buffers.hir_enum_rank_block_prefix_a,
-            &buffers.hir_enum_rank_block_prefix_b,
-            crate::parser::compiler_graph::HIR_ENUM_RANK_SCAN_UP,
-            crate::parser::compiler_graph::HIR_ENUM_RANK_SCAN_DOWN,
+            crate::parser::compiler_graph::HIR_ENUM_RANK_SCAN,
         )
     }
 
@@ -208,9 +187,7 @@ impl HirSemanticPrefixBlocksPass {
             &buffers.hir_semantic_prefix_scan,
             &buffers.hir_match_rank_block_sum,
             &buffers.hir_match_rank_block_prefix_a,
-            &buffers.hir_match_rank_block_prefix_b,
-            crate::parser::compiler_graph::HIR_MATCH_RANK_SCAN_UP,
-            crate::parser::compiler_graph::HIR_MATCH_RANK_SCAN_DOWN,
+            crate::parser::compiler_graph::HIR_MATCH_RANK_SCAN,
         )
     }
 
@@ -223,21 +200,17 @@ impl HirSemanticPrefixBlocksPass {
         plan: &crate::gpu::operations::InclusiveBlockScanPlan,
         block_sum: &LaniusBuffer<u32>,
         block_prefix: &LaniusBuffer<u32>,
-        hierarchy: &LaniusBuffer<u32>,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
         self.scan.record_graph(
             device,
             encoder,
             cache,
             graph_buffers,
-            up_label,
-            down_label,
+            label,
             plan,
             block_sum,
             block_prefix,
-            hierarchy,
         )
     }
 }

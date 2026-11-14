@@ -56,60 +56,21 @@ impl CanonicalConstruct {
         }
     }
 
-    pub(in crate::parser) const fn scan_labels(self) -> (&'static str, &'static str) {
+    pub(in crate::parser) const fn scan_label(self) -> &'static str {
         match self {
-            Self::CallArgument => (
-                "hir_canonical_call_arg_prefix_01_blocks.up",
-                "hir_canonical_call_arg_prefix_01_blocks.down",
-            ),
-            Self::Parameter => (
-                "hir_canonical_param_prefix_01_blocks.up",
-                "hir_canonical_param_prefix_01_blocks.down",
-            ),
-            Self::TypeArgument => (
-                "hir_canonical_type_arg_prefix_01_blocks.up",
-                "hir_canonical_type_arg_prefix_01_blocks.down",
-            ),
-            Self::GenericParameter => (
-                "hir_canonical_generic_param_prefix_01_blocks.up",
-                "hir_canonical_generic_param_prefix_01_blocks.down",
-            ),
-            Self::Path => (
-                "hir_canonical_path_prefix_01_blocks.up",
-                "hir_canonical_path_prefix_01_blocks.down",
-            ),
-            Self::Field => (
-                "hir_canonical_field_prefix_01_blocks.up",
-                "hir_canonical_field_prefix_01_blocks.down",
-            ),
-            Self::Variant => (
-                "hir_canonical_variant_prefix_01_blocks.up",
-                "hir_canonical_variant_prefix_01_blocks.down",
-            ),
-            Self::VariantPayload => (
-                "hir_canonical_variant_payload_prefix_01_blocks.up",
-                "hir_canonical_variant_payload_prefix_01_blocks.down",
-            ),
-            Self::MatchArm => (
-                "hir_canonical_match_arm_prefix_01_blocks.up",
-                "hir_canonical_match_arm_prefix_01_blocks.down",
-            ),
-            Self::MatchPayload => (
-                "hir_canonical_match_payload_prefix_01_blocks.up",
-                "hir_canonical_match_payload_prefix_01_blocks.down",
-            ),
-            Self::ArrayElement => (
-                "hir_canonical_array_element_prefix_01_blocks.up",
-                "hir_canonical_array_element_prefix_01_blocks.down",
-            ),
-            Self::Method => (
-                "hir_canonical_method_prefix_01_blocks.up",
-                "hir_canonical_method_prefix_01_blocks.down",
-            ),
-            Self::Predicate => (
-                "hir_canonical_predicate_prefix_01_blocks.up",
-                "hir_canonical_predicate_prefix_01_blocks.down",
-            ),
+            Self::CallArgument => "hir_canonical_call_arg_prefix_01_blocks",
+            Self::Parameter => "hir_canonical_param_prefix_01_blocks",
+            Self::TypeArgument => "hir_canonical_type_arg_prefix_01_blocks",
+            Self::GenericParameter => "hir_canonical_generic_param_prefix_01_blocks",
+            Self::Path => "hir_canonical_path_prefix_01_blocks",
+            Self::Field => "hir_canonical_field_prefix_01_blocks",
+            Self::Variant => "hir_canonical_variant_prefix_01_blocks",
+            Self::VariantPayload => "hir_canonical_variant_payload_prefix_01_blocks",
+            Self::MatchArm => "hir_canonical_match_arm_prefix_01_blocks",
+            Self::MatchPayload => "hir_canonical_match_payload_prefix_01_blocks",
+            Self::ArrayElement => "hir_canonical_array_element_prefix_01_blocks",
+            Self::Method => "hir_canonical_method_prefix_01_blocks",
+            Self::Predicate => "hir_canonical_predicate_prefix_01_blocks",
         }
     }
 
@@ -174,7 +135,6 @@ fn record_canonical_compaction_prefix(
     construct: CanonicalConstruct,
 ) -> Result<()> {
     record_canonical_scan(ctx, passes, construct)?;
-    let (up, down) = construct.scan_labels();
     passes.hir_semantic_prefix_blocks.record_compact_scan(
         ctx.device,
         ctx.encoder,
@@ -182,8 +142,7 @@ fn record_canonical_compaction_prefix(
         ctx.bg_cache
             .as_deref_mut()
             .expect("parser scan requires a bind-group cache"),
-        up,
-        down,
+        construct.scan_label(),
     )
 }
 
@@ -1112,8 +1071,7 @@ pub fn record_canonical_hir_materialization(
         ctx.bg_cache
             .as_deref_mut()
             .expect("parser path scan requires a bind-group cache"),
-        crate::parser::compiler_graph::HIR_PATH_SEGMENT_SCAN_UP,
-        crate::parser::compiler_graph::HIR_PATH_SEGMENT_SCAN_DOWN,
+        crate::parser::compiler_graph::HIR_PATH_SEGMENT_SCAN,
     )?;
     p.hir_canonical_path_segment_scatter
         .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
