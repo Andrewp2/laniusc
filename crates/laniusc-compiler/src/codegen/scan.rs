@@ -1,4 +1,4 @@
-//! Resident graph-backed hierarchical exclusive scan.
+//! Resident graph-backed counted exclusive scan.
 
 use anyhow::{Context, Result};
 
@@ -9,39 +9,35 @@ use crate::gpu::{
     kernels::KernelRegistry,
     operations::ComputeOperation,
     resource_registry::ResourceMap,
-    scan::hierarchical_scan_levels,
 };
 
 #[derive(Clone, Copy)]
 pub(crate) struct GraphScanContract {
     pub local_pass: &'static str,
-    pub up_pass: &'static str,
-    pub down_pass: &'static str,
+    pub block_prefix_pass: &'static str,
     pub apply_pass: &'static str,
     pub count: &'static str,
     pub input: &'static str,
     pub local: &'static str,
     pub block_sum: &'static str,
     pub block_prefix: &'static str,
-    pub hierarchy: &'static str,
     pub output: &'static str,
     pub total: &'static str,
 }
 
-/// A complete counted exclusive scan expressed as compiler-graph operations.
+/// A complete counted exclusive scan expressed as compiler-graph operations:
+/// local block scans, one workgroup that scans the block sums, and the apply.
 /// All pipelines, uniforms, bind groups, and allocation checks are materialized
 /// once; recording only emits the already-bound operation sequence.
 pub(crate) struct GpuResidentExclusiveScan {
     local: ComputeOperation,
-    hierarchy_up: Vec<ComputeOperation>,
-    hierarchy_down: Vec<ComputeOperation>,
+    block_prefix: ComputeOperation,
     apply: ComputeOperation,
     _params: LaniusBuffer<ScanParams>,
-    _hierarchy_params: Vec<LaniusBuffer<ScanHierarchyParams>>,
+    _block_prefix_params: LaniusBuffer<ScanHierarchyParams>,
     _local: LaniusBuffer<u32>,
     _block_sum: LaniusBuffer<u32>,
     _block_prefix: LaniusBuffer<u32>,
-    _hierarchy: LaniusBuffer<u32>,
 }
 
 impl GpuResidentExclusiveScan {
@@ -75,7 +71,6 @@ impl GpuResidentExclusiveScan {
         let local = alias(contract.local, capacity)?;
         let block_sum = alias(contract.block_sum, blocks)?;
         let block_prefix = alias(contract.block_prefix, blocks)?;
-        let hierarchy = alias(contract.hierarchy, blocks)?;
         let params = uniform_from_val(
             device,
             "lir.scan.params",
@@ -85,26 +80,18 @@ impl GpuResidentExclusiveScan {
                 scan_step: 0,
             },
         );
-        let levels = hierarchical_scan_levels(blocks);
-        let hierarchy_params = levels
-            .iter()
-            .enumerate()
-            .map(|(index, level)| {
-                let parent = levels.get(index + 1);
-                uniform_from_val(
-                    device,
-                    &format!("lir.scan.hierarchy.{index}"),
-                    &ScanHierarchyParams {
-                        n_items: capacity,
-                        n_blocks: blocks,
-                        level_divisor: level.divisor,
-                        level_offset: level.offset,
-                        parent_divisor: parent.map_or(0, |parent| parent.divisor),
-                        parent_offset: parent.map_or(0, |parent| parent.offset),
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
+        let block_prefix_params = uniform_from_val(
+            device,
+            "lir.scan.block_prefix",
+            &ScanHierarchyParams {
+                n_items: capacity,
+                n_blocks: blocks,
+                level_divisor: 1,
+                level_offset: 0,
+                parent_divisor: 0,
+                parent_offset: 0,
+            },
+        );
 
         let mut resources = ResourceMap::new();
         resources.graph_buffer(graph, contract.count, count)?;
@@ -112,7 +99,6 @@ impl GpuResidentExclusiveScan {
         resources.graph_buffer(graph, contract.local, &local)?;
         resources.graph_buffer(graph, contract.block_sum, &block_sum)?;
         resources.graph_buffer(graph, contract.block_prefix, &block_prefix)?;
-        resources.graph_buffer(graph, contract.hierarchy, &hierarchy)?;
         resources.graph_buffer(graph, contract.output, output)?;
         resources.graph_buffer(graph, contract.total, total)?;
         resources.buffer("gScan", &params);
@@ -126,39 +112,18 @@ impl GpuResidentExclusiveScan {
             kernels.kernel("scan/counted/00_local"),
             capacity,
         )?;
-        let hierarchy_up = hierarchy_params
-            .iter()
-            .zip(&levels)
-            .map(|(params, level)| {
-                let mut resources = resources.clone();
-                resources.buffer("gHierarchy", params);
-                ComputeOperation::direct(
-                    device,
-                    &context,
-                    &resources,
-                    contract.up_pass,
-                    kernels.kernel("scan/counted/01_hierarchy_up"),
-                    level.count,
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let hierarchy_down = hierarchy_params
-            .iter()
-            .zip(&levels)
-            .take(levels.len().saturating_sub(1))
-            .map(|(params, level)| {
-                let mut resources = resources.clone();
-                resources.buffer("gHierarchy", params);
-                ComputeOperation::direct(
-                    device,
-                    &context,
-                    &resources,
-                    contract.down_pass,
-                    kernels.kernel("scan/counted/02_hierarchy_down"),
-                    level.count,
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let block_prefix_operation = {
+            let mut resources = resources.clone();
+            resources.buffer("gHierarchy", &block_prefix_params);
+            ComputeOperation::direct(
+                device,
+                &context,
+                &resources,
+                contract.block_prefix_pass,
+                kernels.kernel("scan/counted/04_block_prefix"),
+                1,
+            )?
+        };
         let apply_operation = ComputeOperation::direct(
             device,
             &context,
@@ -170,26 +135,19 @@ impl GpuResidentExclusiveScan {
 
         Ok(Self {
             local: local_operation,
-            hierarchy_up,
-            hierarchy_down,
+            block_prefix: block_prefix_operation,
             apply: apply_operation,
             _params: params,
-            _hierarchy_params: hierarchy_params,
+            _block_prefix_params: block_prefix_params,
             _local: local,
             _block_sum: block_sum,
             _block_prefix: block_prefix,
-            _hierarchy: hierarchy,
         })
     }
 
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.local.record(encoder)?;
-        for operation in &self.hierarchy_up {
-            operation.record(encoder)?;
-        }
-        for operation in self.hierarchy_down.iter().rev() {
-            operation.record(encoder)?;
-        }
+        self.block_prefix.record(encoder)?;
         self.apply.record(encoder)
     }
 }
