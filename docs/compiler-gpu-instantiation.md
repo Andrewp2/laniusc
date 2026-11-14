@@ -16,8 +16,8 @@ substitution, layout, call selection, and lowering must run in GPU shaders.
 
 The [proposed implementation boundaries](compiler-gpu-instantiation-design.md)
 specify the cross-unit identities, retained data, discovery inputs, solver
-ownership and lowering batches. The draft still needs a discovery-input audit
-outside settings. The prototype milestones below describe the earlier selective
+ownership and lowering batches. Discovery and routing audits now identify the
+remaining concrete checks and their GPU owners. The prototype milestones below describe the earlier selective
 fallback approach; they are not the next implementation sequence.
 
 ## Architecture validation checkpoint (2026-11-14)
@@ -25,8 +25,8 @@ fallback approach; they are not the next implementation sequence.
 Independent code review found that the prototype's selective admission and
 fallback machinery does not define a complete replacement. In particular,
 job-local identities, template retention, implementation selection, symbolic
-typing and capacity handling need explicit contracts. Feature expansion is
-paused while those boundaries are resolved. Fewer replay bodies are not an
+typing and capacity handling need explicit contracts. The replacement proceeds
+through retained cross-unit interfaces and concrete semantic checks. Fewer replay bodies are not an
 acceptance criterion for the complete replacement.
 
 Three investigations now provide more specific evidence:
@@ -115,6 +115,34 @@ On the integrated tree, six focused tests passed: the trait-return and generic
 impl-forwarding modules, plus the existing inherited/shadowed method-bound
 test. These include the new shadowing case and rejection diagnostics. All runs
 used the shared GPU lock and one test thread; no broad suite was repeated.
+
+### Concrete instance checks still required
+
+The discovery-input audit found missing value-row types and operator validation
+in the selected-copy prototype. Baseline probes confirm a miscompilation of
+`add<T>` at both integer and floating-point types. Mixed instances also admit
+boolean arithmetic and integer conditions that should fail type checking.
+Forcing those same bodies into another unit invokes source replay, which
+computes the numeric result correctly and rejects the invalid operators.
+Complete symbolic row typing, scalar realization and GPU concrete-operand
+validation are required corrections before replay deletion.
+
+Constant projection fits are another instance-time obligation. The existing
+mixed-projection overflow fixture currently fails with an internal LNC0017
+evidence error without a source label; a failed-fit source diagnostic is a
+required correction, not established baseline behavior. Executed small and
+boundary-fitting instances succeed.
+
+The proposed inherent-method reselection check was rejected after measurement:
+a generic caller preserves its checked impl choice both in selected copies and
+under forced cross-unit replay, even where a direct concrete call is ambiguous.
+The replacement must preserve that template choice. Source grammar inspection
+also removed nested definitions and trait default bodies from the required
+surface; neither is currently supported.
+
+Raw probes and qualified decisions are in `target/instantiation-design-evidence/`
+(`semantic-probes`, `semantic-probes-followup`, `semantic-unit-probes` and
+`discovery-parent-decisions.md`). They measured correctness, not compile speed.
 
 ### Sequential-job regression resolved
 

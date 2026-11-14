@@ -2,9 +2,10 @@
 
 This draft specifies the replacement path. It is not an implementation receipt.
 The measurements, prototype history and remaining coverage gaps are in
-[GPU generic instantiation](compiler-gpu-instantiation.md). The draft needs a
-code audit of discovery inputs outside the settings workload before its
-interfaces are frozen.
+[GPU generic instantiation](compiler-gpu-instantiation.md). Discovery-input and
+emitted-use audits establish the contracts below. Baseline probes also found
+missing concrete operator checks in the current selected-copy path. Those
+corrections and the acceptance gates remain implementation requirements.
 
 The host supplies input bytes, allocations, transfers and submissions. Shaders
 own declaration identity, type substitution, implementation selection, instance
@@ -24,6 +25,21 @@ stores each as a u32. No token number is a program type or instance identity.
 | `TypeId` | An exactly interned **closed** type/constant term in the build store. A named type includes its declaration and complete ordered lexical/application arguments. |
 | `InstanceId` | `(callable DeclId, closed environment TypeId)`. Environment domains, parameter order and constant value/type identity are explicit. Native widths and transient proof IDs are not part of this key. |
 | `UseId` | A template's callable-use ordinal. An instantiated use is `(InstanceId, UseId)`. Deferred uses in original objects get build-global ordinals from GPU scans in deterministic unit order. Calls and function-entry references must both be inventoried, although only calls need deferred instance selection in today's language. |
+
+Each constant parameter record retains its declared scalar, not just its
+position. A callable's binder map composes impl parameters before method
+parameters, separately in the type and constant domains, including unused
+declared parameters. Trait-required members inherit trait parameters and the
+implicit `Self`; they do not introduce their own generic parameters today.
+
+The retained term kinds are scalar, named application, array, slice, reference,
+typed constant value, constant projection, count class, parameter and environment.
+Aliases have already been normalized. Arrays use count-class identity; typed
+constants still distinguish their scalar types. A symbolic constant projection
+retains a fit obligation even when count-class normalization equates its result
+with the original count. There is no constant arithmetic in type expressions;
+ordinary arithmetic using a constant parameter as a value remains executable
+body code. An environment's owner is a declaration identity, not a HIR row.
 
 The canonical store in a frontend job remains job-local. At retention, shaders
 translate its leaves and nominal identities into these build handles before
@@ -60,12 +76,13 @@ whole token-capacity buffers. Every exported field is either local to the
 segment or explicitly externalized. Keeping an arbitrary outside HIR/token
 index, as the current same-job copy code does, is invalid across units.
 
-The retained set includes file functions, impl methods, and supported nested
-definitions with lexical parameters. Trait methods currently end in `;` in
-the grammar; there are no trait-provided bodies to retain. Nested definitions get their
-own declaration identity and an explicit map of inherited parameters. Runtime
-captures must already be represented by the existing closure elaboration.
-An inner slot zero must never capture an outer or trait slot zero accidentally.
+The retained set includes file functions and impl methods. The grammar has
+neither nested definitions nor trait-provided bodies. The inherited binder
+chains are impl-to-method and trait-to-required-member. Closure elaboration
+already produces ordinary non-generic file-level declarations, including
+private nominal types, impl methods and stored-callback entries. Retain those
+through the same declaration and use records. An impl parameter must never be
+confused with a method or trait parameter at the same slot.
 
 Functions whose native bodies are complete can lower during their unit job.
 This includes generic declarations whose emitted code does not depend on their
@@ -88,11 +105,20 @@ from a previous job's function rows or tokens.
 
 ## 3. Discovery consumes semantic dependencies
 
-A callable use records its diagnostic span and one of:
+A use records its diagnostic span and one of these forms:
 
-- a resolved declaration with its symbolic environment;
-- a required trait member, trait arguments, receiver term and receiver plan;
-- an explicitly described deferred route supported by the current language.
+| Form | Retained inputs | Discovery effect |
+| --- | --- | --- |
+| Direct or inherent-method call | Selected declaration, composed symbolic environment, result term and receiver plan | Instantiate the selected signature and its obligations; request its body if needed |
+| Bound-member call | Trait and required-member declarations, trait arguments, receiver term and plan, caller-scoped result term | Ask the program trait solver for an implementation and its environment |
+| Record or enum constructor | Nominal declaration, result application and variant ordinal when applicable | Request layout, not a function instance |
+| Intrinsic | Intrinsic tag and operand terms | Request dependent layouts, such as a raw view's element stride |
+| Function-entry reference | Ordinary callee declaration and C-entry signature | Retain the target for batch lowering; no generic instance selection |
+| Extern or host service | Declaration and closed signature/calling-convention class | Preserve its native target and ABI |
+
+Current producers are `CheckedCallArtifact`, canonical `ct_call_env`, bound
+member context, checked record/variant references and intrinsic tags. Export
+must translate their job-local declaration and parameter leaves explicitly.
 
 Each environment/result dependency is an immutable semantic term or projection
 with named inputs. The initial operations are parameter substitution, nominal
@@ -116,18 +142,33 @@ resolved parameter's owner belongs to the allowed binder chain. Repeating
 source name lookup is wrong when a nearer declaration shadows an inherited
 parameter that remains present in an inferred field or call type.
 
+Validate every exported term leaf, including compound results, call environments,
+receiver terms and field/variant schemas. The allowed binder context belongs
+to the record containing the term. In particular, a callee environment's
+bindings are terms in the caller's scope; its target declaration does not make
+those bindings callee-scoped. Shared terms can be checked against each owning
+record's context. A foreign unresolved leaf is an internal invariant failure,
+not an unbound term that may silently pass through substitution.
+
+Every value-producing expression and storage/type row must export a symbolic
+type reference. Structural rows and callable-only syntax have explicit
+non-value roles. Match rows take their checked result from the match-token
+reference. Arithmetic/bitwise results retain the appropriate operand reference;
+comparisons and logical results have boolean references, with separate operand
+legality constraints. A supported value row must not be accepted as untyped.
+Repair its producer before enabling the new export path for that source form.
+
 Discovery must not assume a single fixed-size call record is sufficient. A use
 may reference a variable-size semantic dependency DAG. Its readiness is defined
 by those inputs. The GPU schedules ready term, obligation and routing tasks;
 one lane must not walk an entire function's call list. Count/scan operations
 flatten `(frontier instance, use)` and variable-length term/argument work.
 
-This is the boundary to audit for constant generics, nested definitions,
-constructors, function references and dependent method
-results. The audit must show that their existing semantic inputs can be
-exported. One settings counter cannot prove this contract for the language.
-If a case needs another semantic dependency, export that dependency; it does
-not automatically require every executable body to stay resident.
+These dependencies, rather than executable statement order, are the resident
+discovery inputs. Their completeness must be established by producer contracts
+and language cases, not by a settings counter. Additional supported dependencies
+belong in this graph; they do not automatically require every body to stay
+resident.
 
 ## 4. One owner for implementation selection and obligations
 
@@ -143,11 +184,37 @@ closed proofs across contexts is a later optimization, with separate admission
 of closedness, catalog identity and source authority. Repeated in-progress goals
 remain dependency edges and must not count as successful proofs.
 
+Inherent method selection is fixed by the checked template. Do not reselect
+overloads merely because its receiver becomes concrete. Baseline probes of
+`via<T>(Wrap<T>)` preserve the generic impl's method even where a direct
+`Wrap<[i32;2]>.marker()` is ambiguous. This also holds with two units and a
+confirmed source replay. Concrete trait-bound implementation selection is a
+different operation and belongs to the program solver.
+
 The GPU checks callee bounds, exact environment domains, selected member
 contracts, receiver adjustment and complete layouts before publication. Replay
 transport/provenance checks may disappear only when their source-authority
 obligations have moved to the retained-template boundary. The current soft
 obligation demotion to replay has no role in the new path.
+
+Concrete instance checks have explicit owners:
+
+| Check | GPU owner and required outcome |
+| --- | --- |
+| Constant projection fit | Substitution reports a distinct failed-fit result, propagated from a required call environment to a source diagnostic. Do not turn it into `CT_UNKNOWN`, or publish errors from discarded inference candidates. Retain pending fits independently of count-class equality. |
+| Closed array count validity | Validate signedness/range before layout, preserving the existing invalid-count diagnostic and template location. |
+| Operator, condition, logical and index legality | Realize operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. Realize scalar caches from the complete type, including floating-point classes. |
+| Callee/receiver/trait prerequisites | Program solver and instantiated signatures, with hard obligations and caller ABI agreement |
+| Unsupported zero initialization or layout | Existing layout/lowering rules on concrete types; map errors back to the template row |
+
+These are parallel row/use tasks, not a second source frontend. Their results
+join the publication reduction. The baseline selected-copy path currently
+miscompiles mixed integer/float generic arithmetic and admits invalid boolean
+arithmetic and integer conditions; forced cross-unit replay behaves correctly
+for those probes. Correct these defects instead of preserving their outputs.
+The mixed-projection overflow fixture currently reports an internal LNC0017
+evidence error without a source label. Its intended failed-fit diagnostic must
+be repaired rather than treated as established LNC0006 parity.
 
 ## 5. Discovery waves, depth and capacity
 
@@ -251,8 +318,9 @@ requires a defined lexicographic reduction; discovery thread order is not one.
 Implementation proceeds through complete interfaces, without per-instance
 admission/rejection fallback:
 
-1. Repair and validate symbolic binder ownership; audit discovery dependencies
-   for the source forms listed in section 3.
+1. Repair complete symbolic row typing, concrete operator checks and constant-fit
+   reporting. Validate exported parameter ownership and the discovery records
+   in section 3. The two-unit retention boundary can be built in parallel.
 2. Export two units into retained segments and semantic data, then overwrite
    both frontend workspaces. Reconstruct a foreign body and its types correctly.
 3. Run GPU discovery/selection with two environments, a cross-unit generic
@@ -267,6 +335,11 @@ admission/rejection fallback:
    selective rejection machinery, then measure full settings rebuilds. Delete
    `ExecRoutes`, `ClosureIntake`, replay unit numbering, host symbol replacement,
    `native_call_hirs` readback and the cross-build library-instance cache.
+
+Before those checks are implemented, a test-only vertical slice may exercise
+the new retained data and execution path. Missing checks are implementation
+gates, not new language rejections or a production per-instance fallback policy.
+Do not switch general compilation onto an incomplete publisher.
 
 The first cross-unit execution fixture is the existing
 `native_large_pack_spills_originals_and_generic_replays_and_writes_atomically`
