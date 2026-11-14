@@ -83,3 +83,8 @@ fn bound_member_results_name_the_callers_parameter() {
     reject_at("bound_member_rigid.lani", "LNC0006", "mapper.apply");
     reject_at("bound_member_missing_impl.lani", "LNC0008", "run<Spread,i32,Pair>");
 }
+
+#[test]
+fn call_results_retain_inherited_parameter_identity_under_shadowing() {
+    execute("shadowed_result_scope.lani");
+}

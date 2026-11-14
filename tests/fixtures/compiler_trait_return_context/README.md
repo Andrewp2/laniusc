@@ -32,6 +32,11 @@ checker rejects a call result that names a parameter outside the call's
 scope with `LNC0047`, so a compile that succeeds shows the template result
 is the caller's `U`.
 
+`shadowed_result_scope.lani` passes an impl-owned field through a generic
+identity call inside a method whose type parameter has the same name. The
+call's result retains the impl parameter's identity. Scope validation must
+accept that identity even though name lookup would find the method parameter.
+
 | Source | Rejected contract | Diagnostic |
 | --- | --- | --- |
 | `bound_member_rigid.lani` | Bound result `U` stored in a `T` | `LNC0006` |

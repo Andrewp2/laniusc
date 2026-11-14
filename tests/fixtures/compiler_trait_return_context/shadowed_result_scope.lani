@@ -1,0 +1,15 @@
+struct Cell<T> { value: T }
+fn identity<U>(value: U) -> U { return value; }
+impl<T> Cell<T> {
+    fn shadow<T>(&self, value: T) -> T {
+        // This call returns the impl's T, even though source spelling T here
+        // names the method's parameter. Its resolved identity stays valid.
+        let inherited = identity(self.value);
+        return value;
+    }
+}
+fn main() -> i32 {
+    let cell: Cell<i32> = Cell { value: 7 };
+    if (!cell.shadow(true)) { return 1; }
+    return 0;
+}
