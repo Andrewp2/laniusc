@@ -18,6 +18,9 @@ pub(super) use native_layout::NativeLayoutFailure;
 mod implementation_application;
 pub(super) use implementation_application::{ImplProjectionLimits, ProjectedImplApplication};
 mod proof;
+mod retained;
+pub(super) use retained::check as retained_check;
+pub use retained::{RETAINED_POISON, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitStage};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -231,6 +234,20 @@ impl GpuTraitSolver {
         workspace: WorkspaceLease,
         catalog: Arc<FrozenCatalog>,
     ) -> Result<Self> {
+        ensure!(!catalog.is_retained(), "a GPU-produced catalog is admitted with its producer");
+        let storage = Arena::from_words(&workspace, "trait_solver.catalog", &catalog.words)?;
+        Self::admit_storage(workspace, catalog, storage, |_, _| Ok(()))
+    }
+
+    /// Admission of `catalog` in `storage`. `fill` records, before the
+    /// admission kernels and in the same submit, the writes that complete
+    /// the catalog rows (the retained producer, dispatch/retained.rs).
+    fn admit_storage(
+        workspace: WorkspaceLease,
+        catalog: Arc<FrozenCatalog>,
+        storage: Arena,
+        fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
+    ) -> Result<Self> {
         let device = workspace.device().clone();
         let queue = workspace.queue().clone();
         let limits = device.limits();
@@ -241,7 +258,6 @@ impl GpuTraitSolver {
             "device cannot bind evidence arenas"
         );
         let kernels = kernels::CatalogKernels::load(&device)?;
-        let storage = Arena::from_words(&workspace, "trait_solver.catalog", &catalog.words)?;
         let recipe_kernels = kernels::RecipeKernels::load(&device)?;
         // One-shot processes create these pipelines lazily; save driver
         // compiles now rather than only at a normal exit.
@@ -263,6 +279,7 @@ impl GpuTraitSolver {
         });
         // Trusted serializer offsets; reset before initialize even when a future
         // upload policy recycles physical storage. Scratch gets full phase clears.
+        fill(&mut encoder, &storage)?;
         passes_core::flush_deferred_compute(&mut encoder);
         for table in [0usize, 1] {
             let slice = catalog.outputs[table];
@@ -1104,7 +1121,7 @@ impl OutputLayout {
                     ],
             "submission header mismatch"
         );
-        let catalog_words = u32_len(catalog.words.len(), "catalog words")?;
+        let catalog_words = catalog.word_count()?;
         let mut counts = [0; TABLE_COUNT];
         let mut offsets = [0; TABLE_COUNT];
         let mut capacities = [0; TABLE_COUNT];

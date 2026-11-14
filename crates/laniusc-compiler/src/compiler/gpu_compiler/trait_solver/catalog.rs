@@ -8,6 +8,8 @@ use std::{
 
 use anyhow::{Result, anyhow, ensure};
 
+mod retained;
+
 use super::{super::typecheck::{CompiledSourcePackUnit, OriginalUnitFacts}, abi::*, native_layout::FrozenNativeLayout};
 use crate::{
     compiler::{GpuSemanticInterfaceArtifact, GpuSemanticInterfaceImplementationKind, GpuSemanticInterfaceMemberKind},
@@ -151,9 +153,25 @@ pub(in crate::compiler::gpu_compiler) struct FrozenCatalog {
     pub words: Arc<[u32]>,
     pub slices: [Slice; TABLE_COUNT],
     pub outputs: [Slice; OUTPUT_COUNT],
+    /// Arena size of a catalog whose rows the GPU writes (catalog/retained.rs);
+    /// `words` is then empty. None for a host-serialized catalog.
+    retained_word_count: Option<u32>,
 }
 
 impl FrozenCatalog {
+    /// Words of the catalog arena: the serialized image, or the layout of a
+    /// GPU-produced catalog.
+    pub fn word_count(&self) -> Result<u32> {
+        match self.retained_word_count {
+            Some(words) => Ok(words),
+            None => u32_len(self.words.len(), "catalog words"),
+        }
+    }
+    /// True when the GPU writes this catalog's rows (no host image).
+    pub fn is_retained(&self) -> bool {
+        self.retained_word_count.is_some()
+    }
+
     pub fn freeze(inputs: &[CatalogInput<'_>]) -> Result<Arc<Self>> {
         // Sub-spans of trait_solver.catalog_freeze (traced runs only).
         let mut phase = std::time::Instant::now();
@@ -211,6 +229,7 @@ impl FrozenCatalog {
             words: Arc::from([]),
             slices: [Slice::default(); TABLE_COUNT],
             outputs: [Slice::default(); OUTPUT_COUNT],
+            retained_word_count: None,
         };
         for (&key, input) in &originals {
             let index = u32_len(result.snapshots.len(), "snapshots")?;

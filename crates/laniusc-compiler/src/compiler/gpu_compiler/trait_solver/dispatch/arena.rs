@@ -33,6 +33,16 @@ impl Arena {
         Self::from_slot_words(&slot, words)
     }
 
+    /// An arena of `words` words whose contents the GPU writes before any
+    /// read (the retained catalog, dispatch/retained.rs). Reused physical
+    /// storage keeps old bytes: the writer clears it first.
+    pub fn uninitialized(workspace: &WorkspaceLease, label: &str, words: u32) -> Result<Self> {
+        let slot = workspace.reserve(label)?;
+        let buffer = slot.buffer(words, storage_usage(), None)?;
+        let capacity_words = u32::try_from(buffer.byte_size / 4)?;
+        Ok(Self { buffer, logical_words: words, capacity_words, slot })
+    }
+
     /// Reinitialize one controller-owned query role after its previous complete
     /// readbacks. The caller owns exclusivity; other controllers reserve their
     /// own roles even when retaining the same workspace lease.

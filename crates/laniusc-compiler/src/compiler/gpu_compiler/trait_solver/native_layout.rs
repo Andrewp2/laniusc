@@ -78,6 +78,12 @@ impl FrozenNativeLayout {
         Self::from_rows(epoch, 0, &[], &[])
     }
 
+    /// The image of a catalog with no nominal recipes and `atom_count` atoms
+    /// (a GPU-produced catalog, catalog/retained.rs).
+    pub fn without_recipes(epoch: u64, atom_count: u32) -> Result<Self> {
+        Self::from_rows(epoch, atom_count, &[], &[])
+    }
+
     pub fn capture(catalog: &mut FrozenCatalog) -> Result<Self> {
         let mut recipes = Vec::<[u32; RECIPE_WIDTH as usize]>::new();
         let mut groups = Vec::<[u32; GROUP_WIDTH as usize]>::new();

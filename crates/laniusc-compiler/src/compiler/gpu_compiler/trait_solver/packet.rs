@@ -19,6 +19,7 @@ use crate::type_checker::{CheckedGenericCall, CheckedGenericTarget};
 #[path = "packet_tests.rs"]
 mod tests;
 mod implementation_application;
+mod retained;
 pub(super) use implementation_application::{AdmittedImplementationApplication, ImplApplicationRequest};
 
 /// Results may only be copied after the orchestrator has observed successful

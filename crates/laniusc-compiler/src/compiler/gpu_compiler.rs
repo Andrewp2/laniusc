@@ -10,6 +10,7 @@ mod benchmarks;
 mod body_specialization;
 mod instance_copies;
 mod trait_solver;
+pub use trait_solver::{RETAINED_POISON, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitStage};
 mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;

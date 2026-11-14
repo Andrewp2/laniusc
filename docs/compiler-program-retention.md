@@ -19,6 +19,7 @@ under "Not exported completely".
 | Store growth | `shaders/type_checker/retention/store_rehash.slang` |
 | Substitution over retained terms (probe) | `shaders/type_checker/retention/retention_subst.slang` |
 | Production substitution | `shaders/type_checker/retention/substitution/`, [guide](compiler-retained-substitution.md) |
+| Trait catalog and bound goals from the store | `shaders/type_checker/trait_solver/retained/`, [guide](compiler-retained-trait-catalog.md) |
 | Host object | `crates/laniusc-compiler/src/type_checker/program_retention.rs` |
 | Acceptance probe | `shaders/tests/retention_resolve.slang`, `tests/program_retention.rs` |
 
@@ -564,8 +565,10 @@ Return statement payloads are never interpreted as declaration-name tokens.
   `p + (4 * 2)` with their integer widths.
 
 - Discovery needs the trait solver's implementation evidence to select
-  bound-member callees. The solver's catalog inputs are retained
-  ("Trait facts"); its admission, coherence check and evidence are not.
+  bound-member callees. The GPU builds the catalog and the bound goals of
+  direct and inherent-method calls from the store, and the solver admits
+  and solves them ([retained trait catalog](compiler-retained-trait-catalog.md)).
+  Bound-member routing does not consume that evidence yet.
 - A dependency-signature slot leaf has to map to the dependency's committed
   binder entry. The dependency interface's slot order has to match the
   composed binder order above (impl before method per domain, then `Self`).

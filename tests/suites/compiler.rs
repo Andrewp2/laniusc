@@ -80,6 +80,8 @@ mod program_retention_readiness;
 mod program_retention_traits;
 #[path = "../retained_substitution.rs"]
 mod retained_substitution;
+#[path = "../retained_trait_catalog.rs"]
+mod retained_trait_catalog;
 #[path = "../language_ergonomics_execution.rs"]
 mod language_ergonomics_execution;
 #[path = "../language_tour.rs"]

@@ -865,6 +865,18 @@ impl ProgramRetention {
         Ok(words)
     }
 
+    /// Runs `f` with the store's buffers and the current build generation
+    /// while holding the store lock, so no export, growth or `begin_build`
+    /// changes the store while a consumer records and runs. Consumers (the
+    /// retained trait catalog) bind the buffers by reflected name.
+    pub(crate) fn with_store_buffers<R>(
+        &self,
+        f: impl FnOnce(&BTreeMap<&'static str, wgpu::Buffer>, u32) -> Result<R>,
+    ) -> Result<R> {
+        let store = self.store.lock().unwrap();
+        f(&store.buffers, store.generation)
+    }
+
     /// The store's status words.
     pub fn status(&self) -> Result<Vec<u32>> {
         let store = self.store.lock().unwrap();
