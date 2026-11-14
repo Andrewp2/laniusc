@@ -94,6 +94,7 @@ pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
 pub(super) const INSTANCE_EXEC_CLEAR_PASS: &str = "type_check.instance_exec.clear";
 pub(super) const INSTANCE_EXEC_SELECT_PASS: &str = "type_check.instance_exec.select";
 pub(super) const INSTANCE_EXEC_MEMBERS_PASS: &str = "type_check.instance_exec.members";
+pub(super) const INSTANCE_EXEC_CALLEES_PASS: &str = "type_check.instance_exec.callees";
 pub(super) const INSTANCE_EXEC_LAYOUT_PASS: &str = "type_check.instance_exec.layout";
 pub(super) const INSTANCE_EXEC_NATIVE_WORDS_CLEAR_PASS: &str =
     "type_check.instance_exec.native_words.clear";
@@ -103,7 +104,12 @@ pub(super) const INSTANCE_EXEC_TABLES_PASS: &str = "type_check.instance_exec.tab
 pub(super) const INSTANCE_EXEC_COUNTS_PASS: &str = "type_check.instance_exec.counts";
 const EXEC_SELECT_KERNEL: &str = "type_checker/closure/08_exec_select";
 const EXEC_MEMBERS_KERNEL: &str = "type_checker/closure/08a_exec_members";
+const EXEC_CALLEES_KERNEL: &str = "type_checker/closure/08c_exec_callees";
 const EXEC_LAYOUT_KERNEL: &str = "type_checker/closure/08b_exec_layout";
+/// Runs of 08c_exec_callees: each moves a rejected callee's rejection at
+/// least one caller up, so a chain of up to this many callers replays
+/// together (one more than the closure's levels).
+const EXEC_CALLEE_ROUNDS: usize = 17;
 const EXEC_ROWS_KERNEL: &str = "type_checker/closure/09_exec_rows";
 const EXEC_TABLES_KERNEL: &str = "type_checker/closure/09b_exec_tables";
 const EXEC_COUNTS_KERNEL: &str = "type_checker/closure/09c_exec_counts";
@@ -578,6 +584,15 @@ pub(super) fn register_instance_exec_passes(
     )?;
     graph.add_indirect_dispatch(INSTANCE_EXEC_MEMBERS_PASS, "instance_table_args")?;
     graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_CALLEES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXEC_CALLEES_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_CALLEES_PASS, "instance_closure_args")?;
+    graph.add_kernel_pass_by_name(
         INSTANCE_EXEC_LAYOUT_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::Types,
@@ -640,6 +655,7 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     exec_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_select: ComputeOperation,
     exec_members: ComputeOperation,
+    exec_callees: ComputeOperation,
     exec_layout: ComputeOperation,
     exec_native_words_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_native_words: ComputeOperation,
@@ -703,6 +719,7 @@ impl InstanceTableOperations {
             )?,
             exec_select: indirect(INSTANCE_EXEC_SELECT_PASS, EXEC_SELECT_KERNEL, &closure_args)?,
             exec_members: indirect(INSTANCE_EXEC_MEMBERS_PASS, EXEC_MEMBERS_KERNEL, &table_args)?,
+            exec_callees: indirect(INSTANCE_EXEC_CALLEES_PASS, EXEC_CALLEES_KERNEL, &closure_args)?,
             exec_layout: ComputeOperation::direct(
                 device,
                 graph,
@@ -755,6 +772,9 @@ impl InstanceTableOperations {
             self.exec_native_words_clear.record(encoder);
             self.exec_native_words.record(encoder)?;
             self.exec_members.record(encoder)?;
+            for _ in 0..EXEC_CALLEE_ROUNDS {
+                self.exec_callees.record(encoder)?;
+            }
             self.exec_layout.record(encoder)?;
             self.exec_rows.record(encoder)?;
             self.exec_tables.record(encoder)?;

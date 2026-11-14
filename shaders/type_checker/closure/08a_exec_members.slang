@@ -9,8 +9,9 @@
 // derive here replays (EX_REJECT_FACT), and so does one with a struct
 // literal whose realized struct has an application-typed field
 // (literal_fields_resolve), or a raw view whose realized element has no
-// native width (view_stride_resolves). Every other row is marked INVALID:
-// its copy keeps the template's member facts.
+// native width (view_stride_resolves). A method call's callee member names
+// no field and needs no layout. Every other row is marked INVALID: its copy
+// keeps the template's member facts.
 import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
@@ -28,6 +29,7 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
+StructuredBuffer<uint> method_call_name_id;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -219,6 +221,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     if (compact_hir_core[source].kind != HIR_MEMBER_EXPR) return;
+    // A method call's callee names no field: the call's route and the
+    // receiver's realized type are what lowering reads.
+    uint name = compact_hir_payload[source].c;
+    if (name < gParams.n_tokens && method_call_name_id[name] != INVALID) return;
     // Selection checked that the receiver is a row of the subtree.
     uint receiver = compact_hir_payload[source].b;
     uint2 realized = instance_row_refs[key.w + (receiver - key.x)];

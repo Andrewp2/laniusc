@@ -108,8 +108,8 @@ reports each entry's first failed rule.
 | `0x102` constants | The template has no constant parameters. |
 | `0x103` syntax | The body declares no nested item or function. |
 | `0x104` row | Every row's type realized under the environment. |
-| `0x105` call | Every call is routed: a call of a local generic body names its callee's table entry, and every other call keeps the template's callee and needs no type argument from the environment. Method, bound-member, dependency-generic and unresolved calls fail. |
-| `0x106` fact | No index, iteration or array row and no function result changes to an array type. A member's receiver is a row of the body, and its layout under a changed receiver derives in `08a_exec_members`. A raw view's realized element has a native width, and a struct literal's realized struct has no application-typed field (`08a_exec_members`). |
+| `0x105` call | Every call is routed. A call of a local generic body, or a bound-member call whose receiver selects a generic method, names its callee's table entry. A method call's receiver dereferences under the environment as the template's did. Every other call keeps the template's callee and needs no type argument from the environment, as a variant constructor does. A call routed to a nongeneric method, a dependency-generic call and an unresolved call fail. |
+| `0x106` fact | No index, iteration or array row and no function result changes to an array type. A member's receiver is a row of the body, and its layout under a changed receiver derives in `08a_exec_members`. A method call's callee member needs no layout. A raw view's realized element has a native width, and a struct literal's realized struct has no application-typed field (`08a_exec_members`). |
 | `0x107` block | Each side-table block of the body is contiguous. |
 | `0x108` capacity | The rows, tokens and side-table rows fit. An entry that does not fit, and every later entry, replays. |
 
@@ -120,10 +120,13 @@ passes the same admission as a replay request. The origin must target this
 unit, `checked_replay_environment` must close its environment, and the
 copy's symbol must be defined in the unit's object. The copy is then
 registered as that environment's specialization, with the origin's layout
-witnesses, so no replay is requested for it. A call row inside a copy routes
-through its callee entry's admitted origin. A routed call whose callee entry has
-no admitted origin is a compile error, not a fallback. Selected entries that do
-not route still replay. Their copies stay in the object as unreferenced
+witnesses, so no replay is requested for it. A call row inside a copy calls a
+selected callee entry's copy directly (`09_exec_rows`). An entry that calls a
+rejected entry is rejected too (`08c_exec_callees`, and `08b_exec_layout` after
+a capacity rejection), so a copy calls only copies. A call of a rejected entry
+that the 17 rounds leave in a copy routes through that entry's admitted origin,
+and an entry without one is a compile error, not a fallback. Selected entries
+that do not route still replay. Their copies stay in the object as unreferenced
 definitions.
 
 Nothing in this path is retained between builds. The table, the copies and
@@ -244,8 +247,47 @@ Methods of file-level impls are lowered as execution rows. Measured as above:
 | Language fixtures, replay bodies | 203 | 104 |
 
 On settings, the other 345 of 1,338 entries are 7 owner rejections (in-place
-instances), 279 call rejections and 59 fact rejections. Most call rejections
-are method and bound-member calls inside a copy, such as `self.next()`.
+instances), 279 call rejections and 59 fact rejections. 268 of the call
+rejections are calls of generic variant constructors, such as `Some(x)`.
+
+### Calls inside copies, 2026-11-13
+
+A copy's calls of generic methods and constructors are lowered with it:
+
+- A generic variant constructor keeps its callee. Its value has the call's
+  realized type.
+- A call routed to a selected table entry targets that entry's copy: its
+  virtual function row and first token. The template's target cannot be
+  kept: a bound-member call's template names the trait's member, and a
+  recursive call's target is inside the template's own tokens.
+- An entry that calls a rejected entry is rejected too (`0x105`), since its
+  copy would call a body that only a replay defines. `08c_exec_callees`
+  moves these rejections one caller up per run and runs 17 times, one more
+  than the closure's levels. `08b_exec_layout` repeats it after a capacity
+  rejection.
+- A method call's receiver parameter is the callee entry's realized
+  receiver type. Its matched receiver is the copy's realized receiver after
+  the template's dereferences.
+- A call that the template leaves untyped, such as a method returning its
+  impl's parameter, is typed by the callee's declared return type under the
+  callee's instance environment (`untyped_call_result` in `table_rows.slang`).
+- A method call's callee member names no field, so a changed receiver needs
+  no member layout for it.
+
+| Workload | Method instances | Calls inside copies |
+| --- | --- | --- |
+| Settings entries selected and routed | 993 | 1,136 |
+| Settings replay compiles | 1 | 1 |
+| Settings replay bodies | 338 | 195 |
+| Language fixtures, replay compiles | 25 | 22 |
+| Language fixtures, replay bodies | 104 | 104 |
+
+On settings, the other 202 entries are 7 owner rejections (in-place
+instances), 97 call rejections and 98 fact rejections. 85 of the fact
+rejections are index rows whose element type the environment changes. 85 of
+the call rejections are callers of a rejected entry. 10 are bound-member calls
+routed to a nongeneric method. The fixtures lower more bodies than before but
+replay as many, for the same reason.
 
 ## Complete instance contract
 
@@ -347,8 +389,10 @@ does not complete a milestone.
    path; do not bypass trait or layout admission.
 3. **Close local instance graphs.** Calls between local function instances,
    including finite recursion, are routed. Methods of generic impls are
-   lowered as instances. Method calls, bound-member selection and dependency
-   generics called from a copy still replay.
+   lowered as instances, and so are method calls and bound-member calls
+   that select a generic method. A bound-member call that selects a
+   nongeneric method, and dependency generics called from a copy, still
+   replay.
    Route calls between instances, including
    finite recursion, generic methods, and bound-member selection. Preserve
    implementation evidence and constant environments at every edge. Emit the

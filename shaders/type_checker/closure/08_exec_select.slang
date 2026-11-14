@@ -13,10 +13,14 @@
 //   own rows already are that instance;
 // - the body declares no nested item or function;
 // - every row's type realized under the environment (instance_row_refs);
-// - every call is routed: a call of a local generic body names its callee's
-//   table entry (IT_CALL_ENTRY), any other call keeps the template's callee
-//   (IT_CALL_NONE) and needs no type argument from the environment; a
-//   bound-member, method, dependency-generic or unresolved call replays;
+// - every call is routed: a call of a local generic body, or a
+//   bound-member call whose receiver selects a generic method, names its
+//   callee's table entry (IT_CALL_ENTRY), and a method call's receiver
+//   dereferences under the environment as the template's did; any other
+//   call keeps the template's callee (IT_CALL_NONE) and needs no type
+//   argument from the environment, as a variant constructor does; a call
+//   routed to a nongeneric method, a dependency-generic call or an
+//   unresolved call replays;
 // - an index, iteration or array row whose type the environment changes
 //   replays, and so does a function whose result becomes an array: its
 //   length, stride or result width is derived by passes that run before the
@@ -57,6 +61,8 @@ StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
 #include "inplace_read.slang"
 
 static const uint INVALID = 0xffffffffu;
@@ -173,6 +179,38 @@ bool call_keeps_callee(uint row)
     return call.receiver_parameter_ref_tag != 2u && call.receiver_matched_ref_tag != 2u;
 }
 
+// The receiver type a method call matched: `receiver` after `count`
+// dereferences through reference instances; (EX_INVALID, 0) when one is not
+// a reference.
+uint2 ex_dereferenced(uint2 receiver, uint count)
+{
+    uint rows; uint stride;
+    type_instance_kind.GetDimensions(rows, stride);
+    for (uint step = 0u; step < count; step++)
+    {
+        if (receiver.x != 3u || receiver.y >= rows || type_instance_kind[receiver.y] != 4u)
+            return uint2(EX_INVALID, 0u);
+        receiver = uint2(type_instance_elem_ref_tag[receiver.y], type_instance_elem_ref_payload[receiver.y]);
+    }
+    return receiver;
+}
+
+// Whether a method call at template row `row` of entry `key`, routed to
+// table entry `callee`, has a realized receiver (09_exec_rows): the callee's
+// receiver parameter realized, and a receiver that dereferences as the
+// template's did.
+bool entry_receiver_realizes(uint row, uint4 key, uint callee)
+{
+    CheckedCallArtifact call = semantic_calls_by_hir[row];
+    if (call.receiver_adjustment_kind == 0u) return true;
+    uint2 parameter = instance_row_refs[instance_table[2u * callee].w];
+    if (parameter.x == 0u || parameter.x == IT_ROW_FAILED) return false;
+    uint receiver = call.receiver_hir;
+    if (receiver < key.x || receiver - key.x >= key.y) return false;
+    uint2 realized = instance_row_refs[key.w + (receiver - key.x)];
+    return ex_dereferenced(uint2(realized.x - 1u, realized.y), call.receiver_deref_count).x != EX_INVALID;
+}
+
 uint reject(uint entry, uint reason)
 {
     ex_set_quad(entry, EX_Q_HEAD, uint4(reason, 0u, 0u, 0u));
@@ -242,6 +280,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         uint2 call = instance_row_calls[key.w + offset];
         if (call.x != IT_CALL_NONE && call.x != IT_CALL_ENTRY)
+        {
+            reject(entry, EX_REJECT_CALL);
+            return;
+        }
+        if (core.kind == HIR_CALL_EXPR && call.x == IT_CALL_ENTRY && !entry_receiver_realizes(row, key, call.y))
         {
             reject(entry, EX_REJECT_CALL);
             return;

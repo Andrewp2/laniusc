@@ -440,8 +440,10 @@ fn in_unit_generic_instances_execute_with_their_own_bodies() {
 /// in the original job like the program's own: a library generic reached
 /// from a local generic, a caller declared before its callees (a copy's
 /// token span ends at the next declaration's first token), a raw view of a
-/// type only the closure realizes, and a payload-free variant argument
-/// ahead of the argument that binds the parameter.
+/// type only the closure realizes, a payload-free variant argument ahead of
+/// the argument that binds the parameter, generic methods called from
+/// generic functions and from themselves, generic variant constructors, and
+/// callers of a generic callee that the job does not lower.
 #[test]
 fn one_unit_generic_instances_execute() {
     for (label, source, stdout, status) in [
@@ -486,6 +488,68 @@ fn one_unit_generic_instances_execute() {
                  return 0;
              }",
             &b"5\n6\n"[..],
+            0,
+        ),
+        (
+            "generic functions calling generic methods, including recursive ones",
+            "struct Cell<T> { count: i32, value: T }
+             impl<T> Cell<T> {
+                 fn get(&self) -> T { return self.value; }
+                 fn down(&self, n: i32) -> i32 { if (n == 0) { return self.count; } return self.down(n - 1) + 1; }
+             }
+             fn take<T>(c: Cell<T>) -> T { return c.get(); }
+             fn depth<T>(c: Cell<T>, n: i32) -> i32 { return c.down(n); }
+             fn sum<T>(x: T, n: i32) -> i32 { if (n == 0) { return 0; } return sum(x, n - 1) + n; }
+             fn main() -> i32 {
+                 let a: Cell<i64> = Cell { count: 3, value: 40 };
+                 let b: Cell<bool> = Cell { count: 10, value: true };
+                 print(take(a) as i32);
+                 print(take(b) as i32);
+                 print(depth(a, 4));
+                 print(depth(b, 2));
+                 print(sum(true, 4));
+                 print(sum(7, 3));
+                 return 0;
+             }",
+            &b"40\n1\n7\n12\n10\n6\n"[..],
+            0,
+        ),
+        (
+            "generic variant constructors, local and imported",
+            "module app::main;
+             import core::option;
+             enum Maybe<T> { Just(T), Nothing }
+             fn wrap<T>(x: T) -> core::option::Option<T> { return core::option::Some(x); }
+             fn mine<T>(x: T) -> Maybe<T> { return Maybe::Just(x); }
+             fn main() -> i32 {
+                 let a: core::option::Option<i32> = wrap(5);
+                 let b: core::option::Option<i64> = wrap(6);
+                 let n: Maybe<i64> = mine(7);
+                 let m: Maybe<bool> = mine(true);
+                 let w: i64 = match (n) { Maybe::Just(v) -> v, Maybe::Nothing -> 0 };
+                 let t: i32 = match (m) { Maybe::Just(v) -> v as i32, Maybe::Nothing -> 0 };
+                 print(a.unwrap());
+                 print(b.unwrap() as i32);
+                 print(w as i32);
+                 print(t);
+                 return 0;
+             }",
+            &b"5\n6\n7\n1\n"[..],
+            0,
+        ),
+        (
+            "generic callers of a generic callee that is not lowered in the job",
+            "fn pick<T>(values: [T; 3], i: i32) -> T { return values[i]; }
+             fn outer<T>(values: [T; 3]) -> T { return pick(values, 1); }
+             fn twice<T>(values: [T; 3], n: i32) -> T { if (n == 0) { return outer(values); } return twice(values, n - 1); }
+             fn main() -> i32 {
+                 let small: [i32; 3] = [4, 5, 6];
+                 let wide: [i64; 3] = [7, 8, 9];
+                 print(twice(small, 2));
+                 print(twice(wide, 1) as i32);
+                 return 0;
+             }",
+            &b"5\n8\n"[..],
             0,
         ),
         (

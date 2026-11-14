@@ -7,8 +7,9 @@
 // Checked type rows are numbered from the end of the type checker's token
 // tables (type/instances/allocate_application.slang), and lowering reads
 // type rows and tokens in one id space, so virtual tokens also end before
-// those tables do. An entry past any capacity, and every later entry,
-// replays (EX_FLAG_CAPACITY). Also sizes the row and table dispatches.
+// those tables do. An entry past any capacity, every later entry and
+// every caller of one replay (EX_FLAG_CAPACITY). Also sizes the row and
+// table dispatches.
 import hir_records;
 import type_checker.closure.instance_table;
 import type_checker.closure.instance_exec;
@@ -85,6 +86,34 @@ uint table_capacity(uint k)
     return min(rows, second);
 }
 
+// Rounds of caller rejection after a capacity rejection
+// (EXEC_CALLEE_ROUNDS in instance_closure_passes.rs).
+static const uint EX_LAYOUT_CALLEE_ROUNDS = 17u;
+
+// Whether `rows` rows, `span` tokens and the side-table blocks fit the room
+// left in each.
+bool fits(uint rows, uint span, uint4 length0, uint4 length1, uint row_room, uint token_room,
+    uint4 room0, uint4 room1)
+{
+    bool fit = rows <= row_room && span <= token_room;
+    for (uint k = 0u; k < EX_TABLES && fit; k++)
+        fit = ex_table_word(length0, length1, k) <= ex_table_word(room0, room1, k);
+    return fit;
+}
+
+// Whether entry `entry` calls a rejected table entry.
+bool calls_rejected(uint entry, uint entries)
+{
+    uint4 key = instance_table[2u * entry];
+    for (uint offset = 0u; offset < key.y; offset++)
+    {
+        uint2 call = instance_row_calls[key.w + offset];
+        if (call.x == IT_CALL_ENTRY && call.y < entries && ex_quad(call.y, EX_Q_HEAD).x >= EX_REJECT_TABLE)
+            return true;
+    }
+    return false;
+}
+
 uint3 dispatch_size(uint lanes)
 {
     uint groups = (lanes + 255u) / 256u;
@@ -125,7 +154,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     instance_exec_counts[EX_COUNT_TOKEN_BASE] = token_base;
     uint row_room = hir <= row_capacity ? row_capacity - hir : 0u;
     uint entries = min(min(instance_table_counts[IT_COUNT_ENTRIES], IT_RANK_LIMIT), ex_entry_capacity());
-    uint selected = 0u;
+    // The pending entries that fit, in table order; the first that does not
+    // and every later one replay.
     uint rows = 0u;
     uint tokens = 0u;
     bool full = false;
@@ -133,19 +163,48 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint4 head = ex_quad(entry, EX_Q_HEAD);
         if (head.x != EX_PENDING) continue;
+        uint4 length0 = ex_quad(entry, EX_Q_TLEN0);
+        uint4 length1 = ex_quad(entry, EX_Q_TLEN1);
+        if (!full && fits(head.z, ex_quad(entry, EX_Q_TOKENS).y, length0, length1,
+                row_room - rows, token_capacity - tokens, room0 - used0, room1 - used1))
+        {
+            used0 += length0;
+            used1 += length1;
+            rows += head.z;
+            tokens += ex_quad(entry, EX_Q_TOKENS).y;
+            continue;
+        }
+        full = true;
+        ex_set_quad(entry, EX_Q_HEAD, uint4(EX_REJECT_CAPACITY, head.y, head.z, 0xffffffffu));
+    }
+    // A copy calls its callees' copies (09_exec_rows), so a caller of an
+    // entry that did not fit replays too, as 08c_exec_callees does for the
+    // other rejections. Dropping a caller only frees room.
+    for (uint round = 0u; full && round < EX_LAYOUT_CALLEE_ROUNDS; round++)
+    {
+        bool changed = false;
+        for (uint entry = 0u; entry < entries; entry++)
+        {
+            if (ex_quad(entry, EX_Q_HEAD).x == EX_PENDING && calls_rejected(entry, entries))
+            {
+                ex_set_quad(entry, EX_Q_HEAD, uint4(EX_REJECT_CALL, 0u, 0u, 0u));
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+    used0 = uint4(0u, 0u, 0u, 0u);
+    used1 = uint4(0u, 0u, 0u, 0u);
+    rows = 0u;
+    tokens = 0u;
+    uint selected = 0u;
+    for (uint entry = 0u; entry < entries; entry++)
+    {
+        uint4 head = ex_quad(entry, EX_Q_HEAD);
+        if (head.x != EX_PENDING) continue;
         uint4 span = ex_quad(entry, EX_Q_TOKENS);
         uint4 length0 = ex_quad(entry, EX_Q_TLEN0);
         uint4 length1 = ex_quad(entry, EX_Q_TLEN1);
-        bool fits = !full && head.z <= row_room - rows && span.y <= token_capacity - tokens;
-        for (uint k = 0u; k < EX_TABLES && fits; k++)
-            fits = ex_table_word(length0, length1, k) <=
-                ex_table_word(room0, room1, k) - ex_table_word(used0, used1, k);
-        if (!fits)
-        {
-            full = true;
-            ex_set_quad(entry, EX_Q_HEAD, uint4(EX_REJECT_CAPACITY, head.y, head.z, 0xffffffffu));
-            continue;
-        }
         uint4 start0 = own0 + used0;
         uint4 start1 = own1 + used1;
         used0 += length0;

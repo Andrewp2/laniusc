@@ -111,6 +111,30 @@ bool route_row(uint token, uint receiver, inout uint reference, inout uint env)
     return true;
 }
 
+// The declared return type of the local generic body that untyped call row
+// `call` calls, and the callee's instance environment under the caller's
+// `env`. False for any other row, or when the callee's environment does
+// not close.
+bool untyped_call_result(uint source, uint call, inout uint env, out uint reference)
+{
+    reference = CT_UNKNOWN;
+    uint token; uint callee; uint2 masks;
+    if (source != IT_SOURCE_LOCAL || !valid_node(call) || !closure_call(call, token, callee, masks))
+        return false;
+    uint declaration = call_fn_index[token];
+    if (!valid_token(declaration)) return false;
+    CtSpare subst_spare = ct_spare_none();
+    CtSpare env_spare = ct_spare_none();
+    uint callee_env = closure_instance_env_of(instance_closure_edge_env[call], callee, masks,
+        env, subst_spare, env_spare);
+    if (!ct_is_record(callee_env)) return false;
+    uint result = ct_ref(fn_return_ref_tag[declaration], fn_return_ref_payload[declaration]);
+    if (!ct_is_resolved(result)) return false;
+    reference = result;
+    env = callee_env;
+    return true;
+}
+
 void realize_row(uint row, bool final_dispatch)
 {
     uint rows = instance_table_counts[IT_COUNT_FLAGS] != 0u ? 0u
@@ -134,15 +158,23 @@ void realize_row(uint row, bool final_dispatch)
     uint token = INVALID;
     uint steps = tag == TYPE_REF_INVALID && source == IT_SOURCE_LOCAL && valid_node(template_row) &&
         closure_bound_call(template_row, token) ? 2u : 1u;
+    uint env = entry.z;
     if (steps == 2u) reference = bound_call_receiver(token);
+    // An untyped call of a local generic body, such as a method returning
+    // its impl's parameter, is typed by the callee's declared return type
+    // under the callee's instance environment (as 07_table_calls names it).
+    else if (tag == TYPE_REF_INVALID && !untyped_call_result(source, template_row, env, reference))
+    {
+        instance_row_refs[row] = uint2(tag + 1u, payload);
+        return;
+    }
     // A row without a type, or with a closed one, reads as the template's.
-    else if (reference == CT_UNKNOWN || ct_closed(reference))
+    else if (tag != TYPE_REF_INVALID && (reference == CT_UNKNOWN || ct_closed(reference)))
     {
         instance_row_refs[row] = uint2(tag + 1u, payload);
         return;
     }
     CtSpare spare = ct_spare_none();
-    uint env = entry.z;
     uint bound = CT_UNKNOWN;
     bool routed = true;
     for (uint step = 0u; step < steps; step++)

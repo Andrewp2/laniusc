@@ -7,8 +7,9 @@
 // realized expression reference, and, derived from it as the artifact
 // projection derives them (00_project, 01_expression_refs), the aggregate
 // declaration and width, the scalar machine type and the legacy value type.
-// A call keeps the template's checked record with the realized result; its
-// callee is the template's (08_exec_select admits no other call). The
+// A call keeps the template's checked record with the realized result and
+// its callee's realized receiver; its callee is the template's or a table
+// entry (08_exec_select admits no other call). The
 // function row gets the realized return width and no interface index: its
 // native symbol is private to this job (0x40000000 | its first token).
 import primitive_types;
@@ -234,6 +235,22 @@ HirPayload payload_of(ExecMap map, uint row, HirCore core, HirPayload p)
     return p;
 }
 
+// The receiver type a method call matched: `receiver` after `count`
+// dereferences through reference instances; (EX_INVALID, 0) when one is not
+// a reference.
+uint2 ex_dereferenced(uint2 receiver, uint count)
+{
+    uint rows; uint stride;
+    type_instance_kind.GetDimensions(rows, stride);
+    for (uint step = 0u; step < count; step++)
+    {
+        if (receiver.x != TYPE_REF_INSTANCE || receiver.y >= rows || type_instance_kind[receiver.y] != 4u)
+            return uint2(EX_INVALID, 0u);
+        receiver = uint2(type_instance_elem_ref_tag[receiver.y], type_instance_elem_ref_payload[receiver.y]);
+    }
+    return receiver;
+}
+
 // The words a value of checked type (tag, payload) occupies, as the
 // return-width projection reads them; INVALID when unknown.
 [shader("compute")]
@@ -379,9 +396,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
     CheckedCallArtifact call = semantic_calls_by_hir[source];
     if (core.kind == HIR_CALL_EXPR)
     {
-        call.target_token = ex_token(map, call.target_token);
+        // A call routed to a selected table entry calls that entry's copy:
+        // its virtual function row and first token. A call routed to another
+        // entry names the entry's template function, as every generic call
+        // names its callee (a bound-member call's template names the trait's
+        // member instead); the host routes its symbol to the entry's body.
+        uint2 routed = instance_row_calls[map.base + (source - map.function)];
+        if (routed.x == IT_CALL_ENTRY && ex_quad(routed.y, EX_Q_HEAD).x == EX_SELECTED)
+        {
+            ExecMap target = ex_map(routed.y);
+            call.target_token = target.vtok;
+            call.callable_hir = target.vrow;
+        }
+        else if (routed.x == IT_CALL_ENTRY)
+        {
+            uint callee = instance_table[2u * routed.y].x;
+            call.target_token = compact_hir_core[callee].token_start;
+            call.callable_hir = callee;
+        }
+        else
+        {
+            call.target_token = ex_token(map, call.target_token);
+            call.callable_hir = ex_row(map, call.callable_hir);
+        }
         call.receiver_hir = ex_row(map, call.receiver_hir);
-        call.callable_hir = ex_row(map, call.callable_hir);
         if (changed)
         {
             call.return_ref_tag = reference.x;
@@ -389,6 +427,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call.return_type = reference.x == TYPE_REF_SCALAR ? reference.y : 0u;
         }
         call.symbolic_type_environment = 0u;
+        // A method call routed to an entry passes its receiver as that
+        // entry's receiver parameter. The receiver matched after the
+        // template's dereferences (selection checked that they apply).
+        if (call.receiver_adjustment_kind != 0u && routed.x == IT_CALL_ENTRY)
+        {
+            uint2 parameter = instance_row_refs[instance_table[2u * routed.y].w];
+            call.receiver_parameter_ref_tag = parameter.x - 1u;
+            call.receiver_parameter_ref_payload = parameter.y;
+            uint2 receiver = ex_row_ref(map, semantic_calls_by_hir[source].receiver_hir);
+            if (receiver.x != EX_INVALID) receiver = ex_dereferenced(receiver, call.receiver_deref_count);
+            if (receiver.x != EX_INVALID)
+            {
+                call.receiver_matched_ref_tag = receiver.x;
+                call.receiver_matched_ref_payload = receiver.y;
+            }
+        }
     }
     semantic_calls_by_hir[row] = call;
 }
