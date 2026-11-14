@@ -6,6 +6,7 @@
 use super::*;
 use crate::gpu::{
     compiler_graph::{
+        AccessMode,
         CompilerGraphBuilder,
         CompilerPhase,
         ReflectedResourceBinding,
@@ -51,21 +52,29 @@ pub(super) const ALIAS_TARGETS_REALIZE_FINAL_KERNEL: &str =
 /// Realization dispatches ahead of the reporting one.
 const ALIAS_TARGET_RETRIES: usize = 2;
 
-/// The field closure (ct_expand.slang): each run queues its roots, then
-/// expands the queue in level rounds and closes with one more advance.
+/// The field closure (ct_expand.slang): each run queues its roots, opens
+/// the first level round with one advance, then expands the queue in level
+/// rounds; each round's last workgroup advances the run, the last one
+/// closing it.
 pub(super) const EXPAND_ADVANCE_KERNEL: &str = "type_checker/substitution/06_expand_advance";
 pub(super) const EXPAND_LEVEL_KERNEL: &str = "type_checker/substitution/05_expand_level";
-/// Level rounds per run (`CT_EXPAND_LEVELS_PER_RUN` in ct_expand.slang).
+/// Level rounds per run (`CT_EXPAND_LEVELS_PER_RUN` in ct_expand.slang);
+/// even: the rounds alternate their two passes in pairs.
 pub(super) const EXPAND_LEVELS_PER_RUN: usize = 4;
+/// The level rounds' indirect arguments: a round dispatched by one buffer
+/// writes the next round's to the other.
+const EXPAND_ARGS: [&str; 2] = ["ct_expand_args", "ct_expand_args_b"];
 /// Words of `ct_expand_counts` (`CT_EXPAND_COUNT_WORDS`).
 const EXPAND_COUNT_WORDS: u64 = 8;
 
-/// The passes of one field-closure run.
+/// The passes of one field-closure run. The level rounds alternate two
+/// passes: one dispatched by `ct_expand_args` that writes the next round's
+/// arguments to `ct_expand_args_b`, and its mirror.
 pub(super) struct FieldClosurePasses {
     pub roots: &'static str,
     pub roots_kernel: &'static str,
     pub advance: &'static str,
-    pub level: &'static str,
+    pub levels: [&'static str; 2],
 }
 
 /// The closed source applications, after the closed application index (in
@@ -74,7 +83,10 @@ pub(super) const SOURCE_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     roots: "type_check.substitution.expand.source_roots",
     roots_kernel: "type_checker/substitution/03_expand_source_roots",
     advance: "type_check.substitution.expand.source_advance",
-    level: "type_check.substitution.expand.source_level",
+    levels: [
+        "type_check.substitution.expand.source_level.a_to_b",
+        "type_check.substitution.expand.source_level.b_to_a",
+    ],
 };
 
 /// A body specialization's applications, after its canonical stage and the
@@ -83,7 +95,10 @@ pub(super) const BODY_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     roots: "type_check.body_specialization.expand.roots",
     roots_kernel: "type_checker/substitution/03_expand_source_roots",
     advance: "type_check.body_specialization.expand.advance",
-    level: "type_check.body_specialization.expand.level",
+    levels: [
+        "type_check.body_specialization.expand.level.a_to_b",
+        "type_check.body_specialization.expand.level.b_to_a",
+    ],
 };
 
 /// Call results and argument contexts, in each inference round after the
@@ -92,7 +107,10 @@ pub(super) const CALL_FIELD_CLOSURE: FieldClosurePasses = FieldClosurePasses {
     roots: "type_check.substitution.expand.call_roots",
     roots_kernel: "type_checker/substitution/04_expand_call_roots",
     advance: "type_check.substitution.expand.call_advance",
-    level: "type_check.substitution.expand.call_level",
+    levels: [
+        "type_check.substitution.expand.call_level.a_to_b",
+        "type_check.substitution.expand.call_level.b_to_a",
+    ],
 };
 
 /// Canonical records and argument words the substitution producers add to
@@ -153,13 +171,15 @@ pub(super) fn register_substitution_state(
     storage(graph, "ct_expand_queue", (records + records / 8 + 256) * 8)?;
     storage(graph, "ct_expand_deferred", (records / 8 + 256) * 8)?;
     storage(graph, "ct_expand_counts", EXPAND_COUNT_WORDS * 4)?;
-    graph.add_resource(ResourceDesc {
-        name: "ct_expand_args",
-        domain: ResourceDomain::DispatchArguments,
-        class: ResourceClass::Workspace,
-        bytes: 12,
-        usage: WorkspaceUsageClass::StorageIndirect,
-    })?;
+    for name in EXPAND_ARGS {
+        graph.add_resource(ResourceDesc {
+            name,
+            domain: ResourceDomain::DispatchArguments,
+            class: ResourceClass::Workspace,
+            bytes: 12,
+            usage: WorkspaceUsageClass::StorageIndirect,
+        })?;
+    }
     graph.add_kernel_initializer_by_name(
         SUBSTITUTION_CLEAR_PASS,
         CompilerPhase::TypeCheck,
@@ -281,24 +301,39 @@ pub(super) fn register_field_closure_passes(
         EXPAND_ADVANCE_KERNEL,
         &[],
     )?;
-    graph.add_kernel_pass_by_name(
-        passes.level,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::Types,
-        kernels,
-        EXPAND_LEVEL_KERNEL,
-        level_bindings,
-    )?;
-    graph.add_indirect_dispatch(passes.level, "ct_expand_args")?;
     graph.mark_pass_bindings_initialize(passes.advance, &["ct_expand_args"])?;
-    graph.repeat_pass_range(EXPAND_LEVELS_PER_RUN as u32, passes.advance, passes.level)
+    for (index, &level) in passes.levels.iter().enumerate() {
+        let next = graph
+            .resource_id(EXPAND_ARGS[1 - index])
+            .ok_or("field closure arguments are not declared")?;
+        let mut bindings = level_bindings.to_vec();
+        bindings.push(ReflectedResourceBinding {
+            binding: "ct_expand_args_next",
+            resource: next,
+            mode: Some(AccessMode::Write),
+        });
+        graph.add_kernel_pass_by_name(
+            level,
+            CompilerPhase::TypeCheck,
+            ResourceDomain::Types,
+            kernels,
+            EXPAND_LEVEL_KERNEL,
+            &bindings,
+        )?;
+        graph.add_indirect_dispatch(level, EXPAND_ARGS[index])?;
+    }
+    graph.repeat_pass_range(
+        (EXPAND_LEVELS_PER_RUN / 2) as u32,
+        passes.levels[0],
+        passes.levels[1],
+    )
 }
 
-/// One field-closure run: the roots, the level rounds, the closing advance.
+/// One field-closure run: the roots, the opening advance, the level rounds.
 pub(in crate::type_checker) struct FieldClosureOperations {
     roots: ComputeOperation,
     advance: ComputeOperation,
-    level: ComputeOperation,
+    levels: [ComputeOperation; 2],
 }
 
 impl FieldClosureOperations {
@@ -310,6 +345,16 @@ impl FieldClosureOperations {
         names: &FieldClosurePasses,
         roots_dispatch: &LaniusBuffer<u32>,
     ) -> Result<Self> {
+        let level = |index: usize| {
+            ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                names.levels[index],
+                &passes.kernel(EXPAND_LEVEL_KERNEL),
+                &typed_buffer_from_resources(resources, EXPAND_ARGS[index])?,
+            )
+        };
         Ok(Self {
             roots: ComputeOperation::indirect(
                 device,
@@ -327,24 +372,17 @@ impl FieldClosureOperations {
                 &passes.kernel(EXPAND_ADVANCE_KERNEL),
                 1,
             )?,
-            level: ComputeOperation::indirect(
-                device,
-                graph,
-                resources,
-                names.level,
-                &passes.kernel(EXPAND_LEVEL_KERNEL),
-                &typed_buffer_from_resources(resources, "ct_expand_args")?,
-            )?,
+            levels: [level(0)?, level(1)?],
         })
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.roots.record(encoder)?;
-        for _ in 0..EXPAND_LEVELS_PER_RUN {
-            self.advance.record(encoder)?;
-            self.level.record(encoder)?;
+        self.advance.record(encoder)?;
+        for round in 0..EXPAND_LEVELS_PER_RUN {
+            self.levels[round % 2].record(encoder)?;
         }
-        self.advance.record(encoder)
+        Ok(())
     }
 }
 

@@ -26,10 +26,12 @@ public static const uint CT_EXPAND_END = 2u;       // this round's end
 public static const uint CT_EXPAND_DEFERRED = 3u;  // deferred entries appended
 public static const uint CT_EXPAND_ROUND = 4u;     // advances in this run
 public static const uint CT_EXPAND_MODE = 5u;      // 1 inside the inference rounds
+public static const uint CT_EXPAND_DONE = 6u;      // level workgroups finished
 public static const uint CT_EXPAND_COUNT_WORDS = 8u;
 
-// Level rounds per closure run; the host records this many level rounds
-// and one closing advance (substitution_passes.rs, EXPAND_LEVELS_PER_RUN).
+// Level rounds per closure run; the host records one advance and this many
+// level rounds, the last workgroup of each round advancing the run
+// (substitution_passes.rs, EXPAND_LEVELS_PER_RUN).
 // Inside the inference rounds a run that leaves queued IDs reports progress,
 // so the next inference round continues it.
 public static const uint CT_EXPAND_LEVELS_PER_RUN = 4u;
@@ -100,4 +102,45 @@ public bool ct_expand_defer(uint id, uint word)
 public void ct_expand_begin_run(uint lane, uint mode)
 {
     if (lane == 0u) ct_expand_counts[CT_EXPAND_MODE] = mode;
+}
+
+// Workgroups of the level round over [START, END): at least one, so the
+// round's last workgroup always advances the run. A dispatch wider than
+// 65535 groups is split over y, as ct_expand_advance writes it.
+public uint3 ct_expand_level_args(uint groups)
+{
+    uint x = min(groups, 65535u);
+    return uint3(x, x == 0u ? 0u : (groups + 65534u) / 65535u, 1u);
+}
+
+public uint ct_expand_level_groups()
+{
+    uint start = ct_expand_counts[CT_EXPAND_START];
+    uint end = ct_expand_counts[CT_EXPAND_END];
+    return max((end - start + 255u) / 256u, 1u);
+}
+
+// Close one level round of the run (one lane): the entries the previous
+// round queued become this round's input. Returns the next level's
+// dispatch arguments; the closing advance of a run dispatches no level and
+// sets `progress` when, inside the inference rounds, queued leftovers must
+// continue in the next inference round.
+public uint3 ct_expand_advance(out bool progress)
+{
+    progress = false;
+    uint capacity; uint stride;
+    ct_expand_queue.GetDimensions(capacity, stride);
+    uint appended;
+    InterlockedAdd(ct_expand_counts[CT_EXPAND_LENGTH], 0u, appended);
+    uint length = min(appended, capacity);
+    uint round = ct_expand_counts[CT_EXPAND_ROUND] % (CT_EXPAND_LEVELS_PER_RUN + 1u);
+    ct_expand_counts[CT_EXPAND_ROUND] = (round + 1u) % (CT_EXPAND_LEVELS_PER_RUN + 1u);
+    if (round < CT_EXPAND_LEVELS_PER_RUN)
+    {
+        ct_expand_counts[CT_EXPAND_START] = ct_expand_counts[CT_EXPAND_END];
+        ct_expand_counts[CT_EXPAND_END] = length;
+        return ct_expand_level_args(ct_expand_level_groups());
+    }
+    progress = length > ct_expand_counts[CT_EXPAND_END] && ct_expand_counts[CT_EXPAND_MODE] != 0u;
+    return ct_expand_level_args(0u);
 }
