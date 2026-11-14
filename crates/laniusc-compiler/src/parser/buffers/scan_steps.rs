@@ -21,7 +21,22 @@ pub struct PackTotalReduceStep {
     pub write_to_a: bool,
 }
 
-/// Capacity-dependent hierarchy shared by associative token-block scans.
+/// Parameters of the one-workgroup associative scans over every token block
+/// (delimiter depths, context events and contextual `>>` summaries).
+pub struct TokenBlockScan {
+    pub params: LaniusBuffer<TokenBlockScanParams>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, encase::ShaderType)]
+pub struct TokenBlockScanParams {
+    pub n_blocks: u32,
+    pub reserved0: u32,
+    pub reserved1: u32,
+    pub reserved2: u32,
+}
+
+/// Capacity-dependent hierarchy of the bracket block-summary scan.
 pub struct TokenBlockScanPlan {
     pub up: Vec<TokenBlockScanStep>,
     pub down: Vec<TokenBlockScanStep>,

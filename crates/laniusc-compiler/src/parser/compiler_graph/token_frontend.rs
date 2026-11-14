@@ -5,39 +5,21 @@ use crate::{
     gpu::{
         compiler_graph::{AccessMode, CompilerGraphBuilder, CompilerPhase, ResourceDomain},
         passes_core::PassData,
-        scan::hierarchical_scan_levels,
     },
     parser::{compiler_graph::ParserGraphCapacity, passes::token_frontend::TokenFrontendPasses},
 };
 
-pub(in crate::parser) const DELIMITER_DEPTH_SCAN_UP: &str =
-    "parser.tokens.delimiters.depth_scan.up";
-pub(in crate::parser) const DELIMITER_DEPTH_SCAN_DOWN: &str =
-    "parser.tokens.delimiters.depth_scan.down";
-pub(in crate::parser) const DELIMITER_OWNER_HEADER_SCAN_UP: &str =
-    "parser.tokens.delimiters.owner_header_scan.up";
-pub(in crate::parser) const DELIMITER_OWNER_HEADER_SCAN_DOWN: &str =
-    "parser.tokens.delimiters.owner_header_scan.down";
-pub(in crate::parser) const DELIMITER_OWNER_SCAN_UP: &str =
-    "parser.tokens.delimiters.owner_scan.up";
-pub(in crate::parser) const DELIMITER_OWNER_SCAN_DOWN: &str =
-    "parser.tokens.delimiters.owner_scan.down";
-pub(in crate::parser) const IMPL_HEADER_SCAN_UP: &str = "parser.tokens.impl_header.scan.up";
-pub(in crate::parser) const IMPL_HEADER_SCAN_DOWN: &str = "parser.tokens.impl_header.scan.down";
-pub(in crate::parser) const STATEMENT_PHASE_SCAN_UP: &str = "parser.tokens.statement_phase.scan.up";
-pub(in crate::parser) const STATEMENT_PHASE_SCAN_DOWN: &str =
-    "parser.tokens.statement_phase.scan.down";
-pub(in crate::parser) const MATCH_PATTERN_SCAN_UP: &str = "parser.tokens.match_pattern.scan.up";
-pub(in crate::parser) const MATCH_PATTERN_SCAN_DOWN: &str = "parser.tokens.match_pattern.scan.down";
-pub(in crate::parser) const WHERE_CLAUSE_SCAN_UP: &str = "parser.tokens.where_clause.scan.up";
-pub(in crate::parser) const WHERE_CLAUSE_SCAN_DOWN: &str = "parser.tokens.where_clause.scan.down";
-pub(in crate::parser) const TYPE_PATH_SCAN_UP: &str = "parser.tokens.type_path_context.scan.up";
-pub(in crate::parser) const TYPE_PATH_SCAN_DOWN: &str = "parser.tokens.type_path_context.scan.down";
-pub(in crate::parser) const GENERIC_SHR_RAW_SCAN_UP: &str = "parser.tokens.generic_shr.raw_scan.up";
-pub(in crate::parser) const GENERIC_SHR_RAW_SCAN_DOWN: &str =
-    "parser.tokens.generic_shr.raw_scan.down";
-pub(in crate::parser) const GENERIC_SHR_SCAN_UP: &str = "parser.tokens.generic_shr.scan.up";
-pub(in crate::parser) const GENERIC_SHR_SCAN_DOWN: &str = "parser.tokens.generic_shr.scan.down";
+pub(in crate::parser) const DELIMITER_DEPTH_SCAN: &str = "parser.tokens.delimiters.depth_scan";
+pub(in crate::parser) const DELIMITER_OWNER_HEADER_SCAN: &str =
+    "parser.tokens.delimiters.owner_header_scan";
+pub(in crate::parser) const DELIMITER_OWNER_SCAN: &str = "parser.tokens.delimiters.owner_scan";
+pub(in crate::parser) const IMPL_HEADER_SCAN: &str = "parser.tokens.impl_header.scan";
+pub(in crate::parser) const STATEMENT_PHASE_SCAN: &str = "parser.tokens.statement_phase.scan";
+pub(in crate::parser) const MATCH_PATTERN_SCAN: &str = "parser.tokens.match_pattern.scan";
+pub(in crate::parser) const WHERE_CLAUSE_SCAN: &str = "parser.tokens.where_clause.scan";
+pub(in crate::parser) const TYPE_PATH_SCAN: &str = "parser.tokens.type_path_context.scan";
+pub(in crate::parser) const GENERIC_SHR_RAW_SCAN: &str = "parser.tokens.generic_shr.raw_scan";
+pub(in crate::parser) const GENERIC_SHR_SCAN: &str = "parser.tokens.generic_shr.scan";
 pub(in crate::parser) const IMPL_HEADER_KIND_CLEAR: &str = "parser.tokens.impl_header_kind.clear";
 pub(in crate::parser) const FEATURE_FLAGS_CLEAR: &str = "parser.tokens.feature_flags.clear";
 
@@ -107,24 +89,16 @@ pub(super) fn register_resources(
         "block_sum_brace",
         "block_sum_bracket",
         "block_sum_angle",
-        "hierarchy_paren",
-        "hierarchy_brace",
-        "hierarchy_bracket",
-        "hierarchy_angle",
         "block_prefix_paren",
         "block_prefix_brace",
         "block_prefix_bracket",
         "block_prefix_angle",
         "top_brace_owner_block",
-        "hierarchy_owner",
         "top_brace_owner_block_prefix",
         "statement_event_block",
-        "statement_event_hierarchy",
         "statement_event_block_prefix",
         "generic_shr_block_sum",
         "generic_shr_block_min",
-        "generic_shr_hierarchy_sum",
-        "generic_shr_hierarchy_min",
         "generic_shr_block_prefix_sum",
         "generic_shr_block_prefix_min",
         "paren_match_block_min",
@@ -191,72 +165,44 @@ fn pass(
     )
 }
 
+/// Registers a one-workgroup scan over every token block. It writes each
+/// output row of the active blocks.
 fn scan(
     graph: &mut CompilerGraphBuilder,
-    up_name: &'static str,
-    down_name: &'static str,
-    up: &PassData,
-    down: &PassData,
-    up_aliases: &[(&'static str, &'static str, Option<AccessMode>)],
-    down_aliases: &[(&'static str, &'static str, Option<AccessMode>)],
+    name: &'static str,
+    data: &PassData,
+    aliases: &[(&'static str, &'static str, Option<AccessMode>)],
     initializes: &[&'static str],
-    levels: usize,
 ) -> Result<(), String> {
-    pass(graph, up_name, up, up_aliases)?;
-    graph.mark_pass_bindings_initialize(up_name, initializes)?;
-    graph.repeat_pass_range(levels as u32, up_name, up_name)?;
-    if levels > 1 {
-        pass(graph, down_name, down, down_aliases)?;
-        graph.repeat_pass_range((levels - 1) as u32, down_name, down_name)?;
-    }
+    pass(graph, name, data, aliases)?;
+    graph.mark_pass_bindings_initialize(name, initializes)?;
     Ok(())
 }
 
 fn statement_scan(
     graph: &mut CompilerGraphBuilder,
-    name_up: &'static str,
-    name_down: &'static str,
+    name: &'static str,
     passes: &TokenFrontendPasses,
-    levels: usize,
 ) -> Result<(), String> {
     scan(
         graph,
-        name_up,
-        name_down,
-        &passes.token_statement_event_scan_up,
-        &passes.token_statement_event_scan_down,
-        &[(
-            "statement_event_hierarchy",
-            "statement_event_hierarchy",
-            None,
-        )],
-        &[(
-            "statement_event_hierarchy",
-            "statement_event_hierarchy",
-            None,
-        )],
-        &["statement_event_block_prefix", "statement_event_hierarchy"],
-        levels,
+        name,
+        &passes.token_statement_event_scan,
+        &[],
+        &["statement_event_block_prefix"],
     )
 }
 
 fn delimiter_scan(
     graph: &mut CompilerGraphBuilder,
-    name_up: &'static str,
-    name_down: &'static str,
+    name: &'static str,
     passes: &TokenFrontendPasses,
-    levels: usize,
 ) -> Result<(), String> {
-    const ALIASES: &[(&str, &str, Option<AccessMode>)] =
-        &[("hierarchy_event", "statement_event_hierarchy", None)];
     scan(
         graph,
-        name_up,
-        name_down,
-        &passes.token_delimiters_02_scan_up,
-        &passes.token_delimiters_02_scan_down,
-        ALIASES,
-        ALIASES,
+        name,
+        &passes.token_delimiters_02_scan,
+        &[],
         &[
             "block_prefix_brace",
             "block_prefix_bracket",
@@ -264,47 +210,27 @@ fn delimiter_scan(
             "block_prefix_angle",
             "top_brace_owner_block_prefix",
             "statement_event_block_prefix",
-            "hierarchy_brace",
-            "hierarchy_bracket",
-            "hierarchy_paren",
-            "hierarchy_angle",
-            "hierarchy_owner",
-            "hierarchy_event",
         ],
-        levels,
     )
 }
 
 fn generic_scan(
     graph: &mut CompilerGraphBuilder,
-    name_up: &'static str,
-    name_down: &'static str,
+    name: &'static str,
     passes: &TokenFrontendPasses,
-    levels: usize,
 ) -> Result<(), String> {
     const ALIASES: &[(&str, &str, Option<AccessMode>)] = &[
         ("block_sum", "generic_shr_block_sum", None),
         ("block_min", "generic_shr_block_min", None),
         ("block_prefix_sum", "generic_shr_block_prefix_sum", None),
         ("block_prefix_min", "generic_shr_block_prefix_min", None),
-        ("hierarchy_sum", "generic_shr_hierarchy_sum", None),
-        ("hierarchy_min", "generic_shr_hierarchy_min", None),
     ];
     scan(
         graph,
-        name_up,
-        name_down,
-        &passes.tokens_generic_shr_02_scan_up,
-        &passes.tokens_generic_shr_02_scan_down,
+        name,
+        &passes.tokens_generic_shr_02_scan,
         ALIASES,
-        ALIASES,
-        &[
-            "block_prefix_sum",
-            "block_prefix_min",
-            "hierarchy_sum",
-            "hierarchy_min",
-        ],
-        levels,
+        &["block_prefix_sum", "block_prefix_min"],
     )
 }
 
@@ -314,7 +240,6 @@ pub(super) fn register_schedule(
     passes: &TokenFrontendPasses,
 ) -> Result<(), String> {
     let blocks = capacity.token_capacity.div_ceil(256).max(1);
-    let levels = hierarchical_scan_levels(blocks).len();
 
     clear(
         graph,
@@ -379,13 +304,7 @@ pub(super) fn register_schedule(
             ),
         ],
     )?;
-    delimiter_scan(
-        graph,
-        DELIMITER_DEPTH_SCAN_UP,
-        DELIMITER_DEPTH_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    delimiter_scan(graph, DELIMITER_DEPTH_SCAN, passes)?;
     // Impl-header boundaries distinguish array-type separators from statement
     // terminators using the completed raw bracket-depth relation.
     pass(
@@ -398,13 +317,7 @@ pub(super) fn register_schedule(
             Some(AccessMode::Write),
         )],
     )?;
-    statement_scan(
-        graph,
-        IMPL_HEADER_SCAN_UP,
-        IMPL_HEADER_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    statement_scan(graph, IMPL_HEADER_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.impl_header.apply",
@@ -432,13 +345,7 @@ pub(super) fn register_schedule(
             ),
         ],
     )?;
-    generic_scan(
-        graph,
-        GENERIC_SHR_RAW_SCAN_UP,
-        GENERIC_SHR_RAW_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    generic_scan(graph, GENERIC_SHR_RAW_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.generic_shr.raw_apply",
@@ -567,13 +474,7 @@ pub(super) fn register_schedule(
         &passes.token_delimiters_03_owner_local,
         &[],
     )?;
-    delimiter_scan(
-        graph,
-        DELIMITER_OWNER_HEADER_SCAN_UP,
-        DELIMITER_OWNER_HEADER_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    delimiter_scan(graph, DELIMITER_OWNER_HEADER_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.delimiters.owner_apply",
@@ -596,13 +497,7 @@ pub(super) fn register_schedule(
             ),
         ],
     )?;
-    delimiter_scan(
-        graph,
-        DELIMITER_OWNER_SCAN_UP,
-        DELIMITER_OWNER_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    delimiter_scan(graph, DELIMITER_OWNER_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.brace_context",
@@ -619,13 +514,7 @@ pub(super) fn register_schedule(
         &passes.tokens_statement_phase_01_local,
         &[],
     )?;
-    statement_scan(
-        graph,
-        STATEMENT_PHASE_SCAN_UP,
-        STATEMENT_PHASE_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    statement_scan(graph, STATEMENT_PHASE_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.statement_phase.apply",
@@ -661,13 +550,7 @@ pub(super) fn register_schedule(
         &passes.tokens_match_pattern_01_local,
         &[],
     )?;
-    statement_scan(
-        graph,
-        MATCH_PATTERN_SCAN_UP,
-        MATCH_PATTERN_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    statement_scan(graph, MATCH_PATTERN_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.match_pattern.apply",
@@ -684,13 +567,7 @@ pub(super) fn register_schedule(
         &passes.tokens_where_clause_01_local,
         &[],
     )?;
-    statement_scan(
-        graph,
-        WHERE_CLAUSE_SCAN_UP,
-        WHERE_CLAUSE_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    statement_scan(graph, WHERE_CLAUSE_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.where_clause.apply",
@@ -738,13 +615,7 @@ pub(super) fn register_schedule(
         &passes.tokens_type_path_context_01_local,
         &[("semantic_token_kinds", "token_kinds", None)],
     )?;
-    statement_scan(
-        graph,
-        TYPE_PATH_SCAN_UP,
-        TYPE_PATH_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    statement_scan(graph, TYPE_PATH_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.type_path_context.apply",
@@ -782,13 +653,7 @@ pub(super) fn register_schedule(
             ),
         ],
     )?;
-    generic_scan(
-        graph,
-        GENERIC_SHR_SCAN_UP,
-        GENERIC_SHR_SCAN_DOWN,
-        passes,
-        levels,
-    )?;
+    generic_scan(graph, GENERIC_SHR_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.generic_shr.apply",

@@ -606,8 +606,8 @@ impl ParserBuffers {
                 match_tree_leaf_base: next_power_of_two_u32(token_delimiter_n_blocks).max(1),
             },
         );
-        let token_block_scan_plan =
-            make_token_block_scan_plan(device, "parser.token_block_scan", token_delimiter_n_blocks);
+        let token_block_scan =
+            make_token_block_scan(device, "parser.token_block_scan", token_delimiter_n_blocks);
         let token_depth_paren_inblock =
             optional_graph_buffer!(i32, "depth_paren_inblock", token_frontend_required);
         let token_depth_brace_inblock =
@@ -624,32 +624,20 @@ impl ParserBuffers {
             optional_graph_buffer!(i32, "block_sum_bracket", token_frontend_required);
         let token_block_sum_angle =
             optional_graph_buffer!(i32, "block_sum_angle", token_frontend_required);
-        let token_prefix_paren_a =
-            optional_graph_buffer!(i32, "hierarchy_paren", token_frontend_required);
         let token_block_prefix_paren =
             optional_graph_buffer!(i32, "block_prefix_paren", token_frontend_required);
-        let token_prefix_brace_a =
-            optional_graph_buffer!(i32, "hierarchy_brace", token_frontend_required);
         let token_block_prefix_brace =
             optional_graph_buffer!(i32, "block_prefix_brace", token_frontend_required);
-        let token_prefix_bracket_a =
-            optional_graph_buffer!(i32, "hierarchy_bracket", token_frontend_required);
         let token_block_prefix_bracket =
             optional_graph_buffer!(i32, "block_prefix_bracket", token_frontend_required);
-        let token_prefix_angle_a =
-            optional_graph_buffer!(i32, "hierarchy_angle", token_frontend_required);
         let token_block_prefix_angle =
             optional_graph_buffer!(i32, "block_prefix_angle", token_frontend_required);
         let token_top_brace_owner_block =
             optional_graph_buffer!(u32, "top_brace_owner_block", token_frontend_required);
-        let token_top_brace_owner_prefix_a =
-            optional_graph_buffer!(u32, "hierarchy_owner", token_frontend_required);
         let token_top_brace_owner_block_prefix =
             optional_graph_buffer!(u32, "top_brace_owner_block_prefix", token_frontend_required);
         let token_statement_event_block =
             optional_graph_buffer!(u32, "statement_event_block", token_frontend_required);
-        let token_statement_event_prefix_a =
-            optional_graph_buffer!(u32, "statement_event_hierarchy", token_frontend_required);
         let token_statement_event_block_prefix =
             optional_graph_buffer!(u32, "statement_event_block_prefix", token_frontend_required);
         let token_brace_semantic_kind =
@@ -675,10 +663,6 @@ impl ParserBuffers {
             optional_graph_buffer!(i32, "generic_shr_block_sum", token_frontend_required);
         let token_generic_shr_block_min =
             optional_graph_buffer!(i32, "generic_shr_block_min", token_frontend_required);
-        let token_generic_shr_prefix_sum_a =
-            optional_graph_buffer!(i32, "generic_shr_hierarchy_sum", token_frontend_required);
-        let token_generic_shr_prefix_min_a =
-            optional_graph_buffer!(i32, "generic_shr_hierarchy_min", token_frontend_required);
         let token_generic_shr_block_prefix_sum =
             optional_graph_buffer!(i32, "generic_shr_block_prefix_sum", token_frontend_required);
         let token_generic_shr_block_prefix_min =
@@ -1931,7 +1915,7 @@ impl ParserBuffers {
             params_llp,
             semantic_token_kinds,
             token_delimiter_params,
-            token_block_scan_plan,
+            token_block_scan,
             token_input_capacity,
             token_delimiter_n_blocks,
             token_depth_paren_inblock,
@@ -1942,19 +1926,13 @@ impl ParserBuffers {
             token_block_sum_brace,
             token_block_sum_bracket,
             token_block_sum_angle,
-            token_prefix_paren_a,
             token_block_prefix_paren,
-            token_prefix_brace_a,
             token_block_prefix_brace,
-            token_prefix_bracket_a,
             token_block_prefix_bracket,
-            token_prefix_angle_a,
             token_block_prefix_angle,
             token_top_brace_owner_block,
-            token_top_brace_owner_prefix_a,
             token_top_brace_owner_block_prefix,
             token_statement_event_block,
-            token_statement_event_prefix_a,
             token_statement_event_block_prefix,
             token_brace_semantic_kind,
             token_bracket_semantic_kind,
@@ -1966,8 +1944,6 @@ impl ParserBuffers {
             token_match_pattern_context_event,
             token_generic_shr_block_sum,
             token_generic_shr_block_min,
-            token_generic_shr_prefix_sum_a,
-            token_generic_shr_prefix_min_a,
             token_generic_shr_block_prefix_sum,
             token_generic_shr_block_prefix_min,
             token_brace_match_params,

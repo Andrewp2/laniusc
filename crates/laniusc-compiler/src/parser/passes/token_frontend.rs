@@ -11,10 +11,8 @@ use crate::gpu::passes_core::PassData;
 /// parser driver.
 pub(in crate::parser) struct TokenFrontendPasses {
     pub token_delimiters_01: PassData,
-    pub token_delimiters_02_scan_up: PassData,
-    pub token_delimiters_02_scan_down: PassData,
-    pub token_statement_event_scan_up: PassData,
-    pub token_statement_event_scan_down: PassData,
+    pub token_delimiters_02_scan: PassData,
+    pub token_statement_event_scan: PassData,
     pub token_delimiters_03_owner_local: PassData,
     pub token_delimiters_04_owner_apply: PassData,
     pub tokens_brace_context: PassData,
@@ -40,8 +38,7 @@ pub(in crate::parser) struct TokenFrontendPasses {
     pub tokens_generic_shr_00_raw_local: PassData,
     pub tokens_generic_shr_00_raw_apply: PassData,
     pub tokens_generic_shr_01_local: PassData,
-    pub tokens_generic_shr_02_scan_up: PassData,
-    pub tokens_generic_shr_02_scan_down: PassData,
+    pub tokens_generic_shr_02_scan: PassData,
     pub tokens_generic_shr_03_apply: PassData,
     pub tokens_generic_shr_04_close_kinds: PassData,
 }
@@ -62,21 +59,13 @@ impl TokenFrontendPasses {
                 "parser_tokens_delimiters_01_local",
                 "parser/tokens/delimiters/01_local"
             ),
-            token_delimiters_02_scan_up: pass!(
-                "parser_tokens_delimiters_02_scan_up",
-                "parser/tokens/delimiters/02_scan_up"
+            token_delimiters_02_scan: pass!(
+                "parser_tokens_delimiters_02_scan",
+                "parser/tokens/delimiters/02_scan"
             ),
-            token_delimiters_02_scan_down: pass!(
-                "parser_tokens_delimiters_02_scan_down",
-                "parser/tokens/delimiters/02_scan_down"
-            ),
-            token_statement_event_scan_up: pass!(
-                "parser_tokens_context_scan_up",
-                "parser/tokens/context/scan_up"
-            ),
-            token_statement_event_scan_down: pass!(
-                "parser_tokens_context_scan_down",
-                "parser/tokens/context/scan_down"
+            token_statement_event_scan: pass!(
+                "parser_tokens_context_scan",
+                "parser/tokens/context/scan"
             ),
             token_delimiters_03_owner_local: pass!(
                 "parser_tokens_delimiters_03_owner_local",
@@ -175,13 +164,9 @@ impl TokenFrontendPasses {
                 "parser_tokens_generic_shr_01_local",
                 "parser/tokens/generic/shr/01_local"
             ),
-            tokens_generic_shr_02_scan_up: pass!(
-                "parser_tokens_generic_shr_02_scan_up",
-                "parser/tokens/generic/shr/02_scan_up"
-            ),
-            tokens_generic_shr_02_scan_down: pass!(
-                "parser_tokens_generic_shr_02_scan_down",
-                "parser/tokens/generic/shr/02_scan_down"
+            tokens_generic_shr_02_scan: pass!(
+                "parser_tokens_generic_shr_02_scan",
+                "parser/tokens/generic/shr/02_scan"
             ),
             tokens_generic_shr_03_apply: pass!(
                 "parser_tokens_generic_shr_03_apply",

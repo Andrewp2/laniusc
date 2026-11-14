@@ -4,7 +4,9 @@ use super::{
     PackOffsetHierarchyStep,
     PackOffsetScanPlan,
     PackTotalReduceStep,
+    TokenBlockScan,
     TokenBlockScanHierarchyParams,
+    TokenBlockScanParams,
     TokenBlockScanPlan,
     TokenBlockScanStep,
     TreePrefixMaxBuildStep,
@@ -140,6 +142,26 @@ pub(super) fn make_token_block_scan_plan(
     TokenBlockScanPlan { up, down }
 }
 
+/// Creates the parameters of the one-workgroup token-block scans.
+pub(super) fn make_token_block_scan(
+    device: &wgpu::Device,
+    label: &str,
+    n_blocks: u32,
+) -> TokenBlockScan {
+    TokenBlockScan {
+        params: uniform_from_val(
+            device,
+            &format!("{label}.params"),
+            &TokenBlockScanParams {
+                n_blocks: n_blocks.max(1),
+                reserved0: 0,
+                reserved1: 0,
+                reserved2: 0,
+            },
+        ),
+    }
+}
+
 /// Creates a hierarchical inclusive scan over semantic-HIR block sums.
 pub(super) fn make_hir_prefix_scan_plan(
     device: &wgpu::Device,
@@ -197,7 +219,7 @@ pub(super) fn next_power_of_two_u32(value: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::make_token_block_scan_plan;
+    use super::make_token_block_scan;
     use crate::gpu::{
         buffers::{
             readback_bytes,
@@ -213,6 +235,27 @@ mod tests {
         },
     };
 
+    fn dispatch_one_workgroup(
+        encoder: &mut wgpu::CommandEncoder,
+        label: &str,
+        pass_data: &crate::gpu::passes_core::PassData,
+        group: &wgpu::BindGroup,
+    ) {
+        let mut pass = begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some(label),
+                timestamp_writes: None,
+            },
+        );
+        pass.set_pipeline(&pass_data.pipeline);
+        pass.set_bind_group(0, Some(group), &[]);
+        crate::gpu::passes_core::record_compute_dispatch();
+        if !crate::gpu::passes_core::debug_operation_skipped() {
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+    }
+
     #[test]
     fn physical_gpu_statement_event_scan_crosses_workgroup_boundary() {
         let gpu = crate::gpu::device::global();
@@ -222,28 +265,19 @@ mod tests {
         let input = storage_ro_from_u32s(&gpu.device, "test.context_scan.input", &values);
         let output =
             storage_rw_for_array::<u32>(&gpu.device, "test.context_scan.output", values.len());
-        let hierarchy =
-            storage_rw_for_array::<u32>(&gpu.device, "test.context_scan.hierarchy", values.len());
         let readback = readback_bytes(
             &gpu.device,
             "test.context_scan.readback",
             values.len() * 4,
             values.len() * 4,
         );
-        let plan =
-            make_token_block_scan_plan(&gpu.device, "test.context_scan", values.len() as u32);
-        let up = make_pass_data_from_shader_key(
+        // Crosses a 256-block tile boundary.
+        let scan = make_token_block_scan(&gpu.device, "test.context_scan", values.len() as u32);
+        let pass_data = make_pass_data_from_shader_key(
             &gpu.device,
-            "test.context_scan.up",
+            "test.context_scan",
             "main",
-            "parser/tokens/context/scan_up",
-        )
-        .unwrap();
-        let down = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.context_scan.down",
-            "main",
-            "parser/tokens/context/scan_down",
+            "parser/tokens/context/scan",
         )
         .unwrap();
         let mut encoder = gpu
@@ -251,61 +285,19 @@ mod tests {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.context_scan.encoder"),
             });
-        for step in &plan.up {
-            let group = bind_group::create_bind_group_from_bindings(
-                &gpu.device,
-                Some("test.context_scan.up"),
-                &up,
-                0,
-                &[
-                    ("gContextScan", step.params.as_entire_binding()),
-                    ("statement_event_block", input.as_entire_binding()),
-                    ("statement_event_block_prefix", output.as_entire_binding()),
-                    ("statement_event_hierarchy", hierarchy.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            let mut pass = begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor {
-                    label: Some("test.context_scan.up"),
-                    timestamp_writes: None,
-                },
-            );
-            pass.set_pipeline(&up.pipeline);
-            pass.set_bind_group(0, Some(&group), &[]);
-            crate::gpu::passes_core::record_compute_dispatch();
-            if !crate::gpu::passes_core::debug_operation_skipped() {
-                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
-            }
-        }
-        for step in &plan.down {
-            let group = bind_group::create_bind_group_from_bindings(
-                &gpu.device,
-                Some("test.context_scan.down"),
-                &down,
-                0,
-                &[
-                    ("gContextScan", step.params.as_entire_binding()),
-                    ("statement_event_block_prefix", output.as_entire_binding()),
-                    ("statement_event_hierarchy", hierarchy.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            let mut pass = begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor {
-                    label: Some("test.context_scan.down"),
-                    timestamp_writes: None,
-                },
-            );
-            pass.set_pipeline(&down.pipeline);
-            pass.set_bind_group(0, Some(&group), &[]);
-            crate::gpu::passes_core::record_compute_dispatch();
-            if !crate::gpu::passes_core::debug_operation_skipped() {
-                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
-            }
-        }
+        let group = bind_group::create_bind_group_from_bindings(
+            &gpu.device,
+            Some("test.context_scan"),
+            &pass_data,
+            0,
+            &[
+                ("gContextScan", scan.params.as_entire_binding()),
+                ("statement_event_block", input.as_entire_binding()),
+                ("statement_event_block_prefix", output.as_entire_binding()),
+            ],
+        )
+        .unwrap();
+        dispatch_one_workgroup(&mut encoder, "test.context_scan", &pass_data, &group);
         encoder.copy_buffer_to_buffer(
             &output.buffer,
             output.byte_offset,
@@ -368,32 +360,13 @@ mod tests {
         let out_angle = storage_rw_for_array::<i32>(&gpu.device, "test.delimiter.out.angle", count);
         let out_owner = storage_rw_for_array::<u32>(&gpu.device, "test.delimiter.out.owner", count);
         let out_event = storage_rw_for_array::<u32>(&gpu.device, "test.delimiter.out.event", count);
-        let hierarchy_brace =
-            storage_rw_for_array::<i32>(&gpu.device, "test.delimiter.hierarchy.brace", count);
-        let hierarchy_bracket =
-            storage_rw_for_array::<i32>(&gpu.device, "test.delimiter.hierarchy.bracket", count);
-        let hierarchy_paren =
-            storage_rw_for_array::<i32>(&gpu.device, "test.delimiter.hierarchy.paren", count);
-        let hierarchy_angle =
-            storage_rw_for_array::<i32>(&gpu.device, "test.delimiter.hierarchy.angle", count);
-        let hierarchy_owner =
-            storage_rw_for_array::<u32>(&gpu.device, "test.delimiter.hierarchy.owner", count);
-        let hierarchy_event =
-            storage_rw_for_array::<u32>(&gpu.device, "test.delimiter.hierarchy.event", count);
         let readback = readback_bytes(&gpu.device, "test.delimiter.readback", count * 8, count * 8);
-        let plan = make_token_block_scan_plan(&gpu.device, "test.delimiter", count as u32);
-        let up = make_pass_data_from_shader_key(
+        let scan = make_token_block_scan(&gpu.device, "test.delimiter", count as u32);
+        let pass_data = make_pass_data_from_shader_key(
             &gpu.device,
-            "test.delimiter.up",
+            "test.delimiter",
             "main",
-            "parser/tokens/delimiters/02_scan_up",
-        )
-        .unwrap();
-        let down = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.delimiter.down",
-            "main",
-            "parser/tokens/delimiters/02_scan_down",
+            "parser/tokens/delimiters/02_scan",
         )
         .unwrap();
         let mut encoder = gpu
@@ -401,98 +374,35 @@ mod tests {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("test.delimiter.encoder"),
             });
-        for step in &plan.up {
-            let group = bind_group::create_bind_group_from_bindings(
-                &gpu.device,
-                Some("test.delimiter.up"),
-                &up,
-                0,
-                &[
-                    ("gDelimiterScan", step.params.as_entire_binding()),
-                    ("block_sum_brace", brace.as_entire_binding()),
-                    ("block_sum_bracket", bracket.as_entire_binding()),
-                    ("block_sum_paren", paren.as_entire_binding()),
-                    ("block_sum_angle", angle.as_entire_binding()),
-                    ("top_brace_owner_block", owner.as_entire_binding()),
-                    ("statement_event_block", event.as_entire_binding()),
-                    ("block_prefix_brace", out_brace.as_entire_binding()),
-                    ("block_prefix_bracket", out_bracket.as_entire_binding()),
-                    ("block_prefix_paren", out_paren.as_entire_binding()),
-                    ("block_prefix_angle", out_angle.as_entire_binding()),
-                    (
-                        "top_brace_owner_block_prefix",
-                        out_owner.as_entire_binding(),
-                    ),
-                    (
-                        "statement_event_block_prefix",
-                        out_event.as_entire_binding(),
-                    ),
-                    ("hierarchy_brace", hierarchy_brace.as_entire_binding()),
-                    ("hierarchy_bracket", hierarchy_bracket.as_entire_binding()),
-                    ("hierarchy_paren", hierarchy_paren.as_entire_binding()),
-                    ("hierarchy_angle", hierarchy_angle.as_entire_binding()),
-                    ("hierarchy_owner", hierarchy_owner.as_entire_binding()),
-                    ("hierarchy_event", hierarchy_event.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            let mut pass = begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor {
-                    label: Some("test.delimiter.up"),
-                    timestamp_writes: None,
-                },
-            );
-            pass.set_pipeline(&up.pipeline);
-            pass.set_bind_group(0, Some(&group), &[]);
-            crate::gpu::passes_core::record_compute_dispatch();
-            if !crate::gpu::passes_core::debug_operation_skipped() {
-                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
-            }
-        }
-        for step in &plan.down {
-            let group = bind_group::create_bind_group_from_bindings(
-                &gpu.device,
-                Some("test.delimiter.down"),
-                &down,
-                0,
-                &[
-                    ("gDelimiterScan", step.params.as_entire_binding()),
-                    ("block_prefix_brace", out_brace.as_entire_binding()),
-                    ("block_prefix_bracket", out_bracket.as_entire_binding()),
-                    ("block_prefix_paren", out_paren.as_entire_binding()),
-                    ("block_prefix_angle", out_angle.as_entire_binding()),
-                    (
-                        "top_brace_owner_block_prefix",
-                        out_owner.as_entire_binding(),
-                    ),
-                    (
-                        "statement_event_block_prefix",
-                        out_event.as_entire_binding(),
-                    ),
-                    ("hierarchy_brace", hierarchy_brace.as_entire_binding()),
-                    ("hierarchy_bracket", hierarchy_bracket.as_entire_binding()),
-                    ("hierarchy_paren", hierarchy_paren.as_entire_binding()),
-                    ("hierarchy_angle", hierarchy_angle.as_entire_binding()),
-                    ("hierarchy_owner", hierarchy_owner.as_entire_binding()),
-                    ("hierarchy_event", hierarchy_event.as_entire_binding()),
-                ],
-            )
-            .unwrap();
-            let mut pass = begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor {
-                    label: Some("test.delimiter.down"),
-                    timestamp_writes: None,
-                },
-            );
-            pass.set_pipeline(&down.pipeline);
-            pass.set_bind_group(0, Some(&group), &[]);
-            crate::gpu::passes_core::record_compute_dispatch();
-            if !crate::gpu::passes_core::debug_operation_skipped() {
-                pass.dispatch_workgroups(step.work_items.div_ceil(256), 1, 1);
-            }
-        }
+        let group = bind_group::create_bind_group_from_bindings(
+            &gpu.device,
+            Some("test.delimiter"),
+            &pass_data,
+            0,
+            &[
+                ("gDelimiterScan", scan.params.as_entire_binding()),
+                ("block_sum_brace", brace.as_entire_binding()),
+                ("block_sum_bracket", bracket.as_entire_binding()),
+                ("block_sum_paren", paren.as_entire_binding()),
+                ("block_sum_angle", angle.as_entire_binding()),
+                ("top_brace_owner_block", owner.as_entire_binding()),
+                ("statement_event_block", event.as_entire_binding()),
+                ("block_prefix_brace", out_brace.as_entire_binding()),
+                ("block_prefix_bracket", out_bracket.as_entire_binding()),
+                ("block_prefix_paren", out_paren.as_entire_binding()),
+                ("block_prefix_angle", out_angle.as_entire_binding()),
+                (
+                    "top_brace_owner_block_prefix",
+                    out_owner.as_entire_binding(),
+                ),
+                (
+                    "statement_event_block_prefix",
+                    out_event.as_entire_binding(),
+                ),
+            ],
+        )
+        .unwrap();
+        dispatch_one_workgroup(&mut encoder, "test.delimiter", &pass_data, &group);
         encoder.copy_buffer_to_buffer(
             &out_brace.buffer,
             out_brace.byte_offset,
