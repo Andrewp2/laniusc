@@ -245,8 +245,7 @@ impl GpuParser {
         self.record_generic_shr_summary_scan(
             encoder,
             bufs,
-            graph_labels::GENERIC_SHR_SCAN_UP,
-            graph_labels::GENERIC_SHR_SCAN_DOWN,
+            graph_labels::GENERIC_SHR_SCAN,
         )?;
 
         self.record_cached_token_operation(
@@ -298,8 +297,7 @@ impl GpuParser {
         self.record_generic_shr_summary_scan(
             encoder,
             bufs,
-            graph_labels::GENERIC_SHR_RAW_SCAN_UP,
-            graph_labels::GENERIC_SHR_RAW_SCAN_DOWN,
+            graph_labels::GENERIC_SHR_RAW_SCAN,
         )?;
 
         self.record_cached_token_operation(
@@ -320,34 +318,18 @@ impl GpuParser {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
-        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
-            let invocation = format!("{up_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                up_label,
-                &self.passes.token_frontend.tokens_generic_shr_02_scan_up,
-                &[("gGenericScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
-            let invocation = format!("{down_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                down_label,
-                &self.passes.token_frontend.tokens_generic_shr_02_scan_down,
-                &[("gGenericScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        Ok(())
+        // One workgroup scans every token block.
+        self.record_cached_graph_operation(
+            encoder,
+            bufs,
+            label,
+            label,
+            &self.passes.token_frontend.tokens_generic_shr_02_scan,
+            &[("gGenericScan", bufs.token_block_scan.params.as_entire_binding())],
+            1,
+        )
     }
 
     fn record_type_path_context_timed(
@@ -378,8 +360,7 @@ impl GpuParser {
         self.record_statement_event_scan(
             encoder,
             bufs,
-            graph_labels::TYPE_PATH_SCAN_UP,
-            graph_labels::TYPE_PATH_SCAN_DOWN,
+            graph_labels::TYPE_PATH_SCAN,
         )?;
         stamp_timer(
             timer_ref,
@@ -438,8 +419,7 @@ impl GpuParser {
         self.record_statement_event_scan(
             encoder,
             bufs,
-            graph_labels::IMPL_HEADER_SCAN_UP,
-            graph_labels::IMPL_HEADER_SCAN_DOWN,
+            graph_labels::IMPL_HEADER_SCAN,
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.scan.done");
 
@@ -482,8 +462,7 @@ impl GpuParser {
         self.record_statement_event_scan(
             encoder,
             bufs,
-            graph_labels::WHERE_CLAUSE_SCAN_UP,
-            graph_labels::WHERE_CLAUSE_SCAN_DOWN,
+            graph_labels::WHERE_CLAUSE_SCAN,
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.scan.done");
 
@@ -526,8 +505,7 @@ impl GpuParser {
         self.record_statement_event_scan(
             encoder,
             bufs,
-            graph_labels::MATCH_PATTERN_SCAN_UP,
-            graph_labels::MATCH_PATTERN_SCAN_DOWN,
+            graph_labels::MATCH_PATTERN_SCAN,
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.scan.done");
 
@@ -570,11 +548,10 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.delimiters.local.done");
 
-        self.record_token_delimiter_hierarchy(
+        self.record_token_delimiter_scan(
             encoder,
             bufs,
-            graph_labels::DELIMITER_DEPTH_SCAN_UP,
-            graph_labels::DELIMITER_DEPTH_SCAN_DOWN,
+            graph_labels::DELIMITER_DEPTH_SCAN,
         )?;
         stamp_timer(
             timer_ref,
@@ -600,11 +577,10 @@ impl GpuParser {
             encoder,
             "parser.tokens.delimiters.owner_header.local.done",
         );
-        self.record_token_delimiter_hierarchy(
+        self.record_token_delimiter_scan(
             encoder,
             bufs,
-            graph_labels::DELIMITER_OWNER_HEADER_SCAN_UP,
-            graph_labels::DELIMITER_OWNER_HEADER_SCAN_DOWN,
+            graph_labels::DELIMITER_OWNER_HEADER_SCAN,
         )?;
         stamp_timer(
             timer_ref,
@@ -617,11 +593,10 @@ impl GpuParser {
             encoder,
             "parser.tokens.delimiters.owner_apply.done",
         );
-        self.record_token_delimiter_hierarchy(
+        self.record_token_delimiter_scan(
             encoder,
             bufs,
-            graph_labels::DELIMITER_OWNER_SCAN_UP,
-            graph_labels::DELIMITER_OWNER_SCAN_DOWN,
+            graph_labels::DELIMITER_OWNER_SCAN,
         )?;
         stamp_timer(
             timer_ref,
@@ -678,8 +653,7 @@ impl GpuParser {
         self.record_statement_event_scan(
             encoder,
             bufs,
-            graph_labels::STATEMENT_PHASE_SCAN_UP,
-            graph_labels::STATEMENT_PHASE_SCAN_DOWN,
+            graph_labels::STATEMENT_PHASE_SCAN,
         )?;
         stamp_timer(
             timer_ref,
@@ -824,72 +798,40 @@ impl GpuParser {
         Ok(())
     }
 
-    fn record_token_delimiter_hierarchy(
+    fn record_token_delimiter_scan(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
-        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
-            let invocation = format!("{up_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                up_label,
-                &self.passes.token_frontend.token_delimiters_02_scan_up,
-                &[("gDelimiterScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
-            let invocation = format!("{down_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                down_label,
-                &self.passes.token_frontend.token_delimiters_02_scan_down,
-                &[("gDelimiterScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        Ok(())
+        // One workgroup scans every token block.
+        self.record_cached_graph_operation(
+            encoder,
+            bufs,
+            label,
+            label,
+            &self.passes.token_frontend.token_delimiters_02_scan,
+            &[("gDelimiterScan", bufs.token_block_scan.params.as_entire_binding())],
+            1,
+        )
     }
 
     fn record_statement_event_scan(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         bufs: &ParserBuffers,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
     ) -> Result<()> {
-        for (index, step) in bufs.token_block_scan_plan.up.iter().enumerate() {
-            let invocation = format!("{up_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                up_label,
-                &self.passes.token_frontend.token_statement_event_scan_up,
-                &[("gContextScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        for (index, step) in bufs.token_block_scan_plan.down.iter().enumerate() {
-            let invocation = format!("{down_label}.{index}");
-            self.record_cached_graph_operation(
-                encoder,
-                bufs,
-                &invocation,
-                down_label,
-                &self.passes.token_frontend.token_statement_event_scan_down,
-                &[("gContextScan", step.params.as_entire_binding())],
-                step.work_items,
-            )?;
-        }
-        Ok(())
+        // One workgroup scans every token block.
+        self.record_cached_graph_operation(
+            encoder,
+            bufs,
+            label,
+            label,
+            &self.passes.token_frontend.token_statement_event_scan,
+            &[("gContextScan", bufs.token_block_scan.params.as_entire_binding())],
+            1,
+        )
     }
 
     fn record_token_delimiter_owner_local(

@@ -3507,7 +3507,7 @@ mod tests {
         // Keep both producer/consumer contracts in the production schedule.
         for (producer, consumer) in [
             (
-                token_frontend::DELIMITER_DEPTH_SCAN_UP,
+                token_frontend::DELIMITER_DEPTH_SCAN,
                 "parser.tokens.impl_header.local",
             ),
             (
@@ -3701,40 +3701,40 @@ mod tests {
         );
         for name in [
             "parser.tokens.impl_header.local",
-            token_frontend::IMPL_HEADER_SCAN_UP,
+            token_frontend::IMPL_HEADER_SCAN,
             "parser.tokens.impl_header.apply",
             "parser.tokens.delimiters.local",
-            token_frontend::DELIMITER_DEPTH_SCAN_UP,
+            token_frontend::DELIMITER_DEPTH_SCAN,
             "parser.tokens.generic_shr.raw_local",
-            token_frontend::GENERIC_SHR_RAW_SCAN_UP,
+            token_frontend::GENERIC_SHR_RAW_SCAN,
             "parser.tokens.generic_shr.raw_apply",
             "parser.tokens.delimiters.owner_local",
-            token_frontend::DELIMITER_OWNER_HEADER_SCAN_UP,
+            token_frontend::DELIMITER_OWNER_HEADER_SCAN,
             "parser.tokens.delimiters.owner_apply",
-            token_frontend::DELIMITER_OWNER_SCAN_UP,
+            token_frontend::DELIMITER_OWNER_SCAN,
             "parser.tokens.brace_context",
             "parser.tokens.statement_phase.local",
-            token_frontend::STATEMENT_PHASE_SCAN_UP,
+            token_frontend::STATEMENT_PHASE_SCAN,
             "parser.tokens.statement_phase.apply",
             "parser.tokens.delimiter_match.depth_blocks",
             "parser.tokens.delimiter_match.build_min_tree",
             "parser.tokens.brace_match.pair_pse",
             "parser.tokens.bracket_match.pair_pse",
             "parser.tokens.match_pattern.local",
-            token_frontend::MATCH_PATTERN_SCAN_UP,
+            token_frontend::MATCH_PATTERN_SCAN,
             "parser.tokens.match_pattern.apply",
             "parser.tokens.where_clause.local",
-            token_frontend::WHERE_CLAUSE_SCAN_UP,
+            token_frontend::WHERE_CLAUSE_SCAN,
             "parser.tokens.where_clause.apply",
             token_frontend::ENCLOSING_OPENS,
             token_frontend::ANGLE_KINDS,
             "parser.tokens_to_kinds.pass",
             "parser.tokens.type_path_context.local",
-            token_frontend::TYPE_PATH_SCAN_UP,
+            token_frontend::TYPE_PATH_SCAN,
             "parser.tokens.type_path_context.apply",
             "parser.tokens_to_identifier_kinds.pass",
             "parser.tokens.generic_shr.local",
-            token_frontend::GENERIC_SHR_SCAN_UP,
+            token_frontend::GENERIC_SHR_SCAN,
             "parser.tokens.generic_shr.apply",
             "parser.tokens.generic_shr.close_kinds",
             ACTIVE_PAIR_DISPATCH,
@@ -3930,38 +3930,40 @@ mod tests {
                 .iter()
                 .any(|region| { region.first_pass == graph.pass_id(BRACKET_SCAN_UP).unwrap() })
         );
-        for name in [
-            token_frontend::DELIMITER_DEPTH_SCAN_UP,
-            token_frontend::IMPL_HEADER_SCAN_UP,
-            token_frontend::GENERIC_SHR_SCAN_UP,
-            "parser.tokens.delimiter_match.build_min_tree",
-        ] {
-            let pass = graph.pass_id(name).unwrap();
-            assert!(
-                graph
-                    .repeated_regions()
-                    .iter()
-                    .any(|region| region.first_pass == pass),
-                "scalable token operation {name} is not a repeated graph region",
-            );
-        }
+        let min_tree = graph
+            .pass_id("parser.tokens.delimiter_match.build_min_tree")
+            .unwrap();
+        assert!(
+            graph
+                .repeated_regions()
+                .iter()
+                .any(|region| region.first_pass == min_tree),
+            "the delimiter min tree is not a repeated graph region",
+        );
+        // One workgroup scans every token block, at any token capacity.
         let mut multi_level_capacity = capacity;
         multi_level_capacity.token_capacity = 100_000;
         multi_level_capacity.n_tokens = 100_002;
         let multi_level = build_graph(multi_level_capacity, &passes).unwrap();
         for name in [
-            token_frontend::DELIMITER_DEPTH_SCAN_DOWN,
-            token_frontend::IMPL_HEADER_SCAN_DOWN,
-            token_frontend::STATEMENT_PHASE_SCAN_DOWN,
-            token_frontend::MATCH_PATTERN_SCAN_DOWN,
-            token_frontend::WHERE_CLAUSE_SCAN_DOWN,
-            token_frontend::TYPE_PATH_SCAN_DOWN,
-            token_frontend::GENERIC_SHR_RAW_SCAN_DOWN,
-            token_frontend::GENERIC_SHR_SCAN_DOWN,
+            token_frontend::DELIMITER_DEPTH_SCAN,
+            token_frontend::IMPL_HEADER_SCAN,
+            token_frontend::STATEMENT_PHASE_SCAN,
+            token_frontend::MATCH_PATTERN_SCAN,
+            token_frontend::WHERE_CLAUSE_SCAN,
+            token_frontend::TYPE_PATH_SCAN,
+            token_frontend::GENERIC_SHR_RAW_SCAN,
+            token_frontend::GENERIC_SHR_SCAN,
         ] {
+            let pass = multi_level
+                .pass_id(name)
+                .unwrap_or_else(|| panic!("missing token scan operation {name}"));
             assert!(
-                multi_level.pass_id(name).is_some(),
-                "missing multilevel token scan operation {name}",
+                !multi_level
+                    .repeated_regions()
+                    .iter()
+                    .any(|region| region.first_pass == pass),
+                "token scan {name} is a repeated graph region",
             );
         }
         // One workgroup scans every semantic block: one pass, not a region.
