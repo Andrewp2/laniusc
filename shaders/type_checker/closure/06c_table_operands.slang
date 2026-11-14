@@ -121,7 +121,8 @@ Operand operand_of(uint4 entry, uint node)
 
 bool null_pointer_constant(uint node)
 {
-    return node < hir_count() && compact_hir_payload[node].a == HIR_EXPR_INT &&
+    return node < hir_count() && compact_hir_core[node].kind == HIR_LITERAL_EXPR &&
+        compact_hir_payload[node].a == HIR_EXPR_INT &&
         compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 

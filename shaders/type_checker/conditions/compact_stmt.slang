@@ -41,6 +41,7 @@ static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_EXPR_FORWARD = 1u;
@@ -157,7 +158,8 @@ bool never_value(uint node)
 
 bool null_pointer_constant(uint node)
 {
-    return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
+    return valid_hir(node) && compact_hir_core[node].kind == HIR_LITERAL_EXPR &&
+        compact_hir_payload[node].a == HIR_EXPR_INT &&
         compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 

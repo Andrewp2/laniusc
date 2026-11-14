@@ -67,7 +67,7 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_STMT_LET = 1u;
-static const uint HIR_STMT_CONST = 2u;
+static const uint HIR_STMT_CONST = 4u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
 [ForceInline]

@@ -199,7 +199,8 @@ void validate_raw_parts_call(uint node, HirCore core)
     if (valid_hir(data))
     {
         HirPayload data_payload = compact_hir_payload[data];
-        null_constant = data_payload.a == HIR_EXPR_INT &&
+        null_constant = compact_hir_core[data].kind == HIR_LITERAL_EXPR &&
+            data_payload.a == HIR_EXPR_INT &&
             data_payload.b == 0u && data_payload.c == 0u;
     }
     if (data_ty != TY_UNKNOWN && data_ty != TY_POINTER && !null_constant)
@@ -213,7 +214,8 @@ void validate_raw_parts_call(uint node, HirCore core)
 }
 bool null_pointer_constant(uint node)
 {
-    return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
+    return valid_hir(node) && compact_hir_core[node].kind == HIR_LITERAL_EXPR &&
+        compact_hir_payload[node].a == HIR_EXPR_INT &&
         compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
 }
 

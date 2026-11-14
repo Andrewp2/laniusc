@@ -387,11 +387,10 @@ This boundary does not yet carry:
 - **File ids** are job-local. Token kinds, byte offsets and spellings are
   retained per body, so diagnostics and identifiers need no job tables.
 
-Known producer defect: `semantic/artifact/01_expression_refs.slang`
-declares `HIR_STMT_CONST = 2u`, but the parser's const statement form is 4
-and 2 is `RETURN`. That pass therefore projects a return statement's payload
-word as a name token and does not project const statements. The export
-uses the parser's forms and does not read return statements' references.
+The semantic projection and export use the parser's statement forms:
+const is 4 and return is 2. Local const statements are not currently accepted
+by the grammar; the retained schema covers top-level constant declarations.
+Return statement payloads are never interpreted as declaration-name tokens.
 
 ## Dependencies for discovery and projection
 
