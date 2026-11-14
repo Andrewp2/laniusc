@@ -657,8 +657,9 @@ impl ProgramRetention {
         self.read(buffer, words)
     }
 
-    /// Test oracle: overwrites the job scratch with a poison pattern, so a
-    /// later read of it would be visible.
+    /// Test oracle: overwrites exporter scratch with a poison pattern, so a
+    /// later read of its job maps would be visible. This does not touch the
+    /// frontend's parser or type-checker storage.
     #[doc(hidden)]
     pub fn poison_scratch(&self) {
         let store = self.store.lock().unwrap();

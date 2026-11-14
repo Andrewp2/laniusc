@@ -215,7 +215,8 @@ No partial or duplicated record of a failed job stays reachable. Then:
 1. The host reads `rt_counts`.
 2. It grows each overflowed arena to twice its demand, and keeps each slot
    table at least twice its arena.
-3. It copies the committed prefixes into the larger buffers.
+3. It copies the old arena buffers into the larger buffers. The restored
+   counters delimit the committed prefixes; bytes beyond them stay unreachable.
 4. `store_rehash` republishes every live record. Tombstones are skipped.
 5. The host runs the export again over the same job tables.
 
@@ -228,6 +229,11 @@ entries `INCOMPLETE`.
 All semantic work runs on the GPU. The host allocates buffers, clears job
 scratch, submits one command buffer per attempt and reads the 96 status
 words and 256 scratch words.
+
+The export records 177 dispatches per attempt: 21 kernels, including 79
+translation/advance pairs and the three scan kernels. Empty translation
+heights dispatch no translation workgroups, but their advance dispatches
+still run. This boundary has not yet been timed on settings.
 
 | Step | Lanes | Work |
 | --- | --- | --- |
@@ -254,9 +260,11 @@ post-order on a global-memory stack, so it uses no per-thread arrays.
 
 This boundary does not yet carry:
 
-- **Token text.** Body tokens are relative indices only, and no token
-  byte table is retained. Identifiers need it, and so would a diagnostic
-  that has to quote foreign source.
+- **Token text and source locations.** Body tokens are relative indices
+  only, and no token byte table or original body token base is retained.
+  File IDs are job-local. Export must retain the source mapping before the
+  frontend is released; projection cannot recover it from these segments.
+  Identifiers and diagnostics need these inputs.
 - **Expression-parent, expression-root and nearest-loop columns.** The
   receiver must rebuild them from the relative tree.
 - **Aggregate, native-width and ABI caches** (`type_native_word_count`,

@@ -1,6 +1,7 @@
 //! Program retention (docs/compiler-program-retention.md): two frontend jobs
-//! export into one build store, the jobs' storage is poisoned, and a GPU
-//! probe resolves foreign generic definitions from the store alone.
+//! export into one build store, frontend storage is released and exporter
+//! scratch is poisoned, and a GPU probe resolves foreign generic definitions
+//! from the store alone.
 
 use std::sync::Arc;
 
@@ -151,7 +152,11 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
         "the two private callables collide on their local token"
     );
 
-    // Poison everything job-local the export read, then resolve from the store.
+    // Remove the frontend's retained buffers and bind-group caches, then
+    // destroy the compiler. The probe must need only the build store, even
+    // when the exporter's separate scratch no longer contains its job maps.
+    pollster::block_on(compiler.release_resident_job_buffers());
+    drop(compiler);
     store.poison_scratch();
     let probe = probe(&store);
     let eligible = probe.eligible().collect::<Vec<_>>();
@@ -171,7 +176,7 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
         assert!(use_words[PROBE_TYPED] > 0);
         assert_eq!(use_words[PROBE_FAILED], 0, "body terms substitute closed: {use_words:?}");
         assert_eq!(use_words[PROBE_FIRST_FAILURE], 0);
-        assert_eq!(use_words[PROBE_BAD_REFS], 0, "body references stay inside the segment");
+        assert_eq!(use_words[PROBE_BAD_REFS], 0, "body tree links stay inside the segment");
         assert_eq!(use_words[PROBE_USES], use_words[PROBE_USES_CLOSED], "body call environments close");
         assert!(use_words[PROBE_PARAMS_CLOSED] >= 1);
         // Every foreign body here calls job A's private `identity`, never
@@ -232,11 +237,34 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
         assert_eq!(a[PROBE_RESULT] == a[PROBE_EXPECTED], b[PROBE_RESULT] == b[PROBE_EXPECTED]);
     }
 
-    // A second build in the same allocations retains the same records:
-    // nothing of the first build leaks into it.
+    // An unrelated build must replace the entire identity namespace, even
+    // though its smaller live prefixes leave bytes from the old build behind.
     let (capacity, _) = tiny.capacity();
+    tiny.begin_build().unwrap();
+    compiler.attach_program_retention(Some(tiny.clone()));
+    pollster::block_on(compiler.semantic_interface_for_source_pack(
+        99,
+        &["module fresh; fn echo<T>(x: T) -> T { return x; } fn main() -> i32 { return echo(42); }"],
+    ))
+    .expect("unrelated build");
+    compiler.attach_program_retention(None);
+    let fresh_status = tiny.status().unwrap();
+    assert_eq!(fresh_status[counts::JOBS], 1);
+    assert_eq!(fresh_status[counts::CONFLICTS], 0);
+    assert_eq!(fresh_status[counts::INVARIANTS], 0);
+    let fresh_keys = decl_keys(&tiny, fresh_status[0] as usize);
+    assert!(fresh_keys.iter().any(|key| key[0] == 99));
+    assert!(fresh_keys.iter().filter(|key| key[0] != 0).all(|key| key[0] == 99),
+        "only the new build's declarations are live: {fresh_keys:?}");
+    let fresh_probe = probe(&tiny);
+    assert!(!fresh_probe.uses.is_empty(), "the unrelated build exports its call");
+    assert_eq!(fresh_probe.eligible().count(), 0, "old foreign definitions are unreachable");
+    assert_eq!(tiny.capacity().0, capacity, "the unrelated build needs no growth");
+
+    // Rebuild the original program after the unrelated job. Stable contents
+    // with retained allocations must still come from a fresh full export.
     build(&compiler, &tiny);
-    assert_eq!(tiny.capacity().0, capacity, "the second build needs no growth");
+    assert_eq!(tiny.capacity().0, capacity, "the original rebuild needs no growth");
     assert_eq!(summary(&tiny), expected);
 
     // One probe chain for every key: equality is decided by full records.
