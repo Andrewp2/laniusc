@@ -124,12 +124,12 @@ bool closure_bound_call(uint call, out uint token)
 // masks `masks`) inside the instance whose tagged environment is `caller`
 // (CT_NONE in a nongeneric function): the call's value environment with
 // every binding substituted, tagged with the callee. Otherwise a status:
-// - CT_NONE: pending; the environment has a hole or stays open there.
+// - CT_NONE: the environment is absent, mask-incomplete or stays symbolic.
 // - CT_FIT_FAILED: a binding's constant projection does not fit under the
-//   caller (closure_instance_fit names it). The call environment is the
+//   caller (the diagnostic overload names it). The call environment is the
 //   admitted one, so this is the instance's language error.
-// - CT_UNKNOWN: an unsupported shape, or a capacity that set an overflow
-//   bit (the job is recorded again).
+// - CT_UNKNOWN: an unbound substitution parameter, unsupported shape, or a
+//   capacity that set an overflow bit (the job is recorded again).
 // The bindings substitute through `subst_spare` while the key's arguments
 // sit in `env_spare`'s block, so the two never share.
 uint closure_instance_env(uint token, uint callee, uint2 masks, uint caller,
@@ -142,6 +142,16 @@ uint closure_instance_env(uint token, uint callee, uint2 masks, uint caller,
 uint closure_instance_env_of(uint environment, uint callee, uint2 masks, uint caller,
     inout CtSpare subst_spare, inout CtSpare env_spare)
 {
+    uint3 failed_fit;
+    return closure_instance_env_of(environment, callee, masks, caller, subst_spare, env_spare, failed_fit);
+}
+
+// `failed_fit` carries (callee slot, constant-domain flag, target scalar)
+// from the failing substitution itself, independently of memo contents.
+uint closure_instance_env_of(uint environment, uint callee, uint2 masks, uint caller,
+    inout CtSpare subst_spare, inout CtSpare env_spare, out uint3 failed_fit)
+{
+    failed_fit = uint3(INVALID, 0u, 0u);
     if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_ENV) return CT_NONE;
     uint3 words = ct_words(environment);
     if (words.y != masks.x || words.z != masks.y) return CT_NONE;
@@ -151,33 +161,20 @@ uint closure_instance_env_of(uint environment, uint callee, uint2 masks, uint ca
     if (!ct_spare_reserve(env_spare, key)) return CT_UNKNOWN;
     for (uint index = 0u; index < arity; index++)
     {
-        uint binding = ct_subst(SourceSlots(), caller, ct_arg(environment, index), true, subst_spare);
+        uint projection;
+        uint binding = ct_subst_with_fit(SourceSlots(), caller, ct_arg(environment, index), true,
+            subst_spare, projection);
+        if (binding == CT_FIT_FAILED)
+        {
+            uint types = countbits(words.y);
+            bool constant = index >= types;
+            uint slot = ct_nth_set_bit(constant ? words.z : words.y, constant ? index - types : index);
+            failed_fit = uint3(slot, constant ? 1u : 0u, ct_words(projection).x);
+        }
         if (!ct_is_resolved(binding)) return binding == CT_FIT_FAILED ? CT_FIT_FAILED : CT_UNKNOWN;
         ct_key_arg(key, index, binding);
     }
     if (!key.ok) return CT_UNKNOWN;
     if ((key.flags & (CTF_TYPE_PARAM | CTF_CONST_PARAM)) != 0u) return CT_NONE;
     return ct_spare_publish(key, uint2(0xffffffffu, 0u), true, env_spare);
-}
-
-// After closure_instance_env_of(environment, ...) returned CT_FIT_FAILED
-// under `caller`: the slot whose binding failed (`constant` tells its
-// domain) and the scalar its projection does not fit. False when no
-// binding holds the failed projection.
-bool closure_instance_fit(uint environment, uint caller, out uint slot, out bool constant, out uint scalar)
-{
-    slot = INVALID; constant = false; scalar = 0u;
-    if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_ENV) return false;
-    uint3 words = ct_words(environment);
-    uint types = countbits(words.y);
-    uint arity = min(ct_arity(environment), types + countbits(words.z));
-    for (uint index = 0u; index < arity; index++)
-    {
-        scalar = ct_subst_failed_fit(caller, ct_arg(environment, index));
-        if (scalar == 0u) continue;
-        constant = index >= types;
-        slot = ct_nth_set_bit(constant ? words.z : words.y, constant ? index - types : index);
-        return slot < 32u;
-    }
-    return false;
 }

@@ -71,12 +71,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         link = ic_next_edge(call);
         uint token; uint callee; uint2 masks;
         if (!valid_node(call) || !closure_call(call, token, callee, masks)) continue;
-        uint key = closure_instance_env(token, callee, masks, instance.x, subst_spare, env_spare);
-        uint slot; bool constant; uint scalar;
-        if (key == CT_FIT_FAILED &&
-            closure_instance_fit(ct_call_env(token).x, instance.x, slot, constant, scalar))
-            record_min_token_error(status, fit_argument_token(call, slot, constant), ERR_ASSIGN_MISMATCH,
-                ASSIGN_MISMATCH_COUNT_FIT | scalar);
+        uint3 failed_fit;
+        uint key = closure_instance_env_of(ct_call_env(token).x, callee, masks, instance.x,
+            subst_spare, env_spare, failed_fit);
+        if (key == CT_FIT_FAILED)
+            record_min_token_error(status, fit_argument_token(call, failed_fit.x, failed_fit.y != 0u),
+                ERR_ASSIGN_MISMATCH, ASSIGN_MISMATCH_COUNT_FIT | failed_fit.z);
         if (!ct_is_record(key))
         {
             ic_count(IC_COUNT_SKIPPED);

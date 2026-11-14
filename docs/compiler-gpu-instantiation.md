@@ -59,8 +59,9 @@ Three investigations now provide more specific evidence:
   route remains unidentified.
 
 The type probe does not establish complete template correctness: constant
-generics, trait-provided methods, nested functions, layout/ABI facts and
-negative diagnostics were not covered. Its all-replay executable differs
+generics, layout/ABI facts and negative diagnostics were not covered. Later
+grammar inspection ruled out trait-provided bodies and nested definitions
+as supported source forms. Its all-replay executable differs
 from the integrated baseline and was not executed. No speed claim follows
 from that probe.
 
@@ -127,11 +128,26 @@ computes the numeric result correctly and rejects the invalid operators.
 Complete symbolic row typing, scalar realization and GPU concrete-operand
 validation are required corrections before replay deletion.
 
-Constant projection fits are another instance-time obligation. The existing
-mixed-projection overflow fixture currently fails with an internal LNC0017
-evidence error without a source label; a failed-fit source diagnostic is a
-required correction, not established baseline behavior. Executed small and
-boundary-fitting instances succeed.
+Constant projection fits are another instance-time obligation. The local-call
+fix in `2fbfb57fd` (integrated as `9bd027f52`) preserves a distinct failed-fit
+status through GPU substitution. The mixed-projection overflow fixture now
+reports LNC0006 at the inner argument whose length does not fit `u8`, including
+through a forwarding generic. Uncalled, small and boundary-fitting cases
+execute. A forced two-unit probe still reports the internal LNC0017 evidence
+error for the overflow case; the retained cross-unit path must carry the
+foreign source location to close that gap. See the
+[constant fit contract](compiler-gpu-instantiation-design.md#constant-fit-status).
+
+Root review found that looking back through the substitution memo could name
+an earlier fitting projection: successful root substitutions are allowed to
+miss the memo. A focused GPU probe reproduces that misidentification. The
+failure now carries its exact projection directly from substitution, with
+the caller retaining the slot and scalar. The GPU regression covers a missing
+memo entry, a nested failed projection, and a successful substitution after a
+failure. On the combined tree, all 14 constant integration tests and the two
+focused canonical-identity and claim-publication GPU tests pass. The latter
+fixture's missing slot-mask buffer was confirmed on the baseline and repaired
+separately. These checks establish correctness, not a new timing result.
 
 The proposed inherent-method reselection check was rejected after measurement:
 a generic caller preserves its checked impl choice both in selected copies and

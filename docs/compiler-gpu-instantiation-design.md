@@ -232,17 +232,22 @@ The constant subsystem owns the fit obligation; consumers read its status.
   `CT_FIT_FAILED` unchanged and never memoizes it. `CT_UNKNOWN` remains an
   unbound slot, an unsupported shape, or a capacity failure; capacity also
   sets an overflow bit and the job is recorded again, so it is never a
-  language error. `closure_instance_env_of` returns `CT_NONE` for a pending
-  (open or holed) environment, `CT_FIT_FAILED`, or `CT_UNKNOWN`. Checked and
+  language error. `closure_instance_env_of` returns `CT_NONE` for an absent
+  or mask-incomplete environment or one whose result stays symbolic. An
+  unbound parameter reached during substitution still returns `CT_UNKNOWN`.
+  A failed fit remains `CT_FIT_FAILED`. Checked and
   dependency-signature interning map `CT_FIT_FAILED` to `CT_UNKNOWN`: their
   fits are reported where they are claimed (`ct_match_fit` at the call).
 - **Report.** `closure/03_expand` substitutes each admitted call environment
   (`ct_call_env`, never a discarded inference candidate) under each closure
-  instance. On `CT_FIT_FAILED`, `closure_instance_fit` re-walks the memo
-  (`ct_subst_failed_fit`) to name the failed slot and the scalar of the
-  failed projection, and records `LNC0006` (type mismatch, count-fit detail
+  instance. `ct_subst_with_fit` returns the exact failed projection with
+  `CT_FIT_FAILED`; the caller retains the binding's slot and scalar and
+  records `LNC0006` (type mismatch, count-fit detail
   with the scalar) at the first argument whose pattern names that slot. The
-  error is ordered by token like every other type-check error.
+  error is ordered by token like every other type-check error. Diagnostic
+  provenance does not depend on memo retention: a successful substitution
+  may miss that cache, so a later cache walk cannot establish which binding
+  failed.
 - **Retention.** A retained environment exports its binding terms as they
   are, including the `CC_CAST` record with its target scalar; the obligation
   is that term, not a separate row. A retained use substitutes it under the
@@ -250,7 +255,12 @@ The constant subsystem owns the fit obligation; consumers read its status.
   this report, keyed by the use's call token and slot.
 - **Not covered.** Dependency summary instances (`closure/03b`) still map a
   failed fit to `CT_UNKNOWN`; their diagnostic would need a dependency
-  source location.
+  source location. A native probe at `2fbfb57fd`, with the caller and generic
+  library each padded above 3 MiB to force two frontend jobs, confirms that
+  K = 255 executes but K = 256 still reports the internal LNC0017 evidence
+  error without a source label. The retained path must preserve both the
+  projection and the foreign argument's source location; this remains an
+  acceptance requirement before replay deletion.
 
 ## 5. Discovery waves, depth and capacity
 

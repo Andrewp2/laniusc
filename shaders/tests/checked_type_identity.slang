@@ -11,6 +11,7 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_constants;
 import type_checker.checked_type_identity;
 import type_checker.substitution.ct_spare;
+import type_checker.substitution.ct_subst;
 import primitive_types;
 
 RWStructuredBuffer<uint> identity_errors;
@@ -231,4 +232,33 @@ void main(uint3 dtid : SV_DispatchThreadID)
             c.right.x, c.right.y, right, c.scoped);
         check(16u + i, equal ? 1u : 0u, c.expected ? 1u : 0u);
     }
+
+    uint environment = ct_intern_small(CT_KIND_ENV, 1u, uint3(1u, 0u, 1u),
+        uint2(canonical_atom[9u], CT_NONE), uint2(INVALID, 0u), spare);
+    uint nested = ct_intern_small(CT_KIND_ENV, 2u, uint3(2u, 0u, 3u),
+        uint2(canonical_projection[2u], canonical_projection[4u]), uint2(INVALID, 0u), spare);
+    CtSpare substitution_spare = ct_spare_none();
+    uint memo_rows; uint memo_stride;
+    ct_subst_memo.GetDimensions(memo_rows, memo_stride);
+    [loop]
+    for (uint scenario = 0u; scenario < 4u; scenario++)
+    {
+        // A successful root may miss the memo when its insert meets another
+        // unpublished key with the same claim tag. Reproduce that permitted
+        // cache state before the next binding fails.
+        if (scenario == 1u)
+            for (uint i = 0u; i < memo_rows; i++) ct_subst_memo[i] = uint4(0u, 0u, 0u, 0u);
+        // Failure provenance must also name the inner projection of a
+        // compound term. A later successful memo hit discards the failure.
+        bool fits = scenario == 0u || scenario == 3u;
+        uint term = fits ? canonical_projection[2u] : scenario == 1u ? canonical_projection[4u] : nested;
+        uint failed_projection;
+        uint result = ct_subst_with_fit(FixtureSlots(), environment, term, true, substitution_spare,
+            failed_projection);
+        check(50u + 2u * scenario, fits && ct_is_record(result) ? cc_count(result) : result,
+            fits ? 256u : CT_FIT_FAILED);
+        check(51u + 2u * scenario, failed_projection, fits ? CT_NONE : canonical_projection[4u]);
+    }
+    check(58u, ct_is_resolved(CT_FIT_FAILED) || ct_is_param(CT_FIT_FAILED)
+        || ct_is_const_param(CT_FIT_FAILED) ? 1u : 0u, 0u);
 }

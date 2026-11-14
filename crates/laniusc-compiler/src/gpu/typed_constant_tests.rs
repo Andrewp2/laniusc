@@ -118,12 +118,13 @@ fn physical_gpu_typed_constant_identity_and_claim_provenance_depth() {
 }
 
 const CHECKED_IDENTITY: &str = "tests/checked_type_identity";
-const CHECKED_IDENTITY_CHECKS: usize = 50;
+const CHECKED_IDENTITY_CHECKS: usize = 59;
 
 /// The identity cases above on canonical IDs (checked_type_identity.slang):
 /// typed constant identity, folded and symbolic casts, count-class array
-/// identity, closure and the walkers' operand admission. The shader interns
-/// its own constants through the production key builders.
+/// identity, closure, operand admission and fit provenance independent of
+/// memo retention. The shader interns its own constants through the
+/// production key builders.
 #[test]
 fn physical_gpu_checked_type_identity_by_canonical_id() {
     assert!(!crate::options::get().allow_software_adapter,
@@ -139,6 +140,8 @@ fn physical_gpu_checked_type_identity_by_canonical_id() {
         ("ct_args", 4096),
         ("ct_slot", 4096),
         ("ct_counts", 16),
+        ("ct_subst_memo", 1024 * 4),
+        ("ct_subst_counts", 8),
         ("canonical_row", 16),
         ("canonical_atom", 16),
         ("canonical_projection", 16),

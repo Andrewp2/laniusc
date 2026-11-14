@@ -245,16 +245,20 @@ uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout 
 // The ID of `term` under `env`, or a status:
 // - CT_FIT_FAILED: a constant projection's substituted value does not fit
 //   its target scalar. The obligation is the projection record itself
-//   (CC_CAST, target scalar in w0), which ct_subst_failed_fit finds again.
-//   It is never memoized, so every caller sees it.
+//   (CC_CAST, target scalar in w0).
+//   It is never memoized, so every caller sees it. `failed_projection`
+//   names that exact node; all other outcomes set it to CT_NONE. Diagnostic
+//   provenance must not be reconstructed from a memo that may miss entries.
 // - CT_UNKNOWN: a parameter is unbound (an environment hole), a shape is
 //   unsupported, or a capacity ran out. Capacity also sets an overflow bit
 //   (ct_subst_counts or ct_counts) and the job is recorded again, so a
 //   caller never reports it as a language error.
 // - CT_NONE: `intern` is false and the result does not exist.
 // CT_NONE as `env` substitutes nothing.
-public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, inout CtSpare spare)
+public uint ct_subst_with_fit<S : ICtSlots>(S slots, uint env, uint term, bool intern,
+    inout CtSpare spare, out uint failed_projection)
 {
+    failed_projection = CT_NONE;
     if (!ct_is_resolved(term)) return CT_UNKNOWN;
     if (env == CT_NONE) return term;
     if (ct_is_param(term)) return ct_subst_param(slots, env, term);
@@ -277,6 +281,7 @@ public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, in
         }
         if (child != CT_NONE) break;
         result = subst_build(slots, env, node, intern, spare);
+        if (result == CT_FIT_FAILED) failed_projection = node;
         if (!ct_is_resolved(result)) return result;
         bool stored = ct_subst_memo_insert(env, node, result);
         if (node == term) return result;
@@ -286,21 +291,10 @@ public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, in
     return CT_UNKNOWN;
 }
 
-// After ct_subst(slots, env, term) returned CT_FIT_FAILED: the target scalar
-// of the projection whose fit failed, or 0 when `term` holds none. The
-// failed build stopped at the first unbuilt open node of the descent, and
-// failures are never memoized, so the same descent ends at that projection.
-// Reads the memo only; it substitutes nothing.
-public uint ct_subst_failed_fit(uint env, uint term)
+// Consumers that need only the result use the same substitution without
+// retaining diagnostic provenance.
+public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, inout CtSpare spare)
 {
-    // A built term has a memo entry; it did not fail.
-    if (!ct_is_record(term) || ct_closed(term) || ct_subst_memo_find(env, term) != CT_PENDING) return 0u;
-    uint node = term;
-    uint child = pending_child(env, node);
-    for (uint depth = 0u; depth < CT_SUBST_DEPTH_LIMIT && child != CT_NONE; depth++)
-    {
-        node = child;
-        child = pending_child(env, node);
-    }
-    return child == CT_NONE && ct_kind(node) == CC_KIND_CAST ? ct_words(node).x : 0u;
+    uint failed_projection;
+    return ct_subst_with_fit(slots, env, term, intern, spare, failed_projection);
 }
