@@ -13,6 +13,53 @@ GPU allocations and pipelines is allowed; reusing compiled units, generic
 instances, or checked source between requests does not count. Instantiation,
 substitution, layout, call selection, and lowering must run in GPU shaders.
 
+## End-state architecture
+
+The replacement is GPU monomorphization of typed intermediate code. Source
+files enter the frontend to produce immutable templates for the current build.
+Instantiating a template does not generate source text or invoke the frontend.
+
+1. **Keep typed templates for the build.** Each definition has a unit-qualified
+   identity and immutable HIR, side tables, symbolic type/constant references,
+   definition contracts, and diagnostic source locations. Later units must not
+   overwrite these buffers. A template is discarded when the build finishes.
+2. **Discover the reachable instance graph on the GPU.** Root calls enqueue
+   `(definition, canonical type arguments, constant arguments)` requests.
+   Expanding an instance substitutes its environment into its calls and
+   enqueues the callees. Structural equality deduplicates requests; selected
+   implementation evidence accompanies the corresponding calls. Finite
+   recursion reuses an existing instance. The worklist must finish or report
+   an explicit semantic/resource failure; an arbitrary round limit cannot
+   silently omit work or make a previously supported program invalid.
+3. **Realize all type-dependent facts on the GPU.** Derive expression types,
+   constant values, trait-method selections, receiver adjustments, native
+   layouts, and parameter/result ABI facts under each environment. The GPU
+   must check the obligations currently protected by replay admission.
+4. **Build concrete execution rows on the GPU.** Counts and scans reserve
+   disjoint ranges for each instance's HIR projection and side tables. Remap
+   local references into those ranges; retain external declaration identities
+   and original diagnostic locations. Root and nested calls target concrete
+   instance identities. Concrete layout must precede LIR sizing and emission.
+5. **Lower and publish the complete graph.** Lower ordinary functions and
+   concrete instance rows through the existing GPU backend. Publish only when
+   every emitted call has an admitted body, intrinsic, or external ABI target,
+   and all required type, trait, and layout facts are complete. Remove the host
+   source-copy builder, replay compilation loop, and semantic replay routing.
+
+Compilation-unit boundaries do not bound this graph. The same instance key
+and typed-template projection must work for a body in another unit. Combining
+small programs into one unit is an optimization. Larger programs require
+retained dependency templates and bounded batches of instance work; they must
+not become unsupported merely because the one-unit optimization cannot apply.
+The cross-unit template ownership and scheduling interfaces remain unfinished.
+
+The host handles files, buffer allocation/transfers, GPU submission, requested
+capacity growth, and artifact I/O. It must not select implementations, derive
+layouts, or decide which generic bodies a call means. Capacity retries may
+repeat GPU instantiation work, without manufacturing source or reparsing the
+templates. Every new build reconstructs templates, instances, and evidence;
+only allocation capacity and GPU pipelines may survive for reuse.
+
 ## Existing implementation
 
 | Boundary | Current behavior | Source |
@@ -165,7 +212,8 @@ the app unit's replay compile.
 
 ## One program, one unit
 
-Decision: a program compiles as one unit. `whole_program_manifest` in
+Current optimization: a program compiles as one unit when it fits.
+`whole_program_manifest` in
 [`bounded_path_codegen.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/bounded_path_codegen.rs)
 merges the entry and every library it imports into one manifest when the
 merged sources fit the resident limits. Type checking, the instance closure,
@@ -188,8 +236,9 @@ Reasons:
 Limits:
 
 - A program above the resident limits stays multi-unit. Its cross-unit
-  instances still replay. Deleting replay requires an explicit compile error
-  for this case.
+  instances still replay. Deleting replay requires the dependency-template
+  path described in the complete instance contract; rejecting a previously
+  supported program is not an acceptable replacement.
 - Library code is now checked through the local path. The local path had gaps
   that the dependency path did not have. This change fixes the ones the test
   suites reach:
@@ -404,9 +453,10 @@ does not complete a milestone.
    call edges, not bodies, so they cannot supply native lowering inputs.
 5. **Replace replay publication.** Admit the instantiated call inventory and
    native layouts under the same definition and implementation contracts as
-   `ValidatedReplayRequest`. Once the complete settings workload uses this
-   path, remove its source-copy compiles and measure full warm rebuilds with
-   all compiled-unit and instance reuse disabled.
+   `ValidatedReplayRequest`, with those semantic checks performed on the GPU.
+   Once all supported instance paths use GPU templates, delete the source-copy
+   builder and replay loop. Measure full warm settings rebuilds with all
+   compiled-unit and instance reuse disabled.
 
 The local milestones can reduce replay bodies before they eliminate an entire
 replay submission. Report both quantities; fewer bodies alone do not establish
