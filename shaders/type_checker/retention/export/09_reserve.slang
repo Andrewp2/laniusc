@@ -21,5 +21,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint side = 0u;
     for (uint k = 0u; k < RT_SIDE_TABLES; k++) side = max(side, side_rows(k));
     set_dispatch(RT_D_SIDE, side);
-    set_dispatch(RT_D_SCHEMA, max(max(side_rows(RT_SIDE_PARAMS), side_rows(RT_SIDE_FIELDS)), variant_payload_rows()));
+    set_dispatch(RT_D_SCHEMA, max(max(side_rows(RT_SIDE_PARAMS), side_rows(RT_SIDE_FIELDS)),
+        max(variant_payload_rows(), variant_rows())));
 }

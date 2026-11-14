@@ -11,6 +11,7 @@ import hir_records;
 import callable_identity;
 import type_checker.canonical.canonical_api;
 import type_checker.retention.retention_store;
+import type_checker.retention.row_classes;
 
 // Job tables (bound by their type-check graph or parser names).
 public StructuredBuffer<uint> compact_hir_count;
@@ -28,6 +29,8 @@ public StructuredBuffer<uint> decl_id_by_name_token;
 public StructuredBuffer<uint> interface_public_decl_index_by_local;
 public StructuredBuffer<uint> interface_public_decl_index_by_hir;
 public StructuredBuffer<uint> type_const_param_scalar_by_token;
+public StructuredBuffer<uint> compact_variant_count;
+public StructuredBuffer<HirVariant> compact_variants;
 
 // Job scratch owned by the retention store's build object, never by the
 // frontend workspace.
@@ -54,6 +57,16 @@ public globallycoherent RWStructuredBuffer<uint4> rt_x_scan;
 //   rt_x_fn_by_token  function start token -> function row + 1 (0 when none);
 //                     a checked local call names its callee by that token
 public globallycoherent RWStructuredBuffer<uint> rt_x_fn_by_token;
+//   rt_x_decl_by_token name token -> declaration row + 1, or
+//                     RT_X_VARIANT_BIT | variant index; 0 when none (step 01b)
+public globallycoherent RWStructuredBuffer<uint> rt_x_decl_by_token;
+//   rt_x_seg_token    job segment ordinal -> the body's first token (step 10),
+//                     ascending, so a token finds its body by binary search
+public globallycoherent RWStructuredBuffer<uint> rt_x_seg_token;
+// rt_x_callee: row -> 1 when the row is a call's callee (step 1b). A
+// callee row's HIR parent is not necessarily its call.
+public globallycoherent RWStructuredBuffer<uint> rt_x_callee;
+public static const uint RT_X_VARIANT_BIT = 0x80000000u;
 
 // The function row whose span starts at `token`, or INVALID.
 public uint function_at_token(uint token)
@@ -110,6 +123,7 @@ public static const uint HIR_CALL_EXPR = 19u;
 public static const uint HIR_MEMBER_EXPR = 21u;
 public static const uint HIR_ENUM_ITEM = 26u;
 public static const uint HIR_STRUCT_ITEM = 27u;
+public static const uint HIR_CONST_ITEM = 25u;
 public static const uint HIR_TYPE_ALIAS_ITEM = 29u;
 public static const uint HIR_IMPL = 35u;
 public static const uint HIR_ITEM_KIND_FN = 4u;
@@ -127,6 +141,7 @@ public static const uint RT_DECL_STRUCT = 5u;
 public static const uint RT_DECL_ENUM = 6u;
 public static const uint RT_DECL_IMPL = 7u;
 public static const uint RT_DECL_TRAIT = 8u;
+public static const uint RT_DECL_CONST = 9u;
 
 // Invariant codes (rt_counts[RT_C_FIRST_INVARIANT] keeps the smallest).
 public static const uint RT_INV_PARAM_OWNER = 1u;     // a generic parameter's owner has no declaration identity
@@ -137,6 +152,7 @@ public static const uint RT_INV_OWNERSHIP = 5u;       // an exported term names 
 public static const uint RT_INV_DUPLICATE_DECL = 6u;  // two committed entries define one declaration
 public static const uint RT_INV_PARAM_MAP = 7u;       // the parameter map is full
 public static const uint RT_INV_ENV_OWNER = 8u;       // a call environment names a different callee
+public static const uint RT_INV_RECEIVER_SCOPE = 9u;  // a local callee's receiver term is outside the callee's binder chain
 
 public uint job_library() { return ct_counts[CT_COUNT_LIBRARY]; }
 public uint job_unit() { return ct_counts[CT_COUNT_UNIT]; }
@@ -223,6 +239,16 @@ public uint nominal_local(uint name_token)
     return persisted != 0xffffffffu ? persisted : CT_PRIVATE_LOCAL_BIT | local;
 }
 
+// A constant's identity: its interface index, or 0x40000000 | its first
+// token when private (as a private callable).
+public uint const_local(uint row)
+{
+    uint index = interface_public_decl_index_by_hir[row];
+    if (index != 0xffffffffu) return index;
+    uint token = compact_hir_core[row].token_start;
+    return token < 0x40000000u ? 0x40000000u | token : 0xffffffffu;
+}
+
 // The declaration key of a declaration row, or a key with INVALID local.
 public uint4 decl_key_of_row(uint row)
 {
@@ -239,8 +265,16 @@ public uint4 decl_key_of_row(uint row)
     }
     else if (is_trait_row(row))
     {
-        key.z = RT_NS_TRAIT;
+        // A trait is a nominal identity of the canonical store: a NAMED
+        // term naming the trait (a bound, an impl header) and the trait's
+        // own declaration meet at one DeclId.
+        key.z = RT_NS_NOMINAL;
         key.w = nominal_local(hir_generic_owner_token(core, payload, token_capacity()));
+    }
+    else if (core.kind == HIR_CONST_ITEM)
+    {
+        key.z = RT_NS_VALUE;
+        key.w = const_local(row);
     }
     return key;
 }
@@ -250,7 +284,7 @@ public bool decl_row(uint row)
     if (!valid_row(row)) return false;
     uint kind = compact_hir_core[row].kind;
     return kind == HIR_FN || kind == HIR_IMPL || kind == HIR_STRUCT_ITEM || kind == HIR_ENUM_ITEM ||
-        is_trait_row(row);
+        kind == HIR_CONST_ITEM || is_trait_row(row);
 }
 
 public uint intern_row_decl(uint row)
@@ -434,4 +468,55 @@ public uint4 scan_at(uint index)
     if (index < rt_x_counts[RT_X_SCAN_N]) return rt_x_scan[index];
     return uint4(rt_x_counts[RT_X_SCAN_TOTAL], rt_x_counts[RT_X_SCAN_TOTAL + 1u],
         rt_x_counts[RT_X_SCAN_TOTAL + 2u], rt_x_counts[RT_X_SCAN_TOTAL + 3u]);
+}
+
+// ---------------------------------------------------------------------------
+// Value bindings. A checked binding is a declaration token
+// (semantic_value_decl_by_hir). Inside a body it becomes
+// (kind, value, aux) of row_classes.slang: a generic parameter leaf, a
+// declaration identity, an enum variant, or a token of the body itself.
+// `span` is the containing body; a binding outside it that names no
+// declaration is FOREIGN.
+public uint4 resolve_binding(BodySpan span, uint token)
+{
+    if (token == 0xffffffffu) return uint4(RT_BIND_NONE, 0xffffffffu, 0xffffffffu, 0u);
+    uint param = param_map_find(token);
+    if (param != RT_INVALID) return uint4(RT_BIND_PARAM, rt_param_leaf(param), 0xffffffffu, 0u);
+    uint count; uint stride;
+    rt_x_decl_by_token.GetDimensions(count, stride);
+    uint entry = token < count ? rt_x_decl_by_token[token] : 0u;
+    if ((entry & RT_X_VARIANT_BIT) != 0u)
+    {
+        uint variant = entry & ~RT_X_VARIANT_BIT;
+        uint enum_row = compact_variants[variant].owner;
+        uint decl = valid_row(enum_row) ? rt_x_row[enum_row].x : RT_INVALID;
+        if (decl != RT_INVALID) return uint4(RT_BIND_VARIANT, decl, compact_variants[variant].ordinal, 0u);
+        return uint4(RT_BIND_FOREIGN, 0xffffffffu, 0xffffffffu, 1u);
+    }
+    if (entry != 0u && valid_row(entry - 1u))
+    {
+        uint decl = rt_x_row[entry - 1u].x;
+        if (decl != RT_INVALID) return uint4(RT_BIND_DECL, decl, 0xffffffffu, 0u);
+        return uint4(RT_BIND_FOREIGN, 0xffffffffu, 0xffffffffu, 1u);
+    }
+    if (token >= span.token && token < span.token_end)
+        return uint4(RT_BIND_LOCAL, token - span.token, 0xffffffffu, 0u);
+    return uint4(RT_BIND_FOREIGN, 0xffffffffu, 0xffffffffu, 1u);
+}
+
+// Whether `row` is the callee of its parent call (callable-only syntax).
+public bool callee_position(uint row)
+{
+    uint count; uint stride;
+    rt_x_callee.GetDimensions(count, stride);
+    return row < count && rt_x_callee[row] != 0u;
+}
+
+// The declaration row (+ 1) or RT_X_VARIANT_BIT | variant a binding token
+// names, 0 when it names neither. Reads only step 01b's map.
+public uint binding_target(uint token)
+{
+    uint count; uint stride;
+    rt_x_decl_by_token.GetDimensions(count, stride);
+    return token < count ? rt_x_decl_by_token[token] : 0u;
 }

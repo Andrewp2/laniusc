@@ -15,8 +15,6 @@ import type_checker.retention.export.type_rows;
 StructuredBuffer<uint> semantic_param_ref_tag_by_row;
 StructuredBuffer<uint> semantic_param_ref_payload_by_row;
 
-public static const uint RT_SCHEMA_FIELD = 1u;
-public static const uint RT_SCHEMA_PAYLOAD = 2u;
 
 void check(uint row, uint term, uint decl, uint parent)
 {
@@ -81,7 +79,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 uint entry = rt_x_row[owner].y;
                 uint4 d0 = rt_dir[entry * RT_DIR_WORDS + 0u];
                 uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
-                uint ordinal = lane - payload_lower_bound(variant_lower_bound(owner));
+                uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
+                uint ordinal = d1.w + lane - payload_lower_bound(variant_lower_bound(owner));
                 if (d2.y != RT_INVALID && ordinal < d2.z)
                 {
                     uint term = type_row_term(payload.type_node);
@@ -89,6 +88,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     rt_schema[d2.y + ordinal] = uint4(d0.x, RT_SCHEMA_PAYLOAD | (payload.ordinal << 8u), variant.ordinal, term);
                 }
             }
+        }
+    }
+    // One record per variant, payloadless ones included: its payload count
+    // and the block-relative index of its first payload record.
+    if (lane < variant_rows())
+    {
+        HirVariant variant = compact_variants[lane];
+        uint owner = variant.owner;
+        if (valid_row(owner) && compact_hir_core[owner].kind == HIR_ENUM_ITEM && rt_x_row[owner].y != RT_INVALID)
+        {
+            uint entry = rt_x_row[owner].y;
+            uint4 d0 = rt_dir[entry * RT_DIR_WORDS + 0u];
+            uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
+            uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
+            uint first_variant = variant_lower_bound(owner);
+            uint index = lane - first_variant;
+            uint first_payload = payload_lower_bound(lane);
+            uint payloads = payload_lower_bound(lane + 1u) - first_payload;
+            if (d2.y != RT_INVALID && index < d1.w)
+                rt_schema[d2.y + index] = uint4(d0.x, RT_SCHEMA_VARIANT | (variant.ordinal << 8u), payloads,
+                    d1.w + first_payload - payload_lower_bound(first_variant));
         }
     }
 }

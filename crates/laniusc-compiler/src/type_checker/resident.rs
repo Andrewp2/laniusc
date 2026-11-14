@@ -2507,7 +2507,15 @@ impl GpuTypeChecker {
             if instance_closure {
                 let closure = &bind_groups.semantic_projection.instance_closure;
                 closure.record(encoder, closure_import_rounds)?;
-                closure.record_inplace_select(encoder)?;
+                // A retained job exports every generic body as a symbolic
+                // template. In-place selection would make the late semantic
+                // columns of a selected body concrete, so with a store
+                // attached no function is selected: the cleared selection
+                // table leaves every body pass inert and the function stays
+                // a template (docs/compiler-program-retention.md).
+                if program_retention.is_none() {
+                    closure.record_inplace_select(encoder)?;
+                }
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.instance_closure.done");
                 }

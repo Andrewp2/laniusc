@@ -29,8 +29,6 @@ public StructuredBuffer<HirParam> compact_params;
 public StructuredBuffer<HirRange> compact_param_ranges;
 public StructuredBuffer<uint> struct_init_field_ordinal_by_row;
 // Nominal schemas (not body side tables).
-public StructuredBuffer<uint> compact_variant_count;
-public StructuredBuffer<HirVariant> compact_variants;
 public StructuredBuffer<uint> compact_variant_payload_row_count;
 public StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 

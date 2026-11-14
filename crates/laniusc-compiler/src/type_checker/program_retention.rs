@@ -49,6 +49,12 @@ pub(crate) const RETAINED_PROGRAM_INPUTS: &[&str] = &[
     "semantic_type_ref_payload_by_hir",
     "semantic_param_ref_tag_by_row",
     "semantic_param_ref_payload_by_row",
+    "semantic_value_decl_by_hir",
+    "semantic_value_const_by_hir",
+    "semantic_value_const_present_by_hir",
+    "semantic_argument_mode_by_hir",
+    "semantic_iterable_kind_by_hir",
+    "semantic_member_field_ordinal_by_hir",
     "decl_id_by_name_token",
     "interface_public_decl_index_by_local",
     "interface_public_decl_index_by_hir",
@@ -90,7 +96,8 @@ const A_SEGMENTS: usize = 9;
 const A_SEG_ROWS: usize = 10;
 const A_SEG_SIDE: usize = 11;
 const A_SEG_BYTES: usize = 12;
-const ARENAS: usize = 13;
+const A_SEG_TOKENS: usize = 13;
+const ARENAS: usize = 14;
 
 /// rt_counts words (retention_store.slang RT_C_*).
 pub mod counts {
@@ -140,10 +147,11 @@ const RECORD_BYTES: [u64; ARENAS] = [
     4,           // signatures
     16,          // schema
     48,          // uses
-    64,          // segments
-    80,          // segment rows
+    96,          // segments
+    112,         // segment rows
     16,          // side records (2 per side row)
-    4,           // string bytes
+    4,           // string bytes and body text
+    16,          // body tokens
 ];
 
 /// Record capacities of the store's arenas and hash tables.
@@ -160,7 +168,7 @@ impl Default for ProgramRetentionCapacity {
         Self {
             arenas: [
                 4096, 4096, 16384, 32768, 4096, 8192, 16384, 8192, 16384, 2048, 65536, 32768,
-                16384,
+                65536, 65536,
             ],
             slots: [8192, 8192, 32768],
         }
@@ -171,7 +179,7 @@ impl ProgramRetentionCapacity {
     /// Deliberately tiny capacities: a test of the overflow/retry protocol.
     pub fn tiny() -> Self {
         Self {
-            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4],
+            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4, 4],
             slots: [8, 8, 8],
         }
     }
@@ -217,15 +225,17 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_sigs", Sized::Arena(A_SIGS, 4)),
     ("rt_schema", Sized::Arena(A_SCHEMA, 16)),
     ("rt_uses", Sized::Arena(A_USES, 48)),
-    ("rt_segments", Sized::Arena(A_SEGMENTS, 64)),
-    ("rt_seg_rows", Sized::Arena(A_SEG_ROWS, 80)),
+    ("rt_segments", Sized::Arena(A_SEGMENTS, 96)),
+    ("rt_seg_rows", Sized::Arena(A_SEG_ROWS, 112)),
     ("rt_seg_side", Sized::Arena(A_SEG_SIDE, 16)),
     ("rt_seg_bytes", Sized::Arena(A_SEG_BYTES, 4)),
+    ("rt_seg_tokens", Sized::Arena(A_SEG_TOKENS, 16)),
 ];
 
 const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/00_begin",
     "type_checker/retention/export/01_params",
+    "type_checker/retention/export/01b_decl_tokens",
     "type_checker/retention/export/02_rows",
     "type_checker/retention/export/03_heights",
     "type_checker/retention/export/04_height_plan",
@@ -239,6 +249,8 @@ const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/10_decls",
     "type_checker/retention/export/11_rows",
     "type_checker/retention/export/12_side",
+    "type_checker/retention/export/12b_text_clear",
+    "type_checker/retention/export/12c_text_copy",
     "type_checker/retention/export/13_schema",
     "type_checker/retention/export/14_uses",
     "type_checker/retention/export/15_finish",
@@ -250,7 +262,7 @@ const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
 const RESOLVE_KERNEL: &str = "tests/retention_resolve";
 
 /// Words per use the acceptance probe writes (shaders/tests/retention_resolve.slang).
-pub const PROBE_WORDS: usize = 20;
+pub const PROBE_WORDS: usize = 40;
 
 fn storage(device: &wgpu::Device, label: &str, bytes: u64, indirect: bool) -> wgpu::Buffer {
     let mut usage =
@@ -284,6 +296,26 @@ impl JobTable {
     }
 }
 
+/// The lexer tables of the job being recorded that the export copies body
+/// source provenance from: token records, source bytes and file starts.
+pub(crate) fn retention_source_tables(
+    lexer: &crate::lexer::buffers::GpuBuffers,
+) -> Vec<(&'static str, JobTable)> {
+    let word_view = |buffer: &wgpu::Buffer, offset: u64, bytes: u64| JobTable {
+        buffer: buffer.clone(),
+        offset,
+        size: bytes.next_multiple_of(4).min(buffer.size() - offset).max(4),
+    };
+    vec![
+        ("rt_job_tokens", JobTable::from_lanius(&lexer.tokens_out)),
+        (
+            "rt_job_source",
+            word_view(&lexer.in_bytes.buffer, lexer.in_bytes.byte_offset, lexer.in_bytes.byte_size as u64),
+        ),
+        ("rt_job_file_start", JobTable::from_lanius(&lexer.source_file_start)),
+    ]
+}
+
 /// The capacities a job's scratch is sized for.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct ScratchShape {
@@ -292,6 +324,7 @@ struct ScratchShape {
     args: u64,
     param_slots: u64,
     tokens: u64,
+    job_tokens: u64,
 }
 
 struct Store {
@@ -444,6 +477,7 @@ impl ProgramRetention {
             args: args.max(1),
             param_slots: (2 * generic + rows / 4 + 64).next_power_of_two(),
             tokens: table_words(job, "decl_id_by_name_token")?.max(1),
+            job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
         };
         let mut store = self.store.lock().unwrap();
         if store.scratch_shape != Some(shape) {
@@ -521,29 +555,33 @@ impl ProgramRetention {
             };
             use Dispatch::{Direct, Indirect};
             let one = Direct([1, 1, 1]);
+            // Indexes follow EXPORT_KERNELS.
             run(0, one);
             run(1, Indirect(D_PARAMS));
-            run(2, Indirect(D_HIR));
-            run(3, Indirect(D_RECORDS));
-            run(4, one);
-            run(5, Indirect(D_RECORDS));
+            run(2, Direct(groups(shape.rows.max(shape.tokens))));
+            run(3, Indirect(D_HIR));
+            run(4, Indirect(D_RECORDS));
+            run(5, one);
+            run(6, Indirect(D_RECORDS));
             for _ in 1..HEIGHTS {
-                run(6, Indirect(D_ROUND));
-                run(7, one);
+                run(7, Indirect(D_ROUND));
+                run(8, one);
             }
-            run(8, Direct(groups(shape.rows)));
-            run(9, one);
-            run(10, Direct(groups(shape.rows)));
-            run(11, one);
-            run(12, Indirect(D_HIR));
+            run(9, Direct(groups(shape.rows)));
+            run(10, one);
+            run(11, Direct(groups(shape.rows)));
+            run(12, one);
             run(13, Indirect(D_HIR));
-            run(14, Indirect(D_SIDE));
-            run(15, Indirect(D_SCHEMA));
-            run(16, Indirect(D_HIR));
-            run(17, Indirect(D_HIR));
-            run(18, one);
-            run(19, Indirect(D_COMMIT_DIR));
-            run(20, Indirect(D_ROLLBACK));
+            run(14, Indirect(D_HIR));
+            run(15, Indirect(D_SIDE));
+            run(16, Direct(groups(shape.job_tokens)));
+            run(17, Direct(groups(shape.job_tokens)));
+            run(18, Indirect(D_SCHEMA));
+            run(19, Indirect(D_HIR));
+            run(20, Indirect(D_HIR));
+            run(21, one);
+            run(22, Indirect(D_COMMIT_DIR));
+            run(23, Indirect(D_ROLLBACK));
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())
@@ -712,7 +750,7 @@ impl ProgramRetention {
             .iter()
             .map(|&a| live[a])
             .sum();
-        let streamable_bodies = [A_SEGMENTS, A_SEG_ROWS, A_SEG_SIDE, A_SEG_BYTES]
+        let streamable_bodies = [A_SEGMENTS, A_SEG_ROWS, A_SEG_SIDE, A_SEG_BYTES, A_SEG_TOKENS]
             .iter()
             .map(|&a| live[a])
             .sum();
@@ -726,9 +764,11 @@ impl ProgramRetention {
     }
 
     /// Acceptance probe (shaders/tests/retention_resolve.slang): reads only
-    /// the store and returns `PROBE_WORDS` words per committed use.
+    /// the store and returns `PROBE_WORDS` words per committed use, then
+    /// per explicit request `(callee DeclId, type argument count, argument
+    /// 0, argument 1)`.
     #[doc(hidden)]
-    pub fn resolve_probe(&self) -> Result<Vec<u32>> {
+    pub fn resolve_probe(&self, requests: &[[u32; 4]]) -> Result<Vec<u32>> {
         let mut resolve = self.resolve.lock().unwrap();
         if resolve.is_none() {
             *resolve = Some(make_pass_data_from_shader_key(&self.device, RESOLVE_KERNEL, "main", RESOLVE_KERNEL)?);
@@ -736,17 +776,25 @@ impl ProgramRetention {
         let pass_data = resolve.as_ref().unwrap();
         let mut store = self.store.lock().unwrap();
         let uses = self.read(&store.buffers["rt_counts"], counts::WORDS)?[A_USES] as u64;
-        if store.stack_lanes < uses.max(1) {
-            store.stack_lanes = uses.max(1).next_power_of_two();
+        let lanes = uses + requests.len() as u64;
+        if store.stack_lanes < lanes.max(1) {
+            store.stack_lanes = lanes.max(1).next_power_of_two();
         }
         let stack = storage(&self.device, "rt_s_stack", store.stack_lanes * 256 * 4, false);
-        let out = storage(&self.device, "rt_test_out", uses.max(1) * PROBE_WORDS as u64 * 4, false);
+        let out = storage(&self.device, "rt_test_out", lanes.max(1) * PROBE_WORDS as u64 * 4, false);
+        let request_words = requests.iter().flatten().copied().collect::<Vec<_>>();
+        let request_buffer = storage(&self.device, "rt_test_requests", (request_words.len() as u64 * 4).max(16), false);
+        self.queue.write_buffer(&request_buffer, 0, &words_bytes(&request_words));
+        let meta = storage(&self.device, "rt_test_meta", 16, false);
+        self.queue.write_buffer(&meta, 0, &words_bytes(&[requests.len() as u32, 0, 0, 0]));
         let names = reflected_names(pass_data);
         let mut entries = Vec::new();
         for name in &names {
             let buffer = match name.as_str() {
                 "rt_s_stack" => &stack,
                 "rt_test_out" => &out,
+                "rt_test_requests" => &request_buffer,
+                "rt_test_meta" => &meta,
                 other => store
                     .buffers
                     .get(other)
@@ -770,11 +818,11 @@ impl ProgramRetention {
             pass.set_pipeline(&pass_data.pipeline);
             pass.set_bind_group(0, &bind, &[]);
             passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(uses.div_ceil(64).max(1) as u32, 1, 1);
+            pass.dispatch_workgroups(lanes.div_ceil(64).max(1) as u32, 1, 1);
         }
         self.queue.submit(Some(encoder.finish()));
         drop(store);
-        self.read(&out, uses as usize * PROBE_WORDS)
+        self.read(&out, lanes as usize * PROBE_WORDS)
     }
 }
 
@@ -830,7 +878,7 @@ fn allocate_store(
 }
 
 fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'static str, wgpu::Buffer> {
-    let ScratchShape { rows, records, args, param_slots, tokens } = shape;
+    let ScratchShape { rows, records, args, param_slots, tokens, .. } = shape;
     let blocks = rows.div_ceil(256).max(1);
     [
         ("rt_x_counts", X_WORDS as u64 * 4, false),
@@ -847,6 +895,9 @@ fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'st
         ("rt_x_scan", rows * 16, false),
         ("rt_x_blocks", blocks * 16, false),
         ("rt_x_fn_by_token", tokens * 4, false),
+        ("rt_x_decl_by_token", tokens * 4, false),
+        ("rt_x_seg_token", rows * 4, false),
+        ("rt_x_callee", rows * 4, false),
     ]
     .into_iter()
     .map(|(name, bytes, indirect)| (name, storage(device, name, bytes, indirect)))

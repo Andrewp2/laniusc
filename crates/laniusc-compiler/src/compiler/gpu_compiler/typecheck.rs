@@ -742,8 +742,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         downstream_host_timer.stamp("lowering");
+        let retention_sources = type_check
+            .program_retention
+            .as_ref()
+            .map(|_| crate::type_checker::program_retention::retention_source_tables(bufs));
         Ok(RecordedTypeCheckWithDiagnosticBuffers {
             type_check,
+            retention_sources,
             diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
             hir,
             semantic_interface,
@@ -1076,7 +1081,13 @@ impl<'gpu> GpuCompiler<'gpu> {
             })?;
             self.type_checker
                 .program_retention_tables(&hir)
-                .and_then(|tables| store.export_job(&tables))
+                .and_then(|mut tables| {
+                    let sources = recorded.retention_sources.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("program retention export without the job's source tables")
+                    })?;
+                    tables.extend(sources.iter().cloned());
+                    store.export_job(&tables)
+                })
                 .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
             finish_timer.stamp("program_retention");
         }
@@ -2492,6 +2503,11 @@ fn debug_parser_rejection(failure: &crate::parser::driver::ParserFailure) {
 
 struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
+    /// The lexer tables a retention export copies source provenance from;
+    /// present when the job records into a program retention store.
+    retention_sources: Option<
+        Vec<(&'static str, crate::type_checker::program_retention::JobTable)>,
+    >,
     diagnostic_tokens: DiagnosticTokenBuffer,
     hir: crate::parser::buffers::GpuHirView,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,

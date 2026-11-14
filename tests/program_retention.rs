@@ -20,17 +20,38 @@ use crate::common;
 
 // Job A, library 10. `pad` makes `identity` start at the same token as job
 // B's own `identity` (after B's import), so both jobs' private callables
-// and their parameter `U` collide on every local token ordinal.
+// and their parameter `U` collide on every local token ordinal. `solo` is a
+// private generic called only at i32 from a nongeneric function: without a
+// store attached the job instantiates it in place.
 const LIBRARY: &str = r#"module lib::a;
 fn pad() {}
 fn identity<U>(value: U) -> U { return value; }
+fn solo<V>(value: V) -> V { let kept: V = value; return kept; }
+pub fn seed() -> i32 { return solo(5); }
+const LIMIT: i32 = 4;
+fn tick(first: ptr, second: ptr, third: ptr) {}
 struct Hidden<T> { inner: T }
 pub struct Cell<T> { value: T }
+pub enum Slot<T> { Empty, Full(T) }
 pub fn wrap<T>(value: T) -> Cell<T> {
     let hidden: Hidden<T> = Hidden { inner: value };
     let result = identity(hidden.inner);
     pad();
     return Cell { value: result };
+}
+pub fn unwrap<T>(cell: Cell<T>) -> T {
+    let entry: ptr = tick;
+    let bound: i32 = LIMIT;
+    return cell.value;
+}
+pub fn fill<T>(value: T) -> Slot<T> {
+    let empty: Slot<T> = Empty;
+    return Full(value);
+}
+pub fn total<const N: usize>(values: [i32; N]) -> i32 {
+    let sum: i32 = 0;
+    for value in values { sum = sum + value; }
+    return sum;
 }
 pub impl<T> Cell<T> {
     pub fn shadow<T>(&self, value: T) -> T {
@@ -41,17 +62,24 @@ pub impl<T> Cell<T> {
 }
 "#;
 
-// Job B, library 11.
+// Job B, library 11. `PairA` and `PairB` have equal widths and different
+// field layouts.
 const APP: &str = r#"module app::b;
 import lib::a;
 fn identity<U>(value: U) -> U { return value; }
 struct Local<T> { item: T }
+struct PairA { left: i32, right: u32 }
+struct PairB { left: u32, right: i32 }
 fn main() -> i32 {
     let first = wrap(7);
     let second = wrap(Local { item: true });
     let third = wrap(1);
     let flag = first.shadow(false);
     let same = identity(3);
+    let a = unwrap(wrap(PairA { left: 1, right: 2 }));
+    let b = unwrap(wrap(PairB { left: 3, right: 4 }));
+    let slot = fill(9);
+    let sum = total([1, 2, 3]);
     return 0;
 }
 "#;
@@ -76,6 +104,43 @@ const PROBE_DIR_FLAGS: usize = 16;
 const PROBE_EXPECTED_CLOSED: usize = 17;
 const PROBE_PARAM_COUNT: usize = 18;
 const PROBE_REJECTION_CHECKS: usize = 19;
+const PROBE_MISSING: usize = 20;
+const PROBE_BINDINGS: usize = 21;
+const PROBE_BINDINGS_BAD: usize = 22;
+const PROBE_MEMBERS: usize = 23;
+const PROBE_MEMBERS_BAD: usize = 24;
+const PROBE_CONSTS: usize = 25;
+const PROBE_CONSTS_BAD: usize = 26;
+const PROBE_ANNOTATIONS: usize = 27;
+const PROBE_TOKENS: usize = 28;
+const PROBE_TOKENS_BAD: usize = 29;
+const PROBE_TEXT_HASH: usize = 30;
+const PROBE_SYMBOLIC: usize = 31;
+const PROBE_ARG_ROWS: usize = 32;
+const PROBE_FN_REFS: usize = 33;
+const PROBE_RECORDS: usize = 34;
+const PROBE_VARIANTS: usize = 35;
+const PROBE_ITERABLES: usize = 37;
+const PROBE_TEXT_BYTES: usize = 38;
+
+// Scalar TermIds are the scalar codes (primitive_types.slang).
+const TERM_BOOL: u32 = 2;
+const TERM_I32: u32 = 3;
+
+/// Every check of one instance passed.
+fn assert_complete_instance(lane: &[u32]) {
+    assert_eq!(lane[PROBE_REJECTION_CHECKS], 31, "sentinel and owner checks: {lane:?}");
+    assert_eq!(lane[PROBE_RESULT_STATUS], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_FAILED], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_BAD_REFS], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_MISSING], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_BINDINGS_BAD], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_MEMBERS_BAD], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_CONSTS_BAD], 0, "{lane:?}");
+    assert_eq!(lane[PROBE_TOKENS_BAD], 0, "{lane:?}");
+    assert!(lane[PROBE_TOKENS] > 0 && lane[PROBE_ANNOTATIONS] > 0, "{lane:?}");
+    assert_eq!(lane[PROBE_USES], lane[PROBE_USES_CLOSED], "{lane:?}");
+}
 
 fn compiler() -> GpuCompiler<'static> {
     pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only()))
@@ -113,7 +178,11 @@ impl Probe {
 }
 
 fn probe(store: &ProgramRetention) -> Probe {
-    let words = store.resolve_probe().expect("resolve probe");
+    probe_with(store, &[])
+}
+
+fn probe_with(store: &ProgramRetention, requests: &[[u32; 4]]) -> Probe {
+    let words = store.resolve_probe(requests).expect("resolve probe");
     Probe { uses: words.chunks_exact(PROBE_WORDS).map(<[u32]>::to_vec).collect() }
 }
 
@@ -121,7 +190,7 @@ fn summary(store: &ProgramRetention) -> Vec<u32> {
     let status = store.status().unwrap();
     // Arena counters and the build's committed/rollback/conflict words.
     // Spare records (lanes that lost an intern race) are not retained data.
-    let mut words = (0..13)
+    let mut words = (0..14)
         .map(|a| status[a] - if a < 4 { status[counts::SPARE + a] } else { 0 })
         .collect::<Vec<_>>();
     words.extend([status[counts::JOBS], status[counts::CONFLICTS], status[counts::INVARIANT_TOTAL],
@@ -194,10 +263,71 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
         assert_eq!(use_words[PROBE_BAD_REFS], 0, "body tree links stay inside the segment");
         assert_eq!(use_words[PROBE_USES], use_words[PROBE_USES_CLOSED], "body call environments close");
         assert_eq!(use_words[PROBE_PARAMS_CLOSED], use_words[PROBE_PARAM_COUNT]);
-        // Every foreign body here calls job A's private `identity`, never
-        // job B's same-spelled one.
-        assert_eq!(use_words[PROBE_NESTED_CALLEE], a_identity, "callee identity is job A's private callable");
+        // Every foreign body that calls a function calls job A's private
+        // `identity`, never job B's same-spelled one.
+        assert!(use_words[PROBE_NESTED_CALLEE] == 0 || use_words[PROBE_NESTED_CALLEE] == a_identity,
+            "callee identity is job A's private callable: {use_words:?}");
+        assert_complete_instance(use_words);
     }
+
+    // Name the bodies by their retained source text, which must be the
+    // program's own text with a matching hash and token records.
+    let texts = body_texts(&store);
+    for (_, text) in &texts {
+        assert!(LIBRARY.contains(text.as_str()) || APP.contains(text.as_str()), "retained text is source: {text:?}");
+    }
+    let named = |prefix: &str| decl_named(&texts, prefix);
+    let lanes = |decl: u32| eligible.iter().filter(move |u| u[PROBE_CALLEE] == decl).collect::<Vec<_>>();
+    for (decl, text) in &texts {
+        for use_words in lanes(*decl) {
+            assert_eq!(use_words[PROBE_TEXT_BYTES] as usize, text.len());
+            assert_eq!(use_words[PROBE_TEXT_HASH], fnv1a(text));
+        }
+    }
+    let wrap = lanes(named("fn wrap<"));
+    assert_eq!(wrap.len(), 5, "three direct calls and the two inside `unwrap`");
+    for use_words in &wrap {
+        assert_eq!(use_words[PROBE_NESTED_CALLEE], a_identity);
+        assert_eq!(use_words[PROBE_RECORDS], 2, "`Hidden {{ .. }}` and `Cell {{ .. }}`: {use_words:?}");
+        assert!(use_words[PROBE_MEMBERS] >= 1, "`hidden.inner` checks its field");
+        assert!(use_words[PROBE_BINDINGS] >= 3, "locals and parameters keep exact bindings");
+    }
+    let shadow = lanes(named("fn shadow<"));
+    assert_eq!(shadow.len(), 1);
+    assert_eq!(shadow[0][PROBE_NESTED_CALLEE], a_identity);
+    assert!(shadow[0][PROBE_MEMBERS] >= 1, "`self.value` checks its field under the impl's binding");
+    // `unwrap` at `Cell<PairA>` and `Cell<PairB>`: equal widths, different
+    // field layouts, two different instance bodies.
+    let unwrap = lanes(named("fn unwrap<"));
+    assert_eq!(unwrap.len(), 2);
+    for use_words in &unwrap {
+        assert!(use_words[PROBE_FN_REFS] >= 1, "`tick` is a function-reference use: {use_words:?}");
+        assert!(use_words[PROBE_CONSTS] >= 1, "`LIMIT` keeps its constant value: {use_words:?}");
+        assert!(use_words[PROBE_MEMBERS] >= 1, "`cell.value` checks its field");
+    }
+    assert_ne!(unwrap[0][PROBE_HASH..PROBE_HASH + 2], unwrap[1][PROBE_HASH..PROBE_HASH + 2]);
+    let fill = lanes(named("fn fill<"));
+    assert_eq!(fill.len(), 1);
+    assert_eq!(fill[0][PROBE_VARIANTS], 2, "`Empty` and `Full(value)`: {:?}", fill[0]);
+    let total = lanes(named("fn total<"));
+    assert_eq!(total.len(), 1);
+    assert!(total[0][PROBE_ITERABLES] >= 1, "the for loop keeps its iterable kind");
+    assert!(total[0][PROBE_SYMBOLIC] >= 1, "`[i32; N]` stays symbolic in the template");
+
+    // A1: `solo` is called only at i32, in its own job. The retained body is
+    // still the template, so it instantiates at bool, which no use names.
+    let solo = named("fn solo<");
+    let requests = probe_with(&store, &[[solo, 1, TERM_BOOL, 0], [solo, 1, TERM_I32, 0]]);
+    let solo_lanes = &requests.uses[requests.uses.len() - 2..];
+    for (lane, scalar) in solo_lanes.iter().zip([TERM_BOOL, TERM_I32]) {
+        assert_eq!(lane[PROBE_ELIGIBLE], 1, "{lane:?}");
+        assert_eq!(lane[PROBE_RESULT], scalar, "{lane:?}");
+        assert!(lane[PROBE_SYMBOLIC] >= 3, "the template rows are symbolic: {lane:?}");
+        assert!(lane[PROBE_ARG_ROWS] >= 3, "the value, the local and the result take the argument: {lane:?}");
+        assert_eq!(lane[PROBE_ARG_ROWS], lane[PROBE_SYMBOLIC], "every symbolic row is the argument: {lane:?}");
+        assert_complete_instance(lane);
+    }
+    assert_ne!(solo_lanes[0][PROBE_HASH..PROBE_HASH + 2], solo_lanes[1][PROBE_HASH..PROBE_HASH + 2]);
     // Two distinct closed environments instantiate `wrap` differently;
     // `wrap(7)` and `wrap(1)` share theirs.
     let mut wrap_hashes = eligible
@@ -336,4 +466,81 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
         bytes.live.iter().sum::<u64>(),
         bytes.capacity.iter().sum::<u64>(),
     );
+}
+
+/// Each retained body's DeclId and source text, read from the store.
+fn body_texts(store: &ProgramRetention) -> Vec<(u32, String)> {
+    let status = store.status().unwrap();
+    let dir = store.read_store_words("rt_dir", status[4] as usize * 16).unwrap();
+    let segs = store.read_store_words("rt_segments", status[9] as usize * 24).unwrap();
+    let bytes = store.read_store_words("rt_seg_bytes", status[12] as usize).unwrap();
+    dir.chunks_exact(16)
+        .filter(|e| e[8] != u32::MAX)
+        .map(|e| {
+            let s = &segs[e[8] as usize * 24..e[8] as usize * 24 + 24];
+            let (len, base) = (s[18] as usize, s[20] as usize);
+            let text = (0..len).map(|i| (bytes[base + i / 4] >> ((i % 4) * 8)) as u8).collect::<Vec<_>>();
+            (e[0], String::from_utf8(text).expect("retained body text is UTF-8"))
+        })
+        .collect()
+}
+
+fn fnv1a(text: &str) -> u32 {
+    text.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193))
+}
+
+fn decl_named(texts: &[(u32, String)], prefix: &str) -> u32 {
+    let found = texts.iter().filter(|(_, t)| t.starts_with(prefix)).collect::<Vec<_>>();
+    assert_eq!(found.len(), 1, "one retained body starts with {prefix:?}: {texts:?}");
+    found[0].0
+}
+
+/// Prints every retained directory entry, segment row and use
+/// (LANIUS_RETENTION_DUMP=1). A calibration aid for the export's producers.
+fn dump(store: &ProgramRetention) {
+    if std::env::var_os("LANIUS_RETENTION_DUMP").is_none() {
+        return;
+    }
+    let status = store.status().unwrap();
+    let dir = store.read_store_words("rt_dir", status[4] as usize * 16).unwrap();
+    let segs = store.read_store_words("rt_segments", status[9] as usize * 24).unwrap();
+    let rows = store.read_store_words("rt_seg_rows", status[10] as usize * 28).unwrap();
+    let uses = store.read_store_words("rt_uses", status[8] as usize * 12).unwrap();
+    let sigs = store.read_store_words("rt_sigs", status[6] as usize).unwrap();
+    let schema = store.read_store_words("rt_schema", status[7] as usize * 4).unwrap();
+    let keys = decl_keys(store, status[0] as usize);
+    for e in dir.chunks_exact(16) {
+        eprintln!("dir {:?} key {:?} d1 {:?} d2 {:?} d3 {:?}", &e[..4], keys[e[0] as usize], &e[4..8], &e[8..12], &e[12..16]);
+        if e[6] != u32::MAX {
+            eprintln!("    sig {:?}", &sigs[e[6] as usize..(e[6] + e[7] + 1).min(sigs.len() as u32) as usize]);
+        }
+        if e[9] != u32::MAX && e[10] != 0 {
+            for r in schema[e[9] as usize * 4..(e[9] + e[10]) as usize * 4].chunks_exact(4) {
+                eprintln!("    schema {r:?}");
+            }
+        }
+        if e[8] != u32::MAX {
+            let s = &segs[e[8] as usize * 24..e[8] as usize * 24 + 24];
+            eprintln!("  seg {:?}", s);
+            for r in 0..s[2] {
+                let w = &rows[(s[1] + r) as usize * 28..(s[1] + r + 1) as usize * 28];
+                eprintln!("    row {r:3} kind {:2} parent {:#x} tok {:?} pay {:?} term {:#x} use {:#x} role {} flags {} bind {:?} mf {:#x} mode {:#x} const {:?}",
+                    w[0], w[1], &w[2..4], &w[8..12], w[12], w[13], w[14], w[15], &w[20..23], w[23], w[24], &w[25..28]);
+            }
+        }
+        for u in 0..e[12] {
+            let w = &uses[(e[11] + u) as usize * 12..(e[11] + u + 1) as usize * 12];
+            eprintln!("    use {:?}", w);
+        }
+    }
+}
+
+#[test]
+fn program_retention_dump_for_calibration() {
+    let compiler = compiler();
+    let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    build(&compiler, &store);
+    eprintln!("status {:?}", &store.status().unwrap()[..96]);
+    eprintln!("reports {:?}", store.job_reports());
+    dump(&store);
 }

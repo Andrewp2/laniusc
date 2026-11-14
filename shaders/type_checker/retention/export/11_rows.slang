@@ -2,16 +2,21 @@
 // segment record (RT_ROW_WORDS uint4), every reference relative to its body:
 //   r0 (kind, parent row, token start, token end)
 //   r1 (first child, next sibling, subtree end, file id)
-//   r2 payload: rows, tokens, side-table indices and contexts relative to the
-//      body; item kinds, operator forms and literal words unchanged
-//   r3 (type term, use index within the body or RT_NONE, 0, flags)
+//   r2 payload, each word encoded by its class (row_classes.slang)
+//   r3 (type term, use index within the body or RT_NONE, role, flags)
 //   r4 (return-type row, constant-value row, array-element start, count)
-// A reference outside the body becomes RT_REL_FOREIGN and is counted in the
-// body's FOREIGN statistic; untranslated or unowned type terms are counted
-// too. Nothing else of the job (canonical IDs, absolute rows) is written.
+//   r5 (binding kind, binding value, binding aux, member field ordinal)
+//   r6 (argument mode | iterable kind << 8, constant flags, value lo, value hi)
+// A type row's term is its checked type (type_row_term); every other row's
+// is its checked expression reference. A VALUE or TYPE row without a
+// resolved term is counted UNTYPED. A reference outside the body becomes
+// RT_REL_FOREIGN and is counted FOREIGN; untranslated and unowned terms are
+// counted too. Nothing else of the job (canonical IDs, absolute rows or
+// tokens, declaration tokens) is written.
 import hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
+import type_checker.retention.row_classes;
 import type_checker.retention.export.common;
 import type_checker.retention.export.side_tables;
 import type_checker.retention.export.body_common;
@@ -21,106 +26,70 @@ StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_count;
-
-static const uint HIR_STMT = 7u;
-static const uint HIR_LET_STMT = 8u;
-static const uint HIR_RETURN_STMT = 9u;
-static const uint HIR_IF_STMT = 10u;
-static const uint HIR_WHILE_STMT = 11u;
-static const uint HIR_BREAK_STMT = 12u;
-static const uint HIR_CONTINUE_STMT = 13u;
-static const uint HIR_INDEX_EXPR = 20u;
-static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_LITERAL_EXPR = 23u;
-static const uint HIR_ARRAY_EXPR = 24u;
-static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
-static const uint HIR_FOR_STMT = 30u;
-static const uint HIR_MATCH_EXPR = 34u;
-static const uint HIR_TRY_EXPR = 36u;
-static const uint STMT_LET = 1u;
-static const uint STMT_RETURN = 2u;
-static const uint STMT_IF = 3u;
-static const uint STMT_CONST = 4u;
-static const uint STMT_ASSIGN = 5u;
-static const uint STMT_WHILE = 6u;
-static const uint STMT_FOR = 7u;
-static const uint HIR_EXPR_INT = 3u;
-static const uint HIR_EXPR_FLOAT = 27u;
-static const uint HIR_EXPR_STRING = 28u;
-static const uint HIR_EXPR_CHAR = 29u;
+StructuredBuffer<uint> semantic_value_decl_by_hir;
+StructuredBuffer<uint2> semantic_value_const_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
+StructuredBuffer<uint> semantic_argument_mode_by_hir;
+StructuredBuffer<uint> semantic_iterable_kind_by_hir;
+StructuredBuffer<uint> semantic_member_field_ordinal_by_hir;
 
 public static const uint RT_ROW_TYPED = 1u;
 public static const uint RT_ROW_FOREIGN = 2u;
+public static const uint RT_ROW_MISSING = 4u;
 
-// Mirrors closure/09_exec_rows.slang payload_of: the same columns are rows,
-// tokens, side indices and contexts.
+uint rel_word(SegmentContext c, uint cls, uint word, inout uint f)
+{
+    if (cls == RT_CLASS_ROW) return rel_row(c.span, word, f);
+    if (cls == RT_CLASS_TOKEN) return rel_token(c.span, word, f);
+    if (cls == RT_CLASS_CONTEXT) return rel_context(c, word, f);
+    if (cls >= RT_CLASS_SIDE) return rel_side(c, cls - RT_CLASS_SIDE, word, f);
+    return word;
+}
+
 HirPayload rel_payload(SegmentContext c, uint row, HirCore core, HirPayload p, inout uint f)
 {
-    BodySpan s = c.span;
-    if (row == s.function) { p.b = rel_token(s, p.b, f); return p; }
-    if (core.kind == HIR_PARAM)
-    {
-        p.a = rel_row(s, p.a, f); p.c = rel_token(s, p.c, f); p.d = rel_row(s, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_TYPE)
-    {
-        p.b = rel_row(s, p.b, f); p.c = rel_token(s, p.c, f); p.d = rel_row(s, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_STMT || core.kind == HIR_LET_STMT || core.kind == HIR_RETURN_STMT ||
-        core.kind == HIR_IF_STMT || core.kind == HIR_WHILE_STMT || core.kind == HIR_BREAK_STMT ||
-        core.kind == HIR_CONTINUE_STMT || core.kind == HIR_FOR_STMT)
-    {
-        if (p.a == STMT_LET || p.a == STMT_CONST || p.a == STMT_FOR)
-        { p.b = rel_token(s, p.b, f); p.c = rel_row(s, p.c, f); p.d = rel_row(s, p.d, f); }
-        else if (p.a == STMT_RETURN) { p.b = rel_row(s, p.b, f); p.d = rel_token(s, p.d, f); }
-        else if (p.a == STMT_ASSIGN) { p.b = rel_row(s, p.b, f); p.c = rel_row(s, p.c, f); }
-        else if (p.a == STMT_IF || p.a == STMT_WHILE)
-        { p.b = rel_row(s, p.b, f); p.c = rel_row(s, p.c, f); p.d = rel_row(s, p.d, f); }
-        return p;
-    }
-    if (core.kind == HIR_CALL_EXPR)
-    {
-        p.a = rel_row(s, p.a, f); p.b = rel_side(c, RT_SIDE_CALL_ARGS, p.b, f); p.d = rel_context(c, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_TRY_EXPR)
-    {
-        p.b = rel_row(s, p.b, f); p.c = rel_row(s, p.c, f); p.d = rel_token(s, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_MEMBER_EXPR)
-    {
-        p.b = rel_row(s, p.b, f); p.c = rel_token(s, p.c, f); p.d = rel_token(s, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_ARRAY_EXPR)
-    {
-        p.b = rel_row(s, p.b, f); p.c = rel_token(s, p.c, f); p.d = rel_context(c, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_STRUCT_LITERAL_EXPR)
-    {
-        p.b = rel_side(c, RT_SIDE_FIELDS, p.b, f); p.d = rel_context(c, p.d, f);
-        return p;
-    }
-    if (core.kind == HIR_MATCH_EXPR)
-    {
-        p.a = rel_row(s, p.a, f); p.b = rel_side(c, RT_SIDE_MATCH_ARMS, p.b, f);
-        return p;
-    }
-    if (p.a == 0u || p.a == HIR_EXPR_FLOAT) return p;
-    if (p.a == HIR_EXPR_INT || p.a == HIR_EXPR_CHAR) { p.d = rel_token(s, p.d, f); return p; }
-    if (p.a == HIR_EXPR_STRING && core.kind == HIR_LITERAL_EXPR)
-    {
-        p.b = rel_side(c, RT_SIDE_STRINGS, p.b, f); p.c = rel_row(s, p.c, f); p.d = rel_token(s, p.d, f);
-        return p;
-    }
-    if (core.kind != HIR_NAME_EXPR) p.b = rel_row(s, p.b, f);
-    p.c = rel_row(s, p.c, f);
-    p.d = rel_token(s, p.d, f);
+    uint classes = rt_payload_classes(core.kind, p.a, row == c.span.function);
+    p.a = rel_word(c, rt_word_class(classes, 0u), p.a, f);
+    p.b = rel_word(c, rt_word_class(classes, 1u), p.b, f);
+    p.c = rel_word(c, rt_word_class(classes, 2u), p.c, f);
+    p.d = rel_word(c, rt_word_class(classes, 3u), p.d, f);
     return p;
+}
+
+uint row_role(uint row, uint function, uint kind)
+{
+    if (row == function) return RT_ROLE_STRUCTURAL;
+    if (kind == RT_HIR_TYPE) return RT_ROLE_TYPE;
+    if (callee_position(row)) return RT_ROLE_CALLEE;
+    return rt_value_kind(kind) ? RT_ROLE_VALUE : RT_ROLE_STRUCTURAL;
+}
+
+static const uint HIR_TYPE_FORM_ARRAY = 2u;
+static const uint RT_STMT_FORM_LET = 1u;
+static const uint RT_STMT_FORM_CONST = 4u;
+
+// Rows whose semantic_expr_ref is a checked reference (01_expression_refs):
+// expressions, and let/const statements (their declared storage). Function,
+// parameter, block and other statement rows hold the per-row scalar cache,
+// which is not a type.
+bool checked_value_row(uint row, uint function, uint kind, uint form)
+{
+    if (row == function) return false;
+    if (rt_value_kind(kind) || kind == RT_HIR_LET_STMT) return true;
+    return kind == RT_HIR_STMT && (form == RT_STMT_FORM_LET || form == RT_STMT_FORM_CONST);
+}
+
+// A type row with no type of its own that is an array type's length (a
+// constant parameter or expression in type position): the array term's
+// length operand, which is the constant count the row denotes.
+uint array_length_term(uint row, uint parent)
+{
+    if (!valid_row(parent) || compact_hir_core[parent].kind != RT_HIR_TYPE) return RT_NONE;
+    HirPayload p = compact_hir_payload[parent];
+    if (p.a != HIR_TYPE_FORM_ARRAY || p.d != row) return RT_NONE;
+    uint array = type_row_term(parent);
+    if (!rt_is_term(array) || rt_term_kind(array) != RT_KIND_ARRAY || rt_term_arity(array) < 2u) return RT_NONE;
+    return rt_term_arg(array, 1u);
 }
 
 [shader("compute")]
@@ -155,17 +124,46 @@ void main(uint3 dtid: SV_DispatchThreadID)
         links.file_id);
     HirPayload p = rel_payload(c, row, core, compact_hir_payload[row], foreign);
 
-    uint tag = semantic_expr_ref_tag_by_hir[row];
-    uint term = body_term(c, tag, semantic_expr_ref_payload_by_hir[row], untranslated, unowned);
+    uint role = row_role(row, function, core.kind);
+    uint term = RT_NONE;
+    if (core.kind == RT_HIR_TYPE)
+    {
+        term = type_row_term(row);
+        if (term == RT_NONE) term = array_length_term(row, core.parent);
+        if (term == RT_UNKNOWN) untranslated++;
+        else if (!owned_by(term, c.decl, c.parent)) unowned++;
+    }
+    else if (checked_value_row(row, function, core.kind, compact_hir_payload[row].a))
+        term = body_term(c, semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row],
+            untranslated, unowned);
+    bool missing = (role == RT_ROLE_VALUE || role == RT_ROLE_TYPE) && !rt_is_resolved(term);
     uint use = rt_x_flags[row].y != 0u ? rt_x_scan[row].y - rt_x_scan[function].y : RT_NONE;
-    uint before = foreign;
     uint elements = compact_array_element_count[row];
     uint4 r4 = uint4(rel_row(c.span, compact_fn_return_type[row], foreign),
         rel_row(c.span, compact_const_value[row], foreign),
         elements != 0u ? rel_side(c, RT_SIDE_ARRAY_ELEMENTS, compact_array_element_start[row], foreign) : 0xffffffffu,
         elements);
-    uint flags = (rt_is_resolved(term) ? RT_ROW_TYPED : 0u) | (foreign != 0u ? RT_ROW_FOREIGN : 0u);
-    uint4 r3 = uint4(term, use, 0u, flags);
+
+    // Checked facts that no environment changes: the exact binding, the
+    // member's field, the argument mode, the iterable kind and the
+    // constant value (a constant parameter's value is its leaf).
+    uint4 binding = resolve_binding(c.span, semantic_value_decl_by_hir[row]);
+    foreign += binding.w;
+    uint4 r5 = uint4(binding.xyz, semantic_member_field_ordinal_by_hir[row]);
+    uint present = semantic_value_const_present_by_hir[row];
+    uint2 value = semantic_value_const_by_hir[row];
+    if ((present & RT_CONST_SYMBOLIC) != 0u)
+    {
+        uint param = param_map_find(value.x);
+        if (param == RT_INVALID) { foreign++; value.x = RT_REL_FOREIGN; }
+        else value.x = rt_param_leaf(param);
+    }
+    uint4 r6 = uint4((semantic_argument_mode_by_hir[row] & 0xffu) | ((semantic_iterable_kind_by_hir[row] & 0xffu) << 8u),
+        present, value.x, value.y);
+
+    uint flags = (rt_is_resolved(term) ? RT_ROW_TYPED : 0u) | (foreign != 0u ? RT_ROW_FOREIGN : 0u) |
+        (missing ? RT_ROW_MISSING : 0u);
+    uint4 r3 = uint4(term, use, role, flags);
 
     uint base = index * RT_ROW_WORDS;
     rt_seg_rows[base + 0u] = r0;
@@ -173,6 +171,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     rt_seg_rows[base + 2u] = uint4(p.a, p.b, p.c, p.d);
     rt_seg_rows[base + 3u] = r3;
     rt_seg_rows[base + 4u] = r4;
+    rt_seg_rows[base + 5u] = r5;
+    rt_seg_rows[base + 6u] = r6;
+    stat_add(function, RT_STAT_UNTYPED, missing ? 1u : 0u);
     stat_add(function, RT_STAT_FOREIGN, foreign);
     stat_add(function, RT_STAT_UNTRANSLATED, untranslated);
     stat_add(function, RT_STAT_OWNERSHIP, unowned);

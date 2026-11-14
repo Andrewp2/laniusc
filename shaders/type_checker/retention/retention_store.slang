@@ -55,15 +55,21 @@ public globallycoherent RWStructuredBuffer<uint4> rt_uses;      // RT_USE_WORDS 
 public globallycoherent RWStructuredBuffer<uint4> rt_segments;  // RT_SEG_WORDS per segment
 public globallycoherent RWStructuredBuffer<uint4> rt_seg_rows;  // RT_ROW_WORDS per row
 public globallycoherent RWStructuredBuffer<uint4> rt_seg_side;  // one record per side-table row
-public globallycoherent RWStructuredBuffer<uint> rt_seg_bytes;  // decoded string bytes, 4 per word
+public globallycoherent RWStructuredBuffer<uint> rt_seg_bytes;  // string bytes and body source text, 4 per word
+public globallycoherent RWStructuredBuffer<uint4> rt_seg_tokens; // body tokens: (kind, text byte start, length, name hash)
 
 public static const uint RT_DIR_WORDS = 4u;
 public static const uint RT_USE_WORDS = 3u;
-public static const uint RT_SEG_WORDS = 4u;
-public static const uint RT_ROW_WORDS = 5u;
+public static const uint RT_SEG_WORDS = 6u;
+public static const uint RT_ROW_WORDS = 7u;
 public static const uint RT_DIR_STAGED = 1u;
 public static const uint RT_DIR_COMMITTED = 2u;
 public static const uint RT_DIR_INCOMPLETE = 1u;
+// Schema record kinds (rt_schema .y low byte).
+public static const uint RT_SCHEMA_FIELD = 1u;    // (struct, FIELD | ordinal << 8, 0, declared term)
+public static const uint RT_SCHEMA_PAYLOAD = 2u;  // (enum, PAYLOAD | ordinal << 8, variant ordinal, declared term)
+public static const uint RT_SCHEMA_VARIANT = 3u;  // (enum, VARIANT | ordinal << 8, payload count, first payload record)
+public static const uint RT_SCHEMA_CONST = 4u;    // (constant, CONST | present << 8, value lo, value hi)
 
 public static const uint RT_INVALID = 0xffffffffu;
 public static const uint RT_UNKNOWN = 0xfffffffeu;
@@ -109,8 +115,9 @@ public static const uint RTF_SLOT = 4u;
 // Declaration namespaces (rt_decl_key.z).
 public static const uint RT_NS_CALLABLE = 1u;  // local = native callable identity (callable_identity.slang)
 public static const uint RT_NS_NOMINAL = 2u;   // local = interface index or CT_PRIVATE_LOCAL_BIT | decl id
-public static const uint RT_NS_TRAIT = 3u;     // local = as nominal
+// Namespace 3 is unused: traits are nominal identities.
 public static const uint RT_NS_IMPL = 4u;      // local = impl HIR row of the declaring job (unit-qualified)
+public static const uint RT_NS_VALUE = 5u;     // local = constant's interface index or 0x40000000 | first token
 
 // Parameter domains (rt_param_key.y) and the synthetic ordinal of `Self`.
 public static const uint RT_DOMAIN_TYPE = 1u;
@@ -131,7 +138,8 @@ public static const uint RT_A_SEGMENTS = 9u;
 public static const uint RT_A_SEG_ROWS = 10u;
 public static const uint RT_A_SEG_SIDE = 11u;
 public static const uint RT_A_SEG_BYTES = 12u;
-public static const uint RT_ARENAS = 13u;
+public static const uint RT_A_SEG_TOKENS = 13u;
+public static const uint RT_ARENAS = 14u;
 
 // rt_counts layout.
 public static const uint RT_C_JOB_BASE = 16u;   // + arena: counter at the job's start
@@ -187,6 +195,7 @@ public uint rt_capacity(uint arena)
     if (arena == RT_A_SEG_ROWS) { rt_seg_rows.GetDimensions(n, s); return n / RT_ROW_WORDS; }
     if (arena == RT_A_SEG_SIDE) { rt_seg_side.GetDimensions(n, s); return n; }
     if (arena == RT_A_SEG_BYTES) { rt_seg_bytes.GetDimensions(n, s); return n; }
+    if (arena == RT_A_SEG_TOKENS) { rt_seg_tokens.GetDimensions(n, s); return n; }
     return 0u;
 }
 

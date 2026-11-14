@@ -15,8 +15,37 @@ import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
 import type_checker.retention.export.side_tables;
 import type_checker.retention.export.type_rows;
+import type_checker.retention.export.source_tables;
+import type_checker.retention.row_classes;
 
 StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<uint> compact_const_type;
+StructuredBuffer<uint2> semantic_value_const_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
+
+void check_term(uint row, uint term, uint decl, uint parent)
+{
+    if (!rt_is_resolved(term)) stat_add(row, RT_STAT_UNTRANSLATED, 1u);
+    else if (!owned_by(term, decl, parent)) { stat_add(row, RT_STAT_OWNERSHIP, 1u); rt_invariant(RT_INV_OWNERSHIP); }
+}
+
+// The impl header's self type row: the last type row directly under the
+// impl that is not its trait reference (method/fields.slang
+// publish_impl_receiver_type), or INVALID.
+uint impl_self_row(uint row)
+{
+    uint trait_row = compact_hir_payload[row].b;
+    uint self_row = 0xffffffffu;
+    uint child = compact_hir_links[row].first_child;
+    for (uint step = 0u; step < hir_count() && valid_row(child); step++)
+    {
+        if (compact_hir_core[child].kind == HIR_TYPE && child != trait_row) self_row = child;
+        uint next = compact_hir_links[child].next_sibling;
+        if (next <= child) break;
+        child = next;
+    }
+    return self_row;
+}
 
 uint2 domain_counts(uint owner)
 {
@@ -85,6 +114,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.kind == HIR_STRUCT_ITEM) kind = RT_DECL_STRUCT;
     else if (core.kind == HIR_ENUM_ITEM) kind = RT_DECL_ENUM;
     else if (core.kind == HIR_IMPL) kind = RT_DECL_IMPL;
+    else if (core.kind == HIR_CONST_ITEM) kind = RT_DECL_CONST;
     else kind = RT_DECL_TRAIT;
     uint parent = valid_row(container) ? rt_x_row[container].x : 0u;
     if (parent == RT_INVALID) parent = 0u;
@@ -114,7 +144,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
     }
 
-    // Signature: the result term, then one term per parameter (step 13).
+    // Signature block: a function's result term, then one term per
+    // parameter (step 13); an impl's self type, then its trait term or
+    // RT_NONE; a constant's type. Schema block: a struct's fields, an
+    // enum's variants then their payloads (step 13), a constant's value.
     uint sig_base = RT_INVALID;
     uint param_count = 0u;
     uint schema_base = RT_INVALID;
@@ -127,20 +160,65 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint result_row = compact_fn_return_type[row];
             uint result = valid_row(result_row) ? type_row_term(result_row) : SCALAR_UNIT;
-            if (!rt_is_resolved(result)) stat_add(row, RT_STAT_UNTRANSLATED, 1u);
-            else if (!owned_by(result, decl, parent)) { stat_add(row, RT_STAT_OWNERSHIP, 1u); rt_invariant(RT_INV_OWNERSHIP); }
+            check_term(row, result, decl, parent);
             rt_sigs[sig_base] = result;
+        }
+    }
+    else if (core.kind == HIR_IMPL)
+    {
+        param_count = 1u;
+        sig_base = rt_alloc(RT_A_SIGS, 2u);
+        if (sig_base != RT_INVALID)
+        {
+            uint self_term = type_row_term(impl_self_row(row));
+            check_term(row, self_term, decl, 0u);
+            uint trait_row = payload.b;
+            uint trait_term = RT_NONE;
+            if (valid_row(trait_row))
+            {
+                trait_term = type_row_term(trait_row);
+                check_term(row, trait_term, decl, 0u);
+                if (rt_is_resolved(trait_term) && rt_term_kind(trait_term) != RT_KIND_NAMED)
+                    stat_add(row, RT_STAT_UNTRANSLATED, 1u);
+            }
+            rt_sigs[sig_base] = self_term;
+            rt_sigs[sig_base + 1u] = trait_term;
+        }
+    }
+    else if (core.kind == HIR_CONST_ITEM)
+    {
+        sig_base = rt_alloc(RT_A_SIGS, 1u);
+        if (sig_base != RT_INVALID)
+        {
+            uint type_row = compact_const_type[row];
+            uint term = valid_row(type_row) ? type_row_term(type_row)
+                : translate_checked(semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row]);
+            check_term(row, term, decl, 0u);
+            rt_sigs[sig_base] = term;
+        }
+        uint present = semantic_value_const_present_by_hir[row];
+        schema_count = 1u;
+        schema_base = rt_alloc(RT_A_SCHEMA, 1u);
+        if (schema_base != RT_INVALID)
+        {
+            uint2 value = semantic_value_const_by_hir[row];
+            rt_schema[schema_base] = uint4(decl, RT_SCHEMA_CONST | ((present & RT_CONST_CONCRETE) != 0u ? 0x100u : 0u),
+                value.x, value.y);
         }
     }
     else if (core.kind == HIR_STRUCT_ITEM)
     {
         schema_count = side_lower_bound(RT_SIDE_FIELDS, row + 1u) - side_lower_bound(RT_SIDE_FIELDS, row);
+        param_count = schema_count;
         schema_base = rt_alloc(RT_A_SCHEMA, schema_count);
     }
     else if (core.kind == HIR_ENUM_ITEM)
     {
-        uint first = payload_lower_bound(variant_lower_bound(row));
-        schema_count = payload_lower_bound(variant_lower_bound(row + 1u)) - first;
+        uint first_variant = variant_lower_bound(row);
+        uint variants = variant_lower_bound(row + 1u) - first_variant;
+        uint first = payload_lower_bound(first_variant);
+        param_count = variants;
+        schema_count = variants + payload_lower_bound(first_variant + variants) - first;
         schema_base = rt_alloc(RT_A_SCHEMA, schema_count);
     }
 
@@ -168,13 +246,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
             else if (k == 3u) low.w = len; else if (k == 4u) high.x = len; else if (k == 5u) high.y = len;
             else high.z = len;
         }
-        high.w = rt_x_span[row] > core.token_start ? rt_x_span[row] - core.token_start : 0u;
+        uint first_token = core.token_start;
+        uint tokens = rt_x_span[row] > first_token ? rt_x_span[row] - first_token : 0u;
+        high.w = tokens;
         uint side_base = rt_alloc(RT_A_SEG_SIDE, RT_SIDE_WORDS * side_total);
+        // Source provenance: the body's text and one record per token,
+        // filled by steps 12b/12c; the file key is (library, unit, file).
+        uint2 text = body_text_range(first_token, tokens);
+        uint text_words = (text.y - text.x + 3u) >> 2u;
+        uint text_base = rt_alloc(RT_A_SEG_BYTES, text_words);
+        uint token_base = rt_alloc(RT_A_SEG_TOKENS, tokens);
+        uint file_start = job_file_start(links.file_id);
         rt_segments[segment * RT_SEG_WORDS + 0u] =
             uint4(decl, rt_x_counts[RT_X_BASE + RT_A_SEG_ROWS] + scan.x, count, side_base);
         rt_segments[segment * RT_SEG_WORDS + 1u] = low;
         rt_segments[segment * RT_SEG_WORDS + 2u] = high;
         rt_segments[segment * RT_SEG_WORDS + 3u] = uint4(0u, 0u, 0u, 0u);
+        rt_segments[segment * RT_SEG_WORDS + 4u] =
+            uint4(links.file_id, text.x >= file_start ? text.x - file_start : 0u, text.y - text.x, token_base);
+        rt_segments[segment * RT_SEG_WORDS + 5u] = uint4(text_base, 0u, 0u, 0u);
+        rt_x_seg_token[scan.w] = first_token;
     }
 
     uint use_base = rt_x_counts[RT_X_BASE + RT_A_USES];

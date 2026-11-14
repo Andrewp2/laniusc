@@ -1,4 +1,6 @@
-// Export step 14: one lane per call row inside a function. Writes the use
+// Export step 14: one lane per use row inside a function (02_rows.slang
+// use_row: calls, struct literals, unit-variant values and function
+// references). Writes the use
 // record (RT_USE_WORDS uint4) at the function's use range:
 //   u0 (owner DeclId, call row relative to the owner, form | adjust << 8 |
 //       deref << 16, callee DeclId or 0)
@@ -19,12 +21,20 @@ import type_checker.canonical.canonical_api;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
+import type_checker.retention.row_classes;
 
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint2> call_env_ct;
+StructuredBuffer<uint> semantic_value_decl_by_hir;
+StructuredBuffer<uint2> semantic_value_const_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
+StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 
 public static const uint RT_USE_DIRECT = 1u;
 public static const uint RT_USE_METHOD = 2u;
+public static const uint RT_USE_RECORD = 3u;     // a struct literal: callee is the struct
+public static const uint RT_USE_FN_REF = 8u;     // an ordinary function named as a value
 public static const uint RT_USE_CONSTRUCTOR = 4u;
 public static const uint RT_USE_INTRINSIC = 5u;
 public static const uint RT_USE_HOST = 6u;
@@ -32,6 +42,10 @@ public static const uint RT_USE_UNRESOLVED = 7u;
 
 uint call_token(uint call)
 {
+    // A struct literal or path keys its environment by its first token
+    // (substitution/02_publish_call_envs.slang).
+    uint kind = compact_hir_core[call].kind;
+    if (kind != HIR_CALL_EXPR) return compact_hir_core[call].token_start;
     uint callee = compact_hir_payload[call].a;
     if (!valid_row(callee)) return 0xffffffffu;
     bool dotted = compact_hir_core[callee].kind == HIR_MEMBER_EXPR;
@@ -76,42 +90,99 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint form = RT_USE_UNRESOLVED;
     uint callee = 0u;
     uint aux = 0u;
-    // A local function is named by its span's first token (target_token).
-    uint callee_row = valid_row(call.callable_hir) ? call.callable_hir : function_at_token(call.target_token);
-    if (call.callable_kind == 1u && valid_row(callee_row))
+    uint callee_row = 0xffffffffu;
+    uint kind = compact_hir_core[row].kind;
+    uint row_term = translate_checked(semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row]);
+    if (kind == HIR_CALL_EXPR)
     {
-        callee = intern_row_decl(callee_row);
-        form = call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT;
+        // A local function is named by its span's first token (target_token).
+        callee_row = valid_row(call.callable_hir) ? call.callable_hir : function_at_token(call.target_token);
+        if (call.callable_kind == 1u && valid_row(callee_row))
+        {
+            callee = intern_row_decl(callee_row);
+            form = call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT;
+        }
+        else if (call.callable_kind == 3u && call.dependency_local_index != 0xffffffffu)
+        {
+            callee_row = 0xffffffffu;
+            callee = rt_intern_decl(uint4(call.dependency_library_id, call.dependency_unit_id, RT_NS_CALLABLE,
+                call.dependency_local_index));
+            form = call.dependency_host_service != 0u && call.dependency_host_service != 0xffffffffu
+                ? RT_USE_HOST
+                : (call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT);
+        }
+        else if (call.callable_kind == 4u)
+        {
+            // The enum's DeclId through the constructor's checked result.
+            uint result = translate_checked(call.return_ref_tag, call.return_ref_payload);
+            if (rt_is_stored_term(result) && rt_term_kind(result) == RT_KIND_NAMED) callee = rt_term_head[result].y;
+            form = RT_USE_CONSTRUCTOR;
+            aux = call.callable_ordinal;
+        }
+        else if (call.callable_kind == 2u)
+        {
+            form = RT_USE_INTRINSIC;
+            aux = call.intrinsic_tag;
+        }
+        if (form != RT_USE_DIRECT && form != RT_USE_METHOD) callee_row = 0xffffffffu;
     }
-    else if (call.callable_kind == 3u && call.dependency_local_index != 0xffffffffu)
+    else if (kind == RT_HIR_STRUCT_LITERAL_EXPR)
     {
-        callee = rt_intern_decl(uint4(call.dependency_library_id, call.dependency_unit_id, RT_NS_CALLABLE,
-            call.dependency_local_index));
-        form = call.dependency_host_service != 0u && call.dependency_host_service != 0xffffffffu
-            ? RT_USE_HOST
-            : (call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT);
+        // A record constructor requests the struct's layout under the
+        // literal's checked application.
+        if (rt_is_stored_term(row_term) && rt_term_kind(row_term) == RT_KIND_NAMED) callee = rt_term_head[row_term].y;
+        form = RT_USE_RECORD;
     }
-    else if (call.callable_kind == 4u)
+    else
     {
-        // The enum's DeclId through the constructor's checked result.
-        uint result = translate_checked(call.return_ref_tag, call.return_ref_payload);
-        if (rt_is_stored_term(result) && rt_term_kind(result) == RT_KIND_NAMED) callee = rt_term_head[result].y;
-        form = RT_USE_CONSTRUCTOR;
-        aux = call.callable_ordinal;
-    }
-    else if (call.callable_kind == 2u)
-    {
-        form = RT_USE_INTRINSIC;
-        aux = call.intrinsic_tag;
+        // A name or path value (02_rows.slang use_row): a unit variant or
+        // an ordinary function reference.
+        uint target = binding_target(semantic_value_decl_by_hir[row]);
+        if ((target & RT_X_VARIANT_BIT) != 0u)
+        {
+            uint variant = target & ~RT_X_VARIANT_BIT;
+            uint owner = compact_variants[variant].owner;
+            callee = valid_row(owner) ? intern_row_decl(owner) : RT_INVALID;
+            aux = compact_variants[variant].ordinal;
+            form = RT_USE_CONSTRUCTOR;
+        }
+        else if (target != 0u && valid_row(target - 1u) && compact_hir_core[target - 1u].kind == HIR_FN)
+        {
+            callee = intern_row_decl(target - 1u);
+            form = RT_USE_FN_REF;
+        }
+        else if ((semantic_value_const_present_by_hir[row] & RT_CONST_VARIANT) != 0u)
+        {
+            if (rt_is_stored_term(row_term) && rt_term_kind(row_term) == RT_KIND_NAMED)
+                callee = rt_term_head[row_term].y;
+            aux = semantic_value_const_by_hir[row].x;
+            form = RT_USE_CONSTRUCTOR;
+        }
     }
     if (callee == RT_INVALID) { callee = 0u; form = RT_USE_UNRESOLVED; }
 
     uint token = call_token(row);
-    uint env = token != 0xffffffffu ? translate_ref(call_env_ct[token].x) : RT_NONE;
-    if (callee != 0u && form != RT_USE_CONSTRUCTOR) env = callee_env(env, callee);
-    uint result = translate_checked(call.return_ref_tag, call.return_ref_payload);
-    uint matched = translate_checked(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload);
-    uint receiver = translate_checked(call.receiver_parameter_ref_tag, call.receiver_parameter_ref_payload);
+    uint env_count; uint env_stride;
+    call_env_ct.GetDimensions(env_count, env_stride);
+    uint env = token < env_count && form != RT_USE_FN_REF ? translate_ref(call_env_ct[token].x) : RT_NONE;
+    if (callee != 0u) env = callee_env(env, callee);
+    bool call_row = kind == HIR_CALL_EXPR;
+    uint result = call_row ? translate_checked(call.return_ref_tag, call.return_ref_payload) : row_term;
+    uint matched = call_row ? translate_checked(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload) : RT_NONE;
+    uint receiver = call_row ? translate_checked(call.receiver_parameter_ref_tag, call.receiver_parameter_ref_payload) : RT_NONE;
+    // A local callee's declared receiver is a term of the callee's binder
+    // chain: a consumer substitutes the callee's instance environment into it.
+    if (form == RT_USE_METHOD && valid_row(callee_row) && rt_is_resolved(receiver))
+    {
+        uint container = container_of(callee_row);
+        uint callee_parent = valid_row(container) ? intern_row_decl(container) : 0u;
+        if (callee_parent == RT_INVALID) callee_parent = 0u;
+        if (!owned_by(receiver, callee, callee_parent))
+        {
+            rt_invariant(RT_INV_RECEIVER_SCOPE);
+            stat_add(owner_row, RT_STAT_OWNERSHIP, 1u);
+        }
+    }
 
     // Every term of the record lives in the caller's scope. (The receiver
     // parameter term is the callee's declared receiver, so it is checked
@@ -138,9 +209,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint rel = rel_row(span, row, foreign);
     uint rel_callee_token = rel_token(span, token, foreign);
     uint index = use_base + rt_x_scan[row].y;
-    uint adjust = call.receiver_adjustment_kind & 0xffu;
-    uint deref = min(call.receiver_deref_count, 0xffffu);
+    uint adjust = call_row ? call.receiver_adjustment_kind & 0xffu : 0u;
+    uint deref = call_row ? min(call.receiver_deref_count, 0xffffu) : 0u;
+    stat_add(owner_row, RT_STAT_FOREIGN, foreign);
     rt_uses[index * RT_USE_WORDS + 0u] = uint4(owner, rel, form | (adjust << 8u) | (deref << 16u), callee);
     rt_uses[index * RT_USE_WORDS + 1u] = uint4(env, result, matched, receiver);
-    rt_uses[index * RT_USE_WORDS + 2u] = uint4(aux, call.generic_requirements, compact_hir_links[row].file_id, rel_callee_token);
+    rt_uses[index * RT_USE_WORDS + 2u] = uint4(aux, call_row ? call.generic_requirements : 0u, compact_hir_links[row].file_id,
+        rel_callee_token);
 }
