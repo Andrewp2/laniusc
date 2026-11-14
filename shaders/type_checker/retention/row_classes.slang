@@ -108,6 +108,9 @@ public static const uint RT_ROLE_STRUCTURAL = 0u;
 public static const uint RT_ROLE_VALUE = 1u;
 public static const uint RT_ROLE_TYPE = 2u;
 public static const uint RT_ROLE_CALLEE = 3u;
+// A predicate's bound (a trait reference). It denotes no type: its trait
+// and arguments are the owner's predicate record (rt_traits).
+public static const uint RT_ROLE_BOUND = 4u;
 
 public bool rt_value_kind(uint kind)
 {

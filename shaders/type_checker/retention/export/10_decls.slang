@@ -164,15 +164,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint self_term = type_row_term(impl_self_row(row));
             check_term(row, self_term, decl, 0u);
-            uint trait_row = payload.b;
-            uint trait_term = RT_NONE;
-            if (valid_row(trait_row))
-            {
-                trait_term = type_row_term(trait_row);
-                check_term(row, trait_term, decl, 0u);
-                if (rt_is_resolved(trait_term) && rt_term_kind(trait_term) != RT_KIND_NAMED)
-                    stat_add(row, RT_STAT_UNTRANSLATED, 1u);
-            }
+            // The checker publishes no type for a trait reference row. Step
+            // 14d interns a trait impl's trait term from its accepted trait
+            // reference and checks it; RT_UNKNOWN until then.
+            uint trait_term = valid_row(payload.b) ? RT_UNKNOWN : RT_NONE;
             rt_sigs[sig_base] = self_term;
             rt_sigs[sig_base + 1u] = trait_term;
         }

@@ -50,6 +50,19 @@ public globallycoherent RWStructuredBuffer<uint> rt_binders;    // ParamIds in c
 public globallycoherent RWStructuredBuffer<uint> rt_sigs;       // result term, then parameter terms
 public globallycoherent RWStructuredBuffer<uint4> rt_schema;    // field and variant-payload records
 public globallycoherent RWStructuredBuffer<uint4> rt_uses;      // RT_USE_WORDS per use
+// Trait facts. rt_dir_trait is a column of the directory (one uint4 per
+// entry): (first predicate record, predicate count, first binding record,
+// binding count). rt_traits holds RT_TRAIT_WORDS uint4 per record:
+//   PREDICATE t0 (owner DeclId, PREDICATE | ordinal << 8, subject term, trait term)
+//             t1 (trait DeclId, file id, file-relative byte start, byte length)
+//   BINDING   t0 (impl DeclId, BINDING | receiver mode << 8 | ordinal << 16,
+//                 required member DeclId, method DeclId)
+//             t1 (trait DeclId, required member symbol, file id,
+//                 file-relative byte start of the method's name)
+// A trait term is NAMED (trait DeclId, constant-operand mask) over the
+// argument terms, in the owner's scope.
+public globallycoherent RWStructuredBuffer<uint4> rt_dir_trait;
+public globallycoherent RWStructuredBuffer<uint4> rt_traits;
 // Body payloads (streamable: nothing in the discovery records points into
 // them except a segment index and arena ranges).
 public globallycoherent RWStructuredBuffer<uint4> rt_segments;  // RT_SEG_WORDS per segment
@@ -70,6 +83,10 @@ public static const uint RT_SCHEMA_FIELD = 1u;    // (struct, FIELD | ordinal <<
 public static const uint RT_SCHEMA_PAYLOAD = 2u;  // (enum, PAYLOAD | ordinal << 8, variant ordinal, declared term)
 public static const uint RT_SCHEMA_VARIANT = 3u;  // (enum, VARIANT | ordinal << 8, payload count, first payload record)
 public static const uint RT_SCHEMA_CONST = 4u;    // (constant, CONST | present << 8, value lo, value hi)
+public static const uint RT_TRAIT_WORDS = 2u;
+// Trait fact kinds (rt_traits t0.y low byte).
+public static const uint RT_TRAIT_PREDICATE = 1u;
+public static const uint RT_TRAIT_BINDING = 2u;
 
 public static const uint RT_INVALID = 0xffffffffu;
 public static const uint RT_UNKNOWN = 0xfffffffeu;
@@ -139,7 +156,8 @@ public static const uint RT_A_SEG_ROWS = 10u;
 public static const uint RT_A_SEG_SIDE = 11u;
 public static const uint RT_A_SEG_BYTES = 12u;
 public static const uint RT_A_SEG_TOKENS = 13u;
-public static const uint RT_ARENAS = 14u;
+public static const uint RT_A_TRAITS = 14u;
+public static const uint RT_ARENAS = 15u;
 
 // rt_counts layout.
 public static const uint RT_C_JOB_BASE = 16u;   // + arena: counter at the job's start
@@ -186,7 +204,7 @@ public uint rt_capacity(uint arena)
         return min(min(n, m), k);
     }
     if (arena == RT_A_TERM_ARGS) { rt_term_args.GetDimensions(n, s); return n; }
-    if (arena == RT_A_DIR) { rt_dir.GetDimensions(n, s); return n / RT_DIR_WORDS; }
+    if (arena == RT_A_DIR) { rt_dir.GetDimensions(n, s); rt_dir_trait.GetDimensions(m, s); return min(n / RT_DIR_WORDS, m); }
     if (arena == RT_A_BINDERS) { rt_binders.GetDimensions(n, s); return n; }
     if (arena == RT_A_SIGS) { rt_sigs.GetDimensions(n, s); return n; }
     if (arena == RT_A_SCHEMA) { rt_schema.GetDimensions(n, s); return n; }
@@ -196,6 +214,7 @@ public uint rt_capacity(uint arena)
     if (arena == RT_A_SEG_SIDE) { rt_seg_side.GetDimensions(n, s); return n; }
     if (arena == RT_A_SEG_BYTES) { rt_seg_bytes.GetDimensions(n, s); return n; }
     if (arena == RT_A_SEG_TOKENS) { rt_seg_tokens.GetDimensions(n, s); return n; }
+    if (arena == RT_A_TRAITS) { rt_traits.GetDimensions(n, s); return n / RT_TRAIT_WORDS; }
     return 0u;
 }
 

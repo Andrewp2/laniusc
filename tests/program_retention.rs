@@ -195,7 +195,7 @@ fn summary(store: &ProgramRetention) -> Vec<u32> {
     let status = store.status().unwrap();
     // Arena counters and the build's committed/rollback/conflict words.
     // Spare records (lanes that lost an intern race) are not retained data.
-    let mut words = (0..14)
+    let mut words = (0..15)
         .map(|a| status[a] - if a < 4 { status[counts::SPARE + a] } else { 0 })
         .collect::<Vec<_>>();
     words.extend([status[counts::JOBS], status[counts::CONFLICTS], status[counts::INVARIANT_TOTAL],

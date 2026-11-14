@@ -100,6 +100,7 @@ public static const uint RT_X_DIR_FIRST = 185u;       // first directory entry o
 public static const uint RT_X_USE_FIRST = 186u;       // first use of the job
 public static const uint RT_X_ROW_FIRST = 187u;       // first segment row of the job
 public static const uint RT_X_UNTRANSLATED = 188u;  // canonical records that did not translate
+public static const uint RT_X_TRAIT_TOTAL = 192u;     // + 4: totals of the trait-fact scan (14c)
 public static const uint RT_X_WORDS = 256u;
 
 // Indirect dispatch slots (rt_x_counts[RT_X_DISPATCH + 3 * slot]).
@@ -153,6 +154,9 @@ public static const uint RT_INV_DUPLICATE_DECL = 6u;  // two committed entries d
 public static const uint RT_INV_PARAM_MAP = 7u;       // the parameter map is full
 public static const uint RT_INV_ENV_OWNER = 8u;       // a call environment names a different callee
 public static const uint RT_INV_RECEIVER_SCOPE = 9u;  // a local callee's receiver term is outside the callee's binder chain
+public static const uint RT_INV_TRAIT_FACT = 10u;     // a predicate, impl head or impl method lacks an accepted producer fact
+public static const uint RT_INV_TRAIT_ORDER = 11u;    // an owner's trait facts are not one contiguous block in source order
+public static const uint RT_INV_TRAIT_IDENTITY = 12u; // trait, required-member or native-target identities disagree
 
 public uint job_library() { return ct_counts[CT_COUNT_LIBRARY]; }
 public uint job_unit() { return ct_counts[CT_COUNT_UNIT]; }
@@ -199,7 +203,7 @@ public bool is_trait_row(uint row)
 
 // Canonical method rows are compacted in increasing dense HIR order
 // (codegen/lir/semantic/function_method.slang).
-uint method_row(uint row)
+public uint method_row(uint row)
 {
     uint count = min(compact_method_count[0u], hir_count());
     uint lo = 0u; uint hi = count;

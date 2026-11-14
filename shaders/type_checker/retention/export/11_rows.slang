@@ -22,6 +22,7 @@ import type_checker.retention.export.side_tables;
 import type_checker.retention.export.body_common;
 import type_checker.retention.export.type_rows;
 
+StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> compact_array_element_start;
@@ -59,7 +60,12 @@ HirPayload rel_payload(SegmentContext c, uint row, HirCore core, HirPayload p, i
 uint row_role(uint row, uint function, uint kind)
 {
     if (row == function) return RT_ROLE_STRUCTURAL;
-    if (kind == RT_HIR_TYPE) return RT_ROLE_TYPE;
+    if (kind == RT_HIR_TYPE)
+    {
+        uint semantic = compact_hir_semantic_facts[row].semantic_kind;
+        bool bound = semantic == HIR_SEMANTIC_BOUND_PATH || semantic == HIR_SEMANTIC_BOUND_REFERENCE;
+        return bound ? RT_ROLE_BOUND : RT_ROLE_TYPE;
+    }
     if (callee_position(row)) return RT_ROLE_CALLEE;
     return rt_value_kind(kind) ? RT_ROLE_VALUE : RT_ROLE_STRUCTURAL;
 }

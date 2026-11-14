@@ -166,7 +166,12 @@ committed definition of the same declaration is counted in
   and its required members end the type domain with `Self`.
 - **Signatures, `rt_sigs`.** For a callable, the result term, then one term
   per parameter. For an impl, the self type, then the trait term or
-  `RT_NONE`. For a constant, its type term.
+  `RT_NONE`. For a constant, its type term. The checker publishes no type
+  for a trait reference row, so step 10 writes `RT_UNKNOWN` for a trait
+  impl's trait term and step 14d replaces it with the term built from the
+  accepted trait reference (see "Trait facts"). A required member's
+  `self` or `&self` parameter has no checked type row; step 13 writes the
+  trait's `Self` leaf, or `REF` of it, from the accepted receiver mode.
 - **Schema, `rt_schema`.** One uint4 per record:
   - `FIELD 1`: `(struct, FIELD | ordinal << 8, 0, declared term)`.
   - `VARIANT 3`: `(enum, VARIANT | ordinal << 8, payload count, first
@@ -199,6 +204,72 @@ committed definition of the same declaration is counted in
     chain (`RT_INV_RECEIVER_SCOPE`).
   - u2 `(variant ordinal or intrinsic tag, a dependency callee's generic
     requirements, file id, callee token relative to the owner)`.
+
+## Trait facts (resident)
+
+Each job exports the predicates and trait-impl method bindings its
+predicate and method validators accepted (`shaders/type_checker/predicates`,
+steps 14b–14d). These are the inputs `FrozenCatalog::freeze` rebuilds on the
+host from `CheckedUnitContracts`. They are a producer boundary for the GPU
+trait solver: nothing here selects an implementation, proves an
+obligation or certifies a route.
+
+`rt_dir_trait` is a column of the directory, one uint4 per entry:
+`(first predicate record, predicate count, first binding record, binding
+count)`. Every entry has one; an entry without facts has counts 0.
+
+`rt_traits` (arena `RT_A_TRAITS` 14) holds 2 × uint4 per record:
+
+| Kind | t0 | t1 |
+| --- | --- | --- |
+| `PREDICATE 1` | `(owner DeclId, PREDICATE \| ordinal << 8, subject term, trait term)` | `(trait DeclId, file id, file-relative byte start of the bound, byte length)` |
+| `BINDING 2` | `(impl DeclId, BINDING \| receiver mode << 8 \| ordinal << 16, required member DeclId, method DeclId)` | `(trait DeclId, required member symbol, file id, file-relative byte start of the method name)` |
+
+- **Owners.** A predicate's owner is the function or impl that declares
+  it; inherited predicates stay on their declaring owner, and the
+  directory's parent chain reaches them. An impl's prerequisites are its
+  own predicate block. The block is in source order of the bounds;
+  `ordinal` is the rank inside it.
+- **Subjects.** A type parameter leaf, resolved by the parameter's
+  declaration token, so a method parameter that shadows its impl's has its
+  own `ParamId`; or a scalar `TermId` (`where bool: Pair<T>`).
+- **Trait terms.** `NAMED (trait DeclId, constant-operand mask)` over the
+  bound's checked argument roots, with the type-slot count and mask the
+  canonical store gives a NAMED term. Equal applications intern to the
+  impl header's trait term. Constant arguments keep their terms
+  (`CC_CAST` stays a pending fit), and a constant parameter's `ParamId`
+  keeps its declared scalar.
+- **Trait identity.** A local trait is its declaration's `DeclId`; an
+  imported one is the defining unit's nominal key, `(library, unit,
+  NOMINAL, interface index)`, the key that unit's export gives it. Private
+  traits are qualified by their unit.
+- **Bindings.** One per method of a trait impl. The required member is
+  `(trait library, trait unit, CALLABLE, interface member symbol)`, the
+  defining unit's `REQUIRED_MEMBER` entry; the method is its own `DeclId`,
+  whose local word must equal the native symbol the semantic artifact
+  published for it. A local trait's member must be that trait's row.
+  Receiver modes are `NONE 0`, `SELF 1`, `REF_SELF 2` and `EXPLICIT 3`.
+  An impl's head (self type, trait term) is its signature block.
+
+Step 14d checks every fact against its producers: predicate status and
+owner, the ordered argument rows, the subject token, the trait
+reference, the impl header's status and trait root, the trait term's
+`DeclId` against the trait reference, method validation status, the
+required symbol and the native symbol, and that an impl binds as many
+members as its trait requires. A failure raises `RT_INV_TRAIT_FACT` (10),
+`RT_INV_TRAIT_ORDER` (11, an owner's facts are not one source-ordered
+block) or `RT_INV_TRAIT_IDENTITY` (12) and marks the owner's entry
+incomplete, so the build is not ready. A predicate whose owner has no
+directory entry raises 10 without a record.
+
+`shaders/tests/retention_traits.slang` validates the facts from the store
+alone, per entry: exact owners and ordinals, subjects in the entry's binder
+map, trait terms over a committed `TRAIT` with matching arity, argument
+leaves inside the owner's chain, required members committed as
+`REQUIRED_MEMBER`s of the impl's trait, methods committed as `METHOD`s of
+the impl whose binder maps start with the impl's, distinct members and one
+binding per required member. `tests/program_retention_traits.rs` runs it
+after releasing the frontend and poisoning the exporter's scratch.
 
 ## Body payloads (streamable)
 
@@ -245,7 +316,10 @@ Row terms and roles:
   reference. Other rows (function, parameter, block and the remaining
   statements) carry the per-row scalar cache in that column, which is not a
   type, so their term is `RT_NONE`.
-- Roles are `STRUCTURAL 0`, `VALUE 1`, `TYPE 2` and `CALLEE 3`. A callee row
+- Roles are `STRUCTURAL 0`, `VALUE 1`, `TYPE 2`, `CALLEE 3` and
+  `BOUND 4`. A BOUND row is a TYPE row whose semantic kind is a bound path
+  or bound reference. It has no checked type; its facts are the predicate
+  records. A callee row
   is marked by its call (step 01b), because its HIR parent need not be the
   call. A VALUE or TYPE row without a resolved term is `MISSING`, is
   counted `untyped` and marks its entry `INCOMPLETE`.
@@ -325,8 +399,8 @@ All semantic work runs on the GPU. The host allocates buffers, clears job
 scratch, submits one command buffer per attempt and reads the 96 status
 words and 256 scratch words.
 
-The export records 180 dispatches per attempt: 24 kernels, including 79
-translation/advance pairs and the three scan kernels. Empty translation
+The export records 186 dispatches per attempt: 27 kernels, including 79
+translation/advance pairs and the three scan kernels, which run twice. Empty translation
 heights dispatch no translation workgroups, but their advance dispatches
 still run. This boundary has not yet been timed on settings.
 
@@ -345,6 +419,10 @@ still run. This boundary has not yet been timed on settings.
 | 12b, 12c | one per job token | clear, then copy, body text; token records |
 | 13 | one per parameter, field and variant payload | signatures and schema |
 | 14 | one per call | use records |
+| 14b | one per HIR row, predicate and method | trait-fact flags and per-owner counts |
+| 08 again | uint4 prefix scan over rows | trait-fact ranks and owner blocks |
+| 14c | 1 lane | trait-fact reservation |
+| 14d | one per declaration, predicate and method | trait column, predicate and binding records |
 | 15 | one per declaration | statistics |
 | 17 | one per staged entry | publish |
 | 18 | one per hash slot | rollback |
@@ -384,9 +462,13 @@ This boundary does not yet carry:
   until discovery maps the dependency's binder.
 - **Nongeneric bodies.** They lower in their own job and keep no segment.
   Their uses are exported, as discovery roots.
-- **Bound-member calls.** Their trait-solver evidence is not exported yet.
+- **Bound-member calls.** Their trait-solver evidence is not exported.
   The use records the trait member's `DeclId` and the caller-scoped
-  environment.
+  environment. The catalog inputs the solver needs (predicates, impl
+  heads, prerequisites, bindings) are under "Trait facts".
+- **Trait-level predicates** (bounds owned by a trait item) have no
+  accepted producer (`predicate_generic_owner_supported`). A required
+  member's own bounds are function-owned and export like any other.
 - **Constant fits.** `CC_CAST` terms are retained. The probe does not
   evaluate fits. The production engine does, and returns the failing
   projection with each result
@@ -427,9 +509,9 @@ Return statement payloads are never interpreted as declaration-name tokens.
   ordinary null and offset rules validate `p == 0`, `p + 8`, `p += 8` and
   `p + (4 * 2)` with their integer widths.
 
-- Discovery needs the trait solver's implementation evidence as store
-  records (`IMPL` declarations, their trait arguments and the receiver
-  plan) to select bound-member callees.
+- Discovery needs the trait solver's implementation evidence to select
+  bound-member callees. The solver's catalog inputs are retained
+  ("Trait facts"); its admission, coherence check and evidence are not.
 - A dependency-signature slot leaf has to map to the dependency's committed
   binder entry. The dependency interface's slot order has to match the
   composed binder order above (impl before method per domain, then `Self`).

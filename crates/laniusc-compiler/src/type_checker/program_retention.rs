@@ -66,6 +66,23 @@ pub(crate) const RETAINED_PROGRAM_INPUTS: &[&str] = &[
     "compact_method_count",
     "compact_method_cores",
     "compact_method_signatures",
+    // Trait facts (export steps 14b-14d): the predicate and method
+    // validators' accepted columns.
+    "predicate_status",
+    "predicate_owner_node",
+    "predicate_bound_reference",
+    "predicate_bound_arg_count",
+    "predicate_trait_impl_trait_type_node",
+    "predicate_method_contract_owner_count",
+    "predicate_method_validation_status",
+    "predicate_method_validation_required_symbol",
+    "semantic_function_native_symbol_by_hir",
+    "semantic_predicate_subject_parameter_token_by_hir",
+    "decl_hir_node",
+    "resolved_dependency_library_id",
+    "resolved_dependency_unit_id",
+    "resolved_dependency_local_index",
+    "resolved_dependency_trait_header",
 ];
 
 /// The consumer contract of the export: every retained input the producer
@@ -99,7 +116,8 @@ const A_SEG_ROWS: usize = 10;
 const A_SEG_SIDE: usize = 11;
 const A_SEG_BYTES: usize = 12;
 const A_SEG_TOKENS: usize = 13;
-const ARENAS: usize = 14;
+const A_TRAITS: usize = 14;
+const ARENAS: usize = 15;
 
 /// rt_counts words (retention_store.slang RT_C_*).
 pub mod counts {
@@ -144,7 +162,7 @@ const RECORD_BYTES: [u64; ARENAS] = [
     16,          // param key
     16 + 16 + 8, // term head, meta, owners
     4,           // term args
-    64,          // directory entry
+    64 + 16,     // directory entry, trait column
     4,           // binders
     4,           // signatures
     16,          // schema
@@ -154,6 +172,7 @@ const RECORD_BYTES: [u64; ARENAS] = [
     16,          // side records (2 per side row)
     4,           // string bytes and body text
     16,          // body tokens
+    32,          // trait facts (predicates, impl method bindings)
 ];
 
 /// Record capacities of the store's arenas and hash tables.
@@ -170,7 +189,7 @@ impl Default for ProgramRetentionCapacity {
         Self {
             arenas: [
                 4096, 4096, 16384, 32768, 4096, 8192, 16384, 8192, 16384, 2048, 65536, 32768,
-                65536, 65536,
+                65536, 65536, 4096,
             ],
             slots: [8192, 8192, 32768],
         }
@@ -181,7 +200,7 @@ impl ProgramRetentionCapacity {
     /// Deliberately tiny capacities: a test of the overflow/retry protocol.
     pub fn tiny() -> Self {
         Self {
-            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4, 4],
+            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4, 4, 1],
             slots: [8, 8, 8],
         }
     }
@@ -223,6 +242,7 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_term_args", Sized::Arena(A_TERM_ARGS, 4)),
     ("rt_term_slot", Sized::Table(2)),
     ("rt_dir", Sized::Arena(A_DIR, 64)),
+    ("rt_dir_trait", Sized::Arena(A_DIR, 16)),
     ("rt_binders", Sized::Arena(A_BINDERS, 4)),
     ("rt_sigs", Sized::Arena(A_SIGS, 4)),
     ("rt_schema", Sized::Arena(A_SCHEMA, 16)),
@@ -232,6 +252,7 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_seg_side", Sized::Arena(A_SEG_SIDE, 16)),
     ("rt_seg_bytes", Sized::Arena(A_SEG_BYTES, 4)),
     ("rt_seg_tokens", Sized::Arena(A_SEG_TOKENS, 16)),
+    ("rt_traits", Sized::Arena(A_TRAITS, 32)),
 ];
 
 const EXPORT_KERNELS: &[&str] = &[
@@ -255,6 +276,9 @@ const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/12c_text_copy",
     "type_checker/retention/export/13_schema",
     "type_checker/retention/export/14_uses",
+    "type_checker/retention/export/14b_trait_flags",
+    "type_checker/retention/export/14c_trait_reserve",
+    "type_checker/retention/export/14d_trait_facts",
     "type_checker/retention/export/15_finish",
     "type_checker/retention/export/16_commit",
     "type_checker/retention/export/17_publish",
@@ -262,6 +286,11 @@ const EXPORT_KERNELS: &[&str] = &[
 ];
 const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
 const RESOLVE_KERNEL: &str = "tests/retention_resolve";
+const TRAIT_PROBE_KERNEL: &str = "tests/retention_traits";
+
+/// Words per directory entry the trait-fact probe writes
+/// (shaders/tests/retention_traits.slang).
+pub const TRAIT_PROBE_WORDS: usize = 16;
 
 /// Words per use the acceptance probe writes (shaders/tests/retention_resolve.slang).
 pub const PROBE_WORDS: usize = 40;
@@ -380,6 +409,10 @@ pub struct ProgramRetention {
     passes: Vec<PassData>,
     rehash: PassData,
     resolve: Mutex<Option<PassData>>,
+    trait_probe: Mutex<Option<PassData>>,
+    /// Test fault: (job table, word) written over that whole snapshot table
+    /// before each export attempt.
+    export_fault: Mutex<Option<(&'static str, u32)>>,
     store: Mutex<Store>,
     /// Every job table name an export kernel binds.
     job_inputs: std::collections::BTreeSet<String>,
@@ -450,6 +483,8 @@ impl ProgramRetention {
             passes,
             rehash,
             resolve: Mutex::new(None),
+            trait_probe: Mutex::new(None),
+            export_fault: Mutex::new(None),
             store: Mutex::new(store),
             job_inputs,
             snapshot_pool: Arc::new(Mutex::new(Vec::new())),
@@ -557,6 +592,10 @@ impl ProgramRetention {
             tokens: table_words(job, "decl_id_by_name_token")?.max(1),
             job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
         };
+        if let Some((name, word)) = *self.export_fault.lock().unwrap() {
+            let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
+            self.queue.write_buffer(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
+        }
         let mut store = self.store.lock().unwrap();
         if store.scratch_shape != Some(shape) {
             store.scratch = allocate_scratch(&self.device, shape);
@@ -611,8 +650,22 @@ impl ProgramRetention {
         let bind_groups = self
             .passes
             .iter()
-            .map(|pass| self.bind(pass, store, job))
+            .map(|pass| self.bind(pass, store, job, &[]))
             .collect::<Result<Vec<_>>>()?;
+        // The trait-fact scan runs the 08 kernels again over the trait flags
+        // with their own counters (export/trait_common.slang).
+        const TRAIT_SCAN: &[(&str, &str)] = &[
+            ("rt_x_flags", "rt_x_tflags"),
+            ("rt_x_scan", "rt_x_tscan"),
+            ("rt_x_blocks", "rt_x_tblocks"),
+            ("rt_x_counts", "rt_x_tcounts"),
+        ];
+        // Bind groups past the kernel list are the trait scan's: index
+        // `EXPORT_KERNELS.len() + k` runs scan kernel 9 + k.
+        let mut bind_groups = bind_groups;
+        for index in 9..12 {
+            bind_groups.push(self.bind(&self.passes[index], store, job, TRAIT_SCAN)?);
+        }
         let indirect = &store.scratch["rt_x_dispatch"];
         {
             let mut pass = passes_core::begin_counted_compute_pass(
@@ -620,7 +673,8 @@ impl ProgramRetention {
                 &wgpu::ComputePassDescriptor { label: Some("program_retention.export"), timestamp_writes: None },
             );
             let mut run = |index: usize, dispatch: Dispatch| {
-                pass.set_pipeline(&self.passes[index].pipeline);
+                let kernel = index.checked_sub(EXPORT_KERNELS.len()).map_or(index, |k| 9 + k);
+                pass.set_pipeline(&self.passes[kernel].pipeline);
                 pass.set_bind_group(0, &bind_groups[index], &[]);
                 passes_core::record_compute_dispatch();
                 match dispatch {
@@ -657,24 +711,37 @@ impl ProgramRetention {
             run(18, Indirect(D_SCHEMA));
             run(19, Indirect(D_HIR));
             run(20, Indirect(D_HIR));
+            let trait_scan = EXPORT_KERNELS.len();
+            run(trait_scan, Direct(groups(shape.rows)));
+            run(trait_scan + 1, one);
+            run(trait_scan + 2, Direct(groups(shape.rows)));
             run(21, one);
-            run(22, Indirect(D_COMMIT_DIR));
-            run(23, Indirect(D_ROLLBACK));
+            run(22, Indirect(D_HIR));
+            run(23, Indirect(D_HIR));
+            run(24, one);
+            run(25, Indirect(D_COMMIT_DIR));
+            run(26, Indirect(D_ROLLBACK));
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())
     }
 
+    /// Binds `pass` by reflected name; `aliases` binds a name to another
+    /// scratch buffer.
     fn bind(
         &self,
         pass: &PassData,
         store: &Store,
         job: &BTreeMap<&'static str, JobTable>,
+        aliases: &[(&str, &str)],
     ) -> Result<wgpu::BindGroup> {
         let names = reflected_names(pass);
         let mut entries = Vec::with_capacity(names.len());
         for name in &names {
-            let resource = if let Some(buffer) = store.buffers.get(name.as_str()) {
+            let alias = aliases.iter().find(|(from, _)| *from == name.as_str()).map(|(_, to)| *to);
+            let resource = if let Some(buffer) = alias.and_then(|to| store.scratch.get(to)) {
+                buffer.as_entire_binding()
+            } else if let Some(buffer) = store.buffers.get(name.as_str()) {
                 buffer.as_entire_binding()
             } else if let Some(buffer) = store.scratch.get(name.as_str()) {
                 buffer.as_entire_binding()
@@ -796,6 +863,70 @@ impl ProgramRetention {
         self.read(buffer, words)
     }
 
+    /// Test fault: fills job table `name` of every later export's snapshot
+    /// with `word` (the frontend's own tables are untouched), or clears it.
+    #[doc(hidden)]
+    pub fn set_export_fault(&self, fault: Option<(&'static str, u32)>) {
+        *self.export_fault.lock().unwrap() = fault;
+    }
+
+    /// Test fault: overwrites words of a store buffer from `offset` words.
+    #[doc(hidden)]
+    pub fn write_store_words(&self, name: &str, offset: u64, words: &[u32]) -> Result<()> {
+        let store = self.store.lock().unwrap();
+        let buffer = store.buffers.get(name).ok_or_else(|| anyhow!("no store buffer {name}"))?;
+        self.queue.write_buffer(buffer, offset * 4, &words_bytes(words));
+        self.queue.submit(None);
+        Ok(())
+    }
+
+    /// Trait-fact probe (shaders/tests/retention_traits.slang): reads only
+    /// the store and returns `TRAIT_PROBE_WORDS` words per directory entry.
+    #[doc(hidden)]
+    pub fn trait_probe(&self) -> Result<Vec<u32>> {
+        let mut probe = self.trait_probe.lock().unwrap();
+        if probe.is_none() {
+            *probe = Some(make_pass_data_from_shader_key(&self.device, TRAIT_PROBE_KERNEL, "main", TRAIT_PROBE_KERNEL)?);
+        }
+        let pass_data = probe.as_ref().unwrap();
+        let store = self.store.lock().unwrap();
+        let entries = self.read(&store.buffers["rt_counts"], counts::WORDS)?[A_DIR] as u64;
+        let out = storage(&self.device, "rt_test_out", entries.max(1) * TRAIT_PROBE_WORDS as u64 * 4, false);
+        let names = reflected_names(pass_data);
+        let mut entries_bound = Vec::new();
+        for name in &names {
+            let buffer = match name.as_str() {
+                "rt_test_out" => &out,
+                other => store
+                    .buffers
+                    .get(other)
+                    .ok_or_else(|| anyhow!("trait probe binds unknown buffer {other}"))?,
+            };
+            entries_bound.push((name.as_str(), buffer.as_entire_binding()));
+        }
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&pass_data.shader_id),
+            pass_data,
+            0,
+            &entries_bound,
+        )?;
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some("program_retention.trait_probe"), timestamp_writes: None },
+            );
+            pass.set_pipeline(&pass_data.pipeline);
+            pass.set_bind_group(0, &bind, &[]);
+            passes_core::record_compute_dispatch();
+            pass.dispatch_workgroups(entries.div_ceil(64).max(1) as u32, 1, 1);
+        }
+        self.queue.submit(Some(encoder.finish()));
+        drop(store);
+        self.read(&out, entries as usize * TRAIT_PROBE_WORDS)
+    }
+
     /// Test oracle: overwrites exporter scratch with a poison pattern, so a
     /// later read of its job maps would be visible. This does not touch the
     /// frontend's parser or type-checker storage.
@@ -824,7 +955,7 @@ impl ProgramRetention {
             live[arena] = words[arena].saturating_sub(first) as u64 * RECORD_BYTES[arena];
             capacity[arena] = store.capacity.arenas[arena] as u64 * RECORD_BYTES[arena];
         }
-        let resident_discovery = [A_DECLS, A_PARAMS, A_TERMS, A_TERM_ARGS, A_DIR, A_BINDERS, A_SIGS, A_SCHEMA, A_USES]
+        let resident_discovery = [A_DECLS, A_PARAMS, A_TERMS, A_TERM_ARGS, A_DIR, A_BINDERS, A_SIGS, A_SCHEMA, A_USES, A_TRAITS]
             .iter()
             .map(|&a| live[a])
             .sum();
@@ -976,6 +1107,10 @@ fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'st
         ("rt_x_decl_by_token", tokens * 4, false),
         ("rt_x_seg_token", rows * 4, false),
         ("rt_x_callee", rows * 4, false),
+        ("rt_x_tflags", rows * 16, false),
+        ("rt_x_tscan", rows * 16, false),
+        ("rt_x_tblocks", blocks * 16, false),
+        ("rt_x_tcounts", X_WORDS as u64 * 4, false),
     ]
     .into_iter()
     .map(|(name, bytes, indirect)| (name, storage(device, name, bytes, indirect)))
