@@ -3613,6 +3613,13 @@ mod tests {
             "test.argument_modes",
             &vec![0u32; capacities.hir_nodes as usize],
         );
+        // Lowering reads its row counts through `hir_inputs`; the view's
+        // execution-row counts are the same tables here.
+        let lowering_counts = [
+            hir_inputs.count, hir_inputs.call_arg_count, hir_inputs.field_count,
+            hir_inputs.match_arm_count, hir_inputs.match_payload_row_count,
+            hir_inputs.array_element_row_count, hir_inputs.string_count, hir_inputs.param_count,
+        ].map(Clone::clone);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing_fn,
@@ -3670,6 +3677,7 @@ mod tests {
             expr_scalar_type_by_hir: &expression_types,
             public_decl_index_by_hir: &visible,
             struct_init_field_ordinal_by_row: &visible,
+            lowering_counts: &lowering_counts,
         };
         let stage = GpuSemanticLoweringStage::from_workspace(
             &gpu.device,
@@ -3983,6 +3991,13 @@ mod tests {
             "test.argument_modes",
             &vec![0u32; capacities.hir_nodes as usize],
         );
+        // Lowering reads its row counts through `hir_inputs`; the view's
+        // execution-row counts are the same tables here.
+        let lowering_counts = [
+            hir_inputs.count, hir_inputs.call_arg_count, hir_inputs.field_count,
+            hir_inputs.match_arm_count, hir_inputs.match_payload_row_count,
+            hir_inputs.array_element_row_count, hir_inputs.string_count, hir_inputs.param_count,
+        ].map(Clone::clone);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &checked_value_decls,
             value_type_by_hir: &checked_value_types,
@@ -4040,6 +4055,7 @@ mod tests {
             expr_scalar_type_by_hir: &expression_types,
             public_decl_index_by_hir: &public_declarations,
             struct_init_field_ordinal_by_row: &invalid_tokens,
+            lowering_counts: &lowering_counts,
         };
         let stage =
             GpuSemanticLoweringStage::new(&gpu.device, capacities, hir_inputs, semantic_inputs)
@@ -4284,6 +4300,13 @@ mod tests {
             "test.argument_modes",
             &vec![0u32; capacities.hir_nodes as usize],
         );
+        // Lowering reads its row counts through `hir_inputs`; the view's
+        // execution-row counts are the same tables here.
+        let lowering_counts = [
+            hir_inputs.count, hir_inputs.call_arg_count, hir_inputs.field_count,
+            hir_inputs.match_arm_count, hir_inputs.match_payload_row_count,
+            hir_inputs.array_element_row_count, hir_inputs.string_count, hir_inputs.param_count,
+        ].map(Clone::clone);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing,
@@ -4341,6 +4364,7 @@ mod tests {
             expr_scalar_type_by_hir: &types,
             public_decl_index_by_hir: &visible,
             struct_init_field_ordinal_by_row: &enclosing,
+            lowering_counts: &lowering_counts,
         };
         let stage =
             GpuSemanticLoweringStage::new(&gpu.device, capacities, hir_inputs, semantic_inputs)
@@ -4592,6 +4616,13 @@ mod tests {
             "test.argument_modes",
             &vec![0u32; capacities.hir_nodes as usize],
         );
+        // Lowering reads its row counts through `hir_inputs`; the view's
+        // execution-row counts are the same tables here.
+        let lowering_counts = [
+            hir_inputs.count, hir_inputs.call_arg_count, hir_inputs.field_count,
+            hir_inputs.match_arm_count, hir_inputs.match_payload_row_count,
+            hir_inputs.array_element_row_count, hir_inputs.string_count, hir_inputs.param_count,
+        ].map(Clone::clone);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing_fn,
@@ -4649,6 +4680,7 @@ mod tests {
             expr_scalar_type_by_hir: &expression_types,
             public_decl_index_by_hir: &visible,
             struct_init_field_ordinal_by_row: &visible,
+            lowering_counts: &lowering_counts,
         };
         let stage =
             GpuSemanticLoweringStage::new(&gpu.device, capacities, hir_inputs, semantic_inputs)

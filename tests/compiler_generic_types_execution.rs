@@ -353,6 +353,89 @@ fn execute_with_stdlib(
     );
 }
 
+/// Programs whose generic instances the original job lowers itself
+/// (docs/compiler-gpu-instantiation.md, milestones 2 and 3): two instances
+/// of one body, equal-width nominal types, independent mutable storage,
+/// branches, loops, matches and strings in two instances, recursion, calls
+/// between instances and member layouts that differ per instance.
+#[test]
+fn in_unit_generic_instances_execute_with_their_own_bodies() {
+    for (label, source, stdout, status) in [
+        (
+            "two scalar instances",
+            "fn twice<T>(x: T, y: T, first: bool) -> T { if (first) { return x; } return y; }
+             fn main() -> i32 { let a: i32 = twice(40, 1, true); let b: i64 = twice(1, 2, false); return a + (b as i32); }",
+            &b""[..],
+            42,
+        ),
+        (
+            "equal-width nominal instances",
+            "struct Meters { value: i32, scale: i64 } struct Pair { wide: i64, narrow: i32 }
+             fn pick<T>(first: T, second: T, take_first: bool) -> T { if (take_first) { return first; } return second; }
+             fn main() -> i32 {
+                 let m: Meters = pick(Meters { value: 3, scale: 4 }, Meters { value: 5, scale: 6 }, false);
+                 let p: Pair = pick(Pair { wide: 10, narrow: 20 }, Pair { wide: 30, narrow: 40 }, true);
+                 print(m.value); print(m.scale as i32); print(p.wide as i32); print(p.narrow);
+                 return 0;
+             }",
+            &b"5\n6\n10\n20\n"[..],
+            0,
+        ),
+        (
+            "independent mutable instance storage",
+            "fn bump<T>(start: T, other: T, rounds: i32) -> T {
+                 let current: T = start; let i = 0;
+                 while (i < rounds) { if (i % 2 == 0) { current = other; } else { current = start; } i += 1; }
+                 return current;
+             }
+             fn main() -> i32 {
+                 let a: i32 = bump(1, 2, 3); let b: i64 = bump(10, 20, 4); let c: u8 = bump(7, 8, 1);
+                 print(a); print(b as i32); print(c);
+                 return 0;
+             }",
+            &b"2\n10\n8\n"[..],
+            0,
+        ),
+        (
+            "branches, loops, matches and strings in two instances",
+            "fn shape<T>(value: T, n: i32) -> i32 {
+                 let text: str = \"four\"; let held: T = value;
+                 let total = string_len(text) as i32;
+                 for k in 0..n { if (k == 1) { continue; } total += k; }
+                 let j = 0; while (true) { j += 1; if (j > 2) { break; } }
+                 let kind = match (n) { 0 -> 100, 3 -> 200, _ -> 30 };
+                 return total + j + kind;
+             }
+             fn main() -> i32 { print(shape(5, 3)); print(shape(true, 0)); print(shape(false, 4)); return 0; }",
+            &b"209\n107\n42\n"[..],
+            0,
+        ),
+        (
+            "recursive and nested instances",
+            "fn count<T>(value: T, n: i32) -> i32 { if (n <= 0) { return 0; } return 1 + count(value, n - 1); }
+             fn both<T>(value: T, n: i32) -> i32 { return count(value, n) + count(value, n); }
+             fn main() -> i32 { print(count(1, 5)); print(count(true, 7)); print(both(3, 10)); print(both(false, 5)); return 0; }",
+            &b"5\n7\n20\n10\n"[..],
+            0,
+        ),
+        (
+            "member layouts per instance",
+            "struct Wide { a: i64, b: i64, c: i64 } struct Cell<T> { head: T, tail: i32 }
+             fn tail<T>(cell: Cell<T>) -> i32 { let copy: Cell<T> = cell; return copy.tail; }
+             fn main() -> i32 {
+                 print(tail(Cell { head: 1, tail: 3 }));
+                 print(tail(Cell { head: Wide { a: 1, b: 2, c: 3 }, tail: 5 }));
+                 print(tail(Cell { head: true, tail: 7 }));
+                 return 0;
+             }",
+            &b"3\n5\n7\n"[..],
+            0,
+        ),
+    ] {
+        execute_with_status(label, source, stdout, status);
+    }
+}
+
 #[test]
 fn imported_trait_contract_records_preserve_ordinary_generic_execution() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

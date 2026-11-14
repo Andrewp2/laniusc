@@ -76,8 +76,11 @@ uint2 row_call(uint call, uint caller)
     uint token;
     uint callee;
     uint2 masks;
+    // The edge's environment as the closure read it: the body passes have
+    // republished call_env_ct since (instance_closure_edge_env).
     if (closure_call(call, token, callee, masks))
-        return entry_call(callee, closure_instance_env(token, callee, masks, caller, subst_spare, env_spare));
+        return entry_call(callee, closure_instance_env_of(instance_closure_edge_env[call], callee, masks,
+            caller, subst_spare, env_spare));
     if (closure_bound_call(call, token))
     {
         uint env;

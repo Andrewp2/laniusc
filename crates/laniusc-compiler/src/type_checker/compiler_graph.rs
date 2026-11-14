@@ -3047,24 +3047,13 @@ fn build_graph(
     )?;
     graph_resources!(graph, Input {
         compact_hir_count in HirNodes => 4;
-        compact_hir_core in HirNodes => hir_rows * 16;
-        _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
-        _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
-        _compact_const_value as "compact_const_value" in HirNodes => hir_rows * 4;
         _compact_const_type as "compact_const_type" in HirNodes => hir_rows * 4;
         compact_hir_semantic_facts in HirNodes =>
             hir_rows * core::mem::size_of::<HirSemanticFacts>() as u64;
         _compact_type_root_owner as "compact_type_root_owner" in HirNodes => hir_rows * 4;
         _compact_type_alias_target as "compact_type_alias_target" in HirNodes => hir_rows * 4;
-        _compact_fn_return_type as "compact_fn_return_type" in HirNodes => hir_rows * 4;
         _compact_param_count as "compact_param_count" in Declarations => 4;
-        _compact_params as "compact_params" in Declarations =>
-            hir_rows * core::mem::size_of::<HirParam>() as u64;
         _compact_call_arg_count as "compact_call_arg_count" in CallArguments => 4;
-        _compact_call_args as "compact_call_args" in CallArguments =>
-            hir_rows * core::mem::size_of::<HirCallArg>() as u64;
-        _compact_hir_expr_parent as "compact_hir_expr_parent" in HirNodes => hir_rows * 4;
-        _compact_hir_nearest_loop as "compact_hir_nearest_loop" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_block as "compact_hir_nearest_block" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_control as "compact_hir_nearest_control" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_fn as "compact_hir_nearest_fn" in HirNodes => hir_rows * 4;
@@ -3075,25 +3064,48 @@ fn build_graph(
         _compact_path_segments as "compact_path_segments" in Tokens =>
             token_rows * core::mem::size_of::<HirPathSegment>() as u64;
         _compact_variant_payload_start as "compact_variant_payload_start" in Declarations => hir_rows * 4;
-        _compact_array_element_start as "compact_array_element_start" in HirNodes => hir_rows * 4;
-        _compact_array_element_count as "compact_array_element_count" in HirNodes => hir_rows * 4;
         _compact_array_element_row_count as "compact_array_element_row_count" in Declarations => 4;
-        _compact_array_elements as "compact_array_elements" in Declarations =>
-            hir_rows * core::mem::size_of::<HirArrayElement>() as u64;
         _compact_match_arm_count as "compact_match_arm_count" in HirNodes => 4;
-        _compact_match_arms as "compact_match_arms" in HirNodes =>
-            hir_rows * core::mem::size_of::<HirMatchArm>() as u64;
-        _compact_match_payload_start as "compact_match_payload_start" in HirNodes => hir_rows * 4;
-        _compact_match_payload_count as "compact_match_payload_count" in HirNodes => hir_rows * 4;
         _compact_match_pattern_payload_count as "compact_match_pattern_payload_count" in HirNodes => hir_rows * 4;
         compact_match_payload_row_count in HirNodes => 4;
-        _compact_match_payloads as "compact_match_payloads" in HirNodes =>
-            hir_rows * core::mem::size_of::<HirMatchPayload>() as u64;
         _compact_string_count as "compact_string_count" in HirNodes => 4;
-        _compact_strings as "compact_strings" in HirNodes =>
-            hir_rows * core::mem::size_of::<HirString>() as u64;
         _compact_string_data_words as "compact_string_data_words" in Tokens => token_rows * 4;
         _compact_string_pool_len as "compact_string_pool_len" in HirNodes => 4;
+    });
+    // Compact HIR and side tables the execution rows of the instance table
+    // extend in place after the parser's rows (closure/instance_exec.slang).
+    // The parser owns them; rows below its counts are never written here.
+    graph_resources!(graph, External {
+        compact_hir_core in HirNodes => hir_rows * 16;
+        _compact_hir_links as "compact_hir_links" in HirNodes => hir_rows * 16;
+        _compact_hir_payload as "compact_hir_payload" in HirNodes => hir_rows * 16;
+        _compact_fn_return_type as "compact_fn_return_type" in HirNodes => hir_rows * 4;
+        _compact_const_value as "compact_const_value" in HirNodes => hir_rows * 4;
+        _compact_hir_expr_parent as "compact_hir_expr_parent" in HirNodes => hir_rows * 4;
+        _compact_hir_expr_root as "compact_hir_expr_root" in HirNodes => hir_rows * 4;
+        _compact_hir_nearest_loop as "compact_hir_nearest_loop" in HirNodes => hir_rows * 4;
+        _compact_param_ranges as "compact_param_ranges" in HirNodes =>
+            hir_rows * core::mem::size_of::<HirRange>() as u64;
+        compact_generic_param_ranges in HirNodes =>
+            hir_rows * core::mem::size_of::<HirRange>() as u64;
+        _compact_array_element_start as "compact_array_element_start" in HirNodes => hir_rows * 4;
+        _compact_array_element_count as "compact_array_element_count" in HirNodes => hir_rows * 4;
+        _compact_call_args as "compact_call_args" in CallArguments =>
+            hir_rows * core::mem::size_of::<HirCallArg>() as u64;
+        _compact_fields as "compact_fields" in Declarations =>
+            hir_rows * core::mem::size_of::<HirField>() as u64;
+        _compact_match_arms as "compact_match_arms" in HirNodes =>
+            hir_rows * core::mem::size_of::<HirMatchArm>() as u64;
+        _compact_match_payloads as "compact_match_payloads" in HirNodes =>
+            hir_rows * core::mem::size_of::<HirMatchPayload>() as u64;
+        _compact_array_elements as "compact_array_elements" in Declarations =>
+            hir_rows * core::mem::size_of::<HirArrayElement>() as u64;
+        _compact_strings as "compact_strings" in HirNodes =>
+            hir_rows * core::mem::size_of::<HirString>() as u64;
+        _compact_params as "compact_params" in Declarations =>
+            hir_rows * core::mem::size_of::<HirParam>() as u64;
+        _compact_match_payload_start as "compact_match_payload_start" in HirNodes => hir_rows * 4;
+        _compact_match_payload_count as "compact_match_payload_count" in HirNodes => hir_rows * 4;
     });
 
     // Function return references are initialized by the physical type-instance
@@ -3245,8 +3257,6 @@ fn build_graph(
             hir_rows * core::mem::size_of::<HirPredicate>() as u64;
         _token_file_id as "token_file_id" in Tokens => token_rows * 4;
         _compact_field_count as "compact_field_count" in Declarations => 4;
-        _compact_fields as "compact_fields" in Declarations =>
-            hir_rows * core::mem::size_of::<HirField>() as u64;
     });
     graph_resources!(graph, Workspace {
         _module_type_path_type as "module_type_path_type" in Tokens => token_rows * 4;
@@ -3486,8 +3496,6 @@ fn build_graph(
         _compact_generic_params as "compact_generic_params" in HirNodes =>
             token_rows * core::mem::size_of::<HirGenericParam>() as u64;
         _compact_generic_param_types as "compact_generic_param_types" in HirNodes => token_rows * 4;
-        compact_generic_param_ranges in HirNodes =>
-            hir_rows * core::mem::size_of::<HirRange>() as u64;
         _compact_variant_count as "compact_variant_count" in HirNodes => 4;
         _compact_variants as "compact_variants" in HirNodes =>
             token_rows * core::mem::size_of::<HirVariant>() as u64;
@@ -3534,8 +3542,6 @@ fn build_graph(
         token_rows * 4,
     )?;
     graph_resources!(graph, Input {
-        _compact_param_ranges as "compact_param_ranges" in HirNodes =>
-            hir_rows * core::mem::size_of::<HirRange>() as u64;
         _compact_type_arg_count as "compact_type_arg_count" in HirNodes => 4;
         _compact_type_args as "compact_type_args" in HirNodes =>
             hir_rows * core::mem::size_of::<HirTypeArg>() as u64;
@@ -6739,9 +6745,8 @@ fn build_graph(
             "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
-    // The instance table (D2, behind `LANIUS_EXPERIMENT=instance-table`)
-    // realizes the closure's instances' rows from the final expression
-    // references.
+    // The instance table (D2) realizes the closure's instances' rows from
+    // the final expression references.
     super::instance_closure_passes::register_instance_table_passes(
         &mut graph,
         kernels,
@@ -6823,6 +6828,22 @@ fn build_graph(
         super::LOCAL_CONST_FOLD_ROUNDS,
         SEMANTIC_LOCAL_CONST_FOLD_ROUND_PASS,
         SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS,
+    )?;
+    // The table's selected instances become execution rows lowering reads
+    // like the job's own (closure/instance_exec.slang), once every checked
+    // fact of their templates is final.
+    super::instance_closure_passes::register_instance_exec_passes(
+        &mut graph,
+        kernels,
+        hir_rows,
+        reflected_bindings![
+            "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
+        reflected_bindings![
+            "public_decl_index_by_hir" => _interface_public_decl_index_by_hir,
+        ],
     )?;
     CALLS_EXPLICIT_APPLICATIONS_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;

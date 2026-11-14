@@ -69,10 +69,20 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     poisoned: bool,
     /// Admitted origins of each unit's instance closure (D1), by unit:
     /// (instantiation depth, origin call).
-    closure_origins: BTreeMap<[u32; 2], Vec<(u32, AdmittedCall)>>,
+    closure_origins: BTreeMap<[u32; 2], Vec<ClosureOrigin>>,
     /// Each exact admitted origin projects its implementation applications at
     /// most once. These owning capabilities never enter the cross-job cache.
     impl_applications: BTreeMap<u32, Arc<ReplayImplApplications>>,
+}
+
+/// One admitted origin of a unit's instance closure (D1).
+pub(in crate::compiler::gpu_compiler) struct ClosureOrigin {
+    /// Instantiation depth.
+    pub depth: u32,
+    /// The instance's row in the unit's GPU closure table, for an instance
+    /// of the unit's own body; None for a dependency body's (D1b).
+    pub closure_index: Option<u32>,
+    pub call: AdmittedCall,
 }
 
 /// A host span named for one source unit (or none), recorded only while
@@ -170,15 +180,16 @@ impl NativeProgramSession {
                 .original_facts
                 .instance_closure()
                 .map_or(&[][..], |closure| closure.instances.as_slice());
+            // (call, (depth, local closure index))
             let (calls, depths): (Vec<_>, Vec<_>) = local
                 .iter()
-                .map(|instance| (&instance.call, instance.depth))
+                .map(|instance| (&instance.call, (instance.depth, Some(instance.index))))
                 .chain(
                     dependency_calls
                         .get(&snapshot.unit)
                         .into_iter()
                         .flatten()
-                        .map(|(call, depth)| (call, *depth)),
+                        .map(|(call, depth)| (call, (*depth, None))),
                 )
                 .filter(|(call, _)| call.has_closed_arguments())
                 .map(|(call, depth)| (call.clone(), depth))
@@ -216,24 +227,26 @@ impl NativeProgramSession {
             let origins = appended
                 .into_iter()
                 .map(|(index, context)| {
-                    Ok((
-                        depths[index],
-                        packet.admitted_closure_call(snapshot, context, calls[index].call_hir)?,
-                    ))
+                    let (depth, closure_index) = depths[index];
+                    Ok(ClosureOrigin {
+                        depth,
+                        closure_index,
+                        call: packet.admitted_closure_call(snapshot, context, calls[index].call_hir)?,
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?;
             let origins = origins
                 .into_iter()
-                .filter(|(_, call)| call.is_concrete())
+                .filter(|origin| origin.call.is_concrete())
                 .collect::<Vec<_>>();
             result.closure_origins.insert(unit, origins);
         }
         Ok(result)
     }
 
-    /// The admitted instance-closure origins of an original unit:
-    /// (instantiation depth, origin call), in closure order.
-    pub fn instance_closure_origins(&self, unit: [u32; 2]) -> &[(u32, AdmittedCall)] {
+    /// The admitted instance-closure origins of an original unit, in
+    /// closure order.
+    pub fn instance_closure_origins(&self, unit: [u32; 2]) -> &[ClosureOrigin] {
         self.closure_origins.get(&unit).map_or(&[], Vec::as_slice)
     }
 

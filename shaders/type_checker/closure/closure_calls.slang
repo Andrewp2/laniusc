@@ -130,7 +130,13 @@ bool closure_bound_call(uint call, out uint token)
 uint closure_instance_env(uint token, uint callee, uint2 masks, uint caller,
     inout CtSpare subst_spare, inout CtSpare env_spare)
 {
-    uint environment = ct_call_env(token).x;
+    return closure_instance_env_of(ct_call_env(token).x, callee, masks, caller, subst_spare, env_spare);
+}
+
+// closure_instance_env for the call whose value environment is `environment`.
+uint closure_instance_env_of(uint environment, uint callee, uint2 masks, uint caller,
+    inout CtSpare subst_spare, inout CtSpare env_spare)
+{
     if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_ENV) return CT_NONE;
     uint3 words = ct_words(environment);
     if (words.y != masks.x || words.z != masks.y) return CT_NONE;

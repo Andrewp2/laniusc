@@ -75,6 +75,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (has_generic_environment(owner))
     {
         ic_link_edge(owner, call);
+        instance_closure_edge_env[call] = ct_call_env(token).x;
         // The callee's environment depends on its caller's instances, and
         // the caller's body holds a call the replays patch.
         inplace_block(owner);

@@ -81,6 +81,52 @@ const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final
 const TABLE_CALLS_KERNEL: &str = "type_checker/closure/07_table_calls";
 /// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
 pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
+/// Execution rows of the table (closure/instance_exec.slang).
+pub(super) const INSTANCE_EXEC_CLEAR_PASS: &str = "type_check.instance_exec.clear";
+pub(super) const INSTANCE_EXEC_SELECT_PASS: &str = "type_check.instance_exec.select";
+pub(super) const INSTANCE_EXEC_MEMBERS_PASS: &str = "type_check.instance_exec.members";
+pub(super) const INSTANCE_EXEC_LAYOUT_PASS: &str = "type_check.instance_exec.layout";
+pub(super) const INSTANCE_EXEC_NATIVE_WORDS_CLEAR_PASS: &str =
+    "type_check.instance_exec.native_words.clear";
+pub(super) const INSTANCE_EXEC_NATIVE_WORDS_PASS: &str = "type_check.instance_exec.native_words";
+pub(super) const INSTANCE_EXEC_ROWS_PASS: &str = "type_check.instance_exec.rows";
+pub(super) const INSTANCE_EXEC_TABLES_PASS: &str = "type_check.instance_exec.tables";
+pub(super) const INSTANCE_EXEC_COUNTS_PASS: &str = "type_check.instance_exec.counts";
+const EXEC_SELECT_KERNEL: &str = "type_checker/closure/08_exec_select";
+const EXEC_MEMBERS_KERNEL: &str = "type_checker/closure/08a_exec_members";
+const EXEC_LAYOUT_KERNEL: &str = "type_checker/closure/08b_exec_layout";
+const EXEC_ROWS_KERNEL: &str = "type_checker/closure/09_exec_rows";
+const EXEC_TABLES_KERNEL: &str = "type_checker/closure/09b_exec_tables";
+const EXEC_COUNTS_KERNEL: &str = "type_checker/closure/09c_exec_counts";
+const NATIVE_WORDS_KERNEL: &str = "type_checker/semantic/artifact/01c_generic_native_words";
+/// Words of `instance_exec_counts` (`EX_COUNT_WORDS`).
+pub(super) const INSTANCE_EXEC_COUNT_WORDS: u64 = 20;
+/// `uint4` words of one `instance_exec_entries` record (`EX_ENTRY_WORDS`).
+const INSTANCE_EXEC_ENTRY_QUADS: u64 = 8;
+/// Table entries one job ranks at most (`IT_RANK_LIMIT`).
+const INSTANCE_TABLE_RANK_LIMIT: u64 = 16384;
+/// Lowering's token tables hold the job's token capacity plus this share
+/// of it for the execution rows' virtual tokens
+/// (`EX_VIRTUAL_TOKEN_DIVISOR` in 08b_exec_layout.slang).
+pub(crate) const EXEC_VIRTUAL_TOKEN_DIVISOR: u32 = 4;
+/// The row counts lowering reads (09c_exec_counts.slang), each the job's
+/// own rows plus its execution rows.
+pub(crate) const EXEC_LOWERING_COUNTS: [&str; 8] = [
+    "exec_hir_count",
+    "exec_call_arg_count",
+    "exec_field_count",
+    "exec_match_arm_count",
+    "exec_match_payload_row_count",
+    "exec_array_element_row_count",
+    "exec_string_count",
+    "exec_param_count",
+];
+
+/// The token capacity lowering needs for a job with `tokens` capacity:
+/// room for the execution rows' virtual tokens after the job's own.
+pub(crate) fn exec_lowering_token_capacity(tokens: u32) -> u32 {
+    tokens.saturating_add(tokens / EXEC_VIRTUAL_TOKEN_DIVISOR)
+}
 /// Row dispatches ahead of the final one (as the export's retries).
 const TABLE_ROW_RETRIES: usize = 4;
 /// The job's dependency closure summaries (D1b; closure_summary.rs).
@@ -149,6 +195,7 @@ pub(super) fn register_instance_closure_passes(
     storage(graph, "instance_closure_targets", instances * 16)?;
     let head = storage(graph, "instance_closure_edge_head", hir_rows.max(1) * 4)?;
     storage(graph, "instance_closure_edge_next", hir_rows.max(1) * 4)?;
+    storage(graph, "instance_closure_edge_env", hir_rows.max(1) * 4)?;
     let inplace_owner = storage(graph, "instance_inplace_owner", hir_rows.max(1) * 4)?;
     let inplace_counts =
         storage(graph, "instance_inplace_counts", INSTANCE_INPLACE_COUNT_WORDS * 4)?;
@@ -202,7 +249,8 @@ pub(super) fn register_instance_closure_passes(
     )?;
     // Mark writes every instance row and edge link it appends before any
     // pass reads it, and readers stay below the appended counts; the
-    // argument table only reserves its blocks here (export fills them).
+    // argument table only reserves its blocks here (export fills them); the
+    // table reads an edge environment only for a call mark linked.
     graph.mark_pass_bindings_initialize(
         INSTANCE_CLOSURE_MARK_PASS,
         &[
@@ -210,6 +258,7 @@ pub(super) fn register_instance_closure_passes(
             "instance_closure_refs",
             "instance_closure_targets",
             "instance_closure_edge_next",
+            "instance_closure_edge_env",
         ],
     )?;
     // Roots into the dependencies' summary functions append after mark's.
@@ -358,9 +407,8 @@ pub(super) fn register_instance_table_passes(
 ) -> Result<(), String> {
     // Off (the default), the passes are never recorded: the table keeps
     // one row of each buffer so the graph holds no workspace for it.
-    let enabled = instance_table_enabled();
-    let instances = if enabled { instance_capacity(hir_rows) } else { 1 };
-    let row_capacity = if enabled { instance_table_row_capacity(hir_rows) } else { 1 };
+    let instances = instance_capacity(hir_rows);
+    let row_capacity = instance_table_row_capacity(hir_rows);
     let counts = storage(graph, "instance_table_counts", INSTANCE_TABLE_COUNT_WORDS * 4)?;
     storage(graph, "instance_table_keys", instances * 16)?;
     storage(graph, "instance_table", instances * 32)?;
@@ -432,16 +480,128 @@ pub(super) fn register_instance_table_passes(
     Ok(())
 }
 
-/// `LANIUS_EXPERIMENT=instance-table` builds the instance table in original
-/// jobs that run the closure (D2, behind its flag);
-/// `LANIUS_CHECK=instance-table` also reads it back and checks it against
-/// every copy run's own types.
-pub(in crate::type_checker) fn instance_table_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| instance_table_checked()
-        || crate::options::get().experiment.instance_table)
+/// Declares the execution rows of the instance table
+/// (closure/instance_exec.slang) and registers their passes, after the local
+/// constant folds. `native_words_bindings` as for 01c_generic_native_words,
+/// which runs again for the rows the table realized. The counts pass runs
+/// in every job.
+pub(super) fn register_instance_exec_passes(
+    graph: &mut CompilerGraphBuilder,
+    kernels: &impl crate::gpu::kernels::KernelReflections,
+    hir_rows: u64,
+    native_words_bindings: &[ReflectedResourceBinding],
+    exec_bindings: &[ReflectedResourceBinding],
+) -> Result<(), String> {
+    let entries = instance_capacity(hir_rows).min(INSTANCE_TABLE_RANK_LIMIT);
+    let counts = storage(graph, "instance_exec_counts", INSTANCE_EXEC_COUNT_WORDS * 4)?;
+    storage(graph, "instance_exec_entries", entries * INSTANCE_EXEC_ENTRY_QUADS * 16)?;
+    storage(graph, "instance_exec_list", entries * 4)?;
+    storage(graph, "instance_exec_row_facts", instance_table_row_capacity(hir_rows) * 16)?;
+    for name in ["instance_exec_args", "instance_exec_table_args"] {
+        graph.add_resource(ResourceDesc {
+            name,
+            domain: ResourceDomain::DispatchArguments,
+            class: ResourceClass::Workspace,
+            bytes: 12,
+            usage: WorkspaceUsageClass::StorageIndirect,
+        })?;
+    }
+    for name in EXEC_LOWERING_COUNTS {
+        graph.add_storage(name, ResourceDomain::HirNodes, ResourceClass::Output, 4)?;
+    }
+    graph.add_pass(PassDesc {
+        name: INSTANCE_EXEC_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Types,
+        accesses: vec![PassAccess::write("instance_exec_counts", counts)],
+    })?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_SELECT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXEC_SELECT_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_SELECT_PASS, "instance_closure_args")?;
+    // Selection writes every entry it ranks before layout reads it; the
+    // list and member words it binds through the module are written by
+    // layout and the member pass before any pass reads them.
+    graph.mark_pass_bindings_initialize(
+        INSTANCE_EXEC_SELECT_PASS,
+        &["instance_exec_entries", "instance_exec_list", "instance_exec_row_facts"],
+    )?;
+    let memo = graph
+        .resource_id("type_native_word_memo")
+        .ok_or_else(|| "type_native_word_memo is not declared".to_string())?;
+    graph.add_pass(PassDesc {
+        name: INSTANCE_EXEC_NATIVE_WORDS_CLEAR_PASS,
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::Types,
+        accesses: vec![PassAccess::write("type_native_word_memo", memo)],
+    })?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_NATIVE_WORDS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        NATIVE_WORDS_KERNEL,
+        native_words_bindings,
+    )?;
+    // Member layouts read the native words of the realized field types.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_MEMBERS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        EXEC_MEMBERS_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_MEMBERS_PASS, "instance_table_args")?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_LAYOUT_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        EXEC_LAYOUT_KERNEL,
+        exec_bindings,
+    )?;
+    graph.mark_pass_bindings_initialize(
+        INSTANCE_EXEC_LAYOUT_PASS,
+        &["instance_exec_args", "instance_exec_table_args"],
+    )?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_ROWS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        EXEC_ROWS_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_ROWS_PASS, "instance_exec_args")?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_TABLES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        EXEC_TABLES_KERNEL,
+        exec_bindings,
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_EXEC_TABLES_PASS, "instance_exec_table_args")?;
+    graph.add_kernel_pass_by_name(
+        INSTANCE_EXEC_COUNTS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        EXEC_COUNTS_KERNEL,
+        exec_bindings,
+    )?;
+    graph.mark_pass_bindings_initialize(INSTANCE_EXEC_COUNTS_PASS, &EXEC_LOWERING_COUNTS)?;
+    Ok(())
 }
 
+/// `LANIUS_CHECK=instance-table` reads the instance table back and checks
+/// it against every copy run's own types.
 pub(crate) fn instance_table_checked() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| crate::options::get().check.instance_table)
@@ -457,6 +617,15 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     rows: ComputeOperation,
     rows_final: ComputeOperation,
     calls: ComputeOperation,
+    exec_clear: crate::gpu::operations::ClearBuffersOperation,
+    exec_select: ComputeOperation,
+    exec_members: ComputeOperation,
+    exec_layout: ComputeOperation,
+    exec_native_words_clear: crate::gpu::operations::ClearBuffersOperation,
+    exec_native_words: ComputeOperation,
+    exec_rows: ComputeOperation,
+    exec_tables: ComputeOperation,
+    exec_counts: ComputeOperation,
 }
 
 impl InstanceTableOperations {
@@ -499,7 +668,70 @@ impl InstanceTableOperations {
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
             calls: indirect(INSTANCE_TABLE_CALLS_PASS, TABLE_CALLS_KERNEL, &table_args)?,
+            exec_clear: crate::gpu::operations::ClearBuffersOperation::new(
+                graph,
+                INSTANCE_EXEC_CLEAR_PASS,
+                &[("instance_exec_counts", (&buffer("instance_exec_counts")?).into())],
+            )?,
+            exec_select: indirect(INSTANCE_EXEC_SELECT_PASS, EXEC_SELECT_KERNEL, &closure_args)?,
+            exec_members: indirect(INSTANCE_EXEC_MEMBERS_PASS, EXEC_MEMBERS_KERNEL, &table_args)?,
+            exec_layout: ComputeOperation::direct(
+                device,
+                graph,
+                resources,
+                INSTANCE_EXEC_LAYOUT_PASS,
+                &passes.kernel(EXEC_LAYOUT_KERNEL),
+                1,
+            )?,
+            exec_native_words_clear: crate::gpu::operations::ClearBuffersOperation::new(
+                graph,
+                INSTANCE_EXEC_NATIVE_WORDS_CLEAR_PASS,
+                &[("type_native_word_memo", (&buffer("type_native_word_memo")?).into())],
+            )?,
+            exec_native_words: ComputeOperation::direct(
+                device,
+                graph,
+                resources,
+                INSTANCE_EXEC_NATIVE_WORDS_PASS,
+                &passes.kernel(NATIVE_WORDS_KERNEL),
+                u32::try_from(buffer("type_expr_ref_tag")?.byte_size / 4)?,
+            )?,
+            exec_rows: indirect(INSTANCE_EXEC_ROWS_PASS, EXEC_ROWS_KERNEL, &buffer("instance_exec_args")?)?,
+            exec_tables: indirect(
+                INSTANCE_EXEC_TABLES_PASS,
+                EXEC_TABLES_KERNEL,
+                &buffer("instance_exec_table_args")?,
+            )?,
+            exec_counts: ComputeOperation::direct(
+                device,
+                graph,
+                resources,
+                INSTANCE_EXEC_COUNTS_PASS,
+                &passes.kernel(EXEC_COUNTS_KERNEL),
+                1,
+            )?,
         })
+    }
+
+    /// The execution rows of a job whose table this job built
+    /// (`active`), then the lowering's row counts, which every job writes.
+    pub(in crate::type_checker) fn record_exec(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        active: bool,
+    ) -> Result<()> {
+        self.exec_clear.record(encoder);
+        if active {
+            self.exec_select.record(encoder)?;
+            // 01c covers the type rows the table realized after it ran.
+            self.exec_native_words_clear.record(encoder);
+            self.exec_native_words.record(encoder)?;
+            self.exec_members.record(encoder)?;
+            self.exec_layout.record(encoder)?;
+            self.exec_rows.record(encoder)?;
+            self.exec_tables.record(encoder)?;
+        }
+        self.exec_counts.record(encoder)
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {

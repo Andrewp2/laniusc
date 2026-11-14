@@ -234,12 +234,9 @@ impl Default for Check {
     }
 }
 
-/// `LANIUS_EXPERIMENT`: features that are not finished.
+/// `LANIUS_EXPERIMENT`: features that are not finished. None today.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Experiment {
-    /// `instance-table`: build the instance table in original jobs.
-    pub instance_table: bool,
-}
+pub struct Experiment {}
 
 /// `LANIUS_CAPTURE`: one dispatch saved for offline replay
 /// (docs/cpu-kernel-replay.md).
@@ -493,15 +490,11 @@ impl Check {
 
 impl Experiment {
     /// The words `LANIUS_EXPERIMENT` accepts.
-    pub const WORDS: &'static [&'static str] = &["instance-table"];
+    pub const WORDS: &'static [&'static str] = &[];
 
     fn parse(value: Option<String>) -> Self {
-        let mut experiment = Self::default();
-        words("LANIUS_EXPERIMENT", value, Self::WORDS, |word, argument| match word {
-            "instance-table" => flag(&mut experiment.instance_table, argument),
-            _ => false,
-        });
-        experiment
+        words("LANIUS_EXPERIMENT", value, Self::WORDS, |_, _| false);
+        Self::default()
     }
 }
 
@@ -595,14 +588,12 @@ mod tests {
             ("LANIUS_TRACE", "stage-errors, wasm"),
             ("LANIUS_REPORT", "host-timing,resources=4096"),
             ("LANIUS_CHECK", "canonical-retry=40,lir-replays"),
-            ("LANIUS_EXPERIMENT", "instance-table"),
         ]);
         assert!(options.trace.stage_errors && options.trace.wasm && !options.trace.canonical);
         assert!(options.report.host_timing && !options.report.gpu_timing);
         assert_eq!(options.report.resources, Some(4096));
         assert_eq!(options.check.canonical_retry, 16);
         assert!(options.check.lir_replays && !options.check.validation_scopes);
-        assert!(options.experiment.instance_table);
     }
 
     #[test]
