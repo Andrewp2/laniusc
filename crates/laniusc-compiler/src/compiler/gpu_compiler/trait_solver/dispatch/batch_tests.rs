@@ -1304,7 +1304,7 @@ fn gpu_solver_workspace_alternates_catalogs_rejects_stale_capabilities_and_recov
     // Corrupt only the unpublished recipe header. This must fail GPU admission,
     // even though the reused storage previously held a successful receipt.
     Arc::make_mut(&mut Arc::get_mut(&mut malformed).unwrap().native_layout.words)[0] = 0;
-    let failed = GpuTraitSolver::admit(compiler.trait_solver_workspace.checkout(), malformed);
+    let failed = GpuTraitSolver::admit_checked(compiler.trait_solver_workspace.checkout(), malformed);
     match failed {
         Ok(_) => panic!("invalid native recipe header reused an old successful admission"),
         Err(error) => assert!(error.to_string().contains("native recipe GPU admission failed"), "{error:#}"),

@@ -25,6 +25,8 @@ pub(super) struct ProofProgress {
     pub header: Vec<u32>,
     pub receipt: [u32; 8],
     pub reserved: [u32; PROOF_STORE_TABLES],
+    /// Admitted rows per table; test hooks read pending rows past them.
+    #[cfg(test)]
     pub admitted: [u32; PROOF_STORE_TABLES],
 }
 impl ProofProgress {
@@ -56,6 +58,7 @@ impl ProofProgress {
             "solver progress has a stale or malformed batch receipt"
         );
         let mut reserved = [0; PROOF_STORE_TABLES];
+        #[cfg(test)]
         let mut admitted = [0; PROOF_STORE_TABLES];
         for table in 0..PROOF_STORE_TABLES {
             let base = PROOF_STORE_DIRECTORY as usize + table * 6;
@@ -76,12 +79,16 @@ impl ProofProgress {
                 "solver progress accepted a temporary table"
             );
             reserved[table] = row[1];
-            admitted[table] = row[3];
+            #[cfg(test)]
+            {
+                admitted[table] = row[3];
+            }
         }
         Ok(Self {
             header,
             receipt,
             reserved,
+            #[cfg(test)]
             admitted,
         })
     }

@@ -421,6 +421,17 @@ publishes authority. Malformed proof kinds or fields leave persistent accepted
 prefixes unchanged and poison the failed packet. Catalog shaders bind only their
 catalog resources; proof-store resources belong to proof matching/admission.
 
+A check records its solver rounds, then a finish point
+(`proof_solver_wave.slang`). The finish point runs the round-start quiescence
+test. A quiescent solve publishes its roots, reduces its calls and writes the
+batch receipt there. Otherwise the host records twice as many rounds and
+another finish point. The first submit records five rounds, or none for a
+check without source obligations. One readback per submit returns the solver
+state and every result row. Wave templates are built once per job and reused
+while they bind the same buffers. Catalog admission does not read its receipts.
+The first check's readback reads them, and a failed admission is that check's
+error.
+
 Source checking retains accepted implementation prerequisites as well as callable
 bounds. Parameter lookup returns the declaration token, preserving lexical
 shadowing. Named owners use their name token; unnamed implementation owners use

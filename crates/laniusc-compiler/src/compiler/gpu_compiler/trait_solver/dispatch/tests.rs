@@ -46,7 +46,7 @@ fn admit_catalog(
     compiler: &GpuCompiler<'_>,
     catalog: Arc<FrozenCatalog>,
 ) -> Result<GpuTraitSolver> {
-    GpuTraitSolver::admit(
+    GpuTraitSolver::admit_checked(
         compiler.trait_solver_workspace.checkout(),
         catalog,
     )

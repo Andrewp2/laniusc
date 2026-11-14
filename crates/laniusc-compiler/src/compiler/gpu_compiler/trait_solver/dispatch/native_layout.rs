@@ -80,6 +80,7 @@ impl GpuTraitSolver {
         limits: NativeLayoutWorkLimits,
     ) -> Result<Vec<MaterializedProofType>> {
         ensure!(!self.query_scratch_poisoned, "a prior query did not complete its scratch readbacks");
+        ensure!(!self.admission_pending.load(std::sync::atomic::Ordering::Relaxed), "no check has read the catalog admission receipts");
         ensure!(sources.len() <= 64, "native layout query exceeds 64 roots");
         ensure!(limits.nodes <= 1024 && limits.edges <= 16384 && limits.groups <= 1024
             && limits.payload_roots <= 16384 && limits.visits <= ROOT_VISITS as u32,

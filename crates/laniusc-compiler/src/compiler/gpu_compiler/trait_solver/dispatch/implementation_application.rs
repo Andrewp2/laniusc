@@ -237,6 +237,7 @@ impl GpuTraitSolver {
             !self.query_scratch_poisoned,
             "a prior query did not complete its scratch readbacks"
         );
+        ensure!(!self.admission_pending.load(std::sync::atomic::Ordering::Relaxed), "no check has read the catalog admission receipts");
         ensure!(
             !packet.poisoned
                 && Arc::ptr_eq(&self.gpu_owner, &packet.gpu_owner)

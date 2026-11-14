@@ -116,7 +116,8 @@ impl GpuProofReadback {
 
 /// One admitted frozen catalog and its device/queue ownership. No independent
 /// catalog cache; this object lives inside the existing program compilation job.
-/// Successful construction is the sole transition that freezes GPU catalog data.
+/// Construction submits the catalog's GPU admission, the sole transition that
+/// freezes GPU catalog data; the first check reports a failed admission.
 pub(super) struct GpuTraitSolver {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -135,6 +136,11 @@ pub(super) struct GpuTraitSolver {
     layout_query_slots: Vec<workspace::WorkspaceSlot>,
     implementation_query_slot: Option<workspace::WorkspaceSlot>,
     query_scratch_poisoned: bool,
+    /// Solver wave templates of this job (kernels::WaveTemplate).
+    wave_templates: Vec<kernels::WaveTemplate>,
+    /// Catalog and native-recipe admission ran but no readback has read
+    /// their receipts yet: the first check reads them with its results.
+    admission_pending: std::sync::atomic::AtomicBool,
 }
 
 /// A host packet and precisely the GPU arenas that contain its row closure.
@@ -274,29 +280,8 @@ impl GpuTraitSolver {
         recipe_kernels.record(&device, &mut encoder, &catalog, &storage, &input, &output, &native_recipes)?;
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
-        let region = ReadbackRegion::from_buffer(
-            &storage.buffer,
-            u64::from(catalog.outputs[0].offset) * 4,
-            32,
-            "catalog receipt",
-        )?;
-        let recipe_region = ReadbackRegion::from_buffer(
-            &native_recipes.buffer, u64::from(recipe_status.offset) * 4, 32, "native recipe receipt",
-        )?;
-        let raw = readback.read_regions(
-            &device,
-            &queue,
-            &[region, recipe_region],
-            "trait solver catalog and recipe receipts",
-        )?;
-        let status = one_status(&raw[0])?;
-        ensure!(
-            status[0] == 1,
-            "program catalog GPU admission/coherence failed: {status:?}"
-        );
-        let recipe_status = one_status(&raw[1])?;
-        ensure!(recipe_status[0] == 1,
-            "program native recipe GPU admission failed: {recipe_status:?}");
+        // The first check reads both admission receipts with its results
+        // (wave_readback), so the host appends calls while this runs.
         Ok(Self {
             device,
             queue,
@@ -313,7 +298,22 @@ impl GpuTraitSolver {
             layout_query_slots: Vec::new(),
             implementation_query_slot: None,
             query_scratch_poisoned: false,
+            wave_templates: Vec::new(),
+            admission_pending: std::sync::atomic::AtomicBool::new(true),
         })
+    }
+
+    /// Admits `catalog` and checks a packet of its original calls, which
+    /// reads the admission receipts: a failed admission is this call's error.
+    #[cfg(test)]
+    pub(super) fn admit_checked(workspace: WorkspaceLease, catalog: Arc<FrozenCatalog>) -> Result<Self> {
+        let mut gpu = Self::admit(workspace, catalog.clone())?;
+        let mut packet = gpu.new_packet()?;
+        for snapshot in &catalog.snapshots {
+            packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
+        }
+        gpu.check(&mut packet)?;
+        Ok(gpu)
     }
 
     pub fn new_packet(&self) -> Result<GpuPacket> {
@@ -414,15 +414,17 @@ impl GpuTraitSolver {
 
     /// Run GPU waves using only row counters. A stopped attempt returns its
     /// sticky GPU receipt; only an explicit table-capacity failure can retry.
+    #[allow(clippy::too_many_arguments)]
     fn run_solver_attempt(
         &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
         capacities: [u32; PROOF_STORE_TABLES],
         retry: bool,
-    ) -> Result<Option<proof::ProofProgress>> {
+    ) -> Result<AttemptEnd> {
         let batch = self.batch_kernels.as_ref().expect("loaded batch kernels");
         let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
         let mut commands = self.wave_encoder();
@@ -441,8 +443,6 @@ impl GpuTraitSolver {
             )?;
             attempt_plan.assumption_index = Span::new(0, layout.input_suffix_counts[14])?;
         }
-        // Resources are rebuilt per recording: the proof arena may grow in
-        // place between submissions (grow_for_demand).
         let record = |packet: &GpuPacket, commands: &mut wgpu::CommandEncoder, phase: u32, span: Span| {
             solver.record(
                 &self.device,
@@ -475,13 +475,17 @@ impl GpuTraitSolver {
             packet.proof_resources(submission),
         )?;
         record(packet, &mut commands, 48, plan.obligations)?;
+        let state = kernels::wave_state(&self.device, &self.storage, plan.calls)?;
+        let demand = kernels::proof_demand(&self.storage)?;
+        // The GPU admits the batch while the host records the rounds.
+        self.submit_wave(commands);
         #[cfg(test)]
         if packet.constant_admission_fault.read().unwrap().is_some()
             || packet.proof_admission_fault.read().unwrap().is_some()
         {
-            return self.run_paused_solver_waves(packet, layout, plan, submission, commands);
+            return self.run_paused_solver_waves(templates, packet, layout, plan, submission, &state, &demand);
         }
-        self.run_solver_waves(packet, layout, plan, submission, commands)
+        self.run_solver_waves(templates, packet, layout, plan, submission, &state, &demand)
     }
 
     fn wave_encoder(&self) -> wgpu::CommandEncoder {
@@ -495,46 +499,39 @@ impl GpuTraitSolver {
         self.queue.submit(Some(commands.finish()));
     }
 
-    /// The steps after quiescence. The GPU classifies unresolved finite
-    /// cycles and missing leaves and checks every source obligation before
-    /// the native publication gate.
-    fn finish_solver_waves(
+    /// The template of `pieces` with `chunks` chunk steps over this packet's
+    /// arenas (kernels::ProofKernels::wave_template).
+    #[allow(clippy::too_many_arguments)]
+    fn template(
         &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
         packet: &GpuPacket,
-        plan: &BatchPlan,
         submission: &Submission,
-        progress: &proof::ProofProgress,
-        words: &[u32],
-        mut commands: wgpu::CommandEncoder,
-    ) -> Result<()> {
-        use kernels::wave;
-        ensure!(
-            words[wave::WORK_CURSOR] == progress.admitted[proof::WORK]
-                && words[wave::QUEUE_CURSOR] == progress.admitted[proof::QUEUE]
-                && words[wave::REQUIREMENT_CURSOR] == progress.admitted[9],
-            "solver wave finished before quiescence"
-        );
-        self.proof_kernels.as_ref().expect("loaded proof kernels").record(
+        pieces: &[kernels::WavePiece],
+        chunks: u32,
+        state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
+    ) -> Result<usize> {
+        self.proof_kernels.as_ref().expect("loaded proof kernels").wave_template(
+            templates,
             &self.device,
-            &mut commands,
-            64,
-            Span::new(0, progress.admitted[13])?,
+            pieces,
+            chunks,
+            state,
+            demand,
             &self.storage,
             &packet.input,
             &packet.output,
             packet.proof_resources(submission),
-        )?;
-        self.batch_kernels.as_ref().expect("loaded batch kernels").record_after_solver(
-            &self.device,
-            &mut commands,
-            plan,
-            &self.storage,
-            &packet.input,
-            &packet.output,
-            packet.proof_resources(submission),
-        )?;
+        )
+    }
+
+    /// Records the templates at `order` in one submit.
+    fn submit_templates(&self, templates: &[kernels::WaveTemplate], order: &[usize]) {
+        let recorded = order.iter().map(|&index| &templates[index]).collect::<Vec<_>>();
+        let mut commands = self.wave_encoder();
+        self.proof_kernels.as_ref().expect("loaded proof kernels").record_waves(&mut commands, &recorded);
         self.submit_wave(commands);
-        Ok(())
     }
 
     /// The wave driver while a test fault is armed: one round at a time, with
@@ -542,14 +539,17 @@ impl GpuTraitSolver {
     /// steps and their order are those of run_solver_waves
     /// (kernels::wave_segment).
     #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
     fn run_paused_solver_waves(
         &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
-        mut commands: wgpu::CommandEncoder,
-    ) -> Result<Option<proof::ProofProgress>> {
+        state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
+    ) -> Result<AttemptEnd> {
         use kernels::{WavePiece, WavePoint, wave};
         #[derive(Clone, Copy)]
         enum Hook {
@@ -559,9 +559,6 @@ impl GpuTraitSolver {
             Selection,
             ReadyProofs,
         }
-        let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
-        let state = kernels::wave_state(&self.device, &self.storage)?;
-        let demand = kernels::proof_demand(&self.storage)?;
         let mut chunks = wave_chunks(plan.obligations.count);
         let mut cuts = std::collections::VecDeque::from([(
             vec![WavePiece::whole(WavePoint::FirstWork)],
@@ -595,25 +592,28 @@ impl GpuTraitSolver {
                     ],
                     Hook::ReadyProofs,
                 ));
-                cuts.push_back((vec![WavePiece::whole(WavePoint::Emitted)], Hook::None));
+                // Each round ends at a finish point: a quiescent solve
+                // finishes there.
+                cuts.push_back((
+                    vec![WavePiece::whole(WavePoint::Emitted), WavePiece::whole(WavePoint::Finish)],
+                    Hook::None,
+                ));
             }
             let (pieces, hook) = cuts.front_mut().expect("a recorded cut");
-            let template = solver.wave_pieces_template(&self.device, pieces, chunks, &state, &demand,
-                &self.storage, &packet.input, &packet.output, packet.proof_resources(submission))?;
-            solver.record_waves(&mut commands, &[&template]);
-            self.submit_wave(commands);
-            let (progress, words, demanded) = self.wave_progress(packet, layout, submission, &state, &demand)?;
-            wave_fault(&words)?;
-            if !progress.is_building() {
-                return Ok(Some(progress));
+            let template = self.template(templates, packet, submission, pieces, chunks, state, demand)?;
+            self.submit_templates(templates, &[template]);
+            let readback = self.wave_readback(packet, layout, submission, state, demand)?;
+            wave_fault(&readback.state)?;
+            if readback.state[wave::STOP] == wave::DONE {
+                return Ok(AttemptEnd { stopped: None, readback });
             }
-            commands = self.wave_encoder();
+            let progress = readback.progress(packet, submission)?;
+            if !progress.is_building() {
+                return Ok(AttemptEnd { stopped: Some(progress), readback });
+            }
+            let words = &readback.state;
             match words[wave::STOP] {
                 wave::RUNNING => {}
-                wave::DONE => {
-                    self.finish_solver_waves(packet, plan, submission, &progress, &words, commands)?;
-                    return Ok(None);
-                }
                 stop @ (wave::OVERFLOW | wave::GROW) => {
                     // The stopping point plans again, with more chunk steps
                     // or after the proof store grew.
@@ -625,7 +625,7 @@ impl GpuTraitSolver {
                         .ok_or_else(|| anyhow!("solver wave stopped at {point:?}, which was not recorded"))?;
                     pieces.drain(..at);
                     if stop == wave::GROW {
-                        self.grow_for_demand(packet, &progress, &demanded)?;
+                        self.grow_for_demand(packet, &progress, &readback.demand)?;
                         demand.write(&self.queue, 0, &[0u8; PROOF_STORE_TABLES * 4]);
                     }
                     chunks = chunks.max(wave_chunks(words[wave::OVERFLOW_ROWS]));
@@ -658,92 +658,91 @@ impl GpuTraitSolver {
         }
     }
 
-    /// The solver rounds, many recorded per submit. The GPU planner computes
-    /// every step's row span from the counters (proof_solver_wave.slang), so
-    /// the host reads back only when the recorded rounds run out, a span
-    /// outgrows its recorded chunk steps, the next normalization's counted
-    /// rows do not fit the proof store, or the solver stops.
+    /// The solver rounds, many recorded per submit, then a finish point. The
+    /// GPU planner computes every step's row span from the counters
+    /// (proof_solver_wave.slang), and the finish point publishes a quiescent
+    /// solve's roots and batch receipt. So the host reads back once per
+    /// submit, and again only when the recorded rounds did not reach
+    /// quiescence, a span outgrew its recorded chunk steps, the next
+    /// normalization's counted rows do not fit the proof store, or the
+    /// solver stopped.
+    #[allow(clippy::too_many_arguments)]
     fn run_solver_waves(
         &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
         packet: &mut GpuPacket,
         layout: &OutputLayout,
         plan: &BatchPlan,
         submission: &Submission,
-        mut commands: wgpu::CommandEncoder,
-    ) -> Result<Option<proof::ProofProgress>> {
-        use kernels::{WavePoint, wave};
-        let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
-        let state = kernels::wave_state(&self.device, &self.storage)?;
-        let demand = kernels::proof_demand(&self.storage)?;
-        let chunks = wave_chunks;
-        // A template binds the proof arena, so growth builds new ones.
-        let template = |packet: &GpuPacket, points: &[WavePoint], chunks: u32| {
-            solver.wave_template(&self.device, points, chunks, &state, &demand, &self.storage,
-                &packet.input, &packet.output, packet.proof_resources(submission))
-        };
+        state: &LaniusBuffer<u32>,
+        demand: &LaniusBuffer<u32>,
+    ) -> Result<AttemptEnd> {
+        use kernels::{WavePiece, WavePoint, wave};
+        let pieces = |points: &[WavePoint]| points.iter().map(|&point| WavePiece::whole(point)).collect::<Vec<_>>();
         // The first work and the first round span every source obligation.
-        let opening_chunks = chunks(plan.obligations.count);
-        let first = template(packet, &[WavePoint::FirstWork], opening_chunks)?;
-        let mut opening = if opening_chunks > 1 {
-            Some(template(packet, &WavePoint::ROUND, opening_chunks)?)
-        } else {
-            None
-        };
-        // Later rounds record one chunk step per span. A longer span stops the
-        // rounds at its point, and the rest of that round is recorded again
-        // with enough chunk steps.
-        let mut regular = if opening.is_none() {
-            Some(template(packet, &WavePoint::ROUND, 1)?)
-        } else {
-            None
-        };
-        // Most solves finish in their first round, so the first submit records
-        // only the opening round; each later submit records twice the rounds
-        // of the one before, up to 64.
-        let mut first_due = true;
-        let mut partial: Option<kernels::WaveTemplate> = None;
-        let mut opening_due = true;
-        let mut rounds = 0u32;
+        let opening_chunks = wave_chunks(plan.obligations.count);
+        // The finish spans every root and every new call.
+        let mut finish_chunks = wave_chunks(plan.obligations.count.max(plan.calls.count));
+        // Steps recorded before the regular rounds, with their chunk steps.
+        let mut lead = vec![(pieces(&[WavePoint::FirstWork]), opening_chunks)];
+        // A solve with no source obligation has no Work: its finish point
+        // follows the first work. Others record FIRST_SUBMIT_ROUNDS rounds,
+        // the opening round with the opening chunk steps.
+        let mut rounds = if plan.obligations.count == 0 { 0 } else { FIRST_SUBMIT_ROUNDS };
+        if rounds != 0 {
+            lead.push((pieces(&WavePoint::ROUND), opening_chunks));
+            rounds -= 1;
+        }
+        let mut finish_due = true;
         loop {
-            if rounds != 0 && regular.is_none() {
-                regular = Some(template(packet, &WavePoint::ROUND, 1)?);
+            // One submit for the lead, then one per later round, so the GPU
+            // runs each while the host records the next.
+            let mut submits = vec![Vec::new()];
+            for (points, chunks) in &lead {
+                submits[0].push(self.template(templates, packet, submission, points, *chunks, state, demand)?);
             }
-            {
-                let mut recorded: Vec<&kernels::WaveTemplate> = Vec::new();
-                if first_due {
-                    recorded.push(&first);
-                }
-                recorded.extend(partial.as_ref());
-                if opening_due {
-                    recorded.push(opening.as_ref().or(regular.as_ref()).expect("opening round template"));
-                }
-                if let Some(regular) = regular.as_ref() {
-                    recorded.extend(std::iter::repeat_n(regular, rounds as usize));
-                }
-                solver.record_waves(&mut commands, &recorded);
+            // Later rounds record one chunk step per span. A longer span
+            // stops the rounds at its point, and the rest of that round is
+            // recorded again with enough chunk steps.
+            if rounds != 0 {
+                let regular = self.template(templates, packet, submission, &pieces(&WavePoint::ROUND), 1, state, demand)?;
+                submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
-            self.submit_wave(commands);
-            let (progress, words, demanded) = self.wave_progress(packet, layout, submission, &state, &demand)?;
-            wave_fault(&words)?;
+            if finish_due {
+                let finish = self.template(templates, packet, submission, &pieces(&[WavePoint::Finish]), finish_chunks, state, demand)?;
+                submits.last_mut().expect("a submit").push(finish);
+            }
+            for order in submits.iter().filter(|order| !order.is_empty()) {
+                self.submit_templates(templates, order);
+            }
+            let readback = self.wave_readback(packet, layout, submission, state, demand)?;
+            wave_fault(&readback.state)?;
+            if readback.state[wave::STOP] == wave::DONE {
+                return Ok(AttemptEnd { stopped: None, readback });
+            }
+            let progress = readback.progress(packet, submission)?;
             if !progress.is_building() {
-                return Ok(Some(progress));
+                return Ok(AttemptEnd { stopped: Some(progress), readback });
             }
-            commands = self.wave_encoder();
-            first_due = false;
+            let words = &readback.state;
             match words[wave::STOP] {
-                wave::DONE => {
-                    self.finish_solver_waves(packet, plan, submission, &progress, &words, commands)?;
-                    return Ok(None);
-                }
                 wave::OVERFLOW => {
                     let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
                         .ok_or_else(|| anyhow!("solver wave overflowed at an unknown point"))?;
-                    let resumed = template(packet, point.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    let chunks = wave_chunks(words[wave::OVERFLOW_ROWS]);
                     // The point plans again from the same counters. The
-                    // opening round follows a resumed first work.
+                    // opening round follows a resumed first work; a resumed
+                    // finish point is the whole submit.
+                    lead = vec![(pieces(point.remainder()), chunks)];
+                    if point == WavePoint::FirstWork && plan.obligations.count != 0 {
+                        lead.push((pieces(&WavePoint::ROUND), chunks));
+                    }
+                    if point == WavePoint::Finish {
+                        rounds = 0;
+                        finish_due = false;
+                        finish_chunks = chunks;
+                    }
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
-                    partial = Some(resumed);
-                    opening_due = point == WavePoint::FirstWork;
                 }
                 wave::GROW => {
                     // In-place growth at the same point. A count that growth
@@ -752,20 +751,17 @@ impl GpuTraitSolver {
                         words[wave::OVERFLOW_POINT] == WavePoint::Round as u32,
                         "solver wave grew at a point without a counted admission"
                     );
-                    self.grow_for_demand(packet, &progress, &demanded)?;
+                    self.grow_for_demand(packet, &progress, &readback.demand)?;
                     demand.write(&self.queue, 0, &[0u8; PROOF_STORE_TABLES * 4]);
-                    // Every template built so far binds the previous layout.
-                    opening = None;
-                    regular = None;
-                    let resumed = template(packet, WavePoint::Round.remainder(), chunks(words[wave::OVERFLOW_ROWS]))?;
+                    lead = vec![(pieces(WavePoint::Round.remainder()), wave_chunks(words[wave::OVERFLOW_ROWS]))];
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
-                    partial = Some(resumed);
-                    opening_due = false;
                 }
                 wave::RUNNING => {
-                    partial = None;
-                    opening_due = false;
-                    rounds = if rounds == 0 { 2 } else { (rounds * 2).min(64) };
+                    // The finish point found more Work: record twice the
+                    // rounds of the last submit, up to 64.
+                    lead.clear();
+                    rounds = (rounds.max(1) * 2).min(64);
+                    finish_due = true;
                 }
                 wave::STOPPED => {
                     return Err(anyhow!("solver wave stopped while the batch and store are building"));
@@ -775,17 +771,19 @@ impl GpuTraitSolver {
         }
     }
 
-    /// The counter readback after a wave submit: the proof-store directory,
-    /// the batch receipt, the planner state and the normalization demand.
-    fn wave_progress(
+    /// The one readback after a wave submit: the proof-store directory, the
+    /// batch receipt, the planner state and the normalization demand, then
+    /// the check's result rows, final once the finish point ran, and the
+    /// catalog admission receipts until a check reads them.
+    fn wave_readback(
         &self,
         packet: &GpuPacket,
         layout: &OutputLayout,
         submission: &Submission,
         state: &LaniusBuffer<u32>,
         demand: &LaniusBuffer<u32>,
-    ) -> Result<(proof::ProofProgress, Vec<u32>, Vec<u32>)> {
-        let regions = [
+    ) -> Result<WaveReadback> {
+        let mut regions = vec![
             ReadbackRegion::from_buffer(
                 &packet.proof.buffer,
                 0,
@@ -805,24 +803,82 @@ impl GpuTraitSolver {
                 arena::byte_len(PROOF_STORE_TABLES as u32)?,
                 "proof normalization demand",
             )?,
+            layout.region(&self.storage, &packet.output, 0, Span::new(0, 1)?)?,
+            layout.region(&self.storage, &packet.output, 2, submission.context_span)?,
+            layout.region(&self.storage, &packet.output, 4, submission.call_span)?,
+            layout.region(&self.storage, &packet.output, 3, submission.obligation_span)?,
+            layout.region(&self.storage, &packet.output, 5, submission.obligation_span)?,
         ];
+        let admission_pending = self.admission_pending.load(std::sync::atomic::Ordering::Relaxed);
+        if admission_pending {
+            let status = self.catalog.native_layout.status;
+            regions.push(ReadbackRegion::from_buffer(
+                &self.native_recipes.buffer,
+                u64::from(status.offset) * 4,
+                32,
+                "native recipe receipt",
+            )?);
+        }
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
             &regions,
             "program proof wave progress",
         )?;
-        let header = words(&raw[0])?;
-        let receipt = one_status(&raw[1])?;
-        let state = words(&raw[2])?;
-        let demand = words(&raw[3])?;
-        let progress = proof::ProofProgress::from_owned_readback(
-            packet.packet.proof_store.layout(),
-            submission,
-            header,
-            receipt,
+        let catalog_status = one_status(&raw[4])?;
+        // The catalog's admission ran in the first submit; its receipts come
+        // with the first check's readback, before any batch result.
+        if admission_pending {
+            ensure!(
+                catalog_status[0] == 1,
+                "program catalog GPU admission/coherence failed: {catalog_status:?}"
+            );
+            let recipe_status = one_status(&raw[9])?;
+            ensure!(recipe_status[0] == 1,
+                "program native recipe GPU admission failed: {recipe_status:?}");
+            self.admission_pending.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(WaveReadback {
+            proof_header: words(&raw[0])?,
+            batch_status: one_status(&raw[1])?,
+            state: words(&raw[2])?,
+            demand: words(&raw[3])?,
+            catalog_status,
+            contexts: statuses(&raw[5])?,
+            calls: statuses(&raw[6])?,
+            obligations: statuses(&raw[7])?,
+            evidence: statuses(&raw[8])?,
+        })
+    }
+
+    /// The solver attempts of one check, retried with larger capacities
+    /// only after an explicit table-capacity failure.
+    fn solve(
+        &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
+        packet: &mut GpuPacket,
+        layout: &OutputLayout,
+        plan: &BatchPlan,
+        submission: &Submission,
+    ) -> Result<WaveReadback> {
+        let mut capacities = proof::with_floor(
+            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+            &self.workspace.proof_capacity_floor(),
+            &packet.packet.proof_store,
         )?;
-        Ok((progress, state, demand))
+        let mut retry = false;
+        loop {
+            let end = self.run_solver_attempt(templates, packet, layout, plan, submission, capacities, retry)?;
+            let Some(stopped) = end.stopped else {
+                return Ok(end.readback);
+            };
+            let Some(grown) = stopped.capacity_retry(&packet.packet.proof_store)? else {
+                return Ok(end.readback);
+            };
+            PROOF_STORE_GROWTHS.with(|count| count.set(count.get() + 1));
+            capacities = grown;
+            retry = true;
+        }
     }
 
     /// Gate before body reuse/specialization and after each replay's fresh calls.
@@ -907,25 +963,12 @@ impl GpuTraitSolver {
         self.queue.submit(Some(encoder.finish()));
         drop(prepare_span);
         let solve_span = crate::gpu::trace::HostSpan::new("host.compiler", "trait_solver.check.solve");
-        let mut capacities = proof::with_floor(
-            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
-            &self.workspace.proof_capacity_floor(),
-            &packet.packet.proof_store,
-        )?;
-        let mut retry = false;
-        loop {
-            let Some(stopped) =
-                self.run_solver_attempt(packet, &layout, &plan, &submission, capacities, retry)?
-            else {
-                break;
-            };
-            let Some(grown) = stopped.capacity_retry(&packet.packet.proof_store)? else {
-                break;
-            };
-            PROOF_STORE_GROWTHS.with(|count| count.set(count.get() + 1));
-            capacities = grown;
-            retry = true;
-        }
+        // The templates of this job's earlier checks are reused while they
+        // bind the same buffers.
+        let mut templates = std::mem::take(&mut self.wave_templates);
+        let solved = self.solve(&mut templates, packet, &layout, &plan, &submission);
+        self.wave_templates = templates;
+        let result = solved?;
         let proof_layout = packet.packet.proof_store.layout();
         self.workspace.raise_proof_capacity_floor(
             &std::array::from_fn(|table| proof_layout.slices[table].capacity));
@@ -933,40 +976,24 @@ impl GpuTraitSolver {
         drop(solve_span);
         let _accept_span = crate::gpu::trace::HostSpan::new("host.compiler", "trait_solver.check.results");
         // Exact arena association comes from these private owned buffers, not a
-        // caller-supplied byte slice. One batched transfer reads all required rows.
-        let regions = [
-            layout.region(&self.storage, &packet.output, 0, Span::new(0, 1)?)?,
-            layout.region(&self.storage, &packet.output, 10, Span::new(0, 1)?)?,
-            layout.region(&self.storage, &packet.output, 2, submission.context_span)?,
-            layout.region(&self.storage, &packet.output, 4, submission.call_span)?,
-            layout.region(&self.storage, &packet.output, 3, submission.obligation_span)?,
-            layout.region(&self.storage, &packet.output, 5, submission.obligation_span)?,
-            ReadbackRegion::from_buffer(
-                &packet.proof.buffer,
-                0,
-                arena::byte_len(PROOF_STORE_FIXED_WORDS)?,
-                "accepted proof directory",
-            )?,
-        ];
-        let raw = self.readback.read_regions(
-            &self.device,
-            &self.queue,
-            &regions,
-            "trait solver batch receipt and results",
-        )?;
-        let catalog_status = one_status(&raw[0])?;
-        let batch_status = one_status(&raw[1])?;
-        let contexts = statuses(&raw[2])?;
-        let calls = statuses(&raw[3])?;
-        let obligations = statuses(&raw[4])?;
-        let evidence = statuses(&raw[5])?;
+        // caller-supplied byte slice. The last wave readback read every required row.
+        let WaveReadback {
+            proof_header,
+            batch_status,
+            catalog_status,
+            contexts,
+            calls,
+            obligations,
+            evidence,
+            ..
+        } = result;
         let proof_readback = GpuProofReadback {
             epoch: submission.epoch,
             arena_id: submission.arena_id,
             serial: submission.serial,
             obligation_span: submission.obligation_span,
             receipt: batch_status,
-            proof_header: words(&raw[6])?,
+            proof_header,
             obligations: obligations.clone(),
             evidence: evidence.clone(),
         };
@@ -1003,6 +1030,44 @@ impl GpuTraitSolver {
         packet.completed_input_offsets = layout.input_offsets;
         packet.poisoned = false;
         Ok(accepted)
+    }
+}
+
+/// Rounds the first submit of a solve with source obligations records.
+/// The settings app's solves quiesce after five; each round recorded past
+/// quiescence costs about 0.2 ms of empty dispatches, and each further
+/// submit a readback.
+const FIRST_SUBMIT_ROUNDS: u32 = 5;
+
+/// How a solver attempt ended, with the readback of its last submit.
+struct AttemptEnd {
+    /// The decoded progress of an attempt whose batch or store stopped
+    /// building; None for a solve the finish point published.
+    stopped: Option<proof::ProofProgress>,
+    readback: WaveReadback,
+}
+
+/// The words of one wave readback (`GpuTraitSolver::wave_readback`).
+struct WaveReadback {
+    proof_header: Vec<u32>,
+    batch_status: [u32; 8],
+    state: Vec<u32>,
+    demand: Vec<u32>,
+    catalog_status: [u32; 8],
+    contexts: Vec<[u32; 8]>,
+    calls: Vec<[u32; 8]>,
+    obligations: Vec<[u32; 8]>,
+    evidence: Vec<[u32; 8]>,
+}
+impl WaveReadback {
+    /// The solver counters of a submit the finish point did not publish.
+    fn progress(&self, packet: &GpuPacket, submission: &Submission) -> Result<proof::ProofProgress> {
+        proof::ProofProgress::from_owned_readback(
+            packet.packet.proof_store.layout(),
+            submission,
+            self.proof_header.clone(),
+            self.batch_status,
+        )
     }
 }
 

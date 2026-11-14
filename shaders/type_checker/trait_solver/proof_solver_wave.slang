@@ -7,7 +7,11 @@
 // (dispatch/proof.rs, ProofProgress), and writes each following step's
 // dispatch parameters and indirect arguments into its slot. A stopped,
 // quiescent, faulted or overflowed solver plans only empty dispatches, so the
-// rest of the recorded rounds do nothing.
+// rest of the recorded rounds do nothing. A finish point after the recorded
+// rounds runs the round's quiescence test: a quiescent solve publishes its
+// roots and the batch receipt there, and otherwise the host records more
+// rounds. So a solve that ends within its recorded rounds takes one submit
+// and one readback.
 import type_checker.trait_solver.abi;
 import type_checker.trait_solver.catalog_io;
 import type_checker.trait_solver.batch_io;
@@ -44,8 +48,10 @@ public static const uint PSW_OVERFLOW_POINT = 13u;
 public static const uint PSW_OVERFLOW_ROWS = 14u; // largest span that did not fit
 public static const uint PSW_CHUNK_ROWS = 15u;    // host: rows per scratch chunk
 public static const uint PSW_SLOT_WORDS = 16u;    // host: slot stride
+public static const uint PSW_CALLS_FIRST = 17u;   // host: the batch's new call rows
+public static const uint PSW_CALLS_COUNT = 18u;
 public static const uint PSW_SPAN_RECORDS = 32u;  // first, count per span
-public static const uint PSW_STATE_WORDS = 64u;
+public static const uint PSW_STATE_WORDS = 80u;
 
 // Slot words.
 public static const uint PSW_SLOT_FIRST = 0u;     // TraitSolverParams.dispatch_first
@@ -58,7 +64,7 @@ public static const uint PSW_SLOT_LIMIT = 14u;    // rows the template recorded 
 
 public static const uint PSW_RUNNING = 0u;
 public static const uint PSW_STOPPED = 1u;  // the batch or the store stopped building
-public static const uint PSW_DONE = 2u;     // quiescent
+public static const uint PSW_DONE = 2u;     // quiescent; the finish point published
 public static const uint PSW_FAULT = 3u;
 public static const uint PSW_OVERFLOW = 4u; // a span needs more chunk steps than recorded
 public static const uint PSW_GROW = 5u;     // the next normalization's rows do not fit
@@ -76,6 +82,7 @@ public static const uint PSW_POINT_SELECTED = 2u;    // after selection
 public static const uint PSW_POINT_EXPANDED = 3u;    // after substitution and expansion
 public static const uint PSW_POINT_QUEUE = 4u;       // after work admission: queue span
 public static const uint PSW_POINT_EMITTED = 5u;     // after ready-proof emission
+public static const uint PSW_POINT_FINISH = 6u;      // after the recorded rounds
 
 // Spans (dispatch/kernels.rs, WaveSpan).
 public static const uint PSW_SPAN_FIRST_WORK = 0u;
@@ -94,7 +101,10 @@ public static const uint PSW_SPAN_QUEUE = 12u;
 public static const uint PSW_SPAN_EMITTED_QUEUE = 13u;
 public static const uint PSW_SPAN_PROOF_EDGES = 14u;
 public static const uint PSW_SPAN_EMITTED_ONE = 15u;
-public static const uint PSW_SPANS = 16u;
+public static const uint PSW_SPAN_FINISH_ROOTS = 16u; // every admitted root, for 64
+public static const uint PSW_SPAN_FINISH_CALLS = 17u; // the batch's new calls, for 18
+public static const uint PSW_SPAN_FINISH_ONE = 18u;
+public static const uint PSW_SPANS = 19u;
 
 void psw_span(uint span, uint first, uint count)
 {
@@ -155,19 +165,38 @@ bool psw_demand_fits()
     return fits;
 }
 
+// The finish of a quiescent solve: root publication (64), call reduction
+// (18) and the batch receipt (19), the host's former final submit.
+void psw_plan_finish()
+{
+    trait_solver_wave[PSW_STOP] = PSW_DONE;
+    uint admitted; uint reserved;
+    psw_table(PPS_ROOT_LINKS, admitted, reserved);
+    psw_span(PSW_SPAN_FINISH_ROOTS, 0u, admitted);
+    psw_span(PSW_SPAN_FINISH_CALLS, trait_solver_wave[PSW_CALLS_FIRST], trait_solver_wave[PSW_CALLS_COUNT]);
+    psw_span(PSW_SPAN_FINISH_ONE, 0u, 1u);
+}
+
+// What planning one point decided for psw_plan.
+static const uint PSW_PLANNED = 0u;
+static const uint PSW_PLANNED_ROUND = 1u;   // a round start with work or queue rows
+static const uint PSW_PLANNED_FINISH = 2u;  // this finish point ended the solve
+
 // The spans of one point: the host loop's decisions between two readbacks.
-void psw_plan_spans(uint point)
+uint psw_plan_spans(uint point)
 {
     uint admitted; uint reserved;
     if (point == PSW_POINT_FIRST_WORK)
     {
-        if (!psw_running()) return;
+        if (!psw_running()) return PSW_PLANNED;
         psw_table(PPS_WORK, admitted, reserved);
         psw_span(PSW_SPAN_FIRST_WORK, admitted, reserved - admitted);
         psw_span(PSW_SPAN_FIRST_ONE, 0u, 1u);
-        return;
+        return PSW_PLANNED;
     }
-    if (point == PSW_POINT_ROUND)
+    // A round start and the finish point share the quiescence test. Rounds
+    // recorded after quiescence plan nothing; the finish point publishes.
+    if (point == PSW_POINT_ROUND || point == PSW_POINT_FINISH)
     {
         // The previous round's queue steps completed.
         if (trait_solver_wave[PSW_QUEUE_ACTIVE] != 0u)
@@ -175,7 +204,7 @@ void psw_plan_spans(uint point)
                 trait_solver_wave[PSW_QUEUE_FIRST] + trait_solver_wave[PSW_QUEUE_COUNT];
         trait_solver_wave[PSW_WORK_ACTIVE] = 0u;
         trait_solver_wave[PSW_QUEUE_ACTIVE] = 0u;
-        if (!psw_running()) return;
+        if (!psw_running()) return PSW_PLANNED;
         uint work; uint queue; uint requirements; uint unused;
         psw_table(PPS_WORK, work, unused);
         psw_table(PPS_REDUCTION_QUEUE, queue, unused);
@@ -185,19 +214,22 @@ void psw_plan_spans(uint point)
         // The previous round's quiescence test, then this round's work.
         if (work_cursor == work && trait_solver_wave[PSW_QUEUE_CURSOR] == queue)
         {
-            if (requirement_cursor != requirements) { psw_fault(PSW_FAULT_REQUIREMENTS); return; }
-            trait_solver_wave[PSW_STOP] = PSW_DONE; return;
+            if (requirement_cursor != requirements) { psw_fault(PSW_FAULT_REQUIREMENTS); return PSW_PLANNED; }
+            if (point == PSW_POINT_FINISH) { psw_plan_finish(); return PSW_PLANNED_FINISH; }
+            return PSW_PLANNED;
         }
-        if (work_cursor > work) { psw_fault(PSW_FAULT_CURSOR); return; }
-        if (work_cursor == work) return;
-        if (requirement_cursor > requirements) { psw_fault(PSW_FAULT_CURSOR); return; }
+        // Not quiescent: the host records more rounds after this finish.
+        if (point == PSW_POINT_FINISH) return PSW_PLANNED;
+        if (work_cursor > work) { psw_fault(PSW_FAULT_CURSOR); return PSW_PLANNED; }
+        if (work_cursor == work) return PSW_PLANNED_ROUND;
+        if (requirement_cursor > requirements) { psw_fault(PSW_FAULT_CURSOR); return PSW_PLANNED; }
         if (!psw_demand_fits())
         {
             trait_solver_wave[PSW_STOP] = PSW_GROW;
             trait_solver_wave[PSW_OVERFLOW_POINT] = PSW_POINT_ROUND;
             trait_solver_wave[PSW_OVERFLOW_ROWS] =
                 max(work - work_cursor, requirements - requirement_cursor);
-            return;
+            return PSW_PLANNED;
         }
         trait_solver_wave[PSW_WORK_ACTIVE] = 1u;
         trait_solver_wave[PSW_WORK_FIRST] = work_cursor;
@@ -207,14 +239,14 @@ void psw_plan_spans(uint point)
         psw_span(PSW_SPAN_WORK_ONE, 0u, 1u);
         psw_span(PSW_SPAN_REQUIREMENTS, requirement_cursor, requirements - requirement_cursor);
         psw_span(PSW_SPAN_ALL_WORK, 0u, work);
-        return;
+        return PSW_PLANNED_ROUND;
     }
     uint work_first = trait_solver_wave[PSW_WORK_FIRST];
     uint work_count = trait_solver_wave[PSW_WORK_COUNT];
     bool work_active = trait_solver_wave[PSW_WORK_ACTIVE] != 0u;
     if (point == PSW_POINT_SELECTED)
     {
-        if (!work_active || !psw_running()) return;
+        if (!work_active || !psw_running()) return PSW_PLANNED;
         trait_solver_wave[PSW_REQUIREMENT_CURSOR] = trait_solver_wave[PSW_REQUIREMENT_END];
         psw_table(PPS_BINDINGS, admitted, reserved);
         psw_span(PSW_SPAN_SELECTED_WORK, work_first, work_count);
@@ -222,44 +254,47 @@ void psw_plan_spans(uint point)
         psw_span(PSW_SPAN_SELECTED_ONE, 0u, 1u);
         psw_table(PPS_WORK, admitted, reserved);
         psw_span(PSW_SPAN_SELECTED_ALL_WORK, 0u, admitted);
-        return;
+        return PSW_PLANNED;
     }
     if (point == PSW_POINT_EXPANDED)
     {
-        if (!work_active || !psw_running()) return;
+        if (!work_active || !psw_running()) return PSW_PLANNED;
         psw_table(PPS_WORK, admitted, reserved);
         psw_span(PSW_SPAN_EXPANDED_WORK, admitted, reserved - admitted);
         psw_span(PSW_SPAN_EXPANDED_ONE, 0u, 1u);
-        return;
+        return PSW_PLANNED;
     }
     if (point == PSW_POINT_QUEUE)
     {
         // Without work steps nothing ran since the round start, whose
         // counters this decode repeats.
-        if (!psw_running()) return;
+        if (!psw_running()) return PSW_PLANNED;
         if (work_active) trait_solver_wave[PSW_WORK_CURSOR] = work_first + work_count;
         uint queue_cursor = trait_solver_wave[PSW_QUEUE_CURSOR];
         psw_table(PPS_REDUCTION_QUEUE, admitted, reserved);
-        if (queue_cursor > admitted) { psw_fault(PSW_FAULT_CURSOR); return; }
-        if (queue_cursor == admitted) return;
+        if (queue_cursor > admitted) { psw_fault(PSW_FAULT_CURSOR); return PSW_PLANNED; }
+        if (queue_cursor == admitted) return PSW_PLANNED;
         trait_solver_wave[PSW_QUEUE_ACTIVE] = 1u;
         trait_solver_wave[PSW_QUEUE_FIRST] = queue_cursor;
         trait_solver_wave[PSW_QUEUE_COUNT] = admitted - queue_cursor;
         psw_span(PSW_SPAN_QUEUE, queue_cursor, admitted - queue_cursor);
-        return;
+        return PSW_PLANNED;
     }
     // PSW_POINT_EMITTED
-    if (trait_solver_wave[PSW_QUEUE_ACTIVE] == 0u || !psw_running()) return;
+    if (trait_solver_wave[PSW_QUEUE_ACTIVE] == 0u || !psw_running()) return PSW_PLANNED;
     psw_table(PPS_PROOF_EDGES, admitted, reserved);
     psw_span(PSW_SPAN_EMITTED_QUEUE, trait_solver_wave[PSW_QUEUE_FIRST],
         trait_solver_wave[PSW_QUEUE_COUNT]);
     psw_span(PSW_SPAN_PROOF_EDGES, admitted, reserved - admitted);
     psw_span(PSW_SPAN_EMITTED_ONE, 0u, 1u);
+    return PSW_PLANNED;
 }
 
 // Plans one point, then writes the parameters of every step up to the next
 // point. Planning is idempotent at its point: after an overflow the host
-// records larger templates and runs the same point again.
+// records larger templates and runs the same point again. A finish point
+// overflows only while finishing; the host resets the state to running and
+// records the finish point again, which repeats the same quiescence test.
 public void psw_plan()
 {
     uint point = trait_solver_wave_plan.point;
@@ -268,14 +303,18 @@ public void psw_plan()
         select(point == PSW_POINT_ROUND, PSW_SPAN_WORK,
         select(point == PSW_POINT_SELECTED, PSW_SPAN_SELECTED_WORK,
         select(point == PSW_POINT_EXPANDED, PSW_SPAN_EXPANDED_WORK,
-        select(point == PSW_POINT_QUEUE, PSW_SPAN_QUEUE, PSW_SPAN_EMITTED_QUEUE)))));
+        select(point == PSW_POINT_QUEUE, PSW_SPAN_QUEUE,
+        select(point == PSW_POINT_EMITTED, PSW_SPAN_EMITTED_QUEUE, PSW_SPAN_FINISH_ROOTS))))));
     uint end_span = select(point == PSW_POINT_FIRST_WORK, PSW_SPAN_WORK,
         select(point == PSW_POINT_ROUND, PSW_SPAN_SELECTED_WORK,
         select(point == PSW_POINT_SELECTED, PSW_SPAN_EXPANDED_WORK,
         select(point == PSW_POINT_EXPANDED, PSW_SPAN_QUEUE,
-        select(point == PSW_POINT_QUEUE, PSW_SPAN_EMITTED_QUEUE, PSW_SPANS)))));
+        select(point == PSW_POINT_QUEUE, PSW_SPAN_EMITTED_QUEUE,
+        select(point == PSW_POINT_EMITTED, PSW_SPAN_FINISH_ROOTS, PSW_SPANS))))));
     for (uint span = first_span; span < end_span; span++) psw_span(span, 0u, 0u);
-    psw_plan_spans(point);
+    uint planned = psw_plan_spans(point);
+    // The finish steps run only after the finish point that ended the solve.
+    bool finishing = planned == PSW_PLANNED_FINISH;
 
     uint stride = trait_solver_wave[PSW_SLOT_WORDS];
     uint rows = trait_solver_wave[PSW_CHUNK_ROWS];
@@ -291,14 +330,15 @@ public void psw_plan()
         uint count = trait_solver_wave[PSW_SPAN_RECORDS + span * 2u + 1u];
         if (count > trait_solver_wave_slots[base + PSW_SLOT_LIMIT]) overflow = max(overflow, count);
     }
-    if (overflow != 0u && trait_solver_wave[PSW_STOP] == PSW_RUNNING)
+    if (overflow != 0u && (trait_solver_wave[PSW_STOP] == PSW_RUNNING || finishing))
     {
         trait_solver_wave[PSW_STOP] = PSW_OVERFLOW;
         trait_solver_wave[PSW_OVERFLOW_POINT] = point;
         trait_solver_wave[PSW_OVERFLOW_ROWS] = overflow;
     }
-    bool running = trait_solver_wave[PSW_STOP] == PSW_RUNNING;
-    if (running && (point == PSW_POINT_ROUND))
+    bool running = trait_solver_wave[PSW_STOP] == PSW_RUNNING ||
+        (finishing && trait_solver_wave[PSW_STOP] == PSW_DONE);
+    if (running && planned == PSW_PLANNED_ROUND)
         trait_solver_wave[PSW_ROUNDS] += 1u;
     for (uint slot = slot_first; slot < slot_end; slot++)
     {
