@@ -51,10 +51,12 @@ Three investigations now provide more specific evidence:
   copies, covering 127 functions and 34,528 rows. Five value-type differences
   identify a bound-member result in `core::function::enter_mapper`: the
   template retains the trait's `U` parameter, and slot-based substitution
-  interprets it as the enclosing function's `T`. This is a concrete frontend
-  defect to fix before replay deletion. The census identifies symbolic terms
-  but does not validate ownership of every parameter leaf. Two other
-  bare-parameter call rows and one unresolved route remain unidentified.
+  interprets it as the enclosing function's `T`. The producer fix below
+  addresses this defect. The census identifies symbolic terms but does not
+  validate ownership of every parameter leaf. The other two bare-parameter
+  rows were subsequently identified as explicit `unwrap<T>` and `unwrap<U>`
+  calls in `core::iter::eq_by`; both were already caller-scoped. One unresolved
+  route remains unidentified.
 
 The type probe does not establish complete template correctness: constant
 generics, trait-provided methods, nested functions, layout/ABI facts and
@@ -86,6 +88,33 @@ Local scripts, raw receipts and review qualifications are under
 reverted diagnostic diff are under `target/e3-evidence/` in worktree
 `t3-f221214e`. No production compiler change follows from these measurements
 alone.
+
+### Bound-member result scope corrected
+
+`00_calls` now retains accepted bare-parameter call results, as it already did
+for scalar and compound results. The preceding return-type materialization
+had already substituted the bound correctly; semantic artifact projection
+discarded that fact. The focused `Mapper<T,U>` fixture previously segfaulted
+when instance-table lowering used the trait's slot as the caller's slot. With
+the fix it executes successfully, and rigid-type and missing-implementation
+diagnostics retain their existing codes and source calls.
+
+A diagnostic-only settings comparison found all seven bare-parameter call
+rows equal to their replay copies after the fix. This establishes the measured
+defect's correction, not full template completeness. The producer change and
+initial tests were committed as `266bebc49` and integrated as `eda69a6b0`.
+The author ran 553 focused compiler tests and seven affected stdlib tests.
+
+The new boundary guard checks bare parameter results only. Root review found
+that repeating lexical name lookup rejected a valid inherited parameter under
+method-parameter shadowing. A focused program succeeds before the guard and
+fails with the initial guard. Validation now compares exact parameter identities
+along the enclosing owner chain, and the fixture covers that case. Parameter
+leaves nested in compound results still require a separate ownership audit.
+On the integrated tree, six focused tests passed: the trait-return and generic
+impl-forwarding modules, plus the existing inherited/shadowed method-bound
+test. These include the new shadowing case and rejection diagnostics. All runs
+used the shared GPU lock and one test thread; no broad suite was repeated.
 
 ### Sequential-job regression resolved
 

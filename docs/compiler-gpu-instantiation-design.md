@@ -19,7 +19,7 @@ stores each as a u32. No token number is a program type or instance identity.
 | Handle | Identity and use |
 | --- | --- |
 | `DeclId` | GPU map of `(library, frontend unit, declaration namespace, local identity)`. Namespaces distinguish callables, nominal types, traits and implementations. Public interface indexes and private local identities keep their existing meaning. |
-| `ParamId` | `(declaring owner DeclId, type/constant domain, source ordinal)`. An inherited parameter retains its original owner. A slot is only a position in one environment's parameter map. |
+| `ParamId` | `(declaring owner DeclId, type/constant domain, declared or reserved synthetic ordinal)`. The implicit trait `Self` has an explicit synthetic ordinal. An inherited parameter retains its original owner, including under name shadowing. A slot is only a position in one environment's parameter map. |
 | `SymTermId` | Immutable symbolic term over exact `ParamId` leaves, named declarations and typed constants. Shared terms are equal only after comparing complete records and child identities. |
 | `TypeId` | An exactly interned **closed** type/constant term in the build store. A named type includes its declaration and complete ordered lexical/application arguments. |
 | `InstanceId` | `(callable DeclId, closed environment TypeId)`. Environment domains, parameter order and constant value/type identity are explicit. Native widths and transient proof IDs are not part of this key. |
@@ -91,8 +91,16 @@ and a GPU producer/consumer contract.
 The frontend must normalize bound-member signature types into the enclosing
 binder before retention. For `F: Mapper<T,U>`, the result of `F.apply` is the
 bound's `U`, even if the trait and enclosing function use different parameter
-slots. The confirmed `enter_mapper` defect violates this requirement. Fixing it
-does not require choosing a concrete implementation.
+slots. The `enter_mapper` defect was in semantic artifact projection: it
+discarded the accepted caller-scoped bare parameter. Its producer now preserves
+that result. This correction does not require choosing a concrete implementation.
+
+Substitution uses exact parameter identities and applies the environment once.
+Replacement terms already belong to the receiving scope; substituting their
+leaves again would capture unrelated parameters. Validation checks that each
+resolved parameter's owner belongs to the allowed binder chain. Repeating
+source name lookup is wrong when a nearer declaration shadows an inherited
+parameter that remains present in an inferred field or call type.
 
 Discovery must not assume a single fixed-size call record is sufficient. A use
 may reference a variable-size semantic dependency DAG. Its readiness is defined
