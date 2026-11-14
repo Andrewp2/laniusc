@@ -111,10 +111,9 @@ bool route_row(uint token, uint receiver, inout uint reference, inout uint env)
     return true;
 }
 
-// The declared return type of the local generic body that untyped call row
-// `call` calls, and the callee's instance environment under the caller's
-// `env`. False for any other row, or when the callee's environment does
-// not close.
+// The declared return type of the local generic body that call row `call`
+// calls, and the callee's instance environment under the caller's `env`.
+// False for any other row, or when the callee's environment does not close.
 bool untyped_call_result(uint source, uint call, inout uint env, out uint reference)
 {
     reference = CT_UNKNOWN;
@@ -153,23 +152,36 @@ void realize_row(uint row, bool final_dispatch)
         return;
     }
     uint reference = ct_ref(tag, payload);
-    // An untyped bound-member call substitutes twice: its receiver, then
-    // the routed method's return type (one substitution site).
+    // A bound-member call substitutes twice: its receiver, then the routed
+    // method's return type (one substitution site). An untyped one has no
+    // other type. A typed one names the trait member's return type, whose
+    // parameters are the trait's, not this environment's: it keeps that
+    // type, substituted, only when the route is unknown.
     uint token = INVALID;
-    uint steps = tag == TYPE_REF_INVALID && source == IT_SOURCE_LOCAL && valid_node(template_row) &&
-        closure_bound_call(template_row, token) ? 2u : 1u;
+    uint template_reference = reference;
+    bool bound_call = source == IT_SOURCE_LOCAL && valid_node(template_row) &&
+        closure_bound_call(template_row, token);
+    uint steps = bound_call && (tag == TYPE_REF_INVALID ||
+        (reference != CT_UNKNOWN && !ct_closed(reference))) ? 2u : 1u;
     uint env = entry.z;
+    bool open = tag == TYPE_REF_INVALID || (reference != CT_UNKNOWN && !ct_closed(reference));
+    uint callee_env = env;
+    uint callee_reference = CT_UNKNOWN;
     if (steps == 2u) reference = bound_call_receiver(token);
-    // An untyped call of a local generic body, such as a method returning
-    // its impl's parameter, is typed by the callee's declared return type
-    // under the callee's instance environment (as 07_table_calls names it).
-    else if (tag == TYPE_REF_INVALID && !untyped_call_result(source, template_row, env, reference))
+    // A call of a local generic body is typed by the callee's declared
+    // return type under the callee's instance environment (as
+    // 07_table_calls names it). The template may leave it untyped, as for a
+    // method returning its impl's parameter, or type it with the callee's
+    // parameters, as for `item.unwrap()` on a generic `Option<T>`: those are
+    // not this environment's.
+    else if (open && untyped_call_result(source, template_row, callee_env, callee_reference))
     {
-        instance_row_refs[row] = uint2(tag + 1u, payload);
-        return;
+        reference = callee_reference;
+        env = callee_env;
     }
-    // A row without a type, or with a closed one, reads as the template's.
-    else if (tag != TYPE_REF_INVALID && (reference == CT_UNKNOWN || ct_closed(reference)))
+    // Any other row without a type, or with a closed one, reads as the
+    // template's.
+    else if (tag == TYPE_REF_INVALID || !open)
     {
         instance_row_refs[row] = uint2(tag + 1u, payload);
         return;
@@ -180,7 +192,12 @@ void realize_row(uint row, bool final_dispatch)
     for (uint step = 0u; step < steps; step++)
     {
         if (routed) bound = ct_subst(SourceSlots(), env, reference, true, spare);
-        if (routed && step + 1u < steps) routed = route_row(token, bound, reference, env);
+        if (routed && step + 1u < steps && !route_row(token, bound, reference, env))
+        {
+            if (tag == TYPE_REF_INVALID) routed = false;
+            reference = template_reference;
+            env = entry.z;
+        }
     }
     // An unknown route leaves the row as the template's (untyped).
     if (!routed)

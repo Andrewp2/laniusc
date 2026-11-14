@@ -15,18 +15,22 @@
 // - every row's type realized under the environment (instance_row_refs);
 // - every call is routed: a call of a local generic body, or a
 //   bound-member call whose receiver selects a generic method, names its
-//   callee's table entry (IT_CALL_ENTRY), and a method call's receiver
-//   dereferences under the environment as the template's did; any other
-//   call keeps the template's callee (IT_CALL_NONE) and needs no type
-//   argument from the environment, as a variant constructor does; a call
-//   routed to a nongeneric method, a dependency-generic call or an
-//   unresolved call replays;
-// - an index, iteration or array row whose type the environment changes
-//   replays, and so does a function whose result becomes an array: its
-//   length, stride or result width is derived by passes that run before the
-//   table; a member row's receiver must be a row of the subtree, and when
-//   the environment changes it, 08a_exec_members derives the field layout
-//   or rejects the entry;
+//   callee's table entry (IT_CALL_ENTRY); a bound-member call whose
+//   receiver selects a nongeneric method names that method
+//   (IT_CALL_METHOD); a routed method call's receiver dereferences under
+//   the environment as the template's did, and its callee's receiver
+//   parameter is known (routed_receiver.slang); any other call keeps the
+//   template's callee (IT_CALL_NONE) and needs no type argument from the
+//   environment, as a variant constructor does; a dependency-generic call
+//   or an unresolved call replays;
+// - an index or array row takes its element layout from its realized type
+//   in lowering, and a function whose result becomes an array takes that
+//   array's native word count as its result width (09_exec_rows), so one
+//   whose count is unknown replays; an iteration whose type the
+//   environment changes replays: its stride is derived by passes that run
+//   before the table; a member row's receiver must be a row of the
+//   subtree, and when the environment changes it, 08a_exec_members derives
+//   the field layout or rejects the entry;
 // - each side-table block of the subtree is contiguous (checked here).
 //
 // Lanes write the entry's head, token span and template blocks; the layout
@@ -61,9 +65,15 @@ StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_native_word_count;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<HirRange> compact_param_ranges;
+StructuredBuffer<uint> semantic_param_ref_tag_by_row;
+StructuredBuffer<uint> semantic_param_ref_payload_by_row;
+StructuredBuffer<HirMethodCore> compact_method_cores;
 #include "inplace_read.slang"
+#include "routed_receiver.slang"
 
 static const uint INVALID = 0xffffffffu;
 // TYPE_REF_INSTANCE and an array instance (type_instance_kind).
@@ -179,32 +189,15 @@ bool call_keeps_callee(uint row)
     return call.receiver_parameter_ref_tag != 2u && call.receiver_matched_ref_tag != 2u;
 }
 
-// The receiver type a method call matched: `receiver` after `count`
-// dereferences through reference instances; (EX_INVALID, 0) when one is not
-// a reference.
-uint2 ex_dereferenced(uint2 receiver, uint count)
-{
-    uint rows; uint stride;
-    type_instance_kind.GetDimensions(rows, stride);
-    for (uint step = 0u; step < count; step++)
-    {
-        if (receiver.x != 3u || receiver.y >= rows || type_instance_kind[receiver.y] != 4u)
-            return uint2(EX_INVALID, 0u);
-        receiver = uint2(type_instance_elem_ref_tag[receiver.y], type_instance_elem_ref_payload[receiver.y]);
-    }
-    return receiver;
-}
-
-// Whether a method call at template row `row` of entry `key`, routed to
-// table entry `callee`, has a realized receiver (09_exec_rows): the callee's
-// receiver parameter realized, and a receiver that dereferences as the
-// template's did.
-bool entry_receiver_realizes(uint row, uint4 key, uint callee)
+// Whether a method call at template row `row` of entry `key`, routed by
+// `routed` to a table entry or a nongeneric method, has a realized receiver
+// (09_exec_rows): the callee's receiver parameter, and a receiver that
+// dereferences as the template's did.
+bool routed_receiver_realizes(uint row, uint4 key, uint2 routed)
 {
     CheckedCallArtifact call = semantic_calls_by_hir[row];
     if (call.receiver_adjustment_kind == 0u) return true;
-    uint2 parameter = instance_row_refs[instance_table[2u * callee].w];
-    if (parameter.x == 0u || parameter.x == IT_ROW_FAILED) return false;
+    if (ex_routed_receiver_parameter(routed).x == EX_INVALID) return false;
     uint receiver = call.receiver_hir;
     if (receiver < key.x || receiver - key.x >= key.y) return false;
     uint2 realized = instance_row_refs[key.w + (receiver - key.x)];
@@ -254,8 +247,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             result.y != semantic_expr_ref_payload_by_hir[return_row];
         uint rows; uint stride;
         type_instance_kind.GetDimensions(rows, stride);
+        // An array result's width is its native word count (09_exec_rows).
         if (changed && result.x - 1u == TYPE_REF_ARRAY_INSTANCE && result.y < rows &&
-            type_instance_kind[result.y] == TYPE_INSTANCE_KIND_ARRAY)
+            type_instance_kind[result.y] == TYPE_INSTANCE_KIND_ARRAY &&
+            (type_native_word_count[result.y] == 0u || type_native_word_count[result.y] == INVALID))
         {
             reject(entry, EX_REJECT_FACT);
             return;
@@ -279,12 +274,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
         uint2 call = instance_row_calls[key.w + offset];
-        if (call.x != IT_CALL_NONE && call.x != IT_CALL_ENTRY)
+        bool routed = call.x == IT_CALL_ENTRY || call.x == IT_CALL_METHOD;
+        if (call.x != IT_CALL_NONE && !routed)
         {
             reject(entry, EX_REJECT_CALL);
             return;
         }
-        if (core.kind == HIR_CALL_EXPR && call.x == IT_CALL_ENTRY && !entry_receiver_realizes(row, key, call.y))
+        if (core.kind == HIR_CALL_EXPR && routed && !routed_receiver_realizes(row, key, call))
         {
             reject(entry, EX_REJECT_CALL);
             return;
@@ -298,7 +294,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             realized.y != semantic_expr_ref_payload_by_hir[row];
         bool for_stmt = core.kind == HIR_FOR_STMT ||
             (core.kind == HIR_STMT && compact_hir_payload[row].a == HIR_STMT_FOR);
-        if (changed && (core.kind == HIR_INDEX_EXPR || core.kind == HIR_ARRAY_EXPR || for_stmt))
+        if (changed && for_stmt)
         {
             reject(entry, EX_REJECT_FACT);
             return;

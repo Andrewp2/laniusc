@@ -289,6 +289,42 @@ the call rejections are callers of a rejected entry. 10 are bound-member calls
 routed to a nongeneric method. The fixtures lower more bodies than before but
 replay as many, for the same reason.
 
+### Indexing, arrays and nongeneric methods, 2026-11-13
+
+A copy's index rows, array values, array results and bound-member calls
+of nongeneric methods are lowered with it:
+
+- An index or array row whose type the environment changes takes its
+  element layout from its realized type in lowering.
+- A function whose result becomes an array takes that array's native word
+  count as its result width (`09_exec_rows`). An entry whose array result
+  has no known count is rejected (`0x106`).
+- A bound-member call whose receiver selects a nongeneric method
+  (`IT_CALL_METHOD`) targets that method. Its receiver parameter is the
+  method's checked `self` parameter (`routed_receiver.slang`).
+- A typed bound-member call names the trait member's return type, whose
+  parameters are the trait's. The row takes the routed method's return type
+  instead (`realize_row` in `table_rows.slang`). It substituted the trait's
+  parameter by slot before, so `Source<T>::pull` in an impl of `Wrap<I, T>`
+  realized as the binding of `I`.
+- A call of a local generic body is typed by the callee's declared return
+  type under the callee's instance environment, also when the template
+  types it. The template can type it with the callee's parameters: in
+  `is_sorted_by<I, P, T>`, `item.unwrap()` has `Option`'s `T`, which
+  substituted by slot as `I`. The copy then moved only the iterator's
+  words of each item.
+
+| Workload | Calls inside copies | Indexing and methods |
+| --- | --- | --- |
+| Settings entries selected and routed | 1,136 | 1,313 |
+| Settings replay compiles | 1 | 1 |
+| Settings replay bodies | 195 | 18 |
+| Language fixtures, replay compiles | 22 | 18 |
+| Language fixtures, replay bodies | 104 | 51 |
+
+On settings, the other 25 entries are 7 owner rejections (in-place
+instances), 5 call rejections and 13 fact rejections.
+
 ## Complete instance contract
 
 An instance identifies a stable template body, its ordered canonical type and

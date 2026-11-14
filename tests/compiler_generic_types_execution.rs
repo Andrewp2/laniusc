@@ -442,8 +442,10 @@ fn in_unit_generic_instances_execute_with_their_own_bodies() {
 /// token span ends at the next declaration's first token), a raw view of a
 /// type only the closure realizes, a payload-free variant argument ahead of
 /// the argument that binds the parameter, generic methods called from
-/// generic functions and from themselves, generic variant constructors, and
-/// callers of a generic callee that the job does not lower.
+/// generic functions and from themselves, generic variant constructors,
+/// callers of a generic callee that the job does not lower, generic
+/// indexing and array results, and bound calls that select a nongeneric
+/// method, including through a borrowed field of a generic impl.
 #[test]
 fn one_unit_generic_instances_execute() {
     for (label, source, stdout, status) in [
@@ -539,17 +541,168 @@ fn one_unit_generic_instances_execute() {
         ),
         (
             "generic callers of a generic callee that is not lowered in the job",
-            "fn pick<T>(values: [T; 3], i: i32) -> T { return values[i]; }
-             fn outer<T>(values: [T; 3]) -> T { return pick(values, 1); }
-             fn twice<T>(values: [T; 3], n: i32) -> T { if (n == 0) { return outer(values); } return twice(values, n - 1); }
+            "struct Span<T> { values: [T], start: i32 }
+             fn make<T>(values: [T], start: i32) -> Span<T> { return Span { values: values, start: start }; }
+             fn outer<T>(values: [T]) -> Span<T> { return make(values, 1); }
+             fn twice<T>(values: [T], n: i32) -> Span<T> { if (n == 0) { return outer(values); } return twice(values, n - 1); }
+             fn at<T>(s: Span<T>) -> T { return s.values[s.start]; }
              fn main() -> i32 {
                  let small: [i32; 3] = [4, 5, 6];
                  let wide: [i64; 3] = [7, 8, 9];
-                 print(twice(small, 2));
-                 print(twice(wide, 1) as i32);
+                 print(at(twice(small, 2)));
+                 print(at(twice(wide, 1)) as i32);
                  return 0;
              }",
             &b"5\n8\n"[..],
+            0,
+        ),
+        (
+            "generic indexing of slices and arrays",
+            "module app::main;
+             import core::slice;
+             struct Pair { a: i32, b: i64 }
+             fn pick<T>(values: [T], i: i32) -> T { return values[i]; }
+             fn put<T>(values: [T], i: i32, v: T) { values[i] = v; }
+             fn fixed<T>(values: [T; 3], i: i32) -> T { return values[i]; }
+             fn main() -> i32 {
+                 let small: [i32; 3] = [4, 5, 6];
+                 let wide: [i64; 3] = [7, 8, 9];
+                 let pairs: [Pair; 2] = [Pair { a: 1, b: 2 }, Pair { a: 3, b: 40 }];
+                 print(pick(small, 1));
+                 print(pick(wide, 2) as i32);
+                 print(pick(pairs, 1).b as i32);
+                 put(small, 0, 11);
+                 put(pairs, 0, Pair { a: 12, b: 13 });
+                 print(small[0]);
+                 print(pairs[0].a);
+                 print(fixed(wide, 0) as i32);
+                 print(fixed(small, 2));
+                 print(core::slice::first(wide) as i32);
+                 return 0;
+             }",
+            &b"5\n9\n40\n11\n12\n7\n6\n7\n"[..],
+            0,
+        ),
+        (
+            "generic array values and array results",
+            "struct Pair { a: i32, b: i64 }
+             fn twice<T>(x: T, y: T) -> T { let a: [T; 2] = [x, y]; return a[1]; }
+             fn both<T>(x: T) -> [T; 2] { return [x, x]; }
+             fn main() -> i32 {
+                 print(twice(3, 4));
+                 print(twice(5 as i64, 6 as i64) as i32);
+                 print(twice(Pair { a: 1, b: 2 }, Pair { a: 7, b: 8 }).b as i32);
+                 let w: [i64; 2] = both(9 as i64);
+                 print(w[1] as i32);
+                 let v: [i32; 2] = both(3);
+                 print(v[0]);
+                 let p: [Pair; 2] = both(Pair { a: 10, b: 11 });
+                 print(p[1].b as i32);
+                 return 0;
+             }",
+            &b"4\n6\n8\n9\n3\n11\n"[..],
+            0,
+        ),
+        (
+            "bound calls that select a nongeneric method",
+            "module app::main;
+             pub trait Show {
+                 pub fn show(&self) -> i32;
+             }
+             struct Pair { a: i32, b: i64 }
+             struct One { v: i32 }
+             impl Pair { fn borrow(&self) -> &Pair { return self; } }
+             impl One { fn borrow(&self) -> &One { return self; } }
+             pub impl Show for Pair {
+                 pub fn show(&self) -> i32 { return self.a + (self.b as i32); }
+             }
+             pub impl Show for One {
+                 pub fn show(&self) -> i32 { return self.v * 10; }
+             }
+             fn twice<T>(x: &T) -> i32 where T: Show { return x.show() * 2; }
+             fn value<T>(x: T) -> i32 where T: Show { return x.show() + 1; }
+             fn main() -> i32 {
+                 let p: Pair = Pair { a: 3, b: 4 };
+                 let o: One = One { v: 5 };
+                 print(twice(p.borrow()));
+                 print(twice(o.borrow()));
+                 print(value(p));
+                 print(value(o));
+                 return 0;
+             }",
+            &b"14\n100\n8\n51\n"[..],
+            0,
+        ),
+        (
+            "bound calls through a generic impl's borrowed field",
+            "module app::main;
+             pub trait Source<T> {
+                 pub fn pull(&self) -> T;
+             }
+             struct Count { n: i32 }
+             impl Count { fn borrow(&self) -> &Count { return self; } }
+             pub impl Source<i32> for Count {
+                 pub fn pull(&self) -> i32 { self.n = self.n + 1; return self.n; }
+             }
+             struct Wrap<I, T> { source: &I, extra: i32 }
+             pub impl<I, T> Wrap<I, T> where I: Source<T> {
+                 pub fn get(&self) -> T { let s: &I = self.source; return s.pull(); }
+                 pub fn direct(&self) -> T { return self.source.pull(); }
+             }
+             fn wrap<I, T>(source: &I) -> Wrap<I, T> where I: Source<T> { return Wrap { source: source, extra: 0 }; }
+             fn first<I, T>(source: &I) -> T where I: Source<T> { return source.pull(); }
+             fn main() -> i32 {
+                 let c = Count { n: 10 };
+                 let w = wrap(c.borrow());
+                 print(w.get());
+                 print(w.direct());
+                 print(first(c.borrow()));
+                 return 0;
+             }",
+            &b"11\n12\n13\n"[..],
+            0,
+        ),
+        (
+            "a library generic over a nongeneric iterator and mapper",
+            "module app::main;
+             import core::function;
+             import core::iter;
+             import core::option;
+             import core::pair;
+             struct Payload { wide: [u64; 3], floats: [f64; 2], flag: core::option::Option<bool> }
+             struct Rec<T> { id: i32, key: i32, wide: i64, payload: T }
+             struct Source { n: i32, pulls: i32 }
+             impl Source { fn borrow(&self) -> &Source { return self; } }
+             pub impl core::iter::Iterator<Rec<Payload>> for Source {
+                 pub fn next(&self) -> core::option::Option<Rec<Payload>> {
+                     self.pulls += 1;
+                     if (self.pulls > self.n) { return core::option::None(); }
+                     return core::option::Some(Rec { id: self.pulls, key: self.pulls * 2, wide: 7, payload: Payload { wide: [1, 2, 3], floats: [1.0, 2.0], flag: core::option::Some(true) } });
+                 }
+             }
+             struct Adjacent { calls: i32 }
+             impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
+             pub impl core::function::Mapper<core::pair::Pair<Rec<Payload>, Rec<Payload>>, bool> for Adjacent {
+                 pub fn apply(&self, pair: core::pair::Pair<Rec<Payload>, Rec<Payload>>) -> bool { self.calls += 1; print(pair.first.id); print(pair.second.payload.wide[2] as i32); return pair.first.key <= pair.second.key; }
+             }
+             fn main() -> i32 {
+                 let s: Source = Source { n: 4, pulls: 0 };
+                 let a: Adjacent = Adjacent { calls: 0 };
+                 print(core::iter::is_sorted_by<Source, Adjacent, Rec<Payload>>(s.borrow(), a.borrow()) as i32);
+                 print(a.calls);
+                 print(s.pulls);
+                 return 0;
+             }",
+            &b"1
+3
+2
+3
+3
+3
+1
+3
+5
+"[..],
             0,
         ),
         (

@@ -62,8 +62,14 @@ StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> compact_param_count;
+StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<uint> semantic_param_ref_tag_by_row;
+StructuredBuffer<uint> semantic_param_ref_payload_by_row;
+StructuredBuffer<HirMethodCore> compact_method_cores;
 
 static const uint INVALID = 0xffffffffu;
+static const uint CALLABLE_FUNCTION = 1u;
 static const uint HIR_FN = 3u;
 static const uint HIR_PARAM = 4u;
 static const uint HIR_TYPE = 5u;
@@ -235,21 +241,7 @@ HirPayload payload_of(ExecMap map, uint row, HirCore core, HirPayload p)
     return p;
 }
 
-// The receiver type a method call matched: `receiver` after `count`
-// dereferences through reference instances; (EX_INVALID, 0) when one is not
-// a reference.
-uint2 ex_dereferenced(uint2 receiver, uint count)
-{
-    uint rows; uint stride;
-    type_instance_kind.GetDimensions(rows, stride);
-    for (uint step = 0u; step < count; step++)
-    {
-        if (receiver.x != TYPE_REF_INSTANCE || receiver.y >= rows || type_instance_kind[receiver.y] != 4u)
-            return uint2(EX_INVALID, 0u);
-        receiver = uint2(type_instance_elem_ref_tag[receiver.y], type_instance_elem_ref_payload[receiver.y]);
-    }
-    return receiver;
-}
+#include "routed_receiver.slang"
 
 // The words a value of checked type (tag, payload) occupies, as the
 // return-width projection reads them; INVALID when unknown.
@@ -378,8 +370,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row == map.vrow)
     {
         // The function's result: its return type row's realized reference.
-        // Only a native array result has words (01b_array_index_refs), and
-        // selection leaves an entry whose result becomes an array to replay.
+        // Only a native array result has words, its native word count
+        // (01b_array_index_refs); selection checked that it is known.
         uint return_row = compact_fn_return_type[source];
         uint2 result = ex_row_ref(map, return_row);
         if (result.x != EX_INVALID &&
@@ -387,7 +379,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
              result.y != semantic_expr_ref_payload_by_hir[return_row]))
         {
             return_type = result.x == TYPE_REF_SCALAR ? result.y : 0u;
-            result_words = 0u;
+            result_words = result.x == TYPE_REF_INSTANCE && valid_instance(result.y) &&
+                type_instance_kind[result.y] == 2u ? type_native_word_count[result.y] : 0u;
         }
     }
     semantic_function_return_type_by_hir[row] = return_type;
@@ -399,20 +392,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // A call routed to a selected table entry calls that entry's copy:
         // its virtual function row and first token. A call routed to another
         // entry names the entry's template function, as every generic call
-        // names its callee (a bound-member call's template names the trait's
-        // member instead); the host routes its symbol to the entry's body.
+        // names its callee, and the host routes its symbol to the entry's
+        // body. A call routed to a nongeneric method names that method. A
+        // bound-member call's template names the trait's member instead.
         uint2 routed = instance_row_calls[map.base + (source - map.function)];
+        uint callee = ex_routed_function(routed);
         if (routed.x == IT_CALL_ENTRY && ex_quad(routed.y, EX_Q_HEAD).x == EX_SELECTED)
         {
             ExecMap target = ex_map(routed.y);
             call.target_token = target.vtok;
             call.callable_hir = target.vrow;
+            call.callable_kind = CALLABLE_FUNCTION;
         }
-        else if (routed.x == IT_CALL_ENTRY)
+        else if (callee != EX_INVALID)
         {
-            uint callee = instance_table[2u * routed.y].x;
             call.target_token = compact_hir_core[callee].token_start;
             call.callable_hir = callee;
+            call.callable_kind = CALLABLE_FUNCTION;
         }
         else
         {
@@ -427,13 +423,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call.return_type = reference.x == TYPE_REF_SCALAR ? reference.y : 0u;
         }
         call.symbolic_type_environment = 0u;
-        // A method call routed to an entry passes its receiver as that
-        // entry's receiver parameter. The receiver matched after the
-        // template's dereferences (selection checked that they apply).
-        if (call.receiver_adjustment_kind != 0u && routed.x == IT_CALL_ENTRY)
+        // A routed method call passes its receiver as its callee's receiver
+        // parameter. The receiver matched after the template's dereferences
+        // (selection checked that they apply).
+        if (call.receiver_adjustment_kind != 0u && callee != EX_INVALID)
         {
-            uint2 parameter = instance_row_refs[instance_table[2u * routed.y].w];
-            call.receiver_parameter_ref_tag = parameter.x - 1u;
+            uint2 parameter = ex_routed_receiver_parameter(routed);
+            call.receiver_parameter_ref_tag = parameter.x;
             call.receiver_parameter_ref_payload = parameter.y;
             uint2 receiver = ex_row_ref(map, semantic_calls_by_hir[source].receiver_hir);
             if (receiver.x != EX_INVALID) receiver = ex_dereferenced(receiver, call.receiver_deref_count);
