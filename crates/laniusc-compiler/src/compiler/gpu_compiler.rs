@@ -699,25 +699,28 @@ mod tests {
     }
 
     // A small job in a lowering workspace retained from a big one resets only
-    // the imported bytes its own resources can address, and its x86 analysis
-    // and artifact clears cover only its rows (LoweringCapacities::for_job).
-    // The bytes past them keep the big job's words; here they are poisoned as
-    // well. Big and small jobs alternate in one compiler, with job-sized
-    // direct operations on, and every artifact must match the one a fresh
-    // workspace gives with them off.
+    // the imported bytes its own zero-initialized resources can address, and
+    // its x86 analysis and artifact clears cover only its rows
+    // (LoweringCapacities::for_job). Imported storage that no zero-initialized
+    // resource uses is not reset at all, in the type checker or in lowering
+    // (CompilerGraphWorkspace::phase_reset_plan). Here every byte a phase
+    // reset leaves is poisoned. Big and small jobs alternate in one compiler,
+    // with job-sized direct operations on, a workspace grows from a small job
+    // to a big one, and valid jobs follow one that fails type checking. Every
+    // artifact must match the one a fresh workspace gives with job-sized
+    // operations off.
     fn run_job_bounded_reset_equivalence() {
         use std::sync::atomic::Ordering;
 
-        use crate::codegen::lowering_pipeline::{
-            TEST_JOB_SIZED_DIRECT_OPS,
-            TEST_PHASE_RESET_POISON,
-            TEST_PHASE_RESET_POISONED_BYTES,
+        use crate::{
+            codegen::lowering_pipeline::TEST_JOB_SIZED_DIRECT_OPS,
+            gpu::compiler_graph::{TEST_PHASE_RESET_POISON, TEST_PHASE_RESET_POISONED_BYTES},
         };
 
         struct PoisonGuard;
         impl Drop for PoisonGuard {
             fn drop(&mut self) {
-                TEST_PHASE_RESET_POISON.store(u64::MAX, Ordering::Relaxed);
+                TEST_PHASE_RESET_POISON.set(u64::MAX);
                 TEST_JOB_SIZED_DIRECT_OPS.store(u8::MAX, Ordering::Relaxed);
             }
         }
@@ -855,8 +858,19 @@ mod tests {
 
         TEST_JOB_SIZED_DIRECT_OPS.store(1, Ordering::Relaxed);
         for word in [1u32, u32::MAX] {
-            TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
-            let poisoned = TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed);
+            TEST_PHASE_RESET_POISON.set(u64::from(word));
+            let poisoned = TEST_PHASE_RESET_POISONED_BYTES.get();
+            // Workspaces built for the small job grow for the big ones.
+            release();
+            assert!(x86(cases[0].1) == fresh_x86[0], "x86 small job in new workspaces (poison {word:#x})");
+            assert!(x86(&big) == fresh_big_x86, "x86 big job in grown workspaces (poison {word:#x})");
+            // A job that fails type checking leaves its words behind.
+            let rejected = pollster::block_on(
+                compiler.compile_source_to_x86_64("fn main() -> i32 { return missing(1); }"),
+            );
+            assert!(rejected.is_err(), "x86 job with an unknown callee should fail (poison {word:#x})");
+            assert!(x86(cases[3].1) == fresh_x86[3], "x86 job after a failed job (poison {word:#x})");
+            assert!(x86(&rich) == fresh_rich_x86, "x86 big job after a failed job (poison {word:#x})");
             for (index, (case, source)) in cases.iter().enumerate() {
                 assert!(x86(&big) == fresh_big_x86, "x86 big job after {case} (poison {word:#x})");
                 assert!(
@@ -885,7 +899,7 @@ mod tests {
                 "Wasm {constant} after the feature-rich big job (poison {word:#x})"
             );
             assert!(
-                TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed) > poisoned,
+                TEST_PHASE_RESET_POISONED_BYTES.get() > poisoned,
                 "the small jobs should leave imported tails to poison (poison {word:#x})"
             );
         }
@@ -944,8 +958,17 @@ mod tests {
             }
             .unwrap_or_else(|error| panic!("{} compile: {error}", target_name(target)))
         };
-        let larger: String = (0..2_000)
-            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+        // Pointer-jump pairs come in buckets of 8 bits of rows
+        // (`pointer_jump_hop_pairs`), and a job's capacities are bucketed to
+        // at least 4096 rows, so every case below needs 2 pairs. The retained
+        // workspace reaches past 2^16 compact-HIR rows and semantic
+        // instructions, the next bucket, so a job records fewer pairs.
+        let larger: String = (0..8_000)
+            .map(|index| {
+                format!(
+                    "fn f{index}(x: i32) -> i32 {{ let a: i32 = x + {index}; let b: i32 = a * 2; return b - x; }} "
+                )
+            })
             .chain(["fn main() -> i32 { return f7(35); }".to_string()])
             .collect();
         for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
@@ -1013,9 +1036,16 @@ mod tests {
                 .expect("retained lowering workspace");
             let job_pairs = retained.job_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
             assert!(
+                retained.hir_nodes > u16::MAX as u32 && retained.semantic_instructions > u16::MAX as u32,
+                "{case}: the retained workspace ({} HIR rows, {} semantic instructions) should reach the third pointer-jump bucket",
+                retained.hir_nodes,
+                retained.semantic_instructions
+            );
+            assert!(
                 job_pairs.ssa_value_link < retained.jump_pairs().ssa_value_link
                     && job_pairs.execution_rank < retained.jump_pairs().execution_rank,
-                "{case}: the retained workspace should record more pairs than the job needs"
+                "{case}: the retained workspace should record more pairs than the job needs ({job_pairs:?} of {:?})",
+                retained.jump_pairs()
             );
             if wasm_runs {
                 let conservative = compile(LoweringTarget::Wasm, source, true);

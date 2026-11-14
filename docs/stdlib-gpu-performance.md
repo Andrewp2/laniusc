@@ -1,5 +1,54 @@
 # GPU compiler performance: stdlib fixes
 
+## Settings full recompiles: imported GPU scratch (2026-11-14)
+
+`35e2a00b3` removes redundant phase-boundary clears of about 1.95 GB of
+imported GPU storage in the settings compile. Only resources declared
+zero-initialized retain a phase reset. Other resources rely on shader
+producer writes and read guards; the graph's access-order validation alone
+does not prove complete row initialization. SSA use overflow now publishes
+zero active rows, and rejected values still initialize their in-range row.
+`7394d78be` repairs four stale lowering tests confirmed on baseline
+`187eb732f`. `c8141129e` scopes poison controls to the recording thread and
+clarifies the initialization contract. No host compile-path optimization or
+compiled-result cache was added.
+
+The integrated comparison used baseline `dca550aa6` and candidate
+`c8141129e`, with the same frozen settings input and full-recompile policy
+as the aggregate/float comparison below. It ran baseline/candidate/candidate/
+baseline, three warmups and seven measurements per daemon, under the shared
+GPU lock and the 24-of-32-core CPU cap. Each binary used matching shader
+artifacts. Compiled-unit and instance cache hits were zero for every request.
+
+| Run | Median warm full-recompile wall time |
+| --- | ---: |
+| Baseline A | 207.565 ms |
+| Candidate A | 199.535 ms |
+| Candidate B | 199.176 ms |
+| Baseline B | 203.643 ms |
+| Baseline, all 14 measurements | 204.792 ms |
+| Candidate, all 14 measurements | 199.355 ms |
+
+The measured saving is 5.437 ms (2.7%). The 160 ms target remains unmet, and
+source replay still exists. Machine conditions differ from the earlier
+receipt; compare only the baseline and candidate within this run. All 40
+outputs, including warmups, match the ELF hash recorded below. All four
+daemons exited successfully and the frozen sources were unchanged.
+
+The author reports 1,442 integration checks with poisoned scratch, plus
+333 integration and 70 library checks on the final change. Independent
+static review found no blocker. After integration, five focused checks
+passed on hardware with indirect-dispatch validation: selective resets,
+poisoned small/large jobs and growth, valid jobs after a type-check failure,
+warm pipeline reuse, and lowering loop structure. The poison word and byte
+counter are thread-local. The semantic/target scan totals are written even
+for zero active rows. Smaller scratch resources were not audited one by
+one; on some already-failed lowering paths, diagnostic row numbers may
+still depend on unwritten scratch. Failed artifacts are rejected.
+
+Local receipts and the preserved baseline binary/shaders are in
+`/tmp/lanius-full-recompile-speed/integration-reset-20261114/`.
+
 ## Settings full recompiles: aggregate and float shaders (2026-11-14)
 
 `b8f81e764` processes wide aggregate literals one element per GPU lane in
