@@ -1,5 +1,27 @@
 # Compiler semantic contracts
 
+## Semantic-interface validation on the GPU (2026-11-13)
+
+The kernels in `shaders/type_checker/interface/validate` check an encoded
+semantic interface. They run the checks the host `validate` used to run, in
+the same order, and report the first failure.
+
+- An export records them after its `materialize` pass in the same
+  submission. The failure key is one more word of the metadata readback,
+  so a valid export costs no extra round trip.
+- `from_bytes` parses and then validates the exact bytes, for interfaces
+  read from disk. `validate` encodes the interface and validates the bytes.
+- The plan kernel checks the framing and writes the indirect arguments of
+  six record kernels. Each record kernel runs one thread per row.
+- A failure key is `phase << 27 | row << 7 | code`, reduced with an atomic
+  minimum. `gpu_validation::failure_message` maps it to the host's message.
+- Type-graph walks keep their stacks in workgroup memory, 192 words per
+  thread in workgroups of 32. A walk deeper than 96 entries or longer than
+  16384 visits reports a failure of its own.
+
+An interface is validated where it is exported or loaded and is immutable
+after that. Later jobs that hold it check only its encoded length.
+
 ## `<` after a path in an expression (2026-10-18)
 
 In a value expression, `path < ...` opens generic arguments only when the

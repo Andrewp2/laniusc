@@ -118,7 +118,6 @@ pub use semantic_interface::{
     GPU_SEMANTIC_INTERFACE_VERSION,
     GpuSemanticInterfaceArtifact,
     GpuSemanticInterfaceDeclarationRecord,
-    GpuSemanticInterfaceIdentityArtifact,
     GpuSemanticInterfaceImplementationKind,
     GpuSemanticInterfaceImplementationMethodBindingRecord,
     GpuSemanticInterfaceImplementationRecord,
@@ -137,6 +136,7 @@ pub use semantic_interface::{
 pub use crate::codegen::x86::native::NativeLinkOptions;
 pub(crate) use crate::codegen::x86::native::NativeMainBridge;
 pub(crate) use semantic_interface::{
+    gpu_validation as semantic_interface_validation,
     ENCODED_RECORDS_WORD,
     IMPLEMENTATION_OWNER_TAG,
     IMPLEMENTATION_METHOD_BINDING_U32S,

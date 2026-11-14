@@ -1814,9 +1814,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             true,
         )?;
         Ok(PendingOriginalUnit {
-            // This call's finish_semantic_interface decoded the interface
-            // with from_bytes, which validated it.
-            facts: OriginalUnitFacts::from_unit(&unit).with_interface_validated_in_this_job(),
+            facts: OriginalUnitFacts::from_unit(&unit),
             unit,
         })
     }
@@ -2495,10 +2493,6 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
 #[derive(Clone)]
 pub(super) struct OriginalUnitFacts {
     snapshot: std::sync::Arc<OriginalUnitSnapshot>,
-    /// The interface passed validate earlier in the job that holds these
-    /// facts. Only the pending-original compile sets it, and the
-    /// pending-original cache clears it, so it never crosses into another job.
-    interface_validated_in_this_job: bool,
 }
 
 struct OriginalUnitSnapshot {
@@ -2541,40 +2535,19 @@ impl OriginalUnitFacts {
                 interface_checked: std::sync::atomic::AtomicBool::new(false),
                 released_with: std::sync::Mutex::new(Vec::new()),
             }),
-            interface_validated_in_this_job: false,
         }
     }
 
-    fn with_interface_validated_in_this_job(mut self) -> Self {
-        self.interface_validated_in_this_job = true;
-        self
-    }
-
-    /// The same facts for use by a later job, which must validate again.
-    fn for_a_later_job(&self) -> Self {
-        Self { snapshot: self.snapshot.clone(), interface_validated_in_this_job: false }
-    }
-
-    /// Succeeds exactly when `interface().check_serializable()` does. When
-    /// validate already passed on this interface earlier in this job, only
-    /// the encoded length is checked.
+    /// Whether the interface serializes. Its records were validated on the
+    /// GPU where they were exported or loaded, so only the encoded length
+    /// remains to check.
     pub(super) fn check_interface_serializable(&self) -> Result<(), String> {
-        let interface = &self.snapshot.interface;
-        if !self.interface_validated_in_this_job {
-            return interface.check_serializable();
-        }
-        interface.check_encoded_len()
+        self.snapshot.interface.check_encoded_len()
     }
 
-    /// The interface's native C bindings. An interface validated earlier in
-    /// this job is not validated again.
+    /// The interface's native C bindings.
     pub(super) fn native_c_functions(&self) -> Result<Vec<crate::compiler::NativeCFunction>, String> {
-        let interface = &self.snapshot.interface;
-        if self.interface_validated_in_this_job {
-            interface.validated_native_c_functions()
-        } else {
-            interface.native_c_functions()
-        }
+        self.snapshot.interface.validated_native_c_functions()
     }
 
     /// The unit's own GPU job left nothing for the whole-program trait solver.
@@ -2716,7 +2689,7 @@ impl PendingOriginalUnit {
     pub(super) fn retain(&self) -> RetainedPendingOriginal {
         RetainedPendingOriginal {
             unit: std::sync::Arc::new(self.unit.clone()),
-            facts: self.facts.for_a_later_job(),
+            facts: self.facts.clone(),
         }
     }
 

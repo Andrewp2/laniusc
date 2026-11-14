@@ -87,8 +87,8 @@ pub(super) struct FrozenSnapshot {
     pub sources: Arc<[String]>,
     pub source_paths: Arc<[Option<std::path::PathBuf>]>,
     pub dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
-    /// The interface's serialization, made on first use: freeze admits the
-    /// interface with check_serializable and needs the bytes only for a
+    /// The interface's serialization, made on first use: freeze checks that
+    /// the interface serializes and needs the bytes only for a
     /// dependency artifact that differs from it by value.
     interface_bytes: std::sync::OnceLock<Arc<[u8]>>,
     /// The complete original accepted inventory is authoritative even when a

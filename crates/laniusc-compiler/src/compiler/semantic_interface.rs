@@ -25,7 +25,6 @@ pub(crate) const IMPLEMENTATION_U32S: usize = 15;
 pub(crate) const IMPLEMENTATION_METHOD_BINDING_U32S: usize = 6;
 pub(crate) const IMPLEMENTATION_OWNER_TAG: u32 = 0x8000_0000;
 const INVALID: u32 = u32::MAX;
-const MAX_CANONICAL_NAME_BYTES: usize = 64;
 const DECL_FLAG_NATIVE_C: u32 = 2;
 /// A native C prototype that ends in `...`.
 const DECL_FLAG_NATIVE_C_VARIADIC: u32 = 4;
@@ -85,7 +84,7 @@ pub struct NativeCFunction {
 #[cfg(test)]
 mod dependency_page_tests;
 mod implementation_evidence;
-use implementation_evidence::{ContractOwner, validate_contract_owner, validate_contract_owner_capacity};
+pub(crate) mod gpu_validation;
 
 /// Stable kind tag for a typed interface node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,23 +104,6 @@ pub enum GpuSemanticInterfaceTypeKind {
     CountProjection = 10,
 }
 
-impl GpuSemanticInterfaceTypeKind {
-    fn from_u32(value: u32) -> Option<Self> {
-        Some(match value {
-            1 => Self::Scalar,
-            2 => Self::GenericParameter,
-            3 => Self::Declaration,
-            4 => Self::Array,
-            5 => Self::Slice,
-            6 => Self::Reference,
-            7 => Self::Function,
-            8 => Self::ConstParameter,
-            9 => Self::ConstValue,
-            10 => Self::CountProjection,
-            _ => return None,
-        })
-    }
-}
 
 /// Stable role tag for a named declaration member.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -352,50 +334,6 @@ pub struct GpuSemanticInterfaceImplementationMethodBindingRecord {
     pub target_symbol: u32,
 }
 
-/// Canonical identity portion emitted before typed signature/member graph
-/// materialization. This value is never a valid persisted interface by itself.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GpuSemanticInterfaceIdentityArtifact {
-    pub library_id: u32,
-    /// Globally unique bounded frontend-unit id within the source-pack build.
-    pub unit_id: u32,
-    pub modules: Vec<GpuSemanticInterfaceModuleRecord>,
-    pub module_segments: Vec<GpuSemanticInterfaceModuleSegmentRecord>,
-    pub declarations: Vec<GpuSemanticInterfaceDeclarationRecord>,
-    pub name_bytes: Vec<u8>,
-}
-
-impl GpuSemanticInterfaceIdentityArtifact {
-    /// Validates canonical identities without accepting the partial artifact as
-    /// a complete semantic interface.
-    pub fn validate(&self) -> Result<(), String> {
-        checked_u32_len("module", self.modules.len())?;
-        checked_u32_len("module segment", self.module_segments.len())?;
-        checked_u32_len("declaration", self.declarations.len())?;
-        checked_u32_len("name byte", self.name_bytes.len())?;
-        let partial = GpuSemanticInterfaceArtifact {
-            version: GPU_SEMANTIC_INTERFACE_VERSION,
-            library_id: self.library_id,
-            unit_id: self.unit_id,
-            modules: self.modules.clone(),
-            module_segments: self.module_segments.clone(),
-            declarations: self.declarations.clone(),
-            types: Vec::new(),
-            type_edges: Vec::new(),
-            members: Vec::new(),
-            predicates: Vec::new(),
-            predicate_arguments: Vec::new(),
-            implementations: Vec::new(),
-            implementation_arguments: Vec::new(),
-            implementation_method_bindings: Vec::new(),
-            name_bytes: self.name_bytes.clone(),
-            closure_summary: None,
-            resident_bytes: Default::default(),
-        };
-        partial.validate_identities()
-    }
-}
-
 /// Complete stable interface emitted for one bounded library compilation unit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GpuSemanticInterfaceArtifact {
@@ -475,8 +413,8 @@ impl GpuSemanticInterfaceArtifact {
         self.validated_native_c_functions()
     }
 
-    /// [`Self::native_c_functions`] of an interface whose validate already
-    /// passed.
+    /// [`Self::native_c_functions`] of an interface whose bytes were
+    /// validated where they were exported or loaded.
     pub(crate) fn validated_native_c_functions(&self) -> Result<Vec<NativeCFunction>, String> {
         self.declarations.iter().enumerate()
             .filter(|(_, declaration)| declaration.flags & DECL_FLAG_NATIVE_C != 0)
@@ -546,918 +484,36 @@ impl GpuSemanticInterfaceArtifact {
             NativeCType::Void | NativeCType::F32 | NativeCType::F64))
     }
 
-    /// Validates all record ranges, canonical names, and typed references.
+    /// Validates all record ranges, canonical names, and typed references
+    /// of the encoded interface on the GPU (`gpu_validation`).
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != GPU_SEMANTIC_INTERFACE_VERSION {
-            return Err(format!(
-                "semantic-interface version {} is unsupported; expected {}",
-                self.version, GPU_SEMANTIC_INTERFACE_VERSION
-            ));
-        }
-        checked_u32_len("module", self.modules.len())?;
-        checked_u32_len("module segment", self.module_segments.len())?;
-        checked_u32_len("declaration", self.declarations.len())?;
-        checked_u32_len("type", self.types.len())?;
-        checked_u32_len("type edge", self.type_edges.len())?;
-        checked_u32_len("member", self.members.len())?;
-        checked_u32_len("predicate", self.predicates.len())?;
-        checked_u32_len("predicate argument", self.predicate_arguments.len())?;
-        checked_u32_len("implementation", self.implementations.len())?;
-        checked_u32_len("implementation argument", self.implementation_arguments.len())?;
-        checked_u32_len("implementation method binding", self.implementation_method_bindings.len())?;
-        validate_contract_owner_capacity("declaration", self.declarations.len())?;
-        validate_contract_owner_capacity("implementation", self.implementations.len())?;
-        checked_u32_len("name byte", self.name_bytes.len())?;
-
-        self.validate_identities()?;
-        // Declaration local indices are assigned by the GPU public-declaration
-        // compaction pass.  That order is the stable identity order consumed
-        // dependency lookup; it need not be grouped by module because every
-        // record carries its explicit module index and lookup hashes that key.
-        for (index, declaration) in self.declarations.iter().enumerate() {
-            let variadic = declaration.flags & DECL_FLAG_NATIVE_C_VARIADIC != 0;
-            if declaration.flags & !7 != 0 ||
-                (variadic && declaration.flags & DECL_FLAG_NATIVE_C == 0) ||
-                (declaration.kind != 3 && declaration.flags & DECL_FLAG_NATIVE_C == 0 && declaration.value_hi != 0)
-            {
-                return Err(format!("semantic-interface declaration {index} has invalid native ABI metadata"));
-            }
-            validate_optional_index(
-                "declaration signature type",
-                index,
-                declaration.signature_type,
-                self.types.len(),
-            )?;
-            if declaration.signature_type == INVALID {
-                return Err(format!(
-                    "semantic-interface declaration record {index} has no typed signature"
-                ));
-            }
-            self.validate_value_type_root("declaration signature", index, declaration.signature_type)?;
-            validate_range(
-                "declaration member",
-                index,
-                declaration.first_member,
-                declaration.member_count,
-                self.members.len(),
-            )?;
-            let member_range = checked_range(
-                "declaration member",
-                index,
-                declaration.first_member,
-                declaration.member_count,
-                self.members.len(),
-            )?;
-            if self.members[member_range]
-                .iter()
-                .any(|member| member.owner_ref as usize != index)
-            {
-                return Err(format!(
-                    "semantic-interface declaration record {index} member range contains a foreign owner"
-                ));
-            }
-        }
-        self.validate_implementation_ranges()?;
-        let mut type_subtree_starts = Vec::with_capacity(self.types.len());
-        for (index, ty) in self.types.iter().enumerate() {
-            let Some(kind) = GpuSemanticInterfaceTypeKind::from_u32(ty.kind) else {
-                return Err(format!(
-                    "semantic-interface type record {index} has unknown kind {}",
-                    ty.kind
-                ));
-            };
-            validate_range(
-                "type edge",
-                index,
-                ty.first_edge,
-                ty.edge_count,
-                self.type_edges.len(),
-            )?;
-            let edge_range = checked_range(
-                "type edge",
-                index,
-                ty.first_edge,
-                ty.edge_count,
-                self.type_edges.len(),
-            )?;
-            for (edge_offset, edge) in self.type_edges[edge_range.clone()].iter().enumerate() {
-                validate_index(
-                    "type edge target",
-                    ty.first_edge as usize + edge_offset,
-                    edge.type_index,
-                    self.types.len(),
-                )?;
-                if matches!(GpuSemanticInterfaceTypeKind::from_u32(self.types[edge.type_index as usize].kind),
-                    Some(GpuSemanticInterfaceTypeKind::ConstParameter | GpuSemanticInterfaceTypeKind::ConstValue | GpuSemanticInterfaceTypeKind::CountProjection))
-                    && !(kind == GpuSemanticInterfaceTypeKind::Declaration
-                        || (kind == GpuSemanticInterfaceTypeKind::Array && edge_offset == 1)
-                        || kind == GpuSemanticInterfaceTypeKind::CountProjection)
-                {
-                    return Err(format!("semantic-interface type record {index} uses a constant operand as a value type"));
-                }
-                if edge.type_index as usize >= index {
-                    return Err(format!(
-                        "semantic-interface type record {index} edge target {} is not in prior topological order",
-                        edge.type_index
-                    ));
-                }
-            }
-            let mut subtree_start = index;
-            if kind != GpuSemanticInterfaceTypeKind::Function {
-                for edge in self.type_edges[edge_range.clone()].iter() {
-                    let expected_child = subtree_start.checked_sub(1).ok_or_else(|| {
-                        format!(
-                            "semantic-interface type record {index} has a child before the start of its reverse-preorder subtree"
-                        )
-                    })?;
-                    if edge.type_index as usize != expected_child {
-                        return Err(format!(
-                            "semantic-interface type record {index} child {} is not contiguous reverse preorder; expected {expected_child}",
-                            edge.type_index
-                        ));
-                    }
-                    subtree_start = type_subtree_starts[expected_child];
-                }
-            }
-            type_subtree_starts.push(subtree_start);
-            if kind == GpuSemanticInterfaceTypeKind::Scalar &&
-                !crate::primitive_types::is_identity(ty.payload_lo) {
-                return Err(format!("semantic-interface type record {index} has an unknown scalar identity {}", ty.payload_lo));
-            }
-            match kind {
-                GpuSemanticInterfaceTypeKind::Scalar
-                | GpuSemanticInterfaceTypeKind::GenericParameter
-                | GpuSemanticInterfaceTypeKind::ConstParameter
-                | GpuSemanticInterfaceTypeKind::ConstValue
-                    if ty.edge_count != 0 =>
-                {
-                    return Err(format!(
-                        "semantic-interface leaf type record {index} has {} child edges",
-                        ty.edge_count
-                    ));
-                }
-                GpuSemanticInterfaceTypeKind::Array if ty.edge_count != 2 => {
-                    return Err(format!("semantic-interface array type record {index} must have element and length edges"));
-                }
-                GpuSemanticInterfaceTypeKind::CountProjection
-                | GpuSemanticInterfaceTypeKind::Slice
-                | GpuSemanticInterfaceTypeKind::Reference
-                    if ty.edge_count != 1 =>
-                {
-                    return Err(format!(
-                        "semantic-interface unary type record {index} has {} child edges",
-                        ty.edge_count
-                    ));
-                }
-                GpuSemanticInterfaceTypeKind::Function if ty.edge_count == 0 => {
-                    return Err(format!(
-                        "semantic-interface function type record {index} has no return-type edge"
-                    ));
-                }
-                _ => {}
-            }
-            match kind {
-                GpuSemanticInterfaceTypeKind::ConstValue => {
-                    if ty.payload_hi != 0 || ty.first_edge != 0 || ty.length_kind != 0
-                        || ty.nominal_unit_id != 0
-                        || crate::constant_value::CheckedConstantValue::from_words(
-                            ty.payload_lo, [ty.length_lo, ty.length_hi]).is_none()
-                    {
-                        return Err(format!("semantic-interface constant operand {index} has an invalid typed scalar value"));
-                    }
-                }
-                GpuSemanticInterfaceTypeKind::CountProjection => {
-                    if crate::primitive_types::integer_bits(ty.payload_lo) == 0
-                        || ty.payload_hi != 0 || ty.length_kind != 0
-                        || ty.length_lo != 0 || ty.length_hi != 0 || ty.nominal_unit_id != 0
-                    {
-                        return Err(format!("semantic-interface count projection {index} has an invalid target or reserved payload"));
-                    }
-                    let child = self.type_edges[ty.first_edge as usize].type_index;
-                    if !self.constant_scalar(child).is_some_and(|scalar|
-                        crate::primitive_types::integer_bits(scalar) != 0)
-                    {
-                        return Err(format!("semantic-interface count projection {index} has a noninteger constant source"));
-                    }
-                    // Admission preserves this checked conversion. Only the
-                    // evaluator may discharge its nonnegative/representable obligation.
-                }
-                GpuSemanticInterfaceTypeKind::Declaration
-                    if ty.payload_lo == self.library_id && ty.nominal_unit_id == self.unit_id =>
-                {
-                    validate_index(
-                        "nominal type declaration",
-                        index,
-                        ty.payload_hi,
-                        self.declarations.len(),
-                    )?
-                }
-                GpuSemanticInterfaceTypeKind::GenericParameter => self.validate_parameter_member(
-                    index,
-                    ty.payload_lo,
-                    GpuSemanticInterfaceMemberKind::GenericTypeParameter,
-                )?,
-                GpuSemanticInterfaceTypeKind::ConstParameter => self.validate_parameter_member(
-                    index,
-                    ty.payload_lo,
-                    GpuSemanticInterfaceMemberKind::GenericConstParameter,
-                )?,
-                GpuSemanticInterfaceTypeKind::Array => {
-                    if ty.length_kind != 0 || ty.length_lo != 0 || ty.length_hi != 0 {
-                        return Err(format!("semantic-interface array type {index} has an invalid length representation"));
-                    }
-                    let length = self.type_edges[ty.first_edge as usize + 1].type_index;
-                    if !self.constant_scalar(length).is_some_and(|scalar|
-                        crate::primitive_types::integer_bits(scalar) != 0)
-                    {
-                        return Err(format!("semantic-interface array type {index} has a noninteger constant length"));
-                    }
-                }
-                _ => {}
-            }
-        }
-        for (index, member) in self.members.iter().enumerate() {
-            if GpuSemanticInterfaceMemberKind::from_u32(member.kind).is_none() {
-                return Err(format!(
-                    "semantic-interface member record {index} has unknown kind {}",
-                    member.kind
-                ));
-            }
-            let owner = validate_contract_owner(member.owner_ref, self.declarations.len(), self.implementations.len())?;
-            let owner_members = self.contract_owner_member_range(owner)?;
-            if !owner_members.contains(&index) {
-                return Err(format!(
-                    "semantic-interface member {index} is outside its owner's member range"
-                ));
-            }
-            self.validate_name(
-                "member",
-                index,
-                member.name_hash_lo,
-                member.name_hash_hi,
-                member.name_byte_start,
-                member.name_byte_len,
-            )?;
-            validate_optional_index("member type", index, member.type_index, self.types.len())?;
-            if member.type_index != INVALID {
-                self.validate_value_type_root("member signature", index, member.type_index)?;
-            }
-            let kind = GpuSemanticInterfaceMemberKind::from_u32(member.kind)
-                .expect("member kind was validated above");
-            if matches!(owner, ContractOwner::Implementation(_))
-                && !matches!(kind, GpuSemanticInterfaceMemberKind::ImplementationMethod
-                    | GpuSemanticInterfaceMemberKind::Parameter
-                    | GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                    | GpuSemanticInterfaceMemberKind::GenericConstParameter)
-            {
-                return Err(format!("semantic-interface member {index} has an invalid implementation member kind"));
-            }
-            if kind == GpuSemanticInterfaceMemberKind::GenericConstParameter
-                && self.constant_parameter_scalar(index as u32).is_none()
-            {
-                return Err(format!("semantic-interface constant parameter {index} lacks a supported declared scalar leaf"));
-            }
-            if kind == GpuSemanticInterfaceMemberKind::ImplementationMethod {
-                if !matches!(owner, ContractOwner::Implementation(_)) {
-                    return Err(format!("semantic-interface implementation method {index} has a declaration owner"));
-                }
-                validate_index("implementation method receiver type", index,
-                    member.receiver_type_index, self.types.len())?;
-                self.validate_value_type_root("implementation method receiver", index, member.receiver_type_index)?;
-            } else if member.receiver_type_index != INVALID {
-                return Err(format!(
-                    "semantic-interface member record {index} has a receiver type without an implementation method"
-                ));
-            }
-            if kind == GpuSemanticInterfaceMemberKind::TraitMethod
-                && !matches!(owner, ContractOwner::Declaration(row) if self.declarations[row as usize].kind == 10)
-            {
-                return Err(format!(
-                    "semantic-interface trait method {index} has a non-trait owner"
-                ));
-            }
-            let generic_parameter = matches!(
-                kind,
-                GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                    | GpuSemanticInterfaceMemberKind::GenericConstParameter
-            );
-            if generic_parameter == (member.generic_parameter_ordinal == INVALID) {
-                return Err(format!(
-                    "semantic-interface member {index} has invalid generic declaration order"
-                ));
-            }
-            if member.type_index == INVALID
-                && !matches!(
-                    kind,
-                    GpuSemanticInterfaceMemberKind::EnumVariant
-                        | GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                )
-            {
-                return Err(format!(
-                    "semantic-interface member record {index} has no typed signature"
-                ));
-            }
-        }
-        self.validate_nominal_operand_domains()?;
-        self.validate_trait_headers()?;
-        self.validate_parameter_scopes()?;
-        self.validate_implementations()?;
-        self.validate_predicates()?;
-        for (index, declaration) in self.declarations.iter().enumerate()
-            .filter(|(_, declaration)| declaration.flags & DECL_FLAG_NATIVE_C != 0)
-        { self.native_c_function(index, declaration)?; }
-        Ok(())
-    }
-
-    /// A predicate is a callable contract, with explicit lexical ownership for
-    /// every parameter reached through its complete subject and operand trees.
-    fn validate_predicates(&self) -> Result<(), String> {
-        let mut argument_owners = vec![None; self.predicate_arguments.len()];
-        for (index, predicate) in self.predicates.iter().enumerate() {
-            validate_contract_owner(predicate.owner_ref, self.declarations.len(), self.implementations.len())?;
-            let scopes = self.predicate_callable_scopes(index, predicate)?;
-            validate_index("predicate subject", index, predicate.subject_type, self.types.len())?;
-            self.validate_value_type_root("predicate subject", index, predicate.subject_type)?;
-            if [predicate.trait_library_id, predicate.trait_unit_id,
-                predicate.trait_declaration_index].contains(&INVALID)
-            {
-                return Err(format!("semantic-interface predicate {index} has an unresolved trait identity"));
-            }
-            if predicate.argument_count > 32 {
-                return Err(format!("semantic-interface predicate {index} exceeds 32 ordered operands"));
-            }
-            let arguments = checked_range("predicate argument", index, predicate.first_argument,
-                predicate.argument_count, self.predicate_arguments.len())?;
-            let mut roots = Vec::with_capacity(arguments.len() + 1);
-            roots.push(predicate.subject_type);
-            for row in arguments.clone() {
-                if argument_owners[row].replace(index).is_some() {
-                    return Err(format!("semantic-interface predicate argument {row} has multiple owners"));
-                }
-                let root = self.predicate_arguments[row];
-                validate_index("predicate argument root", row, root, self.types.len())?;
-                roots.push(root);
-            }
-            if predicate.trait_library_id == self.library_id && predicate.trait_unit_id == self.unit_id {
-                validate_index("predicate trait declaration", index,
-                    predicate.trait_declaration_index, self.declarations.len())?;
-                let declaration = self.declarations[predicate.trait_declaration_index as usize];
-                if declaration.kind != 10 || declaration.namespace != 3 {
-                    return Err(format!("semantic-interface predicate {index} does not name a trait"));
-                }
-                let header = self.types[declaration.signature_type as usize];
-                if header.edge_count != predicate.argument_count {
-                    return Err(format!("semantic-interface predicate {index} trait arity disagrees with its operands"));
-                }
-                for (ordinal, row) in arguments.enumerate() {
-                    let expected = self.types[self.type_edges[header.first_edge as usize + ordinal].type_index as usize];
-                    if !self.parameter_operand_domain_matches(expected.payload_lo, self.predicate_arguments[row]) {
-                        return Err(format!("semantic-interface predicate {index} operand {ordinal} has the wrong declared domain"));
-                    }
-                }
-            }
-            for type_index in self.predicate_graph_nodes(roots) {
-                let ty = self.types[type_index as usize];
-                if (ty.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
-                    && !crate::primitive_types::is_known(ty.payload_lo))
-                    || (ty.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
-                        && [ty.payload_lo, ty.nominal_unit_id, ty.payload_hi].contains(&INVALID))
-                {
-                    return Err(format!("semantic-interface predicate {index} has an unresolved type identity"));
-                }
-                if let Some(member_index) = predicate_parameter_member(ty) {
-                    let member = self.members[member_index as usize];
-                    if member.owner_ref != predicate.owner_ref || !scopes.contains(&member.value_hi) {
-                        return Err(format!("semantic-interface predicate {index} uses a foreign lexical parameter"));
-                    }
-                }
-            }
-        }
-        if let Some(row) = argument_owners.iter().position(Option::is_none) {
-            return Err(format!("semantic-interface predicate argument {row} has no owner"));
-        }
-        Ok(())
-    }
-
-    fn predicate_callable_scopes(&self, index: usize, predicate: &GpuSemanticInterfacePredicateRecord)
-        -> Result<std::collections::BTreeSet<u32>, String>
-    {
-        use std::collections::BTreeSet;
-        let owner = validate_contract_owner(predicate.owner_ref, self.declarations.len(), self.implementations.len())?;
-        let members = self.contract_owner_member_range(owner)?;
-        let mut scopes = BTreeSet::new();
-        let method = match owner {
-            ContractOwner::Declaration(owner_index) => {
-                let declaration = self.declarations[owner_index as usize];
-                if predicate.owner_scope_symbol == 0 {
-                    if declaration.kind != 4 || declaration.namespace != 2
-                        || self.types[declaration.signature_type as usize].kind != GpuSemanticInterfaceTypeKind::Function as u32
-                    {
-                        return Err(format!("semantic-interface predicate {index} has a non-callable owner"));
-                    }
-                    scopes.insert(0);
-                    None
-                } else {
-                    let method = self.members[members.clone()].iter().find(|member|
-                        member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
-                            && member.value_hi == predicate.owner_scope_symbol)
-                        .ok_or_else(|| format!("semantic-interface predicate {index} has no owning trait method"))?;
-                    scopes.extend([0, method.value_hi]);
-                    Some(method)
-                }
-            }
-            ContractOwner::Implementation(implementation_index) => {
-                let implementation = self.implementations[implementation_index as usize];
-                let implementation_scope = self.implementation_parameter_scope(implementation_index)?;
-                if let Some(scope) = implementation_scope { scopes.insert(scope); }
-                if Some(predicate.owner_scope_symbol) == implementation_scope {
-                    let prerequisites = checked_range("implementation prerequisite", implementation_index as usize,
-                        implementation.first_prerequisite, implementation.prerequisite_count, self.predicates.len())?;
-                    if !prerequisites.contains(&index) {
-                        return Err(format!("semantic-interface predicate {index} is outside its implementation prerequisite range"));
-                    }
-                    None
-                } else {
-                    if implementation.kind != GpuSemanticInterfaceImplementationKind::Inherent as u32 {
-                        return Err(format!("semantic-interface predicate {index} requires unsupported trait implementation method predicates"));
-                    }
-                    let method = self.members[members.clone()].iter().find(|member|
-                        member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
-                            && member.value_hi == predicate.owner_scope_symbol)
-                        .ok_or_else(|| format!("semantic-interface predicate {index} has no owning inherent method"))?;
-                    scopes.insert(method.value_hi);
-                    Some(method)
-                }
-            }
-        };
-        // Implementation headers are checked from their complete owner inventory,
-        // including parameters appearing only in bounds. Declaration scopes
-        // retain their established mixed-domain ordering.
-        if matches!(owner, ContractOwner::Declaration(_)) {
-            for &scope in &scopes {
-                let parameters = self.members[members.clone()].iter().filter(|member| member.value_hi == scope);
-                let mut types = Vec::new();
-                let mut constants = Vec::new();
-                for parameter in parameters {
-                    if parameter.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32 {
-                        types.push(parameter.type_binding_slot());
-                    } else if parameter.kind == GpuSemanticInterfaceMemberKind::GenericConstParameter as u32 {
-                        constants.push(parameter.type_binding_slot());
-                    }
-                }
-                types.sort_unstable(); constants.sort_unstable();
-                let type_start = if scope != 0 {
-                    method.unwrap().method_type_parameter_count().saturating_sub(types.len() as u32)
-                } else { 0 };
-                let constant_start = if scope == 0 { types.len() as u32 } else {
-                    method.unwrap().method_constant_parameter_count().saturating_sub(constants.len() as u32)
-                };
-                if types.len() > 32 || constants.len() > 32
-                    || types.iter().copied().ne(type_start..type_start + types.len() as u32)
-                    || constants.iter().copied().ne(constant_start..constant_start + constants.len() as u32)
-                {
-                    return Err(format!("semantic-interface predicate {index} has an incomplete lexical binding scope"));
-                }
-            }
-        }
-        Ok(scopes)
-    }
-
-    /// Type edges were validated in topological order before this traversal.
-    fn predicate_graph_nodes(&self, roots: Vec<u32>) -> std::collections::BTreeSet<u32> {
-        let mut pending = roots;
-        let mut seen = std::collections::BTreeSet::new();
-        while let Some(root) = pending.pop() {
-            if !seen.insert(root) { continue; }
-            let ty = self.types[root as usize];
-            pending.extend(self.type_edges[ty.first_edge as usize..(ty.first_edge + ty.edge_count) as usize]
-                .iter().map(|edge| edge.type_index));
-        }
-        seen
-    }
-
-    /// A trait header is a complete symbolic application in source order. Its
-    /// leaves identify the portable members used by required method signatures.
-    fn validate_trait_headers(&self) -> Result<(), String> {
-        for (index, declaration) in self.declarations.iter().enumerate()
-            .filter(|(_, declaration)| declaration.kind == 10)
-        {
-            let signature = self.types[declaration.signature_type as usize];
-            let mut parameters = self.members[declaration.first_member as usize
-                ..(declaration.first_member + declaration.member_count) as usize]
-                .iter().enumerate().filter(|(_, member)| {
-                member.value_hi == 0
-                    && matches!(GpuSemanticInterfaceMemberKind::from_u32(member.kind),
-                        Some(GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                            | GpuSemanticInterfaceMemberKind::GenericConstParameter))
-            }).map(|(row, member)| (row + declaration.first_member as usize, member))
-                .collect::<Vec<_>>();
-            parameters.sort_unstable_by_key(|(_, member)| member.generic_parameter_ordinal);
-            if signature.kind != GpuSemanticInterfaceTypeKind::Declaration as u32
-                || signature.payload_lo != self.library_id
-                || signature.nominal_unit_id != self.unit_id
-                || signature.payload_hi != index as u32
-                || parameters.len() > 32
-                || signature.edge_count as usize != parameters.len()
-            {
-                return Err(format!("semantic-interface trait {index} has an incomplete header"));
-            }
-            for (ordinal, (member_index, member)) in parameters.iter().enumerate() {
-                let leaf = self.types[self.type_edges[signature.first_edge as usize + ordinal]
-                    .type_index as usize];
-                let expected = if member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32 {
-                    GpuSemanticInterfaceTypeKind::GenericParameter
-                } else {
-                    GpuSemanticInterfaceTypeKind::ConstParameter
-                };
-                if member.generic_parameter_ordinal != ordinal as u32
-                    || leaf.kind != expected as u32 || leaf.payload_lo as usize != *member_index
-                {
-                    return Err(format!("semantic-interface trait {index} has an invalid ordered parameter"));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Const parameter identity remains the exact member; its scalar is a
-    /// separate declared fact, never inferred from an argument value.
-    fn constant_parameter_scalar(&self, member: u32) -> Option<u32> {
-        let member = self.members.get(member as usize)?;
-        if member.kind != GpuSemanticInterfaceMemberKind::GenericConstParameter as u32 {
-            return None;
-        }
-        let leaf = self.types.get(member.type_index as usize)?;
-        (leaf.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
-            && leaf.edge_count == 0
-            && crate::constant_value::constant_scalar_is_supported(leaf.payload_lo))
-            .then_some(leaf.payload_lo)
-    }
-
-    /// This reads an already admitted expression's type, not its value.
-    fn constant_scalar(&self, root: u32) -> Option<u32> {
-        let ty = self.types.get(root as usize)?;
-        match GpuSemanticInterfaceTypeKind::from_u32(ty.kind)? {
-            GpuSemanticInterfaceTypeKind::ConstValue =>
-                crate::constant_value::CheckedConstantValue::from_words(
-                    ty.payload_lo, [ty.length_lo, ty.length_hi]).map(|value| value.scalar()),
-            GpuSemanticInterfaceTypeKind::ConstParameter => self.constant_parameter_scalar(ty.payload_lo),
-            GpuSemanticInterfaceTypeKind::CountProjection =>
-                (crate::primitive_types::integer_bits(ty.payload_lo) != 0).then_some(ty.payload_lo),
-            _ => None,
-        }
-    }
-
-    fn parameter_operand_domain_matches(&self, member: u32, argument: u32) -> bool {
-        let Some(parameter) = self.members.get(member as usize) else { return false; };
-        match GpuSemanticInterfaceMemberKind::from_u32(parameter.kind) {
-            Some(GpuSemanticInterfaceMemberKind::GenericConstParameter) => {
-                let expected = self.constant_parameter_scalar(member);
-                expected.is_some() && expected == self.constant_scalar(argument)
-            }
-            Some(GpuSemanticInterfaceMemberKind::GenericTypeParameter) =>
-                self.types.get(argument as usize).is_some_and(|ty| !matches!(
-                    GpuSemanticInterfaceTypeKind::from_u32(ty.kind),
-                    Some(GpuSemanticInterfaceTypeKind::ConstParameter
-                        | GpuSemanticInterfaceTypeKind::ConstValue
-                        | GpuSemanticInterfaceTypeKind::CountProjection))),
-            _ => false,
-        }
-    }
-
-    /// Local headers are available in this artifact. External applications
-    /// retain their full typed operands for dependency-side validation.
-    fn validate_nominal_operand_domains(&self) -> Result<(), String> {
-        for (index, ty) in self.types.iter().enumerate().filter(|(_, ty)|
-            ty.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
-                && ty.payload_lo == self.library_id && ty.nominal_unit_id == self.unit_id)
-        {
-            let declaration = self.declarations[ty.payload_hi as usize];
-            let range = checked_range("nominal parameter", index, declaration.first_member,
-                declaration.member_count, self.members.len())?;
-            let mut parameters = range.filter(|&row| {
-                let member = self.members[row];
-                member.value_hi == 0 && matches!(GpuSemanticInterfaceMemberKind::from_u32(member.kind),
-                    Some(GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                        | GpuSemanticInterfaceMemberKind::GenericConstParameter))
-            }).collect::<Vec<_>>();
-            parameters.sort_unstable_by_key(|&row| self.members[row].generic_parameter_ordinal);
-            if parameters.len() != ty.edge_count as usize {
-                return Err(format!("semantic-interface nominal application {index} arity disagrees with its header"));
-            }
-            for (ordinal, member) in parameters.into_iter().enumerate() {
-                let root = self.type_edges[ty.first_edge as usize + ordinal].type_index;
-                if !self.parameter_operand_domain_matches(member as u32, root) {
-                    return Err(format!("semantic-interface nominal application {index} operand {ordinal} has the wrong declared domain"));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_value_type_root(&self, label: &str, row: usize, index: u32) -> Result<(), String> {
-        if matches!(
-            GpuSemanticInterfaceTypeKind::from_u32(self.types[index as usize].kind),
-            Some(GpuSemanticInterfaceTypeKind::ConstParameter | GpuSemanticInterfaceTypeKind::ConstValue | GpuSemanticInterfaceTypeKind::CountProjection)
-        ) {
-            return Err(format!("semantic-interface {label} {row} uses a constant operand as a value type"));
-        }
-        Ok(())
-    }
-
-    fn validate_parameter_member(
-        &self,
-        ty: usize,
-        index: u32,
-        expected: GpuSemanticInterfaceMemberKind,
-    ) -> Result<(), String> {
-        validate_index("generic type member", ty, index, self.members.len())?;
-        if self.members[index as usize].kind != expected as u32 {
-            return Err(format!(
-                "semantic-interface type {ty} names the wrong parameter member kind"
-            ));
-        }
-        Ok(())
-    }
-
-    /// Portable parameter identity is (unit, member), while slots encode the
-    /// lexical call environment. Validate that relationship before GPU upload.
-    fn validate_parameter_scopes(&self) -> Result<(), String> {
-        use std::collections::{BTreeMap, BTreeSet};
-        let mut methods = BTreeMap::new();
-        let mut symbols = BTreeSet::new();
-        let mut scoped = BTreeMap::<(u32, u32, u32), Vec<usize>>::new();
-        for (index, member) in self.members.iter().enumerate() {
-            if member.value_hi != 0 {
-                scoped
-                    .entry((member.owner_ref, member.value_hi, member.kind))
-                    .or_default()
-                    .push(index);
-            }
-        }
-        for (index, method) in self.members.iter().enumerate().filter(|(_, member)| {
-            member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
-                || member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
-        }) {
-            let explicit_contract = matches!(GpuSemanticInterfaceMemberKind::from_u32(method.kind),
-                Some(GpuSemanticInterfaceMemberKind::TraitMethod | GpuSemanticInterfaceMemberKind::ImplementationMethod));
-            if method.value_hi & 0xc000_0000 != 0x8000_0000
-                || method.value_lo >> (if explicit_contract { 31 } else { 28 }) != 0
-                || method.method_type_parameter_count() > 32
-                || method.method_constant_parameter_count() > 32
-                || !symbols.insert(method.value_hi)
-                || methods
-                    .insert((method.owner_ref, method.value_hi), index)
-                    .is_some()
-            {
-                return Err(format!(
-                    "semantic-interface method {index} has invalid or duplicate requirements/identity"
-                ));
-            }
-        }
-        let mut bindings = BTreeSet::new();
-        let mut parameter_orders = BTreeMap::<(u32, u32), Vec<u32>>::new();
-        for (&(owner, symbol, kind), _) in &scoped {
-            if kind == GpuSemanticInterfaceMemberKind::Parameter as u32
-                && !methods.contains_key(&(owner, symbol))
-            {
-                return Err(format!(
-                    "semantic-interface declaration {owner} has a parameter without its method"
-                ));
-            }
-        }
-        for (index, parameter) in self.members.iter().enumerate().filter(|(_, member)| {
-            matches!(
-                GpuSemanticInterfaceMemberKind::from_u32(member.kind),
-                Some(
-                    GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                        | GpuSemanticInterfaceMemberKind::GenericConstParameter
-                )
-            )
-        }) {
-            parameter_orders
-                .entry((parameter.owner_ref, parameter.value_hi))
-                .or_default()
-                .push(parameter.generic_parameter_ordinal);
-            let scope_kind = parameter.value_hi & 0xc000_0000;
-            if scope_kind == 0xc000_0000
-                && !matches!(validate_contract_owner(parameter.owner_ref, self.declarations.len(), self.implementations.len())?,
-                    ContractOwner::Implementation(row) if GpuSemanticInterfaceImplementationKind::from_u32(
-                        self.implementations[row as usize].kind).is_some())
-            {
-                return Err(format!("semantic-interface parameter {index} has no implementation owner"));
-            }
-            if (parameter.value_hi != 0 && (scope_kind == 0 || scope_kind == 0x4000_0000))
-                || parameter.value_hi == INVALID
-                || (scope_kind == 0x8000_0000
-                    && !methods.contains_key(&(parameter.owner_ref, parameter.value_hi)))
-                || !bindings.insert((
-                    parameter.owner_ref,
-                    parameter.value_hi,
-                    parameter.kind,
-                    parameter.type_binding_slot(),
-                ))
-            {
-                return Err(format!(
-                    "semantic-interface parameter {index} has invalid or duplicate lexical ownership"
-                ));
-            }
-        }
-        for ((owner, scope), mut order) in parameter_orders {
-            order.sort_unstable();
-            if order.iter().copied().ne(0..order.len() as u32) {
-                return Err(format!(
-                    "semantic-interface declaration {owner} scope {scope} has incomplete or duplicate generic declaration order"
-                ));
-            }
-        }
-        for (&(owner, symbol), &index) in &methods {
-            let method = self.members[index];
-            let trait_method = method.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32;
-            let explicit_contract = trait_method || method.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32;
-            let parameters = scoped
-                .get(&(
-                    owner,
-                    symbol,
-                    GpuSemanticInterfaceMemberKind::Parameter as u32,
-                ))
-                .into_iter()
-                .flatten()
-                .map(|&index| &self.members[index])
-                .collect::<Vec<_>>();
-            if parameters.len() != method.method_parameter_count() as usize {
-                return Err(format!(
-                    "semantic-interface method {index} parameter count disagrees with its records"
-                ));
-            }
-            let mut ordinals = parameters
-                .iter()
-                .map(|parameter| parameter.value_lo)
-                .collect::<Vec<_>>();
-            ordinals.sort_unstable();
-            if let Some(&first) = ordinals.first() {
-                let expected_first = u32::from(explicit_contract && matches!(method.trait_method_receiver_mode(), 1 | 2));
-                if (explicit_contract && first != expected_first) || first > 1
-                    || ordinals
-                        .iter()
-                        .copied()
-                        .ne(first..first + ordinals.len() as u32)
-                {
-                    return Err(format!(
-                        "semantic-interface method {index} parameter ordinals are not a complete signature"
-                    ));
-                }
-            }
-            for (kind, required) in [
-                (
-                    GpuSemanticInterfaceMemberKind::GenericTypeParameter,
-                    method.method_type_parameter_count(),
-                ),
-                (
-                    GpuSemanticInterfaceMemberKind::GenericConstParameter,
-                    method.method_constant_parameter_count(),
-                ),
-            ] {
-                let mut own_slots = scoped
-                    .get(&(owner, symbol, kind as u32))
-                    .into_iter()
-                    .flatten()
-                    .map(|&index| self.members[index].type_binding_slot())
-                    .collect::<Vec<_>>();
-                own_slots.sort_unstable();
-                if (trait_method && own_slots.len() != required as usize)
-                    || own_slots.len() > required as usize
-                    || own_slots
-                        .iter()
-                        .copied()
-                        .ne(required.saturating_sub(own_slots.len() as u32)..required)
-                {
-                    return Err(format!(
-                        "semantic-interface method {index} declared parameter requirements disagree with its lexical slots"
-                    ));
-                }
-            }
-            let mut pending = vec![method.type_index];
-            if method.receiver_type_index != INVALID { pending.push(method.receiver_type_index); }
-            pending.extend(parameters.iter().map(|member| member.type_index));
-            let mut seen = BTreeSet::new();
-            let mut impl_scope = None;
-            while let Some(ty_index) = pending.pop() {
-                if !seen.insert(ty_index) {
-                    continue;
-                }
-                let ty = self.types[ty_index as usize];
-                let parameter = match GpuSemanticInterfaceTypeKind::from_u32(ty.kind) {
-                    Some(
-                        GpuSemanticInterfaceTypeKind::GenericParameter
-                        | GpuSemanticInterfaceTypeKind::ConstParameter,
-                    ) => Some(ty.payload_lo),
-                    _ => None,
-                };
-                if let Some(parameter) = parameter {
-                    let member = self.members[parameter as usize];
-                    let required = if member.kind
-                        == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
-                    {
-                        method.method_type_parameter_count()
-                    } else {
-                        method.method_constant_parameter_count()
-                    };
-                    // Trait header parameters keep their own scope. Method
-                    // requirements count only that method's lexical header.
-                    let trait_parameter = trait_method && member.value_hi == 0;
-                    if member.owner_ref != owner || (!trait_parameter && (
-                        member.value_hi == 0 || member.type_binding_slot() >= required
-                        || (member.value_hi & 0xc000_0000 == 0x8000_0000 && member.value_hi != symbol)))
-                        || (trait_method && member.value_hi & 0xc000_0000 == 0xc000_0000)
-                    {
-                        return Err(format!(
-                            "semantic-interface method {index} uses a foreign or out-of-range parameter"
-                        ));
-                    }
-                    if member.value_hi & 0xc000_0000 == 0xc000_0000 {
-                        if impl_scope.is_some_and(|scope| scope != member.value_hi) {
-                            return Err(format!(
-                                "semantic-interface method {index} mixes different impl parameter scopes"
-                            ));
-                        }
-                        impl_scope = Some(member.value_hi);
-                    }
-                }
-                pending.extend(
-                    self.type_edges
-                        [ty.first_edge as usize..(ty.first_edge + ty.edge_count) as usize]
-                        .iter()
-                        .map(|edge| edge.type_index),
-                );
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_identities(&self) -> Result<(), String> {
-        for (index, module) in self.modules.iter().enumerate() {
-            validate_range(
-                "module segment",
-                index,
-                module.first_segment,
-                module.segment_count,
-                self.module_segments.len(),
-            )?;
-        }
-        for (index, segment) in self.module_segments.iter().enumerate() {
-            self.validate_name(
-                "module segment",
-                index,
-                segment.name_hash_lo,
-                segment.name_hash_hi,
-                segment.name_byte_start,
-                segment.name_byte_len,
-            )?;
-        }
-        for (index, declaration) in self.declarations.iter().enumerate() {
-            validate_index(
-                "declaration module",
-                index,
-                declaration.module,
-                self.modules.len(),
-            )?;
-            self.validate_name(
-                "declaration",
-                index,
-                declaration.name_hash_lo,
-                declaration.name_hash_hi,
-                declaration.name_byte_start,
-                declaration.name_byte_len,
-            )?;
-            validate_optional_index(
-                "declaration owner",
-                index,
-                declaration.owner_declaration,
-                self.declarations.len(),
-            )?;
-        }
-        Ok(())
+        gpu_validation::validate_encoded_bytes(&self.to_bytes()?)
     }
 
     /// Succeeds exactly when [`Self::to_bytes`] does, without serializing:
-    /// to_bytes fails only in validate (which also bounds every count it
-    /// writes) or in its encoded length.
-    pub fn check_serializable(&self) -> Result<(), String> {
-        self.validate()?;
-        encoded_byte_len(self)?;
-        Ok(())
-    }
-
-    /// The part of [`Self::check_serializable`] after validate: whether the
-    /// encoded length fits. For an interface whose validate already passed.
+    /// every count fits its u32 header field and the encoded length fits.
     pub fn check_encoded_len(&self) -> Result<(), String> {
+        for (domain, len) in [
+            ("module", self.modules.len()),
+            ("module segment", self.module_segments.len()),
+            ("declaration", self.declarations.len()),
+            ("type", self.types.len()),
+            ("type edge", self.type_edges.len()),
+            ("member", self.members.len()),
+            ("name byte", self.name_bytes.len()),
+            ("predicate", self.predicates.len()),
+            ("predicate argument", self.predicate_arguments.len()),
+            ("implementation", self.implementations.len()),
+            ("implementation argument", self.implementation_arguments.len()),
+            ("implementation method binding", self.implementation_method_bindings.len()),
+        ] {
+            checked_u32_len(domain, len)?;
+        }
         encoded_byte_len(self).map(|_| ())
     }
 
     /// Serializes the interface into its bounded little-endian binary format.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        self.validate()?;
         let byte_len = encoded_byte_len(self)?;
         let mut bytes = Vec::with_capacity(byte_len);
         bytes.extend_from_slice(&GPU_SEMANTIC_INTERFACE_MAGIC);
@@ -1564,8 +620,21 @@ impl GpuSemanticInterfaceArtifact {
         Ok(bytes)
     }
 
-    /// Parses and validates one persisted semantic-interface artifact.
+    /// Parses and validates one persisted semantic-interface artifact. The
+    /// validation runs on the GPU over these exact bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let artifact = Self::parse(bytes)?;
+        gpu_validation::validate_encoded_bytes(bytes)?;
+        Ok(artifact)
+    }
+
+    /// Parses artifact bytes whose export already validated them on the GPU
+    /// in the same submission that wrote them.
+    pub(crate) fn from_gpu_validated_bytes(bytes: &[u8]) -> Result<Self, String> {
+        Self::parse(bytes)
+    }
+
+    fn parse(bytes: &[u8]) -> Result<Self, String> {
         let header_bytes = 8usize
             .checked_add(HEADER_U32S * 4)
             .ok_or_else(|| "semantic-interface header size overflows".to_string())?;
@@ -1764,37 +833,9 @@ impl GpuSemanticInterfaceArtifact {
             closure_summary: None,
             resident_bytes: Default::default(),
         };
-        artifact.validate()?;
         Ok(artifact)
     }
 
-    fn validate_name(
-        &self,
-        domain: &str,
-        index: usize,
-        hash_lo: u32,
-        hash_hi: u32,
-        start: u32,
-        len: u32,
-    ) -> Result<(), String> {
-        let range = checked_range(domain, index, start, len, self.name_bytes.len())?;
-        let name = &self.name_bytes[range];
-        if name.is_empty()
-            || name.len() > MAX_CANONICAL_NAME_BYTES
-            || std::str::from_utf8(name).is_err()
-        {
-            return Err(format!(
-                "semantic-interface {domain} record {index} has an empty, oversized, or non-UTF-8 canonical name"
-            ));
-        }
-        let expected = stable_name_hash(name);
-        if expected != (hash_lo, hash_hi) {
-            return Err(format!(
-                "semantic-interface {domain} record {index} canonical-name hash does not match its bytes"
-            ));
-        }
-        Ok(())
-    }
 }
 
 /// Exact stable hash used by GPU interface identity records. Bytes remain in
@@ -1833,18 +874,6 @@ fn validate_index(domain: &str, owner: usize, index: u32, len: usize) -> Result<
     Ok(())
 }
 
-fn validate_optional_index(
-    domain: &str,
-    owner: usize,
-    index: u32,
-    len: usize,
-) -> Result<(), String> {
-    if index == INVALID {
-        return Ok(());
-    }
-    validate_index(domain, owner, index, len)
-}
-
 fn checked_range(
     domain: &str,
     owner: usize,
@@ -1862,23 +891,6 @@ fn checked_range(
         ));
     }
     Ok(start..end)
-}
-
-fn validate_range(
-    domain: &str,
-    owner: usize,
-    start: u32,
-    count: u32,
-    len: usize,
-) -> Result<(), String> {
-    checked_range(domain, owner, start, count, len).map(drop)
-}
-
-fn predicate_parameter_member(ty: GpuSemanticInterfaceTypeRecord) -> Option<u32> {
-    match GpuSemanticInterfaceTypeKind::from_u32(ty.kind) {
-        Some(GpuSemanticInterfaceTypeKind::GenericParameter | GpuSemanticInterfaceTypeKind::ConstParameter) => Some(ty.payload_lo),
-        _ => None,
-    }
 }
 
 fn encoded_byte_len(artifact: &GpuSemanticInterfaceArtifact) -> Result<usize, String> {
@@ -2554,7 +1566,7 @@ mod tests {
             malformed.types[2].payload_lo = scalar;
             malformed.types[2].length_lo = bits[0];
             malformed.types[2].length_hi = bits[1];
-            assert!(malformed.to_bytes().unwrap_err().contains("invalid typed scalar value"));
+            assert!(malformed.validate().unwrap_err().contains("invalid typed scalar value"));
         }
         for root in [INVALID, 1, 2, 3] {
             let mut malformed = nominal_constant_interface(0);
@@ -2673,7 +1685,7 @@ mod tests {
     fn semantic_interface_v13_rejects_declaration_owned_method_tag() {
         let mut interface = representative_interface();
         interface.members[0].kind = 6;
-        assert!(interface.validate().unwrap_err().contains("unknown kind 6"));
+        assert!(interface.validate().unwrap_err().contains("member record has unknown kind"));
     }
 
     #[test]

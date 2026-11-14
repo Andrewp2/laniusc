@@ -925,11 +925,12 @@ impl GpuTypeChecker {
             1,
             wgpu::BufferUsages::COPY_SRC,
         );
+        // Length, export status (4 words), then the validation failure key.
         let metadata_readback = self.semantic_interface_buffers.buffer(
             device,
             "type_check.interface.artifact.metadata.readback",
-            20,
-            20,
+            24,
+            24,
             wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         );
         let artifact_readback =
@@ -1053,6 +1054,23 @@ impl GpuTypeChecker {
             16,
         )?;
         artifact_operation.record(encoder)?;
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
+        let validation = crate::compiler::semantic_interface_validation::record_validation(
+            device,
+            queue,
+            encoder,
+            &self.semantic_interface_buffers,
+            &artifact_words,
+            &artifact_length,
+            Some(&status),
+        )?;
+        encoder.copy_buffer_to_buffer(
+            &validation.buffer,
+            validation.absolute_offset(0),
+            &metadata_readback.buffer,
+            metadata_readback.absolute_offset(20),
+            4,
+        );
         artifact_length_readback.record(encoder);
         status_readback.record(encoder);
         // The artifact's length is known only after the job ran. Copy as
@@ -2080,10 +2098,10 @@ impl GpuTypeChecker {
             "semantic-interface artifact metadata",
         )?;
         let mapped = metadata_slice.get_mapped_range();
-        let metadata = read_u32_words::<5>(&mapped, "semantic-interface artifact metadata")?;
+        let metadata = read_u32_words::<6>(&mapped, "semantic-interface artifact metadata")?;
         drop(mapped);
         recorded.metadata_readback.unmap();
-        let [byte_len, status, detail, name_id, name_len] = metadata;
+        let [byte_len, status, detail, name_id, name_len, validation] = metadata;
         if status != 0 {
             return Err(anyhow::Error::new(SemanticInterfaceExportFailure {
                 status,
@@ -2111,6 +2129,8 @@ impl GpuTypeChecker {
             recorded.expected_unit_id,
             byte_len,
         );
+        crate::compiler::semantic_interface_validation::verdict(validation)
+            .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;
         let bytes = recorded.artifact_readback.read_buffer(
             device,
             queue,
@@ -2119,7 +2139,7 @@ impl GpuTypeChecker {
             byte_len,
             "semantic-interface artifact",
         )?;
-        let mut artifact = GpuSemanticInterfaceArtifact::from_bytes(&bytes)
+        let mut artifact = GpuSemanticInterfaceArtifact::from_gpu_validated_bytes(&bytes)
             .map_err(|reason| anyhow::anyhow!("invalid GPU semantic interface: {reason}"))?;
         if artifact.library_id != recorded.expected_library_id
             || artifact.unit_id != recorded.expected_unit_id

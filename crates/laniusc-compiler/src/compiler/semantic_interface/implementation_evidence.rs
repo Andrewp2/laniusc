@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use super::*;
 
@@ -6,16 +6,6 @@ use super::*;
 pub(super) enum ContractOwner {
     Declaration(u32),
     Implementation(u32),
-}
-
-pub(super) fn validate_contract_owner_capacity(domain: &str, count: usize) -> Result<(), String> {
-    // Leave the all-ones owner reference reserved in both domains.
-    if count >= IMPLEMENTATION_OWNER_TAG as usize {
-        return Err(format!(
-            "semantic-interface {domain} count exceeds contract owner domain"
-        ));
-    }
-    Ok(())
 }
 
 pub(super) fn validate_contract_owner(
@@ -33,40 +23,6 @@ pub(super) fn validate_contract_owner(
     } else {
         validate_index("contract implementation owner", 0, index, implementations)?;
         Ok(ContractOwner::Implementation(index))
-    }
-}
-
-/// Row indexes that validate_implementations builds once, so that no
-/// implementation, method or binding has to scan a whole table.
-struct ImplementationIndexes {
-    /// Predicate rows by owner reference, in row order.
-    predicates_by_owner: HashMap<u32, Vec<usize>>,
-    /// Parameter member rows by (owner reference, owning method symbol), in
-    /// row order.
-    parameters_by_owner_method: HashMap<(u32, u32), Vec<usize>>,
-}
-
-impl ImplementationIndexes {
-    fn new(interface: &GpuSemanticInterfaceArtifact) -> Self {
-        let mut predicates_by_owner = HashMap::<u32, Vec<usize>>::new();
-        for (row, predicate) in interface.predicates.iter().enumerate() {
-            predicates_by_owner.entry(predicate.owner_ref).or_default().push(row);
-        }
-        let mut parameters_by_owner_method = HashMap::<(u32, u32), Vec<usize>>::new();
-        for (row, member) in interface.members.iter().enumerate() {
-            if member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32 {
-                parameters_by_owner_method.entry((member.owner_ref, member.value_hi)).or_default().push(row);
-            }
-        }
-        Self { predicates_by_owner, parameters_by_owner_method }
-    }
-
-    fn predicates_of(&self, owner_ref: u32) -> &[usize] {
-        self.predicates_by_owner.get(&owner_ref).map_or(&[], Vec::as_slice)
-    }
-
-    fn parameters_of(&self, owner_ref: u32, method: u32) -> &[usize] {
-        self.parameters_by_owner_method.get(&(owner_ref, method)).map_or(&[], Vec::as_slice)
     }
 }
 
@@ -170,113 +126,6 @@ impl GpuSemanticInterfaceArtifact {
         Ok(scopes.into_iter().next())
     }
 
-    fn validate_inherent_implementation(&self, index: usize, indexes: &ImplementationIndexes) -> Result<(), String> {
-        let implementation = self.implementations[index];
-        if implementation.visibility != 1
-            || [implementation.trait_library_id, implementation.trait_unit_id,
-                implementation.trait_declaration_index] != [INVALID; 3]
-            || implementation.argument_count != 0 || implementation.method_binding_count != 0
-        {
-            return Err(format!("semantic-interface inherent implementation {index} has invalid visibility or trait fields"));
-        }
-        self.validate_value_type_root("implementation subject", index, implementation.subject_type)?;
-        let members = self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
-        let methods = self.members[members.clone()].iter().enumerate()
-            .filter(|(_, member)| member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32)
-            .map(|(row, member)| (members.start + row, member)).collect::<Vec<_>>();
-        if methods.is_empty() {
-            return Err(format!("semantic-interface inherent implementation {index} has no public methods"));
-        }
-        let scope = self.inherent_implementation_scope(index as u32)?;
-        let implementation_scopes = scope.into_iter().collect::<BTreeSet<_>>();
-        self.validate_implementation_graph(index, vec![implementation.subject_type], &implementation_scopes)?;
-        let mut counts = BTreeMap::<(u32, u32), Vec<u32>>::new();
-        for member in &self.members[members.clone()] {
-            if matches!(GpuSemanticInterfaceMemberKind::from_u32(member.kind),
-                Some(GpuSemanticInterfaceMemberKind::GenericTypeParameter | GpuSemanticInterfaceMemberKind::GenericConstParameter))
-            {
-                if Some(member.value_hi) != scope && !methods.iter().any(|(_, method)| method.value_hi == member.value_hi) {
-                    return Err(format!("semantic-interface inherent implementation {index} has a foreign header scope"));
-                }
-                counts.entry((member.value_hi, member.kind)).or_default().push(member.type_binding_slot());
-            }
-        }
-        let mut inherited_counts = [0; 2];
-        for (domain, kind) in [GpuSemanticInterfaceMemberKind::GenericTypeParameter,
-            GpuSemanticInterfaceMemberKind::GenericConstParameter].into_iter().enumerate()
-        {
-            let mut slots = scope.and_then(|scope| counts.get(&(scope, kind as u32))).cloned().unwrap_or_default();
-            slots.sort_unstable();
-            if slots.len() > 32 || slots.iter().copied().ne(0..slots.len() as u32) {
-                return Err(format!("semantic-interface inherent implementation {index} has an incomplete lexical binding scope"));
-            }
-            inherited_counts[domain] = slots.len() as u32;
-        }
-        for (row, method) in methods {
-            self.implementation_method_target(row as u32)?;
-            if !self.implementation_types_match(implementation.subject_type, method.receiver_type_index, &BTreeMap::new()) {
-                return Err(format!("semantic-interface implementation method {row} receiver disagrees with its full subject"));
-            }
-            for (domain, kind, required) in [
-                (0, GpuSemanticInterfaceMemberKind::GenericTypeParameter, method.method_type_parameter_count()),
-                (1, GpuSemanticInterfaceMemberKind::GenericConstParameter, method.method_constant_parameter_count()),
-            ] {
-                let mut own_slots = counts.get(&(method.value_hi, kind as u32)).cloned().unwrap_or_default();
-                own_slots.sort_unstable();
-                let inherited = inherited_counts[domain];
-                if required != inherited + own_slots.len() as u32
-                    || own_slots.iter().copied().ne(inherited..required)
-                {
-                    return Err(format!("semantic-interface inherent method {row} has an incomplete composed header"));
-                }
-            }
-            let mut scopes = implementation_scopes.clone();
-            scopes.insert(method.value_hi);
-            let roots = std::iter::once(method.type_index).chain(self.members[members.clone()].iter()
-                .filter(|parameter| parameter.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
-                    && parameter.value_hi == method.value_hi).map(|parameter| parameter.type_index)).collect();
-            self.validate_implementation_graph(index, roots, &scopes)?;
-        }
-        self.validate_implementation_prerequisites(index, scope, indexes)
-    }
-
-    fn validate_implementation_prerequisites(&self, index: usize, scope: Option<u32>,
-        indexes: &ImplementationIndexes) -> Result<(), String> {
-        let implementation = self.implementations[index];
-        let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
-        let prerequisites = checked_range("implementation prerequisite", index,
-            implementation.first_prerequisite, implementation.prerequisite_count, self.predicates.len())?;
-        for &row in indexes.predicates_of(owner_ref) {
-            let predicate = &self.predicates[row];
-            if predicate.owner_scope_symbol & 0xc000_0000 == 0xc000_0000
-                && (!prerequisites.contains(&row) || Some(predicate.owner_scope_symbol) != scope)
-            {
-                return Err(format!("semantic-interface implementation prerequisite {row} is outside its implementation range"));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_implementation_graph(&self, index: usize, roots: Vec<u32>, scopes: &BTreeSet<u32>) -> Result<(), String> {
-        let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
-        for root in self.predicate_graph_nodes(roots) {
-            let ty = self.types[root as usize];
-            if (ty.kind == GpuSemanticInterfaceTypeKind::Scalar as u32 && !crate::primitive_types::is_known(ty.payload_lo))
-                || (ty.kind == GpuSemanticInterfaceTypeKind::Declaration as u32
-                    && [ty.payload_lo, ty.nominal_unit_id, ty.payload_hi].contains(&INVALID))
-            {
-                return Err(format!("semantic-interface implementation {index} has an unresolved type identity"));
-            }
-            if let Some(parameter) = predicate_parameter_member(ty) {
-                let member = self.members[parameter as usize];
-                if member.owner_ref != owner_ref || !scopes.contains(&member.value_hi) {
-                    return Err(format!("semantic-interface implementation {index} uses a foreign lexical parameter"));
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn contract_owner_member_range(
         &self,
         owner: ContractOwner,
@@ -294,411 +143,6 @@ impl GpuSemanticInterfaceArtifact {
         checked_range("contract owner member", 0, first, count, self.members.len())
     }
 
-    /// Run before any implementation-owned member or graph can be dereferenced.
-    pub(super) fn validate_implementation_ranges(&self) -> Result<(), String> {
-        for (index, implementation) in self.implementations.iter().enumerate() {
-            validate_index(
-                "implementation module",
-                index,
-                implementation.module,
-                self.modules.len(),
-            )?;
-            validate_index(
-                "implementation subject",
-                index,
-                implementation.subject_type,
-                self.types.len(),
-            )?;
-            let members =
-                self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
-            let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
-            if self.members[members]
-                .iter()
-                .any(|member| member.owner_ref != owner_ref)
-            {
-                return Err(format!(
-                    "semantic-interface implementation {index} contains a foreign member owner"
-                ));
-            }
-            let arguments = checked_range(
-                "implementation argument",
-                index,
-                implementation.first_argument,
-                implementation.argument_count,
-                self.implementation_arguments.len(),
-            )?;
-            for row in arguments {
-                validate_index(
-                    "implementation argument root",
-                    row,
-                    self.implementation_arguments[row],
-                    self.types.len(),
-                )?;
-            }
-            validate_range(
-                "implementation prerequisite",
-                index,
-                implementation.first_prerequisite,
-                implementation.prerequisite_count,
-                self.predicates.len(),
-            )?;
-            validate_range(
-                "implementation method binding",
-                index,
-                implementation.first_method_binding,
-                implementation.method_binding_count,
-                self.implementation_method_bindings.len(),
-            )?;
-        }
-        for (row, binding) in self.implementation_method_bindings.iter().enumerate() {
-            validate_index(
-                "method binding implementation",
-                row,
-                binding.implementation_index,
-                self.implementations.len(),
-            )?;
-            validate_index(
-                "method binding callable member",
-                row,
-                binding.implementation_method_member,
-                self.members.len(),
-            )?;
-        }
-        Ok(())
-    }
-
-    pub(super) fn validate_implementations(&self) -> Result<(), String> {
-        let mut argument_owners = vec![None; self.implementation_arguments.len()];
-        let mut binding_owners = vec![None; self.implementation_method_bindings.len()];
-        if !self.implementations.is_empty() && [self.library_id, self.unit_id].contains(&INVALID) {
-            return Err("semantic-interface implementation has an unresolved defining unit".into());
-        }
-        let indexes = ImplementationIndexes::new(self);
-        for (index, implementation) in self.implementations.iter().enumerate() {
-            let owner_ref = IMPLEMENTATION_OWNER_TAG | index as u32;
-            match GpuSemanticInterfaceImplementationKind::from_u32(implementation.kind) {
-                Some(GpuSemanticInterfaceImplementationKind::Inherent) => {
-                    self.validate_inherent_implementation(index, &indexes)?;
-                    continue;
-                }
-                Some(GpuSemanticInterfaceImplementationKind::Trait) => {}
-                None => return Err(format!("semantic-interface implementation {index} has unknown kind {}", implementation.kind)),
-            }
-            if implementation.visibility > 1
-                || [
-                    implementation.trait_library_id,
-                    implementation.trait_unit_id,
-                    implementation.trait_declaration_index,
-                ]
-                .contains(&INVALID)
-            {
-                return Err(format!("semantic-interface implementation {index} has invalid visibility or trait identity"));
-            }
-            if implementation.argument_count > 32 {
-                return Err(format!(
-                    "semantic-interface implementation {index} exceeds 32 ordered operands"
-                ));
-            }
-            self.validate_value_type_root(
-                "implementation subject",
-                index,
-                implementation.subject_type,
-            )?;
-            let arguments = implementation.first_argument as usize
-                ..(implementation.first_argument + implementation.argument_count) as usize;
-            let roots = &self.implementation_arguments[arguments.clone()];
-            for row in arguments {
-                if argument_owners[row].replace(index).is_some() {
-                    return Err(format!(
-                        "semantic-interface implementation argument {row} has multiple owners"
-                    ));
-                }
-            }
-            let (implementation_scope, inherited_counts) = self.validate_trait_implementation_header(index,
-                std::iter::once(implementation.subject_type)
-                    .chain(roots.iter().copied()).collect(), &indexes)?;
-            let implementation_scopes = implementation_scope.into_iter().collect::<BTreeSet<_>>();
-            let members =
-                self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
-            let methods = members
-                .clone()
-                .filter(|&row| {
-                    self.members[row].kind
-                        == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
-                })
-                .collect::<BTreeSet<_>>();
-            for row in members.clone() {
-                let member = self.members[row];
-                if matches!(
-                    GpuSemanticInterfaceMemberKind::from_u32(member.kind),
-                    Some(
-                        GpuSemanticInterfaceMemberKind::GenericTypeParameter
-                            | GpuSemanticInterfaceMemberKind::GenericConstParameter
-                    )
-                ) {
-                    // Owned header parameters were validated against the complete
-                    // trait head above; they do not have value-type signatures.
-                    continue;
-                }
-                if member.kind == GpuSemanticInterfaceMemberKind::Parameter as u32
-                    && !methods
-                        .iter()
-                        .any(|&method| self.members[method].value_hi == member.value_hi)
-                {
-                    return Err(format!(
-                        "semantic-interface implementation parameter {row} has no owning method"
-                    ));
-                }
-                if member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32 {
-                    if [member.method_type_parameter_count(), member.method_constant_parameter_count()]
-                        != inherited_counts
-                    {
-                        return Err(format!("semantic-interface implementation method {row} has an incomplete inherited header"));
-                    }
-                    if indexes.predicates_of(owner_ref).iter().any(|&predicate|
-                        self.predicates[predicate].owner_scope_symbol == member.value_hi)
-                    {
-                        return Err(format!("semantic-interface trait implementation method {row} own prerequisites are unsupported"));
-                    }
-                    if !self.implementation_types_match(
-                        implementation.subject_type,
-                        member.receiver_type_index,
-                        &BTreeMap::new(),
-                    ) {
-                        return Err(format!("semantic-interface implementation method {row} receiver disagrees with its full subject"));
-                    }
-                }
-                self.validate_implementation_graph(index, vec![member.type_index], &implementation_scopes)?;
-            }
-            let local_trait = if implementation.trait_library_id == self.library_id
-                && implementation.trait_unit_id == self.unit_id
-            {
-                validate_index(
-                    "implementation trait declaration",
-                    index,
-                    implementation.trait_declaration_index,
-                    self.declarations.len(),
-                )?;
-                let declaration =
-                    self.declarations[implementation.trait_declaration_index as usize];
-                if declaration.kind != 10 || declaration.namespace != 3 {
-                    return Err(format!(
-                        "semantic-interface implementation {index} does not name a trait"
-                    ));
-                }
-                let header = self.types[declaration.signature_type as usize];
-                if header.edge_count != implementation.argument_count {
-                    return Err(format!("semantic-interface implementation {index} trait arity disagrees with its operands"));
-                }
-                let mut substitutions = BTreeMap::new();
-                for (ordinal, &root) in roots.iter().enumerate() {
-                    let leaf = self.types
-                        [self.type_edges[header.first_edge as usize + ordinal].type_index as usize];
-                    if !self.parameter_operand_domain_matches(leaf.payload_lo, root) {
-                        return Err(format!("semantic-interface implementation {index} operand {ordinal} has the wrong declared domain"));
-                    }
-                    substitutions.insert(leaf.payload_lo, root);
-                }
-                let required = self.members[declaration.first_member as usize
-                    ..(declaration.first_member + declaration.member_count) as usize]
-                    .iter()
-                    .filter(|member| {
-                        member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
-                    })
-                    .map(|member| (member.value_hi, member))
-                    .collect::<BTreeMap<_, _>>();
-                Some((required, substitutions))
-            } else {
-                None
-            };
-            let bindings = implementation.first_method_binding as usize
-                ..(implementation.first_method_binding + implementation.method_binding_count)
-                    as usize;
-            let mut bound_methods = BTreeSet::new();
-            let mut required_symbols = BTreeSet::new();
-            for row in bindings {
-                if binding_owners[row].replace(index).is_some() {
-                    return Err(format!("semantic-interface implementation method binding {row} has multiple owners"));
-                }
-                let binding = self.implementation_method_bindings[row];
-                let member_index = binding.implementation_method_member as usize;
-                let member = self.members[member_index];
-                if binding.implementation_index != index as u32
-                    || member.owner_ref != owner_ref
-                    || !methods.contains(&member_index)
-                    || !bound_methods.insert(member_index)
-                    || binding.required_method_symbol == INVALID
-                    || binding.required_method_symbol & 0xc000_0000 != 0x8000_0000
-                    || !required_symbols.insert(binding.required_method_symbol)
-                {
-                    return Err(format!("semantic-interface implementation method binding {row} has invalid or duplicate ownership"));
-                }
-                // Current exported evidence binds bodies in its defining unit.
-                // Default/forwarded method bodies require a later contract.
-                let target_matches = if member.trait_method_is_public() {
-                    binding.target_symbol == member.value_hi
-                } else {
-                    binding.target_symbol != INVALID
-                        && binding.target_symbol & 0xc000_0000 == 0x4000_0000
-                };
-                if binding.target_library_id != self.library_id
-                    || binding.target_unit_id != self.unit_id
-                    || !target_matches
-                {
-                    return Err(format!("semantic-interface implementation method binding {row} has an invalid executable target"));
-                }
-                if let Some((required, substitutions)) = &local_trait {
-                    let expected = required.get(&binding.required_method_symbol)
-                        .ok_or_else(|| format!("semantic-interface implementation method binding {row} names no required method"))?;
-                    // Required methods have no own generic header in this
-                    // capability. An implementation method additionally carries
-                    // its enclosing impl's separately validated parameter counts.
-                    let generic_count_bits = 0x0fff_0000;
-                    if expected.method_type_parameter_count() != 0
-                        || expected.method_constant_parameter_count() != 0
-                        || (expected.value_lo & !generic_count_bits) != (member.value_lo & !generic_count_bits)
-                        || !self.implementation_types_match(
-                            expected.type_index,
-                            member.type_index,
-                            substitutions,
-                        )
-                    {
-                        return Err(format!("semantic-interface implementation method binding {row} signature disagrees with its trait"));
-                    }
-                    let expected_parameters = indexes
-                        .parameters_of(implementation.trait_declaration_index, expected.value_hi)
-                        .iter().map(|&parameter| &self.members[parameter]);
-                    for expected_parameter in expected_parameters {
-                        let actual = self.members[members.clone()].iter().find(|parameter|
-                            parameter.kind == GpuSemanticInterfaceMemberKind::Parameter as u32 &&
-                            parameter.value_hi == member.value_hi && parameter.value_lo == expected_parameter.value_lo)
-                            .ok_or_else(|| format!("semantic-interface implementation method binding {row} lacks a required parameter"))?;
-                        if !self.implementation_types_match(
-                            expected_parameter.type_index,
-                            actual.type_index,
-                            substitutions,
-                        ) {
-                            return Err(format!("semantic-interface implementation method binding {row} parameter disagrees with its trait"));
-                        }
-                    }
-                }
-            }
-            if bound_methods != methods
-                || local_trait
-                    .as_ref()
-                    .is_some_and(|(required, _)| required.len() != required_symbols.len())
-            {
-                return Err(format!("semantic-interface implementation {index} has an incomplete required-method binding set"));
-            }
-        }
-        if argument_owners.iter().any(Option::is_none) || binding_owners.iter().any(Option::is_none)
-        {
-            return Err(
-                "semantic-interface implementation arguments or method bindings have no owner"
-                    .into(),
-            );
-        }
-        Ok(())
-    }
-
-    fn validate_trait_implementation_header(&self, index: usize, roots: Vec<u32>,
-        indexes: &ImplementationIndexes) -> Result<(Option<u32>, [u32; 2]), String> {
-        let scope = self.implementation_parameter_scope(index as u32)?;
-        let members = self.contract_owner_member_range(ContractOwner::Implementation(index as u32))?;
-        let mut parameters = BTreeSet::new();
-        let mut slots = [Vec::new(), Vec::new()];
-        for row in members {
-            let member = self.members[row];
-            let domain = match GpuSemanticInterfaceMemberKind::from_u32(member.kind) {
-                Some(GpuSemanticInterfaceMemberKind::GenericTypeParameter) => 0,
-                Some(GpuSemanticInterfaceMemberKind::GenericConstParameter) => 1,
-                _ => continue,
-            };
-            if Some(member.value_hi) != scope {
-                return Err(format!("semantic-interface trait implementation {index} has a foreign header scope"));
-            }
-            parameters.insert(row as u32);
-            slots[domain].push(member.type_binding_slot());
-        }
-        for domain in &mut slots {
-            domain.sort_unstable();
-            if domain.len() > 32 || domain.iter().copied().ne(0..domain.len() as u32) {
-                return Err(format!("semantic-interface trait implementation {index} has an incomplete lexical binding scope"));
-            }
-        }
-        let scopes = scope.into_iter().collect::<BTreeSet<_>>();
-        self.validate_implementation_graph(index, roots.clone(), &scopes)?;
-        let used = self.predicate_graph_nodes(roots).into_iter()
-            .filter_map(|row| predicate_parameter_member(self.types[row as usize]))
-            .collect::<BTreeSet<_>>();
-        if used != parameters {
-            return Err(format!("semantic-interface trait implementation {index} has an unconstrained implementation parameter"));
-        }
-        self.validate_implementation_prerequisites(index, scope, indexes)?;
-        Ok((scope, [slots[0].len() as u32, slots[1].len() as u32]))
-    }
-
-    /// Compare complete graphs, substituting only exact trait header members.
-    fn implementation_types_match(
-        &self,
-        expected: u32,
-        actual: u32,
-        substitutions: &BTreeMap<u32, u32>,
-    ) -> bool {
-        let mut pending = vec![(expected, actual)];
-        let mut seen = BTreeSet::new();
-        while let Some((expected, actual)) = pending.pop() {
-            if !seen.insert((expected, actual)) {
-                continue;
-            }
-            let left = self.types[expected as usize];
-            let right = self.types[actual as usize];
-            if matches!(
-                GpuSemanticInterfaceTypeKind::from_u32(left.kind),
-                Some(
-                    GpuSemanticInterfaceTypeKind::GenericParameter
-                        | GpuSemanticInterfaceTypeKind::ConstParameter
-                )
-            ) {
-                if let Some(&root) = substitutions.get(&left.payload_lo) {
-                    pending.push((root, actual));
-                    continue;
-                }
-            }
-            if left.kind != right.kind || left.edge_count != right.edge_count {
-                return false;
-            }
-            let equal = match GpuSemanticInterfaceTypeKind::from_u32(left.kind).unwrap() {
-                GpuSemanticInterfaceTypeKind::Scalar
-                | GpuSemanticInterfaceTypeKind::GenericParameter
-                | GpuSemanticInterfaceTypeKind::ConstParameter
-                | GpuSemanticInterfaceTypeKind::CountProjection
-                | GpuSemanticInterfaceTypeKind::Reference => left.payload_lo == right.payload_lo,
-                GpuSemanticInterfaceTypeKind::Declaration => {
-                    (left.payload_lo, left.nominal_unit_id, left.payload_hi)
-                        == (right.payload_lo, right.nominal_unit_id, right.payload_hi)
-                }
-                GpuSemanticInterfaceTypeKind::ConstValue => {
-                    (left.payload_lo, left.length_lo, left.length_hi)
-                        == (right.payload_lo, right.length_lo, right.length_hi)
-                }
-                GpuSemanticInterfaceTypeKind::Array
-                | GpuSemanticInterfaceTypeKind::Slice | GpuSemanticInterfaceTypeKind::Function => {
-                    true
-                }
-            };
-            if !equal {
-                return false;
-            }
-            for ordinal in 0..left.edge_count {
-                pending.push((
-                    self.type_edges[(left.first_edge + ordinal) as usize].type_index,
-                    self.type_edges[(right.first_edge + ordinal) as usize].type_index,
-                ));
-            }
-        }
-        true
-    }
 }
 
 #[cfg(test)]
@@ -1174,37 +618,49 @@ mod tests {
     }
 
     #[test]
-    fn implementation_evidence_matching_preserves_scalar_bits_and_projection_structure() {
+    fn implementation_evidence_matching_preserves_constant_scalar_and_bits() {
         use crate::primitive_types::*;
-        let mut interface = inherent_interface();
-        let leaf = interface.types[0];
-        for (scalar, bits) in [
-            (SCALAR_U64, [7, 1]), (SCALAR_U64, [7, 1]),
-            (SCALAR_U64, [7, 2]), (SCALAR_I64, [7, 1]),
-            (SCALAR_F32, [0, 0]), (SCALAR_F32, [0x80000000, 0]),
-            (SCALAR_F64, [0x1234, 0x7ff80000]), (SCALAR_F64, [0x1235, 0x7ff80000]),
+        // As in the array-length case above: the trait's constant parameter
+        // is substituted by the implementation argument (type 12) and
+        // compared with the implementation's literal array length (type 8).
+        for ((left_scalar, left_bits), (right_scalar, right_bits), equal) in [
+            ((SCALAR_U64, [7, 1]), (SCALAR_U64, [7, 1]), true),
+            ((SCALAR_U64, [7, 1]), (SCALAR_U64, [7, 2]), false),
+            ((SCALAR_U64, [7, 1]), (SCALAR_I64, [7, 1]), false),
         ] {
+            let mut interface = concrete_implementation_interface();
+            interface.members[1].kind = GpuSemanticInterfaceMemberKind::GenericConstParameter as u32;
+            interface.types[2].kind = GpuSemanticInterfaceTypeKind::ConstParameter as u32;
+            interface.types[5] = interface.types[0];
+            interface.types[4] = GpuSemanticInterfaceTypeRecord {
+                kind: GpuSemanticInterfaceTypeKind::ConstParameter as u32,
+                payload_lo: 1, ..interface.types[0]
+            };
+            let constant = |scalar: u32, bits: [u32; 2]| GpuSemanticInterfaceTypeRecord {
+                kind: GpuSemanticInterfaceTypeKind::ConstValue as u32,
+                payload_lo: scalar,
+                length_lo: bits[0],
+                length_hi: bits[1],
+                ..interface.types[0]
+            };
+            let (argument, literal) = (constant(left_scalar, left_bits), constant(right_scalar, right_bits));
+            interface.types.push(argument);
             interface.types.push(GpuSemanticInterfaceTypeRecord {
-                kind: 9, payload_lo: scalar, length_lo: bits[0], length_hi: bits[1], ..leaf
+                kind: GpuSemanticInterfaceTypeKind::Scalar as u32,
+                payload_lo: left_scalar,
+                ..interface.types[0]
             });
+            interface.members[1].type_index = 13;
+            interface.types[8] = literal;
+            interface.implementation_arguments[0] = 12;
+            let result = interface.validate();
+            if equal {
+                result.expect("equal constant operands match");
+            } else {
+                assert!(result.unwrap_err().contains("signature disagrees"),
+                    "distinct constants {left_scalar} {left_bits:?}, {right_scalar} {right_bits:?} must not match");
+            }
         }
-        interface.types.extend([
-            GpuSemanticInterfaceTypeRecord { kind: 9, payload_lo: SCALAR_U64, length_lo: 7, ..leaf },
-            GpuSemanticInterfaceTypeRecord { kind: 10, payload_lo: SCALAR_U8, first_edge: 1, edge_count: 1, ..leaf },
-            GpuSemanticInterfaceTypeRecord { kind: 9, payload_lo: SCALAR_U64, length_lo: 7, ..leaf },
-            GpuSemanticInterfaceTypeRecord { kind: 10, payload_lo: SCALAR_U8, first_edge: 2, edge_count: 1, ..leaf },
-            GpuSemanticInterfaceTypeRecord { kind: 9, payload_lo: SCALAR_U64, length_lo: 7, ..leaf },
-            GpuSemanticInterfaceTypeRecord { kind: 10, payload_lo: SCALAR_U16, first_edge: 3, edge_count: 1, ..leaf },
-        ]);
-        interface.type_edges.extend([10, 12, 14].map(|type_index| GpuSemanticInterfaceTypeEdge { type_index }));
-        interface.validate().unwrap();
-        let empty = BTreeMap::new();
-        assert!(interface.implementation_types_match(2, 3, &empty));
-        for (left, right) in [(2, 4), (2, 5), (6, 7), (8, 9), (11, 15), (11, 10)] {
-            assert!(!interface.implementation_types_match(left, right, &empty),
-                "distinct typed constant graphs {left}, {right} must not match");
-        }
-        assert!(interface.implementation_types_match(11, 13, &empty));
     }
 
     #[test]
