@@ -117,16 +117,53 @@ impl-forwarding modules, plus the existing inherited/shadowed method-bound
 test. These include the new shadowing case and rejection diagnostics. All runs
 used the shared GPU lock and one test thread; no broad suite was repeated.
 
-### Concrete instance checks still required
+### Concrete operator checks in selected copies
 
 The discovery-input audit found missing value-row types and operator validation
-in the selected-copy prototype. Baseline probes confirm a miscompilation of
-`add<T>` at both integer and floating-point types. Mixed instances also admit
-boolean arithmetic and integer conditions that should fail type checking.
-Forcing those same bodies into another unit invokes source replay, which
-computes the numeric result correctly and rejects the invalid operators.
-Complete symbolic row typing, scalar realization and GPU concrete-operand
-validation are required corrections before replay deletion.
+in the selected-copy prototype. Baseline probes at `c1e85925f` reproduced them
+in one job: `add<T>` at `f64` and `i32` exited 1, and mixed instances accepted
+`bool` addition, an `i32` condition, `!` on `i32`, `str` equality and indexing
+an `i32`. Forcing the same bodies into another unit invoked source replay,
+which computed the result and rejected the invalid operands.
+
+GPU passes now correct the selected path without demoting any body:
+
+| Pass | Effect |
+| --- | --- |
+| [`03k1_project_literal_contexts`](../shaders/type_checker/calls/03k1_project_literal_contexts.slang) | A literal whose only context is a type parameter records that parameter as a symbolic context. |
+| [`00_init`](../shaders/type_checker/semantic/expression_types/00_init.slang) | Such a literal has no template scalar, or its binding in an in-place or replayed body (published at the parameter's declaration token by `00f`). |
+| [`01e_operator_refs`](../shaders/type_checker/semantic/artifact/01e_operator_refs.slang) | A symbolic literal row gets its parameter reference. An arithmetic, bitwise, negation or forwarding row gets the parameter reference of its first operand chain. The table substitutes both per instance, so a copy at `f64` lowers a floating-point add with an f64 literal. |
+| [`06c_table_operands`](../shaders/type_checker/closure/06c_table_operands.slang) | One lane per virtual row checks the instance's realized types: literal kind, range and float status; binary operators, unary minus, `if`/`while` conditions, logical operands and indexing; returned, declared and assigned values. Errors are LNC0006, LNC0069 or LNC0070 at the template row's first token. |
+
+`compact_expr` and `06c` use one rule set,
+[`operator_operand_rules`](../shaders/type_checker/operator_operand_rules.slang),
+which classifies a resolved struct, enum, array or slice operand instead of
+treating it as unknown. This also rejects, outside generics, `-b` for a
+`bool`, `ptr` or `char`, `s + s` and `-s` for a struct, `a + a` and `a == a`
+for an array, a struct condition or `!s`, indexing a struct and a struct
+index. Baseline compiled each of these; the struct and array arithmetic
+crashed. A rule runs on an instance row only when an operand's type changed
+under the environment. Focused tests are in
+`compiler_instance_operator_execution`.
+
+Probe results (selected copies, one unit):
+
+| Program | `ba4a67c5e` | `e11330f16` alone | Now |
+| --- | --- | --- | --- |
+| `a+1` at `i64`, `u8`, `i32` | exit 42 | LNC0006 at `1` | exit 42 |
+| `a+1.5` at `f64`, `f32` | exit 1 | LNC0006 at `1.5` | exit 42 |
+| `a+1` at `f64` and `i32` | exit 1 | LNC0006 at `1` | LNC0006 at `1`, expected f64, found i32 |
+| `2*a` at `i64` | exit 1 | LNC0006 | exit 42 |
+| `-a` at `bool` beside `i32` | exit 42 | exit 42 | LNC0006 at `a` |
+| `a+b` at a struct beside `i32` | exit 139 | exit 139 | LNC0006 at `a` |
+| `return a*a` to `i32` at `f64` | exit 42 | exit 42 | LNC0006 at `a*a` |
+| `a+1e39` at one `f64` instance (in place) | LNC0006, found f32 | not run | exit 42 |
+
+An integer literal does not take a float context in a generic body, as
+`x + 1` for `x: f64` does not outside one. A `LANIUS_TRACE=instance-table`
+run of the first two programs shows every entry selected (3 of 3, 2 of 2) and
+no replay. The design contract's "Operator and literal rows" section lists
+the remaining gaps.
 
 Constant projection fits are another instance-time obligation. The local-call
 fix in `2fbfb57fd` (integrated as `9bd027f52`) preserves a distinct failed-fit

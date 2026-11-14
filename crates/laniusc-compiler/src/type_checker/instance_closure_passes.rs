@@ -73,6 +73,8 @@ pub(super) const INSTANCE_TABLE_ARGS_PASS: &str = "type_check.instance_table.arg
 pub(super) const INSTANCE_TABLE_ROWS_PASS: &str = "type_check.instance_table.rows";
 pub(super) const INSTANCE_TABLE_CALLS_PASS: &str = "type_check.instance_table.calls";
 pub(super) const INSTANCE_TABLE_ROWS_FINAL_PASS: &str = "type_check.instance_table.rows_final";
+/// Operand checks of each instance's rows (06c_table_operands).
+pub(super) const INSTANCE_TABLE_OPERANDS_PASS: &str = "type_check.instance_table.operands";
 const TABLE_KEYS_KERNEL: &str = "type_checker/closure/05_table_keys";
 const TABLE_RANK_KERNEL: &str = "type_checker/closure/05b_table_rank";
 const TABLE_ARGS_KERNEL: &str = "type_checker/closure/05c_table_args";
@@ -91,6 +93,7 @@ pub(super) const TABLE_FIELD_CLOSURE: super::substitution_passes::FieldClosurePa
     };
 const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final";
 const TABLE_CALLS_KERNEL: &str = "type_checker/closure/07_table_calls";
+const TABLE_OPERANDS_KERNEL: &str = "type_checker/closure/06c_table_operands";
 /// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
 pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
 /// Execution rows of the table (closure/instance_exec.slang).
@@ -486,6 +489,17 @@ pub(super) fn register_instance_table_passes(
         )?;
         graph.add_indirect_dispatch(name, "instance_table_args")?;
     }
+    // The operand rules of each instance's operators, conditions and
+    // indexing, on the realized rows; errors join the job's status.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_TABLE_OPERANDS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        TABLE_OPERANDS_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_TABLE_OPERANDS_PASS, "instance_table_args")?;
     // The field closure of the realized row types, for their widths.
     super::substitution_passes::register_field_closure_passes(
         graph,
@@ -653,6 +667,7 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     args: ComputeOperation,
     rows: ComputeOperation,
     rows_final: ComputeOperation,
+    operands: ComputeOperation,
     field_closure: super::substitution_passes::FieldClosureOperations,
     calls: ComputeOperation,
     exec_clear: crate::gpu::operations::ClearBuffersOperation,
@@ -706,6 +721,7 @@ impl InstanceTableOperations {
             )?,
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
+            operands: indirect(INSTANCE_TABLE_OPERANDS_PASS, TABLE_OPERANDS_KERNEL, &table_args)?,
             field_closure: super::substitution_passes::FieldClosureOperations::new(
                 device,
                 graph,
@@ -794,6 +810,7 @@ impl InstanceTableOperations {
             self.rows.record(encoder)?;
         }
         self.rows_final.record(encoder)?;
+        self.operands.record(encoder)?;
         self.field_closure.record(encoder)?;
         self.calls.record(encoder)
     }

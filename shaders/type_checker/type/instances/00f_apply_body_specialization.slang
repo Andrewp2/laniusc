@@ -150,11 +150,13 @@ uint type_path_leaf(uint node)
     return compact_path_segments[record.segment_start + record.segment_count - 1u].name_token;
 }
 
-void publish_type_parameter_reference(uint row, uint slot, uint use_token)
+// The reference a use of type parameter `row` (slot `slot`) has in this
+// job: the bound argument of a body entry or of the in-place instance, else
+// the parameter itself.
+void type_parameter_binding(uint row, uint slot, out uint tag, out uint payload)
 {
-    type_generic_param_slot_by_token[use_token] = slot;
-    uint tag = TYPE_REF_GENERIC_PARAM;
-    uint payload = generic_param_token[row];
+    tag = TYPE_REF_GENERIC_PARAM;
+    payload = generic_param_token[row];
     uint owner = compact_generic_params[row].owner;
     uint entry = owner < active_hir_node_count()
         ? body_specialization_entry_for_owner(owner) : INVALID;
@@ -177,6 +179,13 @@ void publish_type_parameter_reference(uint row, uint slot, uint use_token)
         tag = operand.x;
         payload = operand.y;
     }
+}
+
+void publish_type_parameter_reference(uint row, uint slot, uint use_token)
+{
+    type_generic_param_slot_by_token[use_token] = slot;
+    uint tag; uint payload;
+    type_parameter_binding(row, slot, tag, payload);
     type_expr_ref_tag[use_token] = tag;
     type_expr_ref_payload[use_token] = payload;
 }
@@ -218,7 +227,21 @@ void publish_decl_generic_param_slot(uint row)
 
     uint kind = generic_param_kind[row];
     if (kind == GENERIC_PARAM_KIND_TYPE)
+    {
         type_generic_param_slot_by_token[token] = slot;
+        // A bound parameter's declaration token also carries its binding.
+        // A literal whose context is this parameter names this token
+        // (literal_symbolic_context.slang); expression typing (00_init)
+        // reads the binding there, since literal contexts were computed
+        // before the body was bound.
+        uint tag; uint payload;
+        type_parameter_binding(row, slot, tag, payload);
+        if (tag != TYPE_REF_GENERIC_PARAM)
+        {
+            type_expr_ref_tag[token] = tag;
+            type_expr_ref_payload[token] = payload;
+        }
+    }
     else if (kind == GENERIC_PARAM_KIND_CONST)
         type_const_param_slot_by_token[token] = slot;
 }

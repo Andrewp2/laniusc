@@ -134,6 +134,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) struct_literal_refs: ComputeOperation,
     pub(in crate::type_checker) struct_literal_refs_early: ComputeInvocation,
     pub(in crate::type_checker) array_index_refs: ComputeOperation,
+    pub(in crate::type_checker) operator_refs: ComputeOperation,
     pub(in crate::type_checker) compact_expr: ComputeOperation,
     pub(in crate::type_checker) compact_stmt: ComputeOperation,
     /// Distinct-type brands (`type M = distinct T;`); recorded only when the
@@ -522,6 +523,10 @@ impl SemanticProjectionOperations {
             array_index_refs: direct(
                 compiler_graph::SEMANTIC_ARRAY_INDEX_REFS_PROJECT_PASS,
                 "type_checker/semantic/artifact/01b_array_index_refs",
+            )?,
+            operator_refs: direct(
+                compiler_graph::SEMANTIC_OPERATOR_REFS_PROJECT_PASS,
+                "type_checker/semantic/artifact/01e_operator_refs",
             )?,
             compact_expr: direct(
                 compiler_graph::CONDITIONS_COMPACT_EXPR_PASS,

@@ -4,6 +4,7 @@
 #include "array_literal_context_inputs.slang"
 import primitive_types;
 import type_checker.owned_literal_context;
+import type_checker.literal_symbolic_context;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
@@ -35,6 +36,17 @@ uint checked_numeric_peer(uint node, bool floating)
     if (numeric_literal_accepts_context(node, floating ? 5u : 3u, active_hir_count(),
         compact_hir_core, compact_hir_payload, compact_hir_expr_parent)) return 0u;
     return numeric_context(uint2(call_inference_result_tag[node], call_inference_result_payload[node]), floating);
+}
+
+// The symbolic context (literal_symbolic_context.slang) a peer operand of
+// type-parameter type gives, or 0. A peer that is itself a literal gives
+// none here: its own context is resolved by its own lane.
+uint checked_symbolic_peer(uint node)
+{
+    node = argument_context_root(node, active_hir_count(), compact_hir_core, compact_hir_payload);
+    if (!valid_hir(node) || compact_hir_core[node].kind == HIR_SEM_KIND_LITERAL_EXPR) return 0u;
+    return literal_symbolic_context_of(call_inference_result_tag[node],
+        call_inference_result_payload[node], gParams.n_tokens);
 }
 
 uint direct_range_literal_context(uint literal)
@@ -199,7 +211,9 @@ static const uint QUERY_OPERAND = 0u; // the current operand root
 static const uint QUERY_MATCH = 1u;   // the match whose arm result is the operand
 static const uint QUERY_ARRAY = 2u;   // an enclosing array literal layer
 
-uint checked_literal_context(uint literal)
+// `symbolic` receives the first type-parameter context met on the way,
+// used only when no scalar context is found.
+uint checked_literal_context(uint literal, inout uint symbolic)
 {
     uint owned = checked_owned_numeric_literal_context(literal, active_hir_count(), gParams.n_tokens,
         compact_hir_core, compact_hir_payload, compact_hir_expr_parent, compact_const_type,
@@ -288,6 +302,8 @@ uint checked_literal_context(uint literal)
         {
             uint context = numeric_context(reference, floating);
             if (context != 0u) return context;
+            if (symbolic == 0u)
+                symbolic = literal_symbolic_context_of(reference.x, reference.y, gParams.n_tokens);
         }
         if (mode == QUERY_OPERAND)
         {
@@ -301,6 +317,9 @@ uint checked_literal_context(uint literal)
                     call_inference_result_tag[scrutinee], call_inference_result_payload[scrutinee]),
                     floating) : 0u;
                 if (context != 0u) return context;
+                if (symbolic == 0u && valid_hir(scrutinee))
+                    symbolic = literal_symbolic_context_of(call_inference_result_tag[scrutinee],
+                        call_inference_result_payload[scrutinee], gParams.n_tokens);
             }
             else if (role == MATCH_ROLE_RESULT)
             {
@@ -354,6 +373,8 @@ uint checked_literal_context(uint literal)
         if (shift && value.c == current) return peer;
         if (!shift && peer == 0u)
             peer = checked_numeric_peer(value.b == current ? value.c : value.b, floating);
+        if (!shift && peer == 0u && symbolic == 0u)
+            symbolic = checked_symbolic_peer(value.b == current ? value.c : value.b);
         if (comparison) return peer;
         climbed = true; current = parent; query = parent;
     }
@@ -368,19 +389,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_hir(node) || compact_hir_core[node].kind != HIR_SEM_KIND_LITERAL_EXPR ||
         (compact_hir_payload[node].a != HIR_SEM_EXPR_INT &&
          compact_hir_payload[node].a != HIR_SEM_EXPR_FLOAT)) return;
-    uint type = checked_literal_context(node);
+    uint symbolic = 0u;
+    uint type = checked_literal_context(node, symbolic);
+    // A literal whose only context is a type parameter's value records that
+    // parameter; each instance gives it its scalar (closure/06c).
+    if (type == 0u) type = symbolic;
     if (literal_context_type_by_hir[node] != type)
     {
         uint previous = literal_context_type_by_hir[node];
         literal_context_type_by_hir[node] = type;
         // Preserve explicit context provenance, but request another fixed-point
         // round only when a reader observes a different effective scalar.
-        // An absent context means the syntax category's default scalar.
-        uint default_scalar = compact_hir_payload[node].a == HIR_SEM_EXPR_FLOAT
-            ? SCALAR_F32 : SCALAR_I32;
-        uint previous_scalar = previous == 0u ? default_scalar : previous;
-        uint next_scalar = type == 0u ? default_scalar : type;
-        if (previous_scalar != next_scalar)
+        // An absent or symbolic context means the syntax category's default
+        // scalar to inference.
+        bool floating = compact_hir_payload[node].a == HIR_SEM_EXPR_FLOAT;
+        if (literal_effective_scalar(previous, floating) != literal_effective_scalar(type, floating))
         {
             uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
         }

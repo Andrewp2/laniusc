@@ -326,6 +326,8 @@ pub(super) const SEMANTIC_NATIVE_WORD_MEMO_CLEAR_PASS: &str =
     "type_check.semantic_artifact.generic_native_words.clear";
 pub(super) const SEMANTIC_ARRAY_INDEX_REFS_PROJECT_PASS: &str =
     "type_check.semantic_artifact.array_index_refs";
+pub(super) const SEMANTIC_OPERATOR_REFS_PROJECT_PASS: &str =
+    "type_check.semantic_artifact.operator_refs";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_FIELDS_PASS: &str =
     "type_check.type_instances.struct_init_fields";
 pub(super) const TYPE_INSTANCES_STRUCT_INIT_CLEAR_PASS: &str =
@@ -4797,6 +4799,17 @@ fn build_graph(
                     "semantic_aggregate_decl_token_by_hir" => semantic_aggregate_decl_token_by_hir: ReadWrite,
                     "semantic_iterable_kind_by_hir" => semantic_iterable_kind_by_hir: ReadWrite,
                     "semantic_function_result_word_count_by_hir" => semantic_function_result_word_count_by_hir: Write,
+                ],
+            )?;
+            graph.add_kernel_pass_by_name(
+                SEMANTIC_OPERATOR_REFS_PROJECT_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/semantic/artifact/01e_operator_refs",
+                reflected_bindings![
+                    "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: ReadWrite,
+                    "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: ReadWrite,
                 ],
             )?;
             graph.add_kernel_pass_by_name(

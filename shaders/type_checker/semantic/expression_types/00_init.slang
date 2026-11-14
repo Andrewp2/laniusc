@@ -10,6 +10,7 @@ import hir_records;
 import gpu_index;
 import checked_semantic_artifact;
 import type_checker.checked_index_reference;
+import type_checker.literal_symbolic_context;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -151,6 +152,18 @@ uint compact_index_result_type(uint index_node)
         semantic_calls_by_hir, type_instance_kind, type_instance_elem_ref_tag,
         type_instance_elem_ref_payload, tag, payload)) return TY_UNKNOWN;
     return scalar_type_from_ref(tag, payload);
+}
+
+// The type of a literal whose context is parameter `parameter`: TY_UNKNOWN
+// while the parameter is unbound, else the bound scalar when it has the
+// literal's kind, else the literal's default `fallback`.
+uint bound_literal_type(uint parameter, bool floating, uint fallback)
+{
+    if (!valid_token(parameter) || type_expr_ref_tag[parameter] == TYPE_REF_GENERIC_PARAM ||
+        type_expr_ref_tag[parameter] == 0u) return TY_UNKNOWN;
+    uint bound = type_expr_ref_tag[parameter] == TYPE_REF_SCALAR
+        ? type_expr_ref_payload[parameter] : TY_UNKNOWN;
+    return (floating ? scalar_is_float(bound) : scalar_is_integer(bound)) ? bound : fallback;
 }
 
 uint pack_scalar_type(uint ty, uint link)
@@ -308,6 +321,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint context = literal_context_type_by_hir[current];
             if ((compact_hir_payload[current].a == HIR_EXPR_INT && scalar_is_integer(context)) ||
                 (compact_hir_payload[current].a == HIR_EXPR_FLOAT && scalar_is_float(context))) ty = context;
+            // A literal whose context is a type parameter has no scalar in
+            // the template: each instance types it (literal_symbolic_context).
+            // A body bound in this job (in place or replayed) publishes the
+            // parameter's binding at its declaration token (00f): the literal
+            // takes a bound scalar of its kind, else keeps its default, which
+            // the operand and destination checks then reject.
+            if (literal_context_is_symbolic(context))
+                ty = bound_literal_type(literal_context_parameter(context),
+                    compact_hir_payload[current].a == HIR_EXPR_FLOAT, ty);
         }
         if (ty != TY_UNKNOWN || !valid_hir(link)) break;
         current = link;

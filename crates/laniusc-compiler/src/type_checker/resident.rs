@@ -2628,6 +2628,10 @@ impl GpuTypeChecker {
                 .record(encoder)?;
             bind_groups
                 .semantic_projection
+                .operator_refs
+                .record(encoder)?;
+            bind_groups
+                .semantic_projection
                 .compact_expr
                 .record(encoder)?;
             bind_groups

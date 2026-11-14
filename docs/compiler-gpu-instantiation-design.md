@@ -4,7 +4,9 @@ This draft specifies the replacement path. It is not an implementation receipt.
 The measurements, prototype history and remaining coverage gaps are in
 [GPU generic instantiation](compiler-gpu-instantiation.md). Discovery-input and
 emitted-use audits establish the contracts below. Baseline probes also found
-missing concrete operator checks in the current selected-copy path. Those
+missing concrete operator checks in the selected-copy path. The in-unit
+operator and contextual-literal corrections are in place (see the
+implementation note); their retained-template export is not. The other
 corrections and the acceptance gates remain implementation requirements.
 
 The host supplies input bytes, allocations, transfers and submissions. Shaders
@@ -203,28 +205,76 @@ Concrete instance checks have explicit owners:
 | --- | --- |
 | Constant projection fit | Substitution reports a distinct failed-fit result, propagated from a required call environment to a source diagnostic. Do not turn it into `CT_UNKNOWN`, or publish errors from discarded inference candidates. Retain pending fits independently of count-class equality. Implemented for in-unit instances: see "Constant fit status" below. |
 | Closed array count validity | Validate signedness/range before layout, preserving the existing invalid-count diagnostic and template location. |
-| Operator, condition, logical and index legality | Realize complete operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. A known nominal/aggregate operand is not an unknown scalar. Include numeric unary operands. |
-| Contextual numeric literals | Retain the literal kind, magnitude/float representations and symbolic context. Resolve each instance's literal type, range and native payload before operand validation and lowering. Contextual literal typing does not permit implicit conversion of a named typed value. |
+| Operator, condition, logical and index legality | Realize complete operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. A known nominal/aggregate operand is not an unknown scalar. Include numeric unary operands. Implemented for in-unit instances, with returned, declared and assigned values: see "Operator and literal rows" below. |
+| Contextual numeric literals | Retain the literal kind, magnitude/float representations and symbolic context. Resolve each instance's literal type, range and native payload before operand validation and lowering. Contextual literal typing does not permit implicit conversion of a named typed value. Implemented for in-unit instances: see "Operator and literal rows" below. |
 | Callee/receiver/trait prerequisites | Program solver and instantiated signatures, with hard obligations and caller ABI agreement |
 | Unsupported zero initialization or layout | Existing layout/lowering rules on concrete types; map errors back to the template row |
 
 These are parallel row/use tasks, not a second source frontend. Their results
-join the publication reduction. The baseline selected-copy path currently
-miscompiles mixed integer/float generic arithmetic and admits invalid boolean
-arithmetic and integer conditions; forced cross-unit replay behaves correctly
-for those probes. Correct these defects instead of preserving their outputs.
-An operator correction must also preserve contextual literals. A root probe
-of `fn bump<T>(a:T)->T { return a+1; }` instantiated at `i64`, `u8` and `i32`
-executes correctly at `ba4a67c5e`, but the unintegrated `e11330f16` operator
-patch rejects it because the literal retains a shared `i32` type. The same
-program forced through cross-unit replay already rejects on the baseline;
-replay is therefore not a complete oracle for this case. Per-instance literal
-context is a correctness requirement, not a reason to omit operand validation
-or demote these bodies to replay. Probes and logs are under
-`target/instantiation-design-evidence/operator-literal-baseline/`.
+join the publication reduction. The baseline selected-copy path at
+`ba4a67c5e` miscompiled mixed integer/float generic arithmetic and admitted
+invalid boolean arithmetic and integer conditions; forced cross-unit replay
+behaved correctly for those probes. An operator correction must also preserve
+contextual literals. A root probe of `fn bump<T>(a:T)->T { return a+1; }`
+instantiated at `i64`, `u8` and `i32` executes correctly at `ba4a67c5e`, but
+the operator patch `e11330f16` alone rejected it because the literal kept a
+shared `i32` type. The same program forced through cross-unit replay already
+rejects on the baseline; replay is therefore not a complete oracle for this
+case. Per-instance literal context is a correctness requirement, not a reason
+to omit operand validation or demote these bodies to replay. Probes and logs
+are under `target/instantiation-design-evidence/operator-literal-baseline/`.
 The mixed-projection overflow fixture reported an internal LNC0017 evidence
 error without a source label at c1e85925f. It now reports LNC0006 at the inner
 `narrow(values)` argument (tests `constant_projection_fit_is_checked_per_instance`).
+
+### Operator and literal rows
+
+The template owns symbolic facts; each instance checks them on its realized
+types.
+
+- **Symbolic literal context.** `calls/03k1` resolves each unsuffixed numeric
+  literal's context. When the only context is a value or declared type of a
+  type parameter, `literal_context_type_by_hir` holds
+  `LITERAL_CONTEXT_SYMBOLIC | P`, where `P` is the parameter's declaration
+  token ([`literal_symbolic_context`](../shaders/type_checker/literal_symbolic_context.slang)).
+  Peers through parentheses, unary minus and arithmetic, comparisons, `let`
+  and assignment targets, return types and generic call results are covered.
+  The word is never a scalar, so inference readers keep the default.
+- **Template rows.** `00_init` gives such a literal no scalar. `01e` gives the
+  literal row the reference `(GENERIC_PARAM, P)`, and an inherited operator
+  row its first operand's parameter reference, reached by the same left
+  operand edge `00_init` walks. The template checks therefore see an unknown
+  type, not `i32`.
+- **Bound bodies.** An in-place or replayed body binds `P` after literal
+  contexts are computed. `00f` writes the binding at `P`; `00_init` gives the
+  literal the bound scalar when its kind matches, else its default, which the
+  operand and destination checks reject.
+- **Instances.** The instance table realizes each row's reference.
+  `closure/06c` checks per `(instance, row)`: a literal's kind against the
+  realized scalar (LNC0006, no integer-to-float conversion), its magnitude
+  (LNC0069, signed minimum under unary minus) and its float status in that
+  width (LNC0070); operand classes of binary, unary minus, condition,
+  logical and index rows; and a returned, declared or assigned value against
+  its destination. Execution rows copy the realized scalar, and lowering
+  selects the literal's f32 or f64 HIR word by it.
+- **Operand classes.** [`operator_operand_rules`](../shaders/type_checker/operator_operand_rules.slang)
+  classifies a resolved struct or enum as `OPR_TY_NAMED` and an array or
+  slice as `OPR_TY_SEQUENCE`. Neither takes arithmetic, negation, a
+  condition, a logical operand or an index role. Named values keep equality
+  and ordering (enum ordering is supported); sequences and strings take no
+  equality. Negation takes an integer or a float. References keep the
+  scalar cache's classification. `compact_expr` and `06c` share these rules.
+- **Retention.** A retained template exports the symbolic context words, or
+  equivalently the literal rows' parameter references with the HIR literal
+  words and status. A retained use must apply the `06c` rules under the
+  caller's environment. This export is not implemented.
+- **Not covered.** A table with `IT_COUNT_FLAGS` set skips `06c`, and so do
+  entries whose template is not local. Two aggregates of one class are not
+  compared by complete type in these rules. Struct ordering is not
+  rejected. A literal argument to a `T` parameter inside a generic body, as in
+  `add<T>(a, 1)`, is rejected at the template on the baseline and still is.
+  A cast of a `T` value is rejected at the template (LNC0072); the baseline
+  rejects `a as f64` the same way and failed `(a+b) as f64` in the backend.
 
 ### Constant fit status
 

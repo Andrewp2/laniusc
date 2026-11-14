@@ -10,8 +10,10 @@
 // Kernels: 05_table_keys (one lane per closure instance: eligibility, key,
 // row count), 05b_table_rank (the same lanes: rank and base by counting),
 // 05c_table_args (sizes the row dispatches), 06_table_rows / 06a (one lane
-// per virtual row, retried while a realization is busy), 07_table_calls (one
-// lane per virtual row: the callee instance of each call row, D3).
+// per virtual row, retried while a realization is busy), 06c_table_operands
+// (one lane per virtual row: operand rules on the realized types),
+// 07_table_calls (one lane per virtual row: the callee instance of each call
+// row, D3).
 //
 // The table is an observation for now: the host reads it only in validation
 // mode (LANIUS_CHECK=instance-table), against the copy run's own types.

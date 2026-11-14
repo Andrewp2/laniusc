@@ -12,6 +12,7 @@ import type_checker.checked_index_reference;
 import type_checker.argument_context;
 import type_checker.float_literal_selection;
 import type_checker.owned_literal_context;
+import type_checker.operator_operand_rules;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -117,30 +118,27 @@ uint scalar_type(uint node)
     return valid_hir(node) ? compact_expr_scalar_type[node] >> SCALAR_TYPE_SHIFT : TY_UNKNOWN;
 }
 
+// An operand's class for the operator rules: its scalar, or the class of
+// its complete checked reference (operator_operand_type). A struct or array
+// is a resolved type here, not an unknown one.
+uint operand_type(uint node)
+{
+    if (!valid_hir(node)) return TY_UNKNOWN;
+    return operator_operand_type(scalar_type(node), semantic_expr_ref_tag_by_hir[node],
+        semantic_expr_ref_payload_by_hir[node], type_instance_kind);
+}
+
 void record_bool_mismatch(uint node, uint ty)
 {
-    if (ty == TY_UNKNOWN || ty == TY_BOOL) return;
+    uint detail;
+    if (!operator_bool_violation(ty, detail)) return;
     uint token = valid_hir(node) ? compact_hir_core[node].token_start : 0u;
-    record_min_token_error(status, token, ERR_ASSIGN_MISMATCH, TY_BOOL * 256u + ty);
+    record_min_token_error(status, token, ERR_ASSIGN_MISMATCH, detail);
 }
 
-bool is_array_type(uint ty)
-{
-    return (ty >= TY_ARRAY_BASE && ty < TY_STRUCT_BASE) ||
-           ty >= TY_ARRAY_BASE + TY_GENERIC_BASE;
-}
+bool is_array_type(uint ty) { return operator_is_array_type(ty); }
 
-bool assignable_to_int(uint ty)
-{
-    return ty == TY_UNKNOWN || scalar_is_integer(ty);
-}
-
-bool numeric_operand_ok(uint ty)
-{
-    return ty == TY_UNKNOWN || scalar_is_integer(ty) || scalar_is_float(ty);
-}
-
-bool integer_operand_ok(uint ty) { return assignable_to_int(ty); }
+bool assignable_to_int(uint ty) { return operator_assignable_to_int(ty); }
 
 uint raw_parts_callee_token(uint call)
 {
@@ -213,67 +211,10 @@ void validate_raw_parts_call(uint node, HirCore core)
         record_min_token_error(status, compact_hir_core[length].token_start,
             ERR_ASSIGN_MISMATCH, TY_INT * 256u + length_ty);
 }
-bool equality_operand_ok(uint ty)
-{
-    return ty == TY_UNKNOWN || (!is_array_type(ty) && ty != TY_STRING);
-}
-
-bool integer_binary(uint form)
-{
-    return form == HIR_EXPR_MOD || form == HIR_EXPR_BIT_OR ||
-           form == HIR_EXPR_BIT_XOR || form == HIR_EXPR_BIT_AND ||
-           form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
-}
-
-bool numeric_binary(uint form)
-{
-    return form == HIR_EXPR_ADD || form == HIR_EXPR_SUB ||
-           form == HIR_EXPR_MUL || form == HIR_EXPR_DIV ||
-           form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
-           form == HIR_EXPR_LE || form == HIR_EXPR_GE;
-}
-
-bool equality_binary(uint form)
-{
-    return form == HIR_EXPR_EQ || form == HIR_EXPR_NE;
-}
-
-bool ordering_binary(uint form)
-{
-    return form == HIR_EXPR_LT || form == HIR_EXPR_GT ||
-           form == HIR_EXPR_LE || form == HIR_EXPR_GE;
-}
-
-bool binary_operand_ok(uint form, uint ty)
-{
-    if (integer_binary(form)) return integer_operand_ok(ty);
-    // Chars order by code point (unsigned, as the backends compare them);
-    // they take no arithmetic.
-    if (ordering_binary(form) && ty == TY_CHAR) return true;
-    if (numeric_binary(form)) return numeric_operand_ok(ty);
-    if (equality_binary(form)) return equality_operand_ok(ty);
-    return true;
-}
-
-bool pointer_offset_binary(uint form, uint left_ty, uint right_ty)
-{
-    return (form == HIR_EXPR_ADD || form == HIR_EXPR_SUB) &&
-        left_ty == TY_POINTER && assignable_to_int(right_ty);
-}
-
 bool null_pointer_constant(uint node)
 {
     return valid_hir(node) && compact_hir_payload[node].a == HIR_EXPR_INT &&
         compact_hir_payload[node].b == 0u && compact_hir_payload[node].c == 0u;
-}
-
-bool pointer_equality_ok(uint form, HirPayload payload, uint left_ty, uint right_ty)
-{
-    if (!equality_binary(form) ||
-        (left_ty != TY_POINTER && right_ty != TY_POINTER)) return false;
-    return (left_ty == TY_POINTER && right_ty == TY_POINTER) ||
-        (left_ty == TY_POINTER && right_ty == TY_INT && null_pointer_constant(payload.c)) ||
-        (right_ty == TY_POINTER && left_ty == TY_INT && null_pointer_constant(payload.b));
 }
 
 void record_mismatch(uint node, uint detail)
@@ -284,32 +225,12 @@ void record_mismatch(uint node, uint detail)
 
 void validate_binary(uint node, HirPayload payload)
 {
-    uint form = payload.a;
-    if (!integer_binary(form) && !numeric_binary(form) && !equality_binary(form)) return;
-    uint left_ty = scalar_type(payload.b);
-    uint right_ty = scalar_type(payload.c);
-    if (pointer_offset_binary(form, left_ty, right_ty)) return;
-    if (pointer_equality_ok(form, payload, left_ty, right_ty)) return;
-    if (equality_binary(form) &&
-        (left_ty == TY_POINTER || right_ty == TY_POINTER))
-    {
-        bool left_pointer = left_ty == TY_POINTER;
-        record_mismatch(left_pointer ? payload.c : payload.b,
-            TY_POINTER * 256u + (left_pointer ? right_ty : left_ty));
-        return;
-    }
-    // The detail is the rejected operand's type (no expected type).
-    if (!binary_operand_ok(form, left_ty))
-    {
-        record_mismatch(payload.b, left_ty);
-        return;
-    }
-    if (!binary_operand_ok(form, right_ty)) { record_mismatch(payload.c, right_ty); return; }
-    // Integer widths and signedness are checked type identity. Only an
-    // unsuffixed literal can take the opposite operand's type via context.
-    bool shift = form == HIR_EXPR_SHL || form == HIR_EXPR_SHR;
-    if (!shift && left_ty != TY_UNKNOWN && right_ty != TY_UNKNOWN && left_ty != right_ty)
-        record_mismatch(payload.c, left_ty * 256u + right_ty);
+    uint detail;
+    uint operand = operator_binary_violation(payload.a, operand_type(payload.b),
+        operand_type(payload.c), null_pointer_constant(payload.b),
+        null_pointer_constant(payload.c), detail);
+    if (operand == OPR_OPERAND_LEFT) record_mismatch(payload.b, detail);
+    else if (operand == OPR_OPERAND_RIGHT) record_mismatch(payload.c, detail);
 }
 
 bool instance_is_array_or_slice(uint node)
@@ -336,16 +257,25 @@ bool instance_is_array_or_slice(uint node)
 
 void validate_index(uint node, HirPayload payload)
 {
-    uint base_ty = scalar_type(payload.b);
+    uint base_ty = operand_type(payload.b);
     if (base_ty != TY_UNKNOWN && !is_array_type(base_ty) &&
         !instance_is_array_or_slice(payload.b))
     {
-        record_mismatch(node, base_ty);
+        record_mismatch(node, operator_detail_code(base_ty));
         return;
     }
-    uint index_ty = scalar_type(payload.c);
-    if (!assignable_to_int(index_ty))
-        record_mismatch(payload.c, TY_INT * 256u + index_ty);
+    uint detail;
+    if (operator_index_violation(operand_type(payload.c), detail))
+        record_mismatch(payload.c, detail);
+}
+
+// `-x` takes an integer or a float.
+void validate_negation(uint node, HirCore core, HirPayload payload)
+{
+    if (core.kind != HIR_UNARY_EXPR || payload.a != OPR_EXPR_NEG) return;
+    uint detail;
+    if (operator_negation_violation(operand_type(payload.b), detail))
+        record_mismatch(payload.b, detail);
 }
 
 bool cast_numeric(uint ty) { return scalar_is_integer(ty) || scalar_is_float(ty); }
@@ -582,6 +512,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     validate_direct_range(node, core, payload);
     validate_raw_parts_call(node, core);
     if (core.kind == HIR_INDEX_EXPR) validate_index(node, payload);
+    validate_negation(node, core, payload);
     if (core.kind == HIR_BINARY_EXPR)
     {
         if (payload.a == HIR_EXPR_CAST) validate_cast(node, payload);
@@ -590,7 +521,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (core.kind == HIR_IF_STMT || core.kind == HIR_WHILE_STMT ||
         (core.kind == HIR_STMT &&
          (payload.a == HIR_STMT_IF || payload.a == HIR_STMT_WHILE)))
-        record_bool_mismatch(payload.b, scalar_type(payload.b));
+        record_bool_mismatch(payload.b, operand_type(payload.b));
 
     if (core.kind != HIR_EXPR && core.kind != HIR_BINARY_EXPR &&
         core.kind != HIR_UNARY_EXPR)
@@ -599,7 +530,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.a != HIR_EXPR_OR)
         return;
 
-    record_bool_mismatch(payload.b, scalar_type(payload.b));
+    record_bool_mismatch(payload.b, operand_type(payload.b));
     if (payload.a != HIR_EXPR_NOT)
-        record_bool_mismatch(payload.c, scalar_type(payload.c));
+        record_bool_mismatch(payload.c, operand_type(payload.c));
 }

@@ -56,6 +56,8 @@ mod compiler_empty_enum_layout_execution;
 mod compiler_generic_impl_forwarding_execution;
 #[path = "../compiler_generic_types_execution.rs"]
 mod compiler_generic_types_execution;
+#[path = "../compiler_instance_operator_execution.rs"]
+mod compiler_instance_operator_execution;
 #[path = "../compiler_structural_clone_result_execution.rs"]
 mod compiler_structural_clone_result_execution;
 #[path = "../compiler_trait_return_context_execution.rs"]
