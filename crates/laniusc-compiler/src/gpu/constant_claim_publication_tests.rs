@@ -329,6 +329,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_const_claim_selected", vec![7; capacity]);
     put("call_const_claim_lookup_head", vec![0; capacity]);
     put("call_const_claim_lookup_next", vec![0; capacity]);
+    put("call_const_claim_slot_mask", vec![0; TOKENS]);
     put("call_const_env_binding", vec![0; capacity * 4]);
 
     let mut atoms = vec![0; 128 * 4];
@@ -515,6 +516,7 @@ fn group(
                     "claim_count_in" => "call_const_claim_count_out",
                     "claim_callee" => "call_const_claim_callee",
                     "claim_slot" => "call_const_claim_slot",
+                    "claim_slot_mask" => "call_const_claim_slot_mask",
                     "claim_lookup_head" => "call_const_claim_lookup_head",
                     "claim_lookup_next" => "call_const_claim_lookup_next",
                     other => other,
