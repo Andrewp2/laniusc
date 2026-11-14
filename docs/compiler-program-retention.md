@@ -29,6 +29,12 @@ under "Not exported completely".
   counters and the three hash tables and nothing else. Arena contents past
   a counter are dead and are never read, so nothing carries over from one
   build to the next.
+- Each `begin_build` takes a new build generation, nonzero and unique over
+  every build of every store in the process, and writes it to
+  `rt_counts[RT_C_GENERATION]` (word 78; `ProgramRetention::generation`).
+  Growth copies it with the counters. A derived GPU publication records the
+  generation it was computed in, and its consumer compares the two
+  ([retained substitution](compiler-retained-substitution.md)).
 - `GpuCompiler::attach_program_retention(Some(store))` attaches the store.
   Recording captures that store once for the job, so later attachment changes
   affect only subsequent recordings. The captured store adds `program_retention` to its resident cache key,

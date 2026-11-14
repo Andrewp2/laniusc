@@ -177,6 +177,10 @@ public static const uint RT_C_INVARIANT_TOTAL = 74u; // invariant failures over 
 public static const uint RT_C_INCOMPLETE = 75u; // incomplete entries of the current committed job
 public static const uint RT_C_INCOMPLETE_TOTAL = 76u; // incomplete entries over the build
 public static const uint RT_C_READY = 77u; // exported records complete so far; not codegen admission
+// Build generation: nonzero and unique per begin_build over every store of
+// the process. A GPU consumer of a derived publication compares it with the
+// generation the publication recorded.
+public static const uint RT_C_GENERATION = 78u;
 public static const uint RT_C_JOB_SPARE = 80u; // + arena (decls..term args): spares at the job's start
 public static const uint RT_C_WORDS = 96u;
 

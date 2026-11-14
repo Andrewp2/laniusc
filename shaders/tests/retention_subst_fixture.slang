@@ -16,6 +16,7 @@
 //   6 REQ   decl env term
 //   7 SET   dst value
 //   8 CLEAR_READY
+//   9 FLIP  dst src mask      (dst = src ^ mask)
 // Operands named decl/owner/param/parent/env/term/args are registers;
 // word_registers has bit k set when word k is a register.
 import type_checker.retention.retention_store;
@@ -119,6 +120,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             rt_counts[RT_C_READY] = 0u;
             at += 1u;
+        }
+        else if (code == 9u)
+        {
+            put(op(at + 1u), reg(op(at + 2u)) ^ op(at + 3u));
+            at += 4u;
         }
         else { error = at; break; }
     }

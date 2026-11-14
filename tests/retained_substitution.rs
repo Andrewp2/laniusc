@@ -16,13 +16,16 @@ use laniusc_compiler::{
         ProgramRetentionCapacity,
         counts,
         substitution::{
+            CONSUMER_KERNEL,
             FIXTURE_KERNEL,
             RESULT_WORDS,
             RetainedSubstitution,
             SubstitutionCapacity,
             SubstitutionReport,
             SubstitutionRequests,
+            SubstitutionRun,
             USES_KERNEL,
+            env_cause,
             run_test_kernel,
             status,
             words,
@@ -48,6 +51,8 @@ const TYPE: u32 = 1;
 const CONST: u32 = 2;
 const BOOL: u32 = 2;
 const I32: u32 = 3;
+const U32: u32 = 4;
+const U64: u32 = 10;
 const I8: u32 = 11;
 const U8: u32 = 13;
 const U16: u32 = 14;
@@ -71,8 +76,32 @@ enum W {
 enum Expect {
     /// Success with this expected term register (None: expected terms skipped).
     Ok(Option<R>),
-    /// Failure with status, failed node register and failed value register.
-    Fail(u32, Option<R>, Option<R>),
+    /// Failure: every field that is Some is checked.
+    Fail(Failure),
+}
+
+/// The words of a failed result. Registers, except `env` (a register, or
+/// `CLOSED` for the environment 0 of a closed evaluation) and the codes.
+#[derive(Clone, Copy, Debug, Default)]
+struct Failure {
+    status: u32,
+    node: Option<R>,
+    env: Option<R>,
+    value: Option<R>,
+    /// ENV cause, inner status, inner ENV cause.
+    cause: Option<[u32; 3]>,
+}
+
+/// `Failure::env` of a failure inside a closed evaluation.
+const CLOSED: R = u32::MAX;
+
+fn failure(status: u32, node: Option<R>, value: Option<R>) -> Failure {
+    Failure {
+        status,
+        node,
+        value,
+        ..Failure::default()
+    }
 }
 
 /// A construction script for the GPU fixture interpreter.
@@ -166,6 +195,12 @@ impl Script {
         self.ops.extend(types);
         self.ops.extend(consts);
     }
+    /// `dst = src ^ mask` (a malformed reference).
+    fn flip(&mut self, src: R, mask: u32) -> R {
+        let r = self.reg();
+        self.ops.extend([9, r, src, mask]);
+        r
+    }
     fn clear_ready(&mut self) {
         self.ops.push(8);
     }
@@ -177,7 +212,10 @@ impl Script {
         self.request(decl, env, term, Expect::Ok(expected));
     }
     fn bad(&mut self, decl: R, env: R, term: R, status: u32, node: Option<R>, value: Option<R>) {
-        self.request(decl, env, term, Expect::Fail(status, node, value));
+        self.request(decl, env, term, Expect::Fail(failure(status, node, value)));
+    }
+    fn fails(&mut self, decl: R, env: R, term: R, f: Failure) {
+        self.request(decl, env, term, Expect::Fail(f));
     }
 
     // Term helpers.
@@ -196,8 +234,10 @@ impl Script {
     fn array(&mut self, t: R, n: R) -> R {
         self.mk(ARRAY, 0, [W::I(0); 3], &[t, n])
     }
+    /// A NAMED term: its type-slot count is its type-operand count.
     fn named(&mut self, decl: R, const_mask: u32, args: &[R]) -> R {
-        self.mk(NAMED, 0, [W::R(decl), W::I(const_mask), W::I(0)], args)
+        let types = args.len() as u32 - const_mask.count_ones();
+        self.mk(NAMED, types, [W::R(decl), W::I(const_mask), W::I(0)], args)
     }
     fn env(&mut self, owner: R, type_mask: u32, const_mask: u32, args: &[R]) -> R {
         self.mk(
@@ -233,6 +273,7 @@ struct Program {
     w: R,
     s_decl: R,
     x: R,
+    big: R,
     pair: R,
     boxed: R,
     wide: R,
@@ -257,6 +298,7 @@ impl Program {
         let w = s.decl(NS_CALLABLE, 0x4000_0003);
         let s_decl = s.decl(NS_CALLABLE, 0x4000_0004);
         let x = s.decl(NS_CALLABLE, 0x4000_0005);
+        let big = s.decl(NS_CALLABLE, 0x4000_0006);
         let pair = s.decl(NS_NOMINAL, 0x10);
         let boxed = s.decl(NS_NOMINAL, 0x11);
         let wide = s.decl(NS_NOMINAL, 0x12);
@@ -274,6 +316,8 @@ impl Program {
         s.entry(w, 1, None, &wt, &wc, COMMITTED, 0);
         s.entry(s_decl, 1, None, &[], &[], STAGED, 0);
         s.entry(x, 1, None, &[], &[], COMMITTED, 1);
+        let big_params: Vec<R> = (0..33).map(|k| s.param(big, TYPE, k, 0)).collect();
+        s.entry(big, 1, None, &big_params, &[], COMMITTED, 0);
         let [t, u, n, m, ti, tg] = [t, u, n, m, ti, tg].map(|p| s.leaf(p));
         let wt = wt.into_iter().map(|p| s.leaf(p)).collect();
         let wc = wc.into_iter().map(|p| s.leaf(p)).collect();
@@ -285,6 +329,7 @@ impl Program {
             w,
             s_decl,
             x,
+            big,
             pair,
             boxed,
             wide,
@@ -347,8 +392,19 @@ struct Fixture {
 }
 
 fn build_fixture(store: &ProgramRetention, script: &Script) -> Fixture {
+    build_fixture_into(store, script, script.expects.len() as u32)
+}
+
+/// A fresh build running `script`, whose requests go into buffers of
+/// `capacity` rows (the script writes its full count either way).
+fn build_fixture_into(store: &ProgramRetention, script: &Script, capacity: u32) -> Fixture {
     store.begin_build().unwrap();
-    let requests = SubstitutionRequests::new(script.expects.len() as u32);
+    produce(store, script, capacity)
+}
+
+/// Runs `script` in the store's current build (a producer run).
+fn produce(store: &ProgramRetention, script: &Script, capacity: u32) -> Fixture {
+    let requests = SubstitutionRequests::new(capacity);
     let out = run_test_kernel(
         store,
         FIXTURE_KERNEL,
@@ -356,6 +412,7 @@ fn build_fixture(store: &ProgramRetention, script: &Script) -> Fixture {
         &script.finish(),
         16 + script.regs as usize,
         1,
+        &[],
     )
     .expect("fixture kernel");
     assert_eq!(out[0], 0, "fixture overflowed the store: {:?}", &out[..4]);
@@ -374,13 +431,17 @@ fn run(
     fixture: &Fixture,
 ) -> (SubstitutionReport, Vec<[u32; RESULT_WORDS]>) {
     let started = std::time::Instant::now();
-    let report = engine.run(store, &fixture.requests).expect("substitution");
+    let report = engine
+        .run(store, &fixture.requests)
+        .expect("substitution")
+        .published()
+        .expect("published");
     let elapsed = started.elapsed();
     let results = engine.read_results(fixture.expects.len()).unwrap();
     eprintln!(
         "substitution: {} requests, {} tasks ({} spare), {} edges, {} expansion rounds, {} eval rounds, \
          max frontier {}, max arity {}, edge lanes {}, eval lanes {}, new store terms {}, attempts {}, batches {}, \
-         dispatches {}, growths {}/{}, statuses {:?}, {:.2?} host wall time",
+         dispatches {}, growths {}/{}, rolled back terms {}, statuses {:?}, {:.2?} host wall time",
         fixture.expects.len(),
         report.tasks(),
         report.counts[words::SPARE_TASKS],
@@ -397,19 +458,25 @@ fn run(
         report.dispatches,
         report.growths,
         report.store_growths,
-        report.status_counts(),
+        report.rolled_back_terms,
+        &report.status_counts()[..18],
         elapsed,
     );
     assert_eq!(report.counts[words::STATE], words::STATE_PUBLISHED);
+    let id = report.publication;
+    assert_eq!(id.generation, store.generation());
+    assert_eq!(id.requests as usize, fixture.expects.len());
+    assert_eq!(engine.publication(store).map(|p| p.id), Some(id));
     for (k, r) in results.iter().enumerate() {
-        assert_eq!(
-            r[6],
-            report.counts[words::RUN],
-            "result {k} belongs to this run"
-        );
+        assert_eq!(r[6], id.run, "result {k} belongs to this run");
+        assert_eq!(r[7], id.generation, "result {k} belongs to this build");
         assert_eq!(r[5], k as u32, "result {k} keeps its request tag");
     }
     (report, results)
+}
+
+fn reg(fixture: &Fixture, r: R) -> u32 {
+    fixture.regs[r as usize]
 }
 
 fn check(fixture: &Fixture, results: &[[u32; RESULT_WORDS]]) {
@@ -417,31 +484,37 @@ fn check(fixture: &Fixture, results: &[[u32; RESULT_WORDS]]) {
         match *expect {
             Expect::Ok(expected) => {
                 assert_eq!(r[1], status::OK, "request {k}: {r:?}");
+                assert_eq!(
+                    (r[2], r[3], r[4], r[8], r[9], r[10]),
+                    (RT_NONE, 0, RT_NONE, 0, 0, 0),
+                    "request {k}: a success carries no provenance: {r:?}"
+                );
                 if let Some(e) = expected {
                     assert_eq!(
-                        r[0], fixture.regs[e as usize],
+                        r[0],
+                        reg(fixture, e),
                         "request {k} result is the expected term: {r:?}"
                     );
                 }
             }
-            Expect::Fail(st, node, value) => {
-                assert_eq!(r[1], st, "request {k} status: {r:?}");
+            Expect::Fail(f) => {
+                assert_eq!(r[1], f.status, "request {k} status: {r:?}");
                 assert_eq!(
                     r[0], RT_UNKNOWN,
                     "request {k}: a failure never carries a term"
                 );
-                if let Some(node) = node {
-                    assert_eq!(
-                        r[2], fixture.regs[node as usize],
-                        "request {k} failed node: {r:?}"
-                    );
+                if let Some(node) = f.node {
+                    assert_eq!(r[2], reg(fixture, node), "request {k} failed node: {r:?}");
                 }
-                if let Some(value) = value {
-                    assert_eq!(
-                        r[4], fixture.regs[value as usize],
-                        "request {k} failed value: {r:?}"
-                    );
+                if let Some(env) = f.env {
+                    let env = if env == CLOSED { 0 } else { reg(fixture, env) };
+                    assert_eq!(r[3], env, "request {k} failed environment: {r:?}");
                 }
+                if let Some(value) = f.value {
+                    assert_eq!(r[4], reg(fixture, value), "request {k} failed value: {r:?}");
+                }
+                let cause = f.cause.unwrap_or([0, 0, 0]);
+                assert_eq!([r[8], r[9], r[10]], cause, "request {k} ENV cause: {r:?}");
             }
         }
     }
@@ -614,52 +687,323 @@ fn cases(library: u32, expected: bool) -> Script {
         None
     };
     p.s.ok(f, env1, closed_ok_box, closed_e);
-    // So does a closed environment binding.
+    // A request ENV is normalized: its closed evaluation must be the ENV
+    // itself. A pending fit in a binding is evaluated even when the term
+    // never reads the binding, and it fails the request as an ENV failure
+    // with the fit's own provenance.
     let i300 = p.s.value(I32, 300);
     let pending = p.s.cast(U8, i300);
     let env3 = p.env_f(i32_, bool_, pending, w5);
     let box_n = p.boxed(n);
+    let ptt = p.pair(t, t);
+    for term in [box_n, ptt] {
+        p.s.fails(
+            f,
+            env3,
+            term,
+            Failure {
+                status: status::ENV,
+                node: Some(pending),
+                env: Some(env3),
+                value: Some(i300),
+                cause: Some([env_cause::EVAL, status::FIT_FAILED, 0]),
+            },
+        );
+    }
+    // A fitting pending binding is not normalized: the failed value is the
+    // normalized ENV, the same TermId as the ENV written with the value.
+    let cast5 = p.s.cast(U8, w5);
+    let env_cast = p.env_f(i32_, bool_, cast5, w5);
+    p.s.fails(
+        f,
+        env_cast,
+        box_n,
+        Failure {
+            status: status::ENV,
+            node: Some(env_cast),
+            env: Some(env_cast),
+            value: Some(env1),
+            cause: Some([env_cause::NONCANONICAL, 0, 0]),
+        },
+    );
+    // So is a pending fit deep inside a type binding.
+    let boxed_cast7 = p.boxed(closed_ok);
+    let env_deep = p.env_f(boxed_cast7, bool_, v5, w5);
+    let boxed_decl = p.boxed;
+    let env_deep_e = p.s.ex(|s| {
+        let v = s.value(U8, 7);
+        let b = s.named(boxed_decl, 1, &[v]);
+        s.env(f, 3, 3, &[b, bool_, v5, w5])
+    });
+    p.s.fails(
+        f,
+        env_deep,
+        ptt,
+        Failure {
+            status: status::ENV,
+            node: Some(env_deep),
+            env: Some(env_deep),
+            value: env_deep_e,
+            cause: Some([env_cause::NONCANONICAL, 0, 0]),
+        },
+    );
+
+    // ENV depth parity: an ENV is not a type. A type binding of height 64
+    // is valid, so the ENV holding it (height 65) is too, and a nested ENV
+    // rebuilt over it is not DEPTH. A binding of height 65 is DEPTH.
+    let mut ref63 = i32_;
+    for _ in 0..63 {
+        ref63 = p.s.unary(REF, ref63);
+    }
+    let env64 = p.env_f(ref63, bool_, v5, w5);
+    let nested_f = p.env_f(t, u, n, m);
+    p.s.ok(f, env64, t, Some(ref63));
+    p.s.ok(f, env64, nested_f, Some(env64));
+    let ref64 = p.s.unary(REF, ref63);
+    let env65 = p.env_f(ref64, bool_, v5, w5);
+    p.s.fails(
+        f,
+        env65,
+        t,
+        Failure {
+            status: status::ENV,
+            node: Some(ref64),
+            env: Some(env65),
+            cause: Some([env_cause::EVAL, status::DEPTH, 0]),
+            ..Failure::default()
+        },
+    );
+
+    // Term kinds of closed evaluation (failed environment 0).
+    let c5 = p.s.count(5);
+    let arr_value = p.s.array(v5, c5);
+    let slice_value = p.s.unary(SLICE, w5);
+    let pair_slots =
+        p.s.mk(NAMED, 0, [W::R(p.pair), W::I(0), W::I(0)], &[i32_, i32_]);
+    let pair_mask =
+        p.s.mk(NAMED, 1, [W::R(p.pair), W::I(4), W::I(0)], &[i32_, i32_]);
+    let pair_const =
+        p.s.mk(NAMED, 1, [W::R(p.pair), W::I(1), W::I(0)], &[i32_, i32_]);
+    let boxed_type = p.s.mk(NAMED, 1, [W::R(p.boxed), W::I(0), W::I(0)], &[v5]);
+    for (term, st, value) in [
+        (arr_value, status::KIND, Some(v5)),
+        (slice_value, status::KIND, Some(w5)),
+        (pair_slots, status::INVARIANT, None),
+        (pair_mask, status::INVARIANT, None),
+        (pair_const, status::KIND, Some(i32_)),
+        (boxed_type, status::KIND, Some(v5)),
+    ] {
+        p.s.fails(
+            f,
+            env1,
+            term,
+            Failure {
+                status: st,
+                node: Some(term),
+                env: Some(CLOSED),
+                value,
+                ..Failure::default()
+            },
+        );
+    }
+    // Array lengths and projections of values that are not counts, closed
+    // and through a binding: a negative i32, a bool, a u64 above 2^32, and
+    // the u32 count word 0xffffffff that the canonical store reserves.
+    let neg = p.s.value(I32, u32::MAX);
+    let truth = p.s.value(BOOL, 1);
+    let wide64 = p.s.mk(CC_VALUE, 0, [W::I(U64), W::I(5), W::I(1)], &[]);
+    let max32 = p.s.value(U32, u32::MAX);
+    for value in [neg, truth, wide64] {
+        let arr = p.s.array(i32_, value);
+        p.s.fails(
+            f,
+            env1,
+            arr,
+            Failure {
+                status: status::COUNT,
+                node: Some(arr),
+                env: Some(CLOSED),
+                value: Some(value),
+                ..Failure::default()
+            },
+        );
+    }
+    for value in [neg, truth, wide64, max32] {
+        let cast = p.s.cast(U64, value);
+        let boxed = p.boxed(cast);
+        p.s.fails(
+            f,
+            env1,
+            boxed,
+            Failure {
+                status: status::UNSUPPORTED,
+                node: Some(cast),
+                env: Some(CLOSED),
+                value: Some(value),
+                ..Failure::default()
+            },
+        );
+    }
+    let arr_max = p.s.array(i32_, max32);
+    let arr_max_e = p.s.ex(|s| {
+        let c = s.count(u32::MAX);
+        s.array(i32_, c)
+    });
+    p.s.ok(f, env1, arr_max, arr_max_e);
+
+    // Nested ENVs are checked against their owner's binder after
+    // evaluation (failed environment = the task's environment).
+    let nested_kind = p.env_f(n, u, n, m);
+    let nested_scalar = p.env_f(t, u, m, m);
+    let nested_owner0 = p.s.mk(ENV, 2, [W::I(0), W::I(3), W::I(3)], &[t, u, n, m]);
+    let pair_decl = p.pair;
+    let nested_undefined = p.s.mk(ENV, 1, [W::R(pair_decl), W::I(1), W::I(0)], &[t]);
+    for (term, st, node, value, cause) in [
+        (nested_kind, status::ENV, v5, Some(p.t), env_cause::BINDING),
+        (
+            nested_scalar,
+            status::ENV,
+            w5,
+            Some(p.n),
+            env_cause::BINDING,
+        ),
+        (
+            nested_owner0,
+            status::ENV,
+            nested_owner0,
+            None,
+            env_cause::OWNER,
+        ),
+        (
+            nested_undefined,
+            status::DECL,
+            nested_undefined,
+            None,
+            env_cause::NONE,
+        ),
+    ] {
+        p.s.fails(
+            f,
+            env1,
+            term,
+            Failure {
+                status: st,
+                node: Some(node),
+                env: Some(env1),
+                value,
+                cause: Some([cause, 0, 0]),
+            },
+        );
+    }
+
+    // Typed constants and count classes: Boxed<5u8> and Boxed<5usize> are
+    // distinct, [i32; 5u8] and [i32; 5usize] are one array.
+    let box_m = p.boxed(m);
+    let boxed_decl = p.boxed;
+    let box_n_e = p.s.ex(|s| s.named(boxed_decl, 1, &[v5]));
+    let box_m_e = p.s.ex(|s| s.named(boxed_decl, 1, &[w5]));
+    if expected {
+        assert_ne!(box_n_e, box_m_e);
+    }
+    p.s.ok(f, env1, box_n, box_n_e);
+    p.s.ok(f, env1, box_m, box_m_e);
+
+    // The first failing argument wins even when a later argument fails at
+    // a lower level, which is evaluated earlier.
+    let mut deep = box_nested;
+    for _ in 0..6 {
+        deep = p.s.unary(REF, deep);
+    }
+    let late_first = p.pair(deep, box8);
     p.s.bad(
         f,
-        env3,
-        box_n,
+        env300,
+        late_first,
         status::FIT_FAILED,
-        Some(pending),
-        Some(i300),
+        Some(nested),
+        Some(v300),
+    );
+    let early_first = p.pair(box8, deep);
+    p.s.bad(
+        f,
+        env300,
+        early_first,
+        status::FIT_FAILED,
+        Some(cast8),
+        Some(w300),
     );
 
     // Invalid requests.
-    let ptt = p.pair(t, t);
     let env_g = p.s.env(g, 3, 0, &[i32_, bool_]);
-    p.s.bad(f, env_g, ptt, status::ENV, None, None);
     let wide_mask = p.s.mk(
         ENV,
         2,
         [W::R(f), W::I(7), W::I(1)],
         &[i32_, bool_, i32_, v5],
     );
-    p.s.bad(f, wide_mask, ptt, status::ENV, None, None);
     let short =
         p.s.mk(ENV, 2, [W::R(f), W::I(3), W::I(3)], &[i32_, bool_, v5]);
-    p.s.bad(f, short, ptt, status::ENV, None, None);
+    let slots =
+        p.s.mk(ENV, 1, [W::R(f), W::I(3), W::I(3)], &[i32_, bool_, v5, w5]);
     let not_env = p.pair(i32_, i32_);
-    p.s.bad(f, not_env, ptt, status::ENV, None, None);
     let open = p.env_f(t, bool_, v5, w5);
-    p.s.bad(f, open, ptt, status::ENV, None, None);
     let i5 = p.s.value(I32, 5);
     let wrong_scalar = p.env_f(i32_, bool_, i5, w5);
-    p.s.bad(f, wrong_scalar, ptt, status::ENV, None, None);
     let const_as_type = p.env_f(w5, bool_, v5, w5);
-    p.s.bad(f, const_as_type, ptt, status::ENV, None, None);
+    for (env, cause, node, value) in [
+        (env_g, env_cause::OWNER, env_g, None),
+        (wide_mask, env_cause::SHAPE, wide_mask, None),
+        (short, env_cause::SHAPE, short, None),
+        (slots, env_cause::SHAPE, slots, None),
+        (not_env, env_cause::NOT_ENV, not_env, None),
+        (open, env_cause::NOT_ENV, open, None),
+        (wrong_scalar, env_cause::BINDING, i5, Some(p.n)),
+        (const_as_type, env_cause::BINDING, w5, Some(p.t)),
+    ] {
+        p.s.fails(
+            f,
+            env,
+            ptt,
+            Failure {
+                status: status::ENV,
+                node: Some(node),
+                env: Some(env),
+                value,
+                cause: Some([cause, 0, 0]),
+            },
+        );
+    }
+    let big = p.big;
+    p.s.fails(
+        big,
+        env1,
+        ptt,
+        Failure {
+            status: status::LIMIT,
+            node: Some(env1),
+            env: Some(env1),
+            ..Failure::default()
+        },
+    );
     let s_decl = p.s_decl;
     let env_s = p.s.env(s_decl, 0, 0, &[]);
     let pii = p.pair(i32_, i32_);
-    p.s.bad(s_decl, env_s, pii, status::DECL, None, None);
     let x = p.x;
     let env_x = p.s.env(x, 0, 0, &[]);
-    p.s.bad(x, env_x, pii, status::DECL, None, None);
     let zero = p.s.set(0);
-    p.s.bad(zero, env1, ptt, status::DECL, None, None);
+    for (decl, env, term) in [(s_decl, env_s, pii), (x, env_x, pii), (zero, env1, ptt)] {
+        p.s.fails(
+            decl,
+            env,
+            term,
+            Failure {
+                status: status::DECL,
+                node: Some(term),
+                env: Some(CLOSED),
+                ..Failure::default()
+            },
+        );
+    }
     for sentinel in [0, RT_UNKNOWN, RT_NONE, u32::MAX] {
         let s = p.s.set(sentinel);
         p.s.bad(f, env1, s, status::UNRESOLVED, Some(s), None);
@@ -667,7 +1011,21 @@ fn cases(library: u32, expected: bool) -> Script {
     let fit = p.s.set(RT_FIT_FAILED);
     p.s.bad(f, env1, fit, status::PRIOR_FIT, Some(fit), None);
     let foreign = p.pair(t, tg);
-    p.s.bad(f, env1, foreign, status::FOREIGN, Some(tg), None);
+    p.s.fails(
+        f,
+        env1,
+        foreign,
+        Failure {
+            status: status::FOREIGN,
+            node: Some(tg),
+            env: Some(env1),
+            ..Failure::default()
+        },
+    );
+    // A leaf whose constant bit disagrees with its parameter's domain is a
+    // malformed reference, not a parameter of another binder.
+    let flipped = p.s.flip(t, 0x4000_0000);
+    p.s.bad(f, env1, flipped, status::INVARIANT, Some(flipped), None);
     let partial = p.s.env(f, 1, 3, &[i32_, v5, w5]);
     let ptu = p.pair(t, u);
     p.s.bad(f, partial, ptu, status::UNBOUND, Some(u), None);
@@ -759,20 +1117,22 @@ fn retained_substitution_is_memoized_parallel_and_exact() {
     let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
 
     // A 2^40-leaf tree as a 40-node DAG: one task per distinct node, one
-    // round per level, three equal requests share it.
+    // round per level, three equal requests share it. The request ENV's
+    // closed evaluation is one more task (4 edges) at level 2, which the
+    // first DAG level also uses.
     let fixture = build_fixture(&store, &dag_only(200));
     let (report, results) = run(&mut engine, &store, &fixture);
     check(&fixture, &results);
     assert_eq!(
         report.tasks(),
-        40,
+        41,
         "one task per distinct (environment, term)"
     );
     // Pair<D, D> resolves D once; the repeated argument shares its edge.
-    assert_eq!(report.edges(), 40);
+    assert_eq!(report.edges(), 44);
     assert!(
-        report.counts[words::SPARE_TASKS] <= 2,
-        "only the three equal roots can race: {}",
+        report.counts[words::SPARE_TASKS] <= 4,
+        "only the three equal roots and their equal ENVs can race: {}",
         report.counts[words::SPARE_TASKS]
     );
     assert_eq!(report.expansion_rounds(), 40);
@@ -809,7 +1169,9 @@ fn retained_substitution_is_memoized_parallel_and_exact() {
 }
 
 /// Structural hashes of results (or their failure nodes), comparable across stores.
-fn shapes(store: &ProgramRetention, results: &[[u32; RESULT_WORDS]]) -> Vec<(u32, u32, u32, u32)> {
+/// Structural hashes of results (or their failure nodes, environments and
+/// values) with their status and causes, comparable across stores.
+fn shapes(store: &ProgramRetention, results: &[[u32; RESULT_WORDS]]) -> Vec<[u32; 10]> {
     let terms = store.status().unwrap()[2] as usize;
     let meta = store.read_store_words("rt_term_meta", terms * 4).unwrap();
     let hash = |id: u32| -> (u32, u32) {
@@ -824,9 +1186,92 @@ fn shapes(store: &ProgramRetention, results: &[[u32; RESULT_WORDS]]) -> Vec<(u32
         .iter()
         .map(|r| {
             let (a, b) = hash(if r[1] == status::OK { r[0] } else { r[2] });
-            (r[1], a, b, hash(r[4]).0)
+            let (e, _) = hash(r[3]);
+            let (v, _) = hash(r[4]);
+            [r[1], a, b, e, v, r[5], r[8], r[9], r[10], r[11]]
         })
         .collect()
+}
+
+/// Every result word except the run number.
+fn stable(results: &[[u32; RESULT_WORDS]]) -> Vec<Vec<u32>> {
+    results
+        .iter()
+        .map(|r| {
+            r.iter()
+                .enumerate()
+                .filter(|(k, _)| *k != 6)
+                .map(|(_, w)| *w)
+                .collect()
+        })
+        .collect()
+}
+
+/// The store's term records: every hash slot points below the term
+/// counter at a published record whose slot chain finds it, no two
+/// published records are key-equal, and `old` (heads, meta and owners
+/// of the terms committed before) is unchanged.
+fn check_store_terms(store: &ProgramRetention, old: &(usize, Vec<u32>)) {
+    let status = store.status().unwrap();
+    let terms = status[2] as usize;
+    let (capacity, _) = store.capacity();
+    let slots = store
+        .read_store_words("rt_term_slot", capacity.slots[2] as usize)
+        .unwrap();
+    let heads = store.read_store_words("rt_term_head", terms * 4).unwrap();
+    let meta = store.read_store_words("rt_term_meta", terms * 4).unwrap();
+    let args = store
+        .read_store_words("rt_term_args", status[3] as usize)
+        .unwrap();
+    let mut published = std::collections::BTreeSet::new();
+    for &slot in &slots {
+        if slot == 0 {
+            continue;
+        }
+        assert!(
+            (32..terms as u32).contains(&slot),
+            "slot points at {slot}, past the term counter {terms}"
+        );
+        assert!(published.insert(slot), "two slots publish term {slot}");
+        assert_ne!(
+            heads[slot as usize * 4],
+            0,
+            "slot publishes a tombstone {slot}"
+        );
+    }
+    let mut keys = std::collections::BTreeMap::new();
+    for &id in &published {
+        let id = id as usize;
+        let head = &heads[id * 4..id * 4 + 4];
+        let arity = ((head[0] >> 8) & 0xff) as usize;
+        let base = meta[id * 4] as usize;
+        let key: Vec<u32> = head
+            .iter()
+            .copied()
+            .chain(args[base..base + arity].iter().copied())
+            .collect();
+        if let Some(other) = keys.insert(key, id) {
+            panic!("terms {other} and {id} have one key");
+        }
+    }
+    let (count, words) = old;
+    assert_eq!(
+        &heads[..count * 4],
+        &words[..count * 4],
+        "committed term heads are unchanged"
+    );
+    assert_eq!(
+        &meta[..count * 4],
+        &words[count * 4..],
+        "committed term metadata is unchanged"
+    );
+}
+
+fn term_snapshot(store: &ProgramRetention) -> (usize, Vec<u32>) {
+    let terms = store.status().unwrap()[2] as usize;
+    let mut words = store.read_store_words("rt_term_head", terms * 4).unwrap();
+    words.extend(store.read_store_words("rt_term_meta", terms * 4).unwrap());
+    (terms, words)
 }
 
 #[test]
@@ -845,50 +1290,67 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
         "results are new store terms"
     );
 
-    // Tiny substitution tables and a store with no room for any result:
-    // every overflow rolls back, grows and retries from the same requests.
+    // Tiny substitution tables and a store with room for half the results:
+    // the attempt that first reaches evaluation interns that half, overflows
+    // the store at a later level and rolls back. Every overflow grows and
+    // retries from the same requests, with the full hash and with every
+    // store key on one probe chain.
     let status = reference_store.status().unwrap();
+    let new_terms = reference_report.counts[words::STORE_NEW_TERMS];
+    let fixture_terms = status[2] - new_terms;
     let mut tight = bigger_store();
-    let fixture_terms = status[2] - reference_report.counts[words::STORE_NEW_TERMS];
-    tight.arenas[2] = fixture_terms;
+    tight.arenas[2] = fixture_terms + new_terms / 2;
     tight.arenas[3] = 1 << 19;
-    tight.slots[2] = (2 * fixture_terms).next_power_of_two();
-    let store = ProgramRetention::new(tight).unwrap();
-    let fixture = build_fixture(&store, &script);
-    let committed = store.status().unwrap();
-    let mut tiny = RetainedSubstitution::new(SubstitutionCapacity::tiny()).unwrap();
-    let (report, results) = run(&mut tiny, &store, &fixture);
-    assert!(
-        report.attempts > 1 && report.growths > 0 && report.store_growths > 0,
-        "{report:?}"
-    );
-    check(&fixture, &results);
-    assert_eq!(
-        shapes(&store, &results),
-        expected_shapes,
-        "a retried run publishes the reference results"
-    );
-    let after = store.status().unwrap();
-    assert_eq!(after[counts::READY], 1);
-    assert_eq!(
-        after[2] - committed[2],
-        reference_report.counts[words::STORE_NEW_TERMS],
-        "rolled-back attempts leave no terms behind"
-    );
+    tight.slots[2] = (2 * tight.arenas[2]).next_power_of_two();
+    let mut kept = None;
+    for mask in [0, u32::MAX] {
+        let store = ProgramRetention::new(tight).unwrap();
+        store.set_hash_mask(mask);
+        let fixture = build_fixture(&store, &script);
+        let committed = store.status().unwrap();
+        let old = term_snapshot(&store);
+        let mut tiny = RetainedSubstitution::new(SubstitutionCapacity::tiny()).unwrap();
+        let (report, results) = run(&mut tiny, &store, &fixture);
+        assert!(
+            report.attempts > 2 && report.growths > 0 && report.store_growths > 0,
+            "{report:?}"
+        );
+        assert!(
+            report.rolled_back_terms > 0,
+            "an attempt interned store terms and rolled them back: {report:?}"
+        );
+        check(&fixture, &results);
+        assert_eq!(
+            shapes(&store, &results),
+            expected_shapes,
+            "a retried run publishes the reference results (store hash mask {mask:#x})"
+        );
+        let after = store.status().unwrap();
+        assert_eq!(after[counts::READY], 1);
+        assert_eq!(after[counts::OVERFLOW], committed[counts::OVERFLOW]);
+        assert_eq!(after[counts::DEMAND + 2], committed[counts::DEMAND + 2]);
+        assert_eq!(after[counts::DEMAND + 3], committed[counts::DEMAND + 3]);
+        assert_eq!(
+            after[2] - committed[2],
+            new_terms,
+            "rolled-back attempts leave no terms behind"
+        );
+        check_store_terms(&store, &old);
+        kept = Some((store, fixture, tiny, results));
+    }
+    let (store, fixture, mut tiny, results) = kept.unwrap();
+    store.set_hash_mask(u32::MAX);
 
     // Same store, same requests: a second run is a full recomputation with
     // identical exact results, and a forced single probe chain changes
     // nothing either.
     let (_, again) = run(&mut tiny, &store, &fixture);
-    assert_eq!(
-        again.iter().map(|r| r[..5].to_vec()).collect::<Vec<_>>(),
-        results.iter().map(|r| r[..5].to_vec()).collect::<Vec<_>>()
-    );
+    assert_eq!(stable(&again), stable(&results));
     tiny.set_hash_mask(0);
     let (_, collided) = run(&mut tiny, &store, &fixture);
     assert_eq!(
-        collided.iter().map(|r| r[..5].to_vec()).collect::<Vec<_>>(),
-        results.iter().map(|r| r[..5].to_vec()).collect::<Vec<_>>(),
+        stable(&collided),
+        stable(&results),
         "forced memo collisions never merge keys"
     );
     // Forced store collisions too: a store hash mask holds for whole builds.
@@ -910,7 +1372,7 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
     assert!(fresh.expects.len() < fixture.expects.len());
     let (fresh_report, fresh_results) = run(&mut tiny, &store, &fresh);
     check(&fresh, &fresh_results);
-    assert_eq!(fresh_report.tasks(), 40);
+    assert_eq!(fresh_report.tasks(), 41);
     let keys = store
         .read_store_words("rt_decl_key", 4 * store.status().unwrap()[0] as usize)
         .unwrap();
@@ -928,6 +1390,166 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
         blocked_results
             .iter()
             .all(|r| r[1] == status::NOT_READY && r[0] == RT_UNKNOWN)
+    );
+}
+
+/// The GPU consumer's check (`sb_consumer.slang`) of one publication's
+/// buffers against `store`: (publication current, row current, row
+/// status, row result if current).
+fn consume(
+    store: &ProgramRetention,
+    buffers: &(wgpu::Buffer, wgpu::Buffer),
+    run: u32,
+    request: u32,
+) -> [u32; 4] {
+    let requests = SubstitutionRequests::new(1);
+    let out = run_test_kernel(
+        store,
+        CONSUMER_KERNEL,
+        &requests,
+        &[run, request],
+        4,
+        1,
+        &[("sb_results", &buffers.0), ("sb_counts", &buffers.1)],
+    )
+    .unwrap();
+    [out[0], out[1], out[2], out[3]]
+}
+
+fn published_buffers(
+    engine: &RetainedSubstitution,
+    store: &ProgramRetention,
+) -> (wgpu::Buffer, wgpu::Buffer) {
+    let publication = engine.publication(store).expect("a current publication");
+    (publication.results.clone(), publication.counts.clone())
+}
+
+#[test]
+fn retained_substitution_publications_are_identified_and_fail_closed() {
+    let store = ProgramRetention::new(bigger_store()).unwrap();
+    let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
+    let script = dag_only(210);
+    let n = script.expects.len() as u32;
+
+    // A committed run: the consumer accepts its rows.
+    let full = build_fixture_into(&store, &script, n);
+    let (first, results) = run(&mut engine, &store, &full);
+    check(&full, &results);
+    let id1 = first.publication;
+    let buffers = published_buffers(&engine, &store);
+    assert_eq!(
+        consume(&store, &buffers, id1.run, 0),
+        [1, 1, status::OK, results[0][0]]
+    );
+    assert_eq!(
+        consume(&store, &buffers, id1.run, n)[..2],
+        [1, 0],
+        "rows past the count are not results"
+    );
+
+    // More requests than rows: nothing runs, nothing is published, the
+    // store is untouched, and the earlier publication in these buffers is
+    // withdrawn.
+    let short = produce(&store, &script, n - 1);
+    let before = store.status().unwrap();
+    match engine.run(&store, &short.requests).unwrap() {
+        SubstitutionRun::RequestCapacity {
+            requested,
+            capacity,
+        } => {
+            assert_eq!((requested, capacity), (n, n - 1));
+        }
+        other => panic!("a short request buffer published: {other:?}"),
+    }
+    assert!(engine.publication(&store).is_none());
+    assert_eq!(
+        store.status().unwrap(),
+        before,
+        "a request-capacity run leaves the store untouched"
+    );
+    let counts = engine.read_counts().unwrap();
+    assert_eq!(counts[words::STATE], words::STATE_REQUEST_CAPACITY);
+    assert_eq!(counts[words::REQUEST_DEMAND], n);
+    assert!(
+        counts[words::STATUS..words::STATUS + words::STATUSES]
+            .iter()
+            .all(|&c| c == 0)
+    );
+    assert_eq!(consume(&store, &buffers, id1.run, 0)[..2], [0, 0]);
+
+    // The producer reruns its production into grown storage.
+    let grown = produce(&store, &script, n);
+    let (second, again) = run(&mut engine, &store, &grown);
+    check(&grown, &again);
+    let id2 = second.publication;
+    assert_ne!(id2.run, id1.run);
+    assert_eq!(id2.generation, id1.generation);
+    assert_eq!(
+        consume(&store, &buffers, id1.run, 0)[..2],
+        [0, 0],
+        "an older run of reused buffers"
+    );
+    assert_eq!(consume(&store, &buffers, id2.run, 0)[..2], [1, 1]);
+
+    // A larger request buffer replaces the result buffer. The old result
+    // buffer with the new counts fails the row check; new buffers with the
+    // old run fail the publication check.
+    let wide = produce(&store, &script, 1024);
+    let (third, _) = run(&mut engine, &store, &wide);
+    let id3 = third.publication;
+    let current = published_buffers(&engine, &store);
+    assert_eq!(consume(&store, &current, id3.run, 0)[..2], [1, 1]);
+    assert_eq!(consume(&store, &current, id2.run, 0)[..2], [0, 0]);
+    let mixed = (buffers.0.clone(), current.1.clone());
+    assert_eq!(consume(&store, &mixed, id3.run, 0)[..2], [1, 0]);
+
+    // Another engine's run (whose tables grow) never matches this engine's
+    // run numbers.
+    let mut tiny = RetainedSubstitution::new(SubstitutionCapacity::tiny()).unwrap();
+    let (other, _) = run(&mut tiny, &store, &wide);
+    assert!(other.growths > 0);
+    let other_buffers = published_buffers(&tiny, &store);
+    assert_ne!(other.publication.run, id3.run);
+    assert_eq!(consume(&store, &other_buffers, id3.run, 0)[..2], [0, 0]);
+    assert_eq!(
+        consume(&store, &current, other.publication.run, 0)[..2],
+        [0, 0]
+    );
+    assert_eq!(
+        consume(&store, &other_buffers, other.publication.run, 0)[..2],
+        [1, 1]
+    );
+
+    // Another store never matches, and neither does this store's next build.
+    let elsewhere = ProgramRetention::new(bigger_store()).unwrap();
+    assert!(engine.publication(&elsewhere).is_none());
+    assert_ne!(elsewhere.generation(), id3.generation);
+    assert_eq!(consume(&elsewhere, &current, id3.run, 0)[..2], [0, 0]);
+    store.begin_build().unwrap();
+    assert!(engine.publication(&store).is_none());
+    assert!(tiny.publication(&store).is_none());
+    assert_ne!(store.generation(), id3.generation);
+    assert_eq!(consume(&store, &current, id3.run, 0)[..2], [0, 0]);
+
+    // A host error fails closed: the store is no longer READY, nothing is
+    // published, and the consumer rejects the buffers.
+    let rebuilt = build_fixture_into(&store, &script, n);
+    let (_, _) = run(&mut engine, &store, &rebuilt);
+    let id5 = engine.publication(&store).unwrap().id;
+    let mut oversized = RetainedSubstitution::new(SubstitutionCapacity {
+        tasks: 1 << 30,
+        edges: 1 << 30,
+        memo_slots: 1 << 31,
+    })
+    .unwrap();
+    assert!(oversized.run(&store, &rebuilt.requests).is_err());
+    assert!(oversized.publication(&store).is_none());
+    assert_eq!(store.status().unwrap()[counts::READY], 0);
+    let still = published_buffers(&engine, &store);
+    assert_eq!(
+        consume(&store, &still, id5.run, 0)[..2],
+        [0, 0],
+        "a build that is not READY"
     );
 }
 
@@ -991,12 +1613,19 @@ fn retained_substitution_instantiates_exported_foreign_templates() {
     store.poison_scratch();
 
     let requests = SubstitutionRequests::new(4096);
-    let produced =
-        run_test_kernel(&store, USES_KERNEL, &requests, &[0], 16 + 4 * 4096, 4096).unwrap();
+    let produced = run_test_kernel(
+        &store,
+        USES_KERNEL,
+        &requests,
+        &[0],
+        16 + 4 * 4096,
+        4096,
+        &[],
+    )
+    .unwrap();
     let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
-    let report = engine.run(&store, &requests).unwrap();
+    let report = engine.run(&store, &requests).unwrap().published().unwrap();
     let n = report.counts[words::REQUESTS] as usize;
-    assert_eq!(report.counts[words::REQUEST_CLAMPED], 0);
     let results = engine.read_results(n).unwrap();
     eprintln!(
         "export substitution: {n} requests, {} tasks, {} edges, {} + {} rounds, statuses {:?}",
@@ -1044,4 +1673,86 @@ fn retained_substitution_instantiates_exported_foreign_templates() {
         by_kind[2] > 0 && by_kind[3] > 0,
         "body rows and inner call environments are substituted"
     );
+
+    // Inner call environments, by outer use and inner callee (test oracle).
+    let status_words = store.status().unwrap();
+    let rt_uses = store
+        .read_store_words("rt_uses", 12 * status_words[8] as usize)
+        .unwrap();
+    let decl_def = store
+        .read_store_words("rt_decl_def", status_words[0] as usize)
+        .unwrap();
+    let dir = store
+        .read_store_words("rt_dir", 16 * status_words[4] as usize)
+        .unwrap();
+    let meta = store.read_store_words("rt_term_meta", terms * 4).unwrap();
+    let args = store
+        .read_store_words("rt_term_args", status_words[3] as usize)
+        .unwrap();
+    let use_word = |u: u32, w: usize| rt_uses[u as usize * 12 + w];
+    let mut inner_envs = std::collections::BTreeMap::new();
+    let mut outer_by_callee: std::collections::BTreeMap<
+        u32,
+        std::collections::BTreeSet<(u32, u32)>,
+    > = Default::default();
+    for (k, r) in results.iter().enumerate() {
+        let tag = &produced[16 + 4 * k..20 + 4 * k];
+        let (outer, kind, index) = (tag[0], tag[1], tag[2]);
+        let callee = use_word(outer, 3);
+        outer_by_callee
+            .entry(callee)
+            .or_default()
+            .insert((use_word(outer, 1), outer));
+        if kind != 3 {
+            continue;
+        }
+        let entry = decl_def[callee as usize] as usize - 1;
+        let inner = dir[entry * 16 + 11] + index;
+        let inner_callee = use_word(inner, 3);
+        assert!(
+            inner_envs.insert((outer, inner_callee), r[0]).is_none(),
+            "one environment per inner use"
+        );
+    }
+    let mut callees: Vec<_> = outer_by_callee.into_iter().collect();
+    callees.sort_by_key(|(_, uses)| uses.len());
+    let (shadow, shadow_uses) = &callees[0];
+    let (_, wrap_uses) = &callees[1];
+    assert_eq!((shadow_uses.len(), wrap_uses.len()), (1, 3), "{callees:?}");
+    let shadow_use = shadow_uses.iter().next().unwrap().1;
+    let wraps: Vec<u32> = wrap_uses.iter().map(|(_, u)| *u).collect();
+    let shadow_inner: Vec<_> = inner_envs
+        .iter()
+        .filter(|((outer, _), _)| *outer == shadow_use)
+        .collect();
+    assert_eq!(shadow_inner.len(), 1, "shadow's body calls identity once");
+    let identity = (shadow_inner[0].0).1;
+    assert_ne!(identity, *shadow);
+    let env_of = |outer: u32| inner_envs[&(outer, identity)];
+    let (wrap7, wrap_local, wrap1) = (env_of(wraps[0]), env_of(wraps[1]), env_of(wraps[2]));
+    let in_shadow = env_of(shadow_use);
+    assert_eq!(
+        wrap7, wrap1,
+        "wrap(7) and wrap(1) call identity in one environment"
+    );
+    assert_ne!(
+        wrap7, wrap_local,
+        "wrap(Local {{ .. }}) is another instance"
+    );
+    assert_eq!(
+        in_shadow, wrap7,
+        "identity(self.value) in shadow binds the impl's T (i32), not the method's T (bool)"
+    );
+    let head = |t: u32| &heads[t as usize * 4..t as usize * 4 + 4];
+    let arg = |t: u32, i: usize| args[meta[t as usize * 4] as usize + i];
+    assert_eq!(
+        head(wrap7),
+        &[ENV | 1 << 8 | 1 << 16, identity, 1, 0],
+        "ENV(identity; U = i32): owner, masks and arity"
+    );
+    assert_eq!(arg(wrap7, 0), I32);
+    assert_eq!(head(wrap_local)[..2], [ENV | 1 << 8 | 1 << 16, identity]);
+    let local = arg(wrap_local, 0);
+    assert_eq!(head(local)[0] & 0xff, NAMED);
+    assert_eq!(arg(local, 0), BOOL, "Local<bool>");
 }

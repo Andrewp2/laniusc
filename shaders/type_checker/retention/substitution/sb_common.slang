@@ -1,10 +1,10 @@
 // Production substitution over retained program terms
 // (docs/compiler-retained-substitution.md).
 //
-// A request names a declaration (DeclId), a closed ENV term owned by that
-// declaration and a term over the declaration's binder chain. The result is
-// the exactly interned closed term, or a status with the exact provenance
-// of the failure.
+// A request names a declaration (DeclId), a normalized closed ENV term owned
+// by that declaration and a term over the declaration's binder chain. The
+// result is the exactly interned closed term, or a status with the exact
+// provenance of the failure.
 //
 // Work is a memoized task graph. A task is one unique key
 //   (binding environment, term)
@@ -12,11 +12,13 @@
 // word is the owning definition) or 0 for the environment-independent
 // evaluation of a closed term, which still carries pending CC_CAST fits.
 // Leaves (scalars, arity-0 records, parameter leaves and sentinels) never
-// become tasks: an edge resolves them in place.
+// become tasks: an edge resolves them in place. Each request also evaluates
+// its ENV as a closed term (environment 0): the request is accepted only
+// when that evaluation succeeds and returns the ENV itself.
 //
 // Phases of one attempt (each a GPU kernel, planners are single lanes):
 //   00 begin        open the transaction, publish the root dispatch
-//   01 roots        one lane per request: validate, create the root task
+//   01 roots        one lane per request: validate, create the root tasks
 //   02 expand_plan  next frontier = tasks created by the last round
 //   03 expand       one lane per (frontier task, child index)
 //   04 scatter      one lane per task: bucket by level
@@ -31,6 +33,7 @@
 import primitive_types;
 import constant_value;
 import type_checker.retention.retention_store;
+__exported import type_checker.retention.substitution.sb_layout;
 
 // Requests (producer-owned): (DeclId, ENV TermId, term reference, tag).
 public StructuredBuffer<uint4> sb_requests;
@@ -38,117 +41,25 @@ public StructuredBuffer<uint> sb_request_count;
 
 public globallycoherent RWStructuredBuffer<uint> sb_counts;     // SB_C_* status words
 public RWStructuredBuffer<uint> sb_config;                      // SB_CFG_*
-// Per request: the root edge (value or task, status).
-public globallycoherent RWStructuredBuffer<uint2> sb_req_root;
+// Per request, two uint4: (term edge, environment edge) and the request
+// validation (status, ENV cause, failed node, failed value).
+public globallycoherent RWStructuredBuffer<uint4> sb_req_root;
 // Published results, SB_RESULT_WORDS uint4 per request:
 //   r0 (result TermId or RT_UNKNOWN, status, failed node, failed env)
-//   r1 (failed child value, request tag, run, 0)
+//   r1 (failed child value, request tag, run, store generation)
+//   r2 (ENV cause, inner status, inner ENV cause, 0)
 public globallycoherent RWStructuredBuffer<uint4> sb_results;
 // Tasks: key (env, term, level | SB_DEAD, edge base); result (value,
-// status, failed node, failed env); failed child value.
+// status, failed node, failed env); (failed child value, ENV cause).
 public globallycoherent RWStructuredBuffer<uint4> sb_task_key;
 public globallycoherent RWStructuredBuffer<uint4> sb_task_res;
-public globallycoherent RWStructuredBuffer<uint> sb_task_fail;
+public globallycoherent RWStructuredBuffer<uint2> sb_task_fail;
 // Edges: one uint2 per child of a task, (value, status) or (task, SB_EDGE_TASK).
 public globallycoherent RWStructuredBuffer<uint2> sb_edges;
 // Memo: open-addressing slots holding task + 1.
 public globallycoherent RWStructuredBuffer<uint> sb_memo;
 // Live tasks ordered by level.
 public globallycoherent RWStructuredBuffer<uint> sb_order;
-
-public static const uint SB_RESULT_WORDS = 2u;
-
-// Result statuses. Only SB_OK carries a term.
-public static const uint SB_OK = 0u;
-public static const uint SB_PENDING = 1u;       // internal: not evaluated yet
-public static const uint SB_NOT_READY = 2u;     // the store's READY bit is clear
-public static const uint SB_DECL = 3u;          // no committed, complete definition
-public static const uint SB_ENV = 4u;           // not a closed ENV of the declaration
-public static const uint SB_UNRESOLVED = 5u;    // a sentinel or invalid reference
-public static const uint SB_PRIOR_FIT = 6u;     // an RT_FIT_FAILED reference in the input
-public static const uint SB_FOREIGN = 7u;       // a parameter outside the declaration's binder
-public static const uint SB_UNBOUND = 8u;       // a binder parameter the ENV leaves unbound
-public static const uint SB_SLOT_PENDING = 9u;  // a dependency-signature slot leaf (needs its binder)
-public static const uint SB_FIT_FAILED = 10u;   // a constant projection does not fit its target
-public static const uint SB_COUNT = 11u;        // an array length that is not a count
-public static const uint SB_UNSUPPORTED = 12u;  // a kind or constant shape substitution does not support
-public static const uint SB_DEPTH = 13u;        // the result exceeds the 64-level type graph
-public static const uint SB_CAPACITY = 14u;     // the attempt overflowed; never a language result
-public static const uint SB_INVARIANT = 15u;    // an inconsistent store record
-public static const uint SB_STATUSES = 16u;
-public static const uint SB_EDGE_TASK = 0xffffffffu;
-// An argument equal to an earlier argument of the same task: (that index, SB_EDGE_SAME).
-public static const uint SB_EDGE_SAME = 0xfffffffeu;
-
-public static const uint SB_DEAD = 0x80000000u;
-public static const uint SB_LEVELS = 256u;
-public static const uint SB_MAX_HEIGHT = 64u;
-public static const uint SB_ROUND_LOG = 128u;
-
-// Phases.
-public static const uint SB_PHASE_EXPAND = 1u;
-public static const uint SB_PHASE_SCATTER = 2u;
-public static const uint SB_PHASE_EVAL = 3u;
-public static const uint SB_PHASE_DONE = 4u;
-public static const uint SB_PHASE_OVERFLOW = 5u;
-public static const uint SB_PHASE_FINAL = 6u;
-
-// Published states.
-public static const uint SB_STATE_OPEN = 1u;
-public static const uint SB_STATE_PUBLISHED = 2u;
-public static const uint SB_STATE_OVERFLOWED = 3u;
-
-// Overflow bits.
-public static const uint SB_OVERFLOW_TASKS = 1u;
-public static const uint SB_OVERFLOW_EDGES = 2u;
-public static const uint SB_OVERFLOW_MEMO = 4u;
-public static const uint SB_OVERFLOW_STORE = 8u;
-
-// sb_counts layout.
-public static const uint SB_C_PHASE = 0u;
-public static const uint SB_C_OVERFLOW = 1u;
-public static const uint SB_C_TASKS = 2u;          // allocation counter (keeps the requested end)
-public static const uint SB_C_EDGES = 3u;
-public static const uint SB_C_DEMAND_TASKS = 4u;
-public static const uint SB_C_DEMAND_EDGES = 5u;
-public static const uint SB_C_FRONTIER_LO = 6u;
-public static const uint SB_C_FRONTIER_HI = 7u;
-public static const uint SB_C_FRONTIER_ARITY = 8u;
-public static const uint SB_C_NEXT_ARITY = 9u;
-public static const uint SB_C_ROUNDS = 10u;        // expansion rounds with a nonempty frontier
-public static const uint SB_C_LEVEL = 11u;
-public static const uint SB_C_EVAL_ROUNDS = 12u;   // nonempty levels evaluated
-public static const uint SB_C_MAX_LEVEL = 13u;
-public static const uint SB_C_REQUESTS = 14u;
-public static const uint SB_C_SPARE_TASKS = 15u;   // tasks that lost a memo race
-public static const uint SB_C_EDGE_LANES = 16u;    // expansion lanes dispatched
-public static const uint SB_C_EDGES_RESOLVED = 17u;
-public static const uint SB_C_MAX_FRONTIER = 18u;
-public static const uint SB_C_STATE = 19u;
-public static const uint SB_C_RUN = 20u;
-public static const uint SB_C_STORE_TERMS_BASE = 21u;
-public static const uint SB_C_STORE_ARGS_BASE = 22u;
-public static const uint SB_C_STORE_SPARE_TERMS = 23u;
-public static const uint SB_C_STORE_SPARE_ARGS = 24u;
-public static const uint SB_C_STORE_OVERFLOW_SAVED = 25u;
-public static const uint SB_C_STORE_DEMAND_TERMS_SAVED = 26u;
-public static const uint SB_C_STORE_DEMAND_ARGS_SAVED = 27u;
-public static const uint SB_C_STORE_OVERFLOW = 28u;
-public static const uint SB_C_STORE_DEMAND_TERMS = 29u;
-public static const uint SB_C_STORE_DEMAND_ARGS = 30u;
-public static const uint SB_C_REQUEST_CLAMPED = 31u;
-public static const uint SB_C_STATUS = 32u;        // + status: published results per status
-public static const uint SB_C_EVAL_LANES = 48u;
-public static const uint SB_C_MAX_ARITY = 49u;
-public static const uint SB_C_STORE_NEW_TERMS = 50u; // store terms the committed attempt added
-public static const uint SB_C_LEVEL_COUNT = 64u;   // + level: live tasks
-public static const uint SB_C_LEVEL_BASE = 320u;   // + level: first sb_order index
-public static const uint SB_C_LEVEL_CURSOR = 576u; // + level: scatter cursor
-public static const uint SB_C_ROUND_LOG = 832u;    // + round: frontier tasks of the round
-public static const uint SB_WORDS = 1024u;
-
-public static const uint SB_CFG_HASH_MASK = 0u;
-public static const uint SB_CFG_RUN = 1u;
 
 // Lane numbering of 2D dispatches (set_dispatch).
 public uint sb_lane(uint3 dtid) { return dtid.x + dtid.y * 16776960u; }
@@ -167,12 +78,23 @@ public uint sb_request_capacity()
 {
     uint a; uint b; uint c; uint s;
     sb_requests.GetDimensions(a, s); sb_req_root.GetDimensions(b, s); sb_results.GetDimensions(c, s);
-    return min(min(a, b), c / SB_RESULT_WORDS);
+    return min(min(a, b / SB_ROOT_WORDS), c / SB_RESULT_WORDS);
 }
 
 public uint sb_request_total() { return sb_counts[SB_C_REQUESTS]; }
 
 public void sb_overflow(uint bit) { InterlockedOr(sb_counts[SB_C_OVERFLOW], bit); }
+
+// ---------------------------------------------------------------------------
+// Term kind classes of closed operands.
+
+// A type: a scalar or a NAMED, ARRAY, SLICE or REF record.
+public bool sb_is_type(uint ref)
+{
+    uint kind = rt_term_kind(ref);
+    return kind == RT_KIND_SCALAR || kind == RT_KIND_NAMED || kind == RT_KIND_ARRAY ||
+        kind == RT_KIND_SLICE || kind == RT_KIND_REF;
+}
 
 // ---------------------------------------------------------------------------
 // The binder of an ENV owner: the owner's committed directory entry.
@@ -199,49 +121,60 @@ public SbBinder sb_binder(uint env)
     return b;
 }
 
-uint sb_mask(uint count) { return count >= 32u ? 0xffffffffu : (1u << count) - 1u; }
+public uint sb_mask(uint count) { return count >= 32u ? 0xffffffffu : (1u << count) - 1u; }
 uint sb_below(uint mask, uint index) { return countbits(index >= 32u ? mask : mask & ((1u << index) - 1u)); }
 
-bool sb_type_binding(uint ref)
+// A check outcome: SB_OK, or the status, ENV cause, failed node and failed
+// value.
+public struct SbCheck
 {
-    uint kind = rt_term_kind(ref);
-    return kind == RT_KIND_SCALAR || kind == RT_KIND_NAMED || kind == RT_KIND_ARRAY ||
-        kind == RT_KIND_SLICE || kind == RT_KIND_REF;
+    public uint status;
+    public uint cause;
+    public uint node;
+    public uint value;
 }
 
-// A constant binding of a parameter with declared scalar `scalar` (0 when
-// none is recorded): a typed value of that scalar, or a pending projection
-// to it.
-bool sb_const_binding(uint ref, uint scalar)
+public SbCheck sb_check(uint status, uint cause, uint node, uint value)
 {
-    uint kind = rt_term_kind(ref);
-    if (kind != RT_KIND_CC_VALUE && kind != RT_KIND_CC_CAST) return false;
-    return scalar == 0u || rt_term_words(ref).x == scalar;
+    SbCheck c; c.status = status; c.cause = cause; c.node = node; c.value = value; return c;
 }
 
-// Validates request (decl, env). SB_OK or the failing status.
-public uint sb_validate(uint decl, uint env)
+public SbCheck sb_check_ok() { return sb_check(SB_OK, SB_ENV_NONE, RT_NONE, RT_NONE); }
+
+// The committed directory entry of `decl` plus one, or 0.
+uint sb_committed_entry(uint decl)
 {
-    if (rt_counts[RT_C_READY] == 0u) return SB_NOT_READY;
-    if (decl == 0u || decl >= rt_counts[RT_A_DECLS] || decl >= rt_capacity(RT_A_DECLS)) return SB_DECL;
+    if (decl == 0u || decl >= rt_counts[RT_A_DECLS] || decl >= rt_capacity(RT_A_DECLS)) return 0u;
     uint def = rt_decl_def[decl];
-    if (def == 0u || def - 1u >= rt_counts[RT_A_DIR]) return SB_DECL;
-    uint entry = def - 1u;
-    uint4 d0 = rt_dir[entry * RT_DIR_WORDS];
-    uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
-    uint4 d3 = rt_dir[entry * RT_DIR_WORDS + 3u];
-    if (d0.x != decl || d0.w != RT_DIR_COMMITTED || d3.w != 0u) return SB_DECL;
+    if (def == 0u || def - 1u >= rt_counts[RT_A_DIR]) return 0u;
+    uint4 d0 = rt_dir[(def - 1u) * RT_DIR_WORDS];
+    if (d0.x != decl || d0.w != RT_DIR_COMMITTED) return 0u;
+    return def;
+}
+
+// An ENV record `env` (head `head`, arguments `args`) against its owner's
+// committed binder: the owner word, the 32-slot limit, the masks, arity and
+// type-slot count, then every bound slot. A type slot takes a type. A
+// constant slot takes a CC_VALUE of the parameter's declared scalar (0 when
+// none is recorded) or, when `pending` (an unevaluated request ENV), a
+// CC_CAST to that scalar, which the ENV's own closed evaluation folds.
+// `owner` is the required owner, or 0 for any committed declaration.
+public SbCheck sb_check_env<A : IRtArgs>(uint env, uint4 head, A args, uint owner, bool pending)
+{
+    uint decl = head.y;
+    if (decl == 0u || (owner != 0u && decl != owner)) return sb_check(SB_ENV, SB_ENV_OWNER, env, RT_NONE);
+    uint def = sb_committed_entry(decl);
+    if (def == 0u) return sb_check(SB_DECL, SB_ENV_NONE, env, RT_NONE);
+    uint4 d1 = rt_dir[(def - 1u) * RT_DIR_WORDS + 1u];
     uint type_count = d1.y & 0xffffu;
     uint const_count = d1.y >> 16u;
-    if (type_count > 32u || const_count > 32u) return SB_ENV;
-    if (!rt_is_stored_term(env) || env >= rt_counts[RT_A_TERMS] || rt_term_kind(env) != RT_KIND_ENV ||
-        !rt_term_closed(env)) return SB_ENV;
-    uint4 head = rt_term_head[env];
+    if (type_count > 32u || const_count > 32u) return sb_check(SB_LIMIT, SB_ENV_NONE, env, RT_NONE);
     uint type_mask = head.z;
     uint const_mask = head.w;
-    if (head.y != decl || (type_mask & ~sb_mask(type_count)) != 0u || (const_mask & ~sb_mask(const_count)) != 0u ||
-        rt_term_arity(env) != countbits(type_mask) + countbits(const_mask) ||
-        (head.x >> 16u) != countbits(type_mask)) return SB_ENV;
+    uint arity = (head.x >> 8u) & 0xffu;
+    if ((type_mask & ~sb_mask(type_count)) != 0u || (const_mask & ~sb_mask(const_count)) != 0u ||
+        arity != countbits(type_mask) + countbits(const_mask) || (head.x >> 16u) != countbits(type_mask))
+        return sb_check(SB_ENV, SB_ENV_SHAPE, env, RT_NONE);
     uint arg = 0u;
     for (uint slot = 0u; slot < type_count + const_count; slot++)
     {
@@ -250,12 +183,37 @@ public uint sb_validate(uint decl, uint env)
         if (((is_type ? type_mask : const_mask) >> bit & 1u) == 0u) continue;
         uint param = rt_binders[d1.x + slot];
         uint4 key = rt_param_key[param];
-        uint binding = rt_term_arg(env, arg);
+        uint binding = args.arg(arg);
         arg++;
-        if (key.y != (is_type ? RT_DOMAIN_TYPE : RT_DOMAIN_CONST)) return SB_INVARIANT;
-        if (is_type ? !sb_type_binding(binding) : !sb_const_binding(binding, key.w)) return SB_ENV;
+        if (param == 0u || param >= rt_counts[RT_A_PARAMS] ||
+            key.y != (is_type ? RT_DOMAIN_TYPE : RT_DOMAIN_CONST)) return sb_check(SB_INVARIANT, SB_ENV_NONE, env, RT_NONE);
+        bool fits;
+        if (is_type) fits = sb_is_type(binding);
+        else
+        {
+            uint kind = rt_term_kind(binding);
+            fits = (kind == RT_KIND_CC_VALUE || (pending && kind == RT_KIND_CC_CAST)) &&
+                (key.w == 0u || rt_term_words(binding).x == key.w);
+        }
+        if (!fits) return sb_check(SB_ENV, SB_ENV_BINDING, binding, rt_param_leaf(param));
     }
-    return SB_OK;
+    return sb_check_ok();
+}
+
+// Validates request (decl, env, term) before it creates any task.
+public SbCheck sb_validate(uint decl, uint env, uint term)
+{
+    if (rt_counts[RT_C_READY] == 0u) return sb_check(SB_NOT_READY, SB_ENV_NONE, term, RT_NONE);
+    uint def = sb_committed_entry(decl);
+    if (def == 0u || rt_dir[(def - 1u) * RT_DIR_WORDS + 3u].w != 0u)
+        return sb_check(SB_DECL, SB_ENV_NONE, term, RT_NONE);
+    uint counts = rt_dir[(def - 1u) * RT_DIR_WORDS + 1u].y;
+    if ((counts & 0xffffu) > 32u || (counts >> 16u) > 32u) return sb_check(SB_LIMIT, SB_ENV_NONE, env, RT_NONE);
+    if (!rt_is_stored_term(env) || env >= rt_counts[RT_A_TERMS] || rt_term_kind(env) != RT_KIND_ENV ||
+        !rt_term_closed(env)) return sb_check(SB_ENV, SB_ENV_NOT_ENV, env, RT_NONE);
+    RtStoredArgs args;
+    args.base = rt_term_meta[env].x;
+    return sb_check_env(env, rt_term_head[env], args, decl, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -300,8 +258,10 @@ SbChild sb_bind_leaf(SbBinder b, uint leaf)
     for (uint i = 0u; i < total; i++)
         if (rt_binders[b.base + i] == param) { slot = i; break; }
     if (slot == 0xffffffffu) return sb_immediate(leaf, SB_FOREIGN);
+    // sb_resolve checked the leaf's constant bit against its parameter's
+    // domain; a binder slot of the other domain is an inconsistent binder.
     bool is_const = (leaf & RT_CONST_BIT) != 0u;
-    if (is_const != (slot >= b.type_count)) return sb_immediate(leaf, SB_FOREIGN);
+    if (is_const != (slot >= b.type_count)) return sb_immediate(leaf, SB_INVARIANT);
     uint4 head = rt_term_head[b.env];
     uint index;
     if (!is_const)
@@ -325,8 +285,12 @@ public SbChild sb_resolve(SbBinder b, uint ref)
     if (rt_is_slot_leaf(ref)) return sb_immediate(ref, SB_SLOT_PENDING);
     if (rt_is_param_leaf(ref))
     {
-        if (rt_leaf_param(ref) == 0u || rt_leaf_param(ref) >= rt_counts[RT_A_PARAMS])
-            return sb_immediate(ref, SB_UNRESOLVED);
+        uint param = rt_leaf_param(ref);
+        if (param == 0u || param >= rt_counts[RT_A_PARAMS]) return sb_immediate(ref, SB_UNRESOLVED);
+        // A leaf's constant bit is its parameter's domain (rt_param_leaf).
+        uint domain = rt_param_key[param].y;
+        if (((ref & RT_CONST_BIT) != 0u) != (domain == RT_DOMAIN_CONST) ||
+            (domain != RT_DOMAIN_TYPE && domain != RT_DOMAIN_CONST)) return sb_immediate(ref, SB_INVARIANT);
         return sb_bind_leaf(b, ref);
     }
     if (ref < RT_FIRST_TERM) return sb_immediate(ref, SB_OK);
@@ -390,7 +354,7 @@ public uint sb_task_find_or_create(uint env, uint term)
                 if (edge == RT_INVALID) { sb_task_key[task] = uint4(env, term, level, 0u); sb_kill(task, level); return RT_INVALID; }
                 sb_task_key[task] = uint4(env, term, level, edge);
                 sb_task_res[task] = uint4(RT_UNKNOWN, SB_PENDING, RT_NONE, 0u);
-                sb_task_fail[task] = RT_NONE;
+                sb_task_fail[task] = uint2(RT_NONE, SB_ENV_NONE);
                 InterlockedMax(sb_counts[SB_C_NEXT_ARITY], arity);
                 InterlockedMax(sb_counts[SB_C_MAX_LEVEL], level);
             }

@@ -4,12 +4,23 @@
 // copied from that child's own result: provenance never depends on which
 // lane created a task or on memo contents.
 //
-// Kinds: NAMED, SLICE, REF and ENV rebuild with their words unchanged.
-// ARRAY takes its length's count class (CC_COUNT), so equal counts of
-// different scalars give one array identity. CC_CAST folds its child's
-// typed value to the target scalar with the canonical rules
-// (constant_value_to_count, constant_value_from_count) or fails its fit;
-// this applies to closed casts too, so a result never keeps a CC_CAST.
+// Kinds (docs/compiler-retained-substitution.md, "Evaluation rules"):
+// - NAMED keeps its words. Its head's type-slot count is its type-operand
+//   count (canonical_candidates build_row), its constant-operand mask has
+//   no bit at or past the arity, an operand under a mask bit is a CC_VALUE
+//   and every other operand is a type. At most 32 operands.
+// - ARRAY takes a type element and its length's count class (CC_COUNT), so
+//   equal counts of different scalars give one array identity. SLICE and
+//   REF take a type element.
+// - ENV keeps its words and is checked against its owner's committed binder
+//   (sb_check_env): owner, masks, arity, binding classes and declared
+//   constant scalars.
+// - CC_CAST folds its child's typed value to the target scalar with the
+//   canonical rules (ct_build_projection) or fails its fit; this applies to
+//   closed casts too, so a result never keeps a CC_CAST.
+// - A type result taller than 64 levels is DEPTH. An ENV is not a type: its
+//   height is one more than its tallest binding, and only the bindings,
+//   which are types and values, are held to the 64-level limit.
 import primitive_types;
 import constant_value;
 import type_checker.retention.retention_store;
@@ -21,15 +32,15 @@ struct EdgeArgs : IRtArgs
     uint arg(uint index) { return sb_edges[base + index].x; }
 }
 
-void finish(uint task, uint value, uint status, uint node, uint env, uint fail_value)
+void finish(uint task, uint value, uint status, uint node, uint env, uint fail_value, uint cause)
 {
     sb_task_res[task] = uint4(value, status, node, env);
-    sb_task_fail[task] = fail_value;
+    sb_task_fail[task] = uint2(fail_value, cause);
 }
 
 void fail(uint task, uint status, uint node, uint env, uint fail_value)
 {
-    finish(task, RT_UNKNOWN, status, node, env, fail_value);
+    finish(task, RT_UNKNOWN, status, node, env, fail_value, SB_ENV_NONE);
 }
 
 // The CC_COUNT record of `count`, interned like the canonical cc_intern_count.
@@ -80,7 +91,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint4 r = sb_task_res[e.x];
             if (r.y != SB_OK)
             {
-                fail(task, r.y == SB_PENDING ? SB_INVARIANT : r.y, r.z, r.w, sb_task_fail[e.x]);
+                uint2 f = sb_task_fail[e.x];
+                finish(task, RT_UNKNOWN, r.y == SB_PENDING ? SB_INVARIANT : r.y, r.z, r.w, f.x, f.y);
                 return;
             }
             sb_edges[base + i] = uint2(r.x, SB_OK);
@@ -97,14 +109,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint child = sb_edges[base].x;
         if (rt_term_kind(child) != RT_KIND_CC_VALUE) { fail(task, SB_UNSUPPORTED, term, env, child); return; }
+        // ct_build_projection: a value whose count is not a count, including
+        // the count word 0xffffffff that the canonical store reserves for
+        // "not a count", has no folded identity.
         uint count;
-        if (!constant_value_to_count(rt_term_words(child), count)) { fail(task, SB_UNSUPPORTED, term, env, child); return; }
+        if (!constant_value_to_count(rt_term_words(child), count) || count == 0xffffffffu)
+        {
+            fail(task, SB_UNSUPPORTED, term, env, child);
+            return;
+        }
         uint3 value;
         if (!constant_value_from_count(count, words.x, value)) { fail(task, SB_FIT_FAILED, term, env, child); return; }
         uint folded = value_term(value);
         if (!rt_is_term(folded)) { store_failed(task, term, env); return; }
-        finish(task, folded, SB_OK, RT_NONE, 0u, RT_NONE);
+        finish(task, folded, SB_OK, RT_NONE, 0u, RT_NONE, SB_ENV_NONE);
         return;
+    }
+    if (kind == RT_KIND_ARRAY || kind == RT_KIND_SLICE || kind == RT_KIND_REF)
+    {
+        uint element = sb_edges[base].x;
+        if (!sb_is_type(element)) { fail(task, SB_KIND, term, env, element); return; }
     }
     if (kind == RT_KIND_ARRAY)
     {
@@ -120,7 +144,38 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else if (length_kind != RT_KIND_CC_COUNT) { fail(task, SB_COUNT, term, env, length); return; }
     }
-    else if (kind != RT_KIND_NAMED && kind != RT_KIND_SLICE && kind != RT_KIND_REF && kind != RT_KIND_ENV)
+    else if (kind == RT_KIND_NAMED)
+    {
+        if (arity > 32u) { fail(task, SB_LIMIT, term, env, RT_NONE); return; }
+        uint mask = words.y;
+        if ((mask & ~sb_mask(arity)) != 0u || (head.x >> 16u) != arity - countbits(mask))
+        {
+            fail(task, SB_INVARIANT, term, env, RT_NONE);
+            return;
+        }
+        for (uint i = 0u; i < arity; i++)
+        {
+            uint operand = sb_edges[base + i].x;
+            bool constant = (mask >> i & 1u) != 0u;
+            if (constant ? rt_term_kind(operand) != RT_KIND_CC_VALUE : !sb_is_type(operand))
+            {
+                fail(task, SB_KIND, term, env, operand);
+                return;
+            }
+        }
+    }
+    else if (kind == RT_KIND_ENV)
+    {
+        EdgeArgs bound;
+        bound.base = base;
+        SbCheck check = sb_check_env(term, head, bound, 0u, false);
+        if (check.status != SB_OK)
+        {
+            finish(task, RT_UNKNOWN, check.status, check.node, env, check.value, check.cause);
+            return;
+        }
+    }
+    else if (kind != RT_KIND_SLICE && kind != RT_KIND_REF)
     {
         fail(task, SB_UNSUPPORTED, term, env, RT_NONE);
         return;
@@ -130,9 +185,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     args.base = base;
     for (uint i = 0u; i < arity; i++) rt_key_fold(built, args.arg(i));
     if (!built.ok) { fail(task, SB_INVARIANT, term, env, RT_NONE); return; }
-    if (built.height > SB_MAX_HEIGHT) { fail(task, SB_DEPTH, term, env, RT_NONE); return; }
+    if (kind != RT_KIND_ENV && built.height > SB_MAX_HEIGHT) { fail(task, SB_DEPTH, term, env, RT_NONE); return; }
     uint result = rt_intern_term(built, args);
     if (!rt_is_term(result)) { store_failed(task, term, env); return; }
     if (!rt_term_closed(result)) { fail(task, SB_INVARIANT, term, env, result); return; }
-    finish(task, result, SB_OK, RT_NONE, 0u, RT_NONE);
+    finish(task, result, SB_OK, RT_NONE, 0u, RT_NONE, SB_ENV_NONE);
 }

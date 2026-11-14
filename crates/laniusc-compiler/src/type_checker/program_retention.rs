@@ -135,6 +135,8 @@ pub mod counts {
     pub const INCOMPLETE: usize = 75;
     pub const INCOMPLETE_TOTAL: usize = 76;
     pub const READY: usize = 77;
+    /// Build generation (retention_store.slang RT_C_GENERATION).
+    pub const GENERATION: usize = 78;
     pub const WORDS: usize = 96;
     pub const JOB_COMMITTED: u32 = 2;
     pub const JOB_ROLLED_BACK: u32 = 3;
@@ -369,6 +371,19 @@ struct Store {
     reports: Vec<JobReport>,
     growths: u32,
     builds: u32,
+    /// Build generation of the current build (`counts::GENERATION`).
+    generation: u32,
+}
+
+/// Next build generation, shared by every store of the process, so a
+/// generation names one build of one store.
+static NEXT_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+fn next_generation() -> Result<u32> {
+    use std::sync::atomic::Ordering;
+    NEXT_GENERATION
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |g| g.checked_add(1))
+        .map_err(|_| anyhow!("program retention build generations are exhausted"))
 }
 
 /// What one job's export did.
@@ -469,6 +484,7 @@ impl ProgramRetention {
             reports: Vec::new(),
             growths: 0,
             builds: 0,
+            generation: 0,
         };
         store.buffers = allocate_store(&device, &capacity);
         let job_inputs = passes
@@ -499,6 +515,7 @@ impl ProgramRetention {
     /// never read; nothing of an earlier build is reused.
     pub fn begin_build(&self) -> Result<()> {
         let mut store = self.store.lock().unwrap();
+        let generation = next_generation()?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
         for name in ["rt_decl_slot", "rt_param_slot", "rt_term_slot"] {
             encoder.clear_buffer(&store.buffers[name], 0, None);
@@ -509,6 +526,7 @@ impl ProgramRetention {
         words[A_TERMS] = RT_FIRST_TERM;
         words[counts::FIRST_INVARIANT] = u32::MAX;
         words[counts::READY] = 1;
+        words[counts::GENERATION] = generation;
         self.queue.write_buffer(&store.buffers["rt_counts"], 0, &words_bytes(&words));
         self.queue.write_buffer(
             &store.buffers["rt_config"],
@@ -518,7 +536,15 @@ impl ProgramRetention {
         self.queue.submit(Some(encoder.finish()));
         store.reports.clear();
         store.builds += 1;
+        store.generation = generation;
         Ok(())
+    }
+
+    /// The current build's generation: nonzero, and unique over every build
+    /// of every store in this process. The GPU copy is
+    /// `rt_counts[counts::GENERATION]`.
+    pub fn generation(&self) -> u32 {
+        self.store.lock().unwrap().generation
     }
 
     /// Forces every hash onto one probe chain (mask 0) for the rest of this

@@ -38,6 +38,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     sb_counts[SB_C_FRONTIER_ARITY] = arity;
     sb_counts[SB_C_MAX_FRONTIER] = max(sb_counts[SB_C_MAX_FRONTIER], hi - lo);
     sb_counts[SB_C_MAX_ARITY] = max(sb_counts[SB_C_MAX_ARITY], arity);
+    // Lane numbers are 32-bit: a wider round cannot be dispatched. The
+    // product is checked in 16-bit halves (arity is at most 64).
+    uint width = hi - lo;
+    uint upper = (width >> 16u) * arity;
+    uint lower = (width & 0xffffu) * arity;
+    if (upper >= 0x10000u || (upper << 16u) > ~lower)
+    {
+        sb_overflow(SB_OVERFLOW_LANES);
+        sb_counts[SB_C_PHASE] = SB_PHASE_OVERFLOW;
+        return;
+    }
     uint lanes = (hi - lo) * arity;
     sb_counts[SB_C_EDGE_LANES] += lanes;
     sb_set_dispatch(SB_D_EXPAND, lanes);
