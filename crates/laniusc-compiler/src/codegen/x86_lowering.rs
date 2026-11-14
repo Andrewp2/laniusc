@@ -89,7 +89,9 @@ pub(crate) struct GpuX86LirStage {
     analysis_index: ComputeOperation,
     optimize_init: ComputeOperation,
     optimize_dependencies: ComputeOperation,
+    optimize_elements: ComputeOperation,
     optimize_close: ComputeOperation,
+    optimize_element_liveness: ComputeOperation,
     if_convert: ComputeOperation,
     allocation_words: ComputeOperation,
     stack_scan: GpuResidentExclusiveScan,
@@ -249,10 +251,20 @@ impl GpuX86LirStage {
             "lir.x86.optimize.dependencies",
             "codegen/lir/x86/optimize_dependencies",
         )?;
+        let optimize_elements_pass = load(
+            kernels,
+            "lir.x86.optimize.elements",
+            "codegen/lir/x86/optimize_elements",
+        )?;
         let optimize_close_pass = load(
             kernels,
             "lir.x86.optimize.close",
             "codegen/lir/x86/optimize_close",
+        )?;
+        let optimize_element_liveness_pass = load(
+            kernels,
+            "lir.x86.optimize.element_liveness",
+            "codegen/lir/x86/optimize_element_liveness",
         )?;
         let if_convert_pass = load(kernels, "lir.x86.if_convert", "codegen/lir/x86/if_convert")?;
         let allocation_words_pass = load(
@@ -588,6 +600,16 @@ impl GpuX86LirStage {
             &analysis_params,
             semantic_capacity,
         )?;
+        // One lane per aggregate element row (lir/x86/aggregate_facts.slang).
+        let optimize_elements = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.optimize.elements",
+            &optimize_elements_pass,
+            &analysis_params,
+            capacities.aggregate_elements.max(1),
+        )?;
         let optimize_close = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -596,6 +618,15 @@ impl GpuX86LirStage {
             &optimize_close_pass,
             &analysis_params,
             semantic_capacity,
+        )?;
+        let optimize_element_liveness = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.optimize.element_liveness",
+            &optimize_element_liveness_pass,
+            &analysis_params,
+            capacities.aggregate_elements.max(1),
         )?;
         let if_convert = ComputeOperation::direct_with_uniform(
             device,
@@ -708,7 +739,9 @@ impl GpuX86LirStage {
             analysis_index,
             optimize_init,
             optimize_dependencies,
+            optimize_elements,
             optimize_close,
+            optimize_element_liveness,
             if_convert,
             allocation_words,
             stack_scan,
@@ -796,12 +829,17 @@ impl GpuX86LirStage {
                     let rows = job.semantic_instructions.max(1);
                     self.optimize_init.record_elements(encoder, rows)?;
                     self.optimize_dependencies.record_elements(encoder, rows)?;
+                    let elements = job.aggregate_elements.max(1);
+                    self.optimize_elements.record_elements(encoder, elements)?;
                     self.optimize_close.record_elements(encoder, rows)?;
+                    self.optimize_element_liveness.record_elements(encoder, elements)?;
                 }
                 None => {
                     self.optimize_init.record(encoder)?;
                     self.optimize_dependencies.record(encoder)?;
+                    self.optimize_elements.record(encoder)?;
                     self.optimize_close.record(encoder)?;
+                    self.optimize_element_liveness.record(encoder)?;
                 }
             }
             stamp(timer, encoder, "codegen.x86.optimize.parallel.done");

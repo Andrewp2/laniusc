@@ -33,6 +33,8 @@ StructuredBuffer<uint> x86_function_start;
 StructuredBuffer<uint> x86_function_end;
 RWStructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 RWStructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+// lir/x86/aggregate_facts.slang: optimize_elements accumulates into these.
+RWStructuredBuffer<uint> x86_aggregate_facts;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint INVALID = 0xffffffffu;
@@ -78,6 +80,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (row >= total) return;
+    x86_aggregate_facts[row] = 0u;
     X86ValueAnalysis value;
     value.value = 0u;
     value.known = 0u;

@@ -7,6 +7,7 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import gpu_index;
+import codegen.lir.x86.aggregate_facts;
 import hir_records;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
@@ -30,6 +31,7 @@ StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<X86InlineInfo> x86_inline_info_by_function;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
+StructuredBuffer<uint> x86_aggregate_facts;
 RWStructuredBuffer<uint> target_lir_count;
 RWStructuredBuffer<LoweringStatus> lowering_status;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -311,7 +313,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint element_total = semantic_lir_aggregate_element_total[0u];
         uint words = 0u;
-        for (uint element_i = 0u; element_i < operands.b; element_i += 1u)
+        if (x86_dense_aggregate(x86_aggregate_facts, semantic_row, operands.b))
+            words = operands.b * semantic_lir_aggregate_elements[operands.a].word_count;
+        else for (uint element_i = 0u; element_i < operands.b; element_i += 1u)
         {
             uint row = operands.a + element_i;
             if (row >= element_total) break;
