@@ -82,3 +82,16 @@ fn lanius_functions_are_c_callbacks_for_qsort_bsearch_and_pthread() {
     assert_exits_zero("pthread", executable.path(), &[]);
     assert_exits_zero("pthread", executable.path(), &["one", "two", "three"]);
 }
+
+#[test]
+fn function_references_execute_inside_generic_bodies() {
+    let executable = link("generic_body");
+    let output = common::process_output_with_timeout(
+        "callback references inside generic bodies",
+        &mut Command::new(executable.path()),
+        Duration::from_secs(5),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"AA", "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
