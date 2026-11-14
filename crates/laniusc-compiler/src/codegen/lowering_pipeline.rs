@@ -844,9 +844,9 @@ impl GpuLoweringPipeline {
     /// Flags a job whose semantic or target rows exceed the job's
     /// capacities, as the GPU checks of a fresh workspace for the job would
     /// (optimization/project.slang, x86 and Wasm validate.slang). A job at
-    /// this workspace's capacities was checked on the GPU. The job's phase
-    /// reset and x86 clears covered only its capacities, so its rows past
-    /// them could read stale words. Target rows use an initial frontend estimate
+    /// this workspace's capacities was checked on the GPU. The job's x86
+    /// analysis clears cover only its capacities; rows past them could read
+    /// stale words. Target rows use an initial frontend estimate
     /// plus explicit GPU demand from this compilation's earlier attempt.
     fn check_job_totals(&self, device: &wgpu::Device, status: &mut LoweringStatus) -> Result<()> {
         let job = *self
@@ -868,8 +868,8 @@ impl GpuLoweringPipeline {
     }
 
     /// Fails an artifact the job's capacities could not hold, as a fresh
-    /// workspace for the job would: its x86 clears and phase reset covered
-    /// only those capacities.
+    /// workspace for the job would: its artifact clear covers only those
+    /// capacities.
     fn check_job_artifact_bytes(&self, what: &str, bytes: usize) -> Result<()> {
         let job = *self
             .recorded_job
@@ -1363,17 +1363,17 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_constructs_one_workspace_pipeline_for_each_target() {
+    fn physical_gpu_warm_compiles_reuse_pipelines_for_both_targets() {
         std::thread::Builder::new()
             .name("lowering pipeline construction".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(run_physical_gpu_constructs_one_workspace_pipeline_for_each_target)
+            .spawn(run_physical_gpu_warm_compiles_reuse_pipelines_for_both_targets)
             .unwrap()
             .join()
             .unwrap();
     }
 
-    fn run_physical_gpu_constructs_one_workspace_pipeline_for_each_target() {
+    fn run_physical_gpu_warm_compiles_reuse_pipelines_for_both_targets() {
         let gpu = device::global();
         let compiler =
             pollster::block_on(crate::compiler::GpuCompiler::new_with_device_and_backends(

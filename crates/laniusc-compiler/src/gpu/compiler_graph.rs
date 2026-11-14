@@ -645,11 +645,12 @@ pub struct CompilerGraphWorkspace {
     /// again before the consumer sees them. A resource the graph declares
     /// zero-initialized (`mark_zero_initialized`) reads before it writes, so
     /// its imported slot is cleared at the consumer's phase boundary, after
-    /// all producer commands and before the first pass. Every other resource
-    /// is written before it is read (`CompilerGraphBuilder::build` checks
-    /// this). Like a resource that shares a slot with an earlier lifetime
-    /// in its own graph, it gets whatever bytes the slot holds, so its
-    /// imported slot needs no reset.
+    /// all producer commands and before the first pass. Other resources
+    /// retain the producer's words. Their shaders must initialize every
+    /// consumed row or guard reads with freshly initialized counts or masks.
+    /// `CompilerGraphBuilder::build` checks declared access order, not this
+    /// per-word contract. Failure paths may leave rows unwritten; their
+    /// consumers must remain bounded and the failed job must be rejected.
     phase_reset_ranges: Vec<LaniusBuffer<u8>>,
     /// Each imported slot with the zero-initialized resources the graph
     /// assigns to it, so a job can reset only the bytes those resources can
@@ -691,9 +692,7 @@ impl PhaseResetPlan {
     pub(crate) fn record_test_poison(&self, encoder: &mut wgpu::CommandEncoder) {
         #[cfg(test)]
         {
-            use std::sync::atomic::Ordering;
-
-            let word = TEST_PHASE_RESET_POISON.load(Ordering::Relaxed);
+            let word = TEST_PHASE_RESET_POISON.get();
             let Some(largest) = self.tails.iter().map(|tail| tail.byte_size as u64).max() else {
                 return;
             };
@@ -730,7 +729,7 @@ impl PhaseResetPlan {
                     );
                     offset += chunk;
                 }
-                TEST_PHASE_RESET_POISONED_BYTES.fetch_add(size, Ordering::Relaxed);
+                TEST_PHASE_RESET_POISONED_BYTES.set(TEST_PHASE_RESET_POISONED_BYTES.get() + size);
             }
         }
         #[cfg(not(test))]
@@ -743,14 +742,13 @@ impl PhaseResetPlan {
     }
 }
 
-/// The word a test fills the imported bytes a phase reset leaves with
-/// (`u64::MAX` for none), and the bytes poisoned so far.
 #[cfg(test)]
-pub(crate) static TEST_PHASE_RESET_POISON: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(u64::MAX);
-#[cfg(test)]
-pub(crate) static TEST_PHASE_RESET_POISONED_BYTES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+thread_local! {
+    // Recording runs on the test's compiler thread. Keep its poison and byte
+    // count local so concurrent tests neither consume nor contribute to them.
+    pub(crate) static TEST_PHASE_RESET_POISON: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+    pub(crate) static TEST_PHASE_RESET_POISONED_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 #[cfg(test)]
 const TEST_PHASE_RESET_POISON_CHUNK: u64 = 16 << 20;
 
@@ -1261,7 +1259,7 @@ impl CompilerGraphWorkspace {
             range.clear(encoder, 0, None);
         }
         #[cfg(test)]
-        if TEST_PHASE_RESET_POISON.load(std::sync::atomic::Ordering::Relaxed) != u64::MAX {
+        if TEST_PHASE_RESET_POISON.get() != u64::MAX {
             self.phase_reset_plan(|_| None)
                 .expect("whole-slot phase reset plan")
                 .record_test_poison(encoder);

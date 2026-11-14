@@ -1087,7 +1087,7 @@ impl GpuTypeChecker {
             // graph. The job reset precedes parser execution, so the imported
             // slots of zero-initialized type-check resources are cleared here,
             // after parsing has finished and before type checking reads them.
-            // Every other type-check resource is written before it is read.
+            // Other resources rely on their producer writes and read guards.
             bind_groups.typecheck_graph.record_phase_reset(encoder);
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.phase_reset.done");

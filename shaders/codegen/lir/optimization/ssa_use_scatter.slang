@@ -1,11 +1,10 @@
 // Concatenates fixed operands and the three already-compact variable-arity
 // relations into one deterministic value-use relation.
 //
-// The relation's storage is not cleared before a job, so every row below the
-// published `opt_ir_ssa_use_total` is written here: the fixed, call, aggregate
+// The relation's storage is not cleared before a job. On success every row
+// below `opt_ir_ssa_use_total` is written here: the fixed, call, aggregate
 // and incoming intervals tile [0, total), which ssa_use_validate checks row by
-// row. A failed job keeps that property, so its diagnostics never depend on
-// an earlier job's words. A relation over capacity publishes no rows, and a
+// row. A relation over capacity publishes no rows, and a
 // rejected use still writes its row while the destination is in range.
 
 import codegen.lowering_ir;

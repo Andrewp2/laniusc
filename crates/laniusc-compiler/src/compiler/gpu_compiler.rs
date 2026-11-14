@@ -720,7 +720,7 @@ mod tests {
         struct PoisonGuard;
         impl Drop for PoisonGuard {
             fn drop(&mut self) {
-                TEST_PHASE_RESET_POISON.store(u64::MAX, Ordering::Relaxed);
+                TEST_PHASE_RESET_POISON.set(u64::MAX);
                 TEST_JOB_SIZED_DIRECT_OPS.store(u8::MAX, Ordering::Relaxed);
             }
         }
@@ -858,8 +858,8 @@ mod tests {
 
         TEST_JOB_SIZED_DIRECT_OPS.store(1, Ordering::Relaxed);
         for word in [1u32, u32::MAX] {
-            TEST_PHASE_RESET_POISON.store(u64::from(word), Ordering::Relaxed);
-            let poisoned = TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed);
+            TEST_PHASE_RESET_POISON.set(u64::from(word));
+            let poisoned = TEST_PHASE_RESET_POISONED_BYTES.get();
             // Workspaces built for the small job grow for the big ones.
             release();
             assert!(x86(cases[0].1) == fresh_x86[0], "x86 small job in new workspaces (poison {word:#x})");
@@ -899,7 +899,7 @@ mod tests {
                 "Wasm {constant} after the feature-rich big job (poison {word:#x})"
             );
             assert!(
-                TEST_PHASE_RESET_POISONED_BYTES.load(Ordering::Relaxed) > poisoned,
+                TEST_PHASE_RESET_POISONED_BYTES.get() > poisoned,
                 "the small jobs should leave imported tails to poison (poison {word:#x})"
             );
         }
