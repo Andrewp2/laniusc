@@ -276,6 +276,57 @@ fn fixture() -> Fixture {
             f.valid(&separated_digits(&text));
         }
     }
+    // The Eisel-Lemire fast path (lemire in shaders/float_decimal.slang)
+    // decides most literals; each case below must match the exact result
+    // whether it decides or falls back. Short and 20- to 40-digit mantissas
+    // over the whole exponent range, shortest round-trip spellings of random
+    // bit patterns, exact binary32 midpoints, integer ties and the long
+    // stdlib constants.
+    for _ in 0..160 {
+        let digits = 1 + (next_random(&mut state) % 40) as usize;
+        let mantissa: String = (0..digits)
+            .map(|at| {
+                let digit = next_random(&mut state) % 10;
+                char::from(b'0' + if at == 0 { 1 + digit % 9 } else { digit } as u8)
+            })
+            .collect();
+        let exponent = (next_random(&mut state) % 700) as i32 - 360;
+        let point = (next_random(&mut state) as usize) % (digits + 1);
+        let text = format!("{}.{}e{exponent}", &mantissa[..point], &mantissa[point..]);
+        f.valid(&text);
+    }
+    for _ in 0..96 {
+        let value = f64::from_bits(next_random(&mut state));
+        if value.is_finite() {
+            f.valid(&format!("{:e}", value.abs()));
+        }
+        let single = f32::from_bits(next_random(&mut state) as u32);
+        if single.is_finite() {
+            f.valid(&format!("{:e}", single.abs()));
+            let next = f32::from_bits(single.abs().to_bits() + 1);
+            if next.is_finite() {
+                let midpoint = (f64::from(single.abs()) + f64::from(next)) / 2.0;
+                f.valid(&format!("{midpoint:.1100e}"));
+            }
+        }
+    }
+    for odd in [1u64, 3, 5, 7, 1001, 99_999] {
+        f.valid(&format!("{}", (1u64 << 53) + odd));
+        f.valid(&format!("{}0e-1", (1u64 << 53) + odd));
+        f.valid(&format!("{}", (1u64 << 24) + odd));
+        f.valid(&format!("{}e1", (1u64 << 52) + odd));
+    }
+    for text in [
+        "7.54978941586159635335e-08",
+        "9.33263618503218878990e-302",
+        "8.0085662595372944372e-0017",
+        "3.14159265358979323846264338327950288",
+        "0.000000000000000055511151231257827021181583404541015625",
+        "2.16741683877804819444e-51",
+        "1.67772160000000000000e+07",
+    ] {
+        f.valid(text);
+    }
     // Syntax failures must consume the entire bounded token and return zero
     // bits, including a malformed tail after an already-overflowing prefix.
     for text in [
