@@ -23,7 +23,7 @@ stores each as a u32. No token number is a program type or instance identity.
 | `SymTermId` | Immutable symbolic term over exact `ParamId` leaves, named declarations and typed constants. Shared terms are equal only after comparing complete records and child identities. |
 | `TypeId` | An exactly interned **closed** type/constant term in the build store. A named type includes its declaration and complete ordered lexical/application arguments. |
 | `InstanceId` | `(callable DeclId, closed environment TypeId)`. Environment domains, parameter order and constant value/type identity are explicit. Native widths and transient proof IDs are not part of this key. |
-| `UseId` | A template's callable-use ordinal. An instantiated use is `(InstanceId, UseId)`; an ordinary use is qualified by its frontend unit. Calls and address-taking must both be inventoried. |
+| `UseId` | A template's callable-use ordinal. An instantiated use is `(InstanceId, UseId)`. Deferred uses in original objects get build-global ordinals from GPU scans in deterministic unit order. Calls and function-entry references must both be inventoried, although only calls need deferred instance selection in today's language. |
 
 The canonical store in a frontend job remains job-local. At retention, shaders
 translate its leaves and nominal identities into these build handles before
@@ -60,17 +60,31 @@ whole token-capacity buffers. Every exported field is either local to the
 segment or explicitly externalized. Keeping an arbitrary outside HIR/token
 index, as the current same-job copy code does, is invalid across units.
 
-The retained set includes file functions, impl methods, trait-provided bodies,
-and nested definitions with lexical parameters. Nested definitions get their
+The retained set includes file functions, impl methods, and supported nested
+definitions with lexical parameters. Trait methods currently end in `;` in
+the grammar; there are no trait-provided bodies to retain. Nested definitions get their
 own declaration identity and an explicit map of inherited parameters. Runtime
 captures must already be represented by the existing closure elaboration.
 An inner slot zero must never capture an outer or trait slot zero accidentally.
 
-Ordinary functions can lower during their unit job. Their generic calls and
-generic function references emit deferred GPU link records keyed by ordinary
-`UseId`; final routes are resolved after discovery. This avoids retaining all
-ordinary HIR until the final unit. Those objects remain unpublished until the
-program admission and routing checks finish.
+Functions whose native bodies are complete can lower during their unit job.
+This includes generic declarations whose emitted code does not depend on their
+environment, as certified by `function_templates.slang` today. Keep that GPU
+optimization. It does not waive any concrete call's parameter or obligation
+checks, and it does not reuse results from an earlier build.
+
+Generic calls in these original objects emit provisional symbol identities
+keyed by `UseId`; final routes are resolved after discovery. Candidate use
+ordinals may be assigned before lowering, but only uses surviving in emitted
+symbol records become discovery roots. This matches the current emitted-symbol
+inventory and avoids instantiating a call that optimization removed. Duplicated
+call sites can share the same use identity. These objects remain unpublished
+until admission and routing finish, without retaining all ordinary HIR.
+
+Each declaring unit also exports `DeclNative`: declaration identity, native
+symbol identity, calling-convention class, signature ABI and whether a complete
+reusable definition was emitted. Later batches must not recover those facts
+from a previous job's function rows or tokens.
 
 ## 3. Discovery consumes semantic dependencies
 
@@ -108,8 +122,8 @@ by those inputs. The GPU schedules ready term, obligation and routing tasks;
 one lane must not walk an entire function's call list. Count/scan operations
 flatten `(frontier instance, use)` and variable-length term/argument work.
 
-This is the boundary to audit for constant generics, trait-provided methods,
-nested definitions, constructors, function references and dependent method
+This is the boundary to audit for constant generics, nested definitions,
+constructors, function references and dependent method
 results. The audit must show that their existing semantic inputs can be
 exported. One settings counter cannot prove this contract for the language.
 If a case needs another semantic dependency, export that dependency; it does
@@ -137,8 +151,11 @@ obligation demotion to replay has no role in the new path.
 
 ## 5. Discovery waves, depth and capacity
 
-Root uses come from the ordinary emitted callable inventory. A wave expands a
-frontier of newly discovered instances. It substitutes use inputs, resolves
+Root uses come from the emitted callable inventory, including closed generic
+calls inside reusable generic definitions and generated closure entry functions.
+A root may ultimately target an existing declaration definition or a new
+instance. A wave expands a frontier of newly discovered instances. It substitutes
+use inputs, resolves
 required semantic dependencies, submits obligations, obtains routes and inserts
 new exact instance keys. Pending facts stay in that wave until ready. Memory
 chunks do not increment semantic instantiation depth.
@@ -172,11 +189,41 @@ Instance lowering has its own capacities and local type-row namespace. It does
 not use the original job's spare quarter of token capacity. Cross-batch calls
 name the final instance symbol, never another batch's virtual token.
 
-Use a reserved instance symbol namespace, qualified by the definition's library
-and deterministic instance rank. Frontend units cannot allocate that namespace.
-The GPU link stage resolves ordinary deferred uses and instance relocations to
-these symbols. A trait default body uses the selected implementation's subject
-and trait arguments while retaining the default declaration's identity.
+Use `(RESERVED_LIB, NS_INSTANCE, deterministic instance rank)` for instance
+symbols and `(RESERVED_LIB, NS_USE, build-global use ordinal)` for provisional
+original-call symbols. Reserve `0xffff_fffe` for this library domain; keep
+`0xffff_ffff` as the existing object-local marker. These are internal native
+symbol domains: the build's GPU library map must assign ordinary native
+library identities outside them, while retaining original library identities
+in declaration keys. An explicit source-pack library number must not be
+rejected merely because it equals the internal reserved value. A mixed-library
+instance batch can then use the
+existing single library/unit identity per object. The template's real library
+remains part of its declaration identity and diagnostics.
+
+An instance batch emits symbol calls to final instance or `DeclNative` targets,
+including targets in the same batch. Its call identities therefore do not
+depend on batch membership. This initially gives up same-batch LIR inlining;
+measure that cost rather than assuming the change is free.
+
+After routes and caller/target ABI checks succeed, a GPU finalization pass
+replaces provisional identities in original objects' symbol/identity sections
+with final declaration or instance identities, including their identity hashes.
+The route table is flat: a use targets a final symbol, never another use. Text,
+data and relocation sites remain unchanged. The host transfers opaque object
+sections, including spilled metadata when needed, and receives final sections;
+it does not join call records, choose a route or rename symbols. Exporting or
+linking an object with provisional identities is forbidden. Capacity retries
+start from retained provisional sections and do not publish a partial rewrite.
+Jump stubs and duplicate alias definitions are unnecessary for this contract.
+
+Today's function-as-value form names an ordinary same-job function and produces
+a C-entry `ptr`; generic functions as values and Wasm callback entries remain
+outside the supported surface. A generic body can contain such an ordinary
+function reference. Its batch representation must retain the referenced
+`DeclNative` and admitted C signature, and emit a C-entry stub whose inner call
+has a symbol relocation. The present zero-argument local-CALL encoding assumes
+a same-job function row and is insufficient for separate instance batches.
 
 Bodies may be transferred to opaque host-backed storage for the current build
 and streamed by segment for projection. The GPU determines batch membership
@@ -191,7 +238,13 @@ before claiming large-program support.
 
 One GPU status reduction permits publication only after all required work has
 finished, no capacity or semantic failure remains, every emitted callable use
-has an admitted target, and every by-value type and call ABI is complete.
+has an admitted target, no provisional symbol remains, and every by-value type
+and call ABI is complete. An original caller's recorded ABI must agree with its
+target's realized signature. Use the production argument/result ABI descriptors,
+including scalar classes, aggregate passing and hidden results; word count
+alone is insufficient. This check moves to the GPU, even though host replay
+layout-witness merging is deleted. ABI agreement does not prove nominal layout
+identity; exact types and retained field schemas remain necessary.
 Diagnostics retain unit-qualified source locations. Deterministic error choice
 requires a defined lexicographic reduction; discovery thread order is not one.
 
@@ -205,17 +258,29 @@ admission/rejection fallback:
 3. Run GPU discovery/selection with two environments, a cross-unit generic
    chain, private nominal/extern references and a failing concrete obligation.
 4. Clone and lower the complete instance graph, resolve ordinary root uses,
-   and execute with the source-copy builder unavailable.
+   finalize object symbols on the GPU, and execute with the source-copy builder
+   unavailable. Cover calls inside reusable generic bodies and function-entry
+   references inside instance bodies.
 5. Force growth, body transfer and multiple lowering batches; validate finite
    and growing recursion, diagnostics, hash collisions and repeated builds.
 6. Cover the existing supported language suites, delete source replay and
-   selective rejection machinery, then measure full settings rebuilds.
+   selective rejection machinery, then measure full settings rebuilds. Delete
+   `ExecRoutes`, `ClosureIntake`, replay unit numbering, host symbol replacement,
+   `native_call_hirs` readback and the cross-build library-instance cache.
 
 The first cross-unit execution fixture is the existing
 `native_large_pack_spills_originals_and_generic_replays_and_writes_atomically`
 test. Extend coverage with foreign equal-width/different-layout types and a
 private nominal inside a foreign generic body. Padding above the unit limit
 tests partitioning; it does not test a large live template working set.
+
+The focused `native_c_callback` generic-body case establishes that ordinary
+function references inside generic instances currently execute in a shared job.
+A padded two-unit probe of that case reaches source replay and fails with
+LNC0057 on the baseline. It is an existing cross-unit failure, not evidence of
+cross-unit support. Separate-batch lowering must still preserve the working
+shared-job program. A one-unit program will also pay discovery and batch setup
+cost in the new architecture; measure that fixed cost against the target.
 
 A new implementation may emit different bytes from the replay implementation.
 Required comparisons are program behavior, admitted semantic facts and source
