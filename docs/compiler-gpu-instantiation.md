@@ -20,6 +20,41 @@ ownership and lowering batches. Discovery and routing audits now identify the
 remaining concrete checks and their GPU owners. The prototype milestones below describe the earlier selective
 fallback approach; they are not the next implementation sequence.
 
+## Retained-program checkpoint (2026-11-14)
+
+The opt-in export now reaches `READY=1` on the real settings sources at
+`212c54dce`. The author measured three warm full recompiles at `5160438c6`:
+each original job committed in one attempt with zero invariants, incomplete
+entries and untranslated records. Both compiled caches reported zero hits.
+The production changes are integrated as `b1d117208` and `69fbef2b3`.
+The receipt, temporary instrumentation patch and driver are preserved in
+`target/retention-integration-evidence/settings-ready/` in the integration
+worktree. The instrumentation is not part of the production compiler.
+
+The export distinguishes runtime values from pattern and bound syntax,
+retains caller-scoped receiver plans, publishes generic match result terms,
+and links retained bound rows directly to their predicate records. Unit and
+never results come from checked expression facts; missing types are not
+defaulted. The [retention guide](compiler-program-retention.md) defines the
+row roles and the accepted trait facts.
+
+Retained substitution (`8e84a1957`, authored as `728ffa886`) rejects truncated
+request production, identifies publications by build generation and run,
+checks term kinds and normalized request environments, and rolls back
+partially interned attempts before growing. A consumer must use its GPU
+publication guard. Five retention tests and four substitution tests pass
+together on the integrated tree; their logs are in
+`target/retention-integration-evidence/`. The
+[substitution guide](compiler-retained-substitution.md) defines the API.
+
+These checks establish retained-data readiness, not executable admission.
+The new path still needs GPU catalog admission, discovery, concrete
+layout and row projection, call/ABI certification and native publication.
+The general compiler still uses source replay. Retained original jobs skip
+in-place specialization to preserve symbolic templates; their output bytes
+differ from ordinary builds, and the settings census did not check execution
+equivalence. No compilation-speed claim follows from this checkpoint.
+
 ## Architecture validation checkpoint (2026-11-14)
 
 Independent code review found that the prototype's selective admission and
