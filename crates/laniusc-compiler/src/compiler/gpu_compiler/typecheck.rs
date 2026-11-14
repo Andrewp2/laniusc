@@ -624,6 +624,18 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "typecheck.done");
         }
+        // Freeze the export's inputs now: everything recorded after this
+        // point (semantic interface, lowering) may reuse frontend arenas.
+        let retention_snapshot = type_check
+            .program_retention
+            .as_ref()
+            .map(|store| {
+                let mut tables = self.type_checker.program_retention_tables(&hir)?;
+                tables.extend(crate::type_checker::program_retention::retention_source_tables(bufs));
+                store.record_job_snapshot(encoder, &tables)
+            })
+            .transpose()
+            .map_err(|err| CompileError::GpuFrontend(format!("program retention snapshot: {err:#}")))?;
         // Run the type check's tail while the host records the semantic
         // interface and lowering. Their recording writes only their own
         // buffers through the queue.
@@ -742,13 +754,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
         downstream_host_timer.stamp("lowering");
-        let retention_sources = type_check
-            .program_retention
-            .as_ref()
-            .map(|_| crate::type_checker::program_retention::retention_source_tables(bufs));
         Ok(RecordedTypeCheckWithDiagnosticBuffers {
             type_check,
-            retention_sources,
+            retention_snapshot,
             diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
             hir,
             semantic_interface,
@@ -1076,18 +1084,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         // All lowering retry points have passed. Export once into the store
         // captured when this job selected its workspace and recorded work.
         if let Some(store) = &recorded.type_check.program_retention {
-            let hir = self.parser.current_resident_hir().ok_or_else(|| {
-                CompileError::GpuFrontend("program retention export without resident HIR".to_string())
+            let snapshot = recorded.retention_snapshot.as_ref().ok_or_else(|| {
+                CompileError::GpuFrontend("program retention export without the job's snapshot".to_string())
             })?;
-            self.type_checker
-                .program_retention_tables(&hir)
-                .and_then(|mut tables| {
-                    let sources = recorded.retention_sources.as_ref().ok_or_else(|| {
-                        anyhow::anyhow!("program retention export without the job's source tables")
-                    })?;
-                    tables.extend(sources.iter().cloned());
-                    store.export_job(&tables)
-                })
+            store
+                .export_job(snapshot.tables())
                 .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
             finish_timer.stamp("program_retention");
         }
@@ -2503,11 +2504,9 @@ fn debug_parser_rejection(failure: &crate::parser::driver::ParserFailure) {
 
 struct RecordedTypeCheckWithDiagnosticBuffers {
     type_check: gpu_type_checker::RecordedTypeCheck,
-    /// The lexer tables a retention export copies source provenance from;
+    /// The job's export inputs, copied when its type check was recorded;
     /// present when the job records into a program retention store.
-    retention_sources: Option<
-        Vec<(&'static str, crate::type_checker::program_retention::JobTable)>,
-    >,
+    retention_snapshot: Option<crate::type_checker::program_retention::JobSnapshot>,
     diagnostic_tokens: DiagnosticTokenBuffer,
     hir: crate::parser::buffers::GpuHirView,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
@@ -5370,6 +5369,57 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn physical_gpu_retention_exports_once_after_native_output_retry() {
+        use crate::compiler::GpuCompilerBackends;
+        use crate::type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts};
+
+        let source = "module retry; fn value() -> i32 { return 42; } fn main() -> i32 { return value(); }";
+        for object in [false, true] {
+            let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only())).unwrap();
+            let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+            compiler.attach_program_retention(Some(store.clone()));
+            let compile = || {
+                pollster::block_on(compiler.type_check_explicit_source_pack_with_paths_and_interface(
+                    &[source], None, Some(91), 0, DependencyInterfacePages::Flat(&[]), true,
+                    (!object).then_some(LoweringTarget::X86_64),
+                    object.then_some(LoweringObjectRequest::PendingOriginal {
+                        target: LoweringTarget::X86_64, library_id: 91, unit_id: 0, elide_closed_facts: false,
+                    }),
+                )).unwrap()
+            };
+            let warm = compile();
+            assert_eq!(warm.native_object.is_some(), object);
+            assert_eq!(warm.target_artifact.is_some(), !object);
+            let reference = store.status().unwrap();
+            assert_eq!(reference[counts::READY], 1, "warm job reports: {:?}", store.job_reports());
+
+            // Retain the same workspace, but force its next job through the
+            // real output-capacity failure and frontend retry path.
+            store.begin_build().unwrap();
+            let pipeline = compiler.lowering_pipeline(LoweringTarget::X86_64).unwrap();
+            let retries = pipeline.test_output_retry_count();
+            pipeline.test_limit_next_artifact_capacity(4);
+            let retried = compile();
+            assert_eq!(retried.native_object.is_some(), object);
+            assert_eq!(retried.target_artifact.is_some(), !object);
+            assert!(pipeline.test_output_retry_count() > retries, "must actually retry (object={object})");
+            let status = store.status().unwrap();
+            assert_eq!(status[counts::JOBS], 1, "an abandoned attempt must not export");
+            assert_eq!(status[counts::CONFLICTS], 0);
+            assert_eq!(status[counts::INVARIANT_TOTAL], 0);
+            assert_eq!(status[counts::INCOMPLETE_TOTAL], 0);
+            assert_eq!(status[counts::READY], 1);
+            let reports = store.job_reports();
+            assert_eq!(reports.len(), 1);
+            assert!(reports[0].ready);
+            // Directory, schemas, uses, body segments and their token
+            // records have the same live counts as the successful first
+            // build, with no duplicated unit.
+            assert_eq!(&status[4..14], &reference[4..14]);
+        }
+    }
 
     #[test]
     fn native_call_ownership_retains_ordinary_calls_and_repeated_inlined_sites() {

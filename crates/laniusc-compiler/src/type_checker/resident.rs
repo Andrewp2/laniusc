@@ -2950,7 +2950,7 @@ impl GpuTypeChecker {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("program_retention.call_env_snapshot"),
                 size: bytes.max(16),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             *snapshot = Some((buffer, 0));

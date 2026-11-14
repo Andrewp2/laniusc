@@ -209,6 +209,12 @@ pub(crate) struct GpuLoweringPipeline {
     /// The capacities the last recorded job could address. Its artifact must
     /// fit them, as it would in a fresh workspace for the job.
     recorded_job: Mutex<LoweringCapacities>,
+    // Per-workspace fault injection: exercise output retries without making
+    // unrelated concurrent tests run with artificially small capacities.
+    #[cfg(test)]
+    next_test_artifact_limit: std::sync::atomic::AtomicU32,
+    #[cfg(test)]
+    test_output_retries: std::sync::atomic::AtomicUsize,
 }
 
 /// Sets the capacity failure a GPU check against `job` would set for a job
@@ -758,6 +764,10 @@ impl GpuLoweringPipeline {
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             recorded_job: Mutex::new(capacities),
+            #[cfg(test)]
+            next_test_artifact_limit: std::sync::atomic::AtomicU32::new(0),
+            #[cfg(test)]
+            test_output_retries: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -769,7 +779,27 @@ impl GpuLoweringPipeline {
             bounds.hir_rows,
             self.target.lowering_target(),
         );
-        apply_output_demand(job, bounds.output_demand, self.capacities)
+        let job = apply_output_demand(job, bounds.output_demand, self.capacities);
+        #[cfg(test)]
+        let job = {
+            let limit = self.next_test_artifact_limit.swap(0, std::sync::atomic::Ordering::Relaxed);
+            LoweringCapacities {
+                artifact_bytes: if limit == 0 { job.artifact_bytes } else { job.artifact_bytes.min(limit) },
+                ..job
+            }
+        };
+        job
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_limit_next_artifact_capacity(&self, bytes: u32) {
+        assert!(bytes > 0);
+        self.next_test_artifact_limit.store(bytes, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_output_retry_count(&self) -> usize {
+        self.test_output_retries.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The job's capacities when they are below this workspace's, for the
@@ -1182,7 +1212,12 @@ impl GpuLoweringPipeline {
             .recorded_job
             .lock()
             .expect("lowering recorded job poisoned");
-        output_demand_for_status(failure.status, job, self.target.lowering_target())
+        let demand = output_demand_for_status(failure.status, job, self.target.lowering_target());
+        #[cfg(test)]
+        if matches!(&demand, Ok(Some(_))) {
+            self.test_output_retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        demand
     }
 
     fn ensure_success(&self, device: &wgpu::Device) -> Result<()> {

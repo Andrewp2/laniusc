@@ -379,6 +379,37 @@ pub struct ProgramRetention {
     rehash: PassData,
     resolve: Mutex<Option<PassData>>,
     store: Mutex<Store>,
+    /// Every job table name an export kernel binds.
+    job_inputs: std::collections::BTreeSet<String>,
+    /// Snapshot buffer sets of finished jobs, reused by later jobs.
+    snapshot_pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
+}
+
+/// One job's export inputs, copied into buffers the store owns when the
+/// job's type check has been recorded and before anything later in the job
+/// (semantic interface, lowering, output retries) runs. The export reads
+/// only these copies: lowering may reuse the frontend's arenas, and two
+/// frontend tables that share one arena cannot be bound with different
+/// access in one dispatch. Each table has its own buffer.
+pub(crate) struct JobSnapshot {
+    tables: BTreeMap<&'static str, JobTable>,
+    buffers: BTreeMap<&'static str, wgpu::Buffer>,
+    pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
+}
+
+impl JobSnapshot {
+    pub(crate) fn tables(&self) -> &BTreeMap<&'static str, JobTable> {
+        &self.tables
+    }
+}
+
+impl Drop for JobSnapshot {
+    fn drop(&mut self) {
+        let buffers = std::mem::take(&mut self.buffers);
+        if let Ok(mut pool) = self.pool.lock() {
+            pool.push(buffers);
+        }
+    }
 }
 
 impl ProgramRetention {
@@ -404,6 +435,13 @@ impl ProgramRetention {
             builds: 0,
         };
         store.buffers = allocate_store(&device, &capacity);
+        let job_inputs = passes
+            .iter()
+            .flat_map(reflected_names)
+            // Store buffers and job scratch are `rt_*`; job tables are not,
+            // except the job's lexer source tables.
+            .filter(|name| !name.starts_with("rt_") || name.starts_with("rt_job_"))
+            .collect();
         let this = Arc::new(Self {
             device,
             queue,
@@ -411,6 +449,8 @@ impl ProgramRetention {
             rehash,
             resolve: Mutex::new(None),
             store: Mutex::new(store),
+            job_inputs,
+            snapshot_pool: Arc::new(Mutex::new(Vec::new())),
         });
         this.begin_build()?;
         Ok(this)
@@ -453,6 +493,42 @@ impl ProgramRetention {
 
     /// Exports the current job. `job` names every job table the kernels
     /// read. Retries after growth until the job commits.
+    /// Records copies of the job tables every export kernel reads into
+    /// store-owned buffers, in `encoder` after the job's type check.
+    pub(crate) fn record_job_snapshot(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        live: &BTreeMap<&'static str, JobTable>,
+    ) -> Result<JobSnapshot> {
+        let mut buffers = self.snapshot_pool.lock().unwrap().pop().unwrap_or_default();
+        let mut tables = BTreeMap::new();
+        for (&name, table) in live {
+            if !self.job_inputs.contains(name) {
+                continue;
+            }
+            if table.offset % 4 != 0 || table.size % 4 != 0 {
+                bail!("program retention input {name} is not word aligned ({} + {})", table.offset, table.size);
+            }
+            if !table.buffer.usage().contains(wgpu::BufferUsages::COPY_SRC) {
+                bail!("program retention input {name} cannot be copied");
+            }
+            let fits = buffers.get(name).is_some_and(|b: &wgpu::Buffer| b.size() >= table.size);
+            if !fits {
+                let size = table.size.max(16).next_power_of_two();
+                buffers.insert(name, self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("program_retention.snapshot.{name}")),
+                    size,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            }
+            let buffer = buffers[name].clone();
+            encoder.copy_buffer_to_buffer(&table.buffer, table.offset, &buffer, 0, table.size);
+            tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
+        }
+        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone() })
+    }
+
     pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
         let result = self.export_job_attempts(job);
         if result.is_err() {
