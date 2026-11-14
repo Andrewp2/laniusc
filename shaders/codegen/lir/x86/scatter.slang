@@ -7,6 +7,7 @@ import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import gpu_index;
+import codegen.lir.x86.aggregate_facts;
 import hir_records;
 
 struct Params
@@ -33,6 +34,7 @@ StructuredBuffer<uint> semantic_lir_call_arg_count_by_hir;
 StructuredBuffer<SemanticLirCallArg> semantic_lir_call_args;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
+StructuredBuffer<uint> x86_aggregate_facts;
 StructuredBuffer<uint> semantic_lir_string_total;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
@@ -779,7 +781,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 element.word_offset = word - word % value_element.word_count;
             }
         }
-        for (uint element_i = 0u; !repeat && element_i < args.b; element_i += 1u)
+        // A dense array's word `word` is in element word / width, the only
+        // element covering it; the scan below would find the same one.
+        bool dense = !repeat &&
+            x86_dense_aggregate(x86_aggregate_facts, semantic_row, args.b);
+        if (dense)
+        {
+            uint width = semantic_lir_aggregate_elements[args.a].word_count;
+            if (word / width < args.b)
+            {
+                element = semantic_lir_aggregate_elements[args.a + word / width];
+                enum_padding = false;
+            }
+        }
+        for (uint element_i = 0u; !repeat && !dense && element_i < args.b; element_i += 1u)
         {
             uint element_row = args.a + element_i;
             if (element_row < args.a || element_row >= element_total)

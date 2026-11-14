@@ -13,6 +13,7 @@ import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.runtime_abi;
 import gpu_index;
+import codegen.lir.x86.aggregate_facts;
 
 struct Params
 {
@@ -35,6 +36,7 @@ StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_lir_aggregate_element_total;
 StructuredBuffer<SemanticLirAggregateElement>
     semantic_lir_aggregate_elements;
+StructuredBuffer<uint> x86_aggregate_facts;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> x86_live_by_semantic;
@@ -257,13 +259,15 @@ uint aggregate_copy_word_count(uint row, uint total, uint function_total)
         ? max(core.value_word_count, value_words) : 0u;
 }
 
-uint aggregate_new_word_count(OptIrNodeCore core,
+uint aggregate_new_word_count(uint row, OptIrNodeCore core,
                               OptIrNodeOperands operands)
 {
     uint words = 0u;
     uint element_total = min(gParams.aggregate_capacity,
         semantic_lir_aggregate_element_total[0u]);
-    for (uint element = 0u; element < operands.b; element += 1u)
+    if (x86_dense_aggregate(x86_aggregate_facts, row, operands.b))
+        words = operands.b * semantic_lir_aggregate_elements[operands.a].word_count;
+    else for (uint element = 0u; element < operands.b; element += 1u)
     {
         uint element_row = operands.a + element;
         if (element_row >= element_total) break;
@@ -291,7 +295,7 @@ uint spill_word_count(uint row, uint total, uint function_total)
         return words == 0u ? 0u : 1u + words;
     }
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
-        return 1u + aggregate_new_word_count(core, operands);
+        return 1u + aggregate_new_word_count(row, core, operands);
     if (op == SEMANTIC_LIR_OP_AGGREGATE_COPY)
         return 1u + core.value_word_count;
     if (core.type_id == SEMANTIC_LIR_TY_STRING && produces_scalar_value(op))

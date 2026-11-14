@@ -4930,6 +4930,16 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
+    let x86_aggregate_facts = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.aggregate_facts",
+            ResourceDomain::SemanticInstructions,
+            // See lir/x86/aggregate_facts.slang.
+            LoweringCapacities::bytes::<u32>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
     let x86_liveness_walk = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
             "lir.x86.liveness_walk",
@@ -8313,6 +8323,7 @@ fn lowering_compiler_graph_builder(
                     x86_decl_analysis_by_token.unwrap(),
                 ),
                 PassAccess::write("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
+                PassAccess::write("x86_aggregate_facts", x86_aggregate_facts.unwrap()),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -8360,6 +8371,27 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
+            name: "lir.x86.optimize.elements",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::AggregateElements,
+            accesses: vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read(
+                    "semantic_lir_aggregate_element_total",
+                    semantic_aggregate_element_total,
+                ),
+                PassAccess::read(
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements,
+                ),
+                PassAccess::read(
+                    "x86_liveness_dependencies",
+                    x86_liveness_dependencies.unwrap(),
+                ),
+                PassAccess::read_write("x86_aggregate_facts", x86_aggregate_facts.unwrap()),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
             name: "lir.x86.optimize.close",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
@@ -8386,6 +8418,40 @@ fn lowering_compiler_graph_builder(
                 ),
                 PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
                 // Each lane reads back only the records it wrote in this pass.
+                PassAccess::write("x86_liveness_walk", x86_liveness_walk.unwrap()),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
+            name: "lir.x86.optimize.element_liveness",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::AggregateElements,
+            accesses: vec![
+                PassAccess::read("opt_ir_block_total", opt_block_total),
+                PassAccess::read("opt_ir_control", opt_control),
+                PassAccess::read("opt_ir_reachable", opt_reachable),
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read(
+                    "semantic_lir_aggregate_element_total",
+                    semantic_aggregate_element_total,
+                ),
+                PassAccess::read("semantic_lir_call_args", semantic_call_args),
+                PassAccess::read(
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements,
+                ),
+                PassAccess::read(
+                    "x86_liveness_dependencies",
+                    x86_liveness_dependencies.unwrap(),
+                ),
+                PassAccess::read_write(
+                    "x86_last_use_by_semantic",
+                    x86_last_use_by_semantic.unwrap(),
+                ),
+                PassAccess::read_write("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                // A lane walking a claimed element reads back only the
+                // records it wrote.
                 PassAccess::write("x86_liveness_walk", x86_liveness_walk.unwrap()),
             ],
         })?;
@@ -8436,6 +8502,7 @@ fn lowering_compiler_graph_builder(
                     "semantic_lir_aggregate_elements",
                     semantic_aggregate_elements,
                 ),
+                PassAccess::read("x86_aggregate_facts", x86_aggregate_facts.unwrap()),
                 PassAccess::read("semantic_lir_function_total", semantic_function_total),
                 PassAccess::read("semantic_lir_functions", semantic_functions),
                 PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
@@ -8879,6 +8946,10 @@ fn lowering_compiler_graph_builder(
                 "semantic_lir_aggregate_elements",
                 semantic_aggregate_elements,
             ),
+            PassAccess::read(
+                "x86_aggregate_facts",
+                x86_aggregate_facts.expect("x86 aggregate fact resource"),
+            ),
             PassAccess::write("target_lir_count", target_counts),
             PassAccess::read_write("lowering_status", lowering_status),
         ],
@@ -8948,6 +9019,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read(
                 "semantic_lir_aggregate_elements",
                 semantic_aggregate_elements,
+            ),
+            PassAccess::read(
+                "x86_aggregate_facts",
+                x86_aggregate_facts.expect("x86 aggregate fact resource"),
             ),
             PassAccess::read("semantic_lir_string_total", semantic_string_total),
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
@@ -12240,7 +12315,15 @@ mod tests {
                 "lir.x86.optimize.dependencies",
                 "codegen/lir/x86/optimize_dependencies",
             ),
+            (
+                "lir.x86.optimize.elements",
+                "codegen/lir/x86/optimize_elements",
+            ),
             ("lir.x86.optimize.close", "codegen/lir/x86/optimize_close"),
+            (
+                "lir.x86.optimize.element_liveness",
+                "codegen/lir/x86/optimize_element_liveness",
+            ),
             ("lir.x86.if_convert", "codegen/lir/x86/if_convert"),
             (
                 "lir.x86.allocation.words",

@@ -25,6 +25,52 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_reads_every_element_of_wide_array_literals() {
+    // Wide literals take the per-element liveness pass and the dense element
+    // index (lir/x86/optimize_element_liveness, lir/x86/aggregate_facts).
+    // Negative, computed and call elements must stay live, and each element
+    // of a two-word struct array must land in its own words.
+    const WORDS: i32 = 1500;
+    const PAIRS: i32 = 300;
+    let word = |i: i32| match i % 5 {
+        0 => (format!("-{i}"), -i),
+        1 => (format!("base + {i}"), 3 + i),
+        2 => (format!("twice({i})"), 2 * i),
+        _ => (i.to_string(), i),
+    };
+    let words = (0..WORDS).map(|i| word(i).0).collect::<Vec<_>>().join(", ");
+    let pairs = (0..PAIRS)
+        .map(|i| format!("Pair {{ left: {i}, right: -{i} - base }}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let total = (0..WORDS).map(|i| word(i).1).sum::<i32>() +
+        (0..PAIRS).map(|i| 3 * i - i - 1).sum::<i32>();
+    let source = format!(
+        r#"
+struct Pair {{ left: i32, right: i32 }}
+
+fn twice(value: i32) -> i32 {{ return value * 2; }}
+
+fn words(base: i32) -> [i32; {WORDS}] {{ return [{words}]; }}
+
+fn pairs(base: i32) -> [Pair; {PAIRS}] {{ return [{pairs}]; }}
+
+fn main() -> i32 {{
+    let w: [i32; {WORDS}] = words(3);
+    let p: [Pair; {PAIRS}] = pairs(1);
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < {WORDS}) {{ total = total + w[i]; i = i + 1; }}
+    let j: i32 = 0;
+    while (j < {PAIRS}) {{ total = total + p[j].left * 3 + p[j].right; j = j + 1; }}
+    return total % 251;
+}}
+"#
+    );
+    assert_source_exit("wide_array_literals", &source, total % 251);
+}
+
+#[test]
 fn x86_branches_and_selects_on_comparisons_of_two_literals() {
     // Both operands are immediate candidates. The right one must stay the
     // immediate, as for an unfused compare; swapping left the materialized

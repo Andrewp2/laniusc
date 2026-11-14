@@ -1,5 +1,6 @@
 // Exact decimal-to-binary32/binary64 conversion using u32 arithmetic only.
-// Simple Decimal Conversion is adapted from Rust core::num::dec2flt's
+// The Eisel-Lemire fast path follows Rust core::num::dec2flt's lemire.rs;
+// Simple Decimal Conversion, the exact fallback, is adapted from its
 // decimal_seq.rs and slow.rs; see third_party/rust-dec2flt/NOTICE.md.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
@@ -9,6 +10,7 @@
 import integer_words;
 import primitive_types;
 import float_decimal_tables;
+import float_decimal_pow5;
 
 public static const uint FLOAT_DECIMAL_WORKSPACE_WORDS = 768u;
 public static const uint FLOAT_DECIMAL_OK = 0u;
@@ -316,6 +318,172 @@ bool float_decimal_round(FloatDecimalState state,
     return true;
 }
 
+// 32 x 32 -> 64-bit product as (low32, high32).
+uint2 float_decimal_multiply32(uint a, uint b)
+{
+    uint a0 = a & 0xffffu;
+    uint a1 = a >> 16u;
+    uint b0 = b & 0xffffu;
+    uint b1 = b >> 16u;
+    uint p00 = a0 * b0;
+    uint p01 = a0 * b1;
+    uint p10 = a1 * b0;
+    uint middle = (p00 >> 16u) + (p01 & 0xffffu) + (p10 & 0xffffu);
+    return uint2((p00 & 0xffffu) | (middle << 16u),
+        a1 * b1 + (p01 >> 16u) + (p10 >> 16u) + (middle >> 16u));
+}
+
+// 64 x 64 -> 128-bit product as its low and high 64 bits.
+void float_decimal_multiply64(uint2 a, uint2 b, out uint2 low, out uint2 high)
+{
+    uint2 ll = float_decimal_multiply32(a.x, b.x);
+    uint2 lh = float_decimal_multiply32(a.x, b.y);
+    uint2 hl = float_decimal_multiply32(a.y, b.x);
+    uint2 hh = float_decimal_multiply32(a.y, b.y);
+    uint word1 = ll.y + lh.x;
+    uint carry1 = uint(word1 < lh.x);
+    word1 += hl.x;
+    carry1 += uint(word1 < hl.x);
+    uint word2 = hh.x + lh.y;
+    uint carry2 = uint(word2 < lh.y);
+    word2 += hl.y;
+    carry2 += uint(word2 < hl.y);
+    word2 += carry1;
+    carry2 += uint(word2 < carry1);
+    low = uint2(ll.x, word1);
+    high = uint2(word2, hh.y + carry2);
+}
+
+// An Eisel-Lemire result: the biased binary exponent and the fraction bits
+// (with the hidden bit for the smallest normal reached by rounding a
+// subnormal up, which OR-ing the exponent absorbs). power2 -1: undecided.
+struct FloatDecimalLemire
+{
+    uint2 mantissa;
+    int power2;
+};
+
+// Rust dec2flt lemire::compute_float for w * 10^q; w == 0 gives zero.
+// Every decided result is the correctly rounded value; power2 -1 asks for
+// the exact path.
+FloatDecimalLemire float_decimal_lemire(int q, uint2 w, uint scalar)
+{
+    bool f32 = scalar == SCALAR_F32;
+    uint fraction_bits = f32 ? 23u : 52u;
+    int minimum_exponent = f32 ? -127 : -1023;
+    int infinite_power = f32 ? 255 : 2047;
+    FloatDecimalLemire result;
+    result.mantissa = uint2(0u, 0u);
+    result.power2 = 0;
+    if (integer_words_zero(w) || q < (f32 ? -65 : -342)) return result;
+    if (q > (f32 ? 38 : 308))
+    {
+        result.power2 = infinite_power;
+        return result;
+    }
+    uint lz = w.y != 0u ? 31u - firstbithigh(w.y) : 63u - firstbithigh(w.x);
+    w = integer_words_shift_left(w, lz);
+    uint index = uint(q + int(FLOAT_DECIMAL_POW5_MIN)) * 4u;
+    uint2 high5 = uint2(FLOAT_DECIMAL_POW5[index], FLOAT_DECIMAL_POW5[index + 1u]);
+    uint2 low5 = uint2(FLOAT_DECIMAL_POW5[index + 2u], FLOAT_DECIMAL_POW5[index + 3u]);
+    uint2 low;
+    uint2 high;
+    float_decimal_multiply64(w, high5, low, high);
+    // Keep fraction bits + hidden bit + rounding bit + a possible leading
+    // zero; only all-ones below them needs the lower half of 5^q.
+    uint2 mask = integer_words_mask(64u - (fraction_bits + 3u));
+    if (all((high & mask) == mask))
+    {
+        uint2 ignored;
+        uint2 second_high;
+        float_decimal_multiply64(w, low5, ignored, second_high);
+        low = integer_words_add(low, second_high);
+        if (integer_words_less(low, second_high))
+            high = integer_words_add(high, uint2(1u, 0u));
+    }
+    // The 128-bit approximation may be one short of a carry into the
+    // rounding bit; outside these exponents that cannot be ruled out.
+    if (all(low == uint2(0xffffffffu, 0xffffffffu)) && (q < -27 || q > 55))
+    {
+        result.power2 = -1;
+        return result;
+    }
+    uint upperbit = high.y >> 31u;
+    uint shift = upperbit + 64u - fraction_bits - 3u;
+    uint2 mantissa = integer_words_shift_right(high, shift);
+    int power2 = (((q * (152170 + 65536)) >> 16) + 63) + int(upperbit) - int(lz) -
+        minimum_exponent;
+    uint2 hidden = integer_words_shift_left(uint2(1u, 0u), fraction_bits);
+    if (power2 <= 0)
+    {
+        if (-power2 + 1 >= 64) return result;
+        mantissa = integer_words_shift_right(mantissa, uint(-power2 + 1));
+        mantissa = integer_words_add(mantissa, uint2(mantissa.x & 1u, 0u));
+        mantissa = integer_words_shift_right(mantissa, 1u);
+        result.mantissa = mantissa;
+        result.power2 = integer_words_less(mantissa, hidden) ? 0 : 1;
+        return result;
+    }
+    // An exact tie (5^q fits 64 bits, nothing below the rounding bit)
+    // rounds to even instead of up.
+    if (low.y == 0u && low.x <= 1u && q >= (f32 ? -17 : -4) && q <= (f32 ? 10 : 23) &&
+        (mantissa.x & 3u) == 1u &&
+        all(integer_words_shift_left(mantissa, shift) == high))
+        mantissa.x &= ~1u;
+    mantissa = integer_words_add(mantissa, uint2(mantissa.x & 1u, 0u));
+    mantissa = integer_words_shift_right(mantissa, 1u);
+    if (!integer_words_less(mantissa, integer_words_shift_left(hidden, 1u)))
+    {
+        mantissa = hidden;
+        power2 += 1;
+    }
+    mantissa &= ~hidden;
+    if (power2 >= infinite_power)
+    {
+        result.power2 = infinite_power;
+        return result;
+    }
+    result.mantissa = mantissa;
+    result.power2 = power2;
+    return result;
+}
+
+// Converts with Eisel-Lemire from the first 19 significant digits, as Rust
+// dec2flt does before its exact fallback. With more digits the value lies
+// in [w, w + 1) * 10^q, so a result both ends agree on is the rounded value.
+// Returns false when the exact path must decide.
+bool float_decimal_lemire_bits(FloatDecimalState state,
+    RWStructuredBuffer<uint> workspace, uint base, uint scalar,
+    out uint2 bits, out uint status)
+{
+    bits = uint2(0u, 0u);
+    status = FLOAT_DECIMAL_OK;
+    uint digits = min(state.count, 19u);
+    uint2 w = uint2(0u, 0u);
+    for (uint i = 0u; i < digits; i += 1u)
+        w = integer_words_add(integer_words_multiply(w, uint2(10u, 0u)),
+            uint2(workspace[base + i], 0u));
+    int q = state.point - int(digits);
+    FloatDecimalLemire value = float_decimal_lemire(q, w, scalar);
+    if (value.power2 < 0) return false;
+    if (state.count > 19u || state.truncated)
+    {
+        FloatDecimalLemire above = float_decimal_lemire(q,
+            integer_words_add(w, uint2(1u, 0u)), scalar);
+        if (above.power2 != value.power2 || any(above.mantissa != value.mantissa))
+            return false;
+    }
+    if (value.power2 == (scalar == SCALAR_F32 ? 255 : 2047))
+    {
+        status = FLOAT_DECIMAL_OVERFLOW;
+        return true;
+    }
+    bits = scalar == SCALAR_F32
+        ? uint2(value.mantissa.x | (uint(value.power2) << 23u), 0u)
+        : uint2(value.mantissa.x, value.mantissa.y | (uint(value.power2) << 20u));
+    return true;
+}
+
 uint float_decimal_convert(inout FloatDecimalState state,
     RWStructuredBuffer<uint> workspace, uint base, uint scalar, out uint2 bits)
 {
@@ -327,6 +495,12 @@ uint float_decimal_convert(inout FloatDecimalState state,
     int overflow_point = scalar == SCALAR_F32 ? 40 : 310;
     if (state.count == 0u || state.point < minimum_point) return FLOAT_DECIMAL_OK;
     if (state.point >= overflow_point) return FLOAT_DECIMAL_OVERFLOW;
+    // Eisel-Lemire decides almost every literal with two 64-bit products;
+    // the decimal shifts below cost up to hundreds of digit passes and run
+    // only when it cannot.
+    uint fast_status;
+    if (float_decimal_lemire_bits(state, workspace, base, scalar, bits, fast_status))
+        return fast_status;
     uint fraction_bits = scalar == SCALAR_F32 ? 23u : 52u;
     int minimum_exponent = scalar == SCALAR_F32 ? -126 : -1022;
     int infinite_power = scalar == SCALAR_F32 ? 255 : 2047;
