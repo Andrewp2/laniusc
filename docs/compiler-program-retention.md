@@ -7,8 +7,9 @@ generic parameters, symbolic and closed terms, binder maps, signatures,
 nominal schemas, call uses and generic body segments into the store. The
 export runs at the end of the job, before the job's workspace can be reused.
 The acceptance probe reads only the store. Discovery, projection and native
-instance lowering are not connected yet; the missing exports below prevent
-this prototype from supplying those stages correctly.
+instance lowering are not connected yet. General compiler integration stays
+off until each of them exists. The inputs projection still needs are listed
+under "Not exported completely".
 
 | Part | Location |
 | --- | --- |
@@ -34,12 +35,32 @@ this prototype from supplying those stages correctly.
   (`RETAINED_PROGRAM_INPUTS`) alive until the graph's end. It uses the same
   consumer-contract mechanism as the generic-call readback
   (`retain_resources_imported_by`).
+- When the job's type check has been recorded, and before the semantic
+  interface and lowering are recorded, `ProgramRetention::record_job_snapshot`
+  copies every job table an export kernel binds into store-owned buffers. The
+  tables are the parser's compact HIR views, the retained type-check columns,
+  the call-environment copy and the lexer's tokens, source bytes and file
+  starts. Each table gets its own buffer, taken from a pool that finished jobs
+  return to. The copies freeze the frontend's semantic inputs. Lowering may
+  reuse type-check arenas, and two tables that share one arena cannot be
+  bound read-write (`canonical_api` declares `ct_*` writable) and read-only in
+  one dispatch.
 - `finish_checked_source_pack_pipeline` calls `ProgramRetention::export_job`
-  after the type-check status is accepted and all lowering-output retry points
-  have passed. Only interface jobs export, and an export checks that its
+  on that snapshot after the type-check status is accepted and all
+  lowering-output retry points have passed. An attempt abandoned for an
+  output retry drops its snapshot and exports nothing; the retried job takes
+  its own. Only interface jobs export, and an export checks that its
   workspace actually retained the input lifetimes.
-  The export's inputs are the parser's compact HIR views and the resident
-  type-check graph's tables, bound by name.
+  `physical_gpu_retention_exports_once_after_native_output_retry` covers a
+  warm native export and a forced capacity retry, for an executable and for
+  an object.
+- With a store attached, body specialization selects no generic body in
+  place (`closure.record_inplace_select` is skipped). The late semantic
+  artifact passes write `semantic_*_by_hir` after specialization, so a
+  snapshot taken earlier would miss them, and a body specialized in place
+  would leave concrete and symbolic facts mixed. Every retained generic body
+  is therefore the template: `solo<V>`, called only at i32 in its own job,
+  instantiates at bool from the store after the frontend is released.
 - A job with a body-specialization split re-runs the substitution clear
   after its main inference, which resets `call_env_ct`. With a store
   attached, the type checker first copies `call_env_ct` into a
@@ -70,10 +91,13 @@ Declaration namespaces and their local words:
   member, or `0x40000000 | token` otherwise. A dependency call names a
   callable with the same triple, so a caller and a definition in different
   jobs meet at one `DeclId`.
-- **`NOMINAL` (2) and `TRAIT` (3).** The canonical store's nominal identity:
-  the persisted interface index, or `CT_PRIVATE_LOCAL_BIT | decl id`.
+- **`NOMINAL` (2).** Structs, enums and traits. The canonical store's nominal
+  identity: the persisted interface index, or `CT_PRIVATE_LOCAL_BIT | decl
+  id`. Namespace 3 is unused.
 - **`IMPL` (4).** The impl's HIR row, which the declaring job's
   `(library, unit)` qualifies.
+- **`VALUE` (5).** A constant: its public interface index, or
+  `0x40000000 | first token`.
 
 A parameter's ordinal counts the declarations of its kind in its owner. A
 trait's implicit `Self` is `(trait, TYPE, 0xffff)`. A parameter keeps its
@@ -125,7 +149,9 @@ Directory entry, `rt_dir`, 4 × uint4:
 | d3 | `(use count, file id, committed-job ordinal, INCOMPLETE flag)` |
 
 Declaration kinds are `FREE_FN 1`, `METHOD 2`, `REQUIRED_MEMBER 3`,
-`EXTERN_FN 4`, `STRUCT 5`, `ENUM 6`, `IMPL 7` and `TRAIT 8`.
+`EXTERN_FN 4`, `STRUCT 5`, `ENUM 6`, `IMPL 7`, `TRAIT 8` and `CONST 9`.
+`d1.w` is the parameter count of a callable, the field count of a struct,
+the variant count of an enum and 1 for an impl.
 `rt_decl_def[DeclId]` holds the committed entry plus one. A second
 committed definition of the same declaration is counted in
 `RT_C_CONFLICTS`.
@@ -134,23 +160,37 @@ committed definition of the same declaration is counted in
   type parameters come before the method's, then the impl's constant
   parameters before the method's. Unused parameters are included. A trait
   and its required members end the type domain with `Self`.
-- **Signatures, `rt_sigs`.** The result term, then one term per parameter.
-- **Schema, `rt_schema`.** One uint4 per struct field or enum variant
-  payload: `(nominal DeclId, FIELD 1 / PAYLOAD 2 | ordinal << 8, variant
-  ordinal, declared term)`.
+- **Signatures, `rt_sigs`.** For a callable, the result term, then one term
+  per parameter. For an impl, the self type, then the trait term or
+  `RT_NONE`. For a constant, its type term.
+- **Schema, `rt_schema`.** One uint4 per record:
+  - `FIELD 1`: `(struct, FIELD | ordinal << 8, 0, declared term)`.
+  - `VARIANT 3`: `(enum, VARIANT | ordinal << 8, payload count, first
+    payload record relative to the block)`. Every variant has one,
+    including a payloadless variant. An enum's variants come first.
+  - `PAYLOAD 2`: `(enum, PAYLOAD | ordinal << 8, variant ordinal, declared
+    term)`, after the variants.
+  - `CONST 4`: `(constant, CONST | present << 8, value lo, value hi)`.
 - **Uses, `rt_uses`.** 3 × uint4, one per call row inside a function:
-  - u0 `(owner DeclId, call row relative to the owner, form | adjustment <<
+  - u0 `(owner DeclId, use row relative to the owner, form | adjustment <<
     8 | deref count << 16, callee DeclId or 0)`. Forms are `DIRECT 1`,
-    `METHOD 2`, `CONSTRUCTOR 4`, `INTRINSIC 5`, `HOST 6` and
-    `UNRESOLVED 7`. A local callee is its declaration key, a dependency
-    callee its `(library, unit, CALLABLE, local)` triple, and an enum
-    constructor its enum's `DeclId`.
+    `METHOD 2`, `RECORD 3` (a struct literal; the callee is the struct),
+    `CONSTRUCTOR 4` (a payload constructor call or a variant value, including
+    an imported unit variant), `INTRINSIC 5`, `HOST 6`, `UNRESOLVED 7` and
+    `FN_REF 8` (a function named as a value). A local callee is its
+    declaration key, a dependency callee its `(library, unit, CALLABLE,
+    local)` triple, and a constructor its enum's `DeclId`. Use rows are call
+    rows, struct literals, and path or name rows outside callee position that
+    name a variant or a function. A use without a call has no environment
+    and records its row's term as its result.
   - u1 `(environment, result, matched receiver, receiver parameter)`. The
     environment is the call's value environment with owner 0 re-keyed to the
     callee. A nonzero owner must already match the callee; a mismatch raises
     an invariant and marks the containing entry incomplete. Its arguments are terms in the caller's scope: they must
     be owned by the caller's binder chain, and a consumer substitutes the
-    caller's environment into them before binding the callee's slots.
+    caller's environment into them before binding the callee's slots. A
+    method's receiver parameter term is checked against the callee's binder
+    chain (`RT_INV_RECEIVER_SCOPE`).
   - u2 `(variant ordinal or intrinsic tag, a dependency callee's generic
     requirements, file id, callee token relative to the owner)`.
 
@@ -160,24 +200,55 @@ Discovery records reach body payloads only through a segment index and the
 ranges a segment names. Bodies can therefore be paged out and in without
 touching discovery records.
 
-A segment, `rt_segments`, is 4 × uint4:
+A segment, `rt_segments`, is 6 × uint4:
 
 | Word | Contents |
 | --- | --- |
 | s0 | `(DeclId, first row, row count, first side record)` |
 | s1 | lengths of side tables 0–3 |
-| s2 | lengths of side tables 4–6, the token span |
+| s2 | lengths of side tables 4–6, token count |
 | s3 | statistics `(untyped, foreign, ownership, untranslated)` |
+| s4 | `(file id, file-relative byte start, text length, first token record)` |
+| s5 | `(first text word in rt_seg_bytes, 0, 0, 0)` |
 
-A row, `rt_seg_rows`, is 5 × uint4:
+The body text is the source from the body's first token to its last
+token's end, copied byte-parallel into `rt_seg_bytes` (steps 12b, 12c).
+Its token records, `rt_seg_tokens`, are one uint4 per token: `(kind, byte
+start relative to the text, length, FNV-1a hash of the spelling)`.
+
+A row, `rt_seg_rows`, is 7 × uint4:
 
 | Word | Contents |
 | --- | --- |
 | r0 | `(kind, parent, token start, token end)` |
 | r1 | `(first child, next sibling, subtree end, file id)` |
-| r2 | the payload, with the same column classes as `closure/09_exec_rows.slang` |
-| r3 | `(type term, use index within the body or RT_NONE, 0, TYPED 1 \| FOREIGN 2)` |
+| r2 | the payload, each word encoded by its class (`row_classes.slang`, which mirrors `closure/09_exec_rows.slang`) |
+| r3 | `(term, use index within the body or RT_NONE, role, TYPED 1 \| FOREIGN 2 \| MISSING 4)` |
 | r4 | `(return-type row, constant-value row, array-element start, array-element count)` |
+| r5 | `(binding kind, binding value, binding aux, member field ordinal)` |
+| r6 | `(argument mode \| iterable kind << 8, constant flags, value lo, value hi)` |
+
+Row terms and roles:
+
+- A TYPE row's term is its checked type (`type_row_term`). An array length
+  row in type position (`N` in `[i32; N]`) takes its array term's length
+  operand.
+- Expression rows and let/const statements take their checked expression
+  reference. Other rows (function, parameter, block and the remaining
+  statements) carry the per-row scalar cache in that column, which is not a
+  type, so their term is `RT_NONE`.
+- Roles are `STRUCTURAL 0`, `VALUE 1`, `TYPE 2` and `CALLEE 3`. A callee row
+  is marked by its call (step 01b), because its HIR parent need not be the
+  call. A VALUE or TYPE row without a resolved term is `MISSING`, is
+  counted `untyped` and marks its entry `INCOMPLETE`.
+- Binding kinds are `NONE 0`, `LOCAL 1` (value: the binder's relative
+  token), `DECL 2` (value: `DeclId`), `VARIANT 3` (value: the enum's
+  `DeclId`, aux: the ordinal), `PARAM 4` (value: the parameter leaf) and
+  `FOREIGN 5`. A receiver `&self` is bound to its parameter row's name
+  token, which is the `&`.
+- Constant flags are `CONCRETE 0x80000000`, `VARIANT 0x40000000` and
+  `SYMBOLIC 0x20000000`. A symbolic value's lo word is the constant
+  parameter's leaf.
 
 Side records, `rt_seg_side`, are 2 × uint4 per side row. The seven tables
 come in order: call arguments, fields, match arms, match payloads, array
@@ -246,7 +317,7 @@ All semantic work runs on the GPU. The host allocates buffers, clears job
 scratch, submits one command buffer per attempt and reads the 96 status
 words and 256 scratch words.
 
-The export records 177 dispatches per attempt: 21 kernels, including 79
+The export records 180 dispatches per attempt: 24 kernels, including 79
 translation/advance pairs and the three scan kernels. Empty translation
 heights dispatch no translation workgroups, but their advance dispatches
 still run. This boundary has not yet been timed on settings.
@@ -255,6 +326,7 @@ still run. This boundary has not yet been timed on settings.
 | --- | --- | --- |
 | 00, 04, 07, 09, 16 | 1 lane | transaction, plans and reservations |
 | 01 | one per generic parameter | `ParamId` interning and the job's parameter map |
+| 01b | one per HIR row, token and variant | declaration-token map, callee marks |
 | 02 | one per HIR row | `DeclId` interning, trait `Self`, scan flags, token spans |
 | 03, 05 | one per canonical record | height buckets |
 | 06 | one per record of the current height, 79 indirect rounds | children are always translated first |
@@ -262,6 +334,7 @@ still run. This boundary has not yet been timed on settings.
 | 10 | one per declaration | directory, binders, signature, schema, segment |
 | 11 | one per body row | segment rows |
 | 12 | one per side index × 7 tables | side records |
+| 12b, 12c | one per job token | clear, then copy, body text; token records |
 | 13 | one per parameter, field and variant payload | signatures and schema |
 | 14 | one per call | use records |
 | 15 | one per declaration | statistics |
@@ -277,25 +350,19 @@ Unresolved references return `RT_SUBST_UNRESOLVED`; failed projections retain
 `RT_SUBST_FIT_FAILED`. Neither can compare as a successfully substituted type.
 This is a probe implementation: it visits shared terms as a tree without a
 memo. Production instance substitution still needs bounded work over the DAG.
+That engine is separate work with its own kernels. It consumes the term
+identities and kinds above, which this export keeps stable; a change to
+them has to be coordinated with it.
+
+The acceptance probe calls `rt_subst` from three sites: the signature with
+the rejection terms, the per-row checks (term, parameter binding, symbolic
+constant, member receiver, member field) and the uses. Its fully inlined
+size is 21957 instructions.
 
 ## Not exported completely
 
 This boundary does not yet carry:
 
-- **Resolved bindings and checked body facts.** Local/parameter declarations,
-  member field ordinals, constant values/presence, argument modes and iterable
-  kinds must be retained from the semantic columns. Token text is insufficient
-  to reconstruct these checks. Type-annotation rows also need their checked
-  type terms, and missing required terms must mark the entry incomplete.
-- **Complete declaration and use records.** Enum variants without payloads,
-  const/static declarations, impl self types and trait headers, and use
-  environments on struct-literal and path rows are not completely represented.
-
-- **Token text and source locations.** Body tokens are relative indices
-  only, and no token byte table or original body token base is retained.
-  File IDs are job-local. Export must retain the source mapping before the
-  frontend is released; projection cannot recover it from these segments.
-  Identifiers and diagnostics need these inputs.
 - **Expression-parent, expression-root and nearest-loop columns.** The
   receiver must rebuild them from the relative tree.
 - **Aggregate, native-width and ABI caches** (`type_native_word_count`,
@@ -314,19 +381,19 @@ This boundary does not yet carry:
 - **Constant fits.** `CC_CAST` terms are retained. Retained substitution
   does not yet evaluate fits. When it does, it must return the failing
   projection from the substitution itself.
+- **`for` statement rows** have no term. The producer publishes no checked
+  reference for them; the iterable kind and the binder's let-like rows are
+  retained.
+- **File ids** are job-local. Token kinds, byte offsets and spellings are
+  retained per body, so diagnostics and identifiers need no job tables.
+
+Known producer defect: `semantic/artifact/01_expression_refs.slang`
+declares `HIR_STMT_CONST = 2u`, but the parser's const statement form is 4
+and 2 is `RETURN`. That pass therefore projects a return statement's payload
+word as a name token and does not project const statements. The export
+uses the parser's forms and does not read return statements' references.
 
 ## Dependencies for discovery and projection
-
-- Attaching the store to native compilation is not yet validated. A focused
-  x86 source-pack probe found incompatible read/write bindings of an aliased
-  type-check arena in the export, before an output-capacity retry could be
-  tested. Interface-only tests do not cover this lifetime boundary. The
-  retained snapshot must survive lowering, and a native output retry must
-  commit its unit exactly once.
-
-- The frontend export must preserve symbolic columns before in-place body
-  specialization. Copying only `call_env_ct` leaves the other columns with
-  potentially concrete types. This producer fix remains outstanding.
 
 - A row's type term is whatever the checker publishes for that row. A
   contextual literal inside a generic body (the `1` in `a + 1` with
@@ -335,7 +402,14 @@ This boundary does not yet carry:
   Retention then exports it like any other term, and instantiation resolves
   the literal's type, range and payload per instance before operand
   validation. The literal's kind, magnitude words and float words are
-  already retained, unchanged, in the row payload.
+  already retained, unchanged, in the row payload. The producer (8546fe2d1,
+  2d9330575) publishes a symbolic literal context only over a parameter of
+  the literal's own enclosing binder chain. Projection must keep its
+  realization rule: in a pointer context, integer literals and
+  literal-derived operator results stay i32 (`table_rows`, with
+  `inherited_expression_type`), as bound-body `00_init` does, so the
+  ordinary null and offset rules validate `p == 0`, `p + 8`, `p += 8` and
+  `p + (4 * 2)` with their integer widths.
 
 - Discovery needs the trait solver's implementation evidence as store
   records (`IMPL` declarations, their trait arguments and the receiver
@@ -343,5 +417,7 @@ This boundary does not yet carry:
 - A dependency-signature slot leaf has to map to the dependency's committed
   binder entry. The dependency interface's slot order has to match the
   composed binder order above (impl before method per domain, then `Self`).
-- Projection needs the token-text and layout tables listed above, or an
-  equivalent GPU-side recomputation from the segment.
+- Physical projection into the existing lowering columns needs the layout
+  caches, expression-parent/root and loop columns and lowering facts listed
+  above, recomputed on the GPU from the segment. Token text and spellings
+  are retained.

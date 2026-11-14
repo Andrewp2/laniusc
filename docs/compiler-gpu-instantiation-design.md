@@ -281,7 +281,11 @@ types.
 - **Retention.** A retained template exports the symbolic context words, or
   equivalently the literal rows' parameter references with the HIR literal
   words and status. A retained use must apply the `06c` rules under the
-  caller's environment. This export is not implemented.
+  caller's environment. Program retention exports each literal row's
+  checked reference (the 01e symbolic context, a parameter leaf of the
+  body's own chain) with the literal's payload words
+  (`docs/compiler-program-retention.md`). Applying the rules under a
+  caller's environment is projection work and is not implemented.
 - **Not covered.** A table with `IT_COUNT_FLAGS` set skips `06c`, and so do
   entries whose template is not local. Two aggregates of one class are not
   compared by complete type in these rules. Struct ordering is not
