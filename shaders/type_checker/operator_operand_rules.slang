@@ -99,6 +99,13 @@ public bool operator_assignable_to_int(uint ty)
     return ty == OPR_TY_UNKNOWN || scalar_is_integer(ty);
 }
 
+// The RHS of p += n or p -= n is an integer offset, not the value stored
+// into p. HIR assignment forms 2 and 3 are ADD and SUB (SET is 1).
+public bool operator_pointer_offset_assignment(uint assignment, uint target, uint value)
+{
+    return (assignment == 2u || assignment == 3u) && target == OPR_TY_POINTER && scalar_is_integer(value);
+}
+
 public bool operator_numeric_operand_ok(uint ty)
 {
     return ty == OPR_TY_UNKNOWN || scalar_is_integer(ty) || scalar_is_float(ty);

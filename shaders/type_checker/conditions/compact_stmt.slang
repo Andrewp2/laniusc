@@ -1,5 +1,6 @@
 import primitive_types;
 import type_checker.constant_parameter_slots;
+import type_checker.operator_operand_rules;
 // Validate declaration initializers, assignments, and returns from dense
 // compact HIR. Scalar compatibility is checked here. Aggregate structure stays
 // in the type-instance passes, while this boundary rejects a definite
@@ -276,10 +277,12 @@ void validate_assignment(HirPayload stmt)
     // this store from scalar compatibility checking.
     if (expected_ref_tag == TYPE_REF_SCALAR && known_scalar(expected_ref_payload))
     {
+        if (operator_pointer_offset_assignment(stmt.d, expected_ref_payload, scalar_type(stmt.c))) return;
         validate_pair(expected_ref_payload, scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
         return;
     }
     if (aggregate_decl_ref(target_token)) return;
+    if (operator_pointer_offset_assignment(stmt.d, scalar_type(stmt.b), scalar_type(stmt.c))) return;
     validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), stmt.c, expression_token(stmt.c));
 }
 

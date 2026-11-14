@@ -10,6 +10,16 @@ import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_subst;
 import type_checker.checked_slots;
+import type_checker.type.instances.generic_param_lookup;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_token;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_lookup_state;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_token;
+#include "../type/instances/lexical_parameter_scope.slang"
 StructuredBuffer<uint> compact_hir_expr_parent;
 StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> compact_const_type;
@@ -17,6 +27,16 @@ StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 RWStructuredBuffer<uint> literal_context_type_by_hir;
 RWStructuredBuffer<uint> call_inference_state;
+
+// A field's unresolved declaration parameter can appear during inference.
+// It is not a symbolic context in the caller until substitution places it
+// in the literal's own binder chain. Keep such a literal available to infer
+// the field's concrete argument from its ordinary syntax default.
+uint scoped_symbolic_context(uint literal, uint tag, uint payload)
+{
+    uint context = literal_symbolic_context_of(tag, payload, gParams.n_tokens);
+    return context != 0u && lexical_parameter_reference_in_scope(literal, payload) ? context : 0u;
+}
 
 uint numeric_context(uint2 reference, bool floating)
 {
@@ -41,12 +61,12 @@ uint checked_numeric_peer(uint node, bool floating)
 // The symbolic context (literal_symbolic_context.slang) a peer operand of
 // type-parameter type gives, or 0. A peer that is itself a literal gives
 // none here: its own context is resolved by its own lane.
-uint checked_symbolic_peer(uint node)
+uint checked_symbolic_peer(uint literal, uint node)
 {
     node = argument_context_root(node, active_hir_count(), compact_hir_core, compact_hir_payload);
     if (!valid_hir(node) || compact_hir_core[node].kind == HIR_SEM_KIND_LITERAL_EXPR) return 0u;
-    return literal_symbolic_context_of(call_inference_result_tag[node],
-        call_inference_result_payload[node], gParams.n_tokens);
+    return scoped_symbolic_context(literal, call_inference_result_tag[node],
+        call_inference_result_payload[node]);
 }
 
 uint direct_range_literal_context(uint literal)
@@ -303,7 +323,7 @@ uint checked_literal_context(uint literal, inout uint symbolic)
             uint context = numeric_context(reference, floating);
             if (context != 0u) return context;
             if (symbolic == 0u)
-                symbolic = literal_symbolic_context_of(reference.x, reference.y, gParams.n_tokens);
+                symbolic = scoped_symbolic_context(literal, reference.x, reference.y);
         }
         if (mode == QUERY_OPERAND)
         {
@@ -318,8 +338,8 @@ uint checked_literal_context(uint literal, inout uint symbolic)
                     floating) : 0u;
                 if (context != 0u) return context;
                 if (symbolic == 0u && valid_hir(scrutinee))
-                    symbolic = literal_symbolic_context_of(call_inference_result_tag[scrutinee],
-                        call_inference_result_payload[scrutinee], gParams.n_tokens);
+                    symbolic = scoped_symbolic_context(literal, call_inference_result_tag[scrutinee],
+                        call_inference_result_payload[scrutinee]);
             }
             else if (role == MATCH_ROLE_RESULT)
             {
@@ -374,7 +394,7 @@ uint checked_literal_context(uint literal, inout uint symbolic)
         if (!shift && peer == 0u)
             peer = checked_numeric_peer(value.b == current ? value.c : value.b, floating);
         if (!shift && peer == 0u && symbolic == 0u)
-            symbolic = checked_symbolic_peer(value.b == current ? value.c : value.b);
+            symbolic = checked_symbolic_peer(literal, value.b == current ? value.c : value.b);
         if (comparison) return peer;
         climbed = true; current = parent; query = parent;
     }

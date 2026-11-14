@@ -32,6 +32,7 @@ import hir_records;
 import hir_expr_semantics;
 import gpu_index;
 import type_checker.literal_symbolic_context;
+import type_checker.inherited_expression_type;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -67,30 +68,6 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 uint active_hir_count() { return min(gParams.n_hir_nodes, compact_hir_count[0u]); }
 bool valid_hir(uint node) { return node != INVALID && node < active_hir_count(); }
 
-// Forms whose result type is their operand's type (00_init's
-// inherited_scalar_form).
-bool inherited_form(uint form)
-{
-    return form == HIR_EXPR_NEG || form == HIR_EXPR_ADD ||
-           form == HIR_EXPR_SUB || form == HIR_EXPR_MUL ||
-           form == HIR_EXPR_MOD || form == HIR_EXPR_DIV ||
-           form == HIR_EXPR_BIT_OR || form == HIR_EXPR_BIT_XOR ||
-           form == HIR_EXPR_BIT_AND || form == HIR_EXPR_SHL ||
-           form == HIR_EXPR_SHR;
-}
-
-// Whether `node` is a row whose type is its first operand's (payload.b):
-// forwarding, negation and the inherited binary forms.
-bool inherited_row(uint node)
-{
-    if (!valid_hir(node)) return false;
-    HirCore core = compact_hir_core[node];
-    if (core.kind != HIR_EXPR && core.kind != HIR_BINARY_EXPR && core.kind != HIR_UNARY_EXPR)
-        return false;
-    uint form = compact_hir_payload[node].a;
-    return hir_is_forward_expression(core.kind, form) || inherited_form(form);
-}
-
 // The symbolic context of an unsuffixed numeric literal row, or 0.
 uint symbolic_literal_context(uint node)
 {
@@ -114,15 +91,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_expr_ref_payload_by_hir[node] = literal_context_parameter(context);
         return;
     }
-    if (!inherited_row(node)) return;
-    uint current = node;
-    for (uint step = 0u; step < active_hir_count() && inherited_row(current); step++)
-    {
-        uint operand = compact_hir_payload[current].b;
-        if (!valid_hir(operand) || operand == current) return;
-        current = operand;
-    }
-    if (inherited_row(current)) return;
+    if (!expression_inherits_operand_type(compact_hir_core[node].kind, compact_hir_payload[node].a)) return;
+    uint current = inherited_expression_type_leaf(node, active_hir_count(), compact_hir_core, compact_hir_payload);
+    if (!valid_hir(current)) return;
     context = symbolic_literal_context(current);
     if (context != 0u)
     {

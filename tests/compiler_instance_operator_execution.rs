@@ -347,3 +347,49 @@ fn known_aggregate_and_bool_operands_are_rejected() {
         42,
     );
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn symbolic_literals_preserve_pointer_nulls_and_integer_offsets() {
+    let declarations = "fn zero<T>()->T { return 0; } \
+        fn is_zero<T>(p:T)->bool { return p == 0; } \
+        fn next<T>(p:T)->T { return p + 8; } \
+        fn assign<T>(p:T)->T { p += 8; return p; } \
+        fn nested<T>(p:T)->T { return p - -(4 * 2); } \
+        fn wrap<T>(p:T)->T { return p + (2147483647 + 1); }";
+    let pointer = "let p:ptr = zero<ptr>(); let q:ptr = p + 8; \
+        if (!is_zero<ptr>(p) || next<ptr>(p) != q || assign<ptr>(p) != q || nested<ptr>(p) != q) { return 1; } \
+        let wrapped:ptr = p + -2147483648; if (wrap<ptr>(p) != wrapped) { return 2; }";
+    let integer = "if (zero<i64>() != 0 || !is_zero<i64>(0) || next<i64>(0) != 8 || \
+        assign<i64>(0) != 8 || nested<i64>(0) != 8 || wrap<i64>(0) != 2147483648) { return 3; }";
+    for (index, (first, second)) in [(pointer, integer), (integer, pointer)].into_iter().enumerate() {
+        assert_exit("pointer literal contexts", &format!("instance_literal_pointers_{index}"),
+            &format!("{declarations} fn main()->i32 {{ {first} {second} return 42; }}"), 42);
+    }
+    assert_exit("pointer offset assignment bound in place", "instance_literal_pointer_in_place",
+        "fn move<T>(p:T)->T { p += 8; p -= 4; return p; } fn main()->i32 { let p:ptr=0; let q:ptr=p; q += 8; q -= 4; if (move<ptr>(p)!=q) { return 1; } return 42; }", 42);
+    assert_operand_rejected("nonzero integer is not a null pointer",
+        "fn value<T>()->T { return 8; } fn main()->i32 { let p:ptr=value<ptr>(); return value<i32>(); }",
+        "8;", 1);
+    assert_operand_rejected("pointer comparison requires a null constant",
+        "fn is_one<T>(p:T)->bool { return p == 1; } fn main()->i32 { let p:ptr=0; if (is_one<ptr>(p) || is_one<i32>(1)) { return 1; } return 42; }",
+        "1;", 1);
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn symbolic_literal_contexts_stay_in_the_enclosing_binder() {
+    assert_exit("inferred struct parameters do not escape into main", "instance_literal_inferred_fields",
+        "struct P<T>{x:T} fn main()->i32 { let p=P{x:41}; let q=P{x:2.5}; if (q.x != 2.5) { return 1; } return p.x+1; }", 42);
+    assert_exit("inferred enum payload literal", "instance_literal_inferred_payload",
+        "enum Maybe<T>{Some(T),None} fn main()->i32 { let a=Some(41); return match (a) { Some(v) -> v+1, None -> 0 }; }", 42);
+    assert_exit("generic field and inherited impl parameter", "instance_literal_field_and_impl",
+        "struct P<T>{x:T} impl<T> P<T> { fn bump(&self)->T { return self.x+1; } } \
+         fn bump<T>(p:P<T>)->T { return p.x+1; } \
+         fn main()->i32 { let p:P<i64> = P{x:4000000000}; let q:P<u8> = P{x:41}; \
+           if (p.bump()!=4000000001 || q.bump()!=42 || bump<i64>(p)!=4000000001 || bump<u8>(q)!=42) { return 1; } return 42; }", 42);
+    assert_exit("single integer instance", "instance_literal_integer_in_place",
+        "fn bump<T>(a:T)->T { return a+1; } fn main()->i32 { if (bump<i64>(4000000000)!=4000000001) { return 1; } return 42; }", 42);
+    assert_rejected("single instance still checks literal range", "LNC0069",
+        "fn bump<T>(a:T)->T { return a+300; } fn main()->i32 { let y:u8=bump<u8>(1); return 42; }", "300", 3);
+}

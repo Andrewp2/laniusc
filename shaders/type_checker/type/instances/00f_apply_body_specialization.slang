@@ -212,40 +212,6 @@ void publish_compact_variant_payload_use_slot(uint row)
     if (slot != INVALID) publish_type_parameter_reference(parameter, slot, use_token);
 }
 
-void publish_decl_generic_param_slot(uint row)
-{
-    if (!valid_row(row))
-        return;
-
-    uint token = generic_param_token[row];
-    if (!valid_token(token))
-        return;
-
-    uint slot = lexical_parameter_slot(row);
-    if (slot == INVALID)
-        return;
-
-    uint kind = generic_param_kind[row];
-    if (kind == GENERIC_PARAM_KIND_TYPE)
-    {
-        type_generic_param_slot_by_token[token] = slot;
-        // A bound parameter's declaration token also carries its binding.
-        // A literal whose context is this parameter names this token
-        // (literal_symbolic_context.slang); expression typing (00_init)
-        // reads the binding there, since literal contexts were computed
-        // before the body was bound.
-        uint tag; uint payload;
-        type_parameter_binding(row, slot, tag, payload);
-        if (tag != TYPE_REF_GENERIC_PARAM)
-        {
-            type_expr_ref_tag[token] = tag;
-            type_expr_ref_payload[token] = payload;
-        }
-    }
-    else if (kind == GENERIC_PARAM_KIND_CONST)
-        type_const_param_slot_by_token[token] = slot;
-}
-
 void publish_const_len_use_slot(uint node)
 {
     if (!valid_node(node))
@@ -284,6 +250,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (valid_row(node) && generic_param_kind[node] == GENERIC_PARAM_KIND_TYPE)
     {
         uint slot = lexical_parameter_slot(node);
+        // Literal contexts name the declaration token; expression typing
+        // reads the bound parameter here after body specialization.
         if (slot != INVALID)
             publish_type_parameter_reference(node, slot, generic_param_token[node]);
     }

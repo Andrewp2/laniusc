@@ -6,6 +6,8 @@
 // the next dispatch (06_table_rows); the final dispatch (06a) fails it
 // instead. Included by both entry files.
 import hir_records;
+import primitive_types;
+import type_checker.inherited_expression_type;
 import type_checker.canonical.canonical_api;
 import type_checker.substitution.ct_subst;
 import type_checker.substitution.source_slots;
@@ -200,6 +202,19 @@ void realize_row(uint row, bool final_dispatch)
     {
         fail_row(row, failure);
         return;
+    }
+    // A pointer context does not turn an integer literal into a pointer.
+    // It keeps i32, just as expression_types/00_init does in a bound body.
+    // This also applies to parentheses and arithmetic whose result inherits
+    // that literal (e.g. p + (4 * 2)); null and offset legality are checked
+    // by 06c on the integer value and the pointer destination/operand.
+    if (source == IT_SOURCE_LOCAL && operand.x == 1u && operand.y == SCALAR_PTR)
+    {
+        uint leaf = inherited_expression_type_leaf(template_row, min(compact_hir_count[0u], gParams.n_hir_nodes),
+            compact_hir_core, compact_hir_payload);
+        if (leaf != INVALID && compact_hir_core[leaf].kind == 23u &&
+            compact_hir_payload[leaf].a == 3u && semantic_expr_ref_tag_by_hir[leaf] == 2u)
+            operand.y = SCALAR_I32;
     }
     instance_row_refs[row] = uint2(operand.x + 1u, operand.y);
 }

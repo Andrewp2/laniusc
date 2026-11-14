@@ -218,7 +218,12 @@ void check_statement(uint4 entry, uint node, HirCore core, HirPayload payload)
     else if (payload.a == HIR_STMT_LET)
         check_destination(operand_of(entry, payload.d), operand_of(entry, payload.c));
     else if (payload.a == HIR_STMT_ASSIGN)
-        check_destination(operand_of(entry, payload.b), operand_of(entry, payload.c));
+    {
+        Operand destination = operand_of(entry, payload.b);
+        Operand value = operand_of(entry, payload.c);
+        if (!operator_pointer_offset_assignment(payload.d, destination.ty, value.ty))
+            check_destination(destination, value);
+    }
 }
 
 void check_bool(Operand operand)

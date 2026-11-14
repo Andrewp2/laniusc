@@ -237,6 +237,10 @@ types.
   type parameter, `literal_context_type_by_hir` holds
   `LITERAL_CONTEXT_SYMBOLIC | P`, where `P` is the parameter's declaration
   token ([`literal_symbolic_context`](../shaders/type_checker/literal_symbolic_context.slang)).
+  That exact parameter must belong to the literal's enclosing binder chain,
+  using the same scope check as call-result references. A field's unresolved
+  declaration parameter from a different binder is not a caller context;
+  the literal keeps its syntax default so field inference can finish.
   Peers through parentheses, unary minus and arithmetic, comparisons, `let`
   and assignment targets, return types and generic call results are covered.
   The word is never a scalar, so inference readers keep the default.
@@ -247,8 +251,9 @@ types.
   type, not `i32`.
 - **Bound bodies.** An in-place or replayed body binds `P` after literal
   contexts are computed. `00f` writes the binding at `P`; `00_init` gives the
-  literal the bound scalar when its kind matches, else its default, which the
-  operand and destination checks reject.
+  literal the bound scalar when its kind matches, else its default. Operand
+  and destination checks then apply, including integer null and offset rules
+  for pointers.
 - **Instances.** The instance table realizes each row's reference.
   `closure/06c` checks per `(instance, row)`: a literal's kind against the
   realized scalar (LNC0006, no integer-to-float conversion), its magnitude
@@ -257,6 +262,15 @@ types.
   logical and index rows; and a returned, declared or assigned value against
   its destination. Execution rows copy the realized scalar, and lowering
   selects the literal's f32 or f64 HIR word by it.
+- **Pointer contexts.** An integer literal keeps `i32` when its symbolic
+  context resolves to `ptr`. The same applies to operator/parenthesis rows
+  whose result inherits that literal, so `p + (2147483647 + 1)` performs the
+  inner arithmetic at i32 width. Zero can be a null constant; other integers
+  can be offsets in `p + n`, `p - n`, `p += n` and `p -= n`. The ordinary
+  operand/destination rules reject nonzero integers used as pointer values.
+  `table_rows` and `01e` share the inherited-result edge definition. They
+  still walk a left chain; pointer jumping remains needed to remove the
+  existing quadratic work on deep operator trees.
 - **Operand classes.** [`operator_operand_rules`](../shaders/type_checker/operator_operand_rules.slang)
   classifies a resolved struct or enum as `OPR_TY_NAMED` and an array or
   slice as `OPR_TY_SEQUENCE`. Neither takes arithmetic, negation, a

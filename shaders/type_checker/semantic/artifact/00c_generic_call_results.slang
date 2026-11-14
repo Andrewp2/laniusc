@@ -75,7 +75,7 @@ static const uint GENERIC_PARAM_KIND_TYPE = 1u;
 // type parameter that is not in scope at the call.
 static const uint FOREIGN_RESULT_PARAMETER = 18u;
 
-#include "../../type/instances/lexical_parameter_lookup.slang"
+#include "../../type/instances/lexical_parameter_scope.slang"
 
 // The checked type graph over this pass's writable instance columns.
 struct CallTypeArgumentGraph : ITypeStructureGraph
@@ -310,35 +310,6 @@ void resolve_result(uint row, uint token, inout CheckedCallArtifact call)
     }
 }
 
-// Whether parameter `parameter` belongs to a binder in scope at HIR row
-// `row`: the nearest generic owner and its enclosing owners (an impl's
-// parameters in its methods), or the implicit `Self` of an enclosing trait.
-// This reference is already resolved. A nearer parameter with the same name
-// must not hide an inherited identity, e.g. keep(self.field) in a method
-// whose T shadows the impl's T. Validate each owner by exact parameter token.
-bool parameter_in_scope(uint row, uint parameter)
-{
-    uint hir_count = lexical_parameter_hir_count();
-    uint count = min(generic_param_count_out[0u], gParams.n_tokens);
-    uint name = name_id_by_token[parameter];
-    uint owner = generic_decl_owner_by_node_a[row];
-    for (uint depth = 0u; depth < hir_count && owner < hir_count; depth++)
-    {
-        uint owner_token = lexical_parameter_owner_token(owner);
-        // type/instances/00e keys only a trait's implicit Self by its name.
-        if (compact_hir_core[owner].kind == 2u && compact_hir_payload[owner].a == 10u &&
-            owner_token == parameter) return true;
-        uint found = generic_param_lookup_find(owner_token, name, count, gParams.n_tokens,
-            generic_param_owner_token, generic_param_name_id, generic_param_lookup_state);
-        if (found < count && generic_param_kind[found] == GENERIC_PARAM_KIND_TYPE &&
-            generic_param_token[found] == parameter) return true;
-        uint parent = lexical_parameter_parent(owner);
-        if (parent == owner) break;
-        owner = parent;
-    }
-    return false;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -357,7 +328,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // binder (the callee's, or a trait's through a bound) would silently
     // become the caller parameter at its slot, so it is a compiler error.
     if (call.return_ref_tag == 2u && call.return_ref_payload < gParams.n_tokens &&
-        !parameter_in_scope(row, call.return_ref_payload))
+        !lexical_parameter_reference_in_scope(row, call.return_ref_payload))
         record_min_token_error(status, compact_hir_core[row].token_start, 6u,
             0x474e0000u | FOREIGN_RESULT_PARAMETER);
 }

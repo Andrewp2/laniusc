@@ -130,7 +130,7 @@ GPU passes now correct the selected path without demoting any body:
 
 | Pass | Effect |
 | --- | --- |
-| [`03k1_project_literal_contexts`](../shaders/type_checker/calls/03k1_project_literal_contexts.slang) | A literal whose only context is a type parameter records that parameter as a symbolic context. |
+| [`03k1_project_literal_contexts`](../shaders/type_checker/calls/03k1_project_literal_contexts.slang) | A literal whose only context is a type parameter in its enclosing binder chain records that parameter as a symbolic context. |
 | [`00_init`](../shaders/type_checker/semantic/expression_types/00_init.slang) | Such a literal has no template scalar, or its binding in an in-place or replayed body (published at the parameter's declaration token by `00f`). |
 | [`01e_operator_refs`](../shaders/type_checker/semantic/artifact/01e_operator_refs.slang) | A symbolic literal row gets its parameter reference. An arithmetic, bitwise, negation or forwarding row gets the parameter reference of its first operand chain. The table substitutes both per instance, so a copy at `f64` lowers a floating-point add with an f64 literal. |
 | [`06c_table_operands`](../shaders/type_checker/closure/06c_table_operands.slang) | One lane per virtual row checks the instance's realized types: literal kind, range and float status; binary operators, unary minus, `if`/`while` conditions, logical operands and indexing; returned, declared and assigned values. Errors are LNC0006, LNC0069 or LNC0070 at the template row's first token. |
@@ -164,6 +164,15 @@ An integer literal does not take a float context in a generic body, as
 run of the first two programs shows every entry selected (3 of 3, 2 of 2) and
 no replay. The design contract's "Operator and literal rows" section lists
 the remaining gaps.
+
+The follow-up pointer checks preserve integer literal types when the bound
+context is `ptr`, including inherited operator results. Null comparisons and
+pointer offsets therefore keep their ordinary rules and arithmetic widths.
+The instance-operator tests cover both instance orders, nested arithmetic,
+compound offsets, nonzero-null rejection, inferred struct/enum fields,
+inherited impl parameters and sole-instance integer ranges. The scope guard
+shares the exact-parameter lookup used for bound-member results; a different
+declaration's same-named parameter cannot become a literal context.
 
 Constant projection fits are another instance-time obligation. The local-call
 fix in `2fbfb57fd` (integrated as `9bd027f52`) preserves a distinct failed-fit
