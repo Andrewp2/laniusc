@@ -627,6 +627,43 @@ diagnostic column; backend ownership must use the execution row. String bytes
 may be shared within a build, but each instance needs its own string-to-
 instruction relation.
 
+### Object symbol finalization, 2026-11-14
+
+`GpuX86SymbolFinalizer` in
+[`finalize.rs`](../crates/laniusc-compiler/src/codegen/x86/finalize.rs)
+implements the native x86 finalization boundary from section 6 of the design.
+General compilation does not call it yet.
+
+| Item | Contract |
+| --- | --- |
+| Provisional identity | `(0xfffffffe, 0xffff0001, use ordinal)` |
+| Instance identity | `(0xfffffffe, 0xffff0002, rank)` |
+| Route row | `(library, namespace or unit, local, generation)`, dense by use ordinal, GPU buffer |
+| Readiness row | `(generation, flags, instance count, use count)`, GPU buffer |
+| Required flags | routes published (1) and caller/target ABI certified (2) |
+| Host transfer | object-format symbol rows and identity bytes, from memory or a spilled object file |
+
+Seven kernels in `shaders/codegen/x86/finalize/` run in one submission.
+Each lane handles one object, route, symbol or identity word.
+Identity lengths do not change, so no scan is needed.
+The kernels reject a stale or unflagged readiness row and any missing route.
+They also reject use-to-use routes, out-of-range ranks and uses, and provisional definitions.
+Overlapping identity bytes are rejected too.
+Each failure code keeps its minimum detail, so the reported failure does not depend on lane order.
+Outputs are staged separately and sealed with the generation only after every check passes.
+A small output capacity returns the demand; `finalize` grows staging and replays.
+`GpuX86LinkInput` rejects any object that still names a provisional identity.
+
+Tests: `codegen::x86::finalize::tests`, four hardware tests.
+One links two finalized objects on the GPU and runs the program, which exits 42.
+
+Not covered yet:
+
+- No producer emits provisional identities or writes the route and readiness rows.
+- No GPU caller/target ABI comparison sets the ABI flag.
+- The GPU library map does not yet keep ordinary libraries out of `0xfffffffe`.
+- Wasm objects need the same stage over their symbol table.
+
 ## Executable milestones
 
 Each milestone must execute programs through its new path and remove replay

@@ -24,6 +24,7 @@ pub(crate) use link::{
 };
 
 mod object;
+pub(crate) mod finalize;
 mod file_object;
 pub(crate) use file_object::GpuX86FileObject;
 pub(crate) mod native;

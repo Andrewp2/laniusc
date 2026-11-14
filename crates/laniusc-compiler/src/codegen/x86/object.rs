@@ -128,6 +128,20 @@ impl GpuX86RelocatableObjectLayout {
         })
     }
 
+    /// Byte range of the serialized symbol rows followed by the identity
+    /// bytes: the only columns symbol finalization replaces.
+    pub(crate) fn symbol_metadata_byte_range(&self) -> Result<std::ops::Range<u64>, String> {
+        let (_, rodata) = self.payload_byte_ranges()?;
+        let start = rodata
+            .end
+            .checked_add(self.relocation_count as u64 * RELOCATION_U32S as u64 * 4)
+            .ok_or_else(|| "x86 object symbol column start overflows u64".to_string())?;
+        if start > self.serialized_byte_len {
+            return Err("x86 object symbol column starts past the object".to_string());
+        }
+        Ok(start..self.serialized_byte_len)
+    }
+
     /// Byte ranges of the variable-sized text and rodata payload columns.
     pub(crate) fn payload_byte_ranges(
         &self,
@@ -213,19 +227,12 @@ impl GpuX86LinkObjectMetadata {
                 addend: ((addend_hi << 32) | addend_lo) as i64,
             });
         }
-        let mut symbols = Vec::with_capacity(layout.symbol_count as usize);
-        for _ in 0..layout.symbol_count {
-            symbols.push(GpuX86ObjectSymbolRecord {
-                identity_hash_lo: read_u32(bytes, &mut cursor)?,
-                identity_hash_hi: read_u32(bytes, &mut cursor)?,
-                identity_byte_start: read_u32(bytes, &mut cursor)?,
-                identity_byte_len: read_u32(bytes, &mut cursor)?,
-                section: GpuX86ObjectSection::from_u32(read_u32(bytes, &mut cursor)?)?,
-                offset: read_u32(bytes, &mut cursor)?,
-                size: read_u32(bytes, &mut cursor)?,
-                flags: read_u32(bytes, &mut cursor)?,
-            });
-        }
+        let symbols = decode_symbol_rows(read_bytes(
+            bytes,
+            &mut cursor,
+            layout.symbol_count as usize * SYMBOL_U32S * 4,
+            "symbol",
+        )?)?;
         let identity_bytes = read_bytes(
             bytes,
             &mut cursor,
@@ -454,20 +461,7 @@ impl GpuX86RelocatableObject {
                 push_u32(&mut bytes, word);
             }
         }
-        for symbol in &self.symbols {
-            for word in [
-                symbol.identity_hash_lo,
-                symbol.identity_hash_hi,
-                symbol.identity_byte_start,
-                symbol.identity_byte_len,
-                symbol.section as u32,
-                symbol.offset,
-                symbol.size,
-                symbol.flags,
-            ] {
-                push_u32(&mut bytes, word);
-            }
-        }
+        encode_symbol_rows(&self.symbols, &mut bytes);
         bytes.extend_from_slice(&self.identity_bytes);
         Ok(bytes)
     }
@@ -515,19 +509,10 @@ impl GpuX86RelocatableObject {
                 addend: ((addend_hi << 32) | addend_lo) as i64,
             });
         }
-        let mut symbols = Vec::with_capacity(symbol_count);
-        for _ in 0..symbol_count {
-            symbols.push(GpuX86ObjectSymbolRecord {
-                identity_hash_lo: read_u32(bytes, &mut cursor)?,
-                identity_hash_hi: read_u32(bytes, &mut cursor)?,
-                identity_byte_start: read_u32(bytes, &mut cursor)?,
-                identity_byte_len: read_u32(bytes, &mut cursor)?,
-                section: GpuX86ObjectSection::from_u32(read_u32(bytes, &mut cursor)?)?,
-                offset: read_u32(bytes, &mut cursor)?,
-                size: read_u32(bytes, &mut cursor)?,
-                flags: read_u32(bytes, &mut cursor)?,
-            });
-        }
+        let symbol_bytes = symbol_count
+            .checked_mul(SYMBOL_U32S * 4)
+            .ok_or_else(|| "x86 object symbol range overflows".to_string())?;
+        let symbols = decode_symbol_rows(read_bytes(bytes, &mut cursor, symbol_bytes, "symbol")?)?;
         let identity_bytes = read_bytes(bytes, &mut cursor, identity_len, "identity")?.to_vec();
         if cursor != bytes.len() {
             return Err(format!(
@@ -673,6 +658,53 @@ pub(crate) fn validate_link_object_columns(
         }
     }
     Ok(())
+}
+
+/// Serialized size of one symbol row in the object format.
+pub(crate) const GPU_X86_SYMBOL_ROW_BYTES: usize = SYMBOL_U32S * 4;
+
+/// Appends symbol rows in the object format's symbol column encoding.
+pub(crate) fn encode_symbol_rows(symbols: &[GpuX86ObjectSymbolRecord], bytes: &mut Vec<u8>) {
+    bytes.reserve(symbols.len() * GPU_X86_SYMBOL_ROW_BYTES);
+    for symbol in symbols {
+        for word in [
+            symbol.identity_hash_lo,
+            symbol.identity_hash_hi,
+            symbol.identity_byte_start,
+            symbol.identity_byte_len,
+            symbol.section as u32,
+            symbol.offset,
+            symbol.size,
+            symbol.flags,
+        ] {
+            push_u32(bytes, word);
+        }
+    }
+}
+
+/// Decodes a complete object-format symbol column.
+pub(crate) fn decode_symbol_rows(bytes: &[u8]) -> Result<Vec<GpuX86ObjectSymbolRecord>, String> {
+    if bytes.len() % GPU_X86_SYMBOL_ROW_BYTES != 0 {
+        return Err(format!(
+            "x86 object symbol column has {} bytes, not a whole number of rows",
+            bytes.len()
+        ));
+    }
+    let mut cursor = 0usize;
+    let mut symbols = Vec::with_capacity(bytes.len() / GPU_X86_SYMBOL_ROW_BYTES);
+    while cursor < bytes.len() {
+        symbols.push(GpuX86ObjectSymbolRecord {
+            identity_hash_lo: read_u32(bytes, &mut cursor)?,
+            identity_hash_hi: read_u32(bytes, &mut cursor)?,
+            identity_byte_start: read_u32(bytes, &mut cursor)?,
+            identity_byte_len: read_u32(bytes, &mut cursor)?,
+            section: GpuX86ObjectSection::from_u32(read_u32(bytes, &mut cursor)?)?,
+            offset: read_u32(bytes, &mut cursor)?,
+            size: read_u32(bytes, &mut cursor)?,
+            flags: read_u32(bytes, &mut cursor)?,
+        });
+    }
+    Ok(symbols)
 }
 
 fn checked_u32_len(label: &str, len: usize) -> Result<(), String> {

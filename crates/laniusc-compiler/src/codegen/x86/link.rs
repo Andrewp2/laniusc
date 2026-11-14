@@ -581,13 +581,20 @@ impl GpuX86LinkInput {
                     identity.len()
                 ));
             }
+            let identity = [
+                u32::from_le_bytes(identity[0..4].try_into().expect("four bytes")),
+                u32::from_le_bytes(identity[4..8].try_into().expect("four bytes")),
+                u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
+            ];
+            if super::finalize::is_provisional_identity(identity) {
+                return Err(format!(
+                    "x86 link object {object_index} symbol {symbol_index} still names provisional use {}; GPU symbol finalization must publish it first",
+                    identity[2]
+                ));
+            }
             self.symbols.push(GpuX86LinkSymbolRecord {
                 object_index,
-                identity: [
-                    u32::from_le_bytes(identity[0..4].try_into().expect("four bytes")),
-                    u32::from_le_bytes(identity[4..8].try_into().expect("four bytes")),
-                    u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
-                ],
+                identity,
                 section: symbol.section as u32,
                 offset: if symbol.section == GpuX86ObjectSection::Text {
                     copied_text_offset(symbol.offset, symbol.size, "symbol")?
