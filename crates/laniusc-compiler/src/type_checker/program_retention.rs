@@ -22,6 +22,8 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 
+pub mod substitution;
+
 use crate::gpu::{
     buffers::LaniusBuffer,
     compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},

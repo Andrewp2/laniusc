@@ -17,7 +17,8 @@ under "Not exported completely".
 | Job-side translation | `shaders/type_checker/retention/retention_job.slang` |
 | Export kernels | `shaders/type_checker/retention/export/00_begin` … `18_rollback` |
 | Store growth | `shaders/type_checker/retention/store_rehash.slang` |
-| Substitution over retained terms | `shaders/type_checker/retention/retention_subst.slang` |
+| Substitution over retained terms (probe) | `shaders/type_checker/retention/retention_subst.slang` |
+| Production substitution | `shaders/type_checker/retention/substitution/`, [guide](compiler-retained-substitution.md) |
 | Host object | `crates/laniusc-compiler/src/type_checker/program_retention.rs` |
 | Acceptance probe | `shaders/tests/retention_resolve.slang`, `tests/program_retention.rs` |
 
@@ -352,10 +353,11 @@ inconsistent mask/arity counts and domains exceeding the 32-slot masks.
 Unresolved references return `RT_SUBST_UNRESOLVED`; failed projections retain
 `RT_SUBST_FIT_FAILED`. Neither can compare as a successfully substituted type.
 This is a probe implementation: it visits shared terms as a tree without a
-memo. Production instance substitution still needs bounded work over the DAG.
-That engine is separate work with its own kernels. It consumes the term
-identities and kinds above, which this export keeps stable; a change to
-them has to be coordinated with it.
+memo. The production engine is
+[retained substitution](compiler-retained-substitution.md), with its own
+kernels. It memoizes `(environment, term)` tasks and evaluates fits. It
+consumes the term identities and kinds above, which this export keeps
+stable; a change to them has to be coordinated with it.
 
 The acceptance probe calls `rt_subst` from three sites: the signature with
 the rejection terms, the per-row checks (term, parameter binding, symbolic
@@ -381,9 +383,10 @@ This boundary does not yet carry:
 - **Bound-member calls.** Their trait-solver evidence is not exported yet.
   The use records the trait member's `DeclId` and the caller-scoped
   environment.
-- **Constant fits.** `CC_CAST` terms are retained. Retained substitution
-  does not yet evaluate fits. When it does, it must return the failing
-  projection from the substitution itself.
+- **Constant fits.** `CC_CAST` terms are retained. The probe does not
+  evaluate fits. The production engine does, and returns the failing
+  projection with each result
+  ([retained substitution](compiler-retained-substitution.md)).
 - **`for` statement rows** have no term. The producer publishes no checked
   reference for them; the iterable kind and the binder's let-like rows are
   retained.
