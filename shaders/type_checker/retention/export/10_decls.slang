@@ -20,6 +20,7 @@ import type_checker.retention.row_classes;
 
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_const_type;
+StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint2> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 
@@ -29,22 +30,13 @@ void check_term(uint row, uint term, uint decl, uint parent)
     else if (!owned_by(term, decl, parent)) { stat_add(row, RT_STAT_OWNERSHIP, 1u); rt_invariant(RT_INV_OWNERSHIP); }
 }
 
-// The impl header's self type row: the last type row directly under the
-// impl that is not its trait reference (method/fields.slang
-// publish_impl_receiver_type), or INVALID.
+// Canonical impl payloads store the self type in c for both inherent and
+// trait impls. No method or sibling scan is needed.
 uint impl_self_row(uint row)
 {
-    uint trait_row = compact_hir_payload[row].b;
-    uint self_row = 0xffffffffu;
-    uint child = compact_hir_links[row].first_child;
-    for (uint step = 0u; step < hir_count() && valid_row(child); step++)
-    {
-        if (compact_hir_core[child].kind == HIR_TYPE && child != trait_row) self_row = child;
-        uint next = compact_hir_links[child].next_sibling;
-        if (next <= child) break;
-        child = next;
-    }
-    return self_row;
+    uint self_row = compact_hir_payload[row].c;
+    return valid_row(self_row) && compact_hir_core[self_row].kind == HIR_TYPE
+        ? self_row : 0xffffffffu;
 }
 
 uint2 domain_counts(uint owner)
@@ -196,13 +188,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             check_term(row, term, decl, 0u);
             rt_sigs[sig_base] = term;
         }
-        uint present = semantic_value_const_present_by_hir[row];
+        // Folding publishes on the initializer expression, not the item.
+        uint initializer = compact_const_value[row];
+        uint present = valid_row(initializer) ? semantic_value_const_present_by_hir[initializer] : 0u;
+        bool concrete = (present & RT_CONST_CONCRETE) != 0u;
+        if (!concrete) stat_add(row, RT_STAT_UNTRANSLATED, 1u);
         schema_count = 1u;
         schema_base = rt_alloc(RT_A_SCHEMA, 1u);
         if (schema_base != RT_INVALID)
         {
-            uint2 value = semantic_value_const_by_hir[row];
-            rt_schema[schema_base] = uint4(decl, RT_SCHEMA_CONST | ((present & RT_CONST_CONCRETE) != 0u ? 0x100u : 0u),
+            uint2 value = concrete ? semantic_value_const_by_hir[initializer] : uint2(0u, 0u);
+            rt_schema[schema_base] = uint4(decl, RT_SCHEMA_CONST | (concrete ? 0x100u : 0u),
                 value.x, value.y);
         }
     }

@@ -174,7 +174,9 @@ committed definition of the same declaration is counted in
     including a payloadless variant. An enum's variants come first.
   - `PAYLOAD 2`: `(enum, PAYLOAD | ordinal << 8, variant ordinal, declared
     term)`, after the variants.
-  - `CONST 4`: `(constant, CONST | present << 8, value lo, value hi)`.
+  - `CONST 4`: `(constant, CONST | concrete << 8, value lo, value hi)`.
+    `concrete` is 0 or 1. The value comes from the folded initializer;
+    a missing concrete value makes the declaration incomplete.
 - **Uses, `rt_uses`.** 3 × uint4, one per call row inside a function:
   - u0 `(owner DeclId, use row relative to the owner, form | adjustment <<
     8 | deref count << 16, callee DeclId or 0)`. Forms are `DIRECT 1`,
@@ -216,7 +218,9 @@ A segment, `rt_segments`, is 6 × uint4:
 | s5 | `(first text word in rt_seg_bytes, 0, 0, 0)` |
 
 The body text is the source from the body's first token to its last
-token's end, copied byte-parallel into `rt_seg_bytes` (steps 12b, 12c).
+token's end, copied into `rt_seg_bytes` by one lane per token (steps 12b,
+12c). Each lane walks its token and the gap before the next token; long
+comments can therefore leave one lane with substantial serial work.
 Its token records, `rt_seg_tokens`, are one uint4 per token: `(kind, byte
 start relative to the text, length, FNV-1a hash of the spelling)`.
 
@@ -392,6 +396,13 @@ This boundary does not yet carry:
   retained.
 - **File ids** are job-local. Token kinds, byte offsets and spellings are
   retained per body, so diagnostics and identifiers need no job tables.
+
+Readiness covers the retained schema, not all inputs required by lowering.
+Member field ordinals, iterable kinds and argument modes are retained but
+not yet exhaustively validated for every supported form. Projection must
+validate those facts before publishing executable code. Function-reference
+uses have no instance environment: supported function values are nongeneric;
+generic function values are rejected by the frontend.
 
 The semantic projection and export use the parser's statement forms:
 const is 4 and return is 2. Local const statements are not currently accepted

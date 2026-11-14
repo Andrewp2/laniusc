@@ -181,7 +181,8 @@ void validate_raw_parts_call(uint node, HirCore core)
             if (!valid_hir(argument)) continue;
             uint argument_ty = scalar_type(argument);
             HirPayload argument_payload = compact_hir_payload[argument];
-            bool null_argument = ordinal != 0u && argument_payload.a == HIR_EXPR_INT &&
+            bool null_argument = ordinal != 0u && compact_hir_core[argument].kind == HIR_LITERAL_EXPR &&
+                argument_payload.a == HIR_EXPR_INT &&
                 argument_payload.b == 0u && argument_payload.c == 0u;
             if (argument_ty != TY_POINTER && !null_argument)
                 record_min_token_error(status, compact_hir_core[argument].token_start,

@@ -29,6 +29,8 @@ fn identity<U>(value: U) -> U { return value; }
 fn solo<V>(value: V) -> V { let kept: V = value; return kept; }
 pub fn seed() -> i32 { return solo(5); }
 const LIMIT: i32 = 4;
+const OFF: bool = false;
+const WIDE: i64 = -4294967297;
 fn tick(first: ptr, second: ptr, third: ptr) {}
 struct Hidden<T> { inner: T }
 pub struct Cell<T> { value: T }
@@ -57,7 +59,8 @@ pub impl<T> Cell<T> {
     pub fn shadow<T>(&self, value: T) -> T {
         let inherited: T = value;
         let outer = identity(self.value);
-        return inherited;
+        let value: T = inherited;
+        return value;
     }
 }
 "#;
@@ -67,6 +70,7 @@ pub impl<T> Cell<T> {
 const APP: &str = r#"module app::b;
 import lib::a;
 fn identity<U>(value: U) -> U { return value; }
+fn twice<T>(value: T) -> Cell<T> { return wrap(value); }
 struct Local<T> { item: T }
 struct PairA { left: i32, right: u32 }
 struct PairB { left: u32, right: i32 }
@@ -80,6 +84,7 @@ fn main() -> i32 {
     let b = unwrap(wrap(PairB { left: 3, right: 4 }));
     let slot = fill(9);
     let sum = total([1, 2, 3]);
+    let forwarded = twice(1);
     return 0;
 }
 "#;
@@ -239,6 +244,7 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
     pollster::block_on(compiler.release_resident_job_buffers());
     drop(compiler);
     store.poison_scratch();
+    assert_constant_schema(&store);
     let probe = probe(&store);
     let eligible = probe.eligible().collect::<Vec<_>>();
     for use_words in &probe.uses {
@@ -296,6 +302,13 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
     assert_eq!(shadow.len(), 1);
     assert_eq!(shadow[0][PROBE_NESTED_CALLEE], a_identity);
     assert!(shadow[0][PROBE_MEMBERS] >= 1, "`self.value` checks its field under the impl's binding");
+    assert_shadow_bindings(&store, named("fn shadow<"));
+    let imported_call = probe_with(&store, &[[named("fn twice<"), 1, TERM_I32, 0]]);
+    let imported_call = imported_call.uses.last().unwrap();
+    assert_eq!(imported_call[PROBE_ELIGIBLE], 1);
+    assert_complete_instance(imported_call);
+    assert_eq!(imported_call[PROBE_NESTED_CALLEE], named("fn wrap<"),
+        "the retained generic body keeps its bare imported call target");
     // `unwrap` at `Cell<PairA>` and `Cell<PairB>`: equal widths, different
     // field layouts, two different instance bodies.
     let unwrap = lanes(named("fn unwrap<"));
@@ -487,6 +500,63 @@ fn body_texts(store: &ProgramRetention) -> Vec<(u32, String)> {
 
 fn fnv1a(text: &str) -> u32 {
     text.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193))
+}
+
+fn assert_constant_schema(store: &ProgramRetention) {
+    let status = store.status().unwrap();
+    let dir = store.read_store_words("rt_dir", status[4] as usize * 16).unwrap();
+    let schema = store.read_store_words("rt_schema", status[7] as usize * 4).unwrap();
+    let sigs = store.read_store_words("rt_sigs", status[6] as usize).unwrap();
+    let mut values = Vec::new();
+    for entry in dir.chunks_exact(16).filter(|e| e[1] == 9) {
+        assert_eq!(entry[10], 1, "one constant schema row");
+        let record = &schema[entry[9] as usize * 4..entry[9] as usize * 4 + 4];
+        assert_eq!(record[0], entry[0]);
+        assert_eq!(record[1], 4 | (1 << 8), "the initializer must be concrete");
+        values.push((sigs[entry[6] as usize], record[2], record[3]));
+    }
+    values.sort();
+    assert_eq!(values, [(TERM_BOOL, 0, 0), (TERM_I32, 4, 0), (9, 0xffff_ffff, 0xffff_fffe)]);
+}
+
+fn assert_shadow_bindings(store: &ProgramRetention, decl: u32) {
+    let status = store.status().unwrap();
+    let dir = store.read_store_words("rt_dir", status[4] as usize * 16).unwrap();
+    let entry = dir.chunks_exact(16).find(|e| e[0] == decl).unwrap();
+    let binders = store.read_store_words("rt_binders", status[5] as usize).unwrap();
+    assert_eq!(entry[5], 2, "impl T then method T");
+    let impl_t = 0x8000_0000 | binders[entry[4] as usize];
+    let method_t = 0x8000_0000 | binders[entry[4] as usize + 1];
+    assert_ne!(impl_t, method_t);
+    let segments = store.read_store_words("rt_segments", status[9] as usize * 24).unwrap();
+    let segment = &segments[entry[8] as usize * 24..entry[8] as usize * 24 + 24];
+    let rows = store.read_store_words("rt_seg_rows", status[10] as usize * 28).unwrap();
+    let rows = &rows[segment[1] as usize * 28..(segment[1] + segment[2]) as usize * 28];
+    let tokens = store.read_store_words("rt_seg_tokens", status[13] as usize * 4).unwrap();
+    let token_hash = |token: u32| tokens[(segment[19] + token) as usize * 4 + 3];
+    let local_value = rows.chunks_exact(28).find(|r| r[0] == 8 && token_hash(r[9]) == fnv1a("value")).unwrap()[9];
+    let param_value = rows.chunks_exact(28).find(|r| r[0] == 4 && token_hash(r[10]) == fnv1a("value")).unwrap()[10];
+    assert_ne!(local_value, param_value);
+    let mut checked = [0; 4];
+    for row in rows.chunks_exact(28) {
+        if row[0] == 8 && token_hash(row[9]) == fnv1a("inherited") {
+            assert_eq!(row[12], method_t, "inherited uses the method's T, realized as bool");
+            checked[0] += 1;
+        }
+        if row[0] == 21 && token_hash(row[10]) == fnv1a("value") {
+            assert_eq!(row[12], impl_t, "self.value uses the impl's T, realized as i32");
+            checked[1] += 1;
+        }
+        let name = match row[0] { 22 => row[11], 33 => row[2], _ => continue };
+        if token_hash(name) == fnv1a("value") {
+            let after = name > local_value;
+            assert_eq!(row[20], 1, "a value name has a local binding");
+            assert_eq!(row[21], if after { local_value } else { param_value },
+                "same-spelled values must bind to the correct declaration");
+            checked[2 + usize::from(after)] += 1;
+        }
+    }
+    assert!(checked.iter().all(|n| *n > 0), "both type and value shadowing were checked: {checked:?}");
 }
 
 fn decl_named(texts: &[(u32, String)], prefix: &str) -> u32 {
