@@ -53,7 +53,6 @@ const MATCH_WORKSPACE_RESOURCES: &[&str] = &[
     "hir_match_rank_local_prefix",
     "hir_match_rank_block_sum",
     "hir_match_rank_block_prefix_a",
-    "hir_match_rank_block_prefix_b",
     "hir_match_rank_node",
     "hir_match_rank_count",
 ];
@@ -184,21 +183,18 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
                 | "hir_list_rank_local_prefix"
                 | "hir_list_rank_block_sum"
                 | "hir_list_rank_block_prefix_a"
-                | "hir_list_rank_block_prefix_b"
                 | "hir_list_rank_node"
                 | "hir_list_rank_count"
                 | "hir_enum_rank_flag"
                 | "hir_enum_rank_local_prefix"
                 | "hir_enum_rank_block_sum"
                 | "hir_enum_rank_block_prefix_a"
-                | "hir_enum_rank_block_prefix_b"
                 | "hir_enum_rank_node"
                 | "hir_enum_rank_count"
                 | "hir_struct_rank_flag"
                 | "hir_struct_rank_local_prefix"
                 | "hir_struct_rank_block_sum"
                 | "hir_struct_rank_block_prefix_a"
-                | "hir_struct_rank_block_prefix_b"
                 | "hir_struct_rank_node"
                 | "hir_struct_rank_count"
                 | "hir_item_kind"
@@ -234,7 +230,6 @@ use crate::{
             PassDesc,
             ResourceDomain,
         },
-        scan::hierarchical_scan_levels,
     },
     parser::{
         compiler_graph::ParserGraphCapacity,
@@ -665,16 +660,12 @@ pub(super) fn register_resources(
     for name in [
         "hir_list_rank_block_sum",
         "hir_list_rank_block_prefix_a",
-        "hir_list_rank_block_prefix_b",
         "hir_enum_rank_block_sum",
         "hir_enum_rank_block_prefix_a",
-        "hir_enum_rank_block_prefix_b",
         "hir_match_rank_block_sum",
         "hir_match_rank_block_prefix_a",
-        "hir_match_rank_block_prefix_b",
         "hir_struct_rank_block_sum",
         "hir_struct_rank_block_prefix_a",
-        "hir_struct_rank_block_prefix_b",
     ] {
         if graph_owned_hir_workspace(name) {
             workspace(graph, name, ResourceDomain::HirNodes, tree_blocks * 4)?;
@@ -985,7 +976,6 @@ pub(super) fn register_post_identity_schedule(
 
 fn register_list_rank_compaction(
     graph: &mut CompilerGraphBuilder,
-    capacity: ParserGraphCapacity,
     passes: &ParserPasses,
     invocation: ListRankInvocation,
     owner_a: &'static str,
@@ -1012,7 +1002,7 @@ fn register_list_rank_compaction(
         ],
     )?;
 
-    register_list_rank_scan(graph, capacity, passes, invocation)?;
+    register_list_rank_scan(graph, passes, invocation)?;
 
     reflected(
         graph,
@@ -1046,51 +1036,23 @@ fn register_list_rank_compaction(
 
 fn register_list_rank_scan(
     graph: &mut CompilerGraphBuilder,
-    capacity: ParserGraphCapacity,
     passes: &ParserPasses,
     invocation: ListRankInvocation,
 ) -> Result<(), String> {
-    let levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (up_name, down_name) = invocation.scan_labels();
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let scan_aliases = [
-        ("block_sum", "hir_list_rank_block_sum", None),
-        ("block_prefix", "hir_list_rank_block_prefix_a", None),
-        ("block_hierarchy", "hir_list_rank_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        up_name,
-        CompilerPhase::Hir,
+        passes,
+        invocation.scan_label(),
         ResourceDomain::HirNodes,
-        up,
-        &scan_aliases,
+        "hir_list_rank_block_sum",
+        "hir_list_rank_block_prefix_a",
     )?;
-    // Level zero reads only `block_sum`; it establishes both scan outputs
-    // before subsequent hierarchy levels read them.
-    graph.mark_pass_bindings_first_invocation_skips_read(
-        up_name,
-        &["block_prefix", "block_hierarchy"],
-    )?;
-    graph.repeat_pass_range(levels.len() as u32, up_name, up_name)?;
-    if levels.len() > 1 {
-        reflected(
-            graph,
-            down_name,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &scan_aliases,
-        )?;
-        graph.repeat_pass_range((levels.len() - 1) as u32, down_name, down_name)?;
-    }
 
     Ok(())
 }
 
 fn register_canonical_compaction_prefix(
     graph: &mut CompilerGraphBuilder,
-    capacity: ParserGraphCapacity,
     passes: &ParserPasses,
     construct: crate::parser::passes::CanonicalConstruct,
     family_flag: &'static str,
@@ -1115,34 +1077,14 @@ fn register_canonical_compaction_prefix(
             ),
         ],
     )?;
-    let levels = hierarchical_scan_levels(capacity.token_capacity.max(1).div_ceil(256));
-    let (up_name, down_name) = construct.scan_labels();
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let aliases = [
-        ("block_sum", "hir_semantic_block_sum", None),
-        ("block_prefix", "hir_semantic_block_prefix_a", None),
-        ("block_hierarchy", "hir_semantic_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        up_name,
-        CompilerPhase::Hir,
+        passes,
+        construct.scan_label(),
         ResourceDomain::HirNodes,
-        up,
-        &aliases,
+        "hir_semantic_block_sum",
+        "hir_semantic_block_prefix_a",
     )?;
-    graph.repeat_pass_range(levels.len() as u32, up_name, up_name)?;
-    if levels.len() > 1 {
-        reflected(
-            graph,
-            down_name,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &aliases,
-        )?;
-        graph.repeat_pass_range((levels.len() - 1) as u32, down_name, down_name)?;
-    }
     Ok(())
 }
 
@@ -1232,7 +1174,6 @@ fn register_type_argument_ranking(
     }
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         invocation,
         "hir_type_arg_owner_a",
@@ -1301,7 +1242,6 @@ fn register_type_root_owner(
 
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::TypeRoots,
         "hir_type_root_owner",
@@ -1398,45 +1338,14 @@ fn register_enum_ranking(
         ],
     )?;
 
-    let levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let scan_aliases = [
-        ("block_sum", "hir_enum_rank_block_sum", None),
-        ("block_prefix", "hir_enum_rank_block_prefix_a", None),
-        ("block_hierarchy", "hir_enum_rank_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        super::HIR_ENUM_RANK_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        super::HIR_ENUM_RANK_SCAN,
         ResourceDomain::HirNodes,
-        up,
-        &scan_aliases,
+        "hir_enum_rank_block_sum",
+        "hir_enum_rank_block_prefix_a",
     )?;
-    graph.mark_pass_bindings_first_invocation_skips_read(
-        super::HIR_ENUM_RANK_SCAN_UP,
-        &["block_prefix", "block_hierarchy"],
-    )?;
-    graph.repeat_pass_range(
-        levels.len() as u32,
-        super::HIR_ENUM_RANK_SCAN_UP,
-        super::HIR_ENUM_RANK_SCAN_UP,
-    )?;
-    if levels.len() > 1 {
-        reflected(
-            graph,
-            super::HIR_ENUM_RANK_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (levels.len() - 1) as u32,
-            super::HIR_ENUM_RANK_SCAN_DOWN,
-            super::HIR_ENUM_RANK_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         graph,
         &passes.hir_enum_rank_compact_scatter,
@@ -1601,7 +1510,6 @@ fn register_item_paths_and_type_aliases(
     // seeded both ping-pong buffers, so every other node reads identically.
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::PathSegments,
         "hir_path_segment_owner_a",
@@ -1763,7 +1671,6 @@ fn register_parameters(
     indirect(graph, "hir_param_links", "tree_active_dispatch_args")?;
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::Parameters,
         "hir_param_owner_a",
@@ -1858,7 +1765,6 @@ fn register_expression_and_statement_fields(
     // seed filled both ping-pong buffers, so every other row reads alike.
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::BinarySpans,
         "hir_binary_span_link_a",
@@ -1977,7 +1883,7 @@ fn register_literals_and_raw_expression_records(
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
-    register_list_rank_scan(graph, capacity, passes, ListRankInvocation::StringRecords)?;
+    register_list_rank_scan(graph, passes, ListRankInvocation::StringRecords)?;
     static_pass(
         graph,
         &passes.hir_string_compact_scatter,
@@ -2007,7 +1913,7 @@ fn register_literals_and_raw_expression_records(
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
-    register_list_rank_scan(graph, capacity, passes, ListRankInvocation::StringOffsets)?;
+    register_list_rank_scan(graph, passes, ListRankInvocation::StringOffsets)?;
     static_pass(
         graph,
         &passes.hir_string_offset_scatter,
@@ -2158,7 +2064,6 @@ fn register_canonical_variants(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::Variant,
         "hir_variant_family_flag",
@@ -2239,7 +2144,6 @@ fn register_canonical_variants(
     )?;
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::VariantPayloadOwners,
         "hir_semantic_parent_value_a",
@@ -2275,7 +2179,6 @@ fn register_canonical_variants(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::VariantPayload,
         "hir_variant_payload_family_flag",
@@ -2373,7 +2276,6 @@ fn register_call_arguments(
     indirect(graph, "hir_call_arg_links", "tree_active_dispatch_args")?;
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::CallArguments,
         "hir_call_arg_owner_a",
@@ -2419,7 +2321,6 @@ fn register_call_arguments(
     graph.mark_pass_bindings_initialize("hir_canonical_call_arg_mark", &["family_flag"])?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         crate::parser::passes::CanonicalConstruct::CallArgument,
         "hir_call_arg_family_flag",
@@ -2477,7 +2378,6 @@ fn register_array_elements(
     )?;
     register_list_rank_compaction(
         graph,
-        capacity,
         passes,
         ListRankInvocation::ArrayElements,
         "hir_array_element_owner_a",
@@ -2537,7 +2437,6 @@ fn register_array_elements(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         crate::parser::passes::CanonicalConstruct::ArrayElement,
         "hir_array_element_family_flag",
@@ -2704,45 +2603,14 @@ fn register_matches(
         ],
     )?;
 
-    let levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let scan_aliases = [
-        ("block_sum", "hir_match_rank_block_sum", None),
-        ("block_prefix", "hir_match_rank_block_prefix_a", None),
-        ("block_hierarchy", "hir_match_rank_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        super::HIR_MATCH_RANK_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        super::HIR_MATCH_RANK_SCAN,
         ResourceDomain::HirNodes,
-        up,
-        &scan_aliases,
+        "hir_match_rank_block_sum",
+        "hir_match_rank_block_prefix_a",
     )?;
-    graph.mark_pass_bindings_first_invocation_skips_read(
-        super::HIR_MATCH_RANK_SCAN_UP,
-        &["block_prefix", "block_hierarchy"],
-    )?;
-    graph.repeat_pass_range(
-        levels.len() as u32,
-        super::HIR_MATCH_RANK_SCAN_UP,
-        super::HIR_MATCH_RANK_SCAN_UP,
-    )?;
-    if levels.len() > 1 {
-        reflected(
-            graph,
-            super::HIR_MATCH_RANK_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (levels.len() - 1) as u32,
-            super::HIR_MATCH_RANK_SCAN_DOWN,
-            super::HIR_MATCH_RANK_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         graph,
         &passes.hir_match_rank_compact_scatter,
@@ -2875,7 +2743,6 @@ fn register_matches(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::MatchArm,
         "hir_match_arm_family_flag",
@@ -2940,7 +2807,6 @@ fn register_matches(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::MatchPayload,
         "hir_match_payload_family_flag",
@@ -3091,45 +2957,14 @@ fn register_struct_fields(
         ],
     )?;
 
-    let levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let scan_aliases = [
-        ("block_sum", "hir_struct_rank_block_sum", None),
-        ("block_prefix", "hir_struct_rank_block_prefix_a", None),
-        ("block_hierarchy", "hir_struct_rank_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        super::HIR_STRUCT_RANK_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        super::HIR_STRUCT_RANK_SCAN,
         ResourceDomain::HirNodes,
-        up,
-        &scan_aliases,
+        "hir_struct_rank_block_sum",
+        "hir_struct_rank_block_prefix_a",
     )?;
-    graph.mark_pass_bindings_first_invocation_skips_read(
-        super::HIR_STRUCT_RANK_SCAN_UP,
-        &["block_prefix", "block_hierarchy"],
-    )?;
-    graph.repeat_pass_range(
-        levels.len() as u32,
-        super::HIR_STRUCT_RANK_SCAN_UP,
-        super::HIR_STRUCT_RANK_SCAN_UP,
-    )?;
-    if levels.len() > 1 {
-        reflected(
-            graph,
-            super::HIR_STRUCT_RANK_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (levels.len() - 1) as u32,
-            super::HIR_STRUCT_RANK_SCAN_DOWN,
-            super::HIR_STRUCT_RANK_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         graph,
         &passes.hir_struct_rank_compact_scatter,
@@ -3272,7 +3107,6 @@ fn register_struct_fields(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::Field,
         "hir_field_family_flag",
@@ -3493,7 +3327,6 @@ fn register_canonical_materialization(
     graph.mark_pass_bindings_initialize("hir_canonical_param_mark", &["family_flag"])?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::Parameter,
         "hir_param_family_flag",
@@ -3543,7 +3376,6 @@ fn register_canonical_materialization(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::TypeArgument,
         "hir_type_arg_family_flag",
@@ -3797,7 +3629,6 @@ fn register_canonical_materialization(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::GenericParameter,
         "hir_generic_param_family_flag",
@@ -3848,41 +3679,14 @@ fn register_canonical_materialization(
             ("owner_block_sum", "hir_semantic_block_sum", None),
         ],
     )?;
-    let path_levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (up, down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let path_scan_aliases = [
-        ("block_sum", "hir_semantic_block_sum", None),
-        ("block_prefix", "hir_semantic_block_prefix_a", None),
-        ("block_hierarchy", "hir_semantic_block_prefix_b", None),
-    ];
-    reflected(
+    super::block_scan(
         graph,
-        super::HIR_PATH_SEGMENT_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        super::HIR_PATH_SEGMENT_SCAN,
         ResourceDomain::HirNodes,
-        up,
-        &path_scan_aliases,
+        "hir_semantic_block_sum",
+        "hir_semantic_block_prefix_a",
     )?;
-    graph.repeat_pass_range(
-        path_levels.len() as u32,
-        super::HIR_PATH_SEGMENT_SCAN_UP,
-        super::HIR_PATH_SEGMENT_SCAN_UP,
-    )?;
-    if path_levels.len() > 1 {
-        reflected(
-            graph,
-            super::HIR_PATH_SEGMENT_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::HirNodes,
-            down,
-            &path_scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (path_levels.len() - 1) as u32,
-            super::HIR_PATH_SEGMENT_SCAN_DOWN,
-            super::HIR_PATH_SEGMENT_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         graph,
         &passes.hir_canonical_path_segment_scatter,
@@ -3919,7 +3723,6 @@ fn register_canonical_materialization(
     graph.mark_pass_bindings_initialize("hir_canonical_path_mark", &["family_flag"])?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::Path,
         "hir_path_family_flag",
@@ -3986,7 +3789,6 @@ fn register_canonical_materialization(
         graph.mark_pass_bindings_initialize("hir_canonical_method_mark", &["family_flag"])?;
         register_canonical_compaction_prefix(
             graph,
-            capacity,
             passes,
             CanonicalConstruct::Method,
             "hir_method_family_flag",
@@ -4066,7 +3868,6 @@ fn register_canonical_materialization(
     )?;
     register_canonical_compaction_prefix(
         graph,
-        capacity,
         passes,
         CanonicalConstruct::Predicate,
         "hir_method_family_flag",

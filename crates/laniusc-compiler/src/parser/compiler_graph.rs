@@ -55,22 +55,12 @@ pub(in crate::parser) const BRACKET_SCAN_UP: &str = "brackets_02_scan_block_pref
 pub(in crate::parser) const BRACKET_SCAN_DOWN: &str = "brackets_02_scan_block_prefix.down";
 pub(in crate::parser) const BRACKET_SCAN_FINALIZE: &str = "brackets_02_scan_block_prefix.finalize";
 pub(in crate::parser) const TREE_PREFIX_SCAN: &str = "tree_prefix_02_scan_blocks";
-pub(in crate::parser) const HIR_SEMANTIC_SCAN_UP: &str = "hir_semantic_prefix_01_blocks.up";
-pub(in crate::parser) const HIR_SEMANTIC_SCAN_DOWN: &str = "hir_semantic_prefix_01_blocks.down";
-pub(in crate::parser) const HIR_CANONICAL_IDENTITY_SCAN_UP: &str =
-    "hir_canonical_identity_prefix.up";
-pub(in crate::parser) const HIR_CANONICAL_IDENTITY_SCAN_DOWN: &str =
-    "hir_canonical_identity_prefix.down";
-pub(in crate::parser) const HIR_STRUCT_RANK_SCAN_UP: &str = "hir_struct_rank_prefix_01_blocks.up";
-pub(in crate::parser) const HIR_STRUCT_RANK_SCAN_DOWN: &str =
-    "hir_struct_rank_prefix_01_blocks.down";
-pub(in crate::parser) const HIR_ENUM_RANK_SCAN_UP: &str = "hir_enum_rank_prefix_01_blocks.up";
-pub(in crate::parser) const HIR_ENUM_RANK_SCAN_DOWN: &str = "hir_enum_rank_prefix_01_blocks.down";
-pub(in crate::parser) const HIR_MATCH_RANK_SCAN_UP: &str = "hir_match_rank_prefix_01_blocks.up";
-pub(in crate::parser) const HIR_MATCH_RANK_SCAN_DOWN: &str = "hir_match_rank_prefix_01_blocks.down";
-pub(in crate::parser) const HIR_PATH_SEGMENT_SCAN_UP: &str = "hir_canonical_path_segment_prefix.up";
-pub(in crate::parser) const HIR_PATH_SEGMENT_SCAN_DOWN: &str =
-    "hir_canonical_path_segment_prefix.down";
+pub(in crate::parser) const HIR_SEMANTIC_SCAN: &str = "hir_semantic_prefix_01_blocks";
+pub(in crate::parser) const HIR_CANONICAL_IDENTITY_SCAN: &str = "hir_canonical_identity_prefix";
+pub(in crate::parser) const HIR_STRUCT_RANK_SCAN: &str = "hir_struct_rank_prefix_01_blocks";
+pub(in crate::parser) const HIR_ENUM_RANK_SCAN: &str = "hir_enum_rank_prefix_01_blocks";
+pub(in crate::parser) const HIR_MATCH_RANK_SCAN: &str = "hir_match_rank_prefix_01_blocks";
+pub(in crate::parser) const HIR_PATH_SEGMENT_SCAN: &str = "hir_canonical_path_segment_prefix";
 pub(in crate::parser) const HIR_TYPE_PATH_LEAF_STEPS: [&str; 8] = [
     "hir_type_path_leaf_step.0",
     "hir_type_path_leaf_step.1",
@@ -1008,7 +998,6 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "hir_semantic_local_prefix"
             | "hir_semantic_block_sum"
             | "hir_semantic_block_prefix_a"
-            | "hir_semantic_block_prefix_b"
             | "hir_node_dense_id"
             | "hir_semantic_dense_node"
             | "hir_semantic_prefix_before_node"
@@ -1337,6 +1326,29 @@ pub(super) fn reflected(
     Ok(())
 }
 
+/// Registers a one-workgroup inclusive scan of `block_sum` into
+/// `block_prefix` (scan/blocks/inclusive).
+pub(super) fn block_scan(
+    graph: &mut CompilerGraphBuilder,
+    passes: &ParserPasses,
+    name: &'static str,
+    domain: ResourceDomain,
+    block_sum: &'static str,
+    block_prefix: &'static str,
+) -> Result<(), String> {
+    reflected(
+        graph,
+        name,
+        CompilerPhase::Hir,
+        domain,
+        passes.hir_semantic_prefix_blocks.graph_pass(),
+        &[
+            ("block_sum", block_sum, None),
+            ("block_prefix", block_prefix, Some(AccessMode::Write)),
+        ],
+    )
+}
+
 pub(super) fn static_pass<P>(
     graph: &mut CompilerGraphBuilder,
     pass: &P,
@@ -1604,11 +1616,6 @@ fn build_graph(
         ),
         (
             "hir_semantic_block_prefix_a",
-            ResourceDomain::RawNodes,
-            scan_blocks * 4,
-        ),
-        (
-            "hir_semantic_block_prefix_b",
             ResourceDomain::RawNodes,
             scan_blocks * 4,
         ),
@@ -2759,45 +2766,14 @@ fn build_graph(
             ),
         ],
     )?;
-    let semantic_scan_levels = hierarchical_scan_levels(capacity.tree_node_blocks.max(1));
-    let (semantic_scan_up, semantic_scan_down) = passes.hir_semantic_prefix_blocks.graph_passes();
-    let semantic_scan_aliases = [
-        ("block_sum", "hir_semantic_block_sum", None),
-        ("block_prefix", "hir_semantic_block_prefix_a", None),
-        ("block_hierarchy", "hir_semantic_block_prefix_b", None),
-    ];
-    reflected(
+    block_scan(
         &mut graph,
-        HIR_SEMANTIC_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        HIR_SEMANTIC_SCAN,
         ResourceDomain::RawNodes,
-        semantic_scan_up,
-        &semantic_scan_aliases,
+        "hir_semantic_block_sum",
+        "hir_semantic_block_prefix_a",
     )?;
-    graph.mark_pass_bindings_initialize(
-        HIR_SEMANTIC_SCAN_UP,
-        &["block_prefix", "block_hierarchy"],
-    )?;
-    graph.repeat_pass_range(
-        semantic_scan_levels.len() as u32,
-        HIR_SEMANTIC_SCAN_UP,
-        HIR_SEMANTIC_SCAN_UP,
-    )?;
-    if semantic_scan_levels.len() > 1 {
-        reflected(
-            &mut graph,
-            HIR_SEMANTIC_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::RawNodes,
-            semantic_scan_down,
-            &semantic_scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (semantic_scan_levels.len() - 1) as u32,
-            HIR_SEMANTIC_SCAN_DOWN,
-            HIR_SEMANTIC_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         &mut graph,
         &passes.hir_semantic_compact_scatter,
@@ -3337,34 +3313,14 @@ fn build_graph(
             ("canonical_status", "hir_canonical_status", None),
         ],
     )?;
-    reflected(
+    block_scan(
         &mut graph,
-        HIR_CANONICAL_IDENTITY_SCAN_UP,
-        CompilerPhase::Hir,
+        passes,
+        HIR_CANONICAL_IDENTITY_SCAN,
         ResourceDomain::RawNodes,
-        semantic_scan_up,
-        &semantic_scan_aliases,
+        "hir_semantic_block_sum",
+        "hir_semantic_block_prefix_a",
     )?;
-    graph.repeat_pass_range(
-        semantic_scan_levels.len() as u32,
-        HIR_CANONICAL_IDENTITY_SCAN_UP,
-        HIR_CANONICAL_IDENTITY_SCAN_UP,
-    )?;
-    if semantic_scan_levels.len() > 1 {
-        reflected(
-            &mut graph,
-            HIR_CANONICAL_IDENTITY_SCAN_DOWN,
-            CompilerPhase::Hir,
-            ResourceDomain::RawNodes,
-            semantic_scan_down,
-            &semantic_scan_aliases,
-        )?;
-        graph.repeat_pass_range(
-            (semantic_scan_levels.len() - 1) as u32,
-            HIR_CANONICAL_IDENTITY_SCAN_DOWN,
-            HIR_CANONICAL_IDENTITY_SCAN_DOWN,
-        )?;
-    }
     static_pass(
         &mut graph,
         &passes.hir_canonical_scatter,
@@ -3797,8 +3753,7 @@ mod tests {
             "hir_nodes",
             "tree_depth_schedule",
             "hir_semantic_prefix_00_local",
-            HIR_SEMANTIC_SCAN_UP,
-            HIR_SEMANTIC_SCAN_DOWN,
+            HIR_SEMANTIC_SCAN,
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
             "hir_semantic_nav",
@@ -3808,14 +3763,14 @@ mod tests {
             "hir_semantic_child_index_traverse",
             "hir_type_arg_links",
             "hir_type_arg_rank_prefix_00_local",
-            "hir_type_arg_rank_prefix_01_blocks.up",
+            "hir_type_arg_rank_prefix_01_blocks",
             "hir_type_arg_rank_compact_scatter",
             "hir_type_arg_rank_step.a_to_b",
             "hir_type_arg_rank_step.b_to_a",
             "hir_type_arg_scatter",
             "hir_type_root_owner_init",
             "hir_type_root_rank_prefix_00_local",
-            "hir_type_root_rank_prefix_01_blocks.up",
+            "hir_type_root_rank_prefix_01_blocks",
             "hir_type_root_rank_compact_scatter",
             crate::parser::passes::hir::types::root::step::A_TO_B,
             crate::parser::passes::hir::types::root::step::B_TO_A,
@@ -3827,7 +3782,7 @@ mod tests {
             "hir_path_segment_root",
             "hir_path_segment_links",
             "hir_path_segment_rank_prefix_00_local",
-            "hir_path_segment_rank_prefix_01_blocks.up",
+            "hir_path_segment_rank_prefix_01_blocks",
             "hir_path_segment_rank_compact_scatter",
             "hir_path_segment_step.a_to_b",
             "hir_path_segment_step.b_to_a",
@@ -3839,7 +3794,7 @@ mod tests {
             "hir_fn_return_type",
             "hir_param_links",
             "hir_param_rank_prefix_00_local",
-            "hir_param_rank_prefix_01_blocks.up",
+            "hir_param_rank_prefix_01_blocks",
             "hir_param_rank_compact_scatter",
             "hir_param_id_clear",
             "hir_param_id_base",
@@ -3849,7 +3804,7 @@ mod tests {
             crate::parser::passes::hir::expr::result_root_step::B_TO_A,
             "hir_binary_spans",
             "hir_binary_span_rank_prefix_00_local",
-            "hir_binary_span_rank_prefix_01_blocks.up",
+            "hir_binary_span_rank_prefix_01_blocks",
             "hir_binary_span_rank_compact_scatter",
             crate::parser::passes::hir::binary::span::step::A_TO_B,
             crate::parser::passes::hir::binary::span::step::B_TO_A,
@@ -3859,10 +3814,10 @@ mod tests {
             "hir_stmt_fields",
             "parser_hir_literal_values",
             "hir_string_compact_local",
-            "hir_string_compact_prefix_01_blocks.up",
+            "hir_string_compact_prefix_01_blocks",
             "hir_string_compact_scatter",
             "hir_string_offset_local",
-            "hir_string_offset_prefix_01_blocks.up",
+            "hir_string_offset_prefix_01_blocks",
             "hir_string_offset_scatter",
             "parser_hir_string_decode",
             "hir_call_fields",
@@ -3872,46 +3827,46 @@ mod tests {
             "hir_canonical_stmt_compact",
             "hir_canonical_variant_mark",
             "hir_canonical_variant_local",
-            "hir_canonical_variant_prefix_01_blocks.up",
+            "hir_canonical_variant_prefix_01_blocks",
             "hir_canonical_variant_scatter",
             "hir_canonical_variant_payload_owner_init",
             "hir_variant_payload_owner_rank_prefix_00_local",
-            "hir_variant_payload_owner_rank_prefix_01_blocks.up",
+            "hir_variant_payload_owner_rank_prefix_01_blocks",
             "hir_variant_payload_owner_rank_compact_scatter",
             crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .a_to_b,
             crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER
                 .b_to_a,
             "hir_canonical_variant_payload_local",
-            "hir_canonical_variant_payload_prefix_01_blocks.up",
+            "hir_canonical_variant_payload_prefix_01_blocks",
             "hir_canonical_variant_payload_scatter",
             "hir_canonical_variant_payload_ordinal",
             "hir_call_arg_links",
             "hir_call_arg_rank_prefix_00_local",
-            "hir_call_arg_rank_prefix_01_blocks.up",
+            "hir_call_arg_rank_prefix_01_blocks",
             "hir_call_arg_rank_compact_scatter",
             "hir_call_arg_ordinal_step.a_to_b",
             "hir_call_arg_ordinal_step.b_to_a",
             "hir_call_arg_ordinal_scatter",
             "hir_canonical_call_arg_mark",
             "hir_canonical_call_arg_local",
-            "hir_canonical_call_arg_prefix_01_blocks.up",
+            "hir_canonical_call_arg_prefix_01_blocks",
             "hir_canonical_call_arg_scatter",
             "hir_array_element_links",
             "hir_array_element_rank_prefix_00_local",
-            "hir_array_element_rank_prefix_01_blocks.up",
+            "hir_array_element_rank_prefix_01_blocks",
             "hir_array_element_rank_compact_scatter",
             "hir_array_element_rank_step.a_to_b",
             "hir_array_element_rank_step.b_to_a",
             "hir_array_element_scatter",
             "hir_canonical_array_element_mark",
             "hir_canonical_array_element_local",
-            "hir_canonical_array_element_prefix_01_blocks.up",
+            "hir_canonical_array_element_prefix_01_blocks",
             "hir_canonical_array_element_scatter",
             "hir_struct_fields",
             "hir_struct_field_links",
             "hir_struct_rank_prefix_00_local",
-            HIR_STRUCT_RANK_SCAN_UP,
+            HIR_STRUCT_RANK_SCAN,
             "hir_struct_rank_compact_scatter",
             crate::parser::passes::hir::structs::field::rank_step::A_TO_B,
             crate::parser::passes::hir::structs::field::rank_step::B_TO_A,
@@ -3919,7 +3874,7 @@ mod tests {
             "hir_struct_field_scatter",
             "hir_canonical_field_mark",
             "hir_canonical_field_local",
-            "hir_canonical_field_prefix_01_blocks.up",
+            "hir_canonical_field_prefix_01_blocks",
             "hir_canonical_field_scatter",
             "hir_context_relations_init",
             crate::parser::passes::hir::context::relations::step::A_TO_B,
@@ -3928,11 +3883,11 @@ mod tests {
             "hir_stmt_scope",
             "hir_canonical_param_mark",
             "hir_canonical_param_local",
-            "hir_canonical_param_prefix_01_blocks.up",
+            "hir_canonical_param_prefix_01_blocks",
             "hir_canonical_param_scatter",
             "hir_canonical_type_arg_mark",
             "hir_canonical_type_arg_local",
-            "hir_canonical_type_arg_prefix_01_blocks.up",
+            "hir_canonical_type_arg_prefix_01_blocks",
             "hir_canonical_type_arg_scatter",
             "hir_canonical_end_rows",
             "hir_canonical_end_blocks",
@@ -3946,19 +3901,19 @@ mod tests {
             "hir_canonical_generic_param_candidate_mark",
             "hir_canonical_generic_param_finalize",
             "hir_canonical_generic_param_local",
-            "hir_canonical_generic_param_prefix_01_blocks.up",
+            "hir_canonical_generic_param_prefix_01_blocks",
             "hir_canonical_generic_param_scatter",
             "hir_canonical_path_segment_mark",
-            HIR_PATH_SEGMENT_SCAN_UP,
+            HIR_PATH_SEGMENT_SCAN,
             "hir_canonical_path_segment_scatter",
             "hir_canonical_path_mark",
             "hir_canonical_path_local",
-            "hir_canonical_path_prefix_01_blocks.up",
+            "hir_canonical_path_prefix_01_blocks",
             "hir_canonical_path_scatter",
             "hir_canonical_string_scatter",
             "hir_canonical_predicate_finalize",
             "hir_canonical_predicate_local",
-            "hir_canonical_predicate_prefix_01_blocks.up",
+            "hir_canonical_predicate_prefix_01_blocks",
             "hir_canonical_predicate_scatter",
             "hir_canonical_validate",
             "hir_canonical_decl_index_clear",
@@ -4009,10 +3964,13 @@ mod tests {
                 "missing multilevel token scan operation {name}",
             );
         }
+        // One workgroup scans every semantic block: one pass, not a region.
+        let semantic_scan = graph.pass_id(HIR_SEMANTIC_SCAN).unwrap();
         assert!(
-            graph.repeated_regions().iter().any(|region| {
-                region.first_pass == graph.pass_id(HIR_SEMANTIC_SCAN_UP).unwrap()
-            })
+            !graph
+                .repeated_regions()
+                .iter()
+                .any(|region| region.first_pass == semantic_scan)
         );
 
         let mut match_capacity = capacity;
@@ -4030,18 +3988,18 @@ mod tests {
             crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.finalize,
             "hir_match_arm_links",
             "hir_match_rank_prefix_00_local",
-            HIR_MATCH_RANK_SCAN_UP,
+            HIR_MATCH_RANK_SCAN,
             "hir_match_rank_compact_scatter",
             crate::parser::passes::hir::matches::arm::rank_step::A_TO_B,
             crate::parser::passes::hir::matches::arm::rank_step::B_TO_A,
             "hir_match_arm_scatter",
             "hir_canonical_match_arm_mark",
             "hir_canonical_match_arm_local",
-            "hir_canonical_match_arm_prefix_01_blocks.up",
+            "hir_canonical_match_arm_prefix_01_blocks",
             "hir_canonical_match_arm_scatter",
             "hir_canonical_match_payload_mark",
             "hir_canonical_match_payload_local",
-            "hir_canonical_match_payload_prefix_01_blocks.up",
+            "hir_canonical_match_payload_prefix_01_blocks",
             "hir_canonical_match_payload_scatter",
         ] {
             assert!(
@@ -4058,7 +4016,7 @@ mod tests {
             "hir_method_signature_status",
             "hir_canonical_method_mark",
             "hir_canonical_method_local",
-            "hir_canonical_method_prefix_01_blocks.up",
+            "hir_canonical_method_prefix_01_blocks",
             "hir_canonical_method_scatter",
         ] {
             assert!(

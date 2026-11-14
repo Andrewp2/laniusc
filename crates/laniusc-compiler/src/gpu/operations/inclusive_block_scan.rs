@@ -4,164 +4,89 @@ use encase::ShaderType;
 use crate::gpu::{
     buffers::{LaniusBuffer, uniform_from_val},
     passes_core::{BindGroupCache, CompilerGraphBuffers, PassData, make_pass_data_from_shader_key},
-    scan::{HierarchicalScanLevel, hierarchical_scan_levels},
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct InclusiveBlockScanParams {
     n_blocks: u32,
-    level_divisor: u32,
-    level_offset: u32,
-    parent_divisor: u32,
-    parent_offset: u32,
     _reserved0: u32,
     _reserved1: u32,
     _reserved2: u32,
 }
 
-struct InclusiveBlockScanStep {
-    params: LaniusBuffer<InclusiveBlockScanParams>,
-    work_items: u32,
-}
-
-/// Capacity-dependent schedule for an inclusive scan over precomputed block
-/// sums. The hierarchy scratch occupies at most `n_blocks` u32 rows.
+/// Capacity-dependent parameters of an inclusive scan over precomputed
+/// block sums. One workgroup scans every block (scan/blocks/inclusive).
 pub struct InclusiveBlockScanPlan {
-    up: Vec<InclusiveBlockScanStep>,
-    down: Vec<InclusiveBlockScanStep>,
+    params: LaniusBuffer<InclusiveBlockScanParams>,
 }
 
 impl InclusiveBlockScanPlan {
     pub(crate) fn new(device: &wgpu::Device, label: &str, n_blocks: u32) -> Self {
-        let n_blocks = n_blocks.max(1);
-        let levels = hierarchical_scan_levels(n_blocks);
-        let step = |direction: &str,
-                    index: usize,
-                    level: HierarchicalScanLevel,
-                    parent: Option<HierarchicalScanLevel>| {
-            InclusiveBlockScanStep {
-                params: uniform_from_val(
-                    device,
-                    &format!("{label}.{direction}.{index}.params"),
-                    &InclusiveBlockScanParams {
-                        n_blocks,
-                        level_divisor: level.divisor,
-                        level_offset: level.offset,
-                        parent_divisor: parent.map_or(0, |value| value.divisor),
-                        parent_offset: parent.map_or(0, |value| value.offset),
-                        _reserved0: 0,
-                        _reserved1: 0,
-                        _reserved2: 0,
-                    },
-                ),
-                work_items: level.count,
-            }
-        };
-        let up = levels
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(index, level)| step("up", index, level, levels.get(index + 1).copied()))
-            .collect();
-        let down = (0..levels.len().saturating_sub(1))
-            .rev()
-            .map(|index| step("down", index, levels[index], Some(levels[index + 1])))
-            .collect();
-        Self { up, down }
+        Self {
+            params: uniform_from_val(
+                device,
+                &format!("{label}.params"),
+                &InclusiveBlockScanParams {
+                    n_blocks: n_blocks.max(1),
+                    _reserved0: 0,
+                    _reserved1: 0,
+                    _reserved2: 0,
+                },
+            ),
+        }
     }
 }
 
-/// Shared pipelines for an inclusive hierarchical scan over block sums.
+/// The shared pipeline of the one-workgroup inclusive scan over block sums.
 pub(crate) struct InclusiveBlockScanKernels {
-    up: PassData,
-    down: PassData,
+    scan: PassData,
 }
 
 impl InclusiveBlockScanKernels {
     pub(crate) fn new(device: &wgpu::Device) -> Result<Self> {
         Ok(Self {
-            up: make_pass_data_from_shader_key(
+            scan: make_pass_data_from_shader_key(
                 device,
-                "scan.blocks.inclusive.up",
+                "scan.blocks.inclusive",
                 "main",
-                "scan/blocks/inclusive_up",
-            )?,
-            down: make_pass_data_from_shader_key(
-                device,
-                "scan.blocks.inclusive.down",
-                "main",
-                "scan/blocks/inclusive_down",
+                "scan/blocks/inclusive",
             )?,
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Records the scan under the graph pass `label`: one dispatch of one
+    /// workgroup.
     pub(crate) fn record_graph(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         cache: &mut BindGroupCache,
         graph_buffers: &impl CompilerGraphBuffers,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
         plan: &InclusiveBlockScanPlan,
         block_sum: &LaniusBuffer<u32>,
         block_prefix: &LaniusBuffer<u32>,
-        hierarchy: &LaniusBuffer<u32>,
     ) -> Result<()> {
-        for (index, step) in plan.up.iter().enumerate() {
-            let resources = std::collections::HashMap::from([
-                ("gBlockScan".into(), step.params.as_entire_binding()),
-                ("block_sum".into(), block_sum.as_entire_binding()),
-                ("block_prefix".into(), block_prefix.as_entire_binding()),
-                ("block_hierarchy".into(), hierarchy.as_entire_binding()),
-            ]);
-            let invocation = format!("{up_label}.{index}");
-            let group = cache
-                .reflected_for_graph_invocation(
-                    device,
-                    &invocation,
-                    up_label,
-                    &self.up,
-                    graph_buffers,
-                    &resources,
-                    None,
-                )?
-                .into_iter()
-                .next()
-                .expect("inclusive block-scan up pass must have one bind group");
-            super::record_direct(encoder, &self.up, group.as_ref(), up_label, step.work_items)?;
-        }
-        for (index, step) in plan.down.iter().enumerate() {
-            let resources = std::collections::HashMap::from([
-                ("gBlockScan".into(), step.params.as_entire_binding()),
-                ("block_prefix".into(), block_prefix.as_entire_binding()),
-                ("block_hierarchy".into(), hierarchy.as_entire_binding()),
-            ]);
-            let invocation = format!("{down_label}.{index}");
-            let group = cache
-                .reflected_for_graph_invocation(
-                    device,
-                    &invocation,
-                    down_label,
-                    &self.down,
-                    graph_buffers,
-                    &resources,
-                    None,
-                )?
-                .into_iter()
-                .next()
-                .expect("inclusive block-scan down pass must have one bind group");
-            super::record_direct(
-                encoder,
-                &self.down,
-                group.as_ref(),
-                down_label,
-                step.work_items,
-            )?;
-        }
-        Ok(())
+        let resources = std::collections::HashMap::from([
+            ("gBlockScan".into(), plan.params.as_entire_binding()),
+            ("block_sum".into(), block_sum.as_entire_binding()),
+            ("block_prefix".into(), block_prefix.as_entire_binding()),
+        ]);
+        let group = cache
+            .reflected_for_graph_invocation(
+                device,
+                label,
+                label,
+                &self.scan,
+                graph_buffers,
+                &resources,
+                None,
+            )?
+            .into_iter()
+            .next()
+            .expect("inclusive block scan must have one bind group");
+        super::record_direct(encoder, &self.scan, group.as_ref(), label, 1)
     }
 
     #[cfg(test)]
@@ -169,48 +94,28 @@ impl InclusiveBlockScanKernels {
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        up_label: &'static str,
-        down_label: &'static str,
+        label: &'static str,
         plan: &InclusiveBlockScanPlan,
         block_sum: &LaniusBuffer<u32>,
         block_prefix: &LaniusBuffer<u32>,
-        hierarchy: &LaniusBuffer<u32>,
     ) -> Result<()> {
         use crate::gpu::passes_core::bind_group;
-        for step in &plan.up {
-            let group = bind_group::create_bind_group_from_bindings(
-                device,
-                Some(up_label),
-                &self.up,
-                0,
-                &[
-                    ("gBlockScan", step.params.as_entire_binding()),
-                    ("block_sum", block_sum.as_entire_binding()),
-                    ("block_prefix", block_prefix.as_entire_binding()),
-                    ("block_hierarchy", hierarchy.as_entire_binding()),
-                ],
-            )?;
-            super::record_direct(encoder, &self.up, &group, up_label, step.work_items)?;
-        }
-        for step in &plan.down {
-            let group = bind_group::create_bind_group_from_bindings(
-                device,
-                Some(down_label),
-                &self.down,
-                0,
-                &[
-                    ("gBlockScan", step.params.as_entire_binding()),
-                    ("block_prefix", block_prefix.as_entire_binding()),
-                    ("block_hierarchy", hierarchy.as_entire_binding()),
-                ],
-            )?;
-            super::record_direct(encoder, &self.down, &group, down_label, step.work_items)?;
-        }
-        Ok(())
+        let group = bind_group::create_bind_group_from_bindings(
+            device,
+            Some(label),
+            &self.scan,
+            0,
+            &[
+                ("gBlockScan", plan.params.as_entire_binding()),
+                ("block_sum", block_sum.as_entire_binding()),
+                ("block_prefix", block_prefix.as_entire_binding()),
+            ],
+        )?;
+        super::record_direct(encoder, &self.scan, &group, label, 1)
     }
 
-    pub(crate) fn graph_passes(&self) -> (&PassData, &PassData) {
-        (&self.up, &self.down)
+    pub(crate) fn graph_pass(&self) -> &PassData {
+        &self.scan
     }
 }
 
@@ -225,28 +130,16 @@ mod tests {
             with_uniform_buffer_arena,
         },
         passes_core::map_readback_blocking,
-        scan::hierarchical_scan_levels,
     };
-
-    #[test]
-    fn block_scan_pass_count_grows_by_hierarchy_depth_not_log_two_items() {
-        for (blocks, expected) in [(1, 1), (256, 1), (257, 3), (65_536, 3), (65_537, 5)] {
-            let levels = hierarchical_scan_levels(blocks).len();
-            assert_eq!(levels * 2 - 1, expected);
-        }
-    }
 
     #[test]
     fn physical_gpu_inclusive_block_scan_matches_cpu_prefix_sum() {
         let gpu = crate::gpu::device::global();
-        // Cross both hierarchy boundaries: 65,537 block sums require three
-        // upsweep levels and two carry-propagation levels.
+        // Spans many 2048-row chunks and ends in a partial one.
         let values = (0..65_537).map(|index| index % 7).collect::<Vec<u32>>();
         let block_sum = storage_ro_from_u32s(&gpu.device, "test.block_scan.input", &values);
         let block_prefix =
             storage_rw_for_array::<u32>(&gpu.device, "test.block_scan.output", values.len());
-        let hierarchy =
-            storage_rw_for_array::<u32>(&gpu.device, "test.block_scan.hierarchy", values.len());
         let readback = readback_bytes(
             &gpu.device,
             "test.block_scan.readback",
@@ -266,12 +159,10 @@ mod tests {
             .record_for_test(
                 &gpu.device,
                 &mut encoder,
-                "test.block_scan.up",
-                "test.block_scan.down",
+                "test.block_scan",
                 &plan,
                 &block_sum,
                 &block_prefix,
-                &hierarchy,
             )
             .unwrap();
         encoder.copy_buffer_to_buffer(

@@ -1178,7 +1178,6 @@ impl ParserBuffers {
             .buffer::<u32>("hir_semantic_local_prefix")
             .expect("parser graph must own semantic local prefixes");
         let hir_semantic_block_prefix_a = graph_buffer!(u32, "hir_semantic_block_prefix_a");
-        let hir_semantic_block_prefix_b = graph_buffer!(u32, "hir_semantic_block_prefix_b");
         let hir_node_dense_id = compiler_graph
             .buffer::<u32>("hir_node_dense_id")
             .expect("parser graph must own raw-to-semantic dense ids");
@@ -1325,7 +1324,6 @@ impl ParserBuffers {
         let hir_list_rank_local_prefix = graph_buffer!(u32, "hir_list_rank_local_prefix");
         let hir_list_rank_block_sum = graph_buffer!(u32, "hir_list_rank_block_sum");
         let hir_list_rank_block_prefix_a = graph_buffer!(u32, "hir_list_rank_block_prefix_a");
-        let hir_list_rank_block_prefix_b = graph_buffer!(u32, "hir_list_rank_block_prefix_b");
         let hir_list_rank_node = graph_buffer!(u32, "hir_list_rank_node");
         let hir_list_rank_count = graph_buffer!(u32, "hir_list_rank_count");
         let hir_list_rank_dispatch_args = graph_buffer!(u32, "hir_list_rank_dispatch_args");
@@ -1333,7 +1331,6 @@ impl ParserBuffers {
         let hir_enum_rank_local_prefix = graph_buffer!(u32, "hir_enum_rank_local_prefix");
         let hir_enum_rank_block_sum = graph_buffer!(u32, "hir_enum_rank_block_sum");
         let hir_enum_rank_block_prefix_a = graph_buffer!(u32, "hir_enum_rank_block_prefix_a");
-        let hir_enum_rank_block_prefix_b = graph_buffer!(u32, "hir_enum_rank_block_prefix_b");
         let hir_enum_rank_node = graph_buffer!(u32, "hir_enum_rank_node");
         let hir_enum_rank_count = graph_buffer!(u32, "hir_enum_rank_count");
         let hir_enum_rank_dispatch_args = graph_buffer!(u32, "hir_enum_rank_dispatch_args");
@@ -1397,8 +1394,6 @@ impl ParserBuffers {
             optional_graph_buffer!(u32, "hir_match_rank_block_sum", match_required);
         let hir_match_rank_block_prefix_a =
             optional_graph_buffer!(u32, "hir_match_rank_block_prefix_a", match_required);
-        let hir_match_rank_block_prefix_b =
-            optional_graph_buffer!(u32, "hir_match_rank_block_prefix_b", match_required);
         let hir_match_rank_node =
             optional_graph_buffer!(u32, "hir_match_rank_node", match_required);
         let hir_match_rank_count =
@@ -1550,7 +1545,6 @@ impl ParserBuffers {
         let hir_struct_rank_local_prefix = graph_buffer!(u32, "hir_struct_rank_local_prefix");
         let hir_struct_rank_block_sum = graph_buffer!(u32, "hir_struct_rank_block_sum");
         let hir_struct_rank_block_prefix_a = graph_buffer!(u32, "hir_struct_rank_block_prefix_a");
-        let hir_struct_rank_block_prefix_b = graph_buffer!(u32, "hir_struct_rank_block_prefix_b");
         let hir_struct_rank_node = graph_buffer!(u32, "hir_struct_rank_node");
         let hir_struct_rank_count = graph_buffer!(u32, "hir_struct_rank_count");
         let hir_struct_rank_dispatch_args = graph_buffer!(u32, "hir_struct_rank_dispatch_args");
@@ -2155,7 +2149,6 @@ impl ParserBuffers {
             hir_semantic_flag,
             hir_semantic_local_prefix,
             hir_semantic_block_prefix_a,
-            hir_semantic_block_prefix_b,
             hir_node_dense_id,
             hir_semantic_prefix_before_node,
             hir_semantic_dense_node,
@@ -2304,7 +2297,6 @@ impl ParserBuffers {
             hir_list_rank_local_prefix,
             hir_list_rank_block_sum,
             hir_list_rank_block_prefix_a,
-            hir_list_rank_block_prefix_b,
             hir_list_rank_node,
             hir_list_rank_count,
             hir_list_rank_dispatch_args,
@@ -2312,7 +2304,6 @@ impl ParserBuffers {
             hir_enum_rank_local_prefix,
             hir_enum_rank_block_sum,
             hir_enum_rank_block_prefix_a,
-            hir_enum_rank_block_prefix_b,
             hir_enum_rank_node,
             hir_enum_rank_count,
             hir_enum_rank_dispatch_args,
@@ -2347,7 +2338,6 @@ impl ParserBuffers {
             hir_match_rank_local_prefix,
             hir_match_rank_block_sum,
             hir_match_rank_block_prefix_a,
-            hir_match_rank_block_prefix_b,
             hir_match_rank_node,
             hir_match_rank_count,
             hir_match_rank_dispatch_args,
@@ -2459,7 +2449,6 @@ impl ParserBuffers {
             hir_struct_rank_local_prefix,
             hir_struct_rank_block_sum,
             hir_struct_rank_block_prefix_a,
-            hir_struct_rank_block_prefix_b,
             hir_struct_rank_node,
             hir_struct_rank_count,
             hir_struct_rank_dispatch_args,
