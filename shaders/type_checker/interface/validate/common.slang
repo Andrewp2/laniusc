@@ -15,7 +15,9 @@
 //   1 1 when the framing is valid and the record kernels may read it
 //   2..13 section counts, 14..25 section starts (words; the name start is a
 //   byte offset), 26 library id, 27 unit id, 28 artifact word count
-//   29..32 scratch offsets, 33 scratch words, 34 symbol table capacity
+//   29..32 scratch offsets, 33 scratch words, 34 symbol table capacity,
+//   35..36 scratch offsets of the predicate summaries, 37..38 of the
+//   implementation row results
 __exported import primitive_types;
 __exported import constant_value;
 __exported import atomics;
@@ -54,6 +56,10 @@ public static const uint STATE_BIND_OWNERS = 31u;
 public static const uint STATE_SYMBOLS = 32u;
 public static const uint STATE_SCRATCH_WORDS = 33u;
 public static const uint STATE_SYMBOL_CAPACITY = 34u;
+public static const uint STATE_IMPL_PREDICATES = 35u;
+public static const uint STATE_MEMBER_PREDICATES = 36u;
+public static const uint STATE_MEMBER_RESULTS = 37u;
+public static const uint STATE_BINDING_RESULTS = 38u;
 public static const uint STATE_WORD_COUNT = 40u;
 
 // Kernels with indirect arguments, in dispatch order.
@@ -61,9 +67,10 @@ public static const uint ARGS_CLEAR = 0u;
 public static const uint ARGS_OWNERS = 1u;
 public static const uint ARGS_RECORDS = 2u;
 public static const uint ARGS_SCOPES = 3u;
-public static const uint ARGS_IMPLEMENTATIONS = 4u;
-public static const uint ARGS_PREDICATES = 5u;
-public static const uint ARGS_COUNT = 6u;
+public static const uint ARGS_IMPLEMENTATION_ROWS = 4u;
+public static const uint ARGS_IMPLEMENTATIONS = 5u;
+public static const uint ARGS_PREDICATES = 6u;
+public static const uint ARGS_COUNT = 7u;
 
 // Sections.
 public static const uint S_MODULE = 0u;
@@ -551,6 +558,19 @@ public uint symbol_first_row(uint symbol)
 public uint parg_owner(uint row) { return validate_scratch[validate_state[STATE_PARG_OWNERS] + row]; }
 public uint iarg_owner(uint row) { return validate_scratch[validate_state[STATE_IARG_OWNERS] + row]; }
 public uint bind_owner(uint row) { return validate_scratch[validate_state[STATE_BIND_OWNERS] + row]; }
+
+// Predicates owned by implementation `index` whose scope has the impl tag:
+// the least and greatest row and scope symbol. Four words per
+// implementation, each an atomic minimum (the greatest values stored
+// complemented); `INVALID` least row means there is none.
+public uint impl_predicate_summary(uint index, uint word)
+{ return validate_scratch[validate_state[STATE_IMPL_PREDICATES] + 4u * index + word]; }
+
+// Zero when some predicate owned by this member's owner has the member's
+// symbol as its scope; INVALID otherwise. Only implementation members are
+// marked.
+public bool member_has_owner_predicate(uint row)
+{ return validate_scratch[validate_state[STATE_MEMBER_PREDICATES] + row] == 0u; }
 
 // A depth-first walk over the type nodes reachable from some roots. Type
 // edges point to earlier nodes, so the walk ends; nodes reached twice are

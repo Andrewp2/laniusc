@@ -114,7 +114,11 @@ void main()
     uint iarg_owners = parg_owners + count_of(S_PARG);
     uint bind_owners = iarg_owners + count_of(S_IARG);
     uint symbols = bind_owners + count_of(S_BIND);
-    uint scratch = symbols + 2u * capacity;
+    uint impl_predicates = symbols + 2u * capacity;
+    uint member_predicates = impl_predicates + 4u * count_of(S_IMPL);
+    uint member_results = member_predicates + count_of(S_MEMBER);
+    uint binding_results = member_results + 2u * count_of(S_MEMBER);
+    uint scratch = binding_results + count_of(S_BIND);
     if (scratch > gParams.scratch_capacity)
     {
         fail(PH_HEADER, 0u, 4u);
@@ -124,6 +128,10 @@ void main()
     validate_state[STATE_IARG_OWNERS] = iarg_owners;
     validate_state[STATE_BIND_OWNERS] = bind_owners;
     validate_state[STATE_SYMBOLS] = symbols;
+    validate_state[STATE_IMPL_PREDICATES] = impl_predicates;
+    validate_state[STATE_MEMBER_PREDICATES] = member_predicates;
+    validate_state[STATE_MEMBER_RESULTS] = member_results;
+    validate_state[STATE_BINDING_RESULTS] = binding_results;
     validate_state[STATE_SCRATCH_WORDS] = scratch;
     validate_state[STATE_SYMBOL_CAPACITY] = capacity;
 
@@ -134,8 +142,9 @@ void main()
     uint predicates = max(max(max(count_of(S_PRED), count_of(S_DECL)), count_of(S_PARG)),
         max(count_of(S_IARG), count_of(S_BIND)));
     uint implementations = max(count_of(S_IMPL), 1u);
+    uint implementation_rows = max(count_of(S_MEMBER), count_of(S_BIND));
     if (max(max(scratch, records), owners) > MAX_WORKGROUPS * WG ||
-        max(max(scopes, implementations), predicates) > MAX_WORKGROUPS * WALK_WG)
+        max(max(scopes, implementation_rows), max(implementations, predicates)) > MAX_WORKGROUPS * WALK_WG)
     {
         fail(PH_HEADER, 0u, 4u);
         return;
@@ -145,6 +154,7 @@ void main()
     write_args(ARGS_OWNERS, owners, WG);
     write_args(ARGS_RECORDS, records, WG);
     write_args(ARGS_SCOPES, scopes, WALK_WG);
+    write_args(ARGS_IMPLEMENTATION_ROWS, implementation_rows, WALK_WG);
     write_args(ARGS_IMPLEMENTATIONS, implementations, WALK_WG);
     write_args(ARGS_PREDICATES, predicates, WALK_WG);
 }

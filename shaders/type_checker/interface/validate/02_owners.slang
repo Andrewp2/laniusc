@@ -4,7 +4,10 @@ import type_checker.interface.validate.common;
 // - each predicate argument row's least owning predicate;
 // - each argument and method binding row's least owning trait
 //   implementation (inherent implementations own none);
-// - each method symbol's least member row.
+// - each method symbol's least member row;
+// - per implementation, the extent of its impl-scoped predicates, and per
+//   implementation member, whether one of its owner's predicates has the
+//   member's symbol as its scope.
 // Only well-formed ranges and method identities are recorded; a malformed
 // row fails its own earlier check.
 
@@ -22,6 +25,26 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         if (range_ok(first, count, count_of(S_PARG)))
             for (uint k = 0u; k < count; ++k)
                 atomic_u32_min(validate_scratch, validate_state[STATE_PARG_OWNERS] + first + k, row);
+        uint owner = pred(row, P_OWNER);
+        uint index = owner & ~OWNER_TAG;
+        if ((owner & OWNER_TAG) != 0u && index < count_of(S_IMPL))
+        {
+            uint symbol = pred(row, P_SCOPE);
+            if ((symbol & SCOPE_MASK) == SCOPE_IMPL)
+            {
+                uint base = validate_state[STATE_IMPL_PREDICATES] + 4u * index;
+                atomic_u32_min(validate_scratch, base, row);
+                atomic_u32_min(validate_scratch, base + 1u, ~row);
+                atomic_u32_min(validate_scratch, base + 2u, symbol);
+                atomic_u32_min(validate_scratch, base + 3u, ~symbol);
+            }
+            uint members = impl(index, I_FIRST_MEMBER);
+            uint member_count = impl(index, I_MEMBER_COUNT);
+            if (range_ok(members, member_count, count_of(S_MEMBER)))
+                for (uint member = members; member < members + member_count; ++member)
+                    if (mem(member, B_VALUE_HI) == symbol)
+                        validate_scratch[validate_state[STATE_MEMBER_PREDICATES] + member] = 0u;
+        }
     }
     if (row < count_of(S_IMPL) && impl(row, I_KIND) == IMPL_TRAIT)
     {

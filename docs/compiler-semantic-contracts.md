@@ -12,7 +12,10 @@ the same order, and report the first failure.
 - `from_bytes` parses and then validates the exact bytes, for interfaces
   read from disk. `validate` encodes the interface and validates the bytes.
 - The plan kernel checks the framing and writes the indirect arguments of
-  six record kernels. Each record kernel runs one thread per row.
+  seven record kernels. Each record kernel runs one thread per row.
+- The checks of an implementation's members and method bindings run one
+  thread per member and binding (`04a_implementation_rows`). The
+  implementation thread reads their results in check order.
 - A failure key is `phase << 27 | row << 7 | code`, reduced with an atomic
   minimum. `gpu_validation::failure_message` maps it to the host's message.
 - Type-graph walks keep their stacks in workgroup memory, 192 words per

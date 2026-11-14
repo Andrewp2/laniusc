@@ -4,7 +4,7 @@
 //! The kernels read the exact persisted byte stream where it already is: an
 //! export validates the artifact its materialize pass wrote, in the same
 //! submission. A plan kernel checks the framing and writes the indirect
-//! dispatch arguments of six record kernels, which check record ranges,
+//! dispatch arguments of seven record kernels, which check record ranges,
 //! canonical names, the typed graph, lexical ownership, implementations and
 //! predicates. Each kernel reports a failure as one key; the smallest key is
 //! the first failure in check order, and the host reads only that word.
@@ -22,11 +22,12 @@ const LABEL: &str = "type_check.interface.validate";
 const PLAN_SHADER: &str = "type_checker/interface/validate/00_plan";
 /// The record kernels in dispatch order. Kernel `k` reads its indirect
 /// arguments at words `3k..3k + 3` of the arguments the plan wrote.
-const RECORD_SHADERS: [(&str, &str); 6] = [
+const RECORD_SHADERS: [(&str, &str); 7] = [
     ("type_checker/interface/validate/01_clear", "type_check.interface.validate.clear"),
     ("type_checker/interface/validate/02_owners", "type_check.interface.validate.owners"),
     ("type_checker/interface/validate/03_records", "type_check.interface.validate.records"),
     ("type_checker/interface/validate/04_scopes", "type_check.interface.validate.scopes"),
+    ("type_checker/interface/validate/04a_implementation_rows", "type_check.interface.validate.implementation_rows"),
     ("type_checker/interface/validate/05_implementations", "type_check.interface.validate.implementations"),
     ("type_checker/interface/validate/06_predicates", "type_check.interface.validate.predicates"),
 ];
@@ -61,9 +62,10 @@ pub(crate) fn record_validation(
 ) -> Result<LaniusBuffer<u32>> {
     let word_capacity = u32::try_from(artifact_words.byte_size / 4)
         .map_err(|_| anyhow!("semantic-interface artifact capacity exceeds u32 words"))?;
-    // Argument and binding owners plus a symbol table of at most four
-    // slots per 12-word member record.
-    let scratch_words = 3 * word_capacity as usize + 64;
+    // Each scratch table (00_plan.slang) has fewer words per row than the
+    // row's record has in the artifact; the symbol table's power-of-two
+    // slack is at most eight more.
+    let scratch_words = word_capacity as usize + 64;
     let state = buffers.storage_u32(device, "type_check.interface.validate.state", STATE_WORDS,
         wgpu::BufferUsages::empty());
     let dispatch_args = buffers.storage_u32(device, "type_check.interface.validate.dispatch_args",
