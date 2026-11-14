@@ -28,7 +28,9 @@ struct Hidden<T> { inner: T }
 pub struct Cell<T> { value: T }
 pub fn wrap<T>(value: T) -> Cell<T> {
     let hidden: Hidden<T> = Hidden { inner: value };
-    return Cell { value: identity(hidden.inner) };
+    let result = identity(hidden.inner);
+    pad();
+    return Cell { value: result };
 }
 pub impl<T> Cell<T> {
     pub fn shadow<T>(&self, value: T) -> T {
@@ -200,7 +202,7 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
     // `wrap(7)` and `wrap(1)` share theirs.
     let mut wrap_hashes = eligible
         .iter()
-        .filter(|u| u[PROBE_ROWS] > 0 && u[PROBE_USES] == 1 && u[PROBE_PARAMS_CLOSED] == 1)
+        .filter(|u| u[PROBE_ROWS] > 0 && u[PROBE_PARAMS_CLOSED] == 1)
         .map(|u| (u[PROBE_CALLEE], u[PROBE_HASH], u[PROBE_HASH + 1]))
         .collect::<Vec<_>>();
     wrap_hashes.sort();
@@ -265,6 +267,7 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     assert_eq!(fresh_status[counts::JOBS], 1);
     assert_eq!(fresh_status[counts::CONFLICTS], 0);
     assert_eq!(fresh_status[counts::INVARIANTS], 0);
+    assert_eq!(fresh_status[counts::READY], 1);
     let fresh_keys = decl_keys(&tiny, fresh_status[0] as usize);
     assert!(fresh_keys.iter().any(|key| key[0] == 99));
     assert!(fresh_keys.iter().filter(|key| key[0] != 0).all(|key| key[0] == 99),
@@ -272,6 +275,7 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     let fresh_probe = probe(&tiny);
     assert!(!fresh_probe.uses.is_empty(), "the unrelated build exports its call");
     assert_eq!(fresh_probe.eligible().count(), 0, "old foreign definitions are unreachable");
+    assert!(fresh_probe.uses.iter().all(|u| u[PROBE_ELIGIBLE] != 6), "the fresh build is usable");
     let definitions = tiny.read_store_words("rt_decl_def", fresh_status[0] as usize).unwrap();
     for use_words in &fresh_probe.uses {
         let callee = use_words[PROBE_CALLEE] as usize;
@@ -307,13 +311,24 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     assert!(failed[counts::INVARIANT_TOTAL] > 0);
     assert!(failed[counts::INCOMPLETE_TOTAL] > 0);
     assert!(!collided.job_reports().last().unwrap().ready);
-    assert_eq!(probe(&collided).eligible().count(), 0, "conflicting builds cannot supply a probe instance");
+    let blocked = probe(&collided);
+    assert_eq!(blocked.eligible().count(), 0, "conflicting builds cannot supply a probe instance");
+    assert!(blocked.uses.iter().any(|u| u[PROBE_ELIGIBLE] == 6));
+    for use_words in blocked.uses.iter().filter(|u| u[PROBE_ELIGIBLE] == 6) {
+        assert_eq!(use_words[PROBE_RESULT_STATUS], 6, "binding itself rejects the conflicting build");
+    }
     pollster::block_on(compiler.semantic_interface_for_source_pack(100, &["module later; fn main() -> i32 { return 0; }"])).unwrap();
     compiler.attach_program_retention(None);
     let later = collided.status().unwrap();
     assert_eq!(later[counts::INVARIANTS], 0, "the latest job itself is clean");
     assert_eq!(later[counts::INVARIANT_TOTAL], failed[counts::INVARIANT_TOTAL]);
     assert_eq!(later[counts::READY], 0, "build readiness cannot recover without begin_build");
+    build(&compiler, &collided);
+    let recovered = collided.status().unwrap();
+    assert_eq!(recovered[counts::READY], 1);
+    assert_eq!(recovered[counts::INVARIANT_TOTAL], 0);
+    assert_eq!(recovered[counts::INCOMPLETE_TOTAL], 0);
+    assert!(collided.job_reports().iter().all(|r| r.ready));
 
     let bytes = tiny.retained_bytes().unwrap();
     eprintln!(

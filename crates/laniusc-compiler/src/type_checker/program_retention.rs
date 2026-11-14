@@ -421,6 +421,19 @@ impl ProgramRetention {
     /// Exports the current job. `job` names every job table the kernels
     /// read. Retries after growth until the job commits.
     pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
+        let result = self.export_job_attempts(job);
+        if result.is_err() {
+            // An incomplete transfer/readback invalidates this build even if
+            // its last GPU attempt committed. A driver must not reuse the
+            // preceding successful prefix after an export error.
+            let store = self.store.lock().unwrap();
+            self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
+            self.queue.submit(None);
+        }
+        result
+    }
+
+    fn export_job_attempts(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
         let rows = table_words(job, "compact_hir_core")? / 4;
         let records = table_words(job, "ct_head")? / 4;
         let args = table_words(job, "ct_args")?;

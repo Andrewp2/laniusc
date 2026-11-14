@@ -230,8 +230,9 @@ Invariant failures do not roll a job back. The current job reports
 Commit accumulates the invariant and incomplete-entry totals across the
 build; conflicts found during publication update those totals too. Any such
 failure clears `RT_C_READY` until `begin_build`. A duplicate definition may
-leave a scheduling-dependent pointer, but the conflicting build cannot be
-consumed by the probe or an admitted consumer.
+leave a scheduling-dependent pointer, but `rt_binding` itself rejects a build
+whose readiness bit is clear. An export error on the host also clears that
+bit, including a readback failure after the GPU committed the job.
 
 `export_job` returns a `JobReport` with that readiness bit and retains it in
 `job_reports()`. A successful transaction alone does not certify completeness.
@@ -270,7 +271,7 @@ still run. This boundary has not yet been timed on settings.
 Substitution (`retention_subst.slang`) resolves a parameter leaf by its
 `ParamId` through the callee's committed binder map. It walks terms in
 post-order on a global-memory stack, so it uses no per-thread arrays.
-It rejects incomplete/uncommitted entries, a foreign environment owner,
+It rejects an unready build, incomplete/uncommitted entries, a foreign environment owner,
 inconsistent mask/arity counts and domains exceeding the 32-slot masks.
 Unresolved references return `RT_SUBST_UNRESOLVED`; failed projections retain
 `RT_SUBST_FIT_FAILED`. Neither can compare as a successfully substituted type.
@@ -315,6 +316,13 @@ This boundary does not yet carry:
   projection from the substitution itself.
 
 ## Dependencies for discovery and projection
+
+- Attaching the store to native compilation is not yet validated. A focused
+  x86 source-pack probe found incompatible read/write bindings of an aliased
+  type-check arena in the export, before an output-capacity retry could be
+  tested. Interface-only tests do not cover this lifetime boundary. The
+  retained snapshot must survive lowering, and a native output retry must
+  commit its unit exactly once.
 
 - The frontend export must preserve symbolic columns before in-place body
   specialization. Copying only `call_env_ct` leaves the other columns with

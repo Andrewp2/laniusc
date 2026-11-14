@@ -43,7 +43,8 @@ public RtBinding rt_binding(uint entry, uint env)
     b.type_count = d1.y & 0xffffu;
     b.const_count = d1.y >> 16u;
     b.status = RT_SUBST_ENV;
-    if (rt_dir[entry * RT_DIR_WORDS].w != RT_DIR_COMMITTED || rt_dir[entry * RT_DIR_WORDS + 3u].w != 0u ||
+    if (rt_counts[RT_C_READY] == 0u ||
+        rt_dir[entry * RT_DIR_WORDS].w != RT_DIR_COMMITTED || rt_dir[entry * RT_DIR_WORDS + 3u].w != 0u ||
         b.type_count > 32u || b.const_count > 32u ||
         !rt_is_stored_term(env) || rt_term_kind(env) != RT_KIND_ENV || !rt_term_closed(env)) return b;
     uint4 head = rt_term_head[env];

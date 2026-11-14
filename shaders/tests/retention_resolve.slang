@@ -52,10 +52,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint callee = u0.w;
     rt_test_out[o + P_CALLEE] = callee;
     rt_test_out[o + P_EXPECTED] = u1.y;
-    if (rt_counts[RT_C_READY] == 0u) { rt_test_out[o + P_ELIGIBLE] = 6u; return; }
     if (callee == 0u) { rt_test_out[o + P_ELIGIBLE] = 2u; return; }
     uint def = rt_decl_def[callee];
     if (def == 0u) { rt_test_out[o + P_ELIGIBLE] = 3u; return; }
+    if (rt_counts[RT_C_READY] == 0u)
+    {
+        RtBinding blocked = rt_binding(def - 1u, u1.x);
+        rt_test_out[o + P_RESULT_STATUS] = blocked.status;
+        rt_test_out[o + P_ELIGIBLE] = 6u;
+        return;
+    }
     if (all(rt_decl_key[callee].xy == rt_decl_key[u0.x].xy)) { rt_test_out[o + P_ELIGIBLE] = 4u; return; }
     if (!rt_term_closed(u1.x)) { rt_test_out[o + P_ELIGIBLE] = 5u; return; }
     rt_test_out[o + P_ELIGIBLE] = 1u;
@@ -81,12 +87,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint wanted = i == 3u ? RT_SUBST_FIT_FAILED : RT_SUBST_UNRESOLVED;
         if (value.y == wanted) rejected |= 1u << i;
     }
-    uint caller_entry = rt_decl_def[u0.x];
-    if (caller_entry != 0u)
-    {
-        RtBinding wrong = rt_binding(caller_entry - 1u, u1.x);
-        if (rt_subst(wrong, rt_sigs[d1.z], scratch, LANE_WORDS).y == RT_SUBST_ENV) rejected |= 16u;
-    }
+    // Keep the entry, masks, arity and all arguments identical. Only changing
+    // the environment owner can distinguish this from the valid binding.
+    uint4 original_env = rt_term_head[u1.x];
+    RtTermKey other_key = rt_key_begin(RT_KIND_ENV, rt_term_arity(u1.x), original_env.x >> 16u,
+        uint3(u0.x, original_env.z, original_env.w));
+    RtStoredArgs other_args;
+    other_args.base = rt_term_meta[u1.x].x;
+    for (uint i = 0u; i < rt_term_arity(u1.x); i++) rt_key_fold(other_key, other_args.arg(i));
+    uint other_env = rt_intern_term(other_key, other_args);
+    if (rt_is_stored_term(other_env) && rt_binding(entry, other_env).status == RT_SUBST_ENV) rejected |= 16u;
     rt_test_out[o + P_REJECTION_CHECKS] = rejected;
 
     uint2 result = rt_subst(b, rt_sigs[d1.z], scratch, LANE_WORDS);

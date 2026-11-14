@@ -54,7 +54,7 @@ public uint rel_context(SegmentContext c, uint encoded, inout uint foreign)
 public uint body_term(SegmentContext c, uint tag, uint payload, inout uint untranslated, inout uint unowned)
 {
     uint term = translate_checked(tag, payload);
-    if (term == RT_UNKNOWN) untranslated++;
+    if (term == RT_UNKNOWN || term == RT_FIT_FAILED) untranslated++;
     else if (!owned_by(term, c.decl, c.parent)) unowned++;
     return term;
 }
