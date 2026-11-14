@@ -280,7 +280,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint2 template_ref = uint2(semantic_expr_ref_tag_by_hir[source], semantic_expr_ref_payload_by_hir[source]);
     uint4 facts = instance_exec_row_facts[map.base + (source - map.function)];
-    uint2 reference = ex_row_ref(map, source);
+    // The function row's realized reference is its receiver parameter's
+    // type (table_rows.slang), not a value of the row.
+    uint2 reference = source == map.function ? template_ref : ex_row_ref(map, source);
     if (reference.x == EX_INVALID) reference = template_ref;
     bool changed = any(reference != template_ref);
 

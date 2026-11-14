@@ -3,9 +3,12 @@
 // other entry stays a replay body, as before. The rules:
 //
 // - the table is complete (no IT_COUNT_FLAGS) and the body is this job's;
-// - the template is a function declared at file level whose generic
-//   parameters are all its own types (no constant parameters, no impl,
-//   trait or generic owner): the copy has no environment left to bind;
+// - the template is a function declared at file level or a method of an
+//   impl (inherent or trait), with no constant parameters and no trait or
+//   function owner: the entry's environment binds the impl's parameters and
+//   the function's own, so the copy has no environment left to bind. A
+//   receiver parameter's type is realized at the function row
+//   (table_rows.slang);
 // - the template is not instantiated in place (inplace_read.slang): its
 //   own rows already are that instance;
 // - the body declares no nested item or function;
@@ -87,19 +90,22 @@ uint hir_count()
     return min(compact_hir_count[0u], rows);
 }
 
-// A function declared at file level, outside any impl, trait, function or
-// generic owner (as 04b_select_inplace, without its interface rule: the
-// copy is private to this job whatever the template's visibility).
-bool top_level_function(uint row)
+// A function declared at file level, or a method of an impl declared at
+// file level, outside any trait, function or other generic owner. The copy
+// is private to this job whatever the template's visibility.
+bool exec_owner_function(uint row)
 {
-    if (compact_hir_core[row].kind != HIR_FN || compact_hir_payload[row].a != HIR_ITEM_KIND_FN) return false;
+    if (compact_hir_core[row].kind != HIR_FN) return false;
+    bool free_function = compact_hir_payload[row].a == HIR_ITEM_KIND_FN;
     uint count = hir_count();
     uint node = compact_hir_core[row].parent;
+    bool impl_seen = false;
     for (uint depth = 0u; depth < count && node < count; depth++)
     {
         uint kind = compact_hir_core[node].kind;
-        if (kind == HIR_FILE) return true;
-        if (kind == HIR_IMPL || kind == HIR_FN || compact_generic_param_ranges[node].count != 0u ||
+        if (kind == HIR_FILE) return free_function || impl_seen;
+        if (kind == HIR_IMPL) { impl_seen = true; }
+        else if (kind == HIR_FN || compact_generic_param_ranges[node].count != 0u ||
             (kind == HIR_ITEM && compact_hir_payload[node].a == HIR_ITEM_KIND_TRAIT)) return false;
         uint parent = compact_hir_core[node].parent;
         if (parent >= node) break;
@@ -191,7 +197,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         reject(entry, EX_REJECT_TABLE);
         return;
     }
-    if (!top_level_function(function) || inplace_instance(function) != INPLACE_NONE)
+    if (!exec_owner_function(function) || inplace_instance(function) != INPLACE_NONE)
     {
         reject(entry, EX_REJECT_OWNER);
         return;

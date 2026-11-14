@@ -83,6 +83,18 @@ lowering reads type rows and tokens in one id space. The type checker therefore
 sizes its token tables for the job's tokens plus the copies' share, and
 `08b_exec_layout` never places a copy's token at or past the first type row.
 
+A method copy's receiver parameter has no written type. Its realized type is
+the impl's self type under the environment, which the table stores at the
+function row (`template_expr_ref` in `table_rows.slang`). Native lowering
+reads it as the parameter type, so the copy's signature is closed and
+`function_templates` emits it.
+
+The table's realized types can name aggregates that no checked row names, such
+as `Entry<i32, i32>` inside `Node<i32, i32>`. After the table rows are final,
+`06b_table_expand_roots` pushes every closed realized aggregate into the field
+closure that dependency summaries use (`ct_expand`). The closure creates rows
+for its field types, so native widths derive for nested fields.
+
 ### Selection and fallback
 
 `08_exec_select` admits an entry only when every rule holds. Any other entry
@@ -92,7 +104,7 @@ reports each entry's first failed rule.
 | Status | Rule that failed |
 | --- | --- |
 | `0x100` table | The table and the closure are complete (no capacity, depth or closure flags) and the body is this job's. |
-| `0x101` owner | The template is a top-level function and is not instantiated in place. |
+| `0x101` owner | The template is a file-level function or a method of an impl declared outside a trait or function, and is not instantiated in place. |
 | `0x102` constants | The template has no constant parameters. |
 | `0x103` syntax | The body declares no nested item or function. |
 | `0x104` row | Every row's type realized under the environment. |
@@ -219,6 +231,22 @@ On settings, 367 of 1,338 table entries are lowered in the job. The other 971
 are 729 owner rejections (`0x101`, mostly methods), 191 call rejections and
 51 fact rejections.
 
+### Method instances, 2026-11-13
+
+Methods of file-level impls are lowered as execution rows. Measured as above:
+
+| Workload | One unit | Method instances |
+| --- | --- | --- |
+| Settings entries selected and routed | 367 | 993 |
+| Settings replay compiles | 1 | 1 |
+| Settings replay bodies | 964 | 338 |
+| Language fixtures, replay compiles | 35 | 25 |
+| Language fixtures, replay bodies | 203 | 104 |
+
+On settings, the other 345 of 1,338 entries are 7 owner rejections (in-place
+instances), 279 call rejections and 59 fact rejections. Most call rejections
+are method and bound-member calls inside a copy, such as `self.next()`.
+
 ## Complete instance contract
 
 An instance identifies a stable template body, its ordered canonical type and
@@ -309,7 +337,8 @@ does not complete a milestone.
    and return contracts in the audit; their row-cache differences are currently
    reported separately.
 2. **Lower local closed instances.** Implemented for file-level functions
-   without constant parameters (see [Execution rows](#execution-rows)).
+   and methods of file-level impls without constant parameters (see
+   [Execution rows](#execution-rows)).
    Introduce execution rows and complete the
    per-instance semantic projection. Start with local bodies whose calls and
    layouts close in the current unit. Emit two distinct environments of the
@@ -317,8 +346,9 @@ does not complete a milestone.
    compile. Compare execution and admitted facts against the existing replay
    path; do not bypass trait or layout admission.
 3. **Close local instance graphs.** Calls between local function instances,
-   including finite recursion, are routed. Generic methods, bound-member
-   selection and dependency generics called from local bodies still replay.
+   including finite recursion, are routed. Methods of generic impls are
+   lowered as instances. Method calls, bound-member selection and dependency
+   generics called from a copy still replay.
    Route calls between instances, including
    finite recursion, generic methods, and bound-member selection. Preserve
    implementation evidence and constant environments at every edge. Emit the

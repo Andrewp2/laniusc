@@ -87,7 +87,9 @@ void copy_slot(uint k, uint lane)
         value.name_token = ex_token(map, value.name_token);
         value.type_node = ex_row(map, value.type_node);
         compact_params[index] = value;
-        uint2 reference = ex_row_ref(map, type_row);
+        // A receiver parameter has no type row; the table realized its type
+        // at the function row (table_rows.slang).
+        uint2 reference = ex_row_ref(map, type_row == EX_INVALID ? compact_params[source].owner : type_row);
         if (reference.x == EX_INVALID)
             reference = uint2(semantic_param_ref_tag_by_row[source], semantic_param_ref_payload_by_row[source]);
         semantic_param_ref_tag_by_row[index] = reference.x;

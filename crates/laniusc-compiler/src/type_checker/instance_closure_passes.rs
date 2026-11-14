@@ -77,6 +77,15 @@ const TABLE_KEYS_KERNEL: &str = "type_checker/closure/05_table_keys";
 const TABLE_RANK_KERNEL: &str = "type_checker/closure/05b_table_rank";
 const TABLE_ARGS_KERNEL: &str = "type_checker/closure/05c_table_args";
 const TABLE_ROWS_KERNEL: &str = "type_checker/closure/06_table_rows";
+/// The field closure of the types the table realized (06b), so 01c finds
+/// the widths of their fields' and payloads' types for the execution rows.
+pub(super) const TABLE_FIELD_CLOSURE: super::substitution_passes::FieldClosurePasses =
+    super::substitution_passes::FieldClosurePasses {
+        roots: "type_check.instance_table.expand.roots",
+        roots_kernel: "type_checker/closure/06b_table_expand_roots",
+        advance: "type_check.instance_table.expand.advance",
+        level: "type_check.instance_table.expand.level",
+    };
 const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final";
 const TABLE_CALLS_KERNEL: &str = "type_checker/closure/07_table_calls";
 /// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
@@ -404,6 +413,7 @@ pub(super) fn register_instance_table_passes(
     kernels: &impl crate::gpu::kernels::KernelReflections,
     hir_rows: u64,
     realize_bindings: &[ReflectedResourceBinding],
+    expand_level_bindings: &[ReflectedResourceBinding],
 ) -> Result<(), String> {
     // Off (the default), the passes are never recorded: the table keeps
     // one row of each buffer so the graph holds no workspace for it.
@@ -467,6 +477,15 @@ pub(super) fn register_instance_table_passes(
         )?;
         graph.add_indirect_dispatch(name, "instance_table_args")?;
     }
+    // The field closure of the realized row types, for their widths.
+    super::substitution_passes::register_field_closure_passes(
+        graph,
+        kernels,
+        &TABLE_FIELD_CLOSURE,
+        ResourceDomain::Types,
+        "instance_table_args",
+        expand_level_bindings,
+    )?;
     // The callee of each virtual call row (D3), once the table is ranked.
     graph.add_kernel_pass_by_name(
         INSTANCE_TABLE_CALLS_PASS,
@@ -616,6 +635,7 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     args: ComputeOperation,
     rows: ComputeOperation,
     rows_final: ComputeOperation,
+    field_closure: super::substitution_passes::FieldClosureOperations,
     calls: ComputeOperation,
     exec_clear: crate::gpu::operations::ClearBuffersOperation,
     exec_select: ComputeOperation,
@@ -667,6 +687,14 @@ impl InstanceTableOperations {
             )?,
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
+            field_closure: super::substitution_passes::FieldClosureOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
+                &TABLE_FIELD_CLOSURE,
+                &table_args,
+            )?,
             calls: indirect(INSTANCE_TABLE_CALLS_PASS, TABLE_CALLS_KERNEL, &table_args)?,
             exec_clear: crate::gpu::operations::ClearBuffersOperation::new(
                 graph,
@@ -743,6 +771,7 @@ impl InstanceTableOperations {
             self.rows.record(encoder)?;
         }
         self.rows_final.record(encoder)?;
+        self.field_closure.record(encoder)?;
         self.calls.record(encoder)
     }
 }

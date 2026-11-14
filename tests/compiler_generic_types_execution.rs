@@ -489,6 +489,26 @@ fn one_unit_generic_instances_execute() {
             0,
         ),
         (
+            "two instances of a generic impl's methods",
+            "struct Cell<T> { count: i32, value: T }
+             impl<T> Cell<T> {
+                 fn get(&self) -> T { return self.value; }
+                 fn next(&self) -> i32 { return self.count + 1; }
+                 fn both(&self) -> i32 { return self.next() + self.count; }
+             }
+             fn main() -> i32 {
+                 let a: Cell<i64> = Cell { count: 3, value: 40 };
+                 let b: Cell<bool> = Cell { count: 10, value: true };
+                 print(a.get() as i32);
+                 print(b.get() as i32);
+                 print(a.both());
+                 print(b.both());
+                 return 0;
+             }",
+            &b"40\n1\n7\n21\n"[..],
+            0,
+        ),
+        (
             "anonymous entry with a public function beside library modules",
             "import core::option;
              pub fn helper() -> i32 { return 3; }
