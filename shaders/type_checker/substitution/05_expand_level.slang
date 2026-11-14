@@ -1,5 +1,7 @@
-// One level round of the field closure (ct_expand.slang). Each lane takes
-// one queued ID, queues its type arguments (or element type), substitutes
+// One level round of the field closure (ct_expand.slang). The round's last
+// workgroup advances the run and writes the next round's dispatch
+// arguments to `ct_expand_args_next`; the rounds alternate two argument
+// buffers. Each lane takes one queued ID, queues its type arguments (or element type), substitutes
 // every declaration field and enum payload pattern with the ID itself as
 // the environment, realizes each result's row and queues the result. Local
 // declarations read their fields from the HIR; imported ones from the
@@ -37,6 +39,8 @@ StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 RWStructuredBuffer<uint> status;
+RWStructuredBuffer<uint> ct_expand_args_next;
+RWStructuredBuffer<uint> call_inference_state;
 
 static const uint INVALID = 0xffffffffu;
 static const uint CHILD_LIMIT = 65536u;
@@ -208,12 +212,8 @@ uint subst_failure()
     return (overflow & CT_SUBST_OVERFLOW_WORK) != 0u ? FAILURE_LIMIT : FAILURE_UNBOUND;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void expand_entry(uint index)
 {
-    uint index = ct_expand_counts[CT_EXPAND_START] + dtid.x + dtid.y * 16776960u;
-    if (index >= ct_expand_counts[CT_EXPAND_END]) return;
     uint2 entry = ct_expand_queue[index];
     uint id = entry.x;
     uint word = entry.y;
@@ -254,4 +254,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (retry && failure == 0u && !ct_expand_append(id, word)) failure = FAILURE_CAPACITY;
     if (failure != 0u && ((word & CT_EXPAND_LENIENT) == 0u || failure <= FAILURE_LIMIT))
         record_min_token_error(status, ct_expand_token(word), 6u, 0x474e0000u | failure);
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
+{
+    uint index = ct_expand_counts[CT_EXPAND_START] + dtid.x + dtid.y * 16776960u;
+    if (index < ct_expand_counts[CT_EXPAND_END]) expand_entry(index);
+    uint3 launched = ct_expand_level_args(ct_expand_level_groups());
+    // Every lane's queue writes are visible device-wide before lane 0
+    // counts the workgroup finished.
+    AllMemoryBarrierWithGroupSync();
+    if (ltid.x != 0u) return;
+    uint done;
+    InterlockedAdd(ct_expand_counts[CT_EXPAND_DONE], 1u, done);
+    if (done + 1u != launched.x * launched.y) return;
+    DeviceMemoryBarrier();
+    ct_expand_counts[CT_EXPAND_DONE] = 0u;
+    bool progress;
+    uint3 args = ct_expand_advance(progress);
+    if (progress)
+    {
+        uint ignored;
+        InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    }
+    ct_expand_args_next[0u] = args.x;
+    ct_expand_args_next[1u] = args.y;
+    ct_expand_args_next[2u] = args.z;
 }
