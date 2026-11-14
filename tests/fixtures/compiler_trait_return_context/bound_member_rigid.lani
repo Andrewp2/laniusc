@@ -1,0 +1,14 @@
+module app::main;
+
+pub trait Mapper<T,U> {
+    pub fn apply(&self, value: T) -> U;
+}
+
+// The bound's result is U. T and U are rigid in this body, so the call
+// cannot initialize a T.
+fn run<F,T,U>(mapper: F, value: T) -> T where F: Mapper<T,U> {
+    let r: T = mapper.apply(value);
+    return r;
+}
+
+fn main() -> i32 { return 0; }

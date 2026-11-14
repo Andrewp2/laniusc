@@ -11,6 +11,8 @@ import type_checker.calls.explicit_call_environment;
 import type_checker.concrete_type_equality;
 import type_checker.concrete_type_closure;
 import type_checker.constant_atoms_identity;
+import type_checker.type.instances.generic_param_lookup;
+import status;
 
 struct Params
 {
@@ -57,8 +59,23 @@ StructuredBuffer<uint> call_context_arg_mask;
 StructuredBuffer<uint> call_context_ref_tag;
 StructuredBuffer<uint> call_context_ref_payload;
 RWStructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> generic_decl_owner_by_node_a;
+StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> generic_param_count_out;
+StructuredBuffer<uint> generic_param_owner_token;
+StructuredBuffer<uint> generic_param_name_id;
+StructuredBuffer<uint> generic_param_lookup_state;
+StructuredBuffer<uint> generic_param_kind;
+StructuredBuffer<uint> generic_param_token;
+RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+static const uint GENERIC_PARAM_KIND_TYPE = 1u;
+// GenericInstantiationBoundary detail: a call's caller-scoped result names a
+// type parameter that is not in scope at the call.
+static const uint FOREIGN_RESULT_PARAMETER = 18u;
+
+#include "../../type/instances/lexical_parameter_lookup.slang"
 
 // The checked type graph over this pass's writable instance columns.
 struct CallTypeArgumentGraph : ITypeStructureGraph
@@ -194,22 +211,9 @@ bool accepted_argument(uint token, uint slot, out uint tag, out uint payload)
     return tag != 0u && payload != INVALID;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+// Resolve the result reference of call `row` in place.
+void resolve_result(uint row, uint token, inout CheckedCallArtifact call)
 {
-    uint row = linear_dispatch_thread_id_2d(dtid, 16776960u);
-    uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
-    if (row >= count || compact_hir_core[row].kind != 19u) return;
-    CheckedCallArtifact call = semantic_calls_by_hir[row];
-    uint token = callee_application_token(row, count);
-    // Read before this pass writes any substituted result instance below.
-    uint symbolic = call_type_environment_is_symbolic(row, token) ? 1u : 0u;
-    if (call.symbolic_type_environment != symbolic)
-    {
-        call.symbolic_type_environment = symbolic;
-        semantic_calls_by_hir[row] = call;
-    }
     // A complete accepted compound result is already in caller scope.
     // Applying callee slots to its children again can capture a different
     // caller parameter (for example helper<E,T> returning Result<T,E>).
@@ -220,7 +224,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         call.return_ref_tag = 3u;
         call.return_ref_payload = accepted;
-        semantic_calls_by_hir[row] = call;
         return;
     }
     // Imported calls were checked against the caller's symbolic T before
@@ -237,7 +240,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call.return_ref_payload = type_expr_ref_payload[parameter];
             if (concrete_tag == 1u && scalar_is_known(call.return_ref_payload))
                 call.return_type = call.return_ref_payload;
-            semantic_calls_by_hir[row] = call;
         }
     }
     if (call.callable_kind != 1u || call.target_token >= gParams.n_tokens) return;
@@ -306,5 +308,47 @@ void main(uint3 dtid: SV_DispatchThreadID)
             call.return_ref_payload = token;
         }
     }
+}
+
+// Whether parameter `parameter` belongs to a binder in scope at HIR row
+// `row`: the nearest generic owner and its enclosing owners (an impl's
+// parameters in its methods), by the same name lookup and shadowing as
+// source resolution, or the implicit `Self` of an enclosing trait, which
+// type/instances/00e keys by the trait's name token.
+bool parameter_in_scope(uint row, uint parameter)
+{
+    uint hir_count = lexical_parameter_hir_count();
+    uint owner = generic_decl_owner_by_node_a[row];
+    for (uint depth = 0u; depth < hir_count && owner < hir_count; depth++)
+    {
+        if (lexical_parameter_owner_token(owner) == parameter) return true;
+        uint parent = lexical_parameter_parent(owner);
+        if (parent == owner) break;
+        owner = parent;
+    }
+    uint found = lexical_parameter_row(row, parameter, GENERIC_PARAM_KIND_TYPE);
+    return found != INVALID && generic_param_token[found] == parameter;
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint row = linear_dispatch_thread_id_2d(dtid, 16776960u);
+    uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
+    if (row >= count || compact_hir_core[row].kind != 19u) return;
+    CheckedCallArtifact call = semantic_calls_by_hir[row];
+    uint token = callee_application_token(row, count);
+    // Read before this pass writes any substituted result instance below.
+    call.symbolic_type_environment = call_type_environment_is_symbolic(row, token) ? 1u : 0u;
+    resolve_result(row, token, call);
     semantic_calls_by_hir[row] = call;
+    // A bare parameter result is a term of the caller's scope: instance
+    // realization maps it by the caller's slots. A parameter of another
+    // binder (the callee's, or a trait's through a bound) would silently
+    // become the caller parameter at its slot, so it is a compiler error.
+    if (call.return_ref_tag == 2u && call.return_ref_payload < gParams.n_tokens &&
+        !parameter_in_scope(row, call.return_ref_payload))
+        record_min_token_error(status, compact_hir_core[row].token_start, 6u,
+            0x474e0000u | FOREIGN_RESULT_PARAMETER);
 }

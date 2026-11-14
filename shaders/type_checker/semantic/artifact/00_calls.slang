@@ -307,6 +307,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.return_ref_payload = inferred_payload;
                 call.return_type = inferred_payload;
             }
+            // A bare parameter result is the caller's parameter. The
+            // declaration's reference names the callee's binder: for a
+            // required member it is the trait's own parameter, whose slot
+            // means a different caller parameter (Mapper<T,U>::apply's U is
+            // slot 1, which is T in enter_mapper<F,T,U>).
+            if (inferred_tag == 2u && valid_token(inferred_payload))
+            {
+                call.return_ref_tag = inferred_tag;
+                call.return_ref_payload = inferred_payload;
+            }
             // A substituted generic scalar reference is authoritative even
             // when the declaration's original machine return code was zero.
             // In particular, strings must retain their pointer/length result.

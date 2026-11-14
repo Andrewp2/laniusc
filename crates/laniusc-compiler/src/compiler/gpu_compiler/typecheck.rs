@@ -4091,6 +4091,7 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     8 => "a replay seed has malformed graph roots or exceeds the supported native width",
                     16 => "checked call inference did not converge: its passes changed more than 32 facts per HIR node and token",
                     17 => "call inference needed more than 1024 dependent rounds; add a type annotation to break the chain",
+                    18 => "a call's checked result names a type parameter of another binder, which this call cannot see",
                     _ => "a nested type application could not be instantiated from its checked environment",
                 }),
         ),

@@ -1,0 +1,75 @@
+module app::main;
+
+// Pair is three words; i32 is one. A result realized at the wrong caller
+// slot changes the width of every value that flows through it.
+pub struct Pair { low: u64, high: u64, mark: i32 }
+
+pub trait Mapper<T,U> {
+    pub fn apply(&self, value: T) -> U;
+}
+
+pub trait Maker<U> {
+    pub fn make(&self) -> U;
+}
+
+pub struct Spread { base: u64 }
+
+pub impl Mapper<i32,Pair> for Spread {
+    pub fn apply(&self, value: i32) -> Pair {
+        return Pair { low: self.base, high: 18446744073709551000, mark: value + 7 };
+    }
+}
+
+pub impl Maker<Pair> for Spread {
+    pub fn make(&self) -> Pair {
+        return Pair { low: 18446744073709551001, high: self.base, mark: -29 };
+    }
+}
+
+// A generic implementation: its method is a table entry of its own.
+pub struct Wrap<A> { base: u64, extra: A }
+
+pub impl<A> Mapper<i32,Pair> for Wrap<A> {
+    pub fn apply(&self, value: i32) -> Pair {
+        return Pair { low: self.base, high: 18446744073709551002, mark: value - 11 };
+    }
+}
+
+// The trait's U is its slot 1. Here slot 1 is T and U is slot 2.
+fn run<F,T,U>(mapper: F, value: T) -> U where F: Mapper<T,U> {
+    return mapper.apply(value);
+}
+
+// The result reaches an untyped binding before it is returned.
+fn run_bound<F,T,U>(mapper: F, value: T) -> U where F: Mapper<T,U> {
+    let mapped = mapper.apply(value);
+    return mapped;
+}
+
+// Reverse every slot: trait T is caller slot 2, trait U caller slot 0.
+fn run_reversed<U,T,F>(mapper: F, value: T) -> U where F: Mapper<T,U> {
+    return mapper.apply(value);
+}
+
+// Maker's U is its slot 0. Here slot 0 is T and U is slot 1.
+fn make<T,U,F>(maker: F, fallback: T) -> U where F: Maker<U> {
+    return maker.make();
+}
+
+fn main() -> i32 {
+    let spread: Spread = Spread { base: 9223372036854775825 };
+    let first: Pair = run<Spread,i32,Pair>(spread, 5);
+    assert(first.low == 9223372036854775825 && first.high == 18446744073709551000 && first.mark == 12);
+    let second: Pair = run_bound<Spread,i32,Pair>(spread, -40);
+    assert(second.low == 9223372036854775825 && second.high == 18446744073709551000 && second.mark == -33);
+    let third: Pair = run_reversed<Pair,i32,Spread>(spread, 100);
+    assert(third.low == 9223372036854775825 && third.high == 18446744073709551000 && third.mark == 107);
+    let fourth: Pair = make<i32,Pair,Spread>(spread, 3);
+    assert(fourth.low == 18446744073709551001 && fourth.high == 9223372036854775825 && fourth.mark == -29);
+    let wrap: Wrap<u8> = Wrap<u8> { base: 9223372036854775826, extra: 4 };
+    let fifth: Pair = run<Wrap<u8>,i32,Pair>(wrap, 50);
+    assert(fifth.low == 9223372036854775826 && fifth.high == 18446744073709551002 && fifth.mark == 39);
+    let sixth: Pair = run_reversed<Pair,i32,Wrap<u8>>(wrap, 61);
+    assert(sixth.low == 9223372036854775826 && sixth.high == 18446744073709551002 && sixth.mark == 50);
+    return 0;
+}

@@ -1,0 +1,20 @@
+module app::main;
+
+pub struct Pair { low: u64, high: u64, mark: i32 }
+
+pub trait Mapper<T,U> {
+    pub fn apply(&self, value: T) -> U;
+}
+
+pub struct Spread { base: u64 }
+
+fn run<F,T,U>(mapper: F, value: T) -> U where F: Mapper<T,U> {
+    return mapper.apply(value);
+}
+
+// Spread implements no Mapper.
+fn main() -> i32 {
+    let spread: Spread = Spread { base: 1 };
+    let pair: Pair = run<Spread,i32,Pair>(spread, 5);
+    return pair.mark;
+}

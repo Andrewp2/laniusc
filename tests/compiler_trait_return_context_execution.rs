@@ -37,6 +37,10 @@ fn execute(name: &str) {
 }
 
 fn reject(name: &str, expected_code: &str) {
+    reject_at(name, expected_code, "T::produce");
+}
+
+fn reject_at(name: &str, expected_code: &str, source_call: &str) {
     let error =
         compile(name).expect_err("invalid required-method application must not emit an ELF");
     let diagnostic = error.to_public_diagnostic();
@@ -49,7 +53,7 @@ fn reject(name: &str, expected_code: &str) {
         label
             .source_line
             .as_deref()
-            .is_some_and(|line| line.contains("T::produce")),
+            .is_some_and(|line| line.contains(source_call)),
         "{name}: {label:?}"
     );
 }
@@ -65,4 +69,17 @@ fn imported_required_method_returns_preserve_bound_identity_across_compilation_j
     // generic program. Sparse trait-owner metadata cannot classify this job.
     execute("ordinary_inference.lani");
     execute("native.lani");
+}
+
+// A required member's result is the trait's U, its slot 1. The callers
+// declare their parameters in other orders, so slot 1 of the caller is T
+// (a one-word i32) while U is a three-word Pair. The result must be the
+// caller's U before any instance is realized: the generic-implementation
+// calls are lowered from the instance table, not from a replay. A result
+// that names the trait's own parameter is a compiler error (LNC0047).
+#[test]
+fn bound_member_results_name_the_callers_parameter() {
+    execute("bound_member_scope.lani");
+    reject_at("bound_member_rigid.lani", "LNC0006", "mapper.apply");
+    reject_at("bound_member_missing_impl.lani", "LNC0008", "run<Spread,i32,Pair>");
 }
