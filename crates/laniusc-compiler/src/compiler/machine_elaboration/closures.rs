@@ -111,9 +111,9 @@ pub(super) enum Outcome {
 #[derive(encase::ShaderType)]
 struct ScanParams {
     count: u32,
-    step: u32,
+    mode: u32,
+    tiles: u32,
     reserved0: u32,
-    reserved1: u32,
 }
 
 #[derive(encase::ShaderType)]
@@ -174,12 +174,17 @@ pub(super) struct Gpu<'a> {
     pub(super) queue: &'a wgpu::Queue,
 }
 
-/// The rows of one capacity step of a prefix sum: the token granularity of
-/// the parser's resident workspace.
-const SCAN_BUCKET_ROWS: u32 = 4 * 1024;
-/// The bytes of one capacity step of a resident buffer: `SCAN_BUCKET_ROWS`
-/// rows of four words.
-const BUCKET_BYTES: usize = SCAN_BUCKET_ROWS as usize * 16;
+/// The bytes of one capacity step of a resident buffer: 4096 rows of four
+/// words, the token granularity of the parser's resident workspace.
+const BUCKET_BYTES: usize = 4 * 1024 * 16;
+/// Lanes of one prefix-sum workgroup, and the rows one workgroup sums
+/// (`WG_SIZE` and `TILE_ROWS` in closures/scan.slang).
+const SCAN_WORKGROUP_LANES: u32 = 256;
+const SCAN_TILE_ROWS: u32 = SCAN_WORKGROUP_LANES * 8;
+/// The modes of closures/scan.slang.
+const SCAN_TILE_TOTALS: u32 = 0;
+const SCAN_TILE_OFFSETS: u32 = 1;
+const SCAN_APPLY: u32 = 2;
 
 /// The buffers and bind groups the rewrites keep between runs. A resident
 /// compiler runs them again for every source text it has not seen, so a run
@@ -362,10 +367,10 @@ impl Gpu<'_> {
     }
 
     /// Records an inclusive prefix sum of `input` and returns the buffer
-    /// that holds it: one doubling step per power of two below `count`
-    /// rounded up to `SCAN_BUCKET_ROWS`. A step at or past `count` copies the
-    /// rows. The steps and the buffer that holds the sum then stay the same
-    /// for every text of one capacity step, and so do the bind groups.
+    /// that holds it (closures/scan.slang): per tile of `SCAN_TILE_ROWS`
+    /// rows, a total, then one workgroup's offsets for the tiles, then each
+    /// tile's sum from its offset. A sum of one tile is one dispatch. The
+    /// bindings do not depend on `count`, so neither does the bind group.
     pub(super) fn scan<'b>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -374,30 +379,26 @@ impl Gpu<'_> {
         work: &'b [LaniusBuffer<u8>; 2],
         count: u32,
     ) -> Result<&'b LaniusBuffer<u8>> {
-        let bound = count.max(1).saturating_add(SCAN_BUCKET_ROWS - 1) / SCAN_BUCKET_ROWS * SCAN_BUCKET_ROWS;
-        let mut source = input;
-        let mut target = 0;
-        let mut step = 1u32;
-        loop {
-            let params = self.uniform("closures.scan.params", &ScanParams { count, step, reserved0: 0, reserved1: 0 });
+        let tiles = count.max(1).div_ceil(SCAN_TILE_ROWS);
+        let modes: &[u32] = if tiles > 1 { &[SCAN_TILE_TOTALS, SCAN_TILE_OFFSETS, SCAN_APPLY] } else { &[SCAN_APPLY] };
+        for &mode in modes {
+            let params = self.uniform("closures.scan.params", &ScanParams { count, mode, tiles, reserved0: 0 });
+            // Mode 1 runs in one workgroup; the others in one per tile.
+            let lanes = if mode == SCAN_TILE_OFFSETS { 1 } else { tiles * SCAN_WORKGROUP_LANES };
             self.dispatch(
                 encoder,
                 pass,
                 "closures.scan",
                 &[
                     ("gScan", params.as_entire_binding()),
-                    ("scan_in", source.as_entire_binding()),
-                    ("scan_out", work[target].as_entire_binding()),
+                    ("scan_in", input.as_entire_binding()),
+                    ("scan_tiles", work[1].as_entire_binding()),
+                    ("scan_out", work[0].as_entire_binding()),
                 ],
-                count,
+                lanes,
             )?;
-            source = &work[target];
-            target = 1 - target;
-            step = match step.checked_mul(2) {
-                Some(next) if next < bound => next,
-                _ => return Ok(source),
-            };
         }
+        Ok(&work[0])
     }
 
     fn summary(

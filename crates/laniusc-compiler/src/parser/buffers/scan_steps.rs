@@ -46,13 +46,6 @@ pub struct TokenBlockScanHierarchyParams {
     pub reserved2: u32,
 }
 
-/// One ping-pong scan step for tree prefix counts.
-pub struct TreePrefixScanStep {
-    pub params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
-    pub read_from_a: bool,
-    pub write_to_a: bool,
-}
-
 /// One max-tree build step used by tree parent recovery.
 pub struct TreePrefixMaxBuildStep {
     pub params: LaniusBuffer<super::super::passes::tree::prefix::build_max_tree::Params>,

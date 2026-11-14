@@ -8,11 +8,10 @@ use super::{
     TokenBlockScanPlan,
     TokenBlockScanStep,
     TreePrefixMaxBuildStep,
-    TreePrefixScanStep,
 };
 use crate::gpu::{
     buffers::uniform_from_val,
-    scan::{ScanFinalize, hierarchical_scan_levels, ping_pong_scan_steps},
+    scan::hierarchical_scan_levels,
 };
 
 pub(in crate::parser) fn pack_total_reduce_step_count(n_pairs: u32) -> u32 {
@@ -151,28 +150,6 @@ pub(super) fn make_hir_prefix_scan_plan(
         "parser.hir_semantic_prefix",
         n_blocks,
     )
-}
-
-pub(super) fn make_tree_prefix_scan_steps(
-    device: &wgpu::Device,
-    base: super::super::passes::tree::prefix::local::Params,
-    n_blocks: u32,
-) -> Vec<TreePrefixScanStep> {
-    ping_pong_scan_steps(n_blocks, ScanFinalize::Always(n_blocks))
-        .into_iter()
-        .map(|plan| TreePrefixScanStep {
-            params: uniform_from_val(
-                device,
-                "parser.tree_prefix_scan.legacy.params",
-                &super::super::passes::tree::prefix::local::Params {
-                    scan_step: plan.scan_step,
-                    ..base
-                },
-            ),
-            read_from_a: plan.read_from_a,
-            write_to_a: plan.write_to_a,
-        })
-        .collect()
 }
 
 /// Creates the bottom-up max tree used to bound recovered tree prefix values.

@@ -7,7 +7,6 @@ use super::{
     PackTotalReduceStep,
     TokenBlockScanPlan,
     TreePrefixMaxBuildStep,
-    TreePrefixScanStep,
 };
 use crate::gpu::buffers::{LaniusBuffer, TrackedBufferView};
 
@@ -682,7 +681,6 @@ pub struct ParserBuffers {
 
     // -------- Tree parent recovery --------
     pub tree_prefix_params: LaniusBuffer<super::super::passes::tree::prefix::local::Params>,
-    pub tree_prefix_scan_steps: Vec<TreePrefixScanStep>,
     pub tree_n_node_blocks: u32,
     pub tree_active_dispatch_args: LaniusBuffer<u32>,
     pub tree_enum_dispatch_args: LaniusBuffer<u32>,
@@ -705,8 +703,6 @@ pub struct ParserBuffers {
     pub tree_depth_block_close: LaniusBuffer<u32>,
     pub tree_prefix_inblock: LaniusBuffer<i32>,
     pub tree_block_sum: LaniusBuffer<i32>,
-    pub tree_block_prefix_a: LaniusBuffer<i32>,
-    pub tree_block_prefix_b: LaniusBuffer<i32>,
     pub tree_block_prefix: LaniusBuffer<i32>,
     pub tree_prefix: LaniusBuffer<i32>,
     pub tree_prefix_block_max: LaniusBuffer<i32>,

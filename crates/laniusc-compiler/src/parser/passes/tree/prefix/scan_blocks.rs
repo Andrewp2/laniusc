@@ -3,15 +3,8 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use crate::{
-    gpu::passes_core::{
-        BindGroupCache,
-        DispatchDim,
-        InputElements,
-        Pass,
-        PassData,
-        plan_workgroups,
-    },
-    parser::buffers::{ParserBuffers, TreePrefixScanStep},
+    gpu::passes_core::{BindGroupCache, DispatchDim, Pass, PassData},
+    parser::buffers::ParserBuffers,
 };
 
 /// Pass that scans per-block tree-prefix sums.
@@ -26,7 +19,8 @@ crate::gpu::passes_core::impl_static_shader_pass!(
 );
 
 impl TreePrefixScanBlocksPass {
-    /// Records all configured tree-prefix block scan steps.
+    /// Records the block-prefix scan: one workgroup scans every block
+    /// (parser/tree/prefix/02_scan_blocks.slang).
     pub fn record_scan(
         &self,
         device: &wgpu::Device,
@@ -34,54 +28,12 @@ impl TreePrefixScanBlocksPass {
         buffers: &ParserBuffers,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        for (index, step) in buffers.tree_prefix_scan_steps.iter().enumerate() {
-            self.record_step(device, encoder, buffers, cache, index, step)?;
-        }
-        Ok(())
-    }
-
-    fn record_step(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffers: &ParserBuffers,
-        cache: &mut BindGroupCache,
-        index: usize,
-        step: &TreePrefixScanStep,
-    ) -> Result<()> {
-        let prefix_in = if step.read_from_a {
-            &buffers.tree_block_prefix_a
-        } else {
-            &buffers.tree_block_prefix_b
-        };
-        let prefix_out = if step.write_to_a {
-            &buffers.tree_block_prefix_a
-        } else {
-            &buffers.tree_block_prefix_b
-        };
-        let resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
-            ("gTree".into(), step.params.as_entire_binding()),
-            (
-                "block_sum".into(),
-                buffers.tree_block_sum.as_entire_binding(),
-            ),
-            ("prefix_in".into(), prefix_in.as_entire_binding()),
-            ("prefix_out".into(), prefix_out.as_entire_binding()),
-            (
-                "block_prefix".into(),
-                buffers.tree_block_prefix.as_entire_binding(),
-            ),
-        ]);
-        let operation = if step.write_to_a {
-            crate::parser::compiler_graph::TREE_PREFIX_B_TO_A
-        } else {
-            crate::parser::compiler_graph::TREE_PREFIX_A_TO_B
-        };
-        let invocation = format!("{operation}.{index}");
+        let resources = self.create_resource_map(buffers);
+        let operation = crate::parser::compiler_graph::TREE_PREFIX_SCAN;
         let bind_group = cache
             .reflected_for_graph_invocation(
                 device,
-                &invocation,
+                operation,
                 operation,
                 &self.data,
                 buffers,
@@ -91,18 +43,12 @@ impl TreePrefixScanBlocksPass {
             .into_iter()
             .next()
             .expect("tree-prefix scan pass must have one reflected bind group");
-        let [tgsx, tgsy, _] = self.data.thread_group_size;
-        let (gx, gy, gz) = plan_workgroups(
-            DispatchDim::D1,
-            InputElements::Elements1D(buffers.tree_n_node_blocks),
-            [tgsx, tgsy, 1],
-        )?;
         crate::gpu::passes_core::record_or_defer_compute_direct(
             encoder,
             &self.data,
             bind_group.as_ref(),
             operation,
-            (gx, gy, gz),
+            (1, 1, 1),
         );
         Ok(())
     }
@@ -127,14 +73,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for TreePrefixScanBl
         HashMap::from([
             ("gTree".into(), b.tree_prefix_params.as_entire_binding()),
             ("block_sum".into(), b.tree_block_sum.as_entire_binding()),
-            (
-                "prefix_in".into(),
-                b.tree_block_prefix_b.as_entire_binding(),
-            ),
-            (
-                "prefix_out".into(),
-                b.tree_block_prefix_a.as_entire_binding(),
-            ),
             (
                 "block_prefix".into(),
                 b.tree_block_prefix.as_entire_binding(),

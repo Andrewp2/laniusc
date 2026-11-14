@@ -59,7 +59,6 @@ pub struct GpuBuffers {
     /// Per-block DFA summaries retained for prefix application.
     pub dfa_chunk_summaries: LaniusBuffer<u32>,
     pub(in crate::lexer) dfa_scan_params: Option<DynamicUniformBuffer<super::passes::ScanParams>>,
-    pub(in crate::lexer) pair_scan_params: Option<DynamicUniformBuffer<super::passes::ScanParams>>,
     /// Raw token kinds by byte boundary; also reused by all-boundary compaction.
     pub tok_types: LaniusBuffer<u32>,
     /// Packed boundary and keep flags emitted by DFA prefix application.
@@ -263,22 +262,6 @@ impl GpuBuffers {
                 &dfa_scan_values,
             )
         });
-        let pair_scan_values = super::passes::pair::block_total_scan_steps(nb_sum)
-            .into_iter()
-            .map(|step| super::passes::ScanParams {
-                stride: step.scan_step,
-                use_ping_as_src: u32::from(step.read_from_a),
-            })
-            .collect::<Vec<_>>();
-        let pair_scan_params = (!pair_scan_values.is_empty()).then(|| {
-            dynamic_uniforms_from_vals_with_queue(
-                device,
-                queue,
-                "ScanParams[PAIR-BLOCKS]",
-                &pair_scan_values,
-            )
-        });
-
         let tok_types: LaniusBuffer<u32> = compiler_graph.buffer("tok_types")?;
 
         let flags_packed: LaniusBuffer<u32> = compiler_graph.buffer("flags_packed")?;
@@ -357,7 +340,6 @@ impl GpuBuffers {
             dfa_02_pong,
             dfa_chunk_summaries,
             dfa_scan_params,
-            pair_scan_params,
             tok_types,
             flags_packed,
 

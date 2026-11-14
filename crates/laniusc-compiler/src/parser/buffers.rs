@@ -974,14 +974,10 @@ impl ParserBuffers {
         );
         let tree_depth_block_max = graph_buffer!(u32, "tree_depth_block_max");
         let tree_depth_block_close = graph_buffer!(u32, "tree_depth_block_close");
-        let tree_prefix_scan_steps =
-            make_tree_prefix_scan_steps(device, tree_prefix_params_base, tree_n_node_blocks);
         let tree_prefix_inblock = graph_buffer!(i32, "tree_prefix_inblock");
         let tree_block_sum = compiler_graph
             .buffer::<i32>("tree_block_sum")
             .expect("parser graph must own tree block sums");
-        let tree_block_prefix_a = graph_buffer!(i32, "tree_block_prefix_a");
-        let tree_block_prefix_b = graph_buffer!(i32, "tree_block_prefix_b");
         let tree_block_prefix = graph_buffer!(i32, "tree_block_prefix");
         let tree_prefix = graph_buffer!(i32, "tree_prefix");
         let tree_prefix_block_max = compiler_graph
@@ -2055,7 +2051,6 @@ impl ParserBuffers {
 
             // Tree parent recovery
             tree_prefix_params,
-            tree_prefix_scan_steps,
             tree_n_node_blocks,
             tree_active_dispatch_args,
             tree_enum_dispatch_args,
@@ -2070,8 +2065,6 @@ impl ParserBuffers {
             tree_depth_block_close,
             tree_prefix_inblock,
             tree_block_sum,
-            tree_block_prefix_a,
-            tree_block_prefix_b,
             tree_block_prefix,
             tree_prefix,
             tree_prefix_block_max,

@@ -33,7 +33,7 @@ use crate::{
         },
         passes_core::{Pass, PassData},
         resource_registry::ResourceMap,
-        scan::{ScanFinalize, hierarchical_scan_levels, ping_pong_scan_steps},
+        scan::hierarchical_scan_levels,
         workspace::WorkspaceUsageClass,
     },
     parser::{buffers::ParserBuffers, debug::DebugOutput, passes::ParserPasses},
@@ -54,8 +54,7 @@ pub(in crate::parser) const TREE_FEATURE_DISPATCH: &str = "parser.tree_feature_d
 pub(in crate::parser) const BRACKET_SCAN_UP: &str = "brackets_02_scan_block_prefix.up";
 pub(in crate::parser) const BRACKET_SCAN_DOWN: &str = "brackets_02_scan_block_prefix.down";
 pub(in crate::parser) const BRACKET_SCAN_FINALIZE: &str = "brackets_02_scan_block_prefix.finalize";
-pub(in crate::parser) const TREE_PREFIX_B_TO_A: &str = "tree_prefix_02_scan_blocks.b_to_a";
-pub(in crate::parser) const TREE_PREFIX_A_TO_B: &str = "tree_prefix_02_scan_blocks.a_to_b";
+pub(in crate::parser) const TREE_PREFIX_SCAN: &str = "tree_prefix_02_scan_blocks";
 pub(in crate::parser) const HIR_SEMANTIC_SCAN_UP: &str = "hir_semantic_prefix_01_blocks.up";
 pub(in crate::parser) const HIR_SEMANTIC_SCAN_DOWN: &str = "hir_semantic_prefix_01_blocks.down";
 pub(in crate::parser) const HIR_CANONICAL_IDENTITY_SCAN_UP: &str =
@@ -988,8 +987,6 @@ fn graph_owned_workspace(name: &str) -> bool {
             | "pack_emit_prefix_b"
             | "tree_block_sum"
             | "tree_prefix_inblock"
-            | "tree_block_prefix_a"
-            | "tree_block_prefix_b"
             | "tree_block_prefix"
             | "tree_prefix"
             | "tree_prefix_block_max"
@@ -1521,16 +1518,6 @@ fn build_graph(
             tree_rows * 4,
         ),
         ("tree_block_sum", ResourceDomain::RawNodes, tree_blocks * 4),
-        (
-            "tree_block_prefix_a",
-            ResourceDomain::RawNodes,
-            tree_blocks * 4,
-        ),
-        (
-            "tree_block_prefix_b",
-            ResourceDomain::RawNodes,
-            tree_blocks * 4,
-        ),
         (
             "tree_block_prefix",
             ResourceDomain::RawNodes,
@@ -2543,41 +2530,16 @@ fn build_graph(
             ("block_sum", "tree_block_sum", Some(AccessMode::Write)),
         ],
     )?;
-    let tree_steps = ping_pong_scan_steps(
-        capacity.tree_node_blocks.max(1),
-        ScanFinalize::Always(capacity.tree_node_blocks.max(1)),
-    );
     reflected(
         &mut graph,
-        TREE_PREFIX_B_TO_A,
+        TREE_PREFIX_SCAN,
         CompilerPhase::Parse,
         ResourceDomain::RawNodes,
         passes.tree_prefix_02.data(),
         &[
             ("block_sum", "tree_block_sum", None),
-            ("prefix_in", "tree_block_prefix_b", Some(AccessMode::Read)),
-            ("prefix_out", "tree_block_prefix_a", Some(AccessMode::Write)),
             ("block_prefix", "tree_block_prefix", Some(AccessMode::Write)),
         ],
-    )?;
-    graph.mark_pass_bindings_first_invocation_skips_read(TREE_PREFIX_B_TO_A, &["prefix_in"])?;
-    reflected(
-        &mut graph,
-        TREE_PREFIX_A_TO_B,
-        CompilerPhase::Parse,
-        ResourceDomain::RawNodes,
-        passes.tree_prefix_02.data(),
-        &[
-            ("block_sum", "tree_block_sum", None),
-            ("prefix_in", "tree_block_prefix_a", Some(AccessMode::Read)),
-            ("prefix_out", "tree_block_prefix_b", Some(AccessMode::Write)),
-            ("block_prefix", "tree_block_prefix", Some(AccessMode::Write)),
-        ],
-    )?;
-    graph.repeat_pass_range(
-        (tree_steps.len() as u32).div_ceil(2),
-        TREE_PREFIX_B_TO_A,
-        TREE_PREFIX_A_TO_B,
     )?;
     static_pass(
         &mut graph,
@@ -3830,8 +3792,7 @@ mod tests {
             "pack_offsets_scan.apply",
             BRACKET_SCAN_UP,
             BRACKET_SCAN_FINALIZE,
-            TREE_PREFIX_B_TO_A,
-            TREE_PREFIX_A_TO_B,
+            TREE_PREFIX_SCAN,
             "tree_parent_parallel",
             "hir_nodes",
             "tree_depth_schedule",
