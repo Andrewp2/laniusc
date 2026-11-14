@@ -98,6 +98,8 @@ mod native_c_callback_execution;
 mod native_c_contract;
 #[path = "../native_c_dynamic_link_execution.rs"]
 mod native_c_dynamic_link_execution;
+#[path = "../native_c_elaboration.rs"]
+mod native_c_elaboration;
 #[path = "../native_c_execution.rs"]
 mod native_c_execution;
 #[path = "../native_c_float_execution.rs"]

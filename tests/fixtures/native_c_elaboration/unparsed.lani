@@ -1,0 +1,10 @@
+// The program does not parse. The standard library's machine is in the
+// same rewrite run, which then cannot stand in for one run per unit.
+module app::main;
+
+import core::utf8_state;
+
+fn main() -> i32 {
+    let sequence: core::utf8_state::Sequence = core::utf8_state::sequence_start(true);
+    return 0 +;
+}

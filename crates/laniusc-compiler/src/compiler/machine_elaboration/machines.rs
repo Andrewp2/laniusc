@@ -19,7 +19,7 @@ use crate::{
         buffers::LaniusBuffer,
         passes_core::PassData,
     },
-    lexer::{GpuToken, buffers::GpuBuffers, driver::try_global_lexer},
+    lexer::{GpuToken, buffers::GpuBuffers, driver::try_global_lexer, features::CONSERVATIVE_PARSER_FEATURES},
     parser::{buffers::ParserBuffers, driver::GpuParser, tables::PrecomputedParseTables},
 };
 
@@ -139,6 +139,8 @@ pub(super) enum Outcome {
     /// rewritten pack are not expanded yet.
     Generators(Vec<Option<Rewritten>>),
     Invalid(Invalid),
+    /// A file does not lex or parse. The frontend reports that.
+    Unparsed,
 }
 
 #[derive(encase::ShaderType)]
@@ -227,52 +229,120 @@ struct Parsed {
 /// buffers; `finish` runs after they are submitted, while the lexer's buffers
 /// still hold this pack. `None` when a file does not lex or parse: the
 /// frontend reports that.
+///
+/// The parse uses the tree capacity of the parser's resident buffers when
+/// they cover the pack, so it needs no capacity readback first. A larger
+/// tree reports the capacity it needs, and the pack runs once more with that
+/// capacity.
 fn with_parse<A, R>(
     sources: &[&str],
-    record: impl FnOnce(&Gpu<'_>, &GpuBuffers, &ParserBuffers, &mut wgpu::CommandEncoder, &Parsed) -> Result<A>,
-    finish: impl FnOnce(&Gpu<'_>, A) -> Result<Option<R>>,
+    mut record: impl FnMut(&Gpu<'_>, &GpuBuffers, &ParserBuffers, &mut wgpu::CommandEncoder, &Parsed) -> Result<A>,
+    mut finish: impl FnMut(&Gpu<'_>, A) -> Result<R>,
 ) -> Result<Option<R>> {
     let _run = super::closures::begin_run();
     let lexer = try_global_lexer()?;
     let frontend = frontend()?;
-    let outcome = pollster::block_on(lexer.with_recorded_resident_source_pack_tokens_after_count(
-        sources,
-        |device, queue, buffers, token_count, encoder, mut timer| {
-            frontend.bind_lexer(buffers);
-            let token_capacity = token_count.max(1);
-            let tree_capacity = frontend.parser.read_resident_partial_parse_tree_capacity(
-                token_capacity,
-                &buffers.tokens_out,
-                &buffers.token_count,
-                Some(&buffers.token_file_id),
-                &frontend.tables,
-            )?;
-            let parsed = Parsed { token_count, token_capacity, tree_capacity };
-            let gpu = Gpu { device, queue };
-            let (check, recorded) = frontend.parser.record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
-                encoder,
-                token_capacity,
-                &buffers.tokens_out,
-                &buffers.token_count,
-                Some(&buffers.token_file_id),
-                buffers.n,
-                &buffers.in_bytes,
-                &frontend.tables,
-                Some(tree_capacity),
-                &mut timer,
-                |parse_buffers, encoder, _| record(&gpu, buffers, parse_buffers, encoder, &parsed),
-            )?;
-            frontend.parser.retain_resident_capacity_probe_bindings()?;
-            Ok::<_, anyhow::Error>((check, recorded?))
-        },
-        |device, queue, (check, recorded)| {
-            if frontend.parser.finish_recorded_resident_ll1_hir_check(&check).is_err() {
-                return Ok::<_, anyhow::Error>(None);
+    let mut needed = None;
+    loop {
+        let outcome = pollster::block_on(lexer.with_recorded_resident_source_pack_tokens_after_count(
+            sources,
+            |device, queue, buffers, token_count, encoder, mut timer| {
+                frontend.bind_lexer(buffers);
+                let token_capacity = token_count.max(1);
+                let resident = || {
+                    #[cfg(test)]
+                    if let Some(capacity) = TEST_TREE_CAPACITY.with(std::cell::Cell::take) {
+                        // Buffers of this tree capacity, which the parse checks.
+                        frontend.parser.release_current_resident_buffers();
+                        return Some(capacity);
+                    }
+                    frontend.parser.reusable_tree_capacity(
+                        token_capacity,
+                        buffers.n,
+                        &frontend.tables,
+                        true,
+                        CONSERVATIVE_PARSER_FEATURES,
+                    )
+                };
+                let tree_capacity = match needed.or_else(resident) {
+                    Some(capacity) => capacity,
+                    None => frontend.parser.read_resident_partial_parse_tree_capacity(
+                        token_capacity,
+                        &buffers.tokens_out,
+                        &buffers.token_count,
+                        Some(&buffers.token_file_id),
+                        &frontend.tables,
+                    )?,
+                };
+                let parsed = Parsed { token_count, token_capacity, tree_capacity };
+                let gpu = Gpu { device, queue };
+                let (check, recorded) = frontend.parser.record_checked_resident_ll1_hir_artifacts_with_tree_capacity(
+                    encoder,
+                    token_capacity,
+                    &buffers.tokens_out,
+                    &buffers.token_count,
+                    Some(&buffers.token_file_id),
+                    buffers.n,
+                    &buffers.in_bytes,
+                    &frontend.tables,
+                    Some(tree_capacity),
+                    &mut timer,
+                    |parse_buffers, encoder, _| record(&gpu, buffers, parse_buffers, encoder, &parsed),
+                )?;
+                frontend.parser.retain_resident_capacity_probe_bindings()?;
+                Ok::<_, anyhow::Error>((check, tree_capacity, recorded?))
+            },
+            |device, queue, (check, tree_capacity, recorded)| {
+                let status = frontend.parser.read_recorded_resident_ll1_hir_status(&check)?;
+                // The kernels read `tree_capacity` nodes, and the parser
+                // accepts a tree up to its allocation, which can hold more.
+                if status.accepted && status.emit_len > tree_capacity {
+                    #[cfg(test)]
+                    TEST_TREE_GROWTHS.with(|growths| growths.set(growths.get() + 1));
+                    return Ok(Parse::Grow(status.emit_len));
+                }
+                if status.accepted {
+                    return finish(&Gpu { device, queue }, recorded).map(Parse::Done);
+                }
+                Ok::<_, anyhow::Error>(match status.error_code {
+                    TREE_CAPACITY_EXCEEDED if status.detail > tree_capacity => {
+                        #[cfg(test)]
+                        TEST_TREE_GROWTHS.with(|growths| growths.set(growths.get() + 0x1_0000));
+                        Parse::Grow(status.detail)
+                    }
+                    _ => Parse::Rejected,
+                })
+            },
+        ))??;
+        match outcome {
+            Parse::Done(result) => return Ok(Some(result)),
+            Parse::Rejected => return Ok(None),
+            Parse::Grow(capacity) if needed.is_none() => needed = Some(capacity),
+            Parse::Grow(capacity) => {
+                return Err(anyhow!("the parse tree of the pack does not fit {capacity} nodes on its second run"));
             }
-            finish(&Gpu { device, queue }, recorded)
-        },
-    ))?;
-    outcome
+        }
+    }
+}
+
+/// The parser status code of a tree larger than its capacity. The status
+/// detail is the capacity the tree needs.
+const TREE_CAPACITY_EXCEEDED: u32 = 3;
+
+enum Parse<R> {
+    Done(R),
+    Grow(u32),
+    Rejected,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A tree capacity for the next first parse of `with_parse` on this
+    /// thread, in new buffers of that capacity, to exercise the second run.
+    static TEST_TREE_CAPACITY: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+    /// How many times `with_parse` on this thread ran a pack again with a
+    /// larger tree: accepted trees in the low 16 bits, rejected ones above.
+    static TEST_TREE_GROWTHS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 /// What the first submission leaves for the later ones: the lexer's and
@@ -316,20 +386,20 @@ pub(super) struct Tree {
 
 /// Expands the machines of `sources`, one GPU run for all of them. `flags`
 /// holds `FILE_GENERATORS` and `FILE_CLOSURES` per file. `None` when no file
-/// has a machine, or when a file does not lex or parse: the frontend reports
-/// that.
+/// has a machine.
 pub(super) fn expand(sources: &[&str], flags: &[u32]) -> Result<Option<Outcome>> {
     if sources.iter().all(|source| source.is_empty()) {
         return Ok(None);
     }
-    with_parse(
+    Ok(with_parse(
         sources,
         |gpu, lexer, parser, encoder, parsed| mark(gpu, lexer, parser, encoder, parsed, flags),
         |gpu, marked| match marked {
             Some(marked) => write(gpu, sources, &marked),
             None => Ok(None),
         },
-    )
+    )?
+    .unwrap_or(Some(Outcome::Unparsed)))
 }
 
 /// Records the kernels that read the parse tree into token records, number
@@ -953,7 +1023,7 @@ mod tests {
                 invalid.file, invalid.start, invalid.message, invalid.help
             ),
             Some(Outcome::Generators(_)) => panic!("the sources declare a generator"),
-            None => None,
+            Some(Outcome::Unparsed) | None => None,
         }
     }
 
@@ -974,7 +1044,7 @@ mod tests {
             ),
             Some(Outcome::Expanded(_)) => "expanded".to_string(),
             Some(Outcome::Generators(_)) => "generators".to_string(),
-            None => "no machine, or the file does not parse".to_string(),
+            Some(Outcome::Unparsed) | None => "no machine, or the file does not parse".to_string(),
         }
     }
 
@@ -1019,6 +1089,25 @@ pub machine Door on Input -> Reply {
         assert!(text.contains("Input::Open -> { return Reply::Ignored; },"), "{text}");
         assert!(text.contains("Input::Open -> { self.opens += 1; self.__lanius_state = DoorState::Opened; return Reply::Done; },"), "{text}");
         assert!(text.contains("return match (self.__lanius_state) {"), "{text}");
+    }
+
+    /// A first parse whose tree capacity is too small reports the capacity
+    /// the tree needs, and the pack parses again with it: the expansion is
+    /// the one a large enough first parse gives. The small source fits the
+    /// parser's allocation, and the parser accepts it with a longer tree than
+    /// the capacity. The large one does not fit, and the parser rejects it.
+    #[test]
+    fn a_tree_larger_than_the_first_capacity_parses_again() {
+        let functions: String = (0..800).map(|index| format!("fn f{index}() -> i32 {{ return {index}; }}\n")).collect();
+        for (source, growth) in [(DOOR.to_string(), 1), (format!("{DOOR}{functions}"), 0x1_0000)] {
+            let expected = expanded_text(&source);
+            let growths = TEST_TREE_GROWTHS.with(std::cell::Cell::get);
+            TEST_TREE_CAPACITY.with(|capacity| capacity.set(Some(1)));
+            let grown = std::panic::catch_unwind(|| expanded_text(&source));
+            TEST_TREE_CAPACITY.with(|capacity| capacity.set(None));
+            assert_eq!(grown.expect("the second parse expands the machine"), expected);
+            assert_eq!(TEST_TREE_GROWTHS.with(std::cell::Cell::get), growths + growth, "the first parse ran once more");
+        }
     }
 
     #[test]
@@ -1225,7 +1314,7 @@ machine Pair on Op {
                 read_all(gpu, encoder, &parser.semantic_token_kinds, parsed.token_capacity + 2),
                 gpu.read(encoder, &lexer.tokens_out, 0, parsed.token_capacity as usize * 3),
             ))
-        }, |_, read| Ok(Some(read)))
+        }, |_, read| Ok(read))
         .expect("parse")
         .expect("the parser accepts the machine");
         let lexer = try_global_lexer().unwrap();

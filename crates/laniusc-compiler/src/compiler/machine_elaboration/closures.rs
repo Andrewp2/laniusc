@@ -106,6 +106,8 @@ pub(super) enum Outcome {
     /// One entry per file: `None` for a file without closures.
     Rewritten(Vec<Option<Rewritten>>),
     Invalid(Invalid),
+    /// A file does not lex. The frontend reports that.
+    Unlexed,
 }
 
 #[derive(encase::ShaderType)]
@@ -463,8 +465,7 @@ impl Gpu<'_> {
 }
 
 /// Rewrites the closures of `sources`, one GPU run for all of them. `None`
-/// when no file has a closure, or when a file does not lex: the frontend
-/// reports that.
+/// when no file has a closure.
 pub(super) fn rewrite(sources: &[&str]) -> Result<Option<Outcome>> {
     let total: usize = sources.iter().map(|source| source.len()).sum();
     if total == 0 {
@@ -508,7 +509,10 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     gpu.submit("closures.mark", encoder);
     let counts = gpu.words(&summary_read)?;
     let closure_count = counts[1];
-    if gpu.words(&lex_error_read)?[0] != 0 || closure_count == 0 {
+    if gpu.words(&lex_error_read)?[0] != 0 {
+        return Ok(Some(Outcome::Unlexed));
+    }
+    if closure_count == 0 {
         return Ok(None);
     }
 

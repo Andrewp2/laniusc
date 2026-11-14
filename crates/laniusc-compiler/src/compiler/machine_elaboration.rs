@@ -175,6 +175,29 @@ impl Pending {
 /// then machines are rewritten on the GPU, each in one run over all the
 /// files.
 pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<String>, CompileError> {
+    Ok(elaborate(sources, None)?.expect("a load without a batch limit is always elaborated"))
+}
+
+/// `elaborate_sources` for the loads of one build, in one run of each
+/// rewrite over all their files. A build of several source units elaborates
+/// them all at its start, instead of once per unit.
+///
+/// `None` when the run cannot stand in for one `elaborate_sources` per load:
+/// the files the rewrites read come to more than `max_bytes`, a file does not
+/// lex or parse, or a rewrite rejects a file. Nothing is recorded then, and
+/// each load is elaborated on its own, which reports the error in its order.
+pub(crate) fn elaborate_source_loads(
+    loads: Vec<Vec<(PathBuf, String)>>,
+    max_bytes: usize,
+) -> Option<Vec<Vec<String>>> {
+    let lens: Vec<usize> = loads.iter().map(Vec::len).collect();
+    let mut texts = elaborate(loads.into_iter().flatten().collect(), Some(max_bytes)).ok()??.into_iter();
+    Some(lens.into_iter().map(|len| texts.by_ref().take(len).collect()).collect())
+}
+
+/// `elaborate_sources`. With a `batch_limit`, `None` instead of a pack the
+/// rewrites cannot read, or of more than `batch_limit` bytes to read.
+fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Result<Option<Vec<String>>, CompileError> {
     let mut files = Vec::with_capacity(sources.len());
     for (path, source) in sources {
         let hash = blake3::hash(source.as_bytes());
@@ -182,6 +205,11 @@ pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<S
             || (source.contains(RESERVED_PREFIX)
                 && registry().lock().is_ok_and(|registry| registry.contains_key(&hash)));
         files.push(Pending { path, source, known, stages: None, flags: 0 });
+    }
+    if let Some(limit) = batch_limit
+        && files.iter().filter(|file| !file.known).map(|file| file.source.len()).sum::<usize>() > limit
+    {
+        return Ok(None);
     }
 
     // Closures, for the files that can hold one. The parser does not read a
@@ -198,7 +226,8 @@ pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<S
             )
         })?;
         match outcome {
-            None => {}
+            Some(closures::Outcome::Unlexed) if batch_limit.is_some() => return Ok(None),
+            None | Some(closures::Outcome::Unlexed) => {}
             Some(closures::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
                 let (text, start, len) = file.source_span(invalid.start, invalid.len);
@@ -235,7 +264,8 @@ pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<S
             )
         })?;
         let (outputs, flag) = match outcome {
-            None => break,
+            Some(machines::Outcome::Unparsed) if batch_limit.is_some() => return Ok(None),
+            None | Some(machines::Outcome::Unparsed) => break,
             Some(machines::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
                 let (text, start, len) = file.source_span(invalid.start, invalid.len);
@@ -280,7 +310,7 @@ pub(crate) fn elaborate_sources(sources: Vec<(PathBuf, String)>) -> Result<Vec<S
             }
         });
     }
-    Ok(texts)
+    Ok(Some(texts))
 }
 
 /// The diagnostic of a machine the GPU rules reject. `source` is the text of
@@ -392,6 +422,7 @@ pub machine Door on Input -> Reply {
                 invalid.message,
                 invalid.start
             ),
+            Some(closures::Outcome::Unlexed) => panic!("a library source does not lex"),
             None => panic!("the pass found no closure in the control source"),
         };
         assert_eq!(outputs.len(), sources.len());

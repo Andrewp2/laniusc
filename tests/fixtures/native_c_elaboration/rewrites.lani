@@ -1,0 +1,42 @@
+// A closure and a machine in the program, and a machine of the standard
+// library. A native build rewrites the files of both units in one run of
+// each rewrite. Exits 0 when all three behave as written.
+module app::main;
+
+import core::function;
+import core::utf8_state;
+
+enum Input { Open, Close }
+enum Reply { Done, Ignored }
+
+machine Door on Input -> Reply {
+    opens: i32,
+    start Closed;
+    state Opened {
+        Input::Close -> goto Closed with Reply::Done,
+        Input::Open -> stay with Reply::Ignored,
+    }
+    state Closed {
+        Input::Open -> { self.opens += 1; goto Opened with Reply::Done; },
+        Input::Close -> stay with Reply::Ignored,
+    }
+}
+
+fn twice<M>(mapper: &M, value: i32) -> i32 where M: core::function::Mapper<i32, i32> {
+    return mapper.apply(mapper.apply(value));
+}
+
+fn main() -> i32 {
+    let step: i32 = 3;
+    if (twice(|x: i32| x + step, 1) != 7) { return 1; }
+    let door: Door = door_start(0);
+    let first: Reply = door.step(Input::Open);
+    let second: Reply = door.step(Input::Open);
+    let third: Reply = door.step(Input::Close);
+    let fourth: Reply = door.step(Input::Open);
+    if (door.opens != 2) { return 2; }
+    let sequence: core::utf8_state::Sequence = core::utf8_state::sequence_start(true);
+    if (!sequence.step(65)) { return 3; }
+    if (!sequence.complete()) { return 4; }
+    return 0;
+}

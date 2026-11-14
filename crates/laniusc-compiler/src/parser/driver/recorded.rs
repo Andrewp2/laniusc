@@ -178,6 +178,18 @@ impl GpuParser {
         &self,
         recorded: &RecordedResidentLl1HirCheck,
     ) -> Result<Ll1AcceptResult> {
+        let result = self.read_recorded_resident_ll1_hir_status(recorded)?;
+        if !result.accepted {
+            anyhow::bail!("{}", result.rejection_message());
+        }
+        Ok(result)
+    }
+
+    /// Reads deferred LL/HIR parser status, accepted or not.
+    pub(crate) fn read_recorded_resident_ll1_hir_status(
+        &self,
+        recorded: &RecordedResidentLl1HirCheck,
+    ) -> Result<Ll1AcceptResult> {
         let slice = recorded.status_readback.slice(..);
         crate::gpu::passes_core::map_readback_blocking(
             &self.device,
@@ -188,13 +200,6 @@ impl GpuParser {
         let words = read_u32_words(&mapped, 11)?;
         drop(mapped);
         recorded.status_readback.unmap();
-
-        let result = Ll1AcceptResult::from_status_words(&words);
-
-        if !result.accepted {
-            anyhow::bail!("{}", result.rejection_message());
-        }
-
-        Ok(result)
+        Ok(Ll1AcceptResult::from_status_words(&words))
     }
 }

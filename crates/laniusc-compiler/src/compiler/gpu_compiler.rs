@@ -79,6 +79,9 @@ pub struct GpuCompiler<'gpu> {
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
     pending_original_cache: std::sync::Mutex<unit_cache::PendingOriginalCache>,
     unit_source_texts: std::sync::Mutex<unit_cache::UnitSourceTexts>,
+    /// The elaborated texts of the current build's units, prepared together
+    /// at its start (`native_codegen::PreparedUnitSources`).
+    prepared_unit_sources: std::sync::Mutex<Vec<native_codegen::PreparedUnitSource>>,
     library_instance_cache: std::sync::Mutex<unit_cache::LibraryInstanceCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
@@ -453,6 +456,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
                 pending_original_cache: std::sync::Mutex::new(unit_cache::PendingOriginalCache::pending_default()),
                 unit_source_texts: std::sync::Mutex::new(unit_cache::UnitSourceTexts::default()),
+                prepared_unit_sources: std::sync::Mutex::new(Vec::new()),
                 library_instance_cache: std::sync::Mutex::new(unit_cache::LibraryInstanceCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
