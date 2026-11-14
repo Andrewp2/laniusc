@@ -268,8 +268,12 @@ A reference is one of three things:
     parameter. A constant slot also carries its declared scalar in bits
     5..9 (`ct_dep_param_slot`, `ct_dep_param_scalar`), so a substitution is
     checked without the signature node;
-- a sentinel: `CT_PENDING`, `CT_UNKNOWN` or `CT_NONE`, the three largest
-  values.
+- a sentinel: `CT_PENDING`, `CT_UNKNOWN`, `CT_NONE` or `CT_FIT_FAILED`, the
+  four largest values. `CT_FIT_FAILED` is a substitution's status for a
+  constant projection whose closed value does not fit its target scalar
+  (docs/compiler-gpu-instantiation-design.md, "Constant fit status"). It is
+  never a candidate's state; a table that stores substitution results may
+  hold it, and `ct_is_resolved` is false for it like every sentinel.
 
 Parameter leaves carry their declaration token, so `T` of two binders never
 collides.

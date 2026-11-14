@@ -21,6 +21,14 @@ import primitive_types;
 public static const uint CT_PENDING = 0xffffffffu;
 public static const uint CT_UNKNOWN = 0xfffffffeu;
 public static const uint CT_NONE = 0xfffffffdu;
+// A constant projection whose closed value does not fit its target scalar
+// (ct_build_projection): a language error of the substitution that built
+// it, not an unsupported shape. Substitution returns it unchanged
+// (ct_subst.slang); producers that report fits elsewhere map it to
+// CT_UNKNOWN.
+public static const uint CT_FIT_FAILED = 0xfffffffcu;
+// The smallest sentinel.
+static const uint CT_SENTINEL_FIRST = CT_FIT_FAILED;
 public static const uint CT_PARAM_BIT = 0x80000000u;
 public static const uint CT_CONST_PARAM_BIT = 0x40000000u;
 public static const uint CT_PARAM_TOKEN_MASK = 0x1fffffffu;
@@ -137,16 +145,16 @@ public uint ct_arg_capacity()
 }
 
 // ---------------------------------------------------------------------------
-// Reference classification. Sentinels are the three largest values, so a
-// resolved reference is nonzero and below CT_NONE.
+// Reference classification. Sentinels are the four largest values, so a
+// resolved reference is nonzero and below CT_SENTINEL_FIRST.
 public bool ct_is_resolved(uint ref)
 {
-    return ref - 1u < CT_NONE - 1u;
+    return ref - 1u < CT_SENTINEL_FIRST - 1u;
 }
 
 public bool ct_is_param(uint ref)
 {
-    return ref - CT_PARAM_BIT < CT_NONE - CT_PARAM_BIT;
+    return ref - CT_PARAM_BIT < CT_SENTINEL_FIRST - CT_PARAM_BIT;
 }
 
 public bool ct_is_type_param(uint ref)
@@ -156,7 +164,7 @@ public bool ct_is_type_param(uint ref)
 
 public bool ct_is_const_param(uint ref)
 {
-    return ref - (CT_PARAM_BIT | CT_CONST_PARAM_BIT) < CT_NONE - (CT_PARAM_BIT | CT_CONST_PARAM_BIT);
+    return ref - (CT_PARAM_BIT | CT_CONST_PARAM_BIT) < CT_SENTINEL_FIRST - (CT_PARAM_BIT | CT_CONST_PARAM_BIT);
 }
 
 public bool ct_is_record(uint ref)

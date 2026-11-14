@@ -148,7 +148,9 @@ uint build_dependency(uint t, bool final, out CtKey key)
         if (!ct_is_resolved(child)) return CT_UNKNOWN;
         uint status = ct_build_projection(target, child, dependency_constant_scalar(child_node),
             fold, value, key);
-        if (!fold) return status;
+        // A checked or signature projection's fit is reported where it is
+        // claimed (ct_match_fit at the call); its candidate stays unknown.
+        if (!fold) return status == CT_FIT_FAILED ? CT_UNKNOWN : status;
     }
     if (fold) return ct_build_value(value, key);
     return build_composite(t, kind, final, key);

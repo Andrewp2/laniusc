@@ -192,7 +192,8 @@ void main(uint3 dtid : SV_DispatchThreadID)
         canonical_projection[i] = id;
     }
     check(6u, canonical_projection[0u] == canonical_atom[2] ? 1u : 0u, 1u);
-    check(7u, canonical_projection[1u], CT_UNKNOWN);
+    // A count that does not fit is a failed fit, not an unsupported shape.
+    check(7u, canonical_projection[1u], CT_FIT_FAILED);
     check(8u, ct_kind(canonical_projection[2u]), CC_KIND_CAST);
     check(9u, cc_count_class(canonical_projection[2u]) == ct_const_param(3u) ? 1u : 0u, 1u);
 

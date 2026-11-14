@@ -8376,6 +8376,72 @@ fn constant_count_fit_reports_the_parameter_type_at_the_argument() {
     assert_eq!(primary.byte_start, Some(argument), "{diagnostic:?}");
 }
 
+/// `narrow(values)` inside `conflicting<K: u64>` binds narrow's `N: u8` to
+/// the projection P_u8(K), whose count class is K, so `make` binds K and
+/// `Tag<K>` agrees with `tag`. The u8 fit stays an obligation of each
+/// instance: K = 255 executes, K = 256 is a type mismatch at the inner
+/// argument, also through a forwarding generic caller.
+#[test]
+fn constant_projection_fit_is_checked_per_instance() {
+    let fixture = include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/reject_mixed_projection_instance_fit.lani");
+    let control = include_str!("fixtures/stdlib_foundation/typed_constant_transport/constant-claim-provenance-v1/accept_mixed_projection_count_identity.lani");
+    let generics = control.split("fn main()").next().expect("fixture generics");
+    let program = |count: usize, forward: bool| {
+        let values = (0..count).map(|i| (i % 17).to_string()).collect::<Vec<_>>().join(",");
+        let (outer, call) = if forward {
+            ("fn outer<const M:u64>(values:[i32;M],tag:Tag<M>)->[i32;M] { return conflicting(values,tag); }\n", "outer")
+        } else {
+            ("", "conflicting")
+        };
+        format!(
+            "{generics}{outer}fn main()->i32 {{ let values:[i32;{count}]=[{values}]; let tag:Tag<{count}> = Tag {{ values:values }}; \
+             let result:[i32;{count}]={call}(values,tag); if (result[{last}]!={expected}) {{ return 1; }} return 0; }}",
+            last = count - 1,
+            expected = (count - 1) % 17,
+        )
+    };
+    execute("uncalled projection identity", control);
+    for forward in [false, true] {
+        for count in [3, 255] {
+            execute(&format!("projection fit {count}, forwarded {forward}"), &program(count, forward));
+        }
+    }
+    let rejected = [
+        ("fixture K = 256".to_owned(), fixture.to_owned()),
+        ("K = 256".to_owned(), program(256, false)),
+        ("forwarded K = 256".to_owned(), program(256, true)),
+    ];
+    for (label, source) in rejected {
+        let owned = source.clone();
+        let error = common::run_gpu_codegen_with_timeout(&label, move || {
+            let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).expect("GPU compiler");
+            pollster::block_on(compiler.compile_source_to_x86_64(&owned))
+        }).err().unwrap_or_else(|| panic!("{label}: a projection that does not fit u8 emitted an executable"));
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0006", "{label}: {error:?}");
+        let primary = diagnostic.primary_label.as_ref().unwrap_or_else(|| panic!("{label}: missing source label: {error:?}"));
+        assert!(primary.message.contains("does not fit `u8`"), "{label}: {diagnostic:?}");
+        let argument = source.find("narrow(values)").expect("inner call") + "narrow(".len();
+        assert_eq!(primary.byte_start, Some(argument), "{label}: {diagnostic:?}");
+    }
+}
+
+/// Declared constant scalars are not narrowed to integers: a bool constant
+/// takes a bool and rejects an integer, and only lengths need counts.
+#[test]
+fn constant_parameters_keep_declared_scalars_and_count_validation() {
+    execute(
+        "bool constant",
+        "fn flag<const B:bool>()->bool { return B; } fn main()->i32 { if (flag<true>()) { return 0; } return 1; }",
+    );
+    for (label, source, code) in [
+        ("integer for bool constant", "fn flag<const B:bool>()->i32 { return 42; } fn main()->i32 { return flag<1>(); }", "LNC0006"),
+        ("negative symbolic count", "fn f<const N:i32>()->i32 { let a:[i32;N]; return 0; } fn main()->i32 { return f<-1>(); }", "LNC0047"),
+    ] {
+        reject_trait_program(label, source, code);
+    }
+}
+
 #[test]
 fn generic_result_only_constants_execute_local_calls() {
     execute(

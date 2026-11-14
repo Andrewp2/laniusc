@@ -242,9 +242,17 @@ uint subst_build<S : ICtSlots>(S slots, uint env, uint node, bool intern, inout 
     return ct_spare_intern(key, extra, spare);
 }
 
-// The ID of `term` under `env`; CT_UNKNOWN when a parameter is unbound or a
-// shape is unsupported, CT_NONE when `intern` is false and the result does
-// not exist. CT_NONE as `env` substitutes nothing.
+// The ID of `term` under `env`, or a status:
+// - CT_FIT_FAILED: a constant projection's substituted value does not fit
+//   its target scalar. The obligation is the projection record itself
+//   (CC_CAST, target scalar in w0), which ct_subst_failed_fit finds again.
+//   It is never memoized, so every caller sees it.
+// - CT_UNKNOWN: a parameter is unbound (an environment hole), a shape is
+//   unsupported, or a capacity ran out. Capacity also sets an overflow bit
+//   (ct_subst_counts or ct_counts) and the job is recorded again, so a
+//   caller never reports it as a language error.
+// - CT_NONE: `intern` is false and the result does not exist.
+// CT_NONE as `env` substitutes nothing.
 public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, inout CtSpare spare)
 {
     if (!ct_is_resolved(term)) return CT_UNKNOWN;
@@ -276,4 +284,23 @@ public uint ct_subst<S : ICtSlots>(S slots, uint env, uint term, bool intern, in
     }
     ct_subst_flag(CT_SUBST_OVERFLOW_WORK);
     return CT_UNKNOWN;
+}
+
+// After ct_subst(slots, env, term) returned CT_FIT_FAILED: the target scalar
+// of the projection whose fit failed, or 0 when `term` holds none. The
+// failed build stopped at the first unbuilt open node of the descent, and
+// failures are never memoized, so the same descent ends at that projection.
+// Reads the memo only; it substitutes nothing.
+public uint ct_subst_failed_fit(uint env, uint term)
+{
+    // A built term has a memo entry; it did not fail.
+    if (!ct_is_record(term) || ct_closed(term) || ct_subst_memo_find(env, term) != CT_PENDING) return 0u;
+    uint node = term;
+    uint child = pending_child(env, node);
+    for (uint depth = 0u; depth < CT_SUBST_DEPTH_LIMIT && child != CT_NONE; depth++)
+    {
+        node = child;
+        child = pending_child(env, node);
+    }
+    return child == CT_NONE && ct_kind(node) == CC_KIND_CAST ? ct_words(node).x : 0u;
 }

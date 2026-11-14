@@ -199,7 +199,9 @@ uint build_constant<R : ICtRowReader>(uint candidate, bool final, out CtKey key)
             ? checked_constant_parameter_scalar(ct_param_token(child)) : 0u;
         bool fold;
         uint status = ct_build_projection(target, child, param_scalar, fold, value, key);
-        if (!fold) return status;
+        // A checked or signature projection's fit is reported where it is
+        // claimed (ct_match_fit at the call); its candidate stays unknown.
+        if (!fold) return status == CT_FIT_FAILED ? CT_UNKNOWN : status;
     }
     return ct_build_value(value, key);
 }

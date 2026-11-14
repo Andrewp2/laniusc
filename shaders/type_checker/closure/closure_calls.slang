@@ -123,10 +123,15 @@ bool closure_bound_call(uint call, out uint token)
 // The instance key of the call at `token` (callee row `callee`, candidate
 // masks `masks`) inside the instance whose tagged environment is `caller`
 // (CT_NONE in a nongeneric function): the call's value environment with
-// every binding substituted, tagged with the callee. CT_NONE when the call
-// environment has a hole or stays open there, CT_UNKNOWN when substitution
-// or interning fails. The bindings substitute through `subst_spare` while
-// the key's arguments sit in `env_spare`'s block, so the two never share.
+// every binding substituted, tagged with the callee. Otherwise a status:
+// - CT_NONE: pending; the environment has a hole or stays open there.
+// - CT_FIT_FAILED: a binding's constant projection does not fit under the
+//   caller (closure_instance_fit names it). The call environment is the
+//   admitted one, so this is the instance's language error.
+// - CT_UNKNOWN: an unsupported shape, or a capacity that set an overflow
+//   bit (the job is recorded again).
+// The bindings substitute through `subst_spare` while the key's arguments
+// sit in `env_spare`'s block, so the two never share.
 uint closure_instance_env(uint token, uint callee, uint2 masks, uint caller,
     inout CtSpare subst_spare, inout CtSpare env_spare)
 {
@@ -147,10 +152,32 @@ uint closure_instance_env_of(uint environment, uint callee, uint2 masks, uint ca
     for (uint index = 0u; index < arity; index++)
     {
         uint binding = ct_subst(SourceSlots(), caller, ct_arg(environment, index), true, subst_spare);
-        if (!ct_is_resolved(binding)) return CT_UNKNOWN;
+        if (!ct_is_resolved(binding)) return binding == CT_FIT_FAILED ? CT_FIT_FAILED : CT_UNKNOWN;
         ct_key_arg(key, index, binding);
     }
     if (!key.ok) return CT_UNKNOWN;
     if ((key.flags & (CTF_TYPE_PARAM | CTF_CONST_PARAM)) != 0u) return CT_NONE;
     return ct_spare_publish(key, uint2(0xffffffffu, 0u), true, env_spare);
+}
+
+// After closure_instance_env_of(environment, ...) returned CT_FIT_FAILED
+// under `caller`: the slot whose binding failed (`constant` tells its
+// domain) and the scalar its projection does not fit. False when no
+// binding holds the failed projection.
+bool closure_instance_fit(uint environment, uint caller, out uint slot, out bool constant, out uint scalar)
+{
+    slot = INVALID; constant = false; scalar = 0u;
+    if (!ct_is_record(environment) || ct_kind(environment) != CT_KIND_ENV) return false;
+    uint3 words = ct_words(environment);
+    uint types = countbits(words.y);
+    uint arity = min(ct_arity(environment), types + countbits(words.z));
+    for (uint index = 0u; index < arity; index++)
+    {
+        scalar = ct_subst_failed_fit(caller, ct_arg(environment, index));
+        if (scalar == 0u) continue;
+        constant = index >= types;
+        slot = ct_nth_set_bit(constant ? words.z : words.y, constant ? index - types : index);
+        return slot < 32u;
+    }
+    return false;
 }

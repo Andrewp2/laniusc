@@ -40,7 +40,8 @@ public uint ct_build_value(uint3 value, out CtKey key)
 // fits: `fold` is set with `value`, and the caller builds the value key (at
 // its one ct_build_value site). A symbolic child is CC_CAST(target; child),
 // counted like its child. `param_scalar` is the declared scalar of `child`
-// when it is a constant parameter.
+// when it is a constant parameter. A concrete count that does not fit
+// returns CT_FIT_FAILED; any other unsupported child, CT_UNKNOWN.
 public uint ct_build_projection(uint target, uint child, uint param_scalar,
     out bool fold, out uint3 value, out CtKey key)
 {
@@ -53,10 +54,12 @@ public uint ct_build_projection(uint target, uint child, uint param_scalar,
     if (kind == CC_KIND_VALUE)
     {
         uint count = cc_count(child);
-        // A value that is not a count, or does not fit the target, has no
-        // folded identity: an unsupported shape, not an empty candidate.
-        fold = count != 0xffffffffu && constant_value_from_count(count, target, value);
-        return fold ? CT_KEY_BUILT : CT_UNKNOWN;
+        // A value that is not a count has no folded identity: an
+        // unsupported shape. A count that does not fit the target is the
+        // projection's failed fit, kept distinct for its required caller.
+        if (count == 0xffffffffu) return CT_UNKNOWN;
+        fold = constant_value_from_count(count, target, value);
+        return fold ? CT_KEY_BUILT : CT_FIT_FAILED;
     }
     uint child_scalar = ct_is_const_param(child) ? param_scalar
         : kind == CC_KIND_CAST ? ct_words(child).x : 0u;

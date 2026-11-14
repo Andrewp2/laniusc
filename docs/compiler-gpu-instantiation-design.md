@@ -201,7 +201,7 @@ Concrete instance checks have explicit owners:
 
 | Check | GPU owner and required outcome |
 | --- | --- |
-| Constant projection fit | Substitution reports a distinct failed-fit result, propagated from a required call environment to a source diagnostic. Do not turn it into `CT_UNKNOWN`, or publish errors from discarded inference candidates. Retain pending fits independently of count-class equality. |
+| Constant projection fit | Substitution reports a distinct failed-fit result, propagated from a required call environment to a source diagnostic. Do not turn it into `CT_UNKNOWN`, or publish errors from discarded inference candidates. Retain pending fits independently of count-class equality. Implemented for in-unit instances: see "Constant fit status" below. |
 | Closed array count validity | Validate signedness/range before layout, preserving the existing invalid-count diagnostic and template location. |
 | Operator, condition, logical and index legality | Realize operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. Realize scalar caches from the complete type, including floating-point classes. |
 | Callee/receiver/trait prerequisites | Program solver and instantiated signatures, with hard obligations and caller ABI agreement |
@@ -212,9 +212,45 @@ join the publication reduction. The baseline selected-copy path currently
 miscompiles mixed integer/float generic arithmetic and admits invalid boolean
 arithmetic and integer conditions; forced cross-unit replay behaves correctly
 for those probes. Correct these defects instead of preserving their outputs.
-The mixed-projection overflow fixture currently reports an internal LNC0017
-evidence error without a source label. Its intended failed-fit diagnostic must
-be repaired rather than treated as established LNC0006 parity.
+The mixed-projection overflow fixture reported an internal LNC0017 evidence
+error without a source label at c1e85925f. It now reports LNC0006 at the inner
+`narrow(values)` argument (tests `constant_projection_fit_is_checked_per_instance`).
+
+### Constant fit status
+
+The constant subsystem owns the fit obligation; consumers read its status.
+
+- **Where the fit lives.** A count claim of a symbolic count against a
+  parameter of another scalar binds the slot to `CC_CAST(target; child)`
+  (`ct_match`). Its count class is the child's, so array identity and later
+  claims see `K`, but the call environment keeps the `CC_CAST` record. That
+  record is the pending obligation; count-class normalization never removes
+  it from the environment.
+- **Status.** `ct_build_projection` returns `CT_FIT_FAILED` (a fourth
+  canonical sentinel, `0xfffffffc`) for a closed count that does not fit,
+  `CT_UNKNOWN` for a value that is not a count. `ct_subst` returns
+  `CT_FIT_FAILED` unchanged and never memoizes it. `CT_UNKNOWN` remains an
+  unbound slot, an unsupported shape, or a capacity failure; capacity also
+  sets an overflow bit and the job is recorded again, so it is never a
+  language error. `closure_instance_env_of` returns `CT_NONE` for a pending
+  (open or holed) environment, `CT_FIT_FAILED`, or `CT_UNKNOWN`. Checked and
+  dependency-signature interning map `CT_FIT_FAILED` to `CT_UNKNOWN`: their
+  fits are reported where they are claimed (`ct_match_fit` at the call).
+- **Report.** `closure/03_expand` substitutes each admitted call environment
+  (`ct_call_env`, never a discarded inference candidate) under each closure
+  instance. On `CT_FIT_FAILED`, `closure_instance_fit` re-walks the memo
+  (`ct_subst_failed_fit`) to name the failed slot and the scalar of the
+  failed projection, and records `LNC0006` (type mismatch, count-fit detail
+  with the scalar) at the first argument whose pattern names that slot. The
+  error is ordered by token like every other type-check error.
+- **Retention.** A retained environment exports its binding terms as they
+  are, including the `CC_CAST` record with its target scalar; the obligation
+  is that term, not a separate row. A retained use substitutes it under the
+  caller's closed environment with `ct_subst` and treats `CT_FIT_FAILED` as
+  this report, keyed by the use's call token and slot.
+- **Not covered.** Dependency summary instances (`closure/03b`) still map a
+  failed fit to `CT_UNKNOWN`; their diagnostic would need a dependency
+  source location.
 
 ## 5. Discovery waves, depth and capacity
 
