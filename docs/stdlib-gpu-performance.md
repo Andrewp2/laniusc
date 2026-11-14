@@ -1,5 +1,48 @@
 # GPU compiler performance: stdlib fixes
 
+## Settings full recompiles: aggregate and float shaders (2026-11-14)
+
+`b8f81e764` processes wide aggregate literals one element per GPU lane in
+x86 liveness and layout discovery. Dense literals then use direct word counts
+and element indexes instead of serial scans. `187ac2491` adds Rust's
+Eisel-Lemire conversion before the exact decimal-to-float fallback. Both
+changes perform compilation work in shaders.
+
+The integrated comparison used baseline `187eb732f` and candidate `187ac2491`
+with the frozen settings sources from `212c54dce7f70f644c774655307f3851bdec7df2`.
+`tools/benchmark_settings_recompile.py` ran in baseline/candidate/candidate/
+baseline order, with three warmups and seven measured requests per daemon.
+Each binary used its matching shader directory. GPU pipeline caches were warm;
+compiled-unit and instance caches were cleared before every request, and both
+reported zero hits. The four runs held the shared GPU validation lock. Agent
+CPU usage was capped at 24 of the machine's 32 cores.
+
+| Run | Median warm full-recompile wall time |
+| --- | ---: |
+| Baseline A | 241.548 ms |
+| Candidate A | 225.230 ms |
+| Candidate B | 232.390 ms |
+| Baseline B | 242.049 ms |
+| Baseline, all 14 measurements | 241.577 ms |
+| Candidate, all 14 measurements | 227.454 ms |
+
+This comparison saves 14.123 ms (5.8%). It does not meet the 160 ms target or
+remove generic source replay. Absolute timings vary with machine conditions;
+compare these versions within this run rather than against older receipts.
+
+Every output, including warmups, had the same ELF SHA-256:
+`528a81a7c844844ced58aca5395f546c737aa14ba9a019d258ed1dbcccc827fb`.
+The source manifest SHA-256 was
+`14549738f464df671001e573073fe897bca590b30c43f4ce991997f9bdd56763`.
+The benchmark checks ELF structure and byte determinism; it does not exercise
+the settings UI. Integrated execution checks passed for
+`codegen_x86::x86_reads_every_element_of_wide_array_literals`,
+`physical_gpu_runs_resident_semantic_to_scheduled_x86_lir`, and
+`physical_gpu_float_decimal_matches_native_rounding_and_bounds`, with hardware
+GPU use required and indirect-dispatch validation enabled. All 651 generated
+128-bit powers of five match Rust 1.97.1's table exactly. An independent review
+found no blocking correctness issues in either commit.
+
 ## One-shot process slots (2026-11-12)
 
 A fresh `laniusc` process takes about 550 MB of GPU memory to check a one-line
