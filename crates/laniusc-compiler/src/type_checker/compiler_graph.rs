@@ -711,11 +711,15 @@ pub(super) const CALL_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         block_prefix: "call_arg_row_scan_prefix_a",
     },
 };
-pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
+/// The generic and constant claim offsets of each argument row, one paired
+/// scan: both count the same rows.
+pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
+    left_label: "type_check.calls.generic_claims",
+    right_label: "type_check.calls.const_claims",
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::CallArguments,
-    passes: prefix_scan_graph_passes!("type_check.calls.generic_claims.scan"),
-    resources: PrefixScanResources {
+    passes: prefix_scan_graph_passes!("type_check.calls.claims.scan"),
+    left: PrefixScanResources {
         count: "call_arg_row_count_out",
         input: "call_generic_claim_scan_input",
         output_prefix: "call_generic_claim_prefix",
@@ -725,12 +729,7 @@ pub(super) const GENERIC_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
         block_sum: "call_generic_claim_scan_block_sum",
         block_prefix: "call_generic_claim_scan_prefix_a",
     },
-};
-pub(super) const CONST_CLAIM_SCAN: PrefixScanSpec = PrefixScanSpec {
-    phase: CompilerPhase::TypeCheck,
-    dispatch_domain: ResourceDomain::CallArguments,
-    passes: prefix_scan_graph_passes!("type_check.calls.const_claims.scan"),
-    resources: PrefixScanResources {
+    right: PrefixScanResources {
         count: "call_arg_row_count_out",
         input: "call_const_claim_scan_input",
         output_prefix: "call_const_claim_prefix",
@@ -5714,8 +5713,7 @@ fn build_graph(
     // neither the claim inputs nor the delayed apply inputs can be colored
     // onto scratch used by the intervening operations.
     CALLS_GENERIC_CLAIM_CLEAR.register_kernel(&mut graph, kernels)?;
-    GENERIC_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
-    CONST_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
+    CALL_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         GENERIC_CLAIM_INDEX_PREPARE_PASS,

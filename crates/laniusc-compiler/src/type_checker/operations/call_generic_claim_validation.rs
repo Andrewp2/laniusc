@@ -1,8 +1,8 @@
 use super::super::*;
 
 pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
-    pub claim_scan: PrefixScanOperation,
-    pub const_scan: PrefixScanOperation,
+    /// Generic and constant claim offsets, one paired scan.
+    pub claim_scans: PrefixScanPairOperation,
     pub emit_claims: ComputeOperation,
     pub generic_index: CallClaimIndexOperation,
     pub validate_generic: ComputeOperation,
@@ -23,8 +23,7 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
 /// The recorder schedules claim collection during inference and strict type and constant
 /// conflicts and required bindings together after closure.
 pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
-    claim_scan: PrefixScanOperation,
-    const_scan: PrefixScanOperation,
+    claim_scans: PrefixScanPairOperation,
     emit_claims: ComputeOperation,
     generic_index: CallClaimIndexOperation,
     validate_generic: ComputeOperation,
@@ -41,8 +40,7 @@ pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
 impl CallGenericClaimValidationOperation {
     pub(in crate::type_checker) fn new(build: CallGenericClaimValidationBuild) -> Self {
         Self {
-            claim_scan: build.claim_scan,
-            const_scan: build.const_scan,
+            claim_scans: build.claim_scans,
             emit_claims: build.emit_claims,
             generic_index: build.generic_index,
             validate_generic: build.validate_generic,
@@ -62,8 +60,7 @@ impl CallGenericClaimValidationOperation {
         encoder: &mut wgpu::CommandEncoder,
         pages: &DependencyPatternReplay<'_>,
     ) -> Result<()> {
-        self.claim_scan.record(encoder)?;
-        self.const_scan.record(encoder)?;
+        self.claim_scans.record(encoder)?;
         pages.record(encoder, |encoder| self.emit_claims.record(encoder))?;
         self.generic_index.record(encoder)?;
         self.mark_required.record(encoder)?;

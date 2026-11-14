@@ -124,8 +124,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     );
     let generic_claim_validation =
         CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
-            claim_scan: prefix_scan_spec(compiler_graph::GENERIC_CLAIM_SCAN)?,
-            const_scan: prefix_scan_spec(compiler_graph::CONST_CLAIM_SCAN)?,
+            claim_scans: PrefixScanPairOperation::from_spec(
+                device,
+                passes,
+                resources,
+                compiler_graph::CALL_CLAIM_SCAN,
+            )?,
             emit_claims: indirect(CALLS_GENERIC_CLAIM_EMIT)?,
             validate_generic: ComputeOperation::indirect_spec(
                 device,
