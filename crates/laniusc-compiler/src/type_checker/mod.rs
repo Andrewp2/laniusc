@@ -322,6 +322,17 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     pub upstream_workspace: &'a [crate::gpu::buffers::TrackedBufferView<'a>],
 }
 
+impl GpuTypeCheckHirItemBuffers<'_> {
+    /// Retention owns original templates. A replay may request interface
+    /// storage too, but must neither export another definition nor suppress
+    /// the specialization that its caller explicitly requested.
+    pub(crate) fn retains_program_templates(self) -> bool {
+        self.semantic_interface_required
+            && self.body_specialization.is_none()
+            && !matches!(self.frontend_trait_check, FrontendTraitCheck::AuthorizedReplay { .. })
+    }
+}
+
 impl std::fmt::Display for GpuTypeCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

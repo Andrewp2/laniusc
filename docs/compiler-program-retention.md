@@ -49,12 +49,15 @@ under "Not exported completely".
   on that snapshot after the type-check status is accepted and all
   lowering-output retry points have passed. An attempt abandoned for an
   output retry drops its snapshot and exports nothing; the retried job takes
-  its own. Only interface jobs export, and an export checks that its
-  workspace actually retained the input lifetimes.
+  its own. Only original interface jobs export. Explicit body-specialization
+  and authorized-replay jobs never capture the store, even when they request
+  interface storage. They keep their normal specialization policy and cannot
+  publish duplicate or concrete definitions into the template store. An export
+  checks that its workspace actually retained the input lifetimes.
   `physical_gpu_retention_exports_once_after_native_output_retry` covers a
   warm native export and a forced capacity retry, for an executable and for
   an object.
-- With a store attached, body specialization selects no generic body in
+- On a retained original job, body specialization selects no generic body in
   place (`closure.record_inplace_select` is skipped). The late semantic
   artifact passes write `semantic_*_by_hir` after specialization, so a
   snapshot taken earlier would miss them, and a body specialized in place

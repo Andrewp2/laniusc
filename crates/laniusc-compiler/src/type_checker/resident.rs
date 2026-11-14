@@ -747,7 +747,7 @@ impl GpuTypeChecker {
             call_arg_row_capacity: hir_items.call_arg_row_capacity.max(1),
             parser_feature_flags: hir_items.parser_feature_flags,
             semantic_interface_required: hir_items.semantic_interface_required,
-            program_retention: hir_items.semantic_interface_required && program_retention,
+            program_retention: hir_items.retains_program_templates() && program_retention,
             canonical_scale: self.canonical_scale.load(std::sync::atomic::Ordering::Relaxed),
             input_fingerprint: buffer_fingerprint(&fingerprint_buffers),
         }
@@ -862,7 +862,7 @@ impl GpuTypeChecker {
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
         // One attachment owns this entire job, including resource lifetimes,
         // the pre-restart snapshot, and export after submission completes.
-        let program_retention = if hir_items.semantic_interface_required {
+        let program_retention = if hir_items.retains_program_templates() {
             self.attached_program_retention()
         } else {
             None

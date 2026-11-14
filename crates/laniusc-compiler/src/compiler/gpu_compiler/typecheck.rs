@@ -5371,6 +5371,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn physical_gpu_replay_does_not_retain_specialized_definitions() {
+        use crate::compiler::GpuCompilerBackends;
+        use crate::type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts};
+
+        let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only())).unwrap();
+        let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+        compiler.attach_program_retention(Some(store.clone()));
+        let source = "module originals; pub fn keep<T>(value: T) -> T { return value; } fn main() -> i32 { let flag = keep(false); return keep(42); }";
+        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(), 92, 0, vec![vec![]].into(), SourcePackArtifactTarget::X86_64,
+        )).unwrap();
+        let reference = store.status().unwrap();
+        assert_eq!(reference[counts::JOBS], 1);
+        assert_eq!(reference[counts::READY], 1, "{:?}", store.job_reports());
+        assert_eq!(template.generic_calls.len(), 2);
+        for call in template.generic_calls.iter() {
+            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call)).unwrap();
+            assert_eq!(replay.interface, template.interface);
+            assert_eq!(store.status().unwrap(), reference, "replay must leave the retained originals untouched");
+            assert_eq!(store.job_reports().len(), 1);
+        }
+        // Excluding replay must not detach the store from subsequent units.
+        pollster::block_on(compiler.semantic_interface_for_source_pack(
+            93, &["module next; pub fn next() -> i32 { return 7; }"],
+        )).unwrap();
+        let status = store.status().unwrap();
+        assert_eq!(status[counts::JOBS], 2);
+        assert_eq!(status[counts::READY], 1, "{:?}", store.job_reports());
+        assert_eq!(store.job_reports().len(), 2);
+    }
+
+    #[test]
     fn physical_gpu_retention_exports_once_after_native_output_retry() {
         use crate::compiler::GpuCompilerBackends;
         use crate::type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts};
