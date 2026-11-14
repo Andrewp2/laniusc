@@ -1,7 +1,8 @@
 # GPU generic instantiation
 
-This is the implementation contract for removing source replay from full
-compilation. Replay elimination is partial. A program compiles as one unit
+This document records the requirements and current prototype for removing
+source replay from full compilation. The complete replacement design is not
+yet settled. Replay elimination is partial. A bounded program compiles as one unit
 (see [One program, one unit](#one-program-one-unit)), and the original compile
 lowers closed local instances itself (see [Execution rows](#execution-rows)).
 The compiler still constructs source copies of every other generic body and
@@ -12,6 +13,73 @@ the settings application, with every unit compiled on every request. Reusing
 GPU allocations and pipelines is allowed; reusing compiled units, generic
 instances, or checked source between requests does not count. Instantiation,
 substitution, layout, call selection, and lowering must run in GPU shaders.
+
+## Architecture validation checkpoint (2026-11-14)
+
+Independent code review found that the prototype's selective admission and
+fallback machinery does not define a complete replacement. In particular,
+job-local identities, template retention, implementation selection, symbolic
+typing and capacity handling need explicit contracts. Feature expansion is
+paused while those boundaries are resolved. Fewer replay bodies are not an
+acceptance criterion for the complete replacement.
+
+Three investigations now provide more specific evidence:
+
+- **Cost:** a fresh trace of the integrated compiler at `3b38e1eb1`, with
+  frozen settings sources at `212c54dce`, records one replay compile and
+  5,073 GPU dispatches per measured build, 1,551 inside replay. Across three
+  measured requests after three warmups, the replay compile's median wall
+  duration is 35.756 ms. These are instrumented attribution measurements;
+  replacement GPU work consumes some of that budget. All output bytes match
+  the integrated baseline, and both compiled caches report zero hits.
+- **Storage:** current projection helpers can relocate references inside a
+  body, but preserve outside references because the copy shares its original
+  job. Cross-unit projection also needs declaration, type, string-pool,
+  nominal-layout, callee and diagnostic-file translations. Unit-qualified
+  template segments with externalized references are the current proposal.
+  Whole-build body residency is not an established requirement or a proven
+  memory-safe assumption. Exact retained-template sizes remain unmeasured;
+  source-token ratios are estimates, not memory bounds.
+- **Types:** a diagnostic probe forces every settings instance-table entry
+  through replay, then compares its realized types. It matches 1,331 replay
+  copies, covering 127 functions and 34,528 rows. Five value-type differences
+  identify a bound-member result in `core::function::enter_mapper`: the
+  template retains the trait's `U` parameter, and slot-based substitution
+  interprets it as the enclosing function's `T`. This is a concrete frontend
+  defect to fix before replay deletion. The census identifies symbolic terms
+  but does not validate ownership of every parameter leaf. Two other
+  bare-parameter call rows and one unresolved route remain unidentified.
+
+The type probe does not establish complete template correctness: constant
+generics, trait-provided methods, nested functions, layout/ABI facts and
+negative diagnostics were not covered. Its all-replay executable differs
+from the integrated baseline and was not executed. No speed claim follows
+from that probe.
+
+The program GPU trait solver is the proposed single implementation selector.
+Its current proof memo includes the call context in the key; equal closed
+goals in different contexts do not automatically share proof work. Solver
+term roots are also not canonical type identities: normalization allocates
+fresh terms and equality compares their structure. A build-scoped type store
+must establish exact interning independently. Any shared closed-goal proof
+scope needs explicit admission and must preserve source ownership,
+diagnostics and cycle rejection. Removing replay evidence transport is not
+permission to remove those semantic checks.
+
+Focused baseline hardware probes establish the existing replay-path behavior
+for finite chains, recursion and deduplication. Chains of 17, 63 and 64 generic
+functions execute correctly; 65 reports LNC0073 at the call requiring the
+next body. A direct root call to the last instance lets that 65-function
+chain compile, consistent with instance reuse. Mutual recursion executes;
+growing `grow<T> -> grow<Wrap<T>>` reports LNC0073 at the recursive call with
+a growing-type note. These probes do not establish depth behavior through
+GPU-selected execution copies.
+
+Local scripts, raw receipts and review qualifications are under
+`target/instantiation-design-evidence/`. The symbolic-type probe and its
+reverted diagnostic diff are under `target/e3-evidence/` in worktree
+`t3-f221214e`. No production compiler change follows from these measurements
+alone.
 
 ## End-state architecture
 
