@@ -203,7 +203,8 @@ Concrete instance checks have explicit owners:
 | --- | --- |
 | Constant projection fit | Substitution reports a distinct failed-fit result, propagated from a required call environment to a source diagnostic. Do not turn it into `CT_UNKNOWN`, or publish errors from discarded inference candidates. Retain pending fits independently of count-class equality. Implemented for in-unit instances: see "Constant fit status" below. |
 | Closed array count validity | Validate signedness/range before layout, preserving the existing invalid-count diagnostic and template location. |
-| Operator, condition, logical and index legality | Realize operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. Realize scalar caches from the complete type, including floating-point classes. |
+| Operator, condition, logical and index legality | Realize complete operand references, then apply the production semantic predicates per `(instance, constrained row)` before LIR sizing. Export the constraints when template operands are symbolic. A known nominal/aggregate operand is not an unknown scalar. Include numeric unary operands. |
+| Contextual numeric literals | Retain the literal kind, magnitude/float representations and symbolic context. Resolve each instance's literal type, range and native payload before operand validation and lowering. Contextual literal typing does not permit implicit conversion of a named typed value. |
 | Callee/receiver/trait prerequisites | Program solver and instantiated signatures, with hard obligations and caller ABI agreement |
 | Unsupported zero initialization or layout | Existing layout/lowering rules on concrete types; map errors back to the template row |
 
@@ -212,6 +213,15 @@ join the publication reduction. The baseline selected-copy path currently
 miscompiles mixed integer/float generic arithmetic and admits invalid boolean
 arithmetic and integer conditions; forced cross-unit replay behaves correctly
 for those probes. Correct these defects instead of preserving their outputs.
+An operator correction must also preserve contextual literals. A root probe
+of `fn bump<T>(a:T)->T { return a+1; }` instantiated at `i64`, `u8` and `i32`
+executes correctly at `ba4a67c5e`, but the unintegrated `e11330f16` operator
+patch rejects it because the literal retains a shared `i32` type. The same
+program forced through cross-unit replay already rejects on the baseline;
+replay is therefore not a complete oracle for this case. Per-instance literal
+context is a correctness requirement, not a reason to omit operand validation
+or demote these bodies to replay. Probes and logs are under
+`target/instantiation-design-evidence/operator-literal-baseline/`.
 The mixed-projection overflow fixture reported an internal LNC0017 evidence
 error without a source label at c1e85925f. It now reports LNC0006 at the inner
 `narrow(values)` argument (tests `constant_projection_fit_is_checked_per_instance`).
