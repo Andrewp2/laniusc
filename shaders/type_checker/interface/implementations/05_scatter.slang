@@ -67,6 +67,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (module == INVALID && file == 0u && modules == 0u) module = 0u;
     // A file that declares no module has an unnamed module after the rows.
     if (module >= file_rows) { fail(row, 13u); return; }
+    atomic_u32_max(interface_status, 4u, module + 1u);
     uint3 identity = uint3(INVALID, INVALID, INVALID);
     if (!inherent)
     {

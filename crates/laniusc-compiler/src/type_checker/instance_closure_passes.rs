@@ -135,7 +135,7 @@ const CLOSURE_SUMMARY_CT: &str = "closure_summary_ct";
 
 /// Expansion rounds (`IC_LEVELS` in instance_closure.slang): instances up
 /// to depth `INSTANCE_CLOSURE_LEVELS + 1` are found.
-pub(super) const INSTANCE_CLOSURE_LEVELS: usize = 6;
+pub(super) const INSTANCE_CLOSURE_LEVELS: usize = 16;
 /// Export dispatches ahead of the final one. A lane that meets a row another
 /// lane is realizing stops for the dispatch (CT_REALIZE_BUSY), so nested
 /// arguments shared along a chain realize about one level per dispatch: one

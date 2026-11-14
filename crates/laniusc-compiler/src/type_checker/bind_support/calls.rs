@@ -219,20 +219,19 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
-        bound_inference: if has_dependency_interfaces {
-            Some(BoundInferenceOperations {
-                clear: direct(CALLS_BOUND_TABLES_CLEAR, 4)?,
-                // One lane per implementation or predicate row of the slot.
-                collect_dependency: direct(
-                    CALLS_BOUND_DEPENDENCY_COLLECT,
-                    dependency_bound_rows.max(1),
-                )?,
-                collect_local: indirect(CALLS_BOUND_LOCAL_COLLECT)?,
-                infer: indirect(CALLS_BOUND_INFER)?,
-            })
-        } else {
-            None
-        },
+        // Local generic functions infer from their own bounds, so every unit
+        // records bound inference; only the dependency collector needs pages.
+        bound_inference: Some(BoundInferenceOperations {
+            clear: direct(CALLS_BOUND_TABLES_CLEAR, 4)?,
+            // One lane per implementation or predicate row of the slot.
+            collect_dependency: if has_dependency_interfaces {
+                Some(direct(CALLS_BOUND_DEPENDENCY_COLLECT, dependency_bound_rows.max(1))?)
+            } else {
+                None
+            },
+            collect_local: indirect(CALLS_BOUND_LOCAL_COLLECT)?,
+            infer: indirect(CALLS_BOUND_INFER)?,
+        }),
         bind_method_receiver_environment: inference(
             compiler_graph::CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
             "type_checker/calls/03d_bind_method_receiver_environment",

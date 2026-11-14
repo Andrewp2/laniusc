@@ -1835,11 +1835,7 @@ impl GpuTypeChecker {
                         ContextConstantProducer::ResultRequests,
                     )?;
                 }
-                let bound_inference = bind_groups
-                    .calls
-                    .bound_inference
-                    .as_ref()
-                    .filter(|_| dependency_types_present);
+                let bound_inference = bind_groups.calls.bound_inference.as_ref();
                 if let Some(bound) = bound_inference {
                     bound.clear.record(encoder)?;
                 }
@@ -1861,8 +1857,10 @@ impl GpuTypeChecker {
                                 &visibility.generic_call_results_resolve,
                             )?;
                             // The resident page's implementations and bounds.
-                            if let Some(bound) = bound_inference {
-                                bound.collect_dependency.record(encoder)?;
+                            if let Some(collect) =
+                                bound_inference.and_then(|bound| bound.collect_dependency.as_ref())
+                            {
+                                collect.record(encoder)?;
                             }
                             Ok(())
                         };

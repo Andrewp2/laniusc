@@ -105,18 +105,29 @@ uint active_name_count()
     return min(name_count_out[0u], gParams.name_capacity);
 }
 
+// Declared module rows of this job.
+uint named_module_count()
+{
+    return min(module_count_out[0u], gParams.module_capacity);
+}
+
+// The published modules: the declared rows, then an empty-path module for
+// each file that declares none (05b_clear_file_module_map numbers them after
+// the rows). Word 4 of interface_status is one past the largest module a
+// published declaration or implementation names (00_identity_sizes,
+// implementations/05_scatter). A job always publishes at least the root.
 uint active_module_count()
 {
     return gParams.module_capacity == 0u
         ? 0u
-        : max(1u, min(module_count_out[0u], gParams.module_capacity));
+        : min(max(max(1u, named_module_count()), interface_status[4u]), gParams.module_capacity);
 }
 
 bool active_module_segment_slot(uint slot, out uint module_i, out uint segment_i)
 {
     module_i = 0u;
     segment_i = 0u;
-    uint module_count = active_module_count();
+    uint module_count = named_module_count();
     uint segment_count = module_count_out[0u] == 0u ? 0u
         : min(module_segment_total[0u], gParams.module_segment_capacity);
     if (slot >= segment_count || module_count == 0u)
@@ -257,12 +268,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < module_count)
     {
         ModuleRecord record;
-        // Anonymous source units publish one empty root module. No declared
-        // module row exists in this job; its scratch row can belong to the
-        // preceding named-module compilation in a reused workspace.
-        bool anonymous_root = module_count_out[0u] == 0u;
-        record.first_segment = anonymous_root ? 0u : module_segment_prefix[row];
-        record.segment_count = anonymous_root ? 0u : module_key_segment_count[row];
+        // A file without a module declaration publishes an empty-path
+        // module. No declared module row exists for it; its scratch row can
+        // belong to the preceding compilation in a reused workspace.
+        bool unnamed = row >= named_module_count();
+        record.first_segment = unnamed ? 0u : module_segment_prefix[row];
+        record.segment_count = unnamed ? 0u : module_key_segment_count[row];
         interface_modules[row] = record;
     }
     uint segment_module;

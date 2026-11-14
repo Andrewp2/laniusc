@@ -252,7 +252,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirCore copy_core = core;
     copy_core.parent = row == map.vrow ? core.parent : ex_row(map, core.parent);
     copy_core.token_start = ex_token(map, core.token_start);
-    copy_core.token_end = ex_token(map, core.token_end);
+    copy_core.token_end = ex_token_end(map, core.token_end);
     HirLinks copy_links = links;
     copy_links.first_child = ex_row(map, links.first_child);
     copy_links.next_sibling = row == map.vrow ? INVALID : ex_row(map, links.next_sibling);

@@ -11,6 +11,7 @@ import primitive_types;
 import status;
 import type_checker.type.instances.struct_field_lookup;
 import type_checker.checked_type_identity;
+import type_checker.local_struct_layout;
 
 struct Params
 {
@@ -528,6 +529,41 @@ void validate_member_expr_node(uint node)
     record_error(member_token, ERR_INVALID_MEMBER_ACCESS, receiver_tag);
 }
 
+// A local struct literal supplies each declared field once: detail 3 at the
+// constructor for a missing field, detail 4 at a repeated field. An unknown
+// field is reported per row (detail 0). An imported record is checked by
+// dependencies/16_project_struct_literals.
+void validate_struct_literal_complete(uint node)
+{
+    uint record = written_struct_literal_type(node);
+    if (record == TY_UNKNOWN) return;
+    uint owner = type_decl_hir_node_by_token[record - 4096u];
+    uint count = active_compact_field_count();
+    uint first = first_local_struct_field(compact_hir_core[owner].token_start, count, compact_fields);
+    uint declared = 0u;
+    for (uint row = first; row < count && compact_fields[row].owner == owner; row++) declared++;
+    HirPayload literal = compact_hir_payload[node];
+    if (literal.c != 0u && (literal.b >= count || literal.c > count - literal.b)) return;
+    for (uint i = literal.b; i < literal.b + literal.c; i++)
+    {
+        uint token = compact_fields[i].name_token;
+        if (compact_fields[i].owner != node || !valid_token(token)) return;
+        uint ordinal = struct_init_field_ordinal[token];
+        if (ordinal == INVALID) return;
+        for (uint j = literal.b; j < i; j++)
+        {
+            uint earlier = compact_fields[j].name_token;
+            if (valid_token(earlier) && struct_init_field_ordinal[earlier] == ordinal)
+            {
+                record_error(token, ERR_INVALID_MEMBER_ACCESS, 4u);
+                return;
+            }
+        }
+    }
+    if (literal.c < declared)
+        record_error(compact_hir_core[node].token_start, ERR_INVALID_MEMBER_ACCESS, 3u);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -540,6 +576,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (valid_compact_node(node) && compact_hir_core[node].kind == HIR_MEMBER_EXPR)
         validate_member_expr_node(node);
+    if (valid_compact_node(node) && compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR)
+        validate_struct_literal_complete(node);
     if (node < active_compact_field_count())
         validate_struct_literal_field_row(node);
 }

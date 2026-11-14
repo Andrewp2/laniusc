@@ -1,6 +1,6 @@
 // Bound-directed generic call inference (docs/compiler-generic-types.md,
-// "Bound-directed generic call inference"). One lane per call of an imported
-// free function that still has an unbound type parameter. For each bound
+// "Bound-directed generic call inference"). One lane per call of a free
+// function (imported or local) that still has an unbound type parameter. For each bound
 // `P: Tr<A1..An>` of the callee, in declaration order, whose subject P is
 // bound to a closed type:
 //
@@ -50,6 +50,8 @@ StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> call_dependency_generic_requirements;
+StructuredBuffer<uint> fn_hir_by_decl_token;
+StructuredBuffer<uint> type_decl_generic_param_count;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
@@ -382,12 +384,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // Incomplete tables could hide a second implementation.
     if (bound_inference_counts[BOUND_COUNT_OVERFLOW] != 0u) return;
     uint callee = callee_token_for_hir_call(call);
-    if (!valid_token(callee) || call_intrinsic_tag[callee] != 0u ||
-        call_dependency_library_id[callee] == INVALID) return;
+    if (!valid_token(callee) || call_intrinsic_tag[callee] != 0u) return;
     // Free functions only: a dotted call's bounds include its impl's.
     uint callee_node = compact_hir_payload[call].a;
     if (valid_node(callee_node) && compact_hir_core[callee_node].kind == HIR_MEMBER_EXPR) return;
-    uint types = min(call_dependency_generic_requirements[callee] & 0xffffu, 32u);
+    // An imported callee is its interface identity; a local one is its
+    // function's HIR node (03l2).
+    uint3 owner;
+    uint types;
+    if (call_dependency_library_id[callee] != INVALID)
+    {
+        owner = uint3(call_dependency_library_id[callee], call_dependency_unit_id[callee],
+            call_dependency_local_index[callee]);
+        types = min(call_dependency_generic_requirements[callee] & 0xffffu, 32u);
+    }
+    else
+    {
+        uint target = call_fn_index[callee];
+        if (!valid_token(target)) return;
+        uint function = fn_hir_by_decl_token[target];
+        if (!valid_node(function)) return;
+        owner = uint3(BOUND_LOCAL_IMPLEMENTATION, 1u, function);
+        types = min(type_decl_generic_param_count[target], 32u);
+    }
     bool open = false;
     for (uint slot = 0u; slot < types; slot++)
     {
@@ -395,8 +414,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (!slot_binding(callee, slot, operand)) open = true;
     }
     if (!open) return;
-    uint3 owner = uint3(call_dependency_library_id[callee], call_dependency_unit_id[callee],
-        call_dependency_local_index[callee]);
     CtSpare spare = ct_spare_none();
     bool changed = false;
     uint after = INVALID;

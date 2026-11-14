@@ -57,7 +57,11 @@ fn assert_no_allocator_syscalls(name: &str, bytes: &[u8]) {
 #[test]
 fn symbolic_const_free_api_and_method_control_execute() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for name in ["borrowed-free-control", "fixed-const-method-control"] {
+    for name in [
+        "borrowed-free-control",
+        "fixed-const-method-control",
+        "symbolic-const-method",
+    ] {
         run(
             name,
             root.join(format!(
@@ -66,16 +70,6 @@ fn symbolic_const_free_api_and_method_control_execute() {
             0,
         );
     }
-    let entry =
-        root.join("tests/fixtures/stdlib_compiler_state/fixed_capacity/symbolic-const-method.lani");
-    let result = common::run_gpu_codegen_with_timeout("symbolic const method lookup", move || {
-        pollster::block_on(compile_entry_to_x86_64_with_stdlib(
-            &entry,
-            &root.join("stdlib"),
-        ))
-    });
-    let error = result.expect_err("update the documented method dependency if this now executes");
-    assert!(error.to_string().contains("LNC0027"), "{error}");
 }
 
 fn fixture(name: &str) {

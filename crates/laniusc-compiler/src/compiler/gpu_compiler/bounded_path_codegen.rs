@@ -42,6 +42,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         source_pack: &ExplicitSourcePackPathManifest,
     ) -> Result<(), CompileError> {
         let limits = self.resident_source_unit_limits();
+        let whole_program = whole_program_manifest(source_pack, limits);
+        let source_pack = whole_program.as_ref().unwrap_or(source_pack);
         if !path_manifest_requires_file_backed_build(source_pack, limits)
             && !path_manifest_has_multiple_libraries(source_pack)
         {
@@ -193,10 +195,12 @@ impl<'gpu> GpuCompiler<'gpu> {
         output: Option<&Path>,
     ) -> Result<ResidentLinkedOutput, CompileError> {
         let limits = self.resident_source_unit_limits();
-        // Multiple libraries retain their dependency graph and nominal unit
-        // identities. Small projects carry compact interfaces and objects in
-        // memory; projects above one resident source unit persist them between
-        // bounded jobs instead.
+        let whole_program = whole_program_manifest(source_pack, limits);
+        let source_pack = whole_program.as_ref().unwrap_or(source_pack);
+        // A program that fits one resident unit is one unit. Above that,
+        // libraries retain their dependency graph and nominal unit
+        // identities, and their interfaces and objects persist between
+        // bounded jobs.
         let file_backed = path_manifest_requires_file_backed_build(source_pack, limits);
         let resident_units = !file_backed && path_manifest_has_multiple_libraries(source_pack);
         let report_memory = crate::options::get().report.buffers;
@@ -346,6 +350,34 @@ impl<'gpu> GpuCompiler<'gpu> {
             _root: artifact_root,
         })
     }
+}
+
+/// A program whose files fit one resident unit compiles as one unit, whatever
+/// its libraries. Every generic body and every use of it is then in one GPU
+/// job, which instantiates them all (docs/compiler-gpu-instantiation.md,
+/// "One program, one unit"). Files keep their order and paths; every file
+/// takes the first file's library. The merged unit holds user code, so it is
+/// never the standard library. `None` keeps the manifest as it is: a single
+/// library, or a program above one unit's limits.
+pub(super) fn whole_program_manifest(
+    source_pack: &ExplicitSourcePackPathManifest,
+    limits: CompilationUnitLimits,
+) -> Option<ExplicitSourcePackPathManifest> {
+    if path_manifest_requires_file_backed_build(source_pack, limits)
+        || !path_manifest_has_multiple_libraries(source_pack)
+    {
+        return None;
+    }
+    let library_id = source_pack.files.first()?.library_id;
+    Some(ExplicitSourcePackPathManifest {
+        files: source_pack
+            .files
+            .iter()
+            .map(|file| ExplicitSourcePathFile { library_id, ..file.clone() })
+            .collect(),
+        library_dependencies: Vec::new(),
+        standard_library_id: None,
+    })
 }
 
 fn path_manifest_has_multiple_libraries(source_pack: &ExplicitSourcePackPathManifest) -> bool {

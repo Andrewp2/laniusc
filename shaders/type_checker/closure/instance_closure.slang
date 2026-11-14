@@ -16,10 +16,11 @@
 // key exact, and ct_env_binding reads only words.y/z, so a tagged
 // environment substitutes like the call environment it came from.
 //
-// The closure is an optimization: the host still finds anything it misses
-// after the replays it schedules. A full table only loses instances; a
-// frontier left at the level limit (IC_FLAG_DEPTH) makes the host ignore
-// the closure, since polymorphic recursion never closes.
+// The instance table (05_table_keys) and its execution rows read the
+// closure only when it is complete: any IC_FLAG_* (a full table, or a
+// frontier left at the level limit, IC_FLAG_DEPTH, as polymorphic recursion
+// leaves it) flags the table and no entry is lowered in the job. The host
+// then ignores the closure and replays what it misses.
 import type_checker.canonical.canonical_api;
 
 // Counters and round state; see IC_COUNT_*.
@@ -68,7 +69,7 @@ public static const uint IC_FLAG_DEPTH = 8u;      // a frontier was left at the 
 
 // Expansion rounds; instances deeper than IC_LEVELS + 1 are never found
 // (instance_closure_passes.rs, INSTANCE_CLOSURE_LEVELS).
-public static const uint IC_LEVELS = 6u;
+public static const uint IC_LEVELS = 16u;
 
 static const uint IC_PROBE_LIMIT = 64u;
 static const uint IC_INVALID = 0xffffffffu;

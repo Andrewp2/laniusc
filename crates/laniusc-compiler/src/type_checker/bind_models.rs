@@ -205,7 +205,8 @@ pub(in crate::type_checker) struct CallBindGroups {
 /// The passes of bound-directed generic call inference.
 pub(in crate::type_checker) struct BoundInferenceOperations {
     pub(in crate::type_checker) clear: ComputeOperation,
-    pub(in crate::type_checker) collect_dependency: ComputeOperation,
+    /// Present when the unit has dependency interfaces.
+    pub(in crate::type_checker) collect_dependency: Option<ComputeOperation>,
     pub(in crate::type_checker) collect_local: ComputeOperation,
     pub(in crate::type_checker) infer: ComputeOperation,
 }

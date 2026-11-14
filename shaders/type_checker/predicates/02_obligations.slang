@@ -541,6 +541,10 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
     uint hash;
     if (!predicate_key_hash<PredicateTypeGraph>(subject, pred, count, context, hash))
     {
+        // An argument without a type is a generic parameter the call left
+        // unbound. The required-generic check (03a7) reports that at this
+        // token, and its report names the parameter.
+        if (status[STATUS_OK_SLOT] == 0u && status[STATUS_TOKEN_SLOT] == callee) return;
         record_error(callee, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_INVALID_ARG);
         return;
     }

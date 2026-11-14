@@ -37,6 +37,7 @@ StructuredBuffer<uint> module_segment_total;
 StructuredBuffer<uint> public_decl_count;
 StructuredBuffer<uint> public_decl_local_id;
 StructuredBuffer<uint> decl_name_id;
+StructuredBuffer<uint> decl_module_id;
 StructuredBuffer<uint> interface_member_total;
 StructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_name_ref_len;
@@ -158,6 +159,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else
         {
             interface_name_ref_len[decl_ref] = checked_name_len(decl_name_id[decl], decl_ref);
+            // Publish every module a declaration names, unnamed ones included
+            // (01_identity_records, INTERFACE_STATUS_MODULES).
+            uint module = decl_module_id[decl];
+            if (module != 0xffffffffu)
+                atomic_u32_max(interface_status, 4u, module + 1u);
         }
     }
     uint member_count = min(interface_member_total[0u], gParams.member_capacity);

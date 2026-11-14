@@ -436,6 +436,87 @@ fn in_unit_generic_instances_execute_with_their_own_bodies() {
     }
 }
 
+/// One program compiles as one unit, so library generics are instantiated
+/// in the original job like the program's own: a library generic reached
+/// from a local generic, a caller declared before its callees (a copy's
+/// token span ends at the next declaration's first token), a raw view of a
+/// type only the closure realizes, and a payload-free variant argument
+/// ahead of the argument that binds the parameter.
+#[test]
+fn one_unit_generic_instances_execute() {
+    for (label, source, stdout, status) in [
+        (
+            "generic caller declared before its generic callees",
+            "fn outer<T>(v: T, w: T) -> T { let a: T = first<T>(v); return second<T>(w); }
+             fn first<T>(v: T) -> T { return v; }
+             fn second<T>(v: T) -> T { return v; }
+             fn main() -> i32 { print(outer<i32>(6, 7)); print(outer<bool>(true, false) as i32); return 0; }",
+            &b"7\n0\n"[..],
+            0,
+        ),
+        (
+            "local generic calling library generics",
+            "import core::mem;
+             import core::option;
+             struct Entry<K, V> { key: K, value: V }
+             struct Node<K, V> { item: Entry<K, V>, left: i32 }
+             struct Owner<K, V> { n: i32 }
+             impl<K, V> Owner<K, V> { fn width(&self) -> i32 { return core::mem::size_of<Node<K, V>>() as i32; } }
+             fn wrap<T>(value: T) -> Option<T> { return Some(value); }
+             fn main() -> i32 {
+                 let owner: Owner<i32, i32> = Owner { n: 1 };
+                 print(owner.width());
+                 print(wrap<i32>(5).unwrap_or(0));
+                 return 0;
+             }",
+            &b"24\n5\n"[..],
+            0,
+        ),
+        (
+            "payload-free variant argument before the binding argument",
+            "import core::option;
+             struct Map<K> { n: i32 }
+             enum Bound<T> { At(T), Open }
+             impl<K> Map<K> { fn below(&self, bound: Bound<K>) -> Option<K> { return None(); } }
+             fn lookup<K>(bound: Bound<K>, map: Map<K>) -> Option<K> { return None(); }
+             fn main() -> i32 {
+                 let map: Map<i32> = Map { n: 1 };
+                 print(map.below(Bound::Open).unwrap_or(5));
+                 print(lookup(Bound::Open, map).unwrap_or(6));
+                 return 0;
+             }",
+            &b"5\n6\n"[..],
+            0,
+        ),
+        (
+            "anonymous entry with a public function beside library modules",
+            "import core::option;
+             pub fn helper() -> i32 { return 3; }
+             fn main() -> i32 { let o: Option<i32> = Some(helper()); print(o.unwrap_or(1)); return 0; }",
+            &b"3\n"[..],
+            0,
+        ),
+    ] {
+        execute_with_status(label, source, stdout, status);
+    }
+}
+
+#[test]
+fn local_record_constructors_reject_missing_and_repeated_fields() {
+    for (label, literal) in [
+        ("missing field", "Five { first: 11 }"),
+        ("missing every field", "Five {}"),
+        ("repeated field", "Five { first: 11, fifth: 2, first: 12 }"),
+    ] {
+        let source = format!(
+            "struct Five<A, B> {{ first: A, fifth: B }}
+             struct Holder<T> {{ child: Five<i32, T>, sentinel: i32 }}
+             fn main() -> i32 {{ let value: Holder<i32> = Holder {{ child: {literal}, sentinel: 9 }}; return value.sentinel; }}"
+        );
+        reject_trait_program(label, &source, "LNC0042");
+    }
+}
+
 #[test]
 fn imported_trait_contract_records_preserve_ordinary_generic_execution() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -9,7 +9,8 @@ import hir_records;
 import primitive_types;
 import status;
 
-// Substitute enum match payload types from compact HIR family rows.
+// Substitute enum match payload types from compact HIR family rows, and
+// resolve a bare arm head through the scrutinee's enum.
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 
@@ -23,6 +24,8 @@ StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_row_count;
 StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_match_payload_count;
 StructuredBuffer<uint> compact_variant_payload_start;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> compact_variant_payload_row_count;
@@ -30,8 +33,9 @@ StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
-StructuredBuffer<uint> resolved_value_decl;
-StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> path_segment_count;
+RWStructuredBuffer<uint> resolved_value_decl;
+RWStructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> resolved_dependency_variant_payload_records;
 StructuredBuffer<uint> imported_match_payload_ref_tag;
@@ -77,6 +81,8 @@ static const uint TY_ENUM_BASE = 6144u;
 static const uint TY_GENERIC_BASE = 8192u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
+static const uint TYPE_INSTANCE_ENUM = 1u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -219,6 +225,75 @@ bool enum_variant_for_arm(
     return valid_token(enum_token) && variant < active_variant_count();
 }
 
+// The variant row of enum HIR node `enum_node` named `name`, or INVALID.
+// Variant rows are in source order, so an enum's rows are contiguous and
+// their owners never decrease.
+uint enum_variant_named(uint enum_node, uint name)
+{
+    uint low = 0u;
+    uint high = active_variant_count();
+    for (uint step = 0u; step < 32u && low < high; step++)
+    {
+        uint middle = (low + high) / 2u;
+        if (compact_variants[middle].owner < enum_node) low = middle + 1u;
+        else high = middle;
+    }
+    for (uint row = low; row < active_variant_count() && compact_variants[row].owner == enum_node; row++)
+    {
+        uint token = compact_variants[row].name_token;
+        if (valid_token(token) && name_id_by_token[token] == name) return row;
+    }
+    return INVALID;
+}
+
+// A bare arm head names a variant of the scrutinee's enum when that enum
+// has a variant of its name: one that two module imports provide, or one
+// that name lookup bound to a variant of another enum (a module's own
+// `Error::NonFinite` while matching an imported `Error`). Once inference
+// knows the scrutinee's type, bind the head as 10m binds a resolved one, and
+// its path resolves as one that names the variant. Until then, and when the
+// enum has no such variant, the head keeps its resolution (10m3 rejects a
+// variant of another enum).
+void resolve_bare_arm_head(uint row)
+{
+    HirMatchArm arm = compact_match_arms[row];
+    if (!valid_hir(arm.owner) || !valid_hir(arm.pattern)) return;
+    uint head = compact_hir_core[arm.pattern].token_start;
+    if (!valid_token(head)) return;
+    uint path = path_for_pattern(arm.pattern);
+    if (!valid_path(path) || path_owner_token[path] != head || path_segment_count[path] != 1u) return;
+    bool ambiguous = module_value_path_status[head] == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT;
+    uint bound = resolved_value_status[path] == PATH_RESOLVE_STATUS_OK ? resolved_value_decl[path] : INVALID;
+    if (!ambiguous && (bound >= gParams.n_hir_nodes || decl_kind[bound] != HIR_ITEM_KIND_ENUM_VARIANT))
+        return;
+    uint tag; uint payload;
+    if (!match_scrutinee(arm.owner, tag, payload)) return;
+    uint enum_token = INVALID;
+    if (tag == TYPE_REF_INSTANCE && payload < checked_type_capacity() &&
+        type_instance_kind[payload] == TYPE_INSTANCE_ENUM)
+        enum_token = type_instance_decl_token[payload];
+    else if (tag == TYPE_REF_SCALAR && payload >= TY_ENUM_BASE && payload < TY_GENERIC_BASE)
+        enum_token = payload - TY_ENUM_BASE;
+    if (!valid_token(enum_token)) return;
+    uint enum_decl = decl_id_by_name_token[enum_token];
+    if (enum_decl >= gParams.n_hir_nodes || decl_kind[enum_decl] != HIR_ITEM_KIND_ENUM) return;
+    if (!ambiguous && decl_parent_type_decl[bound] == enum_decl) return;
+    uint variant = enum_variant_named(decl_hir_node[enum_decl], name_id_by_token[head]);
+    if (variant == INVALID) return;
+    uint variant_token = compact_variants[variant].name_token;
+    // The path resolves as if it named the variant: later passes (10o,
+    // lowering) read the path's declaration.
+    resolved_value_decl[path] = decl_id_by_name_token[variant_token];
+    resolved_value_status[path] = PATH_RESOLVE_STATUS_OK;
+    visible_decl[head] = variant_token;
+    visible_type[head] = TY_ENUM_BASE + enum_token;
+    module_value_path_status[head] = INVALID;
+    if (compact_variant_payload_count[variant] != compact_match_payload_count[row])
+        record_min_token_error(status, head, ERR_ASSIGN_MISMATCH, 0u);
+    uint ignored;
+    InterlockedAdd(call_inference_state[1u], 1u, ignored);
+}
+
 // How payload_ref completes a declared payload reference.
 static const uint PAYLOAD_DIRECT = 3u;
 
@@ -226,7 +301,8 @@ static const uint PAYLOAD_DIRECT = 3u;
 // (CHECKED_RESOLVE_* or PAYLOAD_DIRECT) and whether that reads the
 // scrutinee. An imported variant's generic payload (`scrutinee_slot`) is
 // the scrutinee's argument; a local variant's payload is substituted under
-// the scrutinee's application when it binds the arm's own pattern.
+// the application of the value it matches: the arm's scrutinee, or the
+// enclosing payload of a nested pattern.
 bool payload_declared_ref(HirMatchPayload payload_row, HirMatchArm arm, out uint tag,
     out uint ref_payload, out uint mode, out uint scrutinee_slot, out uint enum_token)
 {
@@ -306,12 +382,12 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
     if (mode == PAYLOAD_DIRECT) return true;
     uint context = INVALID;
     inference_deferred_closure = INVALID;
-    if (mode == CHECKED_RESOLVE_CLOSED || payload_row.parent_pattern == arm.pattern)
     {
         // A scrutinee whose closure fails is unknown, and then every use
         // below fails; the closure is read with the other IDs.
-        // A nested imported variant reads its slot from the enclosing
-        // payload's type, which that payload's own binder row publishes.
+        // A nested variant reads its slot (imported) or its application
+        // (local) from the enclosing payload's type, which that payload's
+        // own binder row publishes.
         uint scrutinee_tag = TYPE_REF_INVALID; uint scrutinee = INVALID;
         bool known;
         if (payload_row.parent_pattern != arm.pattern)
@@ -372,6 +448,8 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
+    if (row < active_arm_count())
+        resolve_bare_arm_head(row);
     if (row >= active_payload_count())
         return;
     HirMatchPayload payload = compact_match_payloads[row];

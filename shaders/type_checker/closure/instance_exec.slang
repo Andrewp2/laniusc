@@ -60,7 +60,7 @@ public static const uint EX_FLAG_CAPACITY = 1u;  // an entry did not fit; it and
 // Per table entry: 8 uint4.
 public static const uint EX_ENTRY_WORDS = 8u;
 public static const uint EX_Q_HEAD = 0u;      // (status, F, count, vrow)
-public static const uint EX_Q_TOKENS = 1u;    // (template first token, span, vtok, table base)
+public static const uint EX_Q_TOKENS = 1u;    // (template first token, span incl. end boundary, vtok, table base)
 public static const uint EX_Q_TSTART0 = 2u;   // template block starts, tables 0-3
 public static const uint EX_Q_TSTART1 = 3u;   // tables 4-6
 public static const uint EX_Q_TLEN0 = 4u;     // block lengths, tables 0-3
@@ -185,8 +185,17 @@ public uint ex_boundary(ExecMap map, uint row)
         ? map.vrow + (row - map.function) : row;
 }
 
-// A token inside the template's span names the copy's token.
+// A token of the template names the copy's token. The span's last token is
+// the template's end boundary, the first token of the next declaration: a
+// reference to it (a call of that declaration) keeps naming it.
 public uint ex_token(ExecMap map, uint token)
+{
+    return token != EX_INVALID && token >= map.token && token - map.token + 1u < map.span
+        ? map.vtok + (token - map.token) : token;
+}
+
+// A row's exclusive token end may be the template's end boundary.
+public uint ex_token_end(ExecMap map, uint token)
 {
     return token != EX_INVALID && token >= map.token && token - map.token < map.span
         ? map.vtok + (token - map.token) : token;
