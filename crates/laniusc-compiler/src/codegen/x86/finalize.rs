@@ -29,6 +29,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use super::{
     GPU_X86_OBJECT_HEADER_BYTES,
     GpuX86FileObject,
+    GpuX86ObjectSymbolRecord,
     GpuX86RelocatableObject,
     GpuX86RelocatableObjectLayout,
     object::{GPU_X86_SYMBOL_ROW_BYTES, decode_symbol_rows, encode_symbol_rows},
@@ -52,8 +53,9 @@ use crate::gpu::{
     workspace::WorkspaceUsageClass,
 };
 
-/// Internal native library domain for provisional and instance symbols. The
-/// build's GPU library map keeps ordinary native libraries outside it.
+/// Internal native library domain for provisional and instance symbols.
+/// Before a producer is enabled, the build's GPU library map must keep
+/// ordinary native libraries outside it; that mapping is not implemented yet.
 pub(crate) const NATIVE_RESERVED_LIBRARY: u32 = 0xffff_fffe;
 /// Namespace of provisional original-call symbols, keyed by use ordinal.
 pub(crate) const NATIVE_NS_USE: u32 = 0xffff_0001;
@@ -157,31 +159,70 @@ impl X86SymbolColumns {
             .map_err(|_| anyhow!("x86 symbol column exceeds u32 rows"))
     }
 
-    /// Replaces an object's symbol and identity columns with these published
-    /// columns. Counts and lengths must match; every other column is kept.
-    pub(crate) fn apply_to_object(&self, object: &mut GpuX86RelocatableObject) -> Result<()> {
+    /// Checks the transfer shape and every symbol field the GPU must preserve.
+    /// This catches a batch result applied to a different symbol layout; the
+    /// caller still owns the association when two objects have identical layouts.
+    fn matching_symbols(
+        &self,
+        original: &[GpuX86ObjectSymbolRecord],
+        identity_bytes: usize,
+    ) -> Result<Vec<GpuX86ObjectSymbolRecord>> {
         let symbols = decode_symbol_rows(&self.symbol_rows).map_err(anyhow::Error::msg)?;
-        if symbols.len() != object.symbols.len()
-            || self.identity_bytes.len() != object.identity_bytes.len()
-        {
+        if symbols.len() != original.len() || self.identity_bytes.len() != identity_bytes {
             bail!("finalized x86 symbol columns do not match the original object's shape");
         }
+        for (index, (before, after)) in original.iter().zip(&symbols).enumerate() {
+            let preserved = GpuX86ObjectSymbolRecord {
+                identity_hash_lo: after.identity_hash_lo,
+                identity_hash_hi: after.identity_hash_hi,
+                ..*before
+            };
+            if preserved != *after {
+                bail!("finalized x86 symbol {index} changes the original object's symbol layout");
+            }
+        }
+        Ok(symbols)
+    }
+
+    /// Replaces an object's symbol and identity columns with these published
+    /// columns after validation. Every non-identity field is kept.
+    pub(crate) fn apply_to_object(&self, object: &mut GpuX86RelocatableObject) -> Result<()> {
+        let symbols = self.matching_symbols(&object.symbols, object.identity_bytes.len())?;
+        super::object::validate_link_object_columns(
+            object.version,
+            object.entry_offset,
+            object.body,
+            object.text.len(),
+            object.rodata.len(),
+            &object.relocations,
+            &symbols,
+            &self.identity_bytes,
+        )
+        .map_err(anyhow::Error::msg)?;
         object.symbols = symbols;
         object.identity_bytes.clone_from(&self.identity_bytes);
-        object.validate().map_err(anyhow::Error::msg)
+        Ok(())
     }
 
     pub(crate) fn apply_to_file_object(&self, object: &mut GpuX86FileObject) -> Result<()> {
-        let symbols = decode_symbol_rows(&self.symbol_rows).map_err(anyhow::Error::msg)?;
-        if symbols.len() != object.symbols.len()
-            || self.identity_bytes.len() != object.identity_bytes.len()
-        {
-            bail!("finalized x86 symbol columns do not match the original object's shape");
-        }
+        let symbols = self.matching_symbols(&object.symbols, object.identity_bytes.len())?;
+        object.validate().map_err(anyhow::Error::msg)?;
+        super::object::validate_link_object_columns(
+            object.layout.version,
+            object.layout.entry_offset,
+            object.layout.body,
+            object.layout.text_byte_len as usize,
+            object.layout.rodata_byte_len as usize,
+            &object.relocations,
+            &symbols,
+            &self.identity_bytes,
+        )
+        .map_err(anyhow::Error::msg)?;
         object.symbols = symbols;
         object.identity_bytes.clone_from(&self.identity_bytes);
-        object.refresh_layout().map_err(anyhow::Error::msg)?;
-        object.validate().map_err(anyhow::Error::msg)
+        // Column lengths and symbol layout did not change, so the durable
+        // file layout remains valid without modifying its payload receipt.
+        Ok(())
     }
 }
 
@@ -427,6 +468,14 @@ impl GpuX86SymbolFinalizer {
         routes: &X86RouteTable<'_>,
         generation: NonZeroU32,
     ) -> Result<X86FinalizeAttempt> {
+        // Allocation bounds are a host transfer invariant. Never trust a
+        // caller's capacity to make unchecked SPIR-V buffer reads safe.
+        if u64::from(routes.route_capacity) * 16 > routes.routes.byte_size as u64 {
+            bail!("x86 route capacity exceeds its GPU buffer size");
+        }
+        if routes.readiness.byte_size < 16 {
+            bail!("x86 readiness GPU buffer is smaller than one row");
+        }
         let transfer = Transfer::new(objects)?;
         let output = *self.output.lock().expect("finalize capacity poisoned");
         let needed = GraphShape {
@@ -918,12 +967,17 @@ fn read_bytes(
         return Ok(Vec::new());
     }
     let slice = readback.buffer.slice(..bytes as u64);
-    crate::gpu::passes_core::wait_for_readback_map(
+    if let Err(error) = crate::gpu::passes_core::wait_for_readback_map(
         device,
         &slice,
         &format!("codegen.x86.finalize.{label}"),
         std::time::Duration::from_secs(30),
-    )?;
+    ) {
+        // A timeout or device-poll failure may leave the map pending. Cancel
+        // it before the cached allocation is reused by another submission.
+        readback.buffer.unmap();
+        return Err(error);
+    }
     let mapped = slice.get_mapped_range();
     let out = mapped.to_vec();
     drop(mapped);

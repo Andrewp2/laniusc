@@ -654,14 +654,31 @@ Outputs are staged separately and sealed with the generation only after every ch
 A small output capacity returns the demand; `finalize` grows staging and replays.
 `GpuX86LinkInput` rejects any object that still names a provisional identity.
 
-Tests: `codegen::x86::finalize::tests`, four hardware tests.
+The transfer boundary checks that the route capacity fits its actual GPU
+buffer and that readiness has a complete row before submitting. Installing
+published columns checks every preserved symbol field and validates the new
+columns before mutating the object, including for spilled objects. Two objects
+with identical symbol layouts still require the caller to preserve their
+association with the returned batch columns.
+
+Tests: `codegen::x86::finalize::tests`, four hardware tests and one metadata test.
 One links two finalized objects on the GPU and runs the program, which exits 42.
+All five pass on the integrated retention/finalizer tree after the review fixes,
+under the GPU validation lock with one test thread. They cover undersized route
+and readiness buffers, mismatched symbol layouts and invalid replacement hashes
+without modifying the original in-memory or spilled object.
 
 Not covered yet:
 
 - No producer emits provisional identities or writes the route and readiness rows.
 - No GPU caller/target ABI comparison sets the ABI flag.
 - The GPU library map does not yet keep ordinary libraries out of `0xfffffffe`.
+  It must ship with the producer: manifests using that library ID remain valid,
+  and their declarations need ordinary native identities after GPU remapping.
+  Reserving that ID in source manifests is not an acceptable substitute.
+- The admission-owned route constructor and a fresh generation per build are
+  still required. The publication seal is observed only after the whole
+  submission completes; a future GPU consumer must run after both emit passes.
 - Wasm objects need the same stage over their symbol table.
 
 ## Executable milestones

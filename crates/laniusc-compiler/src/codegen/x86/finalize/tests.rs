@@ -408,6 +408,41 @@ fn assert_only_identities_changed(
 }
 
 #[test]
+fn finalization_rejects_columns_for_a_different_layout_without_mutating_objects() {
+    let original = mixed_objects().remove(0);
+    let finalized = expected(&original, &mixed_routes(7));
+    let columns = X86SymbolColumns::of_object(&finalized);
+    let mut different = original.clone();
+    different.symbols[3].offset -= 1;
+    different.validate().unwrap();
+    let before = different.clone();
+    let error = columns.apply_to_object(&mut different).unwrap_err();
+    assert!(error.to_string().contains("symbol layout"), "{error}");
+    assert_eq!(different, before);
+
+    let mut spilled = GpuX86FileObject::spill(before).unwrap();
+    let before = X86SymbolColumns::of_file_object(&spilled);
+    let error = columns.apply_to_file_object(&mut spilled).unwrap_err();
+    assert!(error.to_string().contains("symbol layout"), "{error}");
+    assert_eq!(X86SymbolColumns::of_file_object(&spilled), before);
+    spilled.validate().unwrap();
+
+    // A structurally matching transfer must also validate before installation.
+    let mut corrupt = columns;
+    corrupt.identity_bytes[0] ^= 1;
+    let mut object = original.clone();
+    assert!(corrupt.apply_to_object(&mut object).is_err());
+    assert_eq!(object, original);
+    let mut spilled = GpuX86FileObject::spill(original.clone()).unwrap();
+    assert!(corrupt.apply_to_file_object(&mut spilled).is_err());
+    assert_eq!(
+        X86SymbolColumns::of_file_object(&spilled),
+        X86SymbolColumns::of_object(&original)
+    );
+    spilled.validate().unwrap();
+}
+
+#[test]
 fn gpu_finalization_rewrites_mixed_object_identities_and_hashes() {
     let finalizer = finalizer();
     let objects = mixed_objects();
@@ -547,6 +582,33 @@ fn gpu_finalization_rejects_invalid_routes_and_retries_capacity() {
     let good = mixed_routes(5);
     let ready = READY_ROUTES_PUBLISHED | READY_ABI_CERTIFIED;
     let kind_detail = |failure: X86FinalizeFailure| (failure.kind, failure.detail);
+
+    // Physical input bounds must be checked before GPU reads. An overstated
+    // capacity may otherwise read arbitrary in-buffer data on a robust device,
+    // rather than reliably producing the shader's RouteMissing diagnostic.
+    let valid = Routes::ready(&good, 5, 2);
+    let inputs = columns(&objects);
+    let mut oversized = valid.table();
+    oversized.route_capacity += 1;
+    let error = finalizer
+        .finalize_once(&gpu.device, &gpu.queue, &inputs, &oversized, generation(5))
+        .unwrap_err();
+    assert!(error.to_string().contains("route capacity"), "{error}");
+    let short = storage_u32_rw(
+        &gpu.device,
+        "test.finalize.short_readiness",
+        1,
+        wgpu::BufferUsages::empty(),
+    );
+    let mut incomplete = valid.table();
+    incomplete.readiness = &short;
+    let error = finalizer
+        .finalize_once(&gpu.device, &gpu.queue, &inputs, &incomplete, generation(5))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("readiness GPU buffer"),
+        "{error}"
+    );
 
     let with_route = |use_i: usize, route: [u32; 4]| {
         let mut rows = good.clone();
