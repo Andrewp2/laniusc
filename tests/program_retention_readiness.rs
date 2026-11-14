@@ -40,6 +40,7 @@ fn left_or_halt<A, B>(c: Choice<A, B>) -> A { return match (c) { Left(inner) -> 
 fn left_or<A, B>(c: Choice<A, B>, fallback: A) -> A { return match (c) { Left(inner) -> inner, Right(_) -> fallback }; }
 fn is_left<A, B>(c: Choice<A, B>) -> bool { return match (c) { Left(_) -> true, Right(_) -> false }; }
 fn is_value<E>(w: Wrap<E>) -> bool { return match (w) { Value(_) -> true, Empty -> false }; }
+fn is_left_wild<A, B>(c: Choice<A, B>) -> bool { return match (c) { Left(_) -> true, _ -> false }; }
 fn wrapped<T, E>(e: E) -> Wrap<E> { return Wrap::Value(e); }
 fn empty<E>() -> Wrap<E> { let none: Wrap<E> = Wrap::Empty; return none; }
 fn checked<T>(v: T, n: i32) -> T { assert(n >= 0); return v; }
@@ -316,6 +317,16 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
     let unit_pattern = rows.iter().find(|r| r[14] == ROLE_PATTERN && r[22] == 1).expect("`Empty` pattern");
     assert_eq!((unit_pattern[13], unit_pattern[20]), (RT_NONE, BIND_VARIANT), "{unit_pattern:?}");
     assert!(s.uses_of(is_value).is_empty(), "patterns are not uses");
+    // A wildcard is pattern syntax, at an arm (the checker types none) and
+    // in a payload.
+    let wild = s.named("fn is_left_wild<");
+    let rows = s.body_rows(wild);
+    let wildcards = s.row_named(wild, &rows, HIR_PATH, "_").into_iter()
+        .chain(s.row_named(wild, &rows, HIR_NAME, "_")).collect::<Vec<_>>();
+    assert_eq!(wildcards.len(), 2, "{rows:?}");
+    for r in wildcards {
+        assert_eq!((r[14], r[15] & ROW_MISSING), (ROLE_PATTERN, 0), "{r:?}");
+    }
     // Runtime variant values stay uses with caller-scoped results.
     let empty = s.named("fn empty<");
     let value = s.uses_of(empty);

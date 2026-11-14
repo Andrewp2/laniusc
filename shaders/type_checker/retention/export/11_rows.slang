@@ -22,6 +22,7 @@ import type_checker.retention.export.common;
 import type_checker.retention.export.side_tables;
 import type_checker.retention.export.body_common;
 import type_checker.retention.export.type_rows;
+import type_checker.retention.export.source_tables;
 
 StructuredBuffer<HirSemanticFacts> compact_hir_semantic_facts;
 StructuredBuffer<uint> compact_fn_return_type;
@@ -58,6 +59,14 @@ HirPayload rel_payload(SegmentContext c, uint row, HirCore core, HirPayload p, i
     return p;
 }
 
+// Whether `row` is the wildcard `_`: one token spelled `_`. A wildcard
+// pattern binds and constructs nothing, at an arm or in a payload.
+bool wildcard(uint row)
+{
+    RtJobToken token = job_token(compact_hir_core[row].token_start);
+    return token.len == 1u && job_source_byte(token.start) == 0x5fu;
+}
+
 uint row_role(uint row, uint function, uint kind)
 {
     if (row == function) return RT_ROLE_STRUCTURAL;
@@ -68,7 +77,8 @@ uint row_role(uint row, uint function, uint kind)
         return bound ? RT_ROLE_BOUND : RT_ROLE_TYPE;
     }
     if (callee_position(row)) return RT_ROLE_CALLEE;
-    if (variant_pattern(row, semantic_value_decl_by_hir[row], semantic_value_const_present_by_hir[row]))
+    if (variant_pattern(row, semantic_value_decl_by_hir[row], semantic_value_const_present_by_hir[row]) ||
+        (pattern_position(row) && (kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) && wildcard(row)))
         return RT_ROLE_PATTERN;
     return rt_value_kind(kind) ? RT_ROLE_VALUE : RT_ROLE_STRUCTURAL;
 }

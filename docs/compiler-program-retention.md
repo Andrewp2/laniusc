@@ -355,10 +355,11 @@ Row terms and roles:
   inside it name the same predicate. (The frontend currently rejects a
   `&Trait` bound head.)
 - A PATTERN row is a match arm's or payload's pattern that names an enum
-  variant (`Ok(_)`, `None`, `Error::Busy`). Its variant is its binding
-  (r5). It keeps its checked term when the checker publishes one and
-  needs none. The matched type is the scrutinee's term. Payload binders
-  (`inner`, `_`) and literal patterns stay VALUE rows with their types.
+  variant (`Ok(_)`, `None`, `Error::Busy`), or the wildcard `_` (one token
+  spelled `_`). A variant's identity is its binding (r5). The row keeps
+  its checked term when the checker publishes one and needs none. The
+  matched type is the scrutinee's term. Named payload binders (`inner`)
+  and literal patterns stay VALUE rows with their types.
 - A variant constructor's callee (`Wrap::Value` in `Wrap::Value(e)`) keeps
   no term. The checker types that row with the enum's declared self
   application over the enum's own parameters, which is a schema fact. The
