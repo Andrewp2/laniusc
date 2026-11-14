@@ -338,6 +338,18 @@ fn initialize_pipeline_families_on_coordinator(
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GpuResidentJobBufferTrim;
 
+impl GpuCompiler<'_> {
+    /// Attaches a build-scoped program retention store: every later
+    /// interface job exports its declarations, terms, uses and generic
+    /// bodies into it before the job's workspace is reused. `None` detaches.
+    pub fn attach_program_retention(
+        &self,
+        store: Option<std::sync::Arc<crate::type_checker::program_retention::ProgramRetention>>,
+    ) {
+        self.type_checker.attach_program_retention(store);
+    }
+}
+
 impl GpuCompiler<'static> {
     /// Create a compiler backed by the process-global GPU device.
     pub fn new()

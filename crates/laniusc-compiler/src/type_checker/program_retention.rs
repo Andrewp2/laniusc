@@ -1,0 +1,863 @@
+//! Build-scoped program retention store (docs/compiler-program-retention.md).
+//!
+//! One [`ProgramRetention`] lives for one build. At the end of each frontend
+//! semantic job, before the job's workspace can be reused, the GPU exports
+//! the job's declarations, parameters, symbolic and closed terms, binder
+//! maps, signatures, nominal schemas, call uses and generic body segments
+//! into the store's own arenas (`shaders/type_checker/retention`). Every
+//! export is a transaction: a job that overflows any arena or table is
+//! rolled back on the GPU, the host grows the store from the demand the GPU
+//! recorded, and the export runs again over the same job tables.
+//!
+//! The host only allocates, transfers, submits and reads the compact status
+//! words (`rt_counts`). All semantic work (identity interning, term
+//! translation, ownership validation, relative encoding, commit) runs on the
+//! GPU.
+
+use std::{
+    collections::BTreeMap,
+    num::NonZeroU64,
+    sync::{Arc, Mutex},
+};
+
+use anyhow::{Result, anyhow, bail};
+
+use crate::gpu::{
+    buffers::LaniusBuffer,
+    compiler_graph::{CompilerGraph, CompilerGraphBuilder, ResourceClass},
+    passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
+};
+
+/// Type-check graph tables the export reads. An interface job with a store
+/// attached keeps them alive until the job's end (`retention_reader_graph`).
+pub(crate) const RETAINED_PROGRAM_INPUTS: &[&str] = &[
+    "ct_head",
+    "ct_meta",
+    "ct_extra",
+    "ct_args",
+    "ct_slot",
+    "ct_counts",
+    "canonical_row",
+    "canonical_atom",
+    "canonical_projection",
+    "canonical_dependency_type",
+    "call_env_ct",
+    "semantic_calls_by_hir",
+    "semantic_expr_ref_tag_by_hir",
+    "semantic_expr_ref_payload_by_hir",
+    "semantic_type_ref_tag_by_hir",
+    "semantic_type_ref_payload_by_hir",
+    "semantic_param_ref_tag_by_row",
+    "semantic_param_ref_payload_by_row",
+    "decl_id_by_name_token",
+    "interface_public_decl_index_by_local",
+    "interface_public_decl_index_by_hir",
+    "type_const_param_scalar_by_token",
+    "struct_init_field_ordinal_by_row",
+    "compact_string_data_words",
+    "compact_method_count",
+    "compact_method_cores",
+    "compact_method_signatures",
+];
+
+/// The consumer contract of the export: every retained input the producer
+/// owns is promoted to live until the producer graph's end.
+pub(crate) fn retention_reader_graph(producer: &CompilerGraph) -> Result<CompilerGraph> {
+    let mut reader = CompilerGraphBuilder::new();
+    for &name in RETAINED_PROGRAM_INPUTS {
+        let Some(id) = producer.resource_id(name) else { continue };
+        let resource = producer
+            .resource(id)
+            .ok_or_else(|| anyhow!("missing resource {name}"))?;
+        reader
+            .add_storage(name, resource.domain, ResourceClass::External, resource.bytes)
+            .map_err(anyhow::Error::msg)?;
+    }
+    reader.build().map_err(anyhow::Error::msg)
+}
+
+// Arena indexes (retention_store.slang RT_A_*).
+const A_DECLS: usize = 0;
+const A_PARAMS: usize = 1;
+const A_TERMS: usize = 2;
+const A_TERM_ARGS: usize = 3;
+const A_DIR: usize = 4;
+const A_BINDERS: usize = 5;
+const A_SIGS: usize = 6;
+const A_SCHEMA: usize = 7;
+const A_USES: usize = 8;
+const A_SEGMENTS: usize = 9;
+const A_SEG_ROWS: usize = 10;
+const A_SEG_SIDE: usize = 11;
+const A_SEG_BYTES: usize = 12;
+const ARENAS: usize = 13;
+
+/// rt_counts words (retention_store.slang RT_C_*).
+pub mod counts {
+    pub const JOB_BASE: usize = 16;
+    pub const DEMAND: usize = 32;
+    pub const SPARE: usize = 48;
+    pub const OVERFLOW: usize = 64;
+    pub const INVARIANTS: usize = 65;
+    pub const FIRST_INVARIANT: usize = 66;
+    pub const JOBS: usize = 67;
+    pub const JOB_STATE: usize = 68;
+    pub const ROLLBACKS: usize = 69;
+    pub const CONFLICTS: usize = 72;
+    pub const INVARIANT_TOTAL: usize = 74;
+    pub const WORDS: usize = 96;
+    pub const JOB_COMMITTED: u32 = 2;
+    pub const JOB_ROLLED_BACK: u32 = 3;
+    pub const OVERFLOW_DECL_TABLE: u32 = 1 << 16;
+    pub const OVERFLOW_PARAM_TABLE: u32 = 1 << 17;
+    pub const OVERFLOW_TERM_TABLE: u32 = 1 << 18;
+}
+
+const RT_FIRST_TERM: u32 = 32;
+const X_WORDS: usize = 256;
+const DISPATCH_WORDS: u64 = 3 * 16;
+const D_HIR: u64 = 0;
+const D_PARAMS: u64 = 1;
+const D_RECORDS: u64 = 2;
+const D_ROUND: u64 = 3;
+const D_SIDE: u64 = 4;
+const D_SCHEMA: u64 = 5;
+const D_COMMIT_DIR: u64 = 6;
+const D_ROLLBACK: u64 = 7;
+const HEIGHTS: usize = 80;
+
+/// Bytes per record of each arena, in arena order.
+const RECORD_BYTES: [u64; ARENAS] = [
+    16 + 4,      // decl key + definition
+    16,          // param key
+    16 + 16 + 8, // term head, meta, owners
+    4,           // term args
+    64,          // directory entry
+    4,           // binders
+    4,           // signatures
+    16,          // schema
+    48,          // uses
+    64,          // segments
+    80,          // segment rows
+    16,          // side records (2 per side row)
+    4,           // string bytes
+];
+
+/// Record capacities of the store's arenas and hash tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProgramRetentionCapacity {
+    /// Records per arena, in `RT_A_*` order.
+    pub arenas: [u32; ARENAS],
+    /// Slots of the decl, param and term hash tables (powers of two).
+    pub slots: [u32; 3],
+}
+
+impl Default for ProgramRetentionCapacity {
+    fn default() -> Self {
+        Self {
+            arenas: [
+                4096, 4096, 16384, 32768, 4096, 8192, 16384, 8192, 16384, 2048, 65536, 32768,
+                16384,
+            ],
+            slots: [8192, 8192, 32768],
+        }
+    }
+}
+
+impl ProgramRetentionCapacity {
+    /// Deliberately tiny capacities: a test of the overflow/retry protocol.
+    pub fn tiny() -> Self {
+        Self {
+            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4],
+            slots: [8, 8, 8],
+        }
+    }
+
+    fn table_bytes(&self) -> u64 {
+        self.slots.iter().map(|&s| s as u64 * 4).sum()
+    }
+
+    /// Bytes the store's arenas and tables occupy.
+    pub fn bytes(&self) -> u64 {
+        self.arenas
+            .iter()
+            .zip(RECORD_BYTES)
+            .map(|(&n, b)| n as u64 * b)
+            .sum::<u64>()
+            + self.table_bytes()
+    }
+}
+
+/// A store buffer: name, bytes per record, arena or table it holds.
+#[derive(Clone, Copy)]
+enum Sized {
+    Arena(usize, u64),
+    Table(usize),
+    Fixed(u64),
+}
+
+const STORE_BUFFERS: &[(&str, Sized)] = &[
+    ("rt_counts", Sized::Fixed(counts::WORDS as u64 * 4)),
+    ("rt_config", Sized::Fixed(16)),
+    ("rt_decl_key", Sized::Arena(A_DECLS, 16)),
+    ("rt_decl_def", Sized::Arena(A_DECLS, 4)),
+    ("rt_decl_slot", Sized::Table(0)),
+    ("rt_param_key", Sized::Arena(A_PARAMS, 16)),
+    ("rt_param_slot", Sized::Table(1)),
+    ("rt_term_head", Sized::Arena(A_TERMS, 16)),
+    ("rt_term_meta", Sized::Arena(A_TERMS, 16)),
+    ("rt_term_owner", Sized::Arena(A_TERMS, 8)),
+    ("rt_term_args", Sized::Arena(A_TERM_ARGS, 4)),
+    ("rt_term_slot", Sized::Table(2)),
+    ("rt_dir", Sized::Arena(A_DIR, 64)),
+    ("rt_binders", Sized::Arena(A_BINDERS, 4)),
+    ("rt_sigs", Sized::Arena(A_SIGS, 4)),
+    ("rt_schema", Sized::Arena(A_SCHEMA, 16)),
+    ("rt_uses", Sized::Arena(A_USES, 48)),
+    ("rt_segments", Sized::Arena(A_SEGMENTS, 64)),
+    ("rt_seg_rows", Sized::Arena(A_SEG_ROWS, 80)),
+    ("rt_seg_side", Sized::Arena(A_SEG_SIDE, 16)),
+    ("rt_seg_bytes", Sized::Arena(A_SEG_BYTES, 4)),
+];
+
+const EXPORT_KERNELS: &[&str] = &[
+    "type_checker/retention/export/00_begin",
+    "type_checker/retention/export/01_params",
+    "type_checker/retention/export/02_rows",
+    "type_checker/retention/export/03_heights",
+    "type_checker/retention/export/04_height_plan",
+    "type_checker/retention/export/05_height_scatter",
+    "type_checker/retention/export/06_translate",
+    "type_checker/retention/export/07_advance",
+    "type_checker/retention/export/08_scan_local",
+    "type_checker/retention/export/08_scan_blocks",
+    "type_checker/retention/export/08_scan_apply",
+    "type_checker/retention/export/09_reserve",
+    "type_checker/retention/export/10_decls",
+    "type_checker/retention/export/11_rows",
+    "type_checker/retention/export/12_side",
+    "type_checker/retention/export/13_schema",
+    "type_checker/retention/export/14_uses",
+    "type_checker/retention/export/15_finish",
+    "type_checker/retention/export/16_commit",
+    "type_checker/retention/export/17_publish",
+    "type_checker/retention/export/18_rollback",
+];
+const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
+const RESOLVE_KERNEL: &str = "tests/retention_resolve";
+
+/// Words per use the acceptance probe writes (shaders/tests/retention_resolve.slang).
+pub const PROBE_WORDS: usize = 16;
+
+fn storage(device: &wgpu::Device, label: &str, bytes: u64, indirect: bool) -> wgpu::Buffer {
+    let mut usage =
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+    if indirect {
+        usage |= wgpu::BufferUsages::INDIRECT;
+    }
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: bytes.max(16).next_multiple_of(16),
+        usage,
+        mapped_at_creation: false,
+    })
+}
+
+/// A job table bound by its name: a view into a graph or parser allocation.
+#[derive(Clone)]
+pub(crate) struct JobTable {
+    pub buffer: wgpu::Buffer,
+    pub offset: u64,
+    pub size: u64,
+}
+
+impl JobTable {
+    pub(crate) fn from_lanius<T>(buffer: &LaniusBuffer<T>) -> Self {
+        Self {
+            buffer: buffer.buffer.clone(),
+            offset: buffer.byte_offset,
+            size: buffer.byte_size as u64,
+        }
+    }
+}
+
+/// The capacities a job's scratch is sized for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct ScratchShape {
+    rows: u64,
+    records: u64,
+    args: u64,
+    param_slots: u64,
+    tokens: u64,
+}
+
+struct Store {
+    capacity: ProgramRetentionCapacity,
+    buffers: BTreeMap<&'static str, wgpu::Buffer>,
+    hash_mask: u32,
+    scratch_shape: Option<ScratchShape>,
+    scratch: BTreeMap<&'static str, wgpu::Buffer>,
+    stack_lanes: u64,
+    reports: Vec<JobReport>,
+    growths: u32,
+    builds: u32,
+}
+
+/// What one job's export did.
+#[derive(Clone, Debug)]
+pub struct JobReport {
+    /// Export attempts (1 when the first attempt committed).
+    pub attempts: u32,
+    /// Status words of the committed attempt.
+    pub counts: Vec<u32>,
+    /// Canonical records that did not translate.
+    pub untranslated_records: u32,
+}
+
+/// Live retained bytes from the GPU counters against allocated capacity.
+#[derive(Clone, Debug)]
+pub struct RetentionBytes {
+    /// Bytes of committed records per arena (`RT_A_*` order).
+    pub live: [u64; ARENAS],
+    /// Allocated bytes per arena.
+    pub capacity: [u64; ARENAS],
+    /// Hash-table bytes (not records; sized by slot count).
+    pub tables: u64,
+    /// Bytes of discovery records (resident for the whole build).
+    pub resident_discovery: u64,
+    /// Bytes of body payloads (streamable).
+    pub streamable_bodies: u64,
+}
+
+/// The build-scoped store. Attach it to a compiler with
+/// `GpuCompiler::attach_program_retention`; each interface job then exports
+/// into it before its workspace is reused.
+pub struct ProgramRetention {
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    passes: Vec<PassData>,
+    rehash: PassData,
+    resolve: Mutex<Option<PassData>>,
+    store: Mutex<Store>,
+}
+
+impl ProgramRetention {
+    /// A store on the process-global GPU with `capacity`.
+    pub fn new(capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
+        let gpu = crate::gpu::device::global();
+        let device = gpu.device.clone();
+        let queue = gpu.queue.clone();
+        let passes = EXPORT_KERNELS
+            .iter()
+            .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
+            .collect::<Result<Vec<_>>>()?;
+        let rehash = make_pass_data_from_shader_key(&device, REHASH_KERNEL, "main", REHASH_KERNEL)?;
+        let mut store = Store {
+            capacity,
+            buffers: BTreeMap::new(),
+            hash_mask: u32::MAX,
+            scratch_shape: None,
+            scratch: BTreeMap::new(),
+            stack_lanes: 0,
+            reports: Vec::new(),
+            growths: 0,
+            builds: 0,
+        };
+        store.buffers = allocate_store(&device, &capacity);
+        let this = Arc::new(Self {
+            device,
+            queue,
+            passes,
+            rehash,
+            resolve: Mutex::new(None),
+            store: Mutex::new(store),
+        });
+        this.begin_build()?;
+        Ok(this)
+    }
+
+    /// Starts a new build in the same allocations: clears the counters and
+    /// the hash tables only. Arena contents past the counters are dead and
+    /// never read; nothing of an earlier build is reused.
+    pub fn begin_build(&self) -> Result<()> {
+        let mut store = self.store.lock().unwrap();
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        for name in ["rt_decl_slot", "rt_param_slot", "rt_term_slot"] {
+            encoder.clear_buffer(&store.buffers[name], 0, None);
+        }
+        let mut words = vec![0u32; counts::WORDS];
+        words[A_DECLS] = 1;
+        words[A_PARAMS] = 1;
+        words[A_TERMS] = RT_FIRST_TERM;
+        words[counts::FIRST_INVARIANT] = u32::MAX;
+        self.queue.write_buffer(&store.buffers["rt_counts"], 0, &words_bytes(&words));
+        self.queue.write_buffer(
+            &store.buffers["rt_config"],
+            0,
+            &words_bytes(&[store.hash_mask, 0, 0, 0]),
+        );
+        self.queue.submit(Some(encoder.finish()));
+        store.reports.clear();
+        store.builds += 1;
+        Ok(())
+    }
+
+    /// Forces every hash onto one probe chain (mask 0) for the rest of this
+    /// store's builds, or restores the full hash (`u32::MAX`).
+    pub fn set_hash_mask(&self, mask: u32) {
+        let mut store = self.store.lock().unwrap();
+        store.hash_mask = mask;
+        self.queue.write_buffer(&store.buffers["rt_config"], 0, &words_bytes(&[mask]));
+    }
+
+    /// Exports the current job. `job` names every job table the kernels
+    /// read. Retries after growth until the job commits.
+    pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<()> {
+        let rows = table_words(job, "compact_hir_core")? / 4;
+        let records = table_words(job, "ct_head")? / 4;
+        let args = table_words(job, "ct_args")?;
+        let generic = table_words(job, "compact_generic_params")? / 4;
+        let shape = ScratchShape {
+            rows: rows.max(1),
+            records: records.max(1),
+            args: args.max(1),
+            param_slots: (2 * generic + rows / 4 + 64).next_power_of_two(),
+            tokens: table_words(job, "decl_id_by_name_token")?.max(1),
+        };
+        let mut store = self.store.lock().unwrap();
+        if store.scratch_shape != Some(shape) {
+            store.scratch = allocate_scratch(&self.device, shape);
+            store.scratch_shape = Some(shape);
+        }
+        for attempt in 1..=8u32 {
+            self.record_export(&store, job, shape)?;
+            let words = self.read(&store.buffers["rt_counts"], counts::WORDS)?;
+            let x = self.read(&store.scratch["rt_x_counts"], X_WORDS)?;
+            if words[counts::JOB_STATE] == counts::JOB_COMMITTED {
+                store.reports.push(JobReport {
+                    attempts: attempt,
+                    counts: words,
+                    untranslated_records: x[188],
+                });
+                return Ok(());
+            }
+            if words[counts::JOB_STATE] != counts::JOB_ROLLED_BACK {
+                bail!(
+                    "program retention export left job state {} (status {:?}, scratch {:?})",
+                    words[counts::JOB_STATE],
+                    &words[..80],
+                    &x[160..200]
+                );
+            }
+            let grown = grown_capacity(&store.capacity, &words);
+            self.grow(&mut store, grown)?;
+        }
+        bail!("program retention export did not fit after repeated growth")
+    }
+
+    fn record_export(
+        &self,
+        store: &Store,
+        job: &BTreeMap<&'static str, JobTable>,
+        shape: ScratchShape,
+    ) -> Result<()> {
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("program_retention.export"),
+        });
+        for (name, buffer) in &store.scratch {
+            if *name != "rt_s_stack" {
+                encoder.clear_buffer(buffer, 0, None);
+            }
+        }
+        let groups = |lanes: u64| -> [u32; 3] {
+            let g = lanes.div_ceil(256).max(1);
+            [g.min(65535) as u32, g.div_ceil(65535) as u32, 1]
+        };
+        let bind_groups = self
+            .passes
+            .iter()
+            .map(|pass| self.bind(pass, store, job))
+            .collect::<Result<Vec<_>>>()?;
+        let indirect = &store.scratch["rt_x_dispatch"];
+        {
+            let mut pass = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some("program_retention.export"), timestamp_writes: None },
+            );
+            let mut run = |index: usize, dispatch: Dispatch| {
+                pass.set_pipeline(&self.passes[index].pipeline);
+                pass.set_bind_group(0, &bind_groups[index], &[]);
+                passes_core::record_compute_dispatch();
+                match dispatch {
+                    Dispatch::Direct([x, y, z]) => pass.dispatch_workgroups(x, y, z),
+                    Dispatch::Indirect(slot) => {
+                        passes_core::record_indirect_compute_dispatch();
+                        pass.dispatch_workgroups_indirect(indirect, 3 * slot * 4)
+                    }
+                }
+            };
+            use Dispatch::{Direct, Indirect};
+            let one = Direct([1, 1, 1]);
+            run(0, one);
+            run(1, Indirect(D_PARAMS));
+            run(2, Indirect(D_HIR));
+            run(3, Indirect(D_RECORDS));
+            run(4, one);
+            run(5, Indirect(D_RECORDS));
+            for _ in 1..HEIGHTS {
+                run(6, Indirect(D_ROUND));
+                run(7, one);
+            }
+            run(8, Direct(groups(shape.rows)));
+            run(9, one);
+            run(10, Direct(groups(shape.rows)));
+            run(11, one);
+            run(12, Indirect(D_HIR));
+            run(13, Indirect(D_HIR));
+            run(14, Indirect(D_SIDE));
+            run(15, Indirect(D_SCHEMA));
+            run(16, Indirect(D_HIR));
+            run(17, Indirect(D_HIR));
+            run(18, one);
+            run(19, Indirect(D_COMMIT_DIR));
+            run(20, Indirect(D_ROLLBACK));
+        }
+        self.queue.submit(Some(encoder.finish()));
+        Ok(())
+    }
+
+    fn bind(
+        &self,
+        pass: &PassData,
+        store: &Store,
+        job: &BTreeMap<&'static str, JobTable>,
+    ) -> Result<wgpu::BindGroup> {
+        let names = reflected_names(pass);
+        let mut entries = Vec::with_capacity(names.len());
+        for name in &names {
+            let resource = if let Some(buffer) = store.buffers.get(name.as_str()) {
+                buffer.as_entire_binding()
+            } else if let Some(buffer) = store.scratch.get(name.as_str()) {
+                buffer.as_entire_binding()
+            } else if let Some(table) = job.get(name.as_str()) {
+                wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &table.buffer,
+                    offset: table.offset,
+                    size: NonZeroU64::new(table.size),
+                })
+            } else {
+                bail!("{} requires missing buffer {name}", pass.shader_id);
+            };
+            entries.push((name.as_str(), resource));
+        }
+        passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&pass.shader_id),
+            pass,
+            0,
+            &entries,
+        )
+    }
+
+    /// Grows the store to `capacity`, keeping every committed record: the
+    /// arenas are copied, the hash tables are rebuilt by the rehash kernel.
+    fn grow(&self, store: &mut Store, capacity: ProgramRetentionCapacity) -> Result<()> {
+        let fresh = allocate_store(&self.device, &capacity);
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        for (name, sized) in STORE_BUFFERS {
+            if matches!(sized, Sized::Table(_)) {
+                continue;
+            }
+            let old = &store.buffers[name];
+            encoder.copy_buffer_to_buffer(old, 0, &fresh[name], 0, old.size().min(fresh[name].size()));
+        }
+        let lanes = capacity.arenas[A_DECLS]
+            .max(capacity.arenas[A_PARAMS])
+            .max(capacity.arenas[A_TERMS]) as u64;
+        store.buffers = fresh;
+        store.capacity = capacity;
+        store.growths += 1;
+        let names = reflected_names(&self.rehash);
+        let entries = names
+            .iter()
+            .map(|name| (name.as_str(), store.buffers[name.as_str()].as_entire_binding()))
+            .collect::<Vec<_>>();
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&self.rehash.shader_id),
+            &self.rehash,
+            0,
+            &entries,
+        )?;
+        {
+            let mut pass = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some("program_retention.rehash"), timestamp_writes: None },
+            );
+            pass.set_pipeline(&self.rehash.pipeline);
+            pass.set_bind_group(0, &bind, &[]);
+            passes_core::record_compute_dispatch();
+            let g = lanes.div_ceil(256).max(1);
+            pass.dispatch_workgroups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1);
+        }
+        self.queue.submit(Some(encoder.finish()));
+        Ok(())
+    }
+
+    fn read(&self, buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>> {
+        let bytes = (words as u64 * 4).min(buffer.size());
+        if bytes == 0 {
+            return Ok(Vec::new());
+        }
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("program_retention.readback"),
+            size: bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, bytes);
+        self.queue.submit(Some(encoder.finish()));
+        let slice = readback.slice(..);
+        map_readback_blocking(&self.device, &slice, "program_retention.readback")?;
+        let words = slice
+            .get_mapped_range()
+            .chunks_exact(4)
+            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+            .collect::<Vec<_>>();
+        readback.unmap();
+        Ok(words)
+    }
+
+    /// The store's status words.
+    pub fn status(&self) -> Result<Vec<u32>> {
+        let store = self.store.lock().unwrap();
+        self.read(&store.buffers["rt_counts"], counts::WORDS)
+    }
+
+    /// Reports of the jobs exported in this build.
+    pub fn job_reports(&self) -> Vec<JobReport> {
+        self.store.lock().unwrap().reports.clone()
+    }
+
+    /// Current capacity and how many times the store grew.
+    pub fn capacity(&self) -> (ProgramRetentionCapacity, u32) {
+        let store = self.store.lock().unwrap();
+        (store.capacity, store.growths)
+    }
+
+    /// Test oracle: the first `words` words of a store buffer.
+    #[doc(hidden)]
+    pub fn read_store_words(&self, name: &str, words: usize) -> Result<Vec<u32>> {
+        let store = self.store.lock().unwrap();
+        let buffer = store
+            .buffers
+            .get(name)
+            .ok_or_else(|| anyhow!("no store buffer {name}"))?;
+        self.read(buffer, words)
+    }
+
+    /// Test oracle: overwrites the job scratch with a poison pattern, so a
+    /// later read of it would be visible.
+    #[doc(hidden)]
+    pub fn poison_scratch(&self) {
+        let store = self.store.lock().unwrap();
+        for buffer in store.scratch.values() {
+            let words = vec![0xa5a5_a5a5u32; (buffer.size() / 4) as usize];
+            self.queue.write_buffer(buffer, 0, &words_bytes(&words));
+        }
+        self.queue.submit(None);
+    }
+
+    /// Live retained bytes from the GPU counters.
+    pub fn retained_bytes(&self) -> Result<RetentionBytes> {
+        let words = self.status()?;
+        let store = self.store.lock().unwrap();
+        let mut live = [0u64; ARENAS];
+        let mut capacity = [0u64; ARENAS];
+        for arena in 0..ARENAS {
+            let first = match arena {
+                A_DECLS | A_PARAMS => 1,
+                A_TERMS => RT_FIRST_TERM,
+                _ => 0,
+            };
+            live[arena] = words[arena].saturating_sub(first) as u64 * RECORD_BYTES[arena];
+            capacity[arena] = store.capacity.arenas[arena] as u64 * RECORD_BYTES[arena];
+        }
+        let resident_discovery = [A_DECLS, A_PARAMS, A_TERMS, A_TERM_ARGS, A_DIR, A_BINDERS, A_SIGS, A_SCHEMA, A_USES]
+            .iter()
+            .map(|&a| live[a])
+            .sum();
+        let streamable_bodies = [A_SEGMENTS, A_SEG_ROWS, A_SEG_SIDE, A_SEG_BYTES]
+            .iter()
+            .map(|&a| live[a])
+            .sum();
+        Ok(RetentionBytes {
+            live,
+            capacity,
+            tables: store.capacity.table_bytes(),
+            resident_discovery,
+            streamable_bodies,
+        })
+    }
+
+    /// Acceptance probe (shaders/tests/retention_resolve.slang): reads only
+    /// the store and returns `PROBE_WORDS` words per committed use.
+    #[doc(hidden)]
+    pub fn resolve_probe(&self) -> Result<Vec<u32>> {
+        let mut resolve = self.resolve.lock().unwrap();
+        if resolve.is_none() {
+            *resolve = Some(make_pass_data_from_shader_key(&self.device, RESOLVE_KERNEL, "main", RESOLVE_KERNEL)?);
+        }
+        let pass_data = resolve.as_ref().unwrap();
+        let mut store = self.store.lock().unwrap();
+        let uses = self.read(&store.buffers["rt_counts"], counts::WORDS)?[A_USES] as u64;
+        if store.stack_lanes < uses.max(1) {
+            store.stack_lanes = uses.max(1).next_power_of_two();
+        }
+        let stack = storage(&self.device, "rt_s_stack", store.stack_lanes * 256 * 4, false);
+        let out = storage(&self.device, "rt_test_out", uses.max(1) * PROBE_WORDS as u64 * 4, false);
+        let names = reflected_names(pass_data);
+        let mut entries = Vec::new();
+        for name in &names {
+            let buffer = match name.as_str() {
+                "rt_s_stack" => &stack,
+                "rt_test_out" => &out,
+                other => store
+                    .buffers
+                    .get(other)
+                    .ok_or_else(|| anyhow!("resolve probe binds unknown buffer {other}"))?,
+            };
+            entries.push((name.as_str(), buffer.as_entire_binding()));
+        }
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&pass_data.shader_id),
+            pass_data,
+            0,
+            &entries,
+        )?;
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some("program_retention.resolve"), timestamp_writes: None },
+            );
+            pass.set_pipeline(&pass_data.pipeline);
+            pass.set_bind_group(0, &bind, &[]);
+            passes_core::record_compute_dispatch();
+            pass.dispatch_workgroups(uses.div_ceil(64).max(1) as u32, 1, 1);
+        }
+        self.queue.submit(Some(encoder.finish()));
+        drop(store);
+        self.read(&out, uses as usize * PROBE_WORDS)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Dispatch {
+    Direct([u32; 3]),
+    Indirect(u64),
+}
+
+fn reflected_names(pass: &PassData) -> Vec<String> {
+    let layout = pass
+        .reflection
+        .entry_points
+        .iter()
+        .find(|entry| entry.stage.as_deref() == Some("compute"))
+        .and_then(|entry| entry.program_layout.as_ref());
+    let parameters = match layout {
+        Some(layout) => layout
+            .parameters
+            .first()
+            .map(|set| set.parameters.as_slice())
+            .unwrap_or_default(),
+        None => pass.reflection.parameters.as_slice(),
+    };
+    parameters
+        .iter()
+        .filter(|p| p.binding.index.is_some() && p.ty.kind.is_some())
+        .map(|p| p.name.clone())
+        .collect()
+}
+
+fn table_words(job: &BTreeMap<&'static str, JobTable>, name: &str) -> Result<u64> {
+    job.get(name)
+        .map(|table| table.size / 4)
+        .ok_or_else(|| anyhow!("program retention needs job table {name}"))
+}
+
+fn allocate_store(
+    device: &wgpu::Device,
+    capacity: &ProgramRetentionCapacity,
+) -> BTreeMap<&'static str, wgpu::Buffer> {
+    STORE_BUFFERS
+        .iter()
+        .map(|&(name, sized)| {
+            let bytes = match sized {
+                Sized::Fixed(bytes) => bytes,
+                Sized::Arena(arena, record) => capacity.arenas[arena] as u64 * record,
+                Sized::Table(table) => capacity.slots[table] as u64 * 4,
+            };
+            (name, storage(device, name, bytes, false))
+        })
+        .collect()
+}
+
+fn allocate_scratch(device: &wgpu::Device, shape: ScratchShape) -> BTreeMap<&'static str, wgpu::Buffer> {
+    let ScratchShape { rows, records, args, param_slots, tokens } = shape;
+    let blocks = rows.div_ceil(256).max(1);
+    [
+        ("rt_x_counts", X_WORDS as u64 * 4, false),
+        ("rt_x_dispatch", DISPATCH_WORDS * 4, true),
+        ("rt_x_param_key", param_slots * 4, false),
+        ("rt_x_param_val", param_slots * 4, false),
+        ("rt_x_term_map", records * 4, false),
+        ("rt_x_order", records * 4, false),
+        ("rt_x_args", args * 4, false),
+        ("rt_x_row", rows * 16, false),
+        ("rt_x_span", rows * 4, false),
+        ("rt_x_stats", rows * 16, false),
+        ("rt_x_flags", rows * 16, false),
+        ("rt_x_scan", rows * 16, false),
+        ("rt_x_blocks", blocks * 16, false),
+        ("rt_x_fn_by_token", tokens * 4, false),
+    ]
+    .into_iter()
+    .map(|(name, bytes, indirect)| (name, storage(device, name, bytes, indirect)))
+    .collect()
+}
+
+/// Capacity covering a rolled-back job's recorded demand, with headroom.
+fn grown_capacity(current: &ProgramRetentionCapacity, words: &[u32]) -> ProgramRetentionCapacity {
+    let mut next = *current;
+    let overflow = words[counts::OVERFLOW];
+    for arena in 0..ARENAS {
+        if overflow & (1 << arena) != 0 {
+            let demand = words[counts::DEMAND + arena].max(current.arenas[arena] + 1);
+            next.arenas[arena] = (demand as u64 * 2).min(u32::MAX as u64 / 2) as u32;
+        }
+    }
+    // A table holds at most its arena's records; keep it at least twice that.
+    for (table, (arena, bit)) in [
+        (A_DECLS, counts::OVERFLOW_DECL_TABLE),
+        (A_PARAMS, counts::OVERFLOW_PARAM_TABLE),
+        (A_TERMS, counts::OVERFLOW_TERM_TABLE),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let need = (next.arenas[arena] as u64 * 2).next_power_of_two() as u32;
+        if overflow & bit != 0 {
+            next.slots[table] = next.slots[table].saturating_mul(2).max(need);
+        } else {
+            next.slots[table] = next.slots[table].max(need);
+        }
+    }
+    next
+}
+
+fn words_bytes(words: &[u32]) -> Vec<u8> {
+    words.iter().flat_map(|w| w.to_le_bytes()).collect()
+}

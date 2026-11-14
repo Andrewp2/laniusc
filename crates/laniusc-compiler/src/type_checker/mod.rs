@@ -11,6 +11,7 @@
 use std::sync::Mutex;
 
 mod bind_groups;
+pub mod program_retention;
 mod bind_models;
 mod bind_support;
 mod canonical_passes;
@@ -420,6 +421,14 @@ pub struct GpuTypeChecker {
     /// Canonical table capacity scale for the next workspace; doubled when a
     /// job's canonical stage overflows, then kept for later jobs.
     canonical_scale: std::sync::atomic::AtomicU32,
+    /// A build retention store is attached (`program_retention.rs`): an
+    /// interface job's graph keeps the tables the store exports from alive
+    /// until the job's end, so the export reads them before reuse.
+    pub(crate) program_retention: std::sync::atomic::AtomicBool,
+    program_store: Mutex<Option<std::sync::Arc<program_retention::ProgramRetention>>>,
+    /// Copy of `call_env_ct` taken before a body restart, and its byte size
+    /// for the current job (0 when no copy belongs to it).
+    program_env_snapshot: Mutex<Option<(wgpu::Buffer, u64)>>,
     /// Records the next job's canonical stages with a counter readback after
     /// every batch, as many batches as candidates need. Set after a job
     /// recorded without readbacks (one batch per stage) left candidates
@@ -464,6 +473,7 @@ struct ResidentTypeCheckCacheKey {
     call_arg_row_capacity: u32,
     parser_feature_flags: u32,
     semantic_interface_required: bool,
+    program_retention: bool,
     /// Canonical table capacity scale (`canonical_passes::CanonicalCapacity`).
     /// It only grows: a job whose canonical stage overflowed is recorded again
     /// with twice the scale, and later jobs keep it.
@@ -497,6 +507,7 @@ impl ResidentTypeCheckCacheKey {
             call_arg_row_capacity: Self::capacity_bucket(self.call_arg_row_capacity, rows),
             parser_feature_flags: self.parser_feature_flags,
             semantic_interface_required: self.semantic_interface_required,
+            program_retention: self.program_retention,
             canonical_scale: self.canonical_scale.max(1),
             input_fingerprint: self.input_fingerprint,
         }
@@ -542,6 +553,7 @@ impl ResidentTypeCheckCacheKey {
             parser_feature_flags: self.parser_feature_flags | required.parser_feature_flags,
             semantic_interface_required: self.semantic_interface_required
                 || required.semantic_interface_required,
+            program_retention: self.program_retention || required.program_retention,
             canonical_scale: self.canonical_scale.max(required.canonical_scale),
             // Buffer identities describe the bindings used by the replacement
             // workspace. Capacities and optional storage remain monotonic even
@@ -562,6 +574,7 @@ impl ResidentTypeCheckCacheKey {
             && self.parser_feature_flags & required.parser_feature_flags
                 == required.parser_feature_flags
             && (self.semantic_interface_required || !required.semantic_interface_required)
+            && (self.program_retention || !required.program_retention)
             && self.canonical_scale >= required.canonical_scale
     }
 }
@@ -581,6 +594,7 @@ mod resident_typecheck_cache_key_tests {
             call_arg_row_capacity: capacity,
             parser_feature_flags: features,
             semantic_interface_required: false,
+            program_retention: false,
             canonical_scale: 1,
             input_fingerprint: fingerprint,
         }

@@ -2533,6 +2533,7 @@ impl TypeCheckCompilerGraph {
         canonical_scale: u32,
         parser_feature_flags: u32,
         semantic_interface_required: bool,
+        program_retention: bool,
         passes: &TypeCheckPasses,
         upstream_workspace: &[crate::gpu::buffers::TrackedBufferView<'_>],
     ) -> Result<Self> {
@@ -2601,6 +2602,12 @@ impl TypeCheckCompilerGraph {
             let generic_call_reader = super::generic_calls::retention_graph(&graph)?;
             graph
                 .retain_resources_imported_by(&generic_call_reader)
+                .map_err(anyhow::Error::msg)?;
+        }
+        if semantic_interface_required && program_retention {
+            let program_reader = crate::type_checker::program_retention::retention_reader_graph(&graph)?;
+            graph
+                .retain_resources_imported_by(&program_reader)
                 .map_err(anyhow::Error::msg)?;
         }
         stamp!("semantic_interface_build");

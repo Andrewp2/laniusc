@@ -501,6 +501,9 @@ impl GpuTypeChecker {
             canonical_validation_readback,
             preflight_graph,
             canonical_scale: std::sync::atomic::AtomicU32::new(1),
+            program_retention: std::sync::atomic::AtomicBool::new(false),
+            program_store: Mutex::new(None),
+            program_env_snapshot: Mutex::new(None),
             canonical_synchronous: std::sync::atomic::AtomicBool::new(false),
             resident_workspace: Mutex::new(None),
             resident_capacity_floor: Mutex::new(None),
@@ -743,6 +746,8 @@ impl GpuTypeChecker {
             call_arg_row_capacity: hir_items.call_arg_row_capacity.max(1),
             parser_feature_flags: hir_items.parser_feature_flags,
             semantic_interface_required: hir_items.semantic_interface_required,
+            program_retention: hir_items.semantic_interface_required
+                && self.program_retention.load(std::sync::atomic::Ordering::Relaxed),
             canonical_scale: self.canonical_scale.load(std::sync::atomic::Ordering::Relaxed),
             input_fingerprint: buffer_fingerprint(&fingerprint_buffers),
         }
@@ -1089,6 +1094,15 @@ impl GpuTypeChecker {
             // after parsing has finished and before type checking reads them.
             // Other resources rely on their producer writes and read guards.
             bind_groups.typecheck_graph.record_phase_reset(encoder);
+            // A call-environment copy of an earlier job never reaches this one.
+            if let Some((_, taken)) = self
+                .program_env_snapshot
+                .lock()
+                .expect("GpuTypeChecker.program_env_snapshot poisoned")
+                .as_mut()
+            {
+                *taken = 0;
+            }
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.phase_reset.done");
             }
@@ -2518,6 +2532,12 @@ impl GpuTypeChecker {
                         if let Some(timer) = timer.as_deref_mut() {
                             timer.stamp(encoder, "typecheck.canonical.body.done");
                         }
+                        // The body restart clears the call environments the
+                        // main inference published; a retention export reads
+                        // them from this copy (program_retention.rs).
+                        if self.program_retention.load(std::sync::atomic::Ordering::Relaxed) {
+                            self.snapshot_program_call_envs(device, encoder, &bind_groups.typecheck_graph)?;
+                        }
                         bind_groups.calls.substitution.record_body_start(encoder)?;
                         if let Some(timer) = timer.as_deref_mut() {
                             timer.stamp(encoder, "typecheck.substitution.body_start.done");
@@ -2870,6 +2890,100 @@ impl GpuTypeChecker {
         guard
             .as_ref()
             .map(|bind_groups| consume(&bind_groups.visible_type))
+    }
+
+    /// Attaches (or detaches) a build retention store. Later interface jobs
+    /// keep the export's tables alive and export into it at their end.
+    pub(crate) fn attach_program_retention(
+        &self,
+        store: Option<std::sync::Arc<super::program_retention::ProgramRetention>>,
+    ) {
+        self.program_retention
+            .store(store.is_some(), std::sync::atomic::Ordering::Relaxed);
+        *self.program_store.lock().expect("GpuTypeChecker.program_store poisoned") = store;
+    }
+
+    pub(crate) fn attached_program_retention(
+        &self,
+    ) -> Option<std::sync::Arc<super::program_retention::ProgramRetention>> {
+        self.program_store
+            .lock()
+            .expect("GpuTypeChecker.program_store poisoned")
+            .clone()
+    }
+
+    /// Copies the job's published call environments before a body restart
+    /// clears them. The export reads the copy instead of the live table.
+    fn snapshot_program_call_envs(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        graph: &compiler_graph::TypeCheckCompilerGraph,
+    ) -> anyhow::Result<()> {
+        let live = graph.u32_buffer("call_env_ct")?;
+        let mut snapshot = self
+            .program_env_snapshot
+            .lock()
+            .expect("GpuTypeChecker.program_env_snapshot poisoned");
+        let bytes = live.byte_size as u64;
+        let fits = snapshot.as_ref().is_some_and(|(buffer, _)| buffer.size() >= bytes);
+        if !fits {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("program_retention.call_env_snapshot"),
+                size: bytes.max(16),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            *snapshot = Some((buffer, 0));
+        }
+        let (buffer, taken) = snapshot.as_mut().expect("snapshot buffer");
+        encoder.copy_buffer_to_buffer(&live.buffer, live.byte_offset, buffer, 0, bytes);
+        *taken = bytes;
+        Ok(())
+    }
+
+    /// The current job's tables the retention export reads: HIR tables from
+    /// the parser, the rest from the resident type-check graph.
+    pub(crate) fn program_retention_tables(
+        &self,
+        hir: &crate::parser::buffers::GpuHirView,
+    ) -> anyhow::Result<
+        std::collections::BTreeMap<&'static str, super::program_retention::JobTable>,
+    > {
+        use super::program_retention::{JobTable, RETAINED_PROGRAM_INPUTS};
+        let mut tables = std::collections::BTreeMap::new();
+        for (name, view) in hir.named_buffers() {
+            tables.insert(name, JobTable {
+                buffer: view.buffer.clone(),
+                offset: view.byte_offset,
+                size: view.byte_size,
+            });
+        }
+        let guard = self
+            .resident_workspace
+            .lock()
+            .expect("GpuTypeChecker.resident_workspace poisoned");
+        let state = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("program retention export without a resident workspace"))?;
+        for &name in RETAINED_PROGRAM_INPUTS {
+            if let Ok(buffer) = state.typecheck_graph.u32_buffer(name) {
+                tables.insert(name, JobTable::from_lanius(&buffer));
+            }
+        }
+        // A job whose body restart cleared its call environments exports
+        // the copy taken before the restart; the copy belongs to this job only.
+        if let Some((buffer, taken)) = self
+            .program_env_snapshot
+            .lock()
+            .expect("GpuTypeChecker.program_env_snapshot poisoned")
+            .as_mut()
+            .filter(|(_, taken)| *taken != 0)
+        {
+            tables.insert("call_env_ct", JobTable { buffer: buffer.clone(), offset: 0, size: *taken });
+            *taken = 0;
+        }
+        Ok(tables)
     }
 
     /// Borrows the retained enclosing-function table if available.

@@ -90,6 +90,7 @@ impl GpuTypeChecker {
             allocation.canonical_scale,
             parser_feature_flags,
             allocation.semantic_interface_required,
+            allocation.program_retention,
             passes,
             hir_items.upstream_workspace,
         )?;

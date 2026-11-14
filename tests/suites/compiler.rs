@@ -70,6 +70,8 @@ mod formatter;
 mod generated_scaling;
 #[path = "../imported_concrete_method_execution.rs"]
 mod imported_concrete_method_execution;
+#[path = "../program_retention.rs"]
+mod program_retention;
 #[path = "../language_ergonomics_execution.rs"]
 mod language_ergonomics_execution;
 #[path = "../language_tour.rs"]
