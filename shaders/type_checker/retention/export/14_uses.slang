@@ -5,7 +5,7 @@
 //   u0 (owner DeclId, call row relative to the owner, form | adjust << 8 |
 //       deref << 16, callee DeclId or 0)
 //   u1 (environment term, result term, matched receiver term, receiver
-//       parameter term)
+//       parameter term), all in the caller's scope
 //   u2 (enum variant ordinal or intrinsic tag, generic requirements of a
 //       dependency callee, file id, callee token relative to the owner)
 // The environment is the call's value environment re-keyed to the callee:
@@ -167,32 +167,45 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint env = token < env_count && form != RT_USE_FN_REF ? translate_ref(call_env_ct[token].x) : RT_NONE;
     if (callee != 0u) env = callee_env(env, callee);
     bool call_row = kind == HIR_CALL_EXPR;
+    // A call whose artifact publishes no result (a unit method statement,
+    // `assert`) takes its row's checked expression type, which is the
+    // checker's own result for the call (unit, never or a value type). An
+    // untranslatable result stays untranslated; no result is defaulted.
     uint result = call_row ? translate_checked(call.return_ref_tag, call.return_ref_payload) : row_term;
+    if (call_row && result == RT_NONE) result = row_term;
     uint matched = call_row ? translate_checked(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload) : RT_NONE;
     uint receiver = call_row ? translate_checked(call.receiver_parameter_ref_tag, call.receiver_parameter_ref_payload) : RT_NONE;
-    // A local callee's declared receiver is a term of the callee's binder
-    // chain: a consumer substitutes the callee's instance environment into it.
-    if (form == RT_USE_METHOD && valid_row(callee_row) && rt_is_resolved(receiver))
+    // The receiver parameter is the accepted plan of methods/08_finalize_
+    // candidates.slang, built from the caller's checked receiver: the
+    // matched receiver itself (adjustment 1, by value or an existing
+    // reference), or a reference to it (adjustment 2: the last dereferenced
+    // reference, or a fresh `&matched`). It is a term of the caller's scope
+    // for every callee kind (local, dependency, bound trait member), like
+    // the matched receiver, and must have exactly that shape.
+    uint untranslated = form == RT_USE_UNRESOLVED || (form == RT_USE_CONSTRUCTOR && callee == 0u) ? 1u : 0u;
+    uint adjust = call_row ? call.receiver_adjustment_kind & 0xffu : 0u;
+    if (form == RT_USE_METHOD || (form == RT_USE_HOST && call.receiver_hir != 0xffffffffu))
     {
-        uint container = container_of(callee_row);
-        uint callee_parent = valid_row(container) ? intern_row_decl(container) : 0u;
-        if (callee_parent == RT_INVALID) callee_parent = 0u;
-        if (!owned_by(receiver, callee, callee_parent))
+        // A missing plan is untranslated here; an untranslatable term is
+        // counted by the loop below.
+        if (receiver == RT_NONE || matched == RT_NONE) untranslated++;
+        else if (rt_is_resolved(receiver) && rt_is_resolved(matched))
         {
-            rt_invariant(RT_INV_RECEIVER_SCOPE);
-            stat_add(owner_row, RT_STAT_OWNERSHIP, 1u);
+            bool shaped = adjust == 1u ? receiver == matched
+                : adjust == 2u && rt_term_kind(receiver) == RT_KIND_REF && rt_term_arg(receiver, 0u) == matched;
+            if (!shaped)
+            {
+                rt_invariant(RT_INV_RECEIVER_SCOPE);
+                stat_add(owner_row, RT_STAT_OWNERSHIP, 1u);
+            }
         }
     }
 
-    // Every term of the record lives in the caller's scope. (The receiver
-    // parameter term is the callee's declared receiver, so it is checked
-    // against the callee's chain only when the callee is local; a
-    // dependency's declared receiver keeps its slot leaves.)
-    uint untranslated = form == RT_USE_UNRESOLVED || (form == RT_USE_CONSTRUCTOR && callee == 0u) ? 1u : 0u;
+    // Every term of the record is in the caller's scope.
     uint unowned = 0u;
-    for (uint i = 0u; i < 3u; i++)
+    for (uint i = 0u; i < 4u; i++)
     {
-        uint t = i == 0u ? env : (i == 1u ? result : matched);
+        uint t = i == 0u ? env : (i == 1u ? result : (i == 2u ? matched : receiver));
         if (t == RT_UNKNOWN || t == RT_FIT_FAILED || (i == 1u && !rt_is_resolved(t))) untranslated++;
         else if (!owned_by(t, owner, owner_parent)) unowned++;
     }
@@ -209,7 +222,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint rel = rel_row(span, row, foreign);
     uint rel_callee_token = rel_token(span, token, foreign);
     uint index = use_base + rt_x_scan[row].y;
-    uint adjust = call_row ? call.receiver_adjustment_kind & 0xffu : 0u;
     uint deref = call_row ? min(call.receiver_deref_count, 0xffffu) : 0u;
     stat_add(owner_row, RT_STAT_FOREIGN, foreign);
     rt_uses[index * RT_USE_WORDS + 0u] = uint4(owner, rel, form | (adjust << 8u) | (deref << 16u), callee);

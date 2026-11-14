@@ -111,6 +111,11 @@ public static const uint RT_ROLE_CALLEE = 3u;
 // A predicate's bound (a trait reference). It denotes no type: its trait
 // and arguments are the owner's predicate record (rt_traits).
 public static const uint RT_ROLE_BOUND = 4u;
+// A match pattern that names an enum variant (`Ok(_)`, `None`). It matches
+// and binds; it produces no value, so it needs no type. Its variant is the
+// row's binding (r5), the matched type is the scrutinee's term, and its
+// payload binders are value rows with their own types.
+public static const uint RT_ROLE_PATTERN = 5u;
 
 public bool rt_value_kind(uint kind)
 {

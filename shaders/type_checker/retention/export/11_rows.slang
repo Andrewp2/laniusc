@@ -7,9 +7,10 @@
 //   r4 (return-type row, constant-value row, array-element start, count)
 //   r5 (binding kind, binding value, binding aux, member field ordinal)
 //   r6 (argument mode | iterable kind << 8, constant flags, value lo, value hi)
-// A type row's term is its checked type (type_row_term); every other row's
-// is its checked expression reference. A VALUE or TYPE row without a
-// resolved term is counted UNTYPED. A reference outside the body becomes
+// A type row's term is its checked type (type_row_term); a variant
+// constructor's callee keeps none; every other row's is its checked
+// expression reference. A VALUE or TYPE row without a resolved term is
+// counted UNTYPED; BOUND, PATTERN and CALLEE rows denote no value. A reference outside the body becomes
 // RT_REL_FOREIGN and is counted FOREIGN; untranslated and unowned terms are
 // counted too. Nothing else of the job (canonical IDs, absolute rows or
 // tokens, declaration tokens) is written.
@@ -67,6 +68,8 @@ uint row_role(uint row, uint function, uint kind)
         return bound ? RT_ROLE_BOUND : RT_ROLE_TYPE;
     }
     if (callee_position(row)) return RT_ROLE_CALLEE;
+    if (variant_pattern(row, semantic_value_decl_by_hir[row], semantic_value_const_present_by_hir[row]))
+        return RT_ROLE_PATTERN;
     return rt_value_kind(kind) ? RT_ROLE_VALUE : RT_ROLE_STRUCTURAL;
 }
 
@@ -138,6 +141,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (term == RT_NONE) term = array_length_term(row, core.parent);
         if (term == RT_UNKNOWN) untranslated++;
         else if (!owned_by(term, c.decl, c.parent)) unowned++;
+    }
+    else if (role == RT_ROLE_CALLEE && (binding_target(semantic_value_decl_by_hir[row]) & RT_X_VARIANT_BIT) != 0u)
+    {
+        // A variant constructor's callee (`Wrap::Value` in `Wrap::Value(e)`)
+        // is callable syntax. The checker types it with the enum's declared
+        // self application over the enum's own parameters, a schema fact
+        // (rt_schema, the enum's binders), not a value of this body. The
+        // caller-scoped instance is the call row's term and its use's
+        // result and environment. The row keeps no term; its variant is its
+        // binding. The producer's term must still be the enum's or the
+        // caller's, so a term naming any other binder stays an error.
+        uint variant = binding_target(semantic_value_decl_by_hir[row]) & ~RT_X_VARIANT_BIT;
+        uint enum_row = compact_variants[variant].owner;
+        uint enum_decl = valid_row(enum_row) ? rt_x_row[enum_row].x : RT_INVALID;
+        uint declared = translate_checked(semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row]);
+        if (declared == RT_UNKNOWN || declared == RT_FIT_FAILED) untranslated++;
+        else if (!owned_by(declared, c.decl, c.parent) &&
+            (enum_decl == RT_INVALID || !owned_by(declared, enum_decl, 0u))) unowned++;
     }
     else if (checked_value_row(row, function, core.kind, compact_hir_payload[row].a))
         term = body_term(c, semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row],

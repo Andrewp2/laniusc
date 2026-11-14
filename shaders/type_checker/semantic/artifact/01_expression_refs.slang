@@ -52,6 +52,7 @@ RWStructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TY_STRUCT_BASE = 4096u;
@@ -325,6 +326,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // instance. Projecting it here gives lowering one uniform dense
             // layout fact without retaining either token table.
             name_token_ref(hir_payload.b, tag, payload);
+        }
+        // A match or `value?` of a generic body whose type is one of the
+        // body's parameters (`Ok(inner) -> inner, Err(_) -> panic()` at T).
+        // 10n publishes the joined arm type at the match token; no other
+        // branch above types the row, and the instance table
+        // (closure/table_rows.slang) reads the same token reference.
+        if (tag == TYPE_REF_INVALID && match_tag == TYPE_REF_GENERIC_PARAM &&
+            valid_token(decl_type_ref_payload[match_token]))
+        {
+            tag = match_tag;
+            payload = decl_type_ref_payload[match_token];
         }
     }
     semantic_expr_ref_tag_by_hir[node] = tag;

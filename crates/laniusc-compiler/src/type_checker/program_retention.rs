@@ -279,6 +279,7 @@ const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/14b_trait_flags",
     "type_checker/retention/export/14c_trait_reserve",
     "type_checker/retention/export/14d_trait_facts",
+    "type_checker/retention/export/14e_bound_links",
     "type_checker/retention/export/15_finish",
     "type_checker/retention/export/16_commit",
     "type_checker/retention/export/17_publish",
@@ -718,9 +719,10 @@ impl ProgramRetention {
             run(21, one);
             run(22, Indirect(D_HIR));
             run(23, Indirect(D_HIR));
-            run(24, one);
-            run(25, Indirect(D_COMMIT_DIR));
-            run(26, Indirect(D_ROLLBACK));
+            run(24, Indirect(D_HIR));
+            run(25, one);
+            run(26, Indirect(D_COMMIT_DIR));
+            run(27, Indirect(D_ROLLBACK));
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())

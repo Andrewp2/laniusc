@@ -16,9 +16,12 @@ StructuredBuffer<uint> semantic_value_const_present_by_hir;
 // Whether body row `row` is a use (docs/compiler-program-retention.md,
 // "Uses"), by its HIR kind: every call; every struct literal; and a name or
 // path outside callee position that names a function (a function
-// reference) or an enum variant (a unit variant value).
+// reference) or an enum variant (a unit variant value). A match pattern is
+// never a use: `Ok(_)` matches a value and constructs none, so it is no
+// discovery root (11_rows.slang gives it the PATTERN role).
 bool use_row(uint row, HirCore core)
 {
+    if (pattern_position(row)) return false;
     if (core.kind == HIR_CALL_EXPR || core.kind == RT_HIR_STRUCT_LITERAL_EXPR) return true;
     if (core.kind != RT_HIR_NAME_EXPR && core.kind != RT_HIR_PATH_EXPR) return false;
     if (callee_position(row)) return false;

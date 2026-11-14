@@ -322,7 +322,16 @@ void check_instance(uint entry, uint env, uint caller, uint first_arg)
         }
         if (!rel_ok(r4.x, rows - 1u) || !rel_ok(r4.y, rows - 1u)) bad++;
         if (r4.w != 0u && (r4.z == 0xffffffffu || r4.z + r4.w > side_len(g, 4u))) bad++;
-        if (r3.y != RT_NONE && r3.y >= d3.x) bad++;
+        // A BOUND row names its predicate (export step 14e): the record at
+        // that ordinal of the entry's predicate block is a predicate of the
+        // entry with the same ordinal. Any other row's r3.y is a use index.
+        if (r3.z == RT_ROLE_BOUND)
+        {
+            uint4 block = rt_dir_trait[entry];
+            uint4 t0 = r3.y < block.y ? rt_traits[(block.x + r3.y) * RT_TRAIT_WORDS] : uint4(0u, 0u, 0u, 0u);
+            if (r3.y >= block.y || t0.x != d0.x || t0.y != (RT_TRAIT_PREDICATE | (r3.y << 8u))) bad++;
+        }
+        else if (r3.y != RT_NONE && r3.y >= d3.x) bad++;
         if ((r3.w & 4u) != 0u || ((r3.z == RT_ROLE_VALUE || r3.z == RT_ROLE_TYPE) && !rt_is_resolved(r3.x))) missing++;
         if ((r6.x & 0xffu) != 0u) modes++;
         if ((r6.x >> 8u) != 0u) iterables++;

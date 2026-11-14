@@ -63,9 +63,12 @@ public globallycoherent RWStructuredBuffer<uint> rt_x_decl_by_token;
 //   rt_x_seg_token    job segment ordinal -> the body's first token (step 10),
 //                     ascending, so a token finds its body by binary search
 public globallycoherent RWStructuredBuffer<uint> rt_x_seg_token;
-// rt_x_callee: row -> 1 when the row is a call's callee (step 1b). A
-// callee row's HIR parent is not necessarily its call.
+// rt_x_callee: row -> syntax marks (step 1b): RT_X_MARK_CALLEE when the
+// row is a call's callee (a callee row's HIR parent is not necessarily its
+// call), RT_X_MARK_PATTERN when it is a match arm's or payload's pattern.
 public globallycoherent RWStructuredBuffer<uint> rt_x_callee;
+public static const uint RT_X_MARK_CALLEE = 1u;
+public static const uint RT_X_MARK_PATTERN = 2u;
 public static const uint RT_X_VARIANT_BIT = 0x80000000u;
 
 // The function row whose span starts at `token`, or INVALID.
@@ -153,7 +156,7 @@ public static const uint RT_INV_OWNERSHIP = 5u;       // an exported term names 
 public static const uint RT_INV_DUPLICATE_DECL = 6u;  // two committed entries define one declaration
 public static const uint RT_INV_PARAM_MAP = 7u;       // the parameter map is full
 public static const uint RT_INV_ENV_OWNER = 8u;       // a call environment names a different callee
-public static const uint RT_INV_RECEIVER_SCOPE = 9u;  // a local callee's receiver term is outside the callee's binder chain
+public static const uint RT_INV_RECEIVER_SCOPE = 9u;  // a receiver parameter term is neither the matched receiver nor a reference to it
 public static const uint RT_INV_TRAIT_FACT = 10u;     // a predicate, impl head or impl method lacks an accepted producer fact
 public static const uint RT_INV_TRAIT_ORDER = 11u;    // an owner's trait facts are not one contiguous block in source order
 public static const uint RT_INV_TRAIT_IDENTITY = 12u; // trait, required-member or native-target identities disagree
@@ -513,7 +516,27 @@ public bool callee_position(uint row)
 {
     uint count; uint stride;
     rt_x_callee.GetDimensions(count, stride);
-    return row < count && rt_x_callee[row] != 0u;
+    return row < count && (rt_x_callee[row] & RT_X_MARK_CALLEE) != 0u;
+}
+
+// Whether `row` is a match pattern: an arm's pattern or a payload pattern.
+public bool pattern_position(uint row)
+{
+    uint count; uint stride;
+    rt_x_callee.GetDimensions(count, stride);
+    return row < count && (rt_x_callee[row] & RT_X_MARK_PATTERN) != 0u;
+}
+
+// Whether pattern row `row` names an enum variant (`Ok(_)`, `None`,
+// `Error::Busy`): constructor syntax that matches a value and constructs
+// none. `decl_token` and `present` are the row's checked value binding and
+// constant presence words. A binder (`inner`, `_`) or literal pattern is
+// not one; it keeps its value role and type.
+public bool variant_pattern(uint row, uint decl_token, uint present)
+{
+    if (!pattern_position(row)) return false;
+    if ((present & RT_CONST_VARIANT) != 0u) return true;
+    return (binding_target(decl_token) & RT_X_VARIANT_BIT) != 0u;
 }
 
 // The declaration row (+ 1) or RT_X_VARIANT_BIT | variant a binding token

@@ -192,16 +192,27 @@ committed definition of the same declaration is counted in
     declaration key, a dependency callee its `(library, unit, CALLABLE,
     local)` triple, and a constructor its enum's `DeclId`. Use rows are call
     rows, struct literals, and path or name rows outside callee position that
-    name a variant or a function. A use without a call has no environment
-    and records its row's term as its result.
+    name a variant or a function. A match pattern is never a use: `Ok(_)`
+    matches a value and constructs none, so it is no discovery root. A use
+    without a call has no environment and records its row's term as its
+    result. A call whose artifact publishes no result (a unit method
+    statement, `assert`) records its row's checked expression type: unit,
+    never (`-> !`) or a value type. A result is never defaulted.
   - u1 `(environment, result, matched receiver, receiver parameter)`. The
     environment is the call's value environment with owner 0 re-keyed to the
     callee. A nonzero owner must already match the callee; a mismatch raises
     an invariant and marks the containing entry incomplete. Its arguments are terms in the caller's scope: they must
     be owned by the caller's binder chain, and a consumer substitutes the
-    caller's environment into them before binding the callee's slots. A
-    method's receiver parameter term is checked against the callee's binder
-    chain (`RT_INV_RECEIVER_SCOPE`).
+    caller's environment into them before binding the callee's slots. All
+    four terms are in the caller's scope and are owned by its binder chain.
+    The receiver parameter is the receiver plan the method selector
+    accepted (`methods/08_finalize_candidates.slang`), built from the
+    caller's checked receiver for every callee kind (local, dependency,
+    bound trait member). With adjustment 1 it is the matched receiver
+    itself. With adjustment 2 it is `REF(matched)`: the last dereferenced
+    reference or a fresh `&matched`. Any other shape raises
+    `RT_INV_RECEIVER_SCOPE` and marks the caller incomplete. The callee's
+    declared receiver is its own signature's `self` parameter.
   - u2 `(variant ordinal or intrinsic tag, a dependency callee's generic
     requirements, file id, callee token relative to the owner)`.
 
@@ -331,13 +342,33 @@ Row terms and roles:
   reference. Other rows (function, parameter, block and the remaining
   statements) carry the per-row scalar cache in that column, which is not a
   type, so their term is `RT_NONE`.
-- Roles are `STRUCTURAL 0`, `VALUE 1`, `TYPE 2`, `CALLEE 3` and
-  `BOUND 4`. A BOUND row is a TYPE row whose semantic kind is a bound path
-  or bound reference. It has no checked type; its facts are the predicate
-  records. A callee row
-  is marked by its call (step 01b), because its HIR parent need not be the
-  call. A VALUE or TYPE row without a resolved term is `MISSING`, is
-  counted `untyped` and marks its entry `INCOMPLETE`.
+- Roles are `STRUCTURAL 0`, `VALUE 1`, `TYPE 2`, `CALLEE 3`, `BOUND 4`
+  and `PATTERN 5`. A callee row is marked by its call (step 01b), because
+  its HIR parent need not be the call. A VALUE or TYPE row without a
+  resolved term is `MISSING`, is counted `untyped` and marks its entry
+  `INCOMPLETE`. BOUND, PATTERN and CALLEE rows denote no value.
+- A BOUND row is a TYPE row whose semantic kind is a bound path or bound
+  reference. It has no checked type; its facts are its predicate record.
+  Its r3.y is that predicate's ordinal in the function's predicate block
+  (step 14e), so the record is `rt_traits[rt_dir_trait[entry].x + r3.y]`
+  and the record's ordinal equals r3.y. A bound reference and the path
+  inside it name the same predicate. (The frontend currently rejects a
+  `&Trait` bound head.)
+- A PATTERN row is a match arm's or payload's pattern that names an enum
+  variant (`Ok(_)`, `None`, `Error::Busy`). Its variant is its binding
+  (r5). It keeps its checked term when the checker publishes one and
+  needs none. The matched type is the scrutinee's term. Payload binders
+  (`inner`, `_`) and literal patterns stay VALUE rows with their types.
+- A variant constructor's callee (`Wrap::Value` in `Wrap::Value(e)`) keeps
+  no term. The checker types that row with the enum's declared self
+  application over the enum's own parameters, which is a schema fact. The
+  caller-scoped instance is the call row's term and its use's result. The
+  export still checks that the producer's term is owned by the enum or by
+  the caller.
+- A match or `value?` whose type is a parameter of the body (`Ok(inner) ->
+  inner, Err(_) -> panic()` at `T`) has that parameter's leaf as its term
+  (`semantic/artifact/01_expression_refs.slang` publishes the joined arm
+  type of `modules/10n_type_match_exprs.slang`).
 - Binding kinds are `NONE 0`, `LOCAL 1` (value: the binder's relative
   token), `DECL 2` (value: `DeclId`), `VARIANT 3` (value: the enum's
   `DeclId`, aux: the ordinal), `PARAM 4` (value: the parameter leaf) and
@@ -414,7 +445,7 @@ All semantic work runs on the GPU. The host allocates buffers, clears job
 scratch, submits one command buffer per attempt and reads the 96 status
 words and 256 scratch words.
 
-The export records 186 dispatches per attempt: 27 kernels, including 79
+The export records 187 dispatches per attempt: 28 kernels, including 79
 translation/advance pairs and the three scan kernels, which run twice. Empty translation
 heights dispatch no translation workgroups, but their advance dispatches
 still run. This boundary has not yet been timed on settings.
@@ -423,7 +454,7 @@ still run. This boundary has not yet been timed on settings.
 | --- | --- | --- |
 | 00, 04, 07, 09, 16 | 1 lane | transaction, plans and reservations |
 | 01 | one per generic parameter | `ParamId` interning and the job's parameter map |
-| 01b | one per HIR row, token and variant | declaration-token map, callee marks |
+| 01b | one per HIR row, token and variant | declaration-token map, callee and pattern marks |
 | 02 | one per HIR row | `DeclId` interning, trait `Self`, scan flags, token spans |
 | 03, 05 | one per canonical record | height buckets |
 | 06 | one per record of the current height, 79 indirect rounds | children are always translated first |
@@ -438,6 +469,7 @@ still run. This boundary has not yet been timed on settings.
 | 08 again | uint4 prefix scan over rows | trait-fact ranks and owner blocks |
 | 14c | 1 lane | trait-fact reservation |
 | 14d | one per declaration, predicate and method | trait column, predicate and binding records |
+| 14e | one per HIR row | BOUND row predicate ordinals |
 | 15 | one per declaration | statistics |
 | 17 | one per staged entry | publish |
 | 18 | one per hash slot | rollback |

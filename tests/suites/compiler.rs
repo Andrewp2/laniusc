@@ -74,6 +74,8 @@ mod generated_scaling;
 mod imported_concrete_method_execution;
 #[path = "../program_retention.rs"]
 mod program_retention;
+#[path = "../program_retention_readiness.rs"]
+mod program_retention_readiness;
 #[path = "../program_retention_traits.rs"]
 mod program_retention_traits;
 #[path = "../retained_substitution.rs"]
