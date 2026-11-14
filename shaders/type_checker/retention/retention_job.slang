@@ -136,6 +136,7 @@ public static const uint RT_INV_SEGMENT = 4u;         // a body's rows or side t
 public static const uint RT_INV_OWNERSHIP = 5u;       // an exported term names a parameter outside its record's binder chain
 public static const uint RT_INV_DUPLICATE_DECL = 6u;  // two committed entries define one declaration
 public static const uint RT_INV_PARAM_MAP = 7u;       // the parameter map is full
+public static const uint RT_INV_ENV_OWNER = 8u;       // a call environment names a different callee
 
 public uint job_library() { return ct_counts[CT_COUNT_LIBRARY]; }
 public uint job_unit() { return ct_counts[CT_COUNT_UNIT]; }

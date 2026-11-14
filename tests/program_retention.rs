@@ -70,6 +70,10 @@ const PROBE_USES_CLOSED: usize = 11;
 const PROBE_HASH: usize = 12;
 const PROBE_PARAMS_CLOSED: usize = 14;
 const PROBE_NESTED_CALLEE: usize = 15;
+const PROBE_DIR_FLAGS: usize = 16;
+const PROBE_EXPECTED_CLOSED: usize = 17;
+const PROBE_PARAM_COUNT: usize = 18;
+const PROBE_REJECTION_CHECKS: usize = 19;
 
 fn compiler() -> GpuCompiler<'static> {
     pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only()))
@@ -118,7 +122,8 @@ fn summary(store: &ProgramRetention) -> Vec<u32> {
     let mut words = (0..13)
         .map(|a| status[a] - if a < 4 { status[counts::SPARE + a] } else { 0 })
         .collect::<Vec<_>>();
-    words.extend([status[counts::JOBS], status[counts::CONFLICTS], status[counts::INVARIANT_TOTAL]]);
+    words.extend([status[counts::JOBS], status[counts::CONFLICTS], status[counts::INVARIANT_TOTAL],
+        status[counts::INCOMPLETE_TOTAL], status[counts::READY]]);
     words
 }
 
@@ -134,6 +139,11 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
     assert_eq!(status[counts::JOBS], 2, "both jobs commit");
     assert_eq!(status[counts::CONFLICTS], 0);
     assert_eq!(status[counts::INVARIANTS], 0, "first invariant code {}", status[counts::FIRST_INVARIANT]);
+    for report in &reports {
+        assert!(report.ready, "committed export must also be complete: {report:?}");
+        assert_eq!(report.counts[counts::INVARIANTS], 0, "{report:?}");
+        assert_eq!(report.counts[counts::INCOMPLETE], 0, "{report:?}");
+    }
 
     // Colliding local identities stay distinct: both private `identity`
     // callables carry the same token-based local word, in two libraries.
@@ -167,6 +177,9 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
     for use_words in &eligible {
         let callee = &keys[use_words[PROBE_CALLEE] as usize];
         assert_eq!(callee[0], 10, "the resolved definition is job A's");
+        assert_eq!(use_words[PROBE_DIR_FLAGS], 0, "callee export is complete: {use_words:?}");
+        assert_eq!(use_words[PROBE_EXPECTED_CLOSED], 1, "an unresolved result cannot match itself");
+        assert_eq!(use_words[PROBE_REJECTION_CHECKS], 31, "sentinel and owner checks: {use_words:?}");
         assert_eq!(use_words[PROBE_RESULT_STATUS], 0, "declared result substitutes: {use_words:?}");
         assert_eq!(
             use_words[PROBE_RESULT], use_words[PROBE_EXPECTED],
@@ -178,7 +191,7 @@ fn program_retention_resolves_foreign_generic_bodies_from_the_store_alone() {
         assert_eq!(use_words[PROBE_FIRST_FAILURE], 0);
         assert_eq!(use_words[PROBE_BAD_REFS], 0, "body tree links stay inside the segment");
         assert_eq!(use_words[PROBE_USES], use_words[PROBE_USES_CLOSED], "body call environments close");
-        assert!(use_words[PROBE_PARAMS_CLOSED] >= 1);
+        assert_eq!(use_words[PROBE_PARAMS_CLOSED], use_words[PROBE_PARAM_COUNT]);
         // Every foreign body here calls job A's private `identity`, never
         // job B's same-spelled one.
         assert_eq!(use_words[PROBE_NESTED_CALLEE], a_identity, "callee identity is job A's private callable");
@@ -259,6 +272,13 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     let fresh_probe = probe(&tiny);
     assert!(!fresh_probe.uses.is_empty(), "the unrelated build exports its call");
     assert_eq!(fresh_probe.eligible().count(), 0, "old foreign definitions are unreachable");
+    let definitions = tiny.read_store_words("rt_decl_def", fresh_status[0] as usize).unwrap();
+    for use_words in &fresh_probe.uses {
+        let callee = use_words[PROBE_CALLEE] as usize;
+        assert_ne!(callee, 0, "fresh call retains its callee");
+        assert_eq!(fresh_keys[callee][0], 99, "every callee belongs to the fresh build");
+        assert!(definitions[callee] > 0 && definitions[callee] <= fresh_status[4]);
+    }
     assert_eq!(tiny.capacity().0, capacity, "the unrelated build needs no growth");
 
     // Rebuild the original program after the unrelated job. Stable contents
@@ -268,14 +288,32 @@ fn program_retention_retries_commits_whole_jobs_and_reuses_allocations() {
     assert_eq!(summary(&tiny), expected);
 
     // One probe chain for every key: equality is decided by full records.
-    let collided = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    let collided = ProgramRetention::new(ProgramRetentionCapacity::tiny()).unwrap();
     collided.set_hash_mask(0);
     build(&compiler, &collided);
+    assert!(collided.capacity().1 > 0, "forced collisions also exercise growth and rehash");
     assert_eq!(summary(&collided), expected, "forced collisions never merge or split keys");
     let collided_probe = probe(&collided);
     for (a, b) in collided_probe.uses.iter().zip(&expected_probe.uses) {
         assert_eq!(a[PROBE_HASH..PROBE_HASH + 2], b[PROBE_HASH..PROBE_HASH + 2]);
     }
+
+    // A duplicate export is committed for inspection but is never ready.
+    // A later clean job must not erase the earlier build-level failure.
+    compiler.attach_program_retention(Some(collided.clone()));
+    pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[LIBRARY])).unwrap();
+    let failed = collided.status().unwrap();
+    assert!(failed[counts::CONFLICTS] > 0);
+    assert!(failed[counts::INVARIANT_TOTAL] > 0);
+    assert!(failed[counts::INCOMPLETE_TOTAL] > 0);
+    assert!(!collided.job_reports().last().unwrap().ready);
+    assert_eq!(probe(&collided).eligible().count(), 0, "conflicting builds cannot supply a probe instance");
+    pollster::block_on(compiler.semantic_interface_for_source_pack(100, &["module later; fn main() -> i32 { return 0; }"])).unwrap();
+    compiler.attach_program_retention(None);
+    let later = collided.status().unwrap();
+    assert_eq!(later[counts::INVARIANTS], 0, "the latest job itself is clean");
+    assert_eq!(later[counts::INVARIANT_TOTAL], failed[counts::INVARIANT_TOTAL]);
+    assert_eq!(later[counts::READY], 0, "build readiness cannot recover without begin_build");
 
     let bytes = tiny.retained_bytes().unwrap();
     eprintln!(

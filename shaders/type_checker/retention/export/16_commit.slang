@@ -19,6 +19,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         rt_counts[RT_C_JOB_STATE] = RT_JOB_COMMITTED;
         rt_counts[RT_C_JOBS] += 1u;
+        rt_counts[RT_C_INVARIANT_TOTAL] += rt_counts[RT_C_INVARIANTS];
+        rt_counts[RT_C_INCOMPLETE_TOTAL] += rt_counts[RT_C_INCOMPLETE];
+        if (rt_counts[RT_C_INVARIANTS] != 0u || rt_counts[RT_C_INCOMPLETE] != 0u)
+            rt_counts[RT_C_READY] = 0u;
         set_dispatch(RT_D_COMMIT_DIR, rt_counts[RT_A_DIR] - staged);
         set_dispatch(RT_D_ROLLBACK, 0u);
         return;

@@ -61,6 +61,9 @@ public static const uint RT_DIR_WORDS = 4u;
 public static const uint RT_USE_WORDS = 3u;
 public static const uint RT_SEG_WORDS = 4u;
 public static const uint RT_ROW_WORDS = 5u;
+public static const uint RT_DIR_STAGED = 1u;
+public static const uint RT_DIR_COMMITTED = 2u;
+public static const uint RT_DIR_INCOMPLETE = 1u;
 
 public static const uint RT_INVALID = 0xffffffffu;
 public static const uint RT_UNKNOWN = 0xfffffffeu;
@@ -145,6 +148,9 @@ public static const uint RT_C_UNIT = 71u;
 public static const uint RT_C_CONFLICTS = 72u;  // declarations defined by two committed entries
 public static const uint RT_C_STAGED_DIR = 73u; // first staged directory entry of the job
 public static const uint RT_C_INVARIANT_TOTAL = 74u; // invariant failures over the build
+public static const uint RT_C_INCOMPLETE = 75u; // incomplete entries of the current committed job
+public static const uint RT_C_INCOMPLETE_TOTAL = 76u; // incomplete entries over the build
+public static const uint RT_C_READY = 77u; // exported records complete so far; not codegen admission
 public static const uint RT_C_JOB_SPARE = 80u; // + arena (decls..term args): spares at the job's start
 public static const uint RT_C_WORDS = 96u;
 

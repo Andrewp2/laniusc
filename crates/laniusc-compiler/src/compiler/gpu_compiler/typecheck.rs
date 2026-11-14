@@ -977,21 +977,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
         finish_timer.stamp("typecheck_status");
-        // Program retention: export this job into the build store before its
-        // workspace can be reused (type_checker/program_retention.rs). Only an
-        // interface job's graph keeps the exported tables alive to here.
-        if recorded.semantic_interface.is_some()
-            && let Some(store) = self.type_checker.attached_program_retention()
-        {
-            let hir = self.parser.current_resident_hir().ok_or_else(|| {
-                CompileError::GpuFrontend("program retention export without resident HIR".to_string())
-            })?;
-            self.type_checker
-                .program_retention_tables(&hir)
-                .and_then(|tables| store.export_job(&tables))
-                .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
-            finish_timer.stamp("program_retention");
-        }
         let semantic_interface = recorded
             .semantic_interface
             .as_ref()
@@ -1083,6 +1068,18 @@ impl<'gpu> GpuCompiler<'gpu> {
             None
         };
         finish_timer.stamp("native_object");
+        // All lowering retry points have passed. Export once into the store
+        // captured when this job selected its workspace and recorded work.
+        if let Some(store) = &recorded.type_check.program_retention {
+            let hir = self.parser.current_resident_hir().ok_or_else(|| {
+                CompileError::GpuFrontend("program retention export without resident HIR".to_string())
+            })?;
+            self.type_checker
+                .program_retention_tables(&hir)
+                .and_then(|tables| store.export_job(&tables))
+                .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
+            finish_timer.stamp("program_retention");
+        }
         let (native_object, native_call_hirs) = match native_object {
             Some((object, call_hirs)) => (Some(object), call_hirs),
             None => (None, Vec::new()),

@@ -10,7 +10,7 @@ import type_checker.retention.retention_subst;
 
 RWStructuredBuffer<uint> rt_test_out;
 
-static const uint RT_PROBE_WORDS = 16u;
+static const uint RT_PROBE_WORDS = 20u;
 static const uint LANE_WORDS = 256u;
 
 static const uint P_ELIGIBLE = 0u;      // 1 eligible; 2+ reasons it is not
@@ -28,6 +28,10 @@ static const uint P_USES_CLOSED = 11u;  // ... whose environments substitute to 
 static const uint P_HASH = 12u;         // + 2: structural hash of substituted row terms
 static const uint P_PARAMS_CLOSED = 14u;
 static const uint P_NESTED_CALLEE = 15u; // callee DeclId of the body's first use
+static const uint P_DIR_FLAGS = 16u;
+static const uint P_EXPECTED_CLOSED = 17u;
+static const uint P_PARAM_COUNT = 18u;
+static const uint P_REJECTION_CHECKS = 19u;
 
 bool rel_ok(uint word, uint limit)
 {
@@ -48,6 +52,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint callee = u0.w;
     rt_test_out[o + P_CALLEE] = callee;
     rt_test_out[o + P_EXPECTED] = u1.y;
+    if (rt_counts[RT_C_READY] == 0u) { rt_test_out[o + P_ELIGIBLE] = 6u; return; }
     if (callee == 0u) { rt_test_out[o + P_ELIGIBLE] = 2u; return; }
     uint def = rt_decl_def[callee];
     if (def == 0u) { rt_test_out[o + P_ELIGIBLE] = 3u; return; }
@@ -59,8 +64,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
     uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
     uint4 d3 = rt_dir[entry * RT_DIR_WORDS + 3u];
+    rt_test_out[o + P_DIR_FLAGS] = d3.w;
+    rt_test_out[o + P_EXPECTED_CLOSED] = rt_is_resolved(u1.y) && rt_term_closed(u1.y) ? 1u : 0u;
+    rt_test_out[o + P_PARAM_COUNT] = d1.w;
+    if (d3.w != 0u) return;
     RtBinding b = rt_binding(entry, u1.x);
     uint scratch = use * LANE_WORDS;
+
+    // Exercise failure results on the actual retained environment. Neither
+    // unresolved references nor another declaration's binder may look valid.
+    uint rejected = 0u;
+    for (uint i = 0u; i < 4u; i++)
+    {
+        uint term = i == 0u ? 0u : (i == 1u ? RT_UNKNOWN : (i == 2u ? RT_NONE : RT_FIT_FAILED));
+        uint2 value = rt_subst(b, term, scratch, LANE_WORDS);
+        uint wanted = i == 3u ? RT_SUBST_FIT_FAILED : RT_SUBST_UNRESOLVED;
+        if (value.y == wanted) rejected |= 1u << i;
+    }
+    uint caller_entry = rt_decl_def[u0.x];
+    if (caller_entry != 0u)
+    {
+        RtBinding wrong = rt_binding(caller_entry - 1u, u1.x);
+        if (rt_subst(wrong, rt_sigs[d1.z], scratch, LANE_WORDS).y == RT_SUBST_ENV) rejected |= 16u;
+    }
+    rt_test_out[o + P_REJECTION_CHECKS] = rejected;
 
     uint2 result = rt_subst(b, rt_sigs[d1.z], scratch, LANE_WORDS);
     rt_test_out[o + P_RESULT] = result.x;

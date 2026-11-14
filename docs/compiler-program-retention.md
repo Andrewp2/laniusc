@@ -1,13 +1,14 @@
 # Program retention
 
-Program retention is the first cross-unit boundary of the GPU instantiation
-engine (`docs/compiler-gpu-instantiation-design.md` §1–3). One build store
+Program retention prototypes the first cross-unit boundary of the GPU
+instantiation engine (`docs/compiler-gpu-instantiation-design.md` §1–3). One build store
 lives for one build. Each frontend semantic job exports its declarations,
 generic parameters, symbolic and closed terms, binder maps, signatures,
 nominal schemas, call uses and generic body segments into the store. The
 export runs at the end of the job, before the job's workspace can be reused.
-Later stages (discovery, projection, instantiation) read the store, never a
-job's tables.
+The acceptance probe reads only the store. Discovery, projection and native
+instance lowering are not connected yet; the missing exports below prevent
+this prototype from supplying those stages correctly.
 
 | Part | Location |
 | --- | --- |
@@ -27,13 +28,16 @@ job's tables.
   a counter are dead and are never read, so nothing carries over from one
   build to the next.
 - `GpuCompiler::attach_program_retention(Some(store))` attaches the store.
-  The type checker then adds `program_retention` to its resident cache key,
+  Recording captures that store once for the job, so later attachment changes
+  affect only subsequent recordings. The captured store adds `program_retention` to its resident cache key,
   so an interface job's graph keeps every table the export reads
   (`RETAINED_PROGRAM_INPUTS`) alive until the graph's end. It uses the same
   consumer-contract mechanism as the generic-call readback
   (`retain_resources_imported_by`).
 - `finish_checked_source_pack_pipeline` calls `ProgramRetention::export_job`
-  right after the type-check status is accepted. Only interface jobs export.
+  after the type-check status is accepted and all lowering-output retry points
+  have passed. Only interface jobs export, and an export checks that its
+  workspace actually retained the input lifetimes.
   The export's inputs are the parser's compact HIR views and the resident
   type-check graph's tables, bound by name.
 - A job with a body-specialization split re-runs the substitution clear
@@ -142,8 +146,9 @@ committed definition of the same declaration is counted in
     callee its `(library, unit, CALLABLE, local)` triple, and an enum
     constructor its enum's `DeclId`.
   - u1 `(environment, result, matched receiver, receiver parameter)`. The
-    environment is the call's value environment with its owner word re-keyed
-    to the callee. Its arguments are terms in the caller's scope: they must
+    environment is the call's value environment with owner 0 re-keyed to the
+    callee. A nonzero owner must already match the callee; a mismatch raises
+    an invariant and marks the containing entry incomplete. Its arguments are terms in the caller's scope: they must
     be owned by the caller's binder chain, and a consumer substitutes the
     caller's environment into them before binding the callee's slots.
   - u2 `(variant ordinal or intrinsic tag, a dependency callee's generic
@@ -220,9 +225,19 @@ No partial or duplicated record of a failed job stays reachable. Then:
 4. `store_rehash` republishes every live record. Tombstones are skipped.
 5. The host runs the export again over the same job tables.
 
-Invariant failures do not roll a job back. They are reported in
-`RT_C_INVARIANTS` and `RT_C_FIRST_INVARIANT`, and they mark the affected
-entries `INCOMPLETE`.
+Invariant failures do not roll a job back. The current job reports
+`RT_C_INVARIANTS`, `RT_C_FIRST_INVARIANT` and `RT_C_INCOMPLETE`.
+Commit accumulates the invariant and incomplete-entry totals across the
+build; conflicts found during publication update those totals too. Any such
+failure clears `RT_C_READY` until `begin_build`. A duplicate definition may
+leave a scheduling-dependent pointer, but the conflicting build cannot be
+consumed by the probe or an admitted consumer.
+
+`export_job` returns a `JobReport` with that readiness bit and retains it in
+`job_reports()`. A successful transaction alone does not certify completeness.
+This bit checks the current exported schema; it is not code-generation
+admission and does not certify the missing fields listed below. Tests check
+every job's report, resolved expected types and each callee's incomplete flag.
 
 ## Work distribution
 
@@ -255,10 +270,25 @@ still run. This boundary has not yet been timed on settings.
 Substitution (`retention_subst.slang`) resolves a parameter leaf by its
 `ParamId` through the callee's committed binder map. It walks terms in
 post-order on a global-memory stack, so it uses no per-thread arrays.
+It rejects incomplete/uncommitted entries, a foreign environment owner,
+inconsistent mask/arity counts and domains exceeding the 32-slot masks.
+Unresolved references return `RT_SUBST_UNRESOLVED`; failed projections retain
+`RT_SUBST_FIT_FAILED`. Neither can compare as a successfully substituted type.
+This is a probe implementation: it visits shared terms as a tree without a
+memo. Production instance substitution still needs bounded work over the DAG.
 
 ## Not exported completely
 
 This boundary does not yet carry:
+
+- **Resolved bindings and checked body facts.** Local/parameter declarations,
+  member field ordinals, constant values/presence, argument modes and iterable
+  kinds must be retained from the semantic columns. Token text is insufficient
+  to reconstruct these checks. Type-annotation rows also need their checked
+  type terms, and missing required terms must mark the entry incomplete.
+- **Complete declaration and use records.** Enum variants without payloads,
+  const/static declarations, impl self types and trait headers, and use
+  environments on struct-literal and path rows are not completely represented.
 
 - **Token text and source locations.** Body tokens are relative indices
   only, and no token byte table or original body token base is retained.
@@ -285,6 +315,10 @@ This boundary does not yet carry:
   projection from the substitution itself.
 
 ## Dependencies for discovery and projection
+
+- The frontend export must preserve symbolic columns before in-place body
+  specialization. Copying only `call_env_ct` leaves the other columns with
+  potentially concrete types. This producer fix remains outstanding.
 
 - A row's type term is whatever the checker publishes for that row. A
   contextual literal inside a generic body (the `1` in `a + 1` with

@@ -6,9 +6,6 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
 
-public static const uint RT_DIR_STAGED = 1u;
-public static const uint RT_DIR_COMMITTED = 2u;
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -23,6 +20,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         InterlockedAdd(rt_counts[RT_C_CONFLICTS], 1u);
         rt_invariant(RT_INV_DUPLICATE_DECL);
+        // The chosen pointer is never consumable from a conflicting build.
+        // Publication conflicts happen after step 16's reduction.
+        InterlockedAdd(rt_counts[RT_C_INVARIANT_TOTAL], 1u);
+        InterlockedAnd(rt_counts[RT_C_READY], 0u);
+        uint previous_flags;
+        InterlockedOr(rt_dir[entry * RT_DIR_WORDS + 3u].w, RT_DIR_INCOMPLETE, previous_flags);
+        if ((previous_flags & RT_DIR_INCOMPLETE) == 0u)
+        {
+            InterlockedAdd(rt_counts[RT_C_INCOMPLETE], 1u);
+            InterlockedAdd(rt_counts[RT_C_INCOMPLETE_TOTAL], 1u);
+        }
     }
     d0.w = RT_DIR_COMMITTED;
     rt_dir[entry * RT_DIR_WORDS] = d0;

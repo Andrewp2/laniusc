@@ -501,7 +501,6 @@ impl GpuTypeChecker {
             canonical_validation_readback,
             preflight_graph,
             canonical_scale: std::sync::atomic::AtomicU32::new(1),
-            program_retention: std::sync::atomic::AtomicBool::new(false),
             program_store: Mutex::new(None),
             program_env_snapshot: Mutex::new(None),
             canonical_synchronous: std::sync::atomic::AtomicBool::new(false),
@@ -684,6 +683,7 @@ impl GpuTypeChecker {
             hir_node_capacity,
             hir_items,
             dependency_interfaces,
+            self.attached_program_retention().is_some(),
             release_workspace_consumers,
         )?;
         Ok(())
@@ -703,6 +703,7 @@ impl GpuTypeChecker {
         hir_node_capacity: u32,
         hir_items: GpuTypeCheckHirItemBuffers<'_>,
         dependency_interfaces: Option<&GpuDependencyInterfaceState>,
+        program_retention: bool,
         mut release_workspace_consumers: impl FnMut(),
     ) -> Result<bool, GpuTypeCheckError> {
         let input_buffers = [
@@ -746,8 +747,7 @@ impl GpuTypeChecker {
             call_arg_row_capacity: hir_items.call_arg_row_capacity.max(1),
             parser_feature_flags: hir_items.parser_feature_flags,
             semantic_interface_required: hir_items.semantic_interface_required,
-            program_retention: hir_items.semantic_interface_required
-                && self.program_retention.load(std::sync::atomic::Ordering::Relaxed),
+            program_retention: hir_items.semantic_interface_required && program_retention,
             canonical_scale: self.canonical_scale.load(std::sync::atomic::Ordering::Relaxed),
             input_fingerprint: buffer_fingerprint(&fingerprint_buffers),
         }
@@ -860,6 +860,13 @@ impl GpuTypeChecker {
         mut timer: Option<&mut crate::gpu::timer::GpuTimer>,
         release_workspace_consumers: impl FnMut(),
     ) -> Result<RecordedTypeCheck, GpuTypeCheckError> {
+        // One attachment owns this entire job, including resource lifetimes,
+        // the pre-restart snapshot, and export after submission completes.
+        let program_retention = if hir_items.semantic_interface_required {
+            self.attached_program_retention()
+        } else {
+            None
+        };
         // Packed expression facts reserve the low 27-bit all-ones link as
         // absent. Reject capacity overflow before creating or packing rows.
         if hir_node_capacity >= crate::primitive_types::SCALAR_TYPE_LINK_MASK {
@@ -971,6 +978,7 @@ impl GpuTypeChecker {
             hir_node_capacity,
             hir_items,
             dependency_interfaces,
+            program_retention.is_some(),
             release_workspace_consumers,
         )?;
         host_timer.stamp(if rebuilt {
@@ -2535,7 +2543,7 @@ impl GpuTypeChecker {
                         // The body restart clears the call environments the
                         // main inference published; a retention export reads
                         // them from this copy (program_retention.rs).
-                        if self.program_retention.load(std::sync::atomic::Ordering::Relaxed) {
+                        if program_retention.is_some() {
                             self.snapshot_program_call_envs(device, encoder, &bind_groups.typecheck_graph)?;
                         }
                         bind_groups.calls.substitution.record_body_start(encoder)?;
@@ -2705,6 +2713,7 @@ impl GpuTypeChecker {
         }
         host_timer.stamp("status_readback_recorded");
         Ok(RecordedTypeCheck {
+            program_retention,
             inference_error,
             unwaited_inference,
             inference_key,
@@ -2898,8 +2907,6 @@ impl GpuTypeChecker {
         &self,
         store: Option<std::sync::Arc<super::program_retention::ProgramRetention>>,
     ) {
-        self.program_retention
-            .store(store.is_some(), std::sync::atomic::Ordering::Relaxed);
         *self.program_store.lock().expect("GpuTypeChecker.program_store poisoned") = store;
     }
 
@@ -2966,6 +2973,8 @@ impl GpuTypeChecker {
         let state = guard
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("program retention export without a resident workspace"))?;
+        anyhow::ensure!(state.cache_key.program_retention,
+            "program retention export without extended input lifetimes");
         for &name in RETAINED_PROGRAM_INPUTS {
             if let Ok(buffer) = state.typecheck_graph.u32_buffer(name) {
                 tables.insert(name, JobTable::from_lanius(&buffer));

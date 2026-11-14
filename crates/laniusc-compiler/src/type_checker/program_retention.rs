@@ -105,6 +105,9 @@ pub mod counts {
     pub const ROLLBACKS: usize = 69;
     pub const CONFLICTS: usize = 72;
     pub const INVARIANT_TOTAL: usize = 74;
+    pub const INCOMPLETE: usize = 75;
+    pub const INCOMPLETE_TOTAL: usize = 76;
+    pub const READY: usize = 77;
     pub const WORDS: usize = 96;
     pub const JOB_COMMITTED: u32 = 2;
     pub const JOB_ROLLED_BACK: u32 = 3;
@@ -247,7 +250,7 @@ const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
 const RESOLVE_KERNEL: &str = "tests/retention_resolve";
 
 /// Words per use the acceptance probe writes (shaders/tests/retention_resolve.slang).
-pub const PROBE_WORDS: usize = 16;
+pub const PROBE_WORDS: usize = 20;
 
 fn storage(device: &wgpu::Device, label: &str, bytes: u64, indirect: bool) -> wgpu::Buffer {
     let mut usage =
@@ -312,6 +315,10 @@ pub struct JobReport {
     pub counts: Vec<u32>,
     /// Canonical records that did not translate.
     pub untranslated_records: u32,
+    /// All committed exports so far have no invariant failures or entries
+    /// marked incomplete. This covers the current retained schema only;
+    /// it does not certify the missing lowering/admission inputs.
+    pub ready: bool,
 }
 
 /// Live retained bytes from the GPU counters against allocated capacity.
@@ -390,6 +397,7 @@ impl ProgramRetention {
         words[A_PARAMS] = 1;
         words[A_TERMS] = RT_FIRST_TERM;
         words[counts::FIRST_INVARIANT] = u32::MAX;
+        words[counts::READY] = 1;
         self.queue.write_buffer(&store.buffers["rt_counts"], 0, &words_bytes(&words));
         self.queue.write_buffer(
             &store.buffers["rt_config"],
@@ -412,7 +420,7 @@ impl ProgramRetention {
 
     /// Exports the current job. `job` names every job table the kernels
     /// read. Retries after growth until the job commits.
-    pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<()> {
+    pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
         let rows = table_words(job, "compact_hir_core")? / 4;
         let records = table_words(job, "ct_head")? / 4;
         let args = table_words(job, "ct_args")?;
@@ -434,12 +442,14 @@ impl ProgramRetention {
             let words = self.read(&store.buffers["rt_counts"], counts::WORDS)?;
             let x = self.read(&store.scratch["rt_x_counts"], X_WORDS)?;
             if words[counts::JOB_STATE] == counts::JOB_COMMITTED {
-                store.reports.push(JobReport {
+                let report = JobReport {
                     attempts: attempt,
+                    ready: words[counts::READY] != 0,
                     counts: words,
                     untranslated_records: x[188],
-                });
-                return Ok(());
+                };
+                store.reports.push(report.clone());
+                return Ok(report);
             }
             if words[counts::JOB_STATE] != counts::JOB_ROLLED_BACK {
                 bail!(

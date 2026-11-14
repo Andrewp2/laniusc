@@ -421,10 +421,8 @@ pub struct GpuTypeChecker {
     /// Canonical table capacity scale for the next workspace; doubled when a
     /// job's canonical stage overflows, then kept for later jobs.
     canonical_scale: std::sync::atomic::AtomicU32,
-    /// A build retention store is attached (`program_retention.rs`): an
-    /// interface job's graph keeps the tables the store exports from alive
-    /// until the job's end, so the export reads them before reuse.
-    pub(crate) program_retention: std::sync::atomic::AtomicBool,
+    /// Default store for subsequent jobs. A recorded job captures its own
+    /// attachment before selecting resource lifetimes and recording work.
     program_store: Mutex<Option<std::sync::Arc<program_retention::ProgramRetention>>>,
     /// Copy of `call_env_ct` taken before a body restart, and its byte size
     /// for the current job (0 when no copy belongs to it).
@@ -450,6 +448,7 @@ pub struct GpuTypeChecker {
 /// Marker returned when type-check work has been recorded into a command
 /// encoder and must still be submitted/read back by the caller.
 pub struct RecordedTypeCheck {
+    pub(crate) program_retention: Option<std::sync::Arc<program_retention::ProgramRetention>>,
     /// The status words of the round in which an error ended call inference.
     inference_error: Option<[u32; 4]>,
     /// The inference batch recorded without a wait; the check reads its

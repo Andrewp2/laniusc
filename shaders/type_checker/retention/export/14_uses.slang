@@ -45,6 +45,11 @@ uint callee_env(uint env, uint callee)
     if (!rt_is_stored_term(env) || rt_term_kind(env) != RT_KIND_ENV) return env;
     uint4 head = rt_term_head[env];
     if (head.y == callee) return env;
+    if (head.y != 0u)
+    {
+        rt_invariant(RT_INV_ENV_OWNER);
+        return RT_UNKNOWN;
+    }
     uint arity = (head.x >> 8u) & 0xffu;
     RtTermKey key = rt_key_begin(RT_KIND_ENV, arity, head.x >> 16u, uint3(callee, head.z, head.w));
     RtStoredArgs args;
@@ -112,12 +117,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // parameter term is the callee's declared receiver, so it is checked
     // against the callee's chain only when the callee is local; a
     // dependency's declared receiver keeps its slot leaves.)
-    uint untranslated = 0u;
+    uint untranslated = form == RT_USE_UNRESOLVED || (form == RT_USE_CONSTRUCTOR && callee == 0u) ? 1u : 0u;
     uint unowned = 0u;
     for (uint i = 0u; i < 3u; i++)
     {
         uint t = i == 0u ? env : (i == 1u ? result : matched);
-        if (t == RT_UNKNOWN) untranslated++;
+        if (t == RT_UNKNOWN || t == RT_FIT_FAILED || (i == 1u && !rt_is_resolved(t))) untranslated++;
         else if (!owned_by(t, owner, owner_parent)) unowned++;
     }
     stat_add(owner_row, RT_STAT_UNTRANSLATED, untranslated);

@@ -8,8 +8,6 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
 
-public static const uint RT_DIR_INCOMPLETE = 1u;
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -21,6 +19,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 stats = uint4(rt_x_stats[row * 4u + RT_STAT_UNTYPED], rt_x_stats[row * 4u + RT_STAT_FOREIGN],
         rt_x_stats[row * 4u + RT_STAT_OWNERSHIP], rt_x_stats[row * 4u + RT_STAT_UNTRANSLATED]);
     bool incomplete = any(stats != uint4(0u, 0u, 0u, 0u));
+    if (incomplete) InterlockedAdd(rt_counts[RT_C_INCOMPLETE], 1u);
     uint4 d3 = rt_dir[info.y * RT_DIR_WORDS + 3u];
     d3.w = incomplete ? RT_DIR_INCOMPLETE : 0u;
     rt_dir[info.y * RT_DIR_WORDS + 3u] = d3;

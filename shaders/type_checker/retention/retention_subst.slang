@@ -21,6 +21,8 @@ public static const uint RT_SUBST_SLOT_LEAF = 3u;    // a dependency-signature s
 public static const uint RT_SUBST_DEPTH = 4u;        // the lane's scratch is too small
 public static const uint RT_SUBST_INTERN = 5u;       // the store could not intern a result
 public static const uint RT_SUBST_ENV = 6u;          // the environment is not a closed ENV of the callee
+public static const uint RT_SUBST_UNRESOLVED = 7u;
+public static const uint RT_SUBST_FIT_FAILED = 8u;
 
 public struct RtBinding
 {
@@ -28,6 +30,7 @@ public struct RtBinding
     public uint binder_base;
     public uint type_count;
     public uint const_count;
+    public uint status;
 }
 
 // The binding of callee `decl`'s committed directory entry for `env`.
@@ -39,6 +42,18 @@ public RtBinding rt_binding(uint entry, uint env)
     b.binder_base = d1.x;
     b.type_count = d1.y & 0xffffu;
     b.const_count = d1.y >> 16u;
+    b.status = RT_SUBST_ENV;
+    if (rt_dir[entry * RT_DIR_WORDS].w != RT_DIR_COMMITTED || rt_dir[entry * RT_DIR_WORDS + 3u].w != 0u ||
+        b.type_count > 32u || b.const_count > 32u ||
+        !rt_is_stored_term(env) || rt_term_kind(env) != RT_KIND_ENV || !rt_term_closed(env)) return b;
+    uint4 head = rt_term_head[env];
+    uint type_mask = b.type_count == 32u ? 0xffffffffu : (1u << b.type_count) - 1u;
+    uint const_mask = b.const_count == 32u ? 0xffffffffu : (1u << b.const_count) - 1u;
+    if (head.y != rt_dir[entry * RT_DIR_WORDS].x ||
+        (head.z & ~type_mask) != 0u || (head.w & ~const_mask) != 0u ||
+        rt_term_arity(env) != countbits(head.z) + countbits(head.w) ||
+        (head.x >> 16u) != countbits(head.z)) return b;
+    b.status = RT_SUBST_OK;
     return b;
 }
 
@@ -47,6 +62,7 @@ uint popcount_below(uint mask, uint index) { return countbits(index >= 32u ? mas
 // The bound argument of parameter leaf `leaf`, or a status in .y.
 public uint2 rt_bind_leaf(RtBinding b, uint leaf)
 {
+    if (b.status != RT_SUBST_OK) return uint2(RT_UNKNOWN, b.status);
     uint param = rt_leaf_param(leaf);
     uint total = b.type_count + b.const_count;
     uint slot = 0xffffffffu;
@@ -77,8 +93,7 @@ public struct RtScratchArgs : IRtArgs
 // the lane's scratch: frames grow up from base, values down from the end.
 public uint2 rt_subst(RtBinding b, uint term, uint base, uint words)
 {
-    if (!rt_is_stored_term(b.env) || rt_term_kind(b.env) != RT_KIND_ENV || !rt_term_closed(b.env))
-        return uint2(RT_UNKNOWN, RT_SUBST_ENV);
+    if (b.status != RT_SUBST_OK) return uint2(RT_UNKNOWN, b.status);
     uint frames = 0u;   // 2 words each from base
     uint values = 0u;   // 1 word each, downward from base + words - 1
     rt_s_stack[base] = term;
@@ -91,6 +106,8 @@ public uint2 rt_subst(RtBinding b, uint term, uint base, uint words)
         uint next = rt_s_stack[at + 1u];
         uint result = RT_UNKNOWN;
         bool done = false;
+        if (t == RT_FIT_FAILED) return uint2(t, RT_SUBST_FIT_FAILED);
+        if (!rt_is_resolved(t)) return uint2(t, RT_SUBST_UNRESOLVED);
         if (rt_is_param_leaf(t))
         {
             uint2 bound = rt_bind_leaf(b, t);
