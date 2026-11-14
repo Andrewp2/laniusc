@@ -14,6 +14,12 @@ GPU allocations and pipelines is allowed; reusing compiled units, generic
 instances, or checked source between requests does not count. Instantiation,
 substitution, layout, call selection, and lowering must run in GPU shaders.
 
+The [proposed implementation boundaries](compiler-gpu-instantiation-design.md)
+specify the cross-unit identities, retained data, discovery inputs, solver
+ownership and lowering batches. The draft still needs a discovery-input audit
+outside settings. The prototype milestones below describe the earlier selective
+fallback approach; they are not the next implementation sequence.
+
 ## Architecture validation checkpoint (2026-11-14)
 
 Independent code review found that the prototype's selective admission and
@@ -80,6 +86,23 @@ Local scripts, raw receipts and review qualifications are under
 reverted diagnostic diff are under `target/e3-evidence/` in worktree
 `t3-f221214e`. No production compiler change follows from these measurements
 alone.
+
+### Sequential-job regression resolved
+
+The replay prototype's larger allocations exposed an existing parser
+initialization defect. Match-arm scatter initialized three match-payload
+ownership columns only when debug rows were retained. An unowned pattern,
+including a `let` binding, could retain a valid stale arm index and become a
+bogus canonical match payload. Lowering then failed its function-block
+contiguity check (reason 30).
+
+`4f2545aee` initializes all three columns for every active node in either debug
+mode. The author's alloc-vec/arena sequence passes with the fix and fails with
+the old shader in the same build. The integrated focused GPU regression seeds
+the columns with zero, a valid arm index and INVALID; it checks owned and
+unowned patterns, both debug modes, direct/status-counted ranges and untouched
+inactive storage. It fails on the old shader and passes on the fixed shader.
+This repairs a parser invariant independently of the instantiation design.
 
 ## End-state architecture
 
