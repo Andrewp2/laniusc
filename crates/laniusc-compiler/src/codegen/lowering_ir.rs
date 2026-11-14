@@ -237,14 +237,12 @@ struct WasmAbiGraphResources {
     param_scan_local: ResourceId,
     param_scan_block_sum: ResourceId,
     param_scan_block_prefix: ResourceId,
-    param_scan_hierarchy: ResourceId,
     param_value_total: ResourceId,
     local_widths: ResourceId,
     local_prefix: ResourceId,
     local_scan_local: ResourceId,
     local_scan_block_sum: ResourceId,
     local_scan_block_prefix: ResourceId,
-    local_scan_hierarchy: ResourceId,
     local_value_total: ResourceId,
     functions: ResourceId,
     local_index_by_token: ResourceId,
@@ -264,14 +262,12 @@ struct WasmModuleGraphResources {
     type_scan_local: ResourceId,
     type_scan_block_sum: ResourceId,
     type_scan_block_prefix: ResourceId,
-    type_scan_hierarchy: ResourceId,
     type_total: ResourceId,
     code_lengths: ResourceId,
     code_offsets: ResourceId,
     code_scan_local: ResourceId,
     code_scan_block_sum: ResourceId,
     code_scan_block_prefix: ResourceId,
-    code_scan_hierarchy: ResourceId,
     code_total: ResourceId,
     entrypoint_state: ResourceId,
     layout: ResourceId,
@@ -287,21 +283,18 @@ struct WasmObjectGraphResources {
     relocation_scan_local: ResourceId,
     relocation_scan_block_sum: ResourceId,
     relocation_scan_block_prefix: ResourceId,
-    relocation_scan_hierarchy: ResourceId,
     relocation_total: ResourceId,
     symbol_flags: ResourceId,
     symbol_prefix: ResourceId,
     symbol_scan_local: ResourceId,
     symbol_scan_block_sum: ResourceId,
     symbol_scan_block_prefix: ResourceId,
-    symbol_scan_hierarchy: ResourceId,
     symbol_total: ResourceId,
     definition_flags: ResourceId,
     definition_prefix: ResourceId,
     definition_scan_local: ResourceId,
     definition_scan_block_sum: ResourceId,
     definition_scan_block_prefix: ResourceId,
-    definition_scan_hierarchy: ResourceId,
     definition_total: ResourceId,
     relocations: ResourceId,
     functions: ResourceId,
@@ -319,27 +312,23 @@ struct X86ObjectGraphResources {
     relocation_scan_local: ResourceId,
     relocation_scan_block_sum: ResourceId,
     relocation_scan_block_prefix: ResourceId,
-    relocation_scan_hierarchy: ResourceId,
     relocation_total: ResourceId,
     symbol_flags: ResourceId,
     symbol_prefix: ResourceId,
     symbol_scan_local: ResourceId,
     symbol_scan_block_sum: ResourceId,
     symbol_scan_block_prefix: ResourceId,
-    symbol_scan_hierarchy: ResourceId,
     symbol_total: ResourceId,
     definition_flags: ResourceId,
     definition_prefix: ResourceId,
     definition_scan_local: ResourceId,
     definition_scan_block_sum: ResourceId,
     definition_scan_block_prefix: ResourceId,
-    definition_scan_hierarchy: ResourceId,
     definition_total: ResourceId,
     runtime_relocation_prefix: ResourceId,
     runtime_relocation_scan_local: ResourceId,
     runtime_relocation_scan_block_sum: ResourceId,
     runtime_relocation_scan_block_prefix: ResourceId,
-    runtime_relocation_scan_hierarchy: ResourceId,
     runtime_relocation_total: ResourceId,
     relocations: ResourceId,
     runtime_relocations: ResourceId,
@@ -378,7 +367,6 @@ struct ScheduleGraphResources {
     scan_local: ResourceId,
     scan_block_sum: ResourceId,
     scan_block_prefix: ResourceId,
-    scan_hierarchy: ResourceId,
     scan_total: ResourceId,
 }
 
@@ -392,19 +380,17 @@ fn add_schedule_graph_passes(
     let names = [
         "lir.semantic.schedule.histogram.even",
         "lir.semantic.schedule.scan.local.even",
-        "lir.semantic.schedule.scan.hierarchy_up.even",
-        "lir.semantic.schedule.scan.hierarchy_down.even",
+        "lir.semantic.schedule.scan.block_prefix.even",
         "lir.semantic.schedule.scan.apply.even",
         "lir.semantic.schedule.scatter.even",
         "lir.semantic.schedule.histogram.odd",
         "lir.semantic.schedule.scan.local.odd",
-        "lir.semantic.schedule.scan.hierarchy_up.odd",
-        "lir.semantic.schedule.scan.hierarchy_down.odd",
+        "lir.semantic.schedule.scan.block_prefix.odd",
         "lir.semantic.schedule.scan.apply.odd",
         "lir.semantic.schedule.scatter.odd",
     ];
     let mut directions = Vec::with_capacity(2);
-    for base in [0usize, 6usize] {
+    for base in [0usize, 5usize] {
         let (order_in, order_out) = if base == 0 {
             (resources.order, resources.order_tmp)
         } else {
@@ -442,21 +428,10 @@ fn add_schedule_graph_passes(
                     PassAccess::read("scan_count", resources.slot_count),
                     PassAccess::read("scan_block_sum", resources.scan_block_sum),
                     PassAccess::write("scan_block_prefix", resources.scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", resources.scan_hierarchy),
                 ],
             },
             PassDesc {
                 name: names[base + 3],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read_write("scan_block_prefix", resources.scan_block_prefix),
-                    PassAccess::read_write("scan_hierarchy", resources.scan_hierarchy),
-                ],
-            },
-            PassDesc {
-                name: names[base + 4],
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
@@ -468,7 +443,7 @@ fn add_schedule_graph_passes(
                 ],
             },
             PassDesc {
-                name: names[base + 5],
+                name: names[base + 4],
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
@@ -481,7 +456,7 @@ fn add_schedule_graph_passes(
             },
         ]);
     }
-    let mut body = Vec::with_capacity(12);
+    let mut body = Vec::with_capacity(10);
     let starts_in_temporary = radix_steps % 2 != 0;
     if starts_in_temporary {
         body.extend(directions[1].clone());
@@ -1879,11 +1854,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(param_scan_blocks),
     ))?;
-    let semantic_param_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.param_scan_hierarchy",
-        ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<u32>(param_scan_blocks),
-    ))?;
     let semantic_const_function_by_root = graph.add_resource(workspace(
         "lir.semantic.const_function_by_root",
         ResourceDomain::HirNodes,
@@ -2184,11 +2154,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
-    let semantic_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.scan_hierarchy",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
     let semantic_function_scan_local = graph.add_resource(workspace(
         "lir.semantic.function_scan_local",
         ResourceDomain::HirNodes,
@@ -2201,11 +2166,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let semantic_function_scan_block_prefix = graph.add_resource(workspace(
         "lir.semantic.function_scan_block_prefix",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
-    let semantic_function_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.function_scan_hierarchy",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
@@ -2224,11 +2184,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
-    let semantic_local_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.local_scan_hierarchy",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
     let semantic_call_arg_scan_local = graph.add_resource(workspace(
         "lir.semantic.call_arg_scan_local",
         ResourceDomain::HirNodes,
@@ -2241,11 +2196,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let semantic_call_arg_scan_block_prefix = graph.add_resource(workspace(
         "lir.semantic.call_arg_scan_block_prefix",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
-    let semantic_call_arg_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.call_arg_scan_hierarchy",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
@@ -2760,24 +2710,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.function_scan.hierarchy_up",
+        name: "lir.semantic.function_scan.block_prefix",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_block_sum", semantic_function_scan_block_sum),
             PassAccess::write("scan_block_prefix", semantic_function_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", semantic_function_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.function_scan.hierarchy_down",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read_write("scan_block_prefix", semantic_function_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", semantic_function_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -2815,24 +2754,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.param_scan.hierarchy_up",
+        name: "lir.semantic.param_scan.block_prefix",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::Declarations,
         accesses: vec![
             PassAccess::read("scan_count", hir_param_count),
             PassAccess::read("scan_block_sum", semantic_param_scan_block_sum),
             PassAccess::write("scan_block_prefix", semantic_param_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", semantic_param_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.param_scan.hierarchy_down",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_param_count),
-            PassAccess::read_write("scan_block_prefix", semantic_param_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", semantic_param_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -2884,24 +2812,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.local_scan.hierarchy_up",
+        name: "lir.semantic.local_scan.block_prefix",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_block_sum", semantic_local_scan_block_sum),
             PassAccess::write("scan_block_prefix", semantic_local_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", semantic_local_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.local_scan.hierarchy_down",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read_write("scan_block_prefix", semantic_local_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", semantic_local_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -3110,24 +3027,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.call_arg_scan.hierarchy_up",
+        name: "lir.semantic.call_arg_scan.block_prefix",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_block_sum", semantic_call_arg_scan_block_sum),
             PassAccess::write("scan_block_prefix", semantic_call_arg_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", semantic_call_arg_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.call_arg_scan.hierarchy_down",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read_write("scan_block_prefix", semantic_call_arg_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", semantic_call_arg_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -3327,24 +3233,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.scan.hierarchy_up",
+        name: "lir.semantic.scan.block_prefix",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_block_sum", semantic_scan_block_sum),
             PassAccess::write("scan_block_prefix", semantic_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", semantic_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.scan.hierarchy_down",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read_write("scan_block_prefix", semantic_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", semantic_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -4781,11 +4676,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(target_scan_blocks),
     ))?;
-    let target_scan_hierarchy = graph.add_resource(workspace(
-        "lir.target.count_scan_hierarchy",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(target_scan_blocks),
-    ))?;
     let target_page_rows = capacities
         .target_instructions
         .max(1)
@@ -4989,16 +4879,6 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
-    let x86_place_scan_hierarchy = if target == LoweringTarget::X86_64 {
-        let blocks = capacities.local_capacity().max(1).div_ceil(256);
-        Some(graph.add_resource(workspace(
-            "lir.x86.place_scan_hierarchy",
-            ResourceDomain::SemanticInstructions,
-            LoweringCapacities::bytes::<u32>(blocks),
-        ))?)
-    } else {
-        None
-    };
     let x86_stack_words_by_position = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
             "lir.x86.stack_words_by_position",
@@ -5037,16 +4917,6 @@ fn lowering_compiler_graph_builder(
                 block_prefix: "lir.x86.stack_scan_block_prefix",
             },
         )?)
-    } else {
-        None
-    };
-    let x86_stack_scan_hierarchy = if target == LoweringTarget::X86_64 {
-        let blocks = capacities.semantic_instructions.max(1).div_ceil(256);
-        Some(graph.add_resource(workspace(
-            "lir.x86.stack_scan_hierarchy",
-            ResourceDomain::SemanticInstructions,
-            LoweringCapacities::bytes::<u32>(blocks),
-        ))?)
     } else {
         None
     };
@@ -5170,11 +5040,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Declarations,
                 LoweringCapacities::bytes::<u32>(param_blocks),
             ))?,
-            param_scan_hierarchy: graph.add_resource(workspace(
-                "lir.wasm.param_scan_hierarchy",
-                ResourceDomain::Declarations,
-                LoweringCapacities::bytes::<u32>(param_blocks),
-            ))?,
             param_value_total: graph.add_resource(workspace(
                 "lir.wasm.param_value_total",
                 ResourceDomain::Declarations,
@@ -5202,11 +5067,6 @@ fn lowering_compiler_graph_builder(
             ))?,
             local_scan_block_prefix: graph.add_resource(workspace(
                 "lir.wasm.local_scan_block_prefix",
-                ResourceDomain::Declarations,
-                LoweringCapacities::bytes::<u32>(local_blocks),
-            ))?,
-            local_scan_hierarchy: graph.add_resource(workspace(
-                "lir.wasm.local_scan_hierarchy",
                 ResourceDomain::Declarations,
                 LoweringCapacities::bytes::<u32>(local_blocks),
             ))?,
@@ -5309,11 +5169,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
     ))?;
-    let schedule_scan_hierarchy = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_hierarchy",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
-    ))?;
     let schedule_scan_total = graph.add_resource(workspace(
         "lir.semantic.schedule_scan_total",
         ResourceDomain::SemanticInstructions,
@@ -5348,11 +5203,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let byte_scan_block_prefix = graph.add_resource(workspace(
         "lir.target.byte_scan_block_prefix",
-        target_domain,
-        LoweringCapacities::bytes::<u32>(byte_scan_blocks),
-    ))?;
-    let byte_scan_hierarchy = graph.add_resource(workspace(
-        "lir.target.byte_scan_hierarchy",
         target_domain,
         LoweringCapacities::bytes::<u32>(byte_scan_blocks),
     ))?;
@@ -5490,12 +5340,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            relocation_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.x86.object.relocation_scan_hierarchy",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.relocation_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5530,12 +5374,6 @@ fn lowering_compiler_graph_builder(
             symbol_scan_block_prefix: u32_rows(
                 &mut graph,
                 "artifact.x86.object.symbol_scan_block_prefix",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
-            symbol_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.x86.object.symbol_scan_hierarchy",
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
@@ -5576,12 +5414,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Declarations,
                 function_blocks,
             )?,
-            definition_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.x86.object.definition_scan_hierarchy",
-                ResourceDomain::Declarations,
-                function_blocks,
-            )?,
             definition_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.definition_total",
                 domain: ResourceDomain::Declarations,
@@ -5610,12 +5442,6 @@ fn lowering_compiler_graph_builder(
             runtime_relocation_scan_block_prefix: u32_rows(
                 &mut graph,
                 "artifact.x86.object.runtime_relocation_scan_block_prefix",
-                ResourceDomain::X86Instructions,
-                target_row_blocks,
-            )?,
-            runtime_relocation_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.x86.object.runtime_relocation_scan_hierarchy",
                 ResourceDomain::X86Instructions,
                 target_row_blocks,
             )?,
@@ -5724,11 +5550,6 @@ fn lowering_compiler_graph_builder(
                 "lir.wasm.module.type_scan_block_prefix",
                 blocks,
             )?,
-            type_scan_hierarchy: u32_rows(
-                &mut graph,
-                "lir.wasm.module.type_scan_hierarchy",
-                blocks,
-            )?,
             type_total: u32_rows(&mut graph, "lir.wasm.module.type_total", 1)?,
             code_lengths: u32_rows(
                 &mut graph,
@@ -5753,11 +5574,6 @@ fn lowering_compiler_graph_builder(
             code_scan_block_prefix: u32_rows(
                 &mut graph,
                 "lir.wasm.module.code_scan_block_prefix",
-                blocks,
-            )?,
-            code_scan_hierarchy: u32_rows(
-                &mut graph,
-                "lir.wasm.module.code_scan_hierarchy",
                 blocks,
             )?,
             code_total: u32_rows(&mut graph, "lir.wasm.module.code_total", 1)?,
@@ -5842,12 +5658,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            relocation_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.relocation_scan_hierarchy",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.wasm.object.relocation_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5885,12 +5695,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            symbol_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.symbol_scan_hierarchy",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             symbol_total: graph.add_resource(ResourceDesc {
                 name: "artifact.wasm.object.symbol_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5925,12 +5729,6 @@ fn lowering_compiler_graph_builder(
             definition_scan_block_prefix: u32_rows(
                 &mut graph,
                 "artifact.wasm.object.definition_scan_block_prefix",
-                ResourceDomain::Declarations,
-                function_blocks,
-            )?,
-            definition_scan_hierarchy: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.definition_scan_hierarchy",
                 ResourceDomain::Declarations,
                 function_blocks,
             )?,
@@ -6022,7 +5820,6 @@ fn lowering_compiler_graph_builder(
         scan_local: schedule_scan_local,
         scan_block_sum: schedule_scan_block_sum,
         scan_block_prefix: schedule_scan_block_prefix,
-        scan_hierarchy: schedule_scan_hierarchy,
         scan_total: schedule_scan_total,
     };
     add_schedule_graph_passes(
@@ -8692,24 +8489,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.stack_scan.hierarchy_up",
+            name: "lir.x86.stack_scan.block_prefix",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", opt_total),
                 PassAccess::read("scan_block_sum", x86_stack_scan.block_sum),
                 PassAccess::write("scan_block_prefix", x86_stack_scan.block_prefix),
-                PassAccess::write("scan_hierarchy", x86_stack_scan_hierarchy.unwrap()),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.stack_scan.hierarchy_down",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read_write("scan_block_prefix", x86_stack_scan.block_prefix),
-                PassAccess::read_write("scan_hierarchy", x86_stack_scan_hierarchy.unwrap()),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -8802,24 +8588,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.place_scan.hierarchy_up",
+            name: "lir.x86.place_scan.block_prefix",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_local_total),
                 PassAccess::read("scan_block_sum", x86_place_scan.block_sum),
                 PassAccess::write("scan_block_prefix", x86_place_scan.block_prefix),
-                PassAccess::write("scan_hierarchy", x86_place_scan_hierarchy.unwrap()),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.x86.place_scan.hierarchy_down",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read_write("scan_block_prefix", x86_place_scan.block_prefix),
-                PassAccess::read_write("scan_hierarchy", x86_place_scan_hierarchy.unwrap()),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -8977,24 +8752,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.frame_scan.hierarchy_up",
+            name: "lir.wasm.frame_scan.block_prefix",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", opt_total),
                 PassAccess::read("scan_block_sum", target_scan_block_sum),
                 PassAccess::write("scan_block_prefix", target_scan_block_prefix),
-                PassAccess::write("scan_hierarchy", target_scan_hierarchy),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.wasm.frame_scan.hierarchy_down",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read_write("scan_block_prefix", target_scan_block_prefix),
-                PassAccess::read_write("scan_hierarchy", target_scan_hierarchy),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -9231,24 +8995,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.count_scan.hierarchy_up",
+        name: "lir.target.count_scan.block_prefix",
         phase: target_phase,
         dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("scan_count", opt_total),
             PassAccess::read("scan_block_sum", target_scan_block_sum),
             PassAccess::write("scan_block_prefix", target_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", target_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.count_scan.hierarchy_down",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read_write("scan_block_prefix", target_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", target_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -9300,24 +9053,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.param_scan.hierarchy_up",
+            name: "lir.wasm.abi.param_scan.block_prefix",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_param_total),
                 PassAccess::read("scan_block_sum", wasm.param_scan_block_sum),
                 PassAccess::write("scan_block_prefix", wasm.param_scan_block_prefix),
-                PassAccess::write("scan_hierarchy", wasm.param_scan_hierarchy),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.param_scan.hierarchy_down",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_param_total),
-                PassAccess::read_write("scan_block_prefix", wasm.param_scan_block_prefix),
-                PassAccess::read_write("scan_hierarchy", wasm.param_scan_hierarchy),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -9357,24 +9099,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.local_scan.hierarchy_up",
+            name: "lir.wasm.abi.local_scan.block_prefix",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_local_total),
                 PassAccess::read("scan_block_sum", wasm.local_scan_block_sum),
                 PassAccess::write("scan_block_prefix", wasm.local_scan_block_prefix),
-                PassAccess::write("scan_hierarchy", wasm.local_scan_hierarchy),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.local_scan.hierarchy_down",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read_write("scan_block_prefix", wasm.local_scan_block_prefix),
-                PassAccess::read_write("scan_hierarchy", wasm.local_scan_hierarchy),
             ],
         })?;
         graph.add_pass(PassDesc {
@@ -9449,11 +9180,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(function_scan_blocks),
     ))?;
-    let function_scan_hierarchy = graph.add_resource(workspace(
-        "lir.target.function_scan_hierarchy",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(function_scan_blocks),
-    ))?;
     let function_count = graph.add_resource(ResourceDesc {
         name: "lir.target.function_count",
         domain: ResourceDomain::Declarations,
@@ -9510,24 +9236,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.function_scan.hierarchy_up",
+        name: "lir.target.function_scan.block_prefix",
         phase: target_phase,
         dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("scan_count", opt_total),
             PassAccess::read("scan_block_sum", function_scan_block_sum),
             PassAccess::write("scan_block_prefix", function_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", function_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.function_scan.hierarchy_down",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read_write("scan_block_prefix", function_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", function_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -9838,24 +9553,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.byte_scan.hierarchy_up",
+        name: "lir.target.byte_scan.block_prefix",
         phase: target_phase,
         dispatch_domain: target_domain,
         accesses: vec![
             PassAccess::read("scan_count", target_total),
             PassAccess::read("scan_block_sum", byte_scan_block_sum),
             PassAccess::write("scan_block_prefix", byte_scan_block_prefix),
-            PassAccess::write("scan_hierarchy", byte_scan_hierarchy),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.target.byte_scan.hierarchy_down",
-        phase: target_phase,
-        dispatch_domain: target_domain,
-        accesses: vec![
-            PassAccess::read("scan_count", target_total),
-            PassAccess::read_write("scan_block_prefix", byte_scan_block_prefix),
-            PassAccess::read_write("scan_hierarchy", byte_scan_hierarchy),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -10201,23 +9905,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.relocation_scan.hierarchy_up",
+                "artifact.x86.object.relocation_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.relocation_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.x86.object.relocation_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read_write(
-                        "scan_block_prefix",
-                        object.relocation_scan_block_prefix,
-                    ),
-                    PassAccess::read_write("scan_hierarchy", object.relocation_scan_hierarchy),
                 ],
             ),
             (
@@ -10240,20 +9932,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.symbol_scan.hierarchy_up",
+                "artifact.x86.object.symbol_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.symbol_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.x86.object.symbol_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read_write("scan_block_prefix", object.symbol_scan_block_prefix),
-                    PassAccess::read_write("scan_hierarchy", object.symbol_scan_hierarchy),
                 ],
             ),
             (
@@ -10300,23 +9983,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.definition_scan.hierarchy_up",
+                "artifact.x86.object.definition_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.definition_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.x86.object.definition_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read_write(
-                        "scan_block_prefix",
-                        object.definition_scan_block_prefix,
-                    ),
-                    PassAccess::read_write("scan_hierarchy", object.definition_scan_hierarchy),
                 ],
             ),
             (
@@ -10388,28 +10059,13 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.runtime_relocation_scan.hierarchy_up",
+                "artifact.x86.object.runtime_relocation_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", target_total),
                     PassAccess::read("scan_block_sum", object.runtime_relocation_scan_block_sum),
                     PassAccess::write(
                         "scan_block_prefix",
                         object.runtime_relocation_scan_block_prefix,
-                    ),
-                    PassAccess::write("scan_hierarchy", object.runtime_relocation_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.x86.object.runtime_relocation_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", target_total),
-                    PassAccess::read_write(
-                        "scan_block_prefix",
-                        object.runtime_relocation_scan_block_prefix,
-                    ),
-                    PassAccess::read_write(
-                        "scan_hierarchy",
-                        object.runtime_relocation_scan_hierarchy,
                     ),
                 ],
             ),
@@ -10505,7 +10161,7 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read_write("wasm_module_entrypoint_state", module.entrypoint_state),
             ],
         })?;
-        for (prefix, lengths, offsets, local, block_sum, block_prefix, hierarchy, total) in [
+        for (prefix, lengths, offsets, local, block_sum, block_prefix, total) in [
             (
                 "lir.wasm.module.type_scan",
                 module.type_lengths,
@@ -10513,7 +10169,6 @@ fn lowering_compiler_graph_builder(
                 module.type_scan_local,
                 module.type_scan_block_sum,
                 module.type_scan_block_prefix,
-                module.type_scan_hierarchy,
                 module.type_total,
             ),
             (
@@ -10523,7 +10178,6 @@ fn lowering_compiler_graph_builder(
                 module.code_scan_local,
                 module.code_scan_block_sum,
                 module.code_scan_block_prefix,
-                module.code_scan_hierarchy,
                 module.code_total,
             ),
         ] {
@@ -10544,9 +10198,9 @@ fn lowering_compiler_graph_builder(
             })?;
             graph.add_pass(PassDesc {
                 name: if prefix.ends_with("type_scan") {
-                    "lir.wasm.module.type_scan.hierarchy_up"
+                    "lir.wasm.module.type_scan.block_prefix"
                 } else {
-                    "lir.wasm.module.code_scan.hierarchy_up"
+                    "lir.wasm.module.code_scan.block_prefix"
                 },
                 phase: CompilerPhase::Artifact,
                 dispatch_domain: ResourceDomain::Declarations,
@@ -10554,21 +10208,6 @@ fn lowering_compiler_graph_builder(
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_block_sum", block_sum),
                     PassAccess::write("scan_block_prefix", block_prefix),
-                    PassAccess::write("scan_hierarchy", hierarchy),
-                ],
-            })?;
-            graph.add_pass(PassDesc {
-                name: if prefix.ends_with("type_scan") {
-                    "lir.wasm.module.type_scan.hierarchy_down"
-                } else {
-                    "lir.wasm.module.code_scan.hierarchy_down"
-                },
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::Declarations,
-                accesses: vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read_write("scan_block_prefix", block_prefix),
-                    PassAccess::read_write("scan_hierarchy", hierarchy),
                 ],
             })?;
             graph.add_pass(PassDesc {
@@ -10656,23 +10295,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.relocation_scan.hierarchy_up",
+                "artifact.wasm.object.relocation_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.relocation_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.wasm.object.relocation_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read_write(
-                        "scan_block_prefix",
-                        object.relocation_scan_block_prefix,
-                    ),
-                    PassAccess::read_write("scan_hierarchy", object.relocation_scan_hierarchy),
                 ],
             ),
             (
@@ -10704,20 +10331,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.symbol_scan.hierarchy_up",
+                "artifact.wasm.object.symbol_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.symbol_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.wasm.object.symbol_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read_write("scan_block_prefix", object.symbol_scan_block_prefix),
-                    PassAccess::read_write("scan_hierarchy", object.symbol_scan_hierarchy),
                 ],
             ),
             (
@@ -10759,23 +10377,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.definition_scan.hierarchy_up",
+                "artifact.wasm.object.definition_scan.block_prefix",
                 vec![
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
                     PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
-                    PassAccess::write("scan_hierarchy", object.definition_scan_hierarchy),
-                ],
-            ),
-            (
-                "artifact.wasm.object.definition_scan.hierarchy_down",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read_write(
-                        "scan_block_prefix",
-                        object.definition_scan_block_prefix,
-                    ),
-                    PassAccess::read_write("scan_hierarchy", object.definition_scan_hierarchy),
                 ],
             ),
             (
@@ -12053,12 +11659,8 @@ mod tests {
             ("lir.semantic.count", "codegen/lir/semantic/count"),
             ("lir.semantic.scan.local", "scan/counted/00_local"),
             (
-                "lir.semantic.scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.semantic.scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.semantic.scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.semantic.scan.apply", "scan/counted/02_apply"),
             ("lir.semantic.schedule", "codegen/lir/semantic/schedule"),
@@ -12445,24 +12047,16 @@ mod tests {
             ("lir.wasm.frame_words", "codegen/lir/wasm/frame_words"),
             ("lir.wasm.frame_scan.local", "scan/counted/00_local"),
             (
-                "lir.wasm.frame_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.wasm.frame_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.wasm.frame_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.wasm.frame_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.frame_bounds", "codegen/lir/wasm/frame_bounds"),
             ("lir.wasm.count", "codegen/lir/wasm/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.count_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.count_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.count_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.scatter", "codegen/lir/wasm/scatter"),
@@ -12471,12 +12065,8 @@ mod tests {
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
             ("lir.target.function_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.function_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.function_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.function_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
@@ -12490,12 +12080,8 @@ mod tests {
             ("lir.wasm.byte_count", "codegen/lir/wasm/byte_count"),
             ("lir.target.byte_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.byte_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.byte_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.byte_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.emit", "codegen/lir/wasm/emit"),
@@ -12662,12 +12248,8 @@ mod tests {
             ),
             ("lir.x86.stack_scan.local", "scan/counted/00_local"),
             (
-                "lir.x86.stack_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.x86.stack_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.x86.stack_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.x86.stack_scan.apply", "scan/counted/02_apply"),
             (
@@ -12682,12 +12264,8 @@ mod tests {
             ("lir.x86.count", "codegen/lir/x86/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.count_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.count_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.count_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.x86.scatter", "codegen/lir/x86/scatter"),
@@ -12700,12 +12278,8 @@ mod tests {
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
             ("lir.target.function_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.function_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.function_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.function_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
@@ -12725,12 +12299,8 @@ mod tests {
             ("lir.x86.integer_byte_count", "codegen/lir/x86/integer_byte_count"),
             ("lir.target.byte_scan.local", "scan/counted/00_local"),
             (
-                "lir.target.byte_scan.hierarchy_up",
-                "scan/counted/01_hierarchy_up",
-            ),
-            (
-                "lir.target.byte_scan.hierarchy_down",
-                "scan/counted/02_hierarchy_down",
+                "lir.target.byte_scan.block_prefix",
+                "scan/counted/04_block_prefix",
             ),
             ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             (

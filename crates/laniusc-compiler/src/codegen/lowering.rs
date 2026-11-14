@@ -249,8 +249,7 @@ struct SemanticPasses {
     value_uses_mark: PassData,
     count: PassData,
     scan_local: PassData,
-    scan_up: PassData,
-    scan_down: PassData,
+    scan_block_prefix: PassData,
     scan_apply: PassData,
     schedule: PassData,
     scatter: PassData,
@@ -286,8 +285,7 @@ impl SemanticPasses {
             value_uses_mark: load("codegen/lir/semantic/value_uses_mark"),
             count: load("codegen/lir/semantic/count"),
             scan_local: load("scan/counted/00_local"),
-            scan_up: load("scan/counted/01_hierarchy_up"),
-            scan_down: load("scan/counted/02_hierarchy_down"),
+            scan_block_prefix: load("scan/counted/04_block_prefix"),
             scan_apply: load("scan/counted/02_apply"),
             schedule: load("codegen/lir/semantic/schedule"),
             scatter: load("codegen/lir/semantic/scatter"),
@@ -1223,12 +1221,8 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.call_arg_scan.hierarchy_up",
-                passes.scan_up.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.call_arg_scan.hierarchy_down",
-                passes.scan_down.reflection.as_ref(),
+                "lir.semantic.call_arg_scan.block_prefix",
+                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.call_arg_scan.apply",
@@ -1263,12 +1257,8 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.scan.hierarchy_up",
-                passes.scan_up.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.scan.hierarchy_down",
-                passes.scan_down.reflection.as_ref(),
+                "lir.semantic.scan.block_prefix",
+                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.scan.apply",
@@ -1302,12 +1292,8 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.param_scan.hierarchy_up",
-                passes.scan_up.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.param_scan.hierarchy_down",
-                passes.scan_down.reflection.as_ref(),
+                "lir.semantic.param_scan.block_prefix",
+                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.param_scan.apply",
@@ -1330,12 +1316,8 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.function_scan.hierarchy_up",
-                passes.scan_up.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.function_scan.hierarchy_down",
-                passes.scan_down.reflection.as_ref(),
+                "lir.semantic.function_scan.block_prefix",
+                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.function_scan.apply",
@@ -1358,12 +1340,8 @@ impl GpuSemanticLoweringStage {
                 passes.scan_local.reflection.as_ref(),
             ),
             (
-                "lir.semantic.local_scan.hierarchy_up",
-                passes.scan_up.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.local_scan.hierarchy_down",
-                passes.scan_down.reflection.as_ref(),
+                "lir.semantic.local_scan.block_prefix",
+                passes.scan_block_prefix.reflection.as_ref(),
             ),
             (
                 "lir.semantic.local_scan.apply",
@@ -1570,15 +1548,13 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.function_scan.local",
-                up_pass: "lir.semantic.function_scan.hierarchy_up",
-                down_pass: "lir.semantic.function_scan.hierarchy_down",
+                block_prefix_pass: "lir.semantic.function_scan.block_prefix",
                 apply_pass: "lir.semantic.function_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.function_flags",
                 local: "lir.semantic.function_scan_local",
                 block_sum: "lir.semantic.function_scan_block_sum",
                 block_prefix: "lir.semantic.function_scan_block_prefix",
-                hierarchy: "lir.semantic.function_scan_hierarchy",
                 output: "lir.semantic.function_prefix",
                 total: "lir.semantic.function_total",
             },
@@ -1596,15 +1572,13 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.param_scan.local",
-                up_pass: "lir.semantic.param_scan.hierarchy_up",
-                down_pass: "lir.semantic.param_scan.hierarchy_down",
+                block_prefix_pass: "lir.semantic.param_scan.block_prefix",
                 apply_pass: "lir.semantic.param_scan.apply",
                 count: "hir.param_count",
                 input: "lir.semantic.param_flags",
                 local: "lir.semantic.param_scan_local",
                 block_sum: "lir.semantic.param_scan_block_sum",
                 block_prefix: "lir.semantic.param_scan_block_prefix",
-                hierarchy: "lir.semantic.param_scan_hierarchy",
                 output: "lir.semantic.param_prefix",
                 total: "lir.semantic.param_total",
             },
@@ -1622,15 +1596,13 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.local_scan.local",
-                up_pass: "lir.semantic.local_scan.hierarchy_up",
-                down_pass: "lir.semantic.local_scan.hierarchy_down",
+                block_prefix_pass: "lir.semantic.local_scan.block_prefix",
                 apply_pass: "lir.semantic.local_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.local_flags",
                 local: "lir.semantic.local_scan_local",
                 block_sum: "lir.semantic.local_scan_block_sum",
                 block_prefix: "lir.semantic.local_scan_block_prefix",
-                hierarchy: "lir.semantic.local_scan_hierarchy",
                 output: "lir.semantic.local_prefix",
                 total: "lir.semantic.local_total",
             },
@@ -1648,15 +1620,13 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.call_arg_scan.local",
-                up_pass: "lir.semantic.call_arg_scan.hierarchy_up",
-                down_pass: "lir.semantic.call_arg_scan.hierarchy_down",
+                block_prefix_pass: "lir.semantic.call_arg_scan.block_prefix",
                 apply_pass: "lir.semantic.call_arg_scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.call_arg_counts_by_hir",
                 local: "lir.semantic.call_arg_scan_local",
                 block_sum: "lir.semantic.call_arg_scan_block_sum",
                 block_prefix: "lir.semantic.call_arg_scan_block_prefix",
-                hierarchy: "lir.semantic.call_arg_scan_hierarchy",
                 output: "lir.semantic.call_arg_prefix_by_hir",
                 total: "lir.semantic.call_arg_total",
             },
@@ -1674,15 +1644,13 @@ impl GpuSemanticLoweringStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.semantic.scan.local",
-                up_pass: "lir.semantic.scan.hierarchy_up",
-                down_pass: "lir.semantic.scan.hierarchy_down",
+                block_prefix_pass: "lir.semantic.scan.block_prefix",
                 apply_pass: "lir.semantic.scan.apply",
                 count: "hir.count",
                 input: "lir.semantic.count_by_hir",
                 local: "lir.semantic.scan_local",
                 block_sum: "lir.semantic.scan_block_sum",
                 block_prefix: "lir.semantic.scan_block_prefix",
-                hierarchy: "lir.semantic.scan_hierarchy",
                 output: "lir.semantic.offset_by_hir",
                 total: "lir.semantic.total",
             },
@@ -2119,7 +2087,6 @@ mod tests {
                 make_pass_data_from_shader_key,
                 map_readback_blocking,
             },
-            scan::hierarchical_scan_levels,
         },
         parser::buffers::{
             HirCallArg,
@@ -2641,7 +2608,7 @@ mod tests {
     }
 
     #[test]
-    fn physical_gpu_stably_sorts_wasm_schedule_across_scan_hierarchy() {
+    fn physical_gpu_stably_sorts_wasm_schedule_across_scan_block_tiles() {
         let gpu = device::global();
         let radix_layout = TargetScheduleRadixLayout::packed_width();
         let count = 70_000u32;
@@ -2691,11 +2658,6 @@ mod tests {
             "test.schedule.scan_block_prefix",
             scan_blocks as usize,
         );
-        let scan_hierarchy = storage_rw_for_array::<u32>(
-            &gpu.device,
-            "test.schedule.scan_hierarchy",
-            scan_blocks as usize,
-        );
         let scan_total = storage_rw_for_array::<u32>(&gpu.device, "test.schedule.scan_total", 1);
 
         let scan_params = uniform_from_val(
@@ -2707,26 +2669,18 @@ mod tests {
                 scan_step: 0,
             },
         );
-        let scan_levels = hierarchical_scan_levels(scan_blocks);
-        let hierarchy_params = scan_levels
-            .iter()
-            .enumerate()
-            .map(|(index, level)| {
-                let parent = scan_levels.get(index + 1);
-                uniform_from_val(
-                    &gpu.device,
-                    &format!("test.schedule.hierarchy.{index}"),
-                    &ScanHierarchyParams {
-                        n_items: slots,
-                        n_blocks: scan_blocks,
-                        level_divisor: level.divisor,
-                        level_offset: level.offset,
-                        parent_divisor: parent.map_or(0, |parent| parent.divisor),
-                        parent_offset: parent.map_or(0, |parent| parent.offset),
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
+        let block_prefix_params = uniform_from_val(
+            &gpu.device,
+            "test.schedule.block_prefix_params",
+            &ScanHierarchyParams {
+                n_items: slots,
+                n_blocks: scan_blocks,
+                level_divisor: 1,
+                level_offset: 0,
+                parent_divisor: 0,
+                parent_offset: 0,
+            },
+        );
         let histogram_pass = make_pass_data_from_shader_key(
             &gpu.device,
             "test.schedule.histogram",
@@ -2748,18 +2702,11 @@ mod tests {
             "scan/counted/00_local",
         )
         .unwrap();
-        let scan_up_pass = make_pass_data_from_shader_key(
+        let scan_block_prefix_pass = make_pass_data_from_shader_key(
             &gpu.device,
-            "test.schedule.scan.up",
+            "test.schedule.scan.block_prefix",
             "main",
-            "scan/counted/01_hierarchy_up",
-        )
-        .unwrap();
-        let scan_down_pass = make_pass_data_from_shader_key(
-            &gpu.device,
-            "test.schedule.scan.down",
-            "main",
-            "scan/counted/02_hierarchy_down",
+            "scan/counted/04_block_prefix",
         )
         .unwrap();
         let scan_apply_pass = make_pass_data_from_shader_key(
@@ -2851,41 +2798,19 @@ mod tests {
             .unwrap();
             record_direct(&mut encoder, &histogram_pass, &histogram_group, count).unwrap();
             record_direct(&mut encoder, &scan_local_pass, &scan_local_group, slots).unwrap();
-            for (index, level) in scan_levels.iter().enumerate() {
-                let group = make_group(
-                    &gpu.device,
-                    &scan_up_pass,
-                    "test.schedule.scan.up.group",
-                    &[
-                        ("gHierarchy", hierarchy_params[index].as_entire_binding()),
-                        ("scan_count", slot_count.as_entire_binding()),
-                        ("scan_block_sum", scan_block_sum.as_entire_binding()),
-                        ("scan_block_prefix", scan_block_prefix.as_entire_binding()),
-                        ("scan_hierarchy", scan_hierarchy.as_entire_binding()),
-                    ],
-                )
-                .unwrap();
-                record_direct(&mut encoder, &scan_up_pass, &group, level.count).unwrap();
-            }
-            for child_index in (0..scan_levels.len().saturating_sub(1)).rev() {
-                let level = scan_levels[child_index];
-                let group = make_group(
-                    &gpu.device,
-                    &scan_down_pass,
-                    "test.schedule.scan.down.group",
-                    &[
-                        (
-                            "gHierarchy",
-                            hierarchy_params[child_index].as_entire_binding(),
-                        ),
-                        ("scan_count", slot_count.as_entire_binding()),
-                        ("scan_block_prefix", scan_block_prefix.as_entire_binding()),
-                        ("scan_hierarchy", scan_hierarchy.as_entire_binding()),
-                    ],
-                )
-                .unwrap();
-                record_direct(&mut encoder, &scan_down_pass, &group, level.count).unwrap();
-            }
+            let block_prefix_group = make_group(
+                &gpu.device,
+                &scan_block_prefix_pass,
+                "test.schedule.scan.block_prefix.group",
+                &[
+                    ("gHierarchy", block_prefix_params.as_entire_binding()),
+                    ("scan_count", slot_count.as_entire_binding()),
+                    ("scan_block_sum", scan_block_sum.as_entire_binding()),
+                    ("scan_block_prefix", scan_block_prefix.as_entire_binding()),
+                ],
+            )
+            .unwrap();
+            record_direct(&mut encoder, &scan_block_prefix_pass, &block_prefix_group, 1).unwrap();
             record_direct(&mut encoder, &scan_apply_pass, &scan_apply_group, slots).unwrap();
             record_direct(&mut encoder, &scatter_pass, &scatter_group, count).unwrap();
         }
@@ -2986,9 +2911,8 @@ mod tests {
             });
         sorter.record(&mut encoder).unwrap();
         let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
-        let hierarchy_levels = hierarchical_scan_levels(count.div_ceil(256)).len();
-        let passes_per_digit = 3 + 2 * hierarchy_levels as u64;
-        assert_eq!(activity.compute_passes, 4 * passes_per_digit);
+        // Histogram, local scan, block prefix, apply and scatter per digit.
+        assert_eq!(activity.compute_passes, 4 * 5);
         assert_eq!(
             (activity.pipelines, activity.buffers_created, activity.buffers_released),
             (0, 0, 0),
