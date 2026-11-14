@@ -914,42 +914,35 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok((ArtifactPath { key, path }, label))
     }
 
-    fn load_semantic_interface_artifacts<'a>(
+    /// Reads one dependency interface's persisted bytes through its
+    /// descriptor: the storage key and the bytes.
+    fn read_semantic_interface_artifact(
         &self,
-        descriptor_artifacts: impl IntoIterator<Item = &'a ArtifactPath>,
-    ) -> Result<Vec<GpuSemanticInterfaceArtifact>, CompileError> {
-        descriptor_artifacts
-            .into_iter()
-            .map(|descriptor_artifact| {
-                let descriptor = self.load_descriptor_artifact(
-                    descriptor_artifact,
-                    GpuSourcePackArtifactStage::LibraryInterface,
-                )?;
-                let storage_key = descriptor
-                    .output_record_arrays
-                    .iter()
-                    .find(|array| array.name == "semantic_interface_records")
-                    .and_then(|array| array.storage_key.as_deref())
-                    .ok_or_else(|| {
-                        source_pack_artifact_store_error(format!(
-                            "dependency interface descriptor {} has no persisted semantic_interface_records storage key",
-                            descriptor_artifact.key
-                        ))
-                    })?;
-                let interface_path = artifact_path(&self.artifact_root, storage_key)?;
-                let interface_bytes = fs::read(&interface_path).map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "read dependency semantic interface {storage_key} at {}: {err}",
-                        interface_path.display()
-                    ))
-                })?;
-                GpuSemanticInterfaceArtifact::from_bytes(&interface_bytes).map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "parse dependency semantic interface {storage_key}: {reason}"
-                    ))
-                })
-            })
-            .collect()
+        descriptor_artifact: &ArtifactPath,
+    ) -> Result<(String, Vec<u8>), CompileError> {
+        let descriptor = self.load_descriptor_artifact(
+            descriptor_artifact,
+            GpuSourcePackArtifactStage::LibraryInterface,
+        )?;
+        let storage_key = descriptor
+            .output_record_arrays
+            .iter()
+            .find(|array| array.name == "semantic_interface_records")
+            .and_then(|array| array.storage_key.as_deref())
+            .ok_or_else(|| {
+                source_pack_artifact_store_error(format!(
+                    "dependency interface descriptor {} has no persisted semantic_interface_records storage key",
+                    descriptor_artifact.key
+                ))
+            })?;
+        let interface_path = artifact_path(&self.artifact_root, storage_key)?;
+        let interface_bytes = fs::read(&interface_path).map_err(|err| {
+            source_pack_artifact_store_error(format!(
+                "read dependency semantic interface {storage_key} at {}: {err}",
+                interface_path.display()
+            ))
+        })?;
+        Ok((storage_key.to_string(), interface_bytes))
     }
 
     fn load_descriptor_artifact(
@@ -983,15 +976,42 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
         Ok(descriptor)
     }
 
+    /// Every page's dependency interfaces. All are read first, then parsed
+    /// and validated in one GPU job; the first failure in page order is the
+    /// error, as when each was loaded in turn.
     fn load_semantic_interface_pages(
         &self,
         pages: &GpuSourcePackDependencyPages,
     ) -> Result<Vec<Vec<GpuSemanticInterfaceArtifact>>, CompileError> {
-        pages
+        let mut read = Vec::new();
+        let mut read_error = None;
+        for descriptor_artifact in pages.artifacts.iter().flatten() {
+            match self.read_semantic_interface_artifact(descriptor_artifact) {
+                Ok(artifact) => read.push(artifact),
+                Err(error) => {
+                    read_error = Some(error);
+                    break;
+                }
+            }
+        }
+        let bytes = read.iter().map(|(_, bytes)| bytes.as_slice()).collect::<Vec<_>>();
+        let mut interfaces = Vec::with_capacity(read.len());
+        for ((storage_key, _), interface) in read.iter().zip(GpuSemanticInterfaceArtifact::from_bytes_all(&bytes)) {
+            interfaces.push(interface.map_err(|reason| {
+                source_pack_artifact_store_error(format!(
+                    "parse dependency semantic interface {storage_key}: {reason}"
+                ))
+            })?);
+        }
+        if let Some(error) = read_error {
+            return Err(error);
+        }
+        let mut interfaces = interfaces.into_iter();
+        Ok(pages
             .artifacts
             .iter()
-            .map(|page| self.load_semantic_interface_artifacts(page))
-            .collect()
+            .map(|page| interfaces.by_ref().take(page.len()).collect())
+            .collect())
     }
 
     fn resolve_codegen_object_artifacts(

@@ -152,36 +152,72 @@ pub(crate) fn verdict(key: u32) -> std::result::Result<(), String> {
 }
 
 /// Validates encoded artifact bytes that no export of this process left on
-/// the GPU (a stored dependency interface, or a test's artifact): uploads
-/// them, runs the validation and reads its failure key.
-pub(crate) fn validate_encoded_bytes(bytes: &[u8]) -> std::result::Result<(), String> {
+/// the GPU (stored dependency interfaces, or a test's artifacts) in one GPU
+/// job: one submission uploads and validates every artifact, and one
+/// readback reads every failure key. Returns one verdict per artifact; the
+/// error is a device or transport failure.
+pub(crate) fn validate_encoded_artifacts(
+    artifacts: &[&[u8]],
+) -> std::result::Result<Vec<std::result::Result<(), String>>, String> {
+    if artifacts.is_empty() {
+        return Ok(Vec::new());
+    }
     let gpu = crate::gpu::device::global_result().map_err(|error| error.to_string())?;
     let (device, queue) = (&gpu.device, &gpu.queue);
-    let length = u32::try_from(bytes.len())
-        .map_err(|_| "semantic-interface artifact exceeds u32 bytes".to_string())?;
-    let mut padded = bytes.to_vec();
-    padded.resize(bytes.len().next_multiple_of(4).max(4), 0);
-    let artifact = crate::gpu::buffers::storage_ro_from_bytes::<u32>(
+    let readback = crate::gpu::buffers::readback_bytes(
         device,
-        "type_check.interface.validate.upload",
-        &padded,
-        padded.len() / 4,
+        "type_check.interface.validate.readback",
+        4 * artifacts.len(),
+        4 * artifacts.len(),
     );
-    let length = crate::gpu::buffers::storage_ro_from_u32s(device, "type_check.interface.validate.length", &[length]);
-    let readback = crate::gpu::buffers::readback_bytes(device, "type_check.interface.validate.readback", 4, 4);
-    let buffers = CapacityBufferCache::default();
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(LABEL) });
-    let state = record_validation(device, queue, &mut encoder, &buffers, &artifact, &length, None)
-        .map_err(|error| format!("{error:#}"))?;
-    passes_core::flush_deferred_compute(&mut encoder);
-    encoder.copy_buffer_to_buffer(&state.buffer, state.absolute_offset(FAILURE_KEY_BYTE_OFFSET), &readback.buffer, 0, 4);
+    // An artifact longer than u32 bytes has its verdict without a GPU check.
+    let mut verdicts = vec![Ok(()); artifacts.len()];
+    // Each artifact's buffers are its own, so the validations may share one
+    // submission; they live until it completes.
+    let mut retained = Vec::with_capacity(artifacts.len());
+    for (index, bytes) in artifacts.iter().enumerate() {
+        let Ok(length) = u32::try_from(bytes.len()) else {
+            verdicts[index] = Err("semantic-interface artifact exceeds u32 bytes".to_string());
+            continue;
+        };
+        let mut padded = bytes.to_vec();
+        padded.resize(bytes.len().next_multiple_of(4).max(4), 0);
+        let artifact = crate::gpu::buffers::storage_ro_from_bytes::<u32>(
+            device,
+            "type_check.interface.validate.upload",
+            &padded,
+            padded.len() / 4,
+        );
+        let length = crate::gpu::buffers::storage_ro_from_u32s(device, "type_check.interface.validate.length", &[length]);
+        let buffers = CapacityBufferCache::default();
+        let state = record_validation(device, queue, &mut encoder, &buffers, &artifact, &length, None)
+            .map_err(|error| format!("{error:#}"))?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        encoder.copy_buffer_to_buffer(
+            &state.buffer,
+            state.absolute_offset(FAILURE_KEY_BYTE_OFFSET),
+            &readback.buffer,
+            4 * index as u64,
+            4,
+        );
+        retained.push((artifact, length, buffers, state));
+    }
     queue.submit(Some(encoder.finish()));
-    let slice = readback.buffer.slice(0..4);
+    let slice = readback.buffer.slice(0..4 * artifacts.len() as u64);
     passes_core::map_readback_blocking(device, &slice, "semantic-interface validation")
         .map_err(|error| format!("{error:#}"))?;
-    let key = u32::from_le_bytes(slice.get_mapped_range()[..4].try_into().expect("four bytes"));
+    let keys = slice.get_mapped_range()
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+        .collect::<Vec<_>>();
     readback.buffer.unmap();
-    verdict(key)
+    drop(retained);
+    Ok(verdicts
+        .into_iter()
+        .zip(keys)
+        .map(|(verdict, key)| verdict.and_then(|()| self::verdict(key)))
+        .collect())
 }
 
 /// The message of one failure key (phase << 27 | row << 7 | code).

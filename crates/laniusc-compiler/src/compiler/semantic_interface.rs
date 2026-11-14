@@ -487,7 +487,9 @@ impl GpuSemanticInterfaceArtifact {
     /// Validates all record ranges, canonical names, and typed references
     /// of the encoded interface on the GPU (`gpu_validation`).
     pub fn validate(&self) -> Result<(), String> {
-        gpu_validation::validate_encoded_bytes(&self.to_bytes()?)
+        gpu_validation::validate_encoded_artifacts(&[&self.to_bytes()?])?
+            .pop()
+            .expect("one verdict per artifact")
     }
 
     /// Succeeds exactly when [`Self::to_bytes`] does, without serializing:
@@ -623,9 +625,34 @@ impl GpuSemanticInterfaceArtifact {
     /// Parses and validates one persisted semantic-interface artifact. The
     /// validation runs on the GPU over these exact bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        let artifact = Self::parse(bytes)?;
-        gpu_validation::validate_encoded_bytes(bytes)?;
-        Ok(artifact)
+        Self::from_bytes_all(&[bytes]).pop().expect("one result per artifact")
+    }
+
+    /// Parses persisted semantic-interface artifacts and validates every one
+    /// that parses in one GPU job over these exact bytes. One result per
+    /// artifact, in order; a parse error precedes validation.
+    pub fn from_bytes_all(artifacts: &[&[u8]]) -> Vec<Result<Self, String>> {
+        let parsed = artifacts.iter().map(|bytes| Self::parse(bytes)).collect::<Vec<_>>();
+        let checked = artifacts
+            .iter()
+            .zip(&parsed)
+            .filter(|(_, artifact)| artifact.is_ok())
+            .map(|(bytes, _)| *bytes)
+            .collect::<Vec<_>>();
+        match gpu_validation::validate_encoded_artifacts(&checked) {
+            Ok(verdicts) => {
+                let mut verdicts = verdicts.into_iter();
+                parsed
+                    .into_iter()
+                    .map(|artifact| {
+                        let artifact = artifact?;
+                        verdicts.next().expect("one verdict per parsed artifact")?;
+                        Ok(artifact)
+                    })
+                    .collect()
+            }
+            Err(error) => parsed.into_iter().map(|artifact| artifact.and(Err(error.clone()))).collect(),
+        }
     }
 
     /// Parses artifact bytes whose export already validated them on the GPU
