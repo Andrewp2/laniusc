@@ -1,8 +1,10 @@
 # GPU generic instantiation
 
 This is the implementation contract for removing source replay from full
-compilation. Replay elimination has **not** shipped. The current compiler still
-constructs source copies of generic functions and runs the frontend again.
+compilation. Replay elimination is partial. An original unit compile now lowers
+closed local instances itself (see [Execution rows](#execution-rows)). The
+compiler still constructs source copies of every other generic body and runs
+the frontend again for them.
 
 The performance target is about 160 ms for a warm resident-daemon rebuild of
 the settings application, with every unit compiled on every request. Reusing
@@ -16,12 +18,12 @@ substitution, layout, call selection, and lowering must run in GPU shaders.
 | --- | --- | --- |
 | Reachable instances | GPU closure expands local generic calls and dependency summaries into closed environments. Overflow or unfinished depth leaves work for replay. | [`instance_closure.slang`](../shaders/type_checker/closure/instance_closure.slang), [`instance_closure_passes.rs`](../crates/laniusc-compiler/src/type_checker/instance_closure_passes.rs) |
 | In-place instances | A private top-level function with one closed, direct environment can bind its existing rows. Calls requiring further generic replay prevent this selection. | [`04b_select_inplace.slang`](../shaders/type_checker/closure/04b_select_inplace.slang), [`01_mark.slang`](../shaders/type_checker/closure/01_mark.slang) |
-| Multiple instances | An experimental table assigns virtual rows to local function instances, substitutes expression types, and resolves some callees. Native lowering does not consume it. | [`instance_table.slang`](../shaders/type_checker/closure/instance_table.slang), [`table_rows.slang`](../shaders/type_checker/closure/table_rows.slang), [`07_table_calls.slang`](../shaders/type_checker/closure/07_table_calls.slang) |
+| Multiple instances | The instance table realizes each local instance's expression types and resolves its callees. Execution rows copy the selected instances into the job's HIR, and native lowering emits them in the original compile. | [`instance_table.slang`](../shaders/type_checker/closure/instance_table.slang), [`table_rows.slang`](../shaders/type_checker/closure/table_rows.slang), [`07_table_calls.slang`](../shaders/type_checker/closure/07_table_calls.slang), [`instance_exec.slang`](../shaders/type_checker/closure/instance_exec.slang) |
 | Replay | The host groups admitted environments, creates renamed source copies, and invokes another full compile. | [`body_specialization.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/body_specialization.rs), [`instance_copies.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/instance_copies.rs), [`typecheck.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/typecheck.rs) |
 | Publication | A private replay request checks definition provenance, selected implementation bindings, complete native layouts, call ownership, and fresh call admission before releasing its object. | `ValidatedReplayRequest` in [`native_session.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/trait_solver/native_session.rs) |
 
-`LANIUS_CHECK=instance-table` builds the experimental table and compares its
-expression types and call routes with actual source-copy replays. It reports
+`LANIUS_CHECK=instance-table` compares the table's expression types and call
+routes with actual source-copy replays. It reports
 entry coverage, failed rows, differing types, dependency calls, and unresolved
 calls. These reports are diagnostic evidence, not a publication gate; agreement
 does not establish complete native metadata. Such runs include extra GPU work
@@ -51,6 +53,99 @@ lowering target. The stdlib table lacks 963 requested bodies; an original unit
 cannot enumerate all environments that later callers require. Eliminating the
 stdlib replay therefore also requires whole-program demand and retained typed
 dependency templates. No timing claim follows from this diagnostic run.
+
+## Execution rows
+
+An original job with an instance closure builds the instance table and then
+runs the execution-row passes at the end of type checking
+([`instance_exec.slang`](../shaders/type_checker/closure/instance_exec.slang)).
+Each selected table entry gets a copy of its template's HIR subtree:
+
+| Copy | Placement |
+| --- | --- |
+| HIR rows | After the job's compact HIR rows |
+| Tokens | After the job's token capacity, up to a quarter of it |
+| Side-table rows | After each table's rows (call arguments, fields, match arms, match payloads, array elements, strings, parameters) |
+
+A copied value that names a row, token or side-table row inside the template
+names the copy's instead. Other values keep their original identity. The copy
+has its own function row and source tokens, so lowering gives it its own
+function, local, place, temporary and schedule identities and its own symbol
+`(library, unit, 0x40000000 | token)`. The semantic columns of each copy hold
+the instance's realized types: value types, scalar machine types, aggregate
+declarations and widths, member offsets under a changed receiver, and the
+function result. `09c_exec_counts` publishes the row counts lowering reads,
+which include the copies.
+
+Checked type rows are numbered after the type checker's token tables, and
+lowering reads type rows and tokens in one id space. The type checker therefore
+sizes its token tables for the job's tokens plus the copies' share, and
+`08b_exec_layout` never places a copy's token at or past the first type row.
+
+### Selection and fallback
+
+`08_exec_select` admits an entry only when every rule holds. Any other entry
+keeps its replay body, as before. The trace (`LANIUS_TRACE=instance-table`)
+reports each entry's first failed rule.
+
+| Status | Rule that failed |
+| --- | --- |
+| `0x100` table | The table is complete (no capacity flags) and the body is this job's. |
+| `0x101` owner | The template is a top-level function and is not instantiated in place. |
+| `0x102` constants | The template has no constant parameters. |
+| `0x103` syntax | The body declares no nested item or function. |
+| `0x104` row | Every row's type realized under the environment. |
+| `0x105` call | Every call is routed: a call of a local generic body names its callee's table entry, and every other call keeps the template's callee and needs no type argument from the environment. Method, bound-member, dependency-generic and unresolved calls fail. |
+| `0x106` fact | No index, iteration or array row and no function result changes to an array type. A member's receiver is a row of the body, and its layout under a changed receiver derives in `08a_exec_members`. |
+| `0x107` block | Each side-table block of the body is contiguous. |
+| `0x108` capacity | The rows, tokens and side-table rows fit. An entry that does not fit, and every later entry, replays. |
+
+On the host, `ExecRoutes` in
+[`body_specialization.rs`](../crates/laniusc-compiler/src/compiler/gpu_compiler/body_specialization.rs)
+routes a selected entry to its copy only when the entry's closure origin
+passes the same admission as a replay request. The origin must target this
+unit, `checked_replay_environment` must close its environment, and the
+copy's symbol must be defined in the unit's object. The copy is then
+registered as that environment's specialization, with the origin's layout
+witnesses, so no replay is requested for it. A call row inside a copy routes
+through its callee entry's admitted origin. A routed call whose callee entry has
+no admitted origin is a compile error, not a fallback. Selected entries that do
+not route still replay. Their copies stay in the object as unreferenced
+definitions.
+
+Nothing in this path is retained between builds. The table, the copies and
+their routes are rebuilt by every original job.
+
+### Settings results, 2026-11-13
+
+One profiled settings compile (`--profile`, `LANIUS_TRACE=instance-table`),
+with every compiled-unit and library-instance cache cleared, as in the
+benchmark. The baseline is commit `19c4be01c`.
+
+| Unit | Table entries | Selected and routed | Replay bodies before | Replay bodies after |
+| --- | --- | --- | --- | --- |
+| Stdlib `0:0` | 191 | 114 | 1,154 | 1,040 |
+| App `1:1` | 184 | 173 | 177 | 4 |
+
+The build no longer replays 287 bodies. It still runs 2 replay compiles, one
+for each unit, so no fixed frontend cost is saved yet. The settings ELF passes
+the benchmark's x86-64 ELF check.
+
+Timing used `tools/benchmark_settings_recompile.py` with 3 warmups and 7
+measured requests, alternating the baseline and new binaries over two rounds.
+Median wall times were 392.6 and 379.2 ms for the baseline and 367.5 and
+410.0 ms for the new binary. The run-to-run spread exceeds the difference, so
+these runs show no direction.
+
+The app unit's 11 remaining entries are 7 owner rejections, mostly in-place
+instances, and 4 call rejections. The 4 replayed bodies are
+`ui_scene::reserve<T>`, which calls `v.try_reserve(count).is_err()`, and
+`gpu::valid<T>`, which calls `core::mem::slice_len(view.values)`. Both call
+dependency generics from a local template. To lower them, the closure must
+expand dependency edges inside local generic bodies. `07_table_calls` must then
+record the dependency instance, and the host must route `IT_CALL_DEPENDENCY`
+calls in a copy through the library snapshot's closure origin. That removes
+the app unit's replay compile.
 
 ## Complete instance contract
 
@@ -141,13 +236,18 @@ does not complete a milestone.
    differing, and unresolved facts before trusting the table. Include parameter
    and return contracts in the audit; their row-cache differences are currently
    reported separately.
-2. **Lower local closed instances.** Introduce execution rows and complete the
+2. **Lower local closed instances.** Implemented for file-level functions
+   without constant parameters (see [Execution rows](#execution-rows)).
+   Introduce execution rows and complete the
    per-instance semantic projection. Start with local bodies whose calls and
    layouts close in the current unit. Emit two distinct environments of the
    same function, with separate symbols and storage, in the original unit
    compile. Compare execution and admitted facts against the existing replay
    path; do not bypass trait or layout admission.
-3. **Close local instance graphs.** Route calls between instances, including
+3. **Close local instance graphs.** Calls between local function instances,
+   including finite recursion, are routed. Generic methods, bound-member
+   selection and dependency generics called from local bodies still replay.
+   Route calls between instances, including
    finite recursion, generic methods, and bound-member selection. Preserve
    implementation evidence and constant environments at every edge. Emit the
    complete reachable graph and remove its replay requests.
