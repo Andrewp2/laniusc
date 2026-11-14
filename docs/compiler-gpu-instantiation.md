@@ -60,6 +60,53 @@ repeat GPU instantiation work, without manufacturing source or reparsing the
 templates. Every new build reconstructs templates, instances, and evidence;
 only allocation capacity and GPU pipelines may survive for reuse.
 
+### Parallel execution contract
+
+The instance graph exposes parallel work across both instances and the rows
+inside each instance. Merely assigning one lane to a whole function is
+insufficient: a large body or a wide call list would determine the dispatch's
+completion time. The required scheduling shape is:
+
+- **Discovery:** flatten each frontier into `(instance, template call edge)`
+  tasks using edge counts and prefix scans. Resolve and enqueue independent
+  edges in parallel, including edges from different compilation units.
+- **Deduplication and ordering:** use GPU canonicalization with exact equality
+  and scalable set/sort operations. Deterministic instance ordering and row
+  offsets use parallel sorting and scans. An all-pairs instance ranking is not
+  the final algorithm.
+- **Semantic realization:** process ready `(instance, template row)` and
+  type/layout tasks across the frontier. Shared type/layout facts are reused
+  within this build. Unresolved dependencies produce further work; large
+  variable-length relations expose element or field tasks instead of serial
+  body-sized walks.
+- **Allocation and projection:** compute per-instance counts in parallel,
+  prefix-scan them into disjoint ranges, then scatter rows and side-table
+  elements in parallel. A single lane may publish a fixed number of totals;
+  it must not walk all instances to assign their ranges.
+- **Control:** the GPU produces frontier counts, indirect dispatch sizes,
+  completion state, and capacity requirements. Submission can operate in
+  batches, with compact completion/capacity readback at batch boundaries.
+  There must be no host round trip for each instance or call.
+- **Bounded memory:** batch retained templates and instance rows without
+  serializing independent work by source unit. Batch size limits temporary
+  storage; it does not change definition identity or supported semantics.
+
+Dependencies still impose sequential waves: a callee environment can depend
+on its caller's substitution, and aggregate layout can depend on field
+layouts. Available parallelism is the ready frontier within those waves.
+The design does not promise unlimited parallelism or the timing target by
+itself; dispatch overhead, memory traffic and the dependency critical path
+must be measured.
+
+Current migration code has explicit remaining bottlenecks:
+`05b_table_rank.slang` compares all instance keys in every lane;
+`08b_exec_layout.slang` assigns ranges and propagates some failures on one
+lane; `03_expand.slang` and `03c_expand_bound.slang` walk a function's call
+edges in one lane per instance. `06_table_rows`, `09_exec_rows` and
+`09b_exec_tables` already expose row/element work. Performance validation must
+include many small instances, a few very wide instances, and deep dependency
+chains so one workload does not hide the others' scaling limits.
+
 ## Existing implementation
 
 | Boundary | Current behavior | Source |
