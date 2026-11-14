@@ -920,6 +920,22 @@ pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
     (u32::BITS - rows.max(1).leading_zeros()).div_ceil(2)
 }
 
+/// Input links one round of a multi-hop pointer jump follows
+/// (`POINTER_JUMP_HOPS` in execution_rank_step.slang,
+/// structure_dominator_tour_step.slang, structure_dominator_depth_step.slang
+/// and ssa_value_resolve_step.slang). A round multiplies the covered distance
+/// by at least this factor.
+pub(crate) const POINTER_JUMP_HOPS: u32 = 16;
+
+/// Pairs of multi-hop pointer-jump rounds that reach the root of every chain
+/// in a relation of `rows` rows: a pair covers `POINTER_JUMP_HOPS^2 = 2^8`
+/// times the distance, so `ceil(bits(rows) / 8)` pairs cover
+/// `256^pairs > rows` links.
+pub(crate) fn pointer_jump_hop_pairs(rows: u32) -> u32 {
+    const BITS_PER_PAIR: u32 = 2 * POINTER_JUMP_HOPS.trailing_zeros();
+    (u32::BITS - rows.max(1).leading_zeros()).div_ceil(BITS_PER_PAIR)
+}
+
 /// The pointer-jump pairs one lowering records, per relation. Each pair is
 /// an a-to-b and a b-to-a round, so any count leaves the result in the
 /// relation's first buffer.
@@ -1145,11 +1161,11 @@ impl LoweringCapacities {
     pub(crate) fn jump_pairs(self) -> LoweringJumpPairs {
         let blocks = self.optimization_block_capacity();
         LoweringJumpPairs {
-            execution_rank: pointer_jump_pairs(self.hir_nodes),
-            dominator_tour: pointer_jump_pairs(blocks.saturating_mul(2)),
-            dominator_depth: pointer_jump_pairs(blocks),
+            execution_rank: pointer_jump_hop_pairs(self.hir_nodes),
+            dominator_tour: pointer_jump_hop_pairs(blocks.saturating_mul(2)),
+            dominator_depth: pointer_jump_hop_pairs(blocks),
             region_parent: pointer_jump_pairs(self.optimization_region_capacity()),
-            ssa_value_link: pointer_jump_pairs(self.semantic_instructions),
+            ssa_value_link: pointer_jump_hop_pairs(self.semantic_instructions),
         }
     }
 
@@ -11119,6 +11135,9 @@ mod tests {
                 "{rows}"
             );
             assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
+            let hop_pairs = pointer_jump_hop_pairs(rows);
+            assert!(256u128.pow(hop_pairs) > u128::from(rows), "{rows}");
+            assert!(hop_pairs == 1 || 256u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
         }
         for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
             let fresh = |hir: u32| {
@@ -11138,14 +11157,17 @@ mod tests {
             }
             let small = retained.job_jump_pairs(5_000, target);
             let job = fresh(5_000);
-            assert!(4u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
-            assert!(4u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
+            assert!(256u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
+            assert!(256u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
             assert!(
-                4u64.pow(small.dominator_tour) > 2 * u64::from(job.optimization_block_capacity())
+                256u64.pow(small.dominator_tour)
+                    > 2 * u64::from(job.optimization_block_capacity())
             );
-            assert!(4u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity()));
+            assert!(
+                256u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
+            );
             assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
-            assert!(small.dominator_tour < built.dominator_tour);
+            assert!(small.region_parent < built.region_parent);
             assert!(small.ssa_value_link < built.ssa_value_link);
         }
     }

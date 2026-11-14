@@ -1,4 +1,7 @@
-// One parallel list-ranking step over the Euler-tour predecessor relation.
+// One parallel list-ranking step over the Euler-tour predecessor relation:
+// a round follows up to POINTER_JUMP_HOPS input links, so the reach of a
+// link grows by that factor per round (`pointer_jump_hop_pairs` in
+// lowering_ir.rs).
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -20,6 +23,7 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint POINTER_JUMP_HOPS = 16u;
 
 void report_structure_failure(uint arc)
 {
@@ -37,20 +41,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (arc >= arc_total) return;
 
     OptIrDominatorTourLink link = opt_ir_dominator_tour_link_in[arc];
-    if (link.previous != INVALID)
+    for (uint hop = 0u; hop < POINTER_JUMP_HOPS && link.previous != INVALID; ++hop)
     {
         if (link.previous >= arc_total)
         {
             report_structure_failure(arc);
             link.previous = INVALID;
+            break;
         }
-        else
-        {
-            OptIrDominatorTourLink previous =
-                opt_ir_dominator_tour_link_in[link.previous];
-            link.previous = previous.previous;
-            link.down_count += previous.down_count;
-        }
+        OptIrDominatorTourLink previous =
+            opt_ir_dominator_tour_link_in[link.previous];
+        link.previous = previous.previous;
+        link.down_count += previous.down_count;
     }
     opt_ir_dominator_tour_link_out[arc] = link;
 }
