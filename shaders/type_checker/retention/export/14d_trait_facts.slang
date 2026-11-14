@@ -46,8 +46,10 @@ uint trait_term(uint node, uint arity, uint trait_decl)
     if (trait_decl == RT_INVALID || arity > MAX_TRAIT_ARGUMENTS) return RT_UNKNOWN;
     HirRange range = compact_type_arg_ranges[node];
     uint total = min(compact_type_arg_count[0u], hir_count());
-    // A reference without arguments has no argument range to check.
-    if (arity != 0u && (range.count != arity || range.start > total || arity > total - range.start))
+    // Even zero arguments must agree with the canonical range. Otherwise
+    // a missing producer count would silently erase the application.
+    if (range.count != arity ||
+        (arity != 0u && (range.start > total || arity > total - range.start)))
         return RT_UNKNOWN;
     uint mask = 0u;
     for (uint i = 0u; i < arity; i++)
@@ -87,11 +89,15 @@ void directory_lane(uint row)
         return;
     }
 
-    // The accepted trait impl header (checked_contracts.rs read_contracts).
+    // The checker resolves its trait reference from this canonical row:
+    // 00b copies payload.b and direct_type_expr_child reads that copy.
+    // Comparing those copies is not an independent identity check.
     HirPayload payload = compact_hir_payload[row];
     uint method_status = predicate_fact(F_METHOD_STATUS, row);
     if (predicate_fact(F_STATUS, row) != PREDICATE_STATUS_OK ||
-        predicate_fact(F_IMPL_TRAIT_NODE, row) != payload.b ||
+        compact_hir_semantic_facts[row].semantic_kind != HIR_SEMANTIC_IMPL_TRAIT ||
+        compact_hir_semantic_facts[payload.b].semantic_kind != HIR_SEMANTIC_TYPE_PATH ||
+        compact_hir_core[payload.b].parent != row ||
         (method_status != PREDICATE_STATUS_OK && method_status != 0xffffffffu))
     {
         fail(row, RT_INV_TRAIT_FACT);
@@ -177,7 +183,15 @@ void predicate_lane(uint index)
     }
     HirCore core = compact_hir_core[bound];
     uint file = compact_hir_links[bound].file_id;
-    uint2 span = token_bytes(core.token_start, core.token_end, file);
+    // Use the accepted trait-name anchor. A bound's canonical token_end
+    // can include the delimiter after it; that delimiter is not an error
+    // location. Arguments are carried by the term, not this name span.
+    uint last_token = predicate_fact(F_BOUND_TOKEN, bound);
+    bool valid_span = last_token != RT_INVALID && last_token >= core.token_start &&
+        last_token < core.token_end && last_token < job_token_rows();
+    if (!valid_span) fail(owner, RT_INV_TRAIT_FACT);
+    uint2 span = valid_span ? token_bytes(core.token_start, last_token + 1u, file)
+        : uint2(RT_INVALID, 0u);
     write_record(record,
         uint4(decl, RT_TRAIT_PREDICATE | (rank << 8u), subject, applied),
         uint4(trait_decl, file, span.x, span.y));

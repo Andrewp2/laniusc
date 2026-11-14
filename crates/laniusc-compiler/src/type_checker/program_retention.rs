@@ -72,7 +72,7 @@ pub(crate) const RETAINED_PROGRAM_INPUTS: &[&str] = &[
     "predicate_owner_node",
     "predicate_bound_reference",
     "predicate_bound_arg_count",
-    "predicate_trait_impl_trait_type_node",
+    "predicate_bound_token",
     "predicate_method_contract_owner_count",
     "predicate_method_validation_status",
     "predicate_method_validation_required_symbol",

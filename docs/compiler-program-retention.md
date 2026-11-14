@@ -222,7 +222,7 @@ count)`. Every entry has one; an entry without facts has counts 0.
 
 | Kind | t0 | t1 |
 | --- | --- | --- |
-| `PREDICATE 1` | `(owner DeclId, PREDICATE \| ordinal << 8, subject term, trait term)` | `(trait DeclId, file id, file-relative byte start of the bound, byte length)` |
+| `PREDICATE 1` | `(owner DeclId, PREDICATE \| ordinal << 8, subject term, trait term)` | `(trait DeclId, file id, file-relative byte start of the trait name/path, byte length)` |
 | `BINDING 2` | `(impl DeclId, BINDING \| receiver mode << 8 \| ordinal << 16, required member DeclId, method DeclId)` | `(trait DeclId, required member symbol, file id, file-relative byte start of the method name)` |
 
 - **Owners.** A predicate's owner is the function or impl that declares
@@ -236,9 +236,12 @@ count)`. Every entry has one; an entry without facts has counts 0.
 - **Trait terms.** `NAMED (trait DeclId, constant-operand mask)` over the
   bound's checked argument roots, with the type-slot count and mask the
   canonical store gives a NAMED term. Equal applications intern to the
-  impl header's trait term. Constant arguments keep their terms
-  (`CC_CAST` stays a pending fit), and a constant parameter's `ParamId`
-  keeps its declared scalar.
+  impl header's trait term. Constants nested inside type arguments, such
+  as `Pair<[i32; N]>`, keep their terms and declared scalars. This does not
+  establish support for constant parameters on traits themselves: imported
+  constant-generic traits are rejected, and the local predicate validator
+  counts only type parameters. Program catalog admission must check the
+  complete defining binder before accepting an application.
 - **Trait identity.** A local trait is its declaration's `DeclId`; an
   imported one is the defining unit's nominal key, `(library, unit,
   NOMINAL, interface index)`, the key that unit's export gives it. Private
@@ -253,7 +256,7 @@ count)`. Every entry has one; an entry without facts has counts 0.
 
 Step 14d checks every fact against its producers: predicate status and
 owner, the ordered argument rows, the subject token, the trait
-reference, the impl header's status and trait root, the trait term's
+reference, the impl header's status and canonical trait-node shape, the trait term's
 `DeclId` against the trait reference, method validation status, the
 required symbol and the native symbol, and that an impl binds as many
 members as its trait requires. A failure raises `RT_INV_TRAIT_FACT` (10),
@@ -261,6 +264,18 @@ members as its trait requires. A failure raises `RT_INV_TRAIT_FACT` (10),
 block) or `RT_INV_TRAIT_IDENTITY` (12) and marks the owner's entry
 incomplete, so the build is not ready. A predicate whose owner has no
 directory entry raises 10 without a record.
+
+The checker resolves a trait impl from the canonical `payload.b` row; the
+export uses that same row. Its copied predicate column is not independent
+evidence of identity. Argument counts must agree with the canonical range,
+including zero. Predicate diagnostics span the trait name/path through the
+accepted name token, excluding type arguments and following delimiters.
+
+Before solver admission, the program consumer must also resolve imported
+trait and required-member keys to committed entries, check their kinds and
+parent identities, verify the complete defining binder's arity, and check
+distinct method bindings. Export currently checks local member identity and
+producer counts; the cross-unit checks below run only in the test probe.
 
 `shaders/tests/retention_traits.slang` validates the facts from the store
 alone, per entry: exact owners and ordinals, subjects in the entry's binder

@@ -65,6 +65,8 @@ pub impl<T: Show> Show for Wrap<T> {
 }
 pub impl Pair<i32> for Local { pub fn left(&self, value: i32) -> i32 { return value; } }
 impl Tag for Local {}
+trait Hidden { fn h(&self) -> i32; }
+impl Hidden for Local { fn h(&self) -> i32 { return 7; } }
 fn local_tag<T>(value: T) -> T where T: Tag { return value; }
 fn main() -> i32 { return 0; }
 "#;
@@ -188,8 +190,7 @@ impl Store {
     fn methods_named<'a>(&'a self, impl_decl: u32, name: &str) -> Vec<&'a [u32; 8]> {
         self.bindings(impl_decl).iter().filter(|b| self.method_name(b) == name).collect()
     }
-    /// Predicates of `library` whose bound is `text`. The parser's span of
-    /// a bound node can end at the anchor token after it (`Show {`).
+    /// Predicates of `library` whose diagnostic names exactly `text`.
     fn predicates_with<'a>(&'a self, library: u32, text: &str) -> Vec<&'a [u32; 8]> {
         self.traits
             .iter()
@@ -208,10 +209,7 @@ impl Store {
 }
 
 fn bound_is(span: &str, expected: &str) -> bool {
-    span.strip_prefix(expected).is_some_and(|rest| {
-        let rest = rest.trim_start();
-        rest.is_empty() || rest.starts_with(['{', ',', '>'])
-    })
+    span == expected
 }
 
 fn probe(store: &ProgramRetention) -> Vec<Vec<u32>> {
@@ -264,7 +262,7 @@ fn program_retention_exports_trait_predicates_and_method_bindings() {
 
     // Traits by their declaration entries and keys.
     let traits = s.dir.iter().filter(|e| e[1] == KIND_TRAIT).map(|e| (e[0], s.keys[e[0] as usize])).collect::<Vec<_>>();
-    assert_eq!(traits.len(), 5, "Tag, Show, Pair, Comparator in A and Tag in B: {traits:?}");
+    assert_eq!(traits.len(), 6, "Tag, Show, Pair, Comparator in A; Tag and Hidden in B: {traits:?}");
     let a_traits = traits.iter().filter(|(_, k)| k[0] == 20).collect::<Vec<_>>();
     assert!(traits.iter().all(|(_, k)| k[2] == NS_NOMINAL));
 
@@ -289,7 +287,10 @@ fn program_retention_exports_trait_predicates_and_method_bindings() {
     let inherited = show.iter().filter(|r| s.param_owner(r[2]) != r[0]).count();
     assert_eq!(inherited, 1, "only `inherit` bounds the impl's T; `shadow` bounds its own T");
 
-    let pair_generic = s.predicates_with(20, "Pair<T>");
+    let pair_bounds = s.predicates_with(20, "Pair");
+    assert_eq!(pair_bounds.len(), 3, "exact trait-name spans exclude arguments and following syntax");
+    let pair_generic = pair_bounds.iter().copied()
+        .filter(|r| s.term_args(r[3])[0] & PARAM_BIT != 0).collect::<Vec<_>>();
     assert_eq!(pair_generic.len(), 2, "needs and scalar: {pair_generic:?}");
     let pair_trait = pair_generic[0][4];
     assert_ne!(pair_trait, show_trait);
@@ -301,8 +302,9 @@ fn program_retention_exports_trait_predicates_and_method_bindings() {
         assert_eq!(s.param_owner(args[0]), record[0], "the argument is the owner's own T");
     }
 
-    // A typed constant argument: `[i32; N]` with N's declared scalar.
-    let sized = s.predicates_with(20, "Pair<[i32; N]>");
+    // A type argument containing a constant: `[i32; N]` keeps N's scalar.
+    let sized = pair_bounds.iter().copied()
+        .filter(|r| s.term_args(r[3])[0] & PARAM_BIT == 0).collect::<Vec<_>>();
     assert_eq!(sized.len(), 1);
     let array = s.term_args(sized[0][3])[0];
     assert_eq!(s.heads[array as usize][0] & 0xff, TERM_ARRAY);
@@ -325,7 +327,7 @@ fn program_retention_exports_trait_predicates_and_method_bindings() {
 
     // Impls in B: imported trait identities meet A's declarations.
     let impls = lanes.iter().filter(|l| l[T_KIND] == KIND_IMPL && s.keys[l[T_DECL] as usize][0] == 21).collect::<Vec<_>>();
-    assert_eq!(impls.len(), 4, "{impls:?}");
+    assert_eq!(impls.len(), 5, "{impls:?}");
     let show_impls = impls.iter().filter(|l| l[T_IMPL_TRAIT] == show_trait).collect::<Vec<_>>();
     assert_eq!(show_impls.len(), 2);
     for lane in &show_impls {
@@ -359,6 +361,17 @@ fn program_retention_exports_trait_predicates_and_method_bindings() {
     assert_eq!(s.heads[sigs[1] as usize][1], pair_trait);
     let tag_impl = impls.iter().find(|l| l[T_IMPL_TRAIT] == tags_b[0][4]).expect("B's own Tag impl");
     assert_eq!((tag_impl[T_BINDINGS], tag_impl[T_REQUIRED]), (0, 0));
+
+    let private_impl = impls.iter().find(|l| s.methods_named(l[T_DECL], "h").len() == 1)
+        .expect("the private Hidden impl");
+    let binding = s.methods_named(private_impl[T_DECL], "h")[0];
+    let target = s.keys[binding[3] as usize];
+    assert_eq!(target[0], 21);
+    assert_eq!(target[3] & 0xc000_0000, 0x4000_0000, "private native symbol, not a public alias");
+    assert_eq!(s.entry(binding[3])[1], KIND_METHOD);
+    assert_eq!(s.entry(binding[3])[2], private_impl[T_DECL]);
+    assert_eq!(s.entry(binding[2])[1], KIND_REQUIRED);
+    assert_eq!(s.entry(binding[2])[2], private_impl[T_IMPL_TRAIT]);
 
     // A generic impl head in A: `Comparator<T, T> for Natural<T>` over the
     // impl's own T, with its one method bound.
@@ -427,6 +440,8 @@ fn program_retention_trait_facts_reject_faults_retry_and_rebuild() {
         ("predicate_method_validation_required_symbol", u32::MAX, INV_TRAIT_FACT),
         ("semantic_function_native_symbol_by_hir", 0x4000_0001, INV_TRAIT_IDENTITY),
         ("predicate_bound_reference", u32::MAX, INV_TRAIT_FACT),
+        ("predicate_bound_arg_count", 0, INV_TRAIT_FACT),
+        ("predicate_bound_token", u32::MAX, INV_TRAIT_FACT),
     ] {
         let faulted = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
         faulted.set_export_fault(Some((table, word)));
