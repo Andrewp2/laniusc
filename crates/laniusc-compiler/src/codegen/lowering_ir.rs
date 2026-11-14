@@ -10690,6 +10690,79 @@ fn lowering_compiler_graph_builder(
 mod tests {
     use super::*;
 
+    /// The schedule radix loop runs every digit: one histogram, scan and
+    /// scatter per direction, starting in the direction the step parity
+    /// selects, with each scatter writing the order the other direction
+    /// reads, for `steps.div_ceil(2)` iterations.
+    fn assert_schedule_radix_region(graph: &CompilerGraph, steps: u32) {
+        let region = graph
+            .repeated_regions()
+            .iter()
+            .find(|region| {
+                graph.passes()[region.first_pass.index()]
+                    .name
+                    .starts_with("lir.semantic.schedule.histogram.")
+            })
+            .expect("schedule radix region");
+        assert_eq!(region.iterations, steps.div_ceil(2));
+        assert!(2 * region.iterations - steps <= 1, "at most one extra digit pass");
+        let body = &graph.passes()[region.first_pass.index()..][..region.pass_count as usize];
+        let half = body.len() / 2;
+        assert!(half > 2 && body.len() == 2 * half, "two complete directions");
+        let (first, second) = if steps % 2 == 0 { ("even", "odd") } else { ("odd", "even") };
+        for (passes, direction) in [(&body[..half], first), (&body[half..], second)] {
+            assert_eq!(passes[0].name, format!("lir.semantic.schedule.histogram.{direction}"));
+            assert_eq!(passes[half - 1].name, format!("lir.semantic.schedule.scatter.{direction}"));
+            assert!(passes[1..half - 1].iter().all(|pass| {
+                pass.name.starts_with("lir.semantic.schedule.scan.") && pass.name.ends_with(direction)
+            }));
+        }
+        let order = |pass: &PassDesc, binding: &str| {
+            pass.accesses
+                .iter()
+                .find(|access| access.binding == binding)
+                .map(|access| access.resource)
+                .unwrap_or_else(|| panic!("{} binds {binding}", pass.name))
+        };
+        assert_ne!(
+            order(&body[0], "target_schedule_order_in"),
+            order(&body[half], "target_schedule_order_in")
+        );
+        assert_eq!(
+            order(&body[half - 1], "target_schedule_order_out"),
+            order(&body[half], "target_schedule_order_in")
+        );
+        assert_eq!(
+            order(&body[2 * half - 1], "target_schedule_order_out"),
+            order(&body[0], "target_schedule_order_in")
+        );
+    }
+
+    /// A multi-hop pointer jump over chains of up to `rows` links: an a-to-b
+    /// and a b-to-a round per iteration, each round following
+    /// `POINTER_JUMP_HOPS` links, enough iterations to reach every root.
+    fn assert_hop_jump_region(graph: &CompilerGraph, relation: &str, rows: u32) {
+        let region = graph
+            .repeated_regions()
+            .iter()
+            .find(|region| {
+                graph.passes()[region.first_pass.index()].name
+                    == format!("{relation}.step_a_to_b")
+            })
+            .unwrap_or_else(|| panic!("{relation} region"));
+        assert_eq!(region.pass_count, 2);
+        assert_eq!(
+            graph.passes()[region.first_pass.index() + 1].name,
+            format!("{relation}.step_b_to_a")
+        );
+        assert_eq!(region.iterations, pointer_jump_hop_pairs(rows), "{relation}");
+        assert!(
+            u64::from(POINTER_JUMP_HOPS).pow(2 * region.iterations) > u64::from(rows),
+            "{relation}: {} iterations cover {rows} links",
+            region.iterations
+        );
+    }
+
     #[test]
     fn cyclic_short_lifetime_registers_never_overlap() {
         let lanes = opcode::X86_TEMP_REGISTER_COUNT;
@@ -11410,12 +11483,7 @@ mod tests {
         assert_eq!(small.packed_bits, 0x8000_d354);
         assert_eq!(small.steps, 6);
         let graph = lowering_compiler_graph(small_capacities, LoweringTarget::Wasm).unwrap();
-        assert!(graph.repeated_regions().iter().any(|region| {
-            region.iterations == 3
-                && region.pass_count == 12
-                && graph.passes()[region.first_pass.index()].name
-                    == "lir.semantic.schedule.histogram.even"
-        }));
+        assert_schedule_radix_region(&graph, small.steps);
 
         let odd_capacities = LoweringCapacities {
             source_bytes: 4_096,
@@ -11432,12 +11500,7 @@ mod tests {
         assert_eq!(odd.packed_bits, 0x8000_820f);
         assert_eq!(odd.steps, 4);
         let graph = lowering_compiler_graph(odd_capacities, LoweringTarget::Wasm).unwrap();
-        assert!(graph.repeated_regions().iter().any(|region| {
-            region.iterations == 2
-                && region.pass_count == 12
-                && graph.passes()[region.first_pass.index()].name
-                    == "lir.semantic.schedule.histogram.even"
-        }));
+        assert_schedule_radix_region(&graph, odd.steps);
     }
 
     #[test]
@@ -11572,33 +11635,14 @@ mod tests {
                 graph.resource_id("lir.opt.operands"),
                 "identity OptIR must take ownership of semantic operand storage"
             );
-            assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == 3
-                    && region.pass_count == 2
-                    && graph.passes()[region.first_pass.index()].name
-                        == "lir.semantic.execution_rank.step_a_to_b"
-            }));
+            assert_hop_jump_region(&graph, "lir.semantic.execution_rank", capacities.hir_nodes);
             let schedule_layout = TargetScheduleRadixLayout::for_capacities(capacities);
-            assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == schedule_layout.steps.div_ceil(2)
-                    && region.pass_count == 12
-                    && graph.passes()[region.first_pass.index()].name
-                        == if schedule_layout.steps % 2 == 0 {
-                            "lir.semantic.schedule.histogram.even"
-                        } else {
-                            "lir.semantic.schedule.histogram.odd"
-                        }
-            }));
-            let dominator_jump_pairs = (u32::BITS
-                - capacities.optimization_block_capacity().leading_zeros())
-            .max(1)
-            .div_ceil(2);
-            assert!(graph.repeated_regions().iter().any(|region| {
-                region.iterations == dominator_jump_pairs
-                    && region.pass_count == 2
-                    && graph.passes()[region.first_pass.index()].name
-                        == "lir.opt.dominators.depth.step_a_to_b"
-            }));
+            assert_schedule_radix_region(&graph, schedule_layout.steps);
+            assert_hop_jump_region(
+                &graph,
+                "lir.opt.dominators.depth",
+                capacities.optimization_block_capacity(),
+            );
             assert!(
                 graph.repeated_regions().iter().any(|region| {
                     region.iterations == 1

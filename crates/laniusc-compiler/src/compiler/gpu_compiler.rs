@@ -958,8 +958,17 @@ mod tests {
             }
             .unwrap_or_else(|error| panic!("{} compile: {error}", target_name(target)))
         };
-        let larger: String = (0..2_000)
-            .map(|index| format!("fn f{index}(x: i32) -> i32 {{ return x + {index}; }} "))
+        // Pointer-jump pairs come in buckets of 8 bits of rows
+        // (`pointer_jump_hop_pairs`), and a job's capacities are bucketed to
+        // at least 4096 rows, so every case below needs 2 pairs. The retained
+        // workspace reaches past 2^16 compact-HIR rows and semantic
+        // instructions, the next bucket, so a job records fewer pairs.
+        let larger: String = (0..8_000)
+            .map(|index| {
+                format!(
+                    "fn f{index}(x: i32) -> i32 {{ let a: i32 = x + {index}; let b: i32 = a * 2; return b - x; }} "
+                )
+            })
             .chain(["fn main() -> i32 { return f7(35); }".to_string()])
             .collect();
         for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
@@ -1027,9 +1036,16 @@ mod tests {
                 .expect("retained lowering workspace");
             let job_pairs = retained.job_jump_pairs(bounds.hir_rows, LoweringTarget::X86_64);
             assert!(
+                retained.hir_nodes > u16::MAX as u32 && retained.semantic_instructions > u16::MAX as u32,
+                "{case}: the retained workspace ({} HIR rows, {} semantic instructions) should reach the third pointer-jump bucket",
+                retained.hir_nodes,
+                retained.semantic_instructions
+            );
+            assert!(
                 job_pairs.ssa_value_link < retained.jump_pairs().ssa_value_link
                     && job_pairs.execution_rank < retained.jump_pairs().execution_rank,
-                "{case}: the retained workspace should record more pairs than the job needs"
+                "{case}: the retained workspace should record more pairs than the job needs ({job_pairs:?} of {:?})",
+                retained.jump_pairs()
             );
             if wasm_runs {
                 let conservative = compile(LoweringTarget::Wasm, source, true);

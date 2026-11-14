@@ -1381,10 +1381,16 @@ mod tests {
                 crate::compiler::GpuCompilerBackends::all(),
             ))
             .unwrap();
-        let before = crate::gpu::passes_core::this_thread_gpu_activity();
+        // The first request of each target may create pipelines that are
+        // prepared lazily; a repeated request reuses every one of them.
         let source = "fn main() -> i32 { return 42; }";
-        pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
-        pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
-        assert_eq!(crate::gpu::passes_core::this_thread_gpu_activity().since(before).pipelines, 0);
+        let compile_both = || {
+            pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
+            pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
+        };
+        compile_both();
+        let warm = crate::gpu::passes_core::this_thread_gpu_activity();
+        compile_both();
+        assert_eq!(crate::gpu::passes_core::this_thread_gpu_activity().since(warm).pipelines, 0);
     }
 }
