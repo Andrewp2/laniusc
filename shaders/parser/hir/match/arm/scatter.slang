@@ -108,12 +108,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (node >= gHirMatch.n || !valid_node(node))
         return;
 
-    if (gHirMatch.retain_debug_rows != 0u)
-    {
-        hir_match_payload_owner_arm[node] = INVALID;
-        hir_match_payload_match_node[node] = INVALID;
-        hir_match_payload_ordinal[node] = INVALID;
-    }
+    // These rows are graph workspace that may alias other passes' storage.
+    // Initialize every active node: canonical payload marking reads
+    // hir_match_payload_owner_arm for each pattern node, including `let`
+    // patterns that publish_payload leaves unowned.
+    hir_match_payload_owner_arm[node] = INVALID;
+    hir_match_payload_match_node[node] = INVALID;
+    hir_match_payload_ordinal[node] = INVALID;
 
     uint prod = node_kind[node];
     if (prod == PROD_MATCH_ARM)
