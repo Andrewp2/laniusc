@@ -15,6 +15,7 @@ use super::{
     trait_solver::{
         AdmittedCall,
         CheckedReplayCalls,
+        ClosureOrigin,
         NativeProgramSession,
         ReplayScope,
         native_program_error,
@@ -264,6 +265,21 @@ impl GpuCompiler<'_> {
                 from_cache: false,
             })
             .collect::<Vec<_>>();
+        // Instances each original unit lowered itself: their bodies are
+        // already in its object, so their keys are published before any scan.
+        let exec_routes = units
+            .iter()
+            .zip(&contexts)
+            .map(|(unit, context)| {
+                ExecRoutes::admit(
+                    unit,
+                    context,
+                    &program,
+                    &defined_identities,
+                    &mut specializations,
+                )
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
         host_span("setup", setup_started);
         // Bodies the instance closure scheduled ahead of their parent's
         // replay, and every key a scan patched (to find unused predictions).
@@ -301,9 +317,16 @@ impl GpuCompiler<'_> {
                     .iter()
                     .map(|call| (call.checked_call().call_hir, call))
                     .collect();
+                let routes = exec_routes.get(context_index).and_then(Option::as_ref);
                 for (symbol_index, &call_hir) in context.call_hirs.iter().enumerate() {
-                    let Some(&admitted) = calls_by_hir.get(&call_hir) else {
-                        continue;
+                    // A generic call in a body the unit lowered itself is
+                    // routed through its callee instance's admitted origin.
+                    let admitted = match calls_by_hir.get(&call_hir) {
+                        Some(&admitted) => admitted,
+                        None => match routes.map(|routes| routes.call(call_hir)).transpose()?.flatten() {
+                            Some(admitted) => admitted,
+                            None => continue,
+                        },
                     };
                     let call = admitted.checked_call();
                     let Some((library_id, unit_id, declaration_index)) =
@@ -606,6 +629,14 @@ impl GpuCompiler<'_> {
                     };
                     let (output, times, from_cache) = match work {
                         RunWork::Replay(run) => {
+                            if crate::options::get().trace.instance_table {
+                                let (library, unit, _) = pending[&run.keys[0]].target;
+                                eprintln!(
+                                    "[specialization] replay of unit {library}:{unit}: {} bodies{}",
+                                    run.keys.len(),
+                                    if run.copies { " (copies)" } else { "" },
+                                );
+                            }
                             let request = if run.copies {
                                 program.prepare_instance_batch(&origins)
                             } else {
@@ -814,6 +845,105 @@ impl GpuCompiler<'_> {
     }
 }
 
+/// The instances an original unit lowered in its own job
+/// (CheckedInstanceExec). A selected instance whose origin call the trait
+/// solver admitted, and whose virtual function the object defines, is the
+/// body of its environment key: no replay compiles it. Every generic call
+/// in a selected body is routed through its callee's admitted origin, to
+/// another selected body or to a replay; a callee without one fails the
+/// unit, since the object already calls it.
+struct ExecRoutes {
+    /// Admitted origin of each table entry, when it has one.
+    origins: Vec<Option<AdmittedCall>>,
+    /// (virtual call row, callee table entry), by row.
+    calls: Vec<(u32, u32)>,
+    first_row: u32,
+}
+
+impl ExecRoutes {
+    fn admit(
+        unit: &CompiledSourcePackUnit,
+        context: &ReplayContext,
+        program: &NativeProgramSession,
+        defined_identities: &BTreeMap<(u32, u32), HashSet<&[u8]>>,
+        specializations: &mut BTreeMap<Vec<u8>, (Vec<u8>, Vec<u32>)>,
+    ) -> Result<Option<Self>, CompileError> {
+        let Some(exec) = unit.instance_closure.as_ref().and_then(|closure| closure.exec.as_ref()) else {
+            return Ok(None);
+        };
+        let (library, unit_id) = (context.library_id, context.unit_id);
+        let closure = program
+            .instance_closure_origins([library, unit_id])
+            .iter()
+            .filter_map(|origin: &ClosureOrigin| origin.closure_index.map(|index| (index, &origin.call)))
+            .collect::<HashMap<_, _>>();
+        let defined = defined_identities.get(&(library, unit_id));
+        let mut origins = Vec::with_capacity(exec.entries.len());
+        let mut routed = 0usize;
+        for entry in &exec.entries {
+            // The origin must call this unit's own body with a closed
+            // environment (closure origins are concrete already).
+            let origin = closure.get(&entry.closure_index).copied().filter(|origin| {
+                native_target(origin.checked_call().target, library, unit_id)
+                    .is_some_and(|(target_library, target_unit, _)| {
+                        (target_library, target_unit) == (library, unit_id)
+                    })
+            });
+            let environment = origin.and_then(|origin| {
+                checked_replay_environment(origin.checked_call(), library, unit_id).ok().flatten()
+            });
+            let Some((key, layouts)) = environment else {
+                origins.push(None);
+                continue;
+            };
+            let identity = declaration_identity(library, unit_id, 0x4000_0000 | entry.virtual_token);
+            if entry.selected() && defined.is_some_and(|defined| defined.contains(identity.as_slice())) {
+                match specializations.get_mut(&key) {
+                    Some((_, existing)) => {
+                        CheckedBodySpecialization::merge_layout_witnesses(existing, &layouts)
+                            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+                    }
+                    None => {
+                        specializations.insert(key, (identity, layouts));
+                        routed += 1;
+                    }
+                }
+            }
+            origins.push(origin.cloned());
+        }
+        if crate::options::get().trace.instance_table {
+            eprintln!(
+                "[instance-exec] unit {library}:{unit_id}: {} of {} entries selected, {routed} bodies routed in the unit, {} generic calls",
+                exec.entries.iter().filter(|entry| entry.selected()).count(),
+                exec.entries.len(),
+                exec.calls.len(),
+            );
+        }
+        Ok(Some(Self { origins, calls: exec.calls.clone(), first_row: exec.first_row }))
+    }
+
+    /// The admitted origin of the instance a virtual call row calls; None
+    /// for any other call.
+    fn call(&self, call_hir: u32) -> Result<Option<&AdmittedCall>, CompileError> {
+        if call_hir < self.first_row {
+            return Ok(None);
+        }
+        let Ok(position) = self.calls.binary_search_by_key(&call_hir, |&(row, _)| row) else {
+            return Ok(None);
+        };
+        let callee = self.calls[position].1 as usize;
+        self.origins
+            .get(callee)
+            .and_then(Option::as_ref)
+            .map(Some)
+            .ok_or_else(|| {
+                CompileError::GpuCodegen(format!(
+                    "a body lowered in its unit calls instance table entry {callee}, which has no admitted origin"
+                ))
+            })
+    }
+}
+
 /// The instance closure's bodies (D1): each original unit's closed
 /// instances of depth 2 and deeper, scheduled in the first round beside the
 /// bodies its calls reach directly, so a chain of N levels replays in fewer
@@ -840,7 +970,8 @@ impl ClosureIntake {
             if !seen.insert((owner_library, owner_unit)) {
                 continue;
             }
-            for (depth, admitted) in program.instance_closure_origins([owner_library, owner_unit]) {
+            for origin in program.instance_closure_origins([owner_library, owner_unit]) {
+                let (depth, admitted) = (&origin.depth, &origin.call);
                 let call = admitted.checked_call();
                 let Some(target) = native_target(call.target, owner_library, owner_unit) else {
                     continue;

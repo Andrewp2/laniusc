@@ -1147,15 +1147,34 @@ impl<'gpu> GpuCompiler<'gpu> {
     {
         self.type_checker
             .with_post_typecheck_workspace(semantic, |workspace| {
+                let view = semantic.view();
+                // Lowering reads the compact HIR through counts that include
+                // the execution rows of the instances this job lowers, whose
+                // virtual tokens follow the job's own
+                // (type_checker/closure/instance_exec.slang).
+                let [count, call_arg_count, field_count, match_arm_count,
+                    match_payload_row_count, array_element_row_count, string_count,
+                    param_count] = view.lowering_counts;
+                let hir_inputs = crate::codegen::lowering::GpuSemanticHirInputs {
+                    count,
+                    call_arg_count,
+                    field_count,
+                    match_arm_count,
+                    match_payload_row_count,
+                    array_element_row_count,
+                    string_count,
+                    param_count,
+                    ..hir.into()
+                };
                 self.ensure_lowering_pipeline(
                     target,
                     source_bytes,
-                    tokens,
+                    gpu_type_checker::exec_lowering_token_capacity(tokens),
                     hir_nodes,
                     artifact_kind,
                     workspace,
-                    hir.into(),
-                    semantic.view(),
+                    hir_inputs,
+                    view,
                 )
             })
             .ok_or_else(|| "type-check workspace is unavailable for lowering".to_string())?
@@ -2939,6 +2958,7 @@ fn object_lowering_target(target: SourcePackArtifactTarget) -> Result<LoweringTa
 fn retain_native_call_owners(
     native_hirs: &[u32],
     checked_owners: &[gpu_type_checker::CheckedCallOwner],
+    exec: Option<&gpu_type_checker::CheckedInstanceExec>,
 ) -> anyhow::Result<Vec<u32>> {
     let mut by_hir = std::collections::BTreeMap::new();
     for owner in checked_owners {
@@ -2948,8 +2968,11 @@ fn retain_native_call_owners(
     }
     // Inlining may produce multiple native occurrences of one checked source
     // call; all of them retain the same explicit lexical owner.
-    native_hirs.iter().map(|hir| by_hir.get(hir).copied().ok_or_else(||
-        anyhow::anyhow!("native call HIR {hir} has no checked lexical owner"))).collect()
+    // A call in an execution copy of an instance belongs to the copy's
+    // virtual function (closure/instance_exec.slang).
+    native_hirs.iter().map(|hir| by_hir.get(hir).copied()
+        .or_else(|| exec.and_then(|exec| exec.owner(*hir)))
+        .ok_or_else(|| anyhow::anyhow!("native call HIR {hir} has no checked lexical owner"))).collect()
 }
 
 fn finish_source_pack_unit(
@@ -3012,6 +3035,7 @@ fn finish_source_pack_unit(
     } else {
         retain_native_call_owners(
             &artifacts.native_call_hirs, &artifacts.native_call_owners,
+            artifacts.instance_closure.exec.as_ref(),
         ).map_err(|error| CompileError::GpuFrontend(format!(
             "native call ownership retention failed: {error:#}"
         )))?
@@ -3074,7 +3098,8 @@ fn finish_source_pack_unit(
         }
     }
     let closure = &artifacts.instance_closure;
-    let instance_closure = (closure.found != 0 || closure.error.is_some() || !closure.copy_rows.is_empty())
+    let instance_closure = (closure.found != 0 || closure.error.is_some() || !closure.copy_rows.is_empty()
+        || closure.exec.is_some())
         .then(|| std::sync::Arc::new(std::mem::take(&mut artifacts.instance_closure)));
     Ok(CompiledSourcePackUnit {
         owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
@@ -5351,10 +5376,10 @@ mod tests {
             CheckedCallOwner { call_hir: 7, function_hir: 3 },
             CheckedCallOwner { call_hir: 9, function_hir: u32::MAX },
         ];
-        assert_eq!(retain_native_call_owners(&[9, 7, 7], &checked).unwrap(),
+        assert_eq!(retain_native_call_owners(&[9, 7, 7], &checked, None).unwrap(),
             [u32::MAX, 3, 3]);
-        assert!(retain_native_call_owners(&[10], &checked).is_err());
-        assert!(retain_native_call_owners(&[7], &[checked[0], checked[0]]).is_err());
+        assert!(retain_native_call_owners(&[10], &checked, None).is_err());
+        assert!(retain_native_call_owners(&[7], &[checked[0], checked[0]], None).is_err());
     }
 
     #[test]

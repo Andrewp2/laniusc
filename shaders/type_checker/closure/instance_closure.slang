@@ -46,6 +46,10 @@ public RWStructuredBuffer<uint4> instance_closure_targets;
 // call (+1) of each call row; 0 ends a list.
 public RWStructuredBuffer<uint> instance_closure_edge_head;
 public RWStructuredBuffer<uint> instance_closure_edge_next;
+// The value environment of each edge call (call_env_ct.x when 01_mark linked
+// it). The instance table reads it after the body passes have republished
+// call_env_ct for the specialized rows.
+public RWStructuredBuffer<uint> instance_closure_edge_env;
 
 public static const uint IC_COUNT_LENGTH = 0u;   // instances appended
 public static const uint IC_COUNT_START = 1u;    // this round's first instance

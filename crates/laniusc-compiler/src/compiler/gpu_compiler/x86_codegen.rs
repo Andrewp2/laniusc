@@ -1466,6 +1466,120 @@ impl Hidden for i32 { fn private_trait(self)->i32 { return self; } }
         }
     }
 
+    /// Compiles one unit, specializes it alone and runs it. Returns how many
+    /// objects specialization published: 1 when every generic body was
+    /// lowered in the unit's own job, more when replays compiled some.
+    fn specialized_unit_exit(compiler: &GpuCompiler<'_>, source: &str, label: &str, expected: i32) -> usize {
+        let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+            vec![source.to_owned()].into(),
+            0,
+            0,
+            Vec::new().into(),
+            SourcePackArtifactTarget::X86_64,
+        ))
+        .unwrap_or_else(|error| panic!("{label}: compile: {error:?}"));
+        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
+            .unwrap_or_else(|error| panic!("{label}: specialize: {error:?}"));
+        let input =
+            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
+                .expect("prepare specialized program");
+        let linked = compiler
+            .x86_linker()
+            .expect("x86 linker")
+            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
+            .unwrap_or_else(|error| panic!("{label}: link: {error:?}"));
+        assert_x86_main_exit(&linked, label, expected);
+        objects.len()
+    }
+
+    /// Closed instances of the unit's own generic functions are lowered in
+    /// the unit's job (closure/instance_exec.slang): each instance has its
+    /// own function, locals and storage, calls between instances route to
+    /// one another, and no replay compiles any of them.
+    #[test]
+    fn closed_local_instances_lower_in_their_unit_without_replay() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let cases = [
+            (
+                "in-unit-scalar-instances",
+                "fn twice<T>(x: T, y: T, first: bool) -> T { if (first) { return x; } return y; }
+                 fn main() -> i32 { let a: i32 = twice(40, 1, true); let b: i64 = twice(1, 2, false); return a + (b as i32); }",
+                42,
+            ),
+            (
+                "in-unit-equal-width-nominals",
+                "struct Meters { value: i32, scale: i64 } struct Pair { wide: i64, narrow: i32 }
+                 fn pick<T>(first: T, second: T, take_first: bool) -> T { if (take_first) { return first; } return second; }
+                 fn main() -> i32 {
+                     let m: Meters = pick(Meters { value: 3, scale: 4 }, Meters { value: 5, scale: 6 }, false);
+                     let p: Pair = pick(Pair { wide: 10, narrow: 20 }, Pair { wide: 30, narrow: 40 }, true);
+                     return m.value * 10 + (m.scale as i32) + p.narrow - (p.wide as i32);
+                 }",
+                66,
+            ),
+            (
+                "in-unit-independent-storage",
+                "fn bump<T>(start: T, other: T, rounds: i32) -> T {
+                     let current: T = start; let i = 0;
+                     while (i < rounds) { if (i % 2 == 0) { current = other; } else { current = start; } i += 1; }
+                     return current;
+                 }
+                 fn main() -> i32 { let a: i32 = bump(1, 2, 3); let b: i64 = bump(10, 20, 4); let c: i32 = bump(7, 8, 0); return a * 100 + (b as i32) + c; }",
+                217,
+            ),
+            (
+                "in-unit-control-flow-and-strings",
+                "fn shape<T>(value: T, n: i32) -> i32 {
+                     let text: str = \"four\"; let held: T = value; let total = 4;
+                     for k in 0..n { if (k == 1) { continue; } total += k; }
+                     let j = 0; while (true) { j += 1; if (j > 2) { break; } }
+                     let kind = match (n) { 0 -> 100, 3 -> 200, _ -> 30 };
+                     return total + j + kind;
+                 }
+                 fn main() -> i32 { if (shape(5, 3) != 209 || shape(true, 0) != 107) { return 1; } return shape(false, 4) - 42; }",
+                0,
+            ),
+            (
+                "in-unit-recursion-and-nested-instances",
+                "fn count<T>(value: T, n: i32) -> i32 { if (n <= 0) { return 0; } return 1 + count(value, n - 1); }
+                 fn both<T>(value: T, n: i32) -> i32 { return count(value, n) + count(value, n); }
+                 fn main() -> i32 { return count(1, 5) + count(true, 7) + both(3, 10) + both(false, 5); }",
+                42,
+            ),
+            (
+                "in-unit-member-layouts",
+                "struct Wide { a: i64, b: i64, c: i64 } struct Cell<T> { head: T, tail: i32 }
+                 fn tail<T>(cell: Cell<T>) -> i32 { let copy: Cell<T> = cell; return copy.tail; }
+                 fn main() -> i32 {
+                     return tail(Cell { head: 1, tail: 3 }) + tail(Cell { head: Wide { a: 1, b: 2, c: 3 }, tail: 5 }) * 10
+                         + tail(Cell { head: true, tail: 7 }) * 20;
+                 }",
+                193,
+            ),
+        ];
+        for (label, source, expected) in cases {
+            assert_eq!(specialized_unit_exit(&compiler, source, label, expected), 1,
+                "{label}: a replay compiled a body the unit lowered");
+        }
+    }
+
+    /// An instance the execution rows cannot close replays, by the
+    /// selection rules of closure/08_exec_select.slang: here, constant
+    /// parameters.
+    #[test]
+    fn instances_with_constant_parameters_replay() {
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let objects = specialized_unit_exit(
+            &compiler,
+            "fn keep<const N: usize>(v: [i32; N]) -> [i32; N] { return v; }
+             fn twice<T>(x: T) -> T { return x; }
+             fn main() -> i32 { let a: [i32; 2] = keep([40, 2]); let b: [i32; 3] = keep([1, 2, 3]); return a[0] + a[1] + twice(b[2]) - 3; }",
+            "replayed-constant-instances",
+            42,
+        );
+        assert!(objects > 1, "the constant instances replay");
+    }
+
     #[test]
     fn implementation_evidence_targets_defined_public_and_private_native_methods() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");

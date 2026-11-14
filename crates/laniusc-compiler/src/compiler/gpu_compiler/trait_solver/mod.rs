@@ -15,6 +15,7 @@ pub(super) use dispatch::{SolverWorkspacePool, prepare_kernels as prepare_solver
 
 pub(super) use native_session::{
     CheckedReplayCalls,
+    ClosureOrigin,
     DeclarationsOnlyTemplate,
     NativeProgramSession,
     ReplayScope,

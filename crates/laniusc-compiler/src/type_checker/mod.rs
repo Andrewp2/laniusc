@@ -20,7 +20,7 @@ pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
 mod generic_body;
 mod generic_calls;
 mod instance_closure_passes;
-pub(crate) use instance_closure_passes::instance_table_checked;
+pub(crate) use instance_closure_passes::{exec_lowering_token_capacity, instance_table_checked};
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod owner_spans;
@@ -52,6 +52,7 @@ pub(crate) use generic_calls::{
     CheckedGenericArgument,
     CheckedGenericCall,
     CheckedInstanceClosure,
+    CheckedInstanceExec,
     CheckedRowFact,
     CheckedGenericConstant,
     CheckedGenericTarget,
@@ -833,6 +834,16 @@ impl ResidentTypeCheckWorkspace {
             expr_scalar_type_by_hir: graph.buffer("semantic_expr_scalar_type_by_hir")?,
             public_decl_index_by_hir: self.module_path.interface_public_decl_index_by_hir.clone(),
             struct_init_field_ordinal_by_row: graph.buffer("struct_init_field_ordinal_by_row")?,
+            lowering_counts: [
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[0])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[1])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[2])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[3])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[4])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[5])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[6])?,
+                graph.buffer(instance_closure_passes::EXEC_LOWERING_COUNTS[7])?,
+            ],
             generic_call_inputs: semantic_interface_required
                 .then(|| {
                     generic_calls::RetainedGenericCallInputs::new(
@@ -998,6 +1009,10 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub public_decl_index_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical declaration-order ordinal for each compact literal-field row.
     pub struct_init_field_ordinal_by_row: &'a LaniusBuffer<u32>,
+    /// Lowering's row counts of the compact HIR and its side tables, with
+    /// the execution rows of instances lowered in this job
+    /// (`EXEC_LOWERING_COUNTS` order).
+    pub lowering_counts: &'a [LaniusBuffer<u32>; 8],
 }
 
 /// Independently owned compact semantic boundary for one checked unit.
@@ -1063,6 +1078,7 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     expr_scalar_type_by_hir: LaniusBuffer<u32>,
     public_decl_index_by_hir: LaniusBuffer<u32>,
     struct_init_field_ordinal_by_row: LaniusBuffer<u32>,
+    lowering_counts: [LaniusBuffer<u32>; 8],
 }
 
 impl OwnedGpuSemanticArtifact {
@@ -1124,6 +1140,7 @@ impl OwnedGpuSemanticArtifact {
             (&self.public_decl_index_by_hir).into(),
             (&self.struct_init_field_ordinal_by_row).into(),
         ];
+        buffers.extend(self.lowering_counts.iter().map(crate::gpu::buffers::TrackedBufferView::from));
         if let Some(inputs) = self.generic_call_inputs.as_ref() {
             buffers.extend(inputs.retained_buffers());
         }
@@ -1194,6 +1211,7 @@ impl OwnedGpuSemanticArtifact {
             expr_scalar_type_by_hir: &self.expr_scalar_type_by_hir,
             public_decl_index_by_hir: &self.public_decl_index_by_hir,
             struct_init_field_ordinal_by_row: &self.struct_init_field_ordinal_by_row,
+            lowering_counts: &self.lowering_counts,
         }
     }
 }

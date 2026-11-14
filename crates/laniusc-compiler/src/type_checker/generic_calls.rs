@@ -195,6 +195,9 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "instance_row_refs",
     "instance_row_calls",
     "compact_hir_links",
+    // The execution rows the job lowered itself (instance_exec.slang).
+    "instance_exec_counts",
+    "instance_exec_entries",
 ];
 
 /// These facts are produced by the separate interface-export graph. The
@@ -742,6 +745,68 @@ pub(crate) struct CheckedInstanceClosure {
     pub copy_row_kinds: Vec<Vec<u32>>,
     /// The retained generic calls of each copy, by row offset in its copy.
     pub copy_calls: Vec<Vec<(usize, CheckedGenericCall)>>,
+    /// The instances this job lowered itself, when any were selected.
+    pub exec: Option<CheckedInstanceExec>,
+}
+
+/// The execution rows of an original job (closure/instance_exec.slang):
+/// the instance table entries it lowered as functions of its own object,
+/// and the generic calls their bodies make. Every selected entry's virtual
+/// function is defined in the object, and each of its generic calls is an
+/// undefined symbol that the specializer must route.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CheckedInstanceExec {
+    /// The job's own HIR rows: rows at and past this one are virtual.
+    pub first_row: u32,
+    /// EX_FLAG_* bits (an entry did not fit).
+    pub flags: u32,
+    /// Every instance table entry, in table order.
+    pub entries: Vec<CheckedExecEntry>,
+    /// (virtual call row, callee table entry) of each IT_CALL_ENTRY call in a
+    /// selected entry, by row.
+    pub calls: Vec<(u32, u32)>,
+}
+
+/// One instance table entry, as the execution rows see it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CheckedExecEntry {
+    /// The entry's closure instance (CheckedClosureInstance::index).
+    pub closure_index: u32,
+    pub depth: u32,
+    /// EX_SELECTED, or the reason the entry replays.
+    pub status: u32,
+    /// A selected entry's virtual function row, its row count and its first
+    /// token (its native symbol is `0x40000000 | token`); INVALID otherwise.
+    pub virtual_row: u32,
+    pub rows: u32,
+    pub virtual_token: u32,
+}
+
+impl CheckedInstanceExec {
+    /// The virtual function row whose body holds virtual row `row`: the
+    /// lexical owner of a call the job lowered in an execution copy.
+    pub(crate) fn owner(&self, row: u32) -> Option<u32> {
+        if row < self.first_row {
+            return None;
+        }
+        // Selected entries hold ascending virtual rows (08b_exec_layout).
+        self.entries
+            .iter()
+            .filter(|entry| entry.selected())
+            .take_while(|entry| entry.virtual_row <= row)
+            .last()
+            .filter(|entry| row - entry.virtual_row < entry.rows)
+            .map(|entry| entry.virtual_row)
+    }
+}
+
+impl CheckedExecEntry {
+    /// EX_SELECTED (instance_exec.slang).
+    pub(crate) const SELECTED: u32 = 1;
+
+    pub(crate) fn selected(&self) -> bool {
+        self.status == Self::SELECTED
+    }
 }
 
 /// The decoded instance table of an original job (closure/instance_table.slang).
@@ -847,12 +912,19 @@ impl CheckedInstanceClosure {
                 .map(|instance| instance.call.resident_argument_bytes())
                 .fold(0, usize::saturating_add))
             .saturating_add(self.error.as_ref().map_or(0, String::capacity))
+            .saturating_add(self.exec.as_ref().map_or(0, |exec| {
+                exec.entries.capacity() * std::mem::size_of::<CheckedExecEntry>()
+                    + exec.calls.capacity() * 8
+            }))
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckedClosureInstance {
     pub depth: u32,
+    /// The instance's row in the GPU closure table (an instance table
+    /// entry names it).
+    pub index: u32,
     pub call: CheckedGenericCall,
 }
 
@@ -2062,6 +2134,19 @@ pub(super) fn read_unit_facts(
             super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize,
             "instance closure counts"))
         .transpose()?;
+    // An original job with an instance table may have lowered execution
+    // rows; their counters ride along too.
+    let exec_counts = closure_active
+        .then(|| -> Result<usize> {
+            let start = batch.push(inputs.buffer("instance_exec_counts"), 0,
+                super::instance_closure_passes::INSTANCE_EXEC_COUNT_WORDS as usize,
+                "instance exec counts")?;
+            batch.push(inputs.buffer("instance_table_counts"), 0,
+                super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize,
+                "instance table counts")?;
+            Ok(start)
+        })
+        .transpose()?;
     // Only an original job counts what it leaves for the trait solver.
     let original_job = interface_exported && template_contracts.is_none() && instance_copies.is_none();
     let solver_demand = original_job
@@ -3158,6 +3243,14 @@ pub(super) fn read_unit_facts(
     };
     attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
         instance_copies, &callable_hirs, &call_ids, &calls, &mut types);
+    // Unlike the closure, the execution rows are not optional: the object
+    // calls them, so a failed read fails the unit.
+    if let Some(start) = exec_counts {
+        let words = super::instance_closure_passes::INSTANCE_EXEC_COUNT_WORDS as usize;
+        let table = super::instance_closure_passes::INSTANCE_TABLE_COUNT_WORDS as usize;
+        instance_closure.exec = read_instance_exec(&readback, device, queue, inputs,
+            &counts[start..start + words], &counts[start + words..start + words + table])?;
+    }
     timer.stamp("instance_closure");
     Ok(CheckedUnitFacts {
         generic_calls: calls.into_iter().flatten().collect(),
@@ -3251,18 +3344,18 @@ fn read_instance_closure(
     let targets = &words[target_rows..target_rows + length * 4];
     let refs = refs_start.map_or(&[][..], |start| &words[start..start + ref_words]);
     let operand = |index: usize| (refs[index * 2], refs[index * 2 + 1]);
-    // (depth, template, argument base, type count, arity)
+    // (index, depth, template, argument base, type count, arity)
     let mut kept = Vec::new();
     let summaries = inputs.closure_summaries.as_deref();
-    for (row, target) in instances.chunks_exact(8).zip(targets.chunks_exact(4)) {
+    for (index, (row, target)) in instances.chunks_exact(8).zip(targets.chunks_exact(4)).enumerate() {
         let &[_, callee, depth, _, base, template_word, status, shape] = row else { unreachable!() };
         let target = [target[0], target[1], target[2], target[3]];
         let (arity, type_count) = ((shape & 0xffff) as usize, (shape >> 16) as usize);
-        // The decode skips a row that is not exported, has depth below 2,
-        // has no argument block, has a bad shape, or has arguments past the
-        // read table.
+        // The decode skips a row that is not exported, has no argument
+        // block, has a bad shape, or has arguments past the read table. A
+        // depth-1 instance repeats a root call, but it is also the admitted
+        // origin of a body the job may have lowered (CheckedInstanceExec).
         let decodable = status == INSTANCE_CLOSURE_EXPORTED
-            && depth >= 2
             && base != INVALID
             && type_count <= arity
             && (base as usize + arity) * 2 <= ref_words;
@@ -3281,18 +3374,18 @@ fn read_instance_closure(
         }).flatten();
         // A row whose template call was not retained is skipped as well.
         if let Some(template) = template {
-            kept.push((depth, template, base as usize, type_count, arity));
+            kept.push((index as u32, depth, template, base as usize, type_count, arity));
         }
     }
     let type_roots = kept.iter()
-        .flat_map(|&(_, _, base, type_count, _)| (base..base + type_count).map(operand))
+        .flat_map(|&(_, _, _, base, type_count, _)| (base..base + type_count).map(operand))
         .collect::<Vec<_>>();
     types.prefetch_types(readback, device, queue, inputs, &type_roots)?;
     let constant_roots = kept.iter()
-        .flat_map(|&(_, _, base, type_count, arity)| (base + type_count..base + arity).map(operand))
+        .flat_map(|&(_, _, _, base, type_count, arity)| (base + type_count..base + arity).map(operand))
         .collect::<Vec<_>>();
     types.prefetch_constants(readback, device, queue, inputs, &constant_roots)?;
-    for (depth, template, base, type_count, arity) in kept {
+    for (index, depth, template, base, type_count, arity) in kept {
         let routed;
         let (unit, template) = match template {
             ClosureTemplate::Local(position) => (None, calls[position].as_ref().expect("kept template call")),
@@ -3326,7 +3419,7 @@ fn read_instance_closure(
             .collect();
         let call = CheckedGenericCall { arguments, constants, ..template.clone() };
         let Some(unit) = unit else {
-            closure.instances.push(CheckedClosureInstance { depth, call });
+            closure.instances.push(CheckedClosureInstance { depth, index, call });
             continue;
         };
         // The arguments may name this job's own types. The caller scopes
@@ -3350,6 +3443,91 @@ fn read_instance_closure(
     }
     Ok(closure)
 }
+
+/// The execution rows of an original job (CheckedInstanceExec), or None
+/// when it selected no entry. `counts` are its exec and table counters.
+fn read_instance_exec(
+    readback: &PagedReadback,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    inputs: &RetainedGenericCallInputs,
+    counts: &[u32],
+    table_counts: &[u32],
+) -> Result<Option<CheckedInstanceExec>> {
+    // EX_COUNT_* (instance_exec.slang) and IT_COUNT_* (instance_table.slang).
+    let (selected, flags, first_row) = (counts[0], counts[3], counts[4]);
+    let &[entries, rows, table_flags, _] = table_counts else {
+        return Err(anyhow!("instance table counters are truncated"));
+    };
+    // The trace reads an unselected table too, for its reasons.
+    let trace = crate::options::get().trace.instance_table;
+    if selected == 0 && (!trace || entries == 0 || table_flags != 0) {
+        return Ok(None);
+    }
+    ensure!(table_flags == 0, "a flagged instance table selected execution rows");
+    let table_buffer = inputs.buffer("instance_table");
+    let exec_buffer = inputs.buffer("instance_exec_entries");
+    // Selection visits only the entries its record table holds.
+    let entries = (entries as usize).min(INSTANCE_TABLE_RANK_LIMIT).min(exec_buffer.byte_size / 128);
+    let rows = rows as usize;
+    let calls_buffer = inputs.buffer("instance_row_calls");
+    ensure!(entries * 32 <= table_buffer.byte_size && entries * 128 <= exec_buffer.byte_size
+        && rows * 8 <= calls_buffer.byte_size, "instance execution rows are truncated");
+    let indices = (0..entries as u32).collect::<Vec<_>>();
+    let mut batch = WordBatch::default();
+    let table_start = batch.push(table_buffer, 0, entries * 8, "instance table")?;
+    // EX_Q_HEAD (status, F, count, vrow) and EX_Q_TOKENS (token, span, vtok, base).
+    let head_start = batch.rows(exec_buffer, &indices, 32, 8, "instance exec entries")?;
+    let call_start = (rows != 0)
+        .then(|| batch.push(calls_buffer, 0, rows * 2, "instance table calls"))
+        .transpose()?;
+    let words = batch.read(readback, device, queue, "instance exec entries")?;
+    let table = &words[table_start..table_start + entries * 8];
+    let heads = &words[head_start..head_start + entries * 8];
+    let row_calls = call_start.map_or(&[][..], |start| &words[start..start + rows * 2]);
+    let mut exec = CheckedInstanceExec { first_row, flags, entries: Vec::with_capacity(entries), calls: Vec::new() };
+    for (entry, head) in table.chunks_exact(8).zip(heads.chunks_exact(8)) {
+        let &[_, count, _, base, closure_index, depth, _, _] = entry else { unreachable!() };
+        let &[status, _, rows, virtual_row, _, _, virtual_token, _] = head else { unreachable!() };
+        let selected = status == CheckedExecEntry::SELECTED;
+        exec.entries.push(CheckedExecEntry {
+            closure_index,
+            depth,
+            status,
+            virtual_row: if selected { virtual_row } else { INVALID },
+            rows: if selected { rows } else { 0 },
+            virtual_token: if selected { virtual_token } else { INVALID },
+        });
+        if !selected {
+            continue;
+        }
+        let calls = row_calls.get(base as usize * 2..(base as usize + count as usize) * 2)
+            .ok_or_else(|| anyhow!("a selected instance's calls are past the call table"))?;
+        for (offset, call) in calls.chunks_exact(2).enumerate() {
+            // IT_CALL_ENTRY; select admits only it and IT_CALL_NONE.
+            if call[0] == 1 {
+                ensure!((call[1] as usize) < entries, "a selected instance calls an entry past the table");
+                exec.calls.push((virtual_row + offset as u32, call[1]));
+            }
+        }
+    }
+    exec.calls.sort_unstable();
+    if trace {
+        let selected = exec.entries.iter().filter(|entry| entry.selected()).count();
+        let mut reasons = BTreeMap::<u32, usize>::new();
+        for entry in &exec.entries {
+            *reasons.entry(entry.status).or_default() += 1;
+        }
+        let reasons = reasons.iter().map(|(status, count)| format!("{status:#x}: {count}"))
+            .collect::<Vec<_>>().join(", ");
+        eprintln!("[instance-exec] {selected} of {} entries selected, {} rows from {first_row}, flags {flags:#x}, \
+            {} generic calls, status {{{reasons}}}", exec.entries.len(), counts[1], exec.calls.len());
+    }
+    Ok((selected != 0).then_some(exec))
+}
+
+/// Table entries one job ranks at most (IT_RANK_LIMIT).
+const INSTANCE_TABLE_RANK_LIMIT: usize = 16384;
 
 /// The instance table's validation mode: a copy replay's own rows. The
 /// k-th callable at or past the first copy row is copy k (as for the owner

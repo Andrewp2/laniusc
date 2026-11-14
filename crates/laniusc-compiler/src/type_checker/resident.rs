@@ -729,7 +729,14 @@ impl GpuTypeChecker {
         let cache_key = ResidentTypeCheckCacheKey {
             source_byte_capacity: source_len.max(1),
             source_file_capacity,
-            token_capacity,
+            // Checked type rows are numbered after the token tables, and
+            // lowering reads type rows and tokens in one id space. The
+            // execution rows' virtual tokens follow the job's tokens
+            // (closure/instance_exec.slang), so the token tables reserve
+            // their share and the type rows start after it.
+            token_capacity: super::instance_closure_passes::exec_lowering_token_capacity(
+                token_capacity,
+            ),
             hir_node_capacity,
             module_record_capacity: hir_items.module_record_capacity.max(1),
             call_param_row_capacity: hir_items.call_param_row_capacity.max(1),
@@ -2646,10 +2653,9 @@ impl GpuTypeChecker {
                 bind_groups.semantic_projection.owner_spans_clear.record(encoder);
                 bind_groups.semantic_projection.owner_spans.record(encoder)?;
             }
-            if instance_closure && instance_closure_passes::instance_table_enabled() {
+            if instance_closure {
                 // D2: the closure's instances' rows, from the final
-                // expression references (behind
-                // `LANIUS_EXPERIMENT=instance-table`).
+                // expression references.
                 bind_groups.semantic_projection.instance_table.record(encoder)?;
                 if let Some(timer) = timer.as_deref_mut() {
                     timer.stamp(encoder, "typecheck.instance_table.done");
@@ -2664,6 +2670,9 @@ impl GpuTypeChecker {
                 semantic_projection.local_const_references.record(encoder)?;
                 semantic_projection.local_const_fold_publish.record(encoder)?;
             }
+            // The table's closed instances become execution rows; every job
+            // publishes lowering's row counts (closure/instance_exec.slang).
+            semantic_projection.instance_table.record_exec(encoder, instance_closure)?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }
