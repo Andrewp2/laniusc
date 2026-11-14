@@ -206,9 +206,6 @@ pub(crate) struct GpuLoweringPipeline {
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
-    /// Words written over the tails a job's phase reset leaves, when a test
-    /// sets `TEST_PHASE_RESET_POISON`.
-    phase_reset_poison: Mutex<Option<LaniusBuffer<u8>>>,
     /// The capacities the last recorded job could address. Its artifact must
     /// fit them, as it would in a fresh workspace for the job.
     recorded_job: Mutex<LoweringCapacities>,
@@ -338,8 +335,6 @@ fn apply_output_demand(
 
 /// Job phase resets the pipeline keeps, most recent last.
 const PHASE_RESET_PLAN_CACHE: usize = 8;
-/// The largest copy source the phase-reset poison allocates.
-const PHASE_RESET_POISON_BYTES: u64 = 16 << 20;
 
 fn validate_copy_replays() -> bool {
     crate::options::get().check.lir_replays
@@ -372,28 +367,6 @@ fn job_sized_direct_ops() -> bool {
 #[cfg(test)]
 pub(crate) static TEST_JOB_SIZED_DIRECT_OPS: std::sync::atomic::AtomicU8 =
     std::sync::atomic::AtomicU8::new(u8::MAX);
-
-/// The word a test fills the imported bytes a job's phase reset leaves with,
-/// so a reader that looks past the job's rows changes the output.
-fn phase_reset_poison_word() -> Option<u32> {
-    #[cfg(test)]
-    {
-        let word = TEST_PHASE_RESET_POISON.load(std::sync::atomic::Ordering::Relaxed);
-        if word != u64::MAX {
-            return Some(word as u32);
-        }
-    }
-    None
-}
-
-/// The poison word a test sets (`u64::MAX` for none), and the bytes poisoned
-/// so far.
-#[cfg(test)]
-pub(crate) static TEST_PHASE_RESET_POISON: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(u64::MAX);
-#[cfg(test)]
-pub(crate) static TEST_PHASE_RESET_POISONED_BYTES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
 
 /// Tests set this to lower every job with `LoweringJobBounds::CONSERVATIVE`
 /// in place of the bounds it passes, so a test can compare both through the
@@ -784,7 +757,6 @@ impl GpuLoweringPipeline {
             job_totals_readback,
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
-            phase_reset_poison: Mutex::new(None),
             recorded_job: Mutex::new(capacities),
         })
     }
@@ -812,12 +784,12 @@ impl GpuLoweringPipeline {
         self.smaller_job(job).filter(|_| job_sized_direct_ops())
     }
 
-    /// Clears the storage imported from the type checker up to the bytes the
-    /// job's resources can address: each resource's size in a graph built
-    /// for `job`. A job at this workspace's capacities clears whole slots.
+    /// Clears the storage imported from the type checker that the job's
+    /// zero-initialized resources can address: each one's size in a graph
+    /// built for `job` (`CompilerGraphWorkspace::phase_reset_plan`). A job at
+    /// this workspace's capacities clears their whole slots.
     fn record_job_phase_reset(
         &self,
-        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         job: LoweringCapacities,
     ) {
@@ -838,9 +810,7 @@ impl GpuLoweringPipeline {
             }
         };
         plan.record(encoder);
-        if let Some(word) = phase_reset_poison_word() {
-            self.poison_phase_reset_tails(device, encoder, &plan, word);
-        }
+        plan.record_test_poison(encoder);
     }
 
     fn phase_reset_plan(
@@ -862,58 +832,6 @@ impl GpuLoweringPipeline {
         }
         plans.push((job, Arc::clone(&plan)));
         Ok(plan)
-    }
-
-    fn poison_phase_reset_tails(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        plan: &PhaseResetPlan,
-        word: u32,
-    ) {
-        let Some(largest) = plan.tails().iter().map(|tail| tail.byte_size as u64).max() else {
-            return;
-        };
-        let mut source = self
-            .phase_reset_poison
-            .lock()
-            .expect("lowering phase-reset poison poisoned");
-        let wanted = largest
-            .min(PHASE_RESET_POISON_BYTES)
-            .next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT);
-        if source.as_ref().is_none_or(|buffer| (buffer.byte_size as u64) < wanted) {
-            let raw = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("lowering.phase_reset.poison"),
-                size: wanted,
-                usage: wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: true,
-            });
-            {
-                let pattern = word.to_le_bytes().repeat((wanted / 4) as usize);
-                let mut mapped = raw.slice(..).get_mapped_range_mut();
-                mapped.slice(..).copy_from_slice(&pattern);
-            }
-            raw.unmap();
-            *source = Some(LaniusBuffer::new_labeled(
-                (raw, wanted),
-                wanted as usize,
-                "lowering.phase_reset.poison",
-            ));
-        }
-        let source = source.as_ref().expect("phase-reset poison was just allocated");
-        let chunk = source.byte_size as u64;
-        for tail in plan.tails() {
-            let bytes = tail.byte_size as u64;
-            let mut offset = 0;
-            while offset < bytes {
-                let size = chunk.min(bytes - offset);
-                source.copy_to(encoder, 0, tail, offset, size);
-                offset += size;
-            }
-            #[cfg(test)]
-            TEST_PHASE_RESET_POISONED_BYTES
-                .fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
-        }
     }
 
     fn record_status_readback(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -1032,7 +950,7 @@ impl GpuLoweringPipeline {
             "lowering.executable.batch",
         );
         let job = self.job_capacities(bounds);
-        self.record_job_phase_reset(device, encoder, job);
+        self.record_job_phase_reset(encoder, job);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }
@@ -1120,7 +1038,7 @@ impl GpuLoweringPipeline {
         self.target
             .set_object_identity(queue, library_id, unit_id)?;
         let job = self.job_capacities(bounds);
-        self.record_job_phase_reset(device, encoder, job);
+        self.record_job_phase_reset(encoder, job);
         if let Some(timer) = timer.as_deref_mut() {
             timer.stamp(encoder, "lowering.phase_reset.done");
         }

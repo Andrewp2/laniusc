@@ -637,16 +637,23 @@ pub struct CompilerGraph {
 pub struct CompilerGraphWorkspace {
     slots: Vec<LaniusBuffer<u8>>,
     slot_by_resource: Vec<Option<u32>>,
-    /// Disjoint ranges of dead producer allocations imported by this phase.
+    /// Disjoint ranges of the imported slots that hold a zero-initialized
+    /// resource, merged per allocation.
     ///
-    /// The job-wide reset runs before the producer phase, so that producer
-    /// can dirty these allocations again before the consumer sees them. The
-    /// consumer must therefore clear imported storage at its own phase
-    /// boundary, after all producer commands and before its first pass.
+    /// Imported storage is dead producer storage. The job-wide reset runs
+    /// before the producer phase, so the producer dirties these allocations
+    /// again before the consumer sees them. A resource the graph declares
+    /// zero-initialized (`mark_zero_initialized`) reads before it writes, so
+    /// its imported slot is cleared at the consumer's phase boundary, after
+    /// all producer commands and before the first pass. Every other resource
+    /// is written before it is read (`CompilerGraphBuilder::build` checks
+    /// this). Like a resource that shares a slot with an earlier lifetime
+    /// in its own graph, it gets whatever bytes the slot holds, so its
+    /// imported slot needs no reset.
     phase_reset_ranges: Vec<LaniusBuffer<u8>>,
-    /// Each imported slot with the logical resources the graph assigns to it,
-    /// so a job can reset only the bytes its own resources can address
-    /// (`phase_reset_plan`).
+    /// Each imported slot with the zero-initialized resources the graph
+    /// assigns to it, so a job can reset only the bytes those resources can
+    /// address (`phase_reset_plan`). A slot with none is left as it is.
     phase_reset_slots: Vec<PhaseResetSlot>,
 }
 
@@ -655,10 +662,13 @@ struct PhaseResetSlot {
     resources: Vec<&'static str>,
 }
 
-/// The phase reset for one job: the imported bytes its resources can address,
-/// merged per allocation, and the tails past them that it leaves as they are.
+/// The phase reset for one job: the imported bytes its zero-initialized
+/// resources can address, merged per allocation, and the bytes past them
+/// that it leaves as they are.
 pub(crate) struct PhaseResetPlan {
     clears: Vec<LaniusBuffer<u8>>,
+    /// Read only by `record_test_poison` in tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     tails: Vec<LaniusBuffer<u8>>,
 }
 
@@ -670,8 +680,61 @@ impl PhaseResetPlan {
     }
 
     /// The imported bytes this plan does not clear, one view per slot.
+    #[cfg(test)]
     pub(crate) fn tails(&self) -> &[LaniusBuffer<u8>] {
         &self.tails
+    }
+
+    /// Fills the bytes this plan leaves with `word` when a test sets
+    /// `TEST_PHASE_RESET_POISON`, so a resource that reads one of them before
+    /// writing it changes the artifact.
+    pub(crate) fn record_test_poison(&self, encoder: &mut wgpu::CommandEncoder) {
+        #[cfg(test)]
+        {
+            use std::sync::atomic::Ordering;
+
+            let word = TEST_PHASE_RESET_POISON.load(Ordering::Relaxed);
+            let Some(largest) = self.tails.iter().map(|tail| tail.byte_size as u64).max() else {
+                return;
+            };
+            if word == u64::MAX {
+                return;
+            }
+            let bytes = largest
+                .min(TEST_PHASE_RESET_POISON_CHUNK)
+                .next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT);
+            let source = crate::gpu::device::global().device.create_buffer(
+                &wgpu::BufferDescriptor {
+                    label: Some("compiler_graph.phase_reset.poison"),
+                    size: bytes,
+                    usage: wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: true,
+                },
+            );
+            source
+                .slice(..)
+                .get_mapped_range_mut()
+                .copy_from_slice(&(word as u32).to_le_bytes().repeat((bytes / 4) as usize));
+            source.unmap();
+            for tail in &self.tails {
+                let size = tail.byte_size as u64;
+                let mut offset = 0;
+                while offset < size {
+                    let chunk = bytes.min(size - offset);
+                    encoder.copy_buffer_to_buffer(
+                        &source,
+                        0,
+                        &tail.buffer,
+                        tail.byte_offset + offset,
+                        chunk,
+                    );
+                    offset += chunk;
+                }
+                TEST_PHASE_RESET_POISONED_BYTES.fetch_add(size, Ordering::Relaxed);
+            }
+        }
+        #[cfg(not(test))]
+        let _ = encoder;
     }
 
     #[cfg(test)]
@@ -679,6 +742,17 @@ impl PhaseResetPlan {
         self.clears.iter().map(|range| range.byte_size as u64).sum()
     }
 }
+
+/// The word a test fills the imported bytes a phase reset leaves with
+/// (`u64::MAX` for none), and the bytes poisoned so far.
+#[cfg(test)]
+pub(crate) static TEST_PHASE_RESET_POISON: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+#[cfg(test)]
+pub(crate) static TEST_PHASE_RESET_POISONED_BYTES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+#[cfg(test)]
+const TEST_PHASE_RESET_POISON_CHUNK: u64 = 16 << 20;
 
 /// Sorts byte ranges and merges the ones that overlap or touch.
 fn merge_byte_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
@@ -988,31 +1062,6 @@ impl CompilerGraphWorkspace {
         graph: &CompilerGraph,
         imports: &[(ResourceId, LaniusBuffer<u8>)],
     ) -> Result<Self, String> {
-        let mut reset_ranges_by_allocation =
-            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
-        for (_, buffer) in imports {
-            let Some(allocation_id) = buffer.allocation_id() else {
-                continue;
-            };
-            let end = buffer
-                .byte_offset
-                .checked_add(buffer.byte_size as u64)
-                .ok_or_else(|| "imported compiler graph reset range overflows".to_owned())?;
-            reset_ranges_by_allocation
-                .entry(allocation_id)
-                .or_insert_with(|| (&buffer.buffer, Vec::new()))
-                .1
-                .push((buffer.byte_offset, end));
-        }
-        let mut phase_reset_ranges = Vec::new();
-        for (allocation_id, (buffer, ranges)) in reset_ranges_by_allocation {
-            let merged = merge_byte_ranges(ranges);
-            phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
-                let bytes = end - start;
-                TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
-                    .alias::<u8>(bytes as usize)
-            }));
-        }
         let mut imported_by_slot = BTreeMap::<u32, LaniusBuffer<u8>>::new();
         for (resource, buffer) in imports {
             let desc = graph
@@ -1050,11 +1099,45 @@ impl CompilerGraphWorkspace {
                     .workspace
                     .assignments
                     .iter()
-                    .filter(|assignment| assignment.slot == slot)
+                    .filter(|assignment| {
+                        assignment.slot == slot
+                            && graph
+                                .resource_id(assignment.name)
+                                .is_some_and(|resource| graph.is_zero_initialized(resource))
+                    })
                     .map(|assignment| assignment.name)
                     .collect(),
             })
             .collect::<Vec<_>>();
+        let mut reset_ranges_by_allocation =
+            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
+        for slot in phase_reset_slots
+            .iter()
+            .filter(|slot| !slot.resources.is_empty())
+        {
+            let Some(allocation_id) = slot.view.allocation_id() else {
+                continue;
+            };
+            let end = slot
+                .view
+                .byte_offset
+                .checked_add(slot.view.byte_size as u64)
+                .ok_or_else(|| "imported compiler graph reset range overflows".to_owned())?;
+            reset_ranges_by_allocation
+                .entry(allocation_id)
+                .or_insert_with(|| (&slot.view.buffer, Vec::new()))
+                .1
+                .push((slot.view.byte_offset, end));
+        }
+        let mut phase_reset_ranges = Vec::new();
+        for (allocation_id, (buffer, ranges)) in reset_ranges_by_allocation {
+            let merged = merge_byte_ranges(ranges);
+            phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
+                let bytes = end - start;
+                TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
+                    .alias::<u8>(bytes as usize)
+            }));
+        }
 
         let unimported = WorkspacePlan {
             assignments: Vec::new(),
@@ -1171,22 +1254,28 @@ impl CompilerGraphWorkspace {
     }
 
     /// Records the initialization boundary required by cross-phase storage
-    /// reuse. Adjacent imported slots are merged, while unused allocation
-    /// tails are left untouched to avoid unnecessary memory traffic.
+    /// reuse: the imported slots of zero-initialized resources, merged per
+    /// allocation. Every other imported byte keeps the producer's words.
     pub fn record_phase_reset(&self, encoder: &mut wgpu::CommandEncoder) {
         for range in &self.phase_reset_ranges {
             range.clear(encoder, 0, None);
+        }
+        #[cfg(test)]
+        if TEST_PHASE_RESET_POISON.load(std::sync::atomic::Ordering::Relaxed) != u64::MAX {
+            self.phase_reset_plan(|_| None)
+                .expect("whole-slot phase reset plan")
+                .record_test_poison(encoder);
         }
     }
 
     /// The phase reset for a job whose resources have the byte sizes
     /// `job_bytes` gives, by resource name. Every logical resource views its
     /// slot from offset zero, so each imported slot is cleared up to the
-    /// largest job size among the resources assigned to it, rounded up to
-    /// whole words and never past the slot. A resource `job_bytes` does not
-    /// know keeps its whole slot. Contiguous cleared ranges merge as in
-    /// `record_phase_reset`; with every resource at its built size this
-    /// clears the same bytes.
+    /// largest job size among the zero-initialized resources assigned to it,
+    /// rounded up to whole words and never past the slot; a slot without one
+    /// is not cleared. A resource `job_bytes` does not know keeps its whole
+    /// slot. Contiguous cleared ranges merge as in `record_phase_reset`; with
+    /// every resource at its built size this clears the same bytes.
     pub(crate) fn phase_reset_plan(
         &self,
         job_bytes: impl Fn(&'static str) -> Option<u64>,
@@ -1201,7 +1290,7 @@ impl CompilerGraphWorkspace {
                 .iter()
                 .map(|&name| job_bytes(name).unwrap_or(slot_bytes))
                 .max()
-                .unwrap_or(slot_bytes)
+                .unwrap_or(0)
                 .next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT)
                 .min(slot_bytes);
             if prefix > 0 {
@@ -1953,6 +2042,12 @@ impl CompilerGraph {
 
     pub fn resource(&self, resource: ResourceId) -> Option<&ResourceDesc> {
         self.resources.get(resource.index())
+    }
+
+    /// Whether the owning phase clears this resource before its first read
+    /// (`CompilerGraphBuilder::mark_zero_initialized`).
+    pub(crate) fn is_zero_initialized(&self, resource: ResourceId) -> bool {
+        self.zero_initialized_resources.contains(&resource)
     }
 
     pub fn pass(&self, pass: PassId) -> Option<&PassDesc> {
@@ -5065,6 +5160,8 @@ mod tests {
                 ],
             })
             .unwrap();
+        builder.mark_zero_initialized(first).unwrap();
+        builder.mark_zero_initialized(second).unwrap();
         let graph = builder.build().unwrap();
         let device = &crate::gpu::device::global().device;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -5115,6 +5212,77 @@ mod tests {
         );
         let empty = workspace.phase_reset_plan(|_| Some(0)).unwrap();
         assert_eq!((empty.clears.len(), empty.tails().len(), empty.cleared_bytes()), (0, 2, 0));
+    }
+
+    // A resource that is written before it is read needs no zeros, so the
+    // phase reset leaves its imported slot whole while still clearing a
+    // zero-initialized neighbor in the same allocation.
+    #[test]
+    fn phase_reset_clears_only_zero_initialized_imports() {
+        let mut builder = CompilerGraphBuilder::new();
+        let counter = builder
+            .add_storage("counter", ResourceDomain::Types, ResourceClass::Workspace, 64)
+            .unwrap();
+        let rows = builder
+            .add_storage("rows", ResourceDomain::Types, ResourceClass::Workspace, 64)
+            .unwrap();
+        builder
+            .add_pass(PassDesc {
+                name: "count",
+                phase: CompilerPhase::TypeCheck,
+                dispatch_domain: ResourceDomain::Types,
+                accesses: vec![
+                    PassAccess::read_write("counter", counter),
+                    PassAccess::write("rows", rows),
+                ],
+            })
+            .unwrap();
+        builder.mark_zero_initialized(counter).unwrap();
+        let graph = builder.build().unwrap();
+        let device = &crate::gpu::device::global().device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("compiler_graph.phase_reset_declared"),
+            size: 256,
+            usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST),
+            mapped_at_creation: false,
+        });
+        let counter_import =
+            TrackedBufferView::from_parts(&buffer, 0, 64, Some(43)).alias::<u8>(64);
+        let rows_import =
+            TrackedBufferView::from_parts(&buffer, 64, 64, Some(43)).alias::<u8>(64);
+        let workspace = CompilerGraphWorkspace::new_with_imports(
+            device,
+            "phase_reset_declared_test",
+            &graph,
+            &[(counter, counter_import), (rows, rows_import)],
+        )
+        .unwrap();
+
+        assert_eq!(workspace.phase_reset_range_count(), 1);
+        let full = workspace.phase_reset_plan(|_| None).unwrap();
+        assert_eq!(
+            full.clears
+                .iter()
+                .map(|range| (range.byte_offset, range.byte_size))
+                .collect::<Vec<_>>(),
+            [(0, 64)]
+        );
+        assert_eq!(
+            full.tails()
+                .iter()
+                .map(|tail| (tail.byte_offset, tail.byte_size))
+                .collect::<Vec<_>>(),
+            [(64, 64)]
+        );
+        let job = workspace.phase_reset_plan(|_| Some(8)).unwrap();
+        assert_eq!(job.cleared_bytes(), 8);
+        assert_eq!(
+            job.tails()
+                .iter()
+                .map(|tail| (tail.byte_offset, tail.byte_size))
+                .collect::<Vec<_>>(),
+            [(8, 56), (64, 64)]
+        );
     }
 
     #[test]

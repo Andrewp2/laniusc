@@ -1,5 +1,12 @@
 // Concatenates fixed operands and the three already-compact variable-arity
 // relations into one deterministic value-use relation.
+//
+// The relation's storage is not cleared before a job, so every row below the
+// published `opt_ir_ssa_use_total` is written here: the fixed, call, aggregate
+// and incoming intervals tile [0, total), which ssa_use_validate checks row by
+// row. A failed job keeps that property, so its diagnostics never depend on
+// an earlier job's words. A relation over capacity publishes no rows, and a
+// rejected use still writes its row while the destination is in range.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -84,10 +91,8 @@ void write_use(uint destination, uint value, uint user,
     uint value_total, uint diagnostic_row)
 {
     if (destination >= gParams.use_capacity || value >= value_total)
-    {
         report_structure_failure(diagnostic_row);
-        return;
-    }
+    if (destination >= gParams.use_capacity) return;
     opt_ir_ssa_use_values[destination] = value;
     opt_ir_ssa_use_users[destination] = user;
 }
@@ -126,11 +131,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     valid = valid && total <= gParams.use_capacity;
     if (row == 0u)
     {
-        opt_ir_ssa_use_total[0u] = valid ? total :
-            min(total, gParams.use_capacity);
+        uint published = valid ? total : 0u;
+        opt_ir_ssa_use_total[0u] = published;
         uint blocks = max(1u,
-            (min(total, gParams.use_capacity) + WORKGROUP_SIZE - 1u) /
-                WORKGROUP_SIZE);
+            (published + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE);
         opt_ir_ssa_use_radix_dispatch_args[0u] =
             min(blocks, MAX_GROUPS_X);
         opt_ir_ssa_use_radix_dispatch_args[1u] = max(1u,

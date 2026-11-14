@@ -1084,9 +1084,10 @@ impl GpuTypeChecker {
             let aliases_required = module_path.bind_groups.type_aliases.is_some();
 
             // Parser scratch is reused physically by the resident type-check
-            // graph. The job reset precedes parser execution, so reset those
-            // imported allocations here after parsing has finished and before
-            // type checking reads or partially initializes them.
+            // graph. The job reset precedes parser execution, so the imported
+            // slots of zero-initialized type-check resources are cleared here,
+            // after parsing has finished and before type checking reads them.
+            // Every other type-check resource is written before it is read.
             bind_groups.typecheck_graph.record_phase_reset(encoder);
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.phase_reset.done");
