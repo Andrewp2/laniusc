@@ -222,7 +222,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         // Local generic functions infer from their own bounds, so every unit
         // records bound inference; only the dependency collector needs pages.
         bound_inference: Some(BoundInferenceOperations {
-            clear: direct(CALLS_BOUND_TABLES_CLEAR, 4)?,
+            clear: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_BOUND_TABLES_CLEAR_PASS,
+                "bound_inference_counts",
+                &typed_buffer_from_resources::<u32>(resources, "bound_inference_counts")?,
+            )?,
             // One lane per implementation or predicate row of the slot.
             collect_dependency: if has_dependency_interfaces {
                 Some(direct(CALLS_BOUND_DEPENDENCY_COLLECT, dependency_bound_rows.max(1))?)
@@ -381,7 +386,26 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
             "type_checker/calls/03f_infer_return_bindings",
         )?,
-        inference_round_reset: direct(CALLS_BEGIN_INFERENCE_ROUND, 1)?,
+        inference_round_reset: crate::gpu::operations::ClearBufferOperation::range(
+            graph,
+            compiler_graph::CALLS_INFERENCE_ROUND_RESET_PASS,
+            "call_inference_state",
+            &inference_state,
+            4,
+            4,
+        )?,
+        // Word r of the table is r; one word is copied per round.
+        inference_round_number: crate::gpu::operations::CopyBufferOperation::new(
+            graph,
+            compiler_graph::CALLS_INFERENCE_ROUND_NUMBER_PASS,
+            "call_inference_round_numbers",
+            &typed_buffer_from_resources::<u32>(resources, "call_inference_round_numbers")?,
+            0,
+            "call_inference_round",
+            &typed_buffer_from_resources::<u32>(resources, "call_inference_round")?,
+            0,
+            4,
+        )?,
         inference_activity_clear: crate::gpu::operations::ClearBufferOperation::entire(
             graph,
             compiler_graph::CALLS_INFERENCE_ACTIVITY_CLEAR_PASS,

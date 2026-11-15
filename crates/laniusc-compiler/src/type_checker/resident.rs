@@ -47,6 +47,21 @@ pub(super) const CALL_INFERENCE_HISTORY_WORDS: usize =
 /// The most inference rounds one submission carries.
 pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = compiler_graph::CALL_INFERENCE_MAX_BATCH;
 
+/// Word r is r (little-endian): the source of the copy that numbers round r.
+static CALL_INFERENCE_ROUND_NUMBERS: [u8; (compiler_graph::CALL_INFERENCE_DEPTH_LIMIT as usize + 1) * 4] = {
+    let mut bytes = [0u8; (compiler_graph::CALL_INFERENCE_DEPTH_LIMIT as usize + 1) * 4];
+    let mut round = 0usize;
+    while round <= compiler_graph::CALL_INFERENCE_DEPTH_LIMIT as usize {
+        let word = (round as u32).to_le_bytes();
+        bytes[round * 4] = word[0];
+        bytes[round * 4 + 1] = word[1];
+        bytes[round * 4 + 2] = word[2];
+        bytes[round * 4 + 3] = word[3];
+        round += 1;
+    }
+    bytes
+};
+
 /// What the last converged inference of a workspace shape needed.
 #[derive(Clone, Copy)]
 struct CallInferenceMemory {
@@ -468,6 +483,13 @@ impl GpuTypeChecker {
             2,
             wgpu::BufferUsages::COPY_DST,
         );
+        // Word r is r: the round-number copy's source.
+        let call_inference_round_numbers = typed_storage_u32_rw(
+            device,
+            "type_check.calls.inference_round_numbers",
+            compiler_graph::CALL_INFERENCE_DEPTH_LIMIT as usize + 1,
+            wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        );
         // Words 0-1: inference state (word 1 counts the round's changes);
         // words 2-5: the status words after the round.
         let call_inference_readback = readback_u32s(
@@ -497,6 +519,7 @@ impl GpuTypeChecker {
             status_prior,
             call_inference_state,
             call_inference_round,
+            call_inference_round_numbers,
             call_inference_readback,
             canonical_counts_readback,
             canonical_validation_readback,
@@ -922,6 +945,7 @@ impl GpuTypeChecker {
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
         // Outside the inference rounds every item is recomputed.
         self.call_inference_round.write(queue, 0, &[0; 8]);
+        self.call_inference_round_numbers.write(queue, 0, &CALL_INFERENCE_ROUND_NUMBERS);
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;
@@ -1819,7 +1843,7 @@ impl GpuTypeChecker {
                 }
                 let bound_inference = bind_groups.calls.bound_inference.as_ref();
                 if let Some(bound) = bound_inference {
-                    bound.clear.record(encoder)?;
+                    bound.clear.record(encoder);
                 }
                 if let Some(visibility) = module_path
                     .dependency_visibility
@@ -2113,7 +2137,13 @@ impl GpuTypeChecker {
                     let dispatches_before =
                         crate::gpu::passes_core::recorded_compute_dispatch_count();
                     for slot in 0..batch as usize {
+                        // Open the round: zero its change count and number it
+                        // (round + slot + 1; inference_activity.slang).
                         bind_groups.calls.inference_round_reset.record(encoder);
+                        bind_groups
+                            .calls
+                            .inference_round_number
+                            .record_shifted(encoder, (u64::from(round) + slot as u64 + 1) * 4);
                         record_returns(encoder)?;
                         bind_groups.calls.inference_readback[slot].record(encoder);
                         bind_groups.calls.inference_status_readback[slot].record(encoder);
