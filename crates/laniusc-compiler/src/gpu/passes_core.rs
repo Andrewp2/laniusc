@@ -568,10 +568,22 @@ pub(crate) fn readback_round_trips() -> (u64, u64) {
     )
 }
 
+/// The clock of the `at_ms` of host-timing lines.
+fn host_timing_at() -> Duration {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed()
+}
+
+/// A host-timing line that marks a point of a job on the readback clock.
+pub(crate) fn host_timing_mark(label: &str) {
+    if host_timing_enabled() {
+        eprintln!("[gpu_compile_host_timer] mark: label={label} at_ms={:.3}", host_timing_at().as_secs_f64() * 1000.0);
+    }
+}
+
 fn record_readback_round_trip(label: &str, waited: Duration) {
     if host_timing_enabled() {
-        static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-        let at = EPOCH.get_or_init(Instant::now).elapsed();
+        let at = host_timing_at();
         eprintln!(
             "[gpu_compile_host_timer] readback: label={label} wait_ms={:.3} at_ms={:.3}",
             waited.as_secs_f64() * 1000.0,

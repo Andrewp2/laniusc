@@ -1879,6 +1879,7 @@ async fn compile_request(
     request: DaemonRequest,
 ) -> Value {
     let started = Instant::now();
+    crate::gpu::passes_core::host_timing_mark("daemon.job.start");
     let source_roots = request.user_source_roots();
     let native_link = request.native_link_options();
     let source_root = request.source_root;
@@ -1955,7 +1956,10 @@ async fn compile_request(
         native_link.is_some(),
         compiler.resident_source_unit_limits(),
     ) {
-        Ok(source_pack) => source_pack,
+        Ok(source_pack) => {
+            crate::gpu::passes_core::host_timing_mark("daemon.job.sources_planned");
+            source_pack
+        }
         Err(err) => {
             return diagnostic_response(
                 id,
