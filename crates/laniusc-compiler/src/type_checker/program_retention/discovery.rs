@@ -38,6 +38,8 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/06_bound_routes",
 ];
 const STATUS_WORDS: usize = 32;
+/// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
+const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -428,7 +430,7 @@ impl RetainedDiscovery {
                 config[13],
                 &mut report,
             )?;
-            self.sort(&mut encoder, &guard, 4, 1, config, &extra, &mut report)?;
+            self.sort(&mut encoder, &guard, 4, 1, 3, config, &extra, &mut report)?;
             config[0] = 2;
             self.record(
                 &mut encoder,
@@ -568,7 +570,7 @@ impl RetainedDiscovery {
             config[12] = bases[height];
             config[13] = sizes[height];
             config[14] = height as u32;
-            self.sort(&mut encoder, &guard, 3, 2, config, extra, report)?;
+            self.sort(&mut encoder, &guard, 3, 2, 5, config, extra, report)?;
             config[0] = 3;
             self.record(
                 &mut encoder,
@@ -585,29 +587,42 @@ impl RetainedDiscovery {
         let _ = self.read_status(report)?;
         Ok(())
     }
+    /// Bitonic sort of `config[13]` (a power of two) keys. Steps with
+    /// j < SORT_BLOCK / 2 run inside one workgroup in shared memory
+    /// (`local_mode`), so a stage costs one dispatch per global step plus
+    /// one: 10 dispatches for 4096 keys instead of 78.
     fn sort(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         store: &Store,
         kernel: usize,
         mode: u32,
+        local_mode: u32,
         mut config: [u32; 16],
         extra: &[(&str, &wgpu::Buffer)],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
-        config[0] = mode;
-        let mut k = 2;
-        while k <= config[13] {
+        let count = config[13];
+        if count < 2 {
+            return Ok(());
+        }
+        let local_lanes = (count / 2).max(1);
+        config[0] = local_mode;
+        config[10] = 0;
+        self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
+        let mut k = SORT_BLOCK * 2;
+        while k <= count {
+            config[0] = mode;
             let mut j = k / 2;
-            while j != 0 {
+            while j >= SORT_BLOCK {
                 config[10] = k;
                 config[11] = j;
-                self.record(encoder, store, kernel, config, extra, config[13], report)?;
+                self.record(encoder, store, kernel, config, extra, count, report)?;
                 j /= 2;
             }
-            if k == config[13] {
-                break;
-            }
+            config[0] = local_mode;
+            config[10] = k;
+            self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
             k *= 2;
         }
         Ok(())

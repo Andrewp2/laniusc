@@ -44,8 +44,14 @@ nor allocation-order TermIds decide the final instance rank.
 The implementation uses bitonic sorts within each height and over the instance
 set. Work is O(sum N_h log² N_h + I log² I), with bounded-arity comparisons. It
 currently ranks all closed store terms, not just terms reachable from instance
-keys. Frontier placement uses O(F log F) work. Host count readbacks between waves
-and sorting's dispatch overhead remain optimization work.
+keys. Frontier placement uses O(F log F) work. The sort steps with j < 256
+stay inside one 512-key block, so one workgroup runs them in shared memory
+with the same compare-exchange network as the global steps. A stage k then
+costs one dispatch per global step (j ≥ 512) plus one, and a sort of at most
+512 keys is one dispatch. Settings (term heights of 3260, 3139, 323 and 12
+keys, 3138 instance slots) records 28 term-sort and 10 instance-sort
+dispatches instead of 217 and 78. Host count readbacks between waves remain
+optimization work.
 
 ## Publication
 

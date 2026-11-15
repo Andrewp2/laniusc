@@ -7,10 +7,22 @@ int compare_instance(uint a,uint b)
     int c=dg_decl_cmp(x.x,y.x);
     return c!=0 ? c : dg_cmp(dg_term_rank[x.y],dg_term_rank[y.y]);
 }
+struct InstanceOrder : IDgCompare
+{
+    int compare(uint a, uint b) { return compare_instance(a, b); }
+    uint load(uint index) { return dg_order[index]; }
+    void store(uint index, uint value) { dg_order[index] = value; }
+}
 [shader("compute")]
 [numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+void main(uint3 id: SV_DispatchThreadID, uint3 group: SV_GroupID, uint3 thread: SV_GroupThreadID)
 {
+    if(dg_config[0]==3u)
+    {
+        InstanceOrder order;
+        dg_sort_block(order, group.x + group.y * 65535u, thread.x, dg_config[13], dg_config[10]);
+        return;
+    }
     uint lane=dg_lane(id); if(lane>=dg_config[13]) return;
     if(dg_config[0]==0u)
     {

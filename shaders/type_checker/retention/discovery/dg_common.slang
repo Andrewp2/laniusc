@@ -108,3 +108,41 @@ public int dg_decl_cmp(uint a, uint b)
     c = dg_cmp(x.y,y.y); if(c != 0) return c;
     c = dg_cmp(x.z,y.z); return c != 0 ? c : dg_cmp(x.w,y.w);
 }
+// Bitonic sort steps with j < DG_SORT_BLOCK/2 stay inside one 512-element
+// block, so one workgroup runs them in shared memory with the same
+// compare-exchange network as the global steps (identical output, ties
+// included). k == 0 sorts each block completely (k = 2 .. min(512, count));
+// otherwise it finishes stage k with j = 256 .. 1. count is a power of two.
+public static const uint DG_SORT_BLOCK = 512u;
+groupshared uint dg_sort_keys[DG_SORT_BLOCK];
+public void dg_sort_block<C : IDgCompare>(C order, uint group, uint thread, uint count, uint k)
+{
+    uint block = group * DG_SORT_BLOCK;
+    for (uint e = thread; e < DG_SORT_BLOCK; e += 256u)
+        dg_sort_keys[e] = block + e < count ? order.load(block + e) : RT_INVALID;
+    GroupMemoryBarrierWithGroupSync();
+    uint first = k == 0u ? 2u : k;
+    uint last = k == 0u ? min(DG_SORT_BLOCK, count) : k;
+    for (uint kk = first; kk <= last; kk <<= 1u)
+    {
+        for (uint j = k == 0u ? kk >> 1u : DG_SORT_BLOCK >> 1u; j != 0u; j >>= 1u)
+        {
+            uint i = (thread / j) * 2u * j + thread % j;
+            if (block + i < count)
+            {
+                uint a = dg_sort_keys[i]; uint b = dg_sort_keys[i + j];
+                bool ascending = ((block + i) & kk) == 0u;
+                if ((order.compare(a, b) > 0) == ascending) { dg_sort_keys[i] = b; dg_sort_keys[i + j] = a; }
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+    }
+    for (uint e = thread; e < DG_SORT_BLOCK; e += 256u)
+        if (block + e < count) order.store(block + e, dg_sort_keys[e]);
+}
+public interface IDgCompare
+{
+    int compare(uint a, uint b);
+    uint load(uint index);
+    void store(uint index, uint value);
+}
