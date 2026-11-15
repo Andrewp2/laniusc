@@ -429,12 +429,12 @@ bool supported_form(uint kind, uint4 p)
         kind == RT_HIR_BREAK_STMT || kind == RT_HIR_CONTINUE_STMT || kind == RT_HIR_BINARY_EXPR ||
         kind == RT_HIR_UNARY_EXPR || kind == RT_HIR_CALL_EXPR || kind == RT_HIR_MEMBER_EXPR ||
         kind == RT_HIR_NAME_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR || kind == RT_HIR_PATH_EXPR ||
-        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR)
+        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR || kind == RT_HIR_FOR_STMT)
         return true;
     if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID || p.x == 37u || p.x == 38u;
     if (kind == RT_HIR_STMT)
         return p.x == STMT_LET || p.x == 4u || p.x == STMT_RETURN || p.x == STMT_IF || p.x == STMT_ASSIGN ||
-            p.x == STMT_WHILE || p.x == 0u;
+            p.x == STMT_WHILE || p.x == 7u || p.x == 0u;
     if (kind == RT_HIR_LITERAL_EXPR) return true;
     if (kind == RT_HIR_EXPR) return p.x != EXPR_STRING;
     return false;
@@ -493,7 +493,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (!supported_form(kind, p) || (r4.w != 0u && kind != RT_HIR_ARRAY_EXPR) ||
         (r6.y != 0u && r6.y != RT_CONST_CONCRETE && r6.y != RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE) ||
-        ((r6.x >> 8u) & 0xffu) != 0u ||
+        (((r6.x >> 8u) & 0xffu) != 0u && kind != RT_HIR_FOR_STMT && !(kind == RT_HIR_STMT && p.x == 7u)) ||
         (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE &&
             (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) || r5.x == RT_BIND_VARIANT ||
         (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE))
@@ -555,6 +555,33 @@ void main(uint3 dtid: SV_DispatchThreadID)
             (r4.w != 0u && (r4.z > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) ||
              r4.w > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) - r4.z)))
             fail(at, PJ_E_FORM, kind | (p.x << 8u));
+    }
+    else if (kind == RT_HIR_FOR_STMT || (kind == RT_HIR_STMT && p.x == 7u))
+    {
+        if (p.z >= pj_inf(at.rank,1u).x || !rt_is_term(t))
+        { fail(at,PJ_E_INCOMPLETE,p.z); return; }
+        uint source_kind = pj_row(at.rank,p.z,0u).x;
+        uint4 source = pj_row(at.rank,p.z,2u);
+        uint iterable = (r6.x >> 8u) & 0xffu;
+        bool range = (source_kind == RT_HIR_EXPR || source_kind == RT_HIR_BINARY_EXPR) &&
+            source.x >= 30u && source.x <= 35u;
+        if (range)
+        {
+            bool left = source.x == 30u || source.x == 31u || source.x == 34u;
+            bool right = source.x == 30u || source.x == 32u || source.x == 34u || source.x == 35u;
+            if (iterable != 0u || !scalar_is_integer(t) ||
+                (left && row_type(at,source.y) != t) || (right && row_type(at,source.z) != t))
+                fail(at,PJ_E_SIGNATURE,7u);
+        }
+        else
+        {
+            uint container = row_type(at,p.z);
+            uint container_kind = rt_is_stored_term(container) ? rt_term_kind(container) : 0u;
+            if ((container_kind != RT_KIND_ARRAY && container_kind != RT_KIND_SLICE) ||
+                rt_term_arg(container,0u) != t ||
+                iterable != (container_kind == RT_KIND_ARRAY ? 3u : 0u))
+                fail(at,PJ_E_SIGNATURE,7u);
+        }
     }
     else if (kind == RT_HIR_INDEX_EXPR)
     {

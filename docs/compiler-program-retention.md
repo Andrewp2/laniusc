@@ -553,9 +553,9 @@ This boundary does not yet carry:
   evaluate fits. The production engine does, and returns the failing
   projection with each result
   ([retained substitution](compiler-retained-substitution.md)).
-- **`for` statement rows** have no term. The producer publishes no checked
-  reference for them; the iterable kind and the binder's let-like rows are
-  retained.
+- **`for` statement rows** keep the checked binding type and iterable kind.
+  Direct range wrappers are structural control syntax; their bounds remain
+  independent value roots, as in the frontend expression forest.
 - **File ids** are job-local. Token kinds, byte offsets and spellings are
   retained per body, so diagnostics and identifiers need no job tables.
 

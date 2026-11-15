@@ -181,6 +181,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ob_value_const[row] = uint2(0u, 0u);
     }
     ob_argument_mode[row] = r6.x & 0xffu;
+    ob_iterable_kind[row] = (r6.x >> 8u) & 0xffu;
     ob_member_field_ordinal[row] = r5.w;
     if (kind == RT_HIR_MEMBER_EXPR)
     {
@@ -211,6 +212,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         ob_expr_scalar_type[row] = (facts.w << SCALAR_TYPE_SHIFT) | PJ_SCALAR_LINK_NONE;
         ob_aggregate_word_count[row] = facts.x == PJ_REF_INSTANCE ? facts.z : 0u;
+    }
+    if (kind == RT_HIR_FOR_STMT || (kind == RT_HIR_STMT && p.x == 7u))
+    {
+        uint status;
+        uint container = pj_result(pj_req_row(rank,p.z),status);
+        uint container_kind = rt_is_stored_term(container) ? rt_term_kind(container) : 0u;
+        ob_array_length[row] = container_kind == RT_KIND_ARRAY ? pj_array_count(container) :
+            container_kind == RT_KIND_SLICE ? 0xfffffffeu : RT_INVALID;
     }
     if (function)
     {

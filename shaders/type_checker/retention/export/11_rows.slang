@@ -65,9 +65,22 @@ bool wildcard(uint row)
     return token.len == 1u && job_source_byte(token.start) == 0x5fu;
 }
 
+// Direct range syntax is the control input of a for, not a runtime range
+// value. Its endpoints carry values; the owning for carries the binder type.
+bool direct_for_range(uint row)
+{
+    uint kind = compact_hir_core[row].kind;
+    uint form = compact_hir_payload[row].a;
+    uint parent = compact_hir_core[row].parent;
+    if ((kind != RT_HIR_EXPR && kind != RT_HIR_BINARY_EXPR) || form < 30u || form > 35u || !valid_row(parent)) return false;
+    uint parent_kind = compact_hir_core[parent].kind;
+    HirPayload p = compact_hir_payload[parent];
+    return (parent_kind == RT_HIR_FOR_STMT || (parent_kind == RT_HIR_STMT && p.a == 7u)) && p.c == row;
+}
+
 uint row_role(uint row, uint function, uint kind)
 {
-    if (row == function) return RT_ROLE_STRUCTURAL;
+    if (row == function || direct_for_range(row)) return RT_ROLE_STRUCTURAL;
     if (kind == RT_HIR_TYPE)
     {
         uint semantic = compact_hir_semantic_facts[row].semantic_kind;
@@ -86,14 +99,14 @@ static const uint RT_STMT_FORM_LET = 1u;
 static const uint RT_STMT_FORM_CONST = 4u;
 
 // Rows whose semantic_expr_ref is a checked reference (01_expression_refs):
-// expressions, and let/const statements (their declared storage). Function,
+// expressions, let/const storage, and for binders (01b_array_index_refs). Function,
 // parameter, block and other statement rows hold the per-row scalar cache,
 // which is not a type.
 bool checked_value_row(uint row, uint function, uint kind, uint form)
 {
-    if (row == function) return false;
-    if (rt_value_kind(kind) || kind == RT_HIR_LET_STMT) return true;
-    return kind == RT_HIR_STMT && (form == RT_STMT_FORM_LET || form == RT_STMT_FORM_CONST);
+    if (row == function || direct_for_range(row)) return false;
+    if (rt_value_kind(kind) || kind == RT_HIR_LET_STMT || kind == RT_HIR_FOR_STMT) return true;
+    return kind == RT_HIR_STMT && (form == RT_STMT_FORM_LET || form == RT_STMT_FORM_CONST || form == 7u);
 }
 
 // A type row with no type of its own that is an array type's length (a
@@ -171,7 +184,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (checked_value_row(row, function, core.kind, compact_hir_payload[row].a))
         term = body_term(c, semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row],
             untranslated, unowned);
-    bool missing = (role == RT_ROLE_VALUE || role == RT_ROLE_TYPE) && !rt_is_resolved(term);
+    bool for_binding = core.kind == RT_HIR_FOR_STMT || (core.kind == RT_HIR_STMT && p.a == 7u);
+    bool missing = (role == RT_ROLE_VALUE || role == RT_ROLE_TYPE || for_binding) && !rt_is_resolved(term);
     uint use = rt_x_flags[row].y != 0u ? rt_x_scan[row].y - rt_x_scan[function].y : RT_NONE;
     uint elements = compact_array_element_count[row];
     uint4 r4 = uint4(rel_row(c.span, compact_fn_return_type[row], foreign),

@@ -719,3 +719,107 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_for_loops_keep_binding_types_and_control_flow() {
+    common::run_with_timeout("retained native for", || {
+        let directory =
+            std::env::temp_dir().join(format!("lanius-retained-native-for-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            r#"module loops::lib;
+pub fn sum<T>(values:[T;3])->T {
+    let total:T = values[0];
+    for value in values { total += value; }
+    return total;
+}
+pub fn last<T>(values:[T], fallback:T)->T {
+    let result:T = fallback;
+    for value in values { result = value; }
+    return result;
+}
+fn keep<T>(value:T)->T { return value; }
+pub fn ranges<T>(tag:T, end:i32)->i32 {
+    let total:i32 = 0;
+    for value in 0..end {
+        if (value == 2) { continue; }
+        if (value == 5) { break; }
+        total += keep(value);
+    }
+    for value in ..=2 { total += value; }
+    for value in 7.. {
+        total += value;
+        if (value == 8) { break; }
+    }
+    for outer in 0..2 {
+        for inner in 0..3 { total += 1; }
+    }
+    return total;
+}
+pub fn maximum<T>(tag:T)->i32 {
+    let last:i32=2147483647;
+    let count:i32=0;
+    for value in 2147483646 ..= last { count += 1; }
+    return count;
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &app,
+            r#"module app::main;
+import loops::lib;
+struct Pair { x:i32, y:f64 }
+fn main()->i32 {
+    let ints:[i32;3]=[1,2,3];
+    let floats:[f64;3]=[1.25,2.5,3.75];
+    if (sum<i32>(ints) != 7) { return 1; }
+    if (sum<f64>(floats) != 8.75) { return 2; }
+    let a:Pair=Pair{x:5,y:1.25};
+    let b:Pair=Pair{x:9,y:4.5};
+    let pairs:[Pair;2]=[a,b];
+    let found:Pair=last<Pair>(pairs,a);
+    if (found.x != 9 || found.y != 4.5) { return 3; }
+    let empty:[Pair;0]=[];
+    let fallback:Pair=last<Pair>(empty,a);
+    if (fallback.x != 5 || fallback.y != 1.25) { return 4; }
+    if (ranges<bool>(true,6) != 32) { return 5; }
+    if (ranges<i32>(7,6) != 32) { return 6; }
+    if (maximum<u8>(1) != 2) { return 7; }
+    return 42;
+}
+"#,
+        )
+        .unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths {
+                library_id: 1,
+                paths: vec![lib],
+                dependency_library_ids: vec![],
+            },
+            ExplicitSourceLibraryPaths {
+                library_id: 2,
+                paths: vec![app],
+                dependency_library_ids: vec![1],
+            },
+        ])
+        .unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for rows in [8, 4096] {
+            build.options.batch_rows = rows;
+            let before = fallback_counters();
+            let elf = pollster::block_on(
+                compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+            )
+            .unwrap();
+            assert_eq!(fallback_counters().1, before.1);
+            let output = common::run_x86_64_elf_output("retained for", "retained_for", &elf);
+            assert_eq!(output.status.code(), Some(42), "{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

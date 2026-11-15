@@ -395,3 +395,18 @@ It checks exact output and zero replay. The `retained_ intrinsic` test
 filter passes 28 tests, including the existing intrinsic checks. The driver
 printed `NVVM compilation failed: 3` after the passing test summary; no test
 or dispatch failure was reported.
+
+### For loops
+
+Projection substitutes the checked loop-binding type and validates it against
+the array/slice element or numeric range bounds. It restores the iterable
+kind and array/slice length for lowering. Direct range wrappers are structural
+syntax; bound expressions remain independent value roots, matching the
+frontend expression forest and preserving their evaluation before loop entry.
+
+`retained_native_for_loops_keep_binding_types_and_control_flow` executes
+integer/float arrays, record slices, empty slices, nested ranges, break and
+continue, omitted endpoints, and the inclusive i32 maximum. It runs with
+small and combined lowering batches and asserts zero replay.
+The `retained_ numeric_range x86_executes_for` filter passes 35 tests. The
+driver printed the same post-summary NVVM message seen in the intrinsic run.
