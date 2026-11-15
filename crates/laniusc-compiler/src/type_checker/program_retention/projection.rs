@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, anyhow, bail};
 
 use super::{
-    A_TERMS,
+    A_TERMS, A_TERM_ARGS,
     ProgramRetention,
     Store,
     reflected_names,
@@ -191,6 +191,7 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/08b_string_bytes",
     "type_checker/retention/projection/04d_pattern_roots",
     "type_checker/retention/projection/04e_pattern_payloads",
+    "type_checker/retention/projection/03b_type_arguments",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
@@ -211,6 +212,7 @@ const K_STRING_SCAN: usize = 15;
 const K_STRING_BYTES: usize = 16;
 const K_PATTERN_ROOTS: usize = 17;
 const K_PATTERN_PAYLOADS: usize = 18;
+const K_TYPE_ARGUMENTS: usize = 19;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -412,6 +414,7 @@ struct ColumnShape {
     side: u64,
     types: u64,
     string_words: u64,
+    type_args: u64,
 }
 
 /// The lowering columns of one batch: compact HIR and semantic views over
@@ -458,6 +461,7 @@ enum Size {
     Types,
     One,
     StringWords,
+    TypeArgs,
 }
 
 /// u32 columns: (name, size class, words per element, fill word).
@@ -515,10 +519,10 @@ const WORD_COLUMNS: &[(&str, Size, u64, u32)] = &[
     ("z_ti_lookup_next", Size::Types, 1, 0),
     ("z_ti_arg_ref_tag", Size::Types, 1, 0),
     ("z_ti_arg_ref_payload", Size::Types, 1, u32::MAX),
-    ("z_ti_arg_row_start", Size::Types, 1, 0),
-    ("z_ti_arg_row_count", Size::One, 1, 0),
-    ("z_ti_arg_row_ref_tag", Size::Rows, 1, 0),
-    ("z_ti_arg_row_ref_payload", Size::Rows, 1, u32::MAX),
+    ("ob_ti_arg_row_start", Size::Types, 1, 0),
+    ("ob_ti_arg_row_count", Size::One, 1, 0),
+    ("ob_ti_arg_row_ref_tag", Size::TypeArgs, 1, 0),
+    ("ob_ti_arg_row_ref_payload", Size::TypeArgs, 1, u32::MAX),
     ("z_generic_param_slot", Size::Types, 1, u32::MAX),
     ("z_const_param_slot", Size::Types, 1, u32::MAX),
     ("ob_constant_atoms", Size::Types, 4, 0),
@@ -578,8 +582,9 @@ impl BatchColumns {
         };
         let mut words = BTreeMap::new();
         for &(name, size, per, fill) in WORD_COLUMNS {
-            if matches!(size, Size::Types)
+            if (matches!(size, Size::Types | Size::TypeArgs) || name == "ob_ti_arg_row_count")
                 && let Some(buffer) = kept.remove(name)
+                && (!matches!(size, Size::TypeArgs) || buffer.byte_size as u64 >= shape.type_args * 4)
             {
                 words.insert(name, buffer);
                 continue;
@@ -590,6 +595,7 @@ impl BatchColumns {
                 Size::Types => shape.types,
                 Size::One => 1,
                 Size::StringWords => shape.string_words,
+                Size::TypeArgs => shape.type_args,
             };
             let (buffer, size) = make(name, count * per, fill);
             words.insert(
@@ -770,10 +776,10 @@ impl BatchColumns {
             type_instance_arg_start: self.w("ob_ti_arg_start"),
             type_instance_arg_ref_tag: self.w("z_ti_arg_ref_tag"),
             type_instance_arg_ref_payload: self.w("z_ti_arg_ref_payload"),
-            type_instance_arg_row_start: self.w("z_ti_arg_row_start"),
-            type_instance_arg_row_count: self.w("z_ti_arg_row_count"),
-            type_instance_arg_row_ref_tag: self.w("z_ti_arg_row_ref_tag"),
-            type_instance_arg_row_ref_payload: self.w("z_ti_arg_row_ref_payload"),
+            type_instance_arg_row_start: self.w("ob_ti_arg_row_start"),
+            type_instance_arg_row_count: self.w("ob_ti_arg_row_count"),
+            type_instance_arg_row_ref_tag: self.w("ob_ti_arg_row_ref_tag"),
+            type_instance_arg_row_ref_payload: self.w("ob_ti_arg_row_ref_payload"),
             type_instance_elem_ref_tag: self.w("ob_ti_elem_ref_tag"),
             type_instance_elem_ref_payload: self.w("ob_ti_elem_ref_payload"),
             type_instance_len_kind: self.w("ob_ti_len_kind"),
@@ -966,6 +972,7 @@ impl RetainedProjection {
             && columns.shape.rows >= shape.rows
             && columns.shape.side >= shape.side
             && columns.shape.types == shape.types
+            && columns.shape.type_args >= shape.type_args
             && columns.shape.string_words >= shape.string_words
         {
             return;
@@ -975,6 +982,7 @@ impl RetainedProjection {
             rows: grown(previous.map_or(0, |p| p.rows as u32), shape.rows as u32) as u64,
             side: grown(previous.map_or(0, |p| p.side as u32), shape.side as u32) as u64,
             types: shape.types,
+            type_args: grown(previous.map_or(0, |p| p.type_args as u32), shape.type_args as u32) as u64,
             string_words: grown(
                 previous.map_or(0, |p| p.string_words as u32),
                 shape.string_words as u32,
@@ -1294,6 +1302,7 @@ impl RetainedProjection {
                 rows: current.map_or(64, |c| c.rows),
                 side: current.map_or(64, |c| c.side),
                 types: self.type_capacity as u64,
+                type_args: guard.capacity.arenas[A_TERM_ARGS] as u64,
                 string_words: current.map_or(1, |c| c.string_words),
             },
             &mut report,
@@ -1303,6 +1312,7 @@ impl RetainedProjection {
         let mut r = self.recorder();
         trace("check: recording");
         r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
+        r.dispatch(K_TYPE_ARGUMENTS, &guard, inputs, &extra, self.type_capacity)?;
         for _ in 0..LAYOUT_ROUNDS {
             r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
         }
@@ -1417,6 +1427,7 @@ impl RetainedProjection {
             rows: status[S_BATCH_ROWS].max(1) as u64,
             side: (status[S_BATCH_SIDE].max(status[S_BATCH_ROWS])).max(1) as u64,
             types: self.type_capacity as u64,
+            type_args: guard.capacity.arenas[A_TERM_ARGS] as u64,
             string_words: status[S_BATCH_STRING_WORDS].max(1) as u64,
         };
         let token_capacity = status[S_BATCH_TOKENS].max(1);

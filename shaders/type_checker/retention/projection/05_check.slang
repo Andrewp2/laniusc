@@ -451,7 +451,8 @@ bool supported_form(uint kind, uint4 p)
         kind == RT_HIR_BREAK_STMT || kind == RT_HIR_CONTINUE_STMT || kind == RT_HIR_BINARY_EXPR ||
         kind == RT_HIR_UNARY_EXPR || kind == RT_HIR_CALL_EXPR || kind == RT_HIR_MEMBER_EXPR ||
         kind == RT_HIR_NAME_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR || kind == RT_HIR_PATH_EXPR ||
-        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR || kind == RT_HIR_FOR_STMT || kind == RT_HIR_MATCH_EXPR)
+        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR || kind == RT_HIR_FOR_STMT ||
+        kind == RT_HIR_MATCH_EXPR || kind == RT_HIR_TRY_EXPR)
         return true;
     if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID || p.x == 37u || p.x == 38u;
     if (kind == RT_HIR_STMT)
@@ -608,7 +609,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
     }
-    if (kind == RT_HIR_MATCH_EXPR)
+    if (kind == RT_HIR_TRY_EXPR)
+    {
+        uint operand = row_type(at,p.y);
+        uint result = result_or_fail(at,pj_req_result(at.rank));
+        if (failed) return;
+        uint4 success = pj_variant_schema(operand,0u);
+        uint4 failure = pj_variant_schema(operand,1u);
+        uint4 returned = pj_variant_schema(result,1u);
+        uint arity = rt_term_arity(operand);
+        if (success.x == RT_INVALID || failure.x == RT_INVALID || returned.x != failure.x ||
+            success.z != 1u || failure.z > 1u || returned.z != failure.z ||
+            arity != 1u+failure.z || rt_term_arity(result) != arity ||
+            pj_schema_type(operand,success.w) != t || rt_term_arg(operand,0u) != t ||
+            (failure.z != 0u && (pj_schema_type(operand,failure.w) != pj_schema_type(result,returned.w) ||
+                pj_schema_type(operand,failure.w) != rt_term_arg(operand,1u))))
+        { fail(at,PJ_E_SIGNATURE,36u); return; }
+    }
+    else if (kind == RT_HIR_MATCH_EXPR)
     {
         uint arms = pj_side_len(at.rank,PJ_SIDE_MATCH_ARMS);
         if (p.x >= pj_inf(at.rank,1u).x || p.y > arms || p.z > arms-p.y)

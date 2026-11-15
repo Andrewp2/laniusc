@@ -1050,3 +1050,61 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_try_preserves_success_and_error_payloads() {
+    common::run_with_timeout("retained try", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-try-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let result=directory.join("result.lani"); let option=directory.join("option.lani"); let app=directory.join("app.lani");
+        std::fs::write(&result,r#"module core::result;
+pub enum Result<T,E> { Ok(T), Err(E) }
+pub fn echo<T,E>(value:Result<T,E>)->Result<T,E> { let v:T=value?; return Ok(v); }
+pub fn number<T,E>(value:Result<T,E>)->Result<i32,E> { let v:T=echo<T,E>(value)?; return Ok(17); }
+"#).unwrap();
+        std::fs::write(&option,r#"module core::option;
+pub enum Option<T> { Some(T), None }
+pub fn count<T>(value:Option<T>)->Option<i32> { let v:T=value?; return Some(29); }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import core::result;
+import core::option;
+struct Pair { x:i32, y:f64 }
+fn main()->i32 {
+    let p:Pair=Pair{x:11,y:2.5}; let z:Pair=Pair{x:0,y:0.0};
+    let a:Result<Pair,i32> = echo<Pair,i32>(Ok(p));
+    let q:Pair=match (a) { Ok(v) -> v, _ -> z };
+    if (q.x != 11 || q.y != 2.5) { return 1; }
+    let b:Result<i32,Pair> = number<i32,Pair>(Err(p));
+    let e:Pair=match (b) { Err(v) -> v, _ -> z };
+    if (e.x != 11 || e.y != 2.5) { return 2; }
+    let c:Result<i32,Pair> = number<f64,Pair>(Ok(4.25));
+    if ((match (c) { Ok(v) -> v, _ -> 0 }) != 17) { return 3; }
+    let d:Result<i32,str> = number<Pair,str>(Err("held"));
+    let text:str=match (d) { Err(v) -> v, _ -> "" };
+    if (string_len(text) != 4) { return 4; }
+    let present:Option<i32> = count<Pair>(Some(p));
+    let missing:Option<i32> = count<f64>(None);
+    if ((match (present) { Some(v) -> v, _ -> 0 }) != 29) { return 5; }
+    if (!(match (missing) { None -> true, _ -> false })) { return 6; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![result],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![option],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:3,paths:vec![app],dependency_library_ids:vec![1,2]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let output=common::run_x86_64_elf_output("retained try","retained_try",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

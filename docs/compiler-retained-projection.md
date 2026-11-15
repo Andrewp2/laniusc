@@ -103,6 +103,7 @@ term, row or route.
 | substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
 | schema plan, scan, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
+| `03b_type_arguments` | one per TermId, up to 32 operands | publish nominal arguments and typed constant atoms for lowering |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
 | `04c_string_scan` | one per global row, logarithmic scan steps only when strings exist | exclusive decoded-word offsets in instance/row order |
 | `05_check` | one per global row | forms, types, literal, operator and destination rules, calls, record literals, members |
@@ -205,7 +206,7 @@ v1 projects free functions whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `for`, `break`, `continue`, assignment, unary and binary operators,
 integer, float, boolean and string literals, names of locals and parameters, member
 reads of nominal structs, struct literals, plain array literals, indexing, direct calls
-language intrinsic calls, enum construction and matches with nested patterns.
+language intrinsic calls, enum construction, matches with nested patterns and `?` propagation.
 Types include scalars, arrays, slices, references and closed nominal structs and enums
 with compound generic fields and constant operands. Field terms are
 instantiated under the nominal's own exact parameter identities. Arrays
@@ -223,7 +224,7 @@ Every other form fails closed with its template location:
 
 | Form | Error |
 | --- | --- |
-| `?`, named range objects | `FORM` or `TYPE` |
+| named range objects | `FORM` or `TYPE` |
 | methods, receiver adjustments, host calls, function references | `USE` |
 | named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
@@ -471,3 +472,21 @@ before lowering, and a restored store must succeed with the same allocations.
 Validation: 42 focused tests passed (`retained_`, compiler defect fixtures,
 and the slice enum payload case); receipt:
 `target/retained-native-integration-evidence/match-regression.log`.
+The test process stayed alive during GPU teardown for more than five minutes
+after the passing summary and was terminated (exit 143); the 42 test cases
+had completed without failures.
+
+### Success and error propagation
+
+Projection publishes the closed nominal argument graph in the lowering's
+argument-row arena, including typed constant arguments and interleaved domains.
+Each term owns a disjoint argument range. The `?` check requires the operand
+and function result to name the same enum and verifies the exact realized
+success and error payload types. Lowering then uses its existing Option/Result
+path, with complete native widths for both payloads.
+
+`retained_native_try_preserves_success_and_error_payloads` compiles three
+libraries with generic Result and Option helpers. It checks wide struct
+success/error payloads, a string error, a changed success type and None,
+with small and combined batches. Both executions exit 42 with zero replay.
+The complete `retained_` filter passes 31 tests after argument-graph and `?` integration.
