@@ -210,8 +210,9 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         }
         let pending = std::mem::take(&mut self.pending_originals);
         if self.retained {
-            // Discovery and projection replace the trait solver's admission;
-            // they reject what they do not support.
+            // The retained driver admits the GPU-produced whole-program
+            // catalog before discovery and projection. No replay session is
+            // constructed here.
             let objects = pending.into_iter().map(|unit| match unit.release_closed() {
                 CompiledSourcePackObject::X86_64(object) => Ok(object),
                 _ => Err(source_pack_artifact_store_error("a retained build needs resident x86_64 objects")),

@@ -123,15 +123,19 @@ rank, DeclId, body-relative row and token, file id and file-relative byte.
 ## Native compilation
 
 `GpuCompiler::compile_path_manifest_to_x86_64_retained(manifest, build)`
-compiles a resident manifest of two or more libraries. The `build` is a
+compiles a resident manifest with one or more libraries. The `build` is a
 `RetainedNativeBuild` that keeps the store, discovery, projection and
 finalizer allocations across builds. Ordinary entry points are unchanged.
-The build has six steps.
+The build has seven steps.
 
-1. **Units.** The ordinary resident source-pack executor compiles each unit
-   once with the store attached. It uses no unit cache and does not merge
+1. **Units.** The ordinary resident source-pack executor runs one original
+   job per unit with the store attached. A lexer-shape, parser-tree,
+   synchronous type-check or output-capacity retry can rerecord that job;
+   only its accepted attempt exports. It uses no unit cache and does not merge
    the libraries into one unit.
-2. **Original objects.** The retained mode makes three changes to each
+2. **Original objects.** `RetainedNativeBuild` creates a store in native
+   projection mode. An export-only `ProgramRetention::new` store preserves
+   the existing lowering selection. Native mode makes three changes to each
    unit's frontend job:
    - The template lowering selection is `ReplaySelection::RetainedOriginal`.
      `function_templates.slang` omits every function with a generic
@@ -154,10 +158,16 @@ The build has six steps.
    - The host uploads and reads back the object's opaque symbol columns.
      `X86SymbolColumns::apply_to_object` checks that every other field is
      unchanged.
-4. **Discovery** (`docs/compiler-retained-discovery.md`) publishes the
+4. **Catalog admission.** The existing GPU retained-catalog producer and
+   solver check whole-program identities, implementation coverage and
+   coherence before discovery. This includes unused impls from sibling
+   libraries that no individual frontend job saw together. The driver reads
+   compact receipts with `read_rows = false`; a missing or failed GPU
+   publication rejects the build.
+5. **Discovery** (`docs/compiler-retained-discovery.md`) publishes the
    instances, one root route per build-global use and the root readiness
    record with `READY_ROUTES`.
-5. **Projection and certification.** `RetainedProjection::run_certified`
+6. **Projection and certification.** `RetainedProjection::run_certified`
    first checks every instance edge as above. Then `10_certify` runs one
    lane per use whose `nc_use_abi` row belongs to this build. The use's root
    route must name one of two targets:
@@ -168,9 +178,9 @@ The build has six steps.
 
    Every compared type must have a complete layout. `10b_certify_finish`
    sets `READY_ABI` only when no use failed. A failure rejects the build
-   with `ROOT_ABI` before any lowering. Its detail is the failure bits, and
+   with `ROOT_ABI` before any instance lowering. Its detail is the failure bits, and
    `row` is the lowest failing use.
-6. **Finalize and link.** The GPU finalizer rewrites the provisional
+7. **Finalize and link.** The GPU finalizer rewrites the provisional
    symbols to their routes. Then the x86 linker links the original and
    instance objects.
 
@@ -179,8 +189,9 @@ record. `classify.slang` checks the route row of each use that a
 provisional symbol names: its generation, identity and rank. The finalizer
 never reads a row that no symbol names.
 
-The retained link does not run the trait solver. Discovery and projection
-reject the predicates, METHOD uses and forms they do not support, and no
+The retained link runs the GPU trait catalog check. Discovery and
+projection still reject the predicates, METHOD uses and forms they do not
+support; catalog admission does not yet supply discovery-wave routes. No
 step falls back to replay.
 
 ## Supported forms
@@ -200,7 +211,7 @@ Every other form fails closed with its template location:
 | arrays, slices, references, strings, index expressions, `for`, `?` | `FORM` or `TYPE` |
 | methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
 | constant generics, constant values of rows | `FORM` |
-| a use whose recorded result is not a stored term | `USE` (detail `0xfffe`) |
+| a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
 ## Root obligations
 
@@ -217,8 +228,6 @@ Every other form fails closed with its template location:
 - **Native C and file-backed builds.** A retained build rejects a manifest
   that needs file-backed compilation, and it does not link native C
   functions.
-- **DeclNative routes** (calls from an instance to a nongeneric function) are
-  checked (declaration key, closed signature) but not linked in a test.
 - **Trait routes.** The catalog publication (`docs/compiler-retained-trait-catalog.md`,
   "Publication") gives a goal call its impl method DeclId and bindings.
   Discovery must intern the ENV and write the route; projection rejects
@@ -241,11 +250,23 @@ under the GPU validation lock:
   - `pick` calls the generic `keep` and the nongeneric helper `bump`.
   - `pick` returns an `i32` and `pack` returns a two-field struct.
   - `DiscoveryCapacity::tiny()` and `batch_rows` 8 apply.
-  - Each build shows 2 units, 5 instances, 5 instance objects, 2 frontend
-    checks and no replay lowering, and exits 13.
+  - Each build shows 2 units, 5 instances, 5 instance objects and no replay
+    lowering, and exits 13. Exactly two exports commit. Frontend recording
+    counts equal the unit count plus the observed retries; they are not
+    assumed to be exactly two when prior work changed allocation sizes.
   - Discovery takes 4 attempts in the first build and 1 in the second.
   - With every recorded caller argument rewritten to `bool`, the build
     fails with `root call ABI`. A clean build then exits 13.
+- `retained_native_build_handles_one_library_and_no_instances` executes a
+  single-library generic program, a program with no instances, then the
+  generic program again in the same allocations. They exit 43, 9 and 43.
+  It also compiles with an export-only store attached through the existing
+  source-pack API, checking that native mode does not leak into that API.
+- `retained_native_build_rejects_uncalled_conflicting_impls` puts two
+  overlapping impls in sibling libraries with no calls to their methods.
+  The GPU catalog rejects them with coherence status 5. With one impl
+  changed to another type and a fresh manifest, the same build allocations
+  produce a program that exits 17.
 - The finalizer test `gpu_finalization_rejects_invalid_routes_and_retries_capacity`
   covers sparse tables. An unnamed missing row publishes, and a stale row
   that a symbol names fails with `RouteMissing`.

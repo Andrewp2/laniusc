@@ -200,6 +200,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             .grow_output(&self.gpu.device, demand)
             .map_err(CompileError::GpuCodegen)?;
         *state = next;
+        self.parser_shape_cache
+            .lock()
+            .expect("compiler.parser_shape_cache poisoned")
+            .lowering_output_retries += 1;
         Ok(())
     }
 
@@ -212,7 +216,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 ParserRetry::TreeCapacity => "frontend.retry.tree_capacity",
             },
         ));
-        #[cfg(test)]
         {
             let mut cache = self
                 .parser_shape_cache
@@ -518,6 +521,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
         let checked = self.type_checker.finish_recorded_check(device, &type_check);
         if matches!(&checked, Err(err) if err.requests_rerecord()) {
+            self.parser_shape_cache
+                .lock()
+                .expect("compiler.parser_shape_cache poisoned")
+                .typecheck_retries += 1;
             return Ok(DeferredParserFinish::RetryWithSynchronousTypeCheck);
         }
         checked
@@ -752,7 +759,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                 // An original object of a retained build defines no generic
                 // function; retained projection lowers the instances.
                 gpu_type_checker::FrontendTraitCheck::PendingOriginal
-                    if self.type_checker.attached_program_retention().is_some() =>
+                    if self.type_checker.attached_program_retention()
+                        .is_some_and(|store| store.native_projection()) =>
                     crate::codegen::lowering::ReplaySelection::RetainedOriginal,
                 gpu_type_checker::FrontendTraitCheck::Strict
                 | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
@@ -991,6 +999,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             .type_checker
             .finish_recorded_check(device, &recorded.type_check);
         if matches!(&checked, Err(err) if err.requests_rerecord()) {
+            self.parser_shape_cache
+                .lock()
+                .expect("compiler.parser_shape_cache poisoned")
+                .typecheck_retries += 1;
             return Ok(DeferredParserFinish::RetryWithSynchronousTypeCheck);
         }
         checked

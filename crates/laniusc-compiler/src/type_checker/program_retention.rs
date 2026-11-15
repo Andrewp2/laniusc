@@ -433,6 +433,8 @@ enum ExportFault {
 /// `GpuCompiler::attach_program_retention`; each interface job then exports
 /// into it before its workspace is reused.
 pub struct ProgramRetention {
+    /// Only the native retained driver withholds all original generic bodies.
+    native_projection: bool,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
@@ -478,6 +480,18 @@ impl Drop for JobSnapshot {
 impl ProgramRetention {
     /// A store on the process-global GPU with `capacity`.
     pub fn new(capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
+        Self::new_with_mode(capacity, false)
+    }
+
+    pub(crate) fn new_native(capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
+        Self::new_with_mode(capacity, true)
+    }
+
+    pub(crate) fn native_projection(&self) -> bool {
+        self.native_projection
+    }
+
+    fn new_with_mode(capacity: ProgramRetentionCapacity, native_projection: bool) -> Result<Arc<Self>> {
         let gpu = crate::gpu::device::global();
         let device = gpu.device.clone();
         let queue = gpu.queue.clone();
@@ -507,6 +521,7 @@ impl ProgramRetention {
             .filter(|name| !name.starts_with("rt_") || name.starts_with("rt_job_"))
             .collect();
         let this = Arc::new(Self {
+            native_projection,
             device,
             queue,
             passes,

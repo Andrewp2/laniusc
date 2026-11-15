@@ -112,10 +112,10 @@ struct ParserShapeCache {
     clock: u64,
     /// Speculative frontend runs discarded for more tokens or other features
     /// than the cached shape, and parses rerun for a larger tree.
-    #[cfg(test)]
     lexer_boundary_retries: u64,
-    #[cfg(test)]
     tree_capacity_retries: u64,
+    typecheck_retries: u64,
+    lowering_output_retries: u64,
 }
 
 impl ParserShapeCache {
@@ -346,6 +346,22 @@ fn initialize_pipeline_families_on_coordinator(
 pub struct GpuResidentJobBufferTrim;
 
 impl GpuCompiler<'_> {
+    /// Lexer-shape, parser-tree, synchronous type-check and lowering-output retries.
+    /// These are frontend recording attempts, not generic source replay.
+    #[doc(hidden)]
+    pub fn frontend_retry_counts(&self) -> [u64; 4] {
+        let cache = self
+            .parser_shape_cache
+            .lock()
+            .expect("compiler.parser_shape_cache poisoned");
+        [
+            cache.lexer_boundary_retries,
+            cache.tree_capacity_retries,
+            cache.typecheck_retries,
+            cache.lowering_output_retries,
+        ]
+    }
+
     /// Attaches a build-scoped program retention store: every later
     /// interface job exports its declarations, terms, uses and generic
     /// bodies into it before the job's workspace is reused. `None` detaches.

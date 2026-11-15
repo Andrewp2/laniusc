@@ -2716,7 +2716,11 @@ impl GpuTypeChecker {
             // publishes the lowering counts).
             semantic_projection
                 .instance_table
-                .record_exec(encoder, instance_closure && program_retention.is_none())?;
+                .record_exec(
+                    encoder,
+                    instance_closure && program_retention.as_ref()
+                        .is_none_or(|store| !store.native_projection()),
+                )?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }

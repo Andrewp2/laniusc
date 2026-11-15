@@ -6,14 +6,15 @@
 //! Its original objects define the unit's nongeneric functions only; each
 //! call to a generic template is an undefined symbol that the GPU made
 //! provisional right after the unit's export (`program_retention::native_calls`).
-//! At link, discovery publishes the closed instances and
-//! one root route per build-global use, projection checks and lowers the
+//! At link, GPU catalog admission checks whole-program coherence, discovery
+//! publishes the closed instances and one root route per build-global use,
+//! projection checks and lowers the
 //! instances and certifies every recorded root call against its target, the
 //! GPU finalizer rewrites the provisional symbols to their routes, and the
 //! ordinary x86 linker links the original and instance objects.
 //!
 //! No step replays a source or falls back to a frontend: a rejected
-//! discovery, projection, certification or finalization fails the build.
+//! catalog, discovery, projection, certification or finalization fails the build.
 
 use std::{num::NonZeroU32, sync::Arc};
 
@@ -47,6 +48,9 @@ pub struct RetainedNativeReport {
     pub units: usize,
     /// Instance objects (projection batches).
     pub instance_objects: usize,
+    /// GPU catalog admission, coherence and proof receipts. Semantic rows
+    /// stay on the GPU (`read_rows` is false).
+    pub catalog: Option<RetainedTraitCheck>,
     pub discovery: DiscoveryReport,
     pub projection: ProjectionReport,
 }
@@ -69,7 +73,7 @@ pub struct RetainedNativeBuild {
 
 impl RetainedNativeBuild {
     pub fn new(discovery: DiscoveryCapacity) -> anyhow::Result<Self> {
-        let store = ProgramRetention::new(ProgramRetentionCapacity::default())?;
+        let store = ProgramRetention::new_native(ProgramRetentionCapacity::default())?;
         let uses = store.capacity().0.arenas[8];
         Ok(Self {
             store,
@@ -93,20 +97,19 @@ fn retained_error(context: &str, error: impl std::fmt::Display) -> CompileError 
 }
 
 impl GpuCompiler<'_> {
-    /// Compiles a multi-library path manifest as a retained native build:
+    /// Compiles a path manifest as a retained native build:
     /// one frontend job per unit, no source replay (module documentation).
     pub async fn compile_path_manifest_to_x86_64_retained(
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
         build: &mut RetainedNativeBuild,
     ) -> Result<Vec<u8>, CompileError> {
+        build.report = RetainedNativeReport::default();
         let limits = self.resident_source_unit_limits();
-        if source_pack.requires_bounded_compilation_with_limits(limits)
-            || source_pack.files.iter().map(|f| f.library_id).collect::<std::collections::BTreeSet<_>>().len() < 2
-        {
+        if source_pack.requires_bounded_compilation_with_limits(limits) {
             return Err(retained_error(
                 "admission",
-                "a retained build needs a resident manifest of two or more libraries",
+                "this retained build requires a resident manifest",
             ));
         }
         build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
@@ -142,6 +145,18 @@ impl GpuCompiler<'_> {
         build: &mut RetainedNativeBuild,
     ) -> Result<Vec<u8>, CompileError> {
         let store = build.store.clone();
+        // Coherence is a whole-program rule, including impls whose methods
+        // are never called. Discovery's rejection of unsupported bound uses
+        // cannot replace catalog admission.
+        let catalog = self.retained_trait_check(&store, &RetainedTraitOptions::default())
+            .map_err(|e| retained_error("trait catalog", format!("{e:#}")))?;
+        if catalog.publication_status != Some([1, 0, u32::MAX]) {
+            return Err(retained_error("trait catalog rejected the program", format!(
+                "stage {:?}, producer {:?}, admission {:?}, publication {:?}",
+                catalog.stage, catalog.first_failure, catalog.catalog_status,
+                catalog.publication_status,
+            )));
+        }
         let roots = match build.discovery.run(&store).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
             DiscoveryOutcome::Published(roots) => roots,
             DiscoveryOutcome::Rejected(e) => {
@@ -199,6 +214,7 @@ impl GpuCompiler<'_> {
         build.report = RetainedNativeReport {
             units: originals.len(),
             instance_objects: instances.len(),
+            catalog: Some(catalog),
             discovery: roots.report.clone(),
             projection: report,
         };
