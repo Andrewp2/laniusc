@@ -98,12 +98,14 @@ lane`.
 | 14 | `OWNER` | a predicate owner that is not a function, method or impl; a parent that is not an owner |
 | 15 | `LIMIT` | an environment with more than 32 parameters in one domain |
 
-Each check is one lane's work over its own record and a bounded number of
-point lookups. Distinct bindings need no all-pairs scan. Each binding takes
-its sorted position in its impl's block, coverage equality bounds the count,
-and the solver's method admission rejects two bindings of one required
-symbol (strictly increasing symbols). The trait's required-member count
-comes from one `InterlockedAdd` per member in pass `00_mark`.
+Each check runs over its own record and point lookups. Binding placement
+currently calls `binding_rank`, which scans the impl's full binding block
+for every binding: an impl with B methods takes O(B²) comparisons. This
+must be replaced before relying on this path for large catalogs. Coverage
+equality bounds the count, and the solver's method admission rejects two
+bindings of one required symbol (strictly increasing symbols). The trait's
+required-member count comes from one `InterlockedAdd` per member in pass
+`00_mark`.
 
 ## Trait-item-owned predicates
 
@@ -150,6 +152,11 @@ instructions. No producer kernel uses local arrays.
 
 ## What is not covered
 
+- The check returns a host report, including the solver's evidence
+  readback. It does not yet expose an owned GPU publication for discovery
+  or projection to consume after the check returns. Selection itself runs
+  on the GPU; the next integration must preserve the packet's lifetime
+  and expose its buffers without reconstructing routes from the report.
 - Bound-member routing, native finalization and projection do not consume
   the selected evidence yet. They still use replayed sources.
 - Uses whose callee is outside the store, extern, or a trait member are not
