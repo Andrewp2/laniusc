@@ -213,6 +213,29 @@ struct ResidentState {
     /// Bind groups by kernel and by the name, allocation, offset and size of
     /// each binding.
     groups: HashMap<(String, Vec<(&'static str, [u64; 3])>), Arc<wgpu::BindGroup>>,
+    /// The readback batch that `Gpu::read` adds to, until the host maps it.
+    batch: Option<Arc<ReadBatch>>,
+}
+
+/// The reads recorded between two maps (`Gpu::read`). They share one
+/// staging buffer, so the host maps it once for all of them. A read that
+/// does not fit goes to a buffer of its own, and the next run's staging
+/// buffer of this batch covers both.
+struct ReadBatch {
+    /// The key of the staging buffer.
+    key: String,
+    /// The staging buffers and the bytes the reads use of each.
+    segments: Mutex<Vec<(LaniusBuffer<u8>, usize)>>,
+    /// The bytes of each segment, once mapped.
+    mapped: std::sync::OnceLock<Vec<Vec<u8>>>,
+}
+
+/// One read of `Gpu::read`: `len` bytes at `offset` of segment `segment`.
+pub(super) struct Readback {
+    batch: Arc<ReadBatch>,
+    segment: usize,
+    offset: usize,
+    len: usize,
 }
 
 static RESIDENT: LazyLock<Resident> = LazyLock::new(Resident::default);
@@ -429,49 +452,94 @@ impl Gpu<'_> {
         )
     }
 
-    /// Records a copy of `words` words of `source` for the host to read.
+    /// Records a copy of `words` words of `source` for the host to read,
+    /// into the open readback batch.
     pub(super) fn read<T>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         source: &LaniusBuffer<T>,
         first_word: usize,
         words: usize,
-    ) -> LaniusBuffer<u8> {
-        let words = words.max(1);
-        let readback = self
-            .resident(&mut RESIDENT.state(), "closures.readback", words * 4, READBACK)
-            .subrange(0, words as u64 * 4, words)
-            .expect("the readback buffer covers the words it was sized for");
-        source.copy_to(encoder, first_word as u64 * 4, &readback, 0, words as u64 * 4);
-        readback
+    ) -> Readback {
+        let len = words.max(1) * 4;
+        let mut state = RESIDENT.state();
+        let batch = match &state.batch {
+            Some(batch) => batch.clone(),
+            None => {
+                let (key, capacity) = state.take("closures.readback", 0);
+                let buffer = RESIDENT.buffers.binding_capacity(self.device, &key, capacity, READBACK);
+                let batch = Arc::new(ReadBatch {
+                    key,
+                    segments: Mutex::new(vec![(buffer, 0)]),
+                    mapped: std::sync::OnceLock::new(),
+                });
+                state.batch = Some(batch.clone());
+                batch
+            }
+        };
+        let mut segments = batch.segments.lock().unwrap_or_else(PoisonError::into_inner);
+        let used: usize = segments.iter().map(|(_, used)| used).sum();
+        let last = segments.len() - 1;
+        let (segment, offset) = if segments[last].1 + len <= segments[last].0.byte_size {
+            (last, segments[last].1)
+        } else {
+            // The next run's staging buffer covers every read of this one.
+            let held = state.capacity.entry(batch.key.clone()).or_default();
+            let total = used + len;
+            if *held < total {
+                *held = (total + total / 64).next_multiple_of(BUCKET_BYTES);
+            }
+            let (key, capacity) = state.take("closures.readback.overflow", len);
+            segments.push((RESIDENT.buffers.binding_capacity(self.device, &key, capacity, READBACK), 0));
+            (segments.len() - 1, 0)
+        };
+        let (buffer, at) = &mut segments[segment];
+        source.copy_to(encoder, first_word as u64 * 4, buffer, offset as u64, len as u64);
+        *at = offset + len;
+        drop(segments);
+        Readback { batch, segment, offset, len }
     }
 
     pub(super) fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
         passes_core::submit_with_progress(self.queue, label, encoder.finish());
     }
 
-    pub(super) fn words(&self, readback: &LaniusBuffer<u8>) -> Result<Vec<u32>> {
-        let slice = readback.buffer.slice(readback.byte_offset..readback.byte_offset + readback.byte_size as u64);
-        map_readback_blocking(self.device, &slice, "closures.readback")?;
-        let mapped = slice.get_mapped_range();
-        let words = mapped
-            .chunks_exact(4)
-            .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
-            .collect();
-        drop(mapped);
-        readback.unmap();
-        Ok(words)
+    /// The bytes of a read. The first of its batch to be asked for maps the
+    /// whole batch, once; the next read starts a new batch.
+    fn read_bytes<'r>(&self, readback: &'r Readback) -> Result<&'r [u8]> {
+        let batch = &readback.batch;
+        if batch.mapped.get().is_none() {
+            {
+                let mut state = RESIDENT.state();
+                if state.batch.as_ref().is_some_and(|open| Arc::ptr_eq(open, batch)) {
+                    state.batch = None;
+                }
+            }
+            let segments = batch.segments.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut mapped = Vec::with_capacity(segments.len());
+            for (buffer, used) in segments.iter() {
+                let slice = buffer.buffer.slice(buffer.byte_offset..buffer.byte_offset + (*used).max(4) as u64);
+                map_readback_blocking(self.device, &slice, "closures.readback")?;
+                mapped.push(slice.get_mapped_range()[..*used].to_vec());
+                buffer.unmap();
+            }
+            let _ = batch.mapped.set(mapped);
+        }
+        let mapped = batch.mapped.get().expect("the batch was mapped");
+        Ok(&mapped[readback.segment][readback.offset..readback.offset + readback.len])
     }
 
-    /// The first `len` bytes of a readback, as the GPU wrote them.
-    pub(super) fn bytes(&self, readback: &LaniusBuffer<u8>, len: usize) -> Result<Vec<u8>> {
-        let slice = readback.buffer.slice(readback.byte_offset..readback.byte_offset + readback.byte_size as u64);
-        map_readback_blocking(self.device, &slice, "closures.readback")?;
-        let mapped = slice.get_mapped_range();
-        let bytes = mapped.get(..len).context("readback is shorter than its text")?.to_vec();
-        drop(mapped);
-        readback.unmap();
-        Ok(bytes)
+    pub(super) fn words(&self, readback: &Readback) -> Result<Vec<u32>> {
+        Ok(self
+            .read_bytes(readback)?
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
+            .collect())
+    }
+
+    /// The first `len` bytes of a read, as the GPU wrote them.
+    pub(super) fn bytes(&self, readback: &Readback, len: usize) -> Result<Vec<u8>> {
+        Ok(self.read_bytes(readback)?.get(..len).context("readback is shorter than its text")?.to_vec())
     }
 }
 
