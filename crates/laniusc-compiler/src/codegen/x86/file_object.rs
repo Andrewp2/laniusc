@@ -224,6 +224,12 @@ impl GpuX86FileObject {
         self.copy_range(0, self.payload.text_len, output)
     }
 
+    /// The immutable section file. Link inputs borrow its ranges while the
+    /// owning objects keep the private directory alive.
+    pub(super) fn payload_path(&self) -> PathBuf {
+        self.payload.directory.0.join("payload")
+    }
+
     /// Copies one range of the object's text section.
     pub(crate) fn copy_text_range_to<W: Write>(
         &self,

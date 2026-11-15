@@ -385,10 +385,10 @@ pub struct ProjectionReport {
 }
 
 /// The outcome of [`RetainedProjection::run`].
-pub enum ProjectionOutcome {
+pub enum ProjectionOutcome<T = GpuX86RelocatableObject> {
     /// Every rank checked and every batch lowered.
     Objects {
-        objects: Vec<GpuX86RelocatableObject>,
+        objects: Vec<T>,
         report: ProjectionReport,
     },
     /// Nothing was lowered.
@@ -398,8 +398,8 @@ pub enum ProjectionOutcome {
     },
 }
 
-impl ProjectionOutcome {
-    pub fn objects(self) -> Result<(Vec<GpuX86RelocatableObject>, ProjectionReport)> {
+impl<T> ProjectionOutcome<T> {
+    pub fn objects(self) -> Result<(Vec<T>, ProjectionReport)> {
         match self {
             Self::Objects { objects, report } => Ok((objects, report)),
             Self::Rejected { error, .. } => bail!("{error}"),
@@ -1160,6 +1160,20 @@ impl RetainedProjection {
         options: &ProjectionOptions,
         roots: Option<RootCertification<'_>>,
     ) -> Result<ProjectionOutcome> {
+        self.run_certified_with_storage(compiler, store, inputs, options, roots, Ok)
+    }
+
+    /// Stores each lowered batch before lowering the next one. File-backed
+    /// builds release its section vectors here instead of accumulating them.
+    pub(crate) fn run_certified_with_storage<T>(
+        &mut self,
+        compiler: &GpuCompiler<'_>,
+        store: &ProgramRetention,
+        inputs: &ProjectionInputs,
+        options: &ProjectionOptions,
+        roots: Option<RootCertification<'_>>,
+        mut store_object: impl FnMut(GpuX86RelocatableObject) -> Result<T>,
+    ) -> Result<ProjectionOutcome<T>> {
         let mut report = ProjectionReport::default();
         let started = std::time::Instant::now();
 
@@ -1514,7 +1528,7 @@ impl RetainedProjection {
                 object.symbols.len(),
                 object.relocations.len()
             ));
-            objects.push(object);
+            objects.push(store_object(object)?);
         }
         drop(guard);
         report.lowering_us = started.elapsed().as_micros() as u64;

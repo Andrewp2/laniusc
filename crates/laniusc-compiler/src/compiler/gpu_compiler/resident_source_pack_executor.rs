@@ -30,7 +30,8 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // A retained native build (retained_native.rs): units compile without
     // caches, and the link hands the original objects back unlinked.
     retained: bool,
-    retained_originals: Option<Vec<x86::GpuX86RelocatableObject>>,
+    retained_originals: Option<Vec<CompiledSourcePackObject>>,
+    retained_spill: bool,
     retained_native_functions: Vec<NativeCFunction>,
 }
 
@@ -83,7 +84,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
         Self {
             compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None,
-            native_link: None, frontend_units: None, retained: false, retained_originals: None,
+            native_link: None, frontend_units: None, retained: false, retained_originals: None, retained_spill: false,
             retained_native_functions: Vec::new(),
         }
     }
@@ -111,13 +112,14 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
 
     /// A retained native build: no unit cache, no closed-fact elision, and
     /// [`Self::take_retained_originals`] instead of a link.
-    pub(super) fn retained(mut self) -> Self {
+    pub(super) fn retained(mut self, spill: bool) -> Self {
         self.retained = true;
+        self.retained_spill = spill;
         self
     }
 
     /// The original objects of a retained build's link.
-    pub(super) fn take_retained_originals(&mut self) -> Option<Vec<x86::GpuX86RelocatableObject>> {
+    pub(super) fn take_retained_originals(&mut self) -> Option<Vec<CompiledSourcePackObject>> {
         self.retained_originals.take()
     }
 
@@ -153,7 +155,11 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // so generic bodies specialize alike. A standard-library unit may
         // reuse an earlier job's pending original; it is admitted with the
         // rest of this program at link.
-        let pending = if self.retained {
+        let pending = if self.retained && self.retained_spill {
+            self.compiler.compile_file_pending_native_unit(
+                &handle.job, &handle.source_files, dependency_pages.into(),
+            ).await?
+        } else if self.retained {
             self.compiler.compile_cached_pending_original_unit(
                 self.target, &handle.job, false, &handle.source_files, dependency_pages.into(), false,
             ).await?
@@ -219,11 +225,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             // The retained driver admits the GPU-produced whole-program
             // catalog before discovery and projection. No replay session is
             // constructed here.
-            let objects = pending.into_iter().map(|unit| match unit.release_closed() {
-                CompiledSourcePackObject::X86_64(object) => Ok(object),
-                _ => Err(source_pack_artifact_store_error("a retained build needs resident x86_64 objects")),
-            }).collect::<Result<Vec<_>, _>>()?;
-            self.retained_originals = Some(objects);
+            self.retained_originals = Some(pending.into_iter().map(PendingOriginalUnit::release_closed).collect());
             self.retained_native_functions = native_functions;
             return Ok(ResidentLinkedOutput::Bytes(Vec::new()));
         }

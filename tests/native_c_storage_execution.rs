@@ -17,6 +17,8 @@ use laniusc_compiler::{
         GpuCompiler,
         GpuCompilerBackends,
         NativeLinkOptions,
+        RetainedNativeBuild,
+        fallback_counters,
         load_entry_path_manifest_with_source_roots,
     },
 };
@@ -48,6 +50,15 @@ fn write_padded_source(destination: &Path, source: &Path) {
 
 #[test]
 fn native_large_pack_spills_originals_and_generic_replays_and_writes_atomically() {
+    large_pack_storage(false);
+}
+
+#[test]
+fn retained_native_large_pack_spills_instances_and_writes_atomically_without_replay() {
+    large_pack_storage(true);
+}
+
+fn large_pack_storage(retained: bool) {
     let directory = SourceDirectory(common::temp_artifact_path(
         "laniusc_native_storage",
         "source pack 'quoted'",
@@ -110,22 +121,39 @@ fn native_large_pack_spills_originals_and_generic_replays_and_writes_atomically(
     let byte_len = common::run_gpu_codegen_with_timeout("bounded native storage", move || {
         pollster::block_on(async move {
             let compiler = GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only()).await?;
-            let byte_len = compiler
-                .compile_path_manifest_with_native_link_to_file(&manifest, &options, &output_path)
-                .await?;
+            let mut build = RetainedNativeBuild::new(
+                laniusc_compiler::type_checker::program_retention::discovery::DiscoveryCapacity::tiny(),
+            ).expect("retained build");
+            build.options.batch_rows = 1;
+            build.native_link = Some(options.clone());
+            let before = fallback_counters();
+            let byte_len = if retained {
+                compiler.compile_path_manifest_to_x86_64_retained_to_file(&manifest, &mut build, &output_path).await?
+            } else {
+                compiler.compile_path_manifest_with_native_link_to_file(&manifest, &options, &output_path).await?
+            };
+            if retained {
+                assert_eq!(fallback_counters().1, before.1, "large builds must never replay");
+                assert_eq!(build.report.units, 2);
+                assert_eq!(build.report.projection.instances, 2);
+                assert_eq!(build.report.instance_objects, 2);
+                assert_eq!(build.report.spilled_objects, 4, "each unit and instance is spilled immediately");
+            }
             let original = fs::read(&output_path).expect("read completed native executable");
             let limited = NativeLinkOptions {
                 max_output_bytes: 1,
                 ..options
             };
-            let error = compiler
-                .compile_path_manifest_with_native_link_to_file(
-                    &small_manifest,
-                    &limited,
-                    &output_path,
-                )
-                .await
-                .expect_err("reject excessive native output");
+            let result = if retained {
+                build.native_link = Some(limited);
+                compiler.compile_path_manifest_to_x86_64_retained_to_file(&small_manifest, &mut build, &output_path).await
+            } else {
+                compiler.compile_path_manifest_with_native_link_to_file(&small_manifest, &limited, &output_path).await
+            };
+            let error = result.expect_err("reject excessive native output");
+            if retained {
+                assert_eq!(fallback_counters().1, before.1, "rejected builds must never replay");
+            }
             assert!(
                 format!("{error:?}").contains("output") || format!("{error:?}").contains("size"),
                 "{error:?}"
@@ -141,7 +169,7 @@ fn native_large_pack_spills_originals_and_generic_replays_and_writes_atomically(
     .unwrap_or_else(|error| panic!("bounded native storage: {error:?}"));
     assert_eq!(fs::metadata(&executable).unwrap().len(), byte_len);
     let output = common::process_output_with_timeout(
-        "execute private C calls in spilled generic replay",
+        "execute private C calls in spilled generic objects",
         &mut Command::new(&executable),
         Duration::from_secs(2),
     );

@@ -18,10 +18,13 @@
 
 use std::{num::NonZeroU32, sync::Arc};
 
-use super::{resident_source_pack_executor::ResidentSourcePackExecutor, *};
+use super::{
+    resident_source_pack_executor::{ResidentLinkedOutput, ResidentSourcePackExecutor},
+    typecheck::CompiledSourcePackObject,
+    *,
+};
 use crate::{
     codegen::x86::{
-        GpuX86RelocatableObject,
         finalize::{GpuX86SymbolFinalizer, X86RouteTable, X86SymbolColumns},
     },
     type_checker::program_retention::{
@@ -48,6 +51,8 @@ pub struct RetainedNativeReport {
     pub units: usize,
     /// Instance objects (projection batches).
     pub instance_objects: usize,
+    /// Objects whose section bytes were spilled before the next unit or batch.
+    pub spilled_objects: usize,
     /// GPU catalog admission, coherence and proof receipts. Semantic rows
     /// stay on the GPU (`read_rows` is false).
     pub catalog: Option<RetainedTraitCheck>,
@@ -106,22 +111,44 @@ impl GpuCompiler<'_> {
         source_pack: &ExplicitSourcePackPathManifest,
         build: &mut RetainedNativeBuild,
     ) -> Result<Vec<u8>, CompileError> {
+        match self.compile_retained_output(source_pack, build, None).await? {
+            ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
+            ResidentLinkedOutput::File(_) => unreachable!("no output file requested"),
+        }
+    }
+
+    /// Compiles directly to an atomically replaced executable, spilling each
+    /// original and instance batch. The complete image is never read into a Vec.
+    pub async fn compile_path_manifest_to_x86_64_retained_to_file(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        build: &mut RetainedNativeBuild,
+        output: &Path,
+    ) -> Result<u64, CompileError> {
+        match self.compile_retained_output(source_pack, build, Some(output)).await? {
+            ResidentLinkedOutput::File(bytes) => Ok(bytes),
+            ResidentLinkedOutput::Bytes(_) => unreachable!("output file requested"),
+        }
+    }
+
+    async fn compile_retained_output(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        build: &mut RetainedNativeBuild,
+        output: Option<&Path>,
+    ) -> Result<ResidentLinkedOutput, CompileError> {
         build.report = RetainedNativeReport::default();
         let limits = self.resident_source_unit_limits();
-        if source_pack.requires_bounded_compilation_with_limits(limits) {
-            return Err(retained_error(
-                "admission",
-                "this retained build requires a resident manifest",
-            ));
-        }
+        let spill = output.is_some() || build.native_link.is_some()
+            || source_pack.requires_bounded_compilation_with_limits(limits);
         build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
         *self.retained_native_calls.lock().unwrap() = build.calls.take();
         self.attach_program_retention(Some(build.store.clone()));
-        let originals = self.compile_retained_originals(source_pack, limits, build.native_link.as_ref()).await;
+        let originals = self.compile_retained_originals(source_pack, limits, build.native_link.as_ref(), spill).await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
         let (originals, native_functions) = originals?;
-        self.link_retained(originals, &native_functions, build)
+        self.link_retained(originals, &native_functions, build, spill, output)
     }
 
     async fn compile_retained_originals(
@@ -129,13 +156,14 @@ impl GpuCompiler<'_> {
         source_pack: &ExplicitSourcePackPathManifest,
         limits: CompilationUnitLimits,
         native_link: Option<&NativeLinkOptions>,
-    ) -> Result<(Vec<GpuX86RelocatableObject>, Vec<NativeCFunction>), CompileError> {
+        spill: bool,
+    ) -> Result<(Vec<CompiledSourcePackObject>, Vec<NativeCFunction>), CompileError> {
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
         let mut executor = ResidentSourcePackExecutor::new(self, SourcePackArtifactTarget::X86_64)
             .with_frontend_units(&build_plan)
-            .retained();
+            .retained(spill);
         if let Some(options) = native_link {
             x86::native::validate_options(options)
                 .map_err(|e| retained_error("native link options", e))?;
@@ -150,10 +178,12 @@ impl GpuCompiler<'_> {
 
     fn link_retained(
         &self,
-        mut originals: Vec<GpuX86RelocatableObject>,
+        mut originals: Vec<CompiledSourcePackObject>,
         native_functions: &[NativeCFunction],
         build: &mut RetainedNativeBuild,
-    ) -> Result<Vec<u8>, CompileError> {
+        spill: bool,
+        output: Option<&Path>,
+    ) -> Result<ResidentLinkedOutput, CompileError> {
         let store = build.store.clone();
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
@@ -187,12 +217,20 @@ impl GpuCompiler<'_> {
         }
         let outcome = build
             .projection
-            .run_certified(
+            .run_certified_with_storage(
                 self,
                 &store,
                 &roots.inputs,
                 &build.options,
                 Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
+                |object| {
+                    if spill {
+                        x86::GpuX86FileObject::spill(object).map(CompiledSourcePackObject::X86_64File)
+                            .map_err(anyhow::Error::msg)
+                    } else {
+                        Ok(CompiledSourcePackObject::X86_64(object))
+                    }
+                },
             )
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
         let (instances, report) = match outcome {
@@ -210,7 +248,11 @@ impl GpuCompiler<'_> {
                 GpuX86SymbolFinalizer::new_with_device(self.gpu).map_err(|e| retained_error("finalizer", e))?,
             ),
         };
-        let columns = originals.iter().map(X86SymbolColumns::of_object).collect::<Vec<_>>();
+        let columns = originals.iter().map(|object| match object {
+            CompiledSourcePackObject::X86_64(object) => X86SymbolColumns::of_object(object),
+            CompiledSourcePackObject::X86_64File(object) => X86SymbolColumns::of_file_object(object),
+            CompiledSourcePackObject::Wasm(_) => unreachable!("native original"),
+        }).collect::<Vec<_>>();
         let generation = NonZeroU32::new(roots.generation)
             .ok_or_else(|| retained_error("finalize", "build generation zero"))?;
         let table = X86RouteTable {
@@ -223,31 +265,71 @@ impl GpuCompiler<'_> {
             .map_err(|e| retained_error("finalize", format!("{e:#}")))?
             .map_err(|failure| retained_error("finalizer rejected the objects", format!("{failure:?}")))?;
         for (object, columns) in originals.iter_mut().zip(&published) {
-            columns.apply_to_object(object).map_err(|e| retained_error("finalize", e))?;
+            match object {
+                CompiledSourcePackObject::X86_64(object) => columns.apply_to_object(object),
+                CompiledSourcePackObject::X86_64File(object) => columns.apply_to_file_object(object),
+                CompiledSourcePackObject::Wasm(_) => unreachable!("native original"),
+            }.map_err(|e| retained_error("finalize", e))?;
         }
         build.report = RetainedNativeReport {
             units: originals.len(),
             instance_objects: instances.len(),
+            spilled_objects: if spill { originals.len() + instances.len() } else { 0 },
             catalog: Some(catalog),
             discovery: roots.report.clone(),
             projection: report,
         };
         originals.extend(instances);
+        if !spill {
+            let objects = originals.into_iter().map(|object| match object {
+                CompiledSourcePackObject::X86_64(object) => object,
+                _ => unreachable!("resident native object"),
+            }).collect::<Vec<_>>();
+            return self.link_x86_objects(&objects).map(ResidentLinkedOutput::Bytes)
+                .map_err(|e| retained_error("link", format!("{e:#}")));
+        }
+        let objects = originals.into_iter().map(|object| match object {
+            CompiledSourcePackObject::X86_64File(object) => object,
+            _ => unreachable!("spilled native object"),
+        }).collect::<Vec<_>>();
+        let linker = self.x86_linker().map_err(|e| retained_error("native linker", e))?;
+        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         if let Some(options) = &build.native_link {
-            let objects = originals.into_iter().map(x86::GpuX86FileObject::spill)
-                .collect::<Result<Vec<_>, _>>().map_err(|e| retained_error("native object storage", e))?;
             let bridge = super::native_codegen::native_main_bridge(&objects)?;
             let plan = x86::native::plan_native_link(&objects, native_functions, bridge, options)
                 .map_err(|e| retained_error("native link plan", e))?;
             if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {
-                return self.x86_linker().map_err(|e| retained_error("native linker", e))?
-                    .link_dynamic_executable(&self.gpu.device, &self.gpu.queue, input, image)
-                    .map_err(|e| retained_error("native link", e));
+                return match output {
+                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                        path, SourcePackArtifactTarget::X86_64, |file| linker
+                        .link_dynamic_executable_to_writer(device, queue, input, image, file)
+                        .map(|len| len as u64).map_err(|e| retained_error("native link", e)))
+                        .map(ResidentLinkedOutput::File),
+                    None => linker.link_dynamic_executable(device, queue, input, image)
+                        .map(ResidentLinkedOutput::Bytes).map_err(|e| retained_error("native link", e)),
+                };
             }
-            return x86::native::link_native_file_executable(&objects, native_functions, bridge, options)
-                .and_then(|output| output.read_bytes(options.max_output_bytes))
-                .map_err(|e| retained_error("native link", e));
+            let executable = x86::native::link_native_file_executable(&objects, native_functions, bridge, options)
+                .map_err(|e| retained_error("native link", e))?;
+            return match output {
+                Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                    path, SourcePackArtifactTarget::X86_64,
+                    |file| executable.write_to(file).map_err(|e| retained_error("write native executable", e)),
+                ).map(ResidentLinkedOutput::File),
+                None => executable.read_bytes(options.max_output_bytes).map(ResidentLinkedOutput::Bytes)
+                    .map_err(|e| retained_error("native link", e)),
+            };
         }
-        self.link_x86_objects(&originals).map_err(|e| retained_error("link", format!("{e:#}")))
+        let input = x86::GpuX86LinkInput::for_executable_spilled(&objects)
+            .map_err(|e| retained_error("link inputs", e))?;
+        match output {
+            Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                path, SourcePackArtifactTarget::X86_64,
+                |file| linker.link_executable_to_writer(device, queue, &input, file)
+                    .map(|len| len as u64).map_err(|e| retained_error("link", e)),
+            ).map(ResidentLinkedOutput::File),
+            None => linker.link_executable(device, queue, &input).map(ResidentLinkedOutput::Bytes)
+                .map_err(|e| retained_error("link", e)),
+        }
     }
 }

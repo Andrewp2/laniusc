@@ -129,7 +129,7 @@ rank, DeclId, body-relative row and token, file id and file-relative byte.
 ## Native compilation
 
 `GpuCompiler::compile_path_manifest_to_x86_64_retained(manifest, build)`
-compiles a resident manifest with one or more libraries. The `build` is a
+compiles a path manifest with one or more libraries, scheduled into bounded frontend units. The `build` is a
 `RetainedNativeBuild` that keeps the store, discovery, projection and
 finalizer allocations across builds. Ordinary entry points are unchanged.
 The build has seven steps.
@@ -242,8 +242,6 @@ Every other form fails closed with its template location:
 
 ## Gaps
 
-- **File-backed builds.** A retained build still rejects a manifest
-  that needs file-backed compilation.
 - **Inherent method choice.** Discovery currently follows the template's
   accepted inherent method. It must recheck ambiguity under the closed receiver
   before this becomes the default path.
@@ -576,3 +574,23 @@ are READY, the catalog and closed discovery proofs pass, and no source replay
 runs. With the native libraries from the existing settings receipt, the
 generated executable runs `--frames 3 --scale 1` and exits 0. This run proves
 execution; its cold 1.58 s compile is not a warm rebuild measurement.
+
+### File-backed native builds
+
+`compile_path_manifest_to_x86_64_retained_to_file` writes through the existing
+atomic output boundary. The manifest is scheduled into the ordinary bounded
+frontend units. Large manifests, native C builds, and direct file output spill
+each original object before compiling the next unit. Projection stores each
+lowered batch before starting the next batch, so section vectors do not
+accumulate across instances. The GPU finalizer rewrites the in-memory metadata
+of spilled originals; their section files remain immutable. The raw GPU linker
+reads those files in ranges with the finalized metadata.
+
+`retained_native_large_pack_spills_instances_and_writes_atomically_without_replay`
+uses the existing two-file, 6 MiB native C fixture. It produces two original
+objects and two instance objects, all spilled, executes successfully, and
+records zero replay. A second build exceeding the output limit leaves the
+previous executable byte-for-byte unchanged. The original-main test also
+executes file-backed GPU linking without native C, then verifies that an ABI
+rejection preserves the executable. These two tests and the focused private-C
+call test passed together (3 tests, 4.73 s).

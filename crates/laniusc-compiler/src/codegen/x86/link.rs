@@ -325,6 +325,44 @@ impl GpuX86LinkInput {
         Ok(input)
     }
 
+    /// Links private spilled payloads with their current symbol columns.
+    /// Finalization can rewrite those columns without rewriting section files.
+    /// The caller keeps `objects` alive until linking has completed.
+    pub(crate) fn for_executable_spilled(objects: &[GpuX86FileObject]) -> Result<Self, String> {
+        if objects.is_empty() {
+            return Err("x86 link requires at least one object".into());
+        }
+        for object in objects { object.validate()?; }
+        let plans = shared_runtime_text_plans(
+            &objects.iter().map(|object| (
+                object.layout.entry_offset, object.layout.body, object.layout.text_byte_len,
+            )).collect::<Vec<_>>(),
+            |index, range| {
+                let mut bytes = Vec::with_capacity(range.len());
+                objects[index].copy_text_range_to(range, &mut bytes)?;
+                Ok(std::borrow::Cow::Owned(bytes))
+            },
+        )?;
+        let mut input = Self::empty(
+            GpuLinkByteSource::file_segments("x86 link text bytes"),
+            GpuLinkByteSource::file_segments("x86 link rodata bytes"),
+        );
+        for (index, object) in objects.iter().enumerate() {
+            let plan = &plans[index];
+            input.append_object_columns(index, object.layout.entry_offset, plan,
+                object.layout.rodata_byte_len, &object.relocations, &object.symbols,
+                &object.identity_bytes)?;
+            let path = object.payload_path();
+            input.text.push_file_segment(path.clone(), u64::from(plan.copy.start)..u64::from(plan.copy.end))?;
+            let base = u64::from(object.layout.text_byte_len);
+            input.rodata.push_file_segment(path, base..base + u64::from(object.layout.rodata_byte_len))?;
+            checked_u32_count("flat text byte", input.text_len())?;
+            checked_u32_count("flat rodata byte", input.rodata_len())?;
+        }
+        input.finish_validation()?;
+        Ok(input)
+    }
+
     /// The native C profile's dynamic link: Lanius objects read from their
     /// private payload files, then the import object (`dynamic.rs`), whose
     /// stubs define each foreign identity in `imports` (identity, import

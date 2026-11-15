@@ -135,6 +135,24 @@ fn retained_native_program() {
     .expect("clean build after the rejected one");
     let out = common::run_x86_64_elf_output("retained native", "retained_native", &elf);
     assert_eq!(out.status.code(), Some(13));
+    let output = directory.join("program");
+    let before = fallback_counters();
+    let bytes = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(
+        &manifest, &mut build, &output,
+    )).expect("file-backed GPU link");
+    assert_eq!(fallback_counters().1, before.1);
+    assert_eq!(build.report.spilled_objects, build.report.units + build.report.instance_objects);
+    assert_eq!(std::fs::metadata(&output).unwrap().len(), bytes);
+    let result = common::process_output_with_timeout("retained file output",
+        &mut std::process::Command::new(&output), std::time::Duration::from_secs(2));
+    assert_eq!(result.status.code(), Some(13), "{result:?}");
+    let previous = std::fs::read(&output).unwrap();
+    build.test_caller_arg_fault = Some(2);
+    let error = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(
+        &manifest, &mut build, &output,
+    )).expect_err("reject before publishing a new file");
+    assert!(format!("{error:?}").contains("root call ABI"));
+    assert_eq!(std::fs::read(&output).unwrap(), previous);
     std::fs::remove_dir_all(&directory).ok();
 }
 
