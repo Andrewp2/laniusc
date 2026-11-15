@@ -58,9 +58,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     uint previous_tag = call_inference_result_tag[node];
     uint previous_payload = call_inference_result_payload[node];
-    bool changed = !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
-        previous_tag, previous_payload, 0xffffffffu, tag, payload, 0xffffffffu,
-        checked_type_capacity(), gParams.n_tokens);
+    // The same available reference is the same type: skip the walk.
+    bool changed = (previous_tag != tag || previous_payload != payload) &&
+        !scoped_type_refs_equal<ScopedCheckedTypeGraph>(
+            previous_tag, previous_payload, 0xffffffffu, tag, payload, 0xffffffffu,
+            checked_type_capacity(), gParams.n_tokens);
     call_inference_result_tag[node] = tag;
     call_inference_result_payload[node] = payload;
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
