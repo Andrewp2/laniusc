@@ -33,9 +33,22 @@ first failure or grows exactly as it did when it read the status between
 these passes. The substitution counts, the discovery status and the store
 counters come back in one readback. A wave without closed predicates
 therefore costs one readback, and a wave with them adds the closed
-producer, solver, publication receipt and method-route readbacks and one
-status readback after the method routes. Settings: 134 to 106 readbacks
+producer, solver and method-route readbacks. Settings: 134 to 106 readbacks
 per build, discovery about 96 to 36 ms in a back-to-back A/B.
+
+The roots follow the same path: the root request pass, the publish pass
+and resolution need no status readback between them. The closed
+publication's receipt (its route header) is copied on the GPU into
+`dg_receipt` in the wave's scan submit and comes back with the
+resolution readback; the host checks it before any growth or failure of
+that wave, and before the method routes size their tables from its proof
+node count. The bound-route pass `06_bound_routes` and the publish pass
+record into each method-route batch. They do nothing unless `mr_state`
+word 0 is 2 and `MR_PENDING` is clear, so the routes' state, the
+discovery status and the store counters come back in one readback. Term
+ranking takes the term count from the last status readback and does not
+read the status after the sort. Settings: 90 to 81 readbacks per build,
+with the same executable.
 
 A parallel prefix scan assigns each frontier instance a range of use edges.
 Request production and result consumption use one lane per edge or request;

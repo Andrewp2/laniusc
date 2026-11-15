@@ -38,13 +38,42 @@ pub struct ClosedTraitPublication {
     proof_nodes: u32,
     /// Status words of the finished publication, from its receipt.
     status: [u32; 3],
+    /// False until the receipt words have been read.
+    received: bool,
 }
 impl ClosedTraitPublication {
     pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
 
+    /// Words of the publication receipt, the header of the route arena.
+    pub const RECEIPT_WORDS: usize = RP_HEADER_WORDS as usize;
+
+    /// Records a copy of the receipt into `target` at byte `offset`, for a
+    /// caller that reads it with a later readback.
+    pub fn copy_receipt(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::Buffer, offset: u64) {
+        encoder.copy_buffer_to_buffer(
+            &self.routes.buffer.buffer,
+            self.routes.buffer.byte_offset,
+            target,
+            offset,
+            u64::from(RP_HEADER_WORDS) * 4,
+        );
+    }
+
+    /// Accepts the receipt words of a publication made with a deferred
+    /// receipt. They are read after the publication finished on the GPU.
+    /// Returns the publication's status words.
+    pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<[u32; 3]> {
+        ensure!(receipt.len() >= RP_HEADER_WORDS as usize, "closed publication receipt is short");
+        self.proof_nodes = receipt[24];
+        self.status = [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]];
+        self.received = true;
+        Ok(self.status)
+    }
+
     /// The status words `(RP_H_STATUS..+3)`. Publication writes them last;
     /// the receipt read after it finished already holds them.
     pub fn status(&self, _source: &RetainedTraitPublication) -> Result<[u32; 3]> {
+        ensure!(self.received, "closed publication receipt has not been read");
         Ok(self.status)
     }
 
@@ -177,12 +206,15 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
-        self.solve_instances_with_counts(store, instances, first, end, None)
+        self.solve_instances_with_counts(store, instances, first, end, None, false)
     }
 
     /// `solve_instances` with the store's current `rt_counts` words, when
     /// the caller has already read them after its last store write. None
-    /// reads them here.
+    /// reads them here. With `defer_receipt` the publication is submitted
+    /// but its receipt is not read: the caller copies it with
+    /// `copy_receipt`, reads it with its next readback and passes it to
+    /// `accept_receipt` before using the publication.
     pub fn solve_instances_with_counts(
         &mut self,
         store: &ProgramRetention,
@@ -190,6 +222,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
         store_counts: Option<&[u32]>,
+        defer_receipt: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         self.view(store)?;
         ensure!(
@@ -201,7 +234,7 @@ impl RetainedTraitPublication {
             "closed instance range exceeds buffer"
         );
         store.with_store_buffers(|buffers, generation| {
-            self.solve_closed(buffers, generation, instances, first, end, store_counts)
+            self.solve_closed(buffers, generation, instances, first, end, store_counts, defer_receipt)
         })
     }
 
@@ -232,6 +265,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
         store_counts: Option<&[u32]>,
+        defer_receipt: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         let workspace = self.gpu.workspace.clone();
         let device = self.gpu.device.clone();
@@ -553,21 +587,24 @@ impl RetainedTraitPublication {
         producer.record(&mut encoder, 11, 1, store, &ext, 0)?;
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
-        // Finish before releasing the store lock or recycling producer scratch.
-        let receipt = producer.reader.read(
-            &routes.buffer,
-            RP_HEADER_WORDS as usize,
-            "closed publication receipt",
-        )?;
-        Ok((
-            report,
-            Some(ClosedTraitPublication {
-                packet,
-                routes,
-                identity,
-                proof_nodes: receipt[24],
-                status: [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]],
-            }),
-        ))
+        let mut publication = ClosedTraitPublication {
+            packet,
+            routes,
+            identity,
+            proof_nodes: 0,
+            status: [0; 3],
+            received: false,
+        };
+        // Later submissions on this queue run after the publication, so a
+        // caller may read the receipt with its own next readback.
+        if !defer_receipt {
+            let receipt = producer.reader.read(
+                &publication.routes.buffer,
+                RP_HEADER_WORDS as usize,
+                "closed publication receipt",
+            )?;
+            publication.accept_receipt(&receipt)?;
+        }
+        Ok((report, Some(publication)))
     }
 }

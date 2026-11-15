@@ -22,7 +22,7 @@ use super::{
     },
     words_bytes,
 };
-use crate::compiler::RetainedTraitPublication;
+use crate::compiler::{ClosedTraitPublication, RetainedTraitPublication};
 use crate::gpu::{
     buffers::LaniusBuffer,
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
@@ -118,7 +118,8 @@ pub struct RetainedDiscovery {
     config_cursor: usize,
     hash_mask: u32,
     admission: Option<TraitAdmission>,
-    method_routes: super::method_routes::MethodRoutes,
+    /// Taken while the bound routes record into the method routes' submit.
+    method_routes: Option<super::method_routes::MethodRoutes>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -141,7 +142,7 @@ impl RetainedDiscovery {
             config_cursor: 0,
             hash_mask: u32::MAX,
             admission: None,
-            method_routes: super::method_routes::MethodRoutes::new_with_device(gpu)?,
+            method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -240,18 +241,13 @@ impl RetainedDiscovery {
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             self.queue.submit(Some(encoder.finish()));
             drop(guard);
-            let mut status = self.read_status(&mut report)?;
-            if self.grow(&status)? {
-                continue 'attempt;
-            }
-            if let Some(error) = failure(&status) {
-                return Ok(DiscoveryOutcome::Rejected(error));
-            }
-            let resolved = self.resolve(store, &requests, &extra, config, &mut report)?;
+            // As in a wave, resolution skips itself after a root failure or
+            // overflow (status 12), and its readback reports both.
+            let resolved = self.resolve(store, &requests, &extra, config, None, &mut report)?;
             let request_capacity = resolved.is_none();
-            status = match resolved {
+            let mut status = match resolved {
                 Some(words) => words,
-                None => self.read_status_counts(store, &mut report)?,
+                None => self.read_status_counts(store, &[], &mut report)?,
             };
 
             if self.grow(&status)? {
@@ -276,7 +272,7 @@ impl RetainedDiscovery {
                 // (status 11); a wave without any needs no solver work.
                 let wave_predicated = status[11] - predicated;
                 predicated = status[11];
-                let closed = if let Some(source) = publication.as_deref_mut()
+                let mut closed = if let Some(source) = publication.as_deref_mut()
                     && wave_predicated != 0
                 {
                     let buffer = self.scratch["dg_instances"].clone();
@@ -288,6 +284,7 @@ impl RetainedDiscovery {
                         lo,
                         hi,
                         Some(&status[STATUS_WORDS..]),
+                        true,
                     )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {
@@ -295,14 +292,8 @@ impl RetainedDiscovery {
                             code: 8, use_index: u32::MAX, instance: check.first_failure, detail: check.producer_failures,
                         }));
                     }
-                    if let Some(proofs) = &proofs {
-                        let receipt = proofs.status(source)?;
-                        if receipt != [1, 0, u32::MAX] {
-                            return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
-                                code: 8, use_index: u32::MAX, instance: lo, detail: receipt[2],
-                            }));
-                        }
-                    }
+                    // The publication's receipt comes back with this wave's
+                    // resolution readback.
                     proofs
                 } else { None };
                 // Each wave expands precisely the newly interned instances.
@@ -318,6 +309,9 @@ impl RetainedDiscovery {
                 self.config_cursor = 0;
                 let guard = store.store.lock().unwrap();
                 let mut encoder = self.encoder();
+                if let Some(proofs) = &closed {
+                    proofs.copy_receipt(&mut encoder, &self.scratch["dg_receipt"], 0);
+                }
                 self.record(
                     &mut encoder,
                     &guard,
@@ -377,39 +371,58 @@ impl RetainedDiscovery {
                 drop(guard);
                 // Resolution reads back the status (and store counters)
                 // with the substitution's counts.
-                status = match self.resolve(store, &requests, &extra, config, &mut report)? {
+                let receipt_buffer = self.scratch["dg_receipt"].clone();
+                let receipt_read = closed
+                    .as_ref()
+                    .map(|_| (&receipt_buffer, ClosedTraitPublication::RECEIPT_WORDS));
+                status = match self.resolve(store, &requests, &extra, config, receipt_read, &mut report)? {
                     Some(words) => words,
                     None => {
-                        status = self.read_status(&mut report)?;
-                        if self.grow(&status)? {
+                        let words = self.read_status_counts(store, receipt_read.as_slice(), &mut report)?;
+                        if let Some(error) = closed_receipt_failure(closed.as_mut(), &words, lo)? {
+                            return Ok(DiscoveryOutcome::Rejected(error));
+                        }
+                        if self.grow(&words)? {
                             continue 'attempt;
                         }
                         bail!("discovery request capacity exceeded without a growth request");
                     }
                 };
+                if let Some(error) = closed_receipt_failure(closed.as_mut(), &status, lo)? {
+                    return Ok(DiscoveryOutcome::Rejected(error));
+                }
                 if self.grow(&status)? {
                     continue 'attempt;
                 }
                 if let Some(error) = failure(&status) {
                     return Ok(DiscoveryOutcome::Rejected(error));
                 }
-                if let (Some(source),Some(proofs))=(publication.as_deref(),closed.as_ref()) {
-                    let sub=self.substitution.as_ref().ok_or_else(||anyhow!("discovery substitution is in use"))?.publication(store).ok_or_else(||anyhow!("missing method substitution"))?;
-                    let state=self.method_routes.run(store,source,proofs,&sub,&self.scratch["dg_req_meta"],&self.scratch["dg_instances"])?;
-                    report.method_route_waves+=1;
-                    if state[0]!=2 {
-                        return Ok(DiscoveryOutcome::Rejected(DiscoveryError{code:9,use_index:state[16],instance:state[17],detail:state[18] | (state[3]<<24)}));
+                if let (Some(source), Some(proofs)) = (publication.as_deref(), closed.as_ref()) {
+                    let engine = self
+                        .substitution
+                        .take()
+                        .ok_or_else(|| anyhow!("discovery substitution is in use"))?;
+                    let Some(mut routes) = self.method_routes.take() else {
+                        self.substitution = Some(engine);
+                        bail!("discovery method routes are in use");
+                    };
+                    let state = self.method_route_wave(
+                        store, source, proofs, &engine, &mut routes, &extra, &mut config, &mut report,
+                    );
+                    self.method_routes = Some(routes);
+                    self.substitution = Some(engine);
+                    let state = state?;
+                    report.method_route_waves += 1;
+                    report.readbacks += 1;
+                    if state[0] != 2 {
+                        return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                            code: 9,
+                            use_index: state[16],
+                            instance: state[17],
+                            detail: state[18] | (state[3] << 24),
+                        }));
                     }
-                    config[5]=sub.id.run;
-                    let requests=sub.id.requests;
-                    let output=self.method_routes.output().clone();
-                    let mut bound=extra.clone(); bound.push(("mr_out",&output));
-                    let guard=store.store.lock().unwrap(); let mut encoder=self.encoder();
-                    self.record(&mut encoder,&guard,6,config,&bound,requests,&mut report)?;
-                    self.record(&mut encoder,&guard,5,config,&extra,1,&mut report)?;
-                    self.queue.submit(Some(encoder.finish()));
-                    drop(guard);
-                    status = self.read_status_counts(store, &mut report)?;
+                    status = state[32..].to_vec();
                     if self.grow(&status)? {
                         continue 'attempt;
                     }
@@ -430,7 +443,7 @@ impl RetainedDiscovery {
             report.roots = status[9];
             // Rank by full structure, height by height. Hashes never decide
             // equality or output order, even with forced table collisions.
-            self.rank_terms(store, &extra, config, &mut report)?;
+            self.rank_terms(store, status[STATUS_WORDS + super::A_TERMS], &extra, config, &mut report)?;
             self.config_cursor = 0;
             let guard = store.store.lock().unwrap();
             let mut encoder = self.encoder();
@@ -489,6 +502,55 @@ impl RetainedDiscovery {
             }));
         }
     }
+    /// Converts this wave's bound-member proofs to method routes. The bound
+    /// routes and the publish pass share the routes' submit; they run only
+    /// after the routes finished, and the discovery status and store
+    /// counters come back with the routes' state (from word 32).
+    #[allow(clippy::too_many_arguments)]
+    fn method_route_wave(
+        &mut self,
+        store: &ProgramRetention,
+        source: &RetainedTraitPublication,
+        proofs: &ClosedTraitPublication,
+        engine: &RetainedSubstitution,
+        routes: &mut super::method_routes::MethodRoutes,
+        extra: &[(&str, &wgpu::Buffer)],
+        config: &mut [u32; 16],
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let sub = engine
+            .publication(store)
+            .ok_or_else(|| anyhow!("missing method substitution"))?;
+        config[5] = sub.id.run;
+        let config = *config;
+        let requests = sub.id.requests;
+        let req_meta = self.scratch["dg_req_meta"].clone();
+        let instances = self.scratch["dg_instances"].clone();
+        let status_buffer = self.scratch["dg_status"].clone();
+        let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        let mut then = |encoder: &mut wgpu::CommandEncoder,
+                        guard: &Store,
+                        state: &wgpu::Buffer,
+                        output: &wgpu::Buffer|
+         -> Result<()> {
+            let mut bound = extra.to_vec();
+            bound.push(("mr_out", output));
+            bound.push(("mr_state", state));
+            self.config_cursor = 0;
+            self.record(encoder, guard, 6, config, &bound, requests, report)?;
+            self.record(encoder, guard, 5, config, extra, 1, report)
+        };
+        routes.run(
+            store,
+            source,
+            proofs,
+            &sub,
+            &req_meta,
+            &instances,
+            &mut then,
+            &[(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)],
+        )
+    }
     /// Substitutes the requests and records resolution in the same submit.
     /// Returns the status words and store counters after resolution, or
     /// None when the requests exceeded the buffers (the request pass
@@ -499,6 +561,7 @@ impl RetainedDiscovery {
         requests: &SubstitutionRequests,
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
+        also_read: Option<(&wgpu::Buffer, usize)>,
         report: &mut DiscoveryReport,
     ) -> Result<Option<Vec<u32>>> {
         let mut engine = self
@@ -526,12 +589,9 @@ impl RetainedDiscovery {
                 self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
                 self.record(encoder, guard, 5, config, extra, 1, report)
             };
-            engine.run_then(
-                store,
-                requests,
-                Some(&mut consumer),
-                &[(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)],
-            )
+            let mut reads = vec![(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)];
+            reads.extend(also_read);
+            engine.run_then(store, requests, Some(&mut consumer), &reads)
         };
         self.substitution = Some(engine);
         let (sub, words) = match ran? {
@@ -569,17 +629,17 @@ impl RetainedDiscovery {
         self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
         self.queue.submit(Some(encoder.finish()));
         drop(guard);
-        self.read_status_counts(store, report).map(Some)
+        self.read_status_counts(store, also_read.as_slice(), report).map(Some)
     }
+    /// `terms` is the store's term count, read with the last status.
     fn rank_terms(
         &mut self,
         store: &ProgramRetention,
+        terms: u32,
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
-        let status = store.status()?;
-        let terms = status[2];
         self.ensure("dg_term_rank", terms.max(1) as u64 * 4)?;
         self.ensure("dg_term_order", terms.max(1) as u64 * 8)?;
         self.config_cursor = 0;
@@ -637,9 +697,10 @@ impl RetainedDiscovery {
                 report,
             )?;
         }
+        // The instance ranking follows in the next submit, and the final
+        // status readback reports any failure.
         self.queue.submit(Some(encoder.finish()));
         drop(guard);
-        let _ = self.read_status(report)?;
         Ok(())
     }
     /// Bitonic sort of `config[13]` (a power of two) keys. Steps with
@@ -726,6 +787,7 @@ impl RetainedDiscovery {
             ("dg_term_order", 4),
             ("dg_term_rank", 4),
             ("dg_levels", 384 * 4),
+            ("dg_receipt", ClosedTraitPublication::RECEIPT_WORDS as u64 * 4),
         ] {
             self.ensure(name, bytes)?;
         }
@@ -847,20 +909,18 @@ impl RetainedDiscovery {
     fn read_status(&self, report: &mut DiscoveryReport) -> Result<Vec<u32>> {
         self.read(&self.scratch["dg_status"], STATUS_WORDS, report)
     }
-    /// The status words followed by the store's `rt_counts`, in one readback.
+    /// The status words followed by the store's `rt_counts` and `also`,
+    /// in one readback.
     fn read_status_counts(
         &self,
         store: &ProgramRetention,
+        also: &[(&wgpu::Buffer, usize)],
         report: &mut DiscoveryReport,
     ) -> Result<Vec<u32>> {
         let counts = store.store.lock().unwrap().buffers["rt_counts"].clone();
-        self.read_many(
-            &[
-                (&self.scratch["dg_status"], STATUS_WORDS),
-                (&counts, counts::WORDS),
-            ],
-            report,
-        )
+        let mut parts = vec![(&self.scratch["dg_status"], STATUS_WORDS), (&counts, counts::WORDS)];
+        parts.extend_from_slice(also);
+        self.read_many(&parts, report)
     }
     fn read(
         &self,
@@ -908,6 +968,23 @@ enum Dispatch<'a> {
     Lanes(u32),
     /// Workgroup counts the GPU wrote at offset 0 of an indirect buffer.
     Indirect(&'a wgpu::Buffer),
+}
+/// Accepts a deferred closed publication receipt, which follows the status
+/// words and store counters in `words`. A publication that did not finish
+/// rejects the wave, before any growth or discovery failure is reported.
+fn closed_receipt_failure(
+    closed: Option<&mut ClosedTraitPublication>,
+    words: &[u32],
+    first: u32,
+) -> Result<Option<DiscoveryError>> {
+    let Some(closed) = closed else { return Ok(None) };
+    let status = closed.accept_receipt(&words[STATUS_WORDS + counts::WORDS..])?;
+    Ok((status != [1, 0, u32::MAX]).then(|| DiscoveryError {
+        code: 8,
+        use_index: u32::MAX,
+        instance: first,
+        detail: status[2],
+    }))
 }
 fn failure(s: &[u32]) -> Option<DiscoveryError> {
     if s[10] != 0 {

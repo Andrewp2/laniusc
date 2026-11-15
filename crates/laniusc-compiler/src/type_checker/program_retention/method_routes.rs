@@ -80,6 +80,16 @@ impl MethodRoutes {
         }
         Ok(())
     }
+    pub fn state(&self) -> &wgpu::Buffer {
+        &self.buffers["mr_state"]
+    }
+    /// Runs the routes. Every batch also records `then(encoder, store,
+    /// mr_state, mr_out)` after the routes,
+    /// and its one readback returns the 32 state words followed by the
+    /// leading words of each `also` buffer. Passes recorded by `then` must
+    /// do nothing unless `mr_state` is finished (word 0 is 2 and
+    /// `MR_PENDING` is clear).
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &mut self,
         store: &ProgramRetention,
@@ -88,6 +98,8 @@ impl MethodRoutes {
         sub: &Publication<'_>,
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
+        then: &mut dyn FnMut(&mut wgpu::CommandEncoder, &Store, &wgpu::Buffer, &wgpu::Buffer) -> Result<()>,
+        also: &[(&wgpu::Buffer, usize)],
     ) -> Result<Vec<u32>> {
         let view = closed.view(source, store)?;
         let nodes = closed.proof_node_count();
@@ -237,8 +249,17 @@ impl MethodRoutes {
                         instances,
                     )?;
                     passes_core::flush_deferred_compute(&mut encoder);
+                    then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
+                    passes_core::flush_deferred_compute(&mut encoder);
                     self.queue.submit(Some(encoder.finish()));
-                    let status = store.read(&self.buffers["mr_state"], 32)?;
+                    let mut parts = vec![(&self.buffers["mr_state"], 32)];
+                    parts.extend_from_slice(also);
+                    let status = super::substitution::read_many_labeled(
+                        &self.device,
+                        &self.queue,
+                        &parts,
+                        "method_routes.state",
+                    )?;
                     if status[MR_PENDING] == 0 {
                         break status;
                     }
