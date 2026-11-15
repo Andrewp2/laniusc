@@ -129,11 +129,126 @@ impl ComputeScheduleState {
 
 #[derive(Default)]
 struct ReflectedBindGroupCache {
-    invocations: HashMap<String, CachedBindGroupInvocation>,
+    /// Keyed by descriptor-set index.
+    invocations: HashMap<usize, CachedBindGroupInvocation>,
 }
 
+/// The bind groups of one descriptor set, keyed by the exact buffer ranges
+/// they bind. A lookup hashes the entries in place and compares them with
+/// the stored identity, so a warm hit allocates nothing and clones no
+/// buffer handle. A bind group is found only for the same buffer objects,
+/// offsets and sizes: a reallocated buffer is another object and misses.
+#[derive(Default)]
 struct CachedBindGroupInvocation {
-    variants: HashMap<Vec<ReflectedBufferBindingIdentity>, CachedBindGroup>,
+    variants: hashbrown::HashMap<u64, Vec<(Vec<ReflectedBufferBindingIdentity>, CachedBindGroup)>>,
+    hasher: hashbrown::DefaultHashBuilder,
+}
+
+impl CachedBindGroupInvocation {
+    /// The hash of `entries`' buffer bindings, or `None` when one is not a
+    /// buffer (such bind groups are not cached).
+    fn hash_entries(&self, entries: &[wgpu::BindGroupEntry<'_>]) -> Option<u64> {
+        use std::hash::{BuildHasher, Hash, Hasher};
+        let mut hasher = self.hasher.build_hasher();
+        let mut count = 0usize;
+        for_each_buffer_binding(entries, |binding, array_index, buffer| {
+            (
+                binding,
+                array_index,
+                buffer.buffer,
+                buffer.offset,
+                buffer.size,
+            )
+                .hash(&mut hasher);
+            count += 1;
+        })?;
+        count.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+
+    fn get_mut(
+        &mut self,
+        hash: u64,
+        entries: &[wgpu::BindGroupEntry<'_>],
+    ) -> Option<&mut CachedBindGroup> {
+        self.variants
+            .get_mut(&hash)?
+            .iter_mut()
+            .find(|(identity, _)| identity_matches(identity, entries))
+            .map(|(_, cached)| cached)
+    }
+
+    fn insert(
+        &mut self,
+        hash: u64,
+        identity: Vec<ReflectedBufferBindingIdentity>,
+        cached: CachedBindGroup,
+    ) {
+        self.variants
+            .entry(hash)
+            .or_default()
+            .push((identity, cached));
+    }
+
+    fn variants_retain(&mut self, mut keep: impl FnMut(&CachedBindGroup) -> bool) {
+        self.variants.retain(|_, bucket| {
+            bucket.retain(|(_, cached)| keep(cached));
+            !bucket.is_empty()
+        });
+    }
+
+    fn len(&self) -> usize {
+        self.variants.values().map(Vec::len).sum()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.variants.is_empty()
+    }
+
+    fn values_mut(&mut self) -> impl Iterator<Item = &mut CachedBindGroup> {
+        self.variants
+            .values_mut()
+            .flat_map(|bucket| bucket.iter_mut().map(|(_, cached)| cached))
+    }
+}
+
+/// Calls `visit(binding, array_index, buffer)` for every buffer binding of
+/// `entries` in order. `None` when an entry is not a buffer.
+fn for_each_buffer_binding<'e>(
+    entries: &'e [wgpu::BindGroupEntry<'_>],
+    mut visit: impl FnMut(u32, usize, &'e wgpu::BufferBinding<'e>),
+) -> Option<()> {
+    for entry in entries {
+        match &entry.resource {
+            wgpu::BindingResource::Buffer(buffer) => visit(entry.binding, 0, buffer),
+            wgpu::BindingResource::BufferArray(buffers) => {
+                for (array_index, buffer) in buffers.iter().enumerate() {
+                    visit(entry.binding, array_index, buffer);
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(())
+}
+
+fn identity_matches(
+    identity: &[ReflectedBufferBindingIdentity],
+    entries: &[wgpu::BindGroupEntry<'_>],
+) -> bool {
+    let mut stored = identity.iter();
+    let mut equal = true;
+    let complete = for_each_buffer_binding(entries, |binding, array_index, buffer| {
+        equal = equal
+            && stored.next().is_some_and(|stored| {
+                stored.binding == binding
+                    && stored.array_index == array_index
+                    && stored.buffer == *buffer.buffer
+                    && stored.offset == buffer.offset
+                    && stored.size == buffer.size
+            });
+    });
+    complete.is_some() && equal && stored.next().is_none()
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -177,13 +292,13 @@ pub(crate) fn prune_bind_groups_of_released_buffers() {
         };
         let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
         cache.invocations.retain(|_, invocation| {
-            invocation.variants.retain(|_, cached| {
+            invocation.variants_retain(|cached| {
                 cached
                     .tracked_allocations
                     .iter()
                     .all(|id| live.contains(id))
             });
-            !invocation.variants.is_empty()
+            !invocation.is_empty()
         });
         true
     });
@@ -202,7 +317,7 @@ pub fn reflected_bind_group_cache_len() -> usize {
                 .expect("reflected bind-group cache poisoned")
                 .invocations
                 .values()
-                .map(|invocation| invocation.variants.len())
+                .map(CachedBindGroupInvocation::len)
                 .sum::<usize>()
         })
         .sum()
@@ -252,10 +367,8 @@ pub(crate) fn finish_reflected_bind_group_job(epoch: u64, workspace_changed: boo
         };
         let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
         cache.invocations.retain(|_, invocation| {
-            invocation
-                .variants
-                .retain(|_, cached| cached.last_used_job == epoch);
-            !invocation.variants.is_empty()
+            invocation.variants_retain(|cached| cached.last_used_job == epoch);
+            !invocation.is_empty()
         });
         true
     });
@@ -292,7 +405,7 @@ pub(crate) fn mark_reflected_bind_groups_used<'a>(
     for cache in caches {
         let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
         for invocation in cache.invocations.values_mut() {
-            for cached in invocation.variants.values_mut() {
+            for cached in invocation.values_mut() {
                 if wanted.contains(&cached.bind_group) {
                     cached.last_used_job = epoch;
                 }
@@ -577,6 +690,86 @@ pub(crate) fn begin_counted_compute_pass<'encoder>(
     }
     crate::gpu::timer::stamp_job_session_pass_begin(encoder, label);
     encoder.begin_compute_pass(descriptor)
+}
+
+#[cfg(test)]
+mod bind_group_identity_tests {
+    use super::*;
+
+    /// A warm build reuses a bind group only for the exact buffer objects
+    /// and ranges it was created with. A buffer that grows between builds is
+    /// a new object at the same offset and size of its first range; reusing
+    /// the old bind group would bind the released allocation.
+    #[test]
+    fn grown_resized_or_moved_buffers_miss_the_bind_group_cache() {
+        let device = &crate::gpu::device::global().device;
+        let buffer = |size| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("bind_group_identity_test"),
+                size,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            })
+        };
+        fn entries(buffer: &wgpu::Buffer, offset: u64, size: u64) -> [wgpu::BindGroupEntry<'_>; 1] {
+            [wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer,
+                    offset,
+                    size: std::num::NonZeroU64::new(size),
+                }),
+            }]
+        }
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let first = buffer(1024);
+        let built = entries(&first, 0, 256);
+        // The layout has no registered cache, so this creates the bind group.
+        let bind_group =
+            bind_group::create_or_reuse_buffer_bind_group(device, None, &layout, 0, &built);
+        let mut cache = CachedBindGroupInvocation::default();
+        let hash = cache.hash_entries(&built).unwrap();
+        cache.insert(
+            hash,
+            bind_group::reflected_buffer_resource_identity(&built).unwrap(),
+            CachedBindGroup {
+                bind_group: bind_group.clone(),
+                last_used_job: 0,
+                tracked_allocations: Vec::new(),
+            },
+        );
+        let lookup = |cache: &mut CachedBindGroupInvocation,
+                      entries: &[wgpu::BindGroupEntry<'_>]| {
+            let hash = cache.hash_entries(entries).unwrap();
+            cache
+                .get_mut(hash, entries)
+                .map(|cached| cached.bind_group.clone())
+        };
+
+        assert_eq!(
+            lookup(&mut cache, &entries(&first, 0, 256)),
+            Some(bind_group)
+        );
+        let grown = buffer(2048);
+        assert_eq!(lookup(&mut cache, &entries(&grown, 0, 256)), None);
+        assert_eq!(lookup(&mut cache, &entries(&first, 0, 512)), None);
+        assert_eq!(lookup(&mut cache, &entries(&first, 256, 256)), None);
+        // Equal hashes cannot make a different binding hit.
+        assert!(cache.get_mut(hash, &entries(&grown, 0, 256)).is_none());
+        assert_eq!(cache.len(), 1);
+    }
 }
 
 #[cfg(test)]
@@ -2645,7 +2838,7 @@ pub mod bind_group {
         });
     }
 
-    fn reflected_buffer_resource_identity(
+    pub(super) fn reflected_buffer_resource_identity(
         entries: &[wgpu::BindGroupEntry<'_>],
     ) -> Option<Vec<ReflectedBufferBindingIdentity>> {
         let mut identity = Vec::with_capacity(entries.len());
@@ -2680,7 +2873,7 @@ pub mod bind_group {
             .and_then(Weak::upgrade)
     }
 
-    fn create_or_reuse_buffer_bind_group(
+    pub(super) fn create_or_reuse_buffer_bind_group(
         device: &wgpu::Device,
         label: Option<&str>,
         layout: &wgpu::BindGroupLayout,
@@ -2689,23 +2882,19 @@ pub mod bind_group {
     ) -> wgpu::BindGroup {
         let cache_started = bind_group_timing_enabled().then(Instant::now);
         let cache = reflected_bind_group_cache_for_layout(layout);
-        let identity = reflected_buffer_resource_identity(entries);
-        // The cache is already selected by bind-group layout, and `identity`
-        // contains every binding index, buffer handle, offset, and size.
+        // The cache is already selected by bind-group layout, and the key
+        // covers every binding index, buffer handle, offset, and size.
         // Operation labels are diagnostic metadata, not part of the WGPU
         // binding contract; including them here forced graph nodes with
         // identical bindings to create duplicate bind groups on a cold job.
-        let invocation = format!("set::{set_index}");
-        if let (Some(cache), Some(identity)) = (&cache, identity.as_ref()) {
+        let mut hash = None;
+        if let Some(cache) = &cache {
             let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
-            let invocation_cache =
-                cache
-                    .invocations
-                    .entry(invocation.clone())
-                    .or_insert_with(|| CachedBindGroupInvocation {
-                        variants: HashMap::new(),
-                    });
-            if let Some(cached) = invocation_cache.variants.get_mut(identity) {
+            let invocation = cache.invocations.entry(set_index).or_default();
+            hash = invocation.hash_entries(entries);
+            if let Some(hash) = hash
+                && let Some(cached) = invocation.get_mut(hash, entries)
+            {
                 cached.last_used_job = ACTIVE_BIND_GROUP_JOB.load(Ordering::Relaxed);
                 add_timing(&BIND_GROUP_CACHE_NS, cache_started);
                 return cached.bind_group.clone();
@@ -2724,7 +2913,9 @@ pub mod bind_group {
         crate::gpu::dispatch_capture::record_bind_group(&bind_group, entries);
         add_timing(&BIND_GROUP_WGPU_CREATE_NS, create_started);
         let cache_insert_started = bind_group_timing_enabled().then(Instant::now);
-        if let (Some(cache), Some(identity)) = (cache, identity) {
+        if let (Some(cache), Some(hash), Some(identity)) =
+            (cache, hash, reflected_buffer_resource_identity(entries))
+        {
             let tracked_allocations = identity
                 .iter()
                 .filter_map(|binding| {
@@ -2736,12 +2927,10 @@ pub mod bind_group {
                 .lock()
                 .expect("reflected bind-group cache poisoned")
                 .invocations
-                .entry(invocation)
-                .or_insert_with(|| CachedBindGroupInvocation {
-                    variants: HashMap::new(),
-                })
-                .variants
+                .entry(set_index)
+                .or_default()
                 .insert(
+                    hash,
                     identity,
                     CachedBindGroup {
                         bind_group: bind_group.clone(),
