@@ -44,6 +44,10 @@ pub struct ClosedTraitPublication {
 impl ClosedTraitPublication {
     pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
 
+    /// An upper bound of `proof_node_count` known before the receipt is
+    /// read: node rows are 8 words of the proof arena.
+    pub fn proof_node_bound(&self) -> u32 { self.packet.proof.logical_words / 8 }
+
     /// Words of the publication receipt, the header of the route arena.
     pub const RECEIPT_WORDS: usize = RP_HEADER_WORDS as usize;
 

@@ -54,6 +54,22 @@ two counter blocks together, and the original-call symbol pass
 (`native_calls.rs`) returns its status and both symbol columns in one
 readback: 77 per build.
 
+In a wave with closed proofs, the first method-route batch also records
+into resolution's first submit, after `01_resolve` and the publish pass,
+followed by the bound routes and another publish pass. The host does not
+yet know the request count or the proof node count: the batch copies
+`sb_counts` word `REQUESTS` and receipt word 24 (admitted proof node
+rows) from `dg_receipt` into every route config on the GPU, and sizes
+lanes and tables by the request capacity and by the proof arena's words
+divided by 8 (a node row is 8 words). Selection checks that the
+substitution run is current, so a run that did not publish selects
+nothing, and `06_bound_routes` also requires that resolution left status
+12 clear. The routes' state comes back with the resolution readback.
+The host uses it when that readback came from the first batch and the
+routes finished without overflow; otherwise it runs the routes again as
+before. A wave with closed predicates then costs three readbacks: the
+producer, the solver and resolution. Settings: 74 per build.
+
 A parallel prefix scan assigns each frontier instance a range of use edges.
 Request production and result consumption use one lane per edge or request;
 no lane walks a function's call list. The interner may allocate unpublished

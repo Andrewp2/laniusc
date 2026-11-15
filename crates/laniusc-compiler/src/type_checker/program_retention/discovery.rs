@@ -248,10 +248,10 @@ impl RetainedDiscovery {
             drop(guard);
             // As in a wave, resolution skips itself after a root failure or
             // overflow (status 12), and its readback reports both.
-            let resolved = self.resolve(store, &requests, &extra, config, None, &mut report)?;
+            let resolved = self.resolve(store, &requests, &extra, config, None, None, &mut report)?;
             let request_capacity = resolved.is_none();
             let mut status = match resolved {
-                Some(words) => words,
+                Some((words, _)) => words,
                 None => self.read_status_counts(store, &[], &mut report)?,
             };
 
@@ -380,8 +380,36 @@ impl RetainedDiscovery {
                 let receipt_read = closed
                     .as_ref()
                     .map(|_| (&receipt_buffer, ClosedTraitPublication::RECEIPT_WORDS));
-                status = match self.resolve(store, &requests, &extra, config, receipt_read, &mut report)? {
-                    Some(words) => words,
+                // With closed proofs, the first method-route batch rides in
+                // resolution's first submit.
+                let mut routes = self
+                    .method_routes
+                    .take()
+                    .ok_or_else(|| anyhow!("discovery method routes are in use"))?;
+                let resolved = match (publication.as_deref(), closed.as_ref()) {
+                    (Some(source), Some(proofs)) => {
+                        let nodes_bound = proofs.proof_node_bound();
+                        routes.prepare(requests.capacity(), nodes_bound).and_then(|()| {
+                            let spec = SpeculativeRoutes {
+                                routes: &routes,
+                                view: proofs.view(source, store)?,
+                                receipt: &receipt_buffer,
+                                nodes_bound,
+                                metadata: self.scratch["dg_req_meta"].clone(),
+                                instances: self.scratch["dg_instances"].clone(),
+                            };
+                            self.resolve(store, &requests, &extra, config, receipt_read, Some(&spec), &mut report)
+                        })
+                    }
+                    _ => self.resolve(store, &requests, &extra, config, receipt_read, None, &mut report),
+                };
+                self.method_routes = Some(routes);
+                let mut first_batch = false;
+                status = match resolved? {
+                    Some((words, first)) => {
+                        first_batch = first;
+                        words
+                    }
                     None => {
                         let words = self.read_status_counts(store, receipt_read.as_slice(), &mut report)?;
                         if let Some(error) = closed_receipt_failure(closed.as_mut(), &words, lo)? {
@@ -402,7 +430,24 @@ impl RetainedDiscovery {
                 if let Some(error) = failure(&status) {
                     return Ok(DiscoveryOutcome::Rejected(error));
                 }
-                if let (Some(source), Some(proofs)) = (publication.as_deref(), closed.as_ref()) {
+                let speculative = STATUS_WORDS + counts::WORDS + ClosedTraitPublication::RECEIPT_WORDS;
+                let finished = |state: &[u32]| {
+                    state[super::method_routes::MR_PENDING] == 0 && state[0] != 3
+                };
+                if closed.is_some() && first_batch && finished(&status[speculative..speculative + 32]) {
+                    // The first batch's routes finished: their bound routes
+                    // already ran, and `status` came after them.
+                    let state = &status[speculative..speculative + 32];
+                    report.method_route_waves += 1;
+                    if state[0] != 2 {
+                        return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                            code: 9,
+                            use_index: state[16],
+                            instance: state[17],
+                            detail: state[18] | (state[3] << 24),
+                        }));
+                    }
+                } else if let (Some(source), Some(proofs)) = (publication.as_deref(), closed.as_ref()) {
                     let engine = self
                         .substitution
                         .take()
@@ -567,8 +612,9 @@ impl RetainedDiscovery {
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
         also_read: Option<(&wgpu::Buffer, usize)>,
+        speculative: Option<&SpeculativeRoutes<'_>>,
         report: &mut DiscoveryReport,
-    ) -> Result<Option<Vec<u32>>> {
+    ) -> Result<Option<(Vec<u32>, bool)>> {
         let mut engine = self
             .substitution
             .take()
@@ -592,10 +638,37 @@ impl RetainedDiscovery {
                 bindings.extend([("sb_results", results), ("sb_counts", counts)]);
                 self.config_cursor = 0;
                 self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
+                self.record(encoder, guard, 5, config, extra, 1, report)?;
+                let Some(spec) = speculative else { return Ok(()) };
+                // The method routes, the bound routes and the publish pass
+                // follow in this submit. The routes select nothing unless
+                // this run published, and the bound routes do nothing
+                // unless the routes finished and resolution left no
+                // failure (status 12). The counts come from sb_counts and
+                // the receipt copy on the GPU.
+                spec.routes.record_first_batch(
+                    encoder,
+                    guard,
+                    &spec.view,
+                    run,
+                    (results, counts),
+                    (counts, (super::substitution::words::REQUESTS * 4) as u64, request_lanes),
+                    (spec.receipt, (RECEIPT_PROOF_NODE_ROWS * 4) as u64, spec.nodes_bound),
+                    &spec.metadata,
+                    &spec.instances,
+                )?;
+                let mut bound = extra.to_vec();
+                bound.push(("mr_out", spec.routes.output()));
+                bound.push(("mr_state", spec.routes.state()));
+                // No config slot of this submit is rewritten.
+                self.record(encoder, guard, 6, config, &bound, request_lanes, report)?;
                 self.record(encoder, guard, 5, config, extra, 1, report)
             };
             let mut reads = vec![(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)];
             reads.extend(also_read);
+            if let Some(spec) = speculative {
+                reads.push((spec.routes.state(), 32));
+            }
             engine.run_then(store, requests, Some(&mut consumer), &reads)
         };
         self.substitution = Some(engine);
@@ -606,7 +679,7 @@ impl RetainedDiscovery {
         report.substitution_dispatches += sub.dispatches;
         if let Some(words) = words {
             report.readbacks += 1;
-            return Ok(Some(words));
+            return Ok(Some((words, true)));
         }
         // The first batch did not finish: resolve the final publication.
         config[5] = sub.publication.run;
@@ -634,7 +707,8 @@ impl RetainedDiscovery {
         self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
         self.queue.submit(Some(encoder.finish()));
         drop(guard);
-        self.read_status_counts(store, also_read.as_slice(), report).map(Some)
+        self.read_status_counts(store, also_read.as_slice(), report)
+            .map(|words| Some((words, false)))
     }
     /// `terms` is the store's term count, read with the last status.
     fn rank_terms(
@@ -966,6 +1040,20 @@ impl RetainedDiscovery {
         rb.unmap();
         Ok(data)
     }
+}
+/// Receipt word with the admitted proof node rows (route_abi.slang
+/// RP_H_PROOF_NODE_ROWS).
+const RECEIPT_PROOF_NODE_ROWS: usize = 24;
+/// A first method-route batch recorded into resolution's submit before the
+/// host knows the request and proof node counts.
+struct SpeculativeRoutes<'a> {
+    routes: &'a super::method_routes::MethodRoutes,
+    view: crate::compiler::RetainedTraitView<'a>,
+    /// `dg_receipt`, already holding this wave's publication receipt.
+    receipt: &'a wgpu::Buffer,
+    nodes_bound: u32,
+    metadata: wgpu::Buffer,
+    instances: wgpu::Buffer,
 }
 /// How many workgroups a recorded pass runs.
 enum Dispatch<'a> {

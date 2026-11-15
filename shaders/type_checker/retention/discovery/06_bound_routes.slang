@@ -7,7 +7,9 @@ StructuredBuffer<uint> mr_state;
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
-    if (mr_state[0]!=2u || mr_state[28]!=0u) return;
+    // It may also share resolution's submit: then it runs only when
+    // resolution left no failure or overflow (status 12).
+    if (mr_state[0]!=2u || mr_state[28]!=0u || dg_status[12]!=0u) return;
     uint i=dg_lane(id); if (i>=dg_status[7]) return;
     uint4 out=mr_out[i]; if (out.w==0u) return;
     uint4 m=dg_req_meta[i];
