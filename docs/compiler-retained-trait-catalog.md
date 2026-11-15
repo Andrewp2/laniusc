@@ -446,3 +446,18 @@ constant arguments, a 40-method impl, concurrent wave publications, stale
 instances, and a fault changing a previously proven Local binding to an
 unimplemented i32. The native bounded forwarding fixture executes through
 three concrete discovery waves with zero replay.
+
+## Proof-store row reservation
+
+`pps_reserve` (`proof_work.slang`) takes rows of a proof-store table with a
+compare-exchange on the table's counter. The active lanes of a subgroup that
+reserve rows of one table now take them with one exchange: the subgroup
+leader reserves the lanes' total, and each lane takes its prefix of it. The
+total fits exactly when every lane's rows fit after the others', so success,
+the reported limit and the final counter are those of the lane-by-lane
+reservation; only the order of rows inside one subgroup's span differs, as it
+did between lanes before. With a compare-exchange per lane, every lane of a
+large stage (58 emit ready proofs, 53 select work) retried against the same
+counter. Settings, census readback waits of the catalog and closed solves
+(GPU shared with other agents): 17.5 and 18.0 ms before, 9.7 and 6.4 ms after
+over the first eight solve and substitution readbacks.
