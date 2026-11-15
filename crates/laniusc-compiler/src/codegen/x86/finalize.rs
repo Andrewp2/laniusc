@@ -94,6 +94,38 @@ pub(crate) struct X86SymbolColumns {
 
 #[cfg_attr(not(test), allow(dead_code))]
 impl X86SymbolColumns {
+    /// Wasm uses the same eight-word symbol column: kind/function index
+    /// occupy the section/offset words. Finalization preserves both words.
+    pub(crate) fn of_wasm_object(object: &crate::codegen::wasm::GpuWasmRelocatableObject) -> Self {
+        let symbol_rows = object.symbols.iter().flat_map(|s| [
+            s.identity_hash_lo,s.identity_hash_hi,s.identity_byte_start,s.identity_byte_len,
+            s.kind as u32,s.function_index,s.size,s.flags,
+        ]).flat_map(u32::to_le_bytes).collect();
+        Self { symbol_rows, identity_bytes: object.identity_bytes.clone() }
+    }
+
+    pub(crate) fn apply_to_wasm_object(&self, object: &mut crate::codegen::wasm::GpuWasmRelocatableObject) -> Result<()> {
+        let original = Self::of_wasm_object(object);
+        if self.symbol_rows.len()!=original.symbol_rows.len() || self.identity_bytes.len()!=original.identity_bytes.len() {
+            bail!("finalized Wasm symbol columns do not match the original object's shape");
+        }
+        for (before,after) in original.symbol_rows.chunks_exact(32).zip(self.symbol_rows.chunks_exact(32)) {
+            if before[8..]!=after[8..] { bail!("finalized Wasm symbol changes the original object's layout"); }
+        }
+        let mut symbols=object.symbols.clone();
+        for (symbol,row) in symbols.iter_mut().zip(self.symbol_rows.chunks_exact(32)) {
+            symbol.identity_hash_lo=u32::from_le_bytes(row[0..4].try_into().unwrap());
+            symbol.identity_hash_hi=u32::from_le_bytes(row[4..8].try_into().unwrap());
+        }
+        let old_symbols=std::mem::replace(&mut object.symbols,symbols);
+        let old_identity=std::mem::replace(&mut object.identity_bytes,self.identity_bytes.clone());
+        if let Err(error)=object.validate() {
+            object.symbols=old_symbols; object.identity_bytes=old_identity;
+            return Err(anyhow::Error::msg(error));
+        }
+        Ok(())
+    }
+
     pub(crate) fn of_object(object: &GpuX86RelocatableObject) -> Self {
         let mut symbol_rows = Vec::new();
         encode_symbol_rows(&object.symbols, &mut symbol_rows);

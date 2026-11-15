@@ -1583,3 +1583,31 @@ fn default_native_instance_diagnostics_keep_the_defining_source_span() {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn default_wasm_monomorphizes_local_and_cross_unit_generics_without_replay() {
+    common::run_with_timeout("default Wasm monomorphization", || {
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let source="fn twice<T>(v:T)->T { return v+v; } fn main()->i32 { let a:i64=twice<i64>(20); return twice<i32>(1)+(a as i32); }";
+        let before=fallback_counters();
+        for _ in 0..2 {
+            let wasm=pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
+            assert_eq!(common::run_wasm_main_return_with_node("GPU generic Wasm","gpu_generic_wasm",&wasm),42);
+            assert_eq!(fallback_counters().1,before.1);
+        }
+        let directory=std::env::temp_dir().join(format!("lanius-default-wasm-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,LIB).unwrap(); std::fs::write(&app,APP).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let wasm=pollster::block_on(compiler.compile_path_manifest_to_wasm(&manifest)).unwrap();
+        assert_eq!(common::run_wasm_main_return_with_node("cross-unit GPU generic Wasm","cross_unit_gpu_wasm",&wasm),13);
+        let report=pollster::block_on(compiler.native_monomorphization_report()).unwrap();
+        assert_eq!(report.units,2); assert_eq!(report.discovery.instances,5);
+        assert_eq!(fallback_counters().1,before.1);
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

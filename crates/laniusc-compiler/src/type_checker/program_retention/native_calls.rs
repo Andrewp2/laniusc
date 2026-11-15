@@ -88,10 +88,21 @@ impl ProgramRetention {
         object: &mut GpuX86RelocatableObject,
         call_hirs: &[u32],
     ) -> Result<()> {
-        if call_hirs.is_empty() {
-            return Ok(());
-        }
         let columns = X86SymbolColumns::of_object(object);
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_object(object)
+    }
+
+    pub(crate) fn provisionalize_wasm_calls(
+        &self, snapshot:&JobSnapshot, tables:&mut NativeCallTables,
+        object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],
+    ) -> Result<()> {
+        let columns=X86SymbolColumns::of_wasm_object(object);
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_wasm_object(object)
+    }
+
+    fn provisionalize_calls(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
+        columns:X86SymbolColumns,call_hirs:&[u32]) -> Result<X86SymbolColumns> {
+        if call_hirs.is_empty() { return Ok(columns); }
         let symbol_words = columns.symbol_rows.len() / 4;
         if symbol_words == 0 || columns.identity_bytes.len() % 4 != 0 {
             bail!("retained original object has malformed symbol columns");
@@ -198,7 +209,7 @@ impl ProgramRetention {
         drop(store);
         let symbol_rows = words_to_bytes(&self.read(&rows, symbol_words)?);
         let identity_bytes = words_to_bytes(&self.read(&identity, columns.identity_bytes.len() / 4)?);
-        X86SymbolColumns { symbol_rows, identity_bytes }.apply_to_object(object)
+        Ok(X86SymbolColumns { symbol_rows, identity_bytes })
     }
 }
 

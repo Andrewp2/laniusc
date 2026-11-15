@@ -112,8 +112,9 @@ impl GpuCompiler<'_> {
 
     /// This is a storage policy around the existing pending constructor. Its
     /// immutable fact identity and later publication receipt are unchanged.
-    pub(super) async fn compile_pending_native_unit(
+    pub(super) async fn compile_pending_unit(
         &self,
+        target:SourcePackArtifactTarget,
         job: &SourcePackJob,
         source_files: &[ExplicitSourcePathFile],
         dependencies: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
@@ -127,7 +128,7 @@ impl GpuCompiler<'_> {
         };
         let paths = source_files.iter().map(|file| Some(file.path.clone())).collect::<Vec<_>>();
         let pending = self.compile_pending_original_source_pack_unit_for_target(
-            SourcePackArtifactTarget::X86_64, sources.into(), job.library_id, unit_id,
+            target, sources.into(), job.library_id, unit_id,
             dependencies, Some(&paths), false,
         ).await?;
         if spill { pending.spill_native() } else { Ok(pending) }

@@ -1066,7 +1066,7 @@ fn main() -> i32 {
     let path: [i32; 1] = [102];
     let payload: [i32; 1] = [82];
     let read_buffer: [i32; 1] = [0];
-    if (path == payload) {
+    if (path[0] == payload[0]) {
         return 11;
     }
     let path_ptr: ptr = core::mem::i32_array_data_ptr(path);

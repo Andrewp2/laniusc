@@ -429,6 +429,9 @@ uint semantic_lir_control_role(uint op)
 // is selected by the target: 64 bits on x86_64 and 32 bits on Wasm32.
 static const uint SEMANTIC_LIR_TY_STRING = 7u;
 static const uint SEMANTIC_LIR_TY_POINTER = 8u;
+// Aggregate result class when no source-local nominal token exists (e.g.
+// a projected instance). Exact identity and width come from checked refs.
+static const uint SEMANTIC_LIR_TY_AGGREGATE = 128u;
 
 // Runtime services retain the type checker's canonical language-symbol values
 // at the semantic-LIR boundary. Naming the complete namespace here makes the

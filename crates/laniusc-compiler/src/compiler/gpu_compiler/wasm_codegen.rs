@@ -71,32 +71,14 @@ impl<'gpu> GpuCompiler<'gpu> {
             .await
     }
 
-    /// Compile a source pack as x86 does: one pending original Wasm object,
-    /// admitted as a whole program, whose generic calls body specialization
-    /// replays into concrete Wasm objects, all linked into one module.
+    /// Compile original functions once, discover and project generic instances
+    /// on the GPU, and link their objects into one Wasm module.
     pub(super) async fn compile_wasm_source_pack_with_specialization<S: AsRef<str>>(
         &self,
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<Vec<u8>, CompileError> {
-        let template_sources = sources.iter().map(|source| source.as_ref().to_owned())
-            .collect::<Vec<_>>().into();
-        let pending = self.compile_pending_original_source_pack_unit_for_target(
-            SourcePackArtifactTarget::Wasm, template_sources, 0, 0, Vec::new().into(), source_paths,
-            super::body_specialization::closed_release_ready(&[]),
-        ).await?;
-        let objects = self.specialize_pending_source_pack_objects(vec![pending]).await?;
-        let objects = objects.iter().map(|object| match object {
-            super::typecheck::CompiledSourcePackObject::Wasm(object) => Ok(object),
-            super::typecheck::CompiledSourcePackObject::X86_64(_) | super::typecheck::CompiledSourcePackObject::X86_64File(_) => Err(CompileError::GpuCodegen(
-                "Wasm specialization produced an x86_64 object".into())),
-        }).collect::<Result<Vec<_>, _>>()?;
-        let input = wasm::GpuWasmLinkInput::for_executable_refs(objects).map_err(wasm_link_input_error)?;
-        let linker = self.wasm_linker().map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;
-        let _resident_guard = self.resident_pipeline_lock.lock().await;
-        linker
-            .link_executable(&self.gpu.device, &self.gpu.queue, &input)
-            .map_err(|error| source_pack_artifact_store_error(format!("link Wasm source pack: {error}")))
+        self.compile_retained_source_pack(SourcePackArtifactTarget::Wasm,sources,source_paths).await
     }
 
     /// Returns the initialized Wasm linker or its deferred initialization error.

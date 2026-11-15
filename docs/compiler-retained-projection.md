@@ -8,8 +8,10 @@ layouts on the GPU, projects the rows into the existing lowering inputs and
 runs the existing lowering pipeline. It never runs a frontend, never lexes or
 parses instance text and never calls source replay. A retained native build
 (see "Native compilation") uses it with discovery and the original objects.
-Native x86 executable entry points use it by default, including native C
-linking and bounded file output. Wasm still uses the older specialization path.
+Native x86 and Wasm executable entry points use it by default, including native C
+linking and bounded file output. Both targets share discovery, substitution,
+semantic checks, ABI certification and GPU symbol finalization; only lowering
+and linking depend on the target.
 
 This document is the boundary contract. Implementation status and test
 receipts are at the end.

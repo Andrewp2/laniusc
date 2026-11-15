@@ -134,49 +134,10 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         output: &Path,
     ) -> Result<u64, CompileError> {
-        if target == SourcePackArtifactTarget::X86_64 {
-            return match self.compile_native_program(source_pack, None, Some(output)).await? {
-                ResidentLinkedOutput::File(bytes) => Ok(bytes),
-                ResidentLinkedOutput::Bytes(_) => unreachable!("output file requested"),
-            };
+        match self.compile_retained_program(target,source_pack,None,Some(output)).await? {
+            ResidentLinkedOutput::File(bytes)=>Ok(bytes),
+            ResidentLinkedOutput::Bytes(_)=>unreachable!("output file requested"),
         }
-        let limits = self.resident_source_unit_limits();
-        if path_manifest_requires_file_backed_build(source_pack, limits) {
-            let artifact = self
-                .compile_path_manifest_bounded_artifact(source_pack, target, limits)
-                .await?;
-            let byte_len = fs::metadata(&artifact.path)
-                .map_err(|err| {
-                    source_pack_artifact_store_error(format!(
-                        "stat bounded source-pack linked output {}: {err}",
-                        artifact.path.display()
-                    ))
-                })?
-                .len();
-            replace_file(&artifact.path, output)?;
-            set_executable_if_needed(output, target)?;
-            return Ok(byte_len);
-        }
-
-        // A resident multi-library link writes its pages straight into the
-        // output file; the other paths return bytes written here.
-        let bytes = match self.compile_path_manifest_output(source_pack, target, Some(output)).await? {
-            ResidentLinkedOutput::File(byte_len) => return Ok(byte_len),
-            ResidentLinkedOutput::Bytes(bytes) => bytes,
-        };
-        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "daemon.write");
-        write_output_file_atomically(output, target, |file| {
-            use std::io::Write;
-            file.write_all(&bytes).map_err(|err| {
-                source_pack_artifact_store_error(format!(
-                    "write compiled output {}: {err}",
-                    output.display()
-                ))
-            })?;
-            u64::try_from(bytes.len()).map_err(|_| {
-                source_pack_artifact_store_error("compiled output length does not fit u64")
-            })
-        })
     }
 
     async fn compile_path_manifest(
@@ -200,72 +161,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         output: Option<&Path>,
     ) -> Result<ResidentLinkedOutput, CompileError> {
-        if target == SourcePackArtifactTarget::X86_64 {
-            return self.compile_native_program(source_pack, None, output).await;
-        }
-        let limits = self.resident_source_unit_limits();
-        let whole_program = whole_program_manifest(source_pack, limits);
-        let source_pack = whole_program.as_ref().unwrap_or(source_pack);
-        // A program that fits one resident unit is one unit. Above that,
-        // libraries retain their dependency graph and nominal unit
-        // identities, and their interfaces and objects persist between
-        // bounded jobs.
-        let file_backed = path_manifest_requires_file_backed_build(source_pack, limits);
-        let resident_units = !file_backed && path_manifest_has_multiple_libraries(source_pack);
-        let report_memory = crate::options::get().report.buffers;
-        if report_memory {
-            crate::gpu::buffers::reset_tracked_buffer_allocation_peaks();
-        }
-        let result = if file_backed {
-            self.compile_path_manifest_bounded(source_pack, target, limits)
-                .await
-                .map(ResidentLinkedOutput::Bytes)
-        } else if resident_units {
-            self.compile_path_manifest_resident_units(source_pack, target, limits, output)
-                .await
-        } else {
-            let source_pack = load_explicit_source_pack_from_path_manifest(source_pack)?;
-            let lowering_target = match target {
-                SourcePackArtifactTarget::Wasm => LoweringTarget::Wasm,
-                SourcePackArtifactTarget::X86_64 => LoweringTarget::X86_64,
-                SourcePackArtifactTarget::Generic => unreachable!("concrete backend required"),
-            };
-            self.compile_checked_source_pack_with_lowering(
-                &source_pack.sources,
-                Some(&source_pack.source_paths),
-                lowering_target,
-            )
-            .await
-            .map(ResidentLinkedOutput::Bytes)
-        };
-        if report_memory {
-            let units = source_pack.frontend_unit_plan(limits);
-            let peak = crate::gpu::buffers::tracked_buffer_allocation_peak_stats();
-            eprintln!(
-                "source_pack_scale target={target:?} mode={} source_bytes={} source_files={} units={} max_unit_bytes={} peak_gpu_bytes={} peak_gpu_allocations={}",
-                if file_backed {
-                    "file-backed"
-                } else if resident_units {
-                    "resident-units"
-                } else {
-                    "resident-flat"
-                },
-                source_pack
-                    .files
-                    .iter()
-                    .map(|file| file.byte_len)
-                    .sum::<usize>(),
-                source_pack.files.len(),
-                units.unit_count(),
-                units.max_unit_source_bytes(),
-                peak.bytes,
-                peak.allocations,
-            );
-            if let Err(error) = &result {
-                eprintln!("source_pack_scale_error error={error:?}");
-            }
-        }
-        result
+        self.compile_retained_program(target,source_pack,None,output).await
     }
 
     async fn compile_path_manifest_resident_units(

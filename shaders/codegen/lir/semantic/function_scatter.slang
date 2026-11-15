@@ -272,6 +272,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         result.result_type = SEMANTIC_LIR_TY_POINTER;
         result.result_word_count = 0u;
     }
+    else if (checked_return_instance && result.result_type == 0u)
+    {
+        // A retained/imported nominal has no declaration token in this
+        // lowering job. It still returns a value; Wasm must not emit a
+        // void signature merely because the legacy scalar cache is empty.
+        result.result_type = SEMANTIC_LIR_TY_AGGREGATE;
+    }
     result.flags = !constant && semantic_function_entrypoint_by_hir[hir] != 0u
         ? SEMANTIC_FUNCTION_FLAG_ENTRYPOINT : 0u;
     if (!constant && payload.a == 5u)

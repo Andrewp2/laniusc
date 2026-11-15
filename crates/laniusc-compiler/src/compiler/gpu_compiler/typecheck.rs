@@ -1118,11 +1118,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
             // A retained native build: the export scratch still maps this
             // job's call rows to their retained uses.
-            if let Some((CompiledSourcePackObject::X86_64(object), call_hirs)) = &mut native_object
+            if let Some((object, call_hirs)) = &mut native_object
                 && let Some(tables) = self.retained_native_calls.lock().unwrap().as_mut()
             {
-                store
-                    .provisionalize_x86_calls(snapshot, tables, object, call_hirs)
+                match object {
+                    CompiledSourcePackObject::X86_64(object) => store.provisionalize_x86_calls(snapshot,tables,object,call_hirs),
+                    CompiledSourcePackObject::Wasm(object) => store.provisionalize_wasm_calls(snapshot,tables,object,call_hirs),
+                    CompiledSourcePackObject::X86_64File(_) => unreachable!("object has not been spilled"),
+                }
                     .map_err(|err| CompileError::GpuFrontend(format!("retained original call symbols: {err:#}")))?;
             }
             finish_timer.stamp("program_retention");

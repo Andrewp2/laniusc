@@ -162,15 +162,15 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // reuse an earlier job's pending original; it is admitted with the
         // rest of this program at link.
         let pending = if self.retained {
-            self.compiler.compile_pending_native_unit(
-                &handle.job, &handle.source_files, dependency_pages.into(), self.retained_spill,
+            self.compiler.compile_pending_unit(
+                self.target, &handle.job, &handle.source_files, dependency_pages.into(), self.retained_spill,
             ).await?
         } else if self.native_link.is_some() {
             // The native profile spills before any cache or pending inventory
             // can retain its section vectors. Checked source facts still own
             // their exact source and dependency snapshots for admission.
-            self.compiler.compile_pending_native_unit(
-                &handle.job, &handle.source_files, dependency_pages.into(), true,
+            self.compiler.compile_pending_unit(
+                self.target, &handle.job, &handle.source_files, dependency_pages.into(), true,
             ).await?
         } else {
             // The program's last unit has no dependents. When the units

@@ -27,13 +27,26 @@ impl GpuCompiler<'_> {
         library: u32,
         unit: u32,
     ) -> anyhow::Result<GpuX86RelocatableObject> {
+        match self.lower_projected_batch(SourcePackArtifactTarget::X86_64,source_bytes,tokens,hir_nodes,hir,semantic,library,unit)? {
+            typecheck::CompiledSourcePackObject::X86_64(object)=>Ok(object),
+            _=>unreachable!("x86 lowering requested"),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn lower_projected_batch(
+        &self,target:SourcePackArtifactTarget,source_bytes:u32,tokens:u32,hir_nodes:u32,
+        hir:GpuSemanticHirInputs<'_>,semantic:crate::type_checker::GpuSemanticArtifactView<'_>,library:u32,unit:u32,
+    )->anyhow::Result<typecheck::CompiledSourcePackObject> {
+        let lowering_target=match target { SourcePackArtifactTarget::X86_64=>LoweringTarget::X86_64,SourcePackArtifactTarget::Wasm=>LoweringTarget::Wasm,
+            SourcePackArtifactTarget::Generic=>anyhow::bail!("projection requires an executable target") };
         let device = &self.gpu.device;
         let queue = &self.gpu.queue;
         let mut bounds = LoweringJobBounds::CONSERVATIVE;
         for attempt in 0..2 {
             let pipeline = self
                 .ensure_lowering_pipeline(
-                    LoweringTarget::X86_64,
+                    lowering_target,
                     source_bytes,
                     tokens,
                     hir_nodes,
@@ -57,8 +70,13 @@ impl GpuCompiler<'_> {
                 bounds,
             )?;
             queue.submit(Some(encoder.finish()));
-            match pipeline.finish_x86_object(device, queue, library, unit) {
-                Ok((object, _)) => return Ok(object),
+            let result=match target {
+                SourcePackArtifactTarget::X86_64=>pipeline.finish_x86_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::X86_64(o)),
+                SourcePackArtifactTarget::Wasm=>pipeline.finish_wasm_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::Wasm(o)),
+                SourcePackArtifactTarget::Generic=>unreachable!("executable target checked above"),
+            };
+            match result {
+                Ok(object) => return Ok(object),
                 Err(error) => {
                     crate::gpu::dispatch_capture::debug_write_capture(device, queue);
                     crate::gpu::passes_core::debug_dump_buffers(device, queue, "retained_lowering");
