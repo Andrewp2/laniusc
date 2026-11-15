@@ -718,126 +718,127 @@ impl GpuSemanticInterfaceArtifact {
             ));
         }
 
+        // The length check above covers every record word.
         let mut modules = Vec::with_capacity(module_count);
         for _ in 0..module_count {
             modules.push(GpuSemanticInterfaceModuleRecord {
-                first_segment: read_u32(bytes, &mut cursor)?,
-                segment_count: read_u32(bytes, &mut cursor)?,
+                first_segment: record_word(bytes, &mut cursor),
+                segment_count: record_word(bytes, &mut cursor),
             });
         }
         let mut module_segments = Vec::with_capacity(module_segment_count);
         for _ in 0..module_segment_count {
             module_segments.push(GpuSemanticInterfaceModuleSegmentRecord {
-                name_hash_lo: read_u32(bytes, &mut cursor)?,
-                name_hash_hi: read_u32(bytes, &mut cursor)?,
-                name_byte_start: read_u32(bytes, &mut cursor)?,
-                name_byte_len: read_u32(bytes, &mut cursor)?,
+                name_hash_lo: record_word(bytes, &mut cursor),
+                name_hash_hi: record_word(bytes, &mut cursor),
+                name_byte_start: record_word(bytes, &mut cursor),
+                name_byte_len: record_word(bytes, &mut cursor),
             });
         }
         let mut declarations = Vec::with_capacity(declaration_count);
         for _ in 0..declaration_count {
             declarations.push(GpuSemanticInterfaceDeclarationRecord {
-                module: read_u32(bytes, &mut cursor)?,
-                name_hash_lo: read_u32(bytes, &mut cursor)?,
-                name_hash_hi: read_u32(bytes, &mut cursor)?,
-                name_byte_start: read_u32(bytes, &mut cursor)?,
-                name_byte_len: read_u32(bytes, &mut cursor)?,
-                namespace: read_u32(bytes, &mut cursor)?,
-                kind: read_u32(bytes, &mut cursor)?,
-                signature_type: read_u32(bytes, &mut cursor)?,
-                first_member: read_u32(bytes, &mut cursor)?,
-                member_count: read_u32(bytes, &mut cursor)?,
-                owner_declaration: read_u32(bytes, &mut cursor)?,
-                flags: read_u32(bytes, &mut cursor)?,
-                value_lo: read_u32(bytes, &mut cursor)?,
-                value_hi: read_u32(bytes, &mut cursor)?,
+                module: record_word(bytes, &mut cursor),
+                name_hash_lo: record_word(bytes, &mut cursor),
+                name_hash_hi: record_word(bytes, &mut cursor),
+                name_byte_start: record_word(bytes, &mut cursor),
+                name_byte_len: record_word(bytes, &mut cursor),
+                namespace: record_word(bytes, &mut cursor),
+                kind: record_word(bytes, &mut cursor),
+                signature_type: record_word(bytes, &mut cursor),
+                first_member: record_word(bytes, &mut cursor),
+                member_count: record_word(bytes, &mut cursor),
+                owner_declaration: record_word(bytes, &mut cursor),
+                flags: record_word(bytes, &mut cursor),
+                value_lo: record_word(bytes, &mut cursor),
+                value_hi: record_word(bytes, &mut cursor),
             });
         }
         let mut types = Vec::with_capacity(type_count);
         for _ in 0..type_count {
             types.push(GpuSemanticInterfaceTypeRecord {
-                kind: read_u32(bytes, &mut cursor)?,
-                payload_lo: read_u32(bytes, &mut cursor)?,
-                payload_hi: read_u32(bytes, &mut cursor)?,
-                first_edge: read_u32(bytes, &mut cursor)?,
-                edge_count: read_u32(bytes, &mut cursor)?,
-                length_kind: read_u32(bytes, &mut cursor)?,
-                length_lo: read_u32(bytes, &mut cursor)?,
-                length_hi: read_u32(bytes, &mut cursor)?,
-                nominal_unit_id: read_u32(bytes, &mut cursor)?,
+                kind: record_word(bytes, &mut cursor),
+                payload_lo: record_word(bytes, &mut cursor),
+                payload_hi: record_word(bytes, &mut cursor),
+                first_edge: record_word(bytes, &mut cursor),
+                edge_count: record_word(bytes, &mut cursor),
+                length_kind: record_word(bytes, &mut cursor),
+                length_lo: record_word(bytes, &mut cursor),
+                length_hi: record_word(bytes, &mut cursor),
+                nominal_unit_id: record_word(bytes, &mut cursor),
             });
         }
         let mut type_edges = Vec::with_capacity(type_edge_count);
         for _ in 0..type_edge_count {
             type_edges.push(GpuSemanticInterfaceTypeEdge {
-                type_index: read_u32(bytes, &mut cursor)?,
+                type_index: record_word(bytes, &mut cursor),
             });
         }
         let mut members = Vec::with_capacity(member_count);
         for _ in 0..member_count {
             members.push(GpuSemanticInterfaceMemberRecord {
-                owner_ref: read_u32(bytes, &mut cursor)?,
-                kind: read_u32(bytes, &mut cursor)?,
-                ordinal: read_u32(bytes, &mut cursor)?,
-                name_hash_lo: read_u32(bytes, &mut cursor)?,
-                name_hash_hi: read_u32(bytes, &mut cursor)?,
-                name_byte_start: read_u32(bytes, &mut cursor)?,
-                name_byte_len: read_u32(bytes, &mut cursor)?,
-                type_index: read_u32(bytes, &mut cursor)?,
-                value_lo: read_u32(bytes, &mut cursor)?,
-                value_hi: read_u32(bytes, &mut cursor)?,
-                receiver_type_index: read_u32(bytes, &mut cursor)?,
-                generic_parameter_ordinal: read_u32(bytes, &mut cursor)?,
+                owner_ref: record_word(bytes, &mut cursor),
+                kind: record_word(bytes, &mut cursor),
+                ordinal: record_word(bytes, &mut cursor),
+                name_hash_lo: record_word(bytes, &mut cursor),
+                name_hash_hi: record_word(bytes, &mut cursor),
+                name_byte_start: record_word(bytes, &mut cursor),
+                name_byte_len: record_word(bytes, &mut cursor),
+                type_index: record_word(bytes, &mut cursor),
+                value_lo: record_word(bytes, &mut cursor),
+                value_hi: record_word(bytes, &mut cursor),
+                receiver_type_index: record_word(bytes, &mut cursor),
+                generic_parameter_ordinal: record_word(bytes, &mut cursor),
             });
         }
         let mut predicates = Vec::with_capacity(predicate_count);
         for _ in 0..predicate_count {
             predicates.push(GpuSemanticInterfacePredicateRecord {
-                owner_ref: read_u32(bytes, &mut cursor)?,
-                owner_scope_symbol: read_u32(bytes, &mut cursor)?,
-                subject_type: read_u32(bytes, &mut cursor)?,
-                trait_library_id: read_u32(bytes, &mut cursor)?,
-                trait_unit_id: read_u32(bytes, &mut cursor)?,
-                trait_declaration_index: read_u32(bytes, &mut cursor)?,
-                first_argument: read_u32(bytes, &mut cursor)?,
-                argument_count: read_u32(bytes, &mut cursor)?,
+                owner_ref: record_word(bytes, &mut cursor),
+                owner_scope_symbol: record_word(bytes, &mut cursor),
+                subject_type: record_word(bytes, &mut cursor),
+                trait_library_id: record_word(bytes, &mut cursor),
+                trait_unit_id: record_word(bytes, &mut cursor),
+                trait_declaration_index: record_word(bytes, &mut cursor),
+                first_argument: record_word(bytes, &mut cursor),
+                argument_count: record_word(bytes, &mut cursor),
             });
         }
         let mut predicate_arguments = Vec::with_capacity(predicate_argument_count);
         for _ in 0..predicate_argument_count {
-            predicate_arguments.push(read_u32(bytes, &mut cursor)?);
+            predicate_arguments.push(record_word(bytes, &mut cursor));
         }
         let mut implementations = Vec::with_capacity(implementation_count);
         for _ in 0..implementation_count {
             implementations.push(GpuSemanticInterfaceImplementationRecord {
-                module: read_u32(bytes, &mut cursor)?,
-                visibility: read_u32(bytes, &mut cursor)?,
-                trait_library_id: read_u32(bytes, &mut cursor)?,
-                trait_unit_id: read_u32(bytes, &mut cursor)?,
-                trait_declaration_index: read_u32(bytes, &mut cursor)?,
-                subject_type: read_u32(bytes, &mut cursor)?,
-                first_argument: read_u32(bytes, &mut cursor)?,
-                argument_count: read_u32(bytes, &mut cursor)?,
-                first_member: read_u32(bytes, &mut cursor)?,
-                member_count: read_u32(bytes, &mut cursor)?,
-                first_prerequisite: read_u32(bytes, &mut cursor)?,
-                prerequisite_count: read_u32(bytes, &mut cursor)?,
-                first_method_binding: read_u32(bytes, &mut cursor)?,
-                method_binding_count: read_u32(bytes, &mut cursor)?,
-                kind: read_u32(bytes, &mut cursor)?,
+                module: record_word(bytes, &mut cursor),
+                visibility: record_word(bytes, &mut cursor),
+                trait_library_id: record_word(bytes, &mut cursor),
+                trait_unit_id: record_word(bytes, &mut cursor),
+                trait_declaration_index: record_word(bytes, &mut cursor),
+                subject_type: record_word(bytes, &mut cursor),
+                first_argument: record_word(bytes, &mut cursor),
+                argument_count: record_word(bytes, &mut cursor),
+                first_member: record_word(bytes, &mut cursor),
+                member_count: record_word(bytes, &mut cursor),
+                first_prerequisite: record_word(bytes, &mut cursor),
+                prerequisite_count: record_word(bytes, &mut cursor),
+                first_method_binding: record_word(bytes, &mut cursor),
+                method_binding_count: record_word(bytes, &mut cursor),
+                kind: record_word(bytes, &mut cursor),
             });
         }
         let mut implementation_arguments = Vec::with_capacity(implementation_argument_count);
-        for _ in 0..implementation_argument_count { implementation_arguments.push(read_u32(bytes, &mut cursor)?); }
+        for _ in 0..implementation_argument_count { implementation_arguments.push(record_word(bytes, &mut cursor)); }
         let mut implementation_method_bindings = Vec::with_capacity(implementation_method_binding_count);
         for _ in 0..implementation_method_binding_count {
             implementation_method_bindings.push(GpuSemanticInterfaceImplementationMethodBindingRecord {
-                implementation_index: read_u32(bytes, &mut cursor)?,
-                required_method_symbol: read_u32(bytes, &mut cursor)?,
-                implementation_method_member: read_u32(bytes, &mut cursor)?,
-                target_library_id: read_u32(bytes, &mut cursor)?,
-                target_unit_id: read_u32(bytes, &mut cursor)?,
-                target_symbol: read_u32(bytes, &mut cursor)?,
+                implementation_index: record_word(bytes, &mut cursor),
+                required_method_symbol: record_word(bytes, &mut cursor),
+                implementation_method_member: record_word(bytes, &mut cursor),
+                target_library_id: record_word(bytes, &mut cursor),
+                target_unit_id: record_word(bytes, &mut cursor),
+                target_symbol: record_word(bytes, &mut cursor),
             });
         }
         let name_bytes = bytes[cursor..].to_vec();
@@ -985,6 +986,15 @@ fn push_u32(bytes: &mut Vec<u8>, value: u32) {
 fn push_u32_len(bytes: &mut Vec<u8>, domain: &str, len: usize) -> Result<(), String> {
     push_u32(bytes, checked_u32_len(domain, len)?);
     Ok(())
+}
+
+/// One record word of an artifact whose length matched its header, so the
+/// word is in bounds.
+#[inline(always)]
+fn record_word(bytes: &[u8], cursor: &mut usize) -> u32 {
+    let word = u32::from_le_bytes([bytes[*cursor], bytes[*cursor + 1], bytes[*cursor + 2], bytes[*cursor + 3]]);
+    *cursor += 4;
+    word
 }
 
 fn read_u32(bytes: &[u8], cursor: &mut usize) -> Result<u32, String> {
