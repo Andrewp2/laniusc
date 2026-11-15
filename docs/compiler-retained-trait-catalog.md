@@ -367,3 +367,37 @@ so an export after catalog admission invalidates this consumer even within the
 same generation. Appending substitution terms does not change that extent.
 The publication is released after discovery completes. Bound-member method
 selection still needs closed instance goals and concrete method routes.
+
+## Closed discovery waves
+
+`RetainedTraitPublication::solve_instances` reuses the admitted catalog for
+new concrete instances. The kernels in `retained/closed/` read discovery's
+`(DeclId, ENV, generation)` records, mark the closed binding terms, deduplicate
+constant atoms, scan row counts and fill a fresh batch. The batch adds value
+atoms, nodes, edges and roots (tables 1, 5, 6, 7), environments, calls and hard
+obligations. It contains one closed context and no assumptions. The solver
+checks all applicable predicates, including inherited impl predicates.
+
+The host places storage from GPU totals and uploads directory headers. It
+reads producer status and solver receipts, not goal or evidence rows. A
+`ClosedTraitPublication` keeps the packet and proof arenas alive and requires
+the original catalog publication when creating a view. Its route map is keyed
+by discovery instance index, rather than the source publication's use index.
+Multiple wave publications can coexist. A new build, changed source-store
+extent, malformed ENV or stale instance rejects the wave.
+
+Retained native discovery invokes this check before expanding each wave.
+This supplies concrete implementation evidence for bound-member routing;
+the method-routing bridge is still being connected. Direct bounded calls
+continue to check their source proof as well.
+
+The current producer scans live term slots, walks the reached graph in 65
+bounded GPU rounds, and scans eight counters per term or instance. Constant
+atoms share the catalog's identity when present. These fixed rounds and the
+whole-term scans are not yet optimized for the rebuild time target.
+
+Focused validation includes seven concrete calls, generic impl bindings,
+constant arguments, a 40-method impl, concurrent wave publications, stale
+instances, and a fault changing a previously proven Local binding to an
+unimplemented i32. The native bounded forwarding fixture executes through
+three concrete discovery waves with zero replay.

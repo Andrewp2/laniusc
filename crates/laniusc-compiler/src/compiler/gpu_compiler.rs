@@ -11,7 +11,7 @@ mod benchmarks;
 mod body_specialization;
 mod instance_copies;
 mod trait_solver;
-pub use trait_solver::{RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+pub use trait_solver::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;

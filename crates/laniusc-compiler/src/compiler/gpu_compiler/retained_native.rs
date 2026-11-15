@@ -159,8 +159,8 @@ impl GpuCompiler<'_> {
                 catalog.publication_status,
             )));
         }
-        let publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
-        let roots = match build.discovery.run_with_traits(&store, &publication).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
+        let mut publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
+        let roots = match build.discovery.run_with_traits(&store, &mut publication).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
             DiscoveryOutcome::Published(roots) => roots,
             DiscoveryOutcome::Rejected(e) => {
                 return Err(retained_error("discovery rejected the program", format!("{e:?}")));

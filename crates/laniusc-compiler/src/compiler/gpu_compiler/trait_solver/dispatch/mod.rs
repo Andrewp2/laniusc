@@ -20,7 +20,7 @@ pub(super) use implementation_application::{ImplProjectionLimits, ProjectedImplA
 mod proof;
 mod retained;
 pub(super) use retained::{check as retained_check, publish as retained_publish};
-pub use retained::{RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+pub use retained::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

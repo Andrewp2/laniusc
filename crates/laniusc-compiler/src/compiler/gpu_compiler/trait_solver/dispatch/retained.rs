@@ -8,6 +8,9 @@
 //! those counts, and dispatches. It builds no catalog or batch row, selects
 //! nothing and accepts no result: the solver's catalog admission, coherence
 //! and proof kernels consume the GPU-written rows unchanged.
+mod closed;
+pub use closed::{ClosedTraitCheck, ClosedTraitPublication};
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{Result, anyhow, ensure};
@@ -997,8 +1000,6 @@ impl RetainedTraitPublication {
         identity: RetainedTraitIdentity,
         requests: &[[u32; 3]],
     ) -> Result<Vec<[u32; 16]>> {
-        let device = &self.gpu.device;
-        let queue = &self.gpu.queue;
         let view = RetainedTraitView {
             identity: self.identity,
             routes: RetainedBufferRange::of(&self.routes.buffer, self.route_words),
@@ -1007,60 +1008,66 @@ impl RetainedTraitPublication {
             proof: RetainedBufferRange::of(&self.packet.proof.buffer, self.packet.proof.logical_words),
             rt_counts: &self.rt_counts,
         };
-        let mut input = vec![
-            u32::try_from(requests.len())?,
-            identity.epoch as u32,
-            (identity.epoch >> 32) as u32,
-            identity.arena_id as u32,
-            (identity.arena_id >> 32) as u32,
-            identity.serial,
-            identity.generation,
-            0,
-        ];
-        for request in requests {
-            input.extend_from_slice(&[request[0], request[1], request[2], 0]);
-        }
-        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
-        let workspace = &self.gpu.workspace;
-        let input = workspace.initialized("trait_solver.retained_query_in", u32::try_from(input.len())?, usage, Some(&input))?;
-        let out_words = u32::try_from(requests.len().max(1) * 16)?;
-        let output = workspace.initialized("trait_solver.retained_query_out", out_words, usage, Some(&vec![u32::MAX; out_words as usize]))?;
-        let data = make_pass_data_from_shader_key(device, QUERY_KEY, "main", QUERY_KEY)?;
-        store.with_store_buffers(|_, _| {
-            let mut entries = Vec::new();
-            for name in reflected_names(&data) {
-                let resource = match name.as_str() {
-                    "rc_routes" => view.routes.binding(),
-                    "rp_catalog" => view.catalog.binding(),
-                    "rp_proof" => view.proof.binding(),
-                    "rt_counts" => view.rt_counts.as_entire_binding(),
-                    "rq_requests" => input.as_entire_binding(),
-                    "rq_out" => output.as_entire_binding(),
-                    other => return Err(anyhow!("retained route query binds unknown buffer {other}")),
-                };
-                entries.push((name, resource));
-            }
-            let entries = entries.iter().map(|(n, r)| (n.as_str(), r.clone())).collect::<Vec<_>>();
-            let bind = passes_core::bind_group::create_bind_group_from_bindings(device, Some(&data.shader_id), &data, 0, &entries)?;
-            let mut encoder = device.create_command_encoder(&Default::default());
-            {
-                let mut compute = passes_core::begin_counted_compute_pass(
-                    &mut encoder,
-                    &wgpu::ComputePassDescriptor { label: Some("tests.retained_route_query"), timestamp_writes: None },
-                );
-                compute.set_pipeline(&data.pipeline);
-                compute.set_bind_group(0, &bind, &[]);
-                passes_core::record_compute_dispatch();
-                compute.dispatch_workgroups(u32::try_from(requests.len().div_ceil(64).max(1))?, 1, 1);
-            }
-            passes_core::flush_deferred_compute(&mut encoder);
-            queue.submit(Some(encoder.finish()));
-            Ok(())
-        })?;
-        let region = ReadbackRegion::from_buffer(&output, 0, arena::byte_len(out_words)?, "retained route query")?;
-        let words = super::words(&self.gpu.readback.read_regions(device, queue, &[region], "retained route query")?[0])?;
-        Ok(words.chunks_exact(16).take(requests.len()).map(|c| c.try_into().unwrap()).collect())
+        query_view(&self.gpu, store, view, identity, requests)
     }
+}
+
+fn query_view(gpu: &GpuTraitSolver, store: &ProgramRetention, view: RetainedTraitView<'_>, identity: RetainedTraitIdentity, requests: &[[u32; 3]]) -> Result<Vec<[u32; 16]>> {
+    let device = &gpu.device;
+    let queue = &gpu.queue;
+    let mut input = vec![
+        u32::try_from(requests.len())?,
+        identity.epoch as u32,
+        (identity.epoch >> 32) as u32,
+        identity.arena_id as u32,
+        (identity.arena_id >> 32) as u32,
+        identity.serial,
+        identity.generation,
+        0,
+    ];
+    for request in requests {
+        input.extend_from_slice(&[request[0], request[1], request[2], 0]);
+    }
+    let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+    let workspace = &gpu.workspace;
+    let input = workspace.initialized("trait_solver.retained_query_in", u32::try_from(input.len())?, usage, Some(&input))?;
+    let out_words = u32::try_from(requests.len().max(1) * 16)?;
+    let output = workspace.initialized("trait_solver.retained_query_out", out_words, usage, Some(&vec![u32::MAX; out_words as usize]))?;
+    let data = make_pass_data_from_shader_key(device, QUERY_KEY, "main", QUERY_KEY)?;
+    store.with_store_buffers(|_, _| {
+        let mut entries = Vec::new();
+        for name in reflected_names(&data) {
+            let resource = match name.as_str() {
+                "rc_routes" => view.routes.binding(),
+                "rp_catalog" => view.catalog.binding(),
+                "rp_proof" => view.proof.binding(),
+                "rt_counts" => view.rt_counts.as_entire_binding(),
+                "rq_requests" => input.as_entire_binding(),
+                "rq_out" => output.as_entire_binding(),
+                other => return Err(anyhow!("retained route query binds unknown buffer {other}")),
+            };
+            entries.push((name, resource));
+        }
+        let entries = entries.iter().map(|(n, r)| (n.as_str(), r.clone())).collect::<Vec<_>>();
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(device, Some(&data.shader_id), &data, 0, &entries)?;
+        let mut encoder = device.create_command_encoder(&Default::default());
+        {
+            let mut compute = passes_core::begin_counted_compute_pass(
+                &mut encoder,
+                &wgpu::ComputePassDescriptor { label: Some("tests.retained_route_query"), timestamp_writes: None },
+            );
+            compute.set_pipeline(&data.pipeline);
+            compute.set_bind_group(0, &bind, &[]);
+            passes_core::record_compute_dispatch();
+            compute.dispatch_workgroups(u32::try_from(requests.len().div_ceil(64).max(1))?, 1, 1);
+        }
+        passes_core::flush_deferred_compute(&mut encoder);
+        queue.submit(Some(encoder.finish()));
+        Ok(())
+    })?;
+    let region = ReadbackRegion::from_buffer(&output, 0, arena::byte_len(out_words)?, "retained route query")?;
+    let words = super::words(&gpu.readback.read_regions(device, queue, &[region], "retained route query")?[0])?;
+    Ok(words.chunks_exact(16).take(requests.len()).map(|c| c.try_into().unwrap()).collect())
 }
 
 fn words_bytes(words: &[u32]) -> Vec<u8> {

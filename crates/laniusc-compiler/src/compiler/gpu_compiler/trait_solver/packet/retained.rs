@@ -7,13 +7,13 @@ use anyhow::{Result, anyhow, ensure};
 use super::{ProgramPacket, Submission};
 use crate::compiler::gpu_compiler::trait_solver::abi::*;
 
-/// Batch tables a GPU-produced submission fills (11-16).
+/// Callable tables a GPU-produced submission fills (11-16).
 pub(in crate::compiler::gpu_compiler::trait_solver) const RETAINED_BATCH_FIRST: usize = 11;
 pub(in crate::compiler::gpu_compiler::trait_solver) const RETAINED_BATCH_LAST: usize = 16;
 
 impl ProgramPacket {
     /// Plans a fresh packet's first submission with `counts[t]` rows in each
-    /// batch table `t` (11-16) and none elsewhere. The returned word offsets
+    /// batch table `t` (11-16), plus value-graph suffixes (1, 5, 6, 7). The returned word offsets
     /// are where the GPU producer writes each table. A packet makes at most
     /// one such submission; it has no host rows to append later.
     pub(in crate::compiler::gpu_compiler::trait_solver) fn prepare_retained_submission(
@@ -28,12 +28,12 @@ impl ProgramPacket {
         for table in 0..TABLE_COUNT {
             ensure!(
                 self.tables.count(table)? == 0
-                    && ((RETAINED_BATCH_FIRST..=RETAINED_BATCH_LAST).contains(&table) || counts[table] == 0),
-                "a retained submission has rows only in batch tables 11-16"
+                    && ((RETAINED_BATCH_FIRST..=RETAINED_BATCH_LAST).contains(&table) || matches!(table, 1 | 5 | 6 | 7) || counts[table] == 0),
+                "a retained submission cannot append catalog declarations"
             );
         }
         let mut offsets = [0; TABLE_COUNT];
-        for table in RETAINED_BATCH_FIRST..=RETAINED_BATCH_LAST {
+        for table in 0..TABLE_COUNT {
             let count = counts[table];
             offsets[table] = self.arena.next_word;
             if count == 0 {

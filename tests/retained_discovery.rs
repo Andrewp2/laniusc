@@ -287,9 +287,9 @@ fn main()->i32 { return forward<i32>(42); }
         };
         rejected(engine.run(&store).unwrap());
         let (_,proof)=compiler.retained_trait_publish(&store,&Default::default()).unwrap();
-        let proof=proof.unwrap();
+        let mut proof=proof.unwrap();
         assert_eq!(proof.status().unwrap(),[1,0,u32::MAX]);
-        let p=match engine.run_with_traits(&store,&proof).unwrap() {
+        let p=match engine.run_with_traits(&store,&mut proof).unwrap() {
             DiscoveryOutcome::Published(p)=>p,
             DiscoveryOutcome::Rejected(e)=>panic!("{e:?}"),
         };
@@ -305,10 +305,12 @@ fn main()->i32 { return forward<i32>(42); }
         for use_index in bounded {
             let at=map+use_index*4+3;
             let view=proof.view(&store).unwrap();
+            let route_buffer=view.routes.buffer.clone();
+            let route_offset=view.routes.offset;
             let gpu=laniusc_compiler::gpu::device::global();
-            gpu.queue.write_buffer(view.routes.buffer,view.routes.offset+at as u64*4,&0u32.to_le_bytes());
-            rejected(engine.run_with_traits(&store,&proof).unwrap());
-            gpu.queue.write_buffer(view.routes.buffer,view.routes.offset+at as u64*4,&words[at].to_le_bytes());
+            gpu.queue.write_buffer(&route_buffer,route_offset+at as u64*4,&0u32.to_le_bytes());
+            rejected(engine.run_with_traits(&store,&mut proof).unwrap());
+            gpu.queue.write_buffer(&route_buffer,route_offset+at as u64*4,&words[at].to_le_bytes());
         }
 
         // A same-build export can add impls, invalidating coherence even if
@@ -317,8 +319,8 @@ fn main()->i32 { return forward<i32>(42); }
         pollster::block_on(compiler.semantic_interface_for_source_pack(11,&["module empty;"])).unwrap();
         compiler.attach_program_retention(None);
         assert!(store.job_reports().iter().all(|r|r.ready));
-        rejected(engine.run_with_traits(&store,&proof).unwrap());
+        rejected(engine.run_with_traits(&store,&mut proof).unwrap());
         let (_,fresh)=compiler.retained_trait_publish(&store,&Default::default()).unwrap();
-        assert!(matches!(engine.run_with_traits(&store,&fresh.unwrap()).unwrap(),DiscoveryOutcome::Published(_)));
+        assert!(matches!(engine.run_with_traits(&store,&mut fresh.unwrap()).unwrap(),DiscoveryOutcome::Published(_)));
     });
 }

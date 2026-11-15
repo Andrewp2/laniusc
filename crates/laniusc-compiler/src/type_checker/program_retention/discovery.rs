@@ -73,6 +73,7 @@ pub struct DiscoveryReport {
     pub edges: u32,
     pub roots: u32,
     pub substitution_dispatches: u32,
+    pub closed_trait_waves: u32,
 }
 #[derive(Clone, Debug)]
 pub struct DiscoveryError {
@@ -137,14 +138,14 @@ impl RetainedDiscovery {
         self.hash_mask = mask;
     }
     pub fn run(&mut self, store: &ProgramRetention) -> Result<DiscoveryOutcome> {
-        self.run_admitted(store, None)
+        self.run_admitted(store, None, None)
     }
     /// The GPU checks the publication identity, immutable source-store extent,
     /// and the proof map for each bounded direct call before admitting it.
     pub fn run_with_traits(
         &mut self,
         store: &ProgramRetention,
-        publication: &RetainedTraitPublication,
+        publication: &mut RetainedTraitPublication,
     ) -> Result<DiscoveryOutcome> {
         let view = publication.view(store)?;
         let id = view.identity;
@@ -155,11 +156,11 @@ impl RetainedDiscovery {
             identity: [1, id.epoch as u32, (id.epoch >> 32) as u32,
                 id.arena_id as u32, (id.arena_id >> 32) as u32,
                 id.serial, id.generation, 0],
-        }))
+        }), Some(publication))
     }
-    fn run_admitted(&mut self, store: &ProgramRetention, admission: Option<TraitAdmission>) -> Result<DiscoveryOutcome> {
+    fn run_admitted(&mut self, store: &ProgramRetention, admission: Option<TraitAdmission>, publication: Option<&mut RetainedTraitPublication>) -> Result<DiscoveryOutcome> {
         self.admission = admission;
-        let result = self.run_inner(store);
+        let result = self.run_inner(store, publication);
         self.admission = None;
         if result.is_err() {
             let guard = store.store.lock().unwrap();
@@ -172,7 +173,7 @@ impl RetainedDiscovery {
         }
         result
     }
-    fn run_inner(&mut self, store: &ProgramRetention) -> Result<DiscoveryOutcome> {
+    fn run_inner(&mut self, store: &ProgramRetention, mut publication: Option<&mut RetainedTraitPublication>) -> Result<DiscoveryOutcome> {
         let initial = store.status()?;
         let uses = initial[8];
         let generation = store.generation();
@@ -249,6 +250,30 @@ impl RetainedDiscovery {
             let mut edges = 0;
             let mut depth = 1;
             while lo < hi {
+                // Concrete instances have closed goals, even when their
+                // source call was proved parametrically. Reuse the admitted
+                // catalog; the GPU writes and solves this wave's hard goals.
+                let _closed = if let Some(source) = publication.as_deref_mut() {
+                    let buffer = self.scratch["dg_instances"].clone();
+                    let bytes = buffer.size();
+                    let instances = LaniusBuffer::new((buffer, bytes), bytes as usize / 4);
+                    let (check, proofs) = source.solve_instances(store, &instances, lo, hi)?;
+                    report.closed_trait_waves += 1;
+                    if check.producer_failures != 0 {
+                        return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                            code: 8, use_index: u32::MAX, instance: check.first_failure, detail: check.producer_failures,
+                        }));
+                    }
+                    if let Some(proofs) = &proofs {
+                        let receipt = proofs.status(source)?;
+                        if receipt != [1, 0, u32::MAX] {
+                            return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                                code: 8, use_index: u32::MAX, instance: lo, detail: receipt[2],
+                            }));
+                        }
+                    }
+                    proofs
+                } else { None };
                 // Each wave expands precisely the newly interned instances.
                 // A prefix scan places uses; one lane then handles each use.
                 report.waves += 1;

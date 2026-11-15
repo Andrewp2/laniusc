@@ -863,6 +863,7 @@ fn main()->i32 {
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
             assert_eq!(fallback_counters().1,before.1);
             assert_eq!(build.report.discovery.instances,9);
+            assert!(build.report.discovery.closed_trait_waves >= 3);
             assert_eq!(build.report.catalog.as_ref().unwrap().publication_status,Some([1,0,u32::MAX]));
             let output=common::run_x86_64_elf_output("retained bounds","retained_bounds",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");

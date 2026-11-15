@@ -25,7 +25,7 @@ pub(super) use native_session::{
     unit_span,
 };
 pub(super) use packet::AdmittedCall;
-pub use dispatch::{RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+pub use dispatch::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 
 impl super::GpuCompiler<'_> {
     /// Builds the program trait catalog and the bound goals of the

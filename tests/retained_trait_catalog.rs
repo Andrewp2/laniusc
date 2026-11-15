@@ -1022,3 +1022,51 @@ fn compiler_for_rebuild() -> GpuCompiler<'static> {
     compiler()
 }
 
+
+#[test]
+fn retained_trait_catalog_solves_closed_instance_goals() {
+    let compiler = compiler();
+    let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    build(&compiler, &store);
+    pollster::block_on(compiler.release_resident_job_buffers());
+    store.poison_scratch();
+    let s = Store::read(&store);
+    let (_, publication) = compiler.retained_trait_publish(&store, &RetainedTraitOptions::default()).unwrap();
+    let mut publication = publication.unwrap();
+    let queries: Vec<_> = queries(&s, &store).into_iter().filter(|q| q.status == RQ_FOUND).collect();
+    let mut instances = vec![[0; 8]; s.uses.len()];
+    for q in &queries {
+        let u = s.uses[q.request[0] as usize];
+        instances[q.request[0] as usize] = [u[3], u[4], store.generation(), 0, 0, 0, 0, 0];
+    }
+    let (report, closed) = publication.solve_instances_for_test(&store, &instances).unwrap();
+    assert_eq!(report.producer_failures, 0, "{report:?}");
+    assert_eq!(report.batch_status.unwrap()[0], 1, "{report:?}");
+    assert_eq!(report.rows[14], 0, "concrete instances have no assumptions");
+    assert_eq!(report.rows[15], 7, "seven concrete calls, sharing a wide proof");
+    let closed = closed.expect("closed publication");
+    let requests = queries.iter().map(|q| q.request).collect::<Vec<_>>();
+    assert_answers(&queries, &closed.query_for_test(&publication, &store, &requests).unwrap());
+    // A second wave owns separate proof storage; the first stays current.
+    let (_, second) = publication.solve_instances_for_test(&store, &instances).unwrap();
+    assert_answers(&queries, &second.unwrap().query_for_test(&publication, &store, &requests).unwrap());
+    assert_answers(&queries, &closed.query_for_test(&publication, &store, &requests).unwrap());
+    let first = queries[0].request[0] as usize;
+    // The original source proof selected Local. Fault the closed instance's
+    // binding to i32, which has no Show impl. Reusing the source proof would
+    // incorrectly authorize it; this wave must refute the concrete goal.
+    let env = instances[first][1] as usize;
+    let argument = s.meta[env][0] as usize;
+    let saved = s.args[argument];
+    store.write_store_words("rt_term_args", argument as u64, &[SCALAR_I32]).unwrap();
+    let (refuted, bad) = publication.solve_instances_for_test(&store, &instances).unwrap();
+    assert_eq!(refuted.producer_failures, 0, "{refuted:?}");
+    assert_ne!(bad.unwrap().status(&publication).unwrap()[0], 1, "a refuted hard goal cannot publish");
+    store.write_store_words("rt_term_args", argument as u64, &[saved]).unwrap();
+    instances[first][2] = store.generation() - 1;
+    let (stale, result) = publication.solve_instances_for_test(&store, &instances).unwrap();
+    assert_ne!(stale.producer_failures, 0);
+    assert!(result.is_none());
+    store.begin_build().unwrap();
+    assert!(closed.view(&publication, &store).is_err());
+}
