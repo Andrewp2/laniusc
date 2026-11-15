@@ -248,25 +248,49 @@ uint encoded_winner(uint node)
     return (canonical_hir_priority(canonical_kind(node)) << 28u) | (node + 1u);
 }
 
+groupshared uint g_candidate_count;
+groupshared uint g_candidate_anchor_max;
+groupshared uint g_candidate_anchor_sum;
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 dtid: SV_DispatchThreadID, uint lane: SV_GroupIndex)
 {
     uint node = tid(dtid);
-    if (node >= gCanonical.raw_capacity) return;
-    bool active = node < active_count();
-    bool candidate = active && is_canonical(node);
-    uint anchor = active ? anchor_for(node) : INVALID;
-    canonical_anchor_by_raw[node] = anchor;
-    candidate = candidate && anchor < gCanonical.canonical_capacity;
-    canonical_flag[node] = candidate ? 1u : 0u;
-    if (candidate)
+    // The status counters are summed in the workgroup first: one global
+    // atomic per workgroup instead of three per candidate row, which
+    // serialized on three words.
+    if (lane == 0u)
+    {
+        g_candidate_count = 0u;
+        g_candidate_anchor_max = 0u;
+        g_candidate_anchor_sum = 0u;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (node < gCanonical.raw_capacity)
+    {
+        bool active = node < active_count();
+        bool candidate = active && is_canonical(node);
+        uint anchor = active ? anchor_for(node) : INVALID;
+        canonical_anchor_by_raw[node] = anchor;
+        candidate = candidate && anchor < gCanonical.canonical_capacity;
+        canonical_flag[node] = candidate ? 1u : 0u;
+        if (candidate)
+        {
+            uint ignored;
+            InterlockedMax(canonical_anchor_owner[anchor], encoded_winner(node), ignored);
+            InterlockedAdd(g_candidate_count, 1u, ignored);
+            InterlockedMax(g_candidate_anchor_max, anchor, ignored);
+            InterlockedAdd(g_candidate_anchor_sum, anchor, ignored);
+        }
+        if (node == 0u) canonical_status[0u] = 0u;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (lane == 0u && g_candidate_count != 0u)
     {
         uint ignored;
-        InterlockedMax(canonical_anchor_owner[anchor], encoded_winner(node), ignored);
-        InterlockedAdd(canonical_status[4u], 1u, ignored);
-        InterlockedMax(canonical_status[5u], anchor, ignored);
-        InterlockedAdd(canonical_status[7u], anchor, ignored);
+        InterlockedAdd(canonical_status[4u], g_candidate_count, ignored);
+        InterlockedMax(canonical_status[5u], g_candidate_anchor_max, ignored);
+        InterlockedAdd(canonical_status[7u], g_candidate_anchor_sum, ignored);
     }
-    if (node == 0u) canonical_status[0u] = 0u;
 }
