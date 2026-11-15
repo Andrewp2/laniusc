@@ -13,7 +13,9 @@ void main()
     ob_count_match_arms[0u] = 0u;
     ob_count_match_payloads[0u] = 0u;
     ob_count_array_elements[0u] = pj_batch_side(PJ_SIDE_ARRAY_ELEMENTS);
-    ob_count_strings[0u] = 0u;
+    ob_count_strings[0u] = pj_batch_side(PJ_SIDE_STRINGS);
+    ob_string_pool_len[0u] = 4u * (pj_string_offsets[pj_base_at(b.hi,PJ_C_ROWS)] -
+        pj_string_offsets[pj_base_at(b.lo,PJ_C_ROWS)]);
     ob_count_params[0u] = pj_batch_side(PJ_SIDE_PARAMS);
     pj_status[PJ_S_BATCH + 0u] = b.lo;
     pj_status[PJ_S_BATCH + 1u] = b.hi;

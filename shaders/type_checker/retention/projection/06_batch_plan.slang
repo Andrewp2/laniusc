@@ -2,7 +2,7 @@
 // whose first global row is in [b * C, (b + 1) * C) for the configured C,
 // so a rank never straddles two batches and a batch exceeds C rows by less
 // than one instance. pj_batches[b]: (lo, hi, rows with the root row,
-// tokens), side lengths 0..3, (side lengths 4..6, 0). The status receives
+// tokens), side lengths 0..3, (side lengths 4..6, decoded string words). The status receives
 // the largest batch, for the host's one allocation of the batch columns.
 import type_checker.retention.projection.pj_common;
 
@@ -49,7 +49,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         w1 = uint4(span(lo, hi, PJ_C_SIDE + 0u), span(lo, hi, PJ_C_SIDE + 1u),
             span(lo, hi, PJ_C_SIDE + 2u), span(lo, hi, PJ_C_SIDE + 3u));
         w2 = uint4(span(lo, hi, PJ_C_SIDE + 4u), span(lo, hi, PJ_C_SIDE + 5u),
-            span(lo, hi, PJ_C_SIDE + 6u), 0u);
+            span(lo, hi, PJ_C_SIDE + 6u),
+            pj_string_offsets[pj_base_at(hi,PJ_C_ROWS)] - pj_string_offsets[pj_base_at(lo,PJ_C_ROWS)]);
+        InterlockedMax(pj_status[PJ_S_BATCH_STRING_WORDS],w2.w);
         InterlockedMax(pj_status[PJ_S_BATCH_ROWS], w0.z);
         InterlockedMax(pj_status[PJ_S_BATCH_TOKENS], w0.w + 1u);
         InterlockedMax(pj_status[PJ_S_BATCH_SIDE],

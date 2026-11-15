@@ -3,7 +3,7 @@
 // indices; a field keeps its struct-init ordinal and a parameter receives
 // its substituted declared type as the lowering's parameter reference.
 // Array elements retain their owner, value and ordinal.
-// (Match and string tables are empty: step 5 rejects their
+// (Match tables are empty: step 5 rejects their
 // rows.)
 import type_checker.retention.projection.pj_out;
 
@@ -33,6 +33,12 @@ void copy(Batch b, uint k, uint index)
     }
     else if (k == PJ_SIDE_ARRAY_ELEMENTS)
         ob_array_elements[index] = uint4(pj_abs_row(m, record.x), pj_abs_row(m, record.y), record.z, record.w);
+    else if (k == PJ_SIDE_STRINGS)
+    {
+        uint global = pj_base_at(rank,PJ_C_ROWS) + record.x;
+        uint offset = pj_string_offsets[global] - pj_string_offsets[pj_base_at(b.lo,PJ_C_ROWS)];
+        ob_strings[index] = uint4(pj_abs_row(m,record.x),offset*4u,record.z,0u);
+    }
 }
 
 [shader("compute")]
@@ -46,4 +52,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     copy(b, PJ_SIDE_FIELDS, index);
     copy(b, PJ_SIDE_PARAMS, index);
     copy(b, PJ_SIDE_ARRAY_ELEMENTS, index);
+    copy(b, PJ_SIDE_STRINGS, index);
 }

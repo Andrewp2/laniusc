@@ -69,6 +69,7 @@ public static const uint PJ_S_BATCH_ROWS = 40u;
 public static const uint PJ_S_BATCH_TOKENS = 41u;
 public static const uint PJ_S_BATCH_SIDE = 42u;
 public static const uint PJ_S_BATCH_NONEMPTY = 43u;
+public static const uint PJ_S_BATCH_STRING_WORDS = 44u;
 public static const uint PJ_STATUS_WORDS = 64u;
 public static const uint PJ_BATCH_WORDS = 3u;
 

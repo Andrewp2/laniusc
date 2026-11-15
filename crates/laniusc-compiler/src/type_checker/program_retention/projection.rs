@@ -160,6 +160,7 @@ const S_BATCH_ROWS: usize = 40;
 const S_BATCH_TOKENS: usize = 41;
 const S_BATCH_SIDE: usize = 42;
 const S_BATCH_NONEMPTY: usize = 43;
+const S_BATCH_STRING_WORDS: usize = 44;
 const S_BATCHES: usize = 9;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
@@ -183,6 +184,8 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/09_batch_finish",
     "type_checker/retention/projection/10_certify",
     "type_checker/retention/projection/10b_certify_finish",
+    "type_checker/retention/projection/04c_string_scan",
+    "type_checker/retention/projection/08b_string_bytes",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
@@ -199,6 +202,8 @@ const K_SIDE: usize = 11;
 const K_BATCH_FINISH: usize = 12;
 const K_CERTIFY: usize = 13;
 const K_CERTIFY_FINISH: usize = 14;
+const K_STRING_SCAN: usize = 15;
+const K_STRING_BYTES: usize = 16;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -335,6 +340,7 @@ pub struct ProjectionBatch {
     pub rows: u32,
     pub tokens: u32,
     pub side: [u32; 7],
+    pub string_words: u32,
 }
 
 /// What one projection run did.
@@ -397,6 +403,7 @@ struct ColumnShape {
     rows: u64,
     side: u64,
     types: u64,
+    string_words: u64,
 }
 
 /// The lowering columns of one batch: compact HIR and semantic views over
@@ -442,7 +449,7 @@ enum Size {
     Side,
     Types,
     One,
-    Words(u64),
+    StringWords,
 }
 
 /// u32 columns: (name, size class, words per element, fill word).
@@ -516,8 +523,8 @@ const WORD_COLUMNS: &[(&str, Size, u64, u32)] = &[
     ("z_variant_payload_row_count", Size::One, 1, 0),
     ("z_match_payload_start", Size::Side, 1, 0),
     ("z_match_payload_count", Size::Side, 1, 0),
-    ("z_string_data", Size::Words(1024), 1, 0),
-    ("z_string_pool_len", Size::One, 1, 0),
+    ("ob_string_data", Size::StringWords, 1, 0),
+    ("ob_string_pool_len", Size::One, 1, 0),
     ("z_method_count", Size::One, 1, 0),
 ];
 
@@ -574,7 +581,7 @@ impl BatchColumns {
                 Size::Side => shape.side,
                 Size::Types => shape.types,
                 Size::One => 1,
-                Size::Words(n) => n,
+                Size::StringWords => shape.string_words,
             };
             let (buffer, size) = make(name, count * per, fill);
             words.insert(
@@ -607,7 +614,7 @@ impl BatchColumns {
         let match_arms = typed!("z_match_arms", side, 4);
         let match_payloads = typed!("z_match_payloads", side, 4);
         let array_elements = typed!("ob_array_elements", side, 4);
-        let strings = typed!("z_strings", side, 4);
+        let strings = typed!("ob_strings", side, 4);
         let method_cores = typed!("z_method_cores", rows, 4);
         let method_signatures = typed!("z_method_signatures", rows, 4);
         let calls = typed!("ob_calls", rows, CALL_WORDS);
@@ -655,6 +662,7 @@ impl BatchColumns {
             "ob_call_args" => &self.call_args.buffer,
             "ob_fields" => &self.fields.buffer,
             "ob_array_elements" => &self.array_elements.buffer,
+            "ob_strings" => &self.strings.buffer,
             "ob_params" => &self.params.buffer,
             "ob_param_ranges" => &self.param_ranges.buffer,
             "ob_generic_param_ranges" => &self.generic_param_ranges.buffer,
@@ -710,8 +718,8 @@ impl BatchColumns {
             array_elements: &self.array_elements,
             string_count,
             strings: &self.strings,
-            string_data_words: self.w("z_string_data"),
-            string_pool_len: self.w("z_string_pool_len"),
+            string_data_words: self.w("ob_string_data"),
+            string_pool_len: self.w("ob_string_pool_len"),
             param_count,
             params: &self.params,
             param_ranges: &self.param_ranges,
@@ -897,6 +905,14 @@ impl RetainedProjection {
             ("pj_row_errors", storage(d, "pj_row_errors", n * 8, false)),
             ("pj_g_facts", storage(d, "pj_g_facts", n * 16, false)),
             ("pj_g_aux", storage(d, "pj_g_aux", n * 16, false)),
+            (
+                "pj_string_offsets",
+                storage(d, "pj_string_offsets", (n + 1) * 4, false),
+            ),
+            (
+                "pj_string_scratch",
+                storage(d, "pj_string_scratch", (n + 1) * 4, false),
+            ),
         ]
         .into_iter()
         .collect();
@@ -938,6 +954,7 @@ impl RetainedProjection {
             && columns.shape.rows >= shape.rows
             && columns.shape.side >= shape.side
             && columns.shape.types == shape.types
+            && columns.shape.string_words >= shape.string_words
         {
             return;
         }
@@ -946,6 +963,10 @@ impl RetainedProjection {
             rows: grown(previous.map_or(0, |p| p.rows as u32), shape.rows as u32) as u64,
             side: grown(previous.map_or(0, |p| p.side as u32), shape.side as u32) as u64,
             types: shape.types,
+            string_words: grown(
+                previous.map_or(0, |p| p.string_words as u32),
+                shape.string_words as u32,
+            ) as u64,
         };
         let previous = self.columns.take();
         let columns = BatchColumns::new(&self.device, shape, previous);
@@ -1038,7 +1059,8 @@ impl RetainedProjection {
         report: &mut ProjectionReport,
     ) -> Result<Option<ProjectionError>> {
         let cert = storage(&self.device, "nc_cert", 16, false);
-        self.queue.write_buffer(&cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
+        self.queue
+            .write_buffer(&cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
         let extra = [
             ("sb_results", results),
             ("sb_counts", counts),
@@ -1152,9 +1174,14 @@ impl RetainedProjection {
         if totals[S_INPUT_ERROR] != 0 {
             return Ok(ProjectionOutcome::Rejected {
                 error: ProjectionError {
-                    code: totals[S_INPUT_ERROR], detail: totals[S_INPUT_DETAIL],
-                    rank: u32::MAX, decl: u32::MAX, row: u32::MAX,
-                    token: u32::MAX, file: u32::MAX, byte: u32::MAX,
+                    code: totals[S_INPUT_ERROR],
+                    detail: totals[S_INPUT_DETAIL],
+                    rank: u32::MAX,
+                    decl: u32::MAX,
+                    row: u32::MAX,
+                    token: u32::MAX,
+                    file: u32::MAX,
+                    byte: u32::MAX,
                 },
                 report,
             });
@@ -1162,13 +1189,21 @@ impl RetainedProjection {
         if report.instances == 0 {
             if let Some(roots) = &roots {
                 let guard = store.store.lock().unwrap();
-                if let Some(error) =
-                    self.certify(&guard, inputs, roots, &self.no_results, &self.no_counts, &mut report)?
-                {
+                if let Some(error) = self.certify(
+                    &guard,
+                    inputs,
+                    roots,
+                    &self.no_results,
+                    &self.no_counts,
+                    &mut report,
+                )? {
                     return Ok(ProjectionOutcome::Rejected { error, report });
                 }
             }
-            return Ok(ProjectionOutcome::Objects { objects: Vec::new(), report });
+            return Ok(ProjectionOutcome::Objects {
+                objects: Vec::new(),
+                report,
+            });
         }
 
         // Substitution requests and the engine.
@@ -1242,6 +1277,7 @@ impl RetainedProjection {
                 rows: current.map_or(64, |c| c.rows),
                 side: current.map_or(64, |c| c.side),
                 types: self.type_capacity as u64,
+                string_words: current.map_or(1, |c| c.string_words),
             },
             &mut report,
         );
@@ -1255,6 +1291,42 @@ impl RetainedProjection {
         }
         r.dispatch(K_ROWS_INIT, &guard, inputs, &extra, report.rows.max(1))?;
         r.dispatch(K_EDGES, &guard, inputs, &extra, report.rows.max(1))?;
+        if totals[S_TOTALS + 7] != 0 {
+            let mut input = 0u32;
+            let mut distance = 0u32;
+            loop {
+                let config = storage(&self.device, "pj_string_scan_config", 16, false);
+                self.queue
+                    .write_buffer(&config, 0, &words_bytes(&[distance, input, 0, 0]));
+                let scan_extra = [
+                    ("sb_results", &results),
+                    ("sb_counts", &counts),
+                    ("pj_string_scan_config", &config),
+                ];
+                r.dispatch(K_STRING_SCAN, &guard, inputs, &scan_extra, report.rows + 1)?;
+                if distance == 0 {
+                    distance = 1;
+                } else {
+                    input ^= 1;
+                    if distance > report.rows / 2 {
+                        break;
+                    }
+                    distance *= 2;
+                }
+            }
+            if input == 1 {
+                r.encoder.copy_buffer_to_buffer(
+                    &self.rows["pj_string_scratch"],
+                    0,
+                    &self.rows["pj_string_offsets"],
+                    0,
+                    (report.rows as u64 + 1) * 4,
+                );
+            }
+        } else {
+            r.encoder
+                .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
+        }
         r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
         r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
         r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
@@ -1280,7 +1352,8 @@ impl RetainedProjection {
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
         if let Some(roots) = &roots
-            && let Some(error) = self.certify(&guard, inputs, roots, &results, &counts, &mut report)?
+            && let Some(error) =
+                self.certify(&guard, inputs, roots, &results, &counts, &mut report)?
         {
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
@@ -1303,6 +1376,7 @@ impl RetainedProjection {
                 rows: w[2],
                 tokens: w[3],
                 side: [w[4], w[5], w[6], w[7], w[8], w[9], w[10]],
+                string_words: w[11],
             })
             .collect();
         report.batches = all.iter().copied().filter(|b| b.lo < b.hi).collect();
@@ -1316,6 +1390,7 @@ impl RetainedProjection {
             rows: status[S_BATCH_ROWS].max(1) as u64,
             side: (status[S_BATCH_SIDE].max(status[S_BATCH_ROWS])).max(1) as u64,
             types: self.type_capacity as u64,
+            string_words: status[S_BATCH_STRING_WORDS].max(1) as u64,
         };
         let token_capacity = status[S_BATCH_TOKENS].max(1);
         self.ensure_columns(shape, &mut report);
@@ -1330,6 +1405,9 @@ impl RetainedProjection {
             let mut r = self.recorder();
             r.dispatch(K_ROWS, &guard, inputs, &extra, batch.rows)?;
             r.dispatch(K_SIDE, &guard, inputs, &extra, side)?;
+            if batch.string_words != 0 {
+                r.dispatch(K_STRING_BYTES, &guard, inputs, &extra, batch.string_words)?;
+            }
             r.dispatch_groups(K_BATCH_FINISH, &guard, inputs, &extra, 1)?;
             report.dispatches += r.finish();
             trace(&format!("lowering batch {b}: {batch:?}"));

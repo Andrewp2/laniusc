@@ -364,7 +364,7 @@ bool supported_form(uint kind, uint4 p)
     if (kind == RT_HIR_STMT)
         return p.x == STMT_LET || p.x == 4u || p.x == STMT_RETURN || p.x == STMT_IF || p.x == STMT_ASSIGN ||
             p.x == STMT_WHILE || p.x == 0u;
-    if (kind == RT_HIR_LITERAL_EXPR) return p.x != EXPR_STRING;
+    if (kind == RT_HIR_LITERAL_EXPR) return true;
     if (kind == RT_HIR_EXPR) return p.x != EXPR_STRING;
     return false;
 }
@@ -498,6 +498,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             fail(at, PJ_E_SIGNATURE, 0xfffbu);
     }
 
+    else if (kind == RT_HIR_LITERAL_EXPR && p.x == EXPR_STRING)
+    {
+        if (t != SCALAR_STR || p.y >= pj_side_len(at.rank,PJ_SIDE_STRINGS))
+            fail(at,PJ_E_FORM,kind | (p.x << 8u));
+        else
+        {
+            uint4 record = pj_side(at.rank,PJ_SIDE_STRINGS,p.y,0u);
+            uint words = (record.z + 4u) >> 2u;
+            if (record.x != at.row || record.z >= 0xfffffffbu || record.y > rt_counts[RT_A_SEG_BYTES] ||
+                words > rt_counts[RT_A_SEG_BYTES] - record.y)
+                fail(at,PJ_E_INCOMPLETE,p.y);
+        }
+    }
     else if (kind == RT_HIR_LITERAL_EXPR || (kind == RT_HIR_EXPR && (p.x == EXPR_INT || p.x == EXPR_FLOAT)))
         check_literal(at, p, t, changed);
     else if (kind == RT_HIR_BINARY_EXPR)

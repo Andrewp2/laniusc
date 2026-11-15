@@ -521,3 +521,84 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_strings_keep_decoded_bytes_across_batches_and_rebuilds() {
+    common::run_with_timeout("retained native strings", || {
+        let directory = std::env::temp_dir().join(format!(
+            "lanius-retained-native-strings-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("main.lani");
+        std::fs::write(
+            &app,
+            r#"module app::main;
+import text::lib;
+extern "lanius_std" fn write_text(handle:i32, text:str)->i32;
+fn main()->i32 {
+    write_text(1, message<bool>(true, 0));
+    write_text(1, empty<i32>(0));
+    write_text(1, keep<str>(message<i32>(1, 1)));
+    write_text(1, long_text<u8>(2));
+    return 42;
+}
+"#,
+        )
+        .unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        // Independent pools and relocations in several native objects. Shrinking
+        // and then growing the pool on later builds must not retain old bytes.
+        build.options.batch_rows = 8;
+        for (length, batch_rows) in [(8193, 8), (3, 4096), (16385, 8)] {
+            build.options.batch_rows = batch_rows;
+            let long = "abcλ".repeat(length);
+            std::fs::write(
+                &lib,
+                format!(
+                    r#"module text::lib;
+pub fn keep<T>(v:T)->T {{ return v; }}
+pub fn message<T>(tag:T, which:i32)->str {{
+    if (which == 0) {{ return "hello\n\"λ\"\\\t"; }}
+    return "second\n";
+}}
+pub fn empty<T>(tag:T)->str {{ return ""; }}
+pub fn long_text<T>(tag:T)->str {{ return "{long}"; }}
+"#
+                ),
+            )
+            .unwrap();
+            let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+                ExplicitSourceLibraryPaths {
+                    library_id: 1,
+                    paths: vec![lib.clone()],
+                    dependency_library_ids: vec![],
+                },
+                ExplicitSourceLibraryPaths {
+                    library_id: 2,
+                    paths: vec![app.clone()],
+                    dependency_library_ids: vec![1],
+                },
+            ])
+            .unwrap();
+            let before = fallback_counters();
+            let elf = pollster::block_on(
+                compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+            )
+            .unwrap_or_else(|e| panic!("strings ({length}): {e:?}"));
+            assert_eq!(fallback_counters().1, before.1, "no replay lowering");
+            assert_eq!(build.report.instance_objects > 1, batch_rows == 8);
+            let output =
+                common::run_x86_64_elf_output("retained strings", "retained_strings", &elf);
+            assert_eq!(output.status.code(), Some(42), "{output:?}");
+            assert_eq!(
+                output.stdout,
+                format!("hello\n\"λ\"\\\tsecond\n{long}").as_bytes()
+            );
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

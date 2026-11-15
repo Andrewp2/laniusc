@@ -62,6 +62,14 @@ void main(uint3 id: SV_DispatchThreadID)
     }
     uint callee = dg_entry(u0.w);
     if (callee == RT_INVALID) { dg_fail(root,lane,use,2u,u0.w); return; }
+    // Original objects already lower nongeneric extern calls through the
+    // target ABI. They have no body to instantiate and no provisional symbol.
+    if (root != 0u && rt_dir[callee * RT_DIR_WORDS].y == 4u &&
+        !dg_generic(callee) && !dg_predicates(callee))
+    {
+        dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
+        return;
+    }
     if (rt_dir[callee * RT_DIR_WORDS].y != 1u || dg_predicates(callee))
     { dg_fail(root,lane,use,4u,u0.w); return; }
     if (!dg_generic(callee))

@@ -41,6 +41,8 @@ public RWStructuredBuffer<uint4> pj_g_facts;
 // Per global row: (expression parent global row, member word offset, member
 // word count, 0).
 public RWStructuredBuffer<uint4> pj_g_aux;
+public RWStructuredBuffer<uint> pj_string_offsets;
+public RWStructuredBuffer<uint> pj_string_scratch;
 // Closed-type layout per TermId: (native words or RT_INVALID, lowering
 // instance kind, field count, 0).
 public globallycoherent RWStructuredBuffer<uint4> pj_layout;

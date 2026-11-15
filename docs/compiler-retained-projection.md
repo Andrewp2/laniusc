@@ -102,10 +102,12 @@ term, row or route.
 | substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
+| `04c_string_scan` | one per global row, logarithmic scan steps only when strings exist | exclusive decoded-word offsets in instance/row order |
 | `05_check` | one per global row | forms, types, literal, operator and destination rules, calls, record literals, members |
 | `05b_report` | 1 | first error in (rank, row) order, or CHECKED |
 | `06_batch_plan` | one per batch | rank range, rows, tokens and side tables of each batch; maxima |
 | `07_rows`, `08_side`, `09_batch_finish` | one per batch row / side row / 1 | lowering HIR and semantic columns, lowering counts |
+| `08b_string_bytes` | one per decoded word | compact batch string pool; binary search of row offsets finds each source word |
 | lowering | existing pipeline | `GpuCompiler::lower_projected_x86_batch`: semantic LIR, optimization, x86 object |
 
 Every rank is checked before any batch is projected, so a rejected run
@@ -198,7 +200,7 @@ step falls back to replay.
 
 v1 projects free functions whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `break`, `continue`, assignment, unary and binary operators,
-integer, float and boolean literals, names of locals and parameters, member
+integer, float, boolean and string literals, names of locals and parameters, member
 reads of nominal structs, struct literals, plain array literals, indexing and direct calls.
 Types include scalars, arrays, slices, references and closed nominal structs
 whose fields are closed terms or the struct's own type parameters. Arrays
@@ -217,7 +219,7 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
-| string literals, `for`, `?` | `FORM` or `TYPE` |
+| `for`, `?` | `FORM` or `TYPE` |
 | methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
 | const-generic nominal layouts and named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
@@ -359,3 +361,19 @@ The semantic artifact producer now applies name resolution only to name/path
 expressions. A return statement's form word also equals 2; treating it as
 a name gave `return N` a spurious binding on the return statement itself.
 The value expression retains its exact constant parameter binding.
+
+### String storage
+
+String metadata keeps the decoded length and the retained byte-arena range.
+Projection scans word lengths in instance/row order, then copies one decoded
+word per GPU lane into the current lowering batch. Each string includes its
+NUL and word padding. A lane finds its source by binary search over row offsets;
+no lane walks the bytes of a long string. Native string values retain their
+two-word pointer/length ABI. Original nongeneric extern calls keep their
+frontend-checked targets and never enter monomorphization.
+
+`retained_native_strings_keep_decoded_bytes_across_batches_and_rebuilds`
+checks exact stdout for empty, escaped Unicode and long strings, multiple
+strings per template, one shared batch and several batches, then shrinking
+and growing the pools in the same build allocations. All three executions
+exit 42 with zero source replay. The full `retained_` filter passes 21 tests.
