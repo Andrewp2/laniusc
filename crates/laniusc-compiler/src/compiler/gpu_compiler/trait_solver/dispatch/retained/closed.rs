@@ -320,14 +320,10 @@ impl RetainedTraitPublication {
             .checked_mul(2)
             .and_then(|n| n.max(1).checked_next_power_of_two())
             .ok_or_else(|| anyhow!("closed atom slots overflow"))?;
-        let mut steps = Vec::new();
-        let mut distance = 1u32;
-        while distance < lanes {
-            steps.push(distance);
-            distance = distance
-                .checked_mul(2)
-                .ok_or_else(|| anyhow!("closed scan overflow"))?;
-        }
+        // The count scan is a block scan: block-local scans, one workgroup
+        // over the block totals, then the block prefixes added (07_scan
+        // modes 0, 1, 2). The result is in cw_scan_a (config word 7 = 0).
+        let steps = [0u32, 1, 2];
         let mut config = vec![0; 104];
         config[..8].copy_from_slice(&[
             terms,
@@ -337,7 +333,7 @@ impl RetainedTraitPublication {
             end,
             generation,
             slots,
-            steps.len() as u32 % 2,
+            0,
         ]);
         for t in 0..TABLE_COUNT {
             config[32 + t] = catalog.slices[t].offset;
@@ -345,9 +341,8 @@ impl RetainedTraitPublication {
             config[86 + t] = WIDTHS[t];
         }
         let mut step_words = vec![0; steps.len().max(1) * STAGE_STRIDE as usize / 4];
-        for (i, distance) in steps.iter().enumerate() {
-            step_words[i * 64] = *distance;
-            step_words[i * 64 + 1] = i as u32 % 2;
+        for (i, mode) in steps.iter().enumerate() {
+            step_words[i * 64] = *mode;
         }
         for (name, size) in [
             ("cw_config", 104),
@@ -360,6 +355,7 @@ impl RetainedTraitPublication {
             ("cw_indirect", 3),
             ("cw_scan_a", mul(lanes, 8, "closed scan")?),
             ("cw_scan_b", mul(lanes, 8, "closed scan")?),
+            ("cw_blocks", mul(lanes.div_ceil(256), 8, "closed scan blocks")?),
             ("cw_step", step_words.len() as u32),
             ("idle", 4),
         ] {
@@ -428,8 +424,9 @@ impl RetainedTraitPublication {
             recorded += rounds;
             producer.record(&mut encoder, 5, terms, store, &ext, 0)?;
             producer.record(&mut encoder, 6, lanes, store, &ext, 0)?;
-            for i in 0..steps.len() {
-                producer.record(&mut encoder, 7, lanes, store, &ext, i as u32)?;
+            for (i, mode) in steps.iter().enumerate() {
+                let scan_lanes = if *mode == 1 { 1 } else { lanes };
+                producer.record(&mut encoder, 7, scan_lanes, store, &ext, i as u32)?;
             }
             producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
             passes_core::flush_deferred_compute(&mut encoder);

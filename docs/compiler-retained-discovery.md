@@ -71,6 +71,15 @@ before. A wave with closed predicates then costs three readbacks: the
 producer, the solver and resolution. Settings: 74 per build.
 
 A parallel prefix scan assigns each frontier instance a range of use edges.
+It is a block scan in three dispatches (`02_scan` modes 3, 4 and 2): each
+256-lane workgroup scans its instances' use counts in shared memory and
+writes its total to `dg_scan_blocks`, one workgroup turns the totals into
+exclusive prefixes, and the placement pass adds them. The placement writes
+the inclusive prefixes to `dg_scan_a`, which the request pass searches. The
+Hillis-Steele scan it replaces took one dispatch per power of two of the
+frontier width. With the closed producer's block scan, settings records
+5346 instead of 5418 dispatches and discovery's host gaps shrink by about
+a third.
 Request production and result consumption use one lane per edge or request;
 no lane walks a function's call list. The interner may allocate unpublished
 candidate records under contention. They are tombstoned and omitted from

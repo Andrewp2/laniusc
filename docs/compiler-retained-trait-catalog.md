@@ -424,6 +424,14 @@ idempotent constant, count, scan and total passes, up to 65 rounds in all.
 A frontier still pending after 65 rounds is failure code 7, as before. The
 settings app needs one batch per wave. The whole-term scans remain.
 
+The counter scan (`closed/07_scan`) is a block scan in three dispatches
+for any lane count: each 256-lane workgroup scans its lanes' two `uint4`
+counter blocks in shared memory and writes its totals to `cw_blocks`, one
+workgroup turns the totals into exclusive prefixes, and a last pass adds
+each block's prefix. The result is in `cw_scan_a` (config word 7 is 0).
+The Hillis-Steele scan it replaces took one dispatch per power of two of
+the lane count (13 to 14 for settings).
+
 Focused validation includes seven concrete calls, generic impl bindings,
 constant arguments, a 40-method impl, concurrent wave publications, stale
 instances, and a fault changing a previously proven Local binding to an

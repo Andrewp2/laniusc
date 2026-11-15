@@ -317,43 +317,15 @@ impl RetainedDiscovery {
                 if let Some(proofs) = &closed {
                     proofs.copy_receipt(&mut encoder, &self.scratch["dg_receipt"], 0);
                 }
-                self.record(
-                    &mut encoder,
-                    &guard,
-                    2,
-                    config,
-                    &extra,
-                    hi - lo,
-                    &mut report,
-                )?;
-                let mut distance = 1;
-                while distance < hi - lo {
-                    config[0] = 1;
-                    config[8] = distance;
-                    self.record(
-                        &mut encoder,
-                        &guard,
-                        2,
-                        config,
-                        &extra,
-                        hi - lo,
-                        &mut report,
-                    )?;
-                    config[9] ^= 1;
-                    distance = distance
-                        .checked_mul(2)
-                        .ok_or_else(|| anyhow!("discovery scan exhausted"))?;
+                // A block scan places the frontier's uses: block-local
+                // scans, one workgroup over the block totals, then the
+                // placement, whose prefixes later passes read from
+                // dg_scan_a (config 9 = 0).
+                for mode in [3, 4, 2] {
+                    config[0] = mode;
+                    let lanes = if mode == 4 { 1 } else { hi - lo };
+                    self.record(&mut encoder, &guard, 2, config, &extra, lanes, &mut report)?;
                 }
-                config[0] = 2;
-                self.record(
-                    &mut encoder,
-                    &guard,
-                    2,
-                    config,
-                    &extra,
-                    hi - lo,
-                    &mut report,
-                )?;
                 // The scan's last lane sizes the request pass; no host
                 // readback separates them. After an edge overflow the pass
                 // has no workgroups, and resolution skips itself after any
@@ -855,6 +827,7 @@ impl RetainedDiscovery {
             ("dg_slots", i * 8),
             ("dg_scan_a", i * 4),
             ("dg_scan_b", i * 4),
+            ("dg_scan_blocks", i.div_ceil(256) * 4),
             ("dg_edges", e * 16),
             ("dg_targets",e*8),
             ("dg_edge_owner", e * 8),
