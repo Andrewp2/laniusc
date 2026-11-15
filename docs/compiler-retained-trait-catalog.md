@@ -27,7 +27,8 @@ replays sources, and this path does not remove that replay. The list under
 1. The host reads `rt_counts` (96 words) and sizes seven lane regions:
    declarations, parameters, terms, directory entries, trait records, uses
    and committed jobs. One lane handles one retained record.
-2. Pass `00_mark` records each committed job's (library, unit). It also
+2. Pass `00_mark` reads each committed job's (library, unit) from `rt_jobs`,
+   including jobs with no declarations, and checks directory ownership. It also
    counts each trait's required members and marks callers that own a
    selected use. Pass `01_units` indexes the jobs by (library, unit).
    Passes `02a`–`02c` sort the impl bindings (see "Binding ranks").
@@ -178,6 +179,19 @@ not a sort over the whole catalog.
   poison are written by `09_fill_words`; the host uploads no arena-sized
   data.
 
+The empty-unit regression exports an import-only job between the library
+and application jobs, with no directory entry for that middle job. Its
+job arena starts with one row, so the second job rolls back and retries
+after growth. The test checks the three exact unit identities, rebuilds
+with a different empty-unit identity in the same allocations, and rejects
+a stale job-record generation. Before durable job records, the same
+import-only job failed with `SNAPSHOT` despite a ready export.
+
+The integrated catalog, retention, substitution and legacy generic-impl
+checks passed (11 tests) under the GPU lock with one test thread. Logs and
+the empty-unit negative control are in
+`target/retained-catalog-publication-evidence/` in the integration worktree.
+
 ## Publication
 
 `retained_trait_publish` returns a `RetainedTraitPublication` when the
@@ -270,10 +284,6 @@ instructions. No producer kernel uses local arrays.
 - The export does not complete a struct literal of a const-generic struct
   (`Grid { value: v }` for `Grid<T, const N: u32>`), so the test passes
   a `Grid<Local, 4>` value only as a parameter.
-- A committed unit with no directory rows has no (library, unit) record,
-  so its job's snapshot stays invalid and the check fails with
-  `SNAPSHOT`. The fix is a durable per-job (library, unit) record written
-  at commit, which needs a store arena (slot 15 is the last free one).
 - Uses whose callee is outside the store, extern, or a trait member are not
   turned into goals. Only direct and inherent-method calls between store
   callables are.

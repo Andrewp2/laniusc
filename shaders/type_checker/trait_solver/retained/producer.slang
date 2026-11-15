@@ -484,18 +484,28 @@ public void mark_lane(uint lane)
         uint decl = dir(entry, 0u).x;
         uint job = dir(entry, 3u).z;
         uint4 key = rt_decl_key[decl];
-        if (job >= cfg(RC_CFG_JOBS)) { fail(RC_E_SNAPSHOT, lane); return; }
-        uint previous;
-        InterlockedCompareExchange(rc_snapshot[job * 2u], RC_INVALID, key.x, previous);
-        if (previous != RC_INVALID && previous != key.x) fail(RC_E_SNAPSHOT, lane);
-        InterlockedCompareExchange(rc_snapshot[job * 2u + 1u], RC_INVALID, key.y, previous);
-        if (previous != RC_INVALID && previous != key.y) fail(RC_E_SNAPSHOT, lane);
+        if (job >= cfg(RC_CFG_JOBS) || job >= rt_counts[RT_A_JOBS] || job >= rt_capacity(RT_A_JOBS))
+        { fail(RC_E_SNAPSHOT, lane); return; }
+        uint4 identity = rt_jobs[job];
+        if (identity.x != key.x || identity.y != key.y || identity.z != cfg(RC_CFG_GENERATION))
+            fail(RC_E_SNAPSHOT, lane);
         if (entry_kind(entry) == KIND_REQUIRED_MEMBER)
         {
             uint trait_entry = entry_of(dir(entry, 0u).z);
             if (entry_kind(trait_entry) != KIND_TRAIT) { fail(RC_E_REQUIRED_MEMBER, lane); return; }
             InterlockedAdd(rc_entry[trait_entry * 2u + 1u], 1u);
         }
+    }
+    else if (record.x == RC_R_JOB)
+    {
+        uint job = record.y;
+        if (rt_counts[RT_A_JOBS] != cfg(RC_CFG_JOBS) || job >= rt_capacity(RT_A_JOBS))
+        { fail(RC_E_SNAPSHOT, lane); return; }
+        uint4 identity = rt_jobs[job];
+        if (identity.z != cfg(RC_CFG_GENERATION) || identity.w != 0u)
+        { fail(RC_E_SNAPSHOT, lane); return; }
+        rc_snapshot[job * 2u] = identity.x;
+        rc_snapshot[job * 2u + 1u] = identity.y;
     }
     else if (record.x == RC_R_USE)
     {
@@ -513,7 +523,8 @@ public void unit_lane(uint lane)
     uint job = record.y;
     uint library = rc_snapshot[job * 2u];
     uint unit = rc_snapshot[job * 2u + 1u];
-    if (library == RC_INVALID || unit == RC_INVALID) { fail(RC_E_SNAPSHOT, lane); return; }
+    // Pass 00 validates the job record. No library value is a sentinel.
+    if (rc_state[RC_S_FAILURES] != 0u) return;
     uint slots = cfg(RC_CFG_UNIT_SLOTS);
     uint slot = unit_hash(library, unit) & (slots - 1u);
     for (uint probe = 0u; probe < slots; probe++)

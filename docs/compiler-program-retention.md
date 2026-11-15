@@ -417,12 +417,20 @@ Reference domains inside a body:
 1. Step 00 records every arena counter as the job's watermark.
 2. Steps 01–15 intern and write records. An allocation past a capacity
    records the overflow bit and the demand.
-3. Step 16 commits when nothing overflowed. Otherwise it restores every
-   counter and spare counter to the watermark.
+3. Step 16 reserves one job record, then commits when nothing overflowed.
+   Otherwise it restores every counter and spare counter to the watermark,
+   including the job-record counter.
 4. Step 17 publishes the job's staged directory entries.
 5. Step 18 clears every hash slot that points at a record allocated by a
    rolled-back job. Linear probing stays sound, because no older probe chain
    crosses a slot that a later key filled.
+
+`rt_jobs` (arena 15) contains one uint4 per committed job ordinal:
+`(library, unit, build generation, 0)`. Even a job with no declarations
+publishes this record. The catalog reads unit identities from these records
+and checks each directory entry against its job. The arena counter equals
+`RT_C_JOBS` after commit; rolled-back attempts leave neither a job nor a row.
+Growth copies the committed prefix, and `begin_build` resets both counters.
 
 No partial or duplicated record of a failed job stays reachable. Then:
 

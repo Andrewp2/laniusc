@@ -117,7 +117,8 @@ const A_SEG_SIDE: usize = 11;
 const A_SEG_BYTES: usize = 12;
 const A_SEG_TOKENS: usize = 13;
 const A_TRAITS: usize = 14;
-const ARENAS: usize = 15;
+const A_JOBS: usize = 15;
+const ARENAS: usize = 16;
 
 /// rt_counts words (retention_store.slang RT_C_*).
 pub mod counts {
@@ -175,6 +176,7 @@ const RECORD_BYTES: [u64; ARENAS] = [
     4,           // string bytes and body text
     16,          // body tokens
     32,          // trait facts (predicates, impl method bindings)
+    16,          // committed job identity (including jobs with no declarations)
 ];
 
 /// Record capacities of the store's arenas and hash tables.
@@ -191,7 +193,7 @@ impl Default for ProgramRetentionCapacity {
         Self {
             arenas: [
                 4096, 4096, 16384, 32768, 4096, 8192, 16384, 8192, 16384, 2048, 65536, 32768,
-                65536, 65536, 4096,
+                65536, 65536, 4096, 64,
             ],
             slots: [8192, 8192, 32768],
         }
@@ -202,7 +204,7 @@ impl ProgramRetentionCapacity {
     /// Deliberately tiny capacities: a test of the overflow/retry protocol.
     pub fn tiny() -> Self {
         Self {
-            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4, 4, 1],
+            arenas: [4, 4, 34, 4, 2, 2, 2, 2, 2, 1, 4, 4, 4, 4, 1, 1],
             slots: [8, 8, 8],
         }
     }
@@ -255,6 +257,7 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_seg_bytes", Sized::Arena(A_SEG_BYTES, 4)),
     ("rt_seg_tokens", Sized::Arena(A_SEG_TOKENS, 16)),
     ("rt_traits", Sized::Arena(A_TRAITS, 32)),
+    ("rt_jobs", Sized::Arena(A_JOBS, 16)),
 ];
 
 const EXPORT_KERNELS: &[&str] = &[
@@ -1028,7 +1031,7 @@ impl ProgramRetention {
             live[arena] = words[arena].saturating_sub(first) as u64 * RECORD_BYTES[arena];
             capacity[arena] = store.capacity.arenas[arena] as u64 * RECORD_BYTES[arena];
         }
-        let resident_discovery = [A_DECLS, A_PARAMS, A_TERMS, A_TERM_ARGS, A_DIR, A_BINDERS, A_SIGS, A_SCHEMA, A_USES, A_TRAITS]
+        let resident_discovery = [A_DECLS, A_PARAMS, A_TERMS, A_TERM_ARGS, A_DIR, A_BINDERS, A_SIGS, A_SCHEMA, A_USES, A_TRAITS, A_JOBS]
             .iter()
             .map(|&a| live[a])
             .sum();

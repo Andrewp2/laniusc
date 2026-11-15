@@ -15,8 +15,13 @@ import type_checker.retention.export.dispatch;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint staged = rt_counts[RT_C_STAGED_DIR];
+    // The job identity is retained even when no declaration was staged.
+    // Reserve before deciding the transaction so lack of job space rolls
+    // back all the job's other arenas and requests growth in the same way.
+    uint job = rt_alloc(RT_A_JOBS, 1u);
     if (rt_counts[RT_C_OVERFLOW] == 0u)
     {
+        rt_jobs[job] = uint4(rt_counts[RT_C_LIBRARY], rt_counts[RT_C_UNIT], rt_counts[RT_C_GENERATION], 0u);
         rt_counts[RT_C_JOB_STATE] = RT_JOB_COMMITTED;
         rt_counts[RT_C_JOBS] += 1u;
         rt_counts[RT_C_INVARIANT_TOTAL] += rt_counts[RT_C_INVARIANTS];

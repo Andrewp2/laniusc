@@ -63,6 +63,9 @@ public globallycoherent RWStructuredBuffer<uint4> rt_uses;      // RT_USE_WORDS 
 // argument terms, in the owner's scope.
 public globallycoherent RWStructuredBuffer<uint4> rt_dir_trait;
 public globallycoherent RWStructuredBuffer<uint4> rt_traits;
+// One row per committed job ordinal, including jobs with no declarations:
+// (library, unit, build generation, 0). Published only on transaction commit.
+public globallycoherent RWStructuredBuffer<uint4> rt_jobs;
 // Body payloads (streamable: nothing in the discovery records points into
 // them except a segment index and arena ranges).
 public globallycoherent RWStructuredBuffer<uint4> rt_segments;  // RT_SEG_WORDS per segment
@@ -157,7 +160,8 @@ public static const uint RT_A_SEG_SIDE = 11u;
 public static const uint RT_A_SEG_BYTES = 12u;
 public static const uint RT_A_SEG_TOKENS = 13u;
 public static const uint RT_A_TRAITS = 14u;
-public static const uint RT_ARENAS = 15u;
+public static const uint RT_A_JOBS = 15u;
+public static const uint RT_ARENAS = 16u;
 
 // rt_counts layout.
 public static const uint RT_C_JOB_BASE = 16u;   // + arena: counter at the job's start
@@ -219,6 +223,7 @@ public uint rt_capacity(uint arena)
     if (arena == RT_A_SEG_BYTES) { rt_seg_bytes.GetDimensions(n, s); return n; }
     if (arena == RT_A_SEG_TOKENS) { rt_seg_tokens.GetDimensions(n, s); return n; }
     if (arena == RT_A_TRAITS) { rt_traits.GetDimensions(n, s); return n / RT_TRAIT_WORDS; }
+    if (arena == RT_A_JOBS) { rt_jobs.GetDimensions(n, s); return n; }
     return 0u;
 }
 

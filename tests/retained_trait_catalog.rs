@@ -623,6 +623,47 @@ fn assert_answers(queries: &[Query], answers: &[[u32; 16]]) {
 }
 
 #[test]
+fn retained_trait_catalog_keeps_empty_unit_snapshots() {
+    let compiler = compiler();
+    let mut capacity = ProgramRetentionCapacity::default();
+    capacity.arenas[15] = 1;
+    let store = ProgramRetention::new(capacity).unwrap();
+    for (build, empty_library) in [32, 33].into_iter().enumerate() {
+        store.begin_build().unwrap();
+        compiler.attach_program_retention(Some(store.clone()));
+        let library = pollster::block_on(compiler.semantic_interface_for_source_pack(LIB_A, &[LIBRARY.as_str()])).unwrap();
+        let before = store.status().unwrap()[4];
+        pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(
+            empty_library, &["module rtc::empty; import rtc::a;"], std::slice::from_ref(&library),
+        )).unwrap();
+        assert_eq!(store.status().unwrap()[4], before, "the import-only job has no directory entries");
+        pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(LIB_B, &[APP.as_str()], &[library])).unwrap();
+        compiler.attach_program_retention(None);
+        let reports = store.job_reports();
+        assert_eq!(reports.len(), 3);
+        assert!(reports.iter().all(|r| r.ready));
+        assert_eq!(reports[1].attempts, if build == 0 { 2 } else { 1 }, "job-arena overflow retries once; the next build reuses capacity");
+        let status = store.status().unwrap();
+        assert_eq!((status[15], status[counts::JOBS]), (3, 3), "only committed job rows are retained");
+        assert_eq!(status[counts::ROLLBACKS], if build == 0 { 1 } else { 0 });
+        pollster::block_on(compiler.release_resident_job_buffers());
+        store.poison_scratch();
+        let report = check(&compiler, &store, RetainedTraitOptions::default());
+        assert!(solved(&report), "{report:#?}");
+        assert_eq!(report.rows[0], 3);
+        let jobs = chunks::<4>(store.read_store_words("rt_jobs", 12).unwrap());
+        for (job, library) in [LIB_A, empty_library, LIB_B].into_iter().enumerate() {
+            assert_eq!(jobs[job], [library, 0, store.generation(), 0], "no stale or rolled-back job row");
+            assert_eq!(report.row(0, job as u32).unwrap(), [library, 0, job as u32, store.generation()]);
+        }
+    }
+    store.write_store_words("rt_jobs", 6, &[store.generation() - 1]).unwrap();
+    let stale = check(&compiler, &store, RetainedTraitOptions::default());
+    assert_eq!(stale.stage, RetainedTraitStage::Producer);
+    assert_eq!(stale.first_failure.map(|f| f.0), Some(2), "a stale empty-unit record fails SNAPSHOT");
+}
+
+#[test]
 fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     let compiler = compiler();
     let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
