@@ -260,7 +260,7 @@ impl GpuCompiler<'_> {
         }.await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
-        match self.link_retained(SourcePackArtifactTarget::X86_64, originals?, &[], build, false, None)? {
+        match self.link_retained(SourcePackArtifactTarget::X86_64, originals?, &[], build, typecheck::NativeObjectStore::Keep, None)? {
             ResidentLinkedOutput::Bytes(bytes)=>Ok(bytes),
             ResidentLinkedOutput::File(_)=>unreachable!(),
         }
