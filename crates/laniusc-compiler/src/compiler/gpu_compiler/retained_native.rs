@@ -496,7 +496,7 @@ impl GpuCompiler<'_> {
             let bridge = super::native_codegen::native_main_bridge(&objects)?;
             let plan_span = x86::TailSpan::new("tail.native.plan");
             let plan = x86::native::plan_native_link(&objects, native_functions, bridge, options)
-                .map_err(|e| retained_error("native link plan", e))?;
+                .map_err(|e| super::x86_codegen::x86_source_pack_link_error("native link plan", e))?;
             drop(plan_span);
             let _write_span = x86::TailSpan::new("tail.native.link_write");
             if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {

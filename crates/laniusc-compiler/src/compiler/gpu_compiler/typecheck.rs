@@ -2640,6 +2640,9 @@ impl CompiledSourcePackObject {
     /// Store a native-profile object's sections before it enters the program
     /// inventory: in memory, or in a private file for a bounded build.
     pub(super) fn spill_native(self, store: NativeObjectStore) -> Result<Self, CompileError> {
+        if store == NativeObjectStore::Keep {
+            return Ok(self);
+        }
         match self {
             Self::X86_64(object) => match store {
                 NativeObjectStore::Keep => Ok(Self::X86_64(object)),
