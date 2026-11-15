@@ -34,6 +34,13 @@ public RWStructuredBuffer<uint4> rc_sort;
 public RWStructuredBuffer<uint> rc_bind_pos;
 public RWStructuredBuffer<uint> rc_impl_first;
 public StructuredBuffer<uint4> rc_stage;     // (k, j) of one bitonic step
+// Term closure (see "Term closure"): a mark per stored term, the frontier
+// list in discovery order, its cursor (wave first, wave end, appended,
+// waves with work) and the indirect dispatch of the next expansion wave.
+public RWStructuredBuffer<uint> rc_reach;
+public RWStructuredBuffer<uint> rc_front;
+public RWStructuredBuffer<uint> rc_cursor;
+public RWStructuredBuffer<uint> rc_indirect;
 // The route arena of the publication (docs/compiler-retained-trait-catalog.md,
 // "Publication"); the producer writes its atom identity table.
 public RWStructuredBuffer<uint> rc_routes;
@@ -93,7 +100,10 @@ public static const uint RC_S_FILL_FAULTS = 3u;
 public static const uint RC_S_UNIT_SLOTS_FULL = 4u; // the host grows rc_unit_slot and runs again
 public static const uint RC_S_UNSUPPORTED_CALLEES = 5u;
 public static const uint RC_S_PLAIN_CALLS = 6u;
-public static const uint RC_S_TOTALS = 8u;         // + counter
+public static const uint RC_S_TOTALS = 8u;
+public static const uint RC_S_CLOSURE_SHORT = 24u; // frontier not empty after the last wave: the host adds waves
+public static const uint RC_S_CLOSURE_TERMS = 25u; // stored terms in the closure
+public static const uint RC_S_CLOSURE_WAVES = 26u; // expansion waves that had work         // + counter
 public static const uint RC_S_WORDS = 24u;
 
 // Failure codes (docs/compiler-retained-trait-catalog.md, "Failures").
@@ -301,7 +311,8 @@ public bool reference_ok(uint ref)
 {
     if (ref >= 1u && ref < RT_FIRST_TERM) return true;
     if (rt_is_param_leaf(ref)) return valid_param(rt_leaf_param(ref)) && entry_of(rt_param_key[rt_leaf_param(ref)].x) != RC_INVALID;
-    if (!valid_term(ref)) return false;
+    // A stored term outside the closure has no catalog row.
+    if (!valid_term(ref) || rc_reach[ref] == 0u) return false;
     uint kind = rt_term_kind(ref);
     return term_has_node(ref) || kind == RT_KIND_CC_VALUE || kind == RT_KIND_CC_COUNT;
 }
@@ -355,6 +366,81 @@ void count_skipped_use(uint use)
     if (!callable_kind(entry_kind(entry_of(u0.w)))) InterlockedAdd(rc_state[RC_S_UNSUPPORTED_CALLEES], 1u);
     else if (callable_kind(entry_kind(entry_of(u0.x))) && applicable_count(entry_of(u0.w)) == 0u)
         InterlockedAdd(rc_state[RC_S_PLAIN_CALLS], 1u);
+}
+
+// --------------------------------------------------------------------------
+// Term closure. The catalog holds only the stored terms that a solver row
+// references, and their descendants. Roots are every reference a fill pass
+// writes: an impl's self type and trait arguments, an owner predicate's
+// subject and trait arguments, and a selected use's environment arguments.
+// A node's arguments are its children. A u32 CC_VALUE that shares a
+// CC_COUNT's atom also reaches that CC_COUNT. Pass 02d marks the roots from
+// the directory, trait and use lanes. Each wave of 02e/02f expands only the
+// terms the previous wave discovered, through an indirect dispatch; a term
+// enters the frontier once. Pass 02 then counts only marked terms.
+void reach(uint ref)
+{
+    if (!valid_term(ref)) return;
+    uint previous;
+    InterlockedCompareExchange(rc_reach[ref], 0u, 1u, previous);
+    if (previous != 0u) return;
+    uint slot;
+    InterlockedAdd(rc_cursor[2], 1u, slot);
+    rc_front[slot] = ref;
+}
+void reach_arguments(uint term, uint first)
+{
+    if (!valid_term(term)) return;
+    uint arity = rt_term_arity(term);
+    for (uint i = first; i < arity; i++) reach(rt_term_arg(term, i));
+}
+public void closure_roots(uint local)
+{
+    uint lane = region_base(RC_R_DIR) + local;
+    if (lane >= region_base(RC_R_JOB)) return;
+    uint2 record = lane_record(lane);
+    if (record.x == RC_R_DIR)
+    {
+        uint entry = record.y;
+        if (!committed_entry(entry) || !trait_impl(entry)) return;
+        reach(rt_sigs[dir(entry, 1u).z]);
+        reach_arguments(impl_trait_term(entry), 0u);
+    }
+    else if (record.x == RC_R_TRAIT)
+    {
+        uint4 t0 = rt_traits[record.y * RT_TRAIT_WORDS];
+        if ((t0.y & 0xffu) != RT_TRAIT_PREDICATE || !owner_kind(entry_kind(entry_of(t0.x)))) return;
+        reach(t0.z);
+        reach_arguments(t0.w, 0u);
+    }
+    else if (record.x == RC_R_USE)
+    {
+        if (!use_selected(record.y)) return;
+        reach_arguments(rt_uses[record.y * RT_USE_WORDS + 1u].x, 0u);
+    }
+}
+// One lane: the next wave is the terms appended since the last one.
+public void closure_wave()
+{
+    uint first = rc_cursor[1];
+    uint end = rc_cursor[2];
+    rc_cursor[0] = first;
+    rc_cursor[1] = end;
+    uint groups = (end - first + 255u) / 256u;
+    rc_indirect[0] = min(groups, 65535u);
+    rc_indirect[1] = groups == 0u ? 0u : (groups + 65534u) / 65535u;
+    rc_indirect[2] = 1u;
+    if (groups != 0u) InterlockedAdd(rc_state[RC_S_CLOSURE_WAVES], 1u);
+}
+public void closure_expand(uint i)
+{
+    uint at = rc_cursor[0] + i;
+    if (at >= rc_cursor[1]) return;
+    uint term = rc_front[at];
+    uint4 head = rt_term_head[term];
+    uint kind = head.x & 0xffu;
+    if (term_has_node(term)) reach_arguments(term, 0u);
+    else if (kind == RT_KIND_CC_VALUE && !term_owns_atom(term)) reach(find_count_term(head.z));
 }
 
 // The scalar of a constant argument, or RC_INVALID for a type argument.
@@ -578,7 +664,7 @@ void count_param(uint lane, uint param, inout Counts n)
 void count_term(uint lane, uint term, inout Counts n)
 {
     uint kind = rt_term_head[term].x & 0xffu;
-    if (kind == 0u) return;
+    if (kind == 0u || rc_reach[term] == 0u) return;
     if (term_owns_atom(term)) n.set(RC_C_ATOM, 1u);
     if (!term_has_node(term)) return;
     n.set(RC_C_NODE, 1u);
@@ -745,6 +831,12 @@ public void count_lane(uint lane)
     // The store must be READY and of the build the host configured.
     if (lane == 0u && (rt_counts[RT_C_READY] != 1u || rt_counts[RT_C_GENERATION] != cfg(RC_CFG_GENERATION)))
         fail(RC_E_NOT_READY, lane);
+    if (lane == 0u)
+    {
+        // Terms discovered by the last wave were never expanded.
+        if (rc_cursor[1] != rc_cursor[2]) rc_state[RC_S_CLOSURE_SHORT] = 1u;
+        rc_state[RC_S_CLOSURE_TERMS] = rc_cursor[2];
+    }
     uint2 record = lane_record(lane);
     if (record.x == RC_R_DECL) count_decl(lane, record.y, n);
     else if (record.x == RC_R_PARAM) count_param(lane, record.y, n);
@@ -846,7 +938,7 @@ public void fill_term(uint lane, uint term)
 {
     uint4 head = rt_term_head[term];
     uint kind = head.x & 0xffu;
-    if (kind == 0u) return;
+    if (kind == 0u || rc_reach[term] == 0u) return;
     if (term_owns_atom(term))
     {
         uint row = rank(lane, RC_C_ATOM);

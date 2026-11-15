@@ -66,6 +66,8 @@ pub impl Show for Other { pub fn show(&self) -> i32 { return 5; } }
 // A Grid value only as a parameter: the export does not complete a struct
 // literal of a const-generic struct yet.
 fn take(g: Grid<Local, 4>) -> i32 { let h = needs(g); return 0; }
+// Stored compound terms that no solver row references.
+fn unrelated() -> i32 { let q = Wrap { inner: Wrap { inner: Other { v: 1 } } }; return 0; }
 fn main() -> i32 {
     let a = needs(Local { v: 1 });
     let w = needs(Wrap { inner: Local { v: 2 } });
@@ -100,6 +102,7 @@ const E_NOMINAL: u32 = 5;
 const E_TRAIT_ARITY: u32 = 7;
 const E_REQUIRED_MEMBER: u32 = 8;
 const E_BINDING_COVERAGE: u32 = 10;
+const E_SLOT: u32 = 12;
 // The solver's catalog receipt (state, detail) for an overlapping impl
 // pair: TS_COHERENCE_CONFLICT (abi.slang), detail 0.
 const E_COHERENCE_STATUS: [u32; 2] = [5, 0];
@@ -146,6 +149,7 @@ struct Store {
     sigs: Vec<u32>,
     traits: Vec<[u32; 8]>,
     uses: Vec<[u32; USE_WORDS]>,
+    args: Vec<u32>,
 }
 
 impl Store {
@@ -163,6 +167,7 @@ impl Store {
             sigs: w("rt_sigs", status[6] as usize),
             traits: chunks(w("rt_traits", status[14] as usize * 8)),
             uses: chunks(w("rt_uses", status[8] as usize * USE_WORDS)),
+            args: w("rt_term_args", status[3] as usize),
             status,
         }
     }
@@ -212,6 +217,71 @@ impl Store {
         (0..report.rows[0])
             .find(|&job| report.row(0, job).unwrap()[0] == library)
             .unwrap_or_else(|| panic!("no snapshot of library {library}"))
+    }
+}
+
+// retention_store.slang term kinds and flags.
+const RT_KIND_NAMED: u32 = 2;
+const RT_KIND_ARRAY: u32 = 3;
+const RT_KIND_SLICE: u32 = 4;
+const RT_KIND_REF: u32 = 5;
+const RT_KIND_CC_CAST: u32 = 9;
+const RT_KIND_CC_COUNT: u32 = 10;
+const RTF_SLOT: u32 = 4;
+const SCALAR_U32: u32 = 4;
+
+impl Store {
+    fn stored(&self, r: u32) -> bool {
+        r >= 32 && (r as usize) < self.heads.len() && r < 0x8000_0000
+    }
+    fn kind(&self, t: u32) -> u32 {
+        self.heads[t as usize][0] & 0xff
+    }
+    fn term_args(&self, t: u32) -> &[u32] {
+        let base = self.meta[t as usize][0] as usize;
+        &self.args[base..base + self.arity(t) as usize]
+    }
+    fn has_node(&self, t: u32) -> bool {
+        matches!(self.kind(t), RT_KIND_NAMED | RT_KIND_ARRAY | RT_KIND_SLICE | RT_KIND_REF | RT_KIND_CC_CAST)
+            && self.meta[t as usize][1] & RTF_SLOT == 0
+    }
+    /// The term closure the producer must compute, from store records and
+    /// the selected uses (`calls`: the use of each call row). Assertions only.
+    fn closure(&self, selected_uses: &[u32]) -> std::collections::BTreeSet<u32> {
+        let mut roots = Vec::new();
+        for e in &self.dir {
+            if e[3] == 2 && e[1] == KIND_IMPL && self.stored(self.sigs[e[6] as usize + 1]) {
+                roots.push(self.sigs[e[6] as usize]);
+                roots.extend_from_slice(self.term_args(self.sigs[e[6] as usize + 1]));
+            }
+        }
+        for t in &self.traits {
+            let owner = self.dir.iter().find(|e| e[0] == t[0] && e[3] == 2).map(|e| e[1]);
+            if t[1] & 0xff == 1 && matches!(owner, Some(KIND_FREE_FN | KIND_METHOD | KIND_IMPL)) {
+                roots.push(t[2]);
+                if self.stored(t[3]) {
+                    roots.extend_from_slice(self.term_args(t[3]));
+                }
+            }
+        }
+        for &u in selected_uses {
+            roots.extend_from_slice(self.term_args(self.uses[u as usize][4]));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(r) = roots.pop() {
+            if !self.stored(r) || !seen.insert(r) {
+                continue;
+            }
+            if self.has_node(r) {
+                roots.extend_from_slice(self.term_args(r));
+            } else if self.kind(r) == RT_KIND_CC_VALUE {
+                let h = self.heads[r as usize];
+                if h[1] == SCALAR_U32 && h[3] == 0 {
+                    roots.extend((32..self.heads.len() as u32).filter(|&c| self.kind(c) == RT_KIND_CC_COUNT && self.heads[c as usize][1] == h[2]));
+                }
+            }
+        }
+        seen
     }
 }
 
@@ -325,6 +395,7 @@ struct Decls {
     local: u32,
     wrap: u32,
     grid: u32,
+    other: u32,
     cell_inherent: u32,
     cell_show: u32,
     grid_show: u32,
@@ -410,6 +481,7 @@ impl Store {
             local,
             wrap,
             grid,
+            other,
             cell_inherent,
             cell_show: in_a(cell),
             grid_show: in_a(grid),
@@ -698,6 +770,33 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     assert_eq!(checked_goals(&s, &report), sorted(expect), "selected implementations, native targets and environments");
     let first_goals = goals(&report);
 
+    // Term closure: exactly the terms reachable from the solver's roots, one
+    // node per distinct term, no row for unrelated stored terms.
+    let selected = (0..report.rows[15]).map(|c| report.row(15, c).unwrap()[1]).collect::<Vec<_>>();
+    let closure = s.closure(&selected);
+    let nodes = closure.iter().filter(|&&t| s.has_node(t)).count() as u32;
+    let edges = closure.iter().filter(|&&t| s.has_node(t) && s.kind(t) == RT_KIND_NAMED).map(|&t| s.arity(t)).sum::<u32>();
+    assert_eq!(report.closure_terms, closure.len() as u32, "closure terms");
+    assert_eq!((report.rows[5], report.rows[6]), (nodes, edges), "catalog nodes and edges are the closure's");
+    let all_nodes = (32..s.heads.len() as u32).filter(|&t| s.has_node(t)).count() as u32;
+    let wrap_other = (32..s.heads.len() as u32)
+        .find(|&t| s.kind(t) == RT_KIND_NAMED && s.heads[t as usize][1] == d.wrap && s.term_args(t) == [s.named(d.other)])
+        .expect("Wrap<Other> is stored");
+    let wrap_wrap = (32..s.heads.len() as u32)
+        .find(|&t| s.kind(t) == RT_KIND_NAMED && s.heads[t as usize][1] == d.wrap && s.term_args(t) == [wrap_other])
+        .expect("Wrap<Wrap<Other>> is stored");
+    assert!(!closure.contains(&wrap_other) && !closure.contains(&wrap_wrap), "unrelated terms are outside the closure");
+    assert!(nodes < all_nodes, "{nodes} closure nodes of {all_nodes} stored node terms");
+    // Local is shared by many roots and has one node.
+    let local_atom = (0..report.rows[1]).find(|&a| atom(&report, a)[..2] == [2, s.job_of(&report, LIB_B)] && atom(&report, a)[2] == s.keys[d.local as usize][3] & !PRIVATE).unwrap();
+    let local_nodes = (0..report.rows[5]).filter(|&n| { let r = report.row(5, n).unwrap(); r[0] == 1 && r[1] == local_atom && r[3] == 0 }).count();
+    assert_eq!(local_nodes, 1, "one node for the shared Local term");
+    eprintln!(
+        "closure: {} terms ({nodes} nodes, {edges} edges) of {} stored terms ({all_nodes} node terms); {} active of {} waves; dispatches {}",
+        report.closure_terms, s.heads.len() - 32, report.closure_active_waves, report.closure_waves, report.dispatches
+    );
+    assert!(report.closure_active_waves <= report.closure_waves);
+
     // Binding ranks: the GPU sort covers every trait record in
     // log2(P)(log2(P)+1)/2 steps of P lanes. Each lane does one compare,
     // so the work is P log2(P)^2 / 2 for any impl width; the scan it
@@ -722,6 +821,14 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     assert!(solved(&again));
     assert_eq!(goals(&again), first_goals);
     assert_eq!(again.tables[9..=10], report.tables[9..=10], "deterministic impl and method rows");
+
+    // Too few closure waves: the GPU reports an unexpanded frontier and the
+    // host doubles the waves; the same rows and selections.
+    let short = check(&compiler, &store, RetainedTraitOptions { closure_waves: Some(1), ..Default::default() });
+    assert!(short.attempts >= 2 && short.closure_waves >= 2, "{short:#?}");
+    assert!(solved(&short));
+    assert_eq!(goals(&short), first_goals);
+    assert_eq!(short.tables[1..=10], report.tables[1..=10], "identical catalog rows");
 
     // A full unit table grows and the producer runs again from the store.
     let grown = check(&compiler, &store, RetainedTraitOptions { unit_slots: Some(1), ..Default::default() });
@@ -834,6 +941,22 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
         let show_local = Some([s.job_of(r, LIB_B), s.keys[d.show_local as usize][3], 7]);
         assert!(needs_goals.iter().all(|g| g.status == 1 && g.implementation == show_local), "{needs_goals:#?}");
     });
+
+    // An unrelated stored term is not checked or translated: a malformed
+    // arity or a slot flag on Wrap<Wrap<Other>> leaves the check solved and
+    // equal. The same slot flag on the referenced Local term rejects.
+    let head = s.heads[wrap_wrap as usize][0];
+    fault("rt_term_head", wrap_wrap as usize * 4, head & !0xff00, &|r| {
+        assert!(solved(r), "{r:#?}");
+        assert_eq!(goals(r), first_goals);
+    });
+    let flags = s.meta[wrap_wrap as usize][1];
+    fault("rt_term_meta", wrap_wrap as usize * 4 + 1, flags | RTF_SLOT, &|r| {
+        assert!(solved(r), "{r:#?}");
+        assert_eq!(goals(r), first_goals);
+    });
+    let flags = s.meta[local_term as usize][1];
+    fault("rt_term_meta", local_term as usize * 4 + 1, flags | RTF_SLOT, &producer_code(E_SLOT));
 
     // Swapped type slots of `shadow` (impl T, own T).
     let start = s.entry(d.shadow)[4] as usize;

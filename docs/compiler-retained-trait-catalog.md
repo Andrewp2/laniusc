@@ -32,11 +32,12 @@ replays sources, and this path does not remove that replay. The list under
    counts each trait's required members and marks callers that own a
    selected use. Pass `01_units` indexes the jobs by (library, unit).
    Passes `02a`–`02c` sort the impl bindings (see "Binding ranks").
+   Passes `02d`–`02f` mark the term closure (see "Term closure").
 3. Pass `02_count` runs every producer check and counts the rows each lane
    owns in 16 counters, one per solver table. Passes `03`–`05` compute an
    exclusive scan of those counters.
-4. The host reads the producer state: the failure count, the first failure
-   and the 16 totals (96 bytes). Any failure stops the check at stage
+4. The host reads the producer state: the failure count, the first failure,
+   the 16 totals and the closure words (112 bytes). Any failure stops the check at stage
    `Producer`.
 5. The host places tables 0-10 from the totals (`FrozenCatalog::retained_layout`).
    The catalog arena is cleared, or poisoned in tests. The fill kernels
@@ -152,6 +153,60 @@ parameters with a smaller `ParamId`: k² reads for k ≤ 64 parameters
 (`LIMIT` bounds each domain at 32). That per-environment rank is bounded,
 not a sort over the whole catalog.
 
+### Term closure
+
+The catalog's atom, node and edge rows cover only the stored terms that a
+solver row references, and their descendants. The other stored terms are
+not checked, counted or translated. These fill writes are the roots:
+
+| Reader | Roots |
+| --- | --- |
+| impl head (`fill_dir`) | the self type, and each argument of the trait application |
+| predicate (`fill_trait`, function, method and impl owners) | the subject, and each argument of the trait application |
+| selected use (`fill_use`) | each argument of the call environment |
+| node (`fill_term`) | each argument of a NAMED, ARRAY, SLICE, REF or CC_CAST term |
+| constant atom (`reference`) | for a u32 CC_VALUE that shares a CC_COUNT's atom, that CC_COUNT |
+
+The trait applications themselves and the environment terms are not
+referenced as roots. `count_dir`, `count_trait` and `count_use` check them
+directly. Owner, parameter, callable, snapshot and native-recipe rows
+reference no term.
+
+Pass `02d_closure_roots` runs one lane per directory, trait and use
+record and marks its roots. A mark is a compare-exchange on `rc_reach`.
+The first marker appends the term to `rc_front`, so every term enters the
+frontier once.
+
+Each wave is two dispatches. `02e_closure_wave` is one lane: it takes the
+terms appended since the last wave and writes an indirect dispatch.
+`02f_closure_expand` runs one lane per term of that wave and marks its
+children. The work is one lane per closure term and one mark per closure
+edge. Empty waves dispatch no workgroups.
+
+The host records 16 waves by default
+(`RetainedTraitOptions::closure_waves`). If terms remain unexpanded after
+the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
+the waves and runs every count pass again, as it does for a full unit
+table. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
+as absent. A reference to one has no translation, so the check fails
+closed.
+
+A referenced malformed or SLOT term still rejects the check. The same
+fault on an unrelated stored term leaves the check solved, with equal
+selections. The test asserts both. It also checks the node and edge counts
+against a host closure over the store records (assertion only), checks
+that the shared Local term has one node, and checks that a forced
+one-wave start retries to equal rows.
+
+Records still read by every check, each once:
+
+- `02_count`, `03`–`05` and the fill passes run one lane per store record
+  in all seven regions. A term lane outside the closure reads its head and
+  mark, then returns.
+- `00_mark` and `01_units` run one lane per record. `02d` runs one lane per
+  directory, trait and use record.
+- The binding sort covers every trait record.
+
 ## Trait-item-owned predicates
 
 - A required member's own bound (`fn m<U: B>()` in a trait) needs
@@ -167,7 +222,9 @@ not a sort over the whole catalog.
   them. The (library, unit) table starts at twice the job count, or at
   `RetainedTraitOptions::unit_slots`. When it is full, the GPU sets
   `rc_state[4]`, and the host doubles the table and runs every count pass
-  again from the store.
+  again from the store. A term closure that needs more waves retries the
+  same way (`rc_state[24]`). Each attempt clears the marks, the frontier
+  and its cursor.
 - The check holds the store lock for its whole run
   (`ProgramRetention::with_store_buffers`). It creates its bind groups in
   that run and keeps none across store growth. It reads no substitution
@@ -247,15 +304,18 @@ a second live publication.
 ## Costs
 
 These figures come from the test fixture on the development GPU: 2 units,
-218 catalog atoms, 10 calls and 10 obligations, with a 40-method impl.
+220 catalog atoms, 10 calls and 10 obligations, with a 40-method impl.
+The closure holds 10 of 156 stored terms. Those are 8 of the 31 stored
+node terms, with 8 edges. Three of the 16 waves had work.
 
 | Item | Value |
 | --- | --- |
-| Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 7 catalog fills, 2 batch fills and up to 5 word fills |
+| Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 1 + 2·waves closure dispatches (33 by default), 7 catalog fills, 2 batch fills and up to 5 word fills |
 | Publication dispatches | 2, in one submit with no readback |
-| Dispatches, `retained_trait_publish` | 320 |
+| Dispatches, `retained_trait_publish` | 353 |
 | Host round trips, `retained_trait_publish` | 4: store counters, producer state, admission receipts, one solver wave readback |
-| Producer readback bytes | 640 (store counters 384, producer state 96, two receipts and state 160) |
+| Producer readback bytes | 672 (store counters 384, producer state 112, two receipts and state 176) |
+| Closure retry (one-wave start) | 3 attempts, 2 extra round trips |
 | Host readback wait | about 4.5 ms per check |
 | Rejected by the producer | count and sort dispatches, 2 round trips |
 | Rejected by admission | 64 dispatches, 4 round trips (with `read_rows`) |
@@ -263,7 +323,7 @@ These figures come from the test fixture on the development GPU: 2 units,
 The solver's wave readback holds no semantic rows unless `read_rows` is
 set.
 
-The largest producer kernel is `02_count`, at 12694 inlined
+The largest producer kernel is `02_count`, at 12845 inlined
 instructions. No producer kernel uses local arrays.
 
 ## What is not covered
@@ -278,9 +338,6 @@ instructions. No producer kernel uses local arrays.
   sources.
 - Slot resolution: dependency slot leaves fail (`SLOT`), so a publication
   never contains them.
-- The catalog holds every committed term, not only the closure of impl
-  heads, predicates and selected environments. Restricting it needs a
-  GPU reachability pass over the term graph.
 - The export does not complete a struct literal of a const-generic struct
   (`Grid { value: v }` for `Grid<T, const N: u32>`), so the test passes
   a `Grid<Local, 4>` value only as a parameter.

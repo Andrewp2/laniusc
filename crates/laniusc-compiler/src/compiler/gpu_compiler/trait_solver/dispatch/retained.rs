@@ -37,7 +37,7 @@ use crate::{
     type_checker::program_retention::{ProgramRetention, counts},
 };
 
-const KEYS: [&str; 19] = [
+const KEYS: [&str; 22] = [
     "type_checker/trait_solver/retained/entries/00_mark",
     "type_checker/trait_solver/retained/entries/01_units",
     "type_checker/trait_solver/retained/entries/02_count",
@@ -57,8 +57,17 @@ const KEYS: [&str; 19] = [
     "type_checker/trait_solver/retained/entries/07_publish_routes",
     "type_checker/trait_solver/retained/entries/08_publish_finish",
     "type_checker/trait_solver/retained/entries/09_fill_words",
+    "type_checker/trait_solver/retained/entries/02d_closure_roots",
+    "type_checker/trait_solver/retained/entries/02e_closure_wave",
+    "type_checker/trait_solver/retained/entries/02f_closure_expand",
 ];
 const FILL_WORDS: usize = 18;
+const CLOSURE_ROOTS: usize = 19;
+const CLOSURE_WAVE: usize = 20;
+const CLOSURE_EXPAND: usize = 21;
+/// First number of closure expansion waves; doubled while the GPU reports
+/// an unexpanded frontier.
+const CLOSURE_WAVES: u32 = 16;
 const SORT_INIT: usize = 13;
 const SORT_STEP: usize = 14;
 const SORT_FINISH: usize = 15;
@@ -102,7 +111,10 @@ const S_UNIT_SLOTS_FULL: usize = 4;
 const S_UNSUPPORTED_CALLEES: usize = 5;
 const S_PLAIN_CALLS: usize = 6;
 const S_TOTALS: usize = 8;
-const S_WORDS: usize = 24;
+const S_CLOSURE_SHORT: usize = 24;
+const S_CLOSURE_TERMS: usize = 25;
+const S_CLOSURE_WAVES: usize = 26;
+const S_WORDS: usize = 28;
 
 /// Solver table of each producer counter (producer.slang RC_C_*).
 const COUNTER_TABLE: [usize; COUNTERS] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15, 11, 12, 16];
@@ -140,6 +152,9 @@ pub struct RetainedTraitOptions {
     /// Read every produced row back into `RetainedTraitCheck::tables` (for
     /// assertions only; the check itself reads none).
     pub read_rows: bool,
+    /// First number of term closure waves (default 16). A smaller value
+    /// forces the retry that adds waves.
+    pub closure_waves: Option<u32>,
 }
 
 /// Where a retained trait check stopped.
@@ -200,6 +215,11 @@ pub struct RetainedTraitCheck {
     /// committed store callable, or it has no applicable predicate.
     pub unsupported_callees: u32,
     pub plain_calls: u32,
+    /// Stored terms in the catalog's term closure, closure waves dispatched
+    /// in the last attempt, and the waves of those that had work.
+    pub closure_terms: u32,
+    pub closure_waves: u32,
+    pub closure_active_waves: u32,
 }
 
 impl RetainedTraitCheck {
@@ -229,6 +249,10 @@ struct Scratch {
     bind_pos: LaniusBuffer<u32>,
     impl_first: LaniusBuffer<u32>,
     stages: LaniusBuffer<u32>,
+    reach: LaniusBuffer<u32>,
+    front: LaniusBuffer<u32>,
+    cursor: LaniusBuffer<u32>,
+    indirect: LaniusBuffer<u32>,
     /// Bound as the arena of the other phase; never written.
     idle: LaniusBuffer<u32>,
 }
@@ -347,6 +371,12 @@ impl Producer {
                 "rc_sort" => scratch.sort.as_entire_binding(),
                 "rc_bind_pos" => scratch.bind_pos.as_entire_binding(),
                 "rc_impl_first" => scratch.impl_first.as_entire_binding(),
+                "rc_reach" => scratch.reach.as_entire_binding(),
+                "rc_front" => scratch.front.as_entire_binding(),
+                "rc_cursor" => scratch.cursor.as_entire_binding(),
+                // The expansion pass reads it as its indirect argument.
+                "rc_indirect" if pass == CLOSURE_EXPAND => scratch.idle.as_entire_binding(),
+                "rc_indirect" => scratch.indirect.as_entire_binding(),
                 "rc_stage" => wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &bound.stages.buffer,
                     offset: bound.stages.byte_offset + u64::from(bound.stage) * STAGE_STRIDE,
@@ -372,7 +402,7 @@ impl Producer {
             0,
             &entries,
         )?;
-        let (x, y) = if pass == SCAN_BLOCKS || pass == PUBLISH_FINISH { (1, 1) } else { groups(lanes) };
+        let (x, y) = if matches!(pass, SCAN_BLOCKS | PUBLISH_FINISH | CLOSURE_WAVE) { (1, 1) } else { groups(lanes) };
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some("trait_solver.retained_producer"), timestamp_writes: None },
@@ -380,7 +410,12 @@ impl Producer {
         compute.set_pipeline(&data.pipeline);
         compute.set_bind_group(0, &bind, &[]);
         passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(x, y, 1);
+        if pass == CLOSURE_EXPAND {
+            passes_core::record_indirect_compute_dispatch();
+            compute.dispatch_workgroups_indirect(&scratch.indirect.buffer, scratch.indirect.byte_offset);
+        } else {
+            compute.dispatch_workgroups(x, y, 1);
+        }
         Ok(())
     }
 }
@@ -500,6 +535,9 @@ fn run(
         publication_status: None,
         unsupported_callees: 0,
         plain_calls: 0,
+        closure_terms: 0,
+        closure_waves: 0,
+        closure_active_waves: 0,
     };
 
     // The store's counters size the lane regions.
@@ -545,6 +583,9 @@ fn run(
         stage_words[i * stride_words] = k;
         stage_words[i * stride_words + 1] = j;
     }
+    let terms = status[A_TERMS].max(1);
+    let root_lanes = regions[3].1 + regions[4].1 + regions[5].1;
+    let mut closure_waves = options.closure_waves.unwrap_or(CLOSURE_WAVES).max(1);
     let mut unit_slots = options
         .unit_slots
         .unwrap_or_else(|| jobs.saturating_mul(2))
@@ -582,6 +623,15 @@ fn run(
                 usage,
                 Some(&stage_words),
             )?,
+            reach: workspace.initialized("trait_solver.retained_reach", terms, usage, None)?,
+            front: workspace.initialized("trait_solver.retained_front", terms, usage, None)?,
+            cursor: workspace.initialized("trait_solver.retained_cursor", 4, usage, None)?,
+            indirect: workspace.initialized(
+                "trait_solver.retained_indirect",
+                4,
+                usage | wgpu::BufferUsages::INDIRECT,
+                None,
+            )?,
             idle: workspace.initialized("trait_solver.retained_idle", 4, usage, None)?,
         };
         let idle = Bound {
@@ -599,8 +649,16 @@ fn run(
         scratch.entry.clear(&mut encoder, 0, None);
         scratch.unit_slot.clear(&mut encoder, 0, None);
         scratch.impl_first.clear(&mut encoder, 0, None);
+        scratch.reach.clear(&mut encoder, 0, None);
+        scratch.cursor.clear(&mut encoder, 0, None);
         for pass in [MARK, UNITS] {
             producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
+        }
+        // Term closure: roots, then one indirect wave per frontier depth.
+        producer.record(&mut encoder, CLOSURE_ROOTS, root_lanes, &scratch, store, idle)?;
+        for _ in 0..closure_waves {
+            producer.record(&mut encoder, CLOSURE_WAVE, 1, &scratch, store, idle)?;
+            producer.record(&mut encoder, CLOSURE_EXPAND, 0, &scratch, store, idle)?;
         }
         producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
         for stage in 0..steps.len() as u32 {
@@ -613,8 +671,14 @@ fn run(
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
         let state = producer.read(&scratch.state, S_WORDS, "retained producer state")?;
-        if state[S_UNIT_SLOTS_FULL] != 0 {
-            unit_slots = unit_slots.checked_mul(2).ok_or_else(|| anyhow!("retained unit table overflow"))?;
+        if state[S_UNIT_SLOTS_FULL] != 0 || state[S_CLOSURE_SHORT] != 0 {
+            if state[S_UNIT_SLOTS_FULL] != 0 {
+                unit_slots = unit_slots.checked_mul(2).ok_or_else(|| anyhow!("retained unit table overflow"))?;
+            }
+            if state[S_CLOSURE_SHORT] != 0 {
+                closure_waves = closure_waves.checked_mul(2).filter(|&w| w <= 1 << 16)
+                    .ok_or_else(|| anyhow!("retained term closure needs more than 65536 waves"))?;
+            }
             continue;
         }
         break (scratch, state);
@@ -623,6 +687,9 @@ fn run(
     report.unsupported_member_bounds = state[S_UNSUPPORTED_MEMBER_BOUNDS];
     report.unsupported_callees = state[S_UNSUPPORTED_CALLEES];
     report.plain_calls = state[S_PLAIN_CALLS];
+    report.closure_terms = state[S_CLOSURE_TERMS];
+    report.closure_waves = closure_waves;
+    report.closure_active_waves = state[S_CLOSURE_WAVES];
     if state[S_FIRST] != u32::MAX {
         report.first_failure = Some((state[S_FIRST] >> 24, state[S_FIRST] & 0xff_ffff));
     }
