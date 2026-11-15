@@ -62,7 +62,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
-    if ((u0.z & 0xffu) != USE_DIRECT) return;
+    bool method = (u0.z & 0xffu) == 2u;
+    if ((u0.z & 0xffu) != USE_DIRECT && !method) return;
     uint callee = u0.w;
     uint n; uint s;
     rt_decl_def.GetDimensions(n, s);
@@ -72,7 +73,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
     // Only a generic template is withheld from the original objects; a
     // nongeneric callee keeps its ordinary native symbol.
-    if (d0.y != DIR_FREE_FN || d2.x == RT_INVALID) return;
+    if ((d0.y != DIR_FREE_FN && d0.y != 2u) || d2.x == RT_INVALID) return;
 
     // The identity words of this undefined symbol: three aligned words.
     uint start = nc_symbols[row + 2u];
@@ -93,15 +94,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     // Caller ABI facts.
     HirPayload p = compact_hir_payload[call];
-    uint count = p.c;
+    uint count = p.c + (method ? 1u : 0u);
     uint flags = count > NC_ARGS ? NC_FLAG_ARGS_OVER : 0u;
     uint total = compact_call_arg_count[0u];
     for (uint i = 0u; i < min(count, NC_ARGS); i++)
     {
         uint term = RT_NONE;
-        if (p.b + i < total)
+        if (method && i == 0u) term = u1.w;
+        else if (p.b + i - (method ? 1u : 0u) < total)
         {
-            uint value = compact_call_args[p.b + i].value;
+            uint value = compact_call_args[p.b + i - (method ? 1u : 0u)].value;
             if (value < hir_count())
             {
                 term = translate_checked(semantic_expr_ref_tag_by_hir[value], semantic_expr_ref_payload_by_hir[value]);

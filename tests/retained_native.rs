@@ -1108,3 +1108,59 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_methods_preserve_receivers_and_inherited_binders() {
+    common::run_with_timeout("retained methods", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-methods-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module lib::methods;
+pub struct Cell<T> { value:T }
+pub impl<T> Cell<T> {
+    pub fn get(&self)->T { return self.value; }
+    pub fn put(&self,value:T) { self.value=value; }
+    pub fn take(self)->T { return self.value; }
+    pub fn borrow(&self)->&Cell<T> { return self; }
+    pub fn choose<U>(&self,other:U)->U { let kept:T=self.get(); return other; }
+    pub fn shadow<T>(&self,other:T)->T { let kept=self.value; return other; }
+}
+pub fn fetch<T>(cell:&Cell<T>)->T { return cell.get(); }
+pub fn change<T>(cell:&Cell<T>,value:T)->T { cell.put(value); return fetch<T>(cell); }
+pub fn consume<T>(cell:Cell<T>)->T { return cell.take(); }
+pub fn choose<T,U>(cell:Cell<T>,other:U)->U { return cell.choose<U>(other); }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import lib::methods;
+struct Pair { x:i32,y:f64 }
+fn main()->i32 {
+    let a:Cell<i32> = Cell{value:7};
+    if (a.get()!=7 || change<i32>(a.borrow(),11)!=11 || a.get()!=11) { return 1; }
+    let p:Pair=Pair{x:17,y:2.5}; let q:Pair=Pair{x:19,y:4.5};
+    let b:Cell<Pair> = Cell{value:p};
+    let r:Pair=change<Pair>(b.borrow(),q);
+    if (r.x!=19 || r.y!=4.5 || b.get().x!=19) { return 2; }
+    let v:Pair=consume<Pair>(b);
+    if (v.x!=19 || v.y!=4.5) { return 3; }
+    let z:Pair=choose<i32,Pair>(a,p);
+    if (z.x!=17 || z.y!=2.5 || b.choose<i32>(23)!=23 || !a.shadow<bool>(true)) { return 4; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let output=common::run_x86_64_elf_output("retained methods","retained_methods",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

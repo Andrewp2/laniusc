@@ -63,13 +63,15 @@ uint decode(Map m, uint cls, uint word)
     return word;
 }
 
-void write_call(uint row, uint rank, uint rel, uint4 facts)
+void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
 {
     uint use = pj_row(rank, rel, 3u).y;
     uint4 q1 = pj_instances[rank * PJ_INSTANCE_WORDS + 1u];
     uint4 route = pj_routes[q1.x + use];
     uint4 p = pj_row(rank, rel, 2u);
     uint b = row * PJ_CALL_WORDS;
+    uint4 use_record = pj_use(rank,use,0u);
+    bool method = (use_record.z & 0xffu) == 2u;
     bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
     bool constructor = (pj_use(rank,use,0u).z & 0xffu) == 4u;
     ob_calls[b + 0u] = RT_INVALID;      // target token
@@ -79,7 +81,7 @@ void write_call(uint row, uint rank, uint rel, uint4 facts)
     ob_calls[b + 4u] = RT_INVALID;      // host service
     ob_calls[b + 5u] = intrinsic ? pj_use(rank,use,2u).x : 0u;              // intrinsic
     ob_calls[b + 6u] = facts.w;         // return type (scalar code)
-    ob_calls[b + 7u] = RT_INVALID;      // receiver row
+    ob_calls[b + 7u] = method ? pj_abs_row(m,pj_row(rank,p.x,2u).y) : RT_INVALID;      // receiver row
     ob_calls[b + 8u] = p.z;             // arguments
     ob_calls[b + 9u] = facts.x;         // return reference
     ob_calls[b + 10u] = facts.y;
@@ -93,6 +95,16 @@ void write_call(uint row, uint rank, uint rel, uint4 facts)
     ob_calls[b + 18u] = RT_INVALID;
     ob_calls[b + 19u] = 0u;
     ob_calls[b + 20u] = RT_INVALID;
+    if (method)
+    {
+        uint status;
+        uint2 matched = pj_ref_of(pj_result(pj_req_use_matched(rank,use),status));
+        uint2 receiver = pj_ref_of(pj_result(pj_req_use_receiver(rank,use),status));
+        ob_calls[b+15u] = (use_record.z >> 8u) & 0xffu;
+        ob_calls[b+16u] = use_record.z >> 16u;
+        ob_calls[b+17u] = matched.x; ob_calls[b+18u] = matched.y;
+        ob_calls[b+19u] = receiver.x; ob_calls[b+20u] = receiver.y;
+    }
     ob_calls[b + 21u] = 0u;
 }
 
@@ -257,5 +269,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ob_value_type[row] = facts.y;
         ob_expr_scalar_type[row] = (facts.y << SCALAR_TYPE_SHIFT) | PJ_SCALAR_LINK_NONE;
     }
-    if (kind == RT_HIR_CALL_EXPR) write_call(row, rank, rel, facts);
+    if (kind == RT_HIR_CALL_EXPR) write_call(row, rank, rel, facts, m);
 }

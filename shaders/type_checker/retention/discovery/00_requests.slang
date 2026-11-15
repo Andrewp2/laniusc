@@ -41,26 +41,16 @@ void main(uint3 id: SV_DispatchThreadID)
     uint form = u0.z & 0xffu;
     // Non-call syntax contributes row and layout types during projection.
     if (form == 3u || form == 4u || form == 5u) return;
-    // A concrete method called by an original body is already emitted in
-    // its defining unit, with the frontend's checked receiver adjustment.
-    // Generic methods and calls inside instances still need GPU routing.
-    if (root != 0u && form == 2u)
+    // Required-member callees still need a solver-selected concrete method.
+    // A checked implementation method follows the ordinary ENV edge.
+    if ((form != 1u && form != 2u) || (form == 1u && (u0.z >> 8u) != 0u))
     {
-        uint method = dg_entry(u0.w);
-        if (method != RT_INVALID && rt_dir[method * RT_DIR_WORDS].y == 2u &&
-            !dg_generic(method) && !dg_predicates(method))
-        {
-            dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
-            return;
-        }
-    }
-    if (form != 1u || (u0.z >> 8u) != 0u)
-    {
-        // Ordinary intrinsic/native calls already have their own targets.
-        // Projection must reject unsupported forms inside an instance.
-        if (root == 0u || form == 2u || form == 7u) dg_fail(root,lane,use,3u,form);
+        if (root == 0u || form == 7u) dg_fail(root,lane,use,3u,form);
         return;
     }
+    uint adjustment = (u0.z >> 8u) & 0xffu;
+    if (form == 2u && (adjustment < 1u || adjustment > 2u || (u0.z >> 16u) > 64u))
+    { dg_fail(root,lane,use,3u,u0.z); return; }
     uint callee = dg_entry(u0.w);
     if (callee == RT_INVALID) { dg_fail(root,lane,use,2u,u0.w); return; }
     // Original objects already lower nongeneric extern calls through the
@@ -71,7 +61,9 @@ void main(uint3 id: SV_DispatchThreadID)
         dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
         return;
     }
-    if (rt_dir[callee * RT_DIR_WORDS].y != 1u)
+    if (rt_dir[callee * RT_DIR_WORDS].y != 1u && rt_dir[callee * RT_DIR_WORDS].y != 2u)
+    { dg_fail(root,lane,use,4u,u0.w); return; }
+    if (form == 2u && rt_dir[callee * RT_DIR_WORDS].y != 2u)
     { dg_fail(root,lane,use,4u,u0.w); return; }
     if (dg_predicates(callee) && !dg_use_proven(use,callee,root != 0u))
     { dg_fail(root,lane,use,8u,u0.w); return; }

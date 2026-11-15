@@ -39,7 +39,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         term = value.y == RT_CONST_SYMBOLIC && pj_row(rank, row, 0u).x != RT_HIR_TYPE
             ? value.z : resolved_or_unit(pj_row(rank, row, 3u).x);
     }
-    else if (o < 1u + i1.z + i1.x + i1.w) term = resolved_or_unit(pj_use(rank, o - 1u - i1.z - i1.x, 1u).x);
-    else term = resolved_or_unit(pj_use(rank, o - 1u - i1.z - i1.x - i1.w, 1u).y);
+    else
+    {
+        uint use_offset = o - 1u - i1.z - i1.x;
+        uint word = use_offset / i1.w;
+        uint use = use_offset % i1.w;
+        term = resolved_or_unit(pj_use(rank,use,1u)[word]);
+    }
     sb_requests[q] = uint4(i0.x, i0.y, term, q);
 }

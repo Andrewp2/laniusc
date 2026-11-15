@@ -39,7 +39,7 @@ public RWStructuredBuffer<uint2> pj_row_errors;
 // Per global row: (reference tag, reference payload, native words, scalar).
 public RWStructuredBuffer<uint4> pj_g_facts;
 // Per global row: (expression parent global row, member word offset, member
-// word count, 0).
+// word count, matched pattern type or 0).
 public RWStructuredBuffer<uint4> pj_g_aux;
 public RWStructuredBuffer<uint> pj_string_offsets;
 public RWStructuredBuffer<uint> pj_string_scratch;
@@ -90,7 +90,7 @@ public uint pj_rank_of(uint column, uint g, uint lo, uint hi)
 }
 
 // Request indices of a rank: result, parameters, rows, use environments,
-// use results.
+// use results, matched receivers and receiver parameters.
 public uint pj_req_result(uint rank) { return pj_base_at(rank, PJ_C_REQUESTS); }
 public uint pj_req_param(uint rank, uint p) { return pj_req_result(rank) + 1u + p; }
 public uint pj_req_row(uint rank, uint row) { return pj_req_result(rank) + 1u + pj_inf(rank, 1u).z + row; }
@@ -104,10 +104,19 @@ public uint pj_req_use_result(uint rank, uint use)
     uint4 i1 = pj_inf(rank, 1u);
     return pj_req_result(rank) + 1u + i1.z + i1.x + i1.w + use;
 }
+public uint pj_req_use_matched(uint rank, uint use)
+{
+    return pj_req_use_result(rank,use) + pj_inf(rank,1u).w;
+}
+public uint pj_req_use_receiver(uint rank, uint use)
+{
+    return pj_req_use_result(rank,use) + 2u * pj_inf(rank,1u).w;
+}
+
 public uint pj_requests_of(uint rank)
 {
     uint4 i1 = pj_inf(rank, 1u);
-    return 1u + i1.z + i1.x + 2u * i1.w;
+    return 1u + i1.z + i1.x + 4u * i1.w;
 }
 
 // A substitution result: the closed TermId, or RT_INVALID with `status`.

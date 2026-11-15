@@ -16,8 +16,6 @@
 // member row's field range goes to pj_g_aux.yz.
 import integer_words;
 import type_checker.operator_operand_rules;
-import type_checker.intrinsic_operand_rules;
-import type_checker.calls.intrinsic_result;
 import type_checker.retention.projection.pj_types;
 import type_checker.retention.projection.pj_schema;
 import type_checker.retention.projection.pj_patterns;
@@ -31,113 +29,11 @@ static const uint EXPR_INT = 3u;
 static const uint EXPR_FLOAT = 27u;
 static const uint EXPR_STRING = 28u;
 static const uint USE_DIRECT = 1u;
+static const uint USE_METHOD = 2u;
 static const uint USE_RECORD = 3u;
 static const uint USE_CONSTRUCTOR = 4u;
 
-struct Row
-{
-    uint rank;
-    uint base;  // global row of the rank's function row
-    uint row;
-    uint g;
-};
-
-static bool failed;
-
-void fail(Row at, uint code, uint detail)
-{
-    if (failed) return;
-    failed = true;
-    pj_row_fail(at.g, code, detail);
-}
-
-// The closed substituted type of relative row `row`, or RT_INVALID.
-uint row_type(Row at, uint row)
-{
-    uint status;
-    if (row == RT_INVALID || row >= pj_inf(at.rank, 1u).x) return RT_INVALID;
-    if (!rt_is_resolved(pj_row(at.rank, row, 3u).x)) return RT_INVALID;
-    uint t = pj_result(pj_req_row(at.rank, row), status);
-    if (pj_row(at.rank, row, 6u).y == RT_CONST_SYMBOLIC && pj_row(at.rank, row, 0u).x != RT_HIR_TYPE)
-        return rt_is_stored_term(t) && rt_term_kind(t) == RT_KIND_CC_VALUE ? rt_term_words(t).x : RT_INVALID;
-    return t;
-}
-
-bool template_closed(Row at, uint row)
-{
-    return row != RT_INVALID && rt_term_closed(pj_row(at.rank, row, 3u).x);
-}
-
-// A closed runtime type with a complete lowering layout.
-bool supported_type(Row at, uint t)
-{
-    if (!rt_is_term(t))
-    {
-        fail(at, PJ_E_TYPE, 0u);
-        return false;
-    }
-    if (t < RT_FIRST_TERM)
-    {
-        if (t == SCALAR_UNKNOWN)
-        {
-            fail(at, PJ_E_TYPE, t);
-            return false;
-        }
-        return true;
-    }
-    uint kind = rt_term_kind(t);
-    if (kind != RT_KIND_NAMED && kind != RT_KIND_ARRAY && kind != RT_KIND_SLICE && kind != RT_KIND_REF)
-    {
-        fail(at, PJ_E_TYPE, kind);
-        return false;
-    }
-    if (pj_layout[t].x == RT_INVALID || pj_layout[t].y == 0u)
-    {
-        fail(at, PJ_E_LAYOUT, t);
-        return false;
-    }
-    return true;
-}
-
-uint result_or_fail(Row at, uint request)
-{
-    uint status;
-    uint t = pj_result(request, status);
-    if (t == RT_INVALID) fail(at, status == 0xffffu ? PJ_E_PUBLICATION : PJ_E_SUBST, status);
-    return t;
-}
-
-uint operand_class(uint t)
-{
-    if (!rt_is_term(t)) return OPR_TY_UNKNOWN;
-    if (t < RT_FIRST_TERM) return scalar_is_known(t) ? t : OPR_TY_UNKNOWN;
-    uint kind = rt_term_kind(t);
-    if (kind == RT_KIND_NAMED) return OPR_TY_NAMED;
-    if (kind == RT_KIND_ARRAY || kind == RT_KIND_SLICE) return OPR_TY_SEQUENCE;
-    return OPR_TY_UNKNOWN;
-}
-
-bool null_literal(Row at, uint row)
-{
-    if (row == RT_INVALID) return false;
-    uint4 p = pj_row(at.rank, row, 2u);
-    return pj_row(at.rank, row, 0u).x == RT_HIR_LITERAL_EXPR && p.x == EXPR_INT && p.y == 0u && p.z == 0u;
-}
-
-void rule(Row at, uint code, uint detail) { fail(at, PJ_E_RULE, (code << 24u) | (detail & 0xffffffu)); }
-
-// A value of type `value` stored where `expected` is required, when either
-// side was symbolic in the template: the realized types must be equal (a
-// null constant fits a pointer).
-void check_destination(Row at, uint expected, uint value_row, bool changed)
-{
-    if (!changed || value_row == RT_INVALID) return;
-    uint actual = row_type(at, value_row);
-    if (actual == RT_INVALID || expected == RT_INVALID || actual == expected) return;
-    if (expected == SCALAR_PTR && null_literal(at, value_row)) return;
-    rule(at, PJ_RULE_ASSIGN_MISMATCH,
-        operator_detail_code(operand_class(expected)) * 256u + operator_detail_code(operand_class(actual)));
-}
+import type_checker.retention.projection.pj_validation;
 
 // Whether literal `row`'s expression owner is a unary minus over it.
 bool under_unary_minus(Row at, uint row)
@@ -179,196 +75,6 @@ void check_literal(Row at, uint4 p, uint t, bool changed)
         bool f64_finite = (p.w & 0x7ff00000u) != 0x7ff00000u;
         if (t == SCALAR_F32 && f32_infinite && f64_finite)
             rule(at, PJ_RULE_FLOAT_LITERAL, (t << 8u) | 1u);
-    }
-}
-
-// Intrinsics have no declaration signature. Their accepted result is
-// checked above, and their primitive contract is checked after substitution.
-void check_intrinsic(Row at, uint4 p, uint t, uint tag)
-{
-    uint arity = tag == 11u ? 4u : (tag == 4u || tag == 7u || tag == 16u) ? 2u : 1u;
-    if (tag == 0u || tag > 16u || p.z != arity)
-    {
-        fail(at, PJ_E_USE, tag);
-        return;
-    }
-    if (tag == 4u || intrinsic_typed_view(tag))
-    {
-        if (!rt_is_stored_term(t) || rt_term_kind(t) != RT_KIND_SLICE ||
-            (tag == 4u && rt_term_arg(t,0u) != SCALAR_I32) ||
-            pj_words(rt_term_arg(t,0u)) == RT_INVALID)
-        { fail(at,PJ_E_SIGNATURE,tag); return; }
-    }
-    else if (t != intrinsic_result_type(tag))
-    { fail(at,PJ_E_SIGNATURE,tag); return; }
-
-    for (uint k = 0u; k < arity; k++)
-    {
-        uint value = pj_side(at.rank,PJ_SIDE_CALL_ARGS,p.y+k,0u).y;
-        uint actual = row_type(at,value);
-        if (actual == SCALAR_NEVER) continue;
-        uint scalar = actual < RT_FIRST_TERM ? actual : 0u;
-        uint kind = rt_is_stored_term(actual) ? rt_term_kind(actual) : 0u;
-        bool sequence = kind == RT_KIND_ARRAY || kind == RT_KIND_SLICE;
-        uint detail = 0u;
-        bool wrong = false;
-        if (tag == 1u || tag == 9u || tag == 10u || intrinsic_is_bit_cast(tag))
-            wrong = intrinsic_fixed_argument_violation(tag,scalar,sequence,detail);
-        else if (tag == 3u || tag == 5u || tag == 8u)
-        {
-            wrong = !sequence;
-            detail = LENGTH_ARGUMENT_TYPE | scalar;
-        }
-        else if (tag == 6u)
-        {
-            wrong = scalar != SCALAR_STR;
-            detail = LENGTH_ARGUMENT_TYPE | 0x100u | scalar;
-        }
-        else if (tag == 4u || tag == 7u || tag == 16u || tag == 11u)
-        {
-            bool pointer = tag == 11u || k == 0u;
-            wrong = pointer ? (scalar != SCALAR_PTR && !(null_literal(at,value) && (tag != 11u || k != 0u)))
-                : !scalar_is_integer(scalar);
-            detail = (pointer ? SCALAR_PTR : SCALAR_I32) * 256u + scalar;
-        }
-        // assert keeps the existing truth-test contract. Its original
-        // frontend accepts the argument and its arity is checked above.
-        if (wrong)
-        {
-            Row operand = at; operand.row = value; operand.g = at.base + value;
-            rule(operand,PJ_RULE_ASSIGN_MISMATCH,detail);
-            return;
-        }
-    }
-}
-
-// The instance-routed call at `at` (use `use`).
-void check_call(Row at, uint4 p, uint t, uint use)
-{
-    uint4 u0 = pj_use(at.rank, use, 0u);
-    uint form = u0.z & 0xffu;
-    if ((form != USE_DIRECT && form != USE_CONSTRUCTOR && form != 5u) || ((u0.z >> 8u) & 0xffffu) != 0u)
-    {
-        fail(at, PJ_E_USE, u0.z);
-        return;
-    }
-    // The use result is the accepted call result (export/14_uses: only a
-    // unit or never call may take its row's term). It must be resolved: a
-    // term, or a bare type parameter of the caller such as the `T` of
-    // `keep(v)` in a body generic over T. Substituted under the instance
-    // ENV, it must equal the row's type.
-    if (!rt_is_resolved(pj_use(at.rank, use, 1u).y))
-    {
-        fail(at, PJ_E_USE, 0xfffeu);
-        return;
-    }
-    uint accepted = result_or_fail(at, pj_req_use_result(at.rank, use));
-    if (failed) return;
-    if (accepted != t)
-    {
-        fail(at, PJ_E_SIGNATURE, 0xfffdu);
-        return;
-    }
-    uint4 q1 = pj_instances[at.rank * PJ_INSTANCE_WORDS + 1u];
-    uint4 route = pj_routes[q1.x + use];
-    if (route.w != rt_counts[RT_C_GENERATION])
-    {
-        fail(at, PJ_E_ROUTE, 0u);
-        return;
-    }
-    uint args = p.z;
-    uint count = pj_side_len(at.rank,PJ_SIDE_CALL_ARGS);
-    if (p.y > count || args > count - p.y)
-    { fail(at,PJ_E_INCOMPLETE,args); return; }
-    if (form == USE_CONSTRUCTOR)
-    {
-        uint entry = pj_dir_entry(u0.w);
-        uint variant = pj_use(at.rank,use,2u).x;
-        if (route.x != PJ_ROUTE_NONE || !rt_is_stored_term(t) || rt_term_kind(t) != RT_KIND_NAMED ||
-            rt_term_words(t).x != u0.w || entry == RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y != 6u)
-        { fail(at,PJ_E_USE,form); return; }
-        uint4 d1 = rt_dir[entry*RT_DIR_WORDS+1u];
-        uint4 d2 = rt_dir[entry*RT_DIR_WORDS+2u];
-        if (variant >= d1.w || variant >= d2.z)
-        { fail(at,PJ_E_FIELD,variant); return; }
-        uint4 v = rt_schema[d2.y+variant];
-        if (v.x != u0.w || v.y != (RT_SCHEMA_VARIANT | (variant << 8u)) || v.z != args ||
-            v.w > d2.z || v.z > d2.z-v.w)
-        { fail(at,PJ_E_SIGNATURE,variant); return; }
-        for (uint k = 0u; k < args; k++)
-        {
-            uint value = pj_side(at.rank,PJ_SIDE_CALL_ARGS,p.y+k,0u).y;
-            if (value >= pj_inf(at.rank,1u).x || !pj_argument_compatible(pj_schema_type(t,v.w+k),
-                row_type(at,value),pj_row(at.rank,value,6u).x & 0xffu))
-            { fail(at,PJ_E_SIGNATURE,k); return; }
-        }
-        return;
-    }
-    if (form == 5u)
-    {
-        if (route.x != PJ_ROUTE_NONE) { fail(at,PJ_E_ROUTE,3u); return; }
-        check_intrinsic(at,p,t,pj_use(at.rank,use,2u).x);
-        return;
-    }
-    if (route.x == PJ_NATIVE_LIBRARY && route.y == PJ_NATIVE_NS_INSTANCE)
-    {
-        uint target = route.z;
-        uint env = result_or_fail(at, pj_req_use_env(at.rank, use));
-        if (failed) return;
-        if (target >= pj_instance_count() || pj_instances[target * PJ_INSTANCE_WORDS].x != u0.w ||
-            pj_instances[target * PJ_INSTANCE_WORDS].y != env || pj_errors[target].x != 0u)
-        {
-            fail(at, PJ_E_ROUTE, 1u);
-            return;
-        }
-        if (pj_inf(target, 1u).z != args)
-        {
-            fail(at, PJ_E_SIGNATURE, args);
-            return;
-        }
-        uint result = result_or_fail(at, pj_req_result(target));
-        if (failed) return;
-        if (result != t)
-        {
-            fail(at, PJ_E_SIGNATURE, 0xffffu);
-            return;
-        }
-        for (uint k = 0u; k < args; k++)
-        {
-            uint value = pj_side(at.rank, PJ_SIDE_CALL_ARGS, p.y + k, 0u).y;
-            uint expected = result_or_fail(at, pj_req_param(target, k));
-            if (failed) return;
-            if (!pj_argument_compatible(expected, row_type(at, value), pj_row(at.rank, value, 6u).x & 0xffu))
-            {
-                fail(at, PJ_E_SIGNATURE, k);
-                return;
-            }
-        }
-        return;
-    }
-    // An ordinary native callee: its own declaration key and closed
-    // signature.
-    uint4 key = rt_decl_key[u0.w];
-    uint entry = pj_dir_entry(u0.w);
-    if (entry == RT_INVALID || any(route.xyz != uint3(key.x, key.y, key.w)))
-    {
-        fail(at, PJ_E_ROUTE, 2u);
-        return;
-    }
-    uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
-    if (d1.y != 0u || d1.w != args || rt_sigs[d1.z] != t)
-    {
-        fail(at, PJ_E_SIGNATURE, 0xfffeu);
-        return;
-    }
-    for (uint k = 0u; k < args; k++)
-    {
-        uint value = pj_side(at.rank, PJ_SIDE_CALL_ARGS, p.y + k, 0u).y;
-        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], row_type(at, value), pj_row(at.rank, value, 6u).x & 0xffu))
-        {
-            fail(at, PJ_E_SIGNATURE, k);
-            return;
-        }
     }
 }
 
@@ -755,16 +461,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
             fail(at, PJ_E_USE, 0xffffu);
             return;
         }
-        if (kind == RT_HIR_CALL_EXPR) check_call(at, p, t, use);
-        else check_struct_literal(at, p, t, use);
+        if (kind == RT_HIR_STRUCT_LITERAL_EXPR) check_struct_literal(at, p, t, use);
     }
     else if (use != RT_NONE)
     {
         if ((kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) && use < pj_inf(at.rank,1u).w &&
             (pj_use(at.rank,use,0u).z & 0xffu) == USE_CONSTRUCTOR)
-            check_call(at,uint4(0u,0u,0u,0u),t,use);
+            return; // Constructor call validation follows in 05c.
         else fail(at, PJ_E_USE, kind);
     }
-    else if (kind == RT_HIR_MEMBER_EXPR)
+    else if (kind == RT_HIR_MEMBER_EXPR && r3.z != RT_ROLE_CALLEE)
         check_member(at, p, t, r5.w);
 }

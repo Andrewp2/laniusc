@@ -109,7 +109,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 key = rt_decl_key[words.x];
     ob_ti_kind[t] = 1u;
     ob_ti_native_words[t] = total;
-    ob_ti_len_payload[t] = 0u;
+    // The nominal argument mask belongs to 03b_type_arguments.
     ob_ext_library[t] = key.x;
     ob_ext_unit[t] = key.y;
     ob_ext_local[t] = key.w;

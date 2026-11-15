@@ -1,7 +1,7 @@
 //! GPU discovery of closed instances from retained call uses.
 //!
-//! The first production slice handles direct free-function calls. A reachable
-//! method fails closed until its routing is available. Bounded direct calls
+//! Direct calls and accepted implementation methods follow exact ENV edges.
+//! Required trait members need concrete solver routes. Bounded direct calls
 //! require a current retained trait publication, checked per use on the GPU. No unsupported call is omitted or sent to source replay.
 use std::collections::BTreeMap;
 

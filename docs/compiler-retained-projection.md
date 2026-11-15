@@ -40,7 +40,7 @@ environment order). Rank is the native instance symbol:
   parameters. This exists for tests whose program root is an instance.
   Production roots are original objects whose provisional use symbols the
   GPU finalizer rewrites.
-- The callable must be a committed, complete `FREE_FN` with a body segment.
+- The callable must be a committed, complete `FREE_FN` or `METHOD` with a body segment.
   Only generic bodies have a segment
   ([program retention](compiler-program-retention.md), "Nongeneric bodies"),
   so the instances are generic instances. A use inside a nongeneric body
@@ -99,14 +99,15 @@ term, row or route.
 | --- | --- | --- |
 | `00_plan` | one per rank | validate readiness, the record and the directory entry; insert the identity; write the rank plan and counts |
 | `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
-| `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results |
+| `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results, matched receivers and receiver parameters |
 | substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
 | schema plan, scan, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `03b_type_arguments` | one per TermId, up to 32 operands | publish nominal arguments and typed constant atoms for lowering |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
 | `04c_string_scan` | one per global row, logarithmic scan steps only when strings exist | exclusive decoded-word offsets in instance/row order |
-| `05_check` | one per global row | forms, types, literal, operator and destination rules, calls, record literals, members |
+| `05_check` | one per global row | forms, types, literal, operator and destination rules, record literals, members |
+| `05c_calls` | one per global call row | accepted result, route, receiver plan and complete target signature |
 | `05b_report` | 1 | first error in (rank, row) order, or CHECKED |
 | `06_batch_plan` | one per batch | rank range, rows, tokens and side tables of each batch; maxima |
 | `07_rows`, `08_side`, `09_batch_finish` | one per batch row / side row / 1 | lowering HIR and semantic columns, lowering counts |
@@ -153,7 +154,7 @@ The build has seven steps.
    The lane maps the symbol's call HIR to its retained use through
    `rt_x_flags[row].y`, `rt_x_scan[row].y` and
    `rt_x_counts[RT_X_BASE + RT_A_USES]`.
-   - For a DIRECT use whose callee is a generic template, the lane writes
+   - For a DIRECT or METHOD use whose callee is a generic template, the lane writes
      the identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE, use)` and its
      hash.
    - It records the caller's ABI facts in `NativeCallTables`. `nc_use_abi`
@@ -197,12 +198,13 @@ never reads a row that no symbol names.
 The retained link publishes the GPU trait catalog proofs and binds them in
 discovery. Bounded direct calls require a successful per-use proof, and projection
 requires discovery's proof-admission flag before lowering a bounded template.
-METHOD uses still need concrete implementation routes. No step falls back to
-replay.
+Implementation-method uses with a concrete declaration follow the same instance
+route as free functions. Required trait members still need a solver-selected
+implementation. No step falls back to replay.
 
 ## Supported forms
 
-v1 projects free functions whose bodies use: parameters, `let`, `return`,
+Projection handles free functions and implementation methods whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `for`, `break`, `continue`, assignment, unary and binary operators,
 integer, float, boolean and string literals, names of locals and parameters, member
 reads of nominal structs, struct literals, plain array literals, indexing, direct calls
@@ -225,7 +227,7 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | named range objects | `FORM` or `TYPE` |
-| methods, receiver adjustments, host calls, function references | `USE` |
+| required trait-member routes, host calls, function references | `USE` |
 | named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
@@ -235,7 +237,7 @@ Every other form fails closed with its template location:
 | --- | --- |
 | Pattern rows are not constructor uses; enum instances are reached from signature, parameter, scrutinee and row terms | Schema realization reaches enum types from the stored type graph; pattern syntax creates no call use. |
 | A nested pattern's matched type is the enclosing payload's schema-substituted type | Implemented by a lane per arm/payload, taking each nested payload type from its parent variant's realized schema. |
-| Substitute u1.z/u1.w under the instance ENV and validate the adjustment | Not implemented; any receiver adjustment or METHOD use is rejected (`USE`). The receiver contract to port: `enter`/`read`/`peek` borrow mode 2, deref 1; by-value `(2, 0)`; twice borrowed `(2, 2)`; consuming self `(1, 0)`. |
+| Substitute u1.z/u1.w under the instance ENV and validate the adjustment | Implemented for calls naming an implementation method. The checked receiver plan is substituted and compared against the source after its dereference chain and against the target parameter. Receiver cases: `enter`/`read`/`peek` borrow mode 2, deref 1; by-value `(2, 0)`; twice borrowed `(2, 2)`; consuming self `(1, 0)`. |
 | r3.y is a predicate ordinal only when r3.z is BOUND (4), a use index otherwise | Implemented in `05_check` and `07_rows`. |
 | The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be resolved: a term, or a bare type parameter of the caller (the `T` of `keep(v)` in a body generic over T). Its substitution must equal the row type and the target's result. |
 
@@ -490,3 +492,24 @@ libraries with generic Result and Option helpers. It checks wide struct
 success/error payloads, a string error, a changed success type and None,
 with small and combined batches. Both executions exit 42 with zero replay.
 The complete `retained_` filter passes 31 tests after argument-graph and `?` integration.
+
+### Implementation methods
+
+Discovery follows the accepted implementation method's exact declaration and
+substitutes its ENV, including inherited impl parameters and method parameters.
+Projection substitutes both receiver terms, verifies each reference dereference
+and the value/borrow adjustment, and checks the resulting receiver against the
+target's first parameter. Original-object ABI certification includes that first
+parameter too. The checked call artifact retains the explicit argument count;
+ordinary lowering adds the receiver once.
+
+`retained_native_methods_preserve_receivers_and_inherited_binders` executes
+borrowed reads, mutation through `&self`, consuming `self`, method-to-method
+calls, and inherited and shadowing type parameters across units and batches.
+Both builds exit 42 with zero replay.
+
+Before this path becomes the default, inherent-method choice must be checked
+again for the closed receiver: a more specific impl can introduce ambiguity
+that the symbolic template did not see. Required trait members also still need
+concrete routes from the solver. The current method projection validates an
+accepted declaration and its complete ABI; it does not perform either selection.

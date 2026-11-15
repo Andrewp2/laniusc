@@ -110,7 +110,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
     uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
     uint4 d3 = rt_dir[entry * RT_DIR_WORDS + 3u];
-    if (d0.x != decl || d0.y != DIR_FREE_FN || d0.w != RT_DIR_COMMITTED || d3.w != 0u ||
+    if (d0.x != decl || (d0.y != DIR_FREE_FN && d0.y != 2u) || d0.w != RT_DIR_COMMITTED || d3.w != 0u ||
         d2.x == RT_INVALID)
     {
         fail(rank, PJ_E_DECL, d0.y | (d3.w << 8u));
@@ -165,7 +165,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     pj_base[b + PJ_C_SIDE + 4u] = s2.x;
     pj_base[b + PJ_C_SIDE + 5u] = s2.y;
     pj_base[b + PJ_C_SIDE + 6u] = s2.z;
-    pj_base[b + PJ_C_REQUESTS] = 1u + d1.w + s0.z + 2u * d3.x;
+    pj_base[b + PJ_C_REQUESTS] = 1u + d1.w + s0.z + 4u * d3.x;
     InterlockedMax(pj_status[PJ_S_MAX_ROWS], s0.z);
     InterlockedMax(pj_status[PJ_S_MAX_TOKENS], s2.w);
     InterlockedMax(pj_status[PJ_S_MAX_SIDE], max(max(max(s1.x, s1.y), max(s1.z, s1.w)), max(max(s2.x, s2.y), s2.z)));

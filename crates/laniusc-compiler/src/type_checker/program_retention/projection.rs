@@ -192,6 +192,7 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/04d_pattern_roots",
     "type_checker/retention/projection/04e_pattern_payloads",
     "type_checker/retention/projection/03b_type_arguments",
+    "type_checker/retention/projection/05c_calls",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
@@ -213,6 +214,7 @@ const K_STRING_BYTES: usize = 16;
 const K_PATTERN_ROOTS: usize = 17;
 const K_PATTERN_PAYLOADS: usize = 18;
 const K_TYPE_ARGUMENTS: usize = 19;
+const K_CALLS: usize = 20;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -1365,6 +1367,7 @@ impl RetainedProjection {
                 .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
         }
         r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
+        r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
         r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
         r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
         report.dispatches += r.finish();

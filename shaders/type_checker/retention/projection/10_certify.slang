@@ -57,7 +57,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((abi.z & 0xffu) != 0u) { reject(use, C_FLAGS); return; }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
-    if ((u0.z & 0xffu) != USE_DIRECT || ((u0.z >> 8u) & 0xffffu) != 0u || !rt_is_term(abi.x) ||
+    uint form = u0.z & 0xffu;
+    if ((form != USE_DIRECT && form != 2u) || (form == USE_DIRECT && (u0.z >> 8u) != 0u) || !rt_is_term(abi.x) ||
         !rt_term_closed(abi.x))
     {
         reject(use, C_USE);
