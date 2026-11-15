@@ -185,6 +185,21 @@ void check_call(Row at, uint4 p, uint t, uint use)
         fail(at, PJ_E_USE, u0.z);
         return;
     }
+    // The use result is the accepted call result (export/14_uses: only a
+    // unit or never call may take its row's term). It must be a stored
+    // term and, substituted, equal the row's type.
+    if (!rt_is_term(pj_use(at.rank, use, 1u).y))
+    {
+        fail(at, PJ_E_USE, 0xfffeu);
+        return;
+    }
+    uint accepted = result_or_fail(at, pj_req_use_result(at.rank, use));
+    if (failed) return;
+    if (accepted != t)
+    {
+        fail(at, PJ_E_SIGNATURE, 0xfffdu);
+        return;
+    }
     uint4 q1 = pj_instances[at.rank * PJ_INSTANCE_WORDS + 1u];
     uint4 route = pj_routes[q1.x + use];
     if (route.w != rt_counts[RT_C_GENERATION])

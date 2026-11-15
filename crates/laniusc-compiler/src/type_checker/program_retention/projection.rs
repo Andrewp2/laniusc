@@ -510,7 +510,14 @@ fn filled(device: &wgpu::Device, label: &'static str, words: u64, fill: u32) -> 
 }
 
 impl BatchColumns {
-    fn new(device: &wgpu::Device, shape: ColumnShape) -> Self {
+    /// Columns of `shape`. The TermId type tables of `previous` (written
+    /// by the layout kernel of the current run) move over when its type
+    /// capacity matches.
+    fn new(device: &wgpu::Device, shape: ColumnShape, previous: Option<BatchColumns>) -> Self {
+        let mut kept = previous
+            .filter(|p| p.shape.types == shape.types)
+            .map(|p| p.words)
+            .unwrap_or_default();
         let mut bytes = 0u64;
         let mut make = |label: &'static str, words: u64, fill: u32| -> (wgpu::Buffer, u64) {
             let buffer = filled(device, label, words, fill);
@@ -520,6 +527,12 @@ impl BatchColumns {
         };
         let mut words = BTreeMap::new();
         for &(name, size, per, fill) in WORD_COLUMNS {
+            if matches!(size, Size::Types)
+                && let Some(buffer) = kept.remove(name)
+            {
+                words.insert(name, buffer);
+                continue;
+            }
             let count = match size {
                 Size::Rows => shape.rows,
                 Size::Side => shape.side,
@@ -746,6 +759,9 @@ pub struct RetainedProjection {
     columns: Option<BatchColumns>,
     config: wgpu::Buffer,
     status: wgpu::Buffer,
+    /// An empty publication (state 0) the kernels bind before substitution.
+    no_results: wgpu::Buffer,
+    no_counts: wgpu::Buffer,
 }
 
 fn grown(current: u32, need: u32) -> u32 {
@@ -770,6 +786,8 @@ impl RetainedProjection {
         Ok(Self {
             config: storage(&device, "pj_config", CFG_WORDS as u64 * 4, false),
             status: storage(&device, "pj_status", STATUS_WORDS as u64 * 4, false),
+            no_results: storage(&device, "pj_no_results", 64, false),
+            no_counts: storage(&device, "pj_no_counts", 256, false),
             device,
             queue: gpu.queue.clone(),
             passes,
@@ -867,8 +885,8 @@ impl RetainedProjection {
             side: grown(previous.map_or(0, |p| p.side as u32), shape.side as u32) as u64,
             types: shape.types,
         };
-        self.columns = None;
-        let columns = BatchColumns::new(&self.device, shape);
+        let previous = self.columns.take();
+        let columns = BatchColumns::new(&self.device, shape, previous);
         report.allocations += 1;
         report.allocated_bytes += columns.bytes;
         self.columns = Some(columns);
@@ -967,6 +985,12 @@ impl RetainedProjection {
 
         // Plan and scan.
         self.ensure_ranks(inputs.instance_capacity, &mut report);
+        // Every kernel binds every projection table; the plan sizes the row
+        // and batch tables later.
+        self.ensure_rows(1, &mut report);
+        self.ensure_batches(1, &mut report);
+        let terms = store.store.lock().unwrap().capacity.arenas[A_TERMS];
+        self.ensure_types(terms, &mut report);
         self.write_config(0, options, 0);
         let mut status = vec![0u32; STATUS_WORDS];
         status[S_ERROR_RANK] = u32::MAX;
@@ -976,8 +1000,9 @@ impl RetainedProjection {
             let guard = store.store.lock().unwrap();
             let mut r = self.recorder();
             r.encoder.clear_buffer(&self.ranks["pj_identity"], 0, None);
-            r.dispatch(K_PLAN, &guard, inputs, &[], inputs.instance_capacity)?;
-            r.dispatch_groups(K_SCAN, &guard, inputs, &[], 1)?;
+            let none = [("sb_results", &self.no_results), ("sb_counts", &self.no_counts)];
+            r.dispatch(K_PLAN, &guard, inputs, &none, inputs.instance_capacity)?;
+            r.dispatch_groups(K_SCAN, &guard, inputs, &none, 1)?;
             report.dispatches += r.finish();
             drop(guard);
             self.read(&self.status, STATUS_WORDS, &mut report)?
@@ -987,6 +1012,7 @@ impl RetainedProjection {
         report.tokens = totals[S_TOTALS + C_TOKENS];
         report.requests = totals[S_TOTALS + C_REQUESTS];
         report.plan_us = started.elapsed().as_micros() as u64;
+        trace(&format!("plan: {totals:?}"));
 
         // Substitution requests and the engine.
         let started = std::time::Instant::now();
@@ -1000,7 +1026,12 @@ impl RetainedProjection {
             let guard = store.store.lock().unwrap();
             let requests = self.requests.as_ref().unwrap();
             let [requests_buffer, count_buffer] = requests.buffers();
-            let extra = [requests_buffer, count_buffer];
+            let extra = [
+                requests_buffer,
+                count_buffer,
+                ("sb_results", &self.no_results),
+                ("sb_counts", &self.no_counts),
+            ];
             let mut r = self.recorder();
             r.dispatch(K_REQUESTS, &guard, inputs, &extra, report.requests.max(1))?;
             report.dispatches += r.finish();
@@ -1013,15 +1044,24 @@ impl RetainedProjection {
             }
         };
         let run = substitution.publication.run;
+        trace(&format!("substitution: run {run}, statuses {:?}", substitution.status_counts()));
         report.substitution = Some(substitution);
         report.substitution_us = started.elapsed().as_micros() as u64;
 
         // Layout, edges, check and the batch plan.
         let started = std::time::Instant::now();
+        // The publication check reads the store generation, so it runs
+        // before the store lock is taken.
+        let publication = self
+            .substitution
+            .publication(store)
+            .ok_or_else(|| anyhow!("the projection's substitution publication is not current"))?;
+        let results = publication.results.clone();
+        let counts = publication.counts.clone();
         let guard = store.store.lock().unwrap();
+        // The substitution may have grown the term arena.
         let terms = guard.capacity.arenas[A_TERMS];
-        let types_changed = self.ensure_types(terms, &mut report);
-        let _ = types_changed;
+        self.ensure_types(terms, &mut report);
         self.ensure_rows(report.rows, &mut report);
         let batches = report.rows.div_ceil(options.batch_rows.max(1));
         self.ensure_batches(batches, &mut report);
@@ -1036,14 +1076,9 @@ impl RetainedProjection {
             &mut report,
         );
         self.write_config(run, options, 0);
-        let publication = self
-            .substitution
-            .publication(store)
-            .ok_or_else(|| anyhow!("the projection's substitution publication is not current"))?;
-        let results = publication.results.clone();
-        let counts = publication.counts.clone();
         let extra = [("sb_results", &results), ("sb_counts", &counts)];
         let mut r = self.recorder();
+        trace("check: recording");
         r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
         for _ in 0..LAYOUT_ROUNDS {
             r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
@@ -1055,6 +1090,7 @@ impl RetainedProjection {
         r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
         report.dispatches += r.finish();
         let status = self.read(&self.status, STATUS_WORDS, &mut report)?;
+        trace(&format!("check: {status:?}"));
         report.check_us = started.elapsed().as_micros() as u64;
         if status[S_STATE] != STATE_CHECKED {
             let f = &status[S_FIRST..S_FIRST + 8];
@@ -1114,7 +1150,30 @@ impl RetainedProjection {
             r.dispatch(K_SIDE, &guard, inputs, &extra, side)?;
             r.dispatch_groups(K_BATCH_FINISH, &guard, inputs, &extra, 1)?;
             report.dispatches += r.finish();
+            trace(&format!("lowering batch {b}: {batch:?}"));
             let columns = self.columns.as_ref().unwrap();
+            if std::env::var_os("LANIUS_PROJECTION_TRACE").is_some() {
+                let rows = batch.rows as usize;
+                for name in ["ob_function_entrypoint", "ob_public_decl_index", "ob_enclosing_fn", "ob_expr_ref_tag",
+                    "ob_expr_ref_payload", "ob_value_type", "ob_expr_scalar_type", "ob_count_rows"] {
+                    let buffer = columns.binding(name).unwrap();
+                    let words = self.read(buffer, rows, &mut report)?;
+                    trace(&format!("{name}: {words:?}"));
+                }
+                for name in ["ob_ti_kind", "ob_ti_native_words", "ob_ti_arg_count", "ob_ti_decl_token", "ob_ext_library",
+                    "ob_imported_layout_kind", "ob_ti_len_kind"] {
+                    let words = self.read(columns.binding(name).unwrap(), 64, &mut report)?;
+                    trace(&format!("{name}[32..64]: {:?}", &words[32..64]));
+                }
+                let payload = self.read(&columns.payload.buffer, rows * 4, &mut report)?;
+                trace(&format!("payload: {:?}", payload.chunks(4).collect::<Vec<_>>()));
+                let core = self.read(&columns.core.buffer, rows * 4, &mut report)?;
+                trace(&format!("core: {:?}", core.chunks(4).collect::<Vec<_>>()));
+                let calls = self.read(&columns.calls.buffer, rows * 22, &mut report)?;
+                for (i, c) in calls.chunks(22).enumerate() {
+                    if c.iter().any(|&w| w != 0) { trace(&format!("call {i}: {c:?}")); }
+                }
+            }
             let object = compiler.lower_projected_x86_batch(
                 token_capacity.saturating_mul(16).max(4096),
                 token_capacity,
@@ -1124,6 +1183,13 @@ impl RetainedProjection {
                 NATIVE_LIBRARY,
                 NATIVE_NS_INSTANCE,
             )?;
+            trace(&format!(
+                "object {b}: text {} bytes, entry {:?}, {} symbols, {} relocations",
+                object.text.len(),
+                object.entry_offset,
+                object.symbols.len(),
+                object.relocations.len()
+            ));
             objects.push(object);
         }
         drop(guard);
@@ -1175,6 +1241,12 @@ impl Recorder<'_> {
     fn finish(self) -> u32 {
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
+    }
+}
+
+fn trace(message: &str) {
+    if std::env::var_os("LANIUS_PROJECTION_TRACE").is_some() {
+        eprintln!("retained projection: {message}");
     }
 }
 

@@ -83,3 +83,193 @@ fn retained_projection_oracle_columns() {
     let out = common::run_x86_64_elf_output("oracle", "oracle", &bytes);
     assert_eq!(out.status.code(), Some(6));
 }
+
+// Vertical slice: two units retained, frontend released, projection only.
+const SLICE_LIBRARY: &str = r#"module lib::a;
+struct Hidden<T> { inner: T }
+fn keep<T>(value: T) -> T {
+    let cell: Hidden<T> = Hidden { inner: value };
+    return cell.inner;
+}
+pub struct PairA { first: i32, second: u32 }
+pub struct PairB { first: u32, second: i32 }
+pub fn swap<T>(p: PairA, tag: T) -> PairB {
+    return PairB { first: keep(p.second), second: keep(p.first) };
+}
+pub fn scale<T>(v: f64, tag: T) -> f64 { return v * 1.5; }
+"#;
+
+// `main` is nongeneric: its own job lowers it and the store keeps no body
+// for it. Its use of `start<u8>` is the discovery root, and the projected
+// `start<u8>` is the executable's entry.
+const SLICE_APP: &str = r#"module app::b;
+import lib::a;
+fn start<T>() -> i32 {
+    let b: PairB = swap(PairA { first: -3, second: 9 }, true);
+    let s: f64 = scale(2.0, 1);
+    if (s > 2.5) {
+        if (b.first == 9) { return b.second + 10; }
+    }
+    return 1;
+}
+fn main() -> i32 { return start<u8>(); }
+"#;
+
+fn retain(sources: &[(&str, &str)]) -> std::sync::Arc<laniusc_compiler::type_checker::program_retention::ProgramRetention> {
+    use laniusc_compiler::{
+        compiler::{GpuCompiler, GpuCompilerBackends},
+        type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity},
+    };
+    let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only()))
+        .expect("frontend compiler");
+    let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    store.begin_build().unwrap();
+    compiler.attach_program_retention(Some(store.clone()));
+    let library = pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[sources[0].1]))
+        .expect("library job");
+    pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(11, &[sources[1].1], &[library]))
+        .expect("application job");
+    compiler.attach_program_retention(None);
+    for report in store.job_reports() {
+        assert!(report.ready, "{report:?}");
+    }
+    pollster::block_on(compiler.release_resident_job_buffers());
+    drop(compiler);
+    store.poison_scratch();
+    store
+}
+
+#[test]
+fn retained_projection_probe_uses() {
+    let store = retain(&[("lib", SLICE_LIBRARY), ("app", SLICE_APP)]);
+    let s = store.status().unwrap();
+    let terms = s[2] as usize;
+    let heads = store.read_store_words("rt_term_head", terms * 4).unwrap();
+    let uses = store.read_store_words("rt_uses", 12 * s[8] as usize).unwrap();
+    let keys = store.read_store_words("rt_decl_key", 4 * s[0] as usize).unwrap();
+    let dir = store.read_store_words("rt_dir", 16 * s[4] as usize).unwrap();
+    for e in 0..s[4] as usize {
+        let d = &dir[e * 16..e * 16 + 16];
+        eprintln!("dir {e}: {:?} key {:?}", d, &keys[d[0] as usize * 4..d[0] as usize * 4 + 4]);
+    }
+    for u in 0..s[8] as usize {
+        let w = &uses[u * 12..u * 12 + 12];
+        let env = w[4] as usize;
+        let head = if env < terms { heads[env * 4..env * 4 + 4].to_vec() } else { vec![] };
+        eprintln!("use {u}: {:?} env head {head:?}", w);
+    }
+}
+
+mod slice {
+    use laniusc_compiler::{
+        compiler::{GpuCompiler, GpuCompilerBackends},
+        type_checker::program_retention::{
+            ProgramRetention,
+            projection::{
+                PRODUCER_KERNEL,
+                ProjectionInputs,
+                ProjectionOptions,
+                ProjectionOutcome,
+                RetainedProjection,
+                read_test_buffer,
+                run_producer_kernel,
+                test_buffer,
+            },
+            substitution::{RetainedSubstitution, SubstitutionCapacity, SubstitutionRequests, words},
+        },
+    };
+
+    use super::common;
+
+    const SLOTS: u32 = 1024;
+    const APP_LIBRARY: u32 = 11;
+
+    /// Producer figures: ranks, routes, overflow bits, roots, levels.
+    #[derive(Debug)]
+    pub struct Produced {
+        pub ranks: u32,
+        pub routes: u32,
+        pub roots: u32,
+        pub levels: u32,
+    }
+
+    /// Discovers the closed instances reachable from the app's roots on
+    /// the GPU and writes them into `inputs` (test producer).
+    pub fn produce(store: &ProgramRetention, inputs: &ProjectionInputs, root_library: u32) -> Produced {
+        let out = test_buffer(64 + 2 * SLOTS as usize);
+        let requests = SubstitutionRequests::new(4096);
+        let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
+        let mask = SLOTS - 1;
+        let dir = store.status().unwrap()[4];
+        let (none_results, none_counts) = (test_buffer(16), test_buffer(32));
+        let none = [("sb_results", &none_results), ("sb_counts", &none_counts)];
+        let kernel = |config: &[u32], lanes: u32, extra: &[(&str, &wgpu::Buffer)]| {
+            run_producer_kernel(store, PRODUCER_KERNEL, inputs, &requests, config, &out, lanes, extra).unwrap()
+        };
+        kernel(&[0, root_library, 1, mask, 0], dir, &none);
+        let mut lo = 0;
+        let mut levels = 0;
+        loop {
+            let hi = read_test_buffer(&out, 4).unwrap()[0];
+            if hi == lo {
+                break;
+            }
+            levels += 1;
+            kernel(&[5, 0, 0, mask, 0], 1, &none);
+            kernel(&[1, lo, hi, mask, 0], hi - lo, &none);
+            let report = engine.run(store, &requests).unwrap().published().unwrap();
+            let n = report.counts[words::REQUESTS];
+            let publication = engine.publication(store).expect("discovery publication");
+            let run = publication.id.run;
+            let extra = publication.buffers();
+            kernel(&[2, 0, 0, mask, run], n, &extra);
+            kernel(&[3, 0, 0, mask, run], n, &extra);
+            lo = hi;
+        }
+        kernel(&[4, 0, 0, mask, 0], 1, &none);
+        let w = read_test_buffer(&out, 4).unwrap();
+        assert_eq!(w[2], 0, "producer overflow or unresolved request bits");
+        Produced { ranks: w[0], routes: w[1], roots: w[3], levels }
+    }
+
+    pub fn codegen() -> GpuCompiler<'static> {
+        pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only())).expect("x86 compiler")
+    }
+
+    pub fn project(
+        compiler: &GpuCompiler<'_>,
+        projection: &mut RetainedProjection,
+        store: &ProgramRetention,
+        inputs: &ProjectionInputs,
+        options: ProjectionOptions,
+    ) -> ProjectionOutcome {
+        projection.run(compiler, store, inputs, &options).expect("projection runs")
+    }
+
+    #[test]
+    fn retained_projection_executes_two_unit_program() {
+        common::run_with_timeout("retained projection slice", slice_program);
+    }
+
+    fn slice_program() {
+        let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
+        let inputs = ProjectionInputs::new(64, 256);
+        let produced = produce(&store, &inputs, APP_LIBRARY);
+        eprintln!("producer: {produced:?}");
+        assert_eq!(produced.roots, 1, "main is the only root");
+        let started = std::time::Instant::now();
+        let compiler = codegen();
+        eprintln!("codegen compiler ready in {:?}", started.elapsed());
+        let mut projection = RetainedProjection::new(SubstitutionCapacity::default()).unwrap();
+        let options = ProjectionOptions { batch_rows: 1 << 16, ..ProjectionOptions::default() };
+        let outcome = project(&compiler, &mut projection, &store, &inputs, options);
+        let (objects, report) = match outcome {
+            ProjectionOutcome::Objects { objects, report } => (objects, report),
+            ProjectionOutcome::Rejected { error, report } => panic!("{error} ({report:?})"),
+        };
+        eprintln!("projection: {report:?} at {:?}", started.elapsed());
+        let elf = compiler.link_x86_objects(&objects).expect("link");
+        let out = common::run_x86_64_elf_output("retained projection", "retained_projection", &elf);
+        assert_eq!(out.status.code(), Some(7));
+    }
+}
