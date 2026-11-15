@@ -452,7 +452,16 @@ pub(crate) fn readback_round_trips() -> (u64, u64) {
     )
 }
 
-fn record_readback_round_trip(waited: Duration) {
+fn record_readback_round_trip(label: &str, waited: Duration) {
+    if host_timing_enabled() {
+        static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+        let at = EPOCH.get_or_init(Instant::now).elapsed();
+        eprintln!(
+            "[gpu_compile_host_timer] readback: label={label} wait_ms={:.3} at_ms={:.3}",
+            waited.as_secs_f64() * 1000.0,
+            at.as_secs_f64() * 1000.0
+        );
+    }
     let waited = waited.as_nanos() as u64;
     READBACK_ROUND_TRIPS.fetch_add(1, Ordering::Relaxed);
     READBACK_WAIT_NS.fetch_add(waited, Ordering::Relaxed);
@@ -1981,7 +1990,7 @@ pub(crate) fn wait_for_map_progress(device: &wgpu::Device, label: &str, poll_typ
     trace_gpu_progress(&format!("poll.start :: {label}"));
     let started = Instant::now();
     let _ = device.poll(poll_type);
-    record_readback_round_trip(started.elapsed());
+    record_readback_round_trip(label, started.elapsed());
     trace_gpu_progress(&format!("poll.done :: {label}"));
 }
 
@@ -2062,7 +2071,7 @@ pub(crate) fn finish_readback_map(
         match receiver.try_recv() {
             Ok(Ok(())) => {
                 let done = Instant::now();
-                record_readback_round_trip(done.duration_since(started));
+                record_readback_round_trip(&label, done.duration_since(started));
                 crate::gpu::trace::record_host_span("host.readback", &label, started, done);
                 trace_gpu_progress(&format!(
                     "map.done :: {label} elapsed_ms={}",
