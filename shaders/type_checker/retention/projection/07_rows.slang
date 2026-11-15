@@ -74,6 +74,7 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     bool method = (use_record.z & 0xffu) == 2u;
     bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
     bool constructor = (pj_use(rank,use,0u).z & 0xffu) == 4u;
+    if ((use_record.z&0xffu)==1u) ob_call_native_abi[row]=pj_use(rank,use,2u).x & 0xffu;
     ob_calls[b + 0u] = RT_INVALID;      // target token
     ob_calls[b + 1u] = route.x;         // dependency library
     ob_calls[b + 2u] = route.y;         // dependency unit (instance namespace)

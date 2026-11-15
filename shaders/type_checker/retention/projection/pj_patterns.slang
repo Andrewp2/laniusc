@@ -2,7 +2,8 @@ __exported import type_checker.retention.projection.pj_schema;
 __exported import type_checker.retention.projection.pj_common;
 
 // Variant syntax carries either a local definition or the imported ordinal
-// artifact. Imported patterns also retain their checked nominal type.
+// artifact. An imported pattern's type comes from its arm/payload edge,
+// not the dependency interface's unsubstituted enum declaration schema.
 public uint pj_pattern_variant(uint rank, uint row)
 {
     uint4 binding = pj_row(rank,row,5u);

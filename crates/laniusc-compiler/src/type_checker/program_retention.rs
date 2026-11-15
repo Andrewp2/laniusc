@@ -50,6 +50,8 @@ pub(crate) const RETAINED_PROGRAM_INPUTS: &[&str] = &[
     "canonical_dependency_type",
     "call_env_ct",
     "semantic_calls_by_hir",
+    "semantic_call_native_abi_by_hir",
+    "semantic_function_native_abi_by_hir",
     "semantic_expr_ref_tag_by_hir",
     "semantic_expr_ref_payload_by_hir",
     "semantic_type_ref_tag_by_hir",

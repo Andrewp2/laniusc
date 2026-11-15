@@ -60,8 +60,8 @@ public static const uint RP_FAILED = 2u;
 // Use map, 4 words per retained use: call row + 1 (0: no goal), first
 // route, route count, call status word 0.
 public static const uint RP_USE_WORDS = 4u;
-// Route, 8 words per obligation: result state (1 impl, 2 assumption; a
-// valid publication has no other state), predicate atom, impl row (RP_INVALID unless state 1), method
+// Route, 8 words per obligation: result classification (1 closed, 2
+// conditional, 3 refuted), predicate atom, impl row (RP_INVALID for an assumption), method
 // first, method count, proof binding first, proof binding count, proof row.
 public static const uint RP_ROUTE_WORDS = 8u;
 // Atom identity, 2 words per catalog atom: kind, retained id.

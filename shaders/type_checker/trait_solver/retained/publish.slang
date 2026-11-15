@@ -74,8 +74,14 @@ public void publish_route(uint o)
         uint at;
         if (proof != out_word(result + 3u) || !proof_row(PROOF_PROOFS, 8u, proof, at))
         { fault(RP_E_PROOF, o); return; }
-        if (rp_proof[at] != state) { fault(RP_E_RESULT, o); return; }
-        if (state == 1u)
+        // Kind (impl/assumption) and classification (closed/conditional)
+        // are distinct. An impl whose child proof uses a template bound is
+        // kind 1 with classification 2, just as proof_frontier_reduction
+        // publishes it. The output result carries the classification.
+        uint kind = rp_proof[at];
+        if ((kind != 1u && kind != 2u) || rp_proof[at+7u] != state || out_word(evidence) != state)
+        { fault(RP_E_RESULT, o); return; }
+        if (kind == 1u)
         {
             uint selected = out_word(result + 7u);
             if (selected == 0u || selected - 1u >= header(RP_H_IMPL_ROWS)) { fault(RP_E_RESULT, o); return; }

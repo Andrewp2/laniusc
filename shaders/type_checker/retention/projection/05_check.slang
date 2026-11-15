@@ -256,8 +256,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint4 schema = pj_variant_schema(pattern_type,variant);
             if (schema.x == RT_INVALID || schema.z != children ||
-                (r5.x == RT_BIND_VARIANT && r5.y != schema.x) ||
-                (r5.x != RT_BIND_VARIANT && !rt_is_resolved(r3.x)))
+                (r5.x == RT_BIND_VARIANT && r5.y != schema.x))
             { fail(at,PJ_E_FIELD,variant); return; }
         }
         else if (children != 0u || (kind != RT_HIR_LITERAL_EXPR && r5.x != RT_BIND_LOCAL))

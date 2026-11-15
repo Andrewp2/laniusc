@@ -392,6 +392,33 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.dependency_local_index = INVALID;
             }
         }
+        else if ((call.callable_kind == CALLABLE_FUNCTION || call.callable_kind == CALLABLE_DEPENDENCY)
+            && call.receiver_hir == INVALID)
+        {
+            // An associated call `P::member(...)` has a selected subject
+            // without a receiver value. Preserve that accepted subject too:
+            // a trait need not mention Self in its signature, so the call
+            // environment may contain only its explicit trait arguments.
+            uint token = callee_token_for_call(row);
+            uint capacity; uint stride;
+            method_candidate.GetDimensions(capacity, stride);
+            if (token < capacity)
+            {
+                MethodCandidate candidate = method_candidate[token];
+                bool local = call.callable_kind == CALLABLE_FUNCTION;
+                if (candidate.receiver_mode == 0u && candidate.deref_count == 0u &&
+                    method_call_receiver_hir[token] == INVALID &&
+                    method_candidate_is_winner(candidate,
+                        local ? METHOD_CALLABLE_LOCAL : METHOD_CALLABLE_DEPENDENCY,
+                        local ? INVALID : call.dependency_library_id,
+                        local ? INVALID : call.dependency_unit_id,
+                        local ? call_fn_index[token] : call.dependency_local_index))
+                {
+                    call.receiver_matched_ref_tag = candidate.matched_ref_tag;
+                    call.receiver_matched_ref_payload = candidate.matched_ref_payload;
+                }
+            }
+        }
         if (call.callable_kind == CALLABLE_ENUM_VARIANT)
         {
             uint start = compact_hir_payload[row].b;

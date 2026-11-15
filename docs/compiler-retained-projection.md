@@ -243,9 +243,8 @@ Every other form fails closed with its template location:
 
 ## Gaps
 
-- **Native C and file-backed builds.** A retained build rejects a manifest
-  that needs file-backed compilation, and it does not link native C
-  functions.
+- **File-backed builds.** A retained build still rejects a manifest
+  that needs file-backed compilation.
 - **Inherent method choice.** Discovery currently follows the template's
   accepted inherent method. It must recheck ambiguity under the closed receiver
   before this becomes the default path.
@@ -522,6 +521,37 @@ the solver remains the implementation selector.
 `retained_native_bound_members_use_concrete_solver_routes` crosses two units
 and exercises scalar, nominal and generic impls, a nested bound call inside an
 impl, trait type arguments, a wide struct result, an i64 binding, and consuming
-`self`. Small and combined lowering batches both execute with zero replay.
+`self`. Static calls such as `C::same(a,b)` retain the method selector's
+accepted subject even when the trait never spells `Self` and its call ENV
+omits that binding. The execution fixture uses different subject and argument
+types, so recovering the subject from an argument cannot pass it. Small and
+combined lowering batches both execute with zero replay.
 Generic executable trait methods with their own parameters remain rejected by
 the existing frontend (LNC0021).
+
+### Native C and imported patterns
+
+`RetainedNativeBuild::native_link` selects the existing native C linker. Original
+units keep their source-checked foreign declaration inventory. Discovery routes
+calls from generic bodies to those declarations; export retains their accepted
+native ABI word and projection emits a C symbol call. Finalized original and
+instance objects enter the existing native linker unchanged. No generic body is
+recompiled to provide the link metadata.
+
+`retained_native_generic_bodies_call_private_c_declarations` executes `abs`,
+`labs` and `fabs` from two instances of a generic body in another unit. The
+private declarations keep their defining unit identities, and both batch sizes
+exit 42 without replay.
+
+Imported variant patterns retain their accepted ordinal. Their instantiated
+type comes from the scrutinee or enclosing variant payload, checked against
+the retained enum schema. The Result/Option execution test also maps an
+imported `Result<T,i32>` to `Result<T,Failure>`, covering both success and error
+payloads across three units.
+
+After native C and imported-pattern integration, the combined `retained_`
+and `program_retention` filters pass 43 tests. The bound-member fixture also
+passes after adding static calls and an impl proof whose child uses a caller
+assumption. Settings now passes discovery across its two original frontend
+jobs; projection still rejects an unsupported layout. This is not yet the
+default compiler path.

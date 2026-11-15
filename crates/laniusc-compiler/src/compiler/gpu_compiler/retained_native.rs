@@ -65,6 +65,7 @@ pub struct RetainedNativeBuild {
     calls: Option<NativeCallTables>,
     pub options: ProjectionOptions,
     pub report: RetainedNativeReport,
+    pub native_link: Option<NativeLinkOptions>,
     /// Fault injection for tests: before the link, every recorded caller
     /// argument term becomes this term.
     #[doc(hidden)]
@@ -83,6 +84,7 @@ impl RetainedNativeBuild {
             calls: Some(NativeCallTables::new(uses)),
             options: ProjectionOptions::default(),
             report: RetainedNativeReport::default(),
+            native_link: None,
             test_caller_arg_fault: None,
         })
     }
@@ -115,33 +117,41 @@ impl GpuCompiler<'_> {
         build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
         *self.retained_native_calls.lock().unwrap() = build.calls.take();
         self.attach_program_retention(Some(build.store.clone()));
-        let originals = self.compile_retained_originals(source_pack, limits).await;
+        let originals = self.compile_retained_originals(source_pack, limits, build.native_link.as_ref()).await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
-        let originals = originals?;
-        self.link_retained(originals, build)
+        let (originals, native_functions) = originals?;
+        self.link_retained(originals, &native_functions, build)
     }
 
     async fn compile_retained_originals(
         &self,
         source_pack: &ExplicitSourcePackPathManifest,
         limits: CompilationUnitLimits,
-    ) -> Result<Vec<GpuX86RelocatableObject>, CompileError> {
+        native_link: Option<&NativeLinkOptions>,
+    ) -> Result<(Vec<GpuX86RelocatableObject>, Vec<NativeCFunction>), CompileError> {
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
         let mut executor = ResidentSourcePackExecutor::new(self, SourcePackArtifactTarget::X86_64)
             .with_frontend_units(&build_plan)
             .retained();
+        if let Some(options) = native_link {
+            x86::native::validate_options(options)
+                .map_err(|e| retained_error("native link options", e))?;
+            executor = executor.with_native_link(options);
+        }
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor).await?;
-        executor
+        let originals = executor
             .take_retained_originals()
-            .ok_or_else(|| retained_error("link", "the executor published no original objects"))
+            .ok_or_else(|| retained_error("link", "the executor published no original objects"))?;
+        Ok((originals, executor.take_retained_native_functions()))
     }
 
     fn link_retained(
         &self,
         mut originals: Vec<GpuX86RelocatableObject>,
+        native_functions: &[NativeCFunction],
         build: &mut RetainedNativeBuild,
     ) -> Result<Vec<u8>, CompileError> {
         let store = build.store.clone();
@@ -223,6 +233,21 @@ impl GpuCompiler<'_> {
             projection: report,
         };
         originals.extend(instances);
+        if let Some(options) = &build.native_link {
+            let objects = originals.into_iter().map(x86::GpuX86FileObject::spill)
+                .collect::<Result<Vec<_>, _>>().map_err(|e| retained_error("native object storage", e))?;
+            let bridge = super::native_codegen::native_main_bridge(&objects)?;
+            let plan = x86::native::plan_native_link(&objects, native_functions, bridge, options)
+                .map_err(|e| retained_error("native link plan", e))?;
+            if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {
+                return self.x86_linker().map_err(|e| retained_error("native linker", e))?
+                    .link_dynamic_executable(&self.gpu.device, &self.gpu.queue, input, image)
+                    .map_err(|e| retained_error("native link", e));
+            }
+            return x86::native::link_native_file_executable(&objects, native_functions, bridge, options)
+                .and_then(|output| output.read_bytes(options.max_output_bytes))
+                .map_err(|e| retained_error("native link", e));
+        }
         self.link_x86_objects(&originals).map_err(|e| retained_error("link", format!("{e:#}")))
     }
 }

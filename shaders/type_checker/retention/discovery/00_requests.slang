@@ -56,10 +56,12 @@ void main(uint3 id: SV_DispatchThreadID)
     if (callee == RT_INVALID) { dg_fail(root,lane,use,2u,u0.w); return; }
     // Original objects already lower nongeneric extern calls through the
     // target ABI. They have no body to instantiate and no provisional symbol.
-    if (root != 0u && rt_dir[callee * RT_DIR_WORDS].y == 4u &&
+    if (rt_dir[callee * RT_DIR_WORDS].y == 4u &&
         !dg_generic(callee) && !dg_predicates(callee))
     {
-        dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
+        uint4 route=uint4(2u,u0.w,0u,dg_config[15]);
+        if (root!=0u) dg_roots[lane]=route;
+        else { dg_edges[lane]=route; dg_targets[lane]=uint2(u0.w,RT_NONE); }
         return;
     }
     bool bound=rt_dir[callee*RT_DIR_WORDS].y==3u;

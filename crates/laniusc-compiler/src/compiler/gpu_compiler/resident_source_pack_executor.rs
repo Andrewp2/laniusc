@@ -31,6 +31,7 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // caches, and the link hands the original objects back unlinked.
     retained: bool,
     retained_originals: Option<Vec<x86::GpuX86RelocatableObject>>,
+    retained_native_functions: Vec<NativeCFunction>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -83,6 +84,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         Self {
             compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None,
             native_link: None, frontend_units: None, retained: false, retained_originals: None,
+            retained_native_functions: Vec::new(),
         }
     }
 
@@ -117,6 +119,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
     /// The original objects of a retained build's link.
     pub(super) fn take_retained_originals(&mut self) -> Option<Vec<x86::GpuX86RelocatableObject>> {
         self.retained_originals.take()
+    }
+
+    pub(super) fn take_retained_native_functions(&mut self) -> Vec<NativeCFunction> {
+        std::mem::take(&mut self.retained_native_functions)
     }
 
     pub(super) fn with_native_link(mut self, options: &NativeLinkOptions) -> Self {
@@ -218,6 +224,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                 _ => Err(source_pack_artifact_store_error("a retained build needs resident x86_64 objects")),
             }).collect::<Result<Vec<_>, _>>()?;
             self.retained_originals = Some(objects);
+            self.retained_native_functions = native_functions;
             return Ok(ResidentLinkedOutput::Bytes(Vec::new()));
         }
         if let Some(options) = &self.native_link {

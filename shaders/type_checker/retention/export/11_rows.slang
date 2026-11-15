@@ -163,6 +163,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (term == RT_UNKNOWN) untranslated++;
         else if (!owned_by(term, c.decl, c.parent)) unowned++;
     }
+    else if (role == RT_ROLE_PATTERN && (semantic_value_const_present_by_hir[row] & RT_CONST_VARIANT) != 0u)
+    {
+        // An imported variant pattern's external canonical reference names
+        // the enum's declaration schema, not a value instantiated in this
+        // body. Keep its accepted variant ordinal. The arm/payload edges
+        // provide the matched type, including every nested type argument;
+        // projection checks the ordinal and payloads against that schema.
+    }
     else if (role == RT_ROLE_CALLEE && (binding_target(semantic_value_decl_by_hir[row]) & RT_X_VARIANT_BIT) != 0u)
     {
         // A variant constructor's callee (`Wrap::Value` in `Wrap::Value(e)`)

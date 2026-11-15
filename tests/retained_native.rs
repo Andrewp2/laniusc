@@ -1064,6 +1064,11 @@ pub fn echo<T,E>(value:Result<T,E>)->Result<T,E> { let v:T=value?; return Ok(v);
 pub fn number<T,E>(value:Result<T,E>)->Result<i32,E> { let v:T=echo<T,E>(value)?; return Ok(17); }
 "#).unwrap();
         std::fs::write(&option,r#"module core::option;
+import core::result;
+pub struct Failure { code:i32 }
+pub fn convert<T>(value:Result<T,i32>)->Result<T,Failure> {
+    return match (value) { Ok(v) -> Ok(v), Err(e) -> Err(Failure{code:e}) };
+}
 pub enum Option<T> { Some(T), None }
 pub fn count<T>(value:Option<T>)->Option<i32> { let v:T=value?; return Some(29); }
 "#).unwrap();
@@ -1088,12 +1093,17 @@ fn main()->i32 {
     let missing:Option<i32> = count<f64>(None);
     if ((match (present) { Some(v) -> v, _ -> 0 }) != 29) { return 5; }
     if (!(match (missing) { None -> true, _ -> false })) { return 6; }
+    let converted:Result<Pair,Failure> = convert<Pair>(Ok(p));
+    let kept:Pair=match(converted) { Ok(v) -> v, _ -> z };
+    if (kept.x!=11 || kept.y!=2.5) { return 7; }
+    let rejected:Result<f64,Failure> = convert<f64>(Err(31));
+    if ((match(rejected) { Err(e) -> e.code, _ -> 0 })!=31) { return 8; }
     return 42;
 }
 "#).unwrap();
         let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
             ExplicitSourceLibraryPaths{library_id:1,paths:vec![result],dependency_library_ids:vec![]},
-            ExplicitSourceLibraryPaths{library_id:2,paths:vec![option],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![option],dependency_library_ids:vec![1]},
             ExplicitSourceLibraryPaths{library_id:3,paths:vec![app],dependency_library_ids:vec![1,2]},
         ]).unwrap();
         let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
@@ -1176,6 +1186,8 @@ fn retained_native_bound_members_use_concrete_solver_routes() {
 pub trait Mark { pub fn mark(&self)->i32; }
 pub trait Mapper<A,B> { pub fn apply(&self,value:A)->B; }
 pub trait Consume { pub fn consume(self)->i32; }
+pub trait StaticCompare<A> { pub fn same(left:A,right:A)->bool; }
+pub fn same<C,A>(left:A,right:A)->bool where C:StaticCompare<A> { return C::same(left,right); }
 pub fn transform<F,A,B>(f:F,value:A)->B where F:Mapper<A,B> { return f.apply(value); }
 pub fn consumed<T:Consume>(value:T)->i32 { return value.consume(); }
 pub fn score<T:Mark>(value:T)->i32 { return value.mark(); }
@@ -1189,19 +1201,24 @@ struct Pair { first:i32, second:f64 }
 pub impl Mapper<i32,Pair> for Local { pub fn apply(&self,value:i32)->Pair { return Pair{first:value+self.value,second:2.5}; } }
 pub impl<T> Mapper<T,T> for Wrap<T> { pub fn apply(&self,value:T)->T { return value; } }
 pub impl Consume for Local { pub fn consume(self)->i32 { return self.value; } }
+pub impl StaticCompare<i32> for Local { pub fn same(left:i32,right:i32)->bool { return left+right==7; } }
+pub impl<T> StaticCompare<T> for Wrap<T> { pub fn same(left:T,right:T)->bool { return false; } }
 pub impl Mark for Local { pub fn mark(&self)->i32 { return self.value; } }
 pub impl Mark for i32 { pub fn mark(&self)->i32 { return 15; } }
 pub impl<T:Mark> Mark for Wrap<T> { pub fn mark(&self)->i32 { return self.value.mark()+3; } }
+fn wrapped<T:Mark>(value:Wrap<T>)->i32 { return score<Wrap<T>>(value); }
 fn main()->i32 {
     let p:Pair=transform<Local,i32,Pair>(Local{value:3},4);
     let n:i64=transform<Wrap<i64>,i64,i64>(Wrap{value:9},4294967298);
     if (p.first!=7 || p.second!=2.5 || n!=4294967298) { return 1; }
     if (consumed<Local>(Local{value:8})!=8) { return 2; }
+    if (!same<Local,i32>(3,4) || same<Wrap<f64>,f64>(4.0,8.0)) { return 3; }
     let a=forward<Local>(Local{value:11});
-    let b=forward<Wrap<Local>>(Wrap{value:Local{value:13}});
+    let b=wrapped<Local>(Wrap{value:Local{value:13}});
     let c=forward<i32>(7);
     return a+b+c;
 }
+
 "#).unwrap();
         let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
             ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
@@ -1216,6 +1233,48 @@ fn main()->i32 {
             assert_eq!(fallback_counters().1,before.1);
             assert!(build.report.discovery.method_route_waves>=2);
             let result=common::run_x86_64_elf_output("retained bound methods","retained_bound_methods",&elf);
+            assert_eq!(result.status.code(),Some(42),"{result:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+
+#[test]
+fn retained_native_generic_bodies_call_private_c_declarations() {
+    common::run_with_timeout("retained native C", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-native-c-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module native_c::lib;
+extern "C" fn abs(value:i32)->i32;
+extern "C" fn labs(value:i64)->i64;
+extern "C" fn fabs(value:f64)->f64;
+pub fn through_c<T>(value:T)->i32 {
+    let kept:T=value;
+    if (labs(-4294967298)!=4294967298 || fabs(-2.5)!=2.5) { return 1; }
+    return abs(-21);
+}
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import native_c::lib;
+fn main()->i32 { return through_c<i64>(4294967298)+through_c<f64>(2.5); }
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.native_link=Some(laniusc_compiler::compiler::NativeLinkOptions {
+            libraries:vec!["m".into()], ..Default::default()
+        });
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let result=common::run_x86_64_elf_output("retained C","retained_c",&elf);
             assert_eq!(result.status.code(),Some(42),"{result:?}");
         }
         std::fs::remove_dir_all(directory).ok();

@@ -251,6 +251,13 @@ the empty-unit negative control are in
 
 ## Publication
 
+The solver's result classification and proof kind are separate fields. A
+generic impl can prove a goal conditionally by using an assumption for one of
+its own bounds. Publication compares the result with the proof's classification
+(word 7), then reads implementation bindings when the proof kind (word 0) is
+an impl. A conditional impl proof is valid source evidence; discovery still
+solves every concrete instance without assumptions before selecting its methods.
+
 `retained_trait_publish` returns a `RetainedTraitPublication` when the
 solver ran. It owns the solver catalog arena, the packet (batch input,
 output and proof store) and the route arena. Their workspace slots stay
@@ -269,7 +276,7 @@ The route arena (`route_abi.slang`):
 | --- | --- | --- |
 | Header | 48 | magic `0x52545231`, version 1, epoch, arena id, serial, generation, status (0 building, 1 valid, 2 failed; written last), failures, first failure, counts, region offsets, catalog table offsets, proof table offsets and admitted rows |
 | Use map | 4 per retained use | call row + 1 (0: not a goal), first route, route count, call status |
-| Routes | 8 per obligation | state (1 impl, 2 assumption), predicate atom, impl row, method first, method count, proof binding first, binding count, proof row |
+| Routes | 8 per obligation | classification (1 closed, 2 conditional, 3 refuted), predicate atom, impl row (absent for assumption proofs), method first, method count, proof binding first, binding count, proof row |
 | Atom ids | 2 per catalog atom | kind (1 `DeclId`, 2 `ParamId`, 3 `TermId`, 0 none), id |
 
 The producer writes the atom ids with the catalog and the use map with

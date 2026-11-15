@@ -25,6 +25,8 @@ import type_checker.retention.export.common;
 import type_checker.retention.row_classes;
 
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> semantic_call_native_abi_by_hir;
+StructuredBuffer<uint> semantic_function_native_abi_by_hir;
 StructuredBuffer<uint2> call_env_ct;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint2> semantic_value_const_by_hir;
@@ -102,6 +104,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             callee = intern_row_decl(callee_row);
             form = call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT;
+            aux = semantic_function_native_abi_by_hir[callee_row];
         }
         else if (call.callable_kind == 3u && call.dependency_local_index != 0xffffffffu)
         {
@@ -111,6 +114,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             form = call.dependency_host_service != 0u && call.dependency_host_service != 0xffffffffu
                 ? RT_USE_HOST
                 : (call.receiver_hir != 0xffffffffu ? RT_USE_METHOD : RT_USE_DIRECT);
+            aux = semantic_call_native_abi_by_hir[row];
         }
         else if (call.callable_kind == 4u)
         {
