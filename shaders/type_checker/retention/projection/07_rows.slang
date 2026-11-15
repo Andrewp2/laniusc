@@ -71,7 +71,8 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     uint4 p = pj_row(rank, rel, 2u);
     uint b = row * PJ_CALL_WORDS;
     uint4 use_record = pj_use(rank,use,0u);
-    bool method = (use_record.z & 0xffu) == 2u;
+    bool host = (use_record.z & 0xffu) == 6u;
+    bool method = (use_record.z & 0xffu) == 2u || (host && (use_record.z >> 8u) != 0u);
     bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
     bool constructor = (pj_use(rank,use,0u).z & 0xffu) == 4u;
     if ((use_record.z&0xffu)==1u) ob_call_native_abi[row]=pj_use(rank,use,2u).x & 0xffu;
@@ -79,7 +80,7 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     ob_calls[b + 1u] = route.x;         // dependency library
     ob_calls[b + 2u] = route.y;         // dependency unit (instance namespace)
     ob_calls[b + 3u] = route.z;         // dependency local (rank)
-    ob_calls[b + 4u] = RT_INVALID;      // host service
+    ob_calls[b + 4u] = host ? pj_use(rank,use,2u).x : RT_INVALID;
     ob_calls[b + 5u] = intrinsic ? pj_use(rank,use,2u).x : 0u;              // intrinsic
     ob_calls[b + 6u] = facts.w;         // return type (scalar code)
     ob_calls[b + 7u] = method ? pj_abs_row(m,pj_row(rank,p.x,2u).y) : RT_INVALID;      // receiver row

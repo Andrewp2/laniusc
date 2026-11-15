@@ -227,8 +227,7 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | named range objects | `FORM` or `TYPE` |
-| host calls, function references | `USE` |
-| named constant declarations outside the body | `FORM` or `LAYOUT` |
+| function references | `USE` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
 ## Root obligations
@@ -562,3 +561,18 @@ zero-length generic fields, generic returns of empty values, and offsets of
 ordinary fields after empty ones. Folded named constants retain their exact
 value and declaration; projection checks both the value and type against the
 constant schema before native materialization.
+
+Host calls retain their accepted service ID for both local and imported
+declarations. Projection checks the closed extern signature and emits the
+existing host call artifact, so native lowering selects the runtime service.
+`retained_native_host_calls_keep_local_and_imported_service_ids` allocates,
+stores and reads i64/f64 values, deallocates, and writes text from generic
+bodies on both sides of a unit boundary. Both batch sizes exit 42 with the
+expected output and zero replay.
+
+The settings snapshot (`212c54dce`) compiles as two original units with 1,338
+instances, 34,696 projected rows and one instance object. Both export jobs
+are READY, the catalog and closed discovery proofs pass, and no source replay
+runs. With the native libraries from the existing settings receipt, the
+generated executable runs `--frames 3 --scale 1` and exits 0. This run proves
+execution; its cold 1.58 s compile is not a warm rebuild measurement.

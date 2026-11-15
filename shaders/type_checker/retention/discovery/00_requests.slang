@@ -44,7 +44,7 @@ void main(uint3 id: SV_DispatchThreadID)
     if (form == 3u || form == 4u || form == 5u) return;
     // Required members use this same substitution request. The closed
     // solver wave selects their concrete implementation after substitution.
-    if ((form != 1u && form != 2u) || (form == 1u && (u0.z >> 8u) != 0u))
+    if ((form != 1u && form != 2u && form != 6u) || (form == 1u && (u0.z >> 8u) != 0u))
     {
         if (root == 0u || form == 7u) dg_fail(root,lane,use,3u,form);
         return;
@@ -64,6 +64,8 @@ void main(uint3 id: SV_DispatchThreadID)
         else { dg_edges[lane]=route; dg_targets[lane]=uint2(u0.w,RT_NONE); }
         return;
     }
+    // A host service must resolve to a nongeneric extern declaration above.
+    if (form == 6u) { dg_fail(root,lane,use,4u,u0.w); return; }
     bool bound=rt_dir[callee*RT_DIR_WORDS].y==3u;
     if (bound && root!=0u) { dg_fail(root,lane,use,4u,u0.w); return; }
     if (!bound && rt_dir[callee * RT_DIR_WORDS].y != 1u && rt_dir[callee * RT_DIR_WORDS].y != 2u)

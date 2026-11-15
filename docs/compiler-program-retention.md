@@ -213,6 +213,10 @@ committed definition of the same declaration is counted in
     be owned by the caller's binder chain, and a consumer substitutes the
     caller's environment into them before binding the callee's slots. All
     four terms are in the caller's scope and are owned by its binder chain.
+    An associated static call retains its accepted subject in `matched
+    receiver` even though it has no receiver value or adjustment. `HOST`
+    uses store the accepted host-service ID in u2.x for both local and
+    imported declarations; `DIRECT`/`METHOD` use that word for the native ABI.
     The receiver parameter is the receiver plan the method selector
     accepted (`methods/08_finalize_candidates.slang`), built from the
     caller's checked receiver for every callee kind (local, dependency,

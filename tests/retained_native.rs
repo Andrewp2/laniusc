@@ -1272,6 +1272,7 @@ pub fn through_c<T>(value:T)->i32 {
     if (labs(-4294967298)!=4294967298 || fabs(-2.5)!=2.5) { return 1; }
     return abs(-21);
 }
+
 "#).unwrap();
         std::fs::write(&app,r#"module app::main;
 import native_c::lib;
@@ -1293,6 +1294,56 @@ fn main()->i32 { return through_c<i64>(4294967298)+through_c<f64>(2.5); }
             assert_eq!(fallback_counters().1,before.1);
             let result=common::run_x86_64_elf_output("retained C","retained_c",&elf);
             assert_eq!(result.status.code(),Some(42),"{result:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_host_calls_keep_local_and_imported_service_ids() {
+    common::run_with_timeout("retained host services", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-host-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module host::lib;
+pub extern "lanius_alloc" fn alloc(size:usize,align:usize)->ptr;
+pub extern "lanius_alloc" fn dealloc(memory:ptr,size:usize,align:usize);
+pub extern "lanius_std" fn write_text(handle:i32,text:str)->i32;
+pub fn local<T>(value:T)->T {
+    let memory:ptr=alloc(64,8);
+    let values:[T]=slice_from_raw_parts(memory+56,1);
+    values[0]=value; let result:T=values[0];
+    dealloc(memory,64,8); write_text(1,"local\n"); return result;
+}
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import host::lib;
+fn remote<T>(value:T)->T {
+    let memory:ptr=alloc(64,8);
+    let values:[T]=slice_from_raw_parts(memory+56,1);
+    values[0]=value; let result:T=values[0];
+    dealloc(memory,64,8); write_text(1,"remote\n"); return result;
+}
+fn main()->i32 {
+    if (local<i64>(4294967298)!=4294967298 || local<f64>(4.25)!=4.25) { return 1; }
+    if (remote<i64>(4294967299)!=4294967299 || remote<f64>(8.5)!=8.5) { return 2; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let result=common::run_x86_64_elf_output("retained host services","retained_host",&elf);
+            assert_eq!(result.status.code(),Some(42),"{result:?}");
+            assert_eq!(result.stdout,b"local\nlocal\nremote\nremote\n");
         }
         std::fs::remove_dir_all(directory).ok();
     });

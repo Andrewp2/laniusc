@@ -101,8 +101,9 @@ void check_call(Row at, uint4 p, uint t, uint use)
 {
     uint4 u0 = pj_use(at.rank, use, 0u);
     uint form = u0.z & 0xffu;
-    if ((form != USE_DIRECT && form != USE_METHOD && form != USE_CONSTRUCTOR && form != 5u) ||
-        (form != USE_METHOD && (u0.z >> 8u) != 0u))
+    bool host = form == 6u;
+    if ((form != USE_DIRECT && form != USE_METHOD && form != USE_CONSTRUCTOR && form != 5u && !host) ||
+        (form != USE_METHOD && !host && (u0.z >> 8u) != 0u))
     {
         fail(at, PJ_E_USE, u0.z);
         return;
@@ -165,7 +166,7 @@ void check_call(Row at, uint4 p, uint t, uint use)
         check_intrinsic(at,p,t,pj_use(at.rank,use,2u).x);
         return;
     }
-    bool method = form == USE_METHOD;
+    bool method = form == USE_METHOD || (host && (u0.z >> 8u) != 0u);
     uint receiver = RT_INVALID;
     if (method)
     {
@@ -252,6 +253,15 @@ void check_call(Row at, uint4 p, uint t, uint use)
         return;
     }
     uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
+    if (host)
+    {
+        uint service = pj_use(at.rank,use,2u).x;
+        // These are the semantic artifact's host-service slots. Slot 52
+        // and 63..73 are language intrinsics/types, never host calls.
+        if (rt_dir[entry*RT_DIR_WORDS].y != 4u ||
+            !((service >= 20u && service <= 62u && service != 52u) || service == 74u))
+        { fail(at,PJ_E_USE,service); return; }
+    }
     if (d1.y != 0u || d1.w != args || rt_sigs[d1.z] != t)
     {
         fail(at, PJ_E_SIGNATURE, 0xfffeu);
