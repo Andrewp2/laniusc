@@ -24,6 +24,7 @@ use std::{
     fs::File,
     os::unix::fs::FileExt,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result, bail, ensure};
@@ -86,6 +87,49 @@ struct SharedDefinitions {
     defined: Vec<(usize, Option<String>)>,
 }
 
+/// Every exported name of one shared object with its default version, or
+/// the reason its version is unreadable. The first export of a name wins.
+struct SharedTable {
+    soname: Option<String>,
+    exports: HashMap<String, std::result::Result<Option<String>, String>>,
+}
+
+/// What this process last read from one system input, valid while the
+/// file's identity, size and modification time are unchanged. These are
+/// system inputs, not compile results.
+struct CachedInput {
+    stamp: (u64, u64, u64, std::time::SystemTime),
+    kind: InputKind,
+    shared: Option<Arc<SharedTable>>,
+    archive: Option<Arc<Option<Vec<String>>>>,
+}
+
+static INPUTS: Mutex<Option<HashMap<PathBuf, CachedInput>>> = Mutex::new(None);
+
+fn stamp(path: &Path) -> Result<(u64, u64, u64, std::time::SystemTime)> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata =
+        std::fs::metadata(path).with_context(|| format!("open native input {}", path.display()))?;
+    Ok((metadata.dev(), metadata.ino(), metadata.len(), metadata.modified()?))
+}
+
+/// Runs `with` on the cached entry of `path`, reading the file's kind again
+/// when it changed.
+fn cached_input<T>(path: &Path, with: impl FnOnce(&mut CachedInput) -> Result<T>) -> Result<T> {
+    let stamp = stamp(path)?;
+    let mut inputs = INPUTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let inputs = inputs.get_or_insert_with(HashMap::new);
+    if inputs.get(path).is_none_or(|entry| entry.stamp != stamp) {
+        let kind = read_input_kind(path)?;
+        inputs.insert(
+            path.to_path_buf(),
+            CachedInput { stamp, kind, shared: None, archive: None },
+        );
+    }
+    with(inputs.get_mut(path).expect("cached input"))
+}
+
+#[derive(Clone, Copy)]
 enum InputKind {
     Shared,
     Archive,
@@ -266,7 +310,8 @@ impl Resolver<'_> {
         if !self.unresolved() {
             return Ok(None);
         }
-        let Some(symbols) = archive_symbols(path)? else {
+        let symbols = archive_symbols(path)?;
+        let Some(symbols) = symbols.as_ref() else {
             return Ok(Some(format!(
                 "archive {} has no symbol index",
                 path.display()
@@ -338,6 +383,10 @@ fn driver_private_library(name: &str) -> bool {
 }
 
 fn input_kind(path: &Path) -> Result<InputKind> {
+    cached_input(path, |entry| Ok(entry.kind))
+}
+
+fn read_input_kind(path: &Path) -> Result<InputKind> {
     let file = File::open(path).with_context(|| format!("open native input {}", path.display()))?;
     let mut magic = [0u8; 20];
     let length = read_prefix(&file, &mut magic)?;
@@ -428,7 +477,16 @@ fn script_inputs(text: &str) -> std::result::Result<Vec<String>, String> {
 
 /// The global symbols an archive's index defines, or `None` for a non-empty
 /// archive without an index.
-fn archive_symbols(path: &Path) -> Result<Option<Vec<String>>> {
+fn archive_symbols(path: &Path) -> Result<Arc<Option<Vec<String>>>> {
+    cached_input(path, |entry| {
+        if entry.archive.is_none() {
+            entry.archive = Some(Arc::new(read_archive_symbols(path)?));
+        }
+        Ok(entry.archive.clone().expect("archive symbols"))
+    })
+}
+
+fn read_archive_symbols(path: &Path) -> Result<Option<Vec<String>>> {
     let file = File::open(path)?;
     let length = file.metadata()?.len();
     if length == 8 {
@@ -508,6 +566,29 @@ fn shared_definitions(
     wanted: &HashMap<&str, usize>,
     fallback_soname: String,
 ) -> Result<SharedDefinitions> {
+    let table = cached_input(path, |entry| {
+        if entry.shared.is_none() {
+            entry.shared = Some(Arc::new(read_shared_table(path)?));
+        }
+        Ok(entry.shared.clone().expect("shared table"))
+    })?;
+    // Definitions in the order of `wanted`'s names, as the symbol table's
+    // order does not change which library resolves a name.
+    let mut defined = Vec::new();
+    for (name, &index) in wanted {
+        match table.exports.get(*name) {
+            Some(Ok(version)) => defined.push((index, version.clone())),
+            Some(Err(reason)) => bail!("{reason}"),
+            None => {}
+        }
+    }
+    Ok(SharedDefinitions {
+        soname: table.soname.clone().unwrap_or(fallback_soname),
+        defined,
+    })
+}
+
+fn read_shared_table(path: &Path) -> Result<SharedTable> {
     let file = File::open(path)?;
     let mut header = [0u8; 64];
     file.read_exact_at(&mut header, 0)?;
@@ -585,7 +666,7 @@ fn shared_definitions(
             }
         }
     }
-    let mut defined = Vec::new();
+    let mut exports = HashMap::new();
     for (index, symbol) in symbols.chunks_exact(24).enumerate().skip(1) {
         let section = u16::from_le_bytes([symbol[6], symbol[7]]);
         let binding = symbol[4] >> 4;
@@ -597,14 +678,12 @@ fn shared_definitions(
             &strings,
             u32::from_le_bytes(symbol[..4].try_into().unwrap()) as usize,
         )?;
-        let Some(&wanted_index) = wanted.get(name) else {
-            continue;
-        };
         let version = match &versions {
             Some(versions) => {
-                let raw = versions
-                    .get(index * 2..index * 2 + 2)
-                    .context("symbol version table is truncated")?;
+                let Some(raw) = versions.get(index * 2..index * 2 + 2) else {
+                    record(&mut exports, name, Err("symbol version table is truncated".into()));
+                    continue;
+                };
                 let raw = u16::from_le_bytes([raw[0], raw[1]]);
                 // A hidden version is not the default an unversioned
                 // reference binds to; a local one is not exported.
@@ -612,21 +691,37 @@ fn shared_definitions(
                     continue;
                 }
                 match raw {
-                    1 => None,
+                    1 => Ok(None),
                     index => version_names
                         .get(&index)
-                        .context("symbol names an undefined version")?
-                        .clone(),
+                        .cloned()
+                        .ok_or_else(|| "symbol names an undefined version".to_string()),
                 }
             }
-            None => None,
+            None => Ok(None),
         };
-        defined.push((wanted_index, version));
+        record(&mut exports, name, version);
     }
-    Ok(SharedDefinitions {
-        soname: soname.unwrap_or(fallback_soname),
-        defined,
-    })
+    Ok(SharedTable { soname, exports })
+}
+
+/// The first export of `name` wins; an unreadable version of any export of
+/// it is an error, as reading only the requested names reported it.
+fn record(
+    exports: &mut HashMap<String, std::result::Result<Option<String>, String>>,
+    name: &str,
+    version: std::result::Result<Option<String>, String>,
+) {
+    match exports.get_mut(name) {
+        None => {
+            exports.insert(name.to_owned(), version);
+        }
+        Some(entry) => {
+            if entry.is_ok() && version.is_err() {
+                *entry = version;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

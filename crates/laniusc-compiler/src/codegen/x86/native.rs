@@ -191,10 +191,9 @@ impl<'a> NativeSymbols<'a> {
 
         let mut definitions = BTreeMap::<Identity, usize>::new();
         for (object_index, object) in objects.iter().enumerate() {
-            object
-                .validate()
-                .map_err(anyhow::Error::msg)
-                .with_context(|| format!("validate native Lanius object {object_index}"))?;
+            // Objects are validated when lowering publishes them and when
+            // finalization installs their symbols.
+            debug_assert_eq!(object.validate(), Ok(()), "native Lanius object {object_index}");
             for relocation in &object.relocations {
                 if relocation.target_kind == GpuX86RelocationTargetKind::SectionOffset {
                     relocation

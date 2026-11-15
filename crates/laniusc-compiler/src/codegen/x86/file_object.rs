@@ -238,7 +238,7 @@ impl GpuX86FileObject {
     }
 
     pub(crate) fn crt_main_bridge_range(&self) -> Result<Option<std::ops::Range<u32>>, String> {
-        self.validate()?;
+        debug_assert_eq!(self.validate(), Ok(()));
         if self.layout.entry_offset.is_none() {
             return Ok(None);
         }
