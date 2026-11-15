@@ -7,6 +7,8 @@ public globallycoherent RWStructuredBuffer<uint4> dg_instances;
 public globallycoherent RWStructuredBuffer<uint> dg_slots;
 public RWStructuredBuffer<uint> dg_scan_a;
 public RWStructuredBuffer<uint> dg_scan_b;
+// Per 256-lane block of the use scan: its total, then its exclusive prefix.
+public RWStructuredBuffer<uint> dg_scan_blocks;
 public RWStructuredBuffer<uint4> dg_edges;
 public RWStructuredBuffer<uint2> dg_targets;
 public RWStructuredBuffer<uint2> dg_edge_owner;
@@ -21,7 +23,7 @@ public globallycoherent RWStructuredBuffer<uint> dg_levels;
 // Workgroups of the wave's request pass, written by the scan.
 public RWStructuredBuffer<uint> dg_indirect;
 // config: mode, lo, hi, edge base, root phase, subst run, depth, hash mask,
-//         scan distance, scan input, sort k, sort j, sort base, sort count,
+//         unused, scan input (0: dg_scan_a), sort k, sort j, sort base, sort count,
 //         level, generation.
 // status: allocated instances, live instances, edges, overflow bits,
 //         instance demand, edge demand, first error+1 (INVALID when none),

@@ -38,13 +38,46 @@ pub struct ClosedTraitPublication {
     proof_nodes: u32,
     /// Status words of the finished publication, from its receipt.
     status: [u32; 3],
+    /// False until the receipt words have been read.
+    received: bool,
 }
 impl ClosedTraitPublication {
     pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
 
+    /// An upper bound of `proof_node_count` known before the receipt is
+    /// read: node rows are 8 words of the proof arena.
+    pub fn proof_node_bound(&self) -> u32 { self.packet.proof.logical_words / 8 }
+
+    /// Words of the publication receipt, the header of the route arena.
+    pub const RECEIPT_WORDS: usize = RP_HEADER_WORDS as usize;
+
+    /// Records a copy of the receipt into `target` at byte `offset`, for a
+    /// caller that reads it with a later readback.
+    pub fn copy_receipt(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::Buffer, offset: u64) {
+        encoder.copy_buffer_to_buffer(
+            &self.routes.buffer.buffer,
+            self.routes.buffer.byte_offset,
+            target,
+            offset,
+            u64::from(RP_HEADER_WORDS) * 4,
+        );
+    }
+
+    /// Accepts the receipt words of a publication made with a deferred
+    /// receipt. They are read after the publication finished on the GPU.
+    /// Returns the publication's status words.
+    pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<[u32; 3]> {
+        ensure!(receipt.len() >= RP_HEADER_WORDS as usize, "closed publication receipt is short");
+        self.proof_nodes = receipt[24];
+        self.status = [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]];
+        self.received = true;
+        Ok(self.status)
+    }
+
     /// The status words `(RP_H_STATUS..+3)`. Publication writes them last;
     /// the receipt read after it finished already holds them.
     pub fn status(&self, _source: &RetainedTraitPublication) -> Result<[u32; 3]> {
+        ensure!(self.received, "closed publication receipt has not been read");
         Ok(self.status)
     }
 
@@ -105,6 +138,18 @@ impl ClosedProducer {
         external: &[(&str, wgpu::BindingResource<'_>)],
         step: u32,
     ) -> Result<()> {
+        let bind = self.bind_group(pass, store, external, step)?;
+        self.dispatch(encoder, pass, lanes, &bind);
+        Ok(())
+    }
+
+    fn bind_group(
+        &self,
+        pass: usize,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        external: &[(&str, wgpu::BindingResource<'_>)],
+        step: u32,
+    ) -> Result<wgpu::BindGroup> {
         let data = &self.reader.passes[pass];
         let names = reflected_names(data);
         let mut entries = Vec::new();
@@ -132,36 +177,30 @@ impl ClosedProducer {
             };
             entries.push((name.as_str(), binding));
         }
-        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+        passes_core::bind_group::create_bind_group_from_bindings(
             &self.reader.device,
             Some(&data.shader_id),
             data,
             0,
             &entries,
-        )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("trait_solver.closed_instances"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
+        )
+    }
+
+    /// Records `pass` with a bind group from `bind_group` for the same pass.
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
+        let data = &self.reader.passes[pass];
+        let label = "trait_solver.closed_instances";
         if pass == 4 {
             let indirect = &self.buffers["cw_indirect"];
-            passes_core::record_indirect_compute_dispatch();
-            compute.dispatch_workgroups_indirect(&indirect.buffer, indirect.byte_offset);
+            passes_core::record_or_defer_compute_indirect(encoder, data, bind, label, indirect);
         } else {
             let (x, y) = if matches!(pass, 3 | 8 | 11) {
                 (1, 1)
             } else {
                 groups(lanes)
             };
-            compute.dispatch_workgroups(x, y, 1);
+            passes_core::record_or_defer_compute_direct(encoder, data, bind, label, (x, y, 1));
         }
-        Ok(())
     }
 }
 
@@ -177,12 +216,15 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
-        self.solve_instances_with_counts(store, instances, first, end, None)
+        self.solve_instances_with_counts(store, instances, first, end, None, false)
     }
 
     /// `solve_instances` with the store's current `rt_counts` words, when
     /// the caller has already read them after its last store write. None
-    /// reads them here.
+    /// reads them here. With `defer_receipt` the publication is submitted
+    /// but its receipt is not read: the caller copies it with
+    /// `copy_receipt`, reads it with its next readback and passes it to
+    /// `accept_receipt` before using the publication.
     pub fn solve_instances_with_counts(
         &mut self,
         store: &ProgramRetention,
@@ -190,6 +232,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
         store_counts: Option<&[u32]>,
+        defer_receipt: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         self.view(store)?;
         ensure!(
@@ -201,7 +244,7 @@ impl RetainedTraitPublication {
             "closed instance range exceeds buffer"
         );
         store.with_store_buffers(|buffers, generation| {
-            self.solve_closed(buffers, generation, instances, first, end, store_counts)
+            self.solve_closed(buffers, generation, instances, first, end, store_counts, defer_receipt)
         })
     }
 
@@ -232,6 +275,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
         store_counts: Option<&[u32]>,
+        defer_receipt: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         let workspace = self.gpu.workspace.clone();
         let device = self.gpu.device.clone();
@@ -282,14 +326,10 @@ impl RetainedTraitPublication {
             .checked_mul(2)
             .and_then(|n| n.max(1).checked_next_power_of_two())
             .ok_or_else(|| anyhow!("closed atom slots overflow"))?;
-        let mut steps = Vec::new();
-        let mut distance = 1u32;
-        while distance < lanes {
-            steps.push(distance);
-            distance = distance
-                .checked_mul(2)
-                .ok_or_else(|| anyhow!("closed scan overflow"))?;
-        }
+        // The count scan is a block scan: block-local scans, one workgroup
+        // over the block totals, then the block prefixes added (07_scan
+        // modes 0, 1, 2). The result is in cw_scan_a (config word 7 = 0).
+        let steps = [0u32, 1, 2];
         let mut config = vec![0; 104];
         config[..8].copy_from_slice(&[
             terms,
@@ -299,7 +339,7 @@ impl RetainedTraitPublication {
             end,
             generation,
             slots,
-            steps.len() as u32 % 2,
+            0,
         ]);
         for t in 0..TABLE_COUNT {
             config[32 + t] = catalog.slices[t].offset;
@@ -307,9 +347,8 @@ impl RetainedTraitPublication {
             config[86 + t] = WIDTHS[t];
         }
         let mut step_words = vec![0; steps.len().max(1) * STAGE_STRIDE as usize / 4];
-        for (i, distance) in steps.iter().enumerate() {
-            step_words[i * 64] = *distance;
-            step_words[i * 64 + 1] = i as u32 % 2;
+        for (i, mode) in steps.iter().enumerate() {
+            step_words[i * 64] = *mode;
         }
         for (name, size) in [
             ("cw_config", 104),
@@ -322,6 +361,7 @@ impl RetainedTraitPublication {
             ("cw_indirect", 3),
             ("cw_scan_a", mul(lanes, 8, "closed scan")?),
             ("cw_scan_b", mul(lanes, 8, "closed scan")?),
+            ("cw_blocks", mul(lanes.div_ceil(256), 8, "closed scan blocks")?),
             ("cw_step", step_words.len() as u32),
             ("idle", 4),
         ] {
@@ -350,6 +390,11 @@ impl RetainedTraitPublication {
             ("cw_catalog", self.gpu.storage.buffer.as_entire_binding()),
         ];
         let mut encoder = device.create_command_encoder(&Default::default());
+        // One compute pass per submit, flushed before the submit.
+        let mut batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
         producer.record(
             &mut encoder,
             0,
@@ -382,19 +427,24 @@ impl RetainedTraitPublication {
         // rounds is a producer failure (code 7).
         let mut recorded = 0;
         let mut rounds = FIRST_ROUNDS;
+        // Every round binds the same buffers.
+        let wave = producer.bind_group(3, store, &ext, 0)?;
+        let expand = producer.bind_group(4, store, &ext, 0)?;
         let state = loop {
             for _ in 0..rounds {
-                producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
-                producer.record(&mut encoder, 4, 0, store, &ext, 0)?;
+                producer.dispatch(&mut encoder, 3, 1, &wave);
+                producer.dispatch(&mut encoder, 4, 0, &expand);
             }
             recorded += rounds;
             producer.record(&mut encoder, 5, terms, store, &ext, 0)?;
             producer.record(&mut encoder, 6, lanes, store, &ext, 0)?;
-            for i in 0..steps.len() {
-                producer.record(&mut encoder, 7, lanes, store, &ext, i as u32)?;
+            for (i, mode) in steps.iter().enumerate() {
+                let scan_lanes = if *mode == 1 { 1 } else { lanes };
+                producer.record(&mut encoder, 7, scan_lanes, store, &ext, i as u32)?;
             }
             producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
             passes_core::flush_deferred_compute(&mut encoder);
+            drop(batch);
             queue.submit(Some(encoder.finish()));
             let mut state =
                 producer
@@ -410,6 +460,10 @@ impl RetainedTraitPublication {
             }
             rounds = (rounds * 2).min(ROUND_BOUND - recorded);
             encoder = device.create_command_encoder(&Default::default());
+            batch = passes_core::DeferredComputeBatchGuard::begin(
+                passes_core::compute_pass_batching_allowed(false),
+                "trait_solver.closed_instances",
+            );
         };
         let mut report = ClosedTraitCheck {
             producer_failures: state[0],
@@ -542,6 +596,11 @@ impl RetainedTraitPublication {
             ("rp_output", packet.output.buffer.as_entire_binding()),
             ("rp_proof", packet.proof.buffer.as_entire_binding()),
         ];
+        // One compute pass per submit, flushed before the submit.
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
         producer.record(
             &mut encoder,
             10,
@@ -552,22 +611,26 @@ impl RetainedTraitPublication {
         )?;
         producer.record(&mut encoder, 11, 1, store, &ext, 0)?;
         passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
         queue.submit(Some(encoder.finish()));
-        // Finish before releasing the store lock or recycling producer scratch.
-        let receipt = producer.reader.read(
-            &routes.buffer,
-            RP_HEADER_WORDS as usize,
-            "closed publication receipt",
-        )?;
-        Ok((
-            report,
-            Some(ClosedTraitPublication {
-                packet,
-                routes,
-                identity,
-                proof_nodes: receipt[24],
-                status: [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]],
-            }),
-        ))
+        let mut publication = ClosedTraitPublication {
+            packet,
+            routes,
+            identity,
+            proof_nodes: 0,
+            status: [0; 3],
+            received: false,
+        };
+        // Later submissions on this queue run after the publication, so a
+        // caller may read the receipt with its own next readback.
+        if !defer_receipt {
+            let receipt = producer.reader.read(
+                &publication.routes.buffer,
+                RP_HEADER_WORDS as usize,
+                "closed publication receipt",
+            )?;
+            publication.accept_receipt(&receipt)?;
+        }
+        Ok((report, Some(publication)))
     }
 }

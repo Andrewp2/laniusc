@@ -83,11 +83,16 @@ fn main() -> Result<()> {
         let opt_level = shader_opt_level_for_artifact(&artifact_key)?;
         let minimum_slang_opt = shader_minimum_slang_optimization();
         let source_digest = shader_source_digest(&shader_root, &ep)?;
+        // The stamp lists everything that changes the compiled artifact. A
+        // shader compiled with LANIUS_SHADER_DEBUG has different reflection
+        // data, so the stamp records the debug setting too.
+        let debug = env_truthy("LANIUS_SHADER_DEBUG");
         let compile_stamp = format!(
-            "slangc={}\nopt={}\nminimum_slang_opt={}\nsource_digest={}\nextra={}\n",
+            "slangc={}\nopt={}\nminimum_slang_opt={}\ndebug={}\nsource_digest={}\nextra={}\n",
             slangc.display(),
             opt_level,
             minimum_slang_opt,
+            debug,
             source_digest,
             extra
         );
@@ -112,7 +117,7 @@ fn main() -> Result<()> {
             stamp_out,
             opt_level,
             minimum_slang_opt,
-            debug: env_truthy("LANIUS_SHADER_DEBUG"),
+            debug,
             extra_args,
             compile_stamp,
         });

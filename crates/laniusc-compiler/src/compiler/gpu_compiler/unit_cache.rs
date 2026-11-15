@@ -827,7 +827,7 @@ mod tests {
     fn native_spilling_preserves_the_exact_pending_original_facts() {
         let pending = PendingOriginalUnit::from_unit_for_test(unit(7));
         let facts = pending.facts().clone();
-        let pending = pending.spill_native().expect("spill private original");
+        let pending = pending.spill_native(super::super::typecheck::NativeObjectStore::Disk).expect("spill private original");
         assert!(pending.facts().same_snapshot(&facts));
     }
 

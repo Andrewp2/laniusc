@@ -1,9 +1,15 @@
 import type_checker.retention.discovery.dg_common;
 StructuredBuffer<uint4> mr_out;
+// Method-route state: this pass shares their submit and runs only after
+// they finished without failure (word 0 is 2, MR_PENDING word 28 clear).
+StructuredBuffer<uint> mr_state;
 [shader("compute")]
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
+    // It may also share resolution's submit: then it runs only when
+    // resolution left no failure or overflow (status 12).
+    if (mr_state[0]!=2u || mr_state[28]!=0u || dg_status[12]!=0u) return;
     uint i=dg_lane(id); if (i>=dg_status[7]) return;
     uint4 out=mr_out[i]; if (out.w==0u) return;
     uint4 m=dg_req_meta[i];
