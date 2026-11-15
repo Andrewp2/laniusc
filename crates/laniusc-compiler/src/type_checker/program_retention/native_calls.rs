@@ -214,6 +214,7 @@ impl ProgramRetention {
             let groups = undefined.div_ceil(256).max(1);
             cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
         }
+        crate::gpu::timer::stamp_active_operation(&mut encoder, KERNEL);
         self.queue.submit(Some(encoder.finish()));
         // The status and both symbol columns in one readback; the columns
         // are used only when the status is clean.

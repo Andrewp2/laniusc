@@ -876,7 +876,7 @@ struct Recorder<'a> {
     binds: Vec<(usize, Vec<(String, wgpu::Buffer)>, wgpu::BindGroup)>,
     /// The open compute pass. Consecutive dispatches share it; wgpu orders
     /// their storage accesses. `encoder()` ends it before a copy or clear.
-    pass: Option<wgpu::ComputePass<'static>>,
+    pass: super::TimedPass,
 }
 
 impl RetainedProjection {
@@ -1155,7 +1155,7 @@ impl RetainedProjection {
                 }),
             dispatches: 0,
             binds: Vec::new(),
-            pass: None,
+            pass: super::TimedPass::new("retained_projection"),
         }
     }
 
@@ -1613,37 +1613,26 @@ impl Recorder<'_> {
             }
         };
         let pass_data = &self.projection.passes[kernel];
-        let pass = match &mut self.pass {
-            Some(pass) => pass,
-            slot => slot.insert(
-                passes_core::begin_counted_compute_pass(
-                    &mut self.encoder,
-                    &wgpu::ComputePassDescriptor {
-                        label: Some("retained_projection"),
-                        timestamp_writes: None,
-                    },
-                )
-                .forget_lifetime(),
-            ),
-        };
+        let pass = self.pass.pass(&mut self.encoder);
         pass.set_pipeline(&pass_data.pipeline);
         pass.set_bind_group(0, &bind, &[]);
         passes_core::record_compute_dispatch();
         let x = groups.min(65535);
         let y = groups.div_ceil(65535);
         pass.dispatch_workgroups(x, y, 1);
+        self.pass.dispatched(&mut self.encoder, &pass_data.shader_id);
         self.dispatches += 1;
         Ok(())
     }
 
     /// The encoder, after ending the open compute pass.
     fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
-        self.pass = None;
+        self.pass.end();
         &mut self.encoder
     }
 
     fn finish(mut self) -> u32 {
-        self.pass = None;
+        self.pass.end();
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
     }
@@ -1718,6 +1707,7 @@ pub fn run_producer_kernel(
         passes_core::record_compute_dispatch();
         cpass.dispatch_workgroups(lanes.div_ceil(64).max(1), 1, 1);
     }
+    crate::gpu::timer::stamp_active_operation(&mut encoder, key);
     queue.submit(Some(encoder.finish()));
     Ok(())
 }

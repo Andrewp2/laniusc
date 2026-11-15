@@ -744,12 +744,10 @@ impl ProgramRetention {
         }
         let indirect = &store.scratch["rt_x_dispatch"];
         {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.export"), timestamp_writes: None },
-            );
+            let mut timed = TimedPass::new("program_retention.export");
             let mut run = |index: usize, dispatch: Dispatch| {
                 let kernel = index.checked_sub(EXPORT_KERNELS.len()).map_or(index, |k| 9 + k);
+                let pass = timed.pass(&mut encoder);
                 pass.set_pipeline(&self.passes[kernel].pipeline);
                 pass.set_bind_group(0, &bind_groups[index], &[]);
                 passes_core::record_compute_dispatch();
@@ -760,6 +758,7 @@ impl ProgramRetention {
                         pass.dispatch_workgroups_indirect(indirect, 3 * slot * 4)
                     }
                 }
+                timed.dispatched(&mut encoder, &self.passes[kernel].shader_id);
             };
             use Dispatch::{Direct, Indirect};
             let one = Direct([1, 1, 1]);
@@ -798,6 +797,8 @@ impl ProgramRetention {
             run(25, one);
             run(26, Indirect(D_COMMIT_DIR));
             run(27, Indirect(D_ROLLBACK));
+            drop(run);
+            timed.end();
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())
@@ -885,6 +886,7 @@ impl ProgramRetention {
             let g = lanes.div_ceil(256).max(1);
             pass.dispatch_workgroups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1);
         }
+        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.rehash");
         self.queue.submit(Some(encoder.finish()));
         Ok(())
     }
@@ -1049,6 +1051,7 @@ impl ProgramRetention {
             passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(entries.div_ceil(64).max(1) as u32, 1, 1);
         }
+        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.trait_probe");
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, entries as usize * TRAIT_PROBE_WORDS)
@@ -1156,9 +1159,62 @@ impl ProgramRetention {
             passes_core::record_compute_dispatch();
             pass.dispatch_workgroups(lanes.div_ceil(64).max(1) as u32, 1, 1);
         }
+        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.resolve");
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, lanes as usize * PROBE_WORDS)
+    }
+}
+
+/// A compute pass shared by several dispatches. Under an operation capture
+/// scope it stamps each dispatch, and it ends the pass after each one when
+/// the adapter cannot stamp inside a pass. Outside a capture scope it only
+/// checks one flag per dispatch.
+pub(crate) struct TimedPass {
+    pass: Option<wgpu::ComputePass<'static>>,
+    label: &'static str,
+    timed: bool,
+    split: bool,
+}
+
+impl TimedPass {
+    pub(crate) fn new(label: &'static str) -> Self {
+        Self {
+            pass: None,
+            label,
+            timed: crate::gpu::timer::operation_capture_active(),
+            split: crate::gpu::timer::operation_capture_requires_split_passes(),
+        }
+    }
+
+    /// The open pass, begun on `encoder` if none is open.
+    pub(crate) fn pass(&mut self, encoder: &mut wgpu::CommandEncoder) -> &mut wgpu::ComputePass<'static> {
+        let label = self.label;
+        self.pass.get_or_insert_with(|| {
+            passes_core::begin_counted_compute_pass(
+                encoder,
+                &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
+            )
+            .forget_lifetime()
+        })
+    }
+
+    /// Stamps the dispatch just recorded as `operation`.
+    pub(crate) fn dispatched(&mut self, encoder: &mut wgpu::CommandEncoder, operation: &str) {
+        if !self.timed {
+            return;
+        }
+        if self.split {
+            self.pass = None;
+            crate::gpu::timer::stamp_active_operation(encoder, operation);
+        } else if let Some(pass) = &mut self.pass {
+            crate::gpu::timer::stamp_active_operation_in_pass(pass, operation);
+        }
+    }
+
+    /// Ends the open pass, so `encoder` can record copies or clears.
+    pub(crate) fn end(&mut self) {
+        self.pass = None;
     }
 }
 

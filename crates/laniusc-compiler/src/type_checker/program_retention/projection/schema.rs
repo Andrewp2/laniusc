@@ -135,6 +135,8 @@ impl SchemaProjection {
         let groups = lanes.div_ceil(256).max(1);
         compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
         passes_core::record_compute_dispatch();
+        drop(compute);
+        crate::gpu::timer::stamp_active_operation(encoder, &pass.shader_id);
         report.dispatches += 1;
         Ok(())
     }
