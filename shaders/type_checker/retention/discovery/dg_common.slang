@@ -18,12 +18,15 @@ public RWStructuredBuffer<uint> dg_rank;
 public RWStructuredBuffer<uint> dg_term_order;
 public RWStructuredBuffer<uint> dg_term_rank;
 public globallycoherent RWStructuredBuffer<uint> dg_levels;
+// Workgroups of the wave's request pass, written by the scan.
+public RWStructuredBuffer<uint> dg_indirect;
 // config: mode, lo, hi, edge base, root phase, subst run, depth, hash mask,
 //         scan distance, scan input, sort k, sort j, sort base, sort count,
 //         level, generation.
 // status: allocated instances, live instances, edges, overflow bits,
 //         instance demand, edge demand, first error+1 (INVALID when none),
-//         request demand, generation, roots, reserved...
+//         request demand, generation, roots, failure, predicated instances,
+//         requests blocked (failure or overflow before resolution), reserved...
 public uint dg_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint dg_entry(uint decl)
 {
@@ -70,7 +73,14 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
             }
             DeviceMemoryBarrier();
             InterlockedCompareExchange(dg_slots[slot], 0u, candidate + 1u, value);
-            if (value == 0u) { InterlockedAdd(dg_status[1], 1u); return candidate; }
+            if (value == 0u)
+            {
+                InterlockedAdd(dg_status[1], 1u);
+                // Instances whose closed predicates need a solver wave.
+                uint entry = dg_entry(decl);
+                if (entry != RT_INVALID && dg_predicates(entry)) InterlockedAdd(dg_status[11], 1u);
+                return candidate;
+            }
         }
         DeviceMemoryBarrier();
         uint4 key = dg_instances[2u * (value - 1u)];
@@ -99,4 +109,42 @@ public int dg_decl_cmp(uint a, uint b)
     int c = dg_cmp(x.x,y.x); if(c != 0) return c;
     c = dg_cmp(x.y,y.y); if(c != 0) return c;
     c = dg_cmp(x.z,y.z); return c != 0 ? c : dg_cmp(x.w,y.w);
+}
+// Bitonic sort steps with j < DG_SORT_BLOCK/2 stay inside one 512-element
+// block, so one workgroup runs them in shared memory with the same
+// compare-exchange network as the global steps (identical output, ties
+// included). k == 0 sorts each block completely (k = 2 .. min(512, count));
+// otherwise it finishes stage k with j = 256 .. 1. count is a power of two.
+public static const uint DG_SORT_BLOCK = 512u;
+groupshared uint dg_sort_keys[DG_SORT_BLOCK];
+public void dg_sort_block<C : IDgCompare>(C order, uint group, uint thread, uint count, uint k)
+{
+    uint block = group * DG_SORT_BLOCK;
+    for (uint e = thread; e < DG_SORT_BLOCK; e += 256u)
+        dg_sort_keys[e] = block + e < count ? order.load(block + e) : RT_INVALID;
+    GroupMemoryBarrierWithGroupSync();
+    uint first = k == 0u ? 2u : k;
+    uint last = k == 0u ? min(DG_SORT_BLOCK, count) : k;
+    for (uint kk = first; kk <= last; kk <<= 1u)
+    {
+        for (uint j = k == 0u ? kk >> 1u : DG_SORT_BLOCK >> 1u; j != 0u; j >>= 1u)
+        {
+            uint i = (thread / j) * 2u * j + thread % j;
+            if (block + i < count)
+            {
+                uint a = dg_sort_keys[i]; uint b = dg_sort_keys[i + j];
+                bool ascending = ((block + i) & kk) == 0u;
+                if ((order.compare(a, b) > 0) == ascending) { dg_sort_keys[i] = b; dg_sort_keys[i + j] = a; }
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+    }
+    for (uint e = thread; e < DG_SORT_BLOCK; e += 256u)
+        if (block + e < count) order.store(block + e, dg_sort_keys[e]);
+}
+public interface IDgCompare
+{
+    int compare(uint a, uint b);
+    uint load(uint index);
+    void store(uint index, uint value);
 }

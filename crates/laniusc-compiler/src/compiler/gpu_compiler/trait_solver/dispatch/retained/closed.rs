@@ -2,6 +2,10 @@
 //! GPU against the already admitted catalog. No lexical assumptions enter.
 use super::*;
 
+/// BFS rounds of the first producer batch, and the bound over all batches.
+const FIRST_ROUNDS: u32 = 8;
+const ROUND_BOUND: u32 = 65;
+
 const CLOSED_KEYS: [&str; 12] = [
     "type_checker/trait_solver/retained/closed/00_init",
     "type_checker/trait_solver/retained/closed/01_catalog",
@@ -32,25 +36,16 @@ pub struct ClosedTraitPublication {
     routes: Arena,
     identity: RetainedTraitIdentity,
     proof_nodes: u32,
+    /// Status words of the finished publication, from its receipt.
+    status: [u32; 3],
 }
 impl ClosedTraitPublication {
     pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
 
-    pub fn status(&self, source: &RetainedTraitPublication) -> Result<[u32; 3]> {
-        let region = ReadbackRegion::from_buffer(
-            &self.routes.buffer,
-            RP_H_STATUS as u64 * 4,
-            12,
-            "closed publication status",
-        )?;
-        let raw = source.gpu.readback.read_regions(
-            &source.gpu.device,
-            &source.gpu.queue,
-            &[region],
-            "closed publication status",
-        )?;
-        let words = super::super::words(&raw[0])?;
-        Ok([words[0], words[1], words[2]])
+    /// The status words `(RP_H_STATUS..+3)`. Publication writes them last;
+    /// the receipt read after it finished already holds them.
+    pub fn status(&self, _source: &RetainedTraitPublication) -> Result<[u32; 3]> {
+        Ok(self.status)
     }
 
     pub fn view<'a>(
@@ -182,13 +177,31 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
+        self.solve_instances_with_counts(store, instances, first, end, None)
+    }
+
+    /// `solve_instances` with the store's current `rt_counts` words, when
+    /// the caller has already read them after its last store write. None
+    /// reads them here.
+    pub fn solve_instances_with_counts(
+        &mut self,
+        store: &ProgramRetention,
+        instances: &LaniusBuffer<u32>,
+        first: u32,
+        end: u32,
+        store_counts: Option<&[u32]>,
+    ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         self.view(store)?;
+        ensure!(
+            store_counts.is_none_or(|c| c.len() >= counts::WORDS),
+            "closed producer store counts are short"
+        );
         ensure!(
             first <= end && u64::from(end) * 32 <= instances.byte_size as u64,
             "closed instance range exceeds buffer"
         );
         store.with_store_buffers(|buffers, generation| {
-            self.solve_closed(buffers, generation, instances, first, end)
+            self.solve_closed(buffers, generation, instances, first, end, store_counts)
         })
     }
 
@@ -218,6 +231,7 @@ impl RetainedTraitPublication {
         instances: &LaniusBuffer<u32>,
         first: u32,
         end: u32,
+        store_counts: Option<&[u32]>,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         let workspace = self.gpu.workspace.clone();
         let device = self.gpu.device.clone();
@@ -238,20 +252,29 @@ impl RetainedTraitPublication {
             },
             buffers: BTreeMap::new(),
         };
-        let staging =
-            workspace.initialized("closed.store_counts", counts::WORDS as u32, usage, None)?;
-        let mut encoder = device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(
-            &store["rt_counts"],
-            0,
-            &staging.buffer,
-            staging.byte_offset,
-            counts::WORDS as u64 * 4,
-        );
-        queue.submit(Some(encoder.finish()));
-        let status = producer
-            .reader
-            .read(&staging, counts::WORDS, "closed store counters")?;
+        let status = match store_counts {
+            Some(words) => words[..counts::WORDS].to_vec(),
+            None => {
+                let staging = workspace.initialized(
+                    "closed.store_counts",
+                    counts::WORDS as u32,
+                    usage,
+                    None,
+                )?;
+                let mut encoder = device.create_command_encoder(&Default::default());
+                encoder.copy_buffer_to_buffer(
+                    &store["rt_counts"],
+                    0,
+                    &staging.buffer,
+                    staging.byte_offset,
+                    counts::WORDS as u64 * 4,
+                );
+                queue.submit(Some(encoder.finish()));
+                producer
+                    .reader
+                    .read(&staging, counts::WORDS, "closed store counters")?
+            }
+        };
         let terms = status[A_TERMS];
         let lanes = add(terms, end - first, "closed producer lanes")?;
         let catalog = self.gpu.catalog.clone();
@@ -351,24 +374,43 @@ impl RetainedTraitPublication {
             0,
         )?;
         producer.record(&mut encoder, 2, end - first, store, &ext, 0)?;
-        // Retained type height is bounded by 64. One final wave consumes
-        // the leaf frontier; a pending frontier is a producer failure.
-        for _ in 0..65 {
-            producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
-            producer.record(&mut encoder, 4, 0, store, &ext, 0)?;
-        }
-        producer.record(&mut encoder, 5, terms, store, &ext, 0)?;
-        producer.record(&mut encoder, 6, lanes, store, &ext, 0)?;
-        for i in 0..steps.len() {
-            producer.record(&mut encoder, 7, lanes, store, &ext, i as u32)?;
-        }
-        producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
-        passes_core::flush_deferred_compute(&mut encoder);
-        queue.submit(Some(encoder.finish()));
-        let state =
-            producer
-                .reader
-                .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
+        // Retained type height is bounded by 64, so 65 rounds consume any
+        // valid frontier. Few terms are that deep: the first batch records
+        // FIRST_ROUNDS, and the count pass reports a pending frontier in
+        // cw_state[5]. The host then records more rounds and repeats the
+        // count, which is idempotent. A frontier still pending after 65
+        // rounds is a producer failure (code 7).
+        let mut recorded = 0;
+        let mut rounds = FIRST_ROUNDS;
+        let state = loop {
+            for _ in 0..rounds {
+                producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
+                producer.record(&mut encoder, 4, 0, store, &ext, 0)?;
+            }
+            recorded += rounds;
+            producer.record(&mut encoder, 5, terms, store, &ext, 0)?;
+            producer.record(&mut encoder, 6, lanes, store, &ext, 0)?;
+            for i in 0..steps.len() {
+                producer.record(&mut encoder, 7, lanes, store, &ext, i as u32)?;
+            }
+            producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
+            passes_core::flush_deferred_compute(&mut encoder);
+            queue.submit(Some(encoder.finish()));
+            let mut state =
+                producer
+                    .reader
+                    .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
+            if state[5] == 0 {
+                break state;
+            }
+            if recorded >= ROUND_BOUND {
+                state[0] |= 1 << 7;
+                state[1] = 0;
+                break state;
+            }
+            rounds = (rounds * 2).min(ROUND_BOUND - recorded);
+            encoder = device.create_command_encoder(&Default::default());
+        };
         let mut report = ClosedTraitCheck {
             producer_failures: state[0],
             first_failure: state[1],
@@ -524,6 +566,7 @@ impl RetainedTraitPublication {
                 routes,
                 identity,
                 proof_nodes: receipt[24],
+                status: [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]],
             }),
         ))
     }

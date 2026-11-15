@@ -1,7 +1,7 @@
 //! Solver proof bindings become closed method environments on the GPU.
 use std::collections::BTreeMap;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail, ensure};
 
 use super::{
     ProgramRetention,
@@ -26,6 +26,19 @@ const KEYS: [&str; 7] = [
     "type_checker/retention/method_routes/05_finish",
     "type_checker/retention/method_routes/06_rollback",
 ];
+
+/// Fixed-point rounds of each loop in the first batch, and the bound over
+/// all batches (proof depth is at most 64).
+const FIRST_ROUNDS: u32 = 8;
+const ROUND_BOUND: u32 = 65;
+/// Config buffers: one per round modulo 6 (parity and the flag rotation),
+/// the begin config and the final config.
+const ROUND_CONFIGS: usize = 6;
+const BEGIN_CONFIG: usize = 6;
+const FINAL_CONFIG: usize = 7;
+const CONFIG_WORDS: usize = 12;
+/// mr_state word set while more rounds are needed (common.slang MR_PENDING).
+const MR_PENDING: usize = 28;
 
 pub(super) struct MethodRoutes {
     device: std::sync::Arc<wgpu::Device>,
@@ -91,28 +104,39 @@ impl MethodRoutes {
             self.ensure(name, bytes)?;
         }
         if self.configs.is_empty() {
-            for _ in 0..2 {
+            for _ in 0..=FINAL_CONFIG {
                 self.configs
-                    .push(storage(&self.device, "mr_config", 40, false));
+                    .push(storage(&self.device, "mr_config", CONFIG_WORDS as u64 * 4, false));
             }
         }
         let id = view.identity;
-        for parity in 0..2 {
-            let config = [
+        let config = |parity: u32, round: u32, last: bool| -> [u32; CONFIG_WORDS] {
+            [
                 sub.id.run,
                 sub.id.generation,
                 requests,
                 nodes,
-                parity as u32,
+                parity,
                 id.epoch as u32,
                 (id.epoch >> 32) as u32,
                 id.arena_id as u32,
                 (id.arena_id >> 32) as u32,
                 id.serial,
-            ];
+                round,
+                u32::from(last),
+            ]
+        };
+        for c in 0..ROUND_CONFIGS {
+            let words = config(c as u32 % 2, c as u32 % 3, false);
             self.queue
-                .write_buffer(&self.configs[parity], 0, &words_bytes(&config));
+                .write_buffer(&self.configs[c], 0, &words_bytes(&words));
         }
+        // Selection marks before round 0, whose predecessor flag is round 2's.
+        self.queue.write_buffer(
+            &self.configs[BEGIN_CONFIG],
+            0,
+            &words_bytes(&config(0, 2, false)),
+        );
         let mut guard = store.store.lock().unwrap();
         let result = (|| {
             loop {
@@ -121,7 +145,7 @@ impl MethodRoutes {
                     &mut encoder,
                     0,
                     requests.max(nodes).max(1),
-                    0,
+                    BEGIN_CONFIG,
                     &guard,
                     &view,
                     sub,
@@ -132,75 +156,96 @@ impl MethodRoutes {
                     &mut encoder,
                     1,
                     requests,
-                    0,
+                    BEGIN_CONFIG,
                     &guard,
                     &view,
                     sub,
                     metadata,
                     instances,
                 )?;
-                for _ in 0..65 {
-                    self.record(
-                        &mut encoder,
-                        2,
-                        nodes,
+                // Reachability marking, then bottom-up evaluation. Each loop
+                // stops changing at its fixed point, and the environment
+                // pass runs once both have. A batch that ends before then
+                // reports MR_PENDING and the next batch continues the rounds.
+                let mut recorded = 0;
+                let mut rounds = FIRST_ROUNDS;
+                let status = loop {
+                    for round in recorded..recorded + rounds {
+                        self.record(
+                            &mut encoder,
+                            2,
+                            nodes,
+                            round as usize % ROUND_CONFIGS,
+                            &guard,
+                            &view,
+                            sub,
+                            metadata,
+                            instances,
+                        )?;
+                    }
+                    for round in recorded..recorded + rounds {
+                        self.record(
+                            &mut encoder,
+                            3,
+                            nodes,
+                            round as usize % ROUND_CONFIGS,
+                            &guard,
+                            &view,
+                            sub,
+                            metadata,
+                            instances,
+                        )?;
+                    }
+                    recorded += rounds;
+                    let last = config(1, (recorded - 1) % 3, recorded >= ROUND_BOUND);
+                    self.queue.write_buffer(
+                        &self.configs[FINAL_CONFIG],
                         0,
-                        &guard,
-                        &view,
-                        sub,
-                        metadata,
-                        instances,
-                    )?;
-                }
-                for round in 0..65 {
+                        &words_bytes(&last),
+                    );
                     self.record(
                         &mut encoder,
-                        3,
-                        nodes,
-                        round % 2,
+                        4,
+                        requests,
+                        FINAL_CONFIG,
                         &guard,
                         &view,
                         sub,
                         metadata,
                         instances,
                     )?;
-                }
-                self.record(
-                    &mut encoder,
-                    4,
-                    requests,
-                    1,
-                    &guard,
-                    &view,
-                    sub,
-                    metadata,
-                    instances,
-                )?;
-                self.record(
-                    &mut encoder,
-                    5,
-                    1,
-                    1,
-                    &guard,
-                    &view,
-                    sub,
-                    metadata,
-                    instances,
-                )?;
-                self.record(
-                    &mut encoder,
-                    6,
-                    (guard.buffers["rt_term_slot"].size() / 4) as u32,
-                    1,
-                    &guard,
-                    &view,
-                    sub,
-                    metadata,
-                    instances,
-                )?;
-                passes_core::flush_deferred_compute(&mut encoder);
-                self.queue.submit(Some(encoder.finish()));
-                let status = store.read(&self.buffers["mr_state"], 32)?;
+                    self.record(
+                        &mut encoder,
+                        5,
+                        1,
+                        FINAL_CONFIG,
+                        &guard,
+                        &view,
+                        sub,
+                        metadata,
+                        instances,
+                    )?;
+                    self.record(
+                        &mut encoder,
+                        6,
+                        (guard.buffers["rt_term_slot"].size() / 4) as u32,
+                        FINAL_CONFIG,
+                        &guard,
+                        &view,
+                        sub,
+                        metadata,
+                        instances,
+                    )?;
+                    passes_core::flush_deferred_compute(&mut encoder);
+                    self.queue.submit(Some(encoder.finish()));
+                    let status = store.read(&self.buffers["mr_state"], 32)?;
+                    if status[MR_PENDING] == 0 {
+                        break status;
+                    }
+                    ensure!(recorded < ROUND_BOUND, "method routes pending after the round bound");
+                    rounds = (rounds * 2).min(ROUND_BOUND - recorded);
+                    encoder = self.device.create_command_encoder(&Default::default());
+                };
                 if status[0] != 3 {
                     return Ok(status);
                 }
@@ -230,7 +275,7 @@ impl MethodRoutes {
         encoder: &mut wgpu::CommandEncoder,
         kernel: usize,
         lanes: u32,
-        parity: usize,
+        config: usize,
         store: &Store,
         view: &RetainedTraitView<'_>,
         sub: &Publication<'_>,
@@ -247,7 +292,7 @@ impl MethodRoutes {
                 "mr_proof" => view.proof.binding(),
                 "mr_instances" => instances.as_entire_binding(),
                 "mr_requests" => metadata.as_entire_binding(),
-                "mr_config" => self.configs[parity].as_entire_binding(),
+                "mr_config" => self.configs[config].as_entire_binding(),
                 "sb_results" => sub.results.as_entire_binding(),
                 "sb_counts" => sub.counts.as_entire_binding(),
                 n => self

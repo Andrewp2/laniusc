@@ -155,6 +155,15 @@ answer their own requests: committed terms are immutable and stay valid
 for the whole build. A consumer that needs the newest results takes the
 id again after each run.
 
+`run_then` (crate-internal) records a consumer in the first batch's submit,
+after the publication passes, and copies the leading words of extra
+buffers into that batch's readback. The consumer's kernels must check
+`sb_counts` for a `PUBLISHED` state of their run and do nothing otherwise.
+The extra words come back only when that first batch published, so the
+consumer ran on final results. Otherwise the caller records the consumer
+again after `run_then` returns. Discovery resolves each wave this way and
+reads its status and the store counters with the substitution counts.
+
 The engine clears its previous `sb_counts` publication on the first
 attempt of each run. Growth may replace that buffer only after an attempt
 has completed without publishing. An old counts buffer therefore cannot

@@ -23,11 +23,24 @@ int compare_term(uint a, uint b)
     }
     return 0;
 }
+struct TermOrder : IDgCompare
+{
+    uint base;
+    int compare(uint a, uint b) { return compare_term(a, b); }
+    uint load(uint index) { return dg_term_order[base + index]; }
+    void store(uint index, uint value) { dg_term_order[base + index] = value; }
+}
 [shader("compute")]
 [numthreads(256,1,1)]
-void main(uint3 id: SV_DispatchThreadID)
+void main(uint3 id: SV_DispatchThreadID, uint3 group: SV_GroupID, uint3 thread: SV_GroupThreadID)
 {
     uint lane=dg_lane(id); uint mode=dg_config[0];
+    if(mode==5u)
+    {
+        TermOrder order; order.base=dg_config[12];
+        dg_sort_block(order, group.x + group.y * 65535u, thread.x, dg_config[13], dg_config[10]);
+        return;
+    }
     if(mode==4u) { if(lane<dg_config[13]) dg_term_order[lane]=RT_INVALID; return; }
     if(mode < 2u)
     {

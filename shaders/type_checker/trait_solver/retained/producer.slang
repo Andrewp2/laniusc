@@ -546,6 +546,45 @@ public void sort_step(uint i)
         rc_sort[other] = a;
     }
 }
+// The steps with j < RC_SORT_BLOCK / 2 stay inside one block, so one
+// workgroup runs them in shared memory with the same compare-exchange
+// network as sort_step. Stage (k, 0): k == 0 sorts each block completely
+// (k = 2 .. min(block, width)); otherwise it finishes stage k with
+// j = 256 .. 1.
+public static const uint RC_SORT_BLOCK = 512u;
+groupshared uint4 rc_sort_keys[RC_SORT_BLOCK];
+public void sort_block(uint group, uint thread)
+{
+    uint width = cfg(RC_CFG_SORT);
+    uint k = rc_stage[0].x;
+    uint block = group * RC_SORT_BLOCK;
+    for (uint e = thread; e < RC_SORT_BLOCK; e += 256u)
+        if (block + e < width) rc_sort_keys[e] = rc_sort[block + e];
+    GroupMemoryBarrierWithGroupSync();
+    uint first = k == 0u ? 2u : k;
+    uint last = k == 0u ? min(RC_SORT_BLOCK, width) : k;
+    for (uint kk = first; kk <= last; kk <<= 1u)
+    {
+        for (uint j = (k == 0u ? kk : RC_SORT_BLOCK) >> 1u; j != 0u; j >>= 1u)
+        {
+            uint i = (thread / j) * 2u * j + thread % j;
+            if (block + i < width)
+            {
+                uint4 a = rc_sort_keys[i];
+                uint4 b = rc_sort_keys[i + j];
+                bool ascending = ((block + i) & kk) == 0u;
+                if (ascending ? sort_greater(a, b) : sort_greater(b, a))
+                {
+                    rc_sort_keys[i] = b;
+                    rc_sort_keys[i + j] = a;
+                }
+            }
+            GroupMemoryBarrierWithGroupSync();
+        }
+    }
+    for (uint e = thread; e < RC_SORT_BLOCK; e += 256u)
+        if (block + e < width) rc_sort[block + e] = rc_sort_keys[e];
+}
 public void sort_finish(uint p)
 {
     if (p >= cfg(RC_CFG_SORT)) return;
