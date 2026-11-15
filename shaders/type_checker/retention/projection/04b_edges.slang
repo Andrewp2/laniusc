@@ -57,7 +57,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (p.x == 1u || p.x == EXPR_NOT || p.x == EXPR_NEG || p.x == EXPR_CAST) publish(g, rows, base, p.y);
         else if (binary_form(p.x)) { publish(g, rows, base, p.y); publish(g, rows, base, p.z); }
     }
-    if (kind == RT_HIR_INDEX_EXPR)
+    if (kind == RT_HIR_ARRAY_EXPR && (p.x == 37u || p.x == 38u)) publish(g, rows, base, p.y);
+    else if (kind == RT_HIR_INDEX_EXPR)
     {
         publish(g, rows, base, p.y);
         publish(g, rows, base, p.z);

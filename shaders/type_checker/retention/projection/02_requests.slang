@@ -1,6 +1,8 @@
 // Projection step 2: one lane per substitution request. Each rank asks for
 // its signature result and parameters, every body row's term and every
-// use's environment and result, all under (DeclId, ENV). A row or use
+// use's environment and result, all under (DeclId, ENV). A symbolic constant
+// row requests its value: the result includes its declared scalar type.
+// A row or use
 // without a resolved term asks for the unit scalar, whose result nothing
 // reads. The tag is the request index. Requests past the buffer are not
 // written; the count tells the engine how many the producer needed.
@@ -30,7 +32,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint sig = pj_inf(rank, 3u).w;
     uint term;
     if (o <= i1.z) term = rt_sigs[sig + o];
-    else if (o < 1u + i1.z + i1.x) term = resolved_or_unit(pj_row(rank, o - 1u - i1.z, 3u).x);
+    else if (o < 1u + i1.z + i1.x)
+    {
+        uint row = o - 1u - i1.z;
+        uint4 value = pj_row(rank, row, 6u);
+        term = value.y == RT_CONST_SYMBOLIC && pj_row(rank, row, 0u).x != RT_HIR_TYPE
+            ? value.z : resolved_or_unit(pj_row(rank, row, 3u).x);
+    }
     else if (o < 1u + i1.z + i1.x + i1.w) term = resolved_or_unit(pj_use(rank, o - 1u - i1.z - i1.x, 1u).x);
     else term = resolved_or_unit(pj_use(rank, o - 1u - i1.z - i1.x - i1.w, 1u).y);
     sb_requests[q] = uint4(i0.x, i0.y, term, q);

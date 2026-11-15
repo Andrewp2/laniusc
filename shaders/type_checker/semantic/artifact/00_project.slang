@@ -137,6 +137,7 @@ static const uint HIR_LET_STMT = 8u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_EXPR = 14u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_TYPE = 5u;
@@ -392,7 +393,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint type_id = 0u;
     uint2 const_value = uint2(0u, 0u);
     uint const_present = 0u;
-    if ((core.kind == HIR_NAME_EXPR || payload.a == HIR_EXPR_NAME) &&
+    // Form words are kind-specific: a return statement also has form 2,
+    // but its final token names the returned expression, not a binding.
+    if ((core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||
+         (core.kind == HIR_EXPR && payload.a == HIR_EXPR_NAME)) &&
         valid_token(payload.d))
     {
         declaration = visible_decl[payload.d];

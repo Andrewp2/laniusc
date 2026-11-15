@@ -444,3 +444,80 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_constant_values_and_array_extents_execute() {
+    common::run_with_timeout("retained constant projection", || {
+        let directory =
+            std::env::temp_dir().join(format!("lanius-retained-constants-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            r#"module constants::lib;
+pub fn copy<T,const N:usize>(v:[T;N])->[T;N] { return v; }
+pub fn fill<T>(v:T)->[T;3] { return [v;3]; }
+pub fn zero<const N:usize>()->[i32;3] { return [0;3]; }
+pub fn sum<const N:usize>(v:[i32;N])->i32 {
+    let total:i32=0; let i:usize=0;
+    while (i<N) { total=total+v[i]; i=i+1; }
+    return total;
+}
+pub fn forward<const N:usize>(v:[i32;N])->i32 { return sum(copy(v)); }
+pub fn flag<const B:bool>()->bool { return B; }
+pub fn scalar<const N:u8>()->u8 { return N; }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &app,
+            r#"module constants::app;
+import constants::lib;
+fn main()->i32 {
+    let empty:[i32;0]=[];
+    let single:[i32;1]=[-7];
+    let values:[i32;3]=[11,22,33];
+    if (forward(empty)!=0 || forward(single)!=-7 || forward(values)!=66) { return 1; }
+    let repeated:[i32;3]=fill<i32>(7);
+    let flags:[bool;3]=fill<bool>(true);
+    if (sum(repeated)!=21 || !flags[2]) { return 2; }
+    let blank:[i32;3]=zero<3>();
+    if (sum(blank)!=0) { return 3; }
+    if (!flag<true>() || flag<false>() || scalar<255>()!=255 || scalar<3>()!=3) { return 4; }
+    return 42;
+}
+"#,
+        )
+        .unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths {
+                library_id: 1,
+                paths: vec![lib],
+                dependency_library_ids: vec![],
+            },
+            ExplicitSourceLibraryPaths {
+                library_id: 2,
+                paths: vec![app],
+                dependency_library_ids: vec![1],
+            },
+        ])
+        .unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.options.batch_rows = 16;
+        let before = fallback_counters();
+        let compiled = pollster::block_on(
+            compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+        );
+        let elf = compiled.unwrap();
+        assert_eq!(
+            fallback_counters().1,
+            before.1,
+            "constant instances never replay"
+        );
+        let out = common::run_x86_64_elf_output("retained constants", "retained_constants", &elf);
+        assert_eq!(out.status.code(), Some(42), "{out:?}");
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

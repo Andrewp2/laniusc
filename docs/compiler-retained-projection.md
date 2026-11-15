@@ -217,9 +217,9 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
-| repeated arrays, string literals, `for`, `?` | `FORM` or `TYPE` |
+| string literals, `for`, `?` | `FORM` or `TYPE` |
 | methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
-| constant generics, constant values of rows | `FORM` |
+| const-generic nominal layouts and named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
 ## Root obligations
@@ -337,3 +337,25 @@ and array-to-slice arguments from original and projected callers. Its valid
 program exits 42; negative and upper-bound accesses exit 101. All builds
 assert zero source replay. These tests use real discovery, ABI certification,
 projection, native finalization and linking.
+
+### Constant parameters and repeated arrays
+
+Constant parameter values use the same per-row substitution request as the
+row's type. A symbolic constant requests its exact parameter leaf; its
+closed `CC_VALUE` supplies both the declared scalar and the value words.
+Projection checks the scalar against the retained row type before publishing
+a concrete value. Type-annotation counts remain in the closed array type,
+so annotation rows never retain executable symbolic-constant flags. This
+adds no substitution requests to nonconstant bodies.
+
+`retained_native_constant_values_and_array_extents_execute` exercises empty,
+one-element and three-element arrays, nested generic forwarding, loops
+using a `usize` constant parameter, bool and u8 constant values, and repeated
+and zero-filled arrays. It executes across units and batches with zero replay.
+Repeat counts follow the current parser rule: the count in `[value; count]`
+is an integer literal. Constant parameters remain valid in array types.
+
+The semantic artifact producer now applies name resolution only to name/path
+expressions. A return statement's form word also equals 2; treating it as
+a name gave `return N` a spurious binding on the return statement itself.
+The value expression retains its exact constant parameter binding.

@@ -52,7 +52,10 @@ uint row_type(Row at, uint row)
     uint status;
     if (row == RT_INVALID || row >= pj_inf(at.rank, 1u).x) return RT_INVALID;
     if (!rt_is_resolved(pj_row(at.rank, row, 3u).x)) return RT_INVALID;
-    return pj_result(pj_req_row(at.rank, row), status);
+    uint t = pj_result(pj_req_row(at.rank, row), status);
+    if (pj_row(at.rank, row, 6u).y == RT_CONST_SYMBOLIC && pj_row(at.rank, row, 0u).x != RT_HIR_TYPE)
+        return rt_is_stored_term(t) && rt_term_kind(t) == RT_KIND_CC_VALUE ? rt_term_words(t).x : RT_INVALID;
+    return t;
 }
 
 bool template_closed(Row at, uint row)
@@ -357,11 +360,9 @@ bool supported_form(uint kind, uint4 p)
         kind == RT_HIR_NAME_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR || kind == RT_HIR_PATH_EXPR ||
         kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR)
         return true;
-    // Repeated arrays have their own count/value semantics; keep them gated
-    // until their retained count expressions are materialized.
-    if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID;
+    if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID || p.x == 37u || p.x == 38u;
     if (kind == RT_HIR_STMT)
-        return p.x == STMT_LET || p.x == STMT_RETURN || p.x == STMT_IF || p.x == STMT_ASSIGN ||
+        return p.x == STMT_LET || p.x == 4u || p.x == STMT_RETURN || p.x == STMT_IF || p.x == STMT_ASSIGN ||
             p.x == STMT_WHILE || p.x == 0u;
     if (kind == RT_HIR_LITERAL_EXPR) return p.x != EXPR_STRING;
     if (kind == RT_HIR_EXPR) return p.x != EXPR_STRING;
@@ -420,8 +421,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     if (!supported_form(kind, p) || (r4.w != 0u && kind != RT_HIR_ARRAY_EXPR) ||
-        (r6.y != 0u && kind != RT_HIR_TYPE) || ((r6.x >> 8u) & 0xffu) != 0u ||
-        (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE) || r5.x == RT_BIND_VARIANT ||
+        (r6.y != 0u && r6.y != RT_CONST_CONCRETE && r6.y != RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE) ||
+        ((r6.x >> 8u) & 0xffu) != 0u ||
+        (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE &&
+            (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) || r5.x == RT_BIND_VARIANT ||
         (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE))
     {
         fail(at, PJ_E_FORM, kind | (p.x << 8u));
@@ -432,6 +435,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         t = result_or_fail(at, pj_req_row(at.rank, at.row));
         if (failed) return;
+        if (r6.y == RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE)
+        {
+            if (!rt_is_stored_term(t) || rt_term_kind(t) != RT_KIND_CC_VALUE || rt_term_words(t).x != r3.x)
+            {
+                fail(at, PJ_E_TYPE, t);
+                return;
+            }
+            t = rt_term_words(t).x;
+        }
         // An array annotation's count row is a constant operand, not a
         // runtime value. The enclosing array term owns its evaluated count.
         if (kind == RT_HIR_TYPE && rt_is_stored_term(t) &&
@@ -445,8 +457,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // Each element value validates its own array slot. The expression-parent
     // edge was published from that element's side record in step 4b.
     uint parent = pj_g_aux[g].x;
-    if (parent != RT_INVALID && parent >= at.base &&
-        pj_row(at.rank, parent - at.base, 0u).x == RT_HIR_ARRAY_EXPR)
+    bool array_operand = parent != RT_INVALID && parent >= at.base &&
+        pj_row(at.rank, parent - at.base, 0u).x == RT_HIR_ARRAY_EXPR;
+    if (array_operand)
+    {
+        uint4 array = pj_row(at.rank, parent - at.base, 2u);
+        if ((array.x == 37u || array.x == 38u) && array.y == at.row) array_operand = false;
+    }
+    if (array_operand)
     {
         uint container = row_type(at, parent - at.base);
         if (!rt_is_stored_term(container) || rt_term_kind(container) != RT_KIND_ARRAY ||
@@ -459,7 +477,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (kind == RT_HIR_ARRAY_EXPR)
     {
         uint count = pj_array_count(t);
-        if (count == RT_INVALID || count != r4.w ||
+        // Zero-repeat retains its literal element in HIR; lowering emits
+        // a zero fill instead of evaluating that element.
+        uint elements = p.x == 37u || p.x == 38u ? 1u : count;
+        if (count == RT_INVALID || elements != r4.w ||
             (r4.w != 0u && (r4.z > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) ||
              r4.w > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) - r4.z)))
             fail(at, PJ_E_FORM, kind | (p.x << 8u));

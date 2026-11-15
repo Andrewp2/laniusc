@@ -165,6 +165,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     ob_value_decl[row] = r5.x == RT_BIND_LOCAL ? pj_abs_token(m, r5.y) : RT_INVALID;
     ob_value_const[row] = r6.zw;
     ob_value_const_present[row] = r6.y;
+    if (r6.y == RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE)
+    {
+        uint status;
+        uint value = pj_result(pj_req_row(rank, rel), status);
+        ob_value_const[row] = rt_term_words(value).yz;
+        ob_value_const_present[row] = RT_CONST_CONCRETE;
+    }
+    else if (kind == RT_HIR_TYPE)
+    {
+        // A type annotation's constant is carried by its closed type
+        // instance and checked length atom, never by a runtime expression.
+        ob_value_const_present[row] = 0u;
+        ob_value_const[row] = uint2(0u, 0u);
+    }
     ob_argument_mode[row] = r6.x & 0xffu;
     ob_member_field_ordinal[row] = r5.w;
     if (kind == RT_HIR_MEMBER_EXPR)
