@@ -732,6 +732,11 @@ impl RetainedDiscovery {
         if !self.scratch.contains_key("dg_indirect") {
             self.scratch
                 .insert("dg_indirect", storage(&self.device, "dg_indirect", 16, true));
+            // Every kernel's reflection lists dg_indirect; only the scan
+            // writes it. The others bind this one, so the indirect requests
+            // dispatch does not bind its own argument buffer as storage.
+            self.scratch
+                .insert("dg_no_indirect", storage(&self.device, "dg_no_indirect", 16, false));
         }
         Ok(())
     }
@@ -799,6 +804,8 @@ impl RetainedDiscovery {
             }
             let buffer = if n == "dg_config" {
                 Some(config_buffer)
+            } else if n == "dg_indirect" && kernel != 2 {
+                self.scratch.get("dg_no_indirect")
             } else {
                 None
             }
