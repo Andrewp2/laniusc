@@ -42,16 +42,22 @@ impl GpuCompiler<'_> {
             SourcePackArtifactTarget::Generic=>anyhow::bail!("projection requires an executable target") };
         let device = &self.gpu.device;
         let queue = &self.gpu.queue;
-        let mut bounds = LoweringJobBounds::CONSERVATIVE;
+        // The batch's rows and bytes bound the job, as they would bound a
+        // workspace built for it: the shared arena is the frontend's, and
+        // its full capacity would size the phase reset and the clears.
+        let mut bounds = LoweringJobBounds {
+            hir_rows: hir_nodes,
+            source_bytes,
+            ..LoweringJobBounds::CONSERVATIVE
+        };
         for attempt in 0..2 {
             let pipeline = self
-                .ensure_lowering_pipeline(
+                .ensure_projected_lowering_pipeline(
                     lowering_target,
                     source_bytes,
                     tokens,
                     hir_nodes,
                     LoweringArtifactKind::Object,
-                    &[],
                     hir,
                     semantic,
                 )
@@ -84,7 +90,13 @@ impl GpuCompiler<'_> {
                         .output_demand_for_retry(&error)
                         .map_err(anyhow::Error::msg)?;
                     match demand {
-                        Some(demand) if attempt == 0 => bounds.output_demand = demand,
+                        Some(demand) if attempt == 0 => {
+                            // The workspace clamps a job to its own output
+                            // capacity, so the retry needs a larger one.
+                            self.grow_projected_lowering_output(lowering_target, demand)
+                                .map_err(anyhow::Error::msg)?;
+                            bounds.output_demand = demand;
+                        }
                         _ => return Err(error),
                     }
                 }

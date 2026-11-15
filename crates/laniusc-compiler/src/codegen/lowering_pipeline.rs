@@ -195,7 +195,8 @@ pub(crate) struct GpuLoweringPipeline {
     artifact_kind: LoweringArtifactKind,
     upstream_signature: Vec<(u64, u64, u64)>,
     semantic_input_signature: Vec<(u64, u64, u64)>,
-    workspace: CompilerGraphWorkspace,
+    /// The arena; a projected variant shares its frontend pipeline's.
+    workspace: Arc<CompilerGraphWorkspace>,
     semantic: GpuSemanticLoweringStage,
     optimizer: GpuOptimizationStage,
     target: TargetStage,
@@ -387,8 +388,19 @@ fn job_bounds(bounds: super::lowering::LoweringJobBounds) -> super::lowering::Lo
 /// owns only capacity-dependent buffers, uniforms, bind groups, and readback
 /// storage, so an idle trim can return job memory without invalidating kernel
 /// readiness.
+///
+/// One arena (`CompilerGraphWorkspace`) is resident per target. A pipeline
+/// binds that arena and one set of HIR and semantic input buffers. Two input
+/// sets alternate in every retained native build: the frontend units'
+/// type-check outputs (`current`) and the retained projection's batch
+/// columns (`projected`). The projected pipeline is a variant over the
+/// frontend pipeline's arena: it builds its own stages (uniforms and bind
+/// groups) and allocates no arena. Rebuilding the arena for each input set
+/// cost 52 to 62 ms of host time twice per warm settings build.
 pub(crate) struct GpuLoweringWorkspaceCache {
     target: LoweringTarget,
+    /// Lowering of a frontend unit; its arena aliases the dead type-check
+    /// tails and is the one resident arena.
     current: Mutex<Option<Arc<GpuLoweringPipeline>>>,
     /// The capacities of the workspace `release` dropped. The next workspace
     /// covers them, as the lexer and type-check workspaces keep their floors
@@ -396,6 +408,12 @@ pub(crate) struct GpuLoweringWorkspaceCache {
     /// different shapes (a template replay is a few tokens beside a 1.4 MB
     /// original) reallocates the multi-gigabyte workspace on the next job.
     floor: Mutex<Option<LoweringCapacities>>,
+    /// Lowering of retained-projection batches
+    /// (docs/compiler-retained-projection.md), over `current`'s arena.
+    projected: Mutex<Option<Arc<GpuLoweringPipeline>>>,
+    /// The capacities projected object batches asked for. The next frontend
+    /// object arena covers them, so the projection's variant fits it.
+    projected_demand: Mutex<Option<LoweringCapacities>>,
 }
 
 fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
@@ -438,7 +456,20 @@ impl GpuLoweringWorkspaceCache {
             target,
             current: Mutex::new(None),
             floor: Mutex::new(None),
+            projected: Mutex::new(None),
+            projected_demand: Mutex::new(None),
         }
+    }
+
+    /// The projection's capacities an arena for `artifact_kind` must cover.
+    fn projected_demand(&self, artifact_kind: LoweringArtifactKind) -> Option<LoweringCapacities> {
+        if artifact_kind != LoweringArtifactKind::Object {
+            return None;
+        }
+        *self
+            .projected_demand
+            .lock()
+            .expect("projected lowering demand poisoned")
     }
 
     pub(crate) fn ensure(
@@ -456,6 +487,7 @@ impl GpuLoweringWorkspaceCache {
         let required =
             LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
                 .bucketed();
+        let demand = self.projected_demand(artifact_kind);
         let mut current = self
             .current
             .lock()
@@ -464,6 +496,7 @@ impl GpuLoweringWorkspaceCache {
         let semantic_input_signature = exact_buffer_signature(&semantic_input_views(hir, semantic));
         if let Some(pipeline) = current.as_ref()
             && pipeline.capacities.covers(required)
+            && demand.is_none_or(|demand| pipeline.capacities.covers(demand))
             && pipeline.artifact_kind == artifact_kind
             && pipeline.upstream_signature == upstream_signature
             && pipeline.semantic_input_signature == semantic_input_signature
@@ -473,11 +506,19 @@ impl GpuLoweringWorkspaceCache {
         let floor = *self.floor.lock().expect("lowering workspace floor poisoned");
         let capacities = current.as_ref().map(|pipeline| pipeline.capacities).or(floor)
             .map_or(required, |previous| previous.grow_to_cover(required));
-        // Reflected bind groups in the old pipeline own every lowering arena.
-        // Destroy that complete identity graph before allocating its
-        // replacement; otherwise a small capacity increase transiently makes
-        // both multi-gigabyte workspaces resident.
-        let old = current.take();
+        let capacities = demand.map_or(capacities, |demand| capacities.grow_to_cover(demand));
+        // Reflected bind groups in the old pipelines own every lowering
+        // arena. Destroy that complete identity graph (the projected variant
+        // shares the arena) before allocating its replacement; otherwise a
+        // small capacity increase transiently makes both multi-gigabyte
+        // workspaces resident.
+        let old = (
+            current.take(),
+            self.projected
+                .lock()
+                .expect("projected lowering workspace cache poisoned")
+                .take(),
+        );
         drop(old);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let pipeline = Arc::new(
@@ -497,6 +538,116 @@ impl GpuLoweringWorkspaceCache {
         );
         *current = Some(Arc::clone(&pipeline));
         Ok(pipeline)
+    }
+
+    /// `ensure` for a retained-projection batch. It binds the frontend
+    /// pipeline's arena, whose type-check upstream is dead while instances
+    /// lower, and builds only the stages over the batch columns. Without a
+    /// covering frontend arena it builds a standalone one; the next frontend
+    /// arena then grows to cover the batch (`projected_demand`).
+    pub(crate) fn ensure_projected(
+        &self,
+        device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+        artifact_kind: LoweringArtifactKind,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
+    ) -> Result<Arc<GpuLoweringPipeline>, String> {
+        let required =
+            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
+                .bucketed();
+        let current = self
+            .current
+            .lock()
+            .expect("lowering workspace cache poisoned");
+        let mut projected = self
+            .projected
+            .lock()
+            .expect("projected lowering workspace cache poisoned");
+        let required = {
+            let mut demand = self
+                .projected_demand
+                .lock()
+                .expect("projected lowering demand poisoned");
+            let grown = demand.map_or(required, |demand| demand.grow_to_cover(required));
+            *demand = Some(grown);
+            grown
+        };
+        let semantic_input_signature = exact_buffer_signature(&semantic_input_views(hir, semantic));
+        if let Some(pipeline) = projected.as_ref()
+            && pipeline.capacities.covers(required)
+            && pipeline.artifact_kind == artifact_kind
+            && pipeline.semantic_input_signature == semantic_input_signature
+        {
+            return Ok(Arc::clone(pipeline));
+        }
+        // Drop the old variant (or standalone arena) before building.
+        let old = projected.take();
+        drop(old);
+        let pipeline = match current.as_ref() {
+            Some(base)
+                if base.capacities.covers(required) && base.artifact_kind == artifact_kind =>
+            {
+                GpuLoweringPipeline::new_variant(device, kernels, base, semantic_input_signature, hir, semantic)
+            }
+            _ => {
+                let _ = device.poll(wgpu::PollType::wait_indefinitely());
+                GpuLoweringPipeline::new_with_upstream(
+                    device,
+                    kernels,
+                    required,
+                    self.target,
+                    artifact_kind,
+                    &[],
+                    Vec::new(),
+                    semantic_input_signature,
+                    hir,
+                    semantic,
+                )
+            }
+        }
+        .map_err(|err| format!("{err:#}"))?;
+        let pipeline = Arc::new(pipeline);
+        *projected = Some(Arc::clone(&pipeline));
+        Ok(pipeline)
+    }
+
+    /// `grow_output` for a projected batch: the batch's next pipeline, and
+    /// the next frontend arena, cover `demand`.
+    pub(crate) fn grow_projected_output(
+        &self,
+        device: &wgpu::Device,
+        demand: LoweringOutputDemand,
+    ) -> Result<(), String> {
+        let mut projected = self
+            .projected
+            .lock()
+            .expect("projected lowering workspace cache poisoned");
+        let pipeline = projected
+            .as_ref()
+            .ok_or_else(|| "projected lowering workspace is not initialized".to_string())?;
+        let mut required = pipeline.capacities;
+        required.target_instructions =
+            checked_output_bucket(required.target_instructions.max(demand.target_instructions))?;
+        required.artifact_bytes =
+            checked_output_bucket(required.artifact_bytes.max(demand.artifact_bytes))?;
+        if pipeline.capacities.covers(required) {
+            return Ok(());
+        }
+        lowering_compiler_graph_for_artifact(required, self.target, pipeline.artifact_kind)?
+            .workspace_arena_layout(&device.limits())?;
+        let mut stored = self
+            .projected_demand
+            .lock()
+            .expect("projected lowering demand poisoned");
+        *stored = Some(stored.map_or(required, |stored| stored.grow_to_cover(required)));
+        let old = projected.take();
+        drop(old);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        Ok(())
     }
 
     /// Plan measured output growth before retiring the old graph. The caller
@@ -530,7 +681,13 @@ impl GpuLoweringWorkspaceCache {
             .lock()
             .expect("lowering workspace floor poisoned");
         *floor = Some(floor.map_or(required, |floor| floor.grow_to_cover(required)));
-        let old = current.take();
+        let old = (
+            current.take(),
+            self.projected
+                .lock()
+                .expect("projected lowering workspace cache poisoned")
+                .take(),
+        );
         drop(old);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         Ok(())
@@ -550,22 +707,32 @@ impl GpuLoweringWorkspaceCache {
     }
 
     /// Drops the workspace for a frontend replacement; the next one keeps
-    /// at least its capacities.
+    /// at least its capacities. The projected variant shares its arena.
     pub(crate) fn release(&self) {
-        let released = self
+        let mut current = self
             .current
             .lock()
-            .expect("lowering workspace cache poisoned")
+            .expect("lowering workspace cache poisoned");
+        let released = current.take();
+        self.projected
+            .lock()
+            .expect("projected lowering workspace cache poisoned")
             .take();
+        drop(current);
         if let Some(released) = released {
             let mut floor = self.floor.lock().expect("lowering workspace floor poisoned");
             *floor = Some(floor.map_or(released.capacities, |floor| floor.grow_to_cover(released.capacities)));
         }
     }
 
-    /// Drops the workspace and its floor (the daemon's memory-pressure trim).
+    /// Drops the workspace, its floor and the projection's demand (the
+    /// daemon's memory-pressure trim).
     pub(crate) fn trim(&self) {
         self.release();
+        *self
+            .projected_demand
+            .lock()
+            .expect("projected lowering demand poisoned") = None;
         *self.floor.lock().expect("lowering workspace floor poisoned") = None;
     }
 
@@ -624,19 +791,84 @@ impl GpuLoweringPipeline {
         hir: GpuSemanticHirInputs<'_>,
         semantic_inputs: GpuSemanticArtifactView<'_>,
     ) -> Result<Self> {
+        let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
+            .map_err(anyhow::Error::msg)?;
+        let workspace = Arc::new(
+            CompilerGraphWorkspace::new_with_upstream_storage(
+                device,
+                "codegen.lowering",
+                &graph,
+                upstream,
+            )
+            .map_err(anyhow::Error::msg)?,
+        );
+        Self::with_workspace(
+            device,
+            kernels,
+            capacities,
+            target,
+            artifact_kind,
+            graph,
+            workspace,
+            upstream_signature,
+            semantic_input_signature,
+            hir,
+            semantic_inputs,
+        )
+    }
+
+    /// A pipeline over `base`'s arena and other input buffers. It creates
+    /// stages, uniforms and bind groups, and no arena storage.
+    fn new_variant(
+        device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
+        base: &GpuLoweringPipeline,
+        semantic_input_signature: Vec<(u64, u64, u64)>,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic_inputs: GpuSemanticArtifactView<'_>,
+    ) -> Result<Self> {
+        let target = base.target.lowering_target();
+        let label = match target {
+            LoweringTarget::X86_64 => "codegen.x86.lowering.uniform_arena",
+            LoweringTarget::Wasm => "codegen.wasm.lowering.uniform_arena",
+        };
+        with_uniform_buffer_arena(device, label, || {
+            let graph = lowering_compiler_graph_for_artifact(base.capacities, target, base.artifact_kind)
+                .map_err(anyhow::Error::msg)?;
+            Self::with_workspace(
+                device,
+                kernels,
+                base.capacities,
+                target,
+                base.artifact_kind,
+                graph,
+                Arc::clone(&base.workspace),
+                base.upstream_signature.clone(),
+                semantic_input_signature,
+                hir,
+                semantic_inputs,
+            )
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn with_workspace(
+        device: &wgpu::Device,
+        kernels: &crate::gpu::kernels::KernelRegistry,
+        capacities: LoweringCapacities,
+        target: LoweringTarget,
+        artifact_kind: LoweringArtifactKind,
+        graph: crate::gpu::compiler_graph::CompilerGraph,
+        workspace: Arc<CompilerGraphWorkspace>,
+        upstream_signature: Vec<(u64, u64, u64)>,
+        semantic_input_signature: Vec<(u64, u64, u64)>,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic_inputs: GpuSemanticArtifactView<'_>,
+    ) -> Result<Self> {
         let target_total_name = match target {
             LoweringTarget::X86_64 => "lir.x86.total",
             LoweringTarget::Wasm => "lir.wasm.total",
         };
-        let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
-            .map_err(anyhow::Error::msg)?;
-        let workspace = CompilerGraphWorkspace::new_with_upstream_storage(
-            device,
-            "codegen.lowering",
-            &graph,
-            upstream,
-        )
-        .map_err(anyhow::Error::msg)?;
         let hir_core = hir.core;
         let semantic = GpuSemanticLoweringStage::from_workspace(
             device,

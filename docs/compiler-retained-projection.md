@@ -245,6 +245,38 @@ Every other form fails closed with its template location:
 | r3.y is a predicate ordinal only when r3.z is BOUND (4), a use index otherwise | Implemented in `05_check` and `07_rows`. |
 | The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be resolved: a term, or a bare type parameter of the caller (the `T` of `keep(v)` in a body generic over T). Its substitution must equal the row type and the target's result. |
 
+## Lowering workspace
+
+A lowering pipeline binds one arena (`CompilerGraphWorkspace`) and one set of
+HIR and semantic input buffers. Projection batches bind the projection's
+columns; frontend units bind their type-check outputs. `GpuLoweringWorkspaceCache`
+keeps one resident arena per target, owned by the frontend pipeline
+(`ensure`). A projection batch gets a variant over that arena
+(`ensure_projected`, `GpuLoweringPipeline::new_variant`): its own stages,
+uniforms and bind groups, and no arena storage. The arena's type-check
+upstream is dead while instances lower, so the variant may use the aliased
+storage. The variant records with the batch's own bounds (rows and source
+bytes), so the phase reset and the capacity-wide clears stay at the batch's
+size, not the arena's.
+
+The cache records the capacities projection batches asked for
+(`projected_demand`). An object arena covers them, so the first warm build
+grows the arena once and later builds rebuild nothing. A batch that does not
+fit the current arena gets a standalone arena for that build only. A batch's
+output-capacity retry raises the demand (`grow_projected_output`). Replacing,
+growing or releasing the frontend arena drops the variant with it.
+
+With a single pipeline slot, every warm settings build rebuilt the arena
+twice: once for the instance batch and once for unit 0 after it, 52 to 62 ms
+of host time each, while recording took about 2 ms and the object readback
+about 5 ms. With the shared arena neither rebuilds: instance lowering went from
+64 ms to 5.8 ms, unit 0's lowering recording from 54 to 65 ms to 1.4 to 1.8 ms,
+and the warm build median from 394 ms to 261 ms. Tracked GPU buffers after a
+build went from 6.12 GB to 5.43 GB, because the second arena is gone.
+
+Lowering sizes its string pool from the job's source bytes, so a batch passes
+at least its decoded string bytes (`string_words` × 4).
+
 ## Gaps
 
 - **Lowering retry.** `lower_projected_x86_batch` retries once at the

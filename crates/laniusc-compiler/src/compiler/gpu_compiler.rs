@@ -546,6 +546,63 @@ impl<'gpu> GpuCompiler<'gpu> {
         )
     }
 
+    /// The lowering workspace of retained-projection batches, kept apart
+    /// from the frontend units' workspace (`ensure_projected`).
+    pub(super) fn ensure_projected_lowering_pipeline(
+        &self,
+        target: LoweringTarget,
+        source_bytes: u32,
+        tokens: u32,
+        hir_nodes: u32,
+        artifact_kind: LoweringArtifactKind,
+        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
+    ) -> Result<std::sync::Arc<crate::codegen::lowering_pipeline::GpuLoweringPipeline>, String>
+    {
+        let maximum = u32::try_from(DEFAULT_CODEGEN_UNIT_MAX_SOURCE_BYTES)
+            .map_err(|_| "default codegen-unit capacity exceeds u32".to_string())?;
+        if source_bytes > maximum {
+            return Err(format!(
+                "projected batch is {source_bytes} source bytes, exceeding the configured {maximum}-byte compilation-unit capacity"
+            ));
+        }
+        let cache = match target {
+            LoweringTarget::X86_64 => &self.x86_lowering,
+            LoweringTarget::Wasm => &self.wasm_lowering,
+        }
+        .as_deref()
+        .map_err(Clone::clone)?;
+        let kernels = self.codegen_kernels.as_deref().ok_or_else(|| {
+            "code-generation kernels were not initialized for this compiler".to_string()
+        })?;
+        cache.ensure_projected(
+            &self.gpu.device,
+            kernels,
+            source_bytes,
+            tokens,
+            hir_nodes,
+            artifact_kind,
+            hir,
+            semantic,
+        )
+    }
+
+    /// Grows the projected lowering workspace to an output demand
+    /// (`grow_projected_output`).
+    pub(super) fn grow_projected_lowering_output(
+        &self,
+        target: LoweringTarget,
+        demand: crate::codegen::lowering::LoweringOutputDemand,
+    ) -> Result<(), String> {
+        match target {
+            LoweringTarget::X86_64 => &self.x86_lowering,
+            LoweringTarget::Wasm => &self.wasm_lowering,
+        }
+        .as_deref()
+        .map_err(Clone::clone)?
+        .grow_projected_output(&self.gpu.device, demand)
+    }
+
     pub(super) fn lowering_pipeline(
         &self,
         target: LoweringTarget,

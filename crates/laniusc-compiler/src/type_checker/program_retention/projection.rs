@@ -1539,8 +1539,11 @@ impl RetainedProjection {
                     }
                 }
             }
+            // Lowering sizes its string pool from the source bytes, so they
+            // cover the batch's decoded strings.
+            let string_bytes = u32::try_from(shape.string_words.saturating_mul(4)).unwrap_or(u32::MAX);
             objects.push(lower(
-                token_capacity.saturating_mul(16).max(4096), token_capacity,
+                token_capacity.saturating_mul(16).max(string_bytes).max(4096), token_capacity,
                 shape.rows as u32, columns.hir(), columns.semantic(),
             )?);
         }
