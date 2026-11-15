@@ -852,6 +852,10 @@ fn run(
     header[37] = packet.proof.logical_words;
     header[38] = catalog_words;
     header[39] = packet.output.logical_words;
+    header[40] = dir_entries;
+    header[41] = traits;
+    header[42] = jobs;
+    header[43] = status[A_DECLS];
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("trait_solver.retained_publish"),
     });

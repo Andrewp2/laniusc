@@ -262,3 +262,63 @@ fn retained_discovery_reuses_recursive_instances_and_reaches_depth_64() {
         }
     });
 }
+
+#[test]
+fn retained_discovery_requires_current_proofs_for_bounded_calls() {
+    common::run_with_timeout("retained discovery proofs", || {
+        let compiler=pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only())).unwrap();
+        let store=ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+        store.begin_build().unwrap();
+        compiler.attach_program_retention(Some(store.clone()));
+        let source=r#"module proof;
+trait Mark { fn mark(&self)->i32; }
+impl Mark for i32 { fn mark(&self)->i32 { return 1; } }
+fn keep<T:Mark>(x:T)->T { return x; }
+fn forward<T:Mark>(x:T)->T { return keep<T>(x); }
+fn main()->i32 { return forward<i32>(42); }
+"#;
+        pollster::block_on(compiler.semantic_interface_for_source_pack(10,&[source])).unwrap();
+        compiler.attach_program_retention(None);
+        assert!(store.job_reports().iter().all(|r|r.ready));
+        let mut engine=RetainedDiscovery::new(DiscoveryCapacity::tiny(),SubstitutionCapacity::default()).unwrap();
+        let rejected=|outcome:DiscoveryOutcome| match outcome {
+            DiscoveryOutcome::Rejected(e)=>assert_eq!(e.code,8,"{e:?}"),
+            DiscoveryOutcome::Published(_)=>panic!("bounded call published without current proof"),
+        };
+        rejected(engine.run(&store).unwrap());
+        let (_,proof)=compiler.retained_trait_publish(&store,&Default::default()).unwrap();
+        let proof=proof.unwrap();
+        assert_eq!(proof.status().unwrap(),[1,0,u32::MAX]);
+        let p=match engine.run_with_traits(&store,&proof).unwrap() {
+            DiscoveryOutcome::Published(p)=>p,
+            DiscoveryOutcome::Rejected(e)=>panic!("{e:?}"),
+        };
+        assert_eq!(p.report.instances,2);
+        assert_ne!(read_test_buffer(p.inputs.buffers()[2].1,4).unwrap()[1]&4,0);
+
+        // A valid header alone cannot authorize a call: its per-use proof
+        // must be present and successful, including parametric forwarding.
+        let words=proof.read_routes_for_test().unwrap();
+        let map=words[14] as usize;
+        let bounded=(0..words[11] as usize).filter(|u|words[map+u*4]!=0).collect::<Vec<_>>();
+        assert_eq!(bounded.len(),2);
+        for use_index in bounded {
+            let at=map+use_index*4+3;
+            let view=proof.view(&store).unwrap();
+            let gpu=laniusc_compiler::gpu::device::global();
+            gpu.queue.write_buffer(view.routes.buffer,view.routes.offset+at as u64*4,&0u32.to_le_bytes());
+            rejected(engine.run_with_traits(&store,&proof).unwrap());
+            gpu.queue.write_buffer(view.routes.buffer,view.routes.offset+at as u64*4,&words[at].to_le_bytes());
+        }
+
+        // A same-build export can add impls, invalidating coherence even if
+        // it adds no uses. Generation alone must not authorize an old catalog.
+        compiler.attach_program_retention(Some(store.clone()));
+        pollster::block_on(compiler.semantic_interface_for_source_pack(11,&["module empty;"])).unwrap();
+        compiler.attach_program_retention(None);
+        assert!(store.job_reports().iter().all(|r|r.ready));
+        rejected(engine.run_with_traits(&store,&proof).unwrap());
+        let (_,fresh)=compiler.retained_trait_publish(&store,&Default::default()).unwrap();
+        assert!(matches!(engine.run_with_traits(&store,&fresh.unwrap()).unwrap(),DiscoveryOutcome::Published(_)));
+    });
+}

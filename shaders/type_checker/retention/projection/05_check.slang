@@ -481,7 +481,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else check_signature(at);
         return;
     }
-    if (r3.z == RT_ROLE_BOUND || r3.z == RT_ROLE_PATTERN)
+    if (r3.z == RT_ROLE_BOUND)
+    {
+        uint4 info = pj_inf(at.rank,0u);
+        uint4 block = rt_dir_trait[info.z];
+        if ((pj_readiness[0u].y & PJ_READY_PROOFS) == 0u || r3.y >= block.y)
+            fail(at,PJ_E_ROLE,r3.z);
+        else
+        {
+            uint4 predicate = rt_traits[(block.x+r3.y)*RT_TRAIT_WORDS];
+            if (predicate.x != info.x || predicate.y != (RT_TRAIT_PREDICATE | (r3.y << 8u))) fail(at,PJ_E_ROLE,r3.z);
+        }
+        return;
+    }
+    if (r3.z == RT_ROLE_PATTERN)
     {
         fail(at, PJ_E_ROLE, r3.z);
         return;

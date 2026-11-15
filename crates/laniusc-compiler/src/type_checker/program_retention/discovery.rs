@@ -1,8 +1,8 @@
 //! GPU discovery of closed instances from retained call uses.
 //!
 //! The first production slice handles direct free-function calls. A reachable
-//! method or predicate fails closed until the solver's wave producer supplies
-//! its evidence. No unsupported call is omitted or sent to source replay.
+//! method fails closed until its routing is available. Bounded direct calls
+//! require a current retained trait publication, checked per use on the GPU. No unsupported call is omitted or sent to source replay.
 use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail};
@@ -22,6 +22,7 @@ use super::{
     },
     words_bytes,
 };
+use crate::compiler::RetainedTraitPublication;
 use crate::gpu::{
     buffers::LaniusBuffer,
     passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
@@ -93,6 +94,13 @@ pub struct DiscoveryPublication {
     pub report: DiscoveryReport,
 }
 
+struct TraitAdmission {
+    routes: wgpu::Buffer,
+    offset: u64,
+    size: u64,
+    identity: [u32; 8],
+}
+
 pub struct RetainedDiscovery {
     device: std::sync::Arc<wgpu::Device>,
     queue: std::sync::Arc<wgpu::Queue>,
@@ -103,6 +111,7 @@ pub struct RetainedDiscovery {
     configs: Vec<wgpu::Buffer>,
     config_cursor: usize,
     hash_mask: u32,
+    admission: Option<TraitAdmission>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -121,13 +130,37 @@ impl RetainedDiscovery {
             configs: Vec::new(),
             config_cursor: 0,
             hash_mask: u32::MAX,
+            admission: None,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
         self.hash_mask = mask;
     }
     pub fn run(&mut self, store: &ProgramRetention) -> Result<DiscoveryOutcome> {
+        self.run_admitted(store, None)
+    }
+    /// The GPU checks the publication identity, immutable source-store extent,
+    /// and the proof map for each bounded direct call before admitting it.
+    pub fn run_with_traits(
+        &mut self,
+        store: &ProgramRetention,
+        publication: &RetainedTraitPublication,
+    ) -> Result<DiscoveryOutcome> {
+        let view = publication.view(store)?;
+        let id = view.identity;
+        self.run_admitted(store, Some(TraitAdmission {
+            routes: view.routes.buffer.clone(),
+            offset: view.routes.offset,
+            size: view.routes.size,
+            identity: [1, id.epoch as u32, (id.epoch >> 32) as u32,
+                id.arena_id as u32, (id.arena_id >> 32) as u32,
+                id.serial, id.generation, 0],
+        }))
+    }
+    fn run_admitted(&mut self, store: &ProgramRetention, admission: Option<TraitAdmission>) -> Result<DiscoveryOutcome> {
+        self.admission = admission;
         let result = self.run_inner(store);
+        self.admission = None;
         if result.is_err() {
             let guard = store.store.lock().unwrap();
             self.queue.write_buffer(
@@ -156,6 +189,8 @@ impl RetainedDiscovery {
             self.capacity.edges = self.capacity.edges.max(1);
             self.capacity.requests = self.capacity.requests.max(1);
             self.allocate(uses)?;
+            let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
+            self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
             let inputs = ProjectionInputs::new(self.capacity.instances, self.capacity.edges);
             let root_routes = self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?;
             let root_readiness = self.buffer("dg_root_readiness", 16)?;
@@ -543,6 +578,8 @@ impl RetainedDiscovery {
         let r = c.requests as u64;
         for (name, bytes) in [
             ("dg_status", STATUS_WORDS as u64 * 4),
+            ("dg_proof_identity", 32),
+            ("dg_no_proofs", 48 * 4),
             ("dg_instances", i * 32),
             ("dg_slots", i * 8),
             ("dg_scan_a", i * 4),
@@ -601,6 +638,17 @@ impl RetainedDiscovery {
         let mut entries = Vec::new();
         for name in &names {
             let n = name.as_str();
+            if n == "dg_proofs" {
+                let binding = self.admission.as_ref().map_or_else(
+                    || self.scratch["dg_no_proofs"].as_entire_binding(),
+                    |a| wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &a.routes, offset: a.offset,
+                        size: std::num::NonZeroU64::new(a.size),
+                    }),
+                );
+                entries.push((n, binding));
+                continue;
+            }
             let buffer = if n == "dg_config" {
                 Some(config_buffer)
             } else {

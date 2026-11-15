@@ -46,6 +46,13 @@ public static const uint RP_H_PROOF_WORDS = 37u;
 public static const uint RP_H_CAT_WORDS = 38u;
 public static const uint RP_H_OUT_WORDS = 39u;
 
+// Immutable source-store extent. Substitution may append terms, but a new
+// exported job invalidates catalog coherence and the use proof map.
+public static const uint RP_H_STORE_DIRS = 40u;
+public static const uint RP_H_STORE_TRAITS = 41u;
+public static const uint RP_H_STORE_JOBS = 42u;
+public static const uint RP_H_STORE_DECLS = 43u;
+
 public static const uint RP_BUILDING = 0u;
 public static const uint RP_VALID = 1u;
 public static const uint RP_FAILED = 2u;

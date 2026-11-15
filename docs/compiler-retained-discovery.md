@@ -6,9 +6,9 @@ allocates and submits work, reads counts and failures, and retries capacity
 requests. It never supplies an instance list, selects a callee, or reads an
 environment to construct a route.
 
-The current implementation admits direct free-function calls. Relevant method
-routes and trait predicates return a rejection until the discovery-wave solver
-producer supplies their evidence. Unsupported calls never disappear and never
+The current implementation admits direct free-function calls. Bounded calls
+require `run_with_traits` and a current GPU solver publication. Calls that need
+a method implementation route still reject until that route is available. Unsupported calls never disappear and never
 trigger source replay in this API.
 
 ## Discovery
@@ -62,3 +62,24 @@ it lowers any batch. All consumers must validate the generation and store READY.
 A failed discovery returns a code, retained-use ordinal, instance index and detail.
 It publishes no usable readiness record. This API is not yet the default compiler
 path and does not by itself remove replay from normal compilation.
+
+## Bounded direct calls
+
+`run_with_traits` binds the retained solver publication without reading semantic
+rows. The GPU checks its epoch, arena, serial, generation, status, and source-store
+extent (uses, declarations, directory entries, trait records, committed jobs).
+A later export invalidates it even within the same build; adding substitution
+terms does not. Each bounded call needs a use-map entry with exactly its callee's
+applicable predicate count and successful proof routes. Original roots require
+closed proofs; calls inside generic templates may use the caller's declared
+assumptions. This is parametric proof reuse: every root discharges its bounds,
+and every template call proves the next callee's bounds under its own.
+
+The proof gate authorizes a direct callee; it does not select the concrete target
+of a bound-member call. Discovery sets projection readiness bit 4 only after this
+gate succeeds. Projection requires that bit for bounded templates and validates
+each BOUND row's predicate link before omitting its source-only syntax.
+
+`retained_discovery_requires_current_proofs_for_bounded_calls` rejects missing
+admission, missing per-use proof status (including a forwarding template), and a
+publication predating another committed job. A fresh publication succeeds.

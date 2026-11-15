@@ -5,6 +5,7 @@ public static const uint PJ_INSTANCE_WORDS = 2u;
 public static const uint PJ_INFO_WORDS = 6u;
 public static const uint PJ_FLAG_ENTRY = 1u;
 public static const uint PJ_READY_ROUTES = 1u;
+public static const uint PJ_READY_PROOFS = 4u; // discovery checked every bounded direct use
 
 // Native identities (codegen/x86/finalize.rs).
 public static const uint PJ_NATIVE_LIBRARY = 0xfffffffeu;

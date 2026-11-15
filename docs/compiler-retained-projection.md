@@ -191,15 +191,16 @@ record. `classify.slang` checks the route row of each use that a
 provisional symbol names: its generation, identity and rank. The finalizer
 never reads a row that no symbol names.
 
-The retained link runs the GPU trait catalog check. Discovery and
-projection still reject the predicates, METHOD uses and forms they do not
-support; catalog admission does not yet supply discovery-wave routes. No
-step falls back to replay.
+The retained link publishes the GPU trait catalog proofs and binds them in
+discovery. Bounded direct calls require a successful per-use proof, and projection
+requires discovery's proof-admission flag before lowering a bounded template.
+METHOD uses still need concrete implementation routes. No step falls back to
+replay.
 
 ## Supported forms
 
 v1 projects free functions whose bodies use: parameters, `let`, `return`,
-`if`, `while`, `break`, `continue`, assignment, unary and binary operators,
+`if`, `while`, `for`, `break`, `continue`, assignment, unary and binary operators,
 integer, float, boolean and string literals, names of locals and parameters, member
 reads of nominal structs, struct literals, plain array literals, indexing, direct calls
 and language intrinsic calls.
@@ -219,8 +220,8 @@ Every other form fails closed with its template location:
 
 | Form | Error |
 | --- | --- |
-| enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
-| `for`, `?` | `FORM` or `TYPE` |
+| enums, `match`, patterns (role PATTERN) | `ROLE` or `FORM` |
+| `?`, named range objects | `FORM` or `TYPE` |
 | methods, receiver adjustments, host calls, constructors, function references | `USE` |
 | const-generic nominal layouts and named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
@@ -410,3 +411,12 @@ continue, omitted endpoints, and the inclusive i32 maximum. It runs with
 small and combined lowering batches and asserts zero replay.
 The `retained_ numeric_range x86_executes_for` filter passes 35 tests. The
 driver printed the same post-summary NVVM message seen in the intrinsic run.
+
+### Bounded direct calls
+
+`retained_native_bounded_direct_calls_consume_gpu_proofs` compiles cross-unit
+`outer → middle → keep` calls for a scalar, a private record, and a generic
+wrapper whose impl has its own prerequisite. It checks nine instances, small
+and combined lowering batches, a valid GPU proof publication, exit 42 and zero
+replay. Bound-member dispatch remains a separate routing obligation.
+The complete `retained_` filter passes 25 tests after proof integration.

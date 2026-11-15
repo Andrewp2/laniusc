@@ -116,6 +116,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fail(rank, PJ_E_DECL, d0.y | (d3.w << 8u));
         return;
     }
+    uint parent = pj_dir_entry(d0.z);
+    bool bounded = rt_dir_trait[entry].y != 0u ||
+        (parent != RT_INVALID && rt_dir_trait[parent].y != 0u);
+    if (bounded && (ready.y & PJ_READY_PROOFS) == 0u)
+    {
+        fail(rank, PJ_E_READINESS, PJ_READY_PROOFS);
+        return;
+    }
     if (q1.y != d3.x || q1.x > pj_route_count() || q1.y > pj_route_count() - q1.x)
     {
         fail(rank, PJ_E_ROUTES, q1.y);

@@ -1,4 +1,4 @@
-import type_checker.retention.discovery.dg_common;
+import type_checker.retention.discovery.dg_admission;
 RWStructuredBuffer<uint4> pj_instances;
 RWStructuredBuffer<uint4> pj_routes;
 RWStructuredBuffer<uint4> pj_readiness;
@@ -29,6 +29,7 @@ void main(uint3 id: SV_DispatchThreadID)
         }
         return;
     }
+    if (dg_proof_identity[0] != 0u && !dg_proofs_current()) { if (lane == 0u) dg_status[10] = 8u; return; }
     if(dg_status[3]!=0u || dg_status[6]!=RT_INVALID || dg_status[10]!=0u) return;
     if(dg_config[0]==1u)
     {
@@ -46,7 +47,7 @@ void main(uint3 id: SV_DispatchThreadID)
     {
         // Projection checks every instance call's ABI before lowering.
         // Original callers require a separate GPU ABI certification.
-        pj_readiness[0]=uint4(dg_config[15],1u,dg_status[1],dg_status[2]);
+        pj_readiness[0]=uint4(dg_config[15],1u | (dg_proof_identity[0] != 0u ? 4u : 0u),dg_status[1],dg_status[2]);
         dg_root_readiness[0]=uint4(dg_config[15],1u,dg_status[1],rt_counts[RT_A_USES]);
     }
 }

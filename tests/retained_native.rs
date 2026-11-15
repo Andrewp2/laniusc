@@ -823,3 +823,50 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_bounded_direct_calls_consume_gpu_proofs() {
+    common::run_with_timeout("retained bounded direct calls", || {
+        let directory = std::env::temp_dir().join(format!("lanius-retained-bounds-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(&lib, r#"module bounds::lib;
+pub trait Mark { pub fn mark(&self)->i32; }
+pub fn keep<T: Mark>(value:T)->T { return value; }
+pub fn middle<T: Mark>(value:T)->T { return keep<T>(value); }
+pub fn outer<T: Mark>(value:T)->T { return middle<T>(value); }
+"#).unwrap();
+        std::fs::write(&app, r#"module app::main;
+import bounds::lib;
+struct Local { value:i32 }
+struct Wrap<T> { value:T }
+pub impl Mark for Local { pub fn mark(&self)->i32 { return 1; } }
+pub impl Mark for i32 { pub fn mark(&self)->i32 { return 2; } }
+pub impl<T: Mark> Mark for Wrap<T> { pub fn mark(&self)->i32 { return 3; } }
+fn main()->i32 {
+    let a:Local=outer<Local>(Local{value:11});
+    let b:Wrap<Local> = outer<Wrap<Local>>(Wrap{value:Local{value:13}});
+    let c:i32=outer<i32>(18);
+    return a.value+b.value.value+c;
+}
+"#).unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id:1, paths:vec![lib], dependency_library_ids:vec![] },
+            ExplicitSourceLibraryPaths { library_id:2, paths:vec![app], dependency_library_ids:vec![1] },
+        ]).unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            assert_eq!(build.report.discovery.instances,9);
+            assert_eq!(build.report.catalog.as_ref().unwrap().publication_status,Some([1,0,u32::MAX]));
+            let output=common::run_x86_64_elf_output("retained bounds","retained_bounds",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

@@ -1,4 +1,4 @@
-import type_checker.retention.discovery.dg_common;
+import type_checker.retention.discovery.dg_admission;
 RWStructuredBuffer<uint4> sb_requests;
 globallycoherent RWStructuredBuffer<uint> sb_request_count;
 
@@ -10,6 +10,7 @@ void main(uint3 id: SV_DispatchThreadID)
     uint root = dg_config[4]; uint use = lane; uint owner = RT_INVALID;
     if (lane == 0u && (rt_counts[RT_C_READY] == 0u || rt_counts[RT_C_GENERATION] != dg_config[15]))
         dg_status[10] = 1u;
+    if (lane == 0u && dg_proof_identity[0] != 0u && !dg_proofs_current()) dg_status[10] = 8u;
     if (root != 0u)
     {
         if (lane >= rt_counts[RT_A_USES]) return;
@@ -70,8 +71,10 @@ void main(uint3 id: SV_DispatchThreadID)
         dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
         return;
     }
-    if (rt_dir[callee * RT_DIR_WORDS].y != 1u || dg_predicates(callee))
+    if (rt_dir[callee * RT_DIR_WORDS].y != 1u)
     { dg_fail(root,lane,use,4u,u0.w); return; }
+    if (dg_predicates(callee) && !dg_use_proven(use,callee,root != 0u))
+    { dg_fail(root,lane,use,8u,u0.w); return; }
     if (!dg_generic(callee))
     {
         uint4 route = uint4(2u,u0.w,0u,dg_config[15]);

@@ -356,3 +356,14 @@ instructions. No producer kernel uses local arrays.
   contexts are not produced.
 - A retained packet submits once. Appending calls to it after the first
   check needs a GPU producer for the later rows.
+
+### Direct-call discovery consumer
+
+The native retained driver keeps the publication through discovery. Discovery
+checks its identity and per-use proof status on the GPU, including proof under a
+generic caller's declared assumptions. Header words 40–43 record the committed
+source-store extent (directory entries, trait records, jobs and declarations),
+so an export after catalog admission invalidates this consumer even within the
+same generation. Appending substitution terms does not change that extent.
+The publication is released after discovery completes. Bound-member method
+selection still needs closed instance goals and concrete method routes.
