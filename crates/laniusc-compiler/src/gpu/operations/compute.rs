@@ -14,7 +14,7 @@ use crate::gpu::{
         ReflectedComputeSpec,
     },
     passes_core::{ComputePassBatch, PassData},
-    resource_registry::{ResourceMap, reflected_bind_group_from_resources},
+    resource_registry::{ResourceMap, ResourceOverlay},
 };
 
 /// Supplies the graph and allocation identities used to validate an operation.
@@ -86,17 +86,43 @@ impl ComputeOperation {
         pass: &PassData,
         dispatch: Dispatch,
     ) -> Result<Self> {
+        Self::new_with_overlay(
+            device,
+            graph,
+            ResourceOverlay::new(resources),
+            name,
+            pass,
+            dispatch,
+        )
+    }
+
+    /// Builds an operation from a registry plus the operation's own names.
+    /// The overlay replaces a copy of the whole registry.
+    fn new_with_overlay(
+        device: &wgpu::Device,
+        graph: &impl ComputeGraph,
+        resources: ResourceOverlay<'_, '_>,
+        name: &'static str,
+        pass: &PassData,
+        dispatch: Dispatch,
+    ) -> Result<Self> {
         let core = graph.graph();
         let pass_id = core
             .pass_id(name)
             .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{name}`"))?;
-        let mut resources = resources.clone();
         let pass_desc = core.pass(pass_id).expect("pass id came from graph");
         let indirect_access = pass_desc
             .accesses
             .iter()
             .find(|access| access.binding == INDIRECT_DISPATCH_BINDING);
-        if let (Dispatch::Indirect { args, .. }, Some(access)) = (&dispatch, indirect_access) {
+        let indirect_args = match &dispatch {
+            Dispatch::Indirect { args, .. } => Some(args.clone()),
+            Dispatch::Direct { .. } => None,
+        };
+        let indirect_args = indirect_args.as_ref();
+        // Shortened to this operation's own dispatch-argument borrow.
+        let mut resources: ResourceOverlay<'_, '_> = resources;
+        if let (Some(args), Some(access)) = (indirect_args, indirect_access) {
             let canonical = core
                 .resource(access.resource)
                 .expect("pass resource came from graph")
@@ -141,10 +167,11 @@ impl ComputeOperation {
             .allocations()
             .validate_pass_bindings(core, pass_id, &bindings)
             .map_err(anyhow::Error::msg)?;
+        let group = resources.reflected_bind_group(device, name, pass)?;
         Ok(Self {
             name,
             pass: pass.clone(),
-            group: reflected_bind_group_from_resources(device, name, pass, &resources)?,
+            group,
             dispatch,
             bindings,
         })
@@ -207,9 +234,19 @@ impl ComputeOperation {
         params: &LaniusBuffer<T>,
         elements: u32,
     ) -> Result<Self> {
-        let mut resources = resources.clone();
+        let mut resources = ResourceOverlay::new(resources);
         resources.buffer("gParams", params);
-        Self::direct(device, graph, &resources, name, pass, elements)
+        Self::new_with_overlay(
+            device,
+            graph,
+            resources,
+            name,
+            pass,
+            Dispatch::Direct {
+                elements,
+                dynamic_offsets: Vec::new(),
+            },
+        )
     }
 
     pub(crate) fn indirect(

@@ -139,27 +139,17 @@ impl ClosedProducer {
             0,
             &entries,
         )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("trait_solver.closed_instances"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
+        let label = "trait_solver.closed_instances";
         if pass == 4 {
             let indirect = &self.buffers["cw_indirect"];
-            passes_core::record_indirect_compute_dispatch();
-            compute.dispatch_workgroups_indirect(&indirect.buffer, indirect.byte_offset);
+            passes_core::record_or_defer_compute_indirect(encoder, data, &bind, label, indirect);
         } else {
             let (x, y) = if matches!(pass, 3 | 8 | 11) {
                 (1, 1)
             } else {
                 groups(lanes)
             };
-            compute.dispatch_workgroups(x, y, 1);
+            passes_core::record_or_defer_compute_direct(encoder, data, &bind, label, (x, y, 1));
         }
         Ok(())
     }
@@ -350,6 +340,11 @@ impl RetainedTraitPublication {
             ("cw_catalog", self.gpu.storage.buffer.as_entire_binding()),
         ];
         let mut encoder = device.create_command_encoder(&Default::default());
+        // One compute pass per submit, flushed before the submit.
+        let mut batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
         producer.record(
             &mut encoder,
             0,
@@ -395,6 +390,7 @@ impl RetainedTraitPublication {
             }
             producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
             passes_core::flush_deferred_compute(&mut encoder);
+            drop(batch);
             queue.submit(Some(encoder.finish()));
             let mut state =
                 producer
@@ -410,6 +406,10 @@ impl RetainedTraitPublication {
             }
             rounds = (rounds * 2).min(ROUND_BOUND - recorded);
             encoder = device.create_command_encoder(&Default::default());
+            batch = passes_core::DeferredComputeBatchGuard::begin(
+                passes_core::compute_pass_batching_allowed(false),
+                "trait_solver.closed_instances",
+            );
         };
         let mut report = ClosedTraitCheck {
             producer_failures: state[0],
@@ -542,6 +542,11 @@ impl RetainedTraitPublication {
             ("rp_output", packet.output.buffer.as_entire_binding()),
             ("rp_proof", packet.proof.buffer.as_entire_binding()),
         ];
+        // One compute pass per submit, flushed before the submit.
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
         producer.record(
             &mut encoder,
             10,
@@ -552,6 +557,7 @@ impl RetainedTraitPublication {
         )?;
         producer.record(&mut encoder, 11, 1, store, &ext, 0)?;
         passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
         queue.submit(Some(encoder.finish()));
         // Finish before releasing the store lock or recycling producer scratch.
         let receipt = producer.reader.read(

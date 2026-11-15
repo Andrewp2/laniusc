@@ -91,7 +91,7 @@ fn record_direct_with_offsets(
     }
     drop(compute);
     debug_capture_end(encoder, captured);
-    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
+    crate::gpu::timer::stamp_active_operation(encoder, label);
     Ok(())
 }
 
@@ -143,7 +143,7 @@ fn record_indirect_at(
     }
     drop(compute);
     debug_capture_end(encoder, captured);
-    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
+    crate::gpu::timer::stamp_active_operation(encoder, label);
     Ok(())
 }
 
@@ -184,6 +184,6 @@ fn record_indirect_with_offsets(
     }
     drop(compute);
     debug_capture_end(encoder, captured);
-    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
+    crate::gpu::timer::stamp_active_operation(encoder, label);
     Ok(())
 }
