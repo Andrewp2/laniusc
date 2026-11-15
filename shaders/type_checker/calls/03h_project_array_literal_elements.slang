@@ -1,3 +1,4 @@
+import type_checker.calls.inference_activity;
 // Snapshot first-element references before any literal publishes a new graph.
 // Nonempty literals infer from their first checked element; empty literals
 // require an expected array or slice type. One lane per literal, independent of its
@@ -12,6 +13,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = dtid.x + dtid.y * 16776960u;
     if (!valid_hir(node) || compact_hir_core[node].kind != HIR_ARRAY_EXPR) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint tag = 0u; uint payload = INVALID;
     if (compact_array_element_count[node] != 0u)
     {

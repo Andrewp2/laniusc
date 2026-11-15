@@ -3,6 +3,7 @@
 // that remain belong to the enclosing generic body and await specialization.
 import type_checker.checked_type_graph;
 import status;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -93,7 +94,7 @@ void publish_substituted_member_ref(uint member_token)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id(dtid);
-    if (!valid_token(token))
+    if (!valid_token(token) || !inference_item_active(token))
         return;
     publish_substituted_member_ref(token);
 }

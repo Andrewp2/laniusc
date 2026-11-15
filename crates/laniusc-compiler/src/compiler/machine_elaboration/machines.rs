@@ -167,6 +167,9 @@ struct Frontend {
     tables: PrecomputedParseTables,
     /// The allocations of the lexer buffers the parser's bind groups name.
     lexer_buffers: Mutex<Option<[Option<u64>; 5]>>,
+    /// The tree capacity for the next parse after an accepted tree used at
+    /// most a quarter of the resident buffers (see `with_parse`).
+    shrunk_tree_capacity: Mutex<Option<u32>>,
 }
 
 impl Frontend {
@@ -210,7 +213,7 @@ fn frontend() -> Result<&'static Frontend> {
             )))
             .map_err(|err| format!("load parser tables: {err}"))?;
             let parser = pollster::block_on(GpuParser::new()).map_err(|err| err.to_string())?;
-            Ok(Frontend { parser, tables, lexer_buffers: Mutex::new(None) })
+            Ok(Frontend { parser, tables, lexer_buffers: Mutex::new(None), shrunk_tree_capacity: Mutex::new(None) })
         })
         .as_ref()
         .map_err(|err| anyhow!("initialize the machine parser: {err}"))
@@ -234,6 +237,13 @@ struct Parsed {
 /// they cover the pack, so it needs no capacity readback first. A larger
 /// tree reports the capacity it needs, and the pack runs once more with that
 /// capacity.
+///
+/// Every parser and HIR kernel, and the clear of the parser's job storage,
+/// covers the whole tree capacity. The first build reads every file, so the
+/// buffers then fit the whole program, while later builds read only the
+/// files that may hold a machine. When an accepted tree fills at most a
+/// quarter of the capacity, the buffers are freed, and the next parse
+/// allocates them for that tree with `SHRUNK_TREE_HEADROOM` to spare.
 fn with_parse<A, R>(
     sources: &[&str],
     mut record: impl FnMut(&Gpu<'_>, &GpuBuffers, &ParserBuffers, &mut wgpu::CommandEncoder, &Parsed) -> Result<A>,
@@ -264,7 +274,8 @@ fn with_parse<A, R>(
                         CONSERVATIVE_PARSER_FEATURES,
                     )
                 };
-                let tree_capacity = match needed.or_else(resident) {
+                let shrunk = || frontend.shrunk_tree_capacity.lock().unwrap_or_else(PoisonError::into_inner).take();
+                let tree_capacity = match needed.or_else(resident).or_else(shrunk) {
                     Some(capacity) => capacity,
                     None => frontend.parser.read_resident_partial_parse_tree_capacity(
                         token_capacity,
@@ -302,6 +313,16 @@ fn with_parse<A, R>(
                     return Ok(Parse::Grow(status.emit_len));
                 }
                 if status.accepted {
+                    if tree_capacity > SHRINK_MIN_TREE_CAPACITY
+                        && status.emit_len < tree_capacity / 4
+                    {
+                        let next = status
+                            .emit_len
+                            .saturating_add(status.emit_len / SHRUNK_TREE_HEADROOM)
+                            .max(1);
+                        *frontend.shrunk_tree_capacity.lock().unwrap_or_else(PoisonError::into_inner) =
+                            Some(next);
+                    }
                     return finish(&Gpu { device, queue }, recorded).map(Parse::Done);
                 }
                 Ok::<_, anyhow::Error>(match status.error_code {
@@ -315,7 +336,12 @@ fn with_parse<A, R>(
             },
         ))??;
         match outcome {
-            Parse::Done(result) => return Ok(Some(result)),
+            Parse::Done(result) => {
+                if frontend.shrunk_tree_capacity.lock().unwrap_or_else(PoisonError::into_inner).is_some() {
+                    frontend.parser.release_current_resident_buffers();
+                }
+                return Ok(Some(result));
+            }
             Parse::Rejected => return Ok(None),
             Parse::Grow(capacity) if needed.is_none() => needed = Some(capacity),
             Parse::Grow(capacity) => {
@@ -324,6 +350,13 @@ fn with_parse<A, R>(
         }
     }
 }
+
+/// A tree capacity at or below this is never shrunk (`with_parse`).
+const SHRINK_MIN_TREE_CAPACITY: u32 = 1 << 16;
+
+/// A shrunk tree capacity is the accepted tree plus 1/SHRUNK_TREE_HEADROOM
+/// of it.
+const SHRUNK_TREE_HEADROOM: u32 = 8;
 
 /// The parser status code of a tree larger than its capacity. The status
 /// detail is the capacity the tree needs.

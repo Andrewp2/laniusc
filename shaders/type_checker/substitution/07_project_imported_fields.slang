@@ -18,6 +18,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.source_slots;
+import type_checker.calls.inference_activity;
 #include "../type/instances/live_type_rows.slang"
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -196,9 +197,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (complete)
         {
             imported_layout_kind[instance] = kind | 0x80000000u;
-            if (changed) atomic_u32_add(call_inference_state, 1u, 1u);
+            if (changed) { atomic_u32_add(call_inference_state, 1u, 1u); inference_note_item_change(); }
         }
     }
     // Another lane was writing a row a field needs: run another round.
-    if (busy) atomic_u32_add(call_inference_state, 1u, 1u);
+    if (busy) { atomic_u32_add(call_inference_state, 1u, 1u); inference_note_item_change(); }
 }

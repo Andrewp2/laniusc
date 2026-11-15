@@ -22,6 +22,7 @@ import type_checker.canonical.canonical_checked_rows;
 import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_checked;
 import status;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -56,7 +57,7 @@ void clear_unavailable_inferred_declaration(uint token)
     decl_type_ref_tag[token] = 0u;
     decl_type_ref_payload[token] = 0xffffffffu;
     visible_type[token] = 0u;
-    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }
 
 // A for statement owns its binder declaration. Sources are accepted expression
@@ -211,7 +212,7 @@ void publish_for_binding(BindingPlan plan, uint value_id, uint previous_id)
     decl_type_ref_payload[token] = payload;
     visible_type[token] = tag == 1u ? payload : 0u;
     semantic_iterable_kind_by_hir[node] = iterable_kind;
-    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }
 
 BindingPlan plan_for_binding(uint node, HirPayload statement, uint count)
@@ -428,7 +429,7 @@ void publish_try(BindingPlan plan, uint4 ids)
         bool changed = !same_type(plan.previous, ids.y, plan.value, ids.x);
         decl_type_ref_tag[token] = plan.value.x;
         decl_type_ref_payload[token] = plan.value.y;
-        if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+        if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
     }
     visible_type[token] = plan.value.x == 1u ? plan.value.y : 0u;
 }
@@ -503,7 +504,7 @@ void publish_let_binding(BindingPlan plan, uint value_id, uint previous_id, uint
         if (changed)
         {
             uint ignored;
-            InterlockedAdd(call_inference_state[1u], 1u, ignored);
+            InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
         }
     }
     // A newly structural result must not retain a previous scalar cache.
@@ -525,7 +526,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = dtid.x + dtid.y * 16776960u;
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
-    if (node >= count) return;
+    if (node >= count || !inference_item_active(compact_hir_core[node].token_start)) return;
     uint kind = compact_hir_core[node].kind;
     HirPayload statement = compact_hir_payload[node];
     BindingPlan plan;

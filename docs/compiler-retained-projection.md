@@ -274,6 +274,31 @@ about 5 ms. With the shared arena neither rebuilds: instance lowering went from
 and the warm build median from 394 ms to 261 ms. Tracked GPU buffers after a
 build went from 6.12 GB to 5.43 GB, because the second arena is gone.
 
+### Arena capacities
+
+A new arena is built with one semantic row and two target rows per HIR row
+(`LoweringCapacities::initial_for_frontend_unit`). The structural bound is
+eight of each. Job bounds (`for_job`) keep the structural factors, so a job
+in a grown arena is bounded by the arena.
+
+A job with more semantic rows sets `LOWERING_STATUS_SEMANTIC_CAPACITY`. The
+GPU counts every row (`semantic_lir_total`, read with the job totals), so the
+host grows the arena to that count and replays the job, as it does for target
+rows and artifact bytes (`LoweringOutputDemand`). The grown arena stays for
+later jobs.
+
+Settings, warm build, tracked GPU buffers after the build:
+
+| | Semantic rows (capacity) | Target rows (capacity) | Arena slots | New lowering allocations | Tracked |
+|---|---|---|---|---|---|
+| Eight per HIR row | 171,710 (3,735,552) | 358,287 (3,735,552) | 2.12 GB | 839 MB | 9.476 GB |
+| One and two per HIR row | 171,710 (466,944) | 358,287 (933,888) | 0.81 GB | 0 | 8.637 GB |
+
+At 0.81 GB every slot fits in the 2.24 GB of dead type-check storage. The
+instance batch emits 39,257 semantic and 71,004 target rows. The remaining
+8.6 GB is the parser arena (4.0 GB), the type-check arena (2.2 GB), the
+type-check interface buffers (0.47 GB) and smaller ones.
+
 Lowering sizes its string pool from the job's source bytes, so a batch passes
 at least its decoded string bytes (`string_words` × 4).
 

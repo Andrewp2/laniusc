@@ -1,6 +1,7 @@
 // Apply row-dispatched generic direct call inference.
 
 import hir_records;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -121,6 +122,7 @@ void apply_row_argument_call(uint call_node)
 {
     if (!valid_node(call_node) || compact_hir_core[call_node].kind != HIR_CALL_EXPR)
         return;
+    if (!inference_item_active(compact_hir_core[call_node].token_start)) return;
     if (call_record_is_member_call(call_node))
         return;
 

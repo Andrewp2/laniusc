@@ -381,13 +381,12 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
             "type_checker/calls/03f_infer_return_bindings",
         )?,
-        inference_round_reset: crate::gpu::operations::ClearBufferOperation::range(
+        inference_round_reset: direct(CALLS_BEGIN_INFERENCE_ROUND, 1)?,
+        inference_activity_clear: crate::gpu::operations::ClearBufferOperation::entire(
             graph,
-            compiler_graph::CALLS_INFERENCE_ROUND_RESET_PASS,
-            "call_inference_state",
-            &inference_state,
-            4,
-            4,
+            compiler_graph::CALLS_INFERENCE_ACTIVITY_CLEAR_PASS,
+            "call_inference_fn_stamp",
+            &typed_buffer_from_resources::<u32>(resources, "call_inference_fn_stamp")?,
         )?,
         inference_readback: (0..compiler_graph::CALL_INFERENCE_MAX_BATCH)
             .map(|slot| {

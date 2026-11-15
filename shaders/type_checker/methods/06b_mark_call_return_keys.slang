@@ -1,6 +1,7 @@
 import hir_records;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
+import type_checker.calls.inference_activity;
 
 // GPU method-call key marking for call-result receivers.
 //
@@ -302,6 +303,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     if (!valid_dense(i) || compact_hir_core[i].kind != HIR_CALL_EXPR)
         return;
+    if (!inference_item_active(compact_hir_core[i].token_start)) return;
 
     uint member_hir = compact_hir_payload[i].a;
     if (!valid_dense(member_hir) || compact_hir_core[member_hir].kind != HIR_MEMBER_EXPR)

@@ -28,6 +28,7 @@ import type_checker.substitution.source_slots;
 import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.match.field_expected;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -363,7 +364,7 @@ void infer_record_field_constraints(uint node, uint declaration)
         uint outcome = ct_publish_context_changes<CtNoClaims>(node, token, environment, words.y, words.z,
             count_mask, 0u, interned, request, changed);
         if (outcome == CT_PUBLISH_INTERN) continue;
-        if (outcome == CT_PUBLISH_BUSY) return;
+        if (outcome == CT_PUBLISH_BUSY) { inference_note_item_change(); return; }
         if (outcome != CT_PUBLISHED)
         {
             record_min_token_error(status, token, 6u, 0x474e0001u);
@@ -379,7 +380,7 @@ void infer_record_field_constraints(uint node, uint declaration)
         // field types settle last (an outer generic literal over an inferred
         // inner one) would end the rounds unmaterialized.
         if (changed || prior_types != words.y || prior_constants != words.z)
-        { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+        { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
         return;
     }
 }
@@ -392,6 +393,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = dtid.x + dtid.y * 16776960u;
     if (!valid_hir(node) || compact_hir_core[node].kind != 28u) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint source_tag; uint source_payload; uint source_decl;
     bool explicit_type = checked_record_constructor_reference(node, source_tag, source_payload, source_decl);
     // An explicit application already owns its ordered arguments, even when
@@ -443,5 +445,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         same_context_instance(struct_lit_context_instance[node], instance)) return;
     struct_lit_context_decl_token[node] = declaration;
     struct_lit_context_instance[node] = instance;
-    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }

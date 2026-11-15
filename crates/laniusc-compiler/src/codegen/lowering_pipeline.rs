@@ -210,6 +210,9 @@ pub(crate) struct GpuLoweringPipeline {
     /// The capacities the last recorded job could address. Its artifact must
     /// fit them, as it would in a fresh workspace for the job.
     recorded_job: Mutex<LoweringCapacities>,
+    /// The semantic rows the last finished job counted on the GPU
+    /// (`job_totals_readback`).
+    measured_semantic_rows: std::sync::atomic::AtomicU32,
     // Per-workspace fault injection: exercise output retries without making
     // unrelated concurrent tests run with artificially small capacities.
     #[cfg(test)]
@@ -255,11 +258,26 @@ fn output_demand_for_status(
     status: LoweringStatus,
     job: LoweringCapacities,
     target: LoweringTarget,
+    semantic_rows: u32,
 ) -> Result<Option<LoweringOutputDemand>, String> {
     use super::lowering_ir::opcode::{
         LOWERING_STATUS_ARTIFACT_CAPACITY,
+        LOWERING_STATUS_SEMANTIC_CAPACITY,
         LOWERING_STATUS_TARGET_CAPACITY,
     };
+    // A job past its semantic capacity lowered only a prefix of its rows,
+    // so its other flags may come from the cut. The GPU counted every row
+    // (`semantic_lir_total`), so the retry grows to that count and the
+    // other failures, if real, recur in the retry.
+    if status.flags & LOWERING_STATUS_SEMANTIC_CAPACITY != 0
+        && semantic_rows > job.semantic_instructions
+    {
+        return Ok(Some(LoweringOutputDemand {
+            semantic_instructions: checked_output_bucket(semantic_rows)?,
+            target_instructions: job.target_instructions,
+            artifact_bytes: job.artifact_bytes,
+        }));
+    }
     // Other flags share the capacity words. Mixed failures have no unambiguous
     // row/byte requirement and must retain their original diagnostics.
     if !matches!(
@@ -270,6 +288,7 @@ fn output_demand_for_status(
         return Ok(None);
     }
     let mut demand = LoweringOutputDemand {
+        semantic_instructions: job.semantic_instructions,
         target_instructions: job.target_instructions,
         artifact_bytes: job.artifact_bytes,
     };
@@ -283,21 +302,13 @@ fn output_demand_for_status(
             return Err("GPU target demand does not exceed the recorded job capacity".to_string());
         }
         demand.target_instructions = checked_output_bucket(status.required_capacity)?;
-        let bytes_per_row = match target {
-            LoweringTarget::X86_64 => 16,
-            LoweringTarget::Wasm => 8,
-        };
-        let artifact = demand
-            .target_instructions
-            .checked_mul(bytes_per_row)
-            .and_then(|bytes| {
-                job.hir_nodes
-                    .checked_mul(32)
-                    .and_then(|tables| bytes.checked_add(tables))
-            })
-            .and_then(|bytes| bytes.checked_add(job.source_bytes.max(4)))
-            .and_then(|bytes| bytes.checked_add(4096))
-            .ok_or_else(|| "lowering target artifact capacity overflows u32".to_string())?;
+        let artifact = LoweringCapacities::artifact_bytes_for(
+            job.source_bytes,
+            job.hir_nodes,
+            demand.target_instructions,
+            target,
+        )
+        .ok_or_else(|| "lowering target artifact capacity overflows u32".to_string())?;
         demand.artifact_bytes = checked_output_bucket(artifact.max(job.artifact_bytes))?;
     } else {
         if status.required_capacity <= job.artifact_bytes {
@@ -329,6 +340,10 @@ fn apply_output_demand(
     demand: LoweringOutputDemand,
     built: LoweringCapacities,
 ) -> LoweringCapacities {
+    job.semantic_instructions = job
+        .semantic_instructions
+        .max(demand.semantic_instructions)
+        .min(built.semantic_instructions);
     job.target_instructions = job
         .target_instructions
         .max(demand.target_instructions)
@@ -416,6 +431,34 @@ pub(crate) struct GpuLoweringWorkspaceCache {
     projected_demand: Mutex<Option<LoweringCapacities>>,
 }
 
+/// `LANIUS_REPORT=buffers`: a new lowering arena's capacities, its storage
+/// slot bytes, the dead upstream bytes it may reuse, and its largest
+/// resources.
+fn report_lowering_graph_bytes(
+    graph: &crate::gpu::compiler_graph::CompilerGraph,
+    capacities: LoweringCapacities,
+    upstream: &[TrackedBufferView<'_>],
+) {
+    let slot_bytes = graph.workspace_plan().slots.iter().map(|slot| slot.bytes).sum::<u64>();
+    let upstream_bytes = upstream_storage_signature(upstream)
+        .iter()
+        .map(|(_, _, bytes)| bytes)
+        .sum::<u64>();
+    eprintln!(
+        "lowering_arena capacities={capacities:?} slots={} slot_bytes={slot_bytes} upstream_bytes={upstream_bytes}",
+        graph.workspace_plan().slots.len(),
+    );
+    let mut resources = graph
+        .resources()
+        .iter()
+        .map(|resource| (resource.bytes, resource.name, resource.class))
+        .collect::<Vec<_>>();
+    resources.sort_unstable_by(|left, right| right.0.cmp(&left.0));
+    for (bytes, name, class) in resources.iter().take(16) {
+        eprintln!("lowering_resource bytes={bytes} class={class:?} name={name}");
+    }
+}
+
 fn upstream_storage_signature(upstream: &[TrackedBufferView<'_>]) -> Vec<(u64, u64, u64)> {
     let mut unique = BTreeMap::<u64, (u64, u64)>::new();
     for buffer in upstream {
@@ -485,7 +528,7 @@ impl GpuLoweringWorkspaceCache {
         semantic: GpuSemanticArtifactView<'_>,
     ) -> Result<Arc<GpuLoweringPipeline>, String> {
         let required =
-            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
+            LoweringCapacities::initial_for_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
                 .bucketed();
         let demand = self.projected_demand(artifact_kind);
         let mut current = self
@@ -557,7 +600,7 @@ impl GpuLoweringWorkspaceCache {
         semantic: GpuSemanticArtifactView<'_>,
     ) -> Result<Arc<GpuLoweringPipeline>, String> {
         let required =
-            LoweringCapacities::from_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
+            LoweringCapacities::initial_for_frontend_unit(source_bytes, tokens, hir_nodes, self.target)?
                 .bucketed();
         let current = self
             .current
@@ -630,6 +673,9 @@ impl GpuLoweringWorkspaceCache {
             .as_ref()
             .ok_or_else(|| "projected lowering workspace is not initialized".to_string())?;
         let mut required = pipeline.capacities;
+        required.semantic_instructions = checked_output_bucket(
+            required.semantic_instructions.max(demand.semantic_instructions),
+        )?;
         required.target_instructions =
             checked_output_bucket(required.target_instructions.max(demand.target_instructions))?;
         required.artifact_bytes =
@@ -665,6 +711,9 @@ impl GpuLoweringWorkspaceCache {
             .as_ref()
             .ok_or_else(|| "lowering workspace is not initialized".to_string())?;
         let mut required = pipeline.capacities;
+        required.semantic_instructions = checked_output_bucket(
+            required.semantic_instructions.max(demand.semantic_instructions),
+        )?;
         required.target_instructions =
             checked_output_bucket(required.target_instructions.max(demand.target_instructions))?;
         required.artifact_bytes =
@@ -793,6 +842,9 @@ impl GpuLoweringPipeline {
     ) -> Result<Self> {
         let graph = lowering_compiler_graph_for_artifact(capacities, target, artifact_kind)
             .map_err(anyhow::Error::msg)?;
+        if crate::options::get().report.buffers {
+            report_lowering_graph_bytes(&graph, capacities, upstream);
+        }
         let workspace = Arc::new(
             CompilerGraphWorkspace::new_with_upstream_storage(
                 device,
@@ -984,6 +1036,7 @@ impl GpuLoweringPipeline {
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             recorded_job: Mutex::new(capacities),
+            measured_semantic_rows: std::sync::atomic::AtomicU32::new(0),
             #[cfg(test)]
             next_test_artifact_limit: std::sync::atomic::AtomicU32::new(0),
             #[cfg(test)]
@@ -1111,6 +1164,13 @@ impl GpuLoweringPipeline {
         let (semantic_rows, target_rows) = (word(0), word(1));
         drop(mapped);
         self.job_totals_readback.unmap();
+        self.measured_semantic_rows
+            .store(semantic_rows, std::sync::atomic::Ordering::Relaxed);
+        if crate::options::get().report.buffers {
+            eprintln!(
+                "lowering_job semantic_rows={semantic_rows} target_rows={target_rows} job={job:?}"
+            );
+        }
         if job != self.capacities {
             flag_job_totals(status, job, semantic_rows, target_rows);
         }
@@ -1432,7 +1492,12 @@ impl GpuLoweringPipeline {
             .recorded_job
             .lock()
             .expect("lowering recorded job poisoned");
-        let demand = output_demand_for_status(failure.status, job, self.target.lowering_target());
+        let demand = output_demand_for_status(
+            failure.status,
+            job,
+            self.target.lowering_target(),
+            self.measured_semantic_rows.load(std::sync::atomic::Ordering::Relaxed),
+        );
         #[cfg(test)]
         if matches!(&demand, Ok(Some(_))) {
             self.test_output_retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1466,7 +1531,7 @@ mod tests {
             available_capacity: job.target_instructions,
             ..LoweringStatus::default()
         };
-        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64)
+        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64, 0)
             .unwrap()
             .unwrap();
         assert_eq!(demand.target_instructions, 188416);
@@ -1500,11 +1565,78 @@ mod tests {
         }
         .into();
         let status = error.downcast_ref::<LoweringFailure>().unwrap().status;
-        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64)
+        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64, 0)
             .unwrap()
             .unwrap();
         assert_eq!(demand.target_instructions, job.target_instructions);
         assert_eq!(demand.artifact_bytes, job.artifact_bytes + 4096);
+    }
+
+    #[test]
+    fn semantic_overflow_grows_to_the_counted_rows_whatever_the_cut_flagged() {
+        use crate::codegen::lowering_ir::opcode::{
+            LOWERING_STATUS_OPTIMIZATION_STRUCTURE,
+            LOWERING_STATUS_SEMANTIC_CAPACITY,
+            LOWERING_STATUS_TARGET_CAPACITY,
+        };
+        let job = LoweringCapacities::initial_for_frontend_unit(1000, 100, 100, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        let rows = job.semantic_instructions + 5000;
+        for flags in [
+            LOWERING_STATUS_SEMANTIC_CAPACITY,
+            LOWERING_STATUS_SEMANTIC_CAPACITY | LOWERING_STATUS_OPTIMIZATION_STRUCTURE,
+            LOWERING_STATUS_SEMANTIC_CAPACITY | LOWERING_STATUS_TARGET_CAPACITY,
+        ] {
+            let status = LoweringStatus {
+                flags,
+                required_capacity: rows,
+                available_capacity: job.semantic_instructions,
+                diagnostic_reason: 3,
+                ..LoweringStatus::default()
+            };
+            let demand = output_demand_for_status(status, job, LoweringTarget::X86_64, rows)
+                .unwrap()
+                .unwrap();
+            assert_eq!(demand.semantic_instructions, checked_output_bucket(rows).unwrap());
+            assert_eq!(demand.target_instructions, job.target_instructions);
+            assert_eq!(demand.artifact_bytes, job.artifact_bytes);
+            let built = LoweringCapacities {
+                semantic_instructions: demand.semantic_instructions,
+                ..job
+            };
+            assert_eq!(
+                apply_output_demand(job, demand, built).semantic_instructions,
+                demand.semantic_instructions
+            );
+        }
+        // Without a larger GPU count the semantic failure stays a diagnostic.
+        let status = LoweringStatus {
+            flags: LOWERING_STATUS_SEMANTIC_CAPACITY,
+            required_capacity: rows,
+            available_capacity: job.semantic_instructions,
+            ..LoweringStatus::default()
+        };
+        assert!(
+            output_demand_for_status(status, job, LoweringTarget::X86_64, job.semantic_instructions)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn initial_arena_estimate_stays_below_the_structural_job_bound() {
+        let initial = LoweringCapacities::initial_for_frontend_unit(1 << 20, 1 << 16, 1 << 16, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        let structural = LoweringCapacities::from_frontend_unit(1 << 20, 1 << 16, 1 << 16, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        assert!(structural.covers(initial));
+        assert_eq!(initial.semantic_instructions, 1 << 16);
+        assert_eq!(initial.target_instructions, 2 << 16);
+        // A warm job in the arena is bounded by the arena, not by the estimate.
+        assert_eq!(initial.for_job(1 << 20, 1 << 16, LoweringTarget::X86_64), initial);
     }
 
     #[test]
@@ -1534,7 +1666,8 @@ mod tests {
                 output_demand_for_status(
                     LoweringStatus { flags, ..base },
                     job,
-                    LoweringTarget::X86_64
+                    LoweringTarget::X86_64,
+                    0,
                 )
                 .unwrap()
                 .is_none()
@@ -1547,7 +1680,8 @@ mod tests {
                     ..base
                 },
                 job,
-                LoweringTarget::X86_64
+                LoweringTarget::X86_64,
+                    0,
             )
             .unwrap()
             .is_none()
@@ -1560,7 +1694,8 @@ mod tests {
                         ..base
                     },
                     job,
-                    LoweringTarget::X86_64
+                    LoweringTarget::X86_64,
+                    0,
                 )
                 .is_err()
             );
@@ -1569,7 +1704,8 @@ mod tests {
             output_demand_for_status(
                 artifact_capacity_status(u32::MAX, job.artifact_bytes),
                 job,
-                LoweringTarget::X86_64
+                LoweringTarget::X86_64,
+                    0,
             )
             .is_err()
         );

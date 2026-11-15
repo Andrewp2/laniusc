@@ -219,6 +219,11 @@ impl MethodRoutes {
         let result = (|| {
             loop {
                 let mut encoder = self.device.create_command_encoder(&Default::default());
+                // One compute pass per submit, flushed before `then`.
+                let mut batch = passes_core::DeferredComputeBatchGuard::begin(
+                    passes_core::compute_pass_batching_allowed(false),
+                    "retained method routes",
+                );
                 let mut recorded = 0;
                 let mut rounds = FIRST_ROUNDS;
                 let status = loop {
@@ -230,6 +235,7 @@ impl MethodRoutes {
                     passes_core::flush_deferred_compute(&mut encoder);
                     then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
                     passes_core::flush_deferred_compute(&mut encoder);
+                    drop(batch);
                     self.queue.submit(Some(encoder.finish()));
                     let mut parts = vec![(&self.buffers["mr_state"], 32)];
                     parts.extend_from_slice(also);
@@ -245,6 +251,10 @@ impl MethodRoutes {
                     ensure!(recorded < ROUND_BOUND, "method routes pending after the round bound");
                     rounds = (rounds * 2).min(ROUND_BOUND - recorded);
                     encoder = self.device.create_command_encoder(&Default::default());
+                    batch = passes_core::DeferredComputeBatchGuard::begin(
+                        passes_core::compute_pass_batching_allowed(false),
+                        "retained method routes",
+                    );
                 };
                 if status[0] != 3 {
                     return Ok(status);
@@ -331,22 +341,18 @@ impl MethodRoutes {
     /// Records `kernel` with a bind group from `bind_group` for it.
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let pass = &self.passes[kernel];
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained method routes"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, bind, &[]);
-        passes_core::record_compute_dispatch();
         let groups = if kernel == 5 {
             1
         } else {
             lanes.div_ceil(256).max(1)
         };
-        compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+        passes_core::record_or_defer_compute_direct(
+            encoder,
+            pass,
+            bind,
+            "retained method routes",
+            (groups.min(65535), groups.div_ceil(65535), 1),
+        );
     }
 }
 

@@ -8,6 +8,7 @@ import hir_expr_semantics;
 import hir_records;
 import primitive_types;
 import status;
+import type_checker.calls.inference_activity;
 
 // Substitute enum match payload types from compact HIR family rows, and
 // resolve a bare arm head through the scrutinee's enum.
@@ -258,6 +259,7 @@ void resolve_bare_arm_head(uint row)
 {
     HirMatchArm arm = compact_match_arms[row];
     if (!valid_hir(arm.owner) || !valid_hir(arm.pattern)) return;
+    if (!inference_item_active(compact_hir_core[arm.owner].token_start)) return;
     uint head = compact_hir_core[arm.pattern].token_start;
     if (!valid_token(head)) return;
     uint path = path_for_pattern(arm.pattern);
@@ -291,7 +293,7 @@ void resolve_bare_arm_head(uint row)
     if (compact_variant_payload_count[variant] != compact_match_payload_count[row])
         record_min_token_error(status, head, ERR_ASSIGN_MISMATCH, 0u);
     uint ignored;
-    InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }
 
 // How payload_ref completes a declared payload reference.
@@ -453,7 +455,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row >= active_payload_count())
         return;
     HirMatchPayload payload = compact_match_payloads[row];
-    if (payload.arm >= active_arm_count() || !valid_hir(payload.pattern))
+    if (payload.arm >= active_arm_count() || !valid_hir(payload.pattern) ||
+        !inference_item_active(compact_hir_core[payload.pattern].token_start))
         return;
     uint binder_token = compact_hir_core[payload.pattern].token_start;
     if (!valid_token(binder_token))
@@ -492,7 +495,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // This occurrence-local root does not introduce a lexical wildcard name.
     decl_type_ref_tag[binder_token] = tag;
     decl_type_ref_payload[binder_token] = ref_payload;
-    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
     // A literal sub-pattern is compared with the payload: an integer literal
     // needs an integer payload, and `true` or `false` needs a bool payload.
     if (compact_hir_core[payload.pattern].kind == HIR_LITERAL_EXPR && call_inference_state[0u] == 0u)

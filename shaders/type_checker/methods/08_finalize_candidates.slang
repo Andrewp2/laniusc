@@ -15,6 +15,7 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_mutable_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.source_slots;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -233,7 +234,7 @@ void invalidate_result(uint token)
         call_result_instance[call] = INVALID;
     }
     uint ignored;
-    InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }
 
 // The publication comparison's operands: the published receiver, the
@@ -316,7 +317,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id_2d(dtid, 65535u, 256u);
     if (token >= min(token_count[0u], gParams.n_tokens) ||
-        method_call_selection_owned[token] == 0u) return;
+        method_call_selection_owned[token] == 0u || !inference_item_active(token)) return;
     MethodCandidate candidate = method_candidate[token];
     ReceiverPlan plan = plan_receiver(token, candidate);
     uint2 parameter = uint2(0u, INVALID);
