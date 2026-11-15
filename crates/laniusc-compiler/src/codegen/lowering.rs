@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use encase::ShaderType;
 
 #[cfg(test)]
@@ -166,9 +166,7 @@ struct SemanticStringParams {
     string_capacity: u32,
     word_capacity: u32,
     n_hir_nodes: u32,
-    /// Instance-copy replay: first copy HIR row plus one (0 otherwise). Its
-    /// rodata then starts at the first copy string.
-    copy_start: u32,
+    reserved: u32,
 }
 
 #[repr(C)]
@@ -177,45 +175,16 @@ struct SemanticTemplateParams {
     n_hir_nodes: u32,
     param_capacity: u32,
     n_tokens: u32,
-    /// Zero for an ordinary job; selected lexical callable HIR plus one for
-    /// replay, with bit 31 set to also emit ordinary local helpers.
-    replay_function: u32,
-    /// Further selected callables of a batched replay, each HIR plus one.
-    replay_extra_count: u32,
-    /// Instance-copy replay: first copy HIR row plus one (0 otherwise).
-    replay_copy_start: u32,
-    _pad1: u32,
-    _pad2: u32,
-    replay_extra: [ReplayFunctionRow; REPLAY_EXTRA_ROWS],
+    nongeneric_only: u32,
 }
 
-/// Batched replays select at most 64 bodies: the first in `replay_function`,
-/// the other 63 in these rows (16-byte uniform array stride).
-const REPLAY_EXTRA_ROWS: usize = 16;
-
-/// The bodies a replay object holds.
+/// Which definitions are emitted by this object. Concrete instance batches
+/// already contain only the functions selected by GPU discovery.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ReplaySelection<'a> {
-    /// These lexical callables; none for an ordinary or strict job.
-    Functions(&'a [u32]),
-    /// An instance-copy replay: every function from this HIR row on (the
-    /// copies appended after the template), and none before it.
-    CopiesFrom(u32),
-    /// An original object of a retained build
-    /// (docs/compiler-retained-projection.md, "Native compilation"): every
-    /// nongeneric body, and no definition of a function with a generic
-    /// environment, including tag-only bodies. Retained projection lowers
-    /// the generic instances.
-    RetainedOriginal,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Default, ShaderType)]
-struct ReplayFunctionRow {
-    x: u32,
-    y: u32,
-    z: u32,
-    w: u32,
+pub(crate) enum ObjectFunctions {
+    All,
+    /// Generic definitions remain in the build store for GPU instantiation.
+    NonGeneric,
 }
 
 #[repr(C)]
@@ -1143,7 +1112,7 @@ pub(crate) struct GpuSemanticLoweringStage {
     _scatter_params: LaniusBuffer<SemanticScatterParams>,
     _call_arg_params: LaniusBuffer<SemanticCallArgParams>,
     _aggregate_params: LaniusBuffer<SemanticAggregateParams>,
-    string_params: LaniusBuffer<SemanticStringParams>,
+    _string_params: LaniusBuffer<SemanticStringParams>,
     _function_params: LaniusBuffer<SemanticFunctionParams>,
     template_params: LaniusBuffer<SemanticTemplateParams>,
     execution_rank_pairs: u32,
@@ -1565,7 +1534,7 @@ impl GpuSemanticLoweringStage {
                 string_capacity: hir_nodes,
                 word_capacity: capacities.source_bytes.max(4).div_ceil(4),
                 n_hir_nodes: hir_nodes,
-                copy_start: 0,
+                reserved: 0,
             },
         );
         let template_params = uniform_from_val(
@@ -1575,12 +1544,7 @@ impl GpuSemanticLoweringStage {
                 n_hir_nodes: hir_nodes,
                 param_capacity: capacities.parameters,
                 n_tokens: capacities.tokens,
-                replay_function: 0,
-                replay_extra_count: 0,
-                replay_copy_start: 0,
-                _pad1: 0,
-                _pad2: 0,
-                replay_extra: [ReplayFunctionRow::default(); REPLAY_EXTRA_ROWS],
+                nongeneric_only: 0,
             },
         );
         let function_params = uniform_from_val(
@@ -1946,7 +1910,7 @@ impl GpuSemanticLoweringStage {
             _scatter_params: scatter_params,
             _call_arg_params: call_arg_params,
             _aggregate_params: aggregate_params,
-            string_params,
+            _string_params: string_params,
             _function_params: function_params,
             template_params,
             execution_rank_pairs: capacities.jump_pairs().execution_rank,
@@ -1981,42 +1945,9 @@ impl GpuSemanticLoweringStage {
         })
     }
 
-    pub(crate) fn set_replay_functions(
-        &self,
-        queue: &wgpu::Queue,
-        selection: ReplaySelection<'_>,
-    ) -> Result<()> {
-        // A replay object holds only the selected bodies; calls to ordinary
-        // local helpers link against the original object's definitions.
-        let retained_templates = matches!(selection, ReplaySelection::RetainedOriginal);
-        let (selected_hirs, copy_start) = match selection {
-            ReplaySelection::Functions(hirs) => (hirs, 0),
-            ReplaySelection::RetainedOriginal => (&[][..], 0),
-            ReplaySelection::CopiesFrom(row) => (&[][..], row.checked_add(1)
-                .context("first instance copy row cannot be encoded")?),
-        };
-        ensure!(selected_hirs.len() <= 1 + REPLAY_EXTRA_ROWS * 4,
-            "a batched replay selects at most {} bodies", 1 + REPLAY_EXTRA_ROWS * 4);
-        let encoded = selected_hirs.iter().map(|&hir| {
-            hir.checked_add(1)
-                .context("replay callable HIR cannot be encoded")
-        }).collect::<Result<Vec<_>>>()?;
-        // A copy replay is a replay too: it drops ordinary local helpers.
-        let first = encoded.first().copied().unwrap_or(copy_start);
-        let extra = encoded.get(1..).unwrap_or(&[]);
-        let mut bytes = Vec::with_capacity(20 + 12 + extra.len() * 4);
-        bytes.extend_from_slice(&first.to_le_bytes());
-        bytes.extend_from_slice(&(extra.len() as u32).to_le_bytes());
-        // Every job overwrites the copy start; only batched replays read the
-        // extra rows.
-        bytes.extend_from_slice(&copy_start.to_le_bytes());
-        // Every job overwrites the retained-template word.
-        bytes.extend_from_slice(&u32::from(retained_templates).to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
-        self.template_params.write(queue, 12, &bytes);
-        self.string_params.write(queue, 12, &copy_start.to_le_bytes());
-        Ok(())
+    pub(crate) fn set_object_functions(&self, queue: &wgpu::Queue, functions: ObjectFunctions) {
+        let nongeneric_only = u32::from(matches!(functions, ObjectFunctions::NonGeneric));
+        self.template_params.write(queue, 12, &nongeneric_only.to_le_bytes());
     }
 
     pub(crate) fn output(&self) -> GpuSemanticLirView<'_> {

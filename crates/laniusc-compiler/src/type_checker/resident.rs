@@ -431,11 +431,6 @@ impl GpuTypeChecker {
             },
         )?;
         let params_buf = zeroed_type_check_params_buffer(device, "type_check.resident.params");
-        let body_specialization_inputs = storage_ro_from_u32s(
-            device,
-            "type_check.body_specialization_inputs",
-            &vec![0; generic_body::BODY_INPUT_WORDS],
-        );
         let closure_summary_inputs = storage_ro_from_u32s(
             device,
             "type_check.closure_summary_inputs",
@@ -489,7 +484,6 @@ impl GpuTypeChecker {
         Ok(Self {
             passes,
             params_buf,
-            body_specialization_inputs,
             closure_summary_inputs,
             empty_dependency_words,
             status_buf,
@@ -891,9 +885,9 @@ impl GpuTypeChecker {
             "type_check.resident.batch",
         );
         // Every job and parser-capacity retry overwrites both policy words.
-        // Resident workspace reuse must not retain a previous replay's authority.
-        let (trait_obligation_mode, authorized_replay_callable) =
-            hir_items.frontend_trait_check.shader_words();
+        // Each recording publishes its own whole-program obligation mode.
+        let trait_obligation_mode =
+            hir_items.frontend_trait_check.shader_word();
         let params = TypeCheckParams {
             n_tokens: token_capacity,
             source_len,
@@ -903,7 +897,6 @@ impl GpuTypeChecker {
             dependency_interfaces_present: u32::from(dependency_pages.is_some()),
             retain_callable_owners: u32::from(hir_items.semantic_interface_required),
             trait_obligation_mode,
-            authorized_replay_callable,
             canonical_library_id: dependency_pages
                 .map_or(canonical_passes::CANONICAL_NO_LIBRARY, |pages| pages.current_library_id()),
             canonical_unit_id: dependency_pages
@@ -920,48 +913,6 @@ impl GpuTypeChecker {
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
-        // Only the used prefix is written: an ordinary job's zero header and
-        // zero extra-entry count make every later packet row unreachable.
-        let specialization = hir_items
-            .body_specialization
-            .map(CheckedBodySpecializationBatch::packet)
-            .transpose()
-            .map_err(GpuTypeCheckError::Gpu)?
-            .unwrap_or_else(|| vec![0; generic_body::BODY_SPECIALIZATION_WORDS]);
-        let specialization_bytes: Vec<u8> = specialization
-            .into_iter()
-            .flat_map(u32::to_le_bytes)
-            .collect();
-        self.body_specialization_inputs
-            .write(queue, 0, &specialization_bytes);
-        // Both V2 headers are rewritten on every job, so a previous replay's
-        // bindings and environments are unreachable from this one. Upload
-        // only used section prefixes, never the unused fixed-capacity pools.
-        let bindings = hir_items
-            .body_specialization
-            .map(CheckedBodySpecializationBatch::impl_binding_sections)
-            .unwrap_or_else(generic_body::empty_impl_binding_sections);
-        for (relative_row, words) in bindings {
-            let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
-            self.body_specialization_inputs.write(
-                queue,
-                ((generic_body::BODY_IMPL_BINDING_ROW + relative_row) * 16) as u64,
-                &bytes,
-            );
-        }
-        // So is the continuation header: only an instance-copy replay maps
-        // files past its template to the modules they continue.
-        let continuations = hir_items
-            .body_specialization
-            .map(CheckedBodySpecializationBatch::continuation_words)
-            .unwrap_or_else(|| generic_body::continuation_words(0, &[]));
-        let continuation_bytes: Vec<u8> =
-            continuations.into_iter().flat_map(u32::to_le_bytes).collect();
-        self.body_specialization_inputs.write(
-            queue,
-            (generic_body::BODY_CONTINUATION_ROW * 16) as u64,
-            &continuation_bytes,
-        );
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;
@@ -996,8 +947,7 @@ impl GpuTypeChecker {
         // summary (D1b): an app that only calls library generics, with no
         // generic syntax of its own, still roots their library chains. Its
         // unit facts read the closure back.
-        let closure_allowed = hir_items.semantic_interface_required
-            && hir_items.body_specialization.is_none();
+        let closure_allowed = hir_items.semantic_interface_required;
         let canonical_synchronous = canonical_stages_synchronous(
             self.canonical_synchronous
                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -2520,7 +2470,7 @@ impl GpuTypeChecker {
                     timer.stamp(encoder, "typecheck.instance_closure.done");
                 }
             }
-            if hir_items.body_specialization.is_some() || in_place {
+            if in_place {
                 let projection = &bind_groups.semantic_projection;
                 for (index, (required_feature, operation)) in
                     projection.body_specialization.iter().enumerate()
@@ -2583,7 +2533,7 @@ impl GpuTypeChecker {
             }
             // An original job counts what it leaves for the trait solver
             // (closure/04e_solver_demand.slang).
-            if hir_items.semantic_interface_required && hir_items.body_specialization.is_none() {
+            if hir_items.semantic_interface_required {
                 bind_groups.semantic_projection.instance_closure.record_solver_demand(encoder)?;
             }
             record_canonical_types(
@@ -2603,9 +2553,6 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .generic_native_words
                 .record(encoder)?;
-            if hir_items.body_specialization.is_some() {
-                bind_groups.semantic_projection.body_native_layout_admission.record(encoder)?;
-            }
             if members_required {
                 bind_groups
                     .semantic_projection
@@ -2686,12 +2633,6 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.expression_types.done");
             }
             bind_groups.semantic_projection.artifact.record(encoder)?;
-            if hir_items.semantic_interface_required {
-                // Byte spans of generic bodies for instance-copy replay; reads
-                // the native symbols the artifact projection just published.
-                bind_groups.semantic_projection.owner_spans_clear.record(encoder);
-                bind_groups.semantic_projection.owner_spans.record(encoder)?;
-            }
             if instance_closure {
                 // D2: the closure's instances' rows, from the final
                 // expression references.

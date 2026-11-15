@@ -20,6 +20,8 @@ pub struct SchemaReport {
 }
 
 pub(super) struct SchemaProjection {
+    device: std::sync::Arc<wgpu::Device>,
+    queue: std::sync::Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     configs: Vec<wgpu::Buffer>,
@@ -30,8 +32,7 @@ pub(super) struct SchemaProjection {
 }
 
 impl SchemaProjection {
-    pub fn new(capacity: SubstitutionCapacity) -> Result<Self> {
-        let gpu = crate::gpu::device::global();
+    pub fn new_with_device(gpu: &crate::gpu::device::GpuDevice, capacity: SubstitutionCapacity) -> Result<Self> {
         let mut buffers = BTreeMap::new();
         for (name, bytes) in [
             ("ps_status", 16),
@@ -41,6 +42,8 @@ impl SchemaProjection {
             buffers.insert(name, storage(&gpu.device, name, bytes, false));
         }
         Ok(Self {
+            device: gpu.device.clone(),
+            queue: gpu.queue.clone(),
             passes: KEYS
                 .iter()
                 .map(|key| make_pass_data_from_shader_key(&gpu.device, key, "main", key))
@@ -54,8 +57,8 @@ impl SchemaProjection {
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             }),
-            engine: RetainedSubstitution::new(capacity)?,
-            requests: SubstitutionRequests::new(1),
+            engine: RetainedSubstitution::new_with_device(gpu, capacity)?,
+            requests: SubstitutionRequests::new_with_device(&gpu.device, 1),
         })
     }
 
@@ -64,7 +67,6 @@ impl SchemaProjection {
     }
 
     fn ensure(&mut self, name: &'static str, bytes: u64, preserve: bool) -> Result<()> {
-        let gpu = crate::gpu::device::global();
         if self.buffers.get(name).is_some_and(|b| b.size() >= bytes) {
             return Ok(());
         }
@@ -72,14 +74,14 @@ impl SchemaProjection {
             .max(16)
             .checked_next_power_of_two()
             .ok_or_else(|| anyhow!("schema capacity overflow"))?;
-        if size > u64::from(gpu.device.limits().max_storage_buffer_binding_size) {
+        if size > u64::from(self.device.limits().max_storage_buffer_binding_size) {
             bail!("schema table {name} requires {size} bytes, beyond device binding limit");
         }
-        let next = storage(&gpu.device, name, size, false);
+        let next = storage(&self.device, name, size, false);
         if preserve && let Some(previous) = self.buffers.get(name) {
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let mut encoder = self.device.create_command_encoder(&Default::default());
             encoder.copy_buffer_to_buffer(previous, 0, &next, 0, previous.size());
-            gpu.queue.submit(Some(encoder.finish()));
+            self.queue.submit(Some(encoder.finish()));
         }
         self.buffers.insert(name, next);
         Ok(())
@@ -95,14 +97,13 @@ impl SchemaProjection {
         extra: &[(&str, &wgpu::Buffer)],
         report: &mut SchemaReport,
     ) -> Result<()> {
-        let gpu = crate::gpu::device::global();
         if self.cursor == self.configs.len() {
             self.configs
-                .push(storage(&gpu.device, "ps_config", 32, false));
+                .push(storage(&self.device, "ps_config", 32, false));
         }
         let cfg = &self.configs[self.cursor];
         self.cursor += 1;
-        gpu.queue.write_buffer(cfg, 0, &words_bytes(&config));
+        self.queue.write_buffer(cfg, 0, &words_bytes(&config));
         let pass = &self.passes[kernel];
         let names = reflected_names(pass);
         let mut bindings = Vec::new();
@@ -116,7 +117,7 @@ impl SchemaProjection {
             bindings.push((n, b.as_entire_binding()));
         }
         let group = passes_core::bind_group::create_bind_group_from_bindings(
-            &gpu.device,
+            &self.device,
             Some(&pass.shader_id),
             pass,
             0,
@@ -140,12 +141,11 @@ impl SchemaProjection {
 
     fn read_status(&self, report: &mut SchemaReport) -> Result<Vec<u32>> {
         report.readbacks += 1;
-        let gpu = crate::gpu::device::global();
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.copy_buffer_to_buffer(&self.buffers["ps_status"], 0, &self.readback, 0, 16);
-        gpu.queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
         let slice = self.readback.slice(..);
-        map_readback_blocking(&gpu.device, &slice, "retained_schema.status")?;
+        map_readback_blocking(&self.device, &slice, "retained_schema.status")?;
         let words = slice
             .get_mapped_range()
             .chunks_exact(4)
@@ -159,27 +159,25 @@ impl SchemaProjection {
         let result = self.run_inner(store);
         if result.is_err() {
             let guard = store.store.lock().unwrap();
-            let gpu = crate::gpu::device::global();
-            gpu.queue.write_buffer(
+                self.queue.write_buffer(
                 &guard.buffers["rt_counts"],
                 (super::super::counts::READY * 4) as u64,
                 &0u32.to_le_bytes(),
             );
-            gpu.queue.submit(None);
+            self.queue.submit(None);
         }
         result
     }
 
     fn run_inner(&mut self, store: &ProgramRetention) -> Result<SchemaReport> {
-        let gpu = crate::gpu::device::global();
         let mut report = SchemaReport::default();
         let mut lo = 32;
         let mut hi = store.status()?[A_TERMS];
         report.readbacks += 1;
         let mut base = 0u32;
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.clear_buffer(&self.buffers["pj_schema_ranges"], 0, None);
-        gpu.queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
         while lo < hi {
             let n = hi - lo;
             self.ensure("pj_schema_ranges", u64::from(hi) * 8, true)?;
@@ -188,7 +186,7 @@ impl SchemaProjection {
             self.cursor = 0;
             let mut config = [lo, hi, base, 0, 0, 0, store.generation(), 0];
             let guard = store.store.lock().unwrap();
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let mut encoder = self.device.create_command_encoder(&Default::default());
             self.dispatch(&mut encoder, &guard, 0, config, n + 1, &[], &mut report)?;
             let mut distance = 1;
             loop {
@@ -200,7 +198,7 @@ impl SchemaProjection {
                 }
                 distance *= 2;
             }
-            gpu.queue.submit(Some(encoder.finish()));
+            self.queue.submit(Some(encoder.finish()));
             drop(guard);
             let status = self.read_status(&mut report)?;
             if status[2] != 0 {
@@ -215,14 +213,14 @@ impl SchemaProjection {
                 .ok_or_else(|| anyhow!("schema record count overflow"))?;
             self.ensure("pj_schema_fields", u64::from(end) * 8, true)?;
             if self.requests.capacity() < count {
-                self.requests = SubstitutionRequests::new(count);
+                self.requests = SubstitutionRequests::new_with_device(&self.device, count);
             }
             let requests = self.requests.buffers().map(|(n, b)| (n, b.clone()));
             let extra = requests.iter().map(|(n, b)| (*n, b)).collect::<Vec<_>>();
             let guard = store.store.lock().unwrap();
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let mut encoder = self.device.create_command_encoder(&Default::default());
             self.dispatch(&mut encoder, &guard, 2, config, count, &extra, &mut report)?;
-            gpu.queue.submit(Some(encoder.finish()));
+            self.queue.submit(Some(encoder.finish()));
             drop(guard);
             let substitution = match self.engine.run(store, &self.requests)? {
                 SubstitutionRun::Published(r) => r,
@@ -240,7 +238,7 @@ impl SchemaProjection {
             let results = published.results.clone();
             let counts = published.counts.clone();
             let guard = store.store.lock().unwrap();
-            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let mut encoder = self.device.create_command_encoder(&Default::default());
             self.dispatch(
                 &mut encoder,
                 &guard,
@@ -250,7 +248,7 @@ impl SchemaProjection {
                 &[("sb_results", &results), ("sb_counts", &counts)],
                 &mut report,
             )?;
-            gpu.queue.submit(Some(encoder.finish()));
+            self.queue.submit(Some(encoder.finish()));
             drop(guard);
             let status = self.read_status(&mut report)?;
             report.rounds += 1;

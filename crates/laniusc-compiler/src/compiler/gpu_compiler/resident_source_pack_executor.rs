@@ -16,20 +16,7 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // Native originals stay owned here until complete program admission. Their
     // cloneable build handles expose facts and an exact slot, never object bytes.
     pending_originals: Vec<PendingOriginalUnit>,
-    // When set, the link writes the final pages straight into this file
-    // (through a sibling temporary renamed into place) instead of returning
-    // the image as bytes.
-    output_file: Option<std::path::PathBuf>,
-    // The manifest's standard library (`standard_library_id`): only its units
-    // enter the warm caches that survive a project clear.
-    standard_library_id: Option<u32>,
     native_link: Option<NativeLinkOptions>,
-    // The number of units the build plan compiles, when known: the last one
-    // has no dependents and can know whether the trait solver will run.
-    frontend_units: Option<usize>,
-    // A retained native build (retained_native.rs): units compile without
-    // caches, and the link hands the original objects back unlinked.
-    retained: bool,
     retained_originals: Option<Vec<CompiledSourcePackObject>>,
     retained_spill: bool,
     retained_native_functions: Vec<NativeCFunction>,
@@ -84,39 +71,17 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
         Self {
-            compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None,
-            native_link: None, frontend_units: None, retained: false, retained_originals: None, retained_spill: false,
+            compiler, target, pending_originals: Vec::new(), native_link: None,
+            retained_originals: None, retained_spill: false,
             retained_native_functions: Vec::new(),
             retained_sources: Vec::new(),
         }
     }
 
-    pub(super) fn with_output_file(
-        compiler: &'compiler GpuCompiler<'gpu>,
-        target: SourcePackArtifactTarget,
-        output: &std::path::Path,
-    ) -> Self {
-        Self { output_file: Some(output.to_path_buf()), ..Self::new(compiler, target) }
-    }
-
-    /// Names the manifest's standard library (its `standard_library_id`).
-    pub(super) fn with_standard_library(mut self, standard_library_id: Option<u32>) -> Self {
-        self.standard_library_id = standard_library_id;
-        self
-    }
-
-    /// Names how many library-frontend jobs the build plan schedules.
-    pub(super) fn with_frontend_units(mut self, build_plan: &SourcePackBuildPlan) -> Self {
-        self.frontend_units = Some(build_plan.schedule.jobs.iter()
-            .filter(|job| job.phase == SourcePackJobPhase::LibraryFrontend).count());
-        self
-    }
-
-    /// A retained native build: no unit cache, no closed-fact elision, and
-    /// [`Self::take_retained_originals`] instead of a link.
-    pub(super) fn retained(mut self, spill: bool) -> Self {
-        self.retained = true;
-        self.retained_spill = spill;
+    /// Spill original x86 sections after each unit; semantic templates stay
+    /// in the build-scoped GPU store.
+    pub(super) fn spill_objects(mut self, spill:bool)->Self {
+        self.retained_spill=spill;
         self
     }
 
@@ -156,34 +121,8 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let standard_library = self.standard_library_id == Some(handle.job.library_id);
-        // Both targets admit the whole program before publishing any unit,
-        // so generic bodies specialize alike. A standard-library unit may
-        // reuse an earlier job's pending original; it is admitted with the
-        // rest of this program at link.
-        let pending = if self.retained {
-            self.compiler.compile_pending_unit(
-                self.target, &handle.job, &handle.source_files, dependency_pages.into(), self.retained_spill,
-            ).await?
-        } else if self.native_link.is_some() {
-            // The native profile spills before any cache or pending inventory
-            // can retain its section vectors. Checked source facts still own
-            // their exact source and dependency snapshots for admission.
-            self.compiler.compile_pending_unit(
-                self.target, &handle.job, &handle.source_files, dependency_pages.into(), true,
-            ).await?
-        } else {
-            // The program's last unit has no dependents. When the units
-            // before it already let the link skip the trait solver, a last
-            // unit the GPU proves solver-closed needs none of its solver facts.
-            let elide_closed_facts = self.frontend_units == Some(self.pending_originals.len() + 1)
-                && super::body_specialization::closed_release_ready(
-                    &self.pending_originals.iter().map(PendingOriginalUnit::facts).collect::<Vec<_>>());
-            self.compiler.compile_cached_pending_original_unit(
-                self.target, &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
-                elide_closed_facts,
-            ).await?
-        };
+        let pending=self.compiler.compile_pending_unit(self.target,&handle.job,&handle.source_files,
+            dependency_pages.into(),self.retained_spill).await?;
         let artifact = PendingNativeArtifact {
             slot: self.pending_originals.len(), facts: pending.facts().clone(),
         };
@@ -211,7 +150,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         }
         // Keep source-checked C declarations tied to the exact original unit
         // snapshots admitted below, including private declarations. Generic
-        // replays retain those original foreign identities.
+        // instances retain those original foreign identities.
         let mut native_functions = Vec::new();
         if self.target == SourcePackArtifactTarget::X86_64 {
             for pending in &self.pending_originals {
@@ -223,147 +162,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             }
         }
         let pending = std::mem::take(&mut self.pending_originals);
-        if self.retained {
-            // The retained driver admits the GPU-produced whole-program
-            // catalog before discovery and projection. No replay session is
-            // constructed here.
-            self.retained_sources = pending.iter().map(|p| super::retained_native::RetainedDiagnosticSources::of(p.facts())).collect();
-            self.retained_originals = Some(pending.into_iter().map(PendingOriginalUnit::release_closed).collect());
-            self.retained_native_functions = native_functions;
-            return Ok(ResidentLinkedOutput::Bytes(Vec::new()));
-        }
-        if let Some(options) = &self.native_link {
-            let objects = self.compiler.specialize_spilled_native_objects(pending).await?;
-            let bridge = super::native_codegen::native_main_bridge(&objects)?;
-            let _span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.link");
-            let link_error = |context| move |error| super::x86_codegen::x86_source_pack_link_error(context, error);
-            let plan = x86::native::plan_native_link(&objects, &native_functions, bridge, options)
-                .map_err(link_error("link native C executable"))?;
-            if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {
-                let linker = self.compiler.x86_linker().map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "initialize resident x86_64 native linker: {reason}"))
-                })?;
-                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
-                return match &self.output_file {
-                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                        path, self.target, |file| linker
-                            .link_dynamic_executable_to_writer(device, queue, input, image, file)
-                            .map(|len| len as u64)
-                            .map_err(link_error("execute resident x86_64 native linker")),
-                    ).map(ResidentLinkedOutput::File),
-                    None => linker.link_dynamic_executable(device, queue, input, image)
-                        .map(ResidentLinkedOutput::Bytes)
-                        .map_err(link_error("execute resident x86_64 native linker")),
-                };
-            }
-            if let x86::native::NativeLinkPlan::Driver(reason) = &plan
-                && crate::gpu::trace::enabled()
-            {
-                crate::gpu::trace::record_instant(
-                    "host.compiler",
-                    &format!("codegen.x86.native.link.driver: {reason}"),
-                    std::time::Instant::now(),
-                );
-            }
-            let executable = x86::native::link_native_file_executable(
-                &objects, &native_functions, bridge, options,
-            ).map_err(link_error("link native C executable"))?;
-            return match &self.output_file {
-                Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                    path, self.target, |file| executable.write_to(file).map_err(|error|
-                        super::x86_codegen::x86_source_pack_link_error("write native C executable", error)),
-                ).map(ResidentLinkedOutput::File),
-                None => executable.read_bytes(options.max_output_bytes)
-                    .map(ResidentLinkedOutput::Bytes)
-                    .map_err(|error| super::x86_codegen::x86_source_pack_link_error(
-                        "read native C executable", error)),
-            };
-        }
-        let objects = self.compiler.specialize_pending_source_pack_objects(pending).await?;
-        match self.target {
-            SourcePackArtifactTarget::X86_64 => {
-                let objects = objects.into_iter().map(|object| match object {
-                    CompiledSourcePackObject::X86_64(object) => Ok(object),
-                    CompiledSourcePackObject::Wasm(_) | CompiledSourcePackObject::X86_64File(_) => Err(source_pack_artifact_store_error(
-                        "resident x86_64 source-pack link received a different object storage")),
-                }).collect::<Result<Vec<_>, _>>()?;
-                let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
-                let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
-                    .map_err(|error| super::x86_codegen::x86_link_input_error(error, None))?;
-                drop(input_span);
-                let linker = self.compiler.x86_linker().map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "initialize resident x86_64 source-pack linker: {reason}"
-                    ))
-                })?;
-                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
-                let link_error = |err| {
-                    super::x86_codegen::x86_source_pack_link_error(
-                        "execute resident x86_64 source-pack linker",
-                        err,
-                    )
-                };
-                match &self.output_file {
-                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                        path,
-                        self.target,
-                        |file| {
-                            linker
-                                .link_executable_to_writer(device, queue, &input, file)
-                                .map(|len| len as u64)
-                                .map_err(link_error)
-                        },
-                    )
-                    .map(ResidentLinkedOutput::File),
-                    None => linker
-                        .link_executable(device, queue, &input)
-                        .map(ResidentLinkedOutput::Bytes)
-                        .map_err(link_error),
-                }
-            }
-            SourcePackArtifactTarget::Wasm => {
-                let objects = objects.iter().map(|object| match object {
-                    CompiledSourcePackObject::Wasm(object) => Ok(object),
-                    CompiledSourcePackObject::X86_64(_) | CompiledSourcePackObject::X86_64File(_) => Err(source_pack_artifact_store_error(
-                        "resident Wasm source-pack link received an x86_64 object")),
-                }).collect::<Result<Vec<_>, _>>()?;
-                let input = wasm::GpuWasmLinkInput::for_executable_refs(objects)
-                    .map_err(super::wasm_codegen::wasm_link_input_error)?;
-                let linker = self.compiler.wasm_linker().map_err(|reason| {
-                    source_pack_artifact_store_error(format!(
-                        "initialize resident Wasm source-pack linker: {reason}"
-                    ))
-                })?;
-                let _resident_guard = self.compiler.resident_pipeline_lock.lock().await;
-                let (device, queue) = (&self.compiler.gpu.device, &self.compiler.gpu.queue);
-                let link_error = |err| {
-                    source_pack_artifact_store_error(format!(
-                        "execute resident Wasm source-pack linker: {err}"
-                    ))
-                };
-                match &self.output_file {
-                    Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                        path,
-                        self.target,
-                        |file| {
-                            linker
-                                .link_executable_to_writer(device, queue, &input, file)
-                                .map(|len| len as u64)
-                                .map_err(link_error)
-                        },
-                    )
-                    .map(ResidentLinkedOutput::File),
-                    None => linker
-                        .link_executable(device, queue, &input)
-                        .map(ResidentLinkedOutput::Bytes)
-                        .map_err(link_error),
-                }
-            }
-            SourcePackArtifactTarget::Generic => unreachable!("resident target is concrete"),
-        }
+        self.retained_sources=pending.iter().map(|p|super::retained_native::RetainedDiagnosticSources::of(p.facts())).collect();
+        self.retained_originals=Some(pending.into_iter().map(PendingOriginalUnit::release_closed).collect());
+        self.retained_native_functions=native_functions;
+        Ok(ResidentLinkedOutput::Bytes(Vec::new()))
     }
 }
 

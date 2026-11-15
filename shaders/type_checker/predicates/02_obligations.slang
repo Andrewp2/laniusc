@@ -27,7 +27,6 @@ struct Params
     // Private original admission uses 1; an accepted replay request uses 2.
     // Both produce unpublished objects. Unknown modes stay strict.
     uint trait_obligation_mode;
-    uint authorized_replay_callable;
 };
 
 ConstantBuffer<Params> gParams;
@@ -97,7 +96,6 @@ static const uint ERR_INVALID_TRAIT_IMPLEMENTATION = 17u;
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
-
 
 
 static const uint TYPE_REF_SCALAR = 1u;
@@ -548,18 +546,9 @@ void validate_trait_obligation_for_call(uint pred, uint fn_node, uint node)
         record_error(callee, ERR_TRAIT_BOUND_UNSATISFIED, PREDICATE_STATUS_INVALID_ARG);
         return;
     }
-    // Original admission and authorized replay both retain every generic call
-    // for whole-program selection. Replay reparses ordinary siblings as well:
-    // their calls must preserve the admitted original facts, while selected-body
-    // calls receive fresh proofs. Omitted templates recover originals only after
-    // the native emission gate proves they emitted no bodies or calls.
-    // All objects remain private until that gate and program checking succeed.
-    // Keep definition, owner, environment and full key validation above. Intrinsic
-    // calls have no retained callable row, so their bounds must stay strict.
-    uint replay_owner = gParams.authorized_replay_callable;
-    bool authorized_replay = gParams.trait_obligation_mode == 2u &&
-        valid_node(replay_owner) && compact_hir_core[replay_owner].kind == 3u;
-    bool deferred = (gParams.trait_obligation_mode == 1u || authorized_replay) &&
+    // Whole-program GPU admission proves retained calls. Intrinsics have
+    // no retained callable and keep their local checks.
+    bool deferred = gParams.trait_obligation_mode == 1u &&
         call_intrinsic_tag[callee] == 0u;
 #if defined(LANIUS_OBLIGATION_VALIDATE_PASS)
     // An original job still records whether its own concrete implementations

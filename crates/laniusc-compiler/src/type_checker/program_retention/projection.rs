@@ -247,7 +247,10 @@ pub struct ProjectionInputs {
 impl ProjectionInputs {
     /// Buffers for up to `instances` ranks and `routes` routes.
     pub fn new(instances: u32, routes: u32) -> Self {
-        let device = &crate::gpu::device::global().device;
+        Self::new_with_device(&crate::gpu::device::global().device, instances, routes)
+    }
+
+    pub(crate) fn new_with_device(device: &wgpu::Device, instances: u32, routes: u32) -> Self {
         let instances = instances.max(1);
         let routes = routes.max(1);
         Self {
@@ -864,7 +867,10 @@ struct Recorder<'a> {
 impl RetainedProjection {
     /// A projection on the process-global GPU.
     pub fn new(substitution: SubstitutionCapacity) -> Result<Self> {
-        let gpu = crate::gpu::device::global();
+        Self::new_with_device(crate::gpu::device::global(), substitution)
+    }
+
+    pub(crate) fn new_with_device(gpu: &crate::gpu::device::GpuDevice, substitution: SubstitutionCapacity) -> Result<Self> {
         let device = gpu.device.clone();
         let passes = KERNELS
             .iter()
@@ -878,8 +884,8 @@ impl RetainedProjection {
             device,
             queue: gpu.queue.clone(),
             passes,
-            substitution: RetainedSubstitution::new(substitution)?,
-            schema: schema::SchemaProjection::new(substitution)?,
+            substitution: RetainedSubstitution::new_with_device(gpu, substitution)?,
+            schema: schema::SchemaProjection::new_with_device(gpu, substitution)?,
             requests: None,
             rank_capacity: 0,
             ranks: BTreeMap::new(),
@@ -1276,7 +1282,7 @@ impl RetainedProjection {
                 self.requests.as_ref().map_or(0, |r| r.capacity()),
                 report.requests.max(1),
             );
-            self.requests = Some(SubstitutionRequests::new(capacity));
+            self.requests = Some(SubstitutionRequests::new_with_device(&self.device, capacity));
             report.allocations += 1;
             report.allocated_bytes += capacity as u64 * 16;
         }

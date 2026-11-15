@@ -296,10 +296,6 @@ impl GpuTypeChecker {
         resources.buffer("gTypeCheckParams", &self.params_buf);
         resources.buffer("gConstantStoragePlan", &constant_storage_plan);
         resources.buffer(
-            "body_specialization_inputs",
-            &self.body_specialization_inputs,
-        );
-        resources.buffer(
             instance_closure_passes::CLOSURE_SUMMARY_INPUTS,
             &self.closure_summary_inputs,
         );

@@ -206,17 +206,10 @@ pub struct Check {
     /// `canonical-retry=N`: divide the canonical capacities by `2^N` (at most
     /// 16), so that a small program overflows and takes the retry path.
     pub canonical_retry: u32,
-    /// `instance-closure`: fail when a replay round finds a body the closure
-    /// missed.
-    pub instance_closure: bool,
-    /// `instance-table`: read the instance table back and compare it with
-    /// each copy run.
+    /// `instance-table`: include realized instance rows in standalone
+    /// checked-unit readback.
     pub instance_table: bool,
-    /// `library-instance-cache`: replay every cache hit and compare.
-    pub library_instance_cache: bool,
-    /// `lir-replays`: record the optimizer validation dispatches for copy
-    /// replays as well.
-    pub lir_replays: bool,
+
 }
 
 impl Default for Check {
@@ -226,10 +219,7 @@ impl Default for Check {
             indirect_dispatch: cfg!(debug_assertions),
             canonical: false,
             canonical_retry: 0,
-            instance_closure: false,
             instance_table: false,
-            library_instance_cache: false,
-            lir_replays: false,
         }
     }
 }
@@ -459,10 +449,7 @@ impl Check {
         "indirect-dispatch",
         "canonical",
         "canonical-retry=N",
-        "instance-closure",
         "instance-table",
-        "library-instance-cache",
-        "lir-replays",
     ];
 
     fn parse(value: Option<String>) -> Self {
@@ -471,10 +458,7 @@ impl Check {
             "validation-scopes" => flag(&mut check.validation_scopes, argument),
             "indirect-dispatch" => flag(&mut check.indirect_dispatch, argument),
             "canonical" => flag(&mut check.canonical, argument),
-            "instance-closure" => flag(&mut check.instance_closure, argument),
             "instance-table" => flag(&mut check.instance_table, argument),
-            "library-instance-cache" => flag(&mut check.library_instance_cache, argument),
-            "lir-replays" => flag(&mut check.lir_replays, argument),
             "canonical-retry" => match argument.map(str::parse::<u32>) {
                 Some(Ok(shift)) => {
                     check.canonical_retry = shift.min(16);
@@ -587,13 +571,13 @@ mod tests {
         let options = options(&[
             ("LANIUS_TRACE", "stage-errors, wasm"),
             ("LANIUS_REPORT", "host-timing,resources=4096"),
-            ("LANIUS_CHECK", "canonical-retry=40,lir-replays"),
+            ("LANIUS_CHECK", "canonical-retry=40"),
         ]);
         assert!(options.trace.stage_errors && options.trace.wasm && !options.trace.canonical);
         assert!(options.report.host_timing && !options.report.gpu_timing);
         assert_eq!(options.report.resources, Some(4096));
         assert_eq!(options.check.canonical_retry, 16);
-        assert!(options.check.lir_replays && !options.check.validation_scopes);
+        assert!(!options.check.validation_scopes);
     }
 
     #[test]

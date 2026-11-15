@@ -35,7 +35,7 @@ void inplace_block(uint row)
 #include "closure_calls.slang"
 
 // Parameters of any lexical ancestor make the body generic (as
-// 04_owner_spans and codegen's function_has_generic_environment).
+// codegen's function_has_generic_environment).
 bool has_generic_environment(uint row)
 {
     uint owner = row;

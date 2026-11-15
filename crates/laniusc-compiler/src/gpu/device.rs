@@ -43,6 +43,10 @@ static PIPELINE_CACHE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
 /// A tmp file older than this was left by a process that stopped mid-write.
 const PIPELINE_CACHE_STALE_TMP: Duration = Duration::from_secs(10 * 60);
 static GLOBAL_DEVICE: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
+// wgpu 29 compares native resource handles by their instance-local IDs.
+// Compiler caches hold those handles across devices, so all compiler devices
+// must allocate IDs from the same instance. Devices and queues remain separate.
+static COMPILER_INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();
 
 // Uncaptured device errors (an out-of-memory buffer creation and the invalid
 // bind groups that follow it). Work recorded after one does not run, so a
@@ -155,7 +159,7 @@ impl GpuDevice {
     }
 
     /// Returns wgpu-core's current user-owned and dependency-retained resource
-    /// counts. This excludes backend-private Vulkan driver allocations.
+    /// counts across compiler devices. This excludes backend-private allocations.
     pub fn resource_stats(&self) -> Option<WgpuResourceStats> {
         let report = self.instance.generate_report()?;
         let hub = report.hub_report();
@@ -403,11 +407,13 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
         crate::options::Backend::Auto => wgpu::Backends::all(),
     };
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        flags: instance_flags(crate::options::get().trace.gpu_labels),
-        ..wgpu::InstanceDescriptor::new_without_display_handle()
-    });
+    let instance = COMPILER_INSTANCE.get_or_init(|| {
+        wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            flags: instance_flags(options.trace.gpu_labels),
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        })
+    }).clone();
 
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,

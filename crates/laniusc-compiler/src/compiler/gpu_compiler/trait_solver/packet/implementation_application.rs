@@ -137,7 +137,7 @@ impl ProgramPacket {
         origin: &AdmittedCall,
         evidence: &ValidatedSolverResult,
     ) -> Result<(OwnedProofRoot, u32, [u32; 8])> {
-        let (_, _, _, obligations) = self.replay_origin(origin)?;
+        let (_, _, _, obligations) = self.concrete_origin(origin)?;
         ensure!(
             evidence.epoch == self.catalog.epoch && evidence.arena_id == self.arena_id,
             "implementation evidence belongs to another catalog or arena"

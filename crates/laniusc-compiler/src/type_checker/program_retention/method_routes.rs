@@ -35,8 +35,7 @@ pub(super) struct MethodRoutes {
     configs: Vec<wgpu::Buffer>,
 }
 impl MethodRoutes {
-    pub fn new() -> Result<Self> {
-        let gpu = crate::gpu::device::global();
+    pub fn new_with_device(gpu: &crate::gpu::device::GpuDevice) -> Result<Self> {
         let passes = KEYS
             .iter()
             .map(|name| {

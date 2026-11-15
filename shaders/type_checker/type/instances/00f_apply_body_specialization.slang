@@ -1,10 +1,4 @@
-// Apply a checked body environment after ordinary call validation.
-// Replaying a body must not turn its public generic signature into one
-// concrete signature while other callers are being checked.
-//
-// Declaration identity and lexical slot composition are shared with body
-// replay. Each scope uses the exact (owner, name) parameter index; enclosing
-// scopes supply earlier slots in separate type and constant domains.
+// Apply the GPU-selected single-instance environment after call validation.
 
 import hir_records;
 import constant_value;
@@ -49,14 +43,8 @@ StructuredBuffer<uint> generic_param_lookup_state;
 StructuredBuffer<uint> generic_type_param_prefix;
 StructuredBuffer<uint> generic_const_param_prefix;
 StructuredBuffer<uint> interface_public_decl_index_by_hir;
-// Header: (argument_count, native target symbol, 0, 0). Associated methods
-// carry their existing high-bit HIR symbol; free functions use public indices.
-// Rows: (generic_slot, reference_tag, scalar_identity, 0). A batched packet
-// adds entries for other scopes (body_specialization_entries.slang).
-StructuredBuffer<uint4> body_specialization_inputs;
 StructuredBuffer<uint4> checked_constant_atoms;
 
-#include "body_type_graph_reference.slang"
 #define LANIUS_INPLACE_ARGUMENTS 1
 #include "../../closure/inplace_read.slang"
 
@@ -134,7 +122,6 @@ void validate_duplicate_generic_param_key(uint row)
         record_min_token_error(status, token, ERR_BAD_HIR, GENERIC_STATUS_DUPLICATE_PARAM);
 }
 
-#include "body_specialization_owner.slang"
 
 uint type_path_leaf(uint node)
 {
@@ -158,22 +145,9 @@ void type_parameter_binding(uint row, uint slot, out uint tag, out uint payload)
     tag = TYPE_REF_GENERIC_PARAM;
     payload = generic_param_token[row];
     uint owner = compact_generic_params[row].owner;
-    uint entry = owner < active_hir_node_count()
-        ? body_specialization_entry_for_owner(owner) : INVALID;
-    if (entry != INVALID && slot < min(body_entry_header(entry).x, BODY_TYPE_SLOTS))
-    {
-        uint4 argument = body_entry_argument(entry, slot);
-        if (argument.x == slot && argument.y == 10u &&
-            argument.z < body_graph_node_count())
-        {
-            uint source_capacity; uint stride;
-            type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-            body_type_graph_reference(argument.z, source_capacity, tag, payload);
-        }
-    }
     // An original job binds the owner's one instance in place.
     uint2 operand;
-    if (body_entry_count() == 0u && owner < active_hir_node_count() &&
+    if (owner < active_hir_node_count() &&
         inplace_argument(owner, slot, false, operand))
     {
         tag = operand.x;
@@ -240,8 +214,7 @@ void publish_const_len_use_slot(uint node)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    bool packet = body_specialization_inputs[0u].x != 0u || body_specialization_inputs[705u].x != 0u;
-    if (!packet && !inplace_job()) return;
+    if (!inplace_job()) return;
     if (valid_node(node) && compact_hir_core[node].kind == 34u)
     {
         uint token = compact_hir_core[node].token_start;
@@ -260,26 +233,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint slot = lexical_parameter_slot(node);
         uint owner = compact_generic_params[node].owner;
         uint parameter = generic_param_token[node];
-        uint entry = valid_token(parameter) && slot < 32u
-            ? body_specialization_entry_for_owner(owner) : INVALID;
-        if (entry != INVALID && slot < min(body_entry_header(entry).w, 32u))
-        {
-            uint type_node = compact_generic_param_types[node];
-            uint type_token = valid_node(type_node) ? compact_hir_core[type_node].token_start : INVALID;
-            uint scalar = valid_token(type_token) && type_expr_ref_tag[type_token] == TYPE_REF_SCALAR
-                ? type_expr_ref_payload[type_token] : 0u;
-            uint atom_base = body_constant_atom_base();
-            uint3 value; uint atom;
-            if (atom_base == INVALID || !body_entry_constant(entry, slot, atom_base, value, atom) ||
-                scalar != value.x || !constant_value_is_valid(value) ||
-                any(checked_constant_atoms[atom] != uint4(value, 0u)))
-            { record_min_token_error(status, parameter, ERR_BAD_HIR, 0x474e0008u); return; }
-            type_const_param_value_by_token[parameter] = atom;
-        }
         // An original job binds the owner's one instance in place. Its
         // constant is an atom of this job with the parameter's scalar.
         uint2 operand;
-        if (!packet && valid_token(parameter) && slot < 32u && owner < active_hir_node_count() &&
+        if (valid_token(parameter) && slot < 32u && owner < active_hir_node_count() &&
             inplace_argument(owner, slot, true, operand) && operand.x == 1u)
         {
             uint type_node = compact_generic_param_types[node];
@@ -308,7 +265,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     // Alias normalization can publish a parameter reference at a token whose
-    // spelling is an alias name. Replay follows that checked identity; looking
+    // spelling is an alias name. In-place binding follows that identity; looking
     // up the spelling again leaves Id<T> symbolic while T becomes concrete.
     // Verify the exact declaration token so a same-named parameter in another
     // lexical scope cannot be captured by the selected body's environment.

@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::{
-    resident_source_pack_executor::{ResidentLinkedOutput, ResidentSourcePackExecutor},
+    resident_source_pack_executor::ResidentLinkedOutput,
     *,
 };
 
@@ -164,97 +164,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.compile_retained_program(target,source_pack,None,output).await
     }
 
-    async fn compile_path_manifest_resident_units(
-        &self,
-        source_pack: &ExplicitSourcePackPathManifest,
-        target: SourcePackArtifactTarget,
-        limits: CompilationUnitLimits,
-        output: Option<&Path>,
-    ) -> Result<ResidentLinkedOutput, CompileError> {
-        let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
-        let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
-        let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
-        let mut executor = match output {
-            Some(output) => ResidentSourcePackExecutor::with_output_file(self, target, output),
-            None => ResidentSourcePackExecutor::new(self, target),
-        }
-        .with_standard_library(source_pack.standard_library_id)
-        .with_frontend_units(&build_plan);
-        execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor)
-            .await
-            .map(|result| result.linked_output)
-    }
-
-    pub(in crate::compiler) async fn compile_path_manifest_bounded(
-        &self,
-        source_pack: &ExplicitSourcePackPathManifest,
-        target: SourcePackArtifactTarget,
-        limits: CompilationUnitLimits,
-    ) -> Result<Vec<u8>, CompileError> {
-        let artifact = self
-            .compile_path_manifest_bounded_artifact(source_pack, target, limits)
-            .await?;
-        let bytes = fs::read(&artifact.path).map_err(|err| {
-            source_pack_artifact_store_error(format!(
-                "read bounded source-pack linked output {}: {err}",
-                artifact.path.display()
-            ))
-        })?;
-        Ok(bytes)
-    }
-
-    async fn compile_path_manifest_bounded_artifact(
-        &self,
-        source_pack: &ExplicitSourcePackPathManifest,
-        target: SourcePackArtifactTarget,
-        limits: CompilationUnitLimits,
-    ) -> Result<CompletedBoundedArtifact, CompileError> {
-        let artifact_root = TemporaryBoundedArtifactRoot::create()?;
-        let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
-        let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
-        let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
-        let mut executor = GpuSourcePackArtifactExecutor::new(self, artifact_root.path(), target)
-            .with_standard_library(source_pack.standard_library_id);
-        let linked_output_path = execute_path_batched_link_build_async(
-            source_pack,
-            &build_plan,
-            batch_limits,
-            &mut executor,
-        )
-        .await?
-        .linked_output
-        .path;
-
-        let descriptor_bytes = fs::read(&linked_output_path).map_err(|err| {
-            source_pack_artifact_store_error(format!(
-                "read bounded source-pack linked-output descriptor {}: {err}",
-                linked_output_path.display()
-            ))
-        })?;
-        let descriptor: GpuSourcePackArtifactDescriptor = serde_json::from_slice(&descriptor_bytes)
-            .map_err(|err| {
-                source_pack_artifact_store_error(format!(
-                    "parse bounded source-pack linked-output descriptor {}: {err}",
-                    linked_output_path.display()
-                ))
-            })?;
-        let storage_key = descriptor
-            .output_record_arrays
-            .iter()
-            .chain(descriptor.record_arrays.iter())
-            .find(|array| array.name == "emitted_byte_records")
-            .and_then(|array| array.storage_key.as_deref())
-            .ok_or_else(|| {
-                source_pack_artifact_store_error(
-                    "bounded source-pack linked-output descriptor has no emitted-byte artifact",
-                )
-            })?;
-        let artifact_path = artifact_path(artifact_root.path(), storage_key)?;
-        Ok(CompletedBoundedArtifact {
-            path: artifact_path,
-            _root: artifact_root,
-        })
-    }
 }
 
 /// A program whose files fit one resident unit compiles as one unit, whatever
@@ -302,10 +211,6 @@ fn path_manifest_requires_file_backed_build(
     source_pack.requires_bounded_compilation_with_limits(limits)
 }
 
-struct CompletedBoundedArtifact {
-    path: PathBuf,
-    _root: TemporaryBoundedArtifactRoot,
-}
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), CompileError> {
     match fs::rename(source, destination) {

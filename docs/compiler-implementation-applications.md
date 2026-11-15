@@ -1,5 +1,12 @@
 # Imported generic implementation applications
 
+This is a historical account of the retired source-replay pipeline and its
+validation receipts. Native and Wasm builds now use
+[GPU monomorphization](compiler-gpu-instantiation.md). The host replay sessions,
+implementation replay packets and library-instance cache described below have
+been removed, including `LANIUS_CHECK=library-instance-cache`. Current method
+routing consumes [retained GPU solver evidence](compiler-retained-trait-catalog.md).
+
 **Status: the selected imported implementation applications execute in
 GPU-compiled x86_64 Linux output. Buffered library adapters have separate
 runtime admission. This is not a claim about all generic source expressions

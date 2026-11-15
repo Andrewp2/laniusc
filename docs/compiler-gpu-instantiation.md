@@ -1,61 +1,76 @@
 # GPU generic instantiation
 
-This document records the requirements and current prototype for removing
-source replay from full compilation. The complete replacement design is not
-yet settled. Replay elimination is partial. A bounded program compiles as one unit
-(see [One program, one unit](#one-program-one-unit)), and the original compile
-lowers closed local instances itself (see [Execution rows](#execution-rows)).
-The compiler still constructs source copies of every other generic body and
-runs the frontend again for them.
+Native x86 and Wasm executable compilation use GPU monomorphization by default.
+Each frontend unit is checked once and exports immutable typed templates into
+one build store. Original objects contain nongeneric functions. The GPU finds
+the closed generic instances, proves their obligations, substitutes their
+terms, computes layouts, projects concrete bodies and lowers instance batches.
+The GPU certifies calls and resolves provisional symbols before linking.
 
-The performance target is about 160 ms for a warm resident-daemon rebuild of
-the settings application, with every unit compiled on every request. Reusing
-GPU allocations and pipelines is allowed; reusing compiled units, generic
-instances, or checked source between requests does not count. Instantiation,
-substitution, layout, call selection, and lowering must run in GPU shaders.
+Source replay has been removed: there is no source-copy generator, replay
+compiler request, host replay scheduler, replay input packet, source-blanking
+path or replay object selection. A rejected instance reports its diagnostic;
+it does not invoke another frontend. Allocation overflow grows the affected
+buffers and retries from retained GPU data.
 
-The [proposed implementation boundaries](compiler-gpu-instantiation-design.md)
-specify the cross-unit identities, retained data, discovery inputs, solver
-ownership and lowering batches. Discovery and routing audits now identify the
-remaining concrete checks and their GPU owners. The prototype milestones below describe the earlier selective
-fallback approach; they are not the next implementation sequence.
+The implementation contracts are:
 
-## Retained-program checkpoint (2026-11-14)
+- [Program retention](compiler-program-retention.md): declaration and parameter
+  identities, symbolic terms, schemas, use records and build lifetimes.
+- [Trait catalog](compiler-retained-trait-catalog.md): GPU catalog production,
+  coherence, obligation solving and guarded proof publications.
+- [Substitution](compiler-retained-substitution.md): exact parameter binding,
+  constant fits, memoized parallel evaluation and transactional capacity retry.
+- [Projection and compilation](compiler-retained-projection.md): discovery
+  routes, semantic checks, layouts, concrete lowering batches, caller ABI
+  certification, native C linking, bounded output and Wasm.
 
-The opt-in export now reaches `READY=1` on the real settings sources at
-`212c54dce`. The author measured three warm full recompiles at `5160438c6`:
-each original job committed in one attempt with zero invariants, incomplete
-entries and untranslated records. Both compiled caches reported zero hits.
-The production changes are integrated as `b1d117208` and `69fbef2b3`.
-The receipt, temporary instrumentation patch and driver are preserved in
-`target/retention-integration-evidence/settings-ready/` in the integration
-worktree. The instrumentation is not part of the production compiler.
+The host allocates buffers, schedules submissions, observes status and capacity,
+transfers opaque objects, and renders source diagnostics. It does not construct
+instance source, select implementations, join instance environments or rename
+instance symbols. Build generations invalidate retained semantic data; only
+allocations and pipelines survive a fresh build.
 
-The export distinguishes runtime values from pattern and bound syntax,
-retains caller-scoped receiver plans, publishes generic match result terms,
-and links retained bound rows directly to their predicate records. Unit and
-never results come from checked expression facts; missing types are not
-defaulted. The [retention guide](compiler-program-retention.md) defines the
-row roles and the accepted trait facts.
+## Verification checkpoint (2026-11-15)
 
-Retained substitution (`8e84a1957`, authored as `728ffa886`) rejects truncated
-request production, identifies publications by build generation and run,
-checks term kinds and normalized request environments, and rolls back
-partially interned attempts before growing. A consumer must use its GPU
-publication guard. Five retention tests and four substitution tests pass
-together on the integrated tree; their logs are in
-`target/retention-integration-evidence/`. The
-[substitution guide](compiler-retained-substitution.md) defines the API.
+After removing the source replay controller and shader inputs, 541 focused
+compiler integration tests pass in one pinned run (320.06 s):
+`compiler_generic_types_execution`, `compiler_instance_operator_execution`,
+`retained_*` and `native_c_storage_execution`. They cover both default targets,
+original `main`, cross-unit methods and traits, constants, records, arrays,
+strings, matches, `?`, function values, C calls, ABI rejection, custom-device
+compilation and rebuilding in reused storage.
+Another 125 existing Wasm code-generation and bounded-entry tests pass
+(14.72 s). Fifteen focused library tests pass (6.58 s), covering migrated
+instance execution, solver workspace reuse, retained parameter metadata,
+constant storage and option parsing. The first library run reported all tests
+passing but stalled at process shutdown; its bounded rerun exited normally.
+The frontend recording counter checks one recording per original unit plus
+observed capacity retries. Projection and discovery tests check that they record
+no frontend work. The old replay counter and its now-vacuous assertions have
+been deleted with the path it measured.
 
-These checks establish retained-data readiness, not executable admission.
-GPU catalog admission has a focused
-[retained catalog API](compiler-retained-trait-catalog.md). Discovery still
-needs to consume its evidence and connect concrete layout and row projection,
-call/ABI certification and native publication.
-The general compiler still uses source replay. Retained original jobs skip
-in-place specialization to preserve symbolic templates; their output bytes
-differ from ordinary builds, and the settings census did not check execution
-equivalence. No compilation-speed claim follows from this checkpoint.
+The settings snapshot `212c54dce` has executed successfully through the public
+default compilation path: two original units, 1,338 instances and 34,696
+projected rows. Six consecutive builds each recorded exactly two frontend jobs
+and produced one instance object. The last three full rebuilds took 360.910,
+366.130 and 373.971 ms (median 366.130 ms). Each build resets the store; none
+reuses compiled units or instances. The roughly 160 ms performance target is
+not met.
+
+Local receipts are in `target/retained-native-integration-evidence/`:
+`settings-replay-removed.samples.json`, the corresponding compilation and
+execution logs, `replay-pinned-tests.log` and
+`pinned-replay-deletion/receipt.json`. The executable is
+5,870,176 bytes with SHA-256
+`93d566611dd8ede39229ea3a440f9a4df67acd5917300d101bad52510eec0c31`.
+It runs `--frames 3 --scale 1` and exits 0.
+
+## Historical prototype and architecture evidence
+
+The checkpoints below describe the earlier selective-instantiation prototype
+and the investigations used to replace it. Their replay paths and outstanding
+integration work are historical, not the current compilation behavior.
 
 ## Architecture validation checkpoint (2026-11-14)
 

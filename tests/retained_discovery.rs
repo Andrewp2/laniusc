@@ -1,5 +1,5 @@
 use laniusc_compiler::{
-    compiler::{GpuCompiler, GpuCompilerBackends, fallback_counters},
+    compiler::{GpuCompiler, GpuCompilerBackends, frontend_check_count},
     type_checker::program_retention::{
         ProgramRetention,
         ProgramRetentionCapacity,
@@ -129,7 +129,7 @@ fn check(store: &ProgramRetention, p: &DiscoveryPublication) -> Vec<u32> {
 fn retained_discovery_drives_projection_without_a_test_instance_list() {
     common::run_with_timeout("production retained discovery", || {
         let store = retain();
-        let before = fallback_counters();
+        let before = frontend_check_count();
         let mut engine = RetainedDiscovery::new(
             DiscoveryCapacity::default(),
             SubstitutionCapacity::default(),
@@ -160,7 +160,7 @@ fn retained_discovery_drives_projection_without_a_test_instance_list() {
             ProjectionOutcome::Rejected { error, .. } => panic!("{error}"),
         }
         assert_eq!(
-            fallback_counters(),
+            frontend_check_count(),
             before,
             "discovery and projection never invoke the frontend or replay"
         );
@@ -231,7 +231,7 @@ fn retained_discovery_reuses_recursive_instances_and_reaches_depth_64() {
             for report in store.job_reports() {
                 assert!(report.ready, "{report:?}");
             }
-            let before = fallback_counters();
+            let before = frontend_check_count();
             if depth == 65 {
                 match engine.run(&store).unwrap() {
                     DiscoveryOutcome::Rejected(error) => {
@@ -240,7 +240,7 @@ fn retained_discovery_reuses_recursive_instances_and_reaches_depth_64() {
                     }
                     DiscoveryOutcome::Published(_) => panic!("depth 65 published"),
                 }
-                assert_eq!(fallback_counters(), before);
+                assert_eq!(frontend_check_count(), before);
                 continue;
             }
             let publication = publish(&mut engine, &store);
@@ -258,7 +258,7 @@ fn retained_discovery_reuses_recursive_instances_and_reaches_depth_64() {
                 publication.report.edges, depth,
                 "the last edge reuses the recursive instance"
             );
-            assert_eq!(fallback_counters(), before);
+            assert_eq!(frontend_check_count(), before);
         }
     });
 }

@@ -122,11 +122,8 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) late_row_seed: ComputeOperation,
     pub(in crate::type_checker) native_word_memo_clear: crate::gpu::operations::ClearBuffersOperation,
     pub(in crate::type_checker) generic_native_words: ComputeOperation,
-    pub(in crate::type_checker) body_native_layout_admission: ComputeOperation,
     pub(in crate::type_checker) member_layout: ComputeOperation,
     pub(in crate::type_checker) retained_callables: CompactionOperation,
-    pub(in crate::type_checker) owner_spans_clear: crate::gpu::operations::ClearBuffersOperation,
-    pub(in crate::type_checker) owner_spans: ComputeOperation,
     pub(in crate::type_checker) expression_types_init: ComputeOperation,
     pub(in crate::type_checker) expression_refs: ComputeOperation,
     pub(in crate::type_checker) struct_literal_refs_early_clear:
@@ -208,28 +205,8 @@ impl SemanticProjectionOperations {
         let body_canonical_split = std::cell::Cell::new(0usize);
         let body_field_closure_at = std::cell::Cell::new(0usize);
         let body_rearm_at = std::cell::Cell::new(0usize);
-        let owner_span_count: LaniusBuffer<u32> =
-            typed_buffer_from_resources(resources, "retained_owner_span_count")?;
-        let body_span_count: LaniusBuffer<u32> =
-            typed_buffer_from_resources(resources, "retained_body_span_count")?;
-        let owner_spans_clear = crate::gpu::operations::ClearBuffersOperation::new(
-            graph,
-            compiler_graph::SEMANTIC_ARTIFACT_OWNER_SPANS_CLEAR_PASS,
-            &[
-                ("retained_owner_span_count", (&owner_span_count).into()),
-                ("retained_body_span_count", (&body_span_count).into()),
-            ],
-        )?;
         Ok(Self {
             body_specialization: [
-                (
-                    compiler_graph::BODY_SPECIALIZATION_RESOLVE_COPIES_PASS,
-                    "type_checker/type/instances/00d2_resolve_body_copies",
-                ),
-                (
-                    "type_check.body_specialization.graph",
-                    "type_checker/type/instances/00e_seed_body_type_graph",
-                ),
                 (
                     "type_check.body_specialization.apply",
                     "type_checker/type/instances/00f_apply_body_specialization",
@@ -319,10 +296,6 @@ impl SemanticProjectionOperations {
                     "type_checker/modules/10n_type_match_exprs",
                 ),
                 (
-                    "type_check.body_specialization.predicates",
-                    "type_checker/predicates/03_validate_body_obligations",
-                ),
-                (
                     "type_check.body_specialization.bound_members",
                     "type_checker/methods/09_route_bound_members",
                 ),
@@ -358,8 +331,7 @@ impl SemanticProjectionOperations {
                     || kernel.ends_with("04a3_nested_struct_contexts")
                 {
                     crate::lexer::features::PARSER_FEATURE_STRUCTS
-                } else if kernel.ends_with("03_validate_body_obligations") {
-                    crate::lexer::features::PARSER_FEATURE_PREDICATES
+
                 } else if kernel.ends_with("05b_array_literal_return_refs") {
                     crate::lexer::features::PARSER_FEATURE_ARRAYS
                 } else {
@@ -388,9 +360,7 @@ impl SemanticProjectionOperations {
                         )?)
                     };
                     words("call_const_claim_ref_kind")? + words("call_context_constant_kind")?
-                } else if name == "type_check.body_specialization.graph" {
-                    // One lane per reserved graph node and constant atom row.
-                    generic_body::BODY_ATOM_RESERVE_ROWS as u32
+
                 } else if name == "type_check.body_specialization.constants" {
                     let instances: LaniusBuffer<u32> =
                         typed_buffer_from_resources(resources, "type_instance_kind")?;
@@ -495,16 +465,6 @@ impl SemanticProjectionOperations {
                         / 4,
                 )?,
             )?,
-            body_native_layout_admission: ComputeOperation::direct(
-                device,
-                graph,
-                resources,
-                "type_check.body_specialization.native_layout_admission",
-                &passes.kernel("type_checker/semantic/artifact/01c2_validate_body_native_layout"),
-                // One lane per graph node and per entry argument slot.
-                (generic_body::MAX_BODY_ENTRIES * generic_body::MAX_BODY_TYPE_ARGUMENTS)
-                    .max(generic_body::MAX_BODY_GRAPH_NODES) as u32,
-            )?,
             expression_types_init: direct(
                 compiler_graph::INIT_PASS,
                 "type_checker/semantic/expression_types/00_init",
@@ -555,11 +515,6 @@ impl SemanticProjectionOperations {
             artifact: direct(
                 compiler_graph::SEMANTIC_ARTIFACT_PROJECT_PASS,
                 "type_checker/semantic/artifact/00_project",
-            )?,
-            owner_spans_clear,
-            owner_spans: direct(
-                compiler_graph::SEMANTIC_ARTIFACT_OWNER_SPANS_PASS,
-                "type_checker/semantic/artifact/04_owner_spans",
             )?,
             local_const_literals: direct(
                 compiler_graph::SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,

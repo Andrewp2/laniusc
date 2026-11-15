@@ -41,7 +41,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             self.resident_source_unit_limits(),
         )?;
         let sources = prepare_source_pack_for_gpu(sources, source_paths)?;
-        self.compile_wasm_source_pack_with_specialization(&sources, source_paths).await
+        self.compile_wasm_source_pack_program(&sources, source_paths).await
     }
 
     /// Compile an explicit in-memory source-pack manifest through the WASM
@@ -67,13 +67,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: PathBuf,
     ) -> Result<Vec<u8>, CompileError> {
-        self.compile_wasm_source_pack_with_specialization(&[src], Some(&[Some(diagnostic_path)]))
+        self.compile_wasm_source_pack_program(&[src], Some(&[Some(diagnostic_path)]))
             .await
     }
 
     /// Compile original functions once, discover and project generic instances
     /// on the GPU, and link their objects into one Wasm module.
-    pub(super) async fn compile_wasm_source_pack_with_specialization<S: AsRef<str>>(
+    pub(super) async fn compile_wasm_source_pack_program<S: AsRef<str>>(
         &self,
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,

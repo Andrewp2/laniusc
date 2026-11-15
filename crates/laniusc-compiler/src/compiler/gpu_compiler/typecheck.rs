@@ -436,7 +436,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                     hir.capacity,
                     None,
                     false,
-                    None,
                     gpu_type_checker::FrontendTraitCheck::Strict,
                     timer.as_deref_mut(),
                     |err| type_check_execution_failed_for_source(diagnostic_path, src, err),
@@ -588,7 +587,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest<'_>>,
+        object_request: Option<LoweringObjectRequest>,
         lowering_bounds: LoweringJobBounds,
         output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
@@ -596,17 +595,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
         // The parse ran with `token_capacity`, which bounds the job's HIR.
-        let mut lowering_bounds = lowering_bounds.with_token_capacity(token_capacity)
+        let lowering_bounds = lowering_bounds.with_token_capacity(token_capacity)
             .with_output_demand(output_demand);
-        // A declarations-only replay emits the same copies as a replay of
-        // the full template, so it keeps that replay's bound: the tokens
-        // its template left out count as the full template's would.
-        if let Some(removed) = object_request
-            .and_then(LoweringObjectRequest::body_specialization)
-            .and_then(gpu_type_checker::CheckedBodySpecializationBatch::declarations_only_removed_tokens)
-        {
-            lowering_bounds.hir_rows = lowering_bounds.hir_rows.saturating_add(removed);
-        }
         let hir = crate::parser::buffers::GpuHirView::from_parser_buffers(parse_bufs);
         let type_check = self.record_typecheck_from_parse_buffers(
             device,
@@ -621,7 +611,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             hir.capacity,
             dependency_pages,
             emit_semantic_interface,
-            object_request.and_then(LoweringObjectRequest::body_specialization),
             object_request
                 .map(LoweringObjectRequest::frontend_trait_check)
                 .unwrap_or_default(),
@@ -660,13 +649,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         }
         let semantic_interface_batching =
             crate::gpu::passes_core::compute_pass_batching_allowed(timer.is_some());
-        // Body replay keeps the template's public contract. Its checked graph
-        // is concrete for lowering and must not be re-exported as a generic
-        // declaration. Keep semantic retention enabled for nested body calls.
-        let semantic_interface = (emit_semantic_interface
-            && object_request
-                .and_then(LoweringObjectRequest::body_specialization)
-                .is_none())
+        let semantic_interface = emit_semantic_interface
         .then_some(library_id)
         .flatten()
         .map(|library_id| {
@@ -753,25 +736,23 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
             let (library_id, unit_id) = request.ids();
-            let selected_replay = match request.frontend_trait_check() {
-                gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { .. } =>
-                    request.replay_selection(),
+            let object_functions = match request.frontend_trait_check() {
                 // An original object of a retained build defines no generic
                 // function; retained projection lowers the instances.
                 gpu_type_checker::FrontendTraitCheck::PendingOriginal
                     if self.type_checker.attached_program_retention()
                         .is_some_and(|store| store.native_projection()) =>
-                    crate::codegen::lowering::ReplaySelection::RetainedOriginal,
+                    crate::codegen::lowering::ObjectFunctions::NonGeneric,
                 gpu_type_checker::FrontendTraitCheck::Strict
                 | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
-                    crate::codegen::lowering::ReplaySelection::Functions(&[]),
+                    crate::codegen::lowering::ObjectFunctions::All,
             };
             if crate::codegen::lowering_capture::armed() {
                 crate::codegen::lowering_capture::record(device, encoder,
                     crate::codegen::lowering::named_lowering_inputs((&hir).into(), semantic.view()));
             }
             pipeline
-                .record_object(device, queue, encoder, library_id, unit_id, selected_replay,
+                .record_object(device, queue, encoder, library_id, unit_id, object_functions,
                     timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
         }
@@ -849,7 +830,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest<'_>>,
+        object_request: Option<LoweringObjectRequest>,
         output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         self.parser
@@ -899,7 +880,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         library_id: Option<u32>,
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest<'_>>,
+        object_request: Option<LoweringObjectRequest>,
         output_demand: LoweringOutputDemand,
     ) -> Result<DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>, CompileError> {
         let mut record_host_timer = CompilerHostTimer::new("compile.source-pack.record");
@@ -964,7 +945,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         deferred: DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>,
         diagnostic_files: &[DiagnosticSourceFile],
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest<'_>>,
+        object_request: Option<LoweringObjectRequest>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
         let ll1 = deferred
@@ -1134,16 +1115,16 @@ impl<'gpu> GpuCompiler<'gpu> {
             Some((object, call_hirs)) => (Some(object), call_hirs),
             None => (None, Vec::new()),
         };
-        // Concrete replay keeps its template definition contracts and does not
-        // export a fresh interface, but still owns new nested-call facts.
-        let unit_facts = if object_request.is_some() || semantic_interface.is_some() {
+        // Program monomorphization consumes retained GPU records directly.
+        // Host snapshots are only for the standalone interface/object APIs.
+        let unit_facts = if recorded.type_check.program_retention.as_ref().is_some_and(|store|store.native_projection()) {
+            gpu_type_checker::CheckedUnitFacts { facts_elided: true, ..Default::default() }
+        } else if object_request.is_some() || semantic_interface.is_some() {
             self.type_checker
                 .retained_unit_facts(
                     device,
                     queue,
                     semantic_interface.is_some(),
-                    object_request.and_then(LoweringObjectRequest::template_contracts),
-                    object_request.and_then(LoweringObjectRequest::body_specialization),
                     object_request.is_some_and(LoweringObjectRequest::elide_closed_facts),
                 )
                 .map_err(|error| {
@@ -1155,33 +1136,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             Default::default()
         };
         finish_timer.stamp("unit_facts");
-        let body_layouts = object_request
-            .and_then(LoweringObjectRequest::body_specialization)
-            .map(|specialization| self.type_checker.retained_body_native_layouts_with_bindings(device, queue, specialization))
-            .transpose()
-            .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
-        let (body_native_layouts, body_binding_native_layouts) = match body_layouts {
-            Some((entries, bindings)) => (Some(entries), Some(bindings)),
-            None => (None, None),
-        };
-        finish_timer.stamp("body_native_layouts");
-        // An original x86 unit with an interface keeps the byte spans of its
-        // generic bodies, from which a concrete replay copies instances. A
-        // unit without a generic owner has no such body, and skips the readback.
-        let owner_spans = if semantic_interface.is_some()
-            && object_request.is_some_and(|request| request.body_specialization().is_none())
-            && unit_facts.contracts.binders.iter().any(|owner| !owner.parameters.is_empty())
-        {
-            self.type_checker
-                .retained_owner_spans(device, queue)
-                .map_err(|error| CompileError::GpuFrontend(format!("owner span readback failed: {error}")))?
-        } else {
-            None
-        };
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
-            body_native_layouts,
-            body_binding_native_layouts,
-            owner_spans,
             semantic_interface,
             target_artifact,
             native_object,
@@ -1723,22 +1678,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         .map(|_| ())
     }
 
-    /// Native entry compilation retains an opaque original until the complete
-    /// catalog and original-call batch admit it, including a zero-call program.
-    pub(super) async fn compile_x86_source_pack_auto<S: AsRef<str>>(
-        &self,
-        sources: &[S],
-        source_paths: Option<&[Option<PathBuf>]>,
-    ) -> Result<PendingOriginalUnit, CompileError> {
-        let template_sources = sources.iter().map(|source| source.as_ref().to_owned())
-            .collect::<Vec<_>>().into();
-        // The one unit is the whole program.
-        self.compile_pending_original_source_pack_unit_for_target(
-            SourcePackArtifactTarget::X86_64, template_sources, 0, 0, Vec::new().into(),
-            source_paths, super::body_specialization::closed_release_ready(&[]),
-        ).await
-    }
-
     pub(super) async fn compile_checked_source_pack_with_lowering<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -1747,12 +1686,12 @@ impl<'gpu> GpuCompiler<'gpu> {
     ) -> Result<Vec<u8>, CompileError> {
         if target == LoweringTarget::X86_64 {
             return self
-                .compile_x86_source_pack_with_specialization(sources, source_paths)
+                .compile_x86_source_pack_program(sources, source_paths)
                 .await;
         }
         if target == LoweringTarget::Wasm {
             return self
-                .compile_wasm_source_pack_with_specialization(sources, source_paths)
+                .compile_wasm_source_pack_program(sources, source_paths)
                 .await;
         }
         self.type_check_explicit_source_pack_with_paths_and_interface(
@@ -1800,9 +1739,14 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<CompiledSourcePackUnit, CompileError> {
-        self.compile_source_pack_unit_with_body_specialization(
-            template_sources, library_id, unit_id, template_dependency_pages, target, None, source_paths,
-        ).await
+        if template_sources.is_empty() { return Err(super::x86_codegen::x86_empty_source_pack_compile_error()); }
+        validate_in_memory_source_pack_fits_codegen_unit("compile source-pack unit",template_sources.as_ref(),self.resident_source_unit_limits())?;
+        let artifacts=self.type_check_explicit_source_pack_with_paths_and_interface(
+            template_sources.as_ref(),source_paths,Some(library_id),unit_id,
+            DependencyInterfacePages::Paged(template_dependency_pages.as_ref()),true,None,
+            Some(LoweringObjectRequest::Strict{target:object_lowering_target(target)?,library_id,unit_id}),
+        ).await?;
+        finish_source_pack_unit(artifacts,template_sources,source_paths,template_dependency_pages,target,library_id,unit_id,true)
     }
 
     /// Check original definition/graph/owner facts and privately lower one native
@@ -1869,7 +1813,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             template_sources,
             source_paths,
             template_dependency_pages,
-            &[],
             target,
             library_id,
             unit_id,
@@ -1881,301 +1824,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         })
     }
 
-    /// Recompile only the immutable inputs owned by one accepted program replay.
-    /// The result remains opaque until that same request checks every fresh call.
-    pub(super) async fn compile_authorized_body_specialization(
-        &self,
-        request: &trait_solver::ValidatedReplayRequest<'_>,
-    ) -> Result<PendingReplayUnit, CompileError> {
-        let compiled = match request.declarations_only() {
-            Some(blanked) => self
-                .compile_replay_input(request, BodySpecializationInput::declarations_only(request, blanked))
-                .await?,
-            None => self.compile_replay_input(request, BodySpecializationInput::authorized(request)).await?,
-        };
-        Ok(PendingReplayUnit {
-            request_identity: request.identity(),
-            unit: compiled,
-        })
-    }
-
-    /// One frontend run of an authorized replay request.
-    async fn compile_replay_input(
-        &self,
-        request: &trait_solver::ValidatedReplayRequest<'_>,
-        input: BodySpecializationInput<'_>,
-    ) -> Result<CompiledSourcePackUnit, CompileError> {
-        let template = request.template();
-        self.compile_source_pack_unit_with_body_specialization(
-            template.template_sources().clone(),
-            template.interface().library_id,
-            template.interface().unit_id,
-            template.template_dependency_pages().clone(),
-            template.target(),
-            Some(input),
-            Some(template.template_source_paths().as_ref()),
-        )
-        .await
-        .map_err(|error| match (error, request.instance_sources()) {
-            // The frontend checked instance copies; name template bytes.
-            (CompileError::Diagnostic(diagnostic), Some(instance)) => CompileError::Diagnostic(
-                instance.template_diagnostic(
-                    diagnostic,
-                    template.template_sources(),
-                    Some(template.template_source_paths().as_ref()),
-                ),
-            ),
-            (error, _) => error,
-        })
-    }
-
-    #[cfg(test)]
-    pub(super) async fn compile_body_specialization(
-        &self,
-        template: &CompiledSourcePackUnit,
-        call: &gpu_type_checker::CheckedGenericCall,
-    ) -> Result<CompiledSourcePackUnit, CompileError> {
-        if let gpu_type_checker::CheckedGenericTarget::Local {
-            specialization_symbol,
-            ..
-        } = call.target
-        {
-            if !call.has_closed_arguments() {
-                return Err(CompileError::GpuCodegen(
-                    "local body replay requires a complete checked environment".into(),
-                ));
-            }
-            let specialization = gpu_type_checker::CheckedBodySpecializationBatch::single(
-                gpu_type_checker::CheckedBodySpecialization {
-                    target_symbol: specialization_symbol,
-                    source_unit: [template.interface.library_id, template.interface.unit_id],
-                    arguments: call.arguments.clone(),
-                    constants: call.constants.clone(),
-                },
-            )
-            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
-            let compiled = self
-                .compile_source_pack_unit_with_body_specialization(
-                    template.template_sources.clone(),
-                    template.interface.library_id,
-                    template.interface.unit_id,
-                    template.template_dependency_pages.clone(),
-                    template.object.target(),
-                    Some(BodySpecializationInput::strict(
-                        &specialization,
-                        &template.interface,
-                        &template.checked_contracts,
-                    )),
-                    Some(template.template_source_paths.as_ref()),
-                )
-                .await?;
-            return Ok(compiled);
-        }
-        let (library_id, unit_id, target_symbol, method) = match call.target {
-            gpu_type_checker::CheckedGenericTarget::Dependency {
-                library_id,
-                unit_id,
-                declaration_index,
-            } => (library_id, unit_id, declaration_index, false),
-            gpu_type_checker::CheckedGenericTarget::DependencyMethod {
-                library_id,
-                unit_id,
-                method_symbol,
-            } => (library_id, unit_id, method_symbol, true),
-            gpu_type_checker::CheckedGenericTarget::Local { .. } => {
-                return Err(CompileError::GpuCodegen(
-                    "scalar body replay requires an imported function or method".into(),
-                ));
-            }
-        };
-        if library_id != template.interface.library_id
-            || unit_id != template.interface.unit_id
-            || !call.has_closed_arguments()
-        {
-            return Err(CompileError::GpuCodegen(
-                "body replay does not match a complete checked call environment".into(),
-            ));
-        }
-        let (type_count, constant_count) = if method {
-            if target_symbol & 0x8000_0000 == 0 {
-                return Err(CompileError::Diagnostic(Diagnostic::error(
-                    "LNC0017",
-                    "generic method body requires a stable method symbol",
-                )));
-            }
-            let (types, constants) = gpu_type_checker::dependency_method_requirements(
-                &template.interface, target_symbol,
-            ).ok_or_else(|| CompileError::GpuCodegen(
-                "body replay method has no unique accepted implementation owner".into(),
-            ))?;
-            (types as usize, constants as usize)
-        } else {
-            let declaration = template.interface.declarations.get(target_symbol as usize)
-                .ok_or_else(|| CompileError::GpuCodegen("body replay declaration is absent".into()))?;
-            let signature = template.interface.types.get(declaration.signature_type as usize)
-                .ok_or_else(|| CompileError::GpuCodegen("body replay signature is absent".into()))?;
-            if declaration.owner_declaration != u32::MAX
-                || signature.kind != crate::compiler::GpuSemanticInterfaceTypeKind::Function as u32
-            {
-                return Err(CompileError::Diagnostic(Diagnostic::error(
-                    "LNC0017", "generic body requires a top-level function signature",
-                )));
-            }
-            let start = declaration.first_member as usize;
-            let end = start.checked_add(declaration.member_count as usize)
-                .ok_or_else(|| CompileError::GpuCodegen("body replay member range overflow".into()))?;
-            let members = template.interface.members.get(start..end)
-                .ok_or_else(|| CompileError::GpuCodegen("body replay members are absent".into()))?;
-            let count = |kind: crate::compiler::GpuSemanticInterfaceMemberKind| members.iter()
-                .filter(|member| member.kind == kind as u32 && member.value_hi == 0)
-                .count();
-            (count(crate::compiler::GpuSemanticInterfaceMemberKind::GenericTypeParameter),
-             count(crate::compiler::GpuSemanticInterfaceMemberKind::GenericConstParameter))
-        };
-        if constant_count != call.constants.len() || type_count != call.arguments.len() {
-            return Err(CompileError::Diagnostic(Diagnostic::error(
-                "LNC0017",
-                "generic body requires matching type and constant parameters",
-            )));
-        }
-        let specialization = gpu_type_checker::CheckedBodySpecializationBatch::single(
-            gpu_type_checker::CheckedBodySpecialization {
-                target_symbol,
-                source_unit: [template.interface.library_id, template.interface.unit_id],
-                arguments: call.arguments.clone(),
-                constants: call.constants.clone(),
-            },
-        )
-        .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
-        let compiled = self
-            .compile_source_pack_unit_with_body_specialization(
-                template.template_sources.clone(),
-                library_id,
-                unit_id,
-                template.template_dependency_pages.clone(),
-                template.object.target(),
-                Some(BodySpecializationInput::strict(
-                    &specialization,
-                    &template.interface,
-                    &template.checked_contracts,
-                )),
-                Some(template.template_source_paths.as_ref()),
-            )
-            .await?;
-        Ok(compiled)
-    }
-
-    async fn compile_source_pack_unit_with_body_specialization(
-        &self,
-        template_sources: std::sync::Arc<[String]>,
-        library_id: u32,
-        unit_id: u32,
-        template_dependency_pages: std::sync::Arc<
-            [Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
-        >,
-        target: SourcePackArtifactTarget,
-        body_specialization: Option<BodySpecializationInput<'_>>,
-        source_paths: Option<&[Option<PathBuf>]>,
-    ) -> Result<CompiledSourcePackUnit, CompileError> {
-        self.compile_source_pack_unit_with_specialization_and_paths(
-            template_sources,
-            library_id,
-            unit_id,
-            template_dependency_pages,
-            target,
-            body_specialization,
-            source_paths,
-        )
-        .await
-    }
-
-    async fn compile_source_pack_unit_with_specialization_and_paths(
-        &self,
-        template_sources: std::sync::Arc<[String]>,
-        library_id: u32,
-        unit_id: u32,
-        template_dependency_pages: std::sync::Arc<
-            [Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
-        >,
-        target: SourcePackArtifactTarget,
-        body_specialization: Option<BodySpecializationInput<'_>>,
-        source_paths: Option<&[Option<PathBuf>]>,
-    ) -> Result<CompiledSourcePackUnit, CompileError> {
-        // An instance-copy replay checks the template with copies appended;
-        // the unit still retains exactly the template's sources.
-        let frontend_sources = body_specialization
-            .and_then(|input| input.frontend_sources)
-            .unwrap_or(&template_sources)
-            .clone();
-        let sources = frontend_sources.as_ref();
-        if target == SourcePackArtifactTarget::X86_64 && sources.is_empty() {
-            return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
-        }
-        validate_in_memory_source_pack_fits_codegen_unit(
-            "compile source-pack unit",
-            sources,
-            self.resident_source_unit_limits(),
-        )?;
-        let lowering_target = object_lowering_target(target)?;
-        let object_request = match body_specialization {
-            Some(input) => LoweringObjectRequest::Specialized {
-                target: lowering_target,
-                library_id,
-                unit_id,
-                specialization: input.frontend_specialization,
-                replay_selection: input.replay_selection,
-                template_contracts: input.frontend_contracts,
-                frontend_trait_check: input.frontend_trait_check,
-            },
-            None => LoweringObjectRequest::Strict {
-                target: lowering_target,
-                library_id,
-                unit_id,
-            },
-        };
-        // Generic bodies are absent from the public semantic interface. Keep
-        // exactly the ordered source text checked by this unit so a later
-        // concrete instantiation can recover a body without rereading mutable
-        // files or depending on the current lexer/parser workspace.
-        let mut artifacts = self
-            .type_check_explicit_source_pack_with_paths_and_interface(
-                frontend_sources.as_ref(),
-                source_paths,
-                Some(library_id),
-                unit_id,
-                DependencyInterfacePages::Paged(template_dependency_pages.as_ref()),
-                true,
-                None,
-                Some(object_request),
-            )
-            .await?;
-        if let Some(input) = body_specialization {
-            artifacts.semantic_interface = Some(input.interface.clone());
-            if let Some(blanking) = input.blanking {
-                artifacts.blanked_to_full(blanking, input.frontend_specialization, input.specialization).map_err(|error| CompileError::GpuFrontend(format!(
-                    "declarations-only template results do not map back to the template: {error:#}"
-                )))?;
-            }
-        }
-        let mut unit = finish_source_pack_unit(
-            artifacts,
-            template_sources,
-            source_paths,
-            template_dependency_pages,
-            body_specialization.map_or(&[][..], |input| input.specialization.impl_bindings()),
-            target,
-            library_id,
-            unit_id,
-            body_specialization.is_none(),
-        )?;
-        if let Some(input) = body_specialization {
-            // Definition contracts belong to the checked template. Concrete
-            // replay supplies fresh call environments and caller ownership.
-            unit.checked_contracts = input.contracts.clone();
-        }
-        Ok(unit)
-    }
-
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
         &self,
         sources: &[S],
@@ -2185,7 +1833,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         dependency_interfaces: DependencyInterfacePages<'_>,
         emit_semantic_interface: bool,
         lowering_target: Option<LoweringTarget>,
-        object_request: Option<LoweringObjectRequest<'_>>,
+        object_request: Option<LoweringObjectRequest>,
     ) -> Result<CheckedSourcePackArtifacts, CompileError> {
         let diagnostic_files = source_pack_diagnostic_files(sources, source_paths);
         let _resident_guard = self.resident_pipeline_lock.lock().await;
@@ -2233,18 +1881,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 ));
             }
         };
-        // A declarations-only replay checks far fewer tokens than its unit's
-        // own compile, with parser features that follow its copies. Keyed by
-        // content, it neither shrinks the unit's remembered shape nor
-        // predicts another copy set's.
-        let declarations_only = object_request
-            .and_then(LoweringObjectRequest::body_specialization)
-            .is_some_and(gpu_type_checker::CheckedBodySpecializationBatch::is_declarations_only);
-        let parser_shape_key = if declarations_only {
-            parser_shape_key_for_source_pack(sources, None, library_id, unit_id)
-        } else {
-            parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id)
-        };
+        let parser_shape_key = parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id);
         let mut forced_tree_capacity = None;
         let mut require_lexer_boundary = false;
         let mut lowering_output_retry = LoweringOutputRetry::default();
@@ -2443,7 +2080,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             semantic_interface_required,
-            None,
             gpu_type_checker::FrontendTraitCheck::Strict,
             |hir_items| {
                 self.type_checker
@@ -2481,7 +2117,6 @@ impl<'gpu> GpuCompiler<'gpu> {
         hir_node_capacity: u32,
         dependency_pages: Option<&gpu_type_checker::GpuDependencyInterfacePages>,
         semantic_interface_required: bool,
-        body_specialization: Option<&gpu_type_checker::CheckedBodySpecializationBatch>,
         frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
         timer: Option<&mut GpuTimer>,
         map_execution_error: impl FnOnce(GpuTypeCheckError) -> CompileError,
@@ -2495,7 +2130,6 @@ impl<'gpu> GpuCompiler<'gpu> {
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             parse_bufs.n_tokens.saturating_sub(2).max(1),
             semantic_interface_required,
-            body_specialization,
             frontend_trait_check,
             |hir_items| {
                 self.type_checker
@@ -2561,7 +2195,7 @@ pub(super) struct OriginalUnitFacts {
 }
 
 struct OriginalUnitSnapshot {
-    /// The object target the unit was lowered for; its replays lower for it too.
+    /// The target of this unit's original object.
     target: SourcePackArtifactTarget,
     interface: crate::compiler::GpuSemanticInterfaceArtifact,
     checked_contracts: std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
@@ -2570,15 +2204,11 @@ struct OriginalUnitSnapshot {
     template_sources: std::sync::Arc<[String]>,
     template_source_paths: std::sync::Arc<[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
-    owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
     instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
     solver_closed: bool,
     facts_elided: bool,
     /// The interface of this snapshot passed its serialization check.
     interface_checked: std::sync::atomic::AtomicBool,
-    /// The most recent sets of open (not solver-closed) units, this one among
-    /// them, of programs the trait solver passed without changing any object.
-    released_with: std::sync::Mutex<Vec<Vec<std::sync::Weak<OriginalUnitSnapshot>>>>,
 }
 
 impl OriginalUnitFacts {
@@ -2593,12 +2223,10 @@ impl OriginalUnitFacts {
                 template_sources: unit.template_sources.clone(),
                 template_source_paths: unit.template_source_paths.clone(),
                 template_dependency_pages: unit.template_dependency_pages.clone(),
-                owner_spans: unit.owner_spans.clone(),
                 instance_closure: unit.instance_closure.clone(),
                 solver_closed: unit.solver_closed,
                 facts_elided: unit.facts_elided,
                 interface_checked: std::sync::atomic::AtomicBool::new(false),
-                released_with: std::sync::Mutex::new(Vec::new()),
             }),
         }
     }
@@ -2635,14 +2263,6 @@ impl OriginalUnitFacts {
         Ok(())
     }
 
-    /// Whether `group` is exactly a set of open units the trait solver
-    /// released this snapshot with before.
-    pub(super) fn released_with(&self, group: &[&Self]) -> bool {
-        self.snapshot.released_with.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .any(|released| Self::same_group(released, group))
-    }
 
     fn same_group(released: &[std::sync::Weak<OriginalUnitSnapshot>], group: &[&Self]) -> bool {
         released.len() == group.len()
@@ -2654,23 +2274,6 @@ impl OriginalUnitFacts {
 
     const RELEASED_GROUPS: usize = 8;
 
-    /// Record that the trait solver passed a program whose open units were
-    /// exactly `group` and left every object as compiled.
-    pub(super) fn mark_released_with(group: &[&Self]) {
-        use std::sync::atomic::Ordering;
-        for unit in group {
-            unit.snapshot.interface_checked.store(true, Ordering::Relaxed);
-            let mut released = unit.snapshot.released_with.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            // Groups whose members were dropped can never match again.
-            released.retain(|peers| peers.iter().all(|peer| peer.strong_count() != 0)
-                && !Self::same_group(peers, group));
-            if released.len() == Self::RELEASED_GROUPS {
-                released.remove(0);
-            }
-            released.push(group.iter().map(|peer| std::sync::Arc::downgrade(&peer.snapshot)).collect());
-        }
-    }
 
     /// Admission receipts match this exact immutable snapshot, never numeric
     /// library/unit IDs alone. Cloning the view preserves this identity.
@@ -2710,9 +2313,6 @@ impl OriginalUnitFacts {
         &self.snapshot.template_dependency_pages
     }
 
-    pub(super) fn owner_spans(&self) -> Option<&gpu_type_checker::CheckedOwnerSpans> {
-        self.snapshot.owner_spans.as_deref()
-    }
 
     /// The GPU instance closure of this original unit, when it ran.
     pub(super) fn instance_closure(&self) -> Option<&gpu_type_checker::CheckedInstanceClosure> {
@@ -2749,27 +2349,9 @@ impl PendingOriginalUnit {
         &self.facts
     }
 
-    /// Keep this original for a later build of the same unit (the
-    /// pending-original cache). The retained value is still pending.
-    pub(super) fn retain(&self) -> RetainedPendingOriginal {
-        RetainedPendingOriginal {
-            unit: std::sync::Arc::new(self.unit.clone()),
-            facts: self.facts.clone(),
-        }
-    }
 
-    pub(super) fn finish(
-        self,
-        admission: trait_solver::ValidatedOriginalUnit,
-    ) -> anyhow::Result<(CompiledSourcePackUnit, Vec<trait_solver::AdmittedCall>)> {
-        let calls = admission.check_original_unit(&self.facts)?;
-        Ok((self.unit, calls))
-    }
-
-    /// Release without the trait solver. The caller has established that the
-    /// solver would pass this program and leave every object as compiled:
-    /// each unit is solver-closed or was released with exactly the program's
-    /// open units before (body_specialization.rs).
+    /// Release original object bytes to the build driver. The driver publishes
+    /// them only after GPU catalog, discovery and ABI certification succeed.
     pub(super) fn release_closed(self) -> CompiledSourcePackObject {
         self.unit.object
     }
@@ -2782,204 +2364,20 @@ impl PendingOriginalUnit {
     }
 }
 
-/// A pending original retained across builds by the pending-original cache
-/// (unit_cache.rs). Like `PendingOriginalUnit` it exposes no unit or object
-/// and no conversion into a compiled cache value: it re-enters a build only as
-/// a new `PendingOriginalUnit`, which that build's program admission must
-/// release. The new wrapper shares this facts snapshot, so its catalog
-/// inputs are exactly the original compilation's.
-#[derive(Clone)]
-pub(super) struct RetainedPendingOriginal {
-    unit: std::sync::Arc<CompiledSourcePackUnit>,
-    facts: OriginalUnitFacts,
-}
-
-impl RetainedPendingOriginal {
-    pub(super) fn pending(&self) -> PendingOriginalUnit {
-        PendingOriginalUnit { unit: self.unit.as_ref().clone(), facts: self.facts.clone() }
-    }
-
-    /// The unit's charge plus the facts snapshot's own interface copy; the
-    /// snapshot's other fields share the unit's allocations.
-    pub(super) fn resident_byte_len(&self) -> usize {
-        self.unit.resident_byte_len()
-            .saturating_add(super::unit_cache::interface_resident_bytes(self.facts.interface()))
-    }
-}
-
-/// Only authorized frontend compilation constructs this wrapper. Its object
-/// stays private until the matching request gates every fresh call. Keep the
-/// constructor here, beside compilation, rather than accepting arbitrary units
-/// through a public request-plus-unit sealing function.
-pub(super) struct PendingReplayUnit {
-    request_identity: std::sync::Arc<()>,
-    unit: CompiledSourcePackUnit,
-}
-
-impl PendingReplayUnit {
-    pub(super) fn finish(
-        mut self,
-        request: trait_solver::ValidatedReplayRequest<'_>,
-    ) -> anyhow::Result<(CompiledSourcePackUnit, trait_solver::CheckedReplayCalls)> {
-        let calls = request.check_replay_unit(&mut self.unit, &self.request_identity)?;
-        Ok((self.unit, calls))
-    }
-}
-
-// The authorized constructor obtains every input from one checked request.
-// No caller can attach a proof flag to an unrelated template or specialization.
 #[derive(Clone, Copy)]
-struct BodySpecializationInput<'a> {
-    specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-    /// The lexical callables whose bodies this replay may publish, in entry
-    /// order, or the first instance-copy row of a copy replay.
-    replay_selection: crate::codegen::lowering::ReplaySelection<'a>,
-    /// The template with instance copies appended, for a copy replay.
-    frontend_sources: Option<&'a std::sync::Arc<[String]>>,
-    interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
-    contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
-    frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
-    /// What the frontend checks against: `specialization` and `contracts`,
-    /// or their copy-space forms for a declarations-only template, whose
-    /// frontend results `blanking` converts back to full space.
-    frontend_specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-    frontend_contracts: &'a gpu_type_checker::CheckedUnitContracts,
-    blanking: Option<&'a gpu_type_checker::TemplateBlanking>,
+enum LoweringObjectRequest {
+    Strict {target:LoweringTarget,library_id:u32,unit_id:u32},
+    PendingOriginal {target:LoweringTarget,library_id:u32,unit_id:u32,elide_closed_facts:bool},
 }
-
-impl<'a> BodySpecializationInput<'a> {
-    #[cfg(test)]
-    fn strict(
-        specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-        interface: &'a crate::compiler::GpuSemanticInterfaceArtifact,
-        contracts: &'a std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
-    ) -> Self {
-        Self {
-            specialization,
-            replay_selection: crate::codegen::lowering::ReplaySelection::Functions(&[]),
-            frontend_sources: None,
-            interface,
-            contracts,
-            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::Strict,
-            frontend_specialization: specialization,
-            frontend_contracts: contracts.as_ref(),
-            blanking: None,
-        }
+impl LoweringObjectRequest {
+    fn frontend_trait_check(self)->gpu_type_checker::FrontendTraitCheck {
+        match self { Self::PendingOriginal{..}=>gpu_type_checker::FrontendTraitCheck::PendingOriginal,
+            Self::Strict{..}=>gpu_type_checker::FrontendTraitCheck::Strict }
     }
+    fn elide_closed_facts(self)->bool { matches!(self,Self::PendingOriginal{elide_closed_facts:true,..}) }
+    fn target(self)->LoweringTarget {match self {Self::Strict{target,..}|Self::PendingOriginal{target,..}=>target}}
+    fn ids(self)->(u32,u32) {match self {Self::Strict{library_id,unit_id,..}|Self::PendingOriginal{library_id,unit_id,..}=>(library_id,unit_id)}}
 
-    fn authorized(request: &'a trait_solver::ValidatedReplayRequest<'_>) -> Self {
-        let template = request.template();
-        Self {
-            specialization: request.specialization(),
-            replay_selection: request.replay_selection(),
-            frontend_sources: request.instance_sources().map(|_| request.frontend_sources()),
-            interface: template.interface(),
-            contracts: template.checked_contracts(),
-            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
-                selected_function_hir: request.selected_function_hir(),
-            },
-            frontend_specialization: request.specialization(),
-            frontend_contracts: template.checked_contracts().as_ref(),
-            blanking: None,
-        }
-    }
-
-    /// `authorized` against the request's declarations-only template.
-    fn declarations_only(
-        request: &'a trait_solver::ValidatedReplayRequest<'_>,
-        template: &'a trait_solver::DeclarationsOnlyTemplate,
-    ) -> Self {
-        Self {
-            replay_selection: crate::codegen::lowering::ReplaySelection::CopiesFrom(template.first_copy_row),
-            frontend_sources: Some(&template.sources),
-            frontend_trait_check: gpu_type_checker::FrontendTraitCheck::AuthorizedReplay {
-                selected_function_hir: template.selected_function_hir,
-            },
-            frontend_specialization: &template.specialization,
-            frontend_contracts: template.contracts.as_ref(),
-            blanking: Some(&template.blanking),
-            ..Self::authorized(request)
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum LoweringObjectRequest<'a> {
-    /// A strict standalone object.
-    Strict {
-        target: LoweringTarget,
-        library_id: u32,
-        unit_id: u32,
-    },
-    /// Constructed only by the private pending-original compilation route.
-    PendingOriginal {
-        target: LoweringTarget,
-        library_id: u32,
-        unit_id: u32,
-        /// Skip the solver facts when the GPU proves the unit solver-closed.
-        elide_closed_facts: bool,
-    },
-    Specialized {
-        target: LoweringTarget,
-        library_id: u32,
-        unit_id: u32,
-        specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
-        replay_selection: crate::codegen::lowering::ReplaySelection<'a>,
-        template_contracts: &'a gpu_type_checker::CheckedUnitContracts,
-        frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
-    },
-}
-
-impl<'a> LoweringObjectRequest<'a> {
-    fn frontend_trait_check(self) -> gpu_type_checker::FrontendTraitCheck {
-        match self {
-            Self::PendingOriginal { .. } => gpu_type_checker::FrontendTraitCheck::PendingOriginal,
-            Self::Specialized { frontend_trait_check, .. } => frontend_trait_check,
-            _ => gpu_type_checker::FrontendTraitCheck::Strict,
-        }
-    }
-
-    fn template_contracts(self) -> Option<&'a gpu_type_checker::CheckedUnitContracts> {
-        match self {
-            Self::Specialized {
-                template_contracts, ..
-            } => Some(template_contracts),
-            _ => None,
-        }
-    }
-
-    fn elide_closed_facts(self) -> bool {
-        matches!(self, Self::PendingOriginal { elide_closed_facts: true, .. })
-    }
-
-    fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecializationBatch> {
-        match self {
-            Self::Specialized { specialization, .. } => Some(specialization),
-            _ => None,
-        }
-    }
-
-    fn replay_selection(self) -> crate::codegen::lowering::ReplaySelection<'a> {
-        match self {
-            Self::Specialized { replay_selection, .. } => replay_selection,
-            _ => crate::codegen::lowering::ReplaySelection::Functions(&[]),
-        }
-    }
-    fn target(self) -> LoweringTarget {
-        match self {
-            Self::Strict { target, .. }
-            | Self::PendingOriginal { target, .. }
-            | Self::Specialized { target, .. } => target,
-        }
-    }
-
-    fn ids(self) -> (u32, u32) {
-        match self {
-            Self::Strict { library_id, unit_id, .. }
-            | Self::PendingOriginal { library_id, unit_id, .. }
-            | Self::Specialized { library_id, unit_id, .. } => (library_id, unit_id),
-        }
-    }
 }
 
 /// The lowering target of a concrete object target.
@@ -3018,7 +2416,6 @@ fn finish_source_pack_unit(
     template_sources: std::sync::Arc<[String]>,
     source_paths: Option<&[Option<PathBuf>]>,
     template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
-    impl_bindings: &[gpu_type_checker::BodyImplBinding],
     target: SourcePackArtifactTarget,
     library_id: u32,
     unit_id: u32,
@@ -3062,12 +2459,11 @@ fn finish_source_pack_unit(
         .scope_source_unit(library_id, unit_id);
     gpu_type_checker::resolve_generic_requirements(
         &mut artifacts.generic_calls,
-        impl_bindings,
     ).map_err(|error| CompileError::GpuFrontend(format!(
         "generic declaration arity retention failed: {error:#}"
     )))?;
-    // Call owners serve only replays, which a unit without solver facts
-    // never has.
+    // Host call ownership is only needed by standalone checked-unit APIs.
+    // Program monomorphization consumes the retained GPU use records.
     let native_call_function_hirs = if artifacts.facts_elided {
         Vec::new()
     } else {
@@ -3136,11 +2532,10 @@ fn finish_source_pack_unit(
         }
     }
     let closure = &artifacts.instance_closure;
-    let instance_closure = (closure.found != 0 || closure.error.is_some() || !closure.copy_rows.is_empty()
+    let instance_closure = (closure.found != 0 || closure.error.is_some()
         || closure.exec.is_some())
         .then(|| std::sync::Arc::new(std::mem::take(&mut artifacts.instance_closure)));
     Ok(CompiledSourcePackUnit {
-        owner_spans: artifacts.owner_spans.map(std::sync::Arc::new),
         instance_closure,
         solver_closed: artifacts.solver_closed,
         facts_elided: artifacts.facts_elided,
@@ -3150,8 +2545,6 @@ fn finish_source_pack_unit(
         template_source_paths,
         template_dependency_pages,
         generic_calls: artifacts.generic_calls.into(),
-        body_native_layouts: artifacts.body_native_layouts.map(Into::into),
-        body_binding_native_layouts: artifacts.body_binding_native_layouts.map(Into::into),
         checked_contracts: std::sync::Arc::new(artifacts.checked_contracts),
         checked_call_owners: artifacts.checked_call_owners.into(),
         native_call_hirs: artifacts.native_call_hirs.into(),
@@ -3160,9 +2553,6 @@ fn finish_source_pack_unit(
 }
 
 struct CheckedSourcePackArtifacts {
-    body_native_layouts: Option<Vec<Vec<u32>>>,
-    body_binding_native_layouts: Option<Vec<Vec<u32>>>,
-    owner_spans: Option<gpu_type_checker::CheckedOwnerSpans>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
     native_object: Option<CompiledSourcePackObject>,
@@ -3176,65 +2566,10 @@ struct CheckedSourcePackArtifacts {
     native_call_hirs: Vec<u32>,
 }
 
-impl CheckedSourcePackArtifacts {
-    /// Convert a declarations-only replay's results from the blanked
-    /// template's copy space to the template's full space: every token and
-    /// row the template unit's checked calls, owners and native symbols name.
-    fn blanked_to_full(
-        &mut self,
-        blanking: &gpu_type_checker::TemplateBlanking,
-        frontend: &gpu_type_checker::CheckedBodySpecializationBatch,
-        full: &gpu_type_checker::CheckedBodySpecializationBatch,
-    ) -> anyhow::Result<()> {
-        let map = blanking.map(gpu_type_checker::BlankingDirection::ToFull);
-        if let Some(layouts) = &mut self.body_binding_native_layouts {
-            // Remapping local member identities can change their order relative
-            // to imported members. Keep each GPU witness with its exact binding.
-            *layouts = frontend.remap_binding_native_layouts(&map, full, layouts)?;
-        }
-        for call in &mut self.generic_calls {
-            map.call(call)?;
-        }
-        for instance in &mut self.instance_closure.instances {
-            map.call(&mut instance.call)?;
-        }
-        for row in self.instance_closure.copy_rows.iter_mut().flatten() {
-            if let gpu_type_checker::CheckedRowFact::Type(ty) = row {
-                map.ty(ty)?;
-            }
-        }
-        for (_, call) in self.instance_closure.copy_calls.iter_mut().flatten() {
-            map.call(call)?;
-        }
-        for owner in self.checked_call_owners.iter_mut().chain(self.native_call_owners.iter_mut()) {
-            map.call_owner(owner)?;
-        }
-        for hir in &mut self.native_call_hirs {
-            *hir = map.row(*hir)?;
-        }
-        // A replay retains no copyable spans of its own.
-        self.owner_spans = None;
-        if let Some(object) = &mut self.native_object {
-            object.map_symbol_identity_words(|identity| map.qualified_symbol(identity))?;
-        }
-        Ok(())
-    }
-}
 
 #[derive(Clone)]
 pub(in crate::compiler) struct CompiledSourcePackUnit {
-    /// Canonical seed-node widths copied after GPU native admission, only for
-    /// concrete replay. These refine the cache independently of semantic keys.
-    /// One vector per batched replay entry, in entry order.
-    pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
-    /// GPU-admitted widths of implementation environments, aligned with the
-    /// replay packet's sorted bindings. These cover binding-only graph nodes.
-    pub(in crate::compiler) body_binding_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
-    /// Byte spans of this original unit's copyable generic bodies; None for
-    /// a replay or a unit whose spans were not retained.
-    pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
-    /// The GPU instance closure of an original unit (D1); None for a replay
-    /// or a unit without generic calls.
+    /// The checked job's instance closure, when requested for diagnostics.
     pub(in crate::compiler) instance_closure: Option<std::sync::Arc<gpu_type_checker::CheckedInstanceClosure>>,
     /// The unit's own GPU job proved it leaves nothing for the whole-program
     /// trait solver: no call obligation, implementation or generic call that
@@ -3252,7 +2587,6 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     pub(in crate::compiler) checked_contracts:
         std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     /// Checked call-to-function HIR relations belong to this exact source unit.
-    /// Replay refreshes them alongside its concrete call environments.
     pub(in crate::compiler) checked_call_owners:
         std::sync::Arc<[gpu_type_checker::CheckedCallOwner]>,
     /// Dense HIR for each native undefined symbol, in object symbol order.
@@ -3283,20 +2617,7 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
 }
 
-/// What one object symbol is, in either target's object format.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::compiler) enum NativeSymbolKind {
-    /// A reference this object needs another definition for.
-    Undefined,
-    /// A callable definition (x86 text, a Wasm function).
-    Function,
-    /// Any other definition (x86 rodata).
-    Data,
-}
-
-/// The target-neutral symbol view body specialization and program admission
-/// use. Both object formats keep undefined symbols before definitions, name
-/// every symbol by identity bytes, and hash them the same way.
+/// Target-neutral original and instance objects.
 impl CompiledSourcePackObject {
     /// Spill a native-profile object before it enters the program inventory.
     pub(super) fn spill_native(self) -> Result<Self, CompileError> {
@@ -3333,207 +2654,7 @@ impl CompiledSourcePackObject {
         }
     }
 
-    pub(in crate::compiler) fn symbol_count(&self) -> usize {
-        match self {
-            Self::X86_64(object) => object.symbols.len(),
-            Self::X86_64File(object) => object.symbols.len(),
-            Self::Wasm(object) => object.symbols.len(),
-        }
-    }
 
-    pub(in crate::compiler) fn symbol_kind(&self, index: usize) -> NativeSymbolKind {
-        use crate::codegen::{wasm::GpuWasmSymbolKind, x86::GpuX86ObjectSection};
-        match self {
-            Self::X86_64(object) => match object.symbols[index].section {
-                GpuX86ObjectSection::Undefined => NativeSymbolKind::Undefined,
-                GpuX86ObjectSection::Text => NativeSymbolKind::Function,
-                GpuX86ObjectSection::Rodata => NativeSymbolKind::Data,
-            },
-            Self::X86_64File(object) => match object.symbols[index].section {
-                GpuX86ObjectSection::Undefined => NativeSymbolKind::Undefined,
-                GpuX86ObjectSection::Text => NativeSymbolKind::Function,
-                GpuX86ObjectSection::Rodata => NativeSymbolKind::Data,
-            },
-            Self::Wasm(object) => match object.symbols[index].kind {
-                GpuWasmSymbolKind::Undefined => NativeSymbolKind::Undefined,
-                GpuWasmSymbolKind::Function => NativeSymbolKind::Function,
-            },
-        }
-    }
-
-    /// The identity bytes of one symbol (an empty slice when out of range).
-    pub(in crate::compiler) fn symbol_identity(&self, index: usize) -> &[u8] {
-        let (bytes, start, len) = match self {
-            Self::X86_64(object) => {
-                let symbol = &object.symbols[index];
-                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
-            }
-            Self::X86_64File(object) => {
-                let symbol = &object.symbols[index];
-                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
-            }
-            Self::Wasm(object) => {
-                let symbol = &object.symbols[index];
-                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
-            }
-        };
-        let start = start as usize;
-        bytes.get(start..start.saturating_add(len as usize)).unwrap_or(&[])
-    }
-
-    /// A three-word (library, unit, declaration) symbol identity.
-    pub(in crate::compiler) fn symbol_identity_words(&self, index: usize) -> Option<[u32; 3]> {
-        let bytes = self.symbol_identity(index);
-        (bytes.len() == 12).then(|| [
-            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-        ])
-    }
-
-    /// Point one symbol at new identity bytes (appended) and rehash it.
-    pub(in crate::compiler) fn replace_symbol_identity(&mut self, index: usize, identity: &[u8]) -> Result<(), String> {
-        let (bytes, start_field, len_field, lo, hi) = match self {
-            Self::X86_64(object) => {
-                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
-                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
-                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
-            }
-            Self::X86_64File(object) => {
-                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
-                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
-                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
-            }
-            Self::Wasm(object) => {
-                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
-                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
-                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
-            }
-        };
-        let start = u32::try_from(bytes.len()).map_err(|_| "symbol identity storage exceeds u32")?;
-        let len = u32::try_from(identity.len()).map_err(|_| "symbol identity length exceeds u32")?;
-        start.checked_add(len).ok_or("symbol identity range exceeds u32")?;
-        (*lo, *hi) = crate::compiler::stable_name_hash(identity);
-        *start_field = start;
-        *len_field = len;
-        bytes.extend_from_slice(identity);
-        if let Self::X86_64File(object) = self { object.refresh_layout()?; }
-        Ok(())
-    }
-
-    /// Rewrite every three-word identity in place (each distinct identity
-    /// range once), then rehash every symbol.
-    pub(in crate::compiler) fn map_symbol_identity_words(
-        &mut self,
-        mut map: impl FnMut(&mut [u32; 3]) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
-        macro_rules! remap {
-            ($object:expr) => {{
-                let object = $object;
-                let mut ranges = object.symbols.iter()
-                    .filter(|symbol| symbol.identity_byte_len == 12)
-                    .map(|symbol| symbol.identity_byte_start as usize)
-                    .collect::<Vec<_>>();
-                ranges.sort_unstable();
-                ranges.dedup();
-                for start in ranges {
-                    let bytes = object.identity_bytes.get_mut(start..start + 12)
-                        .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
-                    let mut identity = [0u32; 3];
-                    for (word, chunk) in identity.iter_mut().zip(bytes.chunks_exact(4)) {
-                        *word = u32::from_le_bytes(chunk.try_into().unwrap());
-                    }
-                    map(&mut identity)?;
-                    for (chunk, word) in bytes.chunks_exact_mut(4).zip(identity) {
-                        chunk.copy_from_slice(&word.to_le_bytes());
-                    }
-                }
-                for symbol in &mut object.symbols {
-                    let start = symbol.identity_byte_start as usize;
-                    let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
-                        .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
-                    (symbol.identity_hash_lo, symbol.identity_hash_hi) = crate::compiler::stable_name_hash(bytes);
-                }
-            }};
-        }
-        match self {
-            Self::X86_64(object) => remap!(object),
-            Self::X86_64File(object) => { remap!(&mut *object); object.refresh_layout().map_err(anyhow::Error::msg)?; }
-            Self::Wasm(object) => remap!(object),
-        }
-        self.validate().map_err(anyhow::Error::msg)
-    }
-
-    /// Keep the symbols whose `keep` entry is set. Callers keep every
-    /// undefined symbol, which precede the definitions, so relocation
-    /// targets keep their indices; a Wasm function whose definition symbol
-    /// is dropped stays as an unnamed local function.
-    pub(in crate::compiler) fn retain_symbols(&mut self, keep: &[bool]) {
-        match self {
-            Self::X86_64(object) => {
-                let mut index = 0;
-                object.symbols.retain(|_| {
-                    let retain = keep[index];
-                    index += 1;
-                    retain
-                });
-            }
-            Self::X86_64File(object) => {
-                let original_count = object.symbols.len();
-                let mut index = 0;
-                object.symbols.retain(|_| {
-                    let retain = keep[index];
-                    index += 1;
-                    retain
-                });
-                // Retaining rows can only decrease the already admitted count.
-                object.layout.symbol_count = object.symbols.len() as u32;
-                object.layout.serialized_byte_len -= (original_count - object.symbols.len()) as u64 * 32;
-            }
-            Self::Wasm(object) => {
-                let mut renumbered = Vec::with_capacity(keep.len());
-                let mut next = 0u32;
-                for &kept in keep {
-                    renumbered.push(if kept { next } else { u32::MAX });
-                    next += kept as u32;
-                }
-                let mut index = 0;
-                object.symbols.retain(|_| {
-                    let retain = keep[index];
-                    index += 1;
-                    retain
-                });
-                for function in &mut object.functions {
-                    if let Some(&symbol) = renumbered.get(function.symbol_index as usize) {
-                        function.symbol_index = symbol;
-                    }
-                }
-                for relocation in &mut object.relocations {
-                    if relocation.target_kind == crate::codegen::wasm::GpuWasmRelocationTargetKind::Symbol {
-                        relocation.target_index = renumbered[relocation.target_index as usize];
-                    }
-                }
-            }
-        }
-    }
-
-    /// Publish a replay's object under a fresh unit identity, without an entry.
-    pub(in crate::compiler) fn publish_as_unit(&mut self, unit_id: u32) {
-        match self {
-            Self::X86_64(object) => {
-                object.unit_id = unit_id;
-                object.entry_offset = None;
-            }
-            Self::X86_64File(object) => {
-                object.layout.unit_id = unit_id;
-                object.layout.entry_offset = None;
-            }
-            Self::Wasm(object) => {
-                object.unit_id = unit_id;
-                object.entry_function = None;
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -4151,9 +3272,6 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     2 => "the checked application exceeds 32 type parameters, 32 constant parameters, 32 type arguments per node, 64 traversal levels, or 64 generated or expanded nodes per root",
                     4 => "an imported declaration type could not be projected from its checked argument and result bindings",
                     5 => "checked call inference did not converge within 64 rounds per HIR node",
-                    6 => "a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required",
-                    7 => "a retained native width witness conflicts with the GPU-derived replay layout",
-                    8 => "a replay seed has malformed graph roots or exceeds the supported native width",
                     16 => "checked call inference did not converge: its passes changed more than 32 facts per HIR node and token",
                     17 => "call inference needed more than 1024 dependent rounds; add a type annotation to break the chain",
                     18 => "a call's checked result names a type parameter of another binder, which this call cannot see",
@@ -5408,37 +4526,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn physical_gpu_replay_does_not_retain_specialized_definitions() {
-        use crate::compiler::GpuCompilerBackends;
-        use crate::type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts};
-
-        let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only())).unwrap();
-        let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
-        compiler.attach_program_retention(Some(store.clone()));
-        let source = "module originals; pub fn keep<T>(value: T) -> T { return value; } fn main() -> i32 { let flag = keep(false); return keep(42); }";
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(), 92, 0, vec![vec![]].into(), SourcePackArtifactTarget::X86_64,
-        )).unwrap();
-        let reference = store.status().unwrap();
-        assert_eq!(reference[counts::JOBS], 1);
-        assert_eq!(reference[counts::READY], 1, "{:?}", store.job_reports());
-        assert_eq!(template.generic_calls.len(), 2);
-        for call in template.generic_calls.iter() {
-            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call)).unwrap();
-            assert_eq!(replay.interface, template.interface);
-            assert_eq!(store.status().unwrap(), reference, "replay must leave the retained originals untouched");
-            assert_eq!(store.job_reports().len(), 1);
-        }
-        // Excluding replay must not detach the store from subsequent units.
-        pollster::block_on(compiler.semantic_interface_for_source_pack(
-            93, &["module next; pub fn next() -> i32 { return 7; }"],
-        )).unwrap();
-        let status = store.status().unwrap();
-        assert_eq!(status[counts::JOBS], 2);
-        assert_eq!(status[counts::READY], 1, "{:?}", store.job_reports());
-        assert_eq!(store.job_reports().len(), 2);
-    }
 
     #[test]
     fn physical_gpu_retention_exports_once_after_native_output_retry() {
@@ -5911,293 +4998,6 @@ fn main() -> i32 {
         }
     }
 
-    #[test]
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    fn body_replay_preserves_qualified_alias_parameter_identity() {
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let aliases_source = "module lib::aliases; pub type Id<T> = T;";
-        let aliases =
-            pollster::block_on(compiler.semantic_interface_for_source_pack(
-                10,
-                &[aliases_source],
-            ))
-            .expect("identity alias interface");
-        let source = r#"
-module app::main;
-import lib::aliases;
-pub fn keep<T>(v: lib::aliases::Id<T>) -> lib::aliases::Id<lib::aliases::Id<T>> { return v; }
-fn main() -> i32 {
-    let number = keep<i32>(42);
-    let flag = keep<bool>(false);
-    let values = keep<[i32; 2]>([19, 23]);
-    if (flag || values[0] + values[1] != number) { return 1; }
-    return number;
-}
-"#;
-        let pages = vec![vec![aliases]];
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(),
-            12,
-            0,
-            pages.clone().into(),
-            SourcePackArtifactTarget::X86_64,
-        ))
-        .expect("symbolic imported aliases are checked");
-        assert_eq!(template.generic_calls.len(), 3);
-        for call in template.generic_calls.iter() {
-            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call))
-                .expect("complete qualified alias references specialize with their parameter");
-            assert_eq!(
-                replay.interface, template.interface,
-                "body replay preserves the symbolic public interface"
-            );
-            assert!(
-                std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts),
-                "replay shares the immutable definition contracts"
-            );
-        }
-        assert_paged_native_exit(
-            &compiler,
-            source,
-            &[(10, aliases_source, &[])],
-            &pages,
-            "specialized imported identity aliases",
-            42,
-            b"",
-        );
-    }
-
-    #[test]
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    fn semantic_replay_materializes_local_nominal_and_array_without_width_witnesses() {
-        use crate::type_checker::{CheckedGenericApplicationArgument, CheckedGenericType};
-        fn omit_widths(ty: &mut CheckedGenericType) {
-            match ty {
-                CheckedGenericType::Nominal { arguments, words, .. } => {
-                    *words = None;
-                    for child in arguments {
-                        if let CheckedGenericApplicationArgument::Type(child) = child { omit_widths(child); }
-                    }
-                }
-                CheckedGenericType::Array { element, words, .. } => { *words = None; omit_widths(element); }
-                CheckedGenericType::Reference(child) | CheckedGenericType::Slice(child) => omit_widths(child),
-                _ => {}
-            }
-        }
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let source = r#"
-module app::main;
-struct Cell<T> { value: T }
-fn relay<U>(value: U) -> U { return value; }
-pub fn keep<T>(value: T) -> T { return relay(value); }
-fn main() -> i32 {
-    let value: Cell<[i32; 2]> = Cell { value: [19, 23] };
-    let copied = keep(value);
-    return copied.value[0] + copied.value[1];
-}
-"#;
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(), 12, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
-        )).expect("checked source and immutable declaration graph");
-        let mut call = template.generic_calls.iter().find(|call|
-            call.arguments.first().is_some_and(|argument|
-                matches!(argument.ty, CheckedGenericType::Nominal { .. })))
-            .expect("concrete local nominal call").clone();
-        for argument in &mut call.arguments { omit_widths(&mut argument.ty); }
-        assert!(call.has_closed_arguments());
-        assert!(!call.has_complete_arguments());
-        let replay = pollster::block_on(compiler.compile_body_specialization(&template, &call))
-            .expect("GPU derives the local nominal and nested array layouts");
-        let forwarded = replay.generic_calls.iter().find(|fresh|
-            fresh.call_hir != call.call_hir && fresh.arguments.first().is_some_and(|argument|
-                matches!(argument.ty, CheckedGenericType::Nominal { words: Some(2), .. })))
-            .expect("fresh forwarded call retains the GPU-produced native witness");
-        assert!(forwarded.has_complete_arguments(), "{forwarded:?}");
-        let widths = &replay.body_native_layouts.as_ref().expect("completed GPU seed layouts")[0];
-        assert_eq!(widths.last(), Some(&2), "native cache receives the actual nominal width");
-        assert!(!widths.contains(&u32::MAX), "all local seed layouts were materialized");
-        assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts));
-    }
-
-    #[test]
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    fn semantic_replay_layout_admission_preserves_zero_and_recovers_after_conflict() {
-        use crate::type_checker::{CheckedGenericApplicationArgument, CheckedGenericType};
-        fn omit_widths(ty: &mut CheckedGenericType) {
-            match ty {
-                CheckedGenericType::Nominal { arguments, words, .. } => {
-                    *words = None;
-                    for child in arguments {
-                        if let CheckedGenericApplicationArgument::Type(child) = child {
-                            omit_widths(child);
-                        }
-                    }
-                }
-                CheckedGenericType::Array { element, words, .. } => {
-                    *words = None;
-                    omit_widths(element);
-                }
-                CheckedGenericType::Reference(child) | CheckedGenericType::Slice(child) => {
-                    omit_widths(child);
-                }
-                _ => {}
-            }
-        }
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let source = r#"
-module app::main;
-struct Cell<T> { value: T }
-pub fn keep<T>(value: T) -> T { return value; }
-fn main() -> i32 {
-    let empty: Cell<[i32; 0]> = Cell { value: [] };
-    let copied_empty = keep(empty);
-    let copied = keep([19, 23]);
-    return copied[0] + copied[1];
-}
-"#;
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(), 12, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
-        )).expect("checked zero-width and nonzero call environments");
-        let mut empty = template.generic_calls.iter().find(|call|
-            call.arguments.first().is_some_and(|argument|
-                matches!(argument.ty, CheckedGenericType::Nominal { words: Some(0), .. })))
-            .expect("zero-width nominal call").clone();
-        let mut full = template.generic_calls.iter().find(|call|
-            call.arguments.first().is_some_and(|argument|
-                matches!(argument.ty, CheckedGenericType::Array { words: Some(2), .. })))
-            .expect("two-word array call").clone();
-        for call in [&mut empty, &mut full] {
-            for argument in &mut call.arguments { omit_widths(&mut argument.ty); }
-            assert!(call.has_closed_arguments());
-            assert!(!call.has_complete_arguments());
-        }
-        let replay = pollster::block_on(compiler.compile_body_specialization(&template, &empty))
-            .expect("GPU must derive zero as a complete width");
-        let saved = replay.body_native_layouts.as_ref().expect("zero seed readback")[0].clone();
-        assert_eq!(saved.as_slice(), &[0, 0, 0]);
-
-        let mut conflicting = full.clone();
-        let CheckedGenericType::Array { words, .. } = &mut conflicting.arguments[0].ty else {
-            unreachable!("selected array call")
-        };
-        *words = Some(3);
-        let error = pollster::block_on(compiler.compile_body_specialization(&template, &conflicting))
-            .err().expect("retained width 3 must not override the derived two-word array");
-        let diagnostic = error.to_public_diagnostic();
-        assert_eq!(diagnostic.code, "LNC0047", "{error:?}");
-        assert!(diagnostic.notes.iter().any(|note|
-            note.contains("width witness") && note.contains("conflicts")), "{diagnostic:?}");
-
-        // Reuse the same compiler after rejection with both a shorter and a
-        // longer graph. Previous widths, inactive seed rows, and error status
-        // must not become facts about the next replay.
-        for (call, expected) in [(&full, &[0, 2][..]), (&empty, &[0, 0, 0][..])] {
-            let recovered = pollster::block_on(compiler.compile_body_specialization(&template, call))
-                .expect("fresh replay after a rejected width witness");
-            assert_eq!(recovered.body_native_layouts.as_deref().map(|layouts| layouts[0].as_slice()), Some(expected));
-        }
-        assert_eq!(saved.as_slice(), &[0, 0, 0], "later jobs preserve owned layout readback");
-    }
-
-    #[test]
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    fn semantic_replay_descriptors_do_not_require_opaque_referent_widths() {
-        use crate::type_checker::CheckedGenericType;
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let library = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec!["module lib::relay; pub fn keep<T>(value: T) -> T { return value; }".to_owned()].into(),
-            10, 0, vec![].into(), SourcePackArtifactTarget::X86_64,
-        )).expect("descriptor relay template");
-        let source = r#"
-module app::main;
-import lib::relay;
-struct Hidden { value: i32 }
-impl Hidden { fn borrow(&self) -> &Hidden { return self; } }
-fn view(values: [Hidden]) -> [Hidden] { return values; }
-fn main() -> i32 {
-    let first: Hidden = Hidden { value: 19 };
-    let borrowed: &Hidden = lib::relay::keep(first.borrow());
-    let values: [Hidden; 2] = [Hidden { value: 19 }, Hidden { value: 23 }];
-    let slice: [Hidden] = view(values);
-    let copied: [Hidden] = lib::relay::keep(slice);
-    return borrowed.value + copied[1].value;
-}
-"#;
-        let caller = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(), 12, 0, vec![vec![library.interface.clone()]].into(),
-            SourcePackArtifactTarget::X86_64,
-        )).expect("caller-private descriptor operands");
-        for (reference, descriptor_words) in [(true, 1), (false, 3)] {
-            let mut call = caller.generic_calls.iter().find(|call|
-                call.arguments.first().is_some_and(|argument| if reference {
-                    matches!(argument.ty, CheckedGenericType::Reference(_))
-                } else {
-                    matches!(argument.ty, CheckedGenericType::Slice(_))
-                })).expect("checked descriptor call").clone();
-            let (CheckedGenericType::Reference(referent) | CheckedGenericType::Slice(referent)) =
-                &mut call.arguments[0].ty else { unreachable!("selected descriptor") };
-            let CheckedGenericType::Nominal { words, .. } = referent.as_mut() else {
-                panic!("descriptor must retain the caller-private nominal identity")
-            };
-            *words = None;
-            assert!(call.has_closed_arguments());
-            assert!(!call.has_complete_arguments());
-            let replay = pollster::block_on(compiler.compile_body_specialization(&library, &call))
-                .expect("descriptor layout is complete without a foreign payload recipe");
-            let widths = &replay.body_native_layouts.as_deref().expect("descriptor seed readback")[0];
-            assert_eq!(widths.as_slice(), &[u32::MAX, descriptor_words],
-                "opaque referent identity survives while only descriptor storage is required");
-            assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &library.checked_contracts));
-        }
-    }
-
-    #[test]
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    fn body_replay_preserves_symbolic_public_interfaces() {
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let source = r#"
-module app::main;
-pub type Items<T, const N: usize> = [T; N];
-pub fn relay<T, const N: usize>(value: Items<T, N>) -> Items<T, N> { return value; }
-fn main() -> i32 {
-    let data: [i32; 2] = relay<i32, 2>([19, 23]);
-    let flags: [bool; 2] = relay<bool, 2>([false, true]);
-    let empty: [str; 0] = relay<str, 0>([]);
-    if (flags[0] || !flags[1]) { return 1; }
-    return data[0] + data[1];
-}
-"#;
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(),
-            12,
-            0,
-            vec![].into(),
-            SourcePackArtifactTarget::X86_64,
-        ))
-        .expect("symbolic unit");
-        assert_eq!(template.generic_calls.len(), 3);
-        for call in template.generic_calls.iter() {
-            let replay = pollster::block_on(compiler.compile_body_specialization(&template, call))
-                .expect("concrete replay");
-            assert_eq!(
-                replay.interface, template.interface,
-                "concrete body types must not replace the public generic contract"
-            );
-            assert!(
-                std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts),
-                "replay shares the immutable definition contracts"
-            );
-        }
-        assert_paged_native_exit(
-            &compiler,
-            source,
-            &[],
-            &[],
-            "immutable template interface",
-            42,
-            b"",
-        );
-    }
 
     /// A dependency library for a native test program: its library id, its
     /// source, and the interfaces it imports (one page).
@@ -6223,7 +5023,6 @@ fn main() -> i32 {
             sync::atomic::{AtomicU64, Ordering},
         };
 
-        use crate::codegen::x86::GpuX86LinkInput;
         static NEXT_EXECUTABLE: AtomicU64 = AtomicU64::new(0);
 
         let dependency_units = dependencies
@@ -6249,16 +5048,8 @@ fn main() -> i32 {
         ))
         .unwrap_or_else(|error| panic!("{label}: compile paged values: {error:?}"));
         let units = dependency_units.iter().chain([&unit]).collect::<Vec<_>>();
-        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&units))
-            .unwrap_or_else(|error| panic!("{label}: specialize paged values: {error:?}"));
-        let input =
-            GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("link input");
-        let executable = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link paged values");
+        let executable = pollster::block_on(compiler.compile_test_units(&units))
+            .unwrap_or_else(|error| panic!("{label}: GPU monomorphization: {error:?}"));
         let path = std::env::temp_dir().join(format!(
             "laniusc-paged-values-{}-{}",
             std::process::id(),

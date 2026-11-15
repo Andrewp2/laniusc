@@ -260,7 +260,10 @@ pub struct SubstitutionRequests {
 impl SubstitutionRequests {
     /// Buffers for up to `capacity` requests on the process-global GPU.
     pub fn new(capacity: u32) -> Self {
-        let device = &crate::gpu::device::global().device;
+        Self::new_with_device(&crate::gpu::device::global().device, capacity)
+    }
+
+    pub(crate) fn new_with_device(device: &wgpu::Device, capacity: u32) -> Self {
         let capacity = capacity.max(1);
         Self {
             requests: storage(device, "sb_requests", capacity as u64 * 16, false),
@@ -415,7 +418,10 @@ pub struct RetainedSubstitution {
 impl RetainedSubstitution {
     /// An engine on the process-global GPU with initial `capacity`.
     pub fn new(capacity: SubstitutionCapacity) -> Result<Self> {
-        let gpu = crate::gpu::device::global();
+        Self::new_with_device(crate::gpu::device::global(), capacity)
+    }
+
+    pub(crate) fn new_with_device(gpu: &crate::gpu::device::GpuDevice, capacity: SubstitutionCapacity) -> Result<Self> {
         let device = gpu.device.clone();
         let passes = KERNELS
             .iter()

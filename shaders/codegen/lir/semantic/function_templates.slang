@@ -12,19 +12,10 @@ bool valid_instance(uint instance)
     return instance < capacity;
 }
 
-// replay_function: the first selected callable HIR plus one (0 outside
-// replay); a batched replay lists its other selected callables, each HIR
-// plus one, in replay_extra (replay_extra_count of them). An instance-copy
-// replay sets replay_copy_start to its first copy row plus one: every
-// function from that row on is a selected copy, every earlier one is not.
-// retained_templates (an original object of a retained build) withholds
-// every function with a generic environment, tag-only bodies included:
-// retained projection lowers their instances.
+// Original objects omit generic bodies. GPU projection emits their instances.
 struct Params
 {
-    uint n_hir_nodes; uint param_capacity; uint n_tokens; uint replay_function;
-    uint replay_extra_count; uint replay_copy_start; uint retained_templates; uint pad2;
-    uint4 replay_extra[16];
+    uint n_hir_nodes; uint param_capacity; uint n_tokens; uint nongeneric_only;
 };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -74,16 +65,6 @@ static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 
 #include "type_closure_graph.slang"
 #include "function_generic_environment.slang"
-
-bool replay_selects_function(uint row, uint replay)
-{
-    if (gParams.replay_copy_start != 0u) return row >= gParams.replay_copy_start - 1u;
-    if (row == replay - 1u) return true;
-    uint extra = min(gParams.replay_extra_count, 64u);
-    for (uint index = 0u; index < extra; index++)
-        if (gParams.replay_extra[index >> 2u][index & 3u] == row + 1u) return true;
-    return false;
-}
 
 bool unclosed_type_reference(uint tag, uint payload)
 {
@@ -142,28 +123,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
-    uint replay = gParams.replay_function;
-    if (replay != 0u && row < count &&
-        compact_hir_core[row].kind == 3u &&
-        !replay_selects_function(row, replay) &&
-        (function_has_generic_environment(row, count) ||
-         compact_hir_payload[row].a != HIR_ITEM_KIND_EXTERN_FN))
-    {
-        // Scratch substitutions can close sibling impl methods. The replay
-        // request authorizes its selected concrete bodies, not those siblings.
-        // Ordinary local helpers already have definitions in the original
-        // object: calls to them become symbol calls resolved by the linker,
-        // so a replay object holds only the selected body. Extern functions
-        // (host services) have no definition there and stay direct.
-        InterlockedAnd(semantic_function_flag[row], 0u);
-    }
-    if (gParams.retained_templates != 0u && row < count && compact_hir_core[row].kind == 3u &&
+    if (gParams.nongeneric_only != 0u && row < count && compact_hir_core[row].kind == 3u &&
         function_has_generic_environment(row, count))
         InterlockedAnd(semantic_function_flag[row], 0u);
     if (row < min(compact_method_count[0u], count))
     {
         // A trait's own member is a contract over `Self`, not a definition:
-        // bound-member calls are routed to implementation members in replay.
+        // GPU discovery routes bound-member calls to implementation members.
         HirMethodCore method = compact_method_cores[row];
         if (method.impl_node == INVALID && method.node < count)
             InterlockedAnd(semantic_function_flag[method.node], 0u);
@@ -183,7 +149,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         CheckedCallArtifact call = semantic_calls_by_hir[row];
         // A receiver passed as a lexical parameter (a call through `P: Trait`)
-        // also has no layout or routed callee before replay closes it.
+        // also has no layout or routed callee before GPU substitution closes it.
         bool adjusted_receiver = call.receiver_adjustment_kind != 0u ||
             call.receiver_deref_count != 0u ||
             call.receiver_parameter_ref_tag == TYPE_REF_GENERIC_PARAM;
@@ -197,7 +163,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (!closed)
             {
                 // The original generic body remains a deferred template.
-                // Selected replay must close the actual adjusted parameter
+                // GPU projection must close the actual adjusted parameter
                 // contract before publishing its executable definition; a
                 // descriptor's known word width cannot establish its count.
                 uint encoded_function = semantic_enclosing_fn_by_hir[row];
@@ -206,17 +172,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
         }
     }
-    if (replay == 0u && row < count && compact_hir_core[row].kind == 19u)
+    if (row < count && compact_hir_core[row].kind == 19u)
     {
-        // `size_of<T>()` in `fn bytes<T>() -> i32`: the signature and locals
-        // are concrete, but the callee needs the caller's concrete T. Only a
-        // replay of this body can request that instance. Outside a generic
-        // environment there is no replay, so the body is never withheld; a
-        // replay is the body's only instance, so it is never withheld there.
-        // A static required call also consumes its bound subject even when
-        // its signature is concrete and it has no callee type arguments.
-        // A trait requirement is not an executable target until replay routes
-        // it to the selected implementation.
+        // Symbolic calls and required members need a concrete environment
+        // and an implementation selected by program-wide GPU discovery.
         uint encoded_function = semantic_enclosing_fn_by_hir[row];
         if (encoded_function != 0u && encoded_function - 1u < count &&
             function_has_generic_environment(encoded_function - 1u, count))

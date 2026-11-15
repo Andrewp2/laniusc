@@ -440,6 +440,7 @@ enum ExportFault {
 pub struct ProgramRetention {
     /// Only the native retained driver withholds all original generic bodies.
     native_projection: bool,
+    native_call_pass: std::sync::OnceLock<PassData>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
@@ -485,19 +486,18 @@ impl Drop for JobSnapshot {
 impl ProgramRetention {
     /// A store on the process-global GPU with `capacity`.
     pub fn new(capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
-        Self::new_with_mode(capacity, false)
+        Self::new_with_mode(crate::gpu::device::global(), capacity, false)
     }
 
-    pub(crate) fn new_native(capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
-        Self::new_with_mode(capacity, true)
+    pub(crate) fn new_native(gpu: &crate::gpu::device::GpuDevice, capacity: ProgramRetentionCapacity) -> Result<Arc<Self>> {
+        Self::new_with_mode(gpu, capacity, true)
     }
 
     pub(crate) fn native_projection(&self) -> bool {
         self.native_projection
     }
 
-    fn new_with_mode(capacity: ProgramRetentionCapacity, native_projection: bool) -> Result<Arc<Self>> {
-        let gpu = crate::gpu::device::global();
+    fn new_with_mode(gpu: &crate::gpu::device::GpuDevice, capacity: ProgramRetentionCapacity, native_projection: bool) -> Result<Arc<Self>> {
         let device = gpu.device.clone();
         let queue = gpu.queue.clone();
         let passes = EXPORT_KERNELS
@@ -527,6 +527,7 @@ impl ProgramRetention {
             .collect();
         let this = Arc::new(Self {
             native_projection,
+            native_call_pass: std::sync::OnceLock::new(),
             device,
             queue,
             passes,

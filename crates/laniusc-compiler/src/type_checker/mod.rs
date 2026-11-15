@@ -18,23 +18,16 @@ mod canonical_passes;
 mod compiler_graph;
 #[cfg(test)]
 pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
-mod generic_body;
 mod generic_calls;
 mod instance_closure_passes;
-pub(crate) use instance_closure_passes::{exec_lowering_token_capacity, instance_table_checked};
+pub(crate) use instance_closure_passes::{exec_lowering_token_capacity};
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
-mod owner_spans;
-pub(crate) use owner_spans::{CheckedBodySpan, CheckedOwnerSpan, CheckedOwnerSpans};
-#[cfg(test)]
-pub(crate) use owner_spans::{CheckedImplHeader, CheckedTraitCut};
-mod template_blanking;
-pub(crate) use template_blanking::{BlankingDirection, TemplateBlanking, TemplateIdentityMap};
 mod checked_contracts;
 #[cfg(test)]
 mod scoped_type_graph_tests;
 pub(crate) use checked_contracts::{
-    CheckedCallOwner, CheckedNominalRecipeKind, CheckedUnitContracts,
+    CheckedCallOwner, CheckedNominalRecipeKind, CheckedUnitContracts, CheckedUnitFacts,
 };
 #[cfg(test)]
 pub(crate) use checked_contracts::{
@@ -43,7 +36,6 @@ pub(crate) use checked_contracts::{
 };
 #[cfg(test)]
 pub(crate) use generic_calls::CheckedParameterIdentity;
-pub(crate) use generic_body::{BODY_COPY_TARGET, BodyImplBinding, BodyImplEnvironment, CheckedBodySpecialization, CheckedBodySpecializationBatch, MAX_BODY_CONTINUATION_FILES, MAX_BODY_ENTRIES, MAX_BODY_IMPL_BINDINGS, MAX_ORIGINAL_REPLAY_ENTRIES};
 pub(crate) use generic_calls::{
     CheckedBinderIdentity, CheckedGenericConstantValue, CheckedGenericParameter,
     CheckedNominalIdentity, CheckedParameterDomain,
@@ -54,15 +46,12 @@ pub(crate) use generic_calls::{
     CheckedGenericCall,
     CheckedInstanceClosure,
     CheckedInstanceExec,
-    CheckedRowFact,
     CheckedGenericConstant,
     CheckedGenericTarget,
     CheckedGenericType,
     resolve_generic_requirements,
     scope_generic_type_identities,
 };
-#[cfg(test)]
-pub(crate) use generic_calls::dependency_method_requirements;
 mod dependency_interface;
 mod dependency_pack;
 #[cfg(test)]
@@ -265,7 +254,7 @@ pub enum GpuTypeCheckError {
 
 /// Internal recording policy derived by compiler orchestration. This is not
 /// proof authority. Pending originals cannot publish an object before whole-program
-/// admission; only a validated program replay request may select replay.
+/// admission supplies implementation selection for retained builds.
 #[derive(Clone, Copy, Default)]
 pub(crate) enum FrontendTraitCheck {
     #[default]
@@ -273,17 +262,13 @@ pub(crate) enum FrontendTraitCheck {
     /// Original definitions and call graphs are checked, but implementation
     /// selection belongs to a later whole-program admission.
     PendingOriginal,
-    /// Rechecked calls defer selection to the same program: selected-body calls
-    /// receive fresh proofs and ordinary siblings must retain their admitted facts.
-    AuthorizedReplay { selected_function_hir: u32 },
 }
 
 impl FrontendTraitCheck {
-    pub(crate) fn shader_words(self) -> (u32, u32) {
+    pub(crate) fn shader_word(self) -> u32 {
         match self {
-            Self::Strict => (0, u32::MAX),
-            Self::PendingOriginal => (1, u32::MAX),
-            Self::AuthorizedReplay { selected_function_hir } => (2, selected_function_hir),
+            Self::Strict => 0,
+            Self::PendingOriginal => 1,
         }
     }
 }
@@ -308,8 +293,6 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
     /// checking. Ordinary executable compilation leaves the interface-only
     /// workspace unmaterialized.
     pub semantic_interface_required: bool,
-    /// One explicit body replay. Ordinary jobs upload an empty packet.
-    pub(crate) body_specialization: Option<&'a CheckedBodySpecializationBatch>,
     /// Derived from the same private frontend request as the body packet.
     pub(crate) frontend_trait_check: FrontendTraitCheck,
     /// The parser's compact semantic artifact. Keeping this as one typed view
@@ -323,13 +306,10 @@ pub struct GpuTypeCheckHirItemBuffers<'a> {
 }
 
 impl GpuTypeCheckHirItemBuffers<'_> {
-    /// Retention owns original templates. A replay may request interface
-    /// storage too, but must neither export another definition nor suppress
-    /// the specialization that its caller explicitly requested.
+    /// Interface jobs retain their typed definitions in the build store.
     pub(crate) fn retains_program_templates(self) -> bool {
         self.semantic_interface_required
-            && self.body_specialization.is_none()
-            && !matches!(self.frontend_trait_check, FrontendTraitCheck::AuthorizedReplay { .. })
+
     }
 }
 
@@ -411,7 +391,6 @@ impl From<anyhow::Error> for GpuTypeCheckError {
 pub struct GpuTypeChecker {
     passes: TypeCheckPasses,
     params_buf: LaniusBuffer<TypeCheckParams>,
-    body_specialization_inputs: LaniusBuffer<u32>,
     /// The job's dependency closure summaries (D1b; closure_summary.rs).
     closure_summary_inputs: LaniusBuffer<u32>,
     empty_dependency_words: LaniusBuffer<u32>,

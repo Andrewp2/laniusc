@@ -559,9 +559,9 @@ payloads across three units.
 After native C and imported-pattern integration, the combined `retained_`
 and `program_retention` filters pass 43 tests. The bound-member fixture also
 passes after adding static calls and an impl proof whose child uses a caller
-assumption. Settings now passes discovery across its two original frontend
-jobs; projection still rejects an unsupported layout. This is not yet the
-default compiler path.
+assumption. At that checkpoint settings passed discovery across its two original
+frontend jobs, while projection still rejected an unsupported layout. The
+subsequent settings and default-path receipts below supersede that limitation.
 
 Zero-word struct layouts are complete, including structs containing only
 zero-length arrays. The compound-field execution test covers empty records,
@@ -627,3 +627,30 @@ with nonzero upper input bits, pointer parameters, and both raw and native-C
 linking. Separate and combined batches return 42 and write `RNRN`; replay
 counters remain unchanged. The retained tests and existing qsort, bsearch,
 pthread and generic-body callback tests passed together (42 tests, 43.49 s).
+
+### Source replay deletion
+
+Default native and Wasm builds now have one source-compilation path followed by
+GPU monomorphization. The source-copy generator, host replay sessions and cache,
+replay authority and type/layout input packets, source body spans and blanking,
+and host object-symbol mutation helpers have been deleted. Original-object
+lowering selects nongeneric definitions; instance lowering emits every projected
+function. Both run the normal lowering validation passes.
+
+Every retained stage uses the compiler's device and queue, including schema
+substitution, discovery requests and provisional-call symbol production. The
+provisional-call pipeline belongs to its store rather than a process-global
+singleton. Reused allocations are reset by the build generation.
+
+Compiler devices share one wgpu instance but have separate devices and queues.
+wgpu 29 compares native handles by instance-local IDs; using separate instances
+allowed a device to find another device's pipeline or bind-group layout in the
+process caches. The custom-device regression compiles and executes native and
+Wasm programs, then compiles on the global device in the same process.
+
+The local GPU closure and operand checks still run before template export.
+They preserve source diagnostics for constant fits and instance operands.
+Original jobs select no in-place body and append no execution copies when
+program monomorphization is attached. All emitted generic bodies come from
+retained projection. Skipping the local checks exposed diagnostic parity gaps
+in discovery and projection, so that optimization is not part of replay removal.

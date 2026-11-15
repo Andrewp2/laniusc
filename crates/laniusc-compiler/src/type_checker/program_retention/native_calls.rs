@@ -12,7 +12,6 @@
 //! host uploads and reads back the object's opaque symbol columns; it never
 //! decides which symbol is provisional or reads a use.
 
-use std::sync::OnceLock;
 
 use super::*;
 use crate::codegen::x86::{GpuX86RelocatableObject, finalize::X86SymbolColumns};
@@ -35,7 +34,10 @@ pub struct NativeCallTables {
 impl NativeCallTables {
     /// Tables for `uses` uses (grown with the store's use arena).
     pub fn new(uses: u32) -> Self {
-        let device = &crate::gpu::device::global().device;
+        Self::new_with_device(&crate::gpu::device::global().device, uses)
+    }
+
+    pub(crate) fn new_with_device(device: &wgpu::Device, uses: u32) -> Self {
         let uses = u64::from(uses.max(64));
         Self {
             abi: storage(device, "nc_use_abi", uses * 32, false),
@@ -66,15 +68,6 @@ impl NativeCallTables {
         self.abi = abi;
         self.uses = n;
     }
-}
-
-fn pass(device: &wgpu::Device) -> Result<&'static PassData> {
-    static PASS: OnceLock<PassData> = OnceLock::new();
-    if let Some(pass) = PASS.get() {
-        return Ok(pass);
-    }
-    let pass = passes_core::make_pass_data_from_shader_key(device, KERNEL, "main", KERNEL)?;
-    Ok(PASS.get_or_init(|| pass))
 }
 
 impl ProgramRetention {
@@ -113,7 +106,12 @@ impl ProgramRetention {
             bail!("retained original object names {undefined} calls but has {symbols} symbols");
         }
         let device = &self.device;
-        let pass = pass(device)?;
+        let pass = if let Some(pass) = self.native_call_pass.get() {
+            pass
+        } else {
+            let pass = passes_core::make_pass_data_from_shader_key(device, KERNEL, "main", KERNEL)?;
+            self.native_call_pass.get_or_init(|| pass)
+        };
         let store = self.store.lock().unwrap();
         if tables.generation != store.generation {
             tables.generation = store.generation;

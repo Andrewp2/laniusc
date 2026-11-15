@@ -1,51 +1,15 @@
-// Route bound-member calls of the selected replay body (07a) to the member of
-// the implementation that the now-concrete receiver selects.
+// Route bound-member calls in a standalone job's selected in-place body.
+// The concrete receiver matches local implementations by canonical type
+// identity. The selected method owns the resulting type/constant environment.
+// Pattern traversal uses a packed child path, without per-lane arrays.
 //
-// Body specialization has substituted the call's accepted receiver: the
-// receiver value of `value.member(...)`, or the parameter `P` of a static
-// `P::member(...)`. The required member names its trait; a candidate is an implementation method of
-// that trait with the same name whose receiver pattern matches the receiver.
-// Types compare by canonical ID (docs/canonical-type-ids.md). A replay
-// re-arms every row before the match passes (03_rearm), so the receiver and
-// each pattern are interned here, on demand. Replay rewrites only the rows of
-// the selected environment; when that is a generic impl's own method, its
-// rewritten header has another head than any receiver in the body (the
-// lookup chain is keyed by head), except for a blanket impl, which is not
-// routed.
+// This local path cannot route methods defined in another unit. A call with
+// no local target, or a target requiring another generic instance, invalidates
+// the in-place selection. Whole-program monomorphization keeps all frontend
+// bodies symbolic and uses the program trait solver's retained evidence for
+// both local and cross-unit method routes.
 //
-// A nongeneric implementation matches when its pattern is the receiver. A
-// generic one matches when its type and constant parameters bind so that the
-// pattern is the receiver; the routed call then owns that environment, and
-// each binding is published as the call's context argument or constant
-// (contextual_call_environment.slang) in the receiver's own checked spelling
-// at the parameter's position, which is what host retention reads to replay
-// the routed body. A constant binding is the receiver's exact constant
-// operand (identity mode 0), a checked reference, so it is published as
-// admitted. Bindings are found without a stack or local array: a walk over
-// the pattern's open nodes re-descends from the root along a packed child
-// path, and the call's context rows hold the bindings until the masks publish
-// them. A parameter that the receiver does not bind and methods with
-// parameters of their own are not routed; neither is a receiver with no
-// match.
-// Outside replay every accepted receiver of these calls is still a parameter,
-// so nothing is routed and the enclosing body stays a template.
-//
-// A bound on an imported trait selects that trait's required member by its
-// portable identity (dependencies/15b: a dependency candidate of module
-// preference 0, which no implementation candidate has). An implementation of
-// that trait in this unit implements it by the trait's library and unit and
-// the required member's symbol (predicates/01f2), and the routed call becomes
-// a local one.
-//
-// An implementation outside this unit has no candidate here. In replay, the
-// instance's trait solver names it (body_impl_bindings.slang): the
-// implementation that proved the bound on the parameter's binding slot, keyed
-// by the required member's symbol and its trait's unit. The call then becomes
-// a dependency call of that implementation's member.
-//
-// One thread per call expression (HIR domain): the call owns the context rows,
-// and its callee member, or the leaf of its callee path `P::member` for a
-// static member, names the method token.
+// One lane owns each call's context rows and method-callee reference.
 
 import gpu_index;
 import hir_records;
@@ -88,7 +52,6 @@ StructuredBuffer<uint> fn_start_token_by_decl_token;
 StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> interface_public_decl_index_by_hir;
-StructuredBuffer<uint4> body_specialization_inputs;
 RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
@@ -143,11 +106,8 @@ uint active_hir_count() { return min(compact_hir_count[0u], gParams.n_hir_nodes)
 bool valid_hir(uint node) { return node < active_hir_count(); }
 uint active_hir_node_count() { return active_hir_count(); }
 
-#include "../type/instances/body_specialization_owner.slang"
 #define LANIUS_INPLACE_WRITE_OWNER 1
 #include "../closure/inplace_read.slang"
-#include "../type/instances/body_impl_bindings.slang"
-#include "../type/instances/body_type_graph_reference.slang"
 
 #include "local_required_member.slang"
 
@@ -194,54 +154,6 @@ bool implements(uint impl, uint member, uint4 required)
     uint4 identity = trait_reference_identity(reference);
     return identity.y == required.y && identity.z == required.z &&
         predicate_method_validation_required_symbol[member] == required.w;
-}
-
-// The implementation member (library, unit, native symbol) outside this unit
-// that the replayed instance's evidence selected for the bound that offered
-// `candidate` (07a, 15b) on its parameter, for call token `token`.
-bool external_target(uint token, uint4 required, MethodCandidate candidate,
-    out uint3 target, out uint4 environment)
-{
-    target = uint3(INVALID, INVALID, INVALID);
-    environment = uint4(INVALID, 0u, 0u, 0u);
-    if (candidate.matched_ref_tag != TYPE_REF_GENERIC_PARAM) return false;
-    uint tokens; uint stride;
-    type_generic_param_slot_by_token.GetDimensions(tokens, stride);
-    uint parameter = candidate.matched_ref_payload;
-    uint slot = parameter < tokens ? type_generic_param_slot_by_token[parameter] : INVALID;
-    uint encoded = enclosing_fn[token];
-    if (slot == INVALID || encoded == 0u || !valid_hir(encoded - 1u)) return false;
-    uint instance = body_specialization_entry_for_owner(encoded - 1u);
-    if (instance == INVALID) return false;
-    uint symbol = required.w;
-    uint2 trait_unit = required.yz;
-    if (required.x == REQUIRED_LOCAL)
-    {
-        uint member = fn_hir_by_decl_token[call_fn_index[token]];
-        if (!valid_hir(member)) return false;
-        symbol = 0x80000000u | member;
-        trait_unit = uint2(INVALID, INVALID);
-    }
-    if (!body_impl_binding(instance, slot, symbol, trait_unit, target, environment) ||
-        target.x == INVALID || target.y == INVALID || target.z == INVALID) return false;
-    // Transport retains the declaration's source mode. Explicit typed first
-    // parameters use the existing15a adjustment, not a newly inferred plan:
-    // dotted mode3 is value-self1, and every qualified call is static0 (a
-    // self member's receiver is its first argument). Earlier bound candidate
-    // eligibility and the accepted parameter plan remain unchanged.
-    uint mode = method_call_receiver_hir[token] == INVALID ? 0u
-        : environment.w == 3u ? 1u : environment.w;
-    return mode == candidate.receiver_mode;
-}
-
-// Whether local implementation member `candidate` (its declaration token) is
-// the native symbol `symbol` an evidence target names (callable_identity).
-bool evidence_names(uint candidate, uint symbol)
-{
-    uint member = fn_hir_by_decl_token[candidate];
-    if (!valid_hir(member)) return false;
-    return symbol == interface_method_symbol(member) ||
-        symbol == (0x40000000u | compact_hir_core[member].token_start);
 }
 
 // The method token of call expression `call`, or INVALID: its callee member's
@@ -327,73 +239,7 @@ uint slots_mask(uint count) { return count == 32u ? 0xffffffffu : (1u << count) 
 // this bounded check also rejects an unavailable context rather than publishing
 // a callee with a partial environment. Receiver selection remains the accepted
 // candidate's checked plan; transported mode equality was checked above.
-bool external_environment(uint call, uint4 environment, out uint2 masks)
-{
-    masks = uint2(0u, 0u);
-    uint types = environment.y;
-    uint constants = environment.z;
-    if (types == 0u && constants == 0u) return environment.x == INVALID;
-    if (call == INVALID || types > 32u || constants > 32u) return false;
-    uint3 counts;
-    if (!body_impl_binding_header(counts) || environment.x >= counts.y) return false;
-    uint4 span = body_impl_environment(environment.x);
-    if (span.y != types || span.z != constants || span.w != 0u ||
-        span.x > counts.z || types + constants > counts.z - span.x) return false;
-    uint capacity; uint stride;
-    call_context_arg_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
-    call_context_constant_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
-    call_context_constant_valid_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
-    call_context_ref_tag.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
-    call_context_ref_payload.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
-    call_context_constant_kind.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
-    call_context_constant_payload.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
-    call_context_constant_identity_mode.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
-    uint source_capacity;
-    type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-    uint graph_count = body_specialization_inputs[0u].z;
-    uint atom_base = body_constant_atom_base();
-    if (graph_count > BODY_GRAPH_NODES || (constants != 0u && atom_base == INVALID)) return false;
-    for (uint local = 0u; local < types + constants; local++)
-    {
-        uint4 argument = body_impl_argument(span.x + local);
-        bool constant = local >= types;
-        uint slot = constant ? local - types : local;
-        if (argument.x != (constant ? 1u : 0u) || argument.y != slot ||
-            argument.z >= graph_count || argument.w != 0u) return false;
-        uint kind = body_graph_node(argument.z).x;
-        if (constant ? kind != 10u : !(kind == 1u || kind == 2u || kind == 3u || kind == 4u || kind == 9u)) return false;
-        uint tag; uint payload;
-        body_type_graph_reference(argument.z, source_capacity, tag, payload);
-        if (tag == 0u || payload == INVALID || ((tag & 0x80000000u) != 0u) != constant) return false;
-        if (constant)
-        {
-            uint3 value;
-            if (!checked_constant_atom_value(payload, value)) return false;
-        }
-        else if (tag == 3u && payload >= checked_type_capacity()) return false;
-    }
-    for (uint local = 0u; local < types + constants; local++)
-    {
-        uint4 argument = body_impl_argument(span.x + local);
-        uint tag; uint payload;
-        body_type_graph_reference(argument.z, source_capacity, tag, payload);
-        if (local < types)
-        {
-            uint row = call * 32u + local;
-            call_context_ref_tag[row] = tag;
-            call_context_ref_payload[row] = payload;
-        }
-        else
-        {
-            uint row = call * 32u + local - types;
-            call_context_constant_kind[row] = tag & ~0x80000000u;
-            call_context_constant_payload[row] = payload;
-            call_context_constant_identity_mode[row] = 0u;
-        }
-    }
-    masks = uint2(slots_mask(types), slots_mask(constants));
-    return true;
-}
+
 
 uint path_index(uint path, uint level) { return (path >> (level * 5u)) & 31u; }
 
@@ -558,9 +404,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (required.x == 0u) return;
     // An original job routes only the bodies it instantiates in place
     // (closure/04b_select_inplace); every other receiver is a parameter.
-    bool in_place = body_entry_count() == 0u;
     uint in_place_owner = enclosing_fn[token] - 1u;
-    if (in_place && inplace_instance(in_place_owner) == INPLACE_NONE) return;
+    if (inplace_instance(in_place_owner) == INPLACE_NONE) return;
     uint tag = method_call_receiver_ref_tag[token];
     uint payload = method_call_receiver_ref_payload[token];
     if (tag == TYPE_REF_GENERIC_PARAM || tag == 0u || payload == INVALID) return;
@@ -579,15 +424,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint2 written = uint2(0u, 0u);
     uint2 published = uint2(0u, 0u);
     bool rebound = false;
-    // Several nongeneric implementations in this unit can match the receiver
-    // when the trait's other arguments tell them apart (TryClone<i32,E> for
-    // i32 with two E). The instance's evidence names the one that proved the
-    // bound; it selects among them.
-    uint3 evidence = uint3(INVALID, INVALID, INVALID);
-    uint4 evidence_environment;
-    bool has_evidence = external_target(token, required, method_candidate[token], evidence, evidence_environment);
-    uint evidence_pick = INVALID;
-    uint evidence_picks = 0u;
     if (count != 0u && method_receiver_head<ScopedCheckedTypeGraph>(tag, payload,
         checked_type_capacity(), gParams.n_tokens, head))
     {
@@ -641,22 +477,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 if (rebound) { published = matched ? bound : uint2(0u, 0u); break; }
             }
             if (!matched) continue;
-            if (!generic && has_evidence && evidence_names(candidate, evidence.z))
-            {
-                if (evidence_pick != candidate) evidence_picks++;
-                evidence_pick = candidate;
-            }
             if (selected != candidate) matches++;
             selected = candidate;
             selected_row = row;
             selected_generic = generic;
         }
-    }
-    if (matches > 1u && evidence_picks == 1u)
-    {
-        matches = 1u;
-        selected = evidence_pick;
-        selected_generic = false;
     }
     // The accepted selection and its callee are one fact for call artifacts.
     // An imported trait's member was verified as the candidate above.
@@ -664,15 +489,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool accepted = candidate.state == METHOD_CANDIDATE_UNIQUE &&
         (required.x == REQUIRED_IMPORTED || (candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
          candidate.local_index == call_fn_index[token]));
-    // With no implementation in this unit, the one the instance's evidence
-    // selected elsewhere.
     uint3 target = uint3(INVALID, INVALID, INVALID);
-    uint4 environment = uint4(INVALID, 0u, 0u, 0u);
-    bool external = matches == 0u && accepted && external_target(token, required, candidate, target, environment);
-    uint2 external_masks = uint2(0u, 0u);
-    if (external && !external_environment(call, environment, external_masks)) external = false;
     bool bindings = any(published != 0u);
-    bool routed = accepted && (external || (matches == 1u && (!selected_generic || bindings)));
+    bool routed = accepted && matches == 1u && (!selected_generic || bindings);
     // The routed callee owns the call's context: a generic one its bindings,
     // a nongeneric one none (the trait's arguments bound the required
     // member's parameters, methods/07a). Rows written for other candidates
@@ -680,9 +499,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (call != INVALID && (any(written != 0u) || routed))
     {
         call_context_arg_mask[call] = routed
-            ? (external ? external_masks.x : selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
+            ? (selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
         uint constants = routed
-            ? (external ? external_masks.y : selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
+            ? (selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
         call_context_constant_mask[call] = constants;
         call_context_constant_valid_mask[call] = routed
             ? constants : call_context_constant_valid_mask[call] & ~written.y;
@@ -695,14 +514,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     // An in-place body whose call finds no member in this unit, or a generic
     // implementation's member (an instance of its own), stays a template:
-    // a replay routes the call with its instance's evidence.
-    if (in_place && (!routed || selected_generic))
+    // whole-program projection routes it using retained solver evidence.
+    if (!routed || selected_generic)
     {
         uint ignored;
         InterlockedOr(instance_inplace_owner[in_place_owner], INPLACE_FAILED, ignored);
         if (!routed) return;
     }
-    if (!external && (matches != 1u || (selected_generic && !bindings)))
+    if (matches != 1u || (selected_generic && !bindings))
     {
         record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_UNROUTED_BOUND_MEMBER);
         return;
@@ -712,16 +531,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     candidate.matched_ref_tag = tag;
     candidate.matched_ref_payload = payload;
     uint backend = INVALID;
-    if (external)
-    {
-        // The evidence's implementation member, in its own unit.
-        candidate.callable_kind = METHOD_CALLABLE_DEPENDENCY;
-        candidate.library_id = target.x;
-        candidate.unit_id = target.y;
-        candidate.local_index = target.z;
-        selected = INVALID;
-    }
-    else
     {
         // The routed member is local to this unit.
         candidate.callable_kind = METHOD_CALLABLE_LOCAL;
@@ -731,7 +540,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint start = fn_start_token_by_decl_token[selected];
         backend = start < gParams.n_tokens ? start : selected;
     }
-    uint requirements = external ? environment.y | (environment.z << 16u) : 0u;
+    uint requirements = 0u;
     publish_callee(token, candidate, selected, backend, target, requirements);
     if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend, target, requirements);
     if (aliases.y != token && aliases.y != aliases.x)

@@ -8,8 +8,6 @@ mod backends;
 pub use backends::GpuCompilerBackends;
 pub use retained_native::{RetainedNativeBuild, RetainedNativeReport};
 mod benchmarks;
-mod body_specialization;
-mod instance_copies;
 mod trait_solver;
 pub use trait_solver::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 mod bounded_path_codegen;
@@ -81,12 +79,9 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
-    pending_original_cache: std::sync::Mutex<unit_cache::PendingOriginalCache>,
-    unit_source_texts: std::sync::Mutex<unit_cache::UnitSourceTexts>,
     /// The elaborated texts of the current build's units, prepared together
     /// at its start (`native_codegen::PreparedUnitSources`).
     prepared_unit_sources: std::sync::Mutex<Vec<native_codegen::PreparedUnitSource>>,
-    library_instance_cache: std::sync::Mutex<unit_cache::LibraryInstanceCache>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     trait_solver_workspace: trait_solver::SolverWorkspacePool,
@@ -492,10 +487,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_lowering,
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
-                pending_original_cache: std::sync::Mutex::new(unit_cache::PendingOriginalCache::pending_default()),
-                unit_source_texts: std::sync::Mutex::new(unit_cache::UnitSourceTexts::default()),
                 prepared_unit_sources: std::sync::Mutex::new(Vec::new()),
-                library_instance_cache: std::sync::Mutex::new(unit_cache::LibraryInstanceCache::default()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
                 trait_solver_workspace: trait_solver::SolverWorkspacePool::new(
@@ -593,7 +585,6 @@ impl<'gpu> GpuCompiler<'gpu> {
     pub async fn release_resident_job_buffers(&self) -> GpuResidentJobBufferTrim {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.trait_solver_workspace.release();
-        self.clear_library_instance_cache();
         // The rewrites bind lexer buffers, so their storage goes first.
         crate::compiler::machine_elaboration::release_resident_buffers();
         self.lexer.release_current_resident_buffers();

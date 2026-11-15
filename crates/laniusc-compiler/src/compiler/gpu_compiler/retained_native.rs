@@ -80,14 +80,18 @@ pub struct RetainedNativeBuild {
 
 impl RetainedNativeBuild {
     pub fn new(discovery: DiscoveryCapacity) -> anyhow::Result<Self> {
-        let store = ProgramRetention::new_native(ProgramRetentionCapacity::default())?;
+        Self::new_with_device(crate::gpu::device::global(), discovery)
+    }
+
+    pub fn new_with_device(gpu: &crate::gpu::device::GpuDevice, discovery: DiscoveryCapacity) -> anyhow::Result<Self> {
+        let store = ProgramRetention::new_native(gpu, ProgramRetentionCapacity::default())?;
         let uses = store.capacity().0.arenas[8];
         Ok(Self {
             store,
-            projection: RetainedProjection::new(SubstitutionCapacity::default())?,
+            projection: RetainedProjection::new_with_device(gpu, SubstitutionCapacity::default())?,
             finalizer: None,
-            discovery: RetainedDiscovery::new(discovery, SubstitutionCapacity::default())?,
-            calls: Some(NativeCallTables::new(uses)),
+            discovery: RetainedDiscovery::new_with_device(gpu, discovery, SubstitutionCapacity::default())?,
+            calls: Some(NativeCallTables::new_with_device(&gpu.device, uses)),
             sources: Vec::new(),
             options: ProjectionOptions::default(),
             report: RetainedNativeReport::default(),
@@ -166,7 +170,7 @@ impl GpuCompiler<'_> {
     )->Result<ResidentLinkedOutput,CompileError> {
         let mut state = self.retained_native_build.lock().await;
         if state.is_none() {
-            *state = Some(RetainedNativeBuild::new(DiscoveryCapacity::default())
+            *state = Some(RetainedNativeBuild::new_with_device(self.gpu, DiscoveryCapacity::default())
                 .map_err(|e| retained_error("initialize", e))?);
         }
         let build = state.as_mut().unwrap();
@@ -187,7 +191,7 @@ impl GpuCompiler<'_> {
     )->Result<Vec<u8>,CompileError> {
         let mut state = self.retained_native_build.lock().await;
         if state.is_none() {
-            *state = Some(RetainedNativeBuild::new(DiscoveryCapacity::default())
+            *state = Some(RetainedNativeBuild::new_with_device(self.gpu, DiscoveryCapacity::default())
                 .map_err(|e| retained_error("initialize", e))?);
         }
         let build = state.as_mut().unwrap();
@@ -212,6 +216,45 @@ impl GpuCompiler<'_> {
         match self.link_retained(target,vec![pending.release_closed()], &[], build, false, None)? {
             ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
             ResidentLinkedOutput::File(_) => unreachable!("no output file requested"),
+        }
+    }
+
+    /// Preserve the explicit unit/dependency identities of frontend unit tests,
+    /// then execute them through the same GPU build/link boundary as the driver.
+    #[cfg(test)]
+    pub(super) async fn compile_test_units(
+        &self, units: &[&typecheck::CompiledSourcePackUnit],
+    ) -> Result<Vec<u8>, CompileError> {
+        let mut state = self.retained_native_build.lock().await;
+        if state.is_none() {
+            *state = Some(RetainedNativeBuild::new_with_device(self.gpu, DiscoveryCapacity::default())
+                .map_err(|e| retained_error("initialize",e))?);
+        }
+        let build = state.as_mut().unwrap();
+        build.native_link = None;
+        build.report = RetainedNativeReport::default();
+        build.sources.clear();
+        build.store.begin_build().map_err(|e|retained_error("begin build",e))?;
+        *self.retained_native_calls.lock().unwrap() = build.calls.take();
+        self.attach_program_retention(Some(build.store.clone()));
+        let originals = async {
+            let mut objects = Vec::new();
+            for unit in units {
+                let pending = self.compile_pending_original_source_pack_unit_for_target(
+                    SourcePackArtifactTarget::X86_64, unit.template_sources.clone(),
+                    unit.interface.library_id, unit.interface.unit_id,
+                    unit.template_dependency_pages.clone(), Some(&unit.template_source_paths), false,
+                ).await?;
+                build.sources.push(RetainedDiagnosticSources::of(pending.facts()));
+                objects.push(pending.release_closed());
+            }
+            Ok::<_,CompileError>(objects)
+        }.await;
+        self.attach_program_retention(None);
+        build.calls = self.retained_native_calls.lock().unwrap().take();
+        match self.link_retained(SourcePackArtifactTarget::X86_64, originals?, &[], build, false, None)? {
+            ResidentLinkedOutput::Bytes(bytes)=>Ok(bytes),
+            ResidentLinkedOutput::File(_)=>unreachable!(),
         }
     }
 
@@ -282,9 +325,7 @@ impl GpuCompiler<'_> {
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
         let mut executor = ResidentSourcePackExecutor::new(self, target)
-            .with_frontend_units(&build_plan)
-            .with_standard_library(source_pack.standard_library_id)
-            .retained(spill);
+            .spill_objects(spill);
         if let Some(options) = native_link {
             x86::native::validate_options(options)
                 .map_err(|e| retained_error("native link options", e))?;

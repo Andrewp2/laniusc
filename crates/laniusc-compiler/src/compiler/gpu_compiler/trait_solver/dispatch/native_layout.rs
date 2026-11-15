@@ -414,11 +414,8 @@ impl ClosedLayoutReadback<'_> {
                     "native nominal arity exceeds the admitted application limit"
                 );
                 let key = self.packet.packet.retained_atom_key(row[1])?;
-                let (identity, local_replay) = match key {
-                    [1, library, unit, declaration, 0, 0, 0, 0] => (
-                        CheckedNominalIdentity::Public([library, unit, declaration]),
-                        None,
-                    ),
+                let identity = match key {
+                    [1, library, unit, declaration, 0, 0, 0, 0] => CheckedNominalIdentity::Public([library, unit, declaration]),
                     [2, snapshot, declaration_token, 0, 0, 0, 0, 0] => {
                         let snapshot = self
                             .packet
@@ -429,17 +426,10 @@ impl ClosedLayoutReadback<'_> {
                             .ok_or_else(|| {
                                 anyhow!("native private type has no immutable source snapshot")
                             })?;
-                        ensure!(
-                            declaration_token < 0x2000_0000,
-                            "private native type anchor exceeds packet domain"
-                        );
-                        (
-                            CheckedNominalIdentity::SourceLocal {
-                                unit: snapshot.unit,
-                                declaration_token,
-                            },
-                            Some(0x2000_0000 | declaration_token),
-                        )
+                        CheckedNominalIdentity::SourceLocal {
+                            unit: snapshot.unit,
+                            declaration_token,
+                        }
                     }
                     _ => {
                         return Err(anyhow!(
@@ -476,7 +466,6 @@ impl ClosedLayoutReadback<'_> {
                     identity,
                     arguments,
                     words: width,
-                    local_replay,
                 }
             }
             2 => {

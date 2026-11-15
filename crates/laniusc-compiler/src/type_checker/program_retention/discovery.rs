@@ -119,7 +119,10 @@ pub struct RetainedDiscovery {
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
-        let gpu = crate::gpu::device::global();
+        Self::new_with_device(crate::gpu::device::global(), capacity, substitution)
+    }
+
+    pub(crate) fn new_with_device(gpu: &crate::gpu::device::GpuDevice, capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
         let passes = KERNELS
             .iter()
             .map(|key| make_pass_data_from_shader_key(&gpu.device, key, "main", key))
@@ -129,13 +132,13 @@ impl RetainedDiscovery {
             queue: gpu.queue.clone(),
             passes,
             capacity,
-            substitution: RetainedSubstitution::new(substitution)?,
+            substitution: RetainedSubstitution::new_with_device(gpu, substitution)?,
             scratch: BTreeMap::new(),
             configs: Vec::new(),
             config_cursor: 0,
             hash_mask: u32::MAX,
             admission: None,
-            method_routes: super::method_routes::MethodRoutes::new()?,
+            method_routes: super::method_routes::MethodRoutes::new_with_device(gpu)?,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -196,10 +199,10 @@ impl RetainedDiscovery {
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
             self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
-            let inputs = ProjectionInputs::new(self.capacity.instances, self.capacity.edges);
+            let inputs = ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges);
             let root_routes = self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?;
             let root_readiness = self.buffer("dg_root_readiness", 16)?;
-            let requests = SubstitutionRequests::new(self.capacity.requests);
+            let requests = SubstitutionRequests::new_with_device(&self.device, self.capacity.requests);
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([
                 ("dg_root_routes", &root_routes),

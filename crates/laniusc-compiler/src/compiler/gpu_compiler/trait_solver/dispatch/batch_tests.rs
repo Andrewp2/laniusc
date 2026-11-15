@@ -3,12 +3,10 @@
 //! These check packet selection and explicit replay contexts. They do not link
 //! or execute native bodies, or claim caller-evidence scheduling is integrated.
 
-use std::collections::BTreeSet;
 
 use super::{
     super::{
         catalog::CatalogInput,
-        packet::ReplayContextInput,
     },
     *,
 };
@@ -233,132 +231,6 @@ fn main()->i32 {{
     }
 }
 
-#[test]
-fn gpu_batch_forwards_hypotheses_and_keeps_two_replay_occurrences_separate() {
-    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-    let unit = compile_unit(&compiler, [85, 0], FORWARDING, vec![]);
-    let (inner_hir, relay_hir, concrete) = forwarding_calls(&unit);
-    let (mut gpu, mut packet) = batch_job(&compiler, &[&unit]);
-    let original = gpu
-        .check(&mut packet)
-        .expect("GPU checks abstract forwarding and concrete origins");
-    let snapshot = packet.packet.catalog.snapshot_by_unit[&[85, 0]];
-    let symbolic_row = original_call_row(&packet.packet, snapshot, inner_hir);
-    let symbolic_obligation = packet.packet.tables.row(15, symbolic_row).unwrap()[5];
-    assert!(
-        !original[symbolic_obligation as usize].is_concrete(),
-        "original call retains hypothesis evidence"
-    );
-    assert_eq!(original.iter().filter(|proof| proof.is_concrete()).count(), 2);
-    let mut replay_contexts = BTreeSet::new();
-    let mut unused_roots = Vec::new();
-    for call in &concrete {
-        let origin = original_call_row(&packet.packet, snapshot, call.call_hir);
-        let proof = call_evidence(&packet.packet, origin, &original);
-        let context = packet
-            .packet_mut()
-            .unwrap()
-            .replay_context(ReplayContextInput {
-                snapshot,
-                selected_owner_hir: relay_hir,
-                evidence: std::slice::from_ref(&proof),
-                origin_call: origin,
-            })
-            .unwrap();
-        assert!(replay_contexts.insert(context));
-        let body_env = packet.packet.tables.row(13, context).unwrap()[2];
-        let origin_env = packet.packet.tables.row(15, origin).unwrap()[4];
-        let (_, body_unused) = type_binding(&packet.packet, body_env, 1);
-        let (_, origin_unused) = type_binding(&packet.packet, origin_env, 1);
-        assert_eq!(
-            body_unused, origin_unused,
-            "unused U comes from this exact concrete origin"
-        );
-        unused_roots.push(body_unused);
-        // Existing local replay supplies real fresh checked call environments.
-        // The source owns its i32 marker impl, so this does not depend on the
-        // unfinished imported-body caller-evidence scheduling integration.
-        let fresh = pollster::block_on(compiler.compile_body_specialization(&unit, call))
-            .expect("produce real concrete checked call facts for the selected local body");
-        let calls = packet
-            .packet_mut()
-            .unwrap()
-            .append_replay_unit_calls(&fresh, relay_hir, context)
-            .unwrap();
-        assert_eq!(calls.count, 1, "only selected body adds a call occurrence");
-        let row = packet.packet.tables.row(15, calls.first).unwrap();
-        assert_eq!((row[0], row[1]), (context, inner_hir));
-        let replayed = gpu
-            .check(&mut packet)
-            .expect("GPU validates supplied evidence and concrete inner call");
-        assert_eq!(replayed.len(), 1);
-        assert!(
-            replayed[0].is_concrete(),
-            "replayed obligation has concrete evidence"
-        );
-    }
-    assert_eq!(unused_roots.len(), 2);
-    assert_ne!(
-        unused_roots[0], unused_roots[1],
-        "bool and array remain distinct unused arguments"
-    );
-    let contexts = (0..packet.packet.tables.count(15).unwrap())
-        .filter_map(|row| {
-            let call = packet.packet.tables.row(15, row).unwrap();
-            (call[1] == inner_hir).then_some(call[0])
-        })
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        contexts.len(),
-        3,
-        "one source call HIR has original and two concrete contexts"
-    );
-}
-
-#[test]
-fn gpu_batch_rejects_changed_unused_replay_binding_despite_matching_predicate() {
-    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-    let unit = compile_unit(&compiler, [86, 0], FORWARDING, vec![]);
-    let (_, relay_hir, concrete) = forwarding_calls(&unit);
-    let call = concrete
-        .iter()
-        .find(|call| call.arguments[1].ty == CheckedGenericType::Scalar(2))
-        .expect("origin with unused U=bool");
-    let (mut gpu, mut packet) = batch_job(&compiler, &[&unit]);
-    let original = gpu.check(&mut packet).expect("valid original proof");
-    let snapshot = packet.packet.catalog.snapshot_by_unit[&[86, 0]];
-    let origin = original_call_row(&packet.packet, snapshot, call.call_hir);
-    let proof = call_evidence(&packet.packet, origin, &original);
-    let context = packet
-        .packet_mut()
-        .unwrap()
-        .replay_context(ReplayContextInput {
-            snapshot,
-            selected_owner_hir: relay_hir,
-            evidence: &[proof],
-            origin_call: origin,
-        })
-        .unwrap();
-    let body_env = packet.packet.tables.row(13, context).unwrap()[2];
-    let (unused_binding, unused) = type_binding(&packet.packet, body_env, 1);
-    let (subject_binding, subject) = type_binding(&packet.packet, body_env, 0);
-    assert_eq!(unused, [1, 2]);
-    assert_eq!(subject, [1, 3]);
-    let wrong_root = packet.packet.tables.row(12, subject_binding).unwrap()[2];
-    // Narrow corruption of an unpublished row. Both roots are accepted closed
-    // scalars; T:Mark and its evidence are untouched. Only exact origin ownership
-    // of the unused U is violated, so predicate-only checking would miss it.
-    packet.packet.tables.row_mut(12, unused_binding).unwrap()[2] = wrong_root;
-    let error = gpu
-        .check(&mut packet)
-        .expect_err("changed unused binding must invalidate replay");
-    let failure = gpu_failure(&error);
-    assert_eq!(
-        &failure.receipt[..2],
-        &[2, 9],
-        "INVALID_INPUT / origin binding mismatch"
-    );
-}
 
 #[test]
 fn gpu_batch_empty_deltas_get_fresh_receipts_and_reject_unused_bad_roots() {
@@ -521,82 +393,6 @@ fn gpu_batch_rejects_changed_retained_witness_before_replay() {
     );
 }
 
-#[test]
-fn gpu_batch_rejects_authentic_evidence_for_a_different_replay_goal() {
-    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-    let unit = compile_unit(&compiler, [89, 0], TWO_GOAL_FORWARDING, vec![]);
-    let (_, relay_hir, _) = forwarding_calls(&unit);
-    let (mut gpu, mut packet) = batch_job(&compiler, &[&unit]);
-    // Reject the wrong goal, then accept a matching proof in a fresh arena on
-    // the same dispatcher. Both cases use real original GPU selections.
-    for wrong_goal in [true, false] {
-        let original = gpu
-            .check(&mut packet)
-            .expect("valid initial concrete selections");
-        assert_eq!(original.iter().filter(|proof| proof.is_concrete()).count(), 2);
-        let snapshot = packet.packet.catalog.snapshot_by_unit[&[89, 0]];
-        let (origin, proof, expected) =
-            scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 3);
-        let (other_origin, _, other) =
-            scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 2);
-        assert_ne!(origin, other_origin);
-        assert_ne!(expected, other);
-        let context = packet
-            .packet_mut()
-            .unwrap()
-            .replay_context(ReplayContextInput {
-                snapshot,
-                selected_owner_hir: relay_hir,
-                evidence: std::slice::from_ref(&proof),
-                origin_call: origin,
-            })
-            .expect("construct a valid replay with the matching i32 proof");
-        let row = packet.packet.tables.row(13, context).unwrap();
-        assert_eq!(row[4], 1);
-        let assumption = row[3];
-        assert!(assumption >= packet.completed_suffix_counts[14]);
-        assert_eq!(
-            packet.packet.tables.row(14, assumption).unwrap()[3],
-            expected
-        );
-        let retained_evidence = packet.packet.tables.words[17].clone();
-        if wrong_goal {
-            // Only change the supplied proof reference. The bool evidence is
-            // an authentic output of another admitted origin in this arena;
-            // it passes exact provenance, but cannot prove i32:Mark here.
-            packet.packet.tables.row_mut(14, assumption).unwrap()[3] = other;
-        }
-        assert_eq!(packet.packet.tables.words[17], retained_evidence);
-        for table in [15, 16] {
-            assert_eq!(
-                packet.completed_suffix_counts[table],
-                packet.packet.tables.count(table).unwrap()
-            );
-        }
-        if wrong_goal {
-            let error = gpu
-                .check(&mut packet)
-                .expect_err("authentic wrong-goal proof must invalidate replay");
-            let failure = gpu_failure(&error);
-            assert_eq!(&failure.receipt[..4], &[2, 13, context, other]);
-            let (failed_context, status) = failure
-                .context
-                .expect("new replay context failed goal comparison");
-            assert_eq!(failed_context, context);
-            assert_eq!(&status[..4], &[2, 13, context, other]);
-            assert!(failure.call.is_none() && failure.obligation.is_none());
-            packet = gpu.new_packet().unwrap();
-            append_originals(&mut packet);
-        } else {
-            assert!(
-                gpu.check(&mut packet)
-                    .expect("matching proof validates the replay context")
-                    .is_empty()
-            );
-            assert_eq!(packet.completed_serial, 2);
-        }
-    }
-}
 
 /// GpuPacket::retained_input_rewrite: the submission also uploads one retained
 /// input row as the host tables now hold it, as a serializer that rewrote old
@@ -615,58 +411,6 @@ pub(super) fn rewrite_retained_input(
     Ok(submission)
 }
 
-// Proof work selection and assumption-proof admission trust the assumption
-// index that kernel 15 built when an assumption row was new. That is sound
-// only while a retained row cannot change, so the lifecycle must refuse any
-// submission that rewrites one, before a kernel reads the stale index.
-#[test]
-fn gpu_batch_refuses_rewritten_retained_assumption_row() {
-    let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-    let unit = compile_unit(&compiler, [90, 0], TWO_GOAL_FORWARDING, vec![]);
-    let (_, relay_hir, _) = forwarding_calls(&unit);
-    let (mut gpu, mut packet) = batch_job(&compiler, &[&unit]);
-    let original = gpu
-        .check(&mut packet)
-        .expect("valid initial concrete selections");
-    let snapshot = packet.packet.catalog.snapshot_by_unit[&[90, 0]];
-    let (origin, proof, _) = scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 3);
-    let (_, _, other) = scalar_origin_evidence(&unit, &packet.packet, snapshot, &original, 2);
-    let context = packet
-        .packet_mut()
-        .unwrap()
-        .replay_context(ReplayContextInput {
-            snapshot,
-            selected_owner_hir: relay_hir,
-            evidence: std::slice::from_ref(&proof),
-            origin_call: origin,
-        })
-        .expect("construct a valid replay with the matching i32 proof");
-    let assumption = packet.packet.tables.row(13, context).unwrap()[3];
-    assert!(
-        gpu.check(&mut packet)
-            .expect("matching proof validates the replay context")
-            .is_empty()
-    );
-    // The replay's caller assumption is now retained and indexed.
-    assert!(assumption < packet.completed_suffix_counts[14]);
-    let previous_serial = packet.completed_serial;
-    // The authentic proof of another goal, as in the wrong-goal test above, but
-    // as a rewrite of the retained row.
-    packet.packet.tables.row_mut(14, assumption).unwrap()[3] = other;
-    *packet.retained_input_rewrite.lock().unwrap() = Some((14, assumption));
-    let error = gpu
-        .check(&mut packet)
-        .expect_err("a rewritten retained row must be refused");
-    assert!(
-        format!("{error:#}").contains("rewrites retained input rows"),
-        "unexpected refusal: {error:#}"
-    );
-    assert_eq!(packet.completed_serial, previous_serial);
-    assert!(
-        packet.packet_mut().is_err(),
-        "a refused submission cannot authorize another batch"
-    );
-}
 
 // Fault injection owns no semantic decision: it changes one already-emitted
 // pending row and then resumes the exact production admission/commit schedule.
@@ -1053,9 +797,8 @@ fn native_layout_semantic_shape(mut ty: CheckedGenericType) -> CheckedGenericTyp
     fn clear(ty: &mut CheckedGenericType) {
         use crate::type_checker::CheckedGenericApplicationArgument;
         match ty {
-            CheckedGenericType::Nominal { arguments, words, local_replay, .. } => {
+            CheckedGenericType::Nominal { arguments, words, .. } => {
                 *words = None;
-                *local_replay = None;
                 for argument in arguments {
                     if let CheckedGenericApplicationArgument::Type(child) = argument { clear(child); }
                 }
@@ -1282,13 +1025,10 @@ fn gpu_solver_workspace_alternates_catalogs_rejects_stale_capabilities_and_recov
     let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
     let rich = compile_unit(&compiler, [96, 0], FORWARDING, vec![]);
     let plain = compile_unit(&compiler, [97, 0], "fn main()->i32 { return 0; }", vec![]);
-    let (_, relay_hir, concrete) = forwarding_calls(&rich);
-    let call = &concrete[0];
     let (mut gpu, mut packet) = batch_job(&compiler, &[&rich]);
-    let accepted = gpu.check(&mut packet).expect("first rich program");
+    gpu.check(&mut packet).expect("first rich program");
     let snapshot = packet.packet.catalog.snapshot_by_unit[&[96, 0]];
-    let origin = original_call_row(&packet.packet, snapshot, call.call_hir);
-    let stale = call_evidence(&packet.packet, origin, &accepted);
+    let stale = packet.packet.admitted_unit_calls(snapshot).unwrap().remove(0);
     let storage_id = gpu.storage.buffer.allocation_id();
     let retained_catalog = gpu.catalog.clone();
     drop((gpu, packet));
@@ -1319,11 +1059,9 @@ fn gpu_solver_workspace_alternates_catalogs_rejects_stale_capabilities_and_recov
     assert_eq!(gpu.storage.buffer.allocation_id(), storage_id);
     gpu.check(&mut packet).expect("fresh success after failed admission");
     let snapshot = packet.packet.catalog.snapshot_by_unit[&[96, 0]];
-    let origin = original_call_row(&packet.packet, snapshot, call.call_hir);
-    let error = packet.packet_mut().unwrap().replay_context(ReplayContextInput {
-        snapshot, selected_owner_hir: relay_hir, evidence: &[stale], origin_call: origin,
-    }).expect_err("same physical storage cannot revive a prior program's capability");
-    assert!(error.to_string().contains("different catalog or row arena"), "{error:#}");
+    let error = packet.packet.concrete_origin(&stale)
+        .expect_err("same physical storage cannot revive a prior program's capability");
+    assert!(error.to_string().contains("another catalog or arena"), "{error:#}");
     drop((gpu, packet));
 
     // Bind-group caches are process-wide: a parallel test's trim, prune or
@@ -1395,7 +1133,7 @@ fn gpu_batch_soft_context_admits_a_bound_that_holds() {
     assert_eq!(result.len(), 1);
     assert!(result[0].is_concrete() && !result[0].is_refuted(), "the bound is proven");
     let snapshot = context_snapshot(&packet.packet, context);
-    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot, None).unwrap();
+    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot).unwrap();
     assert_eq!(admitted.len(), 1);
     assert!(admitted[0].is_concrete() && !admitted[0].is_refuted(), "the call is admitted concrete");
 }
@@ -1418,7 +1156,7 @@ fn gpu_batch_soft_refutation_demotes_only_its_context_and_never_a_hard_failure()
     assert_eq!(result.len(), 2, "the evidence suffix covers every obligation");
     assert!(result.iter().all(|evidence| evidence.is_refuted() && !evidence.is_concrete()));
     let snapshot = context_snapshot(&packet.packet, calls[0].1);
-    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot, None).unwrap();
+    let admitted = packet.packet_mut().unwrap().admitted_unit_calls(snapshot).unwrap();
     assert_eq!(admitted.len(), 2);
     assert!(admitted.iter().all(|call| call.is_refuted() && !call.is_concrete()),
         "a refuted call is never admitted concrete");

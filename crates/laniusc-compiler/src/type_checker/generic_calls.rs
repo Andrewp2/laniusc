@@ -12,7 +12,6 @@ use crate::constant_value::{CheckedConstantValue, constant_scalar_is_supported};
 
 use super::{
     OwnedGpuSemanticArtifact,
-    generic_body::BodyImplBinding,
     checked_contracts::{
         self,
         CheckedCallOwner,
@@ -50,6 +49,8 @@ use crate::{
         },
     },
 };
+
+const MAX_GENERIC_ARGUMENTS: usize = 32;
 
 const INVALID: u32 = u32::MAX;
 const CALL_WORDS: usize = std::mem::size_of::<super::GpuCheckedCallArtifact>() / 4;
@@ -179,10 +180,6 @@ pub(super) const RETAINED_INPUTS: &[&str] = &[
     "semantic_type_ref_payload_by_hir",
     "semantic_function_native_symbol_by_hir",
     "semantic_predicate_subject_parameter_token_by_hir",
-    "retained_owner_span_count",
-    "retained_owner_spans",
-    "retained_body_span_count",
-    "retained_body_spans",
     "solver_demand",
     "instance_closure_counts",
     "instance_closure_instances",
@@ -380,33 +377,7 @@ impl CheckedNominalIdentity {
         }
     }
 
-    /// Private packet encoding only; callers must not treat this as an export.
-    pub(super) fn packet_identity(self) -> Result<[u32; 3]> {
-        let identity = match self {
-            Self::Public(identity) => {
-                ensure!(
-                    identity[2] < 0x2000_0000,
-                    "invalid public nominal declaration"
-                );
-                identity
-            }
-            Self::SourceLocal {
-                unit,
-                declaration_token,
-            } => {
-                ensure!(
-                    declaration_token < 0x2000_0000,
-                    "invalid source-local nominal token"
-                );
-                [unit[0], unit[1], 0x2000_0000 | declaration_token]
-            }
-        };
-        ensure!(
-            identity.iter().all(|&word| word != INVALID),
-            "nominal identity has no retained unit"
-        );
-        Ok(identity)
-    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -471,9 +442,7 @@ pub(crate) enum CheckedGenericType {
         identity: CheckedNominalIdentity,
         arguments: Vec<CheckedGenericApplicationArgument>,
         words: Option<u32>,
-        /// Optional private packet anchor in this exact source snapshot. It
-        /// is separate from the public declaration's semantic identity.
-        local_replay: Option<u32>,
+
     },
     /// Invalid, unsupported, cyclic, or unavailable semantic identity.
     Unresolved {
@@ -738,13 +707,6 @@ pub(crate) struct CheckedInstanceClosure {
     /// The instance table of an original job (D2), read back only in
     /// validation mode (`LANIUS_CHECK=instance-table`).
     pub table: Option<CheckedInstanceTable>,
-    /// An instance-copy replay in that validation mode: each copy's rows
-    /// (its function row's subtree), in copy order.
-    pub copy_rows: Vec<Vec<CheckedRowFact>>,
-    /// The HIR kind of each of those rows.
-    pub copy_row_kinds: Vec<Vec<u32>>,
-    /// The retained generic calls of each copy, by row offset in its copy.
-    pub copy_calls: Vec<Vec<(usize, CheckedGenericCall)>>,
     /// The instances this job lowered itself, when any were selected.
     pub exec: Option<CheckedInstanceExec>,
 }
@@ -1030,38 +992,7 @@ impl CheckedGenericCall {
 /// environment here. The GPU route owns the exact per-entry environment.
 pub(crate) fn resolve_generic_requirements(
     calls: &mut Vec<CheckedGenericCall>,
-    impl_bindings: &[BodyImplBinding],
 ) -> Result<()> {
-    let mut binding_arities = BTreeMap::new();
-    for binding in impl_bindings {
-        let counts = (binding.required_types, binding.required_constants);
-        ensure!(counts.0 <= 32 && counts.1 <= 32,
-            "implementation target {:?} has invalid parameter counts {counts:?}", binding.target);
-        if let Some(previous) = binding_arities.insert(binding.target, counts) {
-            ensure!(previous == counts,
-                "one implementation target {:?} has conflicting declaration arities", binding.target);
-        }
-    }
-    for call in calls.iter_mut() {
-        let target = match call.target {
-            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index: symbol }
-            | CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol: symbol } =>
-                [library_id, unit_id, symbol],
-            CheckedGenericTarget::Local { .. } => continue,
-        };
-        let Some(&binding) = binding_arities.get(&target) else { continue };
-        // The type checker read the declared arity from the frozen interface
-        // (`CheckedCallArtifact::generic_requirements`).
-        if let (false, Some(types), Some(constants)) =
-            (call.trait_requirement, call.required_generic_parameters, call.required_constant_parameters)
-        {
-            ensure!(binding == (types, constants),
-                "implementation target {target:?} arity differs from its frozen interface");
-        }
-        call.required_generic_parameters = Some(binding.0);
-        call.required_constant_parameters = Some(binding.1);
-        call.trait_requirement = false;
-    }
     // A call through a bound on an imported trait targets the trait's
     // required member, which body specialization routes to the selected
     // implementation per instance; it has no instance of its own.
@@ -1075,26 +1006,6 @@ pub(crate) fn resolve_generic_requirements(
     Ok(())
 }
 
-/// Callable header counts include the exact impl and method domains, even for
-/// parameters absent from the signature. The owner may be structural and must
-/// never be interpreted as a nominal declaration index.
-#[cfg(test)]
-pub(crate) fn dependency_method_requirements(
-    interface: &GpuSemanticInterfaceArtifact,
-    method_symbol: u32,
-) -> Option<(u32, u32)> {
-    let identity = [interface.library_id, interface.unit_id, method_symbol];
-    let mut matches = interface.members.iter().enumerate().filter_map(|(index, member)| {
-        (member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32
-            && interface.implementation_method_target(index as u32).ok() == Some(identity))
-            .then_some(member)
-    });
-    let method = matches.next()?;
-    if matches.next().is_some() { return None; }
-    let types = method.method_type_parameter_count();
-    let constants = method.method_constant_parameter_count();
-    (types <= 32 && constants <= 32).then_some((types, constants))
-}
 
 /// Read plans of recent unit-facts runs, by their counts and kind. A run
 /// whose counts and kind match an earlier run's fetches that run's dependent
@@ -1134,8 +1045,6 @@ impl UnitFactsReadPlans {
 struct UnitFactsPlanKey {
     counts: Vec<u32>,
     interface_exported: bool,
-    template_contracts: bool,
-    first_copy_row: Option<u32>,
 }
 
 /// Ends a run's plan replay and keeps its reads as the plan for its key.
@@ -1479,9 +1388,9 @@ impl CheckedTypeReadback {
             );
             let count = values[1] as usize;
             ensure!(
-                count <= super::generic_body::MAX_BODY_TYPE_ARGUMENTS,
+                count <= MAX_GENERIC_ARGUMENTS,
                 "generic type exceeds {} checked arguments",
-                super::generic_body::MAX_BODY_TYPE_ARGUMENTS
+                MAX_GENERIC_ARGUMENTS
             );
             if count == 0 {
                 self.instance_arguments.insert(instance, Some(Vec::new()));
@@ -1628,7 +1537,7 @@ impl CheckedTypeReadback {
             for &instance in &instances {
                 let values = self.instance_headers[&instance];
                 match values[0] {
-                    1 if values[1] as usize <= super::generic_body::MAX_BODY_TYPE_ARGUMENTS
+                    1 if values[1] as usize <= MAX_GENERIC_ARGUMENTS
                         && (values[4..7].iter().all(|&value| value != INVALID)
                             || self.nominals.contains_key(&values[10])) =>
                     {
@@ -1854,10 +1763,7 @@ impl CheckedTypeReadback {
         owners: &[u32],
         metadata: &[u32],
         interface_exported: bool,
-        template_contracts: Option<&CheckedUnitContracts>,
-        owner_aliases: &BTreeMap<u32, u32>,
     ) -> Result<Self> {
-        let template_hir = |hir: u32| owner_aliases.get(&hir).copied().unwrap_or(hir);
         let owner_words = Self::owner_metadata_words(interface_exported);
         ensure!(
             parameters.len() % 4 == 0
@@ -1865,11 +1771,6 @@ impl CheckedTypeReadback {
             "retained generic parameter metadata is incomplete"
         );
         let (owner_rows, parameter_rows) = metadata.split_at(owners.len() * owner_words);
-        // The first template binder of each source HIR.
-        let mut template_binders = BTreeMap::new();
-        for owner in template_contracts.iter().flat_map(|contracts| &contracts.binders) {
-            template_binders.entry(owner.source_hir).or_insert(owner);
-        }
         let mut result = Self {
             owner_keys: owners.to_vec(),
             owner_parents: Vec::with_capacity(owners.len()),
@@ -1879,15 +1780,7 @@ impl CheckedTypeReadback {
             let core = &row[..4];
             let public = row[6];
             let scope_owner = if interface_exported { row[7] } else { INVALID };
-            // An instance copy's owner takes its template's immutable binder.
-            let template_owner = template_binders.get(&template_hir(hir)).copied();
-            ensure!(
-                interface_exported || template_owner.is_some(),
-                "replayed generic owner {hir} has no immutable template identity"
-            );
-            let binder = if let Some(owner) = template_owner {
-                owner.binder
-            } else if public != INVALID {
+            let binder = if public != INVALID {
                 CheckedBinderIdentity::Public {
                     owner: public,
                     scope: 0,
@@ -1912,16 +1805,9 @@ impl CheckedTypeReadback {
                 CheckedContractOwner {
                     source_hir: hir,
                     binder,
-                    callable: template_owner.and_then(|owner| owner.callable),
+                    callable: None,
                     parameters: Vec::new(),
-                    // Indices belong to the immutable definition table. A
-                    // replay publishes that original table, not its sparse
-                    // decoder cache; an export reads its links later.
-                    enclosing_owner: if interface_exported {
-                        None
-                    } else {
-                        template_owner.and_then(|owner| owner.enclosing_owner)
-                    },
+                    enclosing_owner: None,
                 },
             );
             result.owner_parents.push((hir, core[1]));
@@ -1956,7 +1842,7 @@ impl CheckedTypeReadback {
                 Some(scalar)
             } else { None };
             let binder = result.owners[&row[0]].binder;
-            let mut parameter = CheckedGenericParameter {
+            let parameter = CheckedGenericParameter {
                 identity: CheckedParameterIdentity {
                     unit: [INVALID, INVALID],
                     binder,
@@ -1966,24 +1852,6 @@ impl CheckedTypeReadback {
                 binding_slot,
                 constant_scalar,
             };
-            if !interface_exported {
-                let template = template_binders
-                    .get(&template_hir(row[0]))
-                    .and_then(|owner| {
-                        owner.parameters.iter().find(|parameter| {
-                            parameter.identity.domain == domain
-                                && parameter.identity.source_ordinal == ordinal as u32 - range[0]
-                        })
-                    })
-                    .ok_or_else(|| {
-                        anyhow!("replayed parameter has no exact immutable template binder")
-                    })?;
-                ensure!(
-                    template.binding_slot == binding_slot && template.constant_scalar == constant_scalar,
-                    "replayed parameter changed its checked slot or declared scalar"
-                );
-                parameter = *template;
-            }
             ensure!(
                 result.parameters.insert(row[1], parameter).is_none(),
                 "generic parameter declaration token is not unique"
@@ -2078,13 +1946,10 @@ pub(super) fn read_unit_facts(
     read_plans: &std::sync::Mutex<UnitFactsReadPlans>,
     semantic: &OwnedGpuSemanticArtifact,
     interface_exported: bool,
-    template_contracts: Option<&CheckedUnitContracts>,
-    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
     elide_closed: bool,
 ) -> Result<CheckedUnitFacts> {
     // Ordinary object-only jobs do not publish a definition contract snapshot.
-    // Body replay is explicit and supplies the immutable template instead.
-    if !interface_exported && template_contracts.is_none() {
+    if !interface_exported {
         return Ok(CheckedUnitFacts::default());
     }
     let Some(inputs) = semantic.generic_call_inputs.as_ref() else {
@@ -2126,9 +1991,7 @@ pub(super) fn read_unit_facts(
     }
     // The closure ran in this original job only; its counters ride along.
     let closure_active = inputs.instance_closure_active
-        && interface_exported
-        && template_contracts.is_none()
-        && instance_copies.is_none();
+        && interface_exported;
     let closure_counts = closure_active
         .then(|| batch.push(inputs.buffer("instance_closure_counts"), 0,
             super::instance_closure_passes::INSTANCE_CLOSURE_COUNT_WORDS as usize,
@@ -2148,7 +2011,7 @@ pub(super) fn read_unit_facts(
         })
         .transpose()?;
     // Only an original job counts what it leaves for the trait solver.
-    let original_job = interface_exported && template_contracts.is_none() && instance_copies.is_none();
+    let original_job = interface_exported;
     let solver_demand = original_job
         .then(|| batch.push(inputs.buffer("solver_demand"), 0,
             super::instance_closure_passes::SOLVER_DEMAND_WORDS, "solver demand"))
@@ -2173,8 +2036,6 @@ pub(super) fn read_unit_facts(
     let plan_key = UnitFactsPlanKey {
         counts: counts.clone(),
         interface_exported,
-        template_contracts: template_contracts.is_some(),
-        first_copy_row: instance_copies.and_then(|batch| batch.copy_first_row()),
     };
     let plan = read_plans
         .lock()
@@ -2312,12 +2173,6 @@ pub(super) fn read_unit_facts(
     if let Some(pair) = call_spans.windows(2).find(|pair| pair[0].0 == pair[1].0) {
         return Err(anyhow!("retained call {} has duplicate source records", pair[0].0));
     }
-    // An instance-copy replay publishes only its copies' calls (rows at or
-    // past the first copy row); the template's own calls were admitted with
-    // the template, so their facts are not read again.
-    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row()) {
-        call_spans.retain(|&(call, _)| call >= first);
-    }
     let call_ids = call_spans.iter().map(|&(call, _)| call).collect::<Vec<_>>();
     let calls_with_claims = sorted_unique(
         (0..claim_count)
@@ -2357,12 +2212,6 @@ pub(super) fn read_unit_facts(
         callable_hirs.last() != Some(&INVALID),
         "retained callable declaration has no HIR"
     );
-    // The owners of an instance-copy replay's copies take their template's
-    // immutable identity.
-    let owner_aliases = instance_copies
-        .map(|batch| batch.instance_owner_aliases(&callable_hirs, &method_impls))
-        .transpose()?
-        .unwrap_or_default();
     let parameter_owners = sorted_unique(
         parameters
             .chunks_exact(4)
@@ -2504,8 +2353,6 @@ pub(super) fn read_unit_facts(
         &parameter_owners,
         &metadata[parameter_metadata_start..nominal_metadata_start],
         interface_exported,
-        template_contracts,
-        &owner_aliases,
     )?;
     types.argument_row_count = Some(counts[12]);
     types.read_nominal_metadata(
@@ -2630,8 +2477,7 @@ pub(super) fn read_unit_facts(
     timer.stamp("contracts");
     if call_ids.is_empty() {
         let mut instance_closure = CheckedInstanceClosure::default();
-        attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
-            instance_copies, &callable_hirs, &[], &[], &mut types);
+
         return Ok(CheckedUnitFacts {
             generic_calls: Vec::new(),
             contracts,
@@ -3241,8 +3087,7 @@ pub(super) fn read_unit_facts(
             }),
         None => CheckedInstanceClosure::default(),
     };
-    attach_copy_rows(&mut instance_closure, &readback, device, queue, inputs, semantic,
-        instance_copies, &callable_hirs, &call_ids, &calls, &mut types);
+
     // Unlike the closure, the execution rows are not optional: the object
     // calls them, so a failed read fails the unit.
     if let Some(start) = exec_counts {
@@ -3533,102 +3378,10 @@ fn read_instance_exec(
 /// Table entries one job ranks at most (IT_RANK_LIMIT).
 const INSTANCE_TABLE_RANK_LIMIT: usize = 16384;
 
-/// The instance table's validation mode: a copy replay's own rows. The
-/// k-th callable at or past the first copy row is copy k (as for the owner
-/// aliases).
-#[allow(clippy::too_many_arguments)]
-fn attach_copy_rows(
-    closure: &mut CheckedInstanceClosure,
-    readback: &PagedReadback,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    inputs: &RetainedGenericCallInputs,
-    semantic: &OwnedGpuSemanticArtifact,
-    instance_copies: Option<&super::CheckedBodySpecializationBatch>,
-    callable_hirs: &[u32],
-    call_ids: &[u32],
-    calls: &[Option<CheckedGenericCall>],
-    types: &mut CheckedTypeReadback,
-) {
-    if let Some(first) = instance_copies.and_then(|batch| batch.copy_first_row())
-        .filter(|_| super::instance_closure_passes::instance_table_checked())
-    {
-        let functions = &callable_hirs[callable_hirs.partition_point(|&row| row < first)..];
-        match read_copy_rows(readback, device, queue, inputs, semantic, functions, types) {
-            Ok((rows, kinds)) => {
-                closure.copy_calls = functions.iter().zip(&rows).map(|(&function, rows)| {
-                    let (start, end) = (function, function + rows.len() as u32);
-                    let first = call_ids.partition_point(|&call| call < start);
-                    call_ids[first..].iter().zip(&calls[first..])
-                        .take_while(|&(&call, _)| call < end)
-                        .filter_map(|(&call, retained)| retained.as_ref()
-                            .map(|retained| ((call - start) as usize, retained.clone())))
-                        .collect()
-                }).collect();
-                closure.copy_rows = rows;
-                closure.copy_row_kinds = kinds;
-            }
-            Err(error) => closure.error = Some(format!("copy rows: {error:#}")),
-        }
-        if crate::options::get().trace.instance_table {
-            eprintln!("[instance-table] copy rows: first copy row {first}, {} copies of {} callables, {} read",
-                functions.len(), callable_hirs.len(), closure.copy_rows.len());
-        }
-    } else if instance_copies.is_some() && super::instance_closure_passes::instance_table_checked()
-        && crate::options::get().trace.instance_table
-    {
-        eprintln!("[instance-table] copy rows: the replay batch has no copy rows");
-    }
-}
 
 /// IT_ROW_FAILED (instance_table.slang).
 const INSTANCE_ROW_FAILED: u32 = u32::MAX;
 
-/// The facts of every row of each copy of an instance-copy replay (the
-/// instance table's validation mode): `functions` are the copies' function
-/// rows in copy order, each standing for its subtree.
-#[allow(clippy::too_many_arguments)]
-fn read_copy_rows(
-    readback: &PagedReadback,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    inputs: &RetainedGenericCallInputs,
-    semantic: &super::OwnedGpuSemanticArtifact,
-    functions: &[u32],
-    types: &mut CheckedTypeReadback,
-) -> Result<(Vec<Vec<CheckedRowFact>>, Vec<Vec<u32>>)> {
-    if functions.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-    let mut batch = WordBatch::default();
-    let links = batch.rows(inputs.buffer("compact_hir_links"), functions, 4, 4, "copy function links")?;
-    let words = batch.read(readback, device, queue, "copy function links")?;
-    let mut batch = WordBatch::default();
-    let mut spans = Vec::with_capacity(functions.len());
-    for (index, &function) in functions.iter().enumerate() {
-        let end = words[links + index * 4 + 2];
-        ensure!(end > function, "copy function {function} has no subtree");
-        let count = (end - function) as usize;
-        let tags = batch.push(&semantic.expr_ref_tag_by_hir, function as u64, count, "copy row tags")?;
-        let payloads = batch.push(&semantic.expr_ref_payload_by_hir, function as u64, count, "copy row payloads")?;
-        let core = batch.push(inputs.buffer("compact_hir_core"), function as u64 * 4, count * 4, "copy row kinds")?;
-        spans.push((tags, payloads, core, count));
-    }
-    let words = batch.read(readback, device, queue, "copy rows")?;
-    let words = &words;
-    let roots = spans.iter()
-        .flat_map(|&(tags, payloads, _, count)| (0..count).map(move |row| (words[tags + row], words[payloads + row])))
-        .filter(|&(tag, _)| matches!(tag, 1..=3))
-        .collect::<Vec<_>>();
-    types.prefetch_types(readback, device, queue, inputs, &roots)?;
-    let kinds = spans.iter()
-        .map(|&(_, _, core, count)| (0..count).map(|row| words[core + row * 4]).collect())
-        .collect();
-    let rows = spans.into_iter().map(|(tags, payloads, _, count)| (0..count)
-        .map(|row| read_row_fact(readback, device, queue, inputs, words[tags + row], words[payloads + row], types))
-        .collect()).collect();
-    Ok((rows, kinds))
-}
 
 /// The fact of one row from its (tag, payload) expression reference.
 fn read_row_fact(
@@ -3744,9 +3497,7 @@ impl super::GpuTypeChecker {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         interface_exported: bool,
-        template_contracts: Option<&CheckedUnitContracts>,
-        instance_copies: Option<&super::CheckedBodySpecializationBatch>,
-        elide_closed: bool,
+            elide_closed: bool,
     ) -> Result<CheckedUnitFacts> {
         let semantic = self
             .semantic_artifact()
@@ -3758,9 +3509,7 @@ impl super::GpuTypeChecker {
             &self.unit_facts_read_plans,
             &semantic,
             interface_exported,
-            template_contracts,
-            instance_copies,
-            elide_closed,
+                    elide_closed,
         )
     }
 }
@@ -3914,7 +3663,6 @@ fn read_uncached_type_at_depth(
                 identity: read_nominal_identity(matching[0], types)?,
                 arguments: Vec::new(),
                 words: (width != INVALID).then_some(width),
-                local_replay: Some(0x4000_0000 | payload),
             });
         }
     }
@@ -3970,19 +3718,12 @@ fn read_uncached_type_at_depth(
                 instance_kind: values[0],
             });
         };
-        let local_replay = match identity {
-            CheckedNominalIdentity::SourceLocal {
-                declaration_token, ..
-            } => Some(0x2000_0000 | declaration_token),
-            _ => (values[10] != INVALID).then_some(0x2000_0000 | values[10]),
-        };
         let native_words = (values[7] != INVALID).then_some(values[7]);
         if values[1] == 0 {
             return Ok(CheckedGenericType::Nominal {
                 identity,
                 arguments: Vec::new(),
                 words: native_words,
-                local_replay,
             });
         }
         types.read_argument_rows(readback, device, queue, inputs, &[payload], false)?;
@@ -4017,7 +3758,6 @@ fn read_uncached_type_at_depth(
             identity,
             arguments,
             words: native_words,
-            local_replay,
         };
         if ty.has_semantic_identity() {
             types.insert((tag, payload), ty.clone());
@@ -4057,9 +3797,7 @@ mod tests {
         let key = |count: u32| UnitFactsPlanKey {
             counts: vec![count, 7],
             interface_exported: true,
-            template_contracts: false,
-            first_copy_row: None,
-        };
+            };
         let mut plans = UnitFactsReadPlans::default();
         for count in 0..10 {
             plans.insert(key(count), ReadPlan::default());
@@ -4067,9 +3805,6 @@ mod tests {
         plans.insert(key(9), ReadPlan::default());
         assert_eq!(plans.plans.len(), UnitFactsReadPlans::CAPACITY);
         assert!(plans.take(&key(0)).is_none() && plans.take(&key(1)).is_none());
-        let mut replay = key(9);
-        replay.first_copy_row = Some(3);
-        assert!(plans.take(&replay).is_none());
         // A run takes its plan; the run's own reads replace it.
         assert!(plans.take(&key(9)).is_some());
         assert!(plans.take(&key(9)).is_none());
@@ -4110,80 +3845,6 @@ mod tests {
         }
     }
 
-    fn routed_binding(instance: u32, ty: CheckedGenericType) -> BodyImplBinding {
-        BodyImplBinding {
-            instance,
-            slot: 0,
-            required_symbol: 0x8000_0010,
-            trait_unit: [1, 2],
-            target: [5, 7, 0x8000_0021],
-            receiver_mode: 2,
-            required_types: 1,
-            required_constants: 1,
-            environment: super::super::generic_body::BodyImplEnvironment {
-                arguments: vec![CheckedGenericArgument { slot: 0, ty }],
-                constants: vec![CheckedGenericConstant::literal(0, instance + 9)],
-            },
-        }
-    }
-
-    #[test]
-    fn routed_implementation_arities_preserve_each_gpu_call_environment() {
-        let mut first = call(CheckedGenericType::Scalar(3),
-            CheckedGenericConstantValue::count_literal(7));
-        first.target = CheckedGenericTarget::DependencyMethod {
-            library_id: 5, unit_id: 7, method_symbol: 0x8000_0021,
-        };
-        let mut second = first.clone();
-        second.call_hir = 8;
-        second.arguments[0].ty = CheckedGenericType::Reference(Box::new(CheckedGenericType::Scalar(3)));
-        second.constants[0] = CheckedGenericConstant::literal(0, 19);
-        let expected = vec![first, second];
-        let mut calls = expected.clone();
-        // Two entries select the same declaration under different environments.
-        // Arity retention cannot copy either binding's environment onto a call.
-        let bindings = [routed_binding(0, CheckedGenericType::Scalar(8)),
-            routed_binding(1, CheckedGenericType::Slice(Box::new(CheckedGenericType::Scalar(8))))];
-        resolve_generic_requirements(&mut calls, &bindings).unwrap();
-        assert_eq!(calls, expected);
-    }
-
-    #[test]
-    fn routed_implementation_arity_conflicts_fail_before_mutating_calls() {
-        let mut bindings = [routed_binding(0, CheckedGenericType::Scalar(3)),
-            routed_binding(1, CheckedGenericType::Scalar(3))];
-        bindings[1].required_constants = 0;
-        let expected = vec![call(CheckedGenericType::Scalar(3),
-            CheckedGenericConstantValue::count_literal(7))];
-        let mut calls = expected.clone();
-        assert!(resolve_generic_requirements(&mut calls, &bindings).unwrap_err()
-            .to_string().contains("conflicting declaration arities"));
-        assert_eq!(calls, expected);
-        bindings[1].required_constants = 33;
-        assert!(resolve_generic_requirements(&mut calls, &bindings).unwrap_err()
-            .to_string().contains("invalid parameter counts"));
-        assert_eq!(calls, expected);
-    }
-
-    #[test]
-    fn routed_nongeneric_targets_remain_ordinary_calls() {
-        let mut binding = routed_binding(0, CheckedGenericType::Scalar(3));
-        binding.required_types = 0;
-        binding.required_constants = 0;
-        binding.environment = Default::default();
-        let mut ordinary = call(CheckedGenericType::Scalar(3),
-            CheckedGenericConstantValue::count_literal(7));
-        ordinary.target = CheckedGenericTarget::DependencyMethod {
-            library_id: 5, unit_id: 7, method_symbol: 0x8000_0021,
-        };
-        ordinary.arguments.clear();
-        ordinary.constants.clear();
-        ordinary.required_generic_parameters = Some(0);
-        ordinary.required_constant_parameters = Some(0);
-        let mut calls = vec![ordinary];
-        resolve_generic_requirements(&mut calls, &[binding]).unwrap();
-        assert!(calls.is_empty());
-    }
 
     #[test]
     fn symbolic_graph_scoping_preserves_every_parameter_domain_and_owner() {
@@ -4210,7 +3871,6 @@ mod tests {
                 CheckedGenericApplicationArgument::Type(CheckedGenericType::Parameter(foreign)),
             ],
             words: None,
-            local_replay: Some(0x2000_0003),
         };
         let mut calls = vec![call(graph, CheckedGenericConstantValue::Parameter(length))];
         scope_generic_type_identities(&mut calls, 7, 4);
@@ -4498,7 +4158,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_parameter_metadata_requires_the_same_declared_scalar_on_replay() {
+    fn retained_parameter_metadata_preserves_declared_scalars() {
         use crate::primitive_types::*;
         let parameters = [7, 10, 1, INVALID, 7, 11, 2, 15];
         let mut metadata = vec![
@@ -4506,93 +4166,14 @@ mod tests {
             vec![0], vec![INVALID], vec![INVALID], vec![0], vec![2], vec![10],
             vec![INVALID], vec![0], vec![INVALID], vec![SCALAR_U64], vec![0], vec![INVALID],
         ];
-        let none = BTreeMap::new();
         let original = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), true, None, &none).unwrap();
+            &parameters, &[7], &metadata.concat(), true).unwrap();
         assert_eq!(original.parameters[&10].constant_scalar, None);
         assert_eq!(original.parameters[&11].constant_scalar, Some(SCALAR_U64));
-        let contracts = CheckedUnitContracts {
-            binders: original.owners.values().cloned().collect(), ..CheckedUnitContracts::default()
-        };
-        metadata.remove(3); // Replay inherits the immutable template's public scope.
+        metadata[13][0] = SCALAR_UNIT;
         assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_ok());
-        // An instance copy at row 20 of template owner 7 takes 7's binder.
-        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
-        assert!(CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[20], &metadata.concat(), false, Some(&contracts), &none).is_err(),
-            "a copied owner without its template has no immutable identity");
-        let aliases = BTreeMap::from([(20, 7)]);
-        let copy = CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[20], &metadata.concat(), false, Some(&contracts), &aliases).unwrap();
-        assert_eq!(copy.owners[&20].binder, original.owners[&7].binder);
-        assert_eq!(copy.parameters[&31], original.parameters[&11]);
-        metadata[12][0] = SCALAR_I64;
-        assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err(),
-            "same binder and slot cannot silently change scalar");
-        metadata[12][0] = SCALAR_UNIT;
-        assert!(CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[7], &metadata.concat(), false, Some(&contracts), &none).is_err());
+            &parameters, &[7], &metadata.concat(), true).is_err());
     }
 
-    /// An instance copy of a method inside an impl: both copied owners take
-    /// their template's binder, and the copied method its template's
-    /// enclosing owner (an index into the template's owner table), through
-    /// the aliases alone.
-    #[test]
-    fn instance_copy_owners_take_their_templates_enclosing_owner() {
-        use crate::primitive_types::*;
-        // Owner rows: core (kind, parent, start token, end token), parameter
-        // range, public identity, and on export the generic scope owner.
-        let owner = |kind: u32, parent: u32, token: u32, range: [u32; 2], exported: bool| {
-            let mut row = vec![kind, parent, token, token + 40, range[0], range[1], INVALID];
-            if exported {
-                row.push(INVALID);
-            }
-            row
-        };
-        let parameter_rows = [
-            [0, INVALID, INVALID, 0, 2, 10],
-            [INVALID, 0, INVALID, SCALAR_U64, 0, INVALID],
-        ]
-        .concat();
-        // Template: impl 5 (no parameters) encloses method 7 (parameters 10, 11).
-        let parameters = [7, 10, 1, INVALID, 7, 11, 2, 15];
-        let exported = [
-            owner(HIR_NODE_IMPL, INVALID, 30, [0, 0], true),
-            owner(HIR_NODE_FN, 5, 41, [0, 2], true),
-            parameter_rows.clone(),
-        ]
-        .concat();
-        let none = BTreeMap::new();
-        let template = CheckedTypeReadback::from_parameter_metadata(
-            &parameters, &[5, 7], &exported, true, None, &none).unwrap();
-        let impl_index = template.owner_index(5).unwrap();
-        let mut binders = vec![template.owners[&5].clone(), template.owners[&7].clone()];
-        binders[1].enclosing_owner = Some(impl_index);
-        let contracts = CheckedUnitContracts { binders, ..CheckedUnitContracts::default() };
-
-        // Replay: impl copy 18 encloses method copy 20 (parameters 30, 31).
-        let copied = [20, 30, 1, INVALID, 20, 31, 2, 35];
-        let replay = [
-            owner(HIR_NODE_IMPL, INVALID, 130, [0, 0], false),
-            owner(HIR_NODE_FN, 18, 141, [0, 2], false),
-            parameter_rows,
-        ]
-        .concat();
-        let aliases = BTreeMap::from([(18, 5), (20, 7)]);
-        let copy = CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[18, 20], &replay, false, Some(&contracts), &aliases).unwrap();
-        assert_eq!(copy.owners[&18].binder, template.owners[&5].binder);
-        assert_eq!(copy.owners[&20].binder, template.owners[&7].binder);
-        assert_eq!(copy.owners[&20].enclosing_owner, Some(impl_index));
-        assert_eq!(copy.owners[&18].enclosing_owner, None);
-        assert_eq!(copy.parameters[&31], template.parameters[&11]);
-        // Without the impl's alias, the copied impl has no immutable identity.
-        let method_only = BTreeMap::from([(20, 7)]);
-        assert!(CheckedTypeReadback::from_parameter_metadata(
-            &copied, &[18, 20], &replay, false, Some(&contracts), &method_only).is_err());
-    }
 
 }

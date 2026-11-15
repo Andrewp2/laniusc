@@ -50,7 +50,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             self.resident_source_unit_limits(),
         )?;
         let sources = prepare_source_pack_for_gpu(sources, source_paths)?;
-        self.compile_x86_source_pack_with_specialization(&sources, source_paths)
+        self.compile_x86_source_pack_program(&sources, source_paths)
             .await
     }
 
@@ -80,11 +80,11 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: PathBuf,
     ) -> Result<Vec<u8>, CompileError> {
-        self.compile_x86_source_pack_with_specialization(&[src], Some(&[Some(diagnostic_path)]))
+        self.compile_x86_source_pack_program(&[src], Some(&[Some(diagnostic_path)]))
             .await
     }
 
-    pub(super) async fn compile_x86_source_pack_with_specialization<S: AsRef<str>>(
+    pub(super) async fn compile_x86_source_pack_program<S: AsRef<str>>(
         &self,
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
@@ -197,7 +197,7 @@ mod tests {
 
     /// An array extent named by a `usize` constant parameter: the checker
     /// retains the checked conversion to the u32 count (SCALAR_U32), whose
-    /// fit obligation concrete replay discharges.
+    /// fit obligation GPU instance substitution discharges.
     fn u32_count(
         parameter: crate::type_checker::CheckedGenericParameter,
     ) -> crate::type_checker::CheckedGenericConstantValue {
@@ -406,35 +406,6 @@ fn main()->i32 { let literal:Leaf = Leaf { code:0 }; return 0; }
             "all owned recipes survive source workspace reuse");
     }
 
-    #[test]
-    fn checked_nominal_recipes_replay_reuses_the_original_symbolic_snapshot() {
-        use crate::type_checker::CheckedGenericType as Type;
-        let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let source = r#"
-module checkpoint::recipe_replay;
-pub struct Envelope<T, const N:usize> { values:[T;N] }
-enum Hidden<T> { Absent, Present(T) }
-pub fn keep<T, const N:usize>(value:[T;N])->[T;N] { return value; }
-fn main()->i32 { let values = keep<i32,2>([19,23]); return 0; }
-"#;
-        let template = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(), 44, 18, Vec::new().into(),
-            SourcePackArtifactTarget::X86_64,
-        )).expect("original symbolic recipe snapshot");
-        assert_eq!(template.generic_calls.len(), 1);
-        assert_eq!(template.checked_contracts.nominal_recipes.len(), 2);
-        let retained = template.checked_contracts.as_ref().clone();
-        assert!(retained.nominal_recipes.iter().flat_map(|recipe| &recipe.groups)
-            .flatten().any(|ty| matches!(ty, Type::Parameter(_))),
-            "the original enum payload is declaration-owned and symbolic");
-        let replay = pollster::block_on(compiler.compile_body_specialization(
-            &template, &template.generic_calls[0],
-        )).expect("concrete body replay retains original nominal recipes");
-        assert!(std::sync::Arc::ptr_eq(&replay.checked_contracts, &template.checked_contracts),
-            "replay must reuse the original recipe and binder snapshot");
-        assert_eq!(replay.checked_contracts.as_ref(), &retained);
-        assert_eq!(replay.interface, template.interface);
-    }
 
     #[test]
     fn checked_unit_contracts_keep_impl_subjects_and_shadowed_method_binders() {
@@ -1152,16 +1123,8 @@ fn main()->i32 {
             unit.checked_call_owners.as_ref(),
             retained_call_owners.as_slice()
         );
-        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
-            .expect("specialize local calls after accepted snapshots outlive scratch");
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare local contract control");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link local contract control");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&unit]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "checked-unit-contracts-after-reuse", 0);
         assert_eq!(unit.checked_contracts.as_ref(), &retained);
         assert_eq!(
@@ -1450,36 +1413,17 @@ impl Hidden for i32 { fn private_trait(self)->i32 { return self; } }
         }
     }
 
-    /// Compiles one unit, specializes it alone and runs it. Returns how many
-    /// objects specialization published: 1 when every generic body was
-    /// lowered in the unit's own job, more when replays compiled some.
+    /// Exercise the default executable entry point and its GPU instance batches.
     fn specialized_unit_exit(compiler: &GpuCompiler<'_>, source: &str, label: &str, expected: i32) -> usize {
-        let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![source.to_owned()].into(),
-            0,
-            0,
-            Vec::new().into(),
-            SourcePackArtifactTarget::X86_64,
-        ))
-        .unwrap_or_else(|error| panic!("{label}: compile: {error:?}"));
-        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
-            .unwrap_or_else(|error| panic!("{label}: specialize: {error:?}"));
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare specialized program");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .unwrap_or_else(|error| panic!("{label}: link: {error:?}"));
+        let linked = pollster::block_on(compiler.compile_source_to_x86_64(source))
+            .unwrap_or_else(|error|panic!("{label}: GPU monomorphization: {error:?}"));
         assert_x86_main_exit(&linked, label, expected);
-        objects.len()
+
+        let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
+        assert_eq!(report.units,1);
+        report.instance_objects
     }
 
-    /// Closed instances of the unit's own generic functions are lowered in
-    /// the unit's job (closure/instance_exec.slang): each instance has its
-    /// own function, locals and storage, calls between instances route to
-    /// one another, and no replay compiles any of them.
     #[test]
     fn closed_local_instances_lower_in_their_unit_without_replay() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
@@ -1543,25 +1487,23 @@ impl Hidden for i32 { fn private_trait(self)->i32 { return self; } }
         ];
         for (label, source, expected) in cases {
             assert_eq!(specialized_unit_exit(&compiler, source, label, expected), 1,
-                "{label}: a replay compiled a body the unit lowered");
+                "{label}: instances fit one GPU lowering batch");
         }
     }
 
-    /// An instance the execution rows cannot close replays, by the
-    /// selection rules of closure/08_exec_select.slang: here, constant
-    /// parameters.
+    /// Constant parameters use the same GPU substitution and projection path.
     #[test]
-    fn instances_with_constant_parameters_replay() {
+    fn instances_with_constant_parameters_monomorphize_on_gpu() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
         let objects = specialized_unit_exit(
             &compiler,
             "fn keep<const N: usize>(v: [i32; N]) -> [i32; N] { return v; }
              fn twice<T>(x: T) -> T { return x; }
              fn main() -> i32 { let a: [i32; 2] = keep([40, 2]); let b: [i32; 3] = keep([1, 2, 3]); return a[0] + a[1] + twice(b[2]) - 3; }",
-            "replayed-constant-instances",
+            "constant-gpu-instances",
             42,
         );
-        assert!(objects > 1, "the constant instances replay");
+        assert_eq!(objects, 1, "constant instances share a GPU lowering batch");
     }
 
     #[test]
@@ -1598,16 +1540,8 @@ impl Hidden for i32 { fn private_trait(self)->i32 { return self; } }
                 "every implementation binding names exactly one native body: {target:?}"
             );
         }
-        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
-            .expect("compile generic calls using the same implementation contracts");
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare implementation native program");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link implementation native program");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&unit]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "implementation-evidence-native-targets", 0);
     }
 
@@ -2096,20 +2030,8 @@ fn main() -> i32 {
                         SourcePackArtifactTarget::X86_64,
                     ))
                     .unwrap_or_else(|error| panic!("{label}: compile record fields: {error:?}"));
-                let objects = pollster::block_on(
-                    compiler
-                        .specialize_x86_source_pack_objects(&[&inner, &outer, &helper, &consumer]),
-                )
-                .unwrap_or_else(|error| panic!("{label}: specialize record fields: {error:?}"));
-                let input = x86::GpuX86LinkInput::for_executable_refs(
-                    objects.iter().map(|object| object.as_ref()),
-                )
-                .expect("prepare field operation objects");
-                let executable = compiler
-                    .x86_linker()
-                    .expect("x86 linker")
-                    .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-                    .unwrap_or_else(|error| panic!("{label}: link record fields: {error:?}"));
+                let executable = pollster::block_on(compiler.compile_test_units(&[&inner, &outer, &helper, &consumer]))
+                    .expect("GPU monomorphization and link");
                 assert_x86_main_exit(&executable, &label, 42);
             }
             let concrete = source.replace("TAKE_DEFINITION",
@@ -2434,18 +2356,8 @@ fn main() -> i32 {
             .expect("overwrite lexer, parser, and checker workspace");
         assert!(overwritten.generic_calls.is_empty());
         assert_eq!(consumer.generic_calls.as_ref(), retained.as_ref());
-        let objects = pollster::block_on(
-            compiler.specialize_x86_source_pack_objects(&[&provider, &consumer]),
-        )
-        .expect("instantiate memory helpers after scratch reuse");
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare generic predicate objects");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link generic predicate calls after scratch reuse");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&provider, &consumer]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "retained-generic-call-environments", 0);
     }
 
@@ -2504,18 +2416,8 @@ fn main() -> i32 {
             ),
         )
         .expect("compile caller-private record and enum arguments");
-        let objects = pollster::block_on(
-            compiler.specialize_x86_source_pack_objects(&[&provider, &consumer]),
-        )
-        .expect("replay private nominal graphs through both generic bodies");
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare caller and generic relay objects");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link caller-private nominal roundtrip");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&provider, &consumer]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "caller-private-nominal-relay", 0);
     }
 
@@ -3327,18 +3229,8 @@ fn main() -> i32 {
                 "missing ordered receiver bindings {expected:?}: {method_calls:?}"
             );
         }
-        let objects = pollster::block_on(
-            compiler.specialize_x86_source_pack_objects(&[&provider, &consumer]),
-        )
-        .expect("specialize the real Result functions");
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare Result objects");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link the real Result functions");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&provider, &consumer]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "retained-generic-result-environments", 0);
     }
 
@@ -3466,18 +3358,8 @@ fn main() -> i32 {
             assert!(call.has_complete_arguments(), "{call:?}");
             assert_eq!(call.arguments.len(), 1);
             assert_eq!(call.arguments[0].ty, CheckedGenericType::Scalar(scalar));
-            let objects = pollster::block_on(
-                compiler.specialize_x86_source_pack_objects(&[&template, &consumer]),
-            )
-            .expect("admit and specialize every concrete generic body");
-            let input =
-                x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                    .expect("prepare all checked provider, caller, and replay objects");
-            let linked = compiler
-                .x86_linker()
-                .expect("x86 linker")
-                .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-                .expect("link the concrete generic body");
+            let linked = pollster::block_on(compiler.compile_test_units(&[&template, &consumer]))
+                .expect("GPU monomorphization and link");
             assert_x86_main_exit(&linked, &format!("scalar-body-{label}"), 0);
 
             let ordinary =
@@ -3493,7 +3375,7 @@ fn main() -> i32 {
             let ordinary = ordinary.object.into_x86_64().unwrap();
             assert_eq!(
                 ordinary, original,
-                "replay substitutions and scope must clear before the next ordinary job, including the uncalled generic marker"
+                "instance substitutions and scope must clear before the next ordinary job, including the uncalled generic marker"
             );
         }
     }
@@ -3566,24 +3448,8 @@ fn main() -> i32 {
             ),
         )
         .expect("compile a caller with interleaved concrete types");
-        let objects = pollster::block_on(
-            compiler.specialize_x86_source_pack_objects(&[&template, &consumer]),
-        )
-        .expect("schedule distinct free and receiver body specializations");
-        assert_eq!(
-            objects.len(),
-            3,
-            "two original units plus one replay object: the round's four instances \
-             (two types for each free function and method) share one frontend run"
-        );
-        let input =
-            x86::GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
-                .expect("prepare distinct specialization objects");
-        let linked = compiler
-            .x86_linker()
-            .expect("x86 linker")
-            .link_executable(&compiler.gpu.device, &compiler.gpu.queue, &input)
-            .expect("link different instances of one generic definition");
+        let linked = pollster::block_on(compiler.compile_test_units(&[&template, &consumer]))
+            .expect("GPU monomorphization and link");
         assert_x86_main_exit(&linked, "scalar-bodies-multiple-types", 0);
         let ordinary = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
             template.template_sources.clone(),

@@ -37,9 +37,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint INTERLEAVED_DOMAINS = 0x80000000u;
 // Private rows own 32 argument words each, after the source rows' four and
 // the body graph rows' 32 (allocate_application.slang).
-#include "../type/instances/body_graph_layout.slang"
 static const uint PRIVATE_ROW_ARGS = 32u;
-static const uint BODY_ROWS = BODY_GRAPH_NODES;
 static const uint DEPTH_LIMIT = 64u;
 static const uint WORK_LIMIT = 1024u;
 
@@ -62,11 +60,11 @@ uint token_rows()
 uint allocate_row(uint arity)
 {
     uint ordinal; InterlockedAdd(type_application_count[0u], 1u, ordinal);
-    uint base = token_rows() + BODY_ROWS;
+    uint base = token_rows();
     uint capacity = mutable_type_capacity();
     uint args; uint stride;
     type_instance_arg_ref_tag.GetDimensions(args, stride);
-    uint arg_start = token_rows() * 4u + BODY_ROWS * PRIVATE_ROW_ARGS + ordinal * PRIVATE_ROW_ARGS;
+    uint arg_start = token_rows() * 4u + ordinal * PRIVATE_ROW_ARGS;
     if (arity > PRIVATE_ROW_ARGS || base > capacity || ordinal >= capacity - base ||
         arg_start > args || PRIVATE_ROW_ARGS > args - arg_start)
     {

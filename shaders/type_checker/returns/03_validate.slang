@@ -28,7 +28,6 @@ StructuredBuffer<HirMatchArm> compact_match_arms;
 // Body specialization packet; zero outside replay. Row 705.w of an
 // instance-copy replay is the first copy row, with bit 31 set when the
 // template's function bodies were left out (declarations-only template).
-StructuredBuffer<uint4> body_specialization_inputs;
 
 RWStructuredBuffer<uint> status;
 
@@ -135,13 +134,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (!function_with_body(node))
         return;
-    // A declarations-only template's functions have empty bodies; the
-    // template's own check already validated their returns. Copies, at or
-    // past the first copy row, are checked.
-    uint copy_word = body_specialization_inputs[705u].w;
-    if ((copy_word & 0x80000000u) != 0u && node < (copy_word & 0x7fffffffu))
-        return;
-
     uint fn_token = canonical_function_token(node);
     if (!valid_token(fn_token))
         return;

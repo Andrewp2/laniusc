@@ -342,18 +342,6 @@ fn apply_output_demand(
 /// Job phase resets the pipeline keeps, most recent last.
 const PHASE_RESET_PLAN_CACHE: usize = 8;
 
-fn validate_copy_replays() -> bool {
-    crate::options::get().check.lir_replays
-}
-
-/// Whether the optimizer records its validation-only dispatches for a job.
-/// An instance-copy replay (`ReplaySelection::CopiesFrom`) recompiles copies
-/// of bodies the original compile already validated, so it leaves them out
-/// unless `LANIUS_CHECK=lir-replays` is set; every other job validates. The
-/// choice depends only on the job's selection, never on earlier jobs.
-fn validates_structure(selection: super::lowering::ReplaySelection<'_>) -> bool {
-    !matches!(selection, super::lowering::ReplaySelection::CopiesFrom(_)) || validate_copy_replays()
-}
 
 /// Whether the job-sized direct lowering operations (`JobSized`) record the
 /// job's grid. A test can keep every workspace's built grid with
@@ -1041,16 +1029,10 @@ impl GpuLoweringPipeline {
         encoder: &mut wgpu::CommandEncoder,
         library_id: u32,
         unit_id: u32,
-        selection: super::lowering::ReplaySelection<'_>,
+        functions: super::lowering::ObjectFunctions,
         mut timer: Option<&mut GpuTimer>,
         bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
-        if !matches!(
-            selection,
-            super::lowering::ReplaySelection::Functions(&[]) | super::lowering::ReplaySelection::RetainedOriginal
-        ) {
-            crate::compiler::count_replay_lowering();
-        }
         let bounds = job_bounds(bounds);
         let split = SubmissionSplit { device, queue };
         // Like `record`, time every lowering operation; without this scope
@@ -1070,7 +1052,7 @@ impl GpuLoweringPipeline {
         // compiler job's commands and are not cached by workspace identity.
         // A queue write reaches only the submissions after it, so both
         // precede the first split below.
-        self.semantic.set_replay_functions(queue, selection)?;
+        self.semantic.set_object_functions(queue, functions);
         self.target
             .set_object_identity(queue, library_id, unit_id)?;
         let job = self.job_capacities(bounds);
@@ -1101,7 +1083,7 @@ impl GpuLoweringPipeline {
             timer.as_deref_mut(),
             jump_pairs,
             self.sized_job(job),
-            validates_structure(selection),
+            true,
         )?;
         split.submit_prefix(
             encoder,

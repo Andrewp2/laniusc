@@ -8,7 +8,7 @@ use laniusc_compiler::{
         ExplicitSourcePackPathManifest,
         GpuCompiler,
         RetainedNativeBuild,
-        fallback_counters,
+        frontend_check_count,
     },
     type_checker::program_retention::discovery::DiscoveryCapacity,
 };
@@ -74,12 +74,12 @@ fn retained_native_program() {
     build.options.batch_rows = 8;
     for run in 0..2 {
         let retries_before = compiler.frontend_retry_counts();
-        let before = fallback_counters();
+        let before = frontend_check_count();
         let elf = pollster::block_on(
             compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
         )
         .unwrap_or_else(|error| panic!("retained build {run}: {error:?}"));
-        let after = fallback_counters();
+        let after = frontend_check_count();
         let retries_after = compiler.frontend_retry_counts();
         let retries: u64 = retries_after
             .iter()
@@ -102,11 +102,11 @@ fn retained_native_program() {
             "one committed export per unit"
         );
         assert_eq!(
-            after.0 - before.0,
+            after - before,
             report.units as u64 + retries,
             "one frontend recording per unit plus observed retries: {retries_before:?} -> {retries_after:?}"
         );
-        assert_eq!(after.1, before.1, "no replay lowering");
+
         let catalog = report.catalog.as_ref().expect("GPU catalog was checked");
         assert_eq!(catalog.publication_status, Some([1, 0, u32::MAX]));
         assert!(catalog.tables.is_empty(), "no semantic row readback");
@@ -136,11 +136,10 @@ fn retained_native_program() {
     let out = common::run_x86_64_elf_output("retained native", "retained_native", &elf);
     assert_eq!(out.status.code(), Some(13));
     let output = directory.join("program");
-    let before = fallback_counters();
     let bytes = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(
         &manifest, &mut build, &output,
     )).expect("file-backed GPU link");
-    assert_eq!(fallback_counters().1, before.1);
+
     assert_eq!(build.report.spilled_objects, build.report.units + build.report.instance_objects);
     assert_eq!(std::fs::metadata(&output).unwrap().len(), bytes);
     let result = common::process_output_with_timeout("retained file output",
@@ -186,12 +185,12 @@ fn retained_native_build_handles_one_library_and_no_instances() {
                 }])
                 .unwrap();
             let retries_before = compiler.frontend_retry_counts();
-            let before = fallback_counters();
+            let before = frontend_check_count();
             let elf = pollster::block_on(
                 compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
             )
             .unwrap();
-            let after = fallback_counters();
+            let after = frontend_check_count();
             let retries_after = compiler.frontend_retry_counts();
             let retries: u64 = retries_after
                 .iter()
@@ -199,11 +198,11 @@ fn retained_native_build_handles_one_library_and_no_instances() {
                 .map(|(a, b)| a - b)
                 .sum();
             assert_eq!(
-                after.0 - before.0,
+                after - before,
                 1 + retries,
                 "only the original unit and observed retries: {retries_before:?} -> {retries_after:?}"
             );
-            assert_eq!(after.1, before.1);
+
             assert_eq!(build.report.units, 1);
             assert_eq!(build.store().job_reports().len(), 1);
             assert_eq!(build.report.discovery.instances, instances);
@@ -271,7 +270,6 @@ fn retained_native_build_rejects_uncalled_conflicting_impls() {
         let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
         let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         let manifest = make_manifest();
-        let before = fallback_counters();
         let error = pollster::block_on(
             compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
         )
@@ -281,7 +279,7 @@ fn retained_native_build_rejects_uncalled_conflicting_impls() {
         assert!(diagnostic.notes.iter().any(|note|
             note.contains("program catalog GPU admission/coherence failed: [5, 0,")), "{error:?}");
         assert_eq!(build.store().job_reports().len(), 3);
-        assert_eq!(fallback_counters().1, before.1, "no replay on rejection");
+
         // A non-overlapping impl is valid, and the rejected build leaves no
         // semantic state in the next build using the same allocations.
         std::fs::write(&right, source("Other")).unwrap();
@@ -292,7 +290,7 @@ fn retained_native_build_rejects_uncalled_conflicting_impls() {
         .unwrap();
         assert_eq!(build.report.units, 3);
         assert_eq!(build.report.discovery.instances, 0);
-        assert_eq!(fallback_counters().1, before.1, "no replay after recovery");
+
         let out = common::run_x86_64_elf_output("retained coherence", "retained_coherence", &elf);
         assert_eq!(out.status.code(), Some(17));
         std::fs::remove_dir_all(directory).ok();
@@ -359,16 +357,11 @@ fn main()->i32 {
         let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
         let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         build.options.batch_rows = 16;
-        let before = fallback_counters();
         let elf = pollster::block_on(
             compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
         )
         .unwrap();
-        assert_eq!(
-            fallback_counters().1,
-            before.1,
-            "array instances never replay"
-        );
+
         assert!(build.report.instance_objects > 1);
         let out = common::run_x86_64_elf_output("retained arrays", "retained_arrays", &elf);
         assert_eq!(out.status.code(), Some(42), "{out:?}");
@@ -424,7 +417,6 @@ fn main()->i32 {
         let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
         let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         build.options.batch_rows = 16;
-        let before = fallback_counters();
         for (tail, expected) in [
             ("return 42;", 42),
             ("return read(first,-1);", 101),
@@ -448,11 +440,7 @@ fn main()->i32 {
                 compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
             )
             .unwrap();
-            assert_eq!(
-                fallback_counters().1,
-                before.1,
-                "borrowed instances never replay"
-            );
+
             let out = common::run_x86_64_elf_output("retained borrows", "retained_borrows", &elf);
             assert_eq!(out.status.code(), Some(expected), "{tail}: {out:?}");
         }
@@ -521,16 +509,11 @@ fn main()->i32 {
         let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
         let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         build.options.batch_rows = 16;
-        let before = fallback_counters();
         let compiled = pollster::block_on(
             compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
         );
         let elf = compiled.unwrap();
-        assert_eq!(
-            fallback_counters().1,
-            before.1,
-            "constant instances never replay"
-        );
+
         let out = common::run_x86_64_elf_output("retained constants", "retained_constants", &elf);
         assert_eq!(out.status.code(), Some(42), "{out:?}");
         std::fs::remove_dir_all(directory).ok();
@@ -598,12 +581,11 @@ pub fn long_text<T>(tag:T)->str {{ return "{long}"; }}
                 },
             ])
             .unwrap();
-            let before = fallback_counters();
             let elf = pollster::block_on(
                 compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
             )
             .unwrap_or_else(|e| panic!("strings ({length}): {e:?}"));
-            assert_eq!(fallback_counters().1, before.1, "no replay lowering");
+
             assert_eq!(build.report.instance_objects > 1, batch_rows == 8);
             let output =
                 common::run_x86_64_elf_output("retained strings", "retained_strings", &elf);
@@ -708,12 +690,11 @@ fn main()->i32 {
                 },
             ])
             .unwrap();
-            let before = fallback_counters();
             let elf = pollster::block_on(
                 compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
             )
             .unwrap_or_else(|e| panic!("intrinsics: {e:?}"));
-            assert_eq!(fallback_counters().1, before.1);
+
             let output =
                 common::run_x86_64_elf_output("retained intrinsics", "retained_intrinsics", &elf);
             if code == 101 {
@@ -826,12 +807,11 @@ fn main()->i32 {
         let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for rows in [8, 4096] {
             build.options.batch_rows = rows;
-            let before = fallback_counters();
             let elf = pollster::block_on(
                 compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
             )
             .unwrap();
-            assert_eq!(fallback_counters().1, before.1);
+
             let output = common::run_x86_64_elf_output("retained for", "retained_for", &elf);
             assert_eq!(output.status.code(), Some(42), "{output:?}");
         }
@@ -874,9 +854,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             assert_eq!(build.report.discovery.instances,9);
             assert!(build.report.discovery.closed_trait_waves >= 3);
             assert_eq!(build.report.catalog.as_ref().unwrap().publication_status,Some([1,0,u32::MAX]));
@@ -953,9 +932,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             assert!(build.report.projection.schema.requests>0);
             let output=common::run_x86_64_elf_output("retained fields","retained_fields",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
@@ -1006,9 +984,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let output=common::run_x86_64_elf_output("retained enums","retained_enums",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
         }
@@ -1074,9 +1051,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let output=common::run_x86_64_elf_output("retained matches","retained_matches",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
         }
@@ -1142,9 +1118,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let output=common::run_x86_64_elf_output("retained try","retained_try",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
         }
@@ -1198,9 +1173,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let output=common::run_x86_64_elf_output("retained methods","retained_methods",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
         }
@@ -1260,9 +1234,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             assert!(build.report.discovery.method_route_waves>=2);
             let result=common::run_x86_64_elf_output("retained bound methods","retained_bound_methods",&elf);
             assert_eq!(result.status.code(),Some(42),"{result:?}");
@@ -1289,7 +1262,6 @@ pub fn through_c<T>(value:T)->i32 {
 }
 
 
-
 "#).unwrap();
         std::fs::write(&app,r#"module app::main;
 import native_c::lib;
@@ -1306,9 +1278,8 @@ fn main()->i32 { return through_c<i64>(4294967298)+through_c<f64>(2.5); }
         });
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let result=common::run_x86_64_elf_output("retained C","retained_c",&elf);
             assert_eq!(result.status.code(),Some(42),"{result:?}");
         }
@@ -1355,9 +1326,8 @@ fn main()->i32 {
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
             build.options.batch_rows=batch_rows;
-            let before=fallback_counters();
             let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-            assert_eq!(fallback_counters().1,before.1);
+
             let result=common::run_x86_64_elf_output("retained host services","retained_host",&elf);
             assert_eq!(result.status.code(),Some(42),"{result:?}");
             assert_eq!(result.stdout,b"local\nlocal\nremote\nremote\n");
@@ -1407,10 +1377,9 @@ fn main()->i32 {
             build.native_link = native.then(laniusc_compiler::compiler::NativeLinkOptions::default);
             for batch_rows in [1, 65536] {
                 build.options.batch_rows = batch_rows;
-                let before = fallback_counters();
                 let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build))
                     .unwrap_or_else(|e| panic!("function values native={native}, batch={batch_rows}: {e:?}"));
-                assert_eq!(fallback_counters().1, before.1);
+
                 assert_eq!(build.report.projection.instances, 2);
                 assert_eq!(build.report.instance_objects, if batch_rows == 1 { 2 } else { 1 });
                 let out = common::run_x86_64_elf_output("retained function values", "function_values", &elf);
@@ -1465,9 +1434,8 @@ fn main()->i32 { if (remote<bool>(false)) { return 1; } return remote<i32>(42); 
         build.native_link = Some(laniusc_compiler::compiler::NativeLinkOptions { objects:vec![object], ..Default::default() });
         for batch_rows in [8, 4096] {
             build.options.batch_rows = batch_rows;
-            let before = fallback_counters();
             let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build)).unwrap();
-            assert_eq!(fallback_counters().1, before.1);
+
             // The linked C probe contains legal tail calls between C functions,
             // outside the raw Lanius function-local jump validator's contract.
             use std::os::unix::fs::PermissionsExt;
@@ -1496,9 +1464,8 @@ fn main()->i32 {
     return 40+probe(a)+probe(b);
 }"#;
         for run in 0..2 {
-            let before = fallback_counters();
             let elf = pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
-            assert_eq!(fallback_counters().1, before.1);
+
             let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
             assert!(report.discovery.instances >= 2, "{report:?}");
             assert_eq!(report.units, 1);
@@ -1508,13 +1475,12 @@ fn main()->i32 {
         let directory = std::env::temp_dir().join(format!("lanius-default-native-{}", std::process::id()));
         let manifest = manifest(&directory);
         for native in [false, true] {
-            let before = fallback_counters();
             let elf = if native {
                 pollster::block_on(compiler.compile_path_manifest_with_native_link(&manifest, &Default::default()))
             } else {
                 pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest))
             }.unwrap();
-            assert_eq!(fallback_counters().1, before.1);
+
             let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
             assert_eq!(report.units, 2);
             assert_eq!(report.discovery.instances, 5);
@@ -1538,9 +1504,8 @@ fn default_native_root_abi_grows_for_wide_calls_and_preserves_late_borrows() {
             if (p1 != 1 || p12 != 12 || tail[0] != 13) {{ return 1; }} return 7;
         }} fn main()->i32 {{ let a:[i32;1]=[13]; return {calls}; }}");
         for _ in 0..2 {
-            let before = fallback_counters();
             let elf = pollster::block_on(compiler.compile_source_to_x86_64(&source)).unwrap();
-            assert_eq!(fallback_counters().1, before.1);
+
             let result = common::run_x86_64_elf_output("wide root ABI", "wide_root_abi", &elf);
             assert_eq!(result.status.code(), Some(42), "{result:?}");
         }
@@ -1563,7 +1528,6 @@ fn default_native_instance_diagnostics_keep_the_defining_source_span() {
             ExplicitSourceLibraryPaths { library_id:2, paths:vec![app.clone()], dependency_library_ids:vec![1] },
         ]).unwrap();
         let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
-        let before = fallback_counters();
         let error = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest)).unwrap_err();
         let CompileError::Diagnostic(diagnostic) = error else { panic!("{error:?}") };
         assert_eq!(diagnostic.code, "LNC0069", "{}", diagnostic.render());
@@ -1577,7 +1541,7 @@ fn default_native_instance_diagnostics_keep_the_defining_source_span() {
             ExplicitSourceLibraryPaths { library_id:2, paths:vec![app.clone()], dependency_library_ids:vec![1] },
         ]).unwrap();
         let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest)).unwrap();
-        assert_eq!(fallback_counters().1, before.1);
+
         let result = common::run_x86_64_elf_output("after rejected instance", "after_rejected_instance", &elf);
         assert_eq!(result.status.code(), Some(42), "{result:?}");
         std::fs::remove_dir_all(directory).ok();
@@ -1589,11 +1553,10 @@ fn default_wasm_monomorphizes_local_and_cross_unit_generics_without_replay() {
     common::run_with_timeout("default Wasm monomorphization", || {
         let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
         let source="fn twice<T>(v:T)->T { return v+v; } fn main()->i32 { let a:i64=twice<i64>(20); return twice<i32>(1)+(a as i32); }";
-        let before=fallback_counters();
         for _ in 0..2 {
             let wasm=pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
             assert_eq!(common::run_wasm_main_return_with_node("GPU generic Wasm","gpu_generic_wasm",&wasm),42);
-            assert_eq!(fallback_counters().1,before.1);
+
         }
         let directory=std::env::temp_dir().join(format!("lanius-default-wasm-{}",std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
@@ -1607,7 +1570,25 @@ fn default_wasm_monomorphizes_local_and_cross_unit_generics_without_replay() {
         assert_eq!(common::run_wasm_main_return_with_node("cross-unit GPU generic Wasm","cross_unit_gpu_wasm",&wasm),13);
         let report=pollster::block_on(compiler.native_monomorphization_report()).unwrap();
         assert_eq!(report.units,2); assert_eq!(report.discovery.instances,5);
-        assert_eq!(fallback_counters().1,before.1);
+
         std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn default_monomorphization_uses_the_compilers_device() {
+    common::run_with_timeout("monomorphization device ownership", || {
+        let gpu = laniusc_compiler::gpu::device::GpuDevice::new();
+        assert_ne!(*gpu.device, *laniusc_compiler::gpu::device::global().device);
+        let compiler = pollster::block_on(GpuCompiler::new_with_device(&gpu)).unwrap();
+        let source = "fn twice<T>(x: T) -> T { return x + x; } fn main() -> i32 { if (twice<i64>(21) != 42) { return 1; } return twice<i32>(21); }";
+        for _ in 0..2 {
+            let elf = pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
+            let run = common::run_x86_64_elf_output("custom device", "custom_device", &elf);
+            assert_eq!(run.status.code(), Some(42));
+        }
+        let wasm = pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
+        let value = common::run_wasm_main_return_with_node("custom device Wasm", "custom_device_wasm", &wasm);
+        assert_eq!(value, 42);
     });
 }

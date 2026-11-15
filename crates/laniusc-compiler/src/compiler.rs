@@ -83,9 +83,9 @@ use crate::{
 };
 
 mod artifact_descriptor;
-mod fallback_counters;
-pub use fallback_counters::fallback_counters;
-pub(crate) use fallback_counters::{count_frontend_check, count_replay_lowering};
+mod frontend_check_count;
+pub use frontend_check_count::frontend_check_count;
+pub(crate) use frontend_check_count::{count_frontend_check};
 pub use artifact_descriptor::{
     GPU_SOURCE_PACK_ARTIFACT_DESCRIPTOR_VERSION,
     GPU_SOURCE_PACK_FIRST_RUNTIME_SERVICE_ID,

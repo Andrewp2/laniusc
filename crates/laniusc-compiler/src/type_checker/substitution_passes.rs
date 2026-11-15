@@ -26,11 +26,6 @@ pub(super) const SUBSTITUTION_SEED_KERNEL: &str = "type_checker/substitution/01_
 /// canonical stage: the replay rewrote rows the job-start seed recorded.
 pub(super) const SUBSTITUTION_BODY_CLEAR_PASS: &str = "type_check.substitution.body.clear";
 pub(super) const SUBSTITUTION_BODY_SEED_PASS: &str = "type_check.substitution.body.seed";
-/// Then the replay's body graph rows become the rows of their IDs, so a
-/// realized type keeps each type argument's seed row and its width witness.
-pub(super) const SUBSTITUTION_BODY_ROWS_PASS: &str = "type_check.substitution.body.seed_rows";
-pub(super) const SUBSTITUTION_BODY_ROWS_KERNEL: &str =
-    "type_checker/substitution/01b_seed_body_rows";
 /// Call environments, republished each inference round before the argument
 /// contexts consume them.
 pub(super) const SUBSTITUTION_CALL_ENVS_PASS: &str = "type_check.substitution.call_envs";
@@ -216,7 +211,6 @@ pub(super) fn register_substitution_body_passes(
     for (name, kernel) in [
         (SUBSTITUTION_BODY_CLEAR_PASS, SUBSTITUTION_CLEAR_KERNEL),
         (SUBSTITUTION_BODY_SEED_PASS, SUBSTITUTION_SEED_KERNEL),
-        (SUBSTITUTION_BODY_ROWS_PASS, SUBSTITUTION_BODY_ROWS_KERNEL),
     ] {
         graph.add_kernel_pass_by_name(
             name,
@@ -392,7 +386,6 @@ pub(in crate::type_checker) struct SubstitutionOperations {
     seed: ComputeOperation,
     body_clear: ComputeInvocation,
     body_seed: ComputeInvocation,
-    body_rows: ComputeOperation,
     alias_realize: ComputeOperation,
     alias_realize_final: ComputeOperation,
 }
@@ -423,12 +416,6 @@ impl SubstitutionOperations {
         Ok(Self {
             body_clear: clear.invocation(graph, SUBSTITUTION_BODY_CLEAR_PASS)?,
             body_seed: seed.invocation(graph, SUBSTITUTION_BODY_SEED_PASS)?,
-            // One lane per body graph node.
-            body_rows: direct(
-                SUBSTITUTION_BODY_ROWS_PASS,
-                SUBSTITUTION_BODY_ROWS_KERNEL,
-                generic_body::MAX_BODY_GRAPH_NODES as u32,
-            )?,
             clear,
             seed,
             alias_realize: direct(
@@ -473,7 +460,7 @@ impl SubstitutionOperations {
     ) -> Result<()> {
         self.clear.record_invocation(encoder, &self.body_clear)?;
         self.seed.record_invocation(encoder, &self.body_seed)?;
-        self.body_rows.record(encoder)
+        Ok(())
     }
 
     /// Records the clear and the seed; after the early canonical stage.

@@ -141,7 +141,7 @@ fn retain(sources: &[(&str, &str)]) -> std::sync::Arc<laniusc_compiler::type_che
 
 mod slice {
     use laniusc_compiler::{
-        compiler::{GpuCompiler, GpuCompilerBackends, fallback_counters},
+        compiler::{GpuCompiler, GpuCompilerBackends, frontend_check_count},
         type_checker::program_retention::{
             ProgramRetention,
             projection::{
@@ -232,10 +232,10 @@ mod slice {
     }
 
     fn slice_program() {
-        let exported = fallback_counters();
+        let exported = frontend_check_count();
         let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
-        let before = fallback_counters();
-        assert!(before.0 >= exported.0 + 2, "the export ran two frontend checks: {exported:?} -> {before:?}");
+        let before = frontend_check_count();
+        assert!(before >= exported + 2, "the export ran two frontend checks: {exported:?} -> {before:?}");
         let inputs = ProjectionInputs::new(64, 256);
         let produced = produce(&store, &inputs, APP_LIBRARY);
         eprintln!("producer: {produced:?}");
@@ -258,7 +258,7 @@ mod slice {
             report.substitution.as_ref().map_or(0, |s| s.dispatches), report.check_us, report.lowering_us, started.elapsed()
         );
         let elf = compiler.link_x86_objects(&objects).expect("link");
-        assert_eq!(fallback_counters(), before, "projection and link ran no frontend check and no replay lowering");
+        assert_eq!(frontend_check_count(), before, "projection and link ran no frontend checks");
         let out = common::run_x86_64_elf_output("retained projection", "retained_projection", &elf);
         assert_eq!(out.status.code(), Some(7));
     }
@@ -353,7 +353,6 @@ fn main() -> i32 { return start<u8>(); }
 
     fn batches_program() {
         let compiler = codegen();
-        let counters = fallback_counters();
         let mut projection = RetainedProjection::new(SubstitutionCapacity::tiny()).unwrap();
         let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
         // Rank capacity grows from 1 (`ProjectionInputs` is sized by the producer).
@@ -388,7 +387,7 @@ fn main() -> i32 { return start<u8>(); }
         eprintln!("unrelated: {report:?}");
         assert_eq!(code, Some(6));
         // Exports of the two stores ran the frontend; nothing else did.
-        assert_eq!(fallback_counters().1, counters.1, "no replay lowering");
+
     }
 
     // An instance that breaks the literal rule fails at the template's

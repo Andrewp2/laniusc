@@ -29,8 +29,6 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> type_instance_aggregate_word_count;
-StructuredBuffer<uint4> body_specialization_inputs;
-#include "../../type/instances/body_graph_rows.slang"
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_start;
@@ -97,7 +95,7 @@ uint local_nominal_owner(uint tag, uint payload, uint wanted_kind)
     if (tag == TYPE_REF_INSTANCE && valid_instance(payload) && type_instance_kind[payload] == 1u)
     {
         decl = type_instance_decl_token[payload];
-        // Portable public replay nodes can lack a source-local token. The
+        // Portable public type nodes can lack a source-local token. The
         // completed canonical ID already links this job's own declaration to
         // its local spelling; foreign declarations keep an INVALID token.
         if (decl == INVALID) decl = ct_named_decl_token(ct_ref(tag, payload));
@@ -165,7 +163,7 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
     public static uint leaf_words(uint tag, uint payload)
     {
         // The enum ABI retains its discriminant word even with no legal tag.
-        // Bare local replay nominals use tag 1, so recognize them before the
+        // Bare local nominals use tag 1, so recognize them before the
         // nominal scalar path falls through to payload expansion.
         if (known_empty_enum(tag, payload)) return 1u;
         if (tag == 1u)
@@ -179,18 +177,6 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
         if (type_instance_kind[payload] == 4u) return 1u;
         if (type_instance_kind[payload] == 3u) return NATIVE_SLICE_WORDS;
         if (type_instance_kind[payload] == 2u) return INVALID;
-        // A closed replay graph may retain an exact native width witness from
-        // its checking unit. Foreign private definitions can be opaque here.
-        // Read the immutable seed, not a concurrently produced layout column.
-        // Missing witnesses fall through to the ordinary checked payload graph.
-        uint source_capacity; uint stride;
-        type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-        uint seed_count = body_graph_node_count();
-        if (payload >= source_capacity && payload - source_capacity < seed_count)
-        {
-            uint witness = body_graph_node(payload - source_capacity).w;
-            if (witness != INVALID) return witness;
-        }
         // Concrete enum layouts must be evaluated from their checked payload
         // graph. An earlier dependency projection can still lack a child's
         // width and therefore cannot establish the enclosing enum's width.
@@ -529,10 +515,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint capacity = checked_type_capacity();
     uint source_capacity; uint stride;
     type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
-    uint seed_count = body_graph_node_count();
     // Generated rows end at the last allocated one: a workspace retained from
     // a larger job has more capacity, and its unallocated rows own nothing.
-    uint generated_base = source_capacity + BODY_GRAPH_NODES;
+    uint generated_base = source_capacity;
     uint end = generated_base >= capacity ? capacity
         : generated_base + min(type_application_count[0u], capacity - generated_base);
     // One evaluation site handles source and generated rows.
@@ -562,29 +547,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 }
             }
         }
-        else if (instance - source_capacity < seed_count)
-        {
-            // Keep the seed's completed width in seed-node order even when a
-            // source-owned bare nominal replays through its checked scalar
-            // reference. Cache admission reads this exact contiguous result.
-            uint ordinal = instance - source_capacity;
-            uint4 node = body_graph_node(ordinal);
-            uint anchor = body_graph_identity(ordinal).w;
-            if (node.x == 9u && (anchor & 0xe0000000u) == 0x40000000u)
-            { tag = TYPE_REF_SCALAR; payload = anchor & 0x1fffffffu; }
-        }
         type_native_scalar_identity[instance] = scalar;
         type_native_word_count[instance] = layout_words(tag, payload);
-        // Only active seed rows participate; inactive reserved storage can
-        // belong to a previous job. Ordinary jobs retain their existing walk.
         if (instance < source_capacity)
-            instance = source_capacity + (token < seed_count ? token : BODY_GRAPH_NODES + token);
-        else if (instance - source_capacity < BODY_GRAPH_NODES)
-        {
-            uint ordinal = instance - source_capacity;
-            instance = ordinal < seed_count && gParams.n_tokens < seed_count - ordinal
-                ? instance + gParams.n_tokens : source_capacity + BODY_GRAPH_NODES + token;
-        }
+            instance = source_capacity + token;
         else if (gParams.n_tokens >= end - instance) break;
         else instance += gParams.n_tokens;
     }

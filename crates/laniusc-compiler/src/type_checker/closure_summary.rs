@@ -643,7 +643,6 @@ mod tests {
             identity: CheckedNominalIdentity::SourceLocal { unit: UNIT, declaration_token: 5 },
             arguments: Vec::new(),
             words: None,
-            local_replay: None,
         };
         let calls = vec![
             call(111, 12, CheckedGenericType::Slice(Box::new(slot.clone())), None),

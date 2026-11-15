@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::codegen::{
-    lowering::{GpuSemanticHirInputs, LoweringJobBounds, ReplaySelection},
+    lowering::{GpuSemanticHirInputs, LoweringJobBounds, ObjectFunctions},
     lowering_ir::LoweringArtifactKind,
     x86::{self, GpuX86RelocatableObject},
 };
@@ -65,7 +65,7 @@ impl GpuCompiler<'_> {
                 &mut encoder,
                 library,
                 unit,
-                ReplaySelection::Functions(&[]),
+                ObjectFunctions::All,
                 None,
                 bounds,
             )?;

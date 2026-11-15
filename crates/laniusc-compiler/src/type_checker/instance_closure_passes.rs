@@ -651,8 +651,8 @@ pub(super) fn register_instance_exec_passes(
     Ok(())
 }
 
-/// `LANIUS_CHECK=instance-table` reads the instance table back and checks
-/// it against every copy run's own types.
+/// `LANIUS_CHECK=instance-table` includes realized instance rows in
+/// standalone checked-unit readback.
 pub(crate) fn instance_table_checked() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| crate::options::get().check.instance_table)

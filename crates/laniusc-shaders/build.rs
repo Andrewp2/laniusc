@@ -245,7 +245,6 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/predicates/01f1_emit_method_param_validation_rows"
             | "type_checker/predicates/01f2_validate_imported_methods"
             | "type_checker/predicates/01f_emit_method_validation_rows"
-            | "type_checker/predicates/03_validate_body_obligations"
             | "type_checker/predicates/02a_count_obligations"
             | "type_checker/predicates/02b_validate_obligations"
             | "type_checker/calls/03a_collect_row_args"

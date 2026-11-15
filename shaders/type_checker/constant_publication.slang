@@ -3,7 +3,6 @@ import constant_value;
 // Producers alone allocate immutable scalar/projection rows. Matchers never
 // publish transient references.
 import type_checker.constant_atoms;
-#include "type/instances/body_graph_layout.slang"
 
 // x=first dynamic row, y=exclusive logical limit, z=allocated dynamic rows.
 // A dedicated initialization pass owns this header before any producer runs.
@@ -14,7 +13,7 @@ public bool publish_checked_constant_atom_at(uint row, uint3 value, out uint2 re
     reference = uint2(0u, 0xffffffffu);
     uint count; uint stride;
     checked_constant_atoms.GetDimensions(count, stride);
-    if (count < BODY_ATOM_RESERVE_ROWS || row >= count - BODY_ATOM_RESERVE_ROWS || !constant_value_is_valid(value)) return false;
+    if (row >= count || !constant_value_is_valid(value)) return false;
     checked_constant_atoms[row] = uint4(value, 0u);
     reference = uint2(1u, row);
     return true;
@@ -27,7 +26,7 @@ public bool reserve_checked_constant_row(out uint row)
     uint atoms; uint projections; uint stride;
     checked_constant_atoms.GetDimensions(atoms, stride);
     checked_constant_projections.GetDimensions(projections, stride);
-    if (atoms < BODY_ATOM_RESERVE_ROWS || state.x > state.y || state.y > atoms - BODY_ATOM_RESERVE_ROWS || state.y > projections || state.w != 0u)
+    if (state.x > state.y || state.y > atoms || state.y > projections || state.w != 0u)
         return false;
     // Saturate at the declared limit. A failed reservation cannot wrap and
     // overwrite a previously published row, even after repeated failed work.

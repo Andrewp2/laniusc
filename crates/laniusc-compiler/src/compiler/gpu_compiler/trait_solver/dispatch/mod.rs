@@ -16,7 +16,9 @@ pub(super) use native_layout::MaterializedProofType;
 #[cfg(test)]
 pub(super) use native_layout::NativeLayoutFailure;
 mod implementation_application;
-pub(super) use implementation_application::{ImplProjectionLimits, ProjectedImplApplication};
+pub(super) use implementation_application::ProjectedImplApplication;
+#[cfg(test)]
+pub(super) use implementation_application::ImplProjectionLimits;
 mod proof;
 mod retained;
 pub(super) use retained::{check as retained_check, publish as retained_publish};

@@ -7,20 +7,22 @@ use std::{
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
-    super::typecheck::{CompiledSourcePackUnit, OriginalUnitFacts},
+    super::typecheck::OriginalUnitFacts,
     abi::*,
     catalog::*,
     dispatch::GpuProofReadback,
     proof_store::{OwnedProofRoot, PROOF_STORE_TABLES, ProofStoreSession},
 };
 use crate::type_checker::{CheckedGenericCall, CheckedGenericTarget};
+#[cfg(test)]
+use super::super::typecheck::CompiledSourcePackUnit;
 
 #[cfg(test)]
 #[path = "packet_tests.rs"]
 mod tests;
 mod implementation_application;
 mod retained;
-pub(super) use implementation_application::{AdmittedImplementationApplication, ImplApplicationRequest};
+pub(super) use implementation_application::{ImplApplicationRequest};
 
 /// Results may only be copied after the orchestrator has observed successful
 /// GPU catalog, batch, context and call status for this exact Submission.
@@ -137,14 +139,6 @@ impl std::fmt::Display for RetainedCallSite {
 
 impl std::error::Error for RetainedCallSite {}
 
-pub(in crate::compiler::gpu_compiler) struct ReplayContextInput<'a> {
-    pub snapshot: u32,
-    pub selected_owner_hir: u32,
-    /// Definition predicate order, selected owner then lexical ancestors.
-    pub evidence: &'a [ValidatedSolverResult],
-    pub origin_call: u32,
-}
-
 #[derive(Clone, Debug)]
 pub(in crate::compiler::gpu_compiler) struct Submission {
     pub epoch: u64,
@@ -181,9 +175,7 @@ pub(in crate::compiler::gpu_compiler) struct ProgramPacket {
     original_units: BTreeSet<u32>,
     call_occurrences: HashMap<(u32, u32), CallOccurrence>,
     admitted_calls: HashMap<u32, u32>,
-    /// (replay context, call HIR) -> actual function HIR for the calls a
-    /// replay context owns outside its template's frozen call inventory
-    /// (`append_context_calls`).
+    /// Synthetic closure calls belong to their GPU-admitted context.
     context_call_owners: BTreeMap<(u32, u32), u32>,
     /// Host encodings already written by this packet (`environment`,
     /// `call_predicates`); they change no row.
@@ -370,74 +362,6 @@ impl ProgramPacket {
         Ok(())
     }
 
-    pub fn replay_context(&mut self, input: ReplayContextInput<'_>) -> Result<u32> {
-        self.append_guard(|this| {
-            let owner = this
-                .catalog
-                .owner(input.snapshot, input.selected_owner_hir)?;
-            ensure!(
-                this.catalog.callable_by_owner.contains_key(&owner),
-                "selected body is not callable"
-            );
-            let origin = this.tables.row(15, input.origin_call)?;
-            ensure!(
-                this.admitted_calls.get(&input.origin_call) == Some(&1),
-                "body replay requires a GPU-checked concrete origin call"
-            );
-            ensure!(
-                this.catalog.tables.row(4, origin[3])?[1] == owner,
-                "replay origin calls a different definition"
-            );
-            let origin_environment = origin[4];
-            let predicates = this.catalog.applicable_predicates(owner)?;
-            ensure!(
-                predicates.len() == input.evidence.len(),
-                "replay evidence count differs from selected owner requirements"
-            );
-            // The complete immutable origin environment is the only authority,
-            // including unused/unconstrained parameters. An independent call
-            // argument list could differ while satisfying the same predicates.
-            let context = this.tables.count(13)?;
-            let environment = this.body_environment(origin_environment, owner, context)?;
-            let first = this.tables.count(14)?;
-            for (predicate, evidence) in predicates.iter().zip(input.evidence) {
-                ensure!(
-                    evidence.epoch == this.catalog.epoch && evidence.arena_id == this.arena_id,
-                    "replay evidence from a different catalog or row arena"
-                );
-                // The source evidence goal need not use this body's predicate ID:
-                // the GPU compares it under its retained source environment.
-                let proof = evidence
-                    .proof
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("refuted evidence cannot authorize a replay"))?;
-                let row: [u32; 8] = this.tables.row(17, evidence.input_row)?.try_into()?;
-                proof.require_concrete(&this.proof_store)?;
-                ensure!(
-                    proof.matches_evidence(row),
-                    "retained evidence does not name its accepted proof and conclusion"
-                );
-                this.tables.push(
-                    14,
-                    &[context, *predicate, environment, evidence.input_row, 0, 0],
-                )?;
-            }
-            this.tables.push(
-                13,
-                &[
-                    input.snapshot,
-                    owner,
-                    environment,
-                    if predicates.is_empty() { 0 } else { first },
-                    u32_len(predicates.len(), "replay assumptions")?,
-                    1,
-                    input.origin_call,
-                    0,
-                ],
-            )?;
-            Ok(context)
-        })
-    }
 
     /// Original inputs carry no object or replay authority. Exact immutable
     /// snapshot identity covers the complete retained occurrence inventory,
@@ -462,90 +386,11 @@ impl ProgramPacket {
                 "original unit inventory was already appended"
             );
             this.append_call_inventory(
-                snapshot, facts.generic_calls().clone(), owners, &BTreeMap::new(), &BTreeSet::new(),
+                snapshot, facts.generic_calls().clone(), owners,
             )
         })
     }
 
-    /// A replay reparse is routed by its admitted selected owner. All other
-    /// occurrences must equal already admitted original siblings byte for byte.
-    #[cfg(test)]
-    pub fn append_replay_unit_calls(
-        &mut self,
-        unit: &CompiledSourcePackUnit,
-        selected_hir: u32,
-        context: u32,
-    ) -> Result<Span> {
-        self.append_replay_batch_calls(unit, &BTreeMap::from([(selected_hir, context)]))
-    }
-
-    /// A batched replay reparse: each selected owner HIR routes its calls to
-    /// its own replay context. A selected body may hold generic calls its
-    /// template does not: a bound-member call whose concrete receiver selects
-    /// a generic impl method (methods/09). They join that body's context
-    /// (`append_context_calls`).
-    pub fn append_replay_batch_calls(
-        &mut self,
-        unit: &CompiledSourcePackUnit,
-        selected: &BTreeMap<u32, u32>,
-    ) -> Result<Span> {
-        self.append_guard(|this| {
-            let unit_key = [unit.interface.library_id, unit.interface.unit_id];
-            let snapshot = *this
-                .catalog
-                .snapshot_by_unit
-                .get(&unit_key)
-                .ok_or_else(|| anyhow!("call unit absent from frozen catalog"))?;
-            let frozen = &this.catalog.snapshots[snapshot as usize];
-            ensure!(
-                Arc::ptr_eq(&frozen.contracts, &unit.checked_contracts)
-                    && Arc::ptr_eq(&frozen.sources, &unit.template_sources)
-                    && frozen.source_paths.as_ref() == unit.template_source_paths.as_ref()
-                    && Arc::ptr_eq(&frozen.dependency_pages, &unit.template_dependency_pages),
-                "call unit does not retain frozen definition provenance"
-            );
-            // No fresh public interface definitions are consumed here. The
-            // frozen catalog alone supplies callable aliases and requirements.
-            let owner_by_call = accepted_call_owners(unit)?;
-            ensure!(
-                frozen
-                    .call_owner_by_hir
-                    .iter()
-                    .all(|(call, owner)| owner_by_call.get(call) == Some(owner)),
-                "reparse changed the complete original call occurrence inventory"
-            );
-            ensure!(!selected.is_empty(), "replay reparse selects no body");
-            // Calls the template lacks, grouped by their selected owner.
-            let mut added = BTreeMap::<u32, Vec<usize>>::new();
-            let mut added_hirs = BTreeSet::new();
-            for (index, call) in unit.generic_calls.iter().enumerate() {
-                if frozen.call_owner_by_hir.contains_key(&call.call_hir) { continue; }
-                let owner = owner_by_call[&call.call_hir];
-                ensure!(selected.contains_key(&owner),
-                    "reparse added a generic call outside the selected body");
-                added.entry(owner).or_default().push(index);
-                added_hirs.insert(call.call_hir);
-            }
-            let first = this.tables.count(15)?;
-            this.append_call_inventory(
-                snapshot,
-                unit.generic_calls.clone(),
-                owner_by_call,
-                selected,
-                &added_hirs,
-            )?;
-            for (owner, indices) in &added {
-                this.append_context_calls_inner(
-                    snapshot,
-                    selected[owner],
-                    *owner,
-                    unit.generic_calls.clone(),
-                    indices,
-                )?;
-            }
-            Span::new(first, this.tables.count(15)? - first)
-        })
-    }
 
     /// Append the instance closure's origin calls of `snapshot` (D1): each
     /// fact becomes the one call of a fresh no-owner context (kind 2, no
@@ -594,115 +439,22 @@ impl ProgramPacket {
         self.admitted_occurrence(snapshot, context, call_hir, INVALID)
     }
 
-    /// Append calls that replay context `context` owns outside its template's
-    /// frozen call inventory: each fact at `fact_indices` becomes a call row
-    /// of that context, owned by `owner_hir` (the context's selected body).
-    /// `admitted_context_calls` returns them once the GPU admits them.
-    /// Replay routes its added calls through `append_replay_batch_calls`;
-    /// this entry point is for the calls of copied instance bodies.
-    pub fn append_context_calls(
-        &mut self,
-        snapshot: u32,
-        context: u32,
-        owner_hir: u32,
-        facts: Arc<[CheckedGenericCall]>,
-        fact_indices: &[usize],
-    ) -> Result<Span> {
-        self.append_guard(|this| {
-            this.append_context_calls_inner(snapshot, context, owner_hir, facts, fact_indices)
-        })
-    }
-
-    fn append_context_calls_inner(
-        &mut self,
-        snapshot: u32,
-        context: u32,
-        owner_hir: u32,
-        facts: Arc<[CheckedGenericCall]>,
-        fact_indices: &[usize],
-    ) -> Result<Span> {
-        let catalog = self.catalog.clone();
-        let frozen = catalog
-            .snapshots
-            .get(snapshot as usize)
-            .ok_or_else(|| anyhow!("context call snapshot absent"))?;
-        let owner = catalog.owner(snapshot, owner_hir)?;
-        let row = self.tables.row(13, context)?;
-        ensure!(
-            catalog.callable_by_owner.contains_key(&owner)
-                && row[0] == snapshot
-                && row[1] == owner
-                && row[5] == 1,
-            "replay context does not own the selected lexical body"
-        );
-        let first = self.tables.count(15)?;
-        for &index in fact_indices {
-            let call_hir = facts
-                .get(index)
-                .ok_or_else(|| anyhow!("context call index absent"))?
-                .call_hir;
-            ensure!(
-                !frozen.call_owner_by_hir.contains_key(&call_hir)
-                    && self.context_call_owners.insert((context, call_hir), owner_hir).is_none(),
-                "context call is already a retained occurrence"
-            );
-            self.append_call(snapshot, context, owner_hir, facts.clone(), index)?;
-        }
-        Span::new(first, self.tables.count(15)? - first)
-    }
 
     fn append_call_inventory(
         &mut self,
         snapshot: u32,
         facts: Arc<[CheckedGenericCall]>,
         owner_by_call: BTreeMap<u32, u32>,
-        selected_replay: &BTreeMap<u32, u32>,
-        // Calls the caller appends as context calls instead.
-        context_owned: &BTreeSet<u32>,
     ) -> Result<Span> {
-        // Validate the routing authority before examining calls. An empty
-        // body or a wrong selected HIR must not bypass this check merely
-        // because every encountered call belongs to an original sibling.
-        for (&selected_hir, &context) in selected_replay {
-            let selected_owner = self.catalog.owner(snapshot, selected_hir)?;
-            ensure!(
-                self.catalog.callable_by_owner.contains_key(&selected_owner),
-                "selected replay owner is not an accepted callable"
-            );
-            let row = self.tables.row(13, context)?;
-            ensure!(
-                row[0] == snapshot && row[1] == selected_owner && row[5] == 1,
-                "replay context does not own the selected lexical body"
-            );
-        }
         let first = self.tables.count(15)?;
         for (fact_index, call) in facts.iter().enumerate() {
-            if context_owned.contains(&call.call_hir) { continue; }
             let actual_hir = *owner_by_call
                 .get(&call.call_hir)
                 .ok_or_else(|| anyhow!("checked call missing actual owner"))?;
-            let context = match selected_replay.get(&actual_hir) {
-                Some(&context) => context,
-                None => self.original_context_inner(snapshot, actual_hir)?,
-            };
-            // Only already GPU-admitted original sibling occurrences can be
-            // reused during this exact immutable-source reparse.
-            if let Some(prior) = self.call_occurrences.get(&(context, call.call_hir)) {
-                ensure!(
-                    !selected_replay.is_empty()
-                        && self.tables.row(13, context)?[5] != 1
-                        && matches!(self.admitted_calls.get(&prior.row), Some(1 | 2)),
-                    "duplicate call occurrence is not an admitted original sibling"
-                );
-                ensure!(
-                    prior.facts.get(prior.fact_index) == Some(call),
-                    "UNSUPPORTED: body replay changed a non-selected callable's checked call facts"
-                );
-                continue;
-            }
+            let context = self.original_context_inner(snapshot, actual_hir)?;
             self.append_call(snapshot, context, actual_hir, facts.clone(), fact_index)?;
         }
-        // The full inventory is consumed before original or replay publication.
+        // Consume the complete immutable original call inventory.
         Span::new(first, self.tables.count(15)? - first)
     }
     fn append_call(
@@ -761,22 +513,11 @@ impl ProgramPacket {
         Ok(call_row)
     }
 
-    /// Resolves each original source occurrence to its admitted original or
-    /// selected replay context, preserving the exact producer facts for it.
+
+    /// Every admitted call in the immutable original unit.
     pub fn admitted_unit_calls(
         &self,
         snapshot: u32,
-        selected_replay: Option<(u32, u32)>,
-    ) -> Result<Vec<AdmittedCall>> {
-        self.admitted_batch_calls(snapshot, &selected_replay.into_iter().collect::<BTreeMap<_, _>>())
-    }
-
-    /// Every admitted call of the unit; calls in a selected owner HIR use
-    /// that owner's replay context.
-    pub fn admitted_batch_calls(
-        &self,
-        snapshot: u32,
-        selected_replay: &BTreeMap<u32, u32>,
     ) -> Result<Vec<AdmittedCall>> {
         self.ready()?;
         let frozen = self
@@ -784,17 +525,6 @@ impl ProgramPacket {
             .snapshots
             .get(snapshot as usize)
             .ok_or_else(|| anyhow!("call snapshot absent"))?;
-        for (&selected_hir, &context) in selected_replay {
-            let selected_owner = self.catalog.owner(snapshot, selected_hir)?;
-            let row = self.tables.row(13, context)?;
-            ensure!(
-                self.catalog.callable_by_owner.contains_key(&selected_owner)
-                    && row[0] == snapshot
-                    && row[1] == selected_owner
-                    && row[5] == 1,
-                "replay context does not own the selected lexical body"
-            );
-        }
         frozen
             .original_calls
             .iter()
@@ -803,29 +533,14 @@ impl ProgramPacket {
                     .call_owner_by_hir
                     .get(&call.call_hir)
                     .ok_or_else(|| anyhow!("original call has no accepted owner"))?;
-                let context = match selected_replay.get(&actual_hir) {
-                    Some(&context) => context,
-                    None => *self
-                        .original_contexts
-                        .get(&(snapshot, actual_hir))
-                        .ok_or_else(|| anyhow!("original call context absent"))?,
-                };
+                let context = *self.original_contexts
+                    .get(&(snapshot, actual_hir))
+                    .ok_or_else(|| anyhow!("original call context absent"))?;
                 self.admitted_occurrence(snapshot, context, call.call_hir, actual_hir)
             })
             .collect()
     }
 
-    /// The admitted calls that replay context `context` owns outside its
-    /// template's inventory (`append_context_calls`), in call HIR order.
-    pub fn admitted_context_calls(&self, snapshot: u32, context: u32) -> Result<Vec<AdmittedCall>> {
-        self.ready()?;
-        self.context_call_owners
-            .range((context, 0)..=(context, u32::MAX))
-            .map(|(&(_, call_hir), &actual_hir)| {
-                self.admitted_occurrence(snapshot, context, call_hir, actual_hir)
-            })
-            .collect()
-    }
 
     fn admitted_occurrence(
         &self,
@@ -931,7 +646,7 @@ impl ProgramPacket {
 
     /// Exact identity joins only. Goal equality and concrete selection have
     /// already run on the GPU; symbolic admission cannot authorize replay.
-    pub fn replay_origin(&self, origin: &AdmittedCall) -> Result<(u32, u32, u32, Span)> {
+    pub fn concrete_origin(&self, origin: &AdmittedCall) -> Result<(u32, u32, u32, Span)> {
         self.ready()?;
         ensure!(
             Arc::ptr_eq(&origin.catalog, &self.catalog) && origin.arena_id == self.arena_id,
@@ -939,7 +654,7 @@ impl ProgramPacket {
         );
         ensure!(
             origin.concrete && self.admitted_calls.get(&origin.row) == Some(&1),
-            "body replay requires a GPU-checked concrete origin"
+            "implementation application requires a GPU-checked concrete origin"
         );
         let site = self.retained_call_site(origin.row)?;
         ensure!(
@@ -1139,35 +854,6 @@ impl ProgramPacket {
         Ok(environment)
     }
 
-    fn body_environment(&mut self, original: u32, owner: u32, context: u32) -> Result<u32> {
-        let source: [u32; 5] = self.tables.row(11, original)?.try_into().unwrap();
-        ensure!(
-            source[0] == owner && source[3] == 1,
-            "origin environment has a different owner/form"
-        );
-        let environment = self.tables.count(11)?;
-        let first = self.tables.count(12)?;
-        for index in source[1]..add(source[1], source[2], "origin bindings")? {
-            let binding: [u32; 4] = self.tables.row(12, index)?.try_into().unwrap();
-            ensure!(
-                binding[0] == original,
-                "origin binding has a different environment"
-            );
-            self.tables
-                .push(12, &[environment, binding[1], binding[2], 0])?;
-        }
-        self.tables.push(
-            11,
-            &[
-                owner,
-                if source[2] == 0 { 0 } else { first },
-                source[2],
-                0,
-                context,
-            ],
-        )?;
-        Ok(environment)
-    }
 
     /// Produces upload/copy plans only. The caller must finish GPU catalog
     /// admission/coherence before submitting a batch, then check all phase

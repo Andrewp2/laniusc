@@ -13,7 +13,6 @@ struct Params
     uint dependency_interfaces_present;
     uint retain_callable_owners;
     uint trait_obligation_mode;
-    uint authorized_replay_callable;
     uint canonical_library_id;
     uint canonical_unit_id;
 };
