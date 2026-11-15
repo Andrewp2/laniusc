@@ -46,6 +46,7 @@ pub use object::{
 };
 
 mod support;
+pub(crate) use support::TailSpan;
 
 /// Daemon-resident GPU linker pipelines for durable x86 objects.
 pub struct GpuX86Linker {

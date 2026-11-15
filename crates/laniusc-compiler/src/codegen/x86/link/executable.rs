@@ -321,10 +321,10 @@ impl GpuX86Linker {
         dynamic: Option<&X86DynamicImage>,
         consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.symbols");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.symbols");
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
         drop(span);
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.plan");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.plan");
         let dynamic_len = match dynamic {
             Some(image) => {
                 let layout = image.layout(input)?;
@@ -344,14 +344,14 @@ impl GpuX86Linker {
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
 
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.layout");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.layout");
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
         drop(span);
         let dynamic_rows = dynamic
             .map(|image| image.rows(input, &object_layout.object_bases))
             .transpose()?;
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.pages");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages");
         let result = self.emit_executable_pages(
             device,
             queue,
@@ -401,8 +401,10 @@ impl GpuX86Linker {
             )
         });
         let mut emitted_len = 0usize;
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.splices");
         let splices =
             super::splice::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
+        drop(span);
         for page in &plan.pages {
             if emitted_len != page.output_base as usize {
                 bail!(
@@ -411,6 +413,7 @@ impl GpuX86Linker {
                     emitted_len
                 );
             }
+            let upload_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.upload");
             let page_capacity = (page.output_len as usize).div_ceil(4).max(1) * 4;
             let text_bytes = input
                 .read_text_range_borrowed(page.text_input.clone())
@@ -502,6 +505,8 @@ impl GpuX86Linker {
                 .len()
                 .div_ceil(max_relocations_per_batch)
                 .max(1);
+            drop(upload_span);
+            let record_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.record");
             let mut graph_guard = self
                 .executable_page_graph
                 .lock()
@@ -746,6 +751,8 @@ impl GpuX86Linker {
                 "codegen.x86.link.page",
                 encoder.finish(),
             );
+            drop(record_span);
+            let wait_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.wait");
             let slice = readback.slice(..);
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
@@ -768,7 +775,10 @@ impl GpuX86Linker {
             if relocation_status_words[0] != 1 || relocation_status_words[1] != 0 {
                 bail!("x86 GPU linker relocation failed with status {relocation_status_words:?}");
             }
+            drop(wait_span);
+            let consume_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.consume");
             consume_page(page.output_base, &mapped[..page.output_len as usize])?;
+            drop(consume_span);
             emitted_len += page.output_len as usize;
             drop(mapped);
             readback.unmap();

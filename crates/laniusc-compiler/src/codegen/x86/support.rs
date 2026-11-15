@@ -329,3 +329,29 @@ pub(super) fn reflected_bind_group(
         },
     )
 }
+
+/// A host span of the native link tail: a trace span, and a stderr line under
+/// `LANIUS_REPORT=host-timing`.
+pub(crate) struct TailSpan {
+    name: &'static str,
+    start: Option<std::time::Instant>,
+    _trace: crate::gpu::trace::HostSpan,
+}
+
+impl TailSpan {
+    pub(crate) fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            start: crate::options::get().report.host_timing.then(std::time::Instant::now),
+            _trace: crate::gpu::trace::HostSpan::new("host.compiler", name),
+        }
+    }
+}
+
+impl Drop for TailSpan {
+    fn drop(&mut self) {
+        if let Some(start) = self.start {
+            eprintln!("[native_tail] {}: {:.3}ms", self.name, start.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+}
