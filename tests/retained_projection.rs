@@ -139,30 +139,9 @@ fn retain(sources: &[(&str, &str)]) -> std::sync::Arc<laniusc_compiler::type_che
     store
 }
 
-#[test]
-fn retained_projection_probe_uses() {
-    let store = retain(&[("lib", SLICE_LIBRARY), ("app", SLICE_APP)]);
-    let s = store.status().unwrap();
-    let terms = s[2] as usize;
-    let heads = store.read_store_words("rt_term_head", terms * 4).unwrap();
-    let uses = store.read_store_words("rt_uses", 12 * s[8] as usize).unwrap();
-    let keys = store.read_store_words("rt_decl_key", 4 * s[0] as usize).unwrap();
-    let dir = store.read_store_words("rt_dir", 16 * s[4] as usize).unwrap();
-    for e in 0..s[4] as usize {
-        let d = &dir[e * 16..e * 16 + 16];
-        eprintln!("dir {e}: {:?} key {:?}", d, &keys[d[0] as usize * 4..d[0] as usize * 4 + 4]);
-    }
-    for u in 0..s[8] as usize {
-        let w = &uses[u * 12..u * 12 + 12];
-        let env = w[4] as usize;
-        let head = if env < terms { heads[env * 4..env * 4 + 4].to_vec() } else { vec![] };
-        eprintln!("use {u}: {:?} env head {head:?}", w);
-    }
-}
-
 mod slice {
     use laniusc_compiler::{
-        compiler::{GpuCompiler, GpuCompilerBackends},
+        compiler::{GpuCompiler, GpuCompilerBackends, fallback_counters},
         type_checker::program_retention::{
             ProgramRetention,
             projection::{
@@ -171,6 +150,7 @@ mod slice {
                 ProjectionOptions,
                 ProjectionOutcome,
                 RetainedProjection,
+                error,
                 read_test_buffer,
                 run_producer_kernel,
                 test_buffer,
@@ -252,7 +232,10 @@ mod slice {
     }
 
     fn slice_program() {
+        let exported = fallback_counters();
         let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
+        let before = fallback_counters();
+        assert!(before.0 >= exported.0 + 2, "the export ran two frontend checks: {exported:?} -> {before:?}");
         let inputs = ProjectionInputs::new(64, 256);
         let produced = produce(&store, &inputs, APP_LIBRARY);
         eprintln!("producer: {produced:?}");
@@ -267,9 +250,140 @@ mod slice {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
             ProjectionOutcome::Rejected { error, report } => panic!("{error} ({report:?})"),
         };
-        eprintln!("projection: {report:?} at {:?}", started.elapsed());
+        eprintln!(
+            "projection: {} instances, {} rows, {} requests, {} batches; {} dispatches, {} readbacks ({} bytes), \
+             {} allocations ({} bytes); plan {} us, substitution {} us ({} dispatches), check {} us, lowering {} us; total {:?}",
+            report.instances, report.rows, report.requests, report.batches.len(), report.dispatches, report.readbacks,
+            report.readback_bytes, report.allocations, report.allocated_bytes, report.plan_us, report.substitution_us,
+            report.substitution.as_ref().map_or(0, |s| s.dispatches), report.check_us, report.lowering_us, started.elapsed()
+        );
         let elf = compiler.link_x86_objects(&objects).expect("link");
+        assert_eq!(fallback_counters(), before, "projection and link ran no frontend check and no replay lowering");
         let out = common::run_x86_64_elf_output("retained projection", "retained_projection", &elf);
         assert_eq!(out.status.code(), Some(7));
+    }
+
+    fn execute(
+        compiler: &GpuCompiler<'_>,
+        projection: &mut RetainedProjection,
+        store: &ProgramRetention,
+        inputs: &ProjectionInputs,
+        options: ProjectionOptions,
+        name: &str,
+    ) -> (Option<i32>, laniusc_compiler::type_checker::program_retention::projection::ProjectionReport, usize) {
+        let (objects, report) = match project(compiler, projection, store, inputs, options) {
+            ProjectionOutcome::Objects { objects, report } => (objects, report),
+            ProjectionOutcome::Rejected { error, report } => panic!("{error} ({report:?})"),
+        };
+        let count = objects.len();
+        let elf = compiler.link_x86_objects(&objects).expect("link");
+        let out = common::run_x86_64_elf_output(name, name, &elf);
+        (out.status.code(), report, count)
+    }
+
+    // Small capacities, several batches with cross-batch calls, one engine
+    // reused for an unrelated build, and a stale generation.
+    #[test]
+    fn retained_projection_batches_retries_reuse_and_staleness() {
+        common::run_with_timeout("retained projection batches", batches_program);
+    }
+
+    const OTHER_LIBRARY: &str = r#"module lib::a;
+pub fn twice<T>(v: T, w: T) -> T { return w; }
+"#;
+
+    const OTHER_APP: &str = r#"module app::b;
+import lib::a;
+fn start<T>() -> i32 {
+    let x: u32 = twice(1, 4);
+    let y: i32 = twice(-3, 5);
+    return y + 1;
+}
+fn main() -> i32 { return start<u8>(); }
+"#;
+
+    fn batches_program() {
+        let compiler = codegen();
+        let counters = fallback_counters();
+        let mut projection = RetainedProjection::new(SubstitutionCapacity::tiny()).unwrap();
+        let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
+        // Rank capacity grows from 1 (`ProjectionInputs` is sized by the producer).
+        let inputs = ProjectionInputs::new(8, 16);
+        produce(&store, &inputs, APP_LIBRARY);
+        let options = ProjectionOptions { batch_rows: 16, ..ProjectionOptions::default() };
+        let (code, report, objects) = execute(&compiler, &mut projection, &store, &inputs, options, "retained_projection_batches");
+        eprintln!("batched: {objects} objects, {report:?}");
+        assert_eq!(code, Some(7));
+        assert!(report.batches.len() >= 3, "{:?}", report.batches);
+        assert_eq!(objects, report.batches.len());
+        let substitution = report.substitution.as_ref().unwrap();
+        assert!(substitution.attempts > 1 || substitution.growths > 0, "tiny capacity grows: {substitution:?}");
+        // One identity chain for every instance.
+        let options = ProjectionOptions { batch_rows: 16, identity_mask: 0 };
+        let (code, _, _) = execute(&compiler, &mut projection, &store, &inputs, options, "retained_projection_chain");
+        assert_eq!(code, Some(7));
+
+        // Stale: a new build of the store invalidates the producer's records.
+        store.begin_build().unwrap();
+        match project(&compiler, &mut projection, &store, &inputs, ProjectionOptions::default()) {
+            ProjectionOutcome::Rejected { error, .. } => assert_eq!(error.code, error::READINESS, "{error}"),
+            ProjectionOutcome::Objects { .. } => panic!("stale instance records lowered"),
+        }
+        drop(store);
+
+        // The same projection and compiler for an unrelated program.
+        let store = super::retain(&[("lib", OTHER_LIBRARY), ("app", OTHER_APP)]);
+        let inputs = ProjectionInputs::new(8, 16);
+        produce(&store, &inputs, APP_LIBRARY);
+        let (code, report, _) = execute(&compiler, &mut projection, &store, &inputs, ProjectionOptions::default(), "retained_projection_other");
+        eprintln!("unrelated: {report:?}");
+        assert_eq!(code, Some(6));
+        // Exports of the two stores ran the frontend; nothing else did.
+        assert_eq!(fallback_counters().1, counters.1, "no replay lowering");
+    }
+
+    // An instance that breaks the literal rule fails at the template's
+    // location and publishes no object. The frontend checks every instance
+    // it compiles, so the test rewrites the retained literal of the
+    // symbolic `v + 37` to 300: `bump<u8>` then holds a literal its type
+    // cannot represent, which only the projection sees.
+    #[test]
+    fn retained_projection_rejects_instance_rule_violation() {
+        common::run_with_timeout("retained projection rule", rule_program);
+    }
+
+    const RULE_APP: &str = r#"module app::b;
+import lib::a;
+fn bump<T>(v: T) -> T { return v + 37; }
+fn start<T>() -> i32 {
+    let x: u8 = bump(1);
+    return 0;
+}
+fn main() -> i32 { return start<u8>(); }
+"#;
+
+    fn rule_program() {
+        let store = super::retain(&[("lib", OTHER_LIBRARY), ("app", RULE_APP)]);
+        let rows = store.status().unwrap()[10] as usize;
+        let words = store.read_store_words("rt_seg_rows", rows * 28).unwrap();
+        let literal = (0..rows)
+            .filter(|&r| words[r * 28] == 23 && words[r * 28 + 9] == 37 && words[r * 28 + 10] == 0)
+            .collect::<Vec<_>>();
+        assert_eq!(literal.len(), 1, "one retained literal 37");
+        store.write_store_words("rt_seg_rows", (literal[0] * 28 + 9) as u64, &[300]).unwrap();
+        let inputs = ProjectionInputs::new(8, 16);
+        produce(&store, &inputs, APP_LIBRARY);
+        let compiler = codegen();
+        let mut projection = RetainedProjection::new(SubstitutionCapacity::default()).unwrap();
+        match project(&compiler, &mut projection, &store, &inputs, ProjectionOptions::default()) {
+            ProjectionOutcome::Rejected { error, report } => {
+                eprintln!("rejected: {error} ({report:?})");
+                assert_eq!(error.code, error::RULE);
+                assert_eq!(error.detail >> 24, error::RULE_INTEGER_RANGE);
+                assert_eq!(error.byte as usize, RULE_APP.find("37").unwrap());
+                assert!(report.batches.is_empty(), "nothing was lowered");
+            }
+            ProjectionOutcome::Objects { .. } => panic!("bump<u8> with 300 lowered"),
+        }
     }
 }

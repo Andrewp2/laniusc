@@ -1045,6 +1045,9 @@ impl GpuLoweringPipeline {
         mut timer: Option<&mut GpuTimer>,
         bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
+        if !matches!(selection, super::lowering::ReplaySelection::Functions(&[])) {
+            crate::compiler::count_replay_lowering();
+        }
         let bounds = job_bounds(bounds);
         let split = SubmissionSplit { device, queue };
         // Like `record`, time every lowering operation; without this scope

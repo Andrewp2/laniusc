@@ -209,7 +209,12 @@ impl ProjectionInputs {
         let instances = instances.max(1);
         let routes = routes.max(1);
         Self {
-            instances: storage(device, "pj_instances", instances as u64 * INSTANCE_WORDS * 16, false),
+            instances: storage(
+                device,
+                "pj_instances",
+                instances as u64 * INSTANCE_WORDS * 16,
+                false,
+            ),
             routes: storage(device, "pj_routes", routes as u64 * 16, false),
             readiness: storage(device, "pj_readiness", 16, false),
             instance_capacity: instances,
@@ -496,13 +501,19 @@ fn filled(device: &wgpu::Device, label: &'static str, words: u64, fill: u32) -> 
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: words * 4,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: fill != 0,
     });
     if fill != 0 {
         {
             let bytes: Vec<u8> = (0..words).flat_map(|_| fill.to_le_bytes()).collect();
-            buffer.slice(..).get_mapped_range_mut().slice(..).copy_from_slice(&bytes);
+            buffer
+                .slice(..)
+                .get_mapped_range_mut()
+                .slice(..)
+                .copy_from_slice(&bytes);
         }
         buffer.unmap();
     }
@@ -541,7 +552,10 @@ impl BatchColumns {
                 Size::Words(n) => n,
             };
             let (buffer, size) = make(name, count * per, fill);
-            words.insert(name, LaniusBuffer::new((buffer, size), (count * per) as usize));
+            words.insert(
+                name,
+                LaniusBuffer::new((buffer, size), (count * per) as usize),
+            );
         }
         let mut typed = |label: &'static str, count: u64, per: u64| {
             let (buffer, size) = make(label, count * per, 0);
@@ -628,8 +642,16 @@ impl BatchColumns {
     }
 
     fn hir(&self) -> GpuSemanticHirInputs<'_> {
-        let [count, call_arg_count, field_count, match_arm_count, match_payload_row_count,
-            array_element_row_count, string_count, param_count] = &self.counts;
+        let [
+            count,
+            call_arg_count,
+            field_count,
+            match_arm_count,
+            match_payload_row_count,
+            array_element_row_count,
+            string_count,
+            param_count,
+        ] = &self.counts;
         GpuSemanticHirInputs {
             count,
             core: &self.core,
@@ -765,7 +787,13 @@ pub struct RetainedProjection {
 }
 
 fn grown(current: u32, need: u32) -> u32 {
-    if need <= current { current } else { need.max(current.saturating_mul(2)).max(16).next_power_of_two() }
+    if need <= current {
+        current
+    } else {
+        need.max(current.saturating_mul(2))
+            .max(16)
+            .next_power_of_two()
+    }
 }
 
 struct Recorder<'a> {
@@ -819,7 +847,10 @@ impl RetainedProjection {
         let d = &self.device;
         self.ranks = [
             ("pj_info", storage(d, "pj_info", n * INFO_WORDS * 16, false)),
-            ("pj_base", storage(d, "pj_base", (n + 1) * COLUMNS * 4, false)),
+            (
+                "pj_base",
+                storage(d, "pj_base", (n + 1) * COLUMNS * 4, false),
+            ),
             ("pj_errors", storage(d, "pj_errors", n * 16, false)),
             ("pj_identity", storage(d, "pj_identity", slots * 4, false)),
         ]
@@ -865,7 +896,12 @@ impl RetainedProjection {
             return;
         }
         let n = grown(self.batch_capacity, batches.max(1));
-        self.batches = Some(storage(&self.device, "pj_batches", n as u64 * BATCH_WORDS as u64 * 4, false));
+        self.batches = Some(storage(
+            &self.device,
+            "pj_batches",
+            n as u64 * BATCH_WORDS as u64 * 4,
+            false,
+        ));
         self.batch_capacity = n;
         report.allocations += 1;
         report.allocated_bytes += n as u64 * BATCH_WORDS as u64 * 4;
@@ -892,7 +928,12 @@ impl RetainedProjection {
         self.columns = Some(columns);
     }
 
-    fn read(&self, buffer: &wgpu::Buffer, words: usize, report: &mut ProjectionReport) -> Result<Vec<u32>> {
+    fn read(
+        &self,
+        buffer: &wgpu::Buffer,
+        words: usize,
+        report: &mut ProjectionReport,
+    ) -> Result<Vec<u32>> {
         let bytes = (words as u64 * 4).min(buffer.size());
         report.readbacks += 1;
         report.readback_bytes += bytes;
@@ -937,7 +978,13 @@ impl RetainedProjection {
             }
             .or_else(|| self.ranks.get(n))
             .or_else(|| self.rows.get(n))
-            .or_else(|| inputs.buffers().into_iter().find(|(k, _)| *k == n).map(|(_, b)| b))
+            .or_else(|| {
+                inputs
+                    .buffers()
+                    .into_iter()
+                    .find(|(k, _)| *k == n)
+                    .map(|(_, b)| b)
+            })
             .or_else(|| extra.iter().find(|(k, _)| *k == n).map(|(_, b)| *b))
             .or_else(|| self.columns.as_ref().and_then(|c| c.binding(n)))
             .or_else(|| store.buffers.get(n))
@@ -956,9 +1003,11 @@ impl RetainedProjection {
     fn recorder(&self) -> Recorder<'_> {
         Recorder {
             projection: self,
-            encoder: self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("retained_projection"),
-            }),
+            encoder: self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("retained_projection"),
+                }),
             dispatches: 0,
         }
     }
@@ -969,7 +1018,8 @@ impl RetainedProjection {
         words[CFG_BATCH_ROWS] = options.batch_rows.max(1);
         words[CFG_BATCH] = batch;
         words[CFG_IDENTITY_MASK] = options.identity_mask;
-        self.queue.write_buffer(&self.config, 0, &words_bytes(&words));
+        self.queue
+            .write_buffer(&self.config, 0, &words_bytes(&words));
     }
 
     /// Projects and lowers the producer's instances against `store`.
@@ -995,12 +1045,16 @@ impl RetainedProjection {
         let mut status = vec![0u32; STATUS_WORDS];
         status[S_ERROR_RANK] = u32::MAX;
         status[S_ERROR_ROW] = u32::MAX;
-        self.queue.write_buffer(&self.status, 0, &words_bytes(&status));
+        self.queue
+            .write_buffer(&self.status, 0, &words_bytes(&status));
         let totals = {
             let guard = store.store.lock().unwrap();
             let mut r = self.recorder();
             r.encoder.clear_buffer(&self.ranks["pj_identity"], 0, None);
-            let none = [("sb_results", &self.no_results), ("sb_counts", &self.no_counts)];
+            let none = [
+                ("sb_results", &self.no_results),
+                ("sb_counts", &self.no_counts),
+            ];
             r.dispatch(K_PLAN, &guard, inputs, &none, inputs.instance_capacity)?;
             r.dispatch_groups(K_SCAN, &guard, inputs, &none, 1)?;
             report.dispatches += r.finish();
@@ -1016,8 +1070,15 @@ impl RetainedProjection {
 
         // Substitution requests and the engine.
         let started = std::time::Instant::now();
-        if self.requests.as_ref().is_none_or(|r| r.capacity() < report.requests.max(1)) {
-            let capacity = grown(self.requests.as_ref().map_or(0, |r| r.capacity()), report.requests.max(1));
+        if self
+            .requests
+            .as_ref()
+            .is_none_or(|r| r.capacity() < report.requests.max(1))
+        {
+            let capacity = grown(
+                self.requests.as_ref().map_or(0, |r| r.capacity()),
+                report.requests.max(1),
+            );
             self.requests = Some(SubstitutionRequests::new(capacity));
             report.allocations += 1;
             report.allocated_bytes += capacity as u64 * 16;
@@ -1039,12 +1100,18 @@ impl RetainedProjection {
         let requests = self.requests.as_ref().unwrap();
         let substitution = match self.substitution.run(store, requests)? {
             SubstitutionRun::Published(report) => report,
-            SubstitutionRun::RequestCapacity { requested, capacity } => {
+            SubstitutionRun::RequestCapacity {
+                requested,
+                capacity,
+            } => {
                 bail!("projection wrote {requested} substitution requests into {capacity} rows")
             }
         };
         let run = substitution.publication.run;
-        trace(&format!("substitution: run {run}, statuses {:?}", substitution.status_counts()));
+        trace(&format!(
+            "substitution: run {run}, statuses {:?}",
+            substitution.status_counts()
+        ));
         report.substitution = Some(substitution);
         report.substitution_us = started.elapsed().as_micros() as u64;
 
@@ -1110,9 +1177,16 @@ impl RetainedProjection {
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
         if status[S_BATCHES] != batches {
-            bail!("retained projection planned {} batches, expected {batches}", status[S_BATCHES]);
+            bail!(
+                "retained projection planned {} batches, expected {batches}",
+                status[S_BATCHES]
+            );
         }
-        let table = self.read(self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS, &mut report)?;
+        let table = self.read(
+            self.batches.as_ref().unwrap(),
+            batches as usize * BATCH_WORDS,
+            &mut report,
+        )?;
         let all: Vec<ProjectionBatch> = table
             .chunks_exact(BATCH_WORDS)
             .map(|w| ProjectionBatch {
@@ -1154,24 +1228,44 @@ impl RetainedProjection {
             let columns = self.columns.as_ref().unwrap();
             if std::env::var_os("LANIUS_PROJECTION_TRACE").is_some() {
                 let rows = batch.rows as usize;
-                for name in ["ob_function_entrypoint", "ob_public_decl_index", "ob_enclosing_fn", "ob_expr_ref_tag",
-                    "ob_expr_ref_payload", "ob_value_type", "ob_expr_scalar_type", "ob_count_rows"] {
+                for name in [
+                    "ob_function_entrypoint",
+                    "ob_public_decl_index",
+                    "ob_enclosing_fn",
+                    "ob_expr_ref_tag",
+                    "ob_expr_ref_payload",
+                    "ob_value_type",
+                    "ob_expr_scalar_type",
+                    "ob_count_rows",
+                ] {
                     let buffer = columns.binding(name).unwrap();
                     let words = self.read(buffer, rows, &mut report)?;
                     trace(&format!("{name}: {words:?}"));
                 }
-                for name in ["ob_ti_kind", "ob_ti_native_words", "ob_ti_arg_count", "ob_ti_decl_token", "ob_ext_library",
-                    "ob_imported_layout_kind", "ob_ti_len_kind"] {
+                for name in [
+                    "ob_ti_kind",
+                    "ob_ti_native_words",
+                    "ob_ti_arg_count",
+                    "ob_ti_decl_token",
+                    "ob_ext_library",
+                    "ob_imported_layout_kind",
+                    "ob_ti_len_kind",
+                ] {
                     let words = self.read(columns.binding(name).unwrap(), 64, &mut report)?;
                     trace(&format!("{name}[32..64]: {:?}", &words[32..64]));
                 }
                 let payload = self.read(&columns.payload.buffer, rows * 4, &mut report)?;
-                trace(&format!("payload: {:?}", payload.chunks(4).collect::<Vec<_>>()));
+                trace(&format!(
+                    "payload: {:?}",
+                    payload.chunks(4).collect::<Vec<_>>()
+                ));
                 let core = self.read(&columns.core.buffer, rows * 4, &mut report)?;
                 trace(&format!("core: {:?}", core.chunks(4).collect::<Vec<_>>()));
                 let calls = self.read(&columns.calls.buffer, rows * 22, &mut report)?;
                 for (i, c) in calls.chunks(22).enumerate() {
-                    if c.iter().any(|&w| w != 0) { trace(&format!("call {i}: {c:?}")); }
+                    if c.iter().any(|&w| w != 0) {
+                        trace(&format!("call {i}: {c:?}"));
+                    }
                 }
             }
             let object = compiler.lower_projected_x86_batch(
@@ -1320,7 +1414,12 @@ pub fn run_producer_kernel(
 /// A zeroed storage buffer of `words` words (test producer output).
 #[doc(hidden)]
 pub fn test_buffer(words: usize) -> wgpu::Buffer {
-    storage(&crate::gpu::device::global().device, "fx_out", (words.max(4) * 4) as u64, false)
+    storage(
+        &crate::gpu::device::global().device,
+        "fx_out",
+        (words.max(4) * 4) as u64,
+        false,
+    )
 }
 
 /// Test oracle: `words` words of `buffer`.

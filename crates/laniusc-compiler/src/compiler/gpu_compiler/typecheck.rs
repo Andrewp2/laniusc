@@ -585,6 +585,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         lowering_bounds: LoweringJobBounds,
         output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
+        crate::compiler::count_frontend_check();
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
         // The parse ran with `token_capacity`, which bounds the job's HIR.

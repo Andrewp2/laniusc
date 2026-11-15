@@ -35,10 +35,18 @@ environment order). Rank is the native instance symbol:
   substitution engine accepts and publishes. Two ranks with one identity are
   rejected (`DUPLICATE`).
 - `generation` is the store build generation (`rt_counts[78]`).
-- `flags`: bit 0 `ENTRY` marks the program entry instance. This exists for
-  tests whose program root is an instance. Production roots are original
-  objects whose provisional use symbols the GPU finalizer rewrites.
+- `flags`: bit 0 `ENTRY` marks the program entry instance. An entry has no
+  parameters. This exists for tests whose program root is an instance.
+  Production roots are original objects whose provisional use symbols the
+  GPU finalizer rewrites.
 - The callable must be a committed, complete `FREE_FN` with a body segment.
+  Only generic bodies have a segment
+  ([program retention](compiler-program-retention.md), "Nongeneric bodies"),
+  so the instances are generic instances. A use inside a nongeneric body
+  whose environment is closed is a discovery root.
+- Projection does not depend on the rank order. Errors are reported in
+  (rank, row) order, so a producer with a deterministic rank order gives a
+  deterministic first error.
 
 ### Routes, `pj_routes`
 
@@ -75,24 +83,121 @@ performs its own signature check (above) regardless of bit 1.
 ## Stages
 
 All semantic work is GPU lane work. The host allocates, records, submits and
-reads status words and the finished objects.
+reads three compact status records: the plan totals, the check status with
+the first error and batch maxima, and the batch table. It reads no instance,
+term, row or route.
 
-| Step | Lanes | Work |
+| Kernel | Lanes | Work |
 | --- | --- | --- |
-| 00 plan | one per instance | validate the record, read the body sizes, count requests |
-| 01 scan | uint scans | instance bases of rows, tokens, side tables and requests |
-| 02 requests | one per request | substitution requests: result, parameters, body rows, then use environment, result, matched receiver and receiver parameter |
-| substitution | engine | closed, normalized terms; request capacity is the producer rerun |
-| 03 layout | one per store term, per height | native words and field offsets of closed types |
-| 04 batch plan | 1 | batch totals and capacity demand |
-| 05 rows | one per batch row | HIR rows and semantic columns |
-| 06 side | one per batch side row | call arguments, fields, parameters, array elements |
-| 07 tree | one per batch row | expression parent and root, nearest loop, control depth |
-| 08 check | one per batch row | literal, operator and destination rules; routes and signatures |
-| 09 finish | 1 | lowering counts and the batch status |
-| lowering | existing pipeline | semantic LIR, optimization, x86 object |
+| `00_plan` | one per rank | validate readiness, the record and the directory entry; insert the identity; write the rank plan and counts |
+| `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
+| `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results |
+| substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
+| `03a_layout_init`, `03_layout` × 32 | one per TermId | closed nominal struct layouts and the lowering type tables, indexed by TermId |
+| `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
+| `05_check` | one per global row | forms, types, literal, operator and destination rules, calls, record literals, members |
+| `05b_report` | 1 | first error in (rank, row) order, or CHECKED |
+| `06_batch_plan` | one per batch | rank range, rows, tokens and side tables of each batch; maxima |
+| `07_rows`, `08_side`, `09_batch_finish` | one per batch row / side row / 1 | lowering HIR and semantic columns, lowering counts |
+| lowering | existing pipeline | `GpuCompiler::lower_projected_x86_batch`: semantic LIR, optimization, x86 object |
 
-A lowering batch is a range of ranks. Instances keep their rows contiguous
-in rank order behind one root row. Every call, also inside one batch, is a
-native symbol call to the route's identity, so a call names the same symbol
-in every batch.
+Every rank is checked before any batch is projected, so a rejected run
+publishes no object. A batch holds the ranks whose first global row is in
+`[b × batch_rows, (b + 1) × batch_rows)`. Instance rows are contiguous in
+rank order behind one root row. Every call, also inside one batch, is a
+dependency symbol call to the route's identity, so a call names the same
+symbol in every batch, and the linker resolves calls across batches.
+
+The host driver is `type_checker::program_retention::projection::RetainedProjection`.
+`run(compiler, store, inputs, options)` returns `Objects { objects, report }`
+or `Rejected { error, report }`. `ProjectionError` carries the code, detail,
+rank, DeclId, body-relative row and token, file id and file-relative byte.
+
+## Supported forms
+
+v1 projects free functions whose bodies use: parameters, `let`, `return`,
+`if`, `while`, `break`, `continue`, assignment, unary and binary operators,
+integer, float and boolean literals, names of locals and parameters, member
+reads of nominal structs, struct literals and direct calls. Types are scalars
+and closed nominal structs whose fields are scalars, closed structs or the
+struct's own type parameters.
+
+Every other form fails closed with its template location:
+
+| Form | Error |
+| --- | --- |
+| enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
+| arrays, slices, references, strings, index expressions, `for`, `?` | `FORM` or `TYPE` |
+| methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
+| constant generics, constant values of rows | `FORM` |
+| a use whose recorded result is not a stored term | `USE` (detail `0xfffe`) |
+
+## Root obligations
+
+| Obligation | State |
+| --- | --- |
+| Pattern rows are not constructor uses; enum instances are reached from signature, parameter, scrutinee and row terms | Enums and `match` are rejected (`FORM`, `ROLE`). The producer reaches instances only through DIRECT uses. |
+| A nested pattern's matched type is the enclosing payload's schema-substituted type | Not implemented; patterns are rejected. |
+| Substitute u1.z/u1.w under the instance ENV and validate the adjustment | Not implemented; any receiver adjustment or METHOD use is rejected (`USE`). The receiver contract to port: `enter`/`read`/`peek` borrow mode 2, deref 1; by-value `(2, 0)`; twice borrowed `(2, 2)`; consuming self `(1, 0)`. |
+| r3.y is a predicate ordinal only when r3.z is BOUND (4), a use index otherwise | Implemented in `05_check` and `07_rows`. |
+| The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be a stored term, and its substitution to equal the row type and the target's result. |
+
+## Gaps
+
+- **Original objects.** Nongeneric bodies keep no segment. Their own jobs
+  lower them, so a program whose `main` calls an instance needs the original
+  object and the GPU finalizer's route rewrite. The slice test makes the
+  projected `start<u8>` the entry instead.
+- **DeclNative routes** (calls from an instance to a nongeneric function) are
+  checked (declaration key, closed signature) but not linked in a test.
+- **Trait routes.** The catalog publication (`docs/compiler-retained-trait-catalog.md`,
+  "Publication") gives a goal call its impl method DeclId and bindings.
+  Discovery must intern the ENV and write the route; projection rejects
+  METHOD uses until receivers are ported.
+- **Float literal status.** Only f32 overflow is detected; the frontend's
+  other float statuses are not retained.
+- **Lowering retry.** `lower_projected_x86_batch` retries once at the
+  lowering's output demand. No test forces that retry.
+
+## Receipts
+
+`cargo test --release --test compiler retained_projection:: -- --test-threads=1`
+(5 tests) under the GPU validation lock:
+
+- `retained_projection_executes_two_unit_program`: two units retained, the
+  frontend released and its scratch poisoned. The test producer finds the
+  root `start<u8>` and instances `swap<bool>`, `scale<i32>`, `keep<u32>` and
+  `keep<i32>`. The program uses `PairA {i32, u32}` and `PairB {u32, i32}`, the
+  private generic `keep` and private `Hidden<T>`, an f64 value, contextual
+  literals and instance routes. It exits 7. The fallback counters
+  (`compiler::fallback_counters`) show no frontend check and no replay
+  lowering during projection and link.
+- `retained_projection_batches_retries_reuse_and_staleness`: `batch_rows`
+  16 gives 4 objects with cross-batch calls, and exits 7. A tiny substitution
+  capacity takes 3 attempts with 2 growths. Identity mask 0 puts every
+  identity on one chain. A new store build rejects the old records with
+  `READINESS`. The same projection then lowers an unrelated program
+  (exit 6).
+- `retained_projection_rejects_instance_rule_violation`: the retained
+  literal of `v + 37` in `bump<T>` is rewritten to 300. The run is rejected
+  with `RULE` / `INTEGER_RANGE` at the byte of `37`, and no batch is lowered.
+- `retained_projection_oracle_columns` captures the frontend's lowering
+  columns for a matching program; it fixed the column defaults.
+
+## Costs
+
+The two-unit slice: 5 instances, 90 rows, 117 requests, 1 batch.
+
+| Figure | Value |
+| --- | --- |
+| projection dispatches | 44 (plan 2, requests 1, layout 33, rows and check 5, batch 3) |
+| substitution dispatches | 38 |
+| host readbacks | 3, 560 bytes |
+| allocations | 8, 1.8 MB (first run) |
+| plan / substitution / check | 0.6 ms / 1.0 ms / 2.7 ms |
+| lowering of the batch | 45 ms (the first lowering job of the process) |
+
+Work is O(rows + requests + terms × 32 layout rounds). The span is the
+substitution's term height plus 32 layout rounds and two tree walks of at
+most 256 steps per row. Memory is O(ranks + rows + TermIds) for the check
+and O(largest batch) for the lowering columns.

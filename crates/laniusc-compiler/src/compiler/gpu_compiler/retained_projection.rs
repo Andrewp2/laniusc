@@ -60,7 +60,9 @@ impl GpuCompiler<'_> {
             match pipeline.finish_x86_object(device, queue, library, unit) {
                 Ok((object, _)) => return Ok(object),
                 Err(error) => {
-                    let demand = pipeline.output_demand_for_retry(&error).map_err(anyhow::Error::msg)?;
+                    let demand = pipeline
+                        .output_demand_for_retry(&error)
+                        .map_err(anyhow::Error::msg)?;
                     match demand {
                         Some(demand) if attempt == 0 => bounds.output_demand = demand,
                         _ => return Err(error),
@@ -74,8 +76,11 @@ impl GpuCompiler<'_> {
     /// Links x86 objects into an executable.
     #[doc(hidden)]
     pub fn link_x86_objects(&self, objects: &[GpuX86RelocatableObject]) -> anyhow::Result<Vec<u8>> {
-        let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter()).map_err(anyhow::Error::msg)?;
-        let linker = self.x86_linker().map_err(|reason| anyhow::anyhow!("{reason}"))?;
+        let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
+            .map_err(anyhow::Error::msg)?;
+        let linker = self
+            .x86_linker()
+            .map_err(|reason| anyhow::anyhow!("{reason}"))?;
         linker
             .link_executable(&self.gpu.device, &self.gpu.queue, &input)
             .map_err(|error| anyhow::anyhow!("{error:?}"))
