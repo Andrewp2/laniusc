@@ -19,8 +19,8 @@ mod implementation_application;
 pub(super) use implementation_application::{ImplProjectionLimits, ProjectedImplApplication};
 mod proof;
 mod retained;
-pub(super) use retained::check as retained_check;
-pub use retained::{RETAINED_POISON, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitStage};
+pub(super) use retained::{check as retained_check, publish as retained_publish};
+pub use retained::{RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -144,6 +144,9 @@ pub(super) struct GpuTraitSolver {
     /// Catalog and native-recipe admission ran but no readback has read
     /// their receipts yet: the first check reads them with its results.
     admission_pending: std::sync::atomic::AtomicBool,
+    /// Wave readbacks include the context, call, result and evidence rows.
+    /// A retained publication clears it: its consumers bind the arenas.
+    semantic_rows: bool,
 }
 
 /// A host packet and precisely the GPU arenas that contain its row closure.
@@ -317,6 +320,7 @@ impl GpuTraitSolver {
             query_scratch_poisoned: false,
             wave_templates: Vec::new(),
             admission_pending: std::sync::atomic::AtomicBool::new(true),
+            semantic_rows: true,
         })
     }
 
@@ -821,11 +825,16 @@ impl GpuTraitSolver {
                 "proof normalization demand",
             )?,
             layout.region(&self.storage, &packet.output, 0, Span::new(0, 1)?)?,
-            layout.region(&self.storage, &packet.output, 2, submission.context_span)?,
-            layout.region(&self.storage, &packet.output, 4, submission.call_span)?,
-            layout.region(&self.storage, &packet.output, 3, submission.obligation_span)?,
-            layout.region(&self.storage, &packet.output, 5, submission.obligation_span)?,
         ];
+        if self.semantic_rows {
+            regions.extend([
+                layout.region(&self.storage, &packet.output, 2, submission.context_span)?,
+                layout.region(&self.storage, &packet.output, 4, submission.call_span)?,
+                layout.region(&self.storage, &packet.output, 3, submission.obligation_span)?,
+                layout.region(&self.storage, &packet.output, 5, submission.obligation_span)?,
+            ]);
+        }
+        let recipe_region = regions.len();
         let admission_pending = self.admission_pending.load(std::sync::atomic::Ordering::Relaxed);
         if admission_pending {
             let status = self.catalog.native_layout.status;
@@ -850,7 +859,7 @@ impl GpuTraitSolver {
                 catalog_status[0] == 1,
                 "program catalog GPU admission/coherence failed: {catalog_status:?}"
             );
-            let recipe_status = one_status(&raw[9])?;
+            let recipe_status = one_status(&raw[recipe_region])?;
             ensure!(recipe_status[0] == 1,
                 "program native recipe GPU admission failed: {recipe_status:?}");
             self.admission_pending.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -861,10 +870,10 @@ impl GpuTraitSolver {
             state: words(&raw[2])?,
             demand: words(&raw[3])?,
             catalog_status,
-            contexts: statuses(&raw[5])?,
-            calls: statuses(&raw[6])?,
-            obligations: statuses(&raw[7])?,
-            evidence: statuses(&raw[8])?,
+            contexts: if self.semantic_rows { statuses(&raw[5])? } else { Vec::new() },
+            calls: if self.semantic_rows { statuses(&raw[6])? } else { Vec::new() },
+            obligations: if self.semantic_rows { statuses(&raw[7])? } else { Vec::new() },
+            evidence: if self.semantic_rows { statuses(&raw[8])? } else { Vec::new() },
         })
     }
 

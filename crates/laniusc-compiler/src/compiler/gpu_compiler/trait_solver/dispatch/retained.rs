@@ -37,7 +37,7 @@ use crate::{
     type_checker::program_retention::{ProgramRetention, counts},
 };
 
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 19] = [
     "type_checker/trait_solver/retained/entries/00_mark",
     "type_checker/trait_solver/retained/entries/01_units",
     "type_checker/trait_solver/retained/entries/02_count",
@@ -51,7 +51,23 @@ const KEYS: [&str; 13] = [
     "type_checker/trait_solver/retained/entries/06_fill_traits",
     "type_checker/trait_solver/retained/entries/06_fill_uses",
     "type_checker/trait_solver/retained/entries/06_fill_jobs",
+    "type_checker/trait_solver/retained/entries/02a_sort_init",
+    "type_checker/trait_solver/retained/entries/02b_sort_step",
+    "type_checker/trait_solver/retained/entries/02c_sort_finish",
+    "type_checker/trait_solver/retained/entries/07_publish_routes",
+    "type_checker/trait_solver/retained/entries/08_publish_finish",
+    "type_checker/trait_solver/retained/entries/09_fill_words",
 ];
+const FILL_WORDS: usize = 18;
+const SORT_INIT: usize = 13;
+const SORT_STEP: usize = 14;
+const SORT_FINISH: usize = 15;
+const PUBLISH_ROUTES: usize = 16;
+const PUBLISH_FINISH: usize = 17;
+const QUERY_KEY: &str = "tests/retained_route_query";
+/// Byte stride of one bitonic step's (k, j) in the stage buffer: the
+/// storage offset alignment of every supported device.
+const STAGE_STRIDE: u64 = 256;
 const MARK: usize = 0;
 const UNITS: usize = 1;
 const COUNT: usize = 2;
@@ -70,6 +86,9 @@ const CFG_EPOCH: usize = 16;
 const CFG_GENERATION: usize = 18;
 const CFG_PHASE: usize = 19;
 const CFG_TABLE: usize = 20;
+const CFG_SORT: usize = 37;
+const CFG_ATOM_IDS: usize = 38;
+const CFG_ROUTE_USES: usize = 39;
 const CFG_WORDS: usize = 40;
 const REGIONS: usize = 7;
 const COUNTERS: usize = 16;
@@ -80,6 +99,8 @@ const S_FIRST: usize = 1;
 const S_UNSUPPORTED_MEMBER_BOUNDS: usize = 2;
 const S_FILL_FAULTS: usize = 3;
 const S_UNIT_SLOTS_FULL: usize = 4;
+const S_UNSUPPORTED_CALLEES: usize = 5;
+const S_PLAIN_CALLS: usize = 6;
 const S_TOTALS: usize = 8;
 const S_WORDS: usize = 24;
 
@@ -94,6 +115,14 @@ const A_DIR: usize = 4;
 const A_USES: usize = 8;
 const A_TRAITS: usize = 14;
 const RT_FIRST_TERM: u32 = 32;
+
+// route_abi.slang header words.
+const RP_MAGIC: u32 = 0x5254_5231;
+const RP_HEADER_WORDS: u32 = 48;
+const RP_H_STATUS: usize = 8;
+const RP_H_FIRST_FAILURE: usize = 10;
+const RP_USE_WORDS: u32 = 4;
+const RP_ROUTE_WORDS: u32 = 8;
 
 /// Words written over every arena region the producer must fill when
 /// `RetainedTraitOptions::poison_arenas` is set.
@@ -160,6 +189,17 @@ pub struct RetainedTraitCheck {
     /// Bytes of the producer's own readbacks (store counters, producer
     /// state, admission receipts); the solver's wave readbacks are extra.
     pub producer_readback_bytes: u64,
+    /// Width of the producer's binding sort (a power of two at least the
+    /// trait record count) and the bitonic steps it dispatched.
+    pub sort_width: u32,
+    pub sort_steps: u32,
+    /// Publication header words 8-10 (status, failures, first failure),
+    /// read by `check` for the report; `publish` does not read them.
+    pub publication_status: Option<[u32; 3]>,
+    /// Direct and method uses that are not goals: the callee is not a
+    /// committed store callable, or it has no applicable predicate.
+    pub unsupported_callees: u32,
+    pub plain_calls: u32,
 }
 
 impl RetainedTraitCheck {
@@ -185,8 +225,26 @@ struct Scratch {
     entry: LaniusBuffer<u32>,
     snapshot: LaniusBuffer<u32>,
     unit_slot: LaniusBuffer<u32>,
+    sort: LaniusBuffer<u32>,
+    bind_pos: LaniusBuffer<u32>,
+    impl_first: LaniusBuffer<u32>,
+    stages: LaniusBuffer<u32>,
     /// Bound as the arena of the other phase; never written.
     idle: LaniusBuffer<u32>,
+}
+
+/// Buffers a producer or publish pass binds besides the scratch.
+#[derive(Clone, Copy)]
+struct Bound<'a> {
+    catalog: &'a LaniusBuffer<u32>,
+    batch: &'a LaniusBuffer<u32>,
+    routes: &'a LaniusBuffer<u32>,
+    output: &'a LaniusBuffer<u32>,
+    proof: &'a LaniusBuffer<u32>,
+    /// rc_stage: one 16-byte record of `stages` at `stage` (a bitonic step
+    /// of SORT_STEP, a range of FILL_WORDS).
+    stages: &'a LaniusBuffer<u32>,
+    stage: u32,
 }
 
 struct Producer {
@@ -221,6 +279,42 @@ fn reflected_names(pass: &PassData) -> Vec<String> {
 }
 
 impl Producer {
+    /// Writes `value` over each (first word, words, value) range of
+    /// `target` on the GPU, in order.
+    fn fill_words(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        workspace: &WorkspaceLease,
+        scratch: &Scratch,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        target: &LaniusBuffer<u32>,
+        ranges: &[(u32, u32, u32)],
+    ) -> Result<()> {
+        if ranges.is_empty() {
+            return Ok(());
+        }
+        let stride = (STAGE_STRIDE / 4) as usize;
+        let mut words = vec![0u32; ranges.len() * stride];
+        for (i, range) in ranges.iter().enumerate() {
+            words[i * stride..i * stride + 3].copy_from_slice(&[range.0, range.1, range.2]);
+        }
+        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        let stages = workspace.initialized("trait_solver.retained_fill_ranges", u32::try_from(words.len())?, usage, Some(&words))?;
+        for (i, range) in ranges.iter().enumerate() {
+            let bound = Bound {
+                catalog: target,
+                batch: &scratch.idle,
+                routes: &scratch.idle,
+                output: &scratch.idle,
+                proof: &scratch.idle,
+                stages: &stages,
+                stage: u32::try_from(i)?,
+            };
+            self.record(encoder, FILL_WORDS, range.1, scratch, store, bound)?;
+        }
+        Ok(())
+    }
+
     fn read(&mut self, buffer: &LaniusBuffer<u32>, words: usize, label: &str) -> Result<Vec<u32>> {
         let region = ReadbackRegion::from_buffer(buffer, 0, arena::byte_len(u32::try_from(words)?)?, label)?;
         let raw = self.readback.read_regions(&self.device, &self.queue, &[region], label)?;
@@ -228,7 +322,6 @@ impl Producer {
         super::words(&raw[0])
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn record(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -236,8 +329,7 @@ impl Producer {
         lanes: u32,
         scratch: &Scratch,
         store: &BTreeMap<&'static str, wgpu::Buffer>,
-        catalog: &LaniusBuffer<u32>,
-        batch: &LaniusBuffer<u32>,
+        bound: Bound<'_>,
     ) -> Result<()> {
         let data = &self.passes[pass];
         let names = reflected_names(data);
@@ -252,8 +344,20 @@ impl Producer {
                 "rc_entry" => scratch.entry.as_entire_binding(),
                 "rc_snapshot" => scratch.snapshot.as_entire_binding(),
                 "rc_unit_slot" => scratch.unit_slot.as_entire_binding(),
-                "rc_catalog" => catalog.as_entire_binding(),
-                "rc_batch" => batch.as_entire_binding(),
+                "rc_sort" => scratch.sort.as_entire_binding(),
+                "rc_bind_pos" => scratch.bind_pos.as_entire_binding(),
+                "rc_impl_first" => scratch.impl_first.as_entire_binding(),
+                "rc_stage" => wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &bound.stages.buffer,
+                    offset: bound.stages.byte_offset + u64::from(bound.stage) * STAGE_STRIDE,
+                    size: std::num::NonZeroU64::new(16),
+                }),
+                "rc_catalog" => bound.catalog.as_entire_binding(),
+                "rc_batch" => bound.batch.as_entire_binding(),
+                "rc_routes" => bound.routes.as_entire_binding(),
+                "rp_catalog" => bound.catalog.as_entire_binding(),
+                "rp_output" => bound.output.as_entire_binding(),
+                "rp_proof" => bound.proof.as_entire_binding(),
                 other => store
                     .get(other)
                     .ok_or_else(|| anyhow!("retained trait producer binds unknown buffer {other}"))?
@@ -268,7 +372,7 @@ impl Producer {
             0,
             &entries,
         )?;
-        let (x, y) = if pass == SCAN_BLOCKS { (1, 1) } else { groups(lanes) };
+        let (x, y) = if pass == SCAN_BLOCKS || pass == PUBLISH_FINISH { (1, 1) } else { groups(lanes) };
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some("trait_solver.retained_producer"), timestamp_writes: None },
@@ -304,20 +408,51 @@ fn regions(status: &[u32]) -> Result<[(u32, u32); REGIONS]> {
 }
 
 /// Runs the producer, the solver's catalog admission and coherence, and
-/// the solver over the bound goals of the store's current build.
+/// the solver over the bound goals of the store's current build, then
+/// reads the publication status for the report and drops the publication.
 pub(in crate::compiler::gpu_compiler) fn check(
     workspace: WorkspaceLease,
     store: &ProgramRetention,
     options: &RetainedTraitOptions,
 ) -> Result<RetainedTraitCheck> {
+    let (mut report, publication) = publish(workspace, store, options)?;
+    if let Some(publication) = &publication {
+        report.publication_status = Some(publication.status()?);
+    }
+    Ok(report)
+}
+
+/// `check`, keeping the solved catalog, packet and proof store alive as a
+/// GPU publication when the solver ran.
+pub(in crate::compiler::gpu_compiler) fn publish(
+    workspace: WorkspaceLease,
+    store: &ProgramRetention,
+    options: &RetainedTraitOptions,
+) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
     let dispatches_before = passes_core::recorded_compute_dispatch_count();
     let readbacks_before = passes_core::readback_round_trips();
-    let mut report = store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options))?;
+    let (mut report, publication) =
+        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options))?;
     let readbacks = passes_core::readback_round_trips();
     report.dispatches = passes_core::recorded_compute_dispatch_count() - dispatches_before;
     report.readbacks = readbacks.0 - readbacks_before.0;
     report.readback_wait_ns = readbacks.1 - readbacks_before.1;
-    Ok(report)
+    Ok((report, publication))
+}
+
+/// The (k, j) of every bitonic step over `width` keys.
+fn bitonic_steps(width: u32) -> Vec<(u32, u32)> {
+    let mut steps = Vec::new();
+    let mut k = 2;
+    while k <= width {
+        let mut j = k / 2;
+        while j > 0 {
+            steps.push((k, j));
+            j /= 2;
+        }
+        k *= 2;
+    }
+    steps
 }
 
 fn run(
@@ -325,7 +460,7 @@ fn run(
     store: &BTreeMap<&'static str, wgpu::Buffer>,
     generation: u32,
     options: &RetainedTraitOptions,
-) -> Result<RetainedTraitCheck> {
+) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
     let device = workspace.device().clone();
     let queue = workspace.queue().clone();
     let passes = KEYS
@@ -360,6 +495,11 @@ fn run(
         readbacks: 0,
         readback_wait_ns: 0,
         producer_readback_bytes: 0,
+        sort_width: 0,
+        sort_steps: 0,
+        publication_status: None,
+        unsupported_callees: 0,
+        plain_calls: 0,
     };
 
     // The store's counters size the lane regions.
@@ -380,6 +520,8 @@ fn run(
     let lanes = regions[REGIONS - 1].0 + regions[REGIONS - 1].1;
     let jobs = regions[6].1;
     let dir_entries = regions[3].1;
+    let traits = regions[4].1;
+    let uses = regions[5].1;
     let blocks = lanes.div_ceil(256).max(1);
     let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
     let mut config = vec![0u32; CFG_WORDS];
@@ -392,6 +534,17 @@ fn run(
         config[CFG_BASE + region] = regions[region].0;
     }
     config[CFG_GENERATION] = generation;
+    let sort_width = traits.max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained binding sort overflow"))?;
+    config[CFG_SORT] = sort_width;
+    let steps = bitonic_steps(sort_width);
+    report.sort_width = sort_width;
+    report.sort_steps = u32::try_from(steps.len())?;
+    let stride_words = (STAGE_STRIDE / 4) as usize;
+    let mut stage_words = vec![0u32; steps.len().max(1) * stride_words];
+    for (i, &(k, j)) in steps.iter().enumerate() {
+        stage_words[i * stride_words] = k;
+        stage_words[i * stride_words + 1] = j;
+    }
     let mut unit_slots = options
         .unit_slots
         .unwrap_or_else(|| jobs.saturating_mul(2))
@@ -399,7 +552,8 @@ fn run(
         .checked_next_power_of_two()
         .ok_or_else(|| anyhow!("retained unit table overflow"))?;
 
-    // Count: mark, units, count, scan. Grown only when the unit table is full.
+    // Count: mark, units, the binding sort, count, scan. Grown only when the
+    // unit table is full.
     let (scratch, state) = loop {
         report.attempts += 1;
         config[7] = unit_slots;
@@ -419,15 +573,42 @@ fn run(
                 Some(&vec![u32::MAX; jobs.max(1) as usize * 2]),
             )?,
             unit_slot: workspace.initialized("trait_solver.retained_unit_slot", unit_slots, usage, None)?,
+            sort: workspace.initialized("trait_solver.retained_sort", sort_width * 4, usage, None)?,
+            bind_pos: workspace.initialized("trait_solver.retained_bind_pos", traits.max(1), usage, None)?,
+            impl_first: workspace.initialized("trait_solver.retained_impl_first", dir_entries.max(1), usage, None)?,
+            stages: workspace.initialized(
+                "trait_solver.retained_stages",
+                u32::try_from(stage_words.len())?,
+                usage,
+                Some(&stage_words),
+            )?,
             idle: workspace.initialized("trait_solver.retained_idle", 4, usage, None)?,
+        };
+        let idle = Bound {
+            catalog: &scratch.idle,
+            batch: &scratch.idle,
+            routes: &scratch.idle,
+            output: &scratch.idle,
+            proof: &scratch.idle,
+            stage: 0,
+            stages: &scratch.stages,
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("trait_solver.retained_count"),
         });
         scratch.entry.clear(&mut encoder, 0, None);
         scratch.unit_slot.clear(&mut encoder, 0, None);
-        for pass in [MARK, UNITS, COUNT, SCAN_LOCAL, SCAN_BLOCKS, SCAN_APPLY] {
-            producer.record(&mut encoder, pass, lanes, &scratch, store, &scratch.idle, &scratch.idle)?;
+        scratch.impl_first.clear(&mut encoder, 0, None);
+        for pass in [MARK, UNITS] {
+            producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
+        }
+        producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
+        for stage in 0..steps.len() as u32 {
+            producer.record(&mut encoder, SORT_STEP, sort_width, &scratch, store, Bound { stage, ..idle })?;
+        }
+        producer.record(&mut encoder, SORT_FINISH, sort_width, &scratch, store, idle)?;
+        for pass in [COUNT, SCAN_LOCAL, SCAN_BLOCKS, SCAN_APPLY] {
+            producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
         }
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
@@ -440,6 +621,8 @@ fn run(
     };
     report.producer_failures = state[S_FAILURES];
     report.unsupported_member_bounds = state[S_UNSUPPORTED_MEMBER_BOUNDS];
+    report.unsupported_callees = state[S_UNSUPPORTED_CALLEES];
+    report.plain_calls = state[S_PLAIN_CALLS];
     if state[S_FIRST] != u32::MAX {
         report.first_failure = Some((state[S_FIRST] >> 24, state[S_FIRST] & 0xff_ffff));
     }
@@ -449,8 +632,19 @@ fn run(
     report.rows[0] = jobs;
     if report.producer_failures != 0 || jobs == 0 {
         report.producer_readback_bytes = producer.readback_bytes;
-        return Ok(report);
+        return Ok((report, None));
     }
+
+    // The route arena (route_abi.slang): header, use map, routes, atom ids.
+    let obligations = report.rows[16];
+    let atoms = report.rows[1];
+    let use_map = RP_HEADER_WORDS;
+    let route_rows = add(use_map, mul(uses, RP_USE_WORDS, "retained use map")?, "retained routes")?;
+    let atom_ids = add(route_rows, mul(obligations, RP_ROUTE_WORDS, "retained routes")?, "retained atom ids")?;
+    let route_words = add(atom_ids, mul(atoms, 2, "retained atom ids")?, "retained route arena")?;
+    let routes = Arena::uninitialized(&workspace, "trait_solver.retained_routes", route_words)?;
+    config[CFG_ATOM_IDS] = atom_ids;
+    config[CFG_ROUTE_USES] = use_map;
 
     // Catalog rows, then the solver's own admission and coherence.
     let layout = FrozenCatalog::retained_layout(std::array::from_fn(|table| report.rows[table]))?;
@@ -465,24 +659,34 @@ fn run(
     let catalog_words = catalog.word_count()?;
     let storage = Arena::uninitialized(&workspace, "trait_solver.catalog", catalog_words)?;
     let mut gpu = GpuTraitSolver::admit_storage(workspace.clone(), catalog.clone(), storage, |encoder, storage| {
+        routes.buffer.clear(encoder, 0, Some(u64::from(route_words) * 4));
+        // Poisoned or cleared, then the catalog-owned output regions as
+        // `materialize` leaves them, all written by the GPU.
+        let mut ranges = Vec::new();
         if options.poison_arenas {
-            storage.upload(encoder, &[ArenaWrite { first_word: 0, words: vec![RETAINED_POISON; catalog_words as usize] }])?;
+            ranges.push((0, catalog_words, RETAINED_POISON));
         } else {
             storage.buffer.clear(encoder, 0, Some(u64::from(catalog_words) * 4));
         }
-        // Catalog-owned output regions start as `materialize` leaves them.
-        let mut writes = Vec::new();
         for table in [6usize, 7, 11, 12] {
             let slice = catalog.outputs[table];
-            if slice.count != 0 {
+            if slice.count != 0 && (table == 7 || table == 12 || options.poison_arenas) {
                 let fill = if table == 7 || table == 12 { INVALID } else { 0 };
-                let words = mul(slice.count, OUTPUT_WIDTHS[table], "retained catalog output")?;
-                writes.push(ArenaWrite { first_word: slice.offset, words: vec![fill; words as usize] });
+                ranges.push((slice.offset, mul(slice.count, OUTPUT_WIDTHS[table], "retained catalog output")?, fill));
             }
         }
-        storage.upload(encoder, &writes)?;
+        producer.fill_words(encoder, &workspace, &scratch, store, &storage.buffer, &ranges)?;
+        let bound = Bound {
+            catalog: &storage.buffer,
+            batch: &scratch.idle,
+            routes: &routes.buffer,
+            output: &scratch.idle,
+            proof: &scratch.idle,
+            stage: 0,
+            stages: &scratch.stages,
+        };
         for region in 0..REGIONS {
-            producer.record(encoder, FILL[region], regions[region].1, &scratch, store, &storage.buffer, &scratch.idle)?;
+            producer.record(encoder, FILL[region], regions[region].1, &scratch, store, bound)?;
         }
         Ok(())
     })?;
@@ -500,7 +704,7 @@ fn run(
             report.tables = gpu.read_tables(None)?;
         }
         report.producer_readback_bytes = producer.readback_bytes;
-        return Ok(report);
+        return Ok((report, None));
     }
 
     // Batch rows (bound goals of the retained uses), then the solver.
@@ -516,30 +720,276 @@ fn run(
     }
     scratch.config.write(&queue, 0, &words_bytes(&config));
     let input_words = submission.plan.input_word_count;
-    let result = gpu.check_retained(&mut packet, &submission, |encoder, input| {
+    let (readback, output_layout) = gpu.check_retained(&mut packet, &submission, options.read_rows, |encoder, input| {
         if options.poison_arenas && input_words > BATCH_FIXED_WORDS {
-            input.upload(encoder, &[ArenaWrite {
-                first_word: BATCH_FIXED_WORDS,
-                words: vec![RETAINED_POISON; (input_words - BATCH_FIXED_WORDS) as usize],
-            }])?;
+            let range = (BATCH_FIXED_WORDS, input_words - BATCH_FIXED_WORDS, RETAINED_POISON);
+            producer.fill_words(encoder, &workspace, &scratch, store, &input.buffer, &[range])?;
         }
+        let bound = Bound {
+            catalog: &scratch.idle,
+            batch: &input.buffer,
+            routes: &routes.buffer,
+            output: &scratch.idle,
+            proof: &scratch.idle,
+            stage: 0,
+            stages: &scratch.stages,
+        };
         for region in BATCH_FILL_REGIONS {
-            producer.record(encoder, FILL[region], regions[region].1, &scratch, store, &scratch.idle, &input.buffer)?;
+            producer.record(encoder, FILL[region], regions[region].1, &scratch, store, bound)?;
         }
         Ok(())
     })?;
-    let readback = result;
     report.stage = RetainedTraitStage::Solved;
     report.batch_status = Some(readback.batch_status);
     report.contexts = readback.contexts;
     report.calls = readback.calls;
     report.obligations = readback.obligations;
     report.evidence = readback.evidence;
+
+    // Publication: the host writes the identity and locations; the GPU
+    // copies the solver's selections into routes and writes the status.
+    let identity = RetainedTraitIdentity {
+        epoch: catalog.epoch,
+        arena_id: submission.arena_id,
+        serial: submission.serial,
+        generation,
+    };
+    let mut header = vec![0u32; RP_HEADER_WORDS as usize];
+    header[0] = RP_MAGIC;
+    header[1] = 1;
+    header[2] = identity.epoch as u32;
+    header[3] = (identity.epoch >> 32) as u32;
+    header[4] = identity.arena_id as u32;
+    header[5] = (identity.arena_id >> 32) as u32;
+    header[6] = identity.serial;
+    header[7] = generation;
+    header[RP_H_FIRST_FAILURE] = u32::MAX;
+    header[11] = uses;
+    header[12] = obligations;
+    header[13] = atoms;
+    header[14] = use_map;
+    header[15] = route_rows;
+    header[16] = atom_ids;
+    header[17] = catalog.slices[9].offset;
+    header[18] = catalog.slices[10].offset;
+    header[19] = catalog.slices[9].count;
+    header[20] = catalog.slices[10].count;
+    header[27] = catalog.slices[1].offset;
+    header[28] = catalog.slices[5].offset;
+    header[29] = catalog.slices[6].offset;
+    header[30] = report.rows[15];
+    for (word, table) in [(32, 3), (33, 4), (34, 5), (35, 10)] {
+        header[word] = output_layout.slices[table].offset;
+    }
+    header[36] = catalog.outputs[0].offset;
+    header[37] = packet.proof.logical_words;
+    header[38] = catalog_words;
+    header[39] = packet.output.logical_words;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("trait_solver.retained_publish"),
+    });
+    routes.upload(&mut encoder, &[ArenaWrite { first_word: 0, words: header }])?;
+    let bound = Bound {
+        catalog: &gpu.storage.buffer,
+        batch: &packet.input.buffer,
+        routes: &routes.buffer,
+        output: &packet.output.buffer,
+        proof: &packet.proof.buffer,
+        stage: 0,
+        stages: &scratch.stages,
+    };
+    producer.record(&mut encoder, PUBLISH_ROUTES, add(obligations, uses, "retained publish lanes")?, &scratch, store, bound)?;
+    producer.record(&mut encoder, PUBLISH_FINISH, 1, &scratch, store, bound)?;
+    passes_core::flush_deferred_compute(&mut encoder);
+    queue.submit(Some(encoder.finish()));
+
     report.producer_readback_bytes = producer.readback_bytes;
     if options.read_rows {
         report.tables = gpu.read_tables(Some(&packet))?;
     }
-    Ok(report)
+    let publication = RetainedTraitPublication {
+        gpu,
+        packet,
+        routes,
+        route_words,
+        identity,
+        rt_counts: rt_counts.clone(),
+    };
+    Ok((report, Some(publication)))
+}
+
+/// The identity of one retained trait publication: the solver catalog
+/// epoch, the batch arena id and serial, and the store build generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedTraitIdentity {
+    pub epoch: u64,
+    pub arena_id: u64,
+    pub serial: u32,
+    pub generation: u32,
+}
+
+/// An exact byte range of one publication buffer.
+#[derive(Clone, Copy, Debug)]
+pub struct RetainedBufferRange<'a> {
+    pub buffer: &'a wgpu::Buffer,
+    pub offset: u64,
+    pub size: u64,
+}
+impl<'a> RetainedBufferRange<'a> {
+    fn of(buffer: &'a LaniusBuffer<u32>, words: u32) -> Self {
+        Self { buffer: &buffer.buffer, offset: buffer.byte_offset, size: u64::from(words) * 4 }
+    }
+    pub fn binding(&self) -> wgpu::BindingResource<'a> {
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: self.buffer,
+            offset: self.offset,
+            size: std::num::NonZeroU64::new(self.size),
+        })
+    }
+}
+
+/// The buffers a GPU consumer binds (docs/compiler-retained-trait-catalog.md,
+/// "Publication"). Word offsets inside them are in the route header.
+#[derive(Clone, Copy, Debug)]
+pub struct RetainedTraitView<'a> {
+    pub identity: RetainedTraitIdentity,
+    /// Route arena: header, use map, routes, atom identities.
+    pub routes: RetainedBufferRange<'a>,
+    /// Solver catalog arena: impl, method, atom and term node tables.
+    pub catalog: RetainedBufferRange<'a>,
+    /// Solver output arena of the packet.
+    pub output: RetainedBufferRange<'a>,
+    /// Proof store: bindings and proof term nodes.
+    pub proof: RetainedBufferRange<'a>,
+    /// The store's counters (READY, GENERATION), for the consumer's check.
+    pub rt_counts: &'a wgpu::Buffer,
+}
+
+/// A solved retained trait check whose catalog, packet, proof store and
+/// routes stay allocated, and their workspace slots reserved, until it is
+/// dropped. Production consumers bind `view` and read nothing back.
+pub struct RetainedTraitPublication {
+    gpu: GpuTraitSolver,
+    packet: GpuPacket,
+    routes: Arena,
+    route_words: u32,
+    identity: RetainedTraitIdentity,
+    rt_counts: wgpu::Buffer,
+}
+
+impl RetainedTraitPublication {
+    pub fn identity(&self) -> RetainedTraitIdentity {
+        self.identity
+    }
+
+    /// The buffers to bind, after a host check that `store` is the store and
+    /// build this publication came from. The GPU consumer still checks the
+    /// header status and the live READY and GENERATION counters.
+    pub fn view<'a>(&'a self, store: &ProgramRetention) -> Result<RetainedTraitView<'a>> {
+        let same_store = store.with_store_buffers(|buffers, generation| {
+            Ok(buffers.get("rt_counts") == Some(&self.rt_counts) && generation == self.identity.generation)
+        })?;
+        ensure!(same_store, "retained trait publication belongs to another store or build");
+        Ok(RetainedTraitView {
+            identity: self.identity,
+            routes: RetainedBufferRange::of(&self.routes.buffer, self.route_words),
+            catalog: RetainedBufferRange::of(&self.gpu.storage.buffer, self.gpu.storage.logical_words),
+            output: RetainedBufferRange::of(&self.packet.output.buffer, self.packet.output.logical_words),
+            proof: RetainedBufferRange::of(&self.packet.proof.buffer, self.packet.proof.logical_words),
+            rt_counts: &self.rt_counts,
+        })
+    }
+
+    /// Header words 8-10: status (0 building, 1 valid, 2 failed), route
+    /// failures, first failure. One 12-byte readback.
+    pub fn status(&self) -> Result<[u32; 3]> {
+        let region = ReadbackRegion::from_buffer(&self.routes.buffer, RP_H_STATUS as u64 * 4, 12, "retained publication status")?;
+        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained publication status")?;
+        let words = super::words(&raw[0])?;
+        Ok([words[0], words[1], words[2]])
+    }
+
+    /// Words of the route arena. For assertions only.
+    #[doc(hidden)]
+    pub fn read_routes_for_test(&self) -> Result<Vec<u32>> {
+        let region = ReadbackRegion::from_buffer(&self.routes.buffer, 0, arena::byte_len(self.route_words)?, "retained routes")?;
+        super::words(&self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained routes")?[0])
+    }
+
+    /// Runs the GPU consumer shaders/tests/retained_route_query.slang over
+    /// `requests` (use, obligation ordinal, required symbol) against
+    /// `identity`, and reads its 16-word answers back for assertions.
+    #[doc(hidden)]
+    pub fn query_for_test(
+        &self,
+        store: &ProgramRetention,
+        identity: RetainedTraitIdentity,
+        requests: &[[u32; 3]],
+    ) -> Result<Vec<[u32; 16]>> {
+        let device = &self.gpu.device;
+        let queue = &self.gpu.queue;
+        let view = RetainedTraitView {
+            identity: self.identity,
+            routes: RetainedBufferRange::of(&self.routes.buffer, self.route_words),
+            catalog: RetainedBufferRange::of(&self.gpu.storage.buffer, self.gpu.storage.logical_words),
+            output: RetainedBufferRange::of(&self.packet.output.buffer, self.packet.output.logical_words),
+            proof: RetainedBufferRange::of(&self.packet.proof.buffer, self.packet.proof.logical_words),
+            rt_counts: &self.rt_counts,
+        };
+        let mut input = vec![
+            u32::try_from(requests.len())?,
+            identity.epoch as u32,
+            (identity.epoch >> 32) as u32,
+            identity.arena_id as u32,
+            (identity.arena_id >> 32) as u32,
+            identity.serial,
+            identity.generation,
+            0,
+        ];
+        for request in requests {
+            input.extend_from_slice(&[request[0], request[1], request[2], 0]);
+        }
+        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        let workspace = &self.gpu.workspace;
+        let input = workspace.initialized("trait_solver.retained_query_in", u32::try_from(input.len())?, usage, Some(&input))?;
+        let out_words = u32::try_from(requests.len().max(1) * 16)?;
+        let output = workspace.initialized("trait_solver.retained_query_out", out_words, usage, Some(&vec![u32::MAX; out_words as usize]))?;
+        let data = make_pass_data_from_shader_key(device, QUERY_KEY, "main", QUERY_KEY)?;
+        store.with_store_buffers(|_, _| {
+            let mut entries = Vec::new();
+            for name in reflected_names(&data) {
+                let resource = match name.as_str() {
+                    "rc_routes" => view.routes.binding(),
+                    "rp_catalog" => view.catalog.binding(),
+                    "rp_proof" => view.proof.binding(),
+                    "rt_counts" => view.rt_counts.as_entire_binding(),
+                    "rq_requests" => input.as_entire_binding(),
+                    "rq_out" => output.as_entire_binding(),
+                    other => return Err(anyhow!("retained route query binds unknown buffer {other}")),
+                };
+                entries.push((name, resource));
+            }
+            let entries = entries.iter().map(|(n, r)| (n.as_str(), r.clone())).collect::<Vec<_>>();
+            let bind = passes_core::bind_group::create_bind_group_from_bindings(device, Some(&data.shader_id), &data, 0, &entries)?;
+            let mut encoder = device.create_command_encoder(&Default::default());
+            {
+                let mut compute = passes_core::begin_counted_compute_pass(
+                    &mut encoder,
+                    &wgpu::ComputePassDescriptor { label: Some("tests.retained_route_query"), timestamp_writes: None },
+                );
+                compute.set_pipeline(&data.pipeline);
+                compute.set_bind_group(0, &bind, &[]);
+                passes_core::record_compute_dispatch();
+                compute.dispatch_workgroups(u32::try_from(requests.len().div_ceil(64).max(1))?, 1, 1);
+            }
+            passes_core::flush_deferred_compute(&mut encoder);
+            queue.submit(Some(encoder.finish()));
+            Ok(())
+        })?;
+        let region = ReadbackRegion::from_buffer(&output, 0, arena::byte_len(out_words)?, "retained route query")?;
+        let words = super::words(&self.gpu.readback.read_regions(device, queue, &[region], "retained route query")?[0])?;
+        Ok(words.chunks_exact(16).take(requests.len()).map(|c| c.try_into().unwrap()).collect())
+    }
 }
 
 fn words_bytes(words: &[u32]) -> Vec<u8> {
@@ -610,8 +1060,9 @@ impl GpuTraitSolver {
         &mut self,
         packet: &mut GpuPacket,
         submission: &Submission,
+        semantic_rows: bool,
         fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
-    ) -> Result<WaveReadback> {
+    ) -> Result<(WaveReadback, OutputLayout)> {
         ensure!(
             Arc::ptr_eq(&packet.gpu_owner, &self.gpu_owner) && Arc::ptr_eq(&packet.packet.catalog, &self.catalog),
             "retained packet belongs to another solver"
@@ -643,12 +1094,15 @@ impl GpuTraitSolver {
         passes_core::flush_deferred_compute(&mut encoder);
         self.queue.submit(Some(encoder.finish()));
         let mut templates = std::mem::take(&mut self.wave_templates);
+        // Production publication reads no semantic rows; diagnostics opt in.
+        self.semantic_rows = semantic_rows;
         let solved = self.solve(&mut templates, packet, &layout, &plan, submission);
+        self.semantic_rows = true;
         self.wave_templates = templates;
         let readback = solved?;
         let proof_layout = packet.packet.proof_store.layout();
         self.workspace
             .raise_proof_capacity_floor(&std::array::from_fn(|table| proof_layout.slices[table].capacity));
-        Ok(readback)
+        Ok((readback, layout))
     }
 }

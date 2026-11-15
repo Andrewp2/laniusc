@@ -28,6 +28,15 @@ public globallycoherent RWStructuredBuffer<uint> rc_snapshot;  // 2 words per co
 public globallycoherent RWStructuredBuffer<uint> rc_unit_slot; // (library, unit) -> job + 1
 public RWStructuredBuffer<uint> rc_catalog;  // the solver's catalog arena
 public RWStructuredBuffer<uint> rc_batch;    // the solver's batch input arena
+// Binding order (see "Binding ranks"): sort keys, each binding record's
+// sorted position (its method row) and each trait impl's first method row.
+public RWStructuredBuffer<uint4> rc_sort;
+public RWStructuredBuffer<uint> rc_bind_pos;
+public RWStructuredBuffer<uint> rc_impl_first;
+public StructuredBuffer<uint4> rc_stage;     // (k, j) of one bitonic step
+// The route arena of the publication (docs/compiler-retained-trait-catalog.md,
+// "Publication"); the producer writes its atom identity table.
+public RWStructuredBuffer<uint> rc_routes;
 
 public static const uint RC_CFG_DECLS = 0u;
 public static const uint RC_CFG_PARAMS = 1u;
@@ -43,6 +52,9 @@ public static const uint RC_CFG_EPOCH = 16u;        // epoch low, epoch high
 public static const uint RC_CFG_GENERATION = 18u;   // store build generation (RT_C_GENERATION)
 public static const uint RC_CFG_PHASE = 19u;        // fill: 0 catalog tables (0-10), 1 batch tables (11-16)
 public static const uint RC_CFG_TABLE = 20u;        // + solver table (0-16): word offset
+public static const uint RC_CFG_SORT = 37u;         // bitonic width: a power of two >= trait records
+public static const uint RC_CFG_ATOM_IDS = 38u;     // word offset of the atom identity table in rc_routes
+public static const uint RC_CFG_ROUTE_USES = 39u;   // word offset of the use map in rc_routes
 public static const uint RC_CFG_WORDS = 40u;
 
 public static const uint RC_R_DECL = 0u;
@@ -79,6 +91,8 @@ public static const uint RC_S_FIRST = 1u;          // min (code << 24 | lane)
 public static const uint RC_S_UNSUPPORTED_MEMBER_BOUNDS = 2u;
 public static const uint RC_S_FILL_FAULTS = 3u;
 public static const uint RC_S_UNIT_SLOTS_FULL = 4u; // the host grows rc_unit_slot and runs again
+public static const uint RC_S_UNSUPPORTED_CALLEES = 5u;
+public static const uint RC_S_PLAIN_CALLS = 6u;
 public static const uint RC_S_TOTALS = 8u;         // + counter
 public static const uint RC_S_WORDS = 24u;
 
@@ -326,7 +340,21 @@ public bool use_selected(uint use)
     uint form = u0.z & 0xffu;
     if (form != FORM_DIRECT && form != FORM_METHOD) return false;
     if (!callable_kind(entry_kind(entry_of(u0.x))) || !callable_kind(entry_kind(entry_of(u0.w)))) return false;
-    return valid_term(u1.x) && rt_term_kind(u1.x) == RT_KIND_ENV;
+    // A goal needs an applicable predicate; other calls have no solver row.
+    return valid_term(u1.x) && rt_term_kind(u1.x) == RT_KIND_ENV && applicable_count(entry_of(u0.w)) != 0u;
+}
+// Uses that are not goals, by reason (rc_state words 5 and 6): a direct or
+// method use whose callee is not a committed store callable (extern, trait
+// member, outside the store), and a call between store callables whose
+// callee has no applicable predicate.
+void count_skipped_use(uint use)
+{
+    uint4 u0 = rt_uses[use * RT_USE_WORDS];
+    uint form = u0.z & 0xffu;
+    if (form != FORM_DIRECT && form != FORM_METHOD) return;
+    if (!callable_kind(entry_kind(entry_of(u0.w)))) InterlockedAdd(rc_state[RC_S_UNSUPPORTED_CALLEES], 1u);
+    else if (callable_kind(entry_kind(entry_of(u0.x))) && applicable_count(entry_of(u0.w)) == 0u)
+        InterlockedAdd(rc_state[RC_S_PLAIN_CALLS], 1u);
 }
 
 // The scalar of a constant argument, or RC_INVALID for a type argument.
@@ -342,7 +370,8 @@ uint constant_scalar(uint arg)
 }
 
 // An application of `entry`'s binder: its type arguments fill the binder's
-// type domain except `self_slots` leading Self slots (1 for a trait), its
+// type domain except `self_slots` Self slots (1 for a trait, whose Self is
+// the last type parameter), its
 // constant arguments fill the constant domain, each constant argument has
 // the scalar of its parameter, and every argument has a translation.
 // Returns 0 or a failure code.
@@ -387,21 +416,59 @@ public uint check_trait_term(uint term, uint trait_decl)
 }
 public uint term_arity(uint term) { return valid_term(term) ? rt_term_arity(term) : 0u; }
 
-// The sorted position of a binding among its impl's block: by required
-// symbol, then record order. The solver's own method admission rejects two
-// bindings of one symbol (strictly increasing symbols).
-public uint binding_rank(uint record)
+// --------------------------------------------------------------------------
+// Binding ranks. The solver admits an impl's methods in strictly increasing
+// required symbol. Each binding record is keyed (impl entry, symbol, record)
+// and the keys are sorted by a bitonic network over a power-of-two width P:
+// log2(P) * (log2(P) + 1) / 2 steps, each one compare per lane. A binding's
+// method row is its sorted position, so every impl's block is contiguous
+// and ordered. Equal (impl, symbol) neighbours are a duplicate binding.
+// Other records sort last. The sort runs before 02_count, which checks
+// that each trait impl's segment holds exactly its recorded binding count.
+// rc_impl_first stores first + 1, so a cleared word means no segment.
+bool sort_greater(uint4 a, uint4 b)
 {
-    uint impl_entry = entry_of(rt_traits[record * RT_TRAIT_WORDS].x);
-    uint4 block = rt_dir_trait[impl_entry];
-    uint symbol = rt_traits[record * RT_TRAIT_WORDS + 1u].y;
-    uint position = 0u;
-    for (uint other = block.z; other < block.z + block.w; other++)
+    if (a.x != b.x) return a.x > b.x;
+    if (a.y != b.y) return a.y > b.y;
+    return a.z > b.z;
+}
+public void sort_init(uint i)
+{
+    if (i >= cfg(RC_CFG_SORT)) return;
+    uint4 key = uint4(RC_INVALID, RC_INVALID, i, 0u);
+    if (i < cfg(RC_CFG_TRAITS))
     {
-        uint s = rt_traits[other * RT_TRAIT_WORDS + 1u].y;
-        if (s < symbol || (s == symbol && other < record)) position++;
+        uint4 t0 = rt_traits[i * RT_TRAIT_WORDS];
+        uint impl_entry = entry_of(t0.x);
+        if ((t0.y & 0xffu) == RT_TRAIT_BINDING && trait_impl(impl_entry))
+            key.xy = uint2(impl_entry, rt_traits[i * RT_TRAIT_WORDS + 1u].y);
     }
-    return position;
+    rc_sort[i] = key;
+}
+public void sort_step(uint i)
+{
+    uint width = cfg(RC_CFG_SORT);
+    uint2 step = rc_stage[0].xy;
+    uint other = i ^ step.y;
+    if (i >= width || other <= i || other >= width) return;
+    uint4 a = rc_sort[i];
+    uint4 b = rc_sort[other];
+    bool ascending = (i & step.x) == 0u;
+    if (ascending ? sort_greater(a, b) : sort_greater(b, a))
+    {
+        rc_sort[i] = b;
+        rc_sort[other] = a;
+    }
+}
+public void sort_finish(uint p)
+{
+    if (p >= cfg(RC_CFG_SORT)) return;
+    uint4 key = rc_sort[p];
+    if (key.x == RC_INVALID) return;
+    rc_bind_pos[key.z] = p;
+    uint4 previous = p == 0u ? uint4(RC_INVALID, RC_INVALID, 0u, 0u) : rc_sort[p - 1u];
+    if (previous.x != key.x) rc_impl_first[key.x] = p + 1u;
+    else if (previous.y == key.y) fail(RC_E_BINDING_COVERAGE, lane_of(RC_R_TRAIT, key.z));
 }
 
 // --------------------------------------------------------------------------
@@ -531,11 +598,24 @@ void count_dir(uint lane, uint entry, inout Counts n)
     if (dir(entry, 0u).z != 0u && parent_owner(entry) == RC_INVALID) fail(RC_E_OWNER, lane);
     n.set(RC_C_OWNER, 1u);
     uint2 counts = binder_counts(entry);
+    // The composed binder: in each domain the parent owner's slots, in its
+    // order, then this entry's own parameters.
+    uint parent = parent_owner(entry);
+    uint2 inherited = parent == RC_INVALID ? uint2(0u, 0u) : binder_counts(parent);
+    if (inherited.x > counts.x || inherited.y > counts.y) fail(RC_E_PARAM_OWNER, lane);
     uint own = 0u;
     for (uint i = 0u; i < counts.x + counts.y && i < 128u; i++)
     {
         uint param = rt_binders[dir(entry, 1u).x + i];
         if (!valid_param(param)) { fail(RC_E_PARAM_OWNER, lane); continue; }
+        bool constant = i >= counts.x;
+        uint slot = constant ? i - counts.x : i;
+        if (slot < (constant ? inherited.y : inherited.x))
+        {
+            uint expected = rt_binders[dir(parent, 1u).x + (constant ? inherited.x + slot : slot)];
+            if (param != expected) fail(RC_E_PARAM_OWNER, lane);
+        }
+        else if (rt_param_key[param].x != decl) fail(RC_E_PARAM_OWNER, lane);
         if (rt_param_key[param].x == decl) own++;
     }
     n.set(RC_C_PARAM, own);
@@ -556,10 +636,22 @@ void count_dir(uint lane, uint entry, inout Counts n)
         if (code != 0u) { fail(code, lane); return; }
         if (!reference_ok(self_term)) { fail(reference_failure(self_term), lane); return; }
         uint trait_entry = entry_of(rt_term_head[term].y);
-        if (rt_dir_trait[entry].w != rc_entry[trait_entry * 2u + 1u]) fail(RC_E_BINDING_COVERAGE, lane);
+        uint bound = rt_dir_trait[entry].w;
+        if (bound != rc_entry[trait_entry * 2u + 1u] || !segment_exact(entry, bound)) fail(RC_E_BINDING_COVERAGE, lane);
         n.set(RC_C_IMPL, 1u);
         n.set(RC_C_ROOT, 1u + term_arity(term));
     }
+}
+// The impl's sorted binding segment has exactly `bound` records.
+bool segment_exact(uint entry, uint bound)
+{
+    uint first = rc_impl_first[entry];
+    if (bound == 0u) return first == 0u;
+    if (first == 0u) return false;
+    uint last = first - 1u + bound - 1u;
+    uint width = cfg(RC_CFG_SORT);
+    if (last >= width || rc_sort[last].x != entry) return false;
+    return last + 1u == width || rc_sort[last + 1u].x != entry;
 }
 void count_trait(uint lane, uint record, inout Counts n)
 {
@@ -581,8 +673,10 @@ void count_trait(uint lane, uint record, inout Counts n)
         if (!owner_kind(owner_entry_kind)) { fail(RC_E_OWNER, lane); return; }
         uint code = check_trait_term(t0.w, t1.x);
         if (code != 0u) { fail(code, lane); return; }
+        // A scalar, a type parameter or a structural type term.
         bool subject = (t0.z >= 1u && t0.z < RT_FIRST_TERM) ||
-            (rt_is_param_leaf(t0.z) && (t0.z & RT_CONST_BIT) == 0u && reference_ok(t0.z));
+            (rt_is_param_leaf(t0.z) && (t0.z & RT_CONST_BIT) == 0u && reference_ok(t0.z)) ||
+            (valid_term(t0.z) && term_has_node(t0.z) && rt_term_kind(t0.z) != RT_KIND_CC_CAST && reference_ok(t0.z));
         if (!subject) { fail(reference_failure(t0.z), lane); return; }
         n.set(RC_C_PRED, 1u);
         n.set(RC_C_ATOM, 1u);
@@ -609,7 +703,7 @@ void count_trait(uint lane, uint record, inout Counts n)
 }
 void count_use(uint lane, uint use, inout Counts n)
 {
-    if (!use_selected(use)) return;
+    if (!use_selected(use)) { count_skipped_use(use); return; }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     uint callee = entry_of(u0.w);
@@ -683,6 +777,18 @@ void put_atom(uint row, uint4 low)
     put4(1u, row, 0u, low);
     put4(1u, row, 4u, uint4(0u, 0u, 0u, 0u));
 }
+// The retained identity of a catalog atom: 1 DeclId, 2 ParamId, 3 TermId,
+// 0 none. Written with the catalog.
+static const uint ID_DECL = 1u;
+static const uint ID_PARAM = 2u;
+static const uint ID_TERM = 3u;
+void put_id(uint atom, uint kind, uint id)
+{
+    if (cfg(RC_CFG_PHASE) != 0u) return;
+    uint at = cfg(RC_CFG_ATOM_IDS) + atom * 2u;
+    rc_routes[at] = kind;
+    rc_routes[at + 1u] = id;
+}
 void put_root(uint row, uint ref)
 {
     uint2 r = reference(ref);
@@ -697,6 +803,12 @@ public void fill_decl(uint lane, uint decl)
     if (all(key == uint4(0u, 0u, 0u, 0u))) return;
     uint entry = entry_of(decl);
     uint job = entry == RC_INVALID ? RC_INVALID : dir(entry, 3u).z;
+    for (uint which = 0u; which < 4u; which++)
+    {
+        bool has = which == 0u ? decl_has_nominal(decl) : (which == 1u ? decl_has_binder(decl) :
+            (which == 2u ? decl_has_impl(decl) : decl_has_callable(decl)));
+        if (has) put_id(decl_atom(decl, which), ID_DECL, decl);
+    }
     if (decl_has_nominal(decl))
     {
         bool private_local = (key.w & 0x80000000u) != 0u;
@@ -716,6 +828,7 @@ public void fill_param(uint lane, uint param)
     if (all(key == uint4(0u, 0u, 0u, 0u)) || entry_of(key.x) == RC_INVALID) return;
     uint domain = key.y == RT_DOMAIN_CONST ? 1u : 0u;
     put_atom(param_atom(param), uint4(5u, decl_atom(key.x, 1u), domain, key.z | (domain << 16u)));
+    put_id(param_atom(param), ID_PARAM, param);
     put(1u, param_atom(param), 4u, domain == 1u ? key.w : 0u);
 }
 public void fill_term(uint lane, uint term)
@@ -726,6 +839,7 @@ public void fill_term(uint lane, uint term)
     if (term_owns_atom(term))
     {
         uint row = rank(lane, RC_C_ATOM);
+        put_id(row, ID_TERM, term);
         if (kind == RT_KIND_CC_COUNT) put_atom(row, uint4(12u, SCALAR_U32, head.y, 0u));
         else put_atom(row, uint4(12u, head.y, head.z, head.w));
     }
@@ -797,7 +911,7 @@ public void fill_dir(uint lane, uint entry)
         uint roots = rank(lane, RC_C_ROOT);
         put_root(roots, rt_sigs[dir(entry, 1u).z]);
         for (uint i = 0u; i < arity; i++) put_root(roots + 1u + i, rt_term_arg(term, i));
-        uint methods = own_facts.w == 0u ? 0u : rank(lane_of(RC_R_TRAIT, own_facts.z), RC_C_METHOD);
+        uint methods = own_facts.w == 0u ? 0u : rc_impl_first[entry] - 1u;
         uint row = rank(lane, RC_C_IMPL);
         put4(9u, row, 0u, uint4(decl_atom(decl, 2u), owner, decl_atom(rt_term_head[term].y, 0u), roots));
         put4(9u, row, 4u, uint4(first_or_zero(roots + 1u, arity), arity, methods, own_facts.w));
@@ -829,6 +943,7 @@ public void fill_trait(uint lane, uint record)
         uint4 key = rt_decl_key[t0.x];
         uint atom = rank(lane, RC_C_ATOM);
         put_atom(atom, uint4(11u, dir(owner, 3u).z, key.w, (key.z << 24u) | (t0.y >> 8u)));
+        put_id(atom, 0u, 0u);
         uint arity = term_arity(t0.w);
         uint roots = rank(lane, RC_C_ROOT);
         put_root(roots, t0.z);
@@ -841,8 +956,7 @@ public void fill_trait(uint lane, uint record)
     {
         uint impl_entry = entry_of(t0.x);
         if (!trait_impl(impl_entry)) return;
-        uint4 block = rt_dir_trait[impl_entry];
-        uint row = rank(lane_of(RC_R_TRAIT, block.z), RC_C_METHOD) + binding_rank(record);
+        uint row = rc_bind_pos[record];
         uint impl_row = rank(lane_of(RC_R_DIR, impl_entry), RC_C_IMPL);
         put4(10u, row, 0u, uint4(impl_row, t1.y, decl_atom(t0.w, 3u), (t0.y >> 8u) & 0xffu));
         put(10u, row, 4u, owner_row(entry_of(t0.w)));
@@ -873,7 +987,8 @@ public void fill_use(uint lane, uint use)
     for (uint i = 0u; i < k; i++)
     {
         put_root(roots + i, rt_term_arg(u1.x, i));
-        // Bindings are sorted by parameter atom, which follows ParamId.
+        // Bindings are sorted by parameter atom, which follows ParamId: a
+        // rank by counting, k * k reads for k <= 64 parameters (LIMIT).
         uint param = rt_binders[binder + i];
         uint position = 0u;
         for (uint j = 0u; j < k; j++) if (rt_binders[binder + j] < param) position++;
@@ -881,6 +996,14 @@ public void fill_use(uint lane, uint use)
     }
     for (uint o = 0u; o < count; o++)
         put4(16u, obligations + o, 0u, uint4(call, predicate_row(applicable_record(callee, o)), env, 0u));
+    if (cfg(RC_CFG_PHASE) == 1u)
+    {
+        // The publication's use map (route_abi.slang); pass 07 adds the call status.
+        uint at = cfg(RC_CFG_ROUTE_USES) + use * 4u;
+        rc_routes[at] = call + 1u;
+        rc_routes[at + 1u] = obligations;
+        rc_routes[at + 2u] = count;
+    }
 }
 public void fill_job(uint lane, uint job)
 {

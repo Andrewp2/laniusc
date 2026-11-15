@@ -7,17 +7,36 @@
 //! coherence and proof kernels select implementations. The test reads rows
 //! back for assertions only.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use laniusc_compiler::{
-    compiler::{GpuCompiler, GpuCompilerBackends, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitStage},
+    compiler::{
+        GpuCompiler, GpuCompilerBackends, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitPublication,
+        RetainedTraitStage,
+    },
     type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts},
 };
 
 #[allow(unused_imports)]
 use crate::common;
 
-const LIBRARY: &str = r#"module rtc::a;
+/// Members of the wide trait, and the order in which unit B's impl lists
+/// their methods (an independent permutation).
+const WIDE: u32 = 40;
+fn wide_order() -> Vec<u32> {
+    (0..WIDE).map(|i| (i * 17 + 5) % WIDE).collect()
+}
+
+static LIBRARY: LazyLock<String> = LazyLock::new(|| {
+    let members = (0..WIDE).map(|i| format!("    pub fn w{i:02}(&self) -> i32;\n")).collect::<String>();
+    format!("{LIBRARY_BASE}pub trait Wide {{\n{members}}}\npub fn wide<T: Wide>(value: T) -> T {{ return value; }}\n")
+});
+static APP: LazyLock<String> = LazyLock::new(|| {
+    let methods = wide_order().into_iter().map(|i| format!("    pub fn w{i:02}(&self) -> i32 {{ return {i}; }}\n")).collect::<String>();
+    format!("{APP_BASE}pub impl Wide for Local {{\n{methods}}}\n")
+});
+
+const LIBRARY_BASE: &str = r#"module rtc::a;
 pub trait Show { pub fn show(&self) -> i32; }
 pub trait Pair<X> { pub fn left(&self, value: X) -> X; }
 pub struct Cell<T> { value: T }
@@ -28,15 +47,25 @@ pub impl<T> Cell<T> {
 }
 pub fn needs<T: Show>(value: T) -> T { return value; }
 pub fn paired<T, U>(value: T, other: U) -> U where U: Pair<T> { return other; }
+pub fn shown<T: Show>(value: T) -> i32 { return 0; }
+pub fn outer<T: Show>(value: T) -> i32 { return shown(value); }
+pub impl<T: Show> Show for Cell<T> { pub fn show(&self) -> i32 { return 3; } }
+pub struct Grid<T, const N: u32> { value: T }
+pub impl<T: Show, const N: u32> Show for Grid<T, N> { pub fn show(&self) -> i32 { return 4; } }
 "#;
 
-const APP: &str = r#"module rtc::b;
+const APP_BASE: &str = r#"module rtc::b;
 import rtc::a;
 struct Local { v: i32 }
 struct Wrap<T> { inner: T }
+struct Other { v: i32 }
 pub impl Show for Local { pub fn show(&self) -> i32 { return 1; } }
 pub impl<T: Show> Show for Wrap<T> { pub fn show(&self) -> i32 { return 2; } }
 pub impl Pair<i32> for Local { pub fn left(&self, value: i32) -> i32 { return value; } }
+pub impl Show for Other { pub fn show(&self) -> i32 { return 5; } }
+// A Grid value only as a parameter: the export does not complete a struct
+// literal of a const-generic struct yet.
+fn take(g: Grid<Local, 4>) -> i32 { let h = needs(g); return 0; }
 fn main() -> i32 {
     let a = needs(Local { v: 1 });
     let w = needs(Wrap { inner: Local { v: 2 } });
@@ -45,6 +74,9 @@ fn main() -> i32 {
     let held = cell(Local { v: 5 });
     let i = held.inherit(6);
     let p = paired(7, Local { v: 8 });
+    let o = outer(Local { v: 9 });
+    let c = needs(cell(Local { v: 10 }));
+    let d = wide(Local { v: 12 });
     return 0;
 }
 "#;
@@ -56,13 +88,24 @@ const KIND_METHOD: u32 = 2;
 const KIND_STRUCT: u32 = 5;
 const KIND_IMPL: u32 = 7;
 const KIND_TRAIT: u32 = 8;
+const KIND_REQUIRED_MEMBER: u32 = 3;
+const RT_KIND_CC_VALUE: u32 = 8;
 const SCALAR_I32: u32 = 3;
 const PRIVATE: u32 = 0x8000_0000;
 const USE_WORDS: usize = 12;
 // producer.slang failure codes.
 const E_NOT_READY: u32 = 1;
+const E_PARAM_OWNER: u32 = 4;
+const E_NOMINAL: u32 = 5;
 const E_TRAIT_ARITY: u32 = 7;
 const E_REQUIRED_MEMBER: u32 = 8;
+const E_BINDING_COVERAGE: u32 = 10;
+// The solver's catalog receipt (state, detail) for an overlapping impl
+// pair: TS_COHERENCE_CONFLICT (abi.slang), detail 0.
+const E_COHERENCE_STATUS: [u32; 2] = [5, 0];
+// TS_INVALID_INPUT detail 84, observed when a generic impl head loses its
+// parameter (T no longer appears in the self type).
+const E_UNCOVERED_STATUS: [u32; 2] = [2, 84];
 
 fn compiler() -> GpuCompiler<'static> {
     pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only()))
@@ -73,8 +116,8 @@ fn build(compiler: &GpuCompiler<'static>, store: &Arc<ProgramRetention>) {
     store.begin_build().unwrap();
     compiler.attach_program_retention(Some(store.clone()));
     let result = (|| {
-        let library = pollster::block_on(compiler.semantic_interface_for_source_pack(LIB_A, &[LIBRARY]))?;
-        pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(LIB_B, &[APP], &[library]))?;
+        let library = pollster::block_on(compiler.semantic_interface_for_source_pack(LIB_A, &[LIBRARY.as_str()]))?;
+        pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(LIB_B, &[APP.as_str()], &[library]))?;
         anyhow::Ok(())
     })();
     compiler.attach_program_retention(None);
@@ -265,47 +308,144 @@ fn check(compiler: &GpuCompiler<'static>, store: &ProgramRetention, options: Ret
 fn solved(report: &RetainedTraitCheck) -> bool {
     report.stage == RetainedTraitStage::Solved
         && report.batch_status.is_some_and(|s| s[0] == 1 && s[7] == 0)
-        && report.calls.iter().all(|c| c[0] == 1)
-        && report.obligations.iter().all(|o| o[0] == 1)
+        && report.calls.iter().all(|c| matches!(c[0], 1 | 2))
+        && report.obligations.iter().all(|o| matches!(o[0], 1 | 2))
 }
 
-/// Expected selections, from the store's declarations.
-struct Expect {
-    goals: Vec<Goal>,
+/// The fixture's declarations, identified from store records only.
+struct Decls {
+    show: u32,
+    pair: u32,
+    wide: u32,
+    needs: u32,
+    outer: u32,
+    shown: u32,
+    paired: u32,
+    wide_fn: u32,
+    local: u32,
+    wrap: u32,
+    grid: u32,
+    cell_inherent: u32,
+    cell_show: u32,
+    grid_show: u32,
+    show_local: u32,
+    show_wrap: u32,
+    show_other: u32,
+    pair_local: u32,
+    wide_local: u32,
+    shadow: u32,
+    inherit: u32,
 }
 
-fn expected(s: &Store, report: &RetainedTraitCheck) -> Expect {
+impl Store {
+    fn members(&self, trait_decl: u32) -> Vec<u32> {
+        self.entries(LIB_A, KIND_REQUIRED_MEMBER).into_iter().filter(|&m| self.entry(m)[2] == trait_decl).collect()
+    }
+    fn trait_of(&self, i: u32) -> u32 {
+        self.heads[self.impl_trait(i) as usize][1]
+    }
+    fn self_of(&self, i: u32) -> u32 {
+        self.heads[self.impl_self(i) as usize][1]
+    }
+    fn bindings(&self, i: u32) -> &[[u32; 8]] {
+        let t = self.dir_trait[self.entry_index(i)];
+        &self.traits[t[2] as usize..(t[2] + t[3]) as usize]
+    }
+    /// The method of impl `i` bound to required member `required`.
+    fn method_for(&self, i: u32, required: u32) -> u32 {
+        self.bindings(i).iter().find(|b| b[0] == i && b[2] == required).map(|b| b[3]).unwrap()
+    }
+    fn impl_params(&self, i: u32) -> Vec<u32> {
+        let e = self.entry(i);
+        let k = (e[5] & 0xffff) + (e[5] >> 16);
+        self.binders[e[4] as usize..(e[4] + k) as usize].to_vec()
+    }
+    fn decls(&self) -> Decls {
+        let one = |found: Vec<u32>, what: &str| -> u32 {
+            assert_eq!(found.len(), 1, "{what}: {found:?}");
+            found[0]
+        };
+        let traits = self.entries(LIB_A, KIND_TRAIT);
+        let show = one(traits.iter().copied().filter(|&t| self.types(t) == 1 && self.members(t).len() == 1).collect(), "Show");
+        let pair = one(traits.iter().copied().filter(|&t| self.types(t) == 2).collect(), "Pair");
+        let wide = one(traits.iter().copied().filter(|&t| self.members(t).len() == WIDE as usize).collect(), "Wide");
+        let fns = self.entries(LIB_A, KIND_FREE_FN);
+        let bound = |d: u32, t: u32| self.predicates(d).len() == 1 && self.predicates(d)[0][4] == t;
+        let leaf = |d: u32| self.predicates(d)[0][2] & 0x8000_0000 != 0;
+        let calls = |d: u32| self.uses.iter().any(|u| u[0] == d);
+        let paired = one(fns.iter().copied().filter(|&d| bound(d, pair)).collect(), "paired");
+        let wide_fn = one(fns.iter().copied().filter(|&d| bound(d, wide)).collect(), "wide");
+        let outer = one(fns.iter().copied().filter(|&d| bound(d, show) && leaf(d) && calls(d)).collect(), "outer");
+        let called_by_outer = |d: u32| self.uses.iter().any(|u| u[0] == outer && u[3] == d);
+        let shown = one(fns.iter().copied().filter(|&d| bound(d, show) && leaf(d) && called_by_outer(d)).collect(), "shown");
+        let needs = one(fns.iter().copied().filter(|&d| bound(d, show) && leaf(d) && !calls(d) && d != shown).collect(), "needs");
+        let impls_b = self.entries(LIB_B, KIND_IMPL);
+        let pair_local = one(impls_b.iter().copied().filter(|&i| self.trait_of(i) == pair).collect(), "Pair for Local");
+        let local = self.self_of(pair_local);
+        let wrap = self.find(LIB_B, KIND_STRUCT, 1, 0);
+        let structs_b = self.entries(LIB_B, KIND_STRUCT);
+        let other = one(structs_b.iter().copied().filter(|&d| d != local && d != wrap).collect(), "Other");
+        assert!(leaf(paired) && leaf(needs), "parameter subjects");
+        let grid = one(self.entries(LIB_A, KIND_STRUCT).into_iter().filter(|&d| self.entry(d)[5] >> 16 == 1).collect(), "Grid");
+        let in_b = |t: u32, own: u32| one(impls_b.iter().copied().filter(|&i| self.trait_of(i) == t && self.self_of(i) == own).collect(), "impl in B");
+        let impls_a = self.entries(LIB_A, KIND_IMPL);
+        let cell_inherent = one(impls_a.iter().copied().filter(|&i| self.dir_trait[self.entry_index(i)][3] == 0).collect(), "impl Cell");
+        let cell = self.self_of(cell_inherent);
+        let in_a = |own: u32| one(impls_a.iter().copied().filter(|&i| i != cell_inherent && self.self_of(i) == own).collect(), "impl in A");
+        let methods = self.entries(LIB_A, KIND_METHOD);
+        let shadow = *methods
+            .iter()
+            .find(|&&m| self.entry(m)[2] == cell_inherent && self.predicates(m).iter().all(|p| self.params[(p[2] & 0x1fff_ffff) as usize][0] == m))
+            .unwrap();
+        let inherit = *methods.iter().find(|&&m| m != shadow && self.entry(m)[2] == cell_inherent).unwrap();
+        Decls {
+            show,
+            pair,
+            wide,
+            needs,
+            outer,
+            shown,
+            paired,
+            wide_fn,
+            local,
+            wrap,
+            grid,
+            cell_inherent,
+            cell_show: in_a(cell),
+            grid_show: in_a(grid),
+            show_local: in_b(show, local),
+            show_wrap: in_b(show, wrap),
+            show_other: in_b(show, other),
+            pair_local,
+            wide_local: in_b(wide, local),
+            shadow,
+            inherit,
+        }
+    }
+}
+
+/// Expected selections, from the store's declarations. The goal of
+/// `needs(Grid<Local, 4>)` is checked separately (`grid_goal`).
+fn expected(s: &Store, report: &RetainedTraitCheck) -> Vec<Goal> {
+    let d = s.decls();
     let job_b = s.job_of(report, LIB_B);
     let job_a = s.job_of(report, LIB_A);
     let key = |d: u32| s.keys[d as usize];
     let callable = |d: u32| [key(d)[0], key(d)[1], key(d)[3]];
-    let show = s.find(LIB_A, KIND_TRAIT, 1, 0);
-    let pair = s.find(LIB_A, KIND_TRAIT, 2, 0);
-    let needs = s.find(LIB_A, KIND_FREE_FN, 1, 1);
-    let paired = s.find(LIB_A, KIND_FREE_FN, 2, 1);
-    let local = s.find(LIB_B, KIND_STRUCT, 0, 0);
-    let wrap = s.find(LIB_B, KIND_STRUCT, 1, 0);
-    let cell_impl = s.entries(LIB_A, KIND_IMPL)[0];
-    let methods = s.entries(LIB_A, KIND_METHOD);
-    let shadow = *methods.iter().find(|&&m| {
-        s.entry(m)[2] == cell_impl && s.predicates(m).iter().all(|p| s.params[(p[2] & 0x1fff_ffff) as usize][0] == m)
-    }).unwrap();
-    let inherit = *methods.iter().find(|&&m| m != shadow && s.entry(m)[2] == cell_impl).unwrap();
-    let impls = s.entries(LIB_B, KIND_IMPL);
-    let trait_of = |i: u32| s.heads[s.impl_trait(i) as usize][1];
-    let self_of = |i: u32| s.heads[s.impl_self(i) as usize][1];
-    let show_local = *impls.iter().find(|&&i| trait_of(i) == show && self_of(i) == local).unwrap();
-    let show_wrap = *impls.iter().find(|&&i| trait_of(i) == show && self_of(i) == wrap).unwrap();
-    let pair_local = *impls.iter().find(|&&i| trait_of(i) == pair).unwrap();
-    assert!(key(local)[3] & PRIVATE != 0, "Local is private to unit B");
-    let impl_id = |i: u32| Some([job_b, key(i)[3], 7]);
+    assert!(key(d.local)[3] & PRIVATE != 0, "Local is private to unit B");
+    let impl_id = |i: u32| Some([if key(i)[0] == LIB_A { job_a } else { job_b }, key(i)[3], 7]);
+    // Method rows are in increasing required symbol.
     let impl_methods = |i: u32| {
-        s.entries(LIB_B, KIND_METHOD).into_iter().filter(|&m| s.entry(m)[2] == i).map(callable).collect::<Vec<_>>()
+        let mut bindings = s.bindings(i).to_vec();
+        bindings.sort_by_key(|b| b[5]);
+        bindings.iter().map(|b| callable(b[3])).collect::<Vec<_>>()
     };
-    let local_text = format!("n{:?}{:?}", [2, job_b, key(local)[3] & !PRIVATE, 0], Vec::<String>::new());
-    let wrap_text = format!("n{:?}{:?}", [2, job_b, key(wrap)[3] & !PRIVATE, 0], vec![local_text.clone()]);
-    let binder = |d: u32| -> u32 {
-        (0..report.rows[1]).find(|&a| atom(report, a)[..4] == [4, job_a, key(d)[2], key(d)[3]]).unwrap()
+    let local_text = format!("n{:?}{:?}", [2, job_b, key(d.local)[3] & !PRIVATE, 0], Vec::<String>::new());
+    let wrap_text = format!("n{:?}{:?}", [2, job_b, key(d.wrap)[3] & !PRIVATE, 0], vec![local_text.clone()]);
+    let cell = s.self_of(d.cell_inherent);
+    let cell_text = format!("n{:?}{:?}", [1, key(cell)[0], key(cell)[1], key(cell)[3]], vec![local_text.clone()]);
+    let binder = |o: u32| -> u32 {
+        (0..report.rows[1]).find(|&a| atom(report, a)[..4] == [4, job_a, key(o)[2], key(o)[3]]).unwrap()
     };
     let param = |owner: u32, ordinal: u32| [binder(owner), 0, ordinal];
     let goal = |callee: u32, i: u32, bindings: Vec<([u32; 3], String)>| Goal {
@@ -316,22 +456,170 @@ fn expected(s: &Store, report: &RetainedTraitCheck) -> Expect {
         bindings,
     };
     let i32_text = format!("s{SCALAR_I32}");
-    Expect {
-        goals: vec![
-            goal(needs, show_local, vec![(param(needs, 0), local_text.clone())]),
-            goal(needs, show_wrap, vec![(param(needs, 0), wrap_text)]),
-            // `shadow`'s own T shadows the impl's T; the impl's slot comes first.
-            goal(shadow, show_local, vec![(param(cell_impl, 0), i32_text.clone()), (param(shadow, 0), local_text.clone())]),
-            // `inherit` bounds the impl's T, inherited through its parent.
-            goal(inherit, show_local, vec![(param(cell_impl, 0), local_text.clone()), (param(inherit, 0), i32_text.clone())]),
-            goal(paired, pair_local, vec![(param(paired, 0), i32_text), (param(paired, 1), local_text)]),
-        ],
-    }
+    vec![
+        goal(d.needs, d.show_local, vec![(param(d.needs, 0), local_text.clone())]),
+        goal(d.needs, d.show_wrap, vec![(param(d.needs, 0), wrap_text)]),
+        // `shadow`'s own T shadows the impl's T; the impl's slot comes first.
+        goal(d.shadow, d.show_local, vec![(param(d.cell_inherent, 0), i32_text.clone()), (param(d.shadow, 0), local_text.clone())]),
+        // `inherit` bounds the impl's T, inherited through its parent.
+        goal(d.inherit, d.show_local, vec![(param(d.cell_inherent, 0), local_text.clone()), (param(d.inherit, 0), i32_text.clone())]),
+        goal(d.paired, d.pair_local, vec![(param(d.paired, 0), i32_text), (param(d.paired, 1), local_text.clone())]),
+        goal(d.outer, d.show_local, vec![(param(d.outer, 0), local_text.clone())]),
+        // Inside the generic `outer`, `shown(value)` is proven by outer's own bound.
+        Goal {
+            callee: callable(d.shown),
+            status: 2,
+            implementation: None,
+            targets: Vec::new(),
+            bindings: vec![(param(d.shown, 0), format!("p{}:0", binder(d.outer)))],
+        },
+        // `impl<T: Show> Show for Cell<T>`, whose own bound needs Local: Show.
+        goal(d.needs, d.cell_show, vec![(param(d.needs, 0), cell_text)]),
+        goal(d.wide_fn, d.wide_local, vec![(param(d.wide_fn, 0), local_text)]),
+    ]
+}
+
+/// Whether `goal` is `needs(Grid<Local, 4>)`, with a binding over the
+/// public Grid nominal applied to Local and a constant.
+fn grid_goal(s: &Store, report: &RetainedTraitCheck, goal: &Goal) -> bool {
+    let d = s.decls();
+    let key = s.keys[d.grid as usize];
+    let job_a = s.job_of(report, LIB_A);
+    goal.implementation == Some([job_a, s.keys[d.grid_show as usize][3], 7])
+        && goal.bindings.len() == 1
+        && goal.bindings[0].1.starts_with(&format!("n{:?}", [1, key[0], key[1], key[3]]))
 }
 
 fn sorted(mut goals: Vec<Goal>) -> Vec<Goal> {
     goals.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
     goals
+}
+
+/// The goals of a solved check, the Grid goal asserted and removed.
+fn checked_goals(s: &Store, report: &RetainedTraitCheck) -> Vec<Goal> {
+    let mut all = goals(report);
+    let grid = all.iter().position(|g| grid_goal(s, report, g)).unwrap_or_else(|| panic!("no Grid goal: {all:#?}"));
+    let g = all.remove(grid);
+    assert_eq!(g.status, 1, "{g:?}");
+    eprintln!("grid goal binding: {}", g.bindings[0].1);
+    sorted(all)
+}
+
+// tests/retained_route_query.slang answers.
+const RQ_FOUND: u32 = 1;
+const RQ_HEADER: u32 = 2;
+const RQ_STALE: u32 = 3;
+const RQ_NOT_IMPL: u32 = 6;
+
+/// One GPU route query and the answer the store's records require.
+struct Query {
+    request: [u32; 3],
+    status: u32,
+    implementation: u32,
+    method: u32,
+    /// (ParamId, NAMED DeclId) of each type binding; constant bindings are
+    /// checked by tag.
+    bindings: Vec<(u32, Option<u32>)>,
+}
+
+fn use_of(s: &Store, store: &ProgramRetention, callee: u32, arg0: u32) -> u32 {
+    let found = (0..s.uses.len() as u32)
+        .filter(|&u| {
+            let r = s.uses[u as usize];
+            r[3] == callee && {
+                let base = s.meta[r[4] as usize][0] as usize;
+                store.read_store_words("rt_term_args", base + 1).unwrap()[base] == arg0
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(found.len(), 1, "use of {callee} with {arg0}");
+    found[0]
+}
+
+fn queries(s: &Store, store: &ProgramRetention) -> Vec<Query> {
+    let d = s.decls();
+    let local_term = s.named(d.local);
+    let symbol = |m: u32| s.keys[m as usize][3];
+    let show_member = s.members(d.show)[0];
+    let found = |use_index: u32, i: u32, member: u32, bindings: Vec<(u32, Option<u32>)>| Query {
+        request: [use_index, 0, symbol(member)],
+        status: RQ_FOUND,
+        implementation: i,
+        method: s.method_for(i, member),
+        bindings,
+    };
+    let needs_local = use_of(s, store, d.needs, local_term);
+    let wrap_use = s
+        .uses
+        .iter()
+        .position(|u| u[3] == d.needs && {
+            let base = s.meta[u[4] as usize][0] as usize;
+            let arg = store.read_store_words("rt_term_args", base + 1).unwrap()[base];
+            arg >= 32 && arg < 0x8000_0000 && s.heads[arg as usize][1] == d.wrap
+        })
+        .unwrap() as u32;
+    let arg_use = |nominal: u32| {
+        s.uses
+            .iter()
+            .position(|u| u[3] == d.needs && {
+                let base = s.meta[u[4] as usize][0] as usize;
+                let arg = store.read_store_words("rt_term_args", base + 1).unwrap()[base];
+                arg >= 32 && arg < 0x8000_0000 && s.heads[arg as usize][1] == nominal
+            })
+            .unwrap() as u32
+    };
+    let grid_use = s
+        .uses
+        .iter()
+        .position(|u| u[3] == d.needs && {
+            let base = s.meta[u[4] as usize][0] as usize;
+            let arg = store.read_store_words("rt_term_args", base + 1).unwrap()[base];
+            arg >= 32 && arg < 0x8000_0000 && s.heads[arg as usize][1] == d.grid
+        })
+        .unwrap() as u32;
+    let inner = s.uses.iter().position(|u| u[0] == d.outer && u[3] == d.shown).unwrap() as u32;
+    let mut all = vec![
+        found(needs_local, d.show_local, show_member, vec![]),
+        found(wrap_use, d.show_wrap, show_member, vec![(s.impl_params(d.show_wrap)[0], Some(d.local))]),
+        found(arg_use(s.self_of(d.cell_inherent)), d.cell_show, show_member, vec![(s.impl_params(d.cell_show)[0], Some(d.local))]),
+        found(grid_use, d.grid_show, show_member, {
+            let p = s.impl_params(d.grid_show);
+            vec![(p[0], Some(d.local)), (p[1], None)]
+        }),
+        found(use_of(s, store, d.outer, local_term), d.show_local, show_member, vec![]),
+        found(
+            s.uses.iter().position(|u| u[3] == d.paired).unwrap() as u32,
+            d.pair_local,
+            s.members(d.pair)[0],
+            vec![],
+        ),
+        Query { request: [inner, 0, symbol(show_member)], status: RQ_NOT_IMPL, implementation: 0, method: 0, bindings: vec![] },
+    ];
+    let wide_use = use_of(s, store, d.wide_fn, local_term);
+    for member in s.members(d.wide) {
+        all.push(found(wide_use, d.wide_local, member, vec![]));
+    }
+    all
+}
+
+fn assert_answers(queries: &[Query], answers: &[[u32; 16]]) {
+    assert_eq!(queries.len(), answers.len());
+    for (q, a) in queries.iter().zip(answers) {
+        assert_eq!(a[0], q.status, "request {:?}: {a:?}", q.request);
+        if q.status != RQ_FOUND {
+            continue;
+        }
+        assert_eq!((a[1], a[2]), (q.implementation, q.method), "selected impl and native target of {:?}", q.request);
+        assert_eq!(a[3] as usize, q.bindings.len(), "binding count of {:?}: {a:?}", q.request);
+        for (b, &(param, decl)) in q.bindings.iter().enumerate() {
+            let (id, tag, value) = (a[4 + b * 3], a[5 + b * 3], a[6 + b * 3]);
+            assert_eq!(id, param, "binding {b} parameter of {:?}: {a:?}", q.request);
+            match decl {
+                Some(decl) => assert_eq!((tag, value), (3, decl), "binding {b} of {:?}: {a:?}", q.request),
+                None => assert_ne!(tag, 3, "a constant binding of {:?}: {a:?}", q.request),
+            }
+        }
+    }
 }
 
 #[test]
@@ -344,6 +632,7 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     pollster::block_on(compiler.release_resident_job_buffers());
     store.poison_scratch();
     let s = Store::read(&store);
+    let d = s.decls();
     let generation = store.generation();
 
     // Every catalog and batch word starts poisoned; admission accepts only
@@ -351,6 +640,7 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     let report = check(&compiler, &store, RetainedTraitOptions { poison_arenas: true, ..Default::default() });
     assert!(solved(&report), "{report:#?}");
     assert_eq!((report.producer_failures, report.fill_faults, report.unsupported_member_bounds), (0, 0, 0));
+    assert_eq!(report.publication_status, Some([1, 0, u32::MAX]), "a valid publication");
     assert_eq!(report.generation, generation);
     assert_eq!(report.attempts, 1);
     assert_eq!(report.catalog_status.unwrap()[0], 1);
@@ -358,14 +648,39 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     for job in 0..2 {
         assert_eq!(report.row(0, job).unwrap()[3], generation, "snapshots carry the build generation");
     }
+    // Only calls with an applicable predicate are goals. `grid` and `cell`
+    // have none; every use in this fixture calls a store callable.
+    assert_eq!(report.rows[15], 10, "goal calls");
+    assert!(report.plain_calls >= 2, "{}", report.plain_calls);
+    eprintln!("plain calls {} unsupported callees {}", report.plain_calls, report.unsupported_callees);
     let expect = expected(&s, &report);
-    assert_eq!(sorted(goals(&report)), sorted(expect.goals), "selected implementations, native targets and environments");
+    assert_eq!(checked_goals(&s, &report), sorted(expect), "selected implementations, native targets and environments");
     let first_goals = goals(&report);
+
+    // Binding ranks: the GPU sort covers every trait record in
+    // log2(P)(log2(P)+1)/2 steps of P lanes. Each lane does one compare,
+    // so the work is P log2(P)^2 / 2 for any impl width; the scan it
+    // replaced did B^2 per impl.
+    let records = s.traits.len() as u32;
+    assert_eq!(report.sort_width, records.next_power_of_two());
+    let lg = report.sort_width.trailing_zeros();
+    assert_eq!(report.sort_steps, lg * (lg + 1) / 2);
+    assert!(report.sort_width < 2 * records.max(1));
+    // The wide impl's method rows: contiguous, strictly increasing symbol,
+    // although its source lists the methods in another order.
+    let wide_row = (0..report.rows[9]).find(|&r| atom(&report, report.row(9, r).unwrap()[0])[2] == s.keys[d.wide_local as usize][3]).unwrap();
+    let head = report.row(9, wide_row).unwrap();
+    assert_eq!(head[7], WIDE);
+    let symbols = (0..WIDE).map(|m| report.row(10, head[6] + m).unwrap()[1]).collect::<Vec<_>>();
+    assert!(symbols.windows(2).all(|w| w[0] < w[1]), "{symbols:?}");
+    let source_order = s.bindings(d.wide_local).iter().map(|b| b[5]).collect::<Vec<_>>();
+    assert_ne!(source_order, symbols, "the impl's source order differs from symbol order");
 
     // Reused solver storage, unpoisoned: the same rows and selections.
     let again = check(&compiler, &store, RetainedTraitOptions::default());
     assert!(solved(&again));
     assert_eq!(goals(&again), first_goals);
+    assert_eq!(again.tables[9..=10], report.tables[9..=10], "deterministic impl and method rows");
 
     // A full unit table grows and the producer runs again from the store.
     let grown = check(&compiler, &store, RetainedTraitOptions { unit_slots: Some(1), ..Default::default() });
@@ -373,101 +688,173 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     assert!(solved(&grown));
     assert_eq!(goals(&grown), first_goals);
 
-    // Faults below rewrite one store word and restore it.
-    let fault = |name: &str, offset: usize, value: u32, verify: &dyn Fn(&RetainedTraitCheck)| {
-        let original = store.read_store_words(name, offset + 1).unwrap()[offset];
-        store.write_store_words(name, offset as u64, &[value]).unwrap();
+    // The publication: no semantic row readback, a GPU consumer reads the
+    // selected impl, native target and binding environment.
+    let (plain, publication) = compiler.retained_trait_publish(&store, &RetainedTraitOptions::default()).unwrap();
+    let publication: RetainedTraitPublication = publication.expect("a solved publication");
+    assert_eq!(plain.stage, RetainedTraitStage::Solved);
+    assert!(plain.obligations.is_empty() && plain.evidence.is_empty() && plain.calls.is_empty(), "no semantic readback");
+    assert!(plain.publication_status.is_none(), "publish reads no status");
+    eprintln!("publish: dispatches {} readbacks {} bytes {}", plain.dispatches, plain.readbacks, plain.producer_readback_bytes);
+    assert_eq!(publication.status().unwrap(), [1, 0, u32::MAX]);
+    let id = publication.identity();
+    assert_eq!(id.generation, generation);
+    let view = publication.view(&store).unwrap();
+    assert!(view.routes.size > 0 && view.proof.size > 0 && view.catalog.size > 0);
+    let queries = queries(&s, &store);
+    let requests = queries.iter().map(|q| q.request).collect::<Vec<_>>();
+    assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
+
+    // A second publication keeps the first alive and valid; identities differ.
+    let (_, second) = compiler.retained_trait_publish(&store, &RetainedTraitOptions::default()).unwrap();
+    let second = second.unwrap();
+    assert_ne!(second.identity(), id);
+    assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
+    assert!(publication.query_for_test(&store, second.identity(), &requests).unwrap().iter().all(|a| a[0] == RQ_HEADER));
+    drop(second);
+    assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
+
+    // Fail closed: another identity, a store that is not READY.
+    let stale = |id, expect: u32| {
+        let answers = publication.query_for_test(&store, id, &requests).unwrap();
+        assert!(answers.iter().all(|a| a[0] == expect && a[1..].iter().all(|&w| w == u32::MAX)), "{answers:?}");
+    };
+    stale(laniusc_compiler::compiler::RetainedTraitIdentity { serial: id.serial + 1, ..id }, RQ_HEADER);
+    store.write_store_words("rt_counts", counts::READY as u64, &[0]).unwrap();
+    stale(id, RQ_STALE);
+    store.write_store_words("rt_counts", counts::READY as u64, &[1]).unwrap();
+    assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
+
+    // Faults below rewrite store words and restore them.
+    let fault_words = |name: &str, writes: &[(usize, u32)], verify: &dyn Fn(&RetainedTraitCheck)| {
+        let originals = writes
+            .iter()
+            .map(|&(offset, _)| store.read_store_words(name, offset + 1).unwrap()[offset])
+            .collect::<Vec<_>>();
+        for &(offset, value) in writes {
+            store.write_store_words(name, offset as u64, &[value]).unwrap();
+        }
         let report = check(&compiler, &store, RetainedTraitOptions::default());
-        store.write_store_words(name, offset as u64, &[original]).unwrap();
+        for (&(offset, _), original) in writes.iter().zip(originals) {
+            store.write_store_words(name, offset as u64, &[original]).unwrap();
+        }
         verify(&report);
+    };
+    let fault = |name: &str, offset: usize, value: u32, verify: &dyn Fn(&RetainedTraitCheck)| {
+        fault_words(name, &[(offset, value)], verify)
+    };
+    let producer_code = |code: u32| {
+        move |r: &RetainedTraitCheck| {
+            assert_eq!(r.stage, RetainedTraitStage::Producer, "{r:#?}");
+            assert_eq!(r.first_failure.map(|f| f.0), Some(code), "{r:#?}");
+        }
     };
 
     // Refuted obligation: `needs(Local)` with its environment argument
     // rewritten to i32, which has no Show impl.
-    let needs = s.find(LIB_A, KIND_FREE_FN, 1, 1);
-    let local = s.find(LIB_B, KIND_STRUCT, 0, 0);
-    let local_term = s.named(local);
-    let env = s
-        .uses
-        .iter()
-        .filter(|u| u[3] == needs)
-        .map(|u| u[4])
-        .find(|&env| {
-            let base = s.meta[env as usize][0] as usize;
-            store.read_store_words("rt_term_args", base + 1).unwrap()[base] == local_term
-        })
-        .expect("the use of needs(Local)");
+    let local_term = s.named(d.local);
+    let env = s.uses[use_of(&s, &store, d.needs, local_term) as usize][4];
     fault("rt_term_args", s.meta[env as usize][0] as usize, SCALAR_I32, &|r| {
         assert_eq!(r.stage, RetainedTraitStage::Solved, "{r:#?}");
         assert!(!solved(r), "i32: Show has no evidence: {r:#?}");
         let unproven = r.obligations.iter().filter(|o| !matches!(o[0], 1 | 2)).count();
         assert_eq!(unproven, 1, "only the faulted obligation is unproven: {:?}", r.obligations);
+        // A batch with a refuted goal publishes no routes to consume.
+        let p = r.publication_status.unwrap();
+        assert!(p[0] == 2 && p[1] != 0, "the publication fails closed: {p:?}");
     });
 
-    // Coherence: the generic Wrap impl's self type rewritten to Local
-    // overlaps `impl Show for Local`.
-    let wrap = s.find(LIB_B, KIND_STRUCT, 1, 0);
-    let impls = s.entries(LIB_B, KIND_IMPL);
-    let show_wrap = *impls.iter().find(|&&i| s.heads[s.impl_self(i) as usize][1] == wrap).unwrap();
-    fault("rt_sigs", s.entry(show_wrap)[6] as usize, local_term, &|r| {
+    // Coherence: `impl Show for Other` rewritten to Local overlaps
+    // `impl Show for Local`.
+    fault("rt_sigs", s.entry(d.show_other)[6] as usize, local_term, &|r| {
         assert_eq!(r.stage, RetainedTraitStage::Admission, "{r:#?}");
-        assert_ne!(r.catalog_status.unwrap()[0], 1);
+        eprintln!("coherence status {:?}", r.catalog_status);
+        assert_eq!(r.catalog_status.unwrap()[..2], E_COHERENCE_STATUS, "{:?}", r.catalog_status);
         assert!(r.obligations.is_empty(), "no solve over a rejected catalog");
     });
+    // The generic Wrap impl rewritten to Local leaves its T uncovered.
+    fault("rt_sigs", s.entry(d.show_wrap)[6] as usize, local_term, &|r| {
+        assert_eq!(r.stage, RetainedTraitStage::Admission, "{r:#?}");
+        eprintln!("uncovered status {:?}", r.catalog_status);
+        assert_ne!(r.catalog_status.unwrap()[0], 1);
+        assert_eq!(r.catalog_status.unwrap()[..2], E_UNCOVERED_STATUS, "not reported as overlap: {:?}", r.catalog_status);
+    });
 
-    // Swapped type slots of `shadow` (impl T, own T): never a solved check.
-    let cell_impl = s.entries(LIB_A, KIND_IMPL)[0];
-    let shadow = *s
-        .entries(LIB_A, KIND_METHOD)
-        .iter()
-        .find(|&&m| s.entry(m)[2] == cell_impl && s.predicates(m).iter().all(|p| s.params[(p[2] & 0x1fff_ffff) as usize][0] == m))
-        .unwrap();
-    let start = s.entry(shadow)[4] as usize;
-    let (outer, own) = (s.binders[start], s.binders[start + 1]);
-    store.write_store_words("rt_binders", start as u64, &[own, outer]).unwrap();
-    let swapped = check(&compiler, &store, RetainedTraitOptions::default());
-    store.write_store_words("rt_binders", start as u64, &[outer, own]).unwrap();
-    assert!(!solved(&swapped), "swapped slots are rejected or refuted: {swapped:#?}");
+    // A structural predicate subject (the parser takes only parameter and
+    // scalar subjects): `needs`' bound rewritten to `Local: Show`. Every
+    // goal of `needs` then proves Local: Show with `impl Show for Local`.
+    let needs_bound = s.dir_trait[s.entry_index(d.needs)][0] as usize;
+    fault("rt_traits", needs_bound * 8 + 2, local_term, &|r| {
+        assert!(solved(r), "{r:#?}");
+        let goals = goals(r);
+        let callee = [s.keys[d.needs as usize][0], s.keys[d.needs as usize][1], s.keys[d.needs as usize][3]];
+        let needs_goals = goals.iter().filter(|g| g.callee == callee).collect::<Vec<_>>();
+        assert_eq!(needs_goals.len(), 4, "needs(Local), needs(Wrap), needs(Cell), needs(Grid): {goals:#?}");
+        let show_local = Some([s.job_of(r, LIB_B), s.keys[d.show_local as usize][3], 7]);
+        assert!(needs_goals.iter().all(|g| g.status == 1 && g.implementation == show_local), "{needs_goals:#?}");
+    });
+
+    // Swapped type slots of `shadow` (impl T, own T).
+    let start = s.entry(d.shadow)[4] as usize;
+    let (outer_slot, own) = (s.binders[start], s.binders[start + 1]);
+    fault_words("rt_binders", &[(start, own), (start + 1, outer_slot)], &|r| {
+        eprintln!("swapped: stage {:?} first {:?}", r.stage, r.first_failure);
+        assert_eq!(r.first_failure.map(|f| f.0), Some(E_PARAM_OWNER), "{r:#?}");
+    });
 
     // Trait arity against the defining binder: Pair applied to no argument.
-    let pair_local = *impls.iter().find(|&&i| s.arity(s.impl_trait(i)) == 1).unwrap();
-    let pair_term = s.impl_trait(pair_local);
+    let pair_term = s.impl_trait(d.pair_local);
     let head = s.heads[pair_term as usize][0];
-    fault("rt_term_head", pair_term as usize * 4, head & !0xff00, &|r| {
-        assert_eq!(r.stage, RetainedTraitStage::Producer);
-        assert_eq!(r.first_failure.map(|f| f.0), Some(E_TRAIT_ARITY), "{r:#?}");
-    });
+    fault("rt_term_head", pair_term as usize * 4, head & !0xff00, &producer_code(E_TRAIT_ARITY));
+
+    // A constant argument of the wrong scalar: Grid<Local, 4> with 4 as i32.
+    let grid_term = (32..s.heads.len() as u32)
+        .find(|&t| s.heads[t as usize][0] & 0xff == 2 && s.heads[t as usize][1] == d.grid && s.arity(t) == 2 && {
+            let arg = store.read_store_words("rt_term_args", s.meta[t as usize][0] as usize + 2).unwrap()[s.meta[t as usize][0] as usize + 1];
+            (32..0x8000_0000).contains(&arg)
+        })
+        .expect("Grid<Local, 4>");
+    let base = s.meta[grid_term as usize][0] as usize;
+    let four = store.read_store_words("rt_term_args", base + 2).unwrap()[base + 1];
+    assert_eq!(s.heads[four as usize][0] & 0xff, RT_KIND_CC_VALUE);
+    let wrong = if s.heads[four as usize][1] == SCALAR_I32 { SCALAR_I32 + 1 } else { SCALAR_I32 };
+    fault("rt_term_head", four as usize * 4 + 1, wrong, &producer_code(E_NOMINAL));
 
     // A binding whose required member is the impl's own method.
-    let t = s.dir_trait[s.entry_index(pair_local)];
+    let t = s.dir_trait[s.entry_index(d.pair_local)];
     assert_eq!(t[3], 1, "one binding");
     let binding = t[2] as usize;
-    fault("rt_traits", binding * 8 + 2, s.traits[binding][3], &|r| {
-        assert_eq!(r.stage, RetainedTraitStage::Producer);
-        assert_eq!(r.first_failure.map(|f| f.0), Some(E_REQUIRED_MEMBER), "{r:#?}");
-    });
+    fault("rt_traits", binding * 8 + 2, s.traits[binding][3], &producer_code(E_REQUIRED_MEMBER));
+
+    // The wide impl: two bindings of one required member, and a binding
+    // count below the trait's member count.
+    let wt = s.dir_trait[s.entry_index(d.wide_local)];
+    let (b0, b1) = (wt[2] as usize, wt[2] as usize + 1);
+    fault_words("rt_traits", &[(b1 * 8 + 2, s.traits[b0][2]), (b1 * 8 + 5, s.traits[b0][5])], &producer_code(E_BINDING_COVERAGE));
+    fault("rt_dir_trait", s.entry_index(d.wide_local) * 4 + 3, wt[3] - 1, &producer_code(E_BINDING_COVERAGE));
 
     // A store that is not READY, or of another build generation.
-    fault("rt_counts", counts::READY, 0, &|r| {
-        assert_eq!(r.first_failure.map(|f| f.0), Some(E_NOT_READY), "{r:#?}");
-    });
-    fault("rt_counts", counts::GENERATION, generation.wrapping_add(1), &|r| {
-        assert_eq!(r.first_failure.map(|f| f.0), Some(E_NOT_READY), "{r:#?}");
-    });
+    fault("rt_counts", counts::READY, 0, &producer_code(E_NOT_READY));
+    fault("rt_counts", counts::GENERATION, generation.wrapping_add(1), &producer_code(E_NOT_READY));
 
-    // A fresh build of the same store: new generation, same selections.
+    // A fresh build of the same store: new generation, same selections. The
+    // earlier publication is refused on the host and on the GPU.
     let rebuilt_compiler = compiler_for_rebuild();
     build(&rebuilt_compiler, &store);
     pollster::block_on(rebuilt_compiler.release_resident_job_buffers());
     store.poison_scratch();
+    assert!(publication.view(&store).is_err(), "a publication of an earlier build");
+    stale(id, RQ_STALE);
+    drop(publication);
     let fresh = check(&compiler, &store, RetainedTraitOptions { poison_arenas: true, ..Default::default() });
     assert_ne!(fresh.generation, generation);
     assert!(solved(&fresh), "{fresh:#?}");
     let s2 = Store::read(&store);
-    assert_eq!(sorted(goals(&fresh)), sorted(expected(&s2, &fresh).goals));
+    assert_eq!(checked_goals(&s2, &fresh), sorted(expected(&s2, &fresh)));
     assert_eq!(s.status[counts::JOBS], s2.status[counts::JOBS]);
 }
 
 fn compiler_for_rebuild() -> GpuCompiler<'static> {
     compiler()
 }
+

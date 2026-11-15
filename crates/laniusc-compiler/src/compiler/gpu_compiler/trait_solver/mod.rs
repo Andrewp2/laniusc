@@ -25,7 +25,7 @@ pub(super) use native_session::{
     unit_span,
 };
 pub(super) use packet::AdmittedCall;
-pub use dispatch::{RETAINED_POISON, RetainedTraitCheck, RetainedTraitOptions, RetainedTraitStage};
+pub use dispatch::{RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 
 impl super::GpuCompiler<'_> {
     /// Builds the program trait catalog and the bound goals of the
@@ -39,6 +39,19 @@ impl super::GpuCompiler<'_> {
         options: &RetainedTraitOptions,
     ) -> anyhow::Result<RetainedTraitCheck> {
         dispatch::retained_check(self.trait_solver_workspace.checkout(), store, options)
+    }
+
+    /// `retained_trait_check`, returning the solved check as a GPU
+    /// publication that keeps its catalog, packet, proof store and routes
+    /// (docs/compiler-retained-trait-catalog.md, "Publication"). None when
+    /// the check stopped before the solver.
+    #[doc(hidden)]
+    pub fn retained_trait_publish(
+        &self,
+        store: &crate::type_checker::program_retention::ProgramRetention,
+        options: &RetainedTraitOptions,
+    ) -> anyhow::Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
+        dispatch::retained_publish(self.trait_solver_workspace.checkout(), store, options)
     }
 }
 

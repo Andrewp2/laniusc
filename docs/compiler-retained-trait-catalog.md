@@ -12,11 +12,14 @@ replays sources, and this path does not remove that replay. The list under
 | Part | Location |
 | --- | --- |
 | Producer passes | `shaders/type_checker/trait_solver/retained/producer.slang` |
-| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs` |
+| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` (binding sort), `09_fill_words` |
+| Publication kernels | `retained/publish.slang`, entries `07_publish_routes`, `08_publish_finish` |
+| Route ABI | `retained/route_abi.slang` |
+| GPU consumer (test) | `shaders/tests/retained_route_query.slang` |
 | Host driver | `crates/laniusc-compiler/src/compiler/gpu_compiler/trait_solver/dispatch/retained.rs` |
 | Catalog layout from counts | `trait_solver/catalog/retained.rs` |
 | Batch layout from counts | `trait_solver/packet/retained.rs` |
-| Entry point | `GpuCompiler::retained_trait_check` (doc-hidden) |
+| Entry points | `GpuCompiler::retained_trait_check`, `GpuCompiler::retained_trait_publish` (doc-hidden) |
 | Test | `tests/retained_trait_catalog.rs` |
 
 ## Boundary
@@ -27,6 +30,7 @@ replays sources, and this path does not remove that replay. The list under
 2. Pass `00_mark` records each committed job's (library, unit). It also
    counts each trait's required members and marks callers that own a
    selected use. Pass `01_units` indexes the jobs by (library, unit).
+   Passes `02a`–`02c` sort the impl bindings (see "Binding ranks").
 3. Pass `02_count` runs every producer check and counts the rows each lane
    owns in 16 counters, one per solver table. Passes `03`–`05` compute an
    exclusive scan of those counters.
@@ -44,7 +48,12 @@ replays sources, and this path does not remove that replay. The list under
    use regions write contexts, assumptions, calls, environments, bindings
    and obligations. Then the solver's batch admission and proof waves run.
 8. Results stay in the solver's output arena. `accept_submission` does not
-   run. A test may read rows back with `RetainedTraitOptions::read_rows`.
+   run. The solver's wave readbacks carry only the proof directory, the
+   batch receipt, the planner state and the demand counters. The context,
+   call, result and evidence rows are read only with
+   `RetainedTraitOptions::read_rows`, which a test sets.
+9. Pass `07_publish_routes` and pass `08_publish_finish` write the
+   publication (see "Publication") in one more submit with no readback.
 
 Fill has two phases (`RC_CFG_PHASE`), and each one writes only its own
 arena. The catalog phase runs before admission. The batch phase runs after
@@ -85,7 +94,7 @@ lane`.
 | 1 | `NOT_READY` | `rt_counts[READY] != 1`, or `rt_counts[GENERATION]` differs from the generation the host read under the store lock |
 | 2 | `SNAPSHOT` | a job ordinal out of range, two units in one job, one unit in two jobs |
 | 3 | `UNIT` | a private nominal whose unit has no committed job |
-| 4 | `PARAM_OWNER` | a parameter without a committed owner, or an invalid binder entry |
+| 4 | `PARAM_OWNER` | a parameter without a committed owner, or an invalid binder entry; a composed binder whose slots in either domain are not the parent owner's slots in order followed by the entry's own parameters |
 | 5 | `NOMINAL` | a nominal local word over 2^29; a NAMED term over a non-nominal or uncommitted declaration; a nominal application whose arguments do not fill its defining binder (type count, constant count, constant scalars) |
 | 6 | `TRAIT_IDENTITY` | a bound or impl header that is not NAMED over the record's committed TRAIT |
 | 7 | `TRAIT_ARITY` | a trait application whose arguments do not fill the trait's binder minus `Self`, including constant parameters and their scalars |
@@ -98,14 +107,49 @@ lane`.
 | 14 | `OWNER` | a predicate owner that is not a function, method or impl; a parent that is not an owner |
 | 15 | `LIMIT` | an environment with more than 32 parameters in one domain |
 
-Each check runs over its own record and point lookups. Binding placement
-currently calls `binding_rank`, which scans the impl's full binding block
-for every binding: an impl with B methods takes O(B²) comparisons. This
-must be replaced before relying on this path for large catalogs. Coverage
-equality bounds the count, and the solver's method admission rejects two
-bindings of one required symbol (strictly increasing symbols). The trait's
+Code 10 also covers two bindings of one required symbol and an impl
+whose sorted binding segment does not hold exactly its recorded count.
+
+### Goals and skipped uses
+
+A use is a goal when it is a direct or method call between committed
+store callables and the callee has at least one applicable predicate. The
+producer counts the other direct and method uses in two report fields.
+`unsupported_callees` counts uses whose callee is not a committed store
+callable, such as an extern or a trait member. `plain_calls` counts calls
+whose callee has no applicable predicate. Neither kind has a batch row.
+
+A predicate subject may be a scalar, a type parameter or a structural
+type term. The parser accepts only the first two in a where clause. The
+test covers a structural subject by rewriting a store record.
+
+Each check runs over its own record and point lookups. The trait's
 required-member count comes from one `InterlockedAdd` per member in pass
 `00_mark`.
+
+### Binding ranks
+
+The solver admits an impl's methods in strictly increasing required
+symbol. Pass `02a_sort_init` keys every trait record as (impl entry,
+symbol, record); other records sort last. `02b_sort_step` is a bitonic
+compare-exchange over a power-of-two width P ≥ the trait record count. The
+host dispatches it log2(P)·(log2(P)+1)/2 times, one lane per key, with
+(k, j) from a 256-byte-strided stage buffer. `02c_sort_finish` writes each
+binding's sorted position, which is its method row, and each impl's first
+row. Equal (impl, symbol) neighbours fail with `BINDING_COVERAGE`.
+`02_count` checks that each trait impl's segment has exactly its recorded
+binding count; a missing segment also fails.
+
+The work is P·log2(P)²/2 compares, independent of any impl's width. The
+removed per-binding scan cost B² per impl. The test asserts the step
+count, a width below twice the record count, and strictly increasing
+symbols for a 40-method impl whose source lists the methods in another
+order.
+
+The use fill ranks each environment binding by counting the callee
+parameters with a smaller `ParamId`: k² reads for k ≤ 64 parameters
+(`LIMIT` bounds each domain at 32). That per-environment rank is bounded,
+not a sort over the whole catalog.
 
 ## Trait-item-owned predicates
 
@@ -130,35 +174,106 @@ required-member count comes from one `InterlockedAdd` per member in pass
 - Each check uses a new catalog epoch and a single-use packet. Solver
   storage comes from the compiler's reusable workspace. The catalog arena
   is cleared before fill and batch growth clears its new range, so reused
-  bytes are never read.
+  bytes are never read. The catalog-owned output regions and the test
+  poison are written by `09_fill_words`; the host uploads no arena-sized
+  data.
+
+## Publication
+
+`retained_trait_publish` returns a `RetainedTraitPublication` when the
+solver ran. It owns the solver catalog arena, the packet (batch input,
+output and proof store) and the route arena. Their workspace slots stay
+reserved until it is dropped, so a later check cannot reuse them. The
+solver remains the only selector. The publish kernels copy its result
+rows, proof rows and substitutions; they choose nothing.
+
+`view(store)` returns the exact byte range of each buffer and the identity
+(catalog epoch, batch arena id, serial, store generation). It fails when
+`store` has another `rt_counts` buffer or another build generation.
+`status()` reads header words 8-10; production consumers need not call it.
+
+The route arena (`route_abi.slang`):
+
+| Region | Words | Contents |
+| --- | --- | --- |
+| Header | 48 | magic `0x52545231`, version 1, epoch, arena id, serial, generation, status (0 building, 1 valid, 2 failed; written last), failures, first failure, counts, region offsets, catalog table offsets, proof table offsets and admitted rows |
+| Use map | 4 per retained use | call row + 1 (0: not a goal), first route, route count, call status |
+| Routes | 8 per obligation | state (1 impl, 2 assumption), predicate atom, impl row, method first, method count, proof binding first, binding count, proof row |
+| Atom ids | 2 per catalog atom | kind (1 `DeclId`, 2 `ParamId`, 3 `TermId`, 0 none), id |
+
+The producer writes the atom ids with the catalog and the use map with
+the batch. Pass 07 writes the routes and call statuses, and fails a route
+whose proof row, substitution or binding span is outside the proof store's
+admitted rows, or whose proof impl differs from the result's impl. Pass 08
+requires a valid catalog receipt, a valid batch receipt of this serial and
+a proof store of this identity. It then writes the proof offsets and the
+status. A batch with a refuted goal has no valid receipt, so its
+publication is `FAILED` and a consumer reads no route of it.
+
+A GPU consumer checks the header magic, version and status. It checks the
+identity it was given and that `rt_counts` READY is 1 and GENERATION
+equals the header's. It then reads, without host help:
+
+1. use map, then route;
+2. impl atom (impl row word 0), then `DeclId`;
+3. method row by binary search on the required symbol over the method span,
+   then the callable atom (word 2), then `DeclId`;
+4. proof bindings `[substitution, parameter atom, tag, payload, …]`: the
+   parameter's `ParamId`, and for tag 3 the proof term node, whose NAMED
+   nominal atom gives a `DeclId`.
+
+These bindings are the impl's environment, the one the selected method is
+specialized with. `shaders/tests/retained_route_query.slang` is this
+consumer. The test asserts its answers against store records for 47
+requests. These cover private, generic, nested-bound and constant impls,
+an assumption, and all 40 members of the wide trait. The test also covers
+fail-closed answers: another identity, READY cleared, a fresh build, and
+a second live publication.
 
 ## Costs
 
-These figures come from the test fixture: 2 units, 55 atoms, 7 calls and 5
-obligations, on the development GPU.
+These figures come from the test fixture on the development GPU: 2 units,
+218 catalog atoms, 10 calls and 10 obligations, with a 40-method impl.
 
 | Item | Value |
 | --- | --- |
-| Producer dispatches | 6 count passes + 7 catalog fills + 2 batch fills |
-| Solver dispatches | 26 catalog and recipe admission dispatches plus the batch and proof waves; 291 in total for a solved check |
-| Host round trips (solved check) | 4: store counters, producer state, admission receipts, one solver wave readback |
+| Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 7 catalog fills, 2 batch fills and up to 5 word fills |
+| Publication dispatches | 2, in one submit with no readback |
+| Dispatches, `retained_trait_publish` | 320 |
+| Host round trips, `retained_trait_publish` | 4: store counters, producer state, admission receipts, one solver wave readback |
 | Producer readback bytes | 640 (store counters 384, producer state 96, two receipts and state 160) |
-| Host readback wait | 6–26 ms per check |
-| Rejected by the producer | 6 dispatches, 2 round trips |
-| Rejected by admission | 39 dispatches, 3 round trips |
+| Host readback wait | about 4.5 ms per check |
+| Rejected by the producer | count and sort dispatches, 2 round trips |
+| Rejected by admission | 64 dispatches, 4 round trips (with `read_rows`) |
 
-The largest producer kernel is `06_fill_terms`, at 11278 inlined
+The solver's wave readback holds no semantic rows unless `read_rows` is
+set.
+
+The largest producer kernel is `02_count`, at 12694 inlined
 instructions. No producer kernel uses local arrays.
 
 ## What is not covered
 
-- The check returns a host report, including the solver's evidence
-  readback. It does not yet expose an owned GPU publication for discovery
-  or projection to consume after the check returns. Selection itself runs
-  on the GPU; the next integration must preserve the packet's lifetime
-  and expose its buffers without reconstructing routes from the report.
-- Bound-member routing, native finalization and projection do not consume
-  the selected evidence yet. They still use replayed sources.
+- Production discovery and projection do not bind the publication yet.
+  Only the test consumer does. Discovery-wave producers must read routes
+  and intern the impl environment as a store ENV term on the GPU.
+  Projection then needs that ENV's TermId, which the publication does not
+  write. Bound-member routing must map a member use (receiver plan in
+  `rt_uses` words 6-7) to a route; trait-member callees are not goals
+  yet (`unsupported_callees`). Native finalization still uses replayed
+  sources.
+- Slot resolution: dependency slot leaves fail (`SLOT`), so a publication
+  never contains them.
+- The catalog holds every committed term, not only the closure of impl
+  heads, predicates and selected environments. Restricting it needs a
+  GPU reachability pass over the term graph.
+- The export does not complete a struct literal of a const-generic struct
+  (`Grid { value: v }` for `Grid<T, const N: u32>`), so the test passes
+  a `Grid<Local, 4>` value only as a parameter.
+- A committed unit with no directory rows has no (library, unit) record,
+  so its job's snapshot stays invalid and the check fails with
+  `SNAPSHOT`. The fix is a durable per-job (library, unit) record written
+  at commit, which needs a store arena (slot 15 is the last free one).
 - Uses whose callee is outside the store, extern, or a trait member are not
   turned into goals. Only direct and inherent-method calls between store
   callables are.
