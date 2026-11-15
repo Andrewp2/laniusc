@@ -44,6 +44,11 @@ use crate::gpu::passes_core::{
     map_readback_blocking,
 };
 
+/// Records a consumer of run `run`'s publication: the encoder, the locked
+/// store, the run, and the `sb_results` and `sb_counts` buffers.
+pub(super) type Consumer<'a> =
+    dyn FnMut(&mut wgpu::CommandEncoder, &Store, u32, &wgpu::Buffer, &wgpu::Buffer) -> Result<()> + 'a;
+
 /// Result statuses (sb_common.slang SB_*).
 pub mod status {
     pub const OK: u32 = 0;
@@ -474,12 +479,29 @@ impl RetainedSubstitution {
         store: &ProgramRetention,
         requests: &SubstitutionRequests,
     ) -> Result<SubstitutionRun> {
+        Ok(self.run_then(store, requests, None, &[])?.0)
+    }
+
+    /// `run`, with a consumer recorded in the first batch's submit, after
+    /// the publication passes. The consumer's kernels must check on the GPU
+    /// that the publication of run `run` committed (`sb_publication_current`)
+    /// and do nothing otherwise. The first readback also copies the leading
+    /// words of each `extra` buffer. They come back (Some) only when that
+    /// batch published, so the consumer ran on final results; otherwise
+    /// the caller records the consumer again after this returns.
+    pub(super) fn run_then(
+        &mut self,
+        store: &ProgramRetention,
+        requests: &SubstitutionRequests,
+        consumer: Option<&mut Consumer<'_>>,
+        extra: &[(&wgpu::Buffer, usize)],
+    ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
         self.published = None;
         let mut guard = store.store.lock().unwrap();
-        let result = self.run_attempts(store, &mut guard, requests);
+        let result = self.run_attempts(store, &mut guard, requests, consumer, extra);
         match &result {
-            Ok(SubstitutionRun::Published(report)) => self.published = Some(report.publication),
-            Ok(SubstitutionRun::RequestCapacity { .. }) => {}
+            Ok((SubstitutionRun::Published(report), _)) => self.published = Some(report.publication),
+            Ok((SubstitutionRun::RequestCapacity { .. }, _)) => {}
             Err(_) => {
                 // An attempt may have stopped between its begin and its
                 // finish, with store terms interned and the store's status
@@ -505,7 +527,9 @@ impl RetainedSubstitution {
         store: &ProgramRetention,
         guard: &mut Store,
         requests: &SubstitutionRequests,
-    ) -> Result<SubstitutionRun> {
+        mut consumer: Option<&mut Consumer<'_>>,
+        extra: &[(&wgpu::Buffer, usize)],
+    ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
         if self
             .results
             .as_ref()
@@ -554,9 +578,27 @@ impl RetainedSubstitution {
             let mut rounds = FIRST_BATCH_ROUNDS;
             let mut recorded = rounds;
             self.record_batch(&mut encoder, &binds, true, rounds, &mut report.dispatches);
+            let consumed = match consumer.take() {
+                Some(record) => {
+                    let (_, results, _) = self
+                        .results
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
+                    record(&mut encoder, guard, run, results, &self.scratch["sb_counts"])?;
+                    passes_core::flush_deferred_compute(&mut encoder);
+                    true
+                }
+                None => false,
+            };
             self.queue.submit(Some(encoder.finish()));
             report.batches += 1;
-            let mut counts = self.read(&self.scratch["sb_counts"], words::COUNT)?;
+            let mut parts = vec![(&self.scratch["sb_counts"], words::COUNT)];
+            if consumed {
+                parts.extend_from_slice(extra);
+            }
+            let mut counts = read_many(&self.device, &self.queue, &parts)?;
+            let consumer_words = counts.split_off(words::COUNT);
+            let mut consumer_final = consumed && counts[words::PHASE] == words::PHASE_FINAL;
             while counts[words::PHASE] != words::PHASE_FINAL {
                 if recorded >= ROUND_BOUND {
                     bail!(
@@ -571,6 +613,7 @@ impl RetainedSubstitution {
                 self.queue.submit(Some(encoder.finish()));
                 report.batches += 1;
                 counts = self.read(&self.scratch["sb_counts"], words::COUNT)?;
+                consumer_final = false;
             }
             if counts[words::RUN] != run || counts[words::GENERATION] != guard.generation {
                 bail!(
@@ -589,13 +632,19 @@ impl RetainedSubstitution {
                         requests: counts[words::REQUESTS],
                     };
                     report.counts = counts;
-                    return Ok(SubstitutionRun::Published(report));
+                    return Ok((
+                        SubstitutionRun::Published(report),
+                        consumer_final.then_some(consumer_words),
+                    ));
                 }
                 words::STATE_REQUEST_CAPACITY => {
-                    return Ok(SubstitutionRun::RequestCapacity {
-                        requested: counts[words::REQUEST_DEMAND],
-                        capacity: counts[words::REQUEST_CAPACITY],
-                    });
+                    return Ok((
+                        SubstitutionRun::RequestCapacity {
+                            requested: counts[words::REQUEST_DEMAND],
+                            capacity: counts[words::REQUEST_CAPACITY],
+                        },
+                        None,
+                    ));
                 }
                 words::STATE_OVERFLOWED => {}
                 state => bail!("retained substitution finished in state {state}"),
@@ -807,7 +856,21 @@ fn read_words(
     buffer: &wgpu::Buffer,
     words: usize,
 ) -> Result<Vec<u32>> {
-    let bytes = (words as u64 * 4).min(buffer.size());
+    read_many(device, queue, &[(buffer, words)])
+}
+
+/// The leading words of each buffer (at most its size), concatenated, in
+/// one readback.
+fn read_many(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    parts: &[(&wgpu::Buffer, usize)],
+) -> Result<Vec<u32>> {
+    let sizes: Vec<u64> = parts
+        .iter()
+        .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
+        .collect();
+    let bytes: u64 = sizes.iter().sum();
     if bytes == 0 {
         return Ok(Vec::new());
     }
@@ -818,7 +881,11 @@ fn read_words(
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&Default::default());
-    encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, bytes);
+    let mut at = 0;
+    for ((buffer, _), size) in parts.iter().zip(&sizes) {
+        encoder.copy_buffer_to_buffer(buffer, 0, &readback, at, *size);
+        at += size;
+    }
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
     map_readback_blocking(device, &slice, "retained_substitution.readback")?;

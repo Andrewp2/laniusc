@@ -38,6 +38,8 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/06_bound_routes",
 ];
 const STATUS_WORDS: usize = 32;
+/// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
+const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,7 +111,8 @@ pub struct RetainedDiscovery {
     queue: std::sync::Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     capacity: DiscoveryCapacity,
-    substitution: RetainedSubstitution,
+    /// Taken while a resolution records into the substitution's submit.
+    substitution: Option<RetainedSubstitution>,
     scratch: BTreeMap<&'static str, wgpu::Buffer>,
     configs: Vec<wgpu::Buffer>,
     config_cursor: usize,
@@ -132,7 +135,7 @@ impl RetainedDiscovery {
             queue: gpu.queue.clone(),
             passes,
             capacity,
-            substitution: RetainedSubstitution::new_with_device(gpu, substitution)?,
+            substitution: Some(RetainedSubstitution::new_with_device(gpu, substitution)?),
             scratch: BTreeMap::new(),
             configs: Vec::new(),
             config_cursor: 0,
@@ -244,10 +247,18 @@ impl RetainedDiscovery {
             if let Some(error) = failure(&status) {
                 return Ok(DiscoveryOutcome::Rejected(error));
             }
-            self.resolve(store, &requests, &extra, config, &mut report)?;
-            status = self.read_status(&mut report)?;
+            let resolved = self.resolve(store, &requests, &extra, config, &mut report)?;
+            let request_capacity = resolved.is_none();
+            status = match resolved {
+                Some(words) => words,
+                None => self.read_status_counts(store, &mut report)?,
+            };
+
             if self.grow(&status)? {
                 continue 'attempt;
+            }
+            if request_capacity {
+                bail!("discovery request capacity exceeded without a growth request");
             }
             if let Some(error) = failure(&status) {
                 return Ok(DiscoveryOutcome::Rejected(error));
@@ -256,15 +267,28 @@ impl RetainedDiscovery {
             let mut hi = status[0];
             let mut edges = 0;
             let mut depth = 1;
+            let mut predicated = 0;
             while lo < hi {
                 // Concrete instances have closed goals, even when their
                 // source call was proved parametrically. Reuse the admitted
                 // catalog; the GPU writes and solves this wave's hard goals.
-                let closed = if let Some(source) = publication.as_deref_mut() {
+                // The GPU counts inserted instances with closed predicates
+                // (status 11); a wave without any needs no solver work.
+                let wave_predicated = status[11] - predicated;
+                predicated = status[11];
+                let closed = if let Some(source) = publication.as_deref_mut()
+                    && wave_predicated != 0
+                {
                     let buffer = self.scratch["dg_instances"].clone();
                     let bytes = buffer.size();
                     let instances = LaniusBuffer::new((buffer, bytes), bytes as usize / 4);
-                    let (check, proofs) = source.solve_instances(store, &instances, lo, hi)?;
+                    let (check, proofs) = source.solve_instances_with_counts(
+                        store,
+                        &instances,
+                        lo,
+                        hi,
+                        Some(&status[STATUS_WORDS..]),
+                    )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {
                         return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
@@ -331,41 +355,46 @@ impl RetainedDiscovery {
                     hi - lo,
                     &mut report,
                 )?;
-                self.queue.submit(Some(encoder.finish()));
-                drop(guard);
-                status = self.read_status(&mut report)?;
-                if self.grow(&status)? {
-                    continue 'attempt;
-                }
-                let end = status[2];
-                self.config_cursor = 0;
-                let guard = store.store.lock().unwrap();
-                let mut encoder = self.encoder();
+                // The scan's last lane sizes the request pass; no host
+                // readback separates them. After an edge overflow the pass
+                // has no workgroups, and resolution skips itself after any
+                // request failure or overflow (status 12). The host reports
+                // both from the wave's status readback, as before.
                 encoder.clear_buffer(requests.buffers()[1].1, 0, None);
                 encoder.clear_buffer(&self.scratch["dg_status"], 28, Some(4));
                 config[0] = 0;
-                self.record(
+                self.record_with(
                     &mut encoder,
                     &guard,
                     0,
                     config,
                     &extra,
-                    end - edges,
+                    Dispatch::Indirect(&self.scratch["dg_indirect"].clone()),
                     &mut report,
                 )?;
                 self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
                 self.queue.submit(Some(encoder.finish()));
                 drop(guard);
-                status = self.read_status(&mut report)?;
+                // Resolution reads back the status (and store counters)
+                // with the substitution's counts.
+                status = match self.resolve(store, &requests, &extra, config, &mut report)? {
+                    Some(words) => words,
+                    None => {
+                        status = self.read_status(&mut report)?;
+                        if self.grow(&status)? {
+                            continue 'attempt;
+                        }
+                        bail!("discovery request capacity exceeded without a growth request");
+                    }
+                };
                 if self.grow(&status)? {
                     continue 'attempt;
                 }
                 if let Some(error) = failure(&status) {
                     return Ok(DiscoveryOutcome::Rejected(error));
                 }
-                self.resolve(store, &requests, &extra, config, &mut report)?;
                 if let (Some(source),Some(proofs))=(publication.as_deref(),closed.as_ref()) {
-                    let sub=self.substitution.publication(store).ok_or_else(||anyhow!("missing method substitution"))?;
+                    let sub=self.substitution.as_ref().ok_or_else(||anyhow!("discovery substitution is in use"))?.publication(store).ok_or_else(||anyhow!("missing method substitution"))?;
                     let state=self.method_routes.run(store,source,proofs,&sub,&self.scratch["dg_req_meta"],&self.scratch["dg_instances"])?;
                     report.method_route_waves+=1;
                     if state[0]!=2 {
@@ -379,17 +408,18 @@ impl RetainedDiscovery {
                     self.record(&mut encoder,&guard,6,config,&bound,requests,&mut report)?;
                     self.record(&mut encoder,&guard,5,config,&extra,1,&mut report)?;
                     self.queue.submit(Some(encoder.finish()));
-                }
-                status = self.read_status(&mut report)?;
-                if self.grow(&status)? {
-                    continue 'attempt;
-                }
-                if let Some(error) = failure(&status) {
-                    return Ok(DiscoveryOutcome::Rejected(error));
+                    drop(guard);
+                    status = self.read_status_counts(store, &mut report)?;
+                    if self.grow(&status)? {
+                        continue 'attempt;
+                    }
+                    if let Some(error) = failure(&status) {
+                        return Ok(DiscoveryOutcome::Rejected(error));
+                    }
                 }
                 lo = hi;
                 hi = status[0];
-                edges = end;
+                edges = status[2];
                 depth += 1;
                 if depth > 65 {
                     bail!("discovery exceeded its depth contract");
@@ -415,7 +445,7 @@ impl RetainedDiscovery {
                 config[13],
                 &mut report,
             )?;
-            self.sort(&mut encoder, &guard, 4, 1, config, &extra, &mut report)?;
+            self.sort(&mut encoder, &guard, 4, 1, 3, config, &extra, &mut report)?;
             config[0] = 2;
             self.record(
                 &mut encoder,
@@ -459,6 +489,10 @@ impl RetainedDiscovery {
             }));
         }
     }
+    /// Substitutes the requests and records resolution in the same submit.
+    /// Returns the status words and store counters after resolution, or
+    /// None when the requests exceeded the buffers (the request pass
+    /// flagged the overflow in status 3, bit 4, and the caller grows).
     fn resolve(
         &mut self,
         store: &ProgramRetention,
@@ -466,20 +500,55 @@ impl RetainedDiscovery {
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
         report: &mut DiscoveryReport,
-    ) -> Result<()> {
-        let sub = match self.substitution.run(store, requests)? {
-            SubstitutionRun::Published(r) => r,
-            SubstitutionRun::RequestCapacity {
-                requested,
-                capacity,
-            } => bail!("discovery failed to grow requests ({requested} > {capacity})"),
+    ) -> Result<Option<Vec<u32>>> {
+        let mut engine = self
+            .substitution
+            .take()
+            .ok_or_else(|| anyhow!("discovery substitution is in use"))?;
+        let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        let status_buffer = self.scratch["dg_status"].clone();
+        let request_lanes = requests.capacity();
+        config[0] = 0;
+        let ran = {
+            // 01_resolve does nothing unless this run's publication
+            // committed, so it may follow the first batch on the GPU.
+            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
+                                guard: &Store,
+                                run: u32,
+                                results: &wgpu::Buffer,
+                                counts: &wgpu::Buffer|
+             -> Result<()> {
+                let mut config = config;
+                config[5] = run;
+                let mut bindings = extra.to_vec();
+                bindings.extend([("sb_results", results), ("sb_counts", counts)]);
+                self.config_cursor = 0;
+                self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
+                self.record(encoder, guard, 5, config, extra, 1, report)
+            };
+            engine.run_then(
+                store,
+                requests,
+                Some(&mut consumer),
+                &[(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)],
+            )
+        };
+        self.substitution = Some(engine);
+        let (sub, words) = match ran? {
+            (SubstitutionRun::Published(r), words) => (r, words),
+            (SubstitutionRun::RequestCapacity { .. }, _) => return Ok(None),
         };
         report.substitution_dispatches += sub.dispatches;
+        if let Some(words) = words {
+            report.readbacks += 1;
+            return Ok(Some(words));
+        }
+        // The first batch did not finish: resolve the final publication.
         config[5] = sub.publication.run;
-        config[0] = 0;
         let publication = self
             .substitution
-            .publication(store)
+            .as_ref()
+            .and_then(|engine| engine.publication(store))
             .ok_or_else(|| anyhow!("missing discovery substitution publication"))?;
         let results = publication.results.clone();
         let counts = publication.counts.clone();
@@ -499,7 +568,8 @@ impl RetainedDiscovery {
         )?;
         self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
         self.queue.submit(Some(encoder.finish()));
-        Ok(())
+        drop(guard);
+        self.read_status_counts(store, report).map(Some)
     }
     fn rank_terms(
         &mut self,
@@ -555,7 +625,7 @@ impl RetainedDiscovery {
             config[12] = bases[height];
             config[13] = sizes[height];
             config[14] = height as u32;
-            self.sort(&mut encoder, &guard, 3, 2, config, extra, report)?;
+            self.sort(&mut encoder, &guard, 3, 2, 5, config, extra, report)?;
             config[0] = 3;
             self.record(
                 &mut encoder,
@@ -572,29 +642,42 @@ impl RetainedDiscovery {
         let _ = self.read_status(report)?;
         Ok(())
     }
+    /// Bitonic sort of `config[13]` (a power of two) keys. Steps with
+    /// j < SORT_BLOCK / 2 run inside one workgroup in shared memory
+    /// (`local_mode`), so a stage costs one dispatch per global step plus
+    /// one: 10 dispatches for 4096 keys instead of 78.
     fn sort(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         store: &Store,
         kernel: usize,
         mode: u32,
+        local_mode: u32,
         mut config: [u32; 16],
         extra: &[(&str, &wgpu::Buffer)],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
-        config[0] = mode;
-        let mut k = 2;
-        while k <= config[13] {
+        let count = config[13];
+        if count < 2 {
+            return Ok(());
+        }
+        let local_lanes = (count / 2).max(1);
+        config[0] = local_mode;
+        config[10] = 0;
+        self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
+        let mut k = SORT_BLOCK * 2;
+        while k <= count {
+            config[0] = mode;
             let mut j = k / 2;
-            while j != 0 {
+            while j >= SORT_BLOCK {
                 config[10] = k;
                 config[11] = j;
-                self.record(encoder, store, kernel, config, extra, config[13], report)?;
+                self.record(encoder, store, kernel, config, extra, count, report)?;
                 j /= 2;
             }
-            if k == config[13] {
-                break;
-            }
+            config[0] = local_mode;
+            config[10] = k;
+            self.record(encoder, store, kernel, config, extra, local_lanes, report)?;
             k *= 2;
         }
         Ok(())
@@ -646,6 +729,10 @@ impl RetainedDiscovery {
         ] {
             self.ensure(name, bytes)?;
         }
+        if !self.scratch.contains_key("dg_indirect") {
+            self.scratch
+                .insert("dg_indirect", storage(&self.device, "dg_indirect", 16, true));
+        }
         Ok(())
     }
     fn buffer(&self, name: &str, bytes: u64) -> Result<wgpu::Buffer> {
@@ -673,6 +760,18 @@ impl RetainedDiscovery {
         config: [u32; 16],
         extra: &[(&str, &wgpu::Buffer)],
         lanes: u32,
+        report: &mut DiscoveryReport,
+    ) -> Result<()> {
+        self.record_with(encoder, store, kernel, config, extra, Dispatch::Lanes(lanes), report)
+    }
+    fn record_with(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &Store,
+        kernel: usize,
+        config: [u32; 16],
+        extra: &[(&str, &wgpu::Buffer)],
+        dispatch: Dispatch<'_>,
         report: &mut DiscoveryReport,
     ) -> Result<()> {
         if self.config_cursor == self.configs.len() {
@@ -725,8 +824,16 @@ impl RetainedDiscovery {
         );
         compute.set_pipeline(&pass.pipeline);
         compute.set_bind_group(0, &bind, &[]);
-        let groups = lanes.div_ceil(256).max(1);
-        compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+        match dispatch {
+            Dispatch::Lanes(lanes) => {
+                let groups = lanes.div_ceil(256).max(1);
+                compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+            }
+            Dispatch::Indirect(buffer) => {
+                passes_core::record_indirect_compute_dispatch();
+                compute.dispatch_workgroups_indirect(buffer, 0);
+            }
+        }
         passes_core::record_compute_dispatch();
         report.dispatches += 1;
         Ok(())
@@ -734,13 +841,36 @@ impl RetainedDiscovery {
     fn read_status(&self, report: &mut DiscoveryReport) -> Result<Vec<u32>> {
         self.read(&self.scratch["dg_status"], STATUS_WORDS, report)
     }
+    /// The status words followed by the store's `rt_counts`, in one readback.
+    fn read_status_counts(
+        &self,
+        store: &ProgramRetention,
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let counts = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        self.read_many(
+            &[
+                (&self.scratch["dg_status"], STATUS_WORDS),
+                (&counts, counts::WORDS),
+            ],
+            report,
+        )
+    }
     fn read(
         &self,
         buffer: &wgpu::Buffer,
         words: usize,
         report: &mut DiscoveryReport,
     ) -> Result<Vec<u32>> {
-        let bytes = words as u64 * 4;
+        self.read_many(&[(buffer, words)], report)
+    }
+    /// The leading `words` of each buffer, concatenated, in one readback.
+    fn read_many(
+        &self,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let bytes = parts.iter().map(|(_, words)| *words as u64 * 4).sum();
         report.readbacks += 1;
         let rb = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("discovery.status"),
@@ -749,7 +879,11 @@ impl RetainedDiscovery {
             mapped_at_creation: false,
         });
         let mut encoder = self.encoder();
-        encoder.copy_buffer_to_buffer(buffer, 0, &rb, 0, bytes);
+        let mut at = 0;
+        for (buffer, words) in parts {
+            encoder.copy_buffer_to_buffer(buffer, 0, &rb, at, *words as u64 * 4);
+            at += *words as u64 * 4;
+        }
         self.queue.submit(Some(encoder.finish()));
         let slice = rb.slice(..);
         map_readback_blocking(&self.device, &slice, "discovery.status")?;
@@ -761,6 +895,13 @@ impl RetainedDiscovery {
         rb.unmap();
         Ok(data)
     }
+}
+/// How many workgroups a recorded pass runs.
+enum Dispatch<'a> {
+    /// One lane per item, 256 lanes per workgroup.
+    Lanes(u32),
+    /// Workgroup counts the GPU wrote at offset 0 of an indirect buffer.
+    Indirect(&'a wgpu::Buffer),
 }
 fn failure(s: &[u32]) -> Option<DiscoveryError> {
     if s[10] != 0 {

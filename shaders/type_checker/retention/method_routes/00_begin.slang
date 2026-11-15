@@ -8,6 +8,8 @@ void main(uint3 id:SV_DispatchThreadID)
     if (i<mr_config[3]) { mr_reach[i]=0u; mr_values_a[i]=RT_UNKNOWN; mr_values_b[i]=RT_UNKNOWN; }
     if (i!=0u) return;
     for (uint k=0u;k<32u;k++) mr_state[k]=k==2u ? RT_INVALID : 0u;
+    // Round 0 of each loop runs: its predecessor's flag is round 2's.
+    mr_state[MR_EXPAND_CHANGED+2u]=1u; mr_state[MR_TERMS_CHANGED+2u]=1u;
     bool valid=rt_counts[RT_C_READY]==1u && rt_counts[RT_C_GENERATION]==mr_config[1] && mr_h(RP_H_STATUS)==RP_VALID && mr_h(RP_H_GENERATION)==mr_config[1];
     for (uint k=0u;k<5u;k++) valid=valid && mr_h(RP_H_EPOCH+k)==mr_config[5u+k];
     valid=valid && mr_h(RP_H_STORE_DIRS)==rt_counts[RT_A_DIR] && mr_h(RP_H_STORE_DECLS)==rt_counts[RT_A_DECLS] &&

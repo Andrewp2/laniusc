@@ -52,6 +52,9 @@ pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
 /// This is host orchestration policy, not an IR or shader-visible record.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LoweringOutputDemand {
+    /// Semantic rows the GPU counted (`semantic_lir_total`) when they
+    /// exceeded the arena's semantic capacity.
+    pub(crate) semantic_instructions: u32,
     pub(crate) target_instructions: u32,
     pub(crate) artifact_bytes: u32,
 }
@@ -78,7 +81,7 @@ pub(crate) struct LoweringJobBounds {
 impl LoweringJobBounds {
     pub(crate) const CONSERVATIVE: Self = Self {
         output_demand: LoweringOutputDemand {
-            target_instructions: 0, artifact_bytes: 0,
+            semantic_instructions: 0, target_instructions: 0, artifact_bytes: 0,
         },
         hir_rows: u32::MAX,
         source_bytes: u32::MAX,

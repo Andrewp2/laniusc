@@ -22,6 +22,21 @@ wave expands the new instances, substitutes their retained call environments and
 inserts or reuses the resulting callee instances. An existing instance adds no
 depth; creating a new instance beyond depth 64 fails.
 
+A wave needs few host round trips. The scan's last lane writes the
+workgroup count of the request pass, so requests follow the scan in one
+submit; after an edge overflow the request pass has no workgroups. The
+publish pass then records in status word 12 whether a request failure or
+an overflow happened. Resolution records into the substitution's first
+batch submit (`run_then`). It does nothing unless that run's publication
+committed, or when status word 12 is set, so the host still reports the
+first failure or grows exactly as it did when it read the status between
+these passes. The substitution counts, the discovery status and the store
+counters come back in one readback. A wave without closed predicates
+therefore costs one readback, and a wave with them adds the closed
+producer, solver, publication receipt and method-route readbacks and one
+status readback after the method routes. Settings: 134 to 106 readbacks
+per build, discovery about 96 to 36 ms in a back-to-back A/B.
+
 A parallel prefix scan assigns each frontier instance a range of use edges.
 Request production and result consumption use one lane per edge or request;
 no lane walks a function's call list. The interner may allocate unpublished
@@ -44,8 +59,13 @@ nor allocation-order TermIds decide the final instance rank.
 The implementation uses bitonic sorts within each height and over the instance
 set. Work is O(sum N_h log² N_h + I log² I), with bounded-arity comparisons. It
 currently ranks all closed store terms, not just terms reachable from instance
-keys. Frontier placement uses O(F log F) work. Host count readbacks between waves
-and sorting's dispatch overhead remain optimization work.
+keys. Frontier placement uses O(F log F) work. The sort steps with j < 256
+stay inside one 512-key block, so one workgroup runs them in shared memory
+with the same compare-exchange network as the global steps. A stage k then
+costs one dispatch per global step (j ≥ 512) plus one, and a sort of at most
+512 keys is one dispatch. Settings (term heights of 3260, 3139, 323 and 12
+keys, 3138 instance slots) records 28 term-sort and 10 instance-sort
+dispatches instead of 217 and 78.
 
 ## Publication
 
@@ -95,11 +115,19 @@ table, and converts the selected implementation bindings to retained terms.
 No host code reads proof rows or constructs an environment.
 
 Proof conversion uses one lane per reached proof node and bounded-arity child
-reads. It currently records 65 marking rounds and 65 bottom-up translation
-rounds. A lane per call interns the complete implementation-method ENV, using
-exact parameter identities for inherited impl bindings. Capacity overflow rolls
-back newly interned terms and retries after growing the store. These fixed
-round counts and their dispatch overhead remain optimization work.
+reads. Marking and bottom-up translation are fixed-point loops. Each round
+sets a changed flag, and a round after one without change skips its work.
+Three flags rotate by round modulo 3, so a round clears the next round's
+flag without racing its own readers. The environment and finish passes run
+only after the last recorded round of both loops changed nothing. Otherwise
+they set `MR_PENDING`, and the host records twice as many further rounds in
+the next batch. The first batch has 8 rounds of each loop, and the bound is
+65 of each, where the environment pass runs regardless, as before. The
+settings app converges in the first batch: 23 dispatches and one readback
+per wave instead of 135. A lane per call interns the complete
+implementation-method ENV, using exact parameter identities for inherited
+impl bindings. Capacity overflow rolls back newly interned terms and retries
+after growing the store.
 
 Discovery inserts the selected `(method DeclId, closed ENV)` into the same
 instance table as direct calls. `ProjectionInputs` carries that target alongside

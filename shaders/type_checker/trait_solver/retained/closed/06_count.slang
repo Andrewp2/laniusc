@@ -32,5 +32,7 @@ void main(uint3 id:SV_DispatchThreadID)
         }
     }
     cw_scan_a[2u*i]=low; cw_scan_a[2u*i+1u]=high;
-    if (i==0u && cw_state[2]!=cw_state[4]) cw_fail(7u,0u);
+    // A frontier left after the recorded rounds asks the host for more
+    // rounds; after the 65-round bound it is a producer failure (code 7).
+    if (i==0u) cw_state[5]=cw_state[2]!=cw_state[4] ? 1u : 0u;
 }

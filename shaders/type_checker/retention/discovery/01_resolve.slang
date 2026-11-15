@@ -5,7 +5,10 @@ import type_checker.retention.substitution.sb_consumer;
 void main(uint3 id: SV_DispatchThreadID)
 {
     uint lane = dg_lane(id);
-    if (lane >= sb_counts[SB_C_REQUESTS]) return;
+    // Recorded after the substitution's first batch: nothing before its
+    // publication of this run commits (the host then records it again).
+    if (sb_counts[SB_C_STATE] != SB_STATE_PUBLISHED || sb_counts[SB_C_RUN] != dg_config[5]) return;
+    if (dg_status[12] != 0u || lane >= sb_counts[SB_C_REQUESTS]) return;
     uint4 m = dg_req_meta[lane];
     if (!sb_result_current(dg_config[5],lane)) { dg_fail(m.x,m.y,m.z,5u,0u); return; }
     uint4 r = sb_results[lane * SB_RESULT_WORDS];

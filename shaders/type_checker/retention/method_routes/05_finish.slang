@@ -3,6 +3,7 @@ import type_checker.retention.method_routes.common;
 [numthreads(1,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
+    if (mr_state[MR_PENDING]!=0u) return; // more rounds follow
     uint failure=mr_state[2];
     if (failure<mr_config[2]) { mr_state[16]=mr_requests[failure].z; mr_state[17]=mr_requests[failure].w; mr_state[18]=mr_out[failure].w; }
     uint overflow=rt_counts[RT_C_OVERFLOW];

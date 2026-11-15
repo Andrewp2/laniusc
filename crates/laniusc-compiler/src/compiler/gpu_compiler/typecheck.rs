@@ -80,7 +80,8 @@ impl LoweringOutputRetry {
                 self.attempts
             ));
         }
-        if demand.target_instructions < self.demand.target_instructions
+        if demand.semantic_instructions < self.demand.semantic_instructions
+            || demand.target_instructions < self.demand.target_instructions
             || demand.artifact_bytes < self.demand.artifact_bytes
             || demand == self.demand
         {
@@ -4488,6 +4489,7 @@ mod tests {
                 .is_err()
         );
         let first = super::LoweringOutputDemand {
+            semantic_instructions: 0,
             target_instructions: 4096,
             artifact_bytes: 8192,
         };
@@ -4496,6 +4498,7 @@ mod tests {
         assert!(
             state
                 .next(super::LoweringOutputDemand {
+                    semantic_instructions: 0,
                     target_instructions: 1,
                     artifact_bytes: 16384
                 })

@@ -12,7 +12,7 @@ replays sources, and this path does not remove that replay. The list under
 | Part | Location |
 | --- | --- |
 | Producer passes | `shaders/type_checker/trait_solver/retained/producer.slang` |
-| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` (binding sort), `09_fill_words` |
+| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` and `02g` (binding sort), `09_fill_words` |
 | Publication kernels | `retained/publish.slang`, entries `07_publish_routes`, `08_publish_finish` |
 | Route ABI | `retained/route_abi.slang` |
 | GPU consumer (test) | `shaders/tests/retained_route_query.slang` |
@@ -133,10 +133,14 @@ required-member count comes from one `InterlockedAdd` per member in pass
 
 The solver admits an impl's methods in strictly increasing required
 symbol. Pass `02a_sort_init` keys every trait record as (impl entry,
-symbol, record); other records sort last. `02b_sort_step` is a bitonic
-compare-exchange over a power-of-two width P ≥ the trait record count. The
-host dispatches it log2(P)·(log2(P)+1)/2 times, one lane per key, with
-(k, j) from a 256-byte-strided stage buffer. `02c_sort_finish` writes each
+symbol, record); other records sort last. The sort is a bitonic network
+over a power-of-two width P ≥ the trait record count, with (k, j) from a
+256-byte-strided stage buffer. Steps with j < 256 stay inside one 512-key
+block: `02g_sort_block` runs them in shared memory, one workgroup per
+block, with the same compare-exchange network. `02b_sort_step` runs each
+step with j ≥ 512, one lane per key. The host records one block pass for
+every stage up to 512, then per stage k one dispatch per step j ≥ 512 and
+one block pass: 3 dispatches for P = 1024 (settings) instead of 55. `02c_sort_finish` writes each
 binding's sorted position, which is its method row, and each impl's first
 row. Equal (impl, symbol) neighbours fail with `BINDING_COVERAGE`.
 `02_count` checks that each trait impl's segment has exactly its recorded
@@ -397,15 +401,25 @@ by discovery instance index, rather than the source publication's use index.
 Multiple wave publications can coexist. A new build, changed source-store
 extent, malformed ENV or stale instance rejects the wave.
 
-Retained native discovery invokes this check before expanding each wave.
+Retained native discovery invokes this check before expanding each wave
+that has new instances with closed predicates. Discovery's interner counts
+those instances on the GPU, and a wave without one skips the producer and
+the solver. Discovery passes the store counters from its own status
+readback, so the producer does not read them again. The publication
+receipt, read once after publication, also carries the status words that
+`ClosedTraitPublication::status` returns.
 This supplies concrete implementation evidence for bound-member routing;
 the method-routing bridge is still being connected. Direct bounded calls
 continue to check their source proof as well.
 
-The current producer scans live term slots, walks the reached graph in 65
-bounded GPU rounds, and scans eight counters per term or instance. Constant
-atoms share the catalog's identity when present. These fixed rounds and the
-whole-term scans are not yet optimized for the rebuild time target.
+The producer scans live term slots, walks the reached graph in bounded GPU
+rounds, and scans eight counters per term or instance. Constant atoms share
+the catalog's identity when present. The first batch records 8 rounds. The
+count pass sets producer state word 5 when the frontier is still pending.
+The host then records twice as many further rounds and repeats the
+idempotent constant, count, scan and total passes, up to 65 rounds in all.
+A frontier still pending after 65 rounds is failure code 7, as before. The
+settings app needs one batch per wave. The whole-term scans remain.
 
 Focused validation includes seven concrete calls, generic impl bindings,
 constant arguments, a 40-method impl, concurrent wave publications, stale

@@ -798,13 +798,16 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     assert!(report.closure_active_waves <= report.closure_waves);
 
     // Binding ranks: the GPU sort covers every trait record in
-    // log2(P)(log2(P)+1)/2 steps of P lanes. Each lane does one compare,
-    // so the work is P log2(P)^2 / 2 for any impl width; the scan it
-    // replaced did B^2 per impl.
+    // log2(P)(log2(P)+1)/2 compare steps of P lanes. Each lane does one
+    // compare, so the work is P log2(P)^2 / 2 for any impl width; the scan
+    // it replaced did B^2 per impl. Steps within 512-key blocks run in
+    // shared memory: one dispatch for every stage up to 512, then per
+    // stage k one dispatch per step j >= 512 and one for the rest.
     let records = s.traits.len() as u32;
     assert_eq!(report.sort_width, records.next_power_of_two());
     let lg = report.sort_width.trailing_zeros();
-    assert_eq!(report.sort_steps, lg * (lg + 1) / 2);
+    let dispatches = 1 + (10..=lg).map(|stage| stage - 9 + 1).sum::<u32>();
+    assert_eq!(report.sort_steps, dispatches);
     assert!(report.sort_width < 2 * records.max(1));
     // The wide impl's method rows: contiguous, strictly increasing symbol,
     // although its source lists the methods in another order.

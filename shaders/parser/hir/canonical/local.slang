@@ -26,13 +26,18 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
         uint winner = canonical_anchor_owner[anchor] & 0x0fffffffu;
         flag = winner == node + 1u ? 1u : 0u;
         canonical_flag[node] = flag;
-        if (flag != 0u)
-        {
-            uint ignored;
-            InterlockedAdd(canonical_status[6u], 1u, ignored);
-        }
     }
     uint inclusive = prefix_scan_u32_256(lane, flag);
     if (node < gCanonical.raw_capacity) canonical_local_prefix[node] = inclusive - flag;
-    if (lane == 255u) canonical_block_sum[block] = inclusive;
+    if (lane == 255u)
+    {
+        canonical_block_sum[block] = inclusive;
+        // One status atomic per workgroup: the block total is the number of
+        // winners the rows above counted.
+        if (inclusive != 0u)
+        {
+            uint ignored;
+            InterlockedAdd(canonical_status[6u], inclusive, ignored);
+        }
+    }
 }

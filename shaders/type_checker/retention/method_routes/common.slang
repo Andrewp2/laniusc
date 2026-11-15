@@ -1,7 +1,10 @@
 __exported import type_checker.retention.retention_store;
 __exported import type_checker.trait_solver.retained.route_abi;
 __exported import type_checker.retention.substitution.sb_consumer;
-public StructuredBuffer<uint> mr_config; // run, generation, requests, proof nodes, round parity, identity epoch/arena/serial
+// config: run, generation, requests, proof nodes, round parity, identity
+// epoch/arena/serial, round mod 3 (the final config: last round mod 3),
+// final batch.
+public StructuredBuffer<uint> mr_config;
 public StructuredBuffer<uint> mr_routes;
 public StructuredBuffer<uint> mr_catalog;
 public StructuredBuffer<uint> mr_proof;
@@ -65,11 +68,23 @@ public uint2 mr_child(uint4 low,uint4 high,uint k)
     return k==0u ? high.xy : high.zw;
 }
 public bool mr_compound(uint2 r) { return r.x==3u || r.x==0x80000001u || r.x==0x80000003u; }
+// Fixed-point rounds: round r sets its changed flag state[base + r%3],
+// skips its work when round r-1 changed nothing (a fixed point), and
+// clears the flag of round r+1. Three flags keep that clear apart from
+// the flag this round reads.
+public uint mr_round() { return mr_config[10]; }
+public bool mr_previous_changed(uint base) { return mr_state[base+(mr_round()+2u)%3u]!=0u; }
+public void mr_round_begin(uint lane,uint base) { if (lane==0u) mr_state[base+(mr_round()+1u)%3u]=0u; }
+public void mr_changed(uint base) { mr_state[base+mr_round()]=1u; }
+public static const uint MR_EXPAND_CHANGED=20u;
+public static const uint MR_TERMS_CHANGED=24u;
+public static const uint MR_PENDING=28u;
 public void mr_mark(uint2 r)
 {
     if (r.x==1u && r.y>0u && r.y<RT_FIRST_TERM) return;
     if (!mr_compound(r) || r.y>=mr_config[3]) { InterlockedOr(mr_state[3],1u); return; }
-    InterlockedOr(mr_reach[r.y],1u);
+    uint old; InterlockedOr(mr_reach[r.y],1u,old);
+    if (old==0u) mr_changed(MR_EXPAND_CHANGED);
 }
 public uint mr_value(uint2 r)
 {

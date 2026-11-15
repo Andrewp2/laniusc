@@ -12,6 +12,22 @@ uint selected_binding(uint4 selected,uint param)
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
+    // Both loops must have reached their fixed point: the last recorded
+    // round changed nothing. Otherwise the host records more rounds, up to
+    // the bound, where this pass runs regardless (mr_config[11]).
+    bool converged=mr_state[MR_EXPAND_CHANGED+mr_round()]==0u && mr_state[MR_TERMS_CHANGED+mr_round()]==0u;
+    if (!converged && mr_config[11]==0u)
+    {
+        if (mr_lane(id)==0u)
+        {
+            mr_state[MR_PENDING]=1u;
+            // The next batch's first evaluation round must run: reach may
+            // have grown after this batch's last evaluation round.
+            mr_state[MR_TERMS_CHANGED+mr_round()]=1u;
+        }
+        return;
+    }
+    if (mr_lane(id)==0u) mr_state[MR_PENDING]=0u;
     uint i=mr_lane(id); if (i>=mr_config[2]) return;
     uint4 selected=mr_selected[i]; if (selected.x==RT_INVALID || mr_out[i].w!=0u) return;
     uint4 request=mr_requests[i]; uint required_decl=rt_uses[request.z*RT_USE_WORDS].w;

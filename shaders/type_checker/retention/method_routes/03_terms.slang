@@ -13,9 +13,11 @@ uint intern_zero(uint kind,uint3 words)
 [numthreads(256,1,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
-    uint i=mr_lane(id); if (i>=mr_config[3]) return;
+    uint i=mr_lane(id); mr_round_begin(i,MR_TERMS_CHANGED); if (i>=mr_config[3]) return;
     uint old=mr_config[4]==0u ? mr_values_a[i] : mr_values_b[i]; uint value=old;
-    if (mr_reach[i]!=0u && old==RT_UNKNOWN && mr_state[0]==1u && rt_counts[RT_C_OVERFLOW]==0u)
+    // After a round without change only the copy remains.
+    if (mr_previous_changed(MR_TERMS_CHANGED) &&
+        mr_reach[i]!=0u && old==RT_UNKNOWN && mr_state[0]==1u && rt_counts[RT_C_OVERFLOW]==0u)
     {
         uint4 lo=mr_node(i,0u); uint4 hi=mr_node(i,1u); uint n=mr_arity(lo); bool ready=n<=32u;
         for (uint k=0u;k<n && k<32u;k++) ready=ready && rt_is_term(mr_value(mr_child(lo,hi,k)));
@@ -53,5 +55,6 @@ void main(uint3 id:SV_DispatchThreadID)
             }
         }
     }
+    if (value!=old) mr_changed(MR_TERMS_CHANGED);
     if (mr_config[4]==0u) mr_values_b[i]=value; else mr_values_a[i]=value;
 }
