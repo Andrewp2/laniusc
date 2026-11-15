@@ -675,8 +675,12 @@ impl ProgramRetention {
         }
         for attempt in 1..=8u32 {
             self.record_export(&store, job, shape)?;
-            let words = self.read(&store.buffers["rt_counts"], counts::WORDS)?;
-            let x = self.read(&store.scratch["rt_x_counts"], X_WORDS)?;
+            let mut read = self.read_parts(&[
+                (&store.buffers["rt_counts"], counts::WORDS),
+                (&store.scratch["rt_x_counts"], X_WORDS),
+            ])?;
+            let x = read.pop().unwrap_or_default();
+            let words = read.pop().unwrap_or_default();
             if words[counts::JOB_STATE] == counts::JOB_COMMITTED {
                 let report = JobReport {
                     attempts: attempt,
@@ -886,9 +890,18 @@ impl ProgramRetention {
     }
 
     fn read(&self, buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>> {
-        let bytes = (words as u64 * 4).min(buffer.size());
+        Ok(self.read_parts(&[(buffer, words)])?.pop().unwrap_or_default())
+    }
+
+    /// The leading words of each buffer (at most its size), in one readback.
+    fn read_parts(&self, parts: &[(&wgpu::Buffer, usize)]) -> Result<Vec<Vec<u32>>> {
+        let sizes: Vec<u64> = parts
+            .iter()
+            .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
+            .collect();
+        let bytes: u64 = sizes.iter().sum();
         if bytes == 0 {
-            return Ok(Vec::new());
+            return Ok(vec![Vec::new(); parts.len()]);
         }
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("program_retention.readback"),
@@ -897,7 +910,13 @@ impl ProgramRetention {
             mapped_at_creation: false,
         });
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, bytes);
+        let mut at = 0;
+        for ((buffer, _), size) in parts.iter().zip(&sizes) {
+            if *size != 0 {
+                encoder.copy_buffer_to_buffer(buffer, 0, &readback, at, *size);
+            }
+            at += size;
+        }
         self.queue.submit(Some(encoder.finish()));
         let slice = readback.slice(..);
         map_readback_blocking(&self.device, &slice, "program_retention.readback")?;
@@ -907,7 +926,14 @@ impl ProgramRetention {
             .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
             .collect::<Vec<_>>();
         readback.unmap();
-        Ok(words)
+        let mut out = Vec::with_capacity(parts.len());
+        let mut at = 0;
+        for size in sizes {
+            let n = (size / 4) as usize;
+            out.push(words[at..at + n].to_vec());
+            at += n;
+        }
+        Ok(out)
     }
 
     /// Runs `f` with the store's buffers and the current build generation
