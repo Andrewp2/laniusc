@@ -10,6 +10,7 @@ groupshared uint sums[LANES];
 [numthreads(256, 1, 1)]
 void main(uint3 gtid: SV_GroupThreadID)
 {
+    if (pj_status[PJ_S_INPUT_ERROR] != 0u) return;
     uint lane = gtid.x;
     uint n = pj_instance_count();
     uint chunk = (n + LANES - 1u) / LANES;

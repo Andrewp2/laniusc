@@ -24,6 +24,7 @@
 //  3 routes: one lane per request. The use's route names the callee rank.
 //  4 readiness: one lane.
 //  5 clears the request count: one lane.
+//  6 writes an explicit readiness header for boundary fault tests.
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.sb_consumer;
 
@@ -135,6 +136,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint lane = dtid.x;
     uint mode = fx_config[0];
+    if (mode == 6u)
+    {
+        if (lane == 0u) pj_readiness[0u] = uint4(fx_config[1], fx_config[2], fx_config[3], fx_config[4]);
+        return;
+    }
     if (mode == 0u)
     {
         if (lane >= rt_counts[RT_A_USES]) return;

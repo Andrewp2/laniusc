@@ -96,6 +96,7 @@ pub mod error {
     pub const RULE: u32 = 17;
     pub const DEPTH: u32 = 18;
     pub const FIELD: u32 = 19;
+    pub const INPUT_CAPACITY: u32 = 20;
 
     /// Rule details: the diagnostic in the top byte.
     pub const RULE_ASSIGN_MISMATCH: u32 = 3;
@@ -123,6 +124,7 @@ pub mod error {
             RULE => "language rule",
             DEPTH => "depth",
             FIELD => "field",
+            INPUT_CAPACITY => "producer capacity",
             _ => "unknown",
         }
     }
@@ -145,6 +147,8 @@ const S_ERRORS: usize = 1;
 const S_ERROR_RANK: usize = 2;
 const S_ERROR_ROW: usize = 3;
 const S_IDENTITY_OVERFLOW: usize = 12;
+const S_INPUT_ERROR: usize = 13;
+const S_INPUT_DETAIL: usize = 14;
 const S_TOTALS: usize = 16;
 const S_FIRST: usize = 32;
 const S_BATCH_ROWS: usize = 40;
@@ -1067,6 +1071,19 @@ impl RetainedProjection {
         report.requests = totals[S_TOTALS + C_REQUESTS];
         report.plan_us = started.elapsed().as_micros() as u64;
         trace(&format!("plan: {totals:?}"));
+        if totals[S_INPUT_ERROR] != 0 {
+            return Ok(ProjectionOutcome::Rejected {
+                error: ProjectionError {
+                    code: totals[S_INPUT_ERROR], detail: totals[S_INPUT_DETAIL],
+                    rank: u32::MAX, decl: u32::MAX, row: u32::MAX,
+                    token: u32::MAX, file: u32::MAX, byte: u32::MAX,
+                },
+                report,
+            });
+        }
+        if report.instances == 0 {
+            return Ok(ProjectionOutcome::Objects { objects: Vec::new(), report });
+        }
 
         // Substitution requests and the engine.
         let started = std::time::Instant::now();

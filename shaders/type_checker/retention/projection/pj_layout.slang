@@ -55,6 +55,8 @@ public static const uint PJ_S_BATCHES = 9u;
 public static const uint PJ_S_LAYOUT_CHANGED = 10u; // terms laid out in the current round
 public static const uint PJ_S_LAYOUT_ROUNDS = 11u;
 public static const uint PJ_S_IDENTITY_OVERFLOW = 12u;
+public static const uint PJ_S_INPUT_ERROR = 13u;   // header error, even with no ranks
+public static const uint PJ_S_INPUT_DETAIL = 14u;
 public static const uint PJ_S_TOTALS = 16u;        // + column: totals over all ranks
 // The first error (09_report): (code, detail, rank, DeclId, relative row,
 // relative token, file id, file-relative byte start).
@@ -94,6 +96,7 @@ public static const uint PJ_E_SIGNATURE = 16u;  // argument, arity or result doe
 public static const uint PJ_E_RULE = 17u;       // language rule (detail: the diagnostic code, see PJ_D_*)
 public static const uint PJ_E_DEPTH = 18u;      // expression or control nesting over the bound
 public static const uint PJ_E_FIELD = 19u;      // struct literal or member field
+public static const uint PJ_E_INPUT_CAPACITY = 20u; // producer must grow and rerun; never project a prefix
 
 // Rule details: error code << 24 | the checker's detail.
 public static const uint PJ_RULE_ASSIGN_MISMATCH = 3u;     // LNC0006

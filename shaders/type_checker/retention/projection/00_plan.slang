@@ -50,6 +50,35 @@ void fail(uint rank, uint code, uint detail)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint rank = pj_lane(dtid);
+    uint4 ready = pj_readiness[0u];
+    uint generation = rt_counts[RT_C_GENERATION];
+    uint instance_words; uint route_rows; uint stride;
+    pj_instances.GetDimensions(instance_words, stride);
+    pj_routes.GetDimensions(route_rows, stride);
+    uint input_error = 0u;
+    uint detail = 0u;
+    if ((ready.y & PJ_READY_ROUTES) == 0u || ready.x != generation || generation == 0u ||
+        rt_counts[RT_C_READY] == 0u)
+    {
+        input_error = PJ_E_READINESS;
+        detail = ready.y;
+    }
+    else if (ready.z > instance_words / PJ_INSTANCE_WORDS || ready.w > route_rows)
+    {
+        input_error = PJ_E_INPUT_CAPACITY;
+        detail = ready.z > instance_words / PJ_INSTANCE_WORDS ? 1u : 2u;
+    }
+    // Every lane sees the same immutable header. Check it before the
+    // rank gate so an empty or oversized producer cannot publish a prefix.
+    if (input_error != 0u)
+    {
+        if (rank == 0u)
+        {
+            pj_status[PJ_S_INPUT_ERROR] = input_error;
+            pj_status[PJ_S_INPUT_DETAIL] = detail;
+        }
+        return;
+    }
     uint count = pj_instance_count();
     if (rank >= count) return;
     if (rank == 0u)
@@ -60,14 +89,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     for (uint w = 0u; w < PJ_INFO_WORDS; w++) pj_info[rank * PJ_INFO_WORDS + w] = uint4(0u, 0u, 0u, 0u);
     pj_errors[rank] = uint4(0u, 0u, 0u, 0u);
 
-    uint4 ready = pj_readiness[0u];
-    uint generation = rt_counts[RT_C_GENERATION];
-    if ((ready.y & PJ_READY_ROUTES) == 0u || ready.x != generation || generation == 0u ||
-        rt_counts[RT_C_READY] == 0u)
-    {
-        fail(rank, PJ_E_READINESS, ready.y);
-        return;
-    }
     uint4 q0 = pj_instances[rank * PJ_INSTANCE_WORDS];
     uint4 q1 = pj_instances[rank * PJ_INSTANCE_WORDS + 1u];
     uint decl = q0.x;

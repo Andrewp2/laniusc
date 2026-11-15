@@ -80,6 +80,12 @@ routes published, bit 1 ABI certified by the producer. Projection requires
 bit 0, checks the generation and the counts against the buffers, and
 performs its own signature check (above) regardless of bit 1.
 
+The GPU validates this header even when the instance count is zero. A
+count larger than its buffer returns `INPUT_CAPACITY` before substitution
+or lowering (detail 1 for instances, 2 for routes). The producer must grow
+its buffers and rerun; projection never accepts a truncated prefix. A
+current, ready header with zero instances produces no objects.
+
 ## Stages
 
 All semantic work is GPU lane work. The host allocates, records, submits and
@@ -181,6 +187,11 @@ Every other form fails closed with its template location:
 - `retained_projection_rejects_instance_rule_violation`: the retained
   literal of `v + 37` in `bump<T>` is rewritten to 300. The run is rejected
   with `RULE` / `INTEGER_RANGE` at the byte of `37`, and no batch is lowered.
+- `retained_projection_rejects_truncated_and_unready_inputs`: excess
+  instance and route counts, missing readiness and stale empty inputs
+  reject before substitution. A valid empty input returns no objects.
+  With the old count clamp, the excess-instance case published the valid
+  resident prefix and failed the test.
 - `retained_projection_oracle_columns` captures the frontend's lowering
   columns for a matching program; it fixed the column defaults.
 

@@ -288,6 +288,55 @@ mod slice {
         common::run_with_timeout("retained projection batches", batches_program);
     }
 
+    #[test]
+    fn retained_projection_rejects_truncated_and_unready_inputs() {
+        common::run_with_timeout("retained projection input boundary", input_boundary_program);
+    }
+
+    fn input_boundary_program() {
+        let store = super::retain(&[("lib", super::SLICE_LIBRARY), ("app", super::SLICE_APP)]);
+        let inputs = ProjectionInputs::new(5, 64);
+        let produced = produce(&store, &inputs, APP_LIBRARY);
+        assert_eq!(produced.ranks, inputs.instance_capacity(), "the entire resident prefix is valid");
+        let compiler = codegen();
+        let mut projection = RetainedProjection::new(SubstitutionCapacity::default()).unwrap();
+        let generation = store.generation();
+        let requests = SubstitutionRequests::new(1);
+        let out = test_buffer(4);
+        let (none_results, none_counts) = (test_buffer(16), test_buffer(32));
+        let extra = [("sb_results", &none_results), ("sb_counts", &none_counts)];
+        let cases = [
+            ([generation, 1, inputs.instance_capacity() + 1, produced.routes], error::INPUT_CAPACITY),
+            ([generation, 1, produced.ranks, inputs.route_capacity() + 1], error::INPUT_CAPACITY),
+            ([generation, 0, produced.ranks, produced.routes], error::READINESS),
+            ([generation + 1, 1, 0, 0], error::READINESS),
+            ([generation, 0, 0, 0], error::READINESS),
+            ([generation, 1, 0, inputs.route_capacity() + 1], error::INPUT_CAPACITY),
+        ];
+        for (header, expected) in cases {
+            run_producer_kernel(&store, PRODUCER_KERNEL, &inputs, &requests,
+                &[6, header[0], header[1], header[2], header[3]], &out, 1, &extra).unwrap();
+            match project(&compiler, &mut projection, &store, &inputs, ProjectionOptions::default()) {
+                ProjectionOutcome::Rejected { error, report } => {
+                    assert_eq!(error.code, expected, "header {header:?}: {error}");
+                    assert!(report.batches.is_empty());
+                    assert!(report.substitution.is_none(), "invalid headers stop before substitution");
+                }
+                ProjectionOutcome::Objects { .. } => panic!("invalid header {header:?} published a prefix"),
+            }
+        }
+        run_producer_kernel(&store, PRODUCER_KERNEL, &inputs, &requests,
+            &[6, generation, 1, 0, 0], &out, 1, &extra).unwrap();
+        match project(&compiler, &mut projection, &store, &inputs, ProjectionOptions::default()) {
+            ProjectionOutcome::Objects { objects, report } => {
+                assert!(objects.is_empty());
+                assert!(report.batches.is_empty());
+                assert!(report.substitution.is_none());
+            }
+            ProjectionOutcome::Rejected { error, .. } => panic!("valid empty input: {error}"),
+        }
+    }
+
     const OTHER_LIBRARY: &str = r#"module lib::a;
 pub fn twice<T>(v: T, w: T) -> T { return w; }
 "#;
