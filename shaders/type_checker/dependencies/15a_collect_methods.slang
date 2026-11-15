@@ -62,17 +62,32 @@ uint receiver_actual_id(uint tag, uint payload, inout uint spare)
     return ct_intern_checked<ReceiverRows>(tag, payload, spare);
 }
 
+// A necessary condition of the receiver root of ct_match's shape pass, from
+// two reads: a closed pattern matches only its own ID, and an open record
+// only a stored actual with the same head. It rejects most same-named
+// candidates before the parameter scan and the match.
+bool receiver_head_may_match(uint pattern, uint actual)
+{
+    if (!ct_is_resolved(pattern) || !ct_is_resolved(actual)) return false;
+    if (ct_is_param(pattern)) return true;
+    if (!ct_is_record(pattern) || ct_closed(pattern)) return pattern == actual;
+    return ct_is_stored(actual) && all(ct_head[pattern] == ct_head[actual]);
+}
+
 bool imported_candidate_matches(uint member, bool dotted, uint actual, out uint receiver_mode)
 {
     receiver_mode = 0u;
     uint base = member * MEMBER_WORDS;
     uint mode = (dependency_member_word(base + 8u) >> 28u) & 3u;
+    // A dotted call needs a receiver mode; see the end of this function.
+    if (dotted && mode == 0u) return false;
     // Qualified calls have no implicit receiver; dotted calls require one. Ineligible methods must not shadow an applicable deeper candidate.
     // A typed first parameter of a dotted call consumes exactly the adjusted
     // receiver value, so it is a second root matched against the same actual;
     // repeated parameters agree by ID across both roots. Only syntactic &self
     // creates a borrow of its place.
     uint pattern0 = dependency_type_id(dependency_member_word(base + 10u));
+    if (!receiver_head_may_match(pattern0, actual)) return false;
     uint pattern1 = CT_NONE;
     uint actual1 = CT_NONE;
     if (dotted && mode == 3u)
@@ -108,9 +123,9 @@ void collect_at_depth(uint token, bool dotted, uint tag, uint payload, uint actu
         uint row = dependency_method_named(hash, probe);
         if (row == INVALID) break;
         uint base = row * MEMBER_WORDS;
-        if (!dependency_public_implementation_method(row) ||
-            dependency_member_word(base + 3u) != name_hash_lo[name] ||
-            dependency_member_word(base + 4u) != name_hash_hi[name]) continue;
+        if (dependency_member_word(base + 3u) != name_hash_lo[name] ||
+            dependency_member_word(base + 4u) != name_hash_hi[name] ||
+            !dependency_public_implementation_method(row)) continue;
         uint mode;
         if (!imported_candidate_matches(row, dotted, actual, mode)) continue;
         MethodCandidate candidate = method_candidate_empty();

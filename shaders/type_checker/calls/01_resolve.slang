@@ -125,8 +125,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // tag, including the spare capacity retained from a larger workspace job.
     uint binding_capacity; uint binding_stride;
     call_explicit_binding_tag.GetDimensions(binding_capacity, binding_stride);
-    if (i < binding_capacity / 8u)
-        for (uint row = 0u; row < 8u; row++) call_explicit_binding_tag[i * 8u + row] = 0u;
+    // Lane i clears words i, i + m, ..., i + 7m: the same 8m words as eight
+    // per lane, with consecutive lanes on consecutive words.
+    uint binding_lanes = binding_capacity / 8u;
+    if (i < binding_lanes)
+        for (uint row = 0u; row < 8u; row++) call_explicit_binding_tag[i + row * binding_lanes] = 0u;
     if (i < hir_rows)
     {
         semantic_argument_mode_by_hir[i] = 0u;
@@ -141,10 +144,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_context_arg_mask[i] = 0u;
         call_context_constant_mask[i] = 0u;
         call_context_constant_valid_mask[i] = 0u;
+        // The 32 slots of the first `contexts` rows, words [0, 32 * contexts):
+        // lane i clears words i, i + contexts, ..., so consecutive lanes
+        // write consecutive words.
+        uint contexts = min(hir_rows, context_capacity);
         for (uint slot = 0u; slot < 32u; slot++)
         {
-            call_context_ref_tag[i * 32u + slot] = 0u;
-            call_context_ref_payload[i * 32u + slot] = INVALID;
+            call_context_ref_tag[i + slot * contexts] = 0u;
+            call_context_ref_payload[i + slot * contexts] = INVALID;
         }
     }
     if (i < gParams.n_tokens)
