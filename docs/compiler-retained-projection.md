@@ -277,6 +277,16 @@ build went from 6.12 GB to 5.43 GB, because the second arena is gone.
 Lowering sizes its string pool from the job's source bytes, so a batch passes
 at least its decoded string bytes (`string_words` × 4).
 
+## Recording
+
+A projection recording puts its dispatches in one compute pass and ends the
+pass only before a copy or clear; wgpu orders the storage accesses between
+dispatches. Repeated rounds of a kernel (32 layout rounds, up to 64 pattern
+payload rounds) bind the same buffers, so a recording creates one bind group
+per kernel and extra-buffer set. The string scan's step configs are resident
+buffers. In the settings app this took the check from 5.9 ms to 2.3 ms
+(recording 1.45 to 0.55 ms, submission 1.6 to 0.85 ms).
+
 ## Gaps
 
 - **Lowering retry.** `lower_projected_x86_batch` retries once at the

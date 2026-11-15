@@ -846,6 +846,9 @@ pub struct RetainedProjection {
     /// An empty publication (state 0) the kernels bind before substitution.
     no_results: wgpu::Buffer,
     no_counts: wgpu::Buffer,
+    /// One config buffer per string-scan step (`04c_string_scan`), kept
+    /// between runs; each run rewrites the steps it records.
+    string_scan_configs: Vec<wgpu::Buffer>,
 }
 
 fn grown(current: u32, need: u32) -> u32 {
@@ -862,6 +865,15 @@ struct Recorder<'a> {
     projection: &'a RetainedProjection,
     encoder: wgpu::CommandEncoder,
     dispatches: u32,
+    /// Bind groups created by this recording, by kernel and extra buffers.
+    /// Repeated rounds of one kernel (layout, pattern payloads) bind the
+    /// same buffers, so they share a bind group. A recording runs under the
+    /// store lock and resizes no projection table, so the other bindings of
+    /// a kernel cannot change within it.
+    binds: Vec<(usize, Vec<(String, wgpu::Buffer)>, wgpu::BindGroup)>,
+    /// The open compute pass. Consecutive dispatches share it; wgpu orders
+    /// their storage accesses. `encoder()` ends it before a copy or clear.
+    pass: Option<wgpu::ComputePass<'static>>,
 }
 
 impl RetainedProjection {
@@ -881,6 +893,7 @@ impl RetainedProjection {
             status: storage(&device, "pj_status", STATUS_WORDS as u64 * 4, false),
             no_results: storage(&device, "pj_no_results", 64, false),
             no_counts: storage(&device, "pj_no_counts", 256, false),
+            string_scan_configs: Vec::new(),
             device,
             queue: gpu.queue.clone(),
             passes,
@@ -1137,6 +1150,8 @@ impl RetainedProjection {
                     label: Some("retained_projection"),
                 }),
             dispatches: 0,
+            binds: Vec::new(),
+            pass: None,
         }
     }
 
@@ -1217,7 +1232,7 @@ impl RetainedProjection {
         let totals = {
             let guard = store.store.lock().unwrap();
             let mut r = self.recorder();
-            r.encoder.clear_buffer(&self.ranks["pj_identity"], 0, None);
+            r.encoder().clear_buffer(&self.ranks["pj_identity"], 0, None);
             let none = [
                 ("sb_results", &self.no_results),
                 ("sb_counts", &self.no_counts),
@@ -1352,6 +1367,12 @@ impl RetainedProjection {
             &mut report,
         );
         self.write_config(run, options, 0);
+        // The scan doubles its distance from 1 past rows / 2: at most 33
+        // steps for u32 rows, plus the first.
+        while self.string_scan_configs.len() < 34 {
+            self.string_scan_configs
+                .push(storage(&self.device, "pj_string_scan_config", 16, false));
+        }
         let extra = [("sb_results", &results), ("sb_counts", &counts)];
         let mut r = self.recorder();
         trace("check: recording");
@@ -1375,14 +1396,13 @@ impl RetainedProjection {
         if totals[S_TOTALS + 7] != 0 {
             let mut input = 0u32;
             let mut distance = 0u32;
-            loop {
-                let config = storage(&self.device, "pj_string_scan_config", 16, false);
+            for config in &self.string_scan_configs {
                 self.queue
-                    .write_buffer(&config, 0, &words_bytes(&[distance, input, 0, 0]));
+                    .write_buffer(config, 0, &words_bytes(&[distance, input, 0, 0]));
                 let scan_extra = [
                     ("sb_results", &results),
                     ("sb_counts", &counts),
-                    ("pj_string_scan_config", &config),
+                    ("pj_string_scan_config", config),
                 ];
                 r.dispatch(K_STRING_SCAN, &guard, inputs, &scan_extra, report.rows + 1)?;
                 if distance == 0 {
@@ -1396,7 +1416,7 @@ impl RetainedProjection {
                 }
             }
             if input == 1 {
-                r.encoder.copy_buffer_to_buffer(
+                r.encoder().copy_buffer_to_buffer(
                     &self.rows["pj_string_scratch"],
                     0,
                     &self.rows["pj_string_offsets"],
@@ -1405,7 +1425,7 @@ impl RetainedProjection {
                 );
             }
         } else {
-            r.encoder
+            r.encoder()
                 .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
         }
         r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
@@ -1574,15 +1594,34 @@ impl Recorder<'_> {
         extra: &[(&str, &wgpu::Buffer)],
         groups: u32,
     ) -> Result<()> {
-        let bind = self.projection.bind(kernel, store, inputs, extra)?;
+        let cached = self.binds.iter().find(|(k, e, _)| {
+            *k == kernel
+                && e.len() == extra.len()
+                && e.iter().zip(extra).all(|((n, b), (m, c))| n == m && b == *c)
+        });
+        let bind = match cached {
+            Some((_, _, bind)) => bind.clone(),
+            None => {
+                let bind = self.projection.bind(kernel, store, inputs, extra)?;
+                let key = extra.iter().map(|(n, b)| (n.to_string(), (*b).clone())).collect();
+                self.binds.push((kernel, key, bind.clone()));
+                bind
+            }
+        };
         let pass_data = &self.projection.passes[kernel];
-        let mut pass = passes_core::begin_counted_compute_pass(
-            &mut self.encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_projection"),
-                timestamp_writes: None,
-            },
-        );
+        let pass = match &mut self.pass {
+            Some(pass) => pass,
+            slot => slot.insert(
+                passes_core::begin_counted_compute_pass(
+                    &mut self.encoder,
+                    &wgpu::ComputePassDescriptor {
+                        label: Some("retained_projection"),
+                        timestamp_writes: None,
+                    },
+                )
+                .forget_lifetime(),
+            ),
+        };
         pass.set_pipeline(&pass_data.pipeline);
         pass.set_bind_group(0, &bind, &[]);
         passes_core::record_compute_dispatch();
@@ -1593,7 +1632,14 @@ impl Recorder<'_> {
         Ok(())
     }
 
-    fn finish(self) -> u32 {
+    /// The encoder, after ending the open compute pass.
+    fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
+        self.pass = None;
+        &mut self.encoder
+    }
+
+    fn finish(mut self) -> u32 {
+        self.pass = None;
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
     }
