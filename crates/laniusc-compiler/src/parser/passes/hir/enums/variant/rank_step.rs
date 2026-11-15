@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::parser::passes::hir::walk_state::HirWalk;
 use crate::{
     gpu::passes_core::{BindGroupCache, PassData},
-    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_step_capacity},
+    parser::{buffers::ParserBuffers, passes::hir::bounded_walk_even_step_capacity},
 };
 
 /// Bounded-walk pass that ranks enum variants and payload rows.
@@ -34,7 +34,7 @@ impl HirEnumVariantRankStepPass {
         dispatch_args: &crate::gpu::buffers::LaniusBuffer<u32>,
         cache: &mut BindGroupCache,
     ) -> Result<()> {
-        let steps = bounded_walk_step_capacity(buffers.tree_capacity);
+        let steps = bounded_walk_even_step_capacity(buffers.tree_capacity);
         for step in 0..steps {
             self.record_step(
                 device,

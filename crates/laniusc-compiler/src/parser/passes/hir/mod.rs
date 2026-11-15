@@ -72,6 +72,16 @@ pub(crate) fn bounded_walk_step_capacity(items: u32) -> u32 {
     steps
 }
 
+/// `bounded_walk_step_capacity` rounded up to an even count, so the walk
+/// always ends in its `_a` buffers and never needs the whole-buffer `_b`
+/// to `_a` finalize copy. Walks that use it read their `_b` buffers only at
+/// worklist rows an earlier round wrote, so `_b` needs no clear. The extra
+/// round, when there is one, only rewrites rows the walk already resolved.
+pub(crate) fn bounded_walk_even_step_capacity(items: u32) -> u32 {
+    let steps = bounded_walk_step_capacity(items);
+    steps + (steps & 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::bounded_walk_step_capacity;

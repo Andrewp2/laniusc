@@ -1303,17 +1303,11 @@ fn register_enum_ranking(
         "hir_enum_variant_links",
         &[
             "hir_variant_owner_a",
-            "hir_variant_owner_b",
             "hir_variant_link_a",
-            "hir_variant_link_b",
             "hir_variant_rank_a",
-            "hir_variant_rank_b",
             "hir_variant_payload_owner_a",
-            "hir_variant_payload_owner_b",
             "hir_variant_payload_link_a",
-            "hir_variant_payload_link_b",
             "hir_variant_payload_rank_a",
-            "hir_variant_payload_rank_b",
             "hir_variant_parent_enum",
             "hir_variant_ordinal",
             "hir_variant_payload_start",
@@ -1374,7 +1368,7 @@ fn register_enum_ranking(
         ],
     )?;
 
-    let steps = crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity);
+    let steps = crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity);
     register_ping_pong_walk(
         graph,
         passes.hir_enum_variant_rank_step.graph_pass(),
@@ -2572,18 +2566,12 @@ fn register_matches(
             "hir_match_arm_payload_start",
             "hir_match_arm_payload_count",
             "hir_match_arm_owner_a",
-            "hir_match_arm_owner_b",
             "hir_match_arm_link_a",
-            "hir_match_arm_link_b",
             "hir_match_arm_rank_a",
-            "hir_match_arm_rank_b",
             "hir_match_arm_previous",
             "hir_match_payload_owner_a",
-            "hir_match_payload_owner_b",
             "hir_match_payload_link_a",
-            "hir_match_payload_link_b",
             "hir_match_payload_rank_a",
-            "hir_match_payload_rank_b",
             "hir_match_pattern_parent",
         ],
     )?;
@@ -2647,7 +2635,7 @@ fn register_matches(
         FINALIZE,
         "hir_match_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
+        crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity),
         &[
             ("tree_count_status", "partial_parse_status", None),
             ("hir_match_rank_node", "hir_match_rank_node", None),
@@ -2926,17 +2914,11 @@ fn register_struct_fields(
         "hir_struct_field_links",
         &[
             "hir_struct_field_owner_a",
-            "hir_struct_field_owner_b",
             "hir_struct_field_link_a",
-            "hir_struct_field_link_b",
             "hir_struct_field_rank_a",
-            "hir_struct_field_rank_b",
             "hir_struct_lit_field_owner_a",
-            "hir_struct_lit_field_owner_b",
             "hir_struct_lit_field_link_a",
-            "hir_struct_lit_field_link_b",
             "hir_struct_lit_field_rank_a",
-            "hir_struct_lit_field_rank_b",
             "hir_struct_lit_field_previous",
         ],
     )?;
@@ -3001,7 +2983,7 @@ fn register_struct_fields(
         FINALIZE,
         "hir_struct_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
+        crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity),
         &[
             ("tree_count_status", "partial_parse_status", None),
             ("hir_struct_rank_node", "hir_struct_rank_node", None),
