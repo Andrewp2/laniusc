@@ -853,8 +853,7 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     )?;
     let output_read = gpu.read(&mut encoder, &output, 0, out_words);
     gpu.submit("machines.emit", encoder);
-    let mut bytes: Vec<u8> = gpu.words(&output_read)?.into_iter().flat_map(u32::to_le_bytes).collect();
-    bytes.truncate(out_len as usize);
+    let bytes = gpu.bytes(&output_read, out_len as usize)?;
 
     split_files(sources, &piece_rows, &piece_ends, &piece_anchors, &bytes).map(|files| Some(Outcome::Expanded(files)))
 }

@@ -462,6 +462,17 @@ impl Gpu<'_> {
         readback.unmap();
         Ok(words)
     }
+
+    /// The first `len` bytes of a readback, as the GPU wrote them.
+    pub(super) fn bytes(&self, readback: &LaniusBuffer<u8>, len: usize) -> Result<Vec<u8>> {
+        let slice = readback.buffer.slice(readback.byte_offset..readback.byte_offset + readback.byte_size as u64);
+        map_readback_blocking(self.device, &slice, "closures.readback")?;
+        let mapped = slice.get_mapped_range();
+        let bytes = mapped.get(..len).context("readback is shorter than its text")?.to_vec();
+        drop(mapped);
+        readback.unmap();
+        Ok(bytes)
+    }
 }
 
 /// Rewrites the closures of `sources`, one GPU run for all of them. `None`
@@ -739,8 +750,7 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     )?;
     let output_read = gpu.read(&mut encoder, &output, 0, out_words);
     gpu.submit("closures.emit", encoder);
-    let mut bytes: Vec<u8> = gpu.words(&output_read)?.into_iter().flat_map(u32::to_le_bytes).collect();
-    bytes.truncate(out_len as usize);
+    let bytes = gpu.bytes(&output_read, out_len as usize)?;
 
     split_files(sources, &file_rows, &piece_rows, &piece_ends, &bytes).map(|files| Some(Outcome::Rewritten(files)))
 }
