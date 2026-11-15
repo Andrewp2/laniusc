@@ -17,6 +17,7 @@ mod descriptor_work_queue;
 mod typecheck;
 mod wasm_codegen;
 mod x86_codegen;
+mod retained_projection;
 mod native_codegen;
 
 mod helpers;

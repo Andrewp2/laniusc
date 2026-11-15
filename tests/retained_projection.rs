@@ -73,6 +73,13 @@ fn retained_projection_oracle_columns() {
     let captures = lowering_capture::take();
     eprintln!("{} lowering jobs, {} bytes", captures.len(), bytes.len());
     for c in &captures { dump(c); }
+    if let Ok(path) = std::env::var("LANIUS_PROJECTION_ORACLE_DUMP") {
+        let mut out = String::new();
+        for (name, words) in &captures[0] {
+            out += &format!("{name} {}\n", words.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(" "));
+        }
+        std::fs::write(path, out).unwrap();
+    }
     let out = common::run_x86_64_elf_output("oracle", "oracle", &bytes);
     assert_eq!(out.status.code(), Some(6));
 }
