@@ -1,5 +1,8 @@
 // One lane per symbol. A provisional symbol takes its route's final identity
-// and claims the three identity words it will rewrite. Every other symbol
+// and claims the three identity words it will rewrite. Its route row must be
+// written for this build and name a final identity (an instance rank below
+// the readiness instance count, or a DeclNative identity); routes are flat,
+// so a row never names another use. Rows no symbol names are not read. Every other symbol
 // marks the words its identity bytes cover as preserved; its bytes and hash
 // are copied unchanged.
 
@@ -106,8 +109,37 @@ void main(uint3 tid: SV_DispatchThreadID)
         fail(FAIL_USE_OUT_OF_RANGE, symbol_i);
         return;
     }
+    uint4 route = fin_routes[use_i];
+    if (route.w != gFinalize.generation)
+    {
+        fail(FAIL_ROUTE_MISSING, use_i);
+        return;
+    }
+    if (route.x == OBJECT_LOCAL)
+    {
+        fail(FAIL_ROUTE_INVALID_IDENTITY, use_i);
+        return;
+    }
+    if (route.x == RESERVED_LIB)
+    {
+        if (route.y == NS_USE)
+        {
+            fail(FAIL_ROUTE_USE_CHAIN, use_i);
+            return;
+        }
+        if (route.y != NS_INSTANCE)
+        {
+            fail(FAIL_ROUTE_INVALID_IDENTITY, use_i);
+            return;
+        }
+        if (route.z >= fin_readiness[0u].z)
+        {
+            fail(FAIL_ROUTE_OUT_OF_RANGE, use_i);
+            return;
+        }
+    }
     uint word_base = byte_base >> 2u;
-    fin_symbol_final[symbol_i] = uint4(fin_routes[use_i].xyz, word_base);
+    fin_symbol_final[symbol_i] = uint4(route.xyz, word_base);
     for (uint i = 0u; i < 3u; i += 1u)
         InterlockedMin(fin_word_owner[word_base + i], symbol_i);
 }

@@ -661,11 +661,6 @@ fn gpu_finalization_rejects_invalid_routes_and_retries_capacity() {
             Routes::upload(&good, 4, [5, ready, 2, 3]),
             (X86FinalizeFailureKind::UseOutOfRange, 6 + 2),
         ),
-        // A complete table must cover every use, referenced or not.
-        (
-            Routes::upload(&good, 5, [5, ready, 2, 5]),
-            (X86FinalizeFailureKind::RouteMissing, 4),
-        ),
     ];
     for (routes, expected) in &cases {
         for _ in 0..2 {
@@ -674,6 +669,13 @@ fn gpu_finalization_rejects_invalid_routes_and_retries_capacity() {
                 *expected
             );
         }
+    }
+
+    // A sparse table: use 4 has no row, and no symbol names it.
+    let sparse = Routes::upload(&good, 5, [5, ready, 2, 5]);
+    let published = publish(&finalizer, &objects, &sparse, 5);
+    for (object, published) in objects.iter().zip(&published) {
+        assert_eq!(*published, expected(object, &good));
     }
 
     // Two failures at once: the lower failure code wins in every run.
@@ -778,7 +780,19 @@ fn gpu_finalization_is_deterministic_across_reuse_order_and_batching() {
     let first = publish(&finalizer, &objects, &routes, 11);
 
     // An unrelated build's route table still holds build 11's rows past the
-    // two uses build 12 wrote. Stale rows must not satisfy build 12.
+    // two uses build 12 wrote. A stale row must not satisfy build 12's use 2.
+    let stale_user = vec![object(
+        8,
+        0,
+        true,
+        call_text(3),
+        vec![call(1, 0), call(6, 1), call(11, 2)],
+        vec![
+            undefined(provisional_identity(0)),
+            undefined(provisional_identity(1)),
+            undefined(provisional_identity(2)),
+        ],
+    )];
     let unrelated = vec![object(
         8,
         0,
@@ -800,7 +814,7 @@ fn gpu_finalization_is_deterministic_across_reuse_order_and_batching() {
         .write(&gpu.queue, 0, u32_words_bytes(&[9, 0, 4, 12, 9, 0, 5, 12]));
     finalizer.poison_workspace_for_test(&gpu.queue).unwrap();
     assert_eq!(
-        reject(&finalizer, &unrelated, &stale, 12),
+        reject(&finalizer, &stale_user, &stale, 12),
         X86FinalizeFailure {
             kind: X86FinalizeFailureKind::RouteMissing,
             detail: 2,

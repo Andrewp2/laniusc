@@ -97,6 +97,10 @@ pub mod error {
     pub const DEPTH: u32 = 18;
     pub const FIELD: u32 = 19;
     pub const INPUT_CAPACITY: u32 = 20;
+    /// A call from an original object does not match its root route's
+    /// target (projection/10_certify.slang). Detail: the failure bits;
+    /// `row`: the lowest failing build-global use.
+    pub const ROOT_ABI: u32 = 21;
 
     /// Rule details: the diagnostic in the top byte.
     pub const RULE_ASSIGN_MISMATCH: u32 = 3;
@@ -125,6 +129,7 @@ pub mod error {
             DEPTH => "depth",
             FIELD => "field",
             INPUT_CAPACITY => "producer capacity",
+            ROOT_ABI => "root call ABI",
             _ => "unknown",
         }
     }
@@ -176,6 +181,8 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/07_rows",
     "type_checker/retention/projection/08_side",
     "type_checker/retention/projection/09_batch_finish",
+    "type_checker/retention/projection/10_certify",
+    "type_checker/retention/projection/10b_certify_finish",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
@@ -190,6 +197,20 @@ const K_BATCH_PLAN: usize = 9;
 const K_ROWS: usize = 10;
 const K_SIDE: usize = 11;
 const K_BATCH_FINISH: usize = 12;
+const K_CERTIFY: usize = 13;
+const K_CERTIFY_FINISH: usize = 14;
+
+/// The root routes of original objects and the caller ABI facts of their
+/// calls (docs/compiler-retained-projection.md, "Native compilation").
+/// `routes` holds one `(library, namespace, local, generation)` uint4 per
+/// build-global use and `readiness` one `(generation, flags, instance count,
+/// use count)` uint4. A run with roots sets `READY_ABI` in `readiness` only
+/// when every call the original objects recorded matches its target.
+pub struct RootCertification<'a> {
+    pub routes: &'a wgpu::Buffer,
+    pub readiness: &'a wgpu::Buffer,
+    pub calls: &'a super::NativeCallTables,
+}
 
 /// Test kernel: the explicit-instance producer (shaders/tests/retention_projection_producer.slang).
 #[doc(hidden)]
@@ -1004,6 +1025,49 @@ impl RetainedProjection {
         )
     }
 
+    /// Certifies the root calls (10_certify) against this run's checked
+    /// instances; `None` when every recorded call matches its target.
+    fn certify(
+        &self,
+        guard: &Store,
+        inputs: &ProjectionInputs,
+        roots: &RootCertification<'_>,
+        results: &wgpu::Buffer,
+        counts: &wgpu::Buffer,
+        report: &mut ProjectionReport,
+    ) -> Result<Option<ProjectionError>> {
+        let cert = storage(&self.device, "nc_cert", 16, false);
+        self.queue.write_buffer(&cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
+        let extra = [
+            ("sb_results", results),
+            ("sb_counts", counts),
+            ("nc_use_abi", &roots.calls.abi),
+            ("nc_use_args", &roots.calls.args),
+            ("rr_routes", roots.routes),
+            ("rr_readiness", roots.readiness),
+            ("nc_cert", &cert),
+        ];
+        let mut r = self.recorder();
+        r.dispatch(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())?;
+        r.dispatch_groups(K_CERTIFY_FINISH, guard, inputs, &extra, 1)?;
+        report.dispatches += r.finish();
+        let cert = self.read(&cert, 3, report)?;
+        trace(&format!("certify: {cert:?}"));
+        if cert[0] == 0 && cert[2] == 0 {
+            return Ok(None);
+        }
+        Ok(Some(ProjectionError {
+            code: error::ROOT_ABI,
+            detail: cert[2],
+            rank: u32::MAX,
+            decl: u32::MAX,
+            row: cert[1],
+            token: u32::MAX,
+            file: u32::MAX,
+            byte: u32::MAX,
+        }))
+    }
+
     fn recorder(&self) -> Recorder<'_> {
         Recorder {
             projection: self,
@@ -1033,6 +1097,19 @@ impl RetainedProjection {
         store: &ProgramRetention,
         inputs: &ProjectionInputs,
         options: &ProjectionOptions,
+    ) -> Result<ProjectionOutcome> {
+        self.run_certified(compiler, store, inputs, options, None)
+    }
+
+    /// [`Self::run`], and with `roots` certifies the original objects' root
+    /// calls after the instance check and before any lowering.
+    pub fn run_certified(
+        &mut self,
+        compiler: &GpuCompiler<'_>,
+        store: &ProgramRetention,
+        inputs: &ProjectionInputs,
+        options: &ProjectionOptions,
+        roots: Option<RootCertification<'_>>,
     ) -> Result<ProjectionOutcome> {
         let mut report = ProjectionReport::default();
         let started = std::time::Instant::now();
@@ -1082,6 +1159,14 @@ impl RetainedProjection {
             });
         }
         if report.instances == 0 {
+            if let Some(roots) = &roots {
+                let guard = store.store.lock().unwrap();
+                if let Some(error) =
+                    self.certify(&guard, inputs, roots, &self.no_results, &self.no_counts, &mut report)?
+                {
+                    return Ok(ProjectionOutcome::Rejected { error, report });
+                }
+            }
             return Ok(ProjectionOutcome::Objects { objects: Vec::new(), report });
         }
 
@@ -1191,6 +1276,11 @@ impl RetainedProjection {
             if status[S_IDENTITY_OVERFLOW] != 0 && status[S_ERRORS] == 0 {
                 bail!("retained projection identity table overflowed");
             }
+            return Ok(ProjectionOutcome::Rejected { error, report });
+        }
+        if let Some(roots) = &roots
+            && let Some(error) = self.certify(&guard, inputs, roots, &results, &counts, &mut report)?
+        {
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
         if status[S_BATCHES] != batches {

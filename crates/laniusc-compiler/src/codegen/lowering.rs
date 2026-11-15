@@ -201,6 +201,12 @@ pub(crate) enum ReplaySelection<'a> {
     /// An instance-copy replay: every function from this HIR row on (the
     /// copies appended after the template), and none before it.
     CopiesFrom(u32),
+    /// An original object of a retained build
+    /// (docs/compiler-retained-projection.md, "Native compilation"): every
+    /// nongeneric body, and no definition of a function with a generic
+    /// environment, including tag-only bodies. Retained projection lowers
+    /// the generic instances.
+    RetainedOriginal,
 }
 
 #[repr(C)]
@@ -1982,8 +1988,10 @@ impl GpuSemanticLoweringStage {
     ) -> Result<()> {
         // A replay object holds only the selected bodies; calls to ordinary
         // local helpers link against the original object's definitions.
+        let retained_templates = matches!(selection, ReplaySelection::RetainedOriginal);
         let (selected_hirs, copy_start) = match selection {
             ReplaySelection::Functions(hirs) => (hirs, 0),
+            ReplaySelection::RetainedOriginal => (&[][..], 0),
             ReplaySelection::CopiesFrom(row) => (&[][..], row.checked_add(1)
                 .context("first instance copy row cannot be encoded")?),
         };
@@ -2002,10 +2010,10 @@ impl GpuSemanticLoweringStage {
         // Every job overwrites the copy start; only batched replays read the
         // extra rows.
         bytes.extend_from_slice(&copy_start.to_le_bytes());
-        if !extra.is_empty() {
-            bytes.extend_from_slice(&[0; 8]);
-            bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
-        }
+        // Every job overwrites the retained-template word.
+        bytes.extend_from_slice(&u32::from(retained_templates).to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
         self.template_params.write(queue, 12, &bytes);
         self.string_params.write(queue, 12, &copy_start.to_le_bytes());
         Ok(())

@@ -17,10 +17,13 @@ bool valid_instance(uint instance)
 // plus one, in replay_extra (replay_extra_count of them). An instance-copy
 // replay sets replay_copy_start to its first copy row plus one: every
 // function from that row on is a selected copy, every earlier one is not.
+// retained_templates (an original object of a retained build) withholds
+// every function with a generic environment, tag-only bodies included:
+// retained projection lowers their instances.
 struct Params
 {
     uint n_hir_nodes; uint param_capacity; uint n_tokens; uint replay_function;
-    uint replay_extra_count; uint replay_copy_start; uint pad1; uint pad2;
+    uint replay_extra_count; uint replay_copy_start; uint retained_templates; uint pad2;
     uint4 replay_extra[16];
 };
 ConstantBuffer<Params> gParams;
@@ -154,6 +157,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // (host services) have no definition there and stay direct.
         InterlockedAnd(semantic_function_flag[row], 0u);
     }
+    if (gParams.retained_templates != 0u && row < count && compact_hir_core[row].kind == 3u &&
+        function_has_generic_environment(row, count))
+        InterlockedAnd(semantic_function_flag[row], 0u);
     if (row < min(compact_method_count[0u], count))
     {
         // A trait's own member is a contract over `Self`, not a definition:

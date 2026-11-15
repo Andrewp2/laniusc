@@ -2711,7 +2711,12 @@ impl GpuTypeChecker {
             }
             // The table's closed instances become execution rows; every job
             // publishes lowering's row counts (closure/instance_exec.slang).
-            semantic_projection.instance_table.record_exec(encoder, instance_closure)?;
+            // A retained build lowers instances by retained projection, so
+            // its jobs append no instance copies (record_exec(false) still
+            // publishes the lowering counts).
+            semantic_projection
+                .instance_table
+                .record_exec(encoder, instance_closure && program_retention.is_none())?;
             if let Some(timer) = timer.as_deref_mut() {
                 timer.stamp(encoder, "typecheck.semantic_artifact.done");
             }

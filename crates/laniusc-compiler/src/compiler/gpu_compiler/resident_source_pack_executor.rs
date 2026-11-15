@@ -27,6 +27,10 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // The number of units the build plan compiles, when known: the last one
     // has no dependents and can know whether the trait solver will run.
     frontend_units: Option<usize>,
+    // A retained native build (retained_native.rs): units compile without
+    // caches, and the link hands the original objects back unlinked.
+    retained: bool,
+    retained_originals: Option<Vec<x86::GpuX86RelocatableObject>>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -76,7 +80,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None, native_link: None, frontend_units: None }
+        Self {
+            compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None,
+            native_link: None, frontend_units: None, retained: false, retained_originals: None,
+        }
     }
 
     pub(super) fn with_output_file(
@@ -98,6 +105,18 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         self.frontend_units = Some(build_plan.schedule.jobs.iter()
             .filter(|job| job.phase == SourcePackJobPhase::LibraryFrontend).count());
         self
+    }
+
+    /// A retained native build: no unit cache, no closed-fact elision, and
+    /// [`Self::take_retained_originals`] instead of a link.
+    pub(super) fn retained(mut self) -> Self {
+        self.retained = true;
+        self
+    }
+
+    /// The original objects of a retained build's link.
+    pub(super) fn take_retained_originals(&mut self) -> Option<Vec<x86::GpuX86RelocatableObject>> {
+        self.retained_originals.take()
     }
 
     pub(super) fn with_native_link(mut self, options: &NativeLinkOptions) -> Self {
@@ -128,7 +147,11 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // so generic bodies specialize alike. A standard-library unit may
         // reuse an earlier job's pending original; it is admitted with the
         // rest of this program at link.
-        let pending = if self.native_link.is_some() {
+        let pending = if self.retained {
+            self.compiler.compile_cached_pending_original_unit(
+                self.target, &handle.job, false, &handle.source_files, dependency_pages.into(), false,
+            ).await?
+        } else if self.native_link.is_some() {
             // The native profile spills before any cache or pending inventory
             // can retain its section vectors. Checked source facts still own
             // their exact source and dependency snapshots for admission.
@@ -186,6 +209,16 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             }
         }
         let pending = std::mem::take(&mut self.pending_originals);
+        if self.retained {
+            // Discovery and projection replace the trait solver's admission;
+            // they reject what they do not support.
+            let objects = pending.into_iter().map(|unit| match unit.release_closed() {
+                CompiledSourcePackObject::X86_64(object) => Ok(object),
+                _ => Err(source_pack_artifact_store_error("a retained build needs resident x86_64 objects")),
+            }).collect::<Result<Vec<_>, _>>()?;
+            self.retained_originals = Some(objects);
+            return Ok(ResidentLinkedOutput::Bytes(Vec::new()));
+        }
         if let Some(options) = &self.native_link {
             let objects = self.compiler.specialize_spilled_native_objects(pending).await?;
             let bridge = super::native_codegen::native_main_bridge(&objects)?;

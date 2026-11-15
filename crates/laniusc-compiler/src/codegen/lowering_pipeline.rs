@@ -1045,7 +1045,10 @@ impl GpuLoweringPipeline {
         mut timer: Option<&mut GpuTimer>,
         bounds: super::lowering::LoweringJobBounds,
     ) -> Result<()> {
-        if !matches!(selection, super::lowering::ReplaySelection::Functions(&[])) {
+        if !matches!(
+            selection,
+            super::lowering::ReplaySelection::Functions(&[]) | super::lowering::ReplaySelection::RetainedOriginal
+        ) {
             crate::compiler::count_replay_lowering();
         }
         let bounds = job_bounds(bounds);

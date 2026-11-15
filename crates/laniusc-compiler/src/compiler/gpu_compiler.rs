@@ -6,6 +6,7 @@ use crate::codegen::{
 
 mod backends;
 pub use backends::GpuCompilerBackends;
+pub use retained_native::{RetainedNativeBuild, RetainedNativeReport};
 mod benchmarks;
 mod body_specialization;
 mod instance_copies;
@@ -18,6 +19,7 @@ mod typecheck;
 mod wasm_codegen;
 mod x86_codegen;
 mod retained_projection;
+mod retained_native;
 mod native_codegen;
 
 mod helpers;
@@ -88,6 +90,9 @@ pub struct GpuCompiler<'gpu> {
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     trait_solver_workspace: trait_solver::SolverWorkspacePool,
+    /// Caller ABI tables of the retained native build in progress
+    /// (`retained_native.rs`); `None` outside one.
+    retained_native_calls: std::sync::Mutex<Option<crate::type_checker::program_retention::NativeCallTables>>,
 }
 
 // A worst-case 10,000-file project may place each file in its own bounded
@@ -477,6 +482,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 trait_solver_workspace: trait_solver::SolverWorkspacePool::new(
                     gpu.device.clone(), gpu.queue.clone(),
                 ),
+                retained_native_calls: std::sync::Mutex::new(None),
             })
         })
     }

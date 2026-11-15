@@ -23,6 +23,8 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 
 pub mod discovery;
+mod native_calls;
+pub use native_calls::NativeCallTables;
 pub mod projection;
 pub mod substitution;
 

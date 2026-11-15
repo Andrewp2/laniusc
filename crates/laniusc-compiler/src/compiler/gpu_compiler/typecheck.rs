@@ -749,6 +749,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             let selected_replay = match request.frontend_trait_check() {
                 gpu_type_checker::FrontendTraitCheck::AuthorizedReplay { .. } =>
                     request.replay_selection(),
+                // An original object of a retained build defines no generic
+                // function; retained projection lowers the instances.
+                gpu_type_checker::FrontendTraitCheck::PendingOriginal
+                    if self.type_checker.attached_program_retention().is_some() =>
+                    crate::codegen::lowering::ReplaySelection::RetainedOriginal,
                 gpu_type_checker::FrontendTraitCheck::Strict
                 | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
                     crate::codegen::lowering::ReplaySelection::Functions(&[]),
@@ -1049,7 +1054,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             None
         };
         finish_timer.stamp("target_artifact");
-        let native_object = if let Some(request) = object_request {
+        let mut native_object = if let Some(request) = object_request {
             let target = request.target();
             let (library_id, unit_id) = request.ids();
             let pipeline = self
@@ -1099,6 +1104,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             store
                 .export_job(snapshot.tables())
                 .map_err(|err| CompileError::GpuFrontend(format!("program retention export: {err:#}")))?;
+            // A retained native build: the export scratch still maps this
+            // job's call rows to their retained uses.
+            if let Some((CompiledSourcePackObject::X86_64(object), call_hirs)) = &mut native_object
+                && let Some(tables) = self.retained_native_calls.lock().unwrap().as_mut()
+            {
+                store
+                    .provisionalize_x86_calls(snapshot, tables, object, call_hirs)
+                    .map_err(|err| CompileError::GpuFrontend(format!("retained original call symbols: {err:#}")))?;
+            }
             finish_timer.stamp("program_retention");
         }
         let (native_object, native_call_hirs) = match native_object {

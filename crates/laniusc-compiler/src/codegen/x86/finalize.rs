@@ -2,10 +2,12 @@
 //!
 //! An original object names each deferred generic call by the provisional
 //! identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE, use ordinal)`. After
-//! discovery and admission, the GPU publishes a dense route table from use
-//! ordinal to a final native identity: an instance identity
+//! discovery and admission, the GPU publishes a route table indexed by use
+//! ordinal whose rows name a final native identity: an instance identity
 //! `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_INSTANCE, rank)` or an ordinary
-//! `DeclNative` identity. This stage rewrites the provisional entries of the
+//! `DeclNative` identity. The table may be sparse: only a use that a
+//! provisional symbol names must have a valid row for this build, and a row
+//! no symbol names is never read. This stage rewrites the provisional entries of the
 //! objects' symbol and identity columns, recomputes their identity hashes on the
 //! GPU and publishes the columns only when every input is valid.
 //!
@@ -228,8 +230,9 @@ impl X86SymbolColumns {
 
 /// GPU-resident route inputs published by discovery and admission.
 pub(crate) struct X86RouteTable<'a> {
-    /// Dense `(library, namespace or unit, local identity, generation)` rows
-    /// indexed by build-global use ordinal.
+    /// `(library, namespace or unit, local identity, generation)` rows
+    /// indexed by build-global use ordinal. Rows no provisional symbol names
+    /// may be missing.
     pub routes: &'a LaniusBuffer<u32>,
     /// Rows `routes` can hold. The readiness record's use count must fit.
     pub route_capacity: u32,
@@ -578,7 +581,7 @@ impl GpuX86SymbolFinalizer {
                 transfer.identity_word_count().max(STATUS_WORDS as u32),
             ),
             (PASS_OBJECTS, &self.objects, transfer.object_count().max(1)),
-            (PASS_ROUTES, &self.routes, routes.route_capacity.max(1)),
+            (PASS_ROUTES, &self.routes, 1),
             (PASS_CLASSIFY, &self.classify, symbol_lanes),
             (PASS_CHECK, &self.check, symbol_lanes),
             (PASS_EMIT_SYMBOLS, &self.emit_symbols, symbol_lanes),
