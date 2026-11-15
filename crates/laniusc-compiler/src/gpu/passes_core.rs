@@ -178,7 +178,10 @@ pub(crate) fn prune_bind_groups_of_released_buffers() {
         let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
         cache.invocations.retain(|_, invocation| {
             invocation.variants.retain(|_, cached| {
-                cached.tracked_allocations.iter().all(|id| live.contains(id))
+                cached
+                    .tracked_allocations
+                    .iter()
+                    .all(|id| live.contains(id))
             });
             !invocation.variants.is_empty()
         });
@@ -1462,7 +1465,8 @@ pub(crate) fn submit_recorded_prefix(
     label: &'static str,
 ) {
     flush_deferred_compute(encoder);
-    let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+    let next =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
     let recorded = std::mem::replace(encoder, next);
     crate::gpu::timer::stamp_active_submission_begin(encoder, label);
     let start = Instant::now();
@@ -2524,14 +2528,20 @@ static DEBUG_DUMP_BUFFERS: std::sync::LazyLock<
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::BTreeMap::new()));
 
 fn debug_dump_names() -> &'static [String] {
-    crate::options::get().dump.as_ref().map_or(&[], |dump| &dump.buffers)
+    crate::options::get()
+        .dump
+        .as_ref()
+        .map_or(&[], |dump| &dump.buffers)
 }
 
 /// Remembers a bound buffer whose reflected name is listed in
 /// `LANIUS_DUMP` so `debug_dump_buffers` can print it.
 pub(crate) fn debug_register_dump_buffer(name: &str, buffer: &wgpu::Buffer, offset: u64, end: u64) {
     // `*` registers every reflected binding (determinism diffs).
-    if !debug_dump_names().iter().any(|wanted| wanted == name || wanted == "*") {
+    if !debug_dump_names()
+        .iter()
+        .any(|wanted| wanted == name || wanted == "*")
+    {
         return;
     }
     DEBUG_DUMP_BUFFERS
@@ -2589,7 +2599,10 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
         if let Some(dir) = &dump.dir {
             let path = dir.join(format!("{stage}.{wanted}.bin"));
             if let Err(err) = std::fs::write(&path, &mapped[..]) {
-                eprintln!("[lanius-dump] {stage} {wanted}: write {}: {err}", path.display());
+                eprintln!(
+                    "[lanius-dump] {stage} {wanted}: write {}: {err}",
+                    path.display()
+                );
             }
             continue;
         }
@@ -2604,10 +2617,7 @@ pub(crate) fn debug_dump_buffers(device: &wgpu::Device, queue: &wgpu::Queue, sta
                 }
             })
             .collect::<Vec<_>>();
-        eprintln!(
-            "[lanius-dump] {stage} {wanted}@0: {}",
-            values.join(" ")
-        );
+        eprintln!("[lanius-dump] {stage} {wanted}@0: {}", values.join(" "));
     }
 }
 
@@ -2718,7 +2728,8 @@ pub mod bind_group {
             let tracked_allocations = identity
                 .iter()
                 .filter_map(|binding| {
-                    crate::gpu::buffers::tracked_buffer_identity(&binding.buffer).map(|(id, _, _)| id)
+                    crate::gpu::buffers::tracked_buffer_identity(&binding.buffer)
+                        .map(|(id, _, _)| id)
                 })
                 .collect();
             cache
@@ -2763,10 +2774,10 @@ pub mod bind_group {
         reflection.parameters.as_slice()
     }
 
-    fn validate_reflected_buffer_aliases(
+    fn validate_reflected_buffer_aliases<'a>(
         reflection: &SlangReflection,
         set_index: usize,
-        resources: &HashMap<String, wgpu::BindingResource<'_>>,
+        resources: &impl Fn(&str) -> Option<wgpu::BindingResource<'a>>,
         label: &str,
     ) -> Result<()> {
         struct BoundBuffer<'a> {
@@ -2790,8 +2801,7 @@ pub mod bind_group {
                     ..
                 }
             );
-            let Some(wgpu::BindingResource::Buffer(binding)) = resources.get(&parameter.name)
-            else {
+            let Some(wgpu::BindingResource::Buffer(binding)) = resources(&parameter.name) else {
                 continue;
             };
             let offset = binding.offset;
@@ -2845,23 +2855,47 @@ pub mod bind_group {
         set_index: usize,
         resources: &HashMap<String, wgpu::BindingResource<'a>>,
     ) -> Result<wgpu::BindGroup> {
+        create_bind_group_from_reflection_lookup(
+            device,
+            label,
+            bgl,
+            reflection,
+            set_index,
+            &|name| resources.get(name).cloned(),
+            &|| resources.keys().cloned().collect(),
+        )
+    }
+
+    /// `create_bind_group_from_reflection` over any name lookup, so an
+    /// operation can layer its own bindings over a shared registry without
+    /// copying it. `available` names the resources for an error only.
+    pub(crate) fn create_bind_group_from_reflection_lookup<'a>(
+        device: &wgpu::Device,
+        label: Option<&str>,
+        bgl: &Arc<wgpu::BindGroupLayout>,
+        reflection: &Arc<SlangReflection>,
+        set_index: usize,
+        resources: &impl Fn(&str) -> Option<wgpu::BindingResource<'a>>,
+        available: &dyn Fn() -> Vec<String>,
+    ) -> Result<wgpu::BindGroup> {
         let plan_started = bind_group_timing_enabled().then(Instant::now);
         let resolved_label = label.unwrap_or("<unnamed>");
         validate_reflected_buffer_aliases(reflection, set_index, resources, resolved_label)?;
-        let mut entries = Vec::<wgpu::BindGroupEntry>::new();
-        for p in reflected_parameters_for_set(reflection, set_index) {
+        let parameters = reflected_parameters_for_set(reflection, set_index);
+        let mut entries = Vec::<wgpu::BindGroupEntry>::with_capacity(parameters.len());
+        for p in parameters {
             if let (Some(idx), Some(_ty)) = (p.binding.index, p.ty.kind.as_ref()) {
-                if let Some(res) = resources.get(&p.name) {
+                if let Some(resource) = resources(&p.name) {
                     entries.push(wgpu::BindGroupEntry {
                         binding: idx,
-                        resource: res.clone(),
+                        resource,
                     });
                 } else {
                     return Err(anyhow!(
                         "no resource provided for {:?} in bind group '{}'; available resources: {:?}",
                         p.name,
-                        label.unwrap_or("<unnamed>"),
-                        resources.keys().collect::<Vec<_>>(),
+                        resolved_label,
+                        available(),
                     ));
                 }
             }
@@ -2943,9 +2977,13 @@ pub mod bind_group {
     /// Whether the pass's reflection declares a bound resource named `name` in
     /// `set_index`. Resources the shader optimizes out are not declared.
     pub fn declares_binding(pass: &PassData, set_index: usize, name: &str) -> bool {
-        reflected_parameters_for_set(&pass.reflection, set_index).iter().any(|parameter| {
-            parameter.name == name && parameter.binding.index.is_some() && parameter.ty.kind.is_some()
-        })
+        reflected_parameters_for_set(&pass.reflection, set_index)
+            .iter()
+            .any(|parameter| {
+                parameter.name == name
+                    && parameter.binding.index.is_some()
+                    && parameter.ty.kind.is_some()
+            })
     }
 
     /// Proves that a graph-managed pass binds exactly the resources present in

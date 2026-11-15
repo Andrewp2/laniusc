@@ -399,6 +399,7 @@ impl<'a> ResourceMap<'a> {
     /// This keeps shader recording and ownership validation single-sourced:
     /// adding or changing a binding cannot silently update one description
     /// while leaving the other pointed at a different allocation.
+    #[allow(dead_code)] // Kept for callers; operations use `ResourceOverlay`.
     pub(crate) fn graph_bindings(
         &self,
         graph: &CompilerGraph,
@@ -415,63 +416,7 @@ impl<'a> ResourceMap<'a> {
         pass_name: &str,
         aliases: &[(&str, &str)],
     ) -> Result<Vec<BoundGraphResource>> {
-        let pass = graph
-            .pass_id(pass_name)
-            .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
-        let mut bindings = Vec::new();
-        for access in &graph
-            .pass(pass)
-            .expect("pass id came from this graph")
-            .accesses
-        {
-            let explicit_name = aliases.iter().find_map(|(binding, registered)| {
-                (*binding == access.binding).then_some(*registered)
-            });
-            let canonical_name = graph
-                .resource(access.resource)
-                .expect("pass access resource belongs to graph")
-                .name;
-            // Reflected binding names such as `scan_input` are deliberately
-            // reused by many graph operations. They are therefore not stable
-            // resource identities in a phase-wide registry. The graph's
-            // canonical resource is authoritative unless the operation gives
-            // an explicit local override (for example a radix ping-pong lane).
-            // Falling back to the reflected name keeps small operation-local
-            // registries valid when they contain no canonical graph names.
-            let resolved = explicit_name
-                .and_then(|name| self.graph_identities.get(name).map(|identity| (name, identity)))
-                .or_else(|| {
-                    self.graph_identities
-                        .get(canonical_name)
-                        .map(|identity| (canonical_name, identity))
-                })
-                .or_else(|| {
-                    self.graph_identities
-                        .get(access.binding)
-                        .map(|identity| (access.binding, identity))
-                })
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "compiler pass `{pass_name}` binding `{}` has no registered buffer for its explicit override {:?}, canonical resource `{canonical_name}`, or reflected name",
-                        access.binding,
-                        explicit_name,
-                    )
-                })?;
-            let (_, identity) = resolved;
-            let bound = graph
-                .bind_registered_resource(
-                    access.binding,
-                    access.resource,
-                    identity.allocation_id,
-                    identity.byte_offset,
-                    identity.byte_size,
-                )
-                .map_err(anyhow::Error::msg)?;
-            if !bindings.contains(&bound) {
-                bindings.push(bound);
-            }
-        }
-        Ok(bindings)
+        resolve_graph_bindings(self, graph, pass_name, aliases)
     }
 
     /// Validates one operation pass against the graph attached to this
@@ -524,6 +469,204 @@ impl<'a> ResourceMap<'a> {
     }
 }
 
+/// Name lookup shared by a registry and an operation's overlay of it.
+trait ResourceLookup<'a> {
+    fn resource(&self, name: &str) -> Option<&wgpu::BindingResource<'a>>;
+    fn identity(&self, name: &str) -> Option<GraphResourceIdentity>;
+}
+
+impl<'a> ResourceLookup<'a> for ResourceMap<'a> {
+    fn resource(&self, name: &str) -> Option<&wgpu::BindingResource<'a>> {
+        self.resources.get(name)
+    }
+
+    fn identity(&self, name: &str) -> Option<GraphResourceIdentity> {
+        self.graph_identities.get(name).copied()
+    }
+}
+
+/// Resolves one graph pass's concrete storage bindings (see
+/// `ResourceMap::graph_bindings_with_aliases`).
+fn resolve_graph_bindings<'a>(
+    resources: &impl ResourceLookup<'a>,
+    graph: &CompilerGraph,
+    pass_name: &str,
+    aliases: &[(&str, &str)],
+) -> Result<Vec<BoundGraphResource>> {
+    let pass = graph
+        .pass_id(pass_name)
+        .ok_or_else(|| anyhow::anyhow!("compiler graph has no pass `{pass_name}`"))?;
+    let mut bindings = Vec::new();
+    for access in &graph
+        .pass(pass)
+        .expect("pass id came from this graph")
+        .accesses
+    {
+        let explicit_name = aliases
+            .iter()
+            .find_map(|(binding, registered)| (*binding == access.binding).then_some(*registered));
+        let canonical_name = graph
+            .resource(access.resource)
+            .expect("pass access resource belongs to graph")
+            .name;
+        // Reflected binding names such as `scan_input` are deliberately
+        // reused by many graph operations. They are therefore not stable
+        // resource identities in a phase-wide registry. The graph's
+        // canonical resource is authoritative unless the operation gives
+        // an explicit local override (for example a radix ping-pong lane).
+        // Falling back to the reflected name keeps small operation-local
+        // registries valid when they contain no canonical graph names.
+        let resolved = explicit_name
+                .and_then(|name| resources.identity(name).map(|identity| (name, identity)))
+                .or_else(|| {
+                    resources
+                        .identity(canonical_name)
+                        .map(|identity| (canonical_name, identity))
+                })
+                .or_else(|| {
+                    resources
+                        .identity(access.binding)
+                        .map(|identity| (access.binding, identity))
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "compiler pass `{pass_name}` binding `{}` has no registered buffer for its explicit override {:?}, canonical resource `{canonical_name}`, or reflected name",
+                        access.binding,
+                        explicit_name,
+                    )
+                })?;
+        let (_, identity) = resolved;
+        let bound = graph
+            .bind_registered_resource(
+                access.binding,
+                access.resource,
+                identity.allocation_id,
+                identity.byte_offset,
+                identity.byte_size,
+            )
+            .map_err(anyhow::Error::msg)?;
+        if !bindings.contains(&bound) {
+            bindings.push(bound);
+        }
+    }
+    Ok(bindings)
+}
+
+/// Operation-local bindings layered over a shared registry.
+///
+/// An operation binds a few names of its own (its uniform parameters, its
+/// dispatch arguments, and each reflected binding name aliased to its graph
+/// resource). Copying the phase-wide registry for that cloned two
+/// string-keyed maps of every phase resource per operation; the overlay
+/// holds only the operation's own names, and the latest write of a name
+/// wins, as an insert into a copy would.
+pub(crate) struct ResourceOverlay<'m, 'a> {
+    base: &'m ResourceMap<'a>,
+    entries: Vec<(
+        &'static str,
+        Option<wgpu::BindingResource<'a>>,
+        Option<GraphResourceIdentity>,
+    )>,
+}
+
+impl<'m, 'a> ResourceOverlay<'m, 'a> {
+    pub(crate) fn new(base: &'m ResourceMap<'a>) -> Self {
+        Self {
+            base,
+            entries: Vec::new(),
+        }
+    }
+
+    fn entry(
+        &self,
+        name: &str,
+    ) -> Option<&(
+        &'static str,
+        Option<wgpu::BindingResource<'a>>,
+        Option<GraphResourceIdentity>,
+    )> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|(entry, _, _)| *entry == name)
+    }
+
+    /// Binds a buffer-like value under `name`, as `ResourceMap::buffer`.
+    pub(crate) fn buffer<B>(&mut self, name: &'static str, buffer: B)
+    where
+        B: ResourceBinding<'a> + Copy,
+    {
+        let (allocation_id, byte_offset, byte_size) = buffer.graph_identity();
+        let identity = GraphResourceIdentity {
+            allocation_id,
+            byte_offset,
+            byte_size,
+            logical_byte_size: buffer.logical_byte_size(),
+        };
+        self.entries
+            .push((name, Some(buffer.binding()), Some(identity)));
+    }
+
+    /// Registers `name` for an existing resource, as `ResourceMap::alias`.
+    pub(crate) fn alias(&mut self, name: &'static str, existing: &str) -> Result<()> {
+        let resource = self
+            .resource(existing)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("GPU resource `{existing}` is not registered"))?;
+        let identity = self
+            .identity(existing)
+            .ok_or_else(|| anyhow::anyhow!("GPU resource `{existing}` has no tracked identity"))?;
+        self.entries.push((name, Some(resource), Some(identity)));
+        Ok(())
+    }
+
+    pub(crate) fn graph_bindings(
+        &self,
+        graph: &CompilerGraph,
+        pass_name: &str,
+    ) -> Result<Vec<BoundGraphResource>> {
+        resolve_graph_bindings(self, graph, pass_name, &[])
+    }
+
+    /// Builds the reflected bind group of a loaded pass's first layout.
+    pub(crate) fn reflected_bind_group(
+        &self,
+        device: &wgpu::Device,
+        label: &'static str,
+        pass: &PassData,
+    ) -> Result<wgpu::BindGroup> {
+        bind_group::create_bind_group_from_reflection_lookup(
+            device,
+            Some(label),
+            &pass.bind_group_layouts[0],
+            &pass.reflection,
+            0,
+            &|name| self.resource(name).cloned(),
+            &|| {
+                let mut names = self.base.resources.keys().cloned().collect::<Vec<_>>();
+                names.extend(self.entries.iter().map(|(name, _, _)| (*name).to_owned()));
+                names
+            },
+        )
+    }
+}
+
+impl<'a> ResourceLookup<'a> for ResourceOverlay<'_, 'a> {
+    fn resource(&self, name: &str) -> Option<&wgpu::BindingResource<'a>> {
+        match self.entry(name) {
+            Some((_, resource, _)) => resource.as_ref(),
+            None => self.base.resources.get(name),
+        }
+    }
+
+    fn identity(&self, name: &str) -> Option<GraphResourceIdentity> {
+        match self.entry(name) {
+            Some((_, _, identity)) => *identity,
+            None => self.base.graph_identities.get(name).copied(),
+        }
+    }
+}
+
 /// Builds a reflected bind group from any name-keyed registry plus a small set
 /// of operation-local aliases.
 pub(crate) fn reflected_bind_group_with_overrides<'a>(
@@ -556,6 +699,7 @@ impl<'a> std::ops::Deref for ResourceMap<'a> {
 }
 
 /// Builds a reflected bind group from the first layout in a loaded pass.
+#[allow(dead_code)] // Kept for callers; operations use `ResourceOverlay`.
 pub(crate) fn reflected_bind_group_from_resources(
     device: &wgpu::Device,
     label: &'static str,
