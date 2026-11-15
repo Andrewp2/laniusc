@@ -986,26 +986,14 @@ impl RetainedDiscovery {
             0,
             &entries,
         )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_discovery"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
-        match dispatch {
+        let launch = match dispatch {
             Dispatch::Lanes(lanes) => {
                 let groups = lanes.div_ceil(256).max(1);
-                compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+                super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1)
             }
-            Dispatch::Indirect(buffer) => {
-                passes_core::record_indirect_compute_dispatch();
-                compute.dispatch_workgroups_indirect(buffer, 0);
-            }
-        }
-        passes_core::record_compute_dispatch();
+            Dispatch::Indirect(buffer) => super::substitution::Launch::Indirect(buffer, 0),
+        };
+        super::substitution::record_timed(encoder, "retained_discovery", &[(pass, &bind, launch)]);
         report.dispatches += 1;
         Ok(())
     }

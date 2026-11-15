@@ -44,6 +44,57 @@ use crate::gpu::passes_core::{
     map_readback_blocking,
 };
 
+/// How one recorded dispatch launches.
+#[derive(Clone, Copy)]
+pub(super) enum Launch<'a> {
+    Groups(u32, u32, u32),
+    Indirect(&'a wgpu::Buffer, u64),
+}
+
+/// Records `steps` in order, in one compute pass, with the one timestamp
+/// per dispatch a profiled job needs (a pass per step when the timer cannot
+/// stamp inside a pass). Without a capture scope no timestamp is written.
+pub(super) fn record_timed(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    steps: &[(&PassData, &wgpu::BindGroup, Launch<'_>)],
+) {
+    if steps.is_empty() {
+        return;
+    }
+    passes_core::flush_deferred_compute(encoder);
+    let dispatch = |compute: &mut wgpu::ComputePass<'_>, pass: &PassData, bind: &wgpu::BindGroup, launch: Launch<'_>| {
+        compute.set_pipeline(&pass.pipeline);
+        compute.set_bind_group(0, bind, &[]);
+        passes_core::record_compute_dispatch();
+        match launch {
+            Launch::Groups(x, y, z) => compute.dispatch_workgroups(x, y, z),
+            Launch::Indirect(buffer, offset) => {
+                passes_core::record_indirect_compute_dispatch();
+                compute.dispatch_workgroups_indirect(buffer, offset);
+            }
+        }
+    };
+    let descriptor = wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None };
+    if crate::gpu::timer::operation_capture_requires_split_passes() {
+        for &(pass, bind, launch) in steps {
+            let mut compute = passes_core::begin_counted_compute_pass(encoder, &descriptor);
+            dispatch(&mut compute, pass, bind, launch);
+            drop(compute);
+            crate::gpu::timer::stamp_active_operation(encoder, pass.shader_id.clone());
+        }
+        return;
+    }
+    let timed = crate::gpu::timer::operation_capture_active();
+    let mut compute = passes_core::begin_counted_compute_pass(encoder, &descriptor);
+    for &(pass, bind, launch) in steps {
+        dispatch(&mut compute, pass, bind, launch);
+        if timed {
+            crate::gpu::timer::stamp_active_operation_in_pass(&mut compute, pass.shader_id.clone());
+        }
+    }
+}
+
 /// Records a consumer of run `run`'s publication: the encoder, the locked
 /// store, the run, and the `sb_results` and `sb_counts` buffers.
 pub(super) type Consumer<'a> =
@@ -787,25 +838,14 @@ impl RetainedSubstitution {
         dispatches: &mut u32,
     ) {
         let indirect = &self.scratch["sb_dispatch"];
-        let mut pass = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_substitution"),
-                timestamp_writes: None,
-            },
-        );
+        let mut steps = Vec::new();
         let mut run = |kernel: usize, slot: Option<u64>| {
-            pass.set_pipeline(&self.passes[kernel].pipeline);
-            pass.set_bind_group(0, &binds[kernel], &[]);
-            passes_core::record_compute_dispatch();
             *dispatches += 1;
-            match slot {
-                None => pass.dispatch_workgroups(1, 1, 1),
-                Some(slot) => {
-                    passes_core::record_indirect_compute_dispatch();
-                    pass.dispatch_workgroups_indirect(indirect, 3 * slot * 4);
-                }
-            }
+            let launch = match slot {
+                None => Launch::Groups(1, 1, 1),
+                Some(slot) => Launch::Indirect(indirect, 3 * slot * 4),
+            };
+            steps.push((&self.passes[kernel], &binds[kernel], launch));
         };
         if first {
             run(K_BEGIN, None);
@@ -823,6 +863,7 @@ impl RetainedSubstitution {
         run(K_PUBLISH, Some(D_PUBLISH));
         run(K_FINISH, None);
         run(K_ROLLBACK, Some(D_ROLLBACK));
+        record_timed(encoder, "retained_substitution", &steps);
     }
 
     fn read(&self, buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>> {
@@ -961,19 +1002,11 @@ pub fn run_test_kernel(
         0,
         &entries,
     )?;
-    {
-        let mut cpass = passes_core::begin_counted_compute_pass(
-            &mut encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_substitution.test"),
-                timestamp_writes: None,
-            },
-        );
-        cpass.set_pipeline(&pass.pipeline);
-        cpass.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
-        cpass.dispatch_workgroups(lanes.div_ceil(64).max(1), 1, 1);
-    }
+    record_timed(
+        &mut encoder,
+        "retained_substitution.test",
+        &[(&pass, &bind, Launch::Groups(lanes.div_ceil(64).max(1), 1, 1))],
+    );
     queue.submit(Some(encoder.finish()));
     drop(guard);
     read_words(device, queue, &out, out_words)

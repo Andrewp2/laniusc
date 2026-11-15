@@ -440,6 +440,9 @@ impl Producer {
         } else {
             compute.dispatch_workgroups(x, y, 1);
         }
+        drop(compute);
+        // Profiled jobs need one timestamp per recorded dispatch.
+        crate::gpu::timer::stamp_active_operation(encoder, data.shader_id.clone());
     }
 }
 
@@ -1131,6 +1134,7 @@ fn query_view(gpu: &GpuTraitSolver, store: &ProgramRetention, view: RetainedTrai
             passes_core::record_compute_dispatch();
             compute.dispatch_workgroups(u32::try_from(requests.len().div_ceil(64).max(1))?, 1, 1);
         }
+        crate::gpu::timer::stamp_active_operation(&mut encoder, data.shader_id.clone());
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
         Ok(())

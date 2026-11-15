@@ -173,17 +173,12 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        {
-            let mut cpass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.native_calls"), timestamp_writes: None },
-            );
-            cpass.set_pipeline(&pass.pipeline);
-            cpass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            let groups = undefined.div_ceil(256).max(1);
-            cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
-        }
+        let groups = undefined.div_ceil(256).max(1);
+        super::substitution::record_timed(
+            &mut encoder,
+            "program_retention.native_calls",
+            &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         // The status and both symbol columns in one readback; the columns
         // are used only when the status is clean.
