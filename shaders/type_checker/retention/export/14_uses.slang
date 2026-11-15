@@ -16,6 +16,7 @@
 // function or method is its declaration key, a dependency function its
 // (library, unit, local) triple, an enum constructor its enum's DeclId.
 import hir_records;
+import primitive_types;
 import checked_semantic_artifact;
 import type_checker.canonical.canonical_api;
 import type_checker.retention.retention_store;
@@ -168,11 +169,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (callee != 0u) env = callee_env(env, callee);
     bool call_row = kind == HIR_CALL_EXPR;
     // A call whose artifact publishes no result (a unit method statement,
-    // `assert`) takes its row's checked expression type, which is the
-    // checker's own result for the call (unit, never or a value type). An
-    // untranslatable result stays untranslated; no result is defaulted.
+    // `assert`) may take the row's unit or never type. Value-returning
+    // calls require their accepted call result: a scalar-cache nominal
+    // code can name the declaration without its generic arguments.
     uint result = call_row ? translate_checked(call.return_ref_tag, call.return_ref_payload) : row_term;
-    if (call_row && result == RT_NONE) result = row_term;
+    if (call_row && result == RT_NONE && (row_term == SCALAR_UNIT || row_term == SCALAR_NEVER)) result = row_term;
     uint matched = call_row ? translate_checked(call.receiver_matched_ref_tag, call.receiver_matched_ref_payload) : RT_NONE;
     uint receiver = call_row ? translate_checked(call.receiver_parameter_ref_tag, call.receiver_parameter_ref_payload) : RT_NONE;
     // The receiver parameter is the accepted plan of methods/08_finalize_

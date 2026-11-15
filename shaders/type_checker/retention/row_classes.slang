@@ -114,8 +114,9 @@ public static const uint RT_ROLE_BOUND = 4u;
 // A match pattern that names an enum variant (`Ok(_)`, `None`), or the
 // wildcard `_`. It matches; it produces no value, so it needs no type. A
 // variant's identity is the row's binding (r5), the matched type is the
-// scrutinee's term, and named payload binders are value rows with their own
-// types.
+// scrutinee's term at the top level, or the enclosing payload's substituted
+// schema type for a nested pattern. Named payload binders are value rows
+// with their own types.
 public static const uint RT_ROLE_PATTERN = 5u;
 
 public bool rt_value_kind(uint kind)

@@ -17,11 +17,27 @@ use laniusc_compiler::{
 use crate::common;
 
 // `enter` calls a bound trait member through a caller-scoped `&F`; `read`
-// calls inherent methods on `&Counter<T>` (a borrowed receiver, adjustment
-// 1); `by_value` auto-references a local `Counter<T>` (adjustment 2); `peek`
-// is an impl method calling its own impl's methods. `touch` returns unit,
+// calls inherent methods on `&Counter<T>` (borrow mode, one dereference);
+// `by_value` auto-references a local `Counter<T>` (borrow mode, no dereference);
+// `peek` is an impl method calling its own impl's methods. `touch` returns unit,
 // `halt` never returns. Patterns name variants with and without payloads.
+const LIBRARY: &str = r#"module ready::foreign;
+pub struct Foreign<T> { value: T }
+pub fn generic_box<T>(value: T) -> Foreign<T> { return Foreign { value: value }; }
+"#;
+
+const RESULT_LIBRARY: &str = "module core::result; pub enum Result<T, E> { Ok(T), Err(E) }";
+
+const TRY_ITEM: &str = r#"
+fn echo<T, E>(value: core::result::Result<T, E>) -> core::result::Result<T, E> {
+    let extracted: T = value?;
+    return core::result::Ok(extracted);
+}
+"#;
+
 const SOURCE: &str = r#"module ready::a;
+import ready::foreign;
+import core::result;
 pub trait Mapper<T, U> { pub fn apply(&self, value: T) -> U; }
 pub trait Marker {}
 pub struct Counter<T> { value: T }
@@ -29,6 +45,7 @@ pub impl<T> Counter<T> {
     pub fn get(&self) -> T { return self.value; }
     pub fn touch(&self) { }
     pub fn peek(&self) -> T { self.touch(); return self.get(); }
+    pub fn take(self) -> T { return self.value; }
 }
 pub enum Choice<A, B> { Left(A), Right(B) }
 pub enum Wrap<E> { Value(E), Empty }
@@ -36,6 +53,8 @@ fn halt() -> ! { assert(false); }
 fn enter<F, T, U>(f: &F, value: T) -> U where F: Mapper<T, U> { return f.apply(value); }
 fn read<T>(c: &Counter<T>) -> T { c.touch(); return c.get(); }
 fn by_value<T>(c: Counter<T>) -> T { return c.get(); }
+fn twice_borrowed<T>(c: & &Counter<T>) -> T { return c.get(); }
+fn consume<T>(c: Counter<T>) -> T { return c.take(); }
 fn left_or_halt<A, B>(c: Choice<A, B>) -> A { return match (c) { Left(inner) -> inner, Right(_) -> halt() }; }
 fn left_or<A, B>(c: Choice<A, B>, fallback: A) -> A { return match (c) { Left(inner) -> inner, Right(_) -> fallback }; }
 fn is_left<A, B>(c: Choice<A, B>) -> bool { return match (c) { Left(_) -> true, Right(_) -> false }; }
@@ -47,12 +66,13 @@ fn checked<T>(v: T, n: i32) -> T { assert(n >= 0); return v; }
 fn by_ref<T, U>(value: T, other: U) -> T where U: Mapper<T, T>, T: Marker { return value; }
 fn inline<T: Mapper<T, T>, U>(value: T, other: U) -> T { return value; }
 fn plain(c: Counter<i32>) -> i32 {
+    let foreign = generic_box(6);
     c.touch();
     assert(c.get() > 0);
     let w: Wrap<i32> = Wrap::Value(1);
     let x: Choice<i32, bool> = Choice::Left(2);
     let held: bool = match (w) { Value(_) -> true, Empty -> false };
-    return match (x) { Left(v) -> v, Right(_) -> halt() };
+    return (match (x) { Left(v) -> v, Right(_) -> halt() }) + foreign.value - 6;
 }
 fn main() -> i32 { return plain(Counter { value: 1 }); }
 "#;
@@ -65,6 +85,7 @@ const RT_FIRST_TERM: u32 = 32;
 const PARAM_BIT: u32 = 0x8000_0000;
 const ID_MASK: u32 = 0x1fff_ffff;
 const KIND_REF: u32 = 5;
+const KIND_NAMED: u32 = 2;
 const FORM_DIRECT: u32 = 1;
 const FORM_METHOD: u32 = 2;
 const FORM_CONSTRUCTOR: u32 = 4;
@@ -80,6 +101,7 @@ const HIR_CALL: u32 = 19;
 const HIR_NAME: u32 = 22;
 const HIR_PATH: u32 = 33;
 const HIR_MATCH: u32 = 34;
+const HIR_TRY: u32 = 36;
 
 fn fnv1a(text: &str) -> u32 {
     text.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193))
@@ -214,7 +236,9 @@ fn export() -> (Arc<ProgramRetention>, Store) {
     let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
     store.begin_build().unwrap();
     compiler.attach_program_retention(Some(store.clone()));
-    pollster::block_on(compiler.semantic_interface_for_source_pack(30, &[SOURCE])).expect("job");
+    let library = pollster::block_on(compiler.semantic_interface_for_source_pack(29, &[LIBRARY, RESULT_LIBRARY])).expect("library");
+    let source = format!("{SOURCE}\n{TRY_ITEM}");
+    pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(30, &[&source], &[library])).expect("job");
     compiler.attach_program_retention(None);
     pollster::block_on(compiler.release_resident_job_buffers());
     drop(compiler);
@@ -249,30 +273,33 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
     // scope, and it is the matched receiver (adjustment 1) or a reference
     // to it (adjustment 2).
     let mut receivers = [0usize; 3];
-    for (caller, expect) in [("fn enter<", 0), ("fn read<", 1), ("fn by_value<", 2), ("fn peek(", 1)] {
+    for (caller, expect, derefs) in [("fn enter<", 2, 1), ("fn read<", 2, 1), ("fn by_value<", 2, 0),
+        ("fn peek(", 2, 1), ("fn twice_borrowed<", 2, 2), ("fn consume<", 1, 0)] {
         let decl = s.named(caller);
         let parent = s.entry(decl)[2];
         let methods = s.uses_of(decl).into_iter().filter(|u| u[2] & 0xff == FORM_METHOD).collect::<Vec<_>>();
         assert!(!methods.is_empty(), "{caller} has method uses");
         for u in methods {
             let (matched, receiver, adjust) = (u[6], u[7], (u[2] >> 8) & 0xff);
+            assert_eq!(adjust, expect, "{caller}: the selector's actual adjustment: {u:?}");
+            assert_eq!(u[2] >> 16, derefs, "{caller}: dereference depth: {u:?}");
             for owner in s.owners(receiver).into_iter().chain(s.owners(matched)) {
                 assert!(owner == 0 || owner == decl || owner == parent,
                     "{caller}: receiver terms are caller-scoped: {u:?}");
             }
             assert_ne!(s.owners(receiver), [0, 0], "{caller}: the receiver is symbolic in the template");
             match adjust {
-                1 => assert_eq!(receiver, matched, "{caller}: a borrowed receiver is passed as matched"),
+                1 => assert_eq!(receiver, matched, "{caller}: by-value self is passed as matched"),
                 2 => {
                     assert_eq!(s.kind(receiver), KIND_REF, "{caller}: auto-reference: {u:?}");
                     assert_eq!(s.arg(receiver, 0), matched, "{caller}: &matched");
                 }
                 _ => panic!("{caller}: unexpected receiver adjustment {u:?}"),
             }
-            receivers[expect.min(2)] += 1;
+            receivers[adjust as usize] += 1;
         }
     }
-    assert!(receivers.iter().all(|n| *n > 0), "bound, borrowed and auto-referenced receivers: {receivers:?}");
+    assert!(receivers[1..].iter().all(|n| *n > 0), "value and borrow adjustments: {receivers:?}");
 
     // Call results: unit statements, the never-returning call and the
     // assert intrinsic carry the checker's authoritative result.
@@ -360,6 +387,15 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
     }
     let rows = s.body_rows(is_left);
     assert_eq!(rows.iter().find(|r| r[0] == HIR_MATCH).unwrap()[12], TERM_BOOL);
+    let echo = s.named("fn echo<");
+    let rows = s.body_rows(echo);
+    let tried = rows.iter().find(|r| r[0] == HIR_TRY).expect("value? row");
+    assert_eq!(tried[14], ROLE_VALUE);
+    assert_eq!(s.leaf_owner(tried[12]), echo, "the try payload names echo's T");
+    let extracted = rows.iter().filter(|r| r[14] == ROLE_VALUE && s.token_hash(echo, r[2]) == fnv1a("extracted"))
+        .collect::<Vec<_>>();
+    assert!(!extracted.is_empty());
+    assert!(extracted.iter().all(|r| r[12] == tried[12]));
 
     // Bounds are not value types. Each BOUND row names its predicate record
     // by ordinal: the record's owner is the function and its ordinal is the
@@ -384,10 +420,18 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
     // The acceptance probe instantiates the bounded templates from the
     // store and checks every row reference, including the BOUND links.
     let requests = [("fn by_ref<", [2, 3, TERM_BOOL]), ("fn inline<", [2, 3, TERM_BOOL]),
-        ("fn left_or_halt<", [2, 3, TERM_BOOL]), ("fn is_value<", [1, 3, 0])];
+        ("fn left_or_halt<", [2, 3, TERM_BOOL]), ("fn is_value<", [1, 3, 0]),
+        ("fn echo<", [2, 3, TERM_BOOL])];
     let requests = requests.map(|(name, [n, a, b])| [s.named(name), n, a, b]);
     let words = store.resolve_probe(&requests).unwrap();
     let lanes = words.chunks_exact(PROBE_WORDS).collect::<Vec<_>>();
+    let foreign_use = s.uses.chunks_exact(12).position(|u| u[0] == plain && u[3] == s.named("fn generic_box<"))
+        .expect("plain calls the imported generic");
+    let lane = lanes[foreign_use];
+    assert_eq!(lane[0], 1, "the actual imported use is eligible: {lane:?}");
+    assert_eq!(lane[4], 0, "callee signature substitutes successfully: {lane:?}");
+    assert_eq!(lane[2], lane[3], "the use result equals the callee's realized signature: {lane:?}");
+    assert!(lane[2] >= RT_FIRST_TERM && lane[2] < PARAM_BIT, "generic nominal result: {lane:?}");
     for (lane, request) in lanes[lanes.len() - requests.len()..].iter().zip(&requests) {
         assert_eq!(lane[0], 1, "eligible: {request:?} {lane:?}");
         assert_eq!((lane[7], lane[9], lane[20]), (0, 0, 0), "failed, bad references, missing: {lane:?}");
@@ -395,4 +439,56 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
     for decl in s.texts().iter().map(|(d, _)| *d) {
         assert_eq!(s.seg(decl)[12..16], [0, 0, 0, 0], "segment statistics of {decl}");
     }
+}
+
+#[test]
+fn program_retention_requires_accepted_value_call_results() {
+    let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only())).unwrap();
+    let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    compiler.attach_program_retention(Some(store.clone()));
+    let source = "module ready::fault; import ready::foreign; fn main()->i32 { let value = generic_box(7); return value.value; }";
+    for missing in [false, true] {
+        store.begin_build().unwrap();
+        store.set_export_fault(None);
+        let library = pollster::block_on(compiler.semantic_interface_for_source_pack(29, &[LIBRARY])).unwrap();
+        if missing { store.set_missing_call_results_fault(); }
+        pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(30, &[source], &[library])).unwrap();
+        let reports = store.job_reports();
+        assert!(reports[0].ready, "the defining unit is complete");
+        assert_eq!(reports[1].ready, !missing, "{reports:?}");
+        let s = Store::read(&store);
+        let callee = s.named("fn generic_box<");
+        let call = s.uses.chunks_exact(12).find(|u| u[3] == callee).expect("imported generic call");
+        if missing {
+            assert_eq!(call[5], RT_NONE, "no scalar-cache replacement for a missing accepted value result");
+            assert!(reports[1].counts[counts::INCOMPLETE] > 0);
+        } else {
+            assert_eq!(s.kind(call[5]), KIND_NAMED, "the nominal result has its argument");
+            assert_eq!(s.arg(call[5], 0), 3);
+        }
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn generic_try_payload_keeps_each_instance_type() {
+    let source = format!("module ready::try_runtime; import core::result; {TRY_ITEM}\n{}", r#"
+struct Pair { left: i64, right: i32 }
+fn main() -> i32 {
+    let integer: Result<i32, bool> = echo<i32, bool>(Ok(41));
+    let pair: Result<Pair, i32> = echo<Pair, i32>(Ok(Pair { left: 4000000000, right: 9 }));
+    let failed: Result<Pair, i32> = echo<Pair, i32>(Err(7));
+    if (match (integer) { Ok(v) -> v, Err(_) -> 0 } != 41) { return 1; }
+    let got = match (pair) { Ok(v) -> v, Err(_) -> Pair { left: 0, right: 0 } };
+    if (got.left != 4000000000 || got.right != 9) { return 2; }
+    if (match (failed) { Ok(_) -> 0, Err(e) -> e } != 7) { return 3; }
+    return 42;
+}
+"#);
+    let bytes = common::run_gpu_codegen_with_timeout("generic try payload types", move || {
+        let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::x86_only())).unwrap();
+        pollster::block_on(compiler.compile_source_pack_to_x86_64(&[RESULT_LIBRARY, &source]))
+    }).expect("generic try compiles");
+    let output = common::run_x86_64_elf_output("generic try payload types", "retention_generic_try", &bytes);
+    assert_eq!(output.status.code(), Some(42), "{output:?}");
 }

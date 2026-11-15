@@ -48,8 +48,10 @@ together on the integrated tree; their logs are in
 [substitution guide](compiler-retained-substitution.md) defines the API.
 
 These checks establish retained-data readiness, not executable admission.
-The new path still needs GPU catalog admission, discovery, concrete
-layout and row projection, call/ABI certification and native publication.
+GPU catalog admission has a focused
+[retained catalog API](compiler-retained-trait-catalog.md). Discovery still
+needs to consume its evidence and connect concrete layout and row projection,
+call/ABI certification and native publication.
 The general compiler still uses source replay. Retained original jobs skip
 in-place specialization to preserve symbolic templates; their output bytes
 differ from ordinary builds, and the settings census did not check execution

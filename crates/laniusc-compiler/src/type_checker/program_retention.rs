@@ -416,6 +416,12 @@ pub struct RetentionBytes {
     pub streamable_bodies: u64,
 }
 
+#[derive(Clone, Copy)]
+enum ExportFault {
+    Fill(&'static str, u32),
+    MissingCallResults,
+}
+
 /// The build-scoped store. Attach it to a compiler with
 /// `GpuCompiler::attach_program_retention`; each interface job then exports
 /// into it before its workspace is reused.
@@ -426,9 +432,8 @@ pub struct ProgramRetention {
     rehash: PassData,
     resolve: Mutex<Option<PassData>>,
     trait_probe: Mutex<Option<PassData>>,
-    /// Test fault: (job table, word) written over that whole snapshot table
-    /// before each export attempt.
-    export_fault: Mutex<Option<(&'static str, u32)>>,
+    /// Test fault applied to the export's snapshot, never the frontend.
+    export_fault: Mutex<Option<ExportFault>>,
     store: Mutex<Store>,
     /// Every job table name an export kernel binds.
     job_inputs: std::collections::BTreeSet<String>,
@@ -619,9 +624,21 @@ impl ProgramRetention {
             tokens: table_words(job, "decl_id_by_name_token")?.max(1),
             job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
         };
-        if let Some((name, word)) = *self.export_fault.lock().unwrap() {
-            let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
-            self.queue.write_buffer(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
+        if let Some(fault) = *self.export_fault.lock().unwrap() {
+            match fault {
+                ExportFault::Fill(name, word) => {
+                    let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
+                    self.queue.write_buffer(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
+                }
+                ExportFault::MissingCallResults => {
+                    let table = &job["semantic_calls_by_hir"];
+                    let stride = std::mem::size_of::<super::GpuCheckedCallArtifact>();
+                    let field = std::mem::offset_of!(super::GpuCheckedCallArtifact, return_ref_tag) as u64;
+                    for row in (0..table.size).step_by(stride) {
+                        self.queue.write_buffer(&table.buffer, table.offset + row + field, &[0; 8]);
+                    }
+                }
+            }
         }
         let mut store = self.store.lock().unwrap();
         if store.scratch_shape != Some(shape) {
@@ -916,7 +933,14 @@ impl ProgramRetention {
     /// with `word` (the frontend's own tables are untouched), or clears it.
     #[doc(hidden)]
     pub fn set_export_fault(&self, fault: Option<(&'static str, u32)>) {
-        *self.export_fault.lock().unwrap() = fault;
+        *self.export_fault.lock().unwrap() = fault.map(|(name, word)| ExportFault::Fill(name, word));
+    }
+
+    /// Test fault: remove accepted call results while preserving the
+    /// callee, environment and expression rows. Clear with set_export_fault(None).
+    #[doc(hidden)]
+    pub fn set_missing_call_results_fault(&self) {
+        *self.export_fault.lock().unwrap() = Some(ExportFault::MissingCallResults);
     }
 
     /// Test fault: overwrites words of a store buffer from `offset` words.

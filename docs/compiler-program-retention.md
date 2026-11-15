@@ -203,8 +203,9 @@ committed definition of the same declaration is counted in
     matches a value and constructs none, so it is no discovery root. A use
     without a call has no environment and records its row's term as its
     result. A call whose artifact publishes no result (a unit method
-    statement, `assert`) records its row's checked expression type: unit,
-    never (`-> !`) or a value type. A result is never defaulted.
+    statement, `assert`) may record its row's unit or never (`-> !`) type.
+    A value-returning call must publish an accepted call result; its scalar
+    cache is not a substitute, since a nominal code can omit type arguments.
   - u1 `(environment, result, matched receiver, receiver parameter)`. The
     environment is the call's value environment with owner 0 re-keyed to the
     callee. A nonzero owner must already match the callee; a mismatch raises
@@ -365,8 +366,9 @@ Row terms and roles:
   variant (`Ok(_)`, `None`, `Error::Busy`), or the wildcard `_` (one token
   spelled `_`). A variant's identity is its binding (r5). The row keeps
   its checked term when the checker publishes one and needs none. The
-  matched type is the scrutinee's term. Named payload binders (`inner`)
-  and literal patterns stay VALUE rows with their types.
+  matched type is the scrutinee's term at the top level, or the enclosing
+  payload's substituted schema type for a nested pattern. Named payload
+  binders (`inner`) and literal patterns stay VALUE rows with their types.
 - A variant constructor's callee (`Wrap::Value` in `Wrap::Value(e)`) keeps
   no term. The checker types that row with the enum's declared self
   application over the enum's own parameters, which is a schema fact. The
@@ -447,6 +449,16 @@ This bit checks the current exported schema; it is not code-generation
 admission and does not certify the missing fields listed below. Tests check
 every job's report, resolved expected types and each callee's incomplete flag.
 
+`program_retention_readiness` checks the selector's actual receiver mode
+and dereference depth, a retained imported call's result against its
+substituted signature, and generic `?` payload ownership and execution at
+scalar and aggregate types. Its fault test removes only accepted call
+results from the export snapshot: the defining unit stays ready, while the
+calling unit must become incomplete. Restoring the unrestricted row-type
+fallback makes that test fail because the calling unit still reports ready.
+The focused run and negative control are in
+`target/retention-readiness-review-evidence/` in the integration worktree.
+
 ## Work distribution
 
 All semantic work runs on the GPU. The host allocates buffers, clears job
@@ -456,7 +468,9 @@ words and 256 scratch words.
 The export records 187 dispatches per attempt: 28 kernels, including 79
 translation/advance pairs and the three scan kernels, which run twice. Empty translation
 heights dispatch no translation workgroups, but their advance dispatches
-still run. This boundary has not yet been timed on settings.
+still run. The settings export receipt is recorded in the
+[retained-program checkpoint](compiler-gpu-instantiation.md#retained-program-checkpoint-2026-11-14);
+it does not measure the complete path without source replay.
 
 | Step | Lanes | Work |
 | --- | --- | --- |
