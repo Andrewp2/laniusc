@@ -18,7 +18,7 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     pending_originals: Vec<PendingOriginalUnit>,
     native_link: Option<NativeLinkOptions>,
     retained_originals: Option<Vec<CompiledSourcePackObject>>,
-    retained_spill: bool,
+    retained_spill: super::typecheck::NativeObjectStore,
     retained_native_functions: Vec<NativeCFunction>,
     retained_sources: Vec<super::retained_native::RetainedDiagnosticSources>,
 }
@@ -72,7 +72,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
         Self {
             compiler, target, pending_originals: Vec::new(), native_link: None,
-            retained_originals: None, retained_spill: false,
+            retained_originals: None, retained_spill: super::typecheck::NativeObjectStore::Keep,
             retained_native_functions: Vec::new(),
             retained_sources: Vec::new(),
         }
@@ -80,7 +80,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
 
     /// Spill original x86 sections after each unit; semantic templates stay
     /// in the build-scoped GPU store.
-    pub(super) fn spill_objects(mut self, spill:bool)->Self {
+    pub(super) fn spill_objects(mut self, spill:super::typecheck::NativeObjectStore)->Self {
         self.retained_spill=spill;
         self
     }

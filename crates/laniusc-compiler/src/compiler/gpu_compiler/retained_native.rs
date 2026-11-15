@@ -221,7 +221,7 @@ impl GpuCompiler<'_> {
         if !native.is_empty() {
             return Err(super::x86_codegen::x86_native_link_required_error(&native));
         }
-        match self.link_retained(target,vec![pending.release_closed()], &[], build, false, None)? {
+        match self.link_retained(target,vec![pending.release_closed()], &[], build, typecheck::NativeObjectStore::Keep, None)? {
             ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
             ResidentLinkedOutput::File(_) => unreachable!("no output file requested"),
         }
@@ -308,17 +308,26 @@ impl GpuCompiler<'_> {
     ) -> Result<ResidentLinkedOutput, CompileError> {
         build.report = RetainedNativeReport::default();
         let limits = self.resident_source_unit_limits();
-        let spill = target==SourcePackArtifactTarget::X86_64 && (output.is_some() || build.native_link.is_some()
-            || source_pack.requires_bounded_compilation_with_limits(limits));
+        // A bounded build keeps object sections in private files; any other
+        // file or native build keeps them in memory.
+        let store = if target != SourcePackArtifactTarget::X86_64 {
+            typecheck::NativeObjectStore::Keep
+        } else if source_pack.requires_bounded_compilation_with_limits(limits) {
+            typecheck::NativeObjectStore::Disk
+        } else if output.is_some() || build.native_link.is_some() {
+            typecheck::NativeObjectStore::Memory
+        } else {
+            typecheck::NativeObjectStore::Keep
+        };
         build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
         *self.retained_native_calls.lock().unwrap() = build.calls.take();
         self.attach_program_retention(Some(build.store.clone()));
-        let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), spill).await;
+        let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), store).await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
         let (originals, native_functions, sources) = originals?;
         build.sources = sources;
-        self.link_retained(target,originals, &native_functions, build, spill, output)
+        self.link_retained(target,originals, &native_functions, build, store, output)
     }
 
     async fn compile_retained_originals(
@@ -327,7 +336,7 @@ impl GpuCompiler<'_> {
         source_pack: &ExplicitSourcePackPathManifest,
         limits: CompilationUnitLimits,
         native_link: Option<&NativeLinkOptions>,
-        spill: bool,
+        spill: typecheck::NativeObjectStore,
     ) -> Result<(Vec<CompiledSourcePackObject>, Vec<NativeCFunction>, Vec<RetainedDiagnosticSources>), CompileError> {
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
@@ -353,9 +362,10 @@ impl GpuCompiler<'_> {
         mut originals: Vec<CompiledSourcePackObject>,
         native_functions: &[NativeCFunction],
         build: &mut RetainedNativeBuild,
-        spill: bool,
+        object_store: typecheck::NativeObjectStore,
         output: Option<&Path>,
     ) -> Result<ResidentLinkedOutput, CompileError> {
+        let spill = object_store.file_object();
         let store = build.store.clone();
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
@@ -405,8 +415,8 @@ impl GpuCompiler<'_> {
                 |bytes,tokens,rows,hir,semantic| {
                     let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
                         x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE)?;
-                    if spill { object.spill_native().map_err(|e|anyhow::anyhow!("{e:?}")) }
-                    else { Ok(object) }
+                    let _span = x86::TailSpan::new("tail.instance.spill");
+                    object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))
                 },
             )
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
@@ -414,6 +424,8 @@ impl GpuCompiler<'_> {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
             ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
         };
+        let _tail = x86::TailSpan::new("tail.after_projection");
+        let finalize_span = x86::TailSpan::new("tail.finalize");
         let finalizer = match &mut build.finalizer {
             Some(finalizer) => finalizer,
             slot => slot.insert(
@@ -443,6 +455,7 @@ impl GpuCompiler<'_> {
                 CompiledSourcePackObject::Wasm(object) => columns.apply_to_wasm_object(object),
             }.map_err(|e| retained_error("finalize", e))?;
         }
+        drop(finalize_span);
         build.report = RetainedNativeReport {
             units: originals.len(),
             instance_objects: instances.len(),
@@ -481,8 +494,11 @@ impl GpuCompiler<'_> {
         let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         if let Some(options) = &build.native_link {
             let bridge = super::native_codegen::native_main_bridge(&objects)?;
+            let plan_span = x86::TailSpan::new("tail.native.plan");
             let plan = x86::native::plan_native_link(&objects, native_functions, bridge, options)
                 .map_err(|e| retained_error("native link plan", e))?;
+            drop(plan_span);
+            let _write_span = x86::TailSpan::new("tail.native.link_write");
             if let x86::native::NativeLinkPlan::Gpu { input, image } = &plan {
                 return match output {
                     Some(path) => super::bounded_path_codegen::write_output_file_atomically(

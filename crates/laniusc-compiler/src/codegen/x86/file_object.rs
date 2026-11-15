@@ -45,10 +45,17 @@ impl Eq for GpuX86FileObject {}
 
 #[derive(Debug)]
 struct FilePayload {
-    directory: PrivateDirectory,
+    storage: PayloadStorage,
     text_len: u32,
     rodata_len: u32,
     original_entry_offset: Option<u32>,
+}
+
+/// Section bytes: text then rodata, in a private file or in memory.
+#[derive(Debug)]
+enum PayloadStorage {
+    File(PrivateDirectory),
+    Memory(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -89,6 +96,51 @@ impl Drop for PrivateDirectory {
 impl GpuX86FileObject {
     /// Consumes one accepted object and releases both section vectors after
     /// writing them once. No serialized copy of the complete object is built.
+    /// Consumes one accepted object and keeps its sections in memory. A
+    /// build that need not bound its memory uses this instead of `spill`.
+    pub(crate) fn resident(mut object: GpuX86RelocatableObject) -> Result<Self, String> {
+        debug_assert_eq!(object.validate(), Ok(()));
+        let text_len = object.text.len() as u32;
+        let rodata_len = object.rodata.len() as u32;
+        let mut bytes = std::mem::take(&mut object.text);
+        bytes.extend_from_slice(&object.rodata);
+        Self::from_payload(object, PayloadStorage::Memory(bytes), text_len, rodata_len)
+    }
+
+    fn from_payload(
+        object: GpuX86RelocatableObject,
+        storage: PayloadStorage,
+        text_len: u32,
+        rodata_len: u32,
+    ) -> Result<Self, String> {
+        let mut stored = Self {
+            layout: GpuX86RelocatableObjectLayout {
+                version: object.version,
+                library_id: object.library_id,
+                unit_id: object.unit_id,
+                entry_offset: object.entry_offset,
+                body: object.body,
+                text_byte_len: text_len,
+                rodata_byte_len: rodata_len,
+                relocation_count: 0,
+                symbol_count: 0,
+                identity_byte_len: 0,
+                serialized_byte_len: 0,
+            },
+            relocations: object.relocations,
+            symbols: object.symbols,
+            identity_bytes: object.identity_bytes,
+            payload: Arc::new(FilePayload {
+                storage,
+                text_len,
+                rodata_len,
+                original_entry_offset: object.entry_offset,
+            }),
+        };
+        stored.refresh_layout()?;
+        Ok(stored)
+    }
+
     pub(crate) fn spill(object: GpuX86RelocatableObject) -> Result<Self, String> {
         object.validate()?;
         let text_len = object.text.len() as u32;
@@ -118,32 +170,7 @@ impl GpuX86FileObject {
         file.set_permissions(permissions)
             .map_err(|error| format!("protect native object payload: {error}"))?;
         drop(file);
-        let mut stored = Self {
-            layout: GpuX86RelocatableObjectLayout {
-                version: object.version,
-                library_id: object.library_id,
-                unit_id: object.unit_id,
-                entry_offset: object.entry_offset,
-                body: object.body,
-                text_byte_len: text_len,
-                rodata_byte_len: rodata_len,
-                relocation_count: 0,
-                symbol_count: 0,
-                identity_byte_len: 0,
-                serialized_byte_len: 0,
-            },
-            relocations: object.relocations,
-            symbols: object.symbols,
-            identity_bytes: object.identity_bytes,
-            payload: Arc::new(FilePayload {
-                directory,
-                text_len,
-                rodata_len,
-                original_entry_offset: object.entry_offset,
-            }),
-        };
-        stored.refresh_layout()?;
-        Ok(stored)
+        Self::from_payload(object, PayloadStorage::File(directory), text_len, rodata_len)
     }
 
     /// Refresh counts after specialization changes identities or definitions.
@@ -198,9 +225,12 @@ impl GpuX86FileObject {
             &self.symbols,
             &self.identity_bytes,
         )?;
-        let actual = fs::metadata(self.payload.directory.0.join("payload"))
-            .map_err(|error| format!("stat native object payload: {error}"))?
-            .len();
+        let actual = match &self.payload.storage {
+            PayloadStorage::File(directory) => fs::metadata(directory.0.join("payload"))
+                .map_err(|error| format!("stat native object payload: {error}"))?
+                .len(),
+            PayloadStorage::Memory(bytes) => bytes.len() as u64,
+        };
         if actual != u64::from(self.payload.text_len) + u64::from(self.payload.rodata_len) {
             return Err("native object payload length changed after spilling".into());
         }
@@ -226,8 +256,11 @@ impl GpuX86FileObject {
 
     /// The immutable section file. Link inputs borrow its ranges while the
     /// owning objects keep the private directory alive.
-    pub(super) fn payload_path(&self) -> PathBuf {
-        self.payload.directory.0.join("payload")
+    pub(super) fn payload_path(&self) -> Option<PathBuf> {
+        match &self.payload.storage {
+            PayloadStorage::File(directory) => Some(directory.0.join("payload")),
+            PayloadStorage::Memory(_) => None,
+        }
     }
 
     /// Copies one range of the object's text section.
@@ -251,7 +284,20 @@ impl GpuX86FileObject {
     }
 
     fn copy_range<W: Write>(&self, start: u64, len: u32, output: &mut W) -> Result<u64, String> {
-        let mut file = File::open(self.payload.directory.0.join("payload"))
+        let directory = match &self.payload.storage {
+            PayloadStorage::File(directory) => directory,
+            PayloadStorage::Memory(bytes) => {
+                let bytes = usize::try_from(start)
+                    .ok()
+                    .and_then(|start| bytes.get(start..start + len as usize))
+                    .ok_or("native object payload was truncated")?;
+                output
+                    .write_all(bytes)
+                    .map_err(|error| format!("copy native object payload: {error}"))?;
+                return Ok(u64::from(len));
+            }
+        };
+        let mut file = File::open(directory.0.join("payload"))
             .map_err(|error| format!("open native object payload: {error}"))?;
         file.seek(SeekFrom::Start(start))
             .map_err(|error| format!("seek native object payload: {error}"))?;
@@ -302,7 +348,8 @@ mod tests {
     #[test]
     fn spill_preserves_opaque_sections_and_clone_lifetime() {
         let stored = GpuX86FileObject::spill(object()).unwrap();
-        let directory = stored.payload.directory.0.clone();
+        let PayloadStorage::File(directory) = &stored.payload.storage else { unreachable!() };
+        let directory = directory.0.clone();
         let mut cloned = stored.clone();
         drop(stored);
         cloned.layout.unit_id = 99;
@@ -338,7 +385,7 @@ mod tests {
         stored.layout.text_byte_len += 1;
         assert!(stored.validate().unwrap_err().contains("frozen payload"));
         stored.layout.text_byte_len -= 1;
-        let path = stored.payload.directory.0.join("payload");
+        let path = stored.payload_path().unwrap();
         let mut permissions = fs::metadata(&path).unwrap().permissions();
         #[cfg(unix)]
         {

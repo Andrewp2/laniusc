@@ -2341,8 +2341,8 @@ pub(super) struct PendingOriginalUnit {
 
 impl PendingOriginalUnit {
     /// Storage changes do not change the immutable facts or release this unit.
-    pub(super) fn spill_native(mut self) -> Result<Self, CompileError> {
-        self.unit.object = self.unit.object.spill_native()?;
+    pub(super) fn spill_native(mut self, store: NativeObjectStore) -> Result<Self, CompileError> {
+        self.unit.object = self.unit.object.spill_native(store)?;
         Ok(self)
     }
 
@@ -2618,13 +2618,37 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
 }
 
+/// Where a native build keeps object sections between lowering and the link.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::compiler) enum NativeObjectStore {
+    /// The ordinary resident object.
+    Keep,
+    /// A native file object whose sections stay in memory.
+    Memory,
+    /// A native file object whose sections are in a private file.
+    Disk,
+}
+
+impl NativeObjectStore {
+    pub(in crate::compiler) fn file_object(self) -> bool {
+        self != Self::Keep
+    }
+}
+
 /// Target-neutral original and instance objects.
 impl CompiledSourcePackObject {
-    /// Spill a native-profile object before it enters the program inventory.
-    pub(super) fn spill_native(self) -> Result<Self, CompileError> {
+    /// Store a native-profile object's sections before it enters the program
+    /// inventory: in memory, or in a private file for a bounded build.
+    pub(super) fn spill_native(self, store: NativeObjectStore) -> Result<Self, CompileError> {
         match self {
-            Self::X86_64(object) => crate::codegen::x86::GpuX86FileObject::spill(object)
-                .map(Self::X86_64File).map_err(super::source_pack_artifact_store_error),
+            Self::X86_64(object) => match store {
+                NativeObjectStore::Keep => Ok(Self::X86_64(object)),
+                NativeObjectStore::Memory => Ok(Self::X86_64File(
+                    crate::codegen::x86::GpuX86FileObject::resident(object)
+                        .map_err(super::source_pack_artifact_store_error)?)),
+                NativeObjectStore::Disk => crate::codegen::x86::GpuX86FileObject::spill(object)
+                    .map(Self::X86_64File).map_err(super::source_pack_artifact_store_error),
+            },
             Self::X86_64File(_) => Ok(self),
             Self::Wasm(_) => Err(super::source_pack_artifact_store_error(
                 "native C storage received a Wasm object")),

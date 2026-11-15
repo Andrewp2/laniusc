@@ -321,10 +321,10 @@ impl GpuX86Linker {
         dynamic: Option<&X86DynamicImage>,
         consume_page: impl FnMut(u32, &[u8]) -> Result<()>,
     ) -> Result<usize> {
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.symbols");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.symbols");
         let resolved_relocations = self.resolve_symbol_relocations(device, queue, input)?;
         drop(span);
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.plan");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.plan");
         let dynamic_len = match dynamic {
             Some(image) => {
                 let layout = image.layout(input)?;
@@ -344,14 +344,14 @@ impl GpuX86Linker {
         let output_capacity_u32 = u32::try_from(output_capacity)
             .map_err(|_| anyhow::anyhow!("x86 linked output exceeds the 32-bit ELF model"))?;
 
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.layout");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.layout");
         let object_layout =
             self.resolve_object_layout_chunks(device, queue, input, output_capacity_u32)?;
         drop(span);
         let dynamic_rows = dynamic
             .map(|image| image.rows(input, &object_layout.object_bases))
             .transpose()?;
-        let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.pages");
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages");
         let result = self.emit_executable_pages(
             device,
             queue,

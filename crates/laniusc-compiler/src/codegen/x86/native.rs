@@ -874,7 +874,7 @@ pub(crate) fn plan_native_link(
         "native C linking currently supports Linux x86_64/glibc hosts"
     );
     validate_options(options)?;
-    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.validate");
+    let span = crate::codegen::x86::TailSpan::new("codegen.x86.native.validate");
     let symbols = NativeSymbols::validate(objects, bindings, main)?;
     drop(span);
     // Only foreign functions the objects reference are imported, as only
@@ -894,7 +894,7 @@ pub(crate) fn plan_native_link(
     let mut names = referenced.values().copied().collect::<Vec<_>>();
     names.sort_unstable();
     names.dedup();
-    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.resolve");
+    let span = crate::codegen::x86::TailSpan::new("codegen.x86.native.resolve");
     let imports = match resolve::resolve_native_imports(&names, options)? {
         NativeResolution::Dynamic(imports) => imports,
         NativeResolution::Driver(reason) => return Ok(NativeLinkPlan::Driver(reason)),
@@ -910,7 +910,7 @@ pub(crate) fn plan_native_link(
         .iter()
         .map(|(identity, name)| (*identity, import_index[name]))
         .collect::<Vec<_>>();
-    let span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.native.input");
+    let span = crate::codegen::x86::TailSpan::new("codegen.x86.native.input");
     let input = GpuX86LinkInput::for_native_dynamic(objects, &identities, imports.imports.len())
         .map_err(anyhow::Error::msg)?;
     drop(span);
