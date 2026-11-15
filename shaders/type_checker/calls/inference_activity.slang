@@ -3,7 +3,8 @@
 //
 // call_inference_round[0] is the round's number: 0 outside the rounds (the
 // direct passes, the lookup sweeps and the final pass) and 1 for the job's
-// first round (03z_begin_inference_round counts it up). Word 1 is the last
+// first round (the host copies round r's number from
+// call_inference_round_numbers before the round). Word 1 is the last
 // round that changed a fact outside every function, or a fact without one
 // owning function.
 //

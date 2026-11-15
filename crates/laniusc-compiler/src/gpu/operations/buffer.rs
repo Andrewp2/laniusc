@@ -626,6 +626,27 @@ impl CopyBufferOperation {
         self.size
     }
 
+    /// Records the validated copy from `shift` bytes further into the source:
+    /// one row of a source table per invocation, such as a round's number.
+    pub(crate) fn record_shifted(&self, encoder: &mut wgpu::CommandEncoder, shift: u64) {
+        assert!(
+            self.source_offset + shift + self.size <= self.source.size(),
+            "compiler copy shifted range exceeds its source"
+        );
+        record_compiler_operation(self.name);
+        if crate::gpu::passes_core::debug_operation_skipped() {
+            return;
+        }
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
+        encoder.copy_buffer_to_buffer(
+            &self.source,
+            self.source_base_offset + self.source_offset + shift,
+            &self.destination.buffer,
+            self.destination.byte_offset + self.destination_offset,
+            self.size,
+        );
+    }
+
     /// Records an active prefix of a capacity-sized copy operation. This lets
     /// daemon jobs retain the graph validation and buffer identities while
     /// varying only the number of rows copied by the current request.

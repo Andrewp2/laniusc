@@ -186,7 +186,9 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) infer_return_bindings: Option<ComputeOperation>,
     /// Zeroes the round's change count (state word 1) before each round and
     /// counts the round.
-    pub(in crate::type_checker) inference_round_reset: ComputeOperation,
+    pub(in crate::type_checker) inference_round_reset: crate::gpu::operations::ClearBufferOperation,
+    /// Copies a round's number (`record_round`) into the round word.
+    pub(in crate::type_checker) inference_round_number: crate::gpu::operations::CopyBufferOperation,
     /// Zeroes the per-function change rounds before the first round.
     pub(in crate::type_checker) inference_activity_clear: crate::gpu::operations::ClearBufferOperation,
     /// Per batch slot, the copy of the state words into the slot.
@@ -207,7 +209,8 @@ pub(in crate::type_checker) struct CallBindGroups {
 
 /// The passes of bound-directed generic call inference.
 pub(in crate::type_checker) struct BoundInferenceOperations {
-    pub(in crate::type_checker) clear: ComputeOperation,
+    /// Zeroes the bound tables' counts.
+    pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
     /// Present when the unit has dependency interfaces.
     pub(in crate::type_checker) collect_dependency: Option<ComputeOperation>,
     pub(in crate::type_checker) collect_local: ComputeOperation,
