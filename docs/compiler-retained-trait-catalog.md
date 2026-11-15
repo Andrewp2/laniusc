@@ -191,7 +191,11 @@ The host records 16 waves by default
 (`RetainedTraitOptions::closure_waves`). If terms remain unexpanded after
 the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
 the waves and runs every count pass again, as it does for a full unit
-table. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
+table. Every wave binds the same buffers, so the host creates one bind
+group per closure pass and reuses it for all waves. The closed instance
+producer does the same for its BFS rounds, and the method routes create
+one bind group per (kernel, config slot) for their fixed-point rounds.
+`02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
 closed.
 
@@ -273,6 +277,9 @@ rows, proof rows and substitutions; they choose nothing.
 (catalog epoch, batch arena id, serial, store generation). It fails when
 `store` has another `rt_counts` buffer or another build generation.
 `status()` reads header words 8-10; production consumers need not call it.
+The same readback returns the store's `rt_counts`. `take_store_counts`
+hands them, once, to the next consumer: discovery sizes its root pass with
+them instead of reading the counters again.
 The route header occupies 64 words. Publication reduces hard-refuted calls
 to the smallest retained use and copies its `rt_use_spans` record to words
 48–51. `diagnostic_span()` reads that record on failure, allowing the compiler
@@ -420,6 +427,14 @@ The host then records twice as many further rounds and repeats the
 idempotent constant, count, scan and total passes, up to 65 rounds in all.
 A frontier still pending after 65 rounds is failure code 7, as before. The
 settings app needs one batch per wave. The whole-term scans remain.
+
+The counter scan (`closed/07_scan`) is a block scan in three dispatches
+for any lane count: each 256-lane workgroup scans its lanes' two `uint4`
+counter blocks in shared memory and writes its totals to `cw_blocks`, one
+workgroup turns the totals into exclusive prefixes, and a last pass adds
+each block's prefix. The result is in `cw_scan_a` (config word 7 is 0).
+The Hillis-Steele scan it replaces took one dispatch per power of two of
+the lane count (13 to 14 for settings).
 
 Focused validation includes seven concrete calls, generic impl bindings,
 constant arguments, a 40-method impl, concurrent wave publications, stale

@@ -33,11 +33,53 @@ first failure or grows exactly as it did when it read the status between
 these passes. The substitution counts, the discovery status and the store
 counters come back in one readback. A wave without closed predicates
 therefore costs one readback, and a wave with them adds the closed
-producer, solver, publication receipt and method-route readbacks and one
-status readback after the method routes. Settings: 134 to 106 readbacks
+producer, solver and method-route readbacks. Settings: 134 to 106 readbacks
 per build, discovery about 96 to 36 ms in a back-to-back A/B.
 
+The roots follow the same path: the root request pass, the publish pass
+and resolution need no status readback between them. The closed
+publication's receipt (its route header) is copied on the GPU into
+`dg_receipt` in the wave's scan submit and comes back with the
+resolution readback; the host checks it before any growth or failure of
+that wave, and before the method routes size their tables from its proof
+node count. The bound-route pass `06_bound_routes` and the publish pass
+record into each method-route batch. They do nothing unless `mr_state`
+word 0 is 2 and `MR_PENDING` is clear, so the routes' state, the
+discovery status and the store counters come back in one readback. Term
+ranking takes the term count from the last status readback and does not
+read the status after the sort. Settings: 90 to 81 readbacks per build,
+with the same executable. Discovery takes the store's counters from the
+catalog's publication-status readback, the retention export reads its
+two counter blocks together, and the original-call symbol pass
+(`native_calls.rs`) returns its status and both symbol columns in one
+readback: 77 per build.
+
+In a wave with closed proofs, the first method-route batch also records
+into resolution's first submit, after `01_resolve` and the publish pass,
+followed by the bound routes and another publish pass. The host does not
+yet know the request count or the proof node count: the batch copies
+`sb_counts` word `REQUESTS` and receipt word 24 (admitted proof node
+rows) from `dg_receipt` into every route config on the GPU, and sizes
+lanes and tables by the request capacity and by the proof arena's words
+divided by 8 (a node row is 8 words). Selection checks that the
+substitution run is current, so a run that did not publish selects
+nothing, and `06_bound_routes` also requires that resolution left status
+12 clear. The routes' state comes back with the resolution readback.
+The host uses it when that readback came from the first batch and the
+routes finished without overflow; otherwise it runs the routes again as
+before. A wave with closed predicates then costs three readbacks: the
+producer, the solver and resolution. Settings: 74 per build.
+
 A parallel prefix scan assigns each frontier instance a range of use edges.
+It is a block scan in three dispatches (`02_scan` modes 3, 4 and 2): each
+256-lane workgroup scans its instances' use counts in shared memory and
+writes its total to `dg_scan_blocks`, one workgroup turns the totals into
+exclusive prefixes, and the placement pass adds them. The placement writes
+the inclusive prefixes to `dg_scan_a`, which the request pass searches. The
+Hillis-Steele scan it replaces took one dispatch per power of two of the
+frontier width. With the closed producer's block scan, settings records
+5346 instead of 5418 dispatches and discovery's host gaps shrink by about
+a third.
 Request production and result consumption use one lane per edge or request;
 no lane walks a function's call list. The interner may allocate unpublished
 candidate records under contention. They are tombstoned and omitted from
@@ -55,6 +97,15 @@ ranked children. Scalars retain their fixed codes. Each comparison visits only
 the record's bounded argument list; it does not recursively walk a term graph.
 Instances are then sorted by declaration identity and ENV rank. Neither hashes
 nor allocation-order TermIds decide the final instance rank.
+
+Each resolution submit ends with a level count (`03_term_order` mode 6)
+over the store's term capacity, and the counts come back with that
+readback. After the last wave nothing interns terms, so ranking takes the
+level counts from the last readback when it came from resolution's first
+batch and no method routes ran after it; otherwise it counts and reads
+them as before. Mode 6 skips a term without a valid height, which mode 1
+then reports as before. Discovery's last readback after ranking returns
+the status: settings needs 73 readbacks per build.
 
 The implementation uses bitonic sorts within each height and over the instance
 set. Work is O(sum N_h log² N_h + I log² I), with bounded-arity comparisons. It

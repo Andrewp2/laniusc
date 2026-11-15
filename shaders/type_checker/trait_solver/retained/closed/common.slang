@@ -16,6 +16,9 @@ public RWStructuredBuffer<uint> cw_front;
 public RWStructuredBuffer<uint> cw_indirect;
 public RWStructuredBuffer<uint4> cw_scan_a;
 public RWStructuredBuffer<uint4> cw_scan_b;
+// Per 256-lane block of the count scan: its two totals, then their
+// exclusive prefixes.
+public RWStructuredBuffer<uint4> cw_blocks;
 public StructuredBuffer<uint2> cw_step;
 public RWStructuredBuffer<uint> cw_batch;
 public RWStructuredBuffer<uint> cw_routes;

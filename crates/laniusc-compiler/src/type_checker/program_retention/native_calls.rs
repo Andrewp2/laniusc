@@ -185,7 +185,14 @@ impl ProgramRetention {
             cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
         }
         self.queue.submit(Some(encoder.finish()));
-        let result = self.read(&status, 2)?;
+        // The status and both symbol columns in one readback; the columns
+        // are used only when the status is clean.
+        let mut read = self.read_parts(&[
+            (&status, 2),
+            (&rows, symbol_words),
+            (&identity, columns.identity_bytes.len() / 4),
+        ])?;
+        let result = read[0].clone();
         if result[0] & !4 != 0 {
             bail!("retained original call symbols failed on the GPU (status {:#x})", result[0]);
         }
@@ -202,12 +209,11 @@ impl ProgramRetention {
             continue;
         }
         tables.arguments = result[1];
-        break;
-        }
+        let identity_bytes = words_to_bytes(&read.pop().unwrap_or_default());
+        let symbol_rows = words_to_bytes(&read.pop().unwrap_or_default());
         drop(store);
-        let symbol_rows = words_to_bytes(&self.read(&rows, symbol_words)?);
-        let identity_bytes = words_to_bytes(&self.read(&identity, columns.identity_bytes.len() / 4)?);
-        Ok(X86SymbolColumns { symbol_rows, identity_bytes })
+        return Ok(X86SymbolColumns { symbol_rows, identity_bytes });
+        }
     }
 }
 

@@ -42,6 +42,17 @@ void main(uint3 id: SV_DispatchThreadID, uint3 group: SV_GroupID, uint3 thread: 
         return;
     }
     if(mode==4u) { if(lane<dg_config[13]) dg_term_order[lane]=RT_INVALID; return; }
+    if(mode==6u)
+    {
+        // Level counts recorded after each wave's resolution, over the
+        // store's term capacity. A term without a valid height is left to
+        // mode 1, which reports it as before.
+        uint term=lane+RT_FIRST_TERM;
+        if(term >= rt_counts[RT_A_TERMS] || rt_term_head[term].x == 0u || !rt_term_closed(term)) return;
+        uint height=rt_term_height(term);
+        if(height != 0u && height < 128u) InterlockedAdd(dg_levels[height],1u);
+        return;
+    }
     if(mode < 2u)
     {
         uint term=lane+RT_FIRST_TERM;

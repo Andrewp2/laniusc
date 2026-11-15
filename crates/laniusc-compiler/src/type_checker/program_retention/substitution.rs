@@ -866,6 +866,16 @@ fn read_many(
     queue: &wgpu::Queue,
     parts: &[(&wgpu::Buffer, usize)],
 ) -> Result<Vec<u32>> {
+    read_many_labeled(device, queue, parts, "retained_substitution.readback")
+}
+
+/// `read_many` under another readback label.
+pub(super) fn read_many_labeled(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    parts: &[(&wgpu::Buffer, usize)],
+    label: &str,
+) -> Result<Vec<u32>> {
     let sizes: Vec<u64> = parts
         .iter()
         .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
@@ -875,7 +885,7 @@ fn read_many(
         return Ok(Vec::new());
     }
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("retained_substitution.readback"),
+        label: Some(label),
         size: bytes,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -888,7 +898,7 @@ fn read_many(
     }
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
-    map_readback_blocking(device, &slice, "retained_substitution.readback")?;
+    map_readback_blocking(device, &slice, label)?;
     let out = slice
         .get_mapped_range()
         .chunks_exact(4)
