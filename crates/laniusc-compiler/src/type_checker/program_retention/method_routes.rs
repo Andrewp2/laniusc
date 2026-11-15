@@ -117,6 +117,11 @@ impl MethodRoutes {
         let result = (|| {
             loop {
                 let mut encoder = self.device.create_command_encoder(&Default::default());
+                // One compute pass for the wave, flushed before submit.
+                let batch = passes_core::DeferredComputeBatchGuard::begin(
+                    passes_core::compute_pass_batching_allowed(false),
+                    "retained method routes",
+                );
                 self.record(
                     &mut encoder,
                     0,
@@ -199,6 +204,7 @@ impl MethodRoutes {
                     instances,
                 )?;
                 passes_core::flush_deferred_compute(&mut encoder);
+                drop(batch);
                 self.queue.submit(Some(encoder.finish()));
                 let status = store.read(&self.buffers["mr_state"], 32)?;
                 if status[0] != 3 {
@@ -266,22 +272,18 @@ impl MethodRoutes {
             0,
             &entries,
         )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained method routes"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
         let groups = if kernel == 5 {
             1
         } else {
             lanes.div_ceil(256).max(1)
         };
-        compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+        passes_core::record_or_defer_compute_direct(
+            encoder,
+            pass,
+            &bind,
+            "retained method routes",
+            (groups.min(65535), groups.div_ceil(65535), 1),
+        );
         Ok(())
     }
 }
