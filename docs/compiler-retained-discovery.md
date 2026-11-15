@@ -22,6 +22,21 @@ wave expands the new instances, substitutes their retained call environments and
 inserts or reuses the resulting callee instances. An existing instance adds no
 depth; creating a new instance beyond depth 64 fails.
 
+A wave needs few host round trips. The scan's last lane writes the
+workgroup count of the request pass, so requests follow the scan in one
+submit; after an edge overflow the request pass has no workgroups. The
+publish pass then records in status word 12 whether a request failure or
+an overflow happened. Resolution records into the substitution's first
+batch submit (`run_then`). It does nothing unless that run's publication
+committed, or when status word 12 is set, so the host still reports the
+first failure or grows exactly as it did when it read the status between
+these passes. The substitution counts, the discovery status and the store
+counters come back in one readback. A wave without closed predicates
+therefore costs one readback, and a wave with them adds the closed
+producer, solver, publication receipt and method-route readbacks and one
+status readback after the method routes. Settings: 134 to 106 readbacks
+per build, discovery about 96 to 36 ms in a back-to-back A/B.
+
 A parallel prefix scan assigns each frontier instance a range of use edges.
 Request production and result consumption use one lane per edge or request;
 no lane walks a function's call list. The interner may allocate unpublished
@@ -50,8 +65,7 @@ with the same compare-exchange network as the global steps. A stage k then
 costs one dispatch per global step (j ≥ 512) plus one, and a sort of at most
 512 keys is one dispatch. Settings (term heights of 3260, 3139, 323 and 12
 keys, 3138 instance slots) records 28 term-sort and 10 instance-sort
-dispatches instead of 217 and 78. Host count readbacks between waves remain
-optimization work.
+dispatches instead of 217 and 78.
 
 ## Publication
 

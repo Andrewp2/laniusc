@@ -30,6 +30,12 @@ void main(uint3 id: SV_DispatchThreadID)
             dg_status[2] = demand; dg_status[5] = demand;
             uint capacity; uint stride; dg_edges.GetDimensions(capacity,stride);
             if (demand > capacity) InterlockedOr(dg_status[3],2u);
+            // The request pass runs one lane per edge, or none after an
+            // overflow (the host grows and repeats the attempt).
+            uint groups = demand > capacity ? 0u : (end + 255u) / 256u;
+            dg_indirect[0] = min(groups, 65535u);
+            dg_indirect[1] = groups == 0u ? 0u : (groups + 65534u) / 65535u;
+            dg_indirect[2] = 1u;
         }
     }
 }

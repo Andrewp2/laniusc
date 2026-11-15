@@ -18,13 +18,15 @@ public RWStructuredBuffer<uint> dg_rank;
 public RWStructuredBuffer<uint> dg_term_order;
 public RWStructuredBuffer<uint> dg_term_rank;
 public globallycoherent RWStructuredBuffer<uint> dg_levels;
+// Workgroups of the wave's request pass, written by the scan.
+public RWStructuredBuffer<uint> dg_indirect;
 // config: mode, lo, hi, edge base, root phase, subst run, depth, hash mask,
 //         scan distance, scan input, sort k, sort j, sort base, sort count,
 //         level, generation.
 // status: allocated instances, live instances, edges, overflow bits,
 //         instance demand, edge demand, first error+1 (INVALID when none),
 //         request demand, generation, roots, failure, predicated instances,
-//         reserved...
+//         requests blocked (failure or overflow before resolution), reserved...
 public uint dg_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint dg_entry(uint decl)
 {
