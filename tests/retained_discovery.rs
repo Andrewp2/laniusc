@@ -201,3 +201,64 @@ fn retained_discovery_drives_projection_without_a_test_instance_list() {
         assert_eq!(empty.report.roots, 0);
     });
 }
+
+#[test]
+fn retained_discovery_reuses_recursive_instances_and_reaches_depth_64() {
+    common::run_with_timeout("retained discovery depth", || {
+        let compiler = pollster::block_on(GpuCompiler::new_with_backends(
+            GpuCompilerBackends::frontend_only(),
+        ))
+        .unwrap();
+        let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+        let mut engine = RetainedDiscovery::new(
+            DiscoveryCapacity::default(),
+            SubstitutionCapacity::default(),
+        )
+        .unwrap();
+        for depth in [1u32, 17, 63, 64, 65] {
+            store.begin_build().unwrap();
+            compiler.attach_program_retention(Some(store.clone()));
+            let mut source = String::from(
+                "module chain;\nfn f0<T>(v:T)->T { if (false) { return f0(v); } return v; }\n",
+            );
+            for i in 1..depth {
+                source += &format!("fn f{i}<T>(v:T)->T {{ return f{}(v); }}\n", i - 1);
+            }
+            source += &format!("fn main()->i32 {{ return f{}(7); }}\n", depth - 1);
+            pollster::block_on(compiler.semantic_interface_for_source_pack(12, &[&source]))
+                .unwrap();
+            compiler.attach_program_retention(None);
+            for report in store.job_reports() {
+                assert!(report.ready, "{report:?}");
+            }
+            let before = fallback_counters();
+            if depth == 65 {
+                match engine.run(&store).unwrap() {
+                    DiscoveryOutcome::Rejected(error) => {
+                        assert_eq!(error.code, 7);
+                        assert_eq!(error.detail, 65);
+                    }
+                    DiscoveryOutcome::Published(_) => panic!("depth 65 published"),
+                }
+                assert_eq!(fallback_counters(), before);
+                continue;
+            }
+            let publication = publish(&mut engine, &store);
+            assert_eq!(
+                publication.report.instances, depth,
+                "{:?}",
+                publication.report
+            );
+            assert_eq!(
+                publication.report.waves, depth,
+                "finite recursion creates no extra depth"
+            );
+            assert_eq!(publication.report.roots, 1);
+            assert_eq!(
+                publication.report.edges, depth,
+                "the last edge reuses the recursive instance"
+            );
+            assert_eq!(fallback_counters(), before);
+        }
+    });
+}
