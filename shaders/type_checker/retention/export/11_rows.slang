@@ -30,8 +30,6 @@ StructuredBuffer<uint> compact_const_value;
 StructuredBuffer<uint> compact_array_element_start;
 StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
-StructuredBuffer<uint2> semantic_value_const_by_hir;
-StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> semantic_iterable_kind_by_hir;
 StructuredBuffer<uint> semantic_member_field_ordinal_by_hir;

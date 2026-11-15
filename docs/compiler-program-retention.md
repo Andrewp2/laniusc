@@ -345,7 +345,10 @@ Row terms and roles:
 
 - A TYPE row's term is its checked type (`type_row_term`). An array length
   row in type position (`N` in `[i32; N]`) takes its array term's length
-  operand.
+  operand. A symbolic constant argument (`N` in `Grid<T, N>`) takes the
+  exact constant ParamId published by the checked value artifact when the
+  type and expression columns carry no term. Its owner and declared scalar
+  are preserved; an unknown translation is not replaced.
 - Expression rows and let/const statements take their checked expression
   reference. Other rows (function, parameter, block and the remaining
   statements) carry the per-row scalar cache in that column, which is not a

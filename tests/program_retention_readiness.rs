@@ -442,6 +442,44 @@ fn program_retention_exports_ready_receivers_patterns_and_call_results() {
 }
 
 #[test]
+fn program_retention_exports_const_generic_struct_literals() {
+    let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only())).unwrap();
+    let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();
+    store.begin_build().unwrap();
+    compiler.attach_program_retention(Some(store.clone()));
+    let source = r#"module ready::const_struct;
+pub struct Grid<T, const N: u32> { value: T }
+pub fn make<T, const N: u32>(value: T) -> Grid<T, N> { return Grid { value: value }; }
+pub struct ArrayGrid<T, const N: u32> { values: [T; N] }
+pub fn from_array<T, const N: u32>(values: [T; N]) -> ArrayGrid<T, N> { return ArrayGrid { values: values }; }
+fn main() -> i32 { let grid: Grid<i32, 4> = Grid { value: 7 }; return grid.value; }
+"#;
+    pollster::block_on(compiler.semantic_interface_for_source_pack(34, &[source])).unwrap();
+    assert!(store.job_reports().iter().all(|r| r.ready), "{:?}", store.job_reports());
+    let s = Store::read(&store);
+    let signatures = store.read_store_words("rt_sigs", s.status[6] as usize).unwrap();
+    let mut constants = Vec::new();
+    for name in ["fn make<", "fn from_array<"] {
+        let decl = s.named(name);
+        let result = signatures[s.entry(decl)[6] as usize];
+        assert_eq!(s.kind(result), KIND_NAMED);
+        let constant = s.arg(result, 1);
+        assert_eq!(constant & 0xc000_0000, 0xc000_0000, "a constant parameter leaf");
+        assert_eq!(s.leaf_owner(constant), decl, "each function owns its own N");
+        assert_eq!(s.params[(constant & ID_MASK) as usize * 4 + 3], 4, "N retains its declared u32 scalar");
+        constants.push(constant);
+        let rows = s.body_rows(decl);
+        let ns = s.row_named(decl, &rows, HIR_TYPE, "N");
+        assert!(!ns.is_empty());
+        assert!(ns.iter().all(|r| r[12] == constant), "every N row denotes the signature's exact constant: {ns:?}");
+        let literal = rows.iter().find(|r| r[0] == 28).expect("struct literal");
+        assert_eq!(literal[12], result, "the checked constructor type equals the declared result");
+        assert_eq!(s.seg(decl)[12..16], [0; 4]);
+    }
+    assert_ne!(constants[0], constants[1], "same spelling and slot do not merge binders");
+}
+
+#[test]
 fn program_retention_requires_accepted_value_call_results() {
     let compiler = pollster::block_on(GpuCompiler::new_with_backends(GpuCompilerBackends::frontend_only())).unwrap();
     let store = ProgramRetention::new(ProgramRetentionCapacity::default()).unwrap();

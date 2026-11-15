@@ -21,8 +21,6 @@ import type_checker.retention.row_classes;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_const_type;
 StructuredBuffer<uint> compact_const_value;
-StructuredBuffer<uint2> semantic_value_const_by_hir;
-StructuredBuffer<uint> semantic_value_const_present_by_hir;
 
 void check_term(uint row, uint term, uint decl, uint parent)
 {

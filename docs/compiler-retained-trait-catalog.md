@@ -338,9 +338,12 @@ instructions. No producer kernel uses local arrays.
   sources.
 - Slot resolution: dependency slot leaves fail (`SLOT`), so a publication
   never contains them.
-- The export does not complete a struct literal of a const-generic struct
-  (`Grid { value: v }` for `Grid<T, const N: u32>`), so the test passes
-  a `Grid<Local, 4>` value only as a parameter.
+- The catalog fixture passes `Grid<Local, 4>` only as a parameter.
+  A separate retention readiness test covers const-generic struct literals,
+  including an array field that fixes `N`. The earlier incomplete export
+  came from the symbolic `N` syntax row in `Grid<T, N>`; the constructor's
+  checked type was already correct. That row now retains its exact
+  constant parameter identity.
 - Uses whose callee is outside the store, extern, or a trait member are not
   turned into goals. Only direct and inherent-method calls between store
   callables are.
