@@ -1148,7 +1148,10 @@ enum DeferredComputeCommand {
         timing_label: Option<String>,
         debug_label: Option<String>,
         pipeline: Arc<wgpu::ComputePipeline>,
-        bind_groups: Vec<wgpu::BindGroup>,
+        /// Group 0, then groups 1.. (empty, and so unallocated, for the
+        /// usual single-group dispatch).
+        bind_group: wgpu::BindGroup,
+        more_bind_groups: Vec<wgpu::BindGroup>,
         groups: (u32, u32, u32),
         dynamic_offsets: Vec<u32>,
         /// The `LANIUS_CAPTURE` dispatch: recorded in a pass of its own.
@@ -1158,7 +1161,10 @@ enum DeferredComputeCommand {
         timing_label: Option<String>,
         debug_label: Option<String>,
         pipeline: Arc<wgpu::ComputePipeline>,
-        bind_groups: Vec<wgpu::BindGroup>,
+        /// Group 0, then groups 1.. (empty, and so unallocated, for the
+        /// usual single-group dispatch).
+        bind_group: wgpu::BindGroup,
+        more_bind_groups: Vec<wgpu::BindGroup>,
         dispatch_args: wgpu::Buffer,
         dispatch_offset: u64,
         dynamic_offsets: Vec<u32>,
@@ -1268,7 +1274,8 @@ pub(crate) fn defer_compute_direct_with_offsets(
                 .then(|| operation_label.to_owned()),
             debug_label: deferred_compute_debug_label(pass),
             pipeline: pass.pipeline.clone(),
-            bind_groups: vec![bind_group.clone()],
+            bind_group: bind_group.clone(),
+            more_bind_groups: Vec::new(),
             groups,
             dynamic_offsets: dynamic_offsets.to_vec(),
             capture,
@@ -1306,7 +1313,8 @@ pub(crate) fn defer_compute_indirect(
                 .then(|| operation_label.to_owned()),
             debug_label: deferred_compute_debug_label(pass),
             pipeline: pass.pipeline.clone(),
-            bind_groups: vec![bind_group.clone()],
+            bind_group: bind_group.clone(),
+            more_bind_groups: Vec::new(),
             dispatch_args: dispatch_args.clone(),
             dispatch_offset,
             dynamic_offsets: dynamic_offsets.to_vec(),
@@ -1342,7 +1350,11 @@ pub(crate) fn defer_compute_direct_bind_groups(
                 .then(|| operation_label.to_owned()),
             debug_label: deferred_compute_debug_label(pass),
             pipeline: pass.pipeline.clone(),
-            bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
+            bind_group: (*bind_groups[0]).clone(),
+            more_bind_groups: bind_groups[1..]
+                .iter()
+                .map(|group| (**group).clone())
+                .collect(),
             groups,
             dynamic_offsets: Vec::new(),
             capture,
@@ -1378,7 +1390,11 @@ pub(crate) fn defer_compute_indirect_bind_groups(
                 .then(|| operation_label.to_owned()),
             debug_label: deferred_compute_debug_label(pass),
             pipeline: pass.pipeline.clone(),
-            bind_groups: bind_groups.iter().map(|group| (**group).clone()).collect(),
+            bind_group: (*bind_groups[0]).clone(),
+            more_bind_groups: bind_groups[1..]
+                .iter()
+                .map(|group| (**group).clone())
+                .collect(),
             dispatch_args: dispatch_args.clone(),
             dispatch_offset,
             dynamic_offsets: Vec::new(),
@@ -1419,7 +1435,7 @@ pub(crate) fn record_or_defer_compute_direct(
     }
     drop(compute);
     debug_capture_end(encoder, captured);
-    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
+    crate::gpu::timer::stamp_active_operation(encoder, label);
 }
 
 /// Records one indirect dispatch immediately, or appends it to the active
@@ -1483,14 +1499,14 @@ pub(crate) fn record_or_defer_compute_indirect_offset(
     }
     drop(compute);
     debug_capture_end(encoder, captured);
-    crate::gpu::timer::stamp_active_operation(encoder, label.to_owned());
+    crate::gpu::timer::stamp_active_operation(encoder, label);
 }
 
 /// Flushes all deferred dispatches as one ordered compute pass (two more
 /// when the `LANIUS_CAPTURE` dispatch is among them: it gets a pass
 /// of its own between its input and output copies).
 pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
-    let (label, commands) = DEFERRED_COMPUTE.with(|state| {
+    let (label, mut commands) = DEFERRED_COMPUTE.with(|state| {
         let mut state = state.borrow_mut();
         (
             state.label.unwrap_or("compute.batch"),
@@ -1498,6 +1514,7 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
         )
     });
     if commands.is_empty() {
+        give_back_deferred_commands(commands);
         debug_capture_snapshot(encoder);
         return;
     }
@@ -1513,6 +1530,8 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
             record_deferred_commands(encoder, label, &commands[at + 1..]);
         }
     }
+    commands.clear();
+    give_back_deferred_commands(commands);
     if let Some(started) = started {
         eprintln!(
             "[gpu_compile_host_timer] compute_batch.flush: label={label} commands={command_count} elapsed_ms={:.3}",
@@ -1520,6 +1539,17 @@ pub(crate) fn flush_deferred_compute(encoder: &mut wgpu::CommandEncoder) {
         );
     }
     debug_capture_snapshot(encoder);
+}
+
+/// Returns the drained command vector to the thread's batch so the next
+/// flush reuses its capacity instead of growing a new vector.
+fn give_back_deferred_commands(commands: Vec<DeferredComputeCommand>) {
+    DEFERRED_COMPUTE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.commands.is_empty() && state.commands.capacity() < commands.capacity() {
+            state.commands = commands;
+        }
+    });
 }
 
 /// Records deferred dispatches in order into one compute pass.
@@ -1544,7 +1574,8 @@ fn record_deferred_commands(
                 timing_label,
                 debug_label,
                 pipeline,
-                bind_groups,
+                bind_group,
+                more_bind_groups,
                 groups,
                 dynamic_offsets,
                 capture: _,
@@ -1553,13 +1584,9 @@ fn record_deferred_commands(
                     compute.push_debug_group(label);
                 }
                 compute.set_pipeline(pipeline);
-                for (index, bind_group) in bind_groups.iter().enumerate() {
-                    let offsets = if index == 0 {
-                        dynamic_offsets.as_slice()
-                    } else {
-                        &[]
-                    };
-                    compute.set_bind_group(index as u32, bind_group, offsets);
+                compute.set_bind_group(0, bind_group, dynamic_offsets.as_slice());
+                for (index, bind_group) in more_bind_groups.iter().enumerate() {
+                    compute.set_bind_group(index as u32 + 1, bind_group, &[]);
                 }
                 record_compute_dispatch();
                 compute.dispatch_workgroups(groups.0, groups.1, groups.2);
@@ -1574,7 +1601,8 @@ fn record_deferred_commands(
                 timing_label,
                 debug_label,
                 pipeline,
-                bind_groups,
+                bind_group,
+                more_bind_groups,
                 dispatch_args,
                 dispatch_offset,
                 dynamic_offsets,
@@ -1584,13 +1612,9 @@ fn record_deferred_commands(
                     compute.push_debug_group(label);
                 }
                 compute.set_pipeline(pipeline);
-                for (index, bind_group) in bind_groups.iter().enumerate() {
-                    let offsets = if index == 0 {
-                        dynamic_offsets.as_slice()
-                    } else {
-                        &[]
-                    };
-                    compute.set_bind_group(index as u32, bind_group, offsets);
+                compute.set_bind_group(0, bind_group, dynamic_offsets.as_slice());
+                for (index, bind_group) in more_bind_groups.iter().enumerate() {
+                    compute.set_bind_group(index as u32 + 1, bind_group, &[]);
                 }
                 record_compute_dispatch();
                 record_indirect_compute_dispatch();
