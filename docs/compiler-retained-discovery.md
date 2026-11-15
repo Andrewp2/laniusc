@@ -98,6 +98,15 @@ the record's bounded argument list; it does not recursively walk a term graph.
 Instances are then sorted by declaration identity and ENV rank. Neither hashes
 nor allocation-order TermIds decide the final instance rank.
 
+Each resolution submit ends with a level count (`03_term_order` mode 6)
+over the store's term capacity, and the counts come back with that
+readback. After the last wave nothing interns terms, so ranking takes the
+level counts from the last readback when it came from resolution's first
+batch and no method routes ran after it; otherwise it counts and reads
+them as before. Mode 6 skips a term without a valid height, which mode 1
+then reports as before. Discovery's last readback after ranking returns
+the status: settings needs 73 readbacks per build.
+
 The implementation uses bitonic sorts within each height and over the instance
 set. Work is O(sum N_h log² N_h + I log² I), with bounded-arity comparisons. It
 currently ranks all closed store terms, not just terms reachable from instance

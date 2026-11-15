@@ -41,6 +41,8 @@ const STATUS_WORDS: usize = 32;
 /// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
 const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
+/// Words of dg_levels holding the closed terms per height.
+const LEVELS: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiscoveryCapacity {
@@ -248,10 +250,16 @@ impl RetainedDiscovery {
             drop(guard);
             // As in a wave, resolution skips itself after a root failure or
             // overflow (status 12), and its readback reports both.
+            // Level counts from the last wave's resolution readback, while
+            // nothing has interned terms after it.
+            let mut levels: Option<Vec<u32>> = None;
             let resolved = self.resolve(store, &requests, &extra, config, None, None, &mut report)?;
             let request_capacity = resolved.is_none();
             let mut status = match resolved {
-                Some((words, _)) => words,
+                Some((words, first)) => {
+                    levels = first.then(|| words[words.len() - LEVELS..].to_vec());
+                    words
+                }
                 None => self.read_status_counts(store, &[], &mut report)?,
             };
 
@@ -380,6 +388,7 @@ impl RetainedDiscovery {
                 status = match resolved? {
                     Some((words, first)) => {
                         first_batch = first;
+                        levels = first.then(|| words[words.len() - LEVELS..].to_vec());
                         words
                     }
                     None => {
@@ -434,6 +443,8 @@ impl RetainedDiscovery {
                     self.method_routes = Some(routes);
                     self.substitution = Some(engine);
                     let state = state?;
+                    // These routes may intern terms after the level count.
+                    levels = None;
                     report.method_route_waves += 1;
                     report.readbacks += 1;
                     if state[0] != 2 {
@@ -465,7 +476,7 @@ impl RetainedDiscovery {
             report.roots = status[9];
             // Rank by full structure, height by height. Hashes never decide
             // equality or output order, even with forced table collisions.
-            self.rank_terms(store, status[STATUS_WORDS + super::A_TERMS], &extra, config, &mut report)?;
+            self.rank_terms(store, status[STATUS_WORDS + super::A_TERMS], levels, &extra, config, &mut report)?;
             self.config_cursor = 0;
             let guard = store.store.lock().unwrap();
             let mut encoder = self.encoder();
@@ -594,6 +605,7 @@ impl RetainedDiscovery {
         let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
         let status_buffer = self.scratch["dg_status"].clone();
         let request_lanes = requests.capacity();
+        let levels_buffer = self.scratch["dg_levels"].clone();
         config[0] = 0;
         let ran = {
             // 01_resolve does nothing unless this run's publication
@@ -611,7 +623,16 @@ impl RetainedDiscovery {
                 self.config_cursor = 0;
                 self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
                 self.record(encoder, guard, 5, config, extra, 1, report)?;
-                let Some(spec) = speculative else { return Ok(()) };
+                let record_levels = |this: &mut Self, encoder: &mut wgpu::CommandEncoder, report: &mut DiscoveryReport| {
+                    // Level counts for term ranking, valid when this is
+                    // the last wave and nothing interns after it.
+                    let mut levels_config = config;
+                    levels_config[0] = 6;
+                    encoder.clear_buffer(&this.scratch["dg_levels"], 0, None);
+                    let lanes = guard.capacity.arenas[super::A_TERMS];
+                    this.record(encoder, guard, 3, levels_config, extra, lanes, report)
+                };
+                let Some(spec) = speculative else { return record_levels(self, encoder, report) };
                 // The method routes, the bound routes and the publish pass
                 // follow in this submit. The routes select nothing unless
                 // this run published, and the bound routes do nothing
@@ -634,13 +655,15 @@ impl RetainedDiscovery {
                 bound.push(("mr_state", spec.routes.state()));
                 // No config slot of this submit is rewritten.
                 self.record(encoder, guard, 6, config, &bound, request_lanes, report)?;
-                self.record(encoder, guard, 5, config, extra, 1, report)
+                self.record(encoder, guard, 5, config, extra, 1, report)?;
+                record_levels(self, encoder, report)
             };
             let mut reads = vec![(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)];
             reads.extend(also_read);
             if let Some(spec) = speculative {
                 reads.push((spec.routes.state(), 32));
             }
+            reads.push((&levels_buffer, LEVELS));
             engine.run_then(store, requests, Some(&mut consumer), &reads)
         };
         self.substitution = Some(engine);
@@ -683,26 +706,34 @@ impl RetainedDiscovery {
             .map(|words| Some((words, false)))
     }
     /// `terms` is the store's term count, read with the last status.
+    /// `levels` are the closed terms per height when the last readback
+    /// carried a current count (`03_term_order` mode 6, which also left the
+    /// rest of dg_levels clear); otherwise this counts and reads them.
     fn rank_terms(
         &mut self,
         store: &ProgramRetention,
         terms: u32,
+        levels: Option<Vec<u32>>,
         extra: &[(&str, &wgpu::Buffer)],
         mut config: [u32; 16],
         report: &mut DiscoveryReport,
     ) -> Result<()> {
         self.ensure("dg_term_rank", terms.max(1) as u64 * 4)?;
         self.ensure("dg_term_order", terms.max(1) as u64 * 8)?;
-        self.config_cursor = 0;
-        config[0] = 0;
-        let guard = store.store.lock().unwrap();
-        let mut encoder = self.encoder();
-        encoder.clear_buffer(&self.scratch["dg_levels"], 0, None);
-        encoder.clear_buffer(&self.scratch["dg_term_rank"], 0, None);
-        self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
-        self.queue.submit(Some(encoder.finish()));
-        drop(guard);
-        let levels = self.read(&self.scratch["dg_levels"], 128, report)?;
+        let levels = match levels {
+            Some(levels) => levels,
+            None => {
+                self.config_cursor = 0;
+                config[0] = 0;
+                let guard = store.store.lock().unwrap();
+                let mut encoder = self.encoder();
+                encoder.clear_buffer(&self.scratch["dg_levels"], 0, None);
+                self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
+                self.queue.submit(Some(encoder.finish()));
+                drop(guard);
+                self.read(&self.scratch["dg_levels"], LEVELS, report)?
+            }
+        };
         let mut bases = [0u32; 128];
         let mut sizes = [0u32; 128];
         let mut end = 0u32;
@@ -724,6 +755,7 @@ impl RetainedDiscovery {
         self.config_cursor = 0;
         let guard = store.store.lock().unwrap();
         let mut encoder = self.encoder();
+        encoder.clear_buffer(&self.scratch["dg_term_rank"], 0, None);
         config[0] = 4;
         config[13] = end;
         self.record(&mut encoder, &guard, 3, config, extra, end, report)?;
