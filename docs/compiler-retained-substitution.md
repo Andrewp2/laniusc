@@ -119,8 +119,9 @@ attempt. `report.publication` is the `PublicationId`:
 Generations are nonzero and unique over every build of every store in the
 process. Run numbers are nonzero and unique over every engine in the
 process. `begin_build` takes a new generation and writes it to
-`rt_counts[RT_C_GENERATION]`. Store growth copies the counters, so a
-generation survives growth.
+`rt_counts[RT_C_GENERATION]`. The store retains the same `rt_counts` and
+`rt_config` buffers for its entire lifetime, including growth. Every old
+bind group therefore observes later generation and `READY` changes.
 
 `RetainedSubstitution::publication(&store)` returns the current
 publication, its id and its two buffers. It returns None after a run that
@@ -145,6 +146,11 @@ together from one earlier `publication()` call of the same build still
 answer their own requests: committed terms are immutable and stay valid
 for the whole build. A consumer that needs the newest results takes the
 id again after each run.
+
+The engine clears its previous `sb_counts` publication on the first
+attempt of each run. Growth may replace that buffer only after an attempt
+has completed without publishing. An old counts buffer therefore cannot
+retain a valid publication when the engine replaces its scratch.
 
 ## Validation
 
@@ -368,11 +374,11 @@ read.
   substitution tables plus a store with room for half the results, once
   with every store key on one probe chain and once with the full hash.
   Each run interns store terms in an attempt, overflows the store at a
-  later level and rolls back (29 term records), then grows and retries
-  (5 attempts, 3 own growths, 1 store growth). The results match the
+  later level and rolls back, then grows and retries. The results match the
   reference structurally, including failed environments and causes. After
-  the run every term slot points below the term counter at a published
-  record, no two published records are key-equal, the committed fixture
+  the run every term slot points below the term counter at a live
+  record, every live record has exactly one slot, no two published records
+  are key-equal, term and argument counts match the reference, the committed fixture
   terms are unchanged, and the store's overflow and demand words are back
   to their values before the run. The test also covers a repeated run,
   forced memo collisions, a fresh build in the same allocations, and a
@@ -384,6 +390,12 @@ read.
   replaced result buffer, another engine's run, another store and the
   store's next build; and a host error (a table above the device limit)
   that clears `READY` so the consumer rejects the remaining publication.
+- `retained_substitution_old_bindings_observe_store_growth_invalidations`:
+  retains a publication and its actual `rt_counts` binding, then exports
+  a frontend job that grows the store without rerunning substitution.
+  The old binding still accepts the committed result after growth, but
+  rejects it after `READY` is cleared and after `begin_build`. Before the
+  fixed-buffer lifetime repair it incorrectly accepted the invalid store.
 - `retained_substitution_instantiates_exported_foreign_templates`: two
   frontend jobs export, the frontend is dropped and the exporter scratch is
   poisoned. A GPU kernel turns each foreign generic use into requests for

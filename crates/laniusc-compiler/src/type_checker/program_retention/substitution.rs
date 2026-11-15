@@ -530,6 +530,9 @@ impl RetainedSubstitution {
         };
         loop {
             report.attempts += 1;
+            // The first attempt clears the previous publication's counts.
+            // Scratch may be replaced only after that attempt has completed
+            // without publishing, so old bindings cannot retain PUBLISHED.
             self.ensure_scratch()?;
             let run = next_run()?;
             let mut encoder = self.device.create_command_encoder(&Default::default());

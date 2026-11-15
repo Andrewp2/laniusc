@@ -76,7 +76,7 @@ enum W {
 enum Expect {
     /// Success with this expected term register (None: expected terms skipped).
     Ok(Option<R>),
-    /// Failure: every field that is Some is checked.
+    /// Failure: every field is checked; absent node/value means RT_NONE.
     Fail(Failure),
 }
 
@@ -212,7 +212,9 @@ impl Script {
         self.request(decl, env, term, Expect::Ok(expected));
     }
     fn bad(&mut self, decl: R, env: R, term: R, status: u32, node: Option<R>, value: Option<R>) {
-        self.request(decl, env, term, Expect::Fail(failure(status, node, value)));
+        let mut f = failure(status, node, value);
+        f.env = Some(if status == status::NOT_READY || status == status::DECL { CLOSED } else { env });
+        self.request(decl, env, term, Expect::Fail(f));
     }
     fn fails(&mut self, decl: R, env: R, term: R, f: Failure) {
         self.request(decl, env, term, Expect::Fail(f));
@@ -503,16 +505,11 @@ fn check(fixture: &Fixture, results: &[[u32; RESULT_WORDS]]) {
                     r[0], RT_UNKNOWN,
                     "request {k}: a failure never carries a term"
                 );
-                if let Some(node) = f.node {
-                    assert_eq!(r[2], reg(fixture, node), "request {k} failed node: {r:?}");
-                }
-                if let Some(env) = f.env {
-                    let env = if env == CLOSED { 0 } else { reg(fixture, env) };
-                    assert_eq!(r[3], env, "request {k} failed environment: {r:?}");
-                }
-                if let Some(value) = f.value {
-                    assert_eq!(r[4], reg(fixture, value), "request {k} failed value: {r:?}");
-                }
+                assert_eq!(r[2], f.node.map_or(RT_NONE, |n| reg(fixture, n)), "request {k} failed node: {r:?}");
+                let env = f.env.expect("every failure specifies its environment");
+                let env = if env == CLOSED { 0 } else { reg(fixture, env) };
+                assert_eq!(r[3], env, "request {k} failed environment: {r:?}");
+                assert_eq!(r[4], f.value.map_or(RT_NONE, |v| reg(fixture, v)), "request {k} failed value: {r:?}");
                 let cause = f.cause.unwrap_or([0, 0, 0]);
                 assert_eq!([r[8], r[9], r[10]], cause, "request {k} ENV cause: {r:?}");
             }
@@ -669,13 +666,17 @@ fn cases(library: u32, expected: bool) -> Script {
     let w256 = p.s.value(USIZE, 256);
     let closed_bad = p.s.cast(U8, w256);
     let closed_box = p.boxed(closed_bad);
-    p.s.bad(
+    p.s.fails(
         f,
         env1,
         closed_box,
-        status::FIT_FAILED,
-        Some(closed_bad),
-        Some(w256),
+        Failure {
+            status: status::FIT_FAILED,
+            node: Some(closed_bad),
+            env: Some(CLOSED),
+            value: Some(w256),
+            ..Failure::default()
+        },
     );
     let w7 = p.s.value(USIZE, 7);
     let closed_ok = p.s.cast(U8, w7);
@@ -730,11 +731,11 @@ fn cases(library: u32, expected: bool) -> Script {
     let boxed_cast7 = p.boxed(closed_ok);
     let env_deep = p.env_f(boxed_cast7, bool_, v5, w5);
     let boxed_decl = p.boxed;
-    let env_deep_e = p.s.ex(|s| {
-        let v = s.value(U8, 7);
-        let b = s.named(boxed_decl, 1, &[v]);
-        s.env(f, 3, 3, &[b, bool_, v5, w5])
-    });
+    // Failure provenance is always checked, including in growth runs
+    // that omit the success oracle's pre-interned results.
+    let v = p.s.value(U8, 7);
+    let b = p.s.named(boxed_decl, 1, &[v]);
+    let env_deep_e = p.s.env(f, 3, 3, &[b, bool_, v5, w5]);
     p.s.fails(
         f,
         env_deep,
@@ -743,7 +744,7 @@ fn cases(library: u32, expected: bool) -> Script {
             status: status::ENV,
             node: Some(env_deep),
             env: Some(env_deep),
-            value: env_deep_e,
+            value: Some(env_deep_e),
             cause: Some([env_cause::NONCANONICAL, 0, 0]),
         },
     );
@@ -844,6 +845,9 @@ fn cases(library: u32, expected: bool) -> Script {
             },
         );
     }
+    // Canonical array substitution uses cc_count_class, which preserves
+    // this valid u32 count. Only CC_CAST uses the ambiguous cc_count
+    // sentinel and rejects it; these two paths deliberately differ.
     let arr_max = p.s.array(i32_, max32);
     let arr_max_e = p.s.ex(|s| {
         let c = s.count(u32::MAX);
@@ -1208,8 +1212,8 @@ fn stable(results: &[[u32; RESULT_WORDS]]) -> Vec<Vec<u32>> {
 }
 
 /// The store's term records: every hash slot points below the term
-/// counter at a published record whose slot chain finds it, no two
-/// published records are key-equal, and `old` (heads, meta and owners
+/// counter at a live record, every live record has exactly one slot, no
+/// two published records are key-equal, and `old` (heads and metadata
 /// of the terms committed before) is unchanged.
 fn check_store_terms(store: &ProgramRetention, old: &(usize, Vec<u32>)) {
     let status = store.status().unwrap();
@@ -1239,6 +1243,10 @@ fn check_store_terms(store: &ProgramRetention, old: &(usize, Vec<u32>)) {
             "slot publishes a tombstone {slot}"
         );
     }
+    let live = (32..terms as u32)
+        .filter(|&id| heads[id as usize * 4] != 0)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(published, live, "every live term retains its hash slot");
     let mut keys = std::collections::BTreeMap::new();
     for &id in &published {
         let id = id as usize;
@@ -1282,6 +1290,7 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
     let reference_store = ProgramRetention::new(bigger_store()).unwrap();
     let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
     let fixture = build_fixture(&reference_store, &script);
+    let reference_before = reference_store.status().unwrap();
     let (reference_report, reference) = run(&mut engine, &reference_store, &fixture);
     check(&fixture, &reference);
     let expected_shapes = shapes(&reference_store, &reference);
@@ -1296,6 +1305,7 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
     // retries from the same requests, with the full hash and with every
     // store key on one probe chain.
     let status = reference_store.status().unwrap();
+    let new_args = status[3] - reference_before[3];
     let new_terms = reference_report.counts[words::STORE_NEW_TERMS];
     let fixture_terms = status[2] - new_terms;
     let mut tight = bigger_store();
@@ -1335,6 +1345,7 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
             new_terms,
             "rolled-back attempts leave no terms behind"
         );
+        assert_eq!(after[3] - committed[3], new_args, "rolled-back attempts leave no argument words behind");
         check_store_terms(&store, &old);
         kept = Some((store, fixture, tiny, results));
     }
@@ -1402,7 +1413,19 @@ fn consume(
     run: u32,
     request: u32,
 ) -> [u32; 4] {
+    consume_with_store_bindings(store, buffers, run, request, &[])
+}
+
+fn consume_with_store_bindings(
+    store: &ProgramRetention,
+    buffers: &(wgpu::Buffer, wgpu::Buffer),
+    run: u32,
+    request: u32,
+    store_bindings: &[(&str, &wgpu::Buffer)],
+) -> [u32; 4] {
     let requests = SubstitutionRequests::new(1);
+    let mut bindings = vec![("sb_results", &buffers.0), ("sb_counts", &buffers.1)];
+    bindings.extend_from_slice(store_bindings);
     let out = run_test_kernel(
         store,
         CONSUMER_KERNEL,
@@ -1410,7 +1433,7 @@ fn consume(
         &[run, request],
         4,
         1,
-        &[("sb_results", &buffers.0), ("sb_counts", &buffers.1)],
+        &bindings,
     )
     .unwrap();
     [out[0], out[1], out[2], out[3]]
@@ -1551,6 +1574,46 @@ fn retained_substitution_publications_are_identified_and_fail_closed() {
         [0, 0],
         "a build that is not READY"
     );
+}
+
+#[test]
+fn retained_substitution_old_bindings_observe_store_growth_invalidations() {
+    let compiler = pollster::block_on(GpuCompiler::new_with_backends(
+        GpuCompilerBackends::frontend_only(),
+    )).unwrap();
+    let mut capacity = bigger_store();
+    // The synthetic requests use no body rows. A later frontend export
+    // must grow these arenas without rerunning the substitution engine.
+    capacity.arenas[10] = 1;
+    capacity.arenas[13] = 1;
+    let store = ProgramRetention::new(capacity).unwrap();
+    let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
+    let fixture = build_fixture(&store, &dag_only(211));
+    let (report, results) = run(&mut engine, &store, &fixture);
+    check(&fixture, &results);
+    let buffers = published_buffers(&engine, &store);
+    let old_counts = store.clone_store_buffer_for_test("rt_counts").unwrap();
+    let bindings = [("rt_counts", &old_counts)];
+    let consume_old = || consume_with_store_bindings(
+        &store, &buffers, report.publication.run, 0, &bindings,
+    );
+    assert_eq!(consume_old()[..2], [1, 1]);
+    let growths = store.capacity().1;
+    compiler.attach_program_retention(Some(store.clone()));
+    pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[LIBRARY]))
+        .expect("export that grows the store after publication");
+    assert!(store.capacity().1 > growths);
+    assert_eq!(store.job_reports().len(), 1);
+    assert!(store.job_reports().iter().all(|r| r.ready));
+    assert_eq!(consume_old()[..2], [1, 1], "committed terms survive growth");
+
+    // READY invalidation and a fresh build must both reach bindings held
+    // before growth, not just bindings made from the current store map.
+    store.write_store_words("rt_counts", counts::READY as u64, &[0]).unwrap();
+    assert_eq!(consume_old()[..2], [0, 0], "old bindings observe failure");
+    store.begin_build().unwrap();
+    assert_eq!(store.status().unwrap()[counts::READY], 1);
+    assert_eq!(consume_old()[..2], [0, 0], "old bindings observe the new generation");
 }
 
 // Export path: two frontend jobs, store only.

@@ -1,5 +1,6 @@
 // Substitution step 5 (one lane): select the next nonempty level. Empty
 // levels cost no dispatch round.
+import type_checker.retention.retention_store;
 import type_checker.retention.substitution.sb_common;
 import type_checker.retention.substitution.sb_dispatch;
 
@@ -17,6 +18,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         phase = SB_PHASE_EVAL;
     }
     if (phase != SB_PHASE_EVAL) return;
+    if (rt_counts[RT_C_OVERFLOW] != 0u) sb_overflow(SB_OVERFLOW_STORE);
     if (sb_counts[SB_C_OVERFLOW] != 0u) { sb_counts[SB_C_PHASE] = SB_PHASE_OVERFLOW; return; }
     uint level = sb_counts[SB_C_LEVEL] + 1u;
     uint last = min(sb_counts[SB_C_MAX_LEVEL], SB_LEVELS - 1u);

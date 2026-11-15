@@ -486,7 +486,7 @@ impl ProgramRetention {
             builds: 0,
             generation: 0,
         };
-        store.buffers = allocate_store(&device, &capacity);
+        store.buffers = allocate_store(&device, &capacity, None);
         let job_inputs = passes
             .iter()
             .flat_map(reflected_names)
@@ -795,11 +795,13 @@ impl ProgramRetention {
 
     /// Grows the store to `capacity`, keeping every committed record: the
     /// arenas are copied, the hash tables are rebuilt by the rehash kernel.
+    /// Fixed buffers keep their identity for the store's entire lifetime:
+    /// old consumer bindings must observe generation and READY changes.
     fn grow(&self, store: &mut Store, capacity: ProgramRetentionCapacity) -> Result<()> {
-        let fresh = allocate_store(&self.device, &capacity);
+        let fresh = allocate_store(&self.device, &capacity, Some(&store.buffers));
         let mut encoder = self.device.create_command_encoder(&Default::default());
         for (name, sized) in STORE_BUFFERS {
-            if matches!(sized, Sized::Table(_)) {
+            if !matches!(sized, Sized::Arena(..)) {
                 continue;
             }
             let old = &store.buffers[name];
@@ -889,6 +891,13 @@ impl ProgramRetention {
             .get(name)
             .ok_or_else(|| anyhow!("no store buffer {name}"))?;
         self.read(buffer, words)
+    }
+
+    /// Test oracle: retain an actual binding across store growth or reset.
+    #[doc(hidden)]
+    pub fn clone_store_buffer_for_test(&self, name: &str) -> Result<wgpu::Buffer> {
+        self.store.lock().unwrap().buffers.get(name).cloned()
+            .ok_or_else(|| anyhow!("no store buffer {name}"))
     }
 
     /// Test fault: fills job table `name` of every later export's snapshot
@@ -1100,10 +1109,16 @@ fn table_words(job: &BTreeMap<&'static str, JobTable>, name: &str) -> Result<u64
 fn allocate_store(
     device: &wgpu::Device,
     capacity: &ProgramRetentionCapacity,
+    previous: Option<&BTreeMap<&'static str, wgpu::Buffer>>,
 ) -> BTreeMap<&'static str, wgpu::Buffer> {
     STORE_BUFFERS
         .iter()
         .map(|&(name, sized)| {
+            if matches!(sized, Sized::Fixed(_)) {
+                if let Some(previous) = previous {
+                    return (name, previous[name].clone());
+                }
+            }
             let bytes = match sized {
                 Sized::Fixed(bytes) => bytes,
                 Sized::Arena(arena, record) => capacity.arenas[arena] as u64 * record,
