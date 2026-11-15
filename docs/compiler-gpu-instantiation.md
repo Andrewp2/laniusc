@@ -574,6 +574,45 @@ Execution-row fixes found by the one-unit programs:
   width, and a struct literal whose realized struct has an application-typed
   field. Both replay.
 
+### One program, one unit, 2026-11-15
+
+The default native and Wasm path (`compile_retained_program` in
+`retained_native.rs`) routes the manifest through `whole_program_manifest`. A
+program that fits the resident unit limits compiles as one frontend unit,
+whatever its libraries. A program above them keeps the bounded multi-unit plan.
+Before, settings compiled as two units because the unit builder starts a new
+unit at every library-id change (`UnitBuilder::should_flush_before`); capacity
+did not split it (92 files, 1.8 MB, under the 5 MiB and 16,384-file limits).
+Visibility is a module rule (`pub` or private), so one unit gives the same
+diagnostics: a private library function called from the app reports the same
+LNC0005 in one unit and in two
+(`default_native_build_is_one_unit_and_keeps_library_visibility`).
+
+One unit first measured slower (416 to 427 ms against 372 ms on `5cbc3456e`)
+because the lowering workspace cache held one pipeline, and frontend and
+instance lowering bind different input buffers. Each build reallocated the
+workspace twice, and the reallocation grew with the merged unit's capacity:
+
+| Reallocation | Per library ms | One unit ms |
+| --- | --- | --- |
+| frontend, wait for queued GPU work | 11 | 30 |
+| frontend, allocation | 51 | 81 |
+| instance lowering, allocation | 59 | 79 |
+
+Instance lowering now runs as a variant over the frontend's resident arena
+(docs/compiler-retained-projection.md, "Lowering workspace"), so neither
+reallocation happens. Measured warm on settings, under the GPU lock, 9 builds
+each after 3 warmups:
+
+| Build | Units | Dispatches | Originals ms | Median ms | Tracked GPU buffers |
+| --- | --- | --- | --- | --- | --- |
+| per library, shared arena | 2 | 8,840 | 128 | 261 | 5.43 GB |
+| one unit, shared arena | 1 | 6,864 | 89 | 212 | 9.48 GB |
+
+Instances stay 1,338, and the executable links and starts. The tracked GPU
+buffers grow by about 4 GB, because the frontend and lowering workspaces are
+sized for the whole program rather than its largest library.
+
 ### One-unit results, 2026-11-13
 
 Replay compiles and bodies, from `LANIUS_TRACE=instance-table`, with every

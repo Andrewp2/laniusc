@@ -1482,7 +1482,8 @@ fn main()->i32 {
             }.unwrap();
 
             let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
-            assert_eq!(report.units, 2);
+            // Two libraries that fit one resident unit compile as one unit.
+            assert_eq!(report.units, 1);
             assert_eq!(report.discovery.instances, 5);
             let result = common::run_x86_64_elf_output("default generic manifest", "default_generic_manifest", &elf);
             assert_eq!(result.status.code(), Some(13), "{result:?}");
@@ -1569,7 +1570,8 @@ fn default_wasm_monomorphizes_local_and_cross_unit_generics_without_replay() {
         let wasm=pollster::block_on(compiler.compile_path_manifest_to_wasm(&manifest)).unwrap();
         assert_eq!(common::run_wasm_main_return_with_node("cross-unit GPU generic Wasm","cross_unit_gpu_wasm",&wasm),13);
         let report=pollster::block_on(compiler.native_monomorphization_report()).unwrap();
-        assert_eq!(report.units,2); assert_eq!(report.discovery.instances,5);
+        // Two libraries that fit one resident unit compile as one unit.
+        assert_eq!(report.units,1); assert_eq!(report.discovery.instances,5);
 
         std::fs::remove_dir_all(directory).ok();
     });
@@ -1590,5 +1592,66 @@ fn default_monomorphization_uses_the_compilers_device() {
         let wasm = pollster::block_on(compiler.compile_source_to_wasm(source)).unwrap();
         let value = common::run_wasm_main_return_with_node("custom device Wasm", "custom_device_wasm", &wasm);
         assert_eq!(value, 42);
+    });
+}
+
+// The default native path compiles a program that fits one resident unit as
+// one frontend unit, whatever its libraries (docs/compiler-gpu-instantiation.md,
+// "One program, one unit"). Visibility is a module rule, so a private library
+// function called from the app is rejected with the same diagnostic in one
+// unit as in the explicit two-unit retained build.
+#[test]
+fn default_native_build_is_one_unit_and_keeps_library_visibility() {
+    common::run_with_timeout("default native build as one unit", || {
+        let directory = std::env::temp_dir()
+            .join(format!("lanius-native-one-unit-{}", std::process::id()));
+        let manifest = manifest(&directory);
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("compiler");
+        let retries_before = compiler.frontend_retry_counts();
+        let before = frontend_check_count();
+        let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest))
+            .expect("default native build");
+        let retries: u64 = compiler
+            .frontend_retry_counts()
+            .iter()
+            .zip(retries_before)
+            .map(|(a, b)| a - b)
+            .sum();
+        assert_eq!(
+            frontend_check_count() - before,
+            1 + retries,
+            "two libraries that fit one unit record one frontend"
+        );
+        let out = common::run_x86_64_elf_output("default native", "default_native", &elf);
+        assert_eq!(out.status.code(), Some(13), "{out:?}");
+
+        let lib = directory.join("private_lib.lani");
+        let app = directory.join("private_app.lani");
+        std::fs::write(
+            &lib,
+            "module lib::a;\npub fn exposed() -> i32 { return 1; }\nfn hidden() -> i32 { return 2; }\n",
+        )
+        .unwrap();
+        std::fs::write(&app, "module app::b;\nimport lib::a;\nfn main() -> i32 {\n    return hidden();\n}\n")
+            .unwrap();
+        let private = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id: 1, paths: vec![lib], dependency_library_ids: Vec::new() },
+            ExplicitSourceLibraryPaths { library_id: 2, paths: vec![app], dependency_library_ids: vec![1] },
+        ])
+        .expect("manifest");
+        let one_unit = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&private))
+            .expect_err("a private library function must not be callable from the app");
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).expect("retained build");
+        let two_units = pollster::block_on(
+            compiler.compile_path_manifest_to_x86_64_retained(&private, &mut build),
+        )
+        .expect_err("a private library function must not be callable from the app");
+        eprintln!("one unit: {one_unit}\ntwo units: {two_units}");
+        assert!(
+            matches!(one_unit, laniusc_compiler::compiler::CompileError::Diagnostic(_)),
+            "{one_unit:?}"
+        );
+        assert_eq!(format!("{one_unit:?}"), format!("{two_units:?}"));
+        std::fs::remove_dir_all(&directory).ok();
     });
 }

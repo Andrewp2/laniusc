@@ -168,6 +168,14 @@ impl GpuCompiler<'_> {
         &self,target:SourcePackArtifactTarget,source_pack:&ExplicitSourcePackPathManifest,
         options:Option<&NativeLinkOptions>,output:Option<&Path>,
     )->Result<ResidentLinkedOutput,CompileError> {
+        // A program that fits one resident unit compiles as one frontend
+        // unit, whatever its libraries: one recording of the frontend, not
+        // one per library. Visibility is a module rule, so the unit split does
+        // not change it. A program above the resident limits keeps the
+        // bounded multi-unit plan.
+        let whole_program = super::bounded_path_codegen::whole_program_manifest(
+            source_pack, self.resident_source_unit_limits());
+        let source_pack = whole_program.as_ref().unwrap_or(source_pack);
         let mut state = self.retained_native_build.lock().await;
         if state.is_none() {
             *state = Some(RetainedNativeBuild::new_with_device(self.gpu, DiscoveryCapacity::default())
