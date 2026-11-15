@@ -719,128 +719,97 @@ impl GpuSemanticInterfaceArtifact {
         }
 
         // The length check above covers every record word.
-        let mut modules = Vec::with_capacity(module_count);
-        for _ in 0..module_count {
-            modules.push(GpuSemanticInterfaceModuleRecord {
-                first_segment: record_word(bytes, &mut cursor),
-                segment_count: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut module_segments = Vec::with_capacity(module_segment_count);
-        for _ in 0..module_segment_count {
-            module_segments.push(GpuSemanticInterfaceModuleSegmentRecord {
-                name_hash_lo: record_word(bytes, &mut cursor),
-                name_hash_hi: record_word(bytes, &mut cursor),
-                name_byte_start: record_word(bytes, &mut cursor),
-                name_byte_len: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut declarations = Vec::with_capacity(declaration_count);
-        for _ in 0..declaration_count {
-            declarations.push(GpuSemanticInterfaceDeclarationRecord {
-                module: record_word(bytes, &mut cursor),
-                name_hash_lo: record_word(bytes, &mut cursor),
-                name_hash_hi: record_word(bytes, &mut cursor),
-                name_byte_start: record_word(bytes, &mut cursor),
-                name_byte_len: record_word(bytes, &mut cursor),
-                namespace: record_word(bytes, &mut cursor),
-                kind: record_word(bytes, &mut cursor),
-                signature_type: record_word(bytes, &mut cursor),
-                first_member: record_word(bytes, &mut cursor),
-                member_count: record_word(bytes, &mut cursor),
-                owner_declaration: record_word(bytes, &mut cursor),
-                flags: record_word(bytes, &mut cursor),
-                value_lo: record_word(bytes, &mut cursor),
-                value_hi: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut types = Vec::with_capacity(type_count);
-        for _ in 0..type_count {
-            types.push(GpuSemanticInterfaceTypeRecord {
-                kind: record_word(bytes, &mut cursor),
-                payload_lo: record_word(bytes, &mut cursor),
-                payload_hi: record_word(bytes, &mut cursor),
-                first_edge: record_word(bytes, &mut cursor),
-                edge_count: record_word(bytes, &mut cursor),
-                length_kind: record_word(bytes, &mut cursor),
-                length_lo: record_word(bytes, &mut cursor),
-                length_hi: record_word(bytes, &mut cursor),
-                nominal_unit_id: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut type_edges = Vec::with_capacity(type_edge_count);
-        for _ in 0..type_edge_count {
-            type_edges.push(GpuSemanticInterfaceTypeEdge {
-                type_index: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut members = Vec::with_capacity(member_count);
-        for _ in 0..member_count {
-            members.push(GpuSemanticInterfaceMemberRecord {
-                owner_ref: record_word(bytes, &mut cursor),
-                kind: record_word(bytes, &mut cursor),
-                ordinal: record_word(bytes, &mut cursor),
-                name_hash_lo: record_word(bytes, &mut cursor),
-                name_hash_hi: record_word(bytes, &mut cursor),
-                name_byte_start: record_word(bytes, &mut cursor),
-                name_byte_len: record_word(bytes, &mut cursor),
-                type_index: record_word(bytes, &mut cursor),
-                value_lo: record_word(bytes, &mut cursor),
-                value_hi: record_word(bytes, &mut cursor),
-                receiver_type_index: record_word(bytes, &mut cursor),
-                generic_parameter_ordinal: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut predicates = Vec::with_capacity(predicate_count);
-        for _ in 0..predicate_count {
-            predicates.push(GpuSemanticInterfacePredicateRecord {
-                owner_ref: record_word(bytes, &mut cursor),
-                owner_scope_symbol: record_word(bytes, &mut cursor),
-                subject_type: record_word(bytes, &mut cursor),
-                trait_library_id: record_word(bytes, &mut cursor),
-                trait_unit_id: record_word(bytes, &mut cursor),
-                trait_declaration_index: record_word(bytes, &mut cursor),
-                first_argument: record_word(bytes, &mut cursor),
-                argument_count: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut predicate_arguments = Vec::with_capacity(predicate_argument_count);
-        for _ in 0..predicate_argument_count {
-            predicate_arguments.push(record_word(bytes, &mut cursor));
-        }
-        let mut implementations = Vec::with_capacity(implementation_count);
-        for _ in 0..implementation_count {
-            implementations.push(GpuSemanticInterfaceImplementationRecord {
-                module: record_word(bytes, &mut cursor),
-                visibility: record_word(bytes, &mut cursor),
-                trait_library_id: record_word(bytes, &mut cursor),
-                trait_unit_id: record_word(bytes, &mut cursor),
-                trait_declaration_index: record_word(bytes, &mut cursor),
-                subject_type: record_word(bytes, &mut cursor),
-                first_argument: record_word(bytes, &mut cursor),
-                argument_count: record_word(bytes, &mut cursor),
-                first_member: record_word(bytes, &mut cursor),
-                member_count: record_word(bytes, &mut cursor),
-                first_prerequisite: record_word(bytes, &mut cursor),
-                prerequisite_count: record_word(bytes, &mut cursor),
-                first_method_binding: record_word(bytes, &mut cursor),
-                method_binding_count: record_word(bytes, &mut cursor),
-                kind: record_word(bytes, &mut cursor),
-            });
-        }
-        let mut implementation_arguments = Vec::with_capacity(implementation_argument_count);
-        for _ in 0..implementation_argument_count { implementation_arguments.push(record_word(bytes, &mut cursor)); }
-        let mut implementation_method_bindings = Vec::with_capacity(implementation_method_binding_count);
-        for _ in 0..implementation_method_binding_count {
-            implementation_method_bindings.push(GpuSemanticInterfaceImplementationMethodBindingRecord {
-                implementation_index: record_word(bytes, &mut cursor),
-                required_method_symbol: record_word(bytes, &mut cursor),
-                implementation_method_member: record_word(bytes, &mut cursor),
-                target_library_id: record_word(bytes, &mut cursor),
-                target_unit_id: record_word(bytes, &mut cursor),
-                target_symbol: record_word(bytes, &mut cursor),
-            });
-        }
+        let modules = records::<2, _>(bytes, &mut cursor, module_count, |w| GpuSemanticInterfaceModuleRecord {
+            first_segment: w[0],
+            segment_count: w[1],
+        });
+        let module_segments = records::<4, _>(bytes, &mut cursor, module_segment_count, |w| GpuSemanticInterfaceModuleSegmentRecord {
+            name_hash_lo: w[0],
+            name_hash_hi: w[1],
+            name_byte_start: w[2],
+            name_byte_len: w[3],
+        });
+        let declarations = records::<14, _>(bytes, &mut cursor, declaration_count, |w| GpuSemanticInterfaceDeclarationRecord {
+            module: w[0],
+            name_hash_lo: w[1],
+            name_hash_hi: w[2],
+            name_byte_start: w[3],
+            name_byte_len: w[4],
+            namespace: w[5],
+            kind: w[6],
+            signature_type: w[7],
+            first_member: w[8],
+            member_count: w[9],
+            owner_declaration: w[10],
+            flags: w[11],
+            value_lo: w[12],
+            value_hi: w[13],
+        });
+        let types = records::<9, _>(bytes, &mut cursor, type_count, |w| GpuSemanticInterfaceTypeRecord {
+            kind: w[0],
+            payload_lo: w[1],
+            payload_hi: w[2],
+            first_edge: w[3],
+            edge_count: w[4],
+            length_kind: w[5],
+            length_lo: w[6],
+            length_hi: w[7],
+            nominal_unit_id: w[8],
+        });
+        let type_edges = records::<1, _>(bytes, &mut cursor, type_edge_count, |w| GpuSemanticInterfaceTypeEdge {
+            type_index: w[0],
+        });
+        let members = records::<12, _>(bytes, &mut cursor, member_count, |w| GpuSemanticInterfaceMemberRecord {
+            owner_ref: w[0],
+            kind: w[1],
+            ordinal: w[2],
+            name_hash_lo: w[3],
+            name_hash_hi: w[4],
+            name_byte_start: w[5],
+            name_byte_len: w[6],
+            type_index: w[7],
+            value_lo: w[8],
+            value_hi: w[9],
+            receiver_type_index: w[10],
+            generic_parameter_ordinal: w[11],
+        });
+        let predicates = records::<8, _>(bytes, &mut cursor, predicate_count, |w| GpuSemanticInterfacePredicateRecord {
+            owner_ref: w[0],
+            owner_scope_symbol: w[1],
+            subject_type: w[2],
+            trait_library_id: w[3],
+            trait_unit_id: w[4],
+            trait_declaration_index: w[5],
+            first_argument: w[6],
+            argument_count: w[7],
+        });
+        let predicate_arguments = records::<1, _>(bytes, &mut cursor, predicate_argument_count, |w| w[0]);
+        let implementations = records::<15, _>(bytes, &mut cursor, implementation_count, |w| GpuSemanticInterfaceImplementationRecord {
+            module: w[0],
+            visibility: w[1],
+            trait_library_id: w[2],
+            trait_unit_id: w[3],
+            trait_declaration_index: w[4],
+            subject_type: w[5],
+            first_argument: w[6],
+            argument_count: w[7],
+            first_member: w[8],
+            member_count: w[9],
+            first_prerequisite: w[10],
+            prerequisite_count: w[11],
+            first_method_binding: w[12],
+            method_binding_count: w[13],
+            kind: w[14],
+        });
+        let implementation_arguments = records::<1, _>(bytes, &mut cursor, implementation_argument_count, |w| w[0]);
+        let implementation_method_bindings = records::<6, _>(bytes, &mut cursor, implementation_method_binding_count, |w| GpuSemanticInterfaceImplementationMethodBindingRecord {
+            implementation_index: w[0],
+            required_method_symbol: w[1],
+            implementation_method_member: w[2],
+            target_library_id: w[3],
+            target_unit_id: w[4],
+            target_symbol: w[5],
+        });
         let name_bytes = bytes[cursor..].to_vec();
         let artifact = Self {
             version,
@@ -988,13 +957,22 @@ fn push_u32_len(bytes: &mut Vec<u8>, domain: &str, len: usize) -> Result<(), Str
     Ok(())
 }
 
-/// One record word of an artifact whose length matched its header, so the
-/// word is in bounds.
-#[inline(always)]
-fn record_word(bytes: &[u8], cursor: &mut usize) -> u32 {
-    let word = u32::from_le_bytes([bytes[*cursor], bytes[*cursor + 1], bytes[*cursor + 2], bytes[*cursor + 3]]);
-    *cursor += 4;
-    word
+/// `count` records of `N` words each at `cursor`, in an artifact whose
+/// length matched its header, so every record is in bounds.
+fn records<const N: usize, T>(
+    bytes: &[u8],
+    cursor: &mut usize,
+    count: usize,
+    make: impl Fn([u32; N]) -> T,
+) -> Vec<T> {
+    let end = *cursor + count * N * 4;
+    let rows = bytes[*cursor..end].chunks_exact(N * 4).map(|row| {
+        make(std::array::from_fn(|index| {
+            u32::from_le_bytes([row[index * 4], row[index * 4 + 1], row[index * 4 + 2], row[index * 4 + 3]])
+        }))
+    });
+    *cursor = end;
+    rows.collect()
 }
 
 fn read_u32(bytes: &[u8], cursor: &mut usize) -> Result<u32, String> {
