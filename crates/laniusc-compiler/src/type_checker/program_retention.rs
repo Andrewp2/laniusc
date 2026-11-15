@@ -259,6 +259,7 @@ const STORE_BUFFERS: &[(&str, Sized)] = &[
     ("rt_sigs", Sized::Arena(A_SIGS, 4)),
     ("rt_schema", Sized::Arena(A_SCHEMA, 16)),
     ("rt_uses", Sized::Arena(A_USES, 48)),
+    ("rt_use_spans", Sized::Arena(A_USES, 16)),
     ("rt_segments", Sized::Arena(A_SEGMENTS, 96)),
     ("rt_seg_rows", Sized::Arena(A_SEG_ROWS, 112)),
     ("rt_seg_side", Sized::Arena(A_SEG_SIDE, 16)),

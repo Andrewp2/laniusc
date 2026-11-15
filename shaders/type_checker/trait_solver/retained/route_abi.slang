@@ -5,7 +5,7 @@
 public static const uint RP_MAGIC = 0x52545231u;
 public static const uint RP_VERSION = 1u;
 public static const uint RP_INVALID = 0xffffffffu;
-public static const uint RP_HEADER_WORDS = 48u;
+public static const uint RP_HEADER_WORDS = 64u;
 
 // Header words. The host writes the identity and the locations; the GPU
 // writes the status, failures and proof locations.
@@ -52,6 +52,8 @@ public static const uint RP_H_STORE_DIRS = 40u;
 public static const uint RP_H_STORE_TRAITS = 41u;
 public static const uint RP_H_STORE_JOBS = 42u;
 public static const uint RP_H_STORE_DECLS = 43u;
+public static const uint RP_H_DIAGNOSTIC_USE = 44u; // smallest hard-refuted use, or INVALID
+public static const uint RP_H_DIAGNOSTIC_SPAN = 48u; // job, file, byte, length
 
 public static const uint RP_BUILDING = 0u;
 public static const uint RP_VALID = 1u;

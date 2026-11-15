@@ -269,6 +269,10 @@ rows, proof rows and substitutions; they choose nothing.
 (catalog epoch, batch arena id, serial, store generation). It fails when
 `store` has another `rt_counts` buffer or another build generation.
 `status()` reads header words 8-10; production consumers need not call it.
+The route header occupies 64 words. Publication reduces hard-refuted calls
+to the smallest retained use and copies its `rt_use_spans` record to words
+48–51. `diagnostic_span()` reads that record on failure, allowing the compiler
+to render LNC0008 without reading or selecting among semantic rows on the host.
 
 The route arena (`route_abi.slang`):
 

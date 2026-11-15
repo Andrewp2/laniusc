@@ -93,6 +93,9 @@ pub struct GpuCompiler<'gpu> {
     /// Caller ABI tables of the retained native build in progress
     /// (`retained_native.rs`); `None` outside one.
     retained_native_calls: std::sync::Mutex<Option<crate::type_checker::program_retention::NativeCallTables>>,
+    /// Default native builds reuse their GPU monomorphization allocations.
+    /// This lock covers the whole build, including attachment of its store.
+    retained_native_build: Mutex<Option<RetainedNativeBuild>>,
 }
 
 // A worst-case 10,000-file project may place each file in its own bounded
@@ -499,6 +502,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     gpu.device.clone(), gpu.queue.clone(),
                 ),
                 retained_native_calls: std::sync::Mutex::new(None),
+                retained_native_build: Mutex::new(None, false),
             })
         })
     }

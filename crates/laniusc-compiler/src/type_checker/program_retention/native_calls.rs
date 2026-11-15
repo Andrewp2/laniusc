@@ -17,18 +17,19 @@ use std::sync::OnceLock;
 use super::*;
 use crate::codegen::x86::{GpuX86RelocatableObject, finalize::X86SymbolColumns};
 
-/// Argument terms recorded per use; a call with more fails certification.
-pub const NC_ARGS: u64 = 8;
 const KERNEL: &str = "type_checker/retention/native/00_provisional";
 
 /// Caller ABI facts per build-global use, for the certification
 /// (projection/10_certify.slang): `nc_use_abi` (result term, argument count,
-/// flags, generation) and `nc_use_args` (`NC_ARGS` terms per use). Rows of
+/// flags, generation; argument base, 0, 0, 0) and a compact `nc_use_args`
+/// pool of (term, passing mode) pairs. Rows of
 /// another build carry another generation and never certify.
 pub struct NativeCallTables {
     pub(crate) abi: wgpu::Buffer,
     pub(crate) args: wgpu::Buffer,
     uses: u64,
+    arguments: u32,
+    generation: u32,
 }
 
 impl NativeCallTables {
@@ -37,9 +38,11 @@ impl NativeCallTables {
         let device = &crate::gpu::device::global().device;
         let uses = u64::from(uses.max(64));
         Self {
-            abi: storage(device, "nc_use_abi", uses * 16, false),
-            args: storage(device, "nc_use_args", uses * NC_ARGS * 4, false),
+            abi: storage(device, "nc_use_abi", uses * 32, false),
+            args: storage(device, "nc_use_args", 64 * 8, false),
             uses,
+            arguments: 0,
+            generation: 0,
         }
     }
 
@@ -58,12 +61,9 @@ impl NativeCallTables {
             return;
         }
         let n = uses.next_power_of_two();
-        let abi = storage(device, "nc_use_abi", n * 16, false);
-        let args = storage(device, "nc_use_args", n * NC_ARGS * 4, false);
+        let abi = storage(device, "nc_use_abi", n * 32, false);
         encoder.copy_buffer_to_buffer(&self.abi, 0, &abi, 0, self.abi.size());
-        encoder.copy_buffer_to_buffer(&self.args, 0, &args, 0, self.args.size());
         self.abi = abi;
-        self.args = args;
         self.uses = n;
     }
 }
@@ -104,11 +104,14 @@ impl ProgramRetention {
         let device = &self.device;
         let pass = pass(device)?;
         let store = self.store.lock().unwrap();
+        if tables.generation != store.generation {
+            tables.generation = store.generation;
+            tables.arguments = 0;
+        }
         let mut encoder = device.create_command_encoder(&Default::default());
         tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
+        self.queue.submit(Some(encoder.finish()));
         let config = storage(device, "nc_config", 16, false);
-        self.queue
-            .write_buffer(&config, 0, &words_bytes(&[symbols, undefined, store.generation, 0]));
         let upload = |label: &str, bytes: &[u8]| {
             let buffer = storage(device, label, (bytes.len() as u64).max(16).next_multiple_of(16), false);
             self.queue.write_buffer(&buffer, 0, bytes);
@@ -119,6 +122,12 @@ impl ProgramRetention {
         let identity = upload("nc_identity", &columns.identity_bytes);
         let status = storage(device, "nc_status", 16, false);
         let names = reflected_names(pass);
+        loop {
+        self.queue.write_buffer(&config, 0, &words_bytes(&[
+            symbols, undefined, store.generation, (tables.args.size() / 8) as u32,
+        ]));
+        self.queue.write_buffer(&status, 0, &words_bytes(&[0, tables.arguments, 0, 0]));
+        let mut encoder = device.create_command_encoder(&Default::default());
         let own: [(&str, &wgpu::Buffer); 7] = [
             ("nc_config", &config),
             ("nc_call_hirs", &hirs),
@@ -167,11 +176,26 @@ impl ProgramRetention {
             cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
         }
         self.queue.submit(Some(encoder.finish()));
-        drop(store);
-        let status = self.read(&status, 1)?;
-        if status[0] != 0 {
-            bail!("retained original call symbols failed on the GPU (status {:#x})", status[0]);
+        let result = self.read(&status, 2)?;
+        if result[0] & !4 != 0 {
+            bail!("retained original call symbols failed on the GPU (status {:#x})", result[0]);
         }
+        if result[0] & 4 != 0 {
+            let bytes = (u64::from(result[1]) * 8).next_power_of_two();
+            if bytes <= tables.args.size() || bytes > u64::from(device.limits().max_storage_buffer_binding_size) {
+                bail!("original-call argument pool demand {bytes} exceeds the device limit");
+            }
+            let args = storage(device, "nc_use_args", bytes, false);
+            let mut copy = device.create_command_encoder(&Default::default());
+            copy.copy_buffer_to_buffer(&tables.args, 0, &args, 0, u64::from(tables.arguments) * 8);
+            self.queue.submit(Some(copy.finish()));
+            tables.args = args;
+            continue;
+        }
+        tables.arguments = result[1];
+        break;
+        }
+        drop(store);
         let symbol_rows = words_to_bytes(&self.read(&rows, symbol_words)?);
         let identity_bytes = words_to_bytes(&self.read(&identity, columns.identity_bytes.len() / 4)?);
         X86SymbolColumns { symbol_rows, identity_bytes }.apply_to_object(object)

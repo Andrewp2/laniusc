@@ -16,12 +16,11 @@
 import type_checker.retention.projection.pj_common;
 
 StructuredBuffer<uint4> nc_use_abi;
-StructuredBuffer<uint> nc_use_args;
+StructuredBuffer<uint2> nc_use_args;
 StructuredBuffer<uint4> rr_routes;
 RWStructuredBuffer<uint4> rr_readiness;
 globallycoherent RWStructuredBuffer<uint> nc_cert;
 
-static const uint NC_ARGS = 8u;
 static const uint USE_DIRECT = 1u;
 
 static const uint C_FLAGS = 1u;        // argument overflow or untranslated argument
@@ -50,9 +49,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint n; uint s;
     nc_use_abi.GetDimensions(n, s);
     uint routes; rr_routes.GetDimensions(routes, s);
-    if (use >= min(n, rt_counts[RT_A_USES])) return;
+    if (use >= min(n / 2u, rt_counts[RT_A_USES])) return;
     uint generation = rt_counts[RT_C_GENERATION];
-    uint4 abi = nc_use_abi[use];
+    uint4 abi = nc_use_abi[use * 2u];
     if (abi.w != generation) return;
     if ((abi.z & 0xffu) != 0u) { reject(use, C_FLAGS); return; }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
@@ -67,9 +66,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (use >= routes || rr_routes[use].w != generation) { reject(use, C_ROUTE); return; }
     uint4 route = rr_routes[use];
     uint args = abi.y;
+    uint base = nc_use_abi[use * 2u + 1u].x;
+    uint capacity; nc_use_args.GetDimensions(capacity,s);
+    if (base > capacity || args > capacity-base) { reject(use,C_FLAGS); return; }
     if (!laid_out(abi.x)) { reject(use, C_LAYOUT); return; }
     for (uint k = 0u; k < args; k++)
-        if (!laid_out(nc_use_args[use * NC_ARGS + k])) { reject(use, C_LAYOUT); return; }
+        if (!laid_out(nc_use_args[base + k].x)) { reject(use, C_LAYOUT); return; }
 
     if (route.x == PJ_NATIVE_LIBRARY && route.y == PJ_NATIVE_NS_INSTANCE)
     {
@@ -85,7 +87,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (pj_result(pj_req_result(target), status) != abi.x) { reject(use, C_RESULT); return; }
         for (uint k = 0u; k < args; k++)
             if (!pj_argument_compatible(pj_result(pj_req_param(target, k), status),
-                nc_use_args[use * NC_ARGS + k], (abi.z >> (8u + 2u * k)) & 3u))
+                nc_use_args[base + k].x, nc_use_args[base + k].y))
             {
                 reject(use, C_PARAM);
                 return;
@@ -103,6 +105,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (d1.y != 0u || d1.w != args) { reject(use, C_ARITY); return; }
     if (rt_sigs[d1.z] != abi.x) { reject(use, C_RESULT); return; }
     for (uint k = 0u; k < args; k++)
-        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], nc_use_args[use * NC_ARGS + k],
-            (abi.z >> (8u + 2u * k)) & 3u)) { reject(use, C_PARAM); return; }
+        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], nc_use_args[base + k].x,
+            nc_use_args[base + k].y)) { reject(use, C_PARAM); return; }
 }

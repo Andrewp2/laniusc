@@ -68,6 +68,7 @@ pub struct RetainedNativeBuild {
     finalizer: Option<GpuX86SymbolFinalizer>,
     discovery: RetainedDiscovery,
     calls: Option<NativeCallTables>,
+    sources: Vec<RetainedDiagnosticSources>,
     pub options: ProjectionOptions,
     pub report: RetainedNativeReport,
     pub native_link: Option<NativeLinkOptions>,
@@ -87,6 +88,7 @@ impl RetainedNativeBuild {
             finalizer: None,
             discovery: RetainedDiscovery::new(discovery, SubstitutionCapacity::default())?,
             calls: Some(NativeCallTables::new(uses)),
+            sources: Vec::new(),
             options: ProjectionOptions::default(),
             report: RetainedNativeReport::default(),
             native_link: None,
@@ -103,7 +105,109 @@ fn retained_error(context: &str, error: impl std::fmt::Display) -> CompileError 
     CompileError::GpuCodegen(format!("retained native build: {context}: {error}"))
 }
 
+/// Source text is retained only for rendering a GPU-selected diagnostic.
+/// No instance body or environment is reconstructed from these inputs.
+pub(super) struct RetainedDiagnosticSources {
+    texts: Arc<[String]>,
+    paths: Arc<[Option<PathBuf>]>,
+}
+
+impl RetainedDiagnosticSources {
+    pub(super) fn of(facts: &typecheck::OriginalUnitFacts) -> Self {
+        Self { texts: facts.template_sources().clone(), paths: facts.template_source_paths().clone() }
+    }
+}
+
+impl RetainedNativeBuild {
+    fn source_diagnostic(&self, span: [u32;4], code: gpu_type_checker::GpuTypeCheckCode, detail:u32) -> Option<CompileError> {
+        let [job,file,byte,len] = span;
+        let unit = self.sources.get(job as usize)?;
+        let source = unit.texts.get(file as usize)?;
+        let path = unit.paths.get(file as usize).and_then(Option::as_deref).unwrap_or(Path::new("<source>"));
+        Some(typecheck::type_check_diagnostic_at_span(path,source,byte as usize,len as usize,code,detail))
+    }
+
+    fn projection_error(&self, e: crate::type_checker::program_retention::projection::ProjectionError) -> CompileError {
+        if e.code == error::SUBST && e.detail == 11
+            && let Some(error) = self.source_diagnostic([e.job,e.file,e.byte,e.len],
+                gpu_type_checker::GpuTypeCheckCode::GenericInstantiationBoundary,0)
+        { return error; }
+        if e.code == error::RULE
+            && let Some(unit) = self.sources.get(e.job as usize)
+            && let Some(source) = unit.texts.get(e.file as usize)
+        {
+            let code = match e.detail >> 24 {
+                error::RULE_ASSIGN_MISMATCH => gpu_type_checker::GpuTypeCheckCode::AssignMismatch,
+                error::RULE_INTEGER_RANGE => gpu_type_checker::GpuTypeCheckCode::IntegerLiteralRange,
+                error::RULE_FLOAT_LITERAL => gpu_type_checker::GpuTypeCheckCode::FloatLiteral,
+                _ => return retained_error("instance language rule", e),
+            };
+            let path = unit.paths.get(e.file as usize).and_then(Option::as_deref).unwrap_or(Path::new("<source>"));
+            return typecheck::type_check_diagnostic_at_span(path, source, e.byte as usize,
+                e.len as usize, code, e.detail & 0xffffff);
+        }
+        retained_error("projection rejected the program", e)
+    }
+}
+
 impl GpuCompiler<'_> {
+    pub(super) async fn compile_native_program(
+        &self,
+        source_pack: &ExplicitSourcePackPathManifest,
+        options: Option<&NativeLinkOptions>,
+        output: Option<&Path>,
+    ) -> Result<ResidentLinkedOutput, CompileError> {
+        let mut state = self.retained_native_build.lock().await;
+        if state.is_none() {
+            *state = Some(RetainedNativeBuild::new(DiscoveryCapacity::default())
+                .map_err(|e| retained_error("initialize", e))?);
+        }
+        let build = state.as_mut().unwrap();
+        build.native_link = options.cloned();
+        self.compile_retained_output(source_pack, build, output).await
+    }
+
+    pub(super) async fn compile_native_source_pack<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<Vec<u8>, CompileError> {
+        let mut state = self.retained_native_build.lock().await;
+        if state.is_none() {
+            *state = Some(RetainedNativeBuild::new(DiscoveryCapacity::default())
+                .map_err(|e| retained_error("initialize", e))?);
+        }
+        let build = state.as_mut().unwrap();
+        build.native_link = None;
+        build.report = RetainedNativeReport::default();
+        build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
+        *self.retained_native_calls.lock().unwrap() = build.calls.take();
+        self.attach_program_retention(Some(build.store.clone()));
+        let pending = self.compile_pending_original_source_pack_unit_for_target(
+            SourcePackArtifactTarget::X86_64,
+            sources.iter().map(|s| s.as_ref().to_owned()).collect::<Vec<_>>().into(),
+            0, 0, Vec::new().into(), source_paths, false,
+        ).await;
+        self.attach_program_retention(None);
+        build.calls = self.retained_native_calls.lock().unwrap().take();
+        let pending = pending?;
+        build.sources = vec![RetainedDiagnosticSources::of(pending.facts())];
+        let native = pending.facts().native_c_functions().map_err(source_pack_artifact_store_error)?;
+        if !native.is_empty() {
+            return Err(super::x86_codegen::x86_native_link_required_error(&native));
+        }
+        match self.link_retained(vec![pending.release_closed()], &[], build, false, None)? {
+            ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
+            ResidentLinkedOutput::File(_) => unreachable!("no output file requested"),
+        }
+    }
+
+    /// Counters from the last default native build, including GPU instances.
+    #[doc(hidden)]
+    pub async fn native_monomorphization_report(&self) -> Option<RetainedNativeReport> {
+        self.retained_native_build.lock().await.as_ref().map(|b| b.report.clone())
+    }
+
     /// Compiles a path manifest as a retained native build:
     /// one frontend job per unit, no source replay (module documentation).
     pub async fn compile_path_manifest_to_x86_64_retained(
@@ -147,7 +251,8 @@ impl GpuCompiler<'_> {
         let originals = self.compile_retained_originals(source_pack, limits, build.native_link.as_ref(), spill).await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
-        let (originals, native_functions) = originals?;
+        let (originals, native_functions, sources) = originals?;
+        build.sources = sources;
         self.link_retained(originals, &native_functions, build, spill, output)
     }
 
@@ -157,23 +262,25 @@ impl GpuCompiler<'_> {
         limits: CompilationUnitLimits,
         native_link: Option<&NativeLinkOptions>,
         spill: bool,
-    ) -> Result<(Vec<CompiledSourcePackObject>, Vec<NativeCFunction>), CompileError> {
+    ) -> Result<(Vec<CompiledSourcePackObject>, Vec<NativeCFunction>, Vec<RetainedDiagnosticSources>), CompileError> {
         let batch_limits = SourcePackJobBatchLimits::from_codegen_unit_limits(limits);
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
         let mut executor = ResidentSourcePackExecutor::new(self, SourcePackArtifactTarget::X86_64)
             .with_frontend_units(&build_plan)
+            .with_standard_library(source_pack.standard_library_id)
             .retained(spill);
         if let Some(options) = native_link {
             x86::native::validate_options(options)
                 .map_err(|e| retained_error("native link options", e))?;
             executor = executor.with_native_link(options);
         }
+        let _prepared = self.prepare_unit_sources(source_pack, &build_plan);
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor).await?;
         let originals = executor
             .take_retained_originals()
             .ok_or_else(|| retained_error("link", "the executor published no original objects"))?;
-        Ok((originals, executor.take_retained_native_functions()))
+        Ok((originals, executor.take_retained_native_functions(), executor.take_retained_sources()))
     }
 
     fn link_retained(
@@ -193,11 +300,19 @@ impl GpuCompiler<'_> {
         catalog.publication_status = publication.as_ref().map(|p| p.status()).transpose()
             .map_err(|e| retained_error("trait publication", e))?;
         if catalog.publication_status != Some([1, 0, u32::MAX]) {
-            return Err(retained_error("trait catalog rejected the program", format!(
+            if let Some(publication) = &publication
+                && let Some(span) = publication.diagnostic_span().map_err(|e| retained_error("trait diagnostic",e))?
+                && let Some(error) = build.source_diagnostic(span,gpu_type_checker::GpuTypeCheckCode::TraitBoundUnsatisfied,0)
+            { return Err(error); }
+            if let Some(status) = catalog.catalog_status && status[0] != 1 {
+                return Err(CompileError::Diagnostic(Diagnostic::error("LNC0017", "program trait evidence checking failed")
+                    .with_note(format!("program catalog GPU admission/coherence failed: {status:?}"))));
+            }
+            return Err(CompileError::Diagnostic(Diagnostic::error("LNC0017", "program trait evidence checking failed").with_note(format!(
                 "stage {:?}, producer {:?}, admission {:?}, publication {:?}",
                 catalog.stage, catalog.first_failure, catalog.catalog_status,
                 catalog.publication_status,
-            )));
+            ))));
         }
         let mut publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
         let roots = match build.discovery.run_with_traits(&store, &mut publication).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
@@ -235,12 +350,7 @@ impl GpuCompiler<'_> {
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
         let (instances, report) = match outcome {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
-            ProjectionOutcome::Rejected { error: e, report } => {
-                return Err(retained_error(
-                    "projection rejected the program",
-                    format!("{} {e:?} ({} dispatches)", error::name(e.code), report.dispatches),
-                ));
-            }
+            ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
         };
         let finalizer = match &mut build.finalizer {
             Some(finalizer) => finalizer,

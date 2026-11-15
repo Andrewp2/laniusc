@@ -15,6 +15,7 @@
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
 import native_c_entry;
+import native_c_abi;
 import type_checker.operator_operand_rules;
 import type_checker.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;
@@ -289,7 +290,22 @@ void check_call(Row at, uint4 p, uint t, uint use)
             !((service >= 20u && service <= 62u && service != 52u) || service == 74u))
         { fail(at,PJ_E_USE,service); return; }
     }
-    if (d1.y != 0u || d1.w != args || rt_sigs[d1.z] != t)
+    uint abi = 0u;
+    if (rt_dir[entry*RT_DIR_WORDS].y == 4u)
+    {
+        uint4 d2 = rt_dir[entry*RT_DIR_WORDS+2u];
+        if (d2.z != 1u) { fail(at,PJ_E_SIGNATURE,0xfff7u); return; }
+        uint4 signature = rt_schema[d2.y];
+        if (signature.x != callee || signature.y != RT_SCHEMA_NATIVE_ABI ||
+            (!host && (signature.z & NATIVE_ABI_KIND_MASK) != (pj_use(at.rank,use,2u).x & NATIVE_ABI_KIND_MASK)))
+        { fail(at,PJ_E_SIGNATURE,0xfff7u); return; }
+        abi = signature.z;
+    }
+    bool variadic = (abi & NATIVE_ABI_VARIADIC) != 0u;
+    if (variadic && (abi != (NATIVE_ABI_C | NATIVE_ABI_VARIADIC) ||
+        rt_dir[entry*RT_DIR_WORDS].y != 4u || method || args > NATIVE_C_MAX_PARAMETERS))
+    { fail(at,PJ_E_SIGNATURE,args); return; }
+    if (d1.y != 0u || (variadic ? args < d1.w : d1.w != args) || rt_sigs[d1.z] != t)
     {
         fail(at, PJ_E_SIGNATURE, 0xfffeu);
         return;
@@ -297,7 +313,14 @@ void check_call(Row at, uint4 p, uint t, uint use)
     for (uint k = 0u; k < args; k++)
     {
         uint value = method && k == 0u ? RT_INVALID : pj_side(at.rank, PJ_SIDE_CALL_ARGS, p.y + k - (method ? 1u : 0u), 0u).y;
-        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], method && k == 0u ? receiver : row_type(at,value),
+        uint actual = method && k == 0u ? receiver : row_type(at,value);
+        if (variadic && k >= d1.w)
+        {
+            if (actual == SCALAR_F32 || !native_c_scalar(actual,false))
+            { fail(at,PJ_E_SIGNATURE,k); return; }
+            continue;
+        }
+        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], actual,
             method && k == 0u ? 0u : pj_row(at.rank,value,6u).x & 0xffu))
         {
             fail(at, PJ_E_SIGNATURE, k);

@@ -50,6 +50,9 @@ public globallycoherent RWStructuredBuffer<uint> rt_binders;    // ParamIds in c
 public globallycoherent RWStructuredBuffer<uint> rt_sigs;       // result term, then parameter terms
 public globallycoherent RWStructuredBuffer<uint4> rt_schema;    // field and variant-payload records
 public globallycoherent RWStructuredBuffer<uint4> rt_uses;      // RT_USE_WORDS per use
+// Exact diagnostic provenance, including uses in nongeneric bodies whose
+// body segment is not retained: job, file, file-relative byte, token length.
+public globallycoherent RWStructuredBuffer<uint4> rt_use_spans;
 // Trait facts. rt_dir_trait is a column of the directory (one uint4 per
 // entry): (first predicate record, predicate count, first binding record,
 // binding count). rt_traits holds RT_TRAIT_WORDS uint4 per record:
@@ -86,6 +89,7 @@ public static const uint RT_SCHEMA_FIELD = 1u;    // (struct, FIELD | ordinal <<
 public static const uint RT_SCHEMA_PAYLOAD = 2u;  // (enum, PAYLOAD | ordinal << 8, variant ordinal, declared term)
 public static const uint RT_SCHEMA_VARIANT = 3u;  // (enum, VARIANT | ordinal << 8, payload count, first payload record)
 public static const uint RT_SCHEMA_CONST = 4u;    // (constant, CONST | present << 8, value lo, value hi)
+public static const uint RT_SCHEMA_NATIVE_ABI = 5u; // (extern, NATIVE_ABI, accepted ABI flags, 0)
 public static const uint RT_TRAIT_WORDS = 2u;
 // Trait fact kinds (rt_traits t0.y low byte).
 public static const uint RT_TRAIT_PREDICATE = 1u;
@@ -216,7 +220,7 @@ public uint rt_capacity(uint arena)
     if (arena == RT_A_BINDERS) { rt_binders.GetDimensions(n, s); return n; }
     if (arena == RT_A_SIGS) { rt_sigs.GetDimensions(n, s); return n; }
     if (arena == RT_A_SCHEMA) { rt_schema.GetDimensions(n, s); return n; }
-    if (arena == RT_A_USES) { rt_uses.GetDimensions(n, s); return n / RT_USE_WORDS; }
+    if (arena == RT_A_USES) { rt_uses.GetDimensions(n, s); rt_use_spans.GetDimensions(m, s); return min(n / RT_USE_WORDS, m); }
     if (arena == RT_A_SEGMENTS) { rt_segments.GetDimensions(n, s); return n / RT_SEG_WORDS; }
     if (arena == RT_A_SEG_ROWS) { rt_seg_rows.GetDimensions(n, s); return n / RT_ROW_WORDS; }
     if (arena == RT_A_SEG_SIDE) { rt_seg_side.GetDimensions(n, s); return n; }

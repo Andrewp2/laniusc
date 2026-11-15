@@ -33,6 +33,7 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     retained_originals: Option<Vec<CompiledSourcePackObject>>,
     retained_spill: bool,
     retained_native_functions: Vec<NativeCFunction>,
+    retained_sources: Vec<super::retained_native::RetainedDiagnosticSources>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -86,6 +87,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None,
             native_link: None, frontend_units: None, retained: false, retained_originals: None, retained_spill: false,
             retained_native_functions: Vec::new(),
+            retained_sources: Vec::new(),
         }
     }
 
@@ -127,6 +129,10 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         std::mem::take(&mut self.retained_native_functions)
     }
 
+    pub(super) fn take_retained_sources(&mut self) -> Vec<super::retained_native::RetainedDiagnosticSources> {
+        std::mem::take(&mut self.retained_sources)
+    }
+
     pub(super) fn with_native_link(mut self, options: &NativeLinkOptions) -> Self {
         self.native_link = Some(options.clone());
         self
@@ -155,20 +161,16 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // so generic bodies specialize alike. A standard-library unit may
         // reuse an earlier job's pending original; it is admitted with the
         // rest of this program at link.
-        let pending = if self.retained && self.retained_spill {
-            self.compiler.compile_file_pending_native_unit(
-                &handle.job, &handle.source_files, dependency_pages.into(),
-            ).await?
-        } else if self.retained {
-            self.compiler.compile_cached_pending_original_unit(
-                self.target, &handle.job, false, &handle.source_files, dependency_pages.into(), false,
+        let pending = if self.retained {
+            self.compiler.compile_pending_native_unit(
+                &handle.job, &handle.source_files, dependency_pages.into(), self.retained_spill,
             ).await?
         } else if self.native_link.is_some() {
             // The native profile spills before any cache or pending inventory
             // can retain its section vectors. Checked source facts still own
             // their exact source and dependency snapshots for admission.
-            self.compiler.compile_file_pending_native_unit(
-                &handle.job, &handle.source_files, dependency_pages.into(),
+            self.compiler.compile_pending_native_unit(
+                &handle.job, &handle.source_files, dependency_pages.into(), true,
             ).await?
         } else {
             // The program's last unit has no dependents. When the units
@@ -225,6 +227,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             // The retained driver admits the GPU-produced whole-program
             // catalog before discovery and projection. No replay session is
             // constructed here.
+            self.retained_sources = pending.iter().map(|p| super::retained_native::RetainedDiagnosticSources::of(p.facts())).collect();
             self.retained_originals = Some(pending.into_iter().map(PendingOriginalUnit::release_closed).collect());
             self.retained_native_functions = native_functions;
             return Ok(ResidentLinkedOutput::Bytes(Vec::new()));

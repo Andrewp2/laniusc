@@ -276,13 +276,10 @@ fn retained_native_build_rejects_uncalled_conflicting_impls() {
             compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
         )
         .expect_err("uncalled overlapping impls must fail coherence");
-        let message = format!("{error:?}");
-        assert!(
-            message.contains("trait catalog rejected")
-                && message.contains("stage Admission")
-                && message.contains("admission Some([5, 0,"),
-            "{message}"
-        );
+        let diagnostic = error.to_public_diagnostic();
+        assert_eq!(diagnostic.code, "LNC0017", "{error:?}");
+        assert!(diagnostic.notes.iter().any(|note|
+            note.contains("program catalog GPU admission/coherence failed: [5, 0,")), "{error:?}");
         assert_eq!(build.store().job_reports().len(), 3);
         assert_eq!(fallback_counters().1, before.1, "no replay on rejection");
         // A non-overlapping impl is valid, and the rejected build leaves no
@@ -1291,6 +1288,8 @@ pub fn through_c<T>(value:T)->i32 {
     return abs(-21);
 }
 
+
+
 "#).unwrap();
         std::fs::write(&app,r#"module app::main;
 import native_c::lib;
@@ -1420,6 +1419,167 @@ fn main()->i32 {
                 assert!(out.stderr.is_empty(), "{out:?}");
             }
         }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_variadic_calls_preserve_registers_and_stack_arguments() {
+    common::run_with_timeout("retained variadic C", || {
+        let directory = std::env::temp_dir().join(format!("lanius-retained-varargs-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        let object = directory.join("probes.o");
+        let result = common::process_output_with_timeout("variadic C probe", std::process::Command::new("cc")
+            .args(["-c", "-O2", "tests/fixtures/native_c/probes.c", "-o"]).arg(&object), std::time::Duration::from_secs(20));
+        common::assert_command_success("variadic C probe", &result);
+        std::fs::write(&lib, r#"module varargs::lib;
+pub extern "C" fn probe_variadic_doubles(count:i32, ...)->f64;
+extern "C" fn probe_variadic_mix(count:u32, ...)->i64;
+pub fn local<T>(v:T)->T {
+    let half:f64=0.5; let one:f64=1.5; let two:f64=2.5;
+    let ten:i64=10; let twenty:i64=20; let thirty:i64=30;
+    let cell:[i32;1]=[1000]; let p:ptr=i32_array_data_ptr(cell);
+    assert(probe_variadic_mix(0)==0);
+    assert(probe_variadic_mix(12,1,half,ten,p,2,one,twenty,p,3,two,thirty,p)==3075);
+    assert(probe_variadic_doubles(10,half,half,half,half,half,half,half,half,one,two)==56.5);
+    return v;
+}
+"#).unwrap();
+        std::fs::write(&app, r#"module app::main;
+import varargs::lib;
+fn remote<T>(v:T)->T {
+    let one:f64=1.5; let two:f64=2.5;
+    assert(probe_variadic_doubles(2,one,two)==6.5);
+    return local(v);
+}
+fn main()->i32 { if (remote<bool>(false)) { return 1; } return remote<i32>(42); }
+"#).unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id:1, paths:vec![lib], dependency_library_ids:vec![] },
+            ExplicitSourceLibraryPaths { library_id:2, paths:vec![app], dependency_library_ids:vec![1] },
+        ]).unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.native_link = Some(laniusc_compiler::compiler::NativeLinkOptions { objects:vec![object], ..Default::default() });
+        for batch_rows in [8, 4096] {
+            build.options.batch_rows = batch_rows;
+            let before = fallback_counters();
+            let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build)).unwrap();
+            assert_eq!(fallback_counters().1, before.1);
+            // The linked C probe contains legal tail calls between C functions,
+            // outside the raw Lanius function-local jump validator's contract.
+            use std::os::unix::fs::PermissionsExt;
+            let executable = directory.join("varargs");
+            std::fs::write(&executable, elf).unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let result = common::process_output_with_timeout("retained variadic C",
+                &mut std::process::Command::new(&executable), std::time::Duration::from_secs(20));
+            assert_eq!(result.status.code(), Some(42), "{result:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn default_native_entry_points_monomorphize_without_replay() {
+    common::run_with_timeout("default native monomorphization", || {
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let source = r#"struct Wrap<A> { value:A }
+impl<T> Wrap<T> { fn marker(&self)->i32 { return 1; } }
+impl Wrap<[i32;2]> { fn marker(&self)->i32 { return 2; } }
+fn probe<T>(v:Wrap<T>)->i32 { return v.marker(); }
+fn main()->i32 {
+    let a:Wrap<bool> = Wrap<bool>{value:true};
+    let b:Wrap<[i32;2]> = Wrap<[i32;2]>{value:[7,9]};
+    return 40+probe(a)+probe(b);
+}"#;
+        for run in 0..2 {
+            let before = fallback_counters();
+            let elf = pollster::block_on(compiler.compile_source_to_x86_64(source)).unwrap();
+            assert_eq!(fallback_counters().1, before.1);
+            let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
+            assert!(report.discovery.instances >= 2, "{report:?}");
+            assert_eq!(report.units, 1);
+            let result = common::run_x86_64_elf_output("default generic source", &format!("default_generic_{run}"), &elf);
+            assert_eq!(result.status.code(), Some(42), "{result:?}");
+        }
+        let directory = std::env::temp_dir().join(format!("lanius-default-native-{}", std::process::id()));
+        let manifest = manifest(&directory);
+        for native in [false, true] {
+            let before = fallback_counters();
+            let elf = if native {
+                pollster::block_on(compiler.compile_path_manifest_with_native_link(&manifest, &Default::default()))
+            } else {
+                pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest))
+            }.unwrap();
+            assert_eq!(fallback_counters().1, before.1);
+            let report = pollster::block_on(compiler.native_monomorphization_report()).unwrap();
+            assert_eq!(report.units, 2);
+            assert_eq!(report.discovery.instances, 5);
+            let result = common::run_x86_64_elf_output("default generic manifest", "default_generic_manifest", &elf);
+            assert_eq!(result.status.code(), Some(13), "{result:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn default_native_root_abi_grows_for_wide_calls_and_preserves_late_borrows() {
+    common::run_with_timeout("wide native root ABI", || {
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let params = (1..=12).map(|n| format!("p{n}:i32")).collect::<Vec<_>>().join(",");
+        let args = (1..=12).map(|n| n.to_string()).collect::<Vec<_>>().join(",");
+        let calls = (0..6).map(|n| format!("wide<{}>({}, {args}, a)",
+            if n%2==0 {"bool"} else {"i32"}, if n%2==0 {"true"} else {"9"}))
+            .collect::<Vec<_>>().join("+");
+        let source = format!("fn wide<T>(tag:T,{params},tail:[i32])->i32 {{
+            if (p1 != 1 || p12 != 12 || tail[0] != 13) {{ return 1; }} return 7;
+        }} fn main()->i32 {{ let a:[i32;1]=[13]; return {calls}; }}");
+        for _ in 0..2 {
+            let before = fallback_counters();
+            let elf = pollster::block_on(compiler.compile_source_to_x86_64(&source)).unwrap();
+            assert_eq!(fallback_counters().1, before.1);
+            let result = common::run_x86_64_elf_output("wide root ABI", "wide_root_abi", &elf);
+            assert_eq!(result.status.code(), Some(42), "{result:?}");
+        }
+    });
+}
+
+#[test]
+fn default_native_instance_diagnostics_keep_the_defining_source_span() {
+    use laniusc_compiler::compiler::CompileError;
+    common::run_with_timeout("default instance diagnostic", || {
+        let directory = std::env::temp_dir().join(format!("lanius-default-diagnostic-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        let source = "module lib::a; pub fn bump<T>(v:T)->T { return v+300; }";
+        std::fs::write(&lib, source).unwrap();
+        std::fs::write(&app, "module app::b; import lib::a; fn main()->i32 { let v:u8=bump<u8>(1); return 0; }").unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id:1, paths:vec![lib.clone()], dependency_library_ids:vec![] },
+            ExplicitSourceLibraryPaths { library_id:2, paths:vec![app.clone()], dependency_library_ids:vec![1] },
+        ]).unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let before = fallback_counters();
+        let error = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest)).unwrap_err();
+        let CompileError::Diagnostic(diagnostic) = error else { panic!("{error:?}") };
+        assert_eq!(diagnostic.code, "LNC0069", "{}", diagnostic.render());
+        let label = diagnostic.primary_label.unwrap();
+        assert_eq!(label.path, lib);
+        assert_eq!(label.byte_start, Some(source.find("300").unwrap()));
+        assert_eq!(label.byte_end, Some(source.find("300").unwrap()+3));
+        std::fs::write(&app, "module app::b; import lib::a; fn main()->i32 { let v:u16=bump<u16>(1); if (v==301) { return 42; } return 1; }").unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id:1, paths:vec![lib.clone()], dependency_library_ids:vec![] },
+            ExplicitSourceLibraryPaths { library_id:2, paths:vec![app.clone()], dependency_library_ids:vec![1] },
+        ]).unwrap();
+        let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64(&manifest)).unwrap();
+        assert_eq!(fallback_counters().1, before.1);
+        let result = common::run_x86_64_elf_output("after rejected instance", "after_rejected_instance", &elf);
+        assert_eq!(result.status.code(), Some(42), "{result:?}");
         std::fs::remove_dir_all(directory).ok();
     });
 }

@@ -23,6 +23,7 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import type_checker.retention.export.common;
 import type_checker.retention.row_classes;
+import type_checker.retention.export.source_tables;
 
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> semantic_call_native_abi_by_hir;
@@ -237,4 +238,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     rt_uses[index * RT_USE_WORDS + 1u] = uint4(env, result, matched, receiver);
     rt_uses[index * RT_USE_WORDS + 2u] = uint4(aux, call_row ? call.generic_requirements : 0u, compact_hir_links[row].file_id,
         rel_callee_token);
+    RtJobToken source_token = job_token(token);
+    uint file = compact_hir_links[row].file_id;
+    rt_use_spans[index] = uint4(rt_counts[RT_C_JOBS], file,
+        source_token.start - job_file_start(file), source_token.len);
 }

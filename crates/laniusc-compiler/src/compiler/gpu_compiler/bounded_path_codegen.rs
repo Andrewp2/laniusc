@@ -134,6 +134,12 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         output: &Path,
     ) -> Result<u64, CompileError> {
+        if target == SourcePackArtifactTarget::X86_64 {
+            return match self.compile_native_program(source_pack, None, Some(output)).await? {
+                ResidentLinkedOutput::File(bytes) => Ok(bytes),
+                ResidentLinkedOutput::Bytes(_) => unreachable!("output file requested"),
+            };
+        }
         let limits = self.resident_source_unit_limits();
         if path_manifest_requires_file_backed_build(source_pack, limits) {
             let artifact = self
@@ -194,6 +200,9 @@ impl<'gpu> GpuCompiler<'gpu> {
         target: SourcePackArtifactTarget,
         output: Option<&Path>,
     ) -> Result<ResidentLinkedOutput, CompileError> {
+        if target == SourcePackArtifactTarget::X86_64 {
+            return self.compile_native_program(source_pack, None, output).await;
+        }
         let limits = self.resident_source_unit_limits();
         let whole_program = whole_program_manifest(source_pack, limits);
         let source_pack = whole_program.as_ref().unwrap_or(source_pack);

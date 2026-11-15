@@ -139,6 +139,12 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
     // accepted value like any other call.
     if (!record && !unit && call_intrinsic_tag[token] != INTRINSIC_NONE)
     {
+        if (call_intrinsic_tag[token] == INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
+        {
+            uint spare = CT_NONE;
+            return ct_intern_small(CT_KIND_SLICE, 1u, uint3(0u,0u,0u),
+                uint2(3u,0u), uint2(0u,0u), spare);
+        }
         uint scalar = intrinsic_scalar_result(call_intrinsic_tag[token]);
         return scalar != 0u ? ct_ref(1u, scalar) : CT_NONE;
     }

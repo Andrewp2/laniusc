@@ -133,7 +133,7 @@ const RT_FIRST_TERM: u32 = 32;
 
 // route_abi.slang header words.
 const RP_MAGIC: u32 = 0x5254_5231;
-const RP_HEADER_WORDS: u32 = 48;
+const RP_HEADER_WORDS: u32 = 64;
 const RP_H_STATUS: usize = 8;
 const RP_H_FIRST_FAILURE: usize = 10;
 const RP_USE_WORDS: u32 = 4;
@@ -859,6 +859,7 @@ fn run(
     header[41] = traits;
     header[42] = jobs;
     header[43] = status[A_DECLS];
+    header[44] = u32::MAX;
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("trait_solver.retained_publish"),
     });
@@ -981,6 +982,15 @@ impl RetainedTraitPublication {
         let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained publication status")?;
         let words = super::words(&raw[0])?;
         Ok([words[0], words[1], words[2]])
+    }
+
+    /// GPU-selected source span of the first hard-refuted call. No proof,
+    /// environment or semantic table is read back to choose a diagnostic.
+    pub fn diagnostic_span(&self) -> Result<Option<[u32; 4]>> {
+        let region = ReadbackRegion::from_buffer(&self.routes.buffer, 48 * 4, 16, "retained diagnostic")?;
+        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained diagnostic")?;
+        let words = super::words(&raw[0])?;
+        Ok((words[0] != u32::MAX).then(|| [words[0], words[1], words[2], words[3]]))
     }
 
     /// Words of the route arena. For assertions only.

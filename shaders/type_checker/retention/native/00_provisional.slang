@@ -15,17 +15,17 @@ import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
 import codegen.x86.finalize.symbol_identity;
 
-// (symbol count, undefined count, generation, 0)
+// (symbol count, undefined count, generation, argument capacity)
 StructuredBuffer<uint> nc_config;
 StructuredBuffer<uint> nc_call_hirs;
 // GPU_X86_SYMBOL_ROW_BYTES / 4 words per symbol, as the object stores them.
 RWStructuredBuffer<uint> nc_symbols;
 RWStructuredBuffer<uint> nc_identity;
-// Per global use: (accepted result term, argument count, flags | modes<<8,
-// generation). Eight two-bit checked argument modes follow the low flags.
+// Two rows per global use: (accepted result, count, flags, generation),
+// then (argument base, 0, 0, 0).
 RWStructuredBuffer<uint4> nc_use_abi;
-// Per global use: NC_ARGS argument terms.
-RWStructuredBuffer<uint> nc_use_args;
+// Compact argument pool: (checked term, passing mode).
+RWStructuredBuffer<uint2> nc_use_args;
 RWStructuredBuffer<uint> nc_status;
 
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
@@ -34,8 +34,6 @@ StructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 
-static const uint NC_ARGS = 8u;
-static const uint NC_FLAG_ARGS_OVER = 1u;
 static const uint NC_FLAG_ARG_UNTRANSLATED = 2u;
 static const uint DIR_FREE_FN = 1u;
 static const uint USE_DIRECT = 1u;
@@ -55,7 +53,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint use = use_base + rt_x_scan[call].y;
     uint uses; uint stride;
     nc_use_abi.GetDimensions(uses, stride);
-    if (use >= uses)
+    if (use >= uses / 2u)
     {
         InterlockedOr(nc_status[0], 1u);
         return;
@@ -75,6 +73,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // nongeneric callee keeps its ordinary native symbol.
     if ((d0.y != DIR_FREE_FN && d0.y != 2u) || d2.x == RT_INVALID) return;
 
+    HirPayload p = compact_hir_payload[call];
+    uint count = p.c + (method ? 1u : 0u);
+    uint arg_base;
+    InterlockedAdd(nc_status[1], count, arg_base);
+    if (arg_base > nc_config[3] || count > nc_config[3] - arg_base)
+    {
+        InterlockedOr(nc_status[0], 4u);
+        return;
+    }
+
     // The identity words of this undefined symbol: three aligned words.
     uint start = nc_symbols[row + 2u];
     if (nc_symbols[row + 3u] != PROVISIONAL_IDENTITY_BYTES || (start & 3u) != 0u ||
@@ -93,13 +101,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     nc_symbols[row + 1u] = hash.y;
 
     // Caller ABI facts.
-    HirPayload p = compact_hir_payload[call];
-    uint count = p.c + (method ? 1u : 0u);
-    uint flags = count > NC_ARGS ? NC_FLAG_ARGS_OVER : 0u;
+    uint flags = 0u;
     uint total = compact_call_arg_count[0u];
-    for (uint i = 0u; i < min(count, NC_ARGS); i++)
+    for (uint i = 0u; i < count; i++)
     {
         uint term = RT_NONE;
+        uint mode = 0u;
         if (method && i == 0u) term = u1.w;
         else if (p.b + i - (method ? 1u : 0u) < total)
         {
@@ -107,13 +114,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (value < hir_count())
             {
                 term = translate_checked(semantic_expr_ref_tag_by_hir[value], semantic_expr_ref_payload_by_hir[value]);
-                uint mode = semantic_argument_mode_by_hir[value];
+                mode = semantic_argument_mode_by_hir[value];
                 if (mode > 3u) flags |= NC_FLAG_ARG_UNTRANSLATED;
-                else flags |= mode << (8u + 2u * i);
             }
         }
         if (!rt_is_term(term) || !rt_term_closed(term)) flags |= NC_FLAG_ARG_UNTRANSLATED;
-        nc_use_args[use * NC_ARGS + i] = term;
+        nc_use_args[arg_base + i] = uint2(term,mode);
     }
-    nc_use_abi[use] = uint4(u1.y, count, flags, nc_config[2]);
+    nc_use_abi[use * 2u] = uint4(u1.y, count, flags, nc_config[2]);
+    nc_use_abi[use * 2u + 1u] = uint4(arg_base,0u,0u,0u);
 }

@@ -185,7 +185,10 @@ public uint pj_words(uint term)
     if (term < RT_FIRST_TERM)
     {
         if (term == SCALAR_STR) return 2u;
-        if (term == SCALAR_UNIT || term == SCALAR_NEVER) return 0u;
+        // Native aggregate storage reserves one word for every scalar,
+        // including unit (local_struct_layout and lowering's field layout).
+        // A void function's return convention is determined by its scalar
+        // result code, independently of this storage width.
         return 1u;
     }
     uint n; uint s;

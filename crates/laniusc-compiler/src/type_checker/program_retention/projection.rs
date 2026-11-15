@@ -320,6 +320,9 @@ pub struct ProjectionError {
     /// The defining job's file id and the file-relative byte start.
     pub file: u32,
     pub byte: u32,
+    /// Defining frontend job and source token length (diagnostic metadata).
+    pub job: u32,
+    pub len: u32,
 }
 
 impl std::fmt::Display for ProjectionError {
@@ -1114,6 +1117,8 @@ impl RetainedProjection {
             token: u32::MAX,
             file: u32::MAX,
             byte: u32::MAX,
+            job: u32::MAX,
+            len: 0,
         }))
     }
 
@@ -1222,6 +1227,8 @@ impl RetainedProjection {
                     token: u32::MAX,
                     file: u32::MAX,
                     byte: u32::MAX,
+                    job: u32::MAX,
+                    len: 0,
                 },
                 report,
             });
@@ -1402,6 +1409,8 @@ impl RetainedProjection {
                 token: f[5],
                 file: f[6],
                 byte: f[7],
+                job: status[45],
+                len: status[46],
             };
             if status[S_IDENTITY_OVERFLOW] != 0 && status[S_ERRORS] == 0 {
                 bail!("retained projection identity table overflowed");

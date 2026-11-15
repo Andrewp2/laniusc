@@ -189,6 +189,10 @@ committed definition of the same declaration is counted in
   - `CONST 4`: `(constant, CONST | concrete << 8, value lo, value hi)`.
     `concrete` is 0 or 1. The value comes from the folded initializer;
     a missing concrete value makes the declaration incomplete.
+- **Use provenance, `rt_use_spans`.** One uint4 per use, allocated and retried
+  with the use arena: job, file, file-relative callee byte, and token length.
+  Nongeneric functions retain these spans even though they retain no body
+  segment. The GPU selects failing uses; the host renders their diagnostics.
 - **Uses, `rt_uses`.** 3 × uint4, one per call row inside a function:
   - u0 `(owner DeclId, use row relative to the owner, form | adjustment <<
     8 | deref count << 16, callee DeclId or 0)`. Forms are `DIRECT 1`,

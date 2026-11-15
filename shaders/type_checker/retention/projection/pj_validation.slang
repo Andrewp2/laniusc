@@ -1,5 +1,6 @@
 // Common concrete row and type validation for projection and call checking.
 import type_checker.operator_operand_rules;
+import type_checker.inherited_expression_type;
 __exported import type_checker.retention.projection.pj_types;
 
 public struct Row
@@ -19,6 +20,26 @@ public void fail(Row at, uint code, uint detail)
     pj_row_fail(at.g, code, detail);
 }
 
+// A pointer context keeps literal-derived arithmetic at i32, matching
+// expression_types/00_init and closure/table_rows. Pointer-valued operands
+// still carry ptr. All consumers see this normalization.
+public uint normalize_pointer_literal(Row at, uint row, uint type)
+{
+    if (type != SCALAR_PTR) return type;
+    uint rows = pj_inf(at.rank,1u).x;
+    for (uint step = 0u; step < rows && row < rows; step++)
+    {
+        uint kind = pj_row(at.rank,row,0u).x;
+        uint4 payload = pj_row(at.rank,row,2u);
+        if (!expression_inherits_operand_type(kind,payload.x))
+            return kind == RT_HIR_LITERAL_EXPR && payload.x == 3u &&
+                rt_is_param_leaf(pj_row(at.rank,row,3u).x) ? SCALAR_I32 : type;
+        if (payload.y == row) break;
+        row = payload.y;
+    }
+    return type;
+}
+
 // The closed substituted type of relative row `row`, or RT_INVALID.
 public uint row_type(Row at, uint row)
 {
@@ -28,7 +49,7 @@ public uint row_type(Row at, uint row)
     uint t = pj_result(pj_req_row(at.rank, row), status);
     if (pj_row(at.rank, row, 6u).y == RT_CONST_SYMBOLIC && pj_row(at.rank, row, 0u).x != RT_HIR_TYPE)
         return rt_is_stored_term(t) && rt_term_kind(t) == RT_KIND_CC_VALUE ? rt_term_words(t).x : RT_INVALID;
-    return t;
+    return normalize_pointer_literal(at,row,t);
 }
 
 public bool template_closed(Row at, uint row)

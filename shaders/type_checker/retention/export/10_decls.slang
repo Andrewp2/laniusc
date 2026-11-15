@@ -21,6 +21,7 @@ import type_checker.retention.row_classes;
 StructuredBuffer<uint> compact_fn_return_type;
 StructuredBuffer<uint> compact_const_type;
 StructuredBuffer<uint> compact_const_value;
+StructuredBuffer<uint> semantic_function_native_abi_by_hir;
 
 void check_term(uint row, uint term, uint decl, uint parent)
 {
@@ -152,6 +153,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint result = valid_row(result_row) ? type_row_term(result_row) : SCALAR_UNIT;
             check_term(row, result, decl, parent);
             rt_sigs[sig_base] = result;
+        }
+        if (kind == RT_DECL_EXTERN_FN)
+        {
+            schema_count = 1u;
+            schema_base = rt_alloc(RT_A_SCHEMA, 1u);
+            if (schema_base != RT_INVALID)
+                rt_schema[schema_base] = uint4(decl, RT_SCHEMA_NATIVE_ABI,
+                    semantic_function_native_abi_by_hir[row], 0u);
         }
     }
     else if (core.kind == HIR_IMPL)

@@ -4,6 +4,7 @@
 // own output and proof store. Pass 08 writes the proof locations and then
 // the status. Nothing here selects: the routes copy the solver's choice.
 import type_checker.trait_solver.retained.route_abi;
+import type_checker.retention.retention_store;
 
 public RWStructuredBuffer<uint> rc_routes;
 public RWStructuredBuffer<uint> rp_catalog;
@@ -58,7 +59,9 @@ public void publish_route(uint o)
         uint call = rc_routes[at];
         if (call == 0u) return;
         if (call - 1u >= header(RP_H_CALLS)) { fault(RP_E_RESULT, o); return; }
-        rc_routes[at + 3u] = out_word(header(RP_H_OUT_CALLS) + (call - 1u) * 8u);
+        uint state = out_word(header(RP_H_OUT_CALLS) + (call - 1u) * 8u);
+        rc_routes[at + 3u] = state;
+        if (state == 3u) InterlockedMin(rc_routes[RP_H_DIAGNOSTIC_USE], use);
         return;
     }
     uint result = header(RP_H_OUT_RESULTS) + o * 8u;
@@ -114,6 +117,9 @@ public void publish_route(uint o)
 
 public void publish_finish()
 {
+    uint use = header(RP_H_DIAGNOSTIC_USE);
+    uint4 span = use < header(RP_H_USES) ? rt_use_spans[use] : uint4(RP_INVALID,RP_INVALID,RP_INVALID,0u);
+    for (uint i = 0u; i < 4u; i++) rc_routes[RP_H_DIAGNOSTIC_SPAN+i] = span[i];
     uint receipt = header(RP_H_CAT_RECEIPT);
     bool valid = receipt < header(RP_H_CAT_WORDS) && rp_catalog[receipt] == 1u;
     uint batch = header(RP_H_OUT_RECEIPT);

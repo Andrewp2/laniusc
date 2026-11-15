@@ -89,23 +89,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         sources: &[S],
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<Vec<u8>, CompileError> {
-        let pending = self.compile_x86_source_pack_auto(sources, source_paths).await?;
-        let objects = self.specialize_pending_x86_source_pack_objects(vec![pending]).await?;
-        let first_source = sources.first().map(|source| {
-            let path = source_paths.and_then(|paths| paths.first()).and_then(Option::as_deref);
-            (source.as_ref(), path)
-        });
-        let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
-        let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
-            .map_err(|error| x86_link_input_error(error, first_source))?;
-        drop(input_span);
-        let linker = self
-            .x86_linker()
-            .map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;
-        let _resident_guard = self.resident_pipeline_lock.lock().await;
-        linker
-            .link_executable(&self.gpu.device, &self.gpu.queue, &input)
-            .map_err(|error| x86_source_pack_link_error("link native generic source pack", error))
+        self.compile_native_source_pack(sources, source_paths).await
     }
 }
 

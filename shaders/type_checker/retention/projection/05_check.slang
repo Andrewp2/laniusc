@@ -280,9 +280,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // runtime value. The enclosing array term owns its evaluated count.
         if (kind == RT_HIR_TYPE && rt_is_stored_term(t) &&
             (rt_term_kind(t) == RT_KIND_CC_COUNT || rt_term_kind(t) == RT_KIND_CC_VALUE)) return;
-        if (pattern && pj_referent(t) != pattern_type)
+        if (pattern && t != pattern_type && pj_referent(t) != pattern_type)
         { fail(at,PJ_E_SIGNATURE,0xfffau); return; }
         if (pattern) t = pattern_type;
+        else t = normalize_pointer_literal(at,at.row,t);
         if (!supported_type(at, t)) return;
         if (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE && !function_value)
         {
@@ -463,7 +464,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (kind == RT_HIR_LET_STMT || (kind == RT_HIR_STMT && p.x == STMT_LET))
         check_destination(at, t, p.z, changed || (p.z != RT_INVALID && !template_closed(at, p.z)));
     else if ((kind == RT_HIR_STMT || kind == RT_HIR_ASSIGN_EXPR) && p.x == STMT_ASSIGN)
-        check_destination(at, row_type(at, p.y), p.z, !template_closed(at, p.y) || !template_closed(at, p.z));
+    {
+        uint target = row_type(at,p.y);
+        if (!operator_pointer_offset_assignment(p.w,operand_class(target),operand_class(row_type(at,p.z))))
+            check_destination(at, target, p.z, !template_closed(at,p.y) || !template_closed(at,p.z));
+    }
 
     if (failed) return;
     if (pattern) return;

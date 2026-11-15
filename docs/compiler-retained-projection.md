@@ -8,7 +8,8 @@ layouts on the GPU, projects the rows into the existing lowering inputs and
 runs the existing lowering pipeline. It never runs a frontend, never lexes or
 parses instance text and never calls source replay. A retained native build
 (see "Native compilation") uses it with discovery and the original objects.
-Ordinary compilation does not use it.
+Native x86 executable entry points use it by default, including native C
+linking and bounded file output. Wasm still uses the older specialization path.
 
 This document is the boundary contract. Implementation status and test
 receipts are at the end.
@@ -158,9 +159,12 @@ The build has seven steps.
      the identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE, use)` and its
      hash.
    - It records the caller's ABI facts in `NativeCallTables`. `nc_use_abi`
-     holds the accepted result, argument count, flags and generation.
-     `nc_use_args` holds up to 8 argument terms, each translated from the
-     call's checked argument references.
+     holds the accepted result, argument count, flags, generation and an
+     argument-pool offset. `nc_use_args` holds `(term, passing mode)` pairs
+     translated from each call's checked arguments. GPU allocation reports
+     pool demand; the host grows and retries before publishing the object.
+     A failed attempt preserves earlier units' argument records. No fixed
+     argument-count limit is introduced at this boundary.
    - The host uploads and reads back the object's opaque symbol columns.
      `X86SymbolColumns::apply_to_object` checks that every other field is
      unchanged.
