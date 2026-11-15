@@ -8,6 +8,7 @@ import type_checker.calls.explicit_constant_operand;
 import type_checker.calls.claim_reference;
 import type_checker.checked_type_graph;
 import type_checker.concrete_type_equality;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; uint n_source_files; };
 ConstantBuffer<Params> gParams;
@@ -226,6 +227,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint call = dtid.x + dtid.y * 65535u * 256u;
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     if (call >= count || compact_hir_core[call].kind != 19u) return;
+    if (!inference_item_active(compact_hir_core[call].token_start)) return;
     uint callee = compact_hir_payload[call].a;
     if (callee >= count) return;
     uint leaf; bool repeated;

@@ -24,6 +24,7 @@ import hir_records;
 import type_checker.modules.decl_lookup;
 import type_checker.modules.import_visible_lookup;
 import type_checker.modules.module_lookup;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -851,10 +852,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = linear_thread_id(dtid);
 
-    if (i < active_token_count())
+    if (i < active_token_count() && inference_item_active(i))
         publish_associated_method_call_for_method_token(i);
 
-    if (i < active_compact_hir_count())
+    if (i < active_compact_hir_count() && inference_item_active(compact_hir_core[i].token_start))
     {
         publish_compact_direct_method_call(i);
         publish_compact_associated_method_call(i);

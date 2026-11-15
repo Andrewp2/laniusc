@@ -462,6 +462,12 @@ impl GpuTypeChecker {
             2,
             wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         );
+        let call_inference_round = typed_storage_u32_rw(
+            device,
+            "type_check.calls.inference_round",
+            2,
+            wgpu::BufferUsages::COPY_DST,
+        );
         // Words 0-1: inference state (word 1 counts the round's changes);
         // words 2-5: the status words after the round.
         let call_inference_readback = readback_u32s(
@@ -490,6 +496,7 @@ impl GpuTypeChecker {
             status_readback,
             status_prior,
             call_inference_state,
+            call_inference_round,
             call_inference_readback,
             canonical_counts_readback,
             canonical_validation_readback,
@@ -913,6 +920,8 @@ impl GpuTypeChecker {
         let defer_inference = 1u8;
         self.call_inference_state
             .write(queue, 0, &[defer_inference, 0, 0, 0, 0, 0, 0, 0]);
+        // Outside the inference rounds every item is recomputed.
+        self.call_inference_round.write(queue, 0, &[0; 8]);
         let mut host_timer = TypeCheckRecordHostTimer::new();
         host_timer.stamp("params");
         let parser_feature_flags = hir_items.parser_feature_flags;
@@ -2083,6 +2092,9 @@ impl GpuTypeChecker {
                 let unwaited = unwaited_rounds.filter(|&(rounds, _)| rounds <= round_limit);
                 let unwaited_rounds = unwaited.map(|(rounds, _)| rounds);
                 let final_pass_confirms = unwaited.is_some_and(|(_, confirms)| confirms);
+                // Every function starts the first round unchanged; the round
+                // count starts at 0 (written with the job's state words).
+                bind_groups.calls.inference_activity_clear.record(encoder);
                 let mut round = 0u32;
                 let mut converged_rounds = None;
                 'rounds: while round < round_limit {
@@ -2224,6 +2236,8 @@ impl GpuTypeChecker {
                 // The same producer diagnoses missing or unsupported types
                 // after inference has stopped producing new facts.
                 self.call_inference_state.write(queue, 0, &[0; 8]);
+                // The final pass recomputes every item.
+                self.call_inference_round.write(queue, 0, &[0; 8]);
                 if aggregates_required {
                     bind_groups.calls.status_prior.record(encoder);
                     bind_groups
@@ -2248,6 +2262,8 @@ impl GpuTypeChecker {
                 }
             } else {
                 self.call_inference_state.write(queue, 0, &[0; 8]);
+                // The final pass recomputes every item.
+                self.call_inference_round.write(queue, 0, &[0; 8]);
                 // Even jobs with no materializer require current argument
                 // claims and a final method selection before strict checks.
                 record_returns(encoder)?;

@@ -284,6 +284,10 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     core[8..12].copy_from_slice(&[21, CALL as u32, CALLEE as u32, 9]);
     core[12..16].copy_from_slice(&[22, CALL as u32, 9, 10]);
     put("compact_hir_core", core);
+    // Outside an inference round every call is admitted (03a4c).
+    put("call_inference_round", vec![0, 0]);
+    put("call_inference_fn_stamp", vec![0]);
+    put("enclosing_fn", vec![0; TOKENS]);
     let mut payload = vec![0; HIR * 4];
     payload[CALL * 4] = 2;
     payload[2 * 4 + 2] = CALLEE as u32;

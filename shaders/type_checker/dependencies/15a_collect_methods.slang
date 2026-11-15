@@ -9,6 +9,7 @@ import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
 import type_checker.match.ct_match;
+import type_checker.calls.inference_activity;
 
 // Imported patterns bind only their declaration's slot leaves, which carry
 // their own slots; a local parameter token has no slot here.
@@ -151,7 +152,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint token; uint owner; uint receiver; bool dotted;
-    if (!imported_method_call(call, token, owner, receiver, dotted)) return;
+    if (!imported_method_call(call, token, owner, receiver, dotted) || !inference_item_active(token)) return;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
     if (tag == TYPE_REF_INVALID || payload == INVALID) return;

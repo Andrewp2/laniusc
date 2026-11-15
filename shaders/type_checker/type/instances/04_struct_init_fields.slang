@@ -8,6 +8,7 @@
 
 import hir_records;
 import type_checker.type.instances.struct_field_lookup;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -326,7 +327,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((gParams.parser_feature_flags & PARSER_FEATURE_STRUCTS) == 0u)
         return;
     uint i = linear_thread_id(dtid);
-    if (!valid_compact_field(i))
+    if (!valid_compact_field(i) || !inference_item_active(compact_fields[i].name_token))
         return;
     publish_struct_init_field_row(i);
 }

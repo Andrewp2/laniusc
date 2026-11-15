@@ -184,8 +184,11 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) materialize_array_literals: Option<ComputeOperation>,
     pub(in crate::type_checker) validate_array_literals: Option<ComputeOperation>,
     pub(in crate::type_checker) infer_return_bindings: Option<ComputeOperation>,
-    /// Zeroes the round's change count (state word 1) before each round.
-    pub(in crate::type_checker) inference_round_reset: crate::gpu::operations::ClearBufferOperation,
+    /// Zeroes the round's change count (state word 1) before each round and
+    /// counts the round.
+    pub(in crate::type_checker) inference_round_reset: ComputeOperation,
+    /// Zeroes the per-function change rounds before the first round.
+    pub(in crate::type_checker) inference_activity_clear: crate::gpu::operations::ClearBufferOperation,
     /// Per batch slot, the copy of the state words into the slot.
     pub(in crate::type_checker) inference_readback:
         Vec<crate::gpu::operations::CopyBufferOperation>,

@@ -30,6 +30,7 @@ import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
 import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -91,6 +92,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = dtid.x + dtid.y * 16776960u;
     if (call >= hir_count() || compact_hir_core[call].kind != 19u) return;
+    if (!inference_item_active(compact_hir_core[call].token_start)) return;
     uint callee = compact_hir_payload[call].a;
     if (callee >= hir_count()) return;
     uint kind = compact_hir_core[callee].kind;
@@ -265,7 +267,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             if (outcome == CT_PUBLISHED) call_context_owner_by_token[token] = call;
             if (phase == 0u && ct_is_record(matched)) env = matched;
         }
-        if (outcome == CT_PUBLISH_BUSY) return;
+        if (outcome == CT_PUBLISH_BUSY) { inference_note_item_change(); return; }
         if (outcome == CT_PUBLISH_CAPACITY) record_min_token_error(status, token, 6u, 0x474e0001u);
         if (phase == 0u)
         {

@@ -9,6 +9,7 @@ import type_checker.checked_canonical;
 import type_checker.canonical.canonical_candidates;
 import type_checker.canonical.canonical_api;
 import type_checker.checked_type_graph;
+import type_checker.calls.inference_activity;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -162,6 +163,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (first >= active_arm_count()) return;
     HirMatchArm initial = compact_match_arms[first];
     if (!valid_hir(initial.owner) || compact_hir_core[initial.owner].kind != 34u) return;
+    if (!inference_item_active(compact_hir_core[initial.owner].token_start)) return;
     HirPayload match_value = compact_hir_payload[initial.owner];
     if (match_value.b != first) return;
     uint match_token = compact_hir_core[initial.owner].token_start;

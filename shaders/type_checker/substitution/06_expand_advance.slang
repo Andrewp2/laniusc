@@ -3,6 +3,7 @@
 // indirect dispatch arguments are written. Each level round's last
 // workgroup then advances the run itself.
 import type_checker.substitution.ct_expand;
+import type_checker.calls.inference_activity;
 
 RWStructuredBuffer<uint> ct_expand_args;
 RWStructuredBuffer<uint> call_inference_state;
@@ -18,6 +19,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint ignored;
         InterlockedAdd(call_inference_state[1u], 1u, ignored);
+        // Field closure has no owning function.
+        inference_note_global_change();
     }
     ct_expand_args[0u] = args.x;
     ct_expand_args[1u] = args.y;

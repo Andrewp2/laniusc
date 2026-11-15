@@ -11,6 +11,7 @@ import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_subst;
 import type_checker.checked_slots;
 import type_checker.type.instances.generic_param_lookup;
+import type_checker.calls.inference_activity;
 StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> generic_param_count_out;
@@ -409,6 +410,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_hir(node) || compact_hir_core[node].kind != HIR_SEM_KIND_LITERAL_EXPR ||
         (compact_hir_payload[node].a != HIR_SEM_EXPR_INT &&
          compact_hir_payload[node].a != HIR_SEM_EXPR_FLOAT)) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint symbolic = 0u;
     uint type = checked_literal_context(node, symbolic);
     // A literal whose only context is a type parameter's value records that
@@ -425,7 +427,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         bool floating = compact_hir_payload[node].a == HIR_SEM_EXPR_FLOAT;
         if (literal_effective_scalar(previous, floating) != literal_effective_scalar(type, floating))
         {
-            uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
+            uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
         }
     }
 }

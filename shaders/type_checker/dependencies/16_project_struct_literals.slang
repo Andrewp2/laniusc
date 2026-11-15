@@ -10,6 +10,7 @@ import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.dependencies.record_fields;
+import type_checker.calls.inference_activity;
 
 struct Params { uint type_count; uint declaration_count; uint member_count; uint path_capacity; uint token_capacity; };
 ConstantBuffer<Params> gParams;
@@ -49,6 +50,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint hir_count = min(compact_hir_count[0u], gParams.path_capacity);
     if (node >= hir_count || compact_hir_core[node].kind != 28u) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint instance = struct_lit_context_instance[node];
     if (instance >= checked_type_capacity() || type_instance_kind[instance] != 1u ||
         type_instance_decl_token[instance] != INVALID || external_type_library_id[instance] == INVALID) return;

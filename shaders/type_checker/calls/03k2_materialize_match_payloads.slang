@@ -13,6 +13,7 @@ import type_checker.substitution.ct_subst;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -53,6 +54,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         value.pattern >= hir_count() || value.parent_pattern >= hir_count()) return;
     HirMatchArm arm = compact_match_arms[value.arm];
     if (value.parent_pattern != arm.pattern || arm.owner >= hir_count()) return;
+    if (!inference_item_active(compact_hir_core[arm.owner].token_start)) return;
     uint path = checked_pattern_path(value.parent_pattern, hir_count(),
         min(path_count_out[0u], gParams.n_hir_nodes), compact_hir_links, path_id_by_owner_hir);
     if (path >= min(path_count_out[0u], gParams.n_hir_nodes)) return;
@@ -99,7 +101,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_min_token_error(status, compact_hir_core[value.pattern].token_start,
                 6u, 0x474e0000u | failure);
         // Another lane is writing the row: look again next round.
-        if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+        if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
         return;
     }
     uint prior_tag = imported_match_payload_ref_tag[value.pattern];
@@ -109,5 +111,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     imported_match_payload_ref_payload[value.pattern] = result.y;
     // Rows are unique per ID; another producer's row compares by its ID.
     if (ct_ref(prior_tag, prior) != payload_type)
-    { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }

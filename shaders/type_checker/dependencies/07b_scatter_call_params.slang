@@ -4,6 +4,7 @@ import dependency_interface;
 import dependency_method_index;
 import hir_records;
 import gpu_index;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -79,7 +80,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirCallArg arg = compact_call_args[arg_row];
     if (!valid_hir(arg.call) || !valid_hir(arg.value)) return;
     uint token = callee_token(arg.call);
-    if (token == INVALID) return;
+    if (token == INVALID || !inference_item_active(token)) return;
     uint declaration_i = dependency_find_declaration(
         call_dependency_library_id[token],
         call_dependency_unit_id[token],

@@ -13,6 +13,7 @@ import type_checker.canonical.canonical_mutable_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -35,6 +36,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = dtid.x + dtid.y * 16776960u;
     if (node >= min(compact_hir_count[0u], gParams.n_hir_nodes) ||
         compact_hir_core[node].kind != 24u) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint tag = array_literal_element_ref_tag[node];
     uint payload = array_literal_element_ref_payload[node];
     if (tag == 0u || payload == INVALID) return;
@@ -67,7 +69,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint2 operand = ct_realize(array, failure);
     uint ignored;
     // Another lane is writing a row this one needs: try again next round.
-    if (failure == CT_REALIZE_BUSY) { InterlockedAdd(call_inference_state[1u], 1u, ignored); return; }
+    if (failure == CT_REALIZE_BUSY) { InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); return; }
     if (operand.x != 3u)
     {
         record_min_token_error(status, token, 6u, 0x474e0000u | (failure == 0u ? CT_REALIZE_INVALID : failure));
@@ -75,5 +77,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     call_inference_result_tag[node] = 3u;
     call_inference_result_payload[node] = operand.y;
-    InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }

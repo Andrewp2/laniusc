@@ -23,6 +23,7 @@ import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
 import type_checker.calls.intrinsic_result;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -199,7 +200,7 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = dtid.x + dtid.y * 16776960u;
-    if (call >= hir_count()) return;
+    if (call >= hir_count() || !inference_item_active(compact_hir_core[call].token_start)) return;
     bool record = compact_hir_core[call].kind == 28u;
     bool unit = compact_hir_core[call].kind == 33u;
     if (!record && !unit && compact_hir_core[call].kind != 19u) return;
@@ -233,7 +234,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (result.x == 0u)
     {
         // Another lane is writing a row this result needs: next round.
-        if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); return; }
+        if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); return; }
         if (checked_call_environment_rejected(token) || checked_call_constant_environment_rejected(token)) return;
         // Missing environment entries may become known from earlier call
         // results. They are still diagnosed by the final, nondeferred pass.
@@ -296,6 +297,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (changed)
     {
         uint ignored;
-        InterlockedAdd(call_inference_state[1u], 1u, ignored);
+        InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
     }
 }

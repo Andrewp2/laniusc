@@ -22,6 +22,7 @@ import type_checker.substitution.source_slots;
 import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.match.field_expected;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -117,6 +118,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_thread_id_2d(dtid, 16776960u);
     if (!valid_hir(node)) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint kind = compact_hir_core[node].kind;
     if (kind == HIR_STMT || kind == HIR_LET_STMT || kind == HIR_RETURN_STMT)
     {
@@ -213,7 +215,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     // A row another lane is writing settles in a later round.
-    if (outcome == CT_PUBLISH_BUSY) return;
+    if (outcome == CT_PUBLISH_BUSY) { inference_note_item_change(); return; }
     if (required && outcome == CT_PUBLISH_REJECTED)
     { record_result_mismatch(call); return; }
     if (outcome != CT_PUBLISHED)

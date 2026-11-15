@@ -2,6 +2,8 @@
 // claim validation publishes compound claim pairs into it.
 
 import gpu_index;
+import type_checker.calls.inference_activity;
+import hir_records;
 
 struct Params
 {
@@ -11,6 +13,7 @@ struct Params
 };
 
 ConstantBuffer<Params> gParams;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> compact_hir_count;
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> aggregate_compare_expected_instance;
@@ -33,7 +36,9 @@ uint active_hir_count()
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
-    if (node >= active_hir_count())
+    // A node keeps its comparison row while its function is unchanged: the
+    // contextual result requests (03a4b) would publish it again.
+    if (node >= active_hir_count() || !inference_item_active(compact_hir_core[node].token_start))
         return;
     aggregate_compare_scan_input[node] = 0u;
     aggregate_compare_expected_instance[node] = INVALID;

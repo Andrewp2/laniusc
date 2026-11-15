@@ -19,6 +19,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
 import type_checker.substitution.ct_expand;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -278,6 +279,8 @@ void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
     {
         uint ignored;
         InterlockedAdd(call_inference_state[1u], 1u, ignored);
+        // Field closure has no owning function.
+        inference_note_global_change();
     }
     ct_expand_args_next[0u] = args.x;
     ct_expand_args_next[1u] = args.y;

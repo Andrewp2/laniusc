@@ -1,6 +1,7 @@
 import type_checker.methods.candidate;
 StructuredBuffer<MethodCandidate> method_candidate;
 import hir_records;
+import type_checker.calls.inference_activity;
 
 // Match compact arguments to compact parameter rows.
 //
@@ -173,7 +174,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_thread_id(dtid);
     uint arg_rows = active_arg_row_count();
-    if (row < arg_rows)
+    // An argument row is its call's item.
+    if (row < arg_rows && inference_item_active(valid_node(call_arg_row_call_node[row])
+        ? compact_hir_core[call_arg_row_call_node[row]].token_start : INVALID))
     {
         call_arg_param_row[row] = INVALID;
         // Initialize once before page-owned pattern producers fill their rows.
