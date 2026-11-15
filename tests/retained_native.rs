@@ -60,7 +60,7 @@ fn retained_native_program() {
     for run in 0..2 {
         let before = fallback_counters();
         let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build))
-            .unwrap_or_else(|error| panic!("retained build {run}: {error}"));
+            .unwrap_or_else(|error| panic!("retained build {run}: {error:?}"));
         let after = fallback_counters();
         let report = &build.report;
         eprintln!(
@@ -74,5 +74,19 @@ fn retained_native_program() {
         let out = common::run_x86_64_elf_output("retained native", "retained_native", &elf);
         assert_eq!(out.status.code(), Some(13), "{out:?}");
     }
+    // Certification compares the recorded caller facts: with every caller
+    // argument recorded as `bool`, `pick<u8>(7, 4)` no longer matches its
+    // instance, the build fails before finalization, and a clean build then
+    // succeeds in the same allocations.
+    build.test_caller_arg_fault = Some(2);
+    let error = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build))
+        .expect_err("a caller ABI mismatch must fail the build");
+    let message = format!("{error:?}");
+    assert!(message.contains("root call ABI"), "{message}");
+    build.test_caller_arg_fault = None;
+    let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build))
+        .expect("clean build after the rejected one");
+    let out = common::run_x86_64_elf_output("retained native", "retained_native", &elf);
+    assert_eq!(out.status.code(), Some(13));
     std::fs::remove_dir_all(&directory).ok();
 }

@@ -61,6 +61,10 @@ pub struct RetainedNativeBuild {
     calls: Option<NativeCallTables>,
     pub options: ProjectionOptions,
     pub report: RetainedNativeReport,
+    /// Fault injection for tests: before the link, every recorded caller
+    /// argument term becomes this term.
+    #[doc(hidden)]
+    pub test_caller_arg_fault: Option<u32>,
 }
 
 impl RetainedNativeBuild {
@@ -75,6 +79,7 @@ impl RetainedNativeBuild {
             calls: Some(NativeCallTables::new(uses)),
             options: ProjectionOptions::default(),
             report: RetainedNativeReport::default(),
+            test_caller_arg_fault: None,
         })
     }
 
@@ -147,6 +152,10 @@ impl GpuCompiler<'_> {
             return Err(retained_error("discovery", "the root routes belong to another build"));
         }
         let calls = build.calls.as_ref().ok_or_else(|| retained_error("certify", "no caller ABI tables"))?;
+        if let Some(term) = build.test_caller_arg_fault {
+            let words = vec![term; (calls.args.size() / 4) as usize];
+            self.gpu.queue.write_buffer(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
+        }
         let outcome = build
             .projection
             .run_certified(

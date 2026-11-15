@@ -13,7 +13,7 @@
 import hir_records;
 import type_checker.retention.retention_store;
 import type_checker.retention.retention_job;
-import codegen.x86.finalize.symbol_finalize_common;
+import codegen.x86.finalize.symbol_identity;
 
 // (symbol count, undefined count, generation, 0)
 StructuredBuffer<uint> nc_config;

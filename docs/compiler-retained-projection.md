@@ -6,8 +6,9 @@ code. It substitutes each instance's row, signature and use terms with the
 [retained substitution](compiler-retained-substitution.md) engine, realizes
 layouts on the GPU, projects the rows into the existing lowering inputs and
 runs the existing lowering pipeline. It never runs a frontend, never lexes or
-parses instance text and never calls source replay. General compilation does
-not use it yet.
+parses instance text and never calls source replay. A retained native build
+(see "Native compilation") uses it with discovery and the original objects.
+Ordinary compilation does not use it.
 
 This document is the boundary contract. Implementation status and test
 receipts are at the end.
@@ -119,6 +120,69 @@ The host driver is `type_checker::program_retention::projection::RetainedProject
 or `Rejected { error, report }`. `ProjectionError` carries the code, detail,
 rank, DeclId, body-relative row and token, file id and file-relative byte.
 
+## Native compilation
+
+`GpuCompiler::compile_path_manifest_to_x86_64_retained(manifest, build)`
+compiles a resident manifest of two or more libraries. The `build` is a
+`RetainedNativeBuild` that keeps the store, discovery, projection and
+finalizer allocations across builds. Ordinary entry points are unchanged.
+The build has six steps.
+
+1. **Units.** The ordinary resident source-pack executor compiles each unit
+   once with the store attached. It uses no unit cache and does not merge
+   the libraries into one unit.
+2. **Original objects.** The retained mode makes three changes to each
+   unit's frontend job:
+   - The template lowering selection is `ReplaySelection::RetainedOriginal`.
+     `function_templates.slang` omits every function with a generic
+     environment, including tag-only bodies.
+   - Nongeneric bodies are lowered as before.
+   - `record_exec` is off, so the frontend copies no instance. The counts
+     are still published.
+3. **Provisional calls.** Right after the job's export, one GPU lane per
+   undefined symbol runs `type_checker/retention/native/00_provisional`.
+   The lane maps the symbol's call HIR to its retained use through
+   `rt_x_flags[row].y`, `rt_x_scan[row].y` and
+   `rt_x_counts[RT_X_BASE + RT_A_USES]`.
+   - For a DIRECT use whose callee is a generic template, the lane writes
+     the identity `(NATIVE_RESERVED_LIBRARY, NATIVE_NS_USE, use)` and its
+     hash.
+   - It records the caller's ABI facts in `NativeCallTables`. `nc_use_abi`
+     holds the accepted result, argument count, flags and generation.
+     `nc_use_args` holds up to 8 argument terms, each translated from the
+     call's checked argument references.
+   - The host uploads and reads back the object's opaque symbol columns.
+     `X86SymbolColumns::apply_to_object` checks that every other field is
+     unchanged.
+4. **Discovery** (`docs/compiler-retained-discovery.md`) publishes the
+   instances, one root route per build-global use and the root readiness
+   record with `READY_ROUTES`.
+5. **Projection and certification.** `RetainedProjection::run_certified`
+   first checks every instance edge as above. Then `10_certify` runs one
+   lane per use whose `nc_use_abi` row belongs to this build. The use's root
+   route must name one of two targets:
+   - an instance of the use's callee at the use's ENV, with equal arity,
+     substituted result and parameter types equal to the caller's facts;
+   - the callee's own `DeclNative` identity, with an equal closed
+     signature.
+
+   Every compared type must have a complete layout. `10b_certify_finish`
+   sets `READY_ABI` only when no use failed. A failure rejects the build
+   with `ROOT_ABI` before any lowering. Its detail is the failure bits, and
+   `row` is the lowest failing use.
+6. **Finalize and link.** The GPU finalizer rewrites the provisional
+   symbols to their routes. Then the x86 linker links the original and
+   instance objects.
+
+The route table may be sparse. `routes.slang` checks only the readiness
+record. `classify.slang` checks the route row of each use that a
+provisional symbol names: its generation, identity and rank. The finalizer
+never reads a row that no symbol names.
+
+The retained link does not run the trait solver. Discovery and projection
+reject the predicates, METHOD uses and forms they do not support, and no
+step falls back to replay.
+
 ## Supported forms
 
 v1 projects free functions whose bodies use: parameters, `let`, `return`,
@@ -146,14 +210,13 @@ Every other form fails closed with its template location:
 | A nested pattern's matched type is the enclosing payload's schema-substituted type | Not implemented; patterns are rejected. |
 | Substitute u1.z/u1.w under the instance ENV and validate the adjustment | Not implemented; any receiver adjustment or METHOD use is rejected (`USE`). The receiver contract to port: `enter`/`read`/`peek` borrow mode 2, deref 1; by-value `(2, 0)`; twice borrowed `(2, 2)`; consuming self `(1, 0)`. |
 | r3.y is a predicate ordinal only when r3.z is BOUND (4), a use index otherwise | Implemented in `05_check` and `07_rows`. |
-| The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be a stored term, and its substitution to equal the row type and the target's result. |
+| The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be resolved: a term, or a bare type parameter of the caller (the `T` of `keep(v)` in a body generic over T). Its substitution must equal the row type and the target's result. |
 
 ## Gaps
 
-- **Original objects.** Nongeneric bodies keep no segment. Their own jobs
-  lower them, so a program whose `main` calls an instance needs the original
-  object and the GPU finalizer's route rewrite. The slice test makes the
-  projected `start<u8>` the entry instead.
+- **Native C and file-backed builds.** A retained build rejects a manifest
+  that needs file-backed compilation, and it does not link native C
+  functions.
 - **DeclNative routes** (calls from an instance to a nongeneric function) are
   checked (declaration key, closed signature) but not linked in a test.
 - **Trait routes.** The catalog publication (`docs/compiler-retained-trait-catalog.md`,
@@ -166,6 +229,26 @@ Every other form fails closed with its template location:
   lowering's output demand. No test forces that retry.
 
 ## Receipts
+
+`cargo test --release --test compiler retained_native:: -- --test-threads=1`
+under the GPU validation lock:
+
+- `retained_native_build_executes_original_main_without_replay` writes a
+  two-library path manifest and compiles it twice with one
+  `RetainedNativeBuild`.
+  - The original `main` in `app` calls `pack<bool>`, `pick<u8>` and
+    `pick<i32>` in `lib`.
+  - `pick` calls the generic `keep` and the nongeneric helper `bump`.
+  - `pick` returns an `i32` and `pack` returns a two-field struct.
+  - `DiscoveryCapacity::tiny()` and `batch_rows` 8 apply.
+  - Each build shows 2 units, 5 instances, 5 instance objects, 2 frontend
+    checks and no replay lowering, and exits 13.
+  - Discovery takes 4 attempts in the first build and 1 in the second.
+  - With every recorded caller argument rewritten to `bool`, the build
+    fails with `root call ABI`. A clean build then exits 13.
+- The finalizer test `gpu_finalization_rejects_invalid_routes_and_retries_capacity`
+  covers sparse tables. An unnamed missing row publishes, and a stale row
+  that a symbol names fails with `RouteMissing`.
 
 `cargo test --release --test compiler retained_projection:: -- --test-threads=1`
 (5 tests) under the GPU validation lock:

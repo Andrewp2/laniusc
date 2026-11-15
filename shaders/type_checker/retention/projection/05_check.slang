@@ -186,9 +186,11 @@ void check_call(Row at, uint4 p, uint t, uint use)
         return;
     }
     // The use result is the accepted call result (export/14_uses: only a
-    // unit or never call may take its row's term). It must be a stored
-    // term and, substituted, equal the row's type.
-    if (!rt_is_term(pj_use(at.rank, use, 1u).y))
+    // unit or never call may take its row's term). It must be resolved: a
+    // term, or a bare type parameter of the caller such as the `T` of
+    // `keep(v)` in a body generic over T. Substituted under the instance
+    // ENV, it must equal the row's type.
+    if (!rt_is_resolved(pj_use(at.rank, use, 1u).y))
     {
         fail(at, PJ_E_USE, 0xfffeu);
         return;
