@@ -545,6 +545,67 @@ impl Gpu<'_> {
 
 /// Rewrites the closures of `sources`, one GPU run for all of them. `None`
 /// when no file has a closure.
+/// Per file, the rewrites it needs: `SELECT_CLOSURES` when a closure starts
+/// in it, `SELECT_MACHINES` when the machine pass must parse it. One lex of
+/// all files and one map. `None` when a file does not lex: the frontend
+/// reports that.
+pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
+    let total: usize = sources.iter().map(|source| source.len()).sum();
+    if total == 0 {
+        return Ok(Some(vec![0; sources.len()]));
+    }
+    let _run = begin_run();
+    let lexer = try_global_lexer()?;
+    pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
+        let gpu = Gpu { device, queue };
+        let mut encoder = gpu.encoder("closures.select");
+        let (_, _, file_flags) = record_mark(&gpu, bufs, &mut encoder, total, sources.len())?;
+        let flags_read = gpu.read(&mut encoder, &file_flags, 0, sources.len());
+        let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
+        gpu.submit("closures.select", encoder);
+        if gpu.words(&lex_error_read)?[0] != 0 {
+            return Ok(None);
+        }
+        let mut flags = gpu.words(&flags_read)?;
+        flags.truncate(sources.len());
+        Ok(Some(flags))
+    }))?
+}
+
+/// File flags of `select`.
+pub(super) const SELECT_CLOSURES: u32 = 1;
+pub(super) const SELECT_MACHINES: u32 = 2;
+
+/// Records closures/mark over the lexed pack: the marks, the summary and
+/// the selection flags of each file.
+fn record_mark(
+    gpu: &Gpu<'_>,
+    bufs: &GpuBuffers,
+    encoder: &mut wgpu::CommandEncoder,
+    total: usize,
+    file_count: usize,
+) -> Result<(LaniusBuffer<u8>, LaniusBuffer<u8>, LaniusBuffer<u8>)> {
+    let marks = gpu.rows("closures.marks", total, 4);
+    let summary = gpu.rows("closures.summary", 4, 1);
+    let file_flags = gpu.rows("closures.file_flags", file_count, 1);
+    gpu.dispatch(
+        encoder,
+        &gpu.kernel("closures/mark")?,
+        "closures.mark",
+        &[
+            ("token_count", bufs.token_count.as_entire_binding()),
+            ("tokens_out", bufs.tokens_out.as_entire_binding()),
+            ("token_file_id", bufs.token_file_id.as_entire_binding()),
+            ("in_bytes", bufs.in_bytes.as_entire_binding()),
+            ("marks", marks.as_entire_binding()),
+            ("summary", summary.as_entire_binding()),
+            ("file_flags", file_flags.as_entire_binding()),
+        ],
+        u32::try_from(total).context("source pack is too large")?,
+    )?;
+    Ok((marks, summary, file_flags))
+}
+
 pub(super) fn rewrite(sources: &[&str]) -> Result<Option<Outcome>> {
     let total: usize = sources.iter().map(|source| source.len()).sum();
     if total == 0 {
@@ -566,23 +627,8 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     // Depth changes and closure starts per token. The mark kernel counts
     // starts in the freshly cleared summary; the existing readback then
     // gates all depth/role work for packs without closures.
-    let marks = gpu.rows("closures.marks", total, 4);
-    let summary = gpu.rows("closures.summary", 4, 1);
     let mut encoder = gpu.encoder("closures.mark");
-    gpu.dispatch(
-        &mut encoder,
-        &gpu.kernel("closures/mark")?,
-        "closures.mark",
-        &[
-            ("token_count", bufs.token_count.as_entire_binding()),
-            ("tokens_out", bufs.tokens_out.as_entire_binding()),
-            ("token_file_id", bufs.token_file_id.as_entire_binding()),
-            ("in_bytes", bufs.in_bytes.as_entire_binding()),
-            ("marks", marks.as_entire_binding()),
-            ("summary", summary.as_entire_binding()),
-        ],
-        total_u32,
-    )?;
+    let (marks, summary, _) = record_mark(gpu, bufs, &mut encoder, total, sources.len())?;
     let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
     let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
     gpu.submit("closures.mark", encoder);
