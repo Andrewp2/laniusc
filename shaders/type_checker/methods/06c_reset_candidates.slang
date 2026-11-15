@@ -19,7 +19,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id_2d(dtid, 65535u, 256u);
     if (token >= min(token_count[0u], gParams.n_tokens)) return;
-    method_candidate[token] = method_candidate_empty();
+    // A record whose state is NO_MATCH is the empty record: every producer
+    // writes method_candidate_empty() or a record with another state (or a
+    // copy of one), and 01_clear empties every record at the job's start.
+    // Reading the state word alone keeps the reset from rewriting the whole
+    // token range each transaction.
+    if (method_candidate[token].state != METHOD_CANDIDATE_NO_MATCH)
+        method_candidate[token] = method_candidate_empty();
     if (method_call_name_id[token] == 0xffffffffu) return;
     // Earlier direct-call resolution owns free and module-qualified functions.
     // Previous method winners remain eligible for replacement in later rounds.
