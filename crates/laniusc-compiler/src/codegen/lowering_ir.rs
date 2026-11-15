@@ -1235,6 +1235,70 @@ impl LoweringCapacities {
         }
     }
 
+    /// The capacities a new lowering arena for a frontend unit is built with:
+    /// those of `from_frontend_unit` with semantic and target rows at
+    /// `INITIAL_SEMANTIC_ROWS_PER_HIR` and `INITIAL_TARGET_ROWS_PER_HIR`
+    /// instead of the structural eight per HIR row.
+    ///
+    /// The settings app (466,944 HIR rows) emits 171,710 semantic and 358,287
+    /// target rows in its frontend unit and 39,257 and 71,004 in its instance
+    /// batch (65,536 HIR rows), about 0.4 to 0.6 semantic and 0.8 to 1.1
+    /// target rows per HIR row. At eight per HIR row the arena declared
+    /// 2.12 GB of slots; at these factors 0.94 GB.
+    ///
+    /// A job that emits more rows sets `LOWERING_STATUS_SEMANTIC_CAPACITY`
+    /// or `LOWERING_STATUS_TARGET_CAPACITY` and its exact row count. The
+    /// host grows the arena to that count and replays the job
+    /// (`LoweringOutputDemand`), and the grown arena is kept for later jobs.
+    /// Job bounds (`for_job`) keep the structural factors, so a warm job in a
+    /// grown arena is bounded by the arena, not by these estimates.
+    pub fn initial_for_frontend_unit(
+        source_bytes: u32,
+        token_capacity: u32,
+        hir_capacity: u32,
+        target: LoweringTarget,
+    ) -> Result<Self, String> {
+        let structural =
+            Self::from_frontend_unit(source_bytes, token_capacity, hir_capacity, target)?;
+        let hir_nodes = structural.hir_nodes;
+        let semantic_instructions = hir_nodes.saturating_mul(Self::INITIAL_SEMANTIC_ROWS_PER_HIR);
+        let target_instructions = hir_nodes.saturating_mul(Self::INITIAL_TARGET_ROWS_PER_HIR);
+        Ok(Self {
+            semantic_instructions,
+            target_instructions,
+            artifact_bytes: Self::artifact_bytes_for(
+                structural.source_bytes,
+                hir_nodes,
+                target_instructions,
+                target,
+            )
+            .ok_or_else(|| "lowering artifact capacity overflows u32".to_string())?,
+            ..structural
+        })
+    }
+
+    const INITIAL_SEMANTIC_ROWS_PER_HIR: u32 = 1;
+    const INITIAL_TARGET_ROWS_PER_HIR: u32 = 2;
+
+    /// Artifact bytes for `target_instructions` rows: source bytes, the
+    /// target's bytes per row, 32 table bytes per HIR row, and 4 KiB.
+    pub(crate) fn artifact_bytes_for(
+        source_bytes: u32,
+        hir_nodes: u32,
+        target_instructions: u32,
+        target: LoweringTarget,
+    ) -> Option<u32> {
+        let bytes_per_row = match target {
+            LoweringTarget::X86_64 => 16,
+            LoweringTarget::Wasm => 8,
+        };
+        target_instructions
+            .checked_mul(bytes_per_row)?
+            .checked_add(hir_nodes.checked_mul(32)?)?
+            .checked_add(source_bytes.max(4))?
+            .checked_add(4096)
+    }
+
     /// Derives initial lowering capacities from the bounded frontend unit.
     /// Semantic factors below are structural bounds. Target rows and artifact
     /// bytes are initial capacity estimates: wide aggregate repeats/copies can
