@@ -239,6 +239,7 @@ pub struct ProjectionInputs {
     instances: wgpu::Buffer,
     routes: wgpu::Buffer,
     readiness: wgpu::Buffer,
+    targets: wgpu::Buffer,
     instance_capacity: u32,
     route_capacity: u32,
 }
@@ -258,6 +259,7 @@ impl ProjectionInputs {
             ),
             routes: storage(device, "pj_routes", routes as u64 * 16, false),
             readiness: storage(device, "pj_readiness", 16, false),
+            targets: storage(device,"pj_targets",routes as u64*8,false),
             instance_capacity: instances,
             route_capacity: routes,
         }
@@ -272,11 +274,12 @@ impl ProjectionInputs {
     }
 
     /// The buffers a producer binds, by binding name.
-    pub fn buffers(&self) -> [(&'static str, &wgpu::Buffer); 3] {
+    pub fn buffers(&self) -> [(&'static str, &wgpu::Buffer); 4] {
         [
             ("pj_instances", &self.instances),
             ("pj_routes", &self.routes),
             ("pj_readiness", &self.readiness),
+            ("pj_targets",&self.targets),
         ]
     }
 }

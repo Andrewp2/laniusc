@@ -8,6 +8,7 @@ public globallycoherent RWStructuredBuffer<uint> dg_slots;
 public RWStructuredBuffer<uint> dg_scan_a;
 public RWStructuredBuffer<uint> dg_scan_b;
 public RWStructuredBuffer<uint4> dg_edges;
+public RWStructuredBuffer<uint2> dg_targets;
 public RWStructuredBuffer<uint2> dg_edge_owner;
 public RWStructuredBuffer<uint4> dg_roots;
 public RWStructuredBuffer<uint4> dg_errors;

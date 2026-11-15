@@ -18,6 +18,9 @@ __exported import type_checker.retention.substitution.sb_consumer;
 
 public StructuredBuffer<uint4> pj_instances;
 public StructuredBuffer<uint4> pj_routes;
+// Certified concrete target and ENV, needed when a trait member use
+// routes to a different method declaration. Direct calls check their own ENV.
+public StructuredBuffer<uint2> pj_targets;
 public StructuredBuffer<uint4> pj_readiness;
 public StructuredBuffer<uint> pj_config;
 public globallycoherent RWStructuredBuffer<uint> pj_status;

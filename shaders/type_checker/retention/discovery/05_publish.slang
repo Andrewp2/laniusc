@@ -1,6 +1,7 @@
 import type_checker.retention.discovery.dg_admission;
 RWStructuredBuffer<uint4> pj_instances;
 RWStructuredBuffer<uint4> pj_routes;
+RWStructuredBuffer<uint2> pj_targets;
 RWStructuredBuffer<uint4> pj_readiness;
 RWStructuredBuffer<uint4> dg_root_routes;
 RWStructuredBuffer<uint4> dg_root_readiness;
@@ -40,7 +41,7 @@ void main(uint3 id: SV_DispatchThreadID)
             pj_instances[2u*lane]=i0;
             pj_instances[2u*lane+1u]=uint4(i1.xy,0u,0u);
         }
-        if(lane<dg_status[2]) pj_routes[lane]=route_of(dg_edges[lane],false);
+        if(lane<dg_status[2]) { pj_routes[lane]=route_of(dg_edges[lane],false); pj_targets[lane]=dg_targets[lane]; }
         if(lane<rt_counts[RT_A_USES]) dg_root_routes[lane]=route_of(dg_roots[lane],true);
     }
     else if(lane==0u)

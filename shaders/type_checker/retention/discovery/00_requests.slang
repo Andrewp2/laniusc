@@ -34,6 +34,7 @@ void main(uint3 id: SV_DispatchThreadID)
         use = rt_dir[entry * RT_DIR_WORDS + 2u].w + edge - i1.x;
         dg_edge_owner[edge] = uint2(owner, use);
         dg_edges[edge] = uint4(0u,0u,0u,0u);
+        dg_targets[edge]=uint2(0u,RT_NONE);
         lane = edge;
     }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
@@ -41,8 +42,8 @@ void main(uint3 id: SV_DispatchThreadID)
     uint form = u0.z & 0xffu;
     // Non-call syntax contributes row and layout types during projection.
     if (form == 3u || form == 4u || form == 5u) return;
-    // Required-member callees still need a solver-selected concrete method.
-    // A checked implementation method follows the ordinary ENV edge.
+    // Required members use this same substitution request. The closed
+    // solver wave selects their concrete implementation after substitution.
     if ((form != 1u && form != 2u) || (form == 1u && (u0.z >> 8u) != 0u))
     {
         if (root == 0u || form == 7u) dg_fail(root,lane,use,3u,form);
@@ -61,19 +62,21 @@ void main(uint3 id: SV_DispatchThreadID)
         dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
         return;
     }
-    if (rt_dir[callee * RT_DIR_WORDS].y != 1u && rt_dir[callee * RT_DIR_WORDS].y != 2u)
+    bool bound=rt_dir[callee*RT_DIR_WORDS].y==3u;
+    if (bound && root!=0u) { dg_fail(root,lane,use,4u,u0.w); return; }
+    if (!bound && rt_dir[callee * RT_DIR_WORDS].y != 1u && rt_dir[callee * RT_DIR_WORDS].y != 2u)
     { dg_fail(root,lane,use,4u,u0.w); return; }
-    if (form == 2u && rt_dir[callee * RT_DIR_WORDS].y != 2u)
+    if (form == 2u && !bound && rt_dir[callee * RT_DIR_WORDS].y != 2u)
     { dg_fail(root,lane,use,4u,u0.w); return; }
-    if (dg_predicates(callee) && !dg_use_proven(use,callee,root != 0u))
+    if (!bound && dg_predicates(callee) && !dg_use_proven(use,callee,root != 0u))
     { dg_fail(root,lane,use,8u,u0.w); return; }
     if (!dg_generic(callee))
     {
         uint4 route = uint4(2u,u0.w,0u,dg_config[15]);
-        if (root != 0u) dg_roots[lane] = route; else dg_edges[lane] = route;
+        if (root != 0u) dg_roots[lane] = route; else { dg_edges[lane] = route; dg_targets[lane]=uint2(u0.w,RT_NONE); }
         return;
     }
-    if (rt_dir[callee * RT_DIR_WORDS + 2u].x == RT_INVALID)
+    if (!bound && rt_dir[callee * RT_DIR_WORDS + 2u].x == RT_INVALID)
     { dg_fail(root,lane,use,2u,u0.w); return; }
     uint request; InterlockedAdd(sb_request_count[0],1u,request);
     InterlockedMax(dg_status[7],request+1u);

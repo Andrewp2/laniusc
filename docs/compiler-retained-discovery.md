@@ -6,9 +6,10 @@ allocates and submits work, reads counts and failures, and retries capacity
 requests. It never supplies an instance list, selects a callee, or reads an
 environment to construct a route.
 
-The current implementation admits direct free-function calls. Bounded calls
-require `run_with_traits` and a current GPU solver publication. Calls that need
-a method implementation route still reject until that route is available. Unsupported calls never disappear and never
+The implementation admits free-function and implementation-method calls.
+Bounded calls and required-member calls need `run_with_traits` and a current
+GPU solver publication. Each wave solves the instances' closed predicates;
+required-member edges consume those concrete proofs. Unsupported calls never disappear and never
 trigger source replay in this API.
 
 ## Discovery
@@ -75,11 +76,34 @@ closed proofs; calls inside generic templates may use the caller's declared
 assumptions. This is parametric proof reuse: every root discharges its bounds,
 and every template call proves the next callee's bounds under its own.
 
-The proof gate authorizes a direct callee; it does not select the concrete target
-of a bound-member call. Discovery sets projection readiness bit 4 only after this
-gate succeeds. Projection requires that bit for bounded templates and validates
+The source proof gate authorizes a direct callee. Discovery also solves every
+instance's predicates under its closed environment, without assumptions.
+Discovery sets projection readiness bit 4 only after these gates succeed.
+Projection requires that bit for bounded templates and validates
 each BOUND row's predicate link before omitting its source-only syntax.
 
 `retained_discovery_requires_current_proofs_for_bounded_calls` rejects missing
 admission, missing per-use proof status (including a forwarding template), and a
 publication predating another committed job. A fresh publication succeeds.
+
+## Bound-member routes
+
+`MethodRoutes` matches a required-member use to the caller's accepted predicate
+by exact symbolic subject and trait arguments. It reads that predicate's closed
+solver route, finds the required symbol in the implementation's sorted method
+table, and converts the selected implementation bindings to retained terms.
+No host code reads proof rows or constructs an environment.
+
+Proof conversion uses one lane per reached proof node and bounded-arity child
+reads. It currently records 65 marking rounds and 65 bottom-up translation
+rounds. A lane per call interns the complete implementation-method ENV, using
+exact parameter identities for inherited impl bindings. Capacity overflow rolls
+back newly interned terms and retries after growing the store. These fixed
+round counts and their dispatch overhead remain optimization work.
+
+Discovery inserts the selected `(method DeclId, closed ENV)` into the same
+instance table as direct calls. `ProjectionInputs` carries that target alongside
+each route. Projection checks the selected target's receiver, arguments, result
+and layout before any native lowering. Required-member calls from original
+nongeneric bodies are not admitted through this route; concrete method calls
+there use their frontend-selected implementation.

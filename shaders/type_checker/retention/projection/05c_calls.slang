@@ -191,12 +191,26 @@ void check_call(Row at, uint4 p, uint t, uint use)
         if (!supported_type(at,receiver) || !supported_type(at,matched)) return;
         args++;
     }
+    uint callee=u0.w;
+    uint declared=pj_dir_entry(callee);
+    bool bound=declared!=RT_INVALID && rt_dir[declared*RT_DIR_WORDS].y==3u;
+    uint2 selected=uint2(callee,RT_NONE);
+    if (bound)
+    {
+        uint capacity; uint stride; pj_targets.GetDimensions(capacity,stride);
+        if ((pj_readiness[0].y&4u)==0u || q1.x+use>=capacity) { fail(at,PJ_E_ROUTE,4u); return; }
+        selected=pj_targets[q1.x+use]; callee=selected.x;
+        uint entry=pj_dir_entry(callee);
+        if (entry==RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y!=2u || !rt_is_stored_term(selected.y) ||
+            rt_term_kind(selected.y)!=RT_KIND_ENV || !rt_term_closed(selected.y) || rt_term_words(selected.y).x!=callee)
+        { fail(at,PJ_E_ROUTE,5u); return; }
+    }
     if (route.x == PJ_NATIVE_LIBRARY && route.y == PJ_NATIVE_NS_INSTANCE)
     {
         uint target = route.z;
-        uint env = result_or_fail(at, pj_req_use_env(at.rank, use));
+        uint env = bound ? selected.y : result_or_fail(at, pj_req_use_env(at.rank, use));
         if (failed) return;
-        if (target >= pj_instance_count() || pj_instances[target * PJ_INSTANCE_WORDS].x != u0.w ||
+        if (target >= pj_instance_count() || pj_instances[target * PJ_INSTANCE_WORDS].x != callee ||
             pj_instances[target * PJ_INSTANCE_WORDS].y != env || pj_errors[target].x != 0u)
         {
             fail(at, PJ_E_ROUTE, 1u);
@@ -230,8 +244,8 @@ void check_call(Row at, uint4 p, uint t, uint use)
     }
     // An ordinary native callee: its own declaration key and closed
     // signature.
-    uint4 key = rt_decl_key[u0.w];
-    uint entry = pj_dir_entry(u0.w);
+    uint4 key = rt_decl_key[callee];
+    uint entry = pj_dir_entry(callee);
     if (entry == RT_INVALID || any(route.xyz != uint3(key.x, key.y, key.w)))
     {
         fail(at, PJ_E_ROUTE, 2u);

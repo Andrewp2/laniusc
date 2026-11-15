@@ -23,6 +23,7 @@ use std::{
 use anyhow::{Result, anyhow, bail};
 
 pub mod discovery;
+mod method_routes;
 mod native_calls;
 pub use native_calls::NativeCallTables;
 pub mod projection;

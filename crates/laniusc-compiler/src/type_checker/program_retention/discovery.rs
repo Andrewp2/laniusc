@@ -35,6 +35,7 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/03_term_order",
     "type_checker/retention/discovery/04_instance_order",
     "type_checker/retention/discovery/05_publish",
+    "type_checker/retention/discovery/06_bound_routes",
 ];
 const STATUS_WORDS: usize = 32;
 const FIRST_ERROR: usize = 6;
@@ -74,6 +75,7 @@ pub struct DiscoveryReport {
     pub roots: u32,
     pub substitution_dispatches: u32,
     pub closed_trait_waves: u32,
+    pub method_route_waves: u32,
 }
 #[derive(Clone, Debug)]
 pub struct DiscoveryError {
@@ -113,6 +115,7 @@ pub struct RetainedDiscovery {
     config_cursor: usize,
     hash_mask: u32,
     admission: Option<TraitAdmission>,
+    method_routes: super::method_routes::MethodRoutes,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -132,6 +135,7 @@ impl RetainedDiscovery {
             config_cursor: 0,
             hash_mask: u32::MAX,
             admission: None,
+            method_routes: super::method_routes::MethodRoutes::new()?,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -253,7 +257,7 @@ impl RetainedDiscovery {
                 // Concrete instances have closed goals, even when their
                 // source call was proved parametrically. Reuse the admitted
                 // catalog; the GPU writes and solves this wave's hard goals.
-                let _closed = if let Some(source) = publication.as_deref_mut() {
+                let closed = if let Some(source) = publication.as_deref_mut() {
                     let buffer = self.scratch["dg_instances"].clone();
                     let bytes = buffer.size();
                     let instances = LaniusBuffer::new((buffer, bytes), bytes as usize / 4);
@@ -357,6 +361,22 @@ impl RetainedDiscovery {
                     return Ok(DiscoveryOutcome::Rejected(error));
                 }
                 self.resolve(store, &requests, &extra, config, &mut report)?;
+                if let (Some(source),Some(proofs))=(publication.as_deref(),closed.as_ref()) {
+                    let sub=self.substitution.publication(store).ok_or_else(||anyhow!("missing method substitution"))?;
+                    let state=self.method_routes.run(store,source,proofs,&sub,&self.scratch["dg_req_meta"],&self.scratch["dg_instances"])?;
+                    report.method_route_waves+=1;
+                    if state[0]!=2 {
+                        return Ok(DiscoveryOutcome::Rejected(DiscoveryError{code:9,use_index:state[16],instance:state[17],detail:state[18] | (state[3]<<24)}));
+                    }
+                    config[5]=sub.id.run;
+                    let requests=sub.id.requests;
+                    let output=self.method_routes.output().clone();
+                    let mut bound=extra.clone(); bound.push(("mr_out",&output));
+                    let guard=store.store.lock().unwrap(); let mut encoder=self.encoder();
+                    self.record(&mut encoder,&guard,6,config,&bound,requests,&mut report)?;
+                    self.record(&mut encoder,&guard,5,config,&extra,1,&mut report)?;
+                    self.queue.submit(Some(encoder.finish()));
+                }
                 status = self.read_status(&mut report)?;
                 if self.grow(&status)? {
                     continue 'attempt;
@@ -610,6 +630,7 @@ impl RetainedDiscovery {
             ("dg_scan_a", i * 4),
             ("dg_scan_b", i * 4),
             ("dg_edges", e * 16),
+            ("dg_targets",e*8),
             ("dg_edge_owner", e * 8),
             ("dg_roots", uses.max(1) as u64 * 16),
             ("dg_errors", (uses as u64 + e) * 16),

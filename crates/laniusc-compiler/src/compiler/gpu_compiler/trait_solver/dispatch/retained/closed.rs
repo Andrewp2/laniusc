@@ -31,8 +31,11 @@ pub struct ClosedTraitPublication {
     packet: GpuPacket,
     routes: Arena,
     identity: RetainedTraitIdentity,
+    proof_nodes: u32,
 }
 impl ClosedTraitPublication {
+    pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
+
     pub fn status(&self, source: &RetainedTraitPublication) -> Result<[u32; 3]> {
         let region = ReadbackRegion::from_buffer(
             &self.routes.buffer,
@@ -509,7 +512,7 @@ impl RetainedTraitPublication {
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
         // Finish before releasing the store lock or recycling producer scratch.
-        let _ = producer.reader.read(
+        let receipt = producer.reader.read(
             &routes.buffer,
             RP_HEADER_WORDS as usize,
             "closed publication receipt",
@@ -520,6 +523,7 @@ impl RetainedTraitPublication {
                 packet,
                 routes,
                 identity,
+                proof_nodes: receipt[24],
             }),
         ))
     }

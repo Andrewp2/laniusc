@@ -1165,3 +1165,59 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_bound_members_use_concrete_solver_routes() {
+    common::run_with_timeout("retained bound method routes", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-bound-methods-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module bound_methods::lib;
+pub trait Mark { pub fn mark(&self)->i32; }
+pub trait Mapper<A,B> { pub fn apply(&self,value:A)->B; }
+pub trait Consume { pub fn consume(self)->i32; }
+pub fn transform<F,A,B>(f:F,value:A)->B where F:Mapper<A,B> { return f.apply(value); }
+pub fn consumed<T:Consume>(value:T)->i32 { return value.consume(); }
+pub fn score<T:Mark>(value:T)->i32 { return value.mark(); }
+pub fn forward<T:Mark>(value:T)->i32 { return score<T>(value); }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import bound_methods::lib;
+struct Local { value:i32 }
+struct Wrap<T> { value:T }
+struct Pair { first:i32, second:f64 }
+pub impl Mapper<i32,Pair> for Local { pub fn apply(&self,value:i32)->Pair { return Pair{first:value+self.value,second:2.5}; } }
+pub impl<T> Mapper<T,T> for Wrap<T> { pub fn apply(&self,value:T)->T { return value; } }
+pub impl Consume for Local { pub fn consume(self)->i32 { return self.value; } }
+pub impl Mark for Local { pub fn mark(&self)->i32 { return self.value; } }
+pub impl Mark for i32 { pub fn mark(&self)->i32 { return 15; } }
+pub impl<T:Mark> Mark for Wrap<T> { pub fn mark(&self)->i32 { return self.value.mark()+3; } }
+fn main()->i32 {
+    let p:Pair=transform<Local,i32,Pair>(Local{value:3},4);
+    let n:i64=transform<Wrap<i64>,i64,i64>(Wrap{value:9},4294967298);
+    if (p.first!=7 || p.second!=2.5 || n!=4294967298) { return 1; }
+    if (consumed<Local>(Local{value:8})!=8) { return 2; }
+    let a=forward<Local>(Local{value:11});
+    let b=forward<Wrap<Local>>(Wrap{value:Local{value:13}});
+    let c=forward<i32>(7);
+    return a+b+c;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            assert!(build.report.discovery.method_route_waves>=2);
+            let result=common::run_x86_64_elf_output("retained bound methods","retained_bound_methods",&elf);
+            assert_eq!(result.status.code(),Some(42),"{result:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

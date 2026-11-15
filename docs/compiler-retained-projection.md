@@ -199,7 +199,7 @@ The retained link publishes the GPU trait catalog proofs and binds them in
 discovery. Bounded direct calls require a successful per-use proof, and projection
 requires discovery's proof-admission flag before lowering a bounded template.
 Implementation-method uses with a concrete declaration follow the same instance
-route as free functions. Required trait members still need a solver-selected
+route as free functions. Required trait members use a solver-selected
 implementation. No step falls back to replay.
 
 ## Supported forms
@@ -227,7 +227,7 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | named range objects | `FORM` or `TYPE` |
-| required trait-member routes, host calls, function references | `USE` |
+| host calls, function references | `USE` |
 | named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
@@ -246,10 +246,9 @@ Every other form fails closed with its template location:
 - **Native C and file-backed builds.** A retained build rejects a manifest
   that needs file-backed compilation, and it does not link native C
   functions.
-- **Trait routes.** The catalog publication (`docs/compiler-retained-trait-catalog.md`,
-  "Publication") gives a goal call its impl method DeclId and bindings.
-  Discovery must intern the ENV and write the route; projection rejects
-  METHOD uses until receivers are ported.
+- **Inherent method choice.** Discovery currently follows the template's
+  accepted inherent method. It must recheck ambiguity under the closed receiver
+  before this becomes the default path.
 - **Float literal status.** Only f32 overflow is detected; the frontend's
   other float statuses are not retained.
 - **Lowering retry.** `lower_projected_x86_batch` retries once at the
@@ -510,6 +509,19 @@ Both builds exit 42 with zero replay.
 
 Before this path becomes the default, inherent-method choice must be checked
 again for the closed receiver: a more specific impl can introduce ambiguity
-that the symbolic template did not see. Required trait members also still need
-concrete routes from the solver. The current method projection validates an
-accepted declaration and its complete ABI; it does not perform either selection.
+that the symbolic template did not see.
+
+### Required trait members
+
+Discovery solves each instance's closed predicates, then converts the selected
+implementation's proof bindings into retained terms and a complete method ENV
+on the GPU. It publishes the selected declaration and ENV beside the call route.
+Projection verifies this target's substituted signature, receiver plan and ABI;
+the solver remains the implementation selector.
+
+`retained_native_bound_members_use_concrete_solver_routes` crosses two units
+and exercises scalar, nominal and generic impls, a nested bound call inside an
+impl, trait type arguments, a wide struct result, an i64 binding, and consuming
+`self`. Small and combined lowering batches both execute with zero replay.
+Generic executable trait methods with their own parameters remain rejected by
+the existing frontend (LNC0021).
