@@ -240,8 +240,9 @@ def main():
         save()
         if not response.get("ok"):
             raise RuntimeError(f"Compilation failed: {response}")
+        # The library instance cache went away with source replay.
         for cache_name in ("compiled_unit_cache", "library_instance_cache"):
-            if response[cache_name]["hits_during_job"] != 0:
+            if cache_name in response and response[cache_name]["hits_during_job"] != 0:
                 raise RuntimeError(f"Full-recompile policy violated: {cache_name}={response[cache_name]}")
         elf = (args.out / "settings").read_bytes()
         if len(elf) < 64 or elf[:6] != b"\x7fELF\x02\x01" or elf[18:20] != b"\x3e\x00":
