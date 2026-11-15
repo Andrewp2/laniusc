@@ -16,6 +16,8 @@
 // member row's field range goes to pj_g_aux.yz.
 import integer_words;
 import type_checker.operator_operand_rules;
+import type_checker.intrinsic_operand_rules;
+import type_checker.calls.intrinsic_result;
 import type_checker.retention.projection.pj_types;
 
 static const uint STMT_LET = 1u;
@@ -177,12 +179,72 @@ void check_literal(Row at, uint4 p, uint t, bool changed)
     }
 }
 
+// Intrinsics have no declaration signature. Their accepted result is
+// checked above, and their primitive contract is checked after substitution.
+void check_intrinsic(Row at, uint4 p, uint t, uint tag)
+{
+    uint arity = tag == 11u ? 4u : (tag == 4u || tag == 7u || tag == 16u) ? 2u : 1u;
+    if (tag == 0u || tag > 16u || p.z != arity)
+    {
+        fail(at, PJ_E_USE, tag);
+        return;
+    }
+    if (tag == 4u || intrinsic_typed_view(tag))
+    {
+        if (!rt_is_stored_term(t) || rt_term_kind(t) != RT_KIND_SLICE ||
+            (tag == 4u && rt_term_arg(t,0u) != SCALAR_I32) ||
+            pj_words(rt_term_arg(t,0u)) == RT_INVALID)
+        { fail(at,PJ_E_SIGNATURE,tag); return; }
+    }
+    else if (t != intrinsic_result_type(tag))
+    { fail(at,PJ_E_SIGNATURE,tag); return; }
+
+    for (uint k = 0u; k < arity; k++)
+    {
+        uint value = pj_side(at.rank,PJ_SIDE_CALL_ARGS,p.y+k,0u).y;
+        uint actual = row_type(at,value);
+        if (actual == SCALAR_NEVER) continue;
+        uint scalar = actual < RT_FIRST_TERM ? actual : 0u;
+        uint kind = rt_is_stored_term(actual) ? rt_term_kind(actual) : 0u;
+        bool sequence = kind == RT_KIND_ARRAY || kind == RT_KIND_SLICE;
+        uint detail = 0u;
+        bool wrong = false;
+        if (tag == 1u || tag == 9u || tag == 10u || intrinsic_is_bit_cast(tag))
+            wrong = intrinsic_fixed_argument_violation(tag,scalar,sequence,detail);
+        else if (tag == 3u || tag == 5u || tag == 8u)
+        {
+            wrong = !sequence;
+            detail = LENGTH_ARGUMENT_TYPE | scalar;
+        }
+        else if (tag == 6u)
+        {
+            wrong = scalar != SCALAR_STR;
+            detail = LENGTH_ARGUMENT_TYPE | 0x100u | scalar;
+        }
+        else if (tag == 4u || tag == 7u || tag == 16u || tag == 11u)
+        {
+            bool pointer = tag == 11u || k == 0u;
+            wrong = pointer ? (scalar != SCALAR_PTR && !(null_literal(at,value) && (tag != 11u || k != 0u)))
+                : !scalar_is_integer(scalar);
+            detail = (pointer ? SCALAR_PTR : SCALAR_I32) * 256u + scalar;
+        }
+        // assert keeps the existing truth-test contract. Its original
+        // frontend accepts the argument and its arity is checked above.
+        if (wrong)
+        {
+            Row operand = at; operand.row = value; operand.g = at.base + value;
+            rule(operand,PJ_RULE_ASSIGN_MISMATCH,detail);
+            return;
+        }
+    }
+}
+
 // The instance-routed call at `at` (use `use`).
 void check_call(Row at, uint4 p, uint t, uint use)
 {
     uint4 u0 = pj_use(at.rank, use, 0u);
     uint form = u0.z & 0xffu;
-    if (form != USE_DIRECT || ((u0.z >> 8u) & 0xffffu) != 0u)
+    if ((form != USE_DIRECT && form != 5u) || ((u0.z >> 8u) & 0xffffu) != 0u)
     {
         fail(at, PJ_E_USE, u0.z);
         return;
@@ -212,6 +274,15 @@ void check_call(Row at, uint4 p, uint t, uint use)
         return;
     }
     uint args = p.z;
+    uint count = pj_side_len(at.rank,PJ_SIDE_CALL_ARGS);
+    if (p.y > count || args > count - p.y)
+    { fail(at,PJ_E_INCOMPLETE,args); return; }
+    if (form == 5u)
+    {
+        if (route.x != PJ_ROUTE_NONE) { fail(at,PJ_E_ROUTE,3u); return; }
+        check_intrinsic(at,p,t,pj_use(at.rank,use,2u).x);
+        return;
+    }
     if (route.x == PJ_NATIVE_LIBRARY && route.y == PJ_NATIVE_NS_INSTANCE)
     {
         uint target = route.z;

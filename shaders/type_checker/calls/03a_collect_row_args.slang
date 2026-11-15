@@ -25,6 +25,7 @@ import type_checker.substitution.ct_checked;
 import type_checker.match.ct_match;
 import constant_value;
 import status;
+import type_checker.intrinsic_operand_rules;
 
 struct Params
 {
@@ -294,42 +295,20 @@ void check_intrinsic_argument(uint node, uint callee, uint intrinsic)
     bool known = argument_result_reference(resolve_expr(node), tag, payload);
     if (known && type_ref_is_never(tag, payload)) return;
     bool scalar = known && tag == TYPE_REF_SCALAR;
-    bool accepted = false;
+    bool sequence = false;
+    if (known && tag == TYPE_REF_INSTANCE && payload < parameter_type_capacity())
+        sequence = type_instance_kind[payload] == TYPE_INSTANCE_SLICE ||
+            type_instance_kind[payload] == TYPE_INSTANCE_ARRAY;
+    else if (known && tag == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint count = dependency_type_count();
+        uint root = payload < count ? canonical_type_roots[payload] : INVALID;
+        uint kind = root < count ? dependency_type_word(root * 9u) : 0u;
+        sequence = kind == 4u || kind == 5u;
+    }
     uint detail;
-    if (intrinsic == INTRINSIC_PRINT)
-    {
-        accepted = scalar && (payload == SCALAR_I32 || payload == SCALAR_I8 ||
-            payload == SCALAR_I16 || payload == SCALAR_U8 || payload == SCALAR_U16);
-        detail = PRINT_ARGUMENT_TYPE;
-    }
-    else if (intrinsic >= INTRINSIC_F64_TO_BITS)
-    {
-        uint expected = intrinsic == INTRINSIC_F64_TO_BITS ? SCALAR_F64 :
-            intrinsic == INTRINSIC_F64_FROM_BITS ? SCALAR_U64 :
-            intrinsic == INTRINSIC_F32_TO_BITS ? SCALAR_F32 : SCALAR_U32;
-        accepted = scalar && payload == expected;
-        detail = BIT_CAST_ARGUMENT_TYPE | ((intrinsic - INTRINSIC_F64_TO_BITS) << 8u);
-    }
-    else
-    {
-        bool text = intrinsic == INTRINSIC_STRING_LEN;
-        if (text)
-            accepted = scalar && payload == SCALAR_STR;
-        else if (known && tag == TYPE_REF_INSTANCE && payload < parameter_type_capacity())
-            accepted = type_instance_kind[payload] == TYPE_INSTANCE_SLICE ||
-                type_instance_kind[payload] == TYPE_INSTANCE_ARRAY;
-        else if (known && tag == TYPE_REF_EXTERNAL_CANONICAL)
-        {
-            uint count = dependency_type_count();
-            uint root = payload < count ? canonical_type_roots[payload] : INVALID;
-            uint kind = root < count ? dependency_type_word(root * 9u) : 0u;
-            accepted = kind == 4u || kind == 5u;
-        }
-        detail = LENGTH_ARGUMENT_TYPE | (text ? 0x100u : 0u);
-    }
-    if (accepted) return;
-    record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH,
-        detail | (scalar ? payload : 0u));
+    if (intrinsic_fixed_argument_violation(intrinsic, scalar ? payload : 0u, sequence, detail))
+        record_error(call_arg_error_token(node, callee), ERR_ASSIGN_MISMATCH, detail);
 }
 
 void collect_row_argument(uint row)

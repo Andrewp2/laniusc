@@ -602,3 +602,120 @@ pub fn long_text<T>(tag:T)->str {{ return "{long}"; }}
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_intrinsics_execute_inside_generic_bodies() {
+    common::run_with_timeout("retained native intrinsics", || {
+        let directory = std::env::temp_dir().join(format!(
+            "lanius-retained-native-intrinsics-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            r#"module intrinsic::lib;
+pub fn inspect<T>(values:[T], text:str)->usize {
+    assert(string_len(text) == 5);
+    assert(string_data_ptr(text) != 0);
+    assert(i32_slice_data_ptr(values) != 0);
+    assert(slice_stride(values) != 0);
+    return slice_len(values);
+}
+pub fn native_view<T>(values:[T;3])->usize {
+    let data:ptr = i32_array_data_ptr(values);
+    let view:[T] = slice_from_storage(data,3);
+    assert(slice_len(view) == 3);
+    assert(slice_stride(view) != 0);
+    return slice_len(values);
+}
+pub fn math<T>(tag:T, value:f64)->f64 {
+    print(42);
+    let bits:u64 = f64_to_bits(value);
+    let single:f32 = 1.25;
+    assert(f32_from_bits(f32_to_bits(single)) == single);
+    return f64_from_bits(bits);
+}
+pub fn storage<T>(tag:T)->i32 {
+    let values:[i32;3] = [10,20,30];
+    let data:ptr = i32_array_data_ptr(values);
+    let view:[i32] = slice_from_storage(data,3);
+    return view[2];
+}
+pub fn empty<T>()->usize {
+    let view:[T] = slice_from_raw_parts(0,0);
+    return slice_len(view);
+}
+pub fn trap<T>(tag:T) { assert(false); }
+"#,
+        )
+        .unwrap();
+        let success = r#"module app::main;
+import intrinsic::lib;
+struct Pair { first:i32, second:f64 }
+fn main()->i32 {
+    let ints:[i32;3] = [1,2,3];
+    let pairs:[Pair;3] = [Pair{first:1,second:1.0}, Pair{first:2,second:2.0}, Pair{first:3,second:3.0}];
+    if (inspect<i32>(ints,"hello") != 3) { return 1; }
+    if (inspect<Pair>(pairs,"hello") != 3) { return 2; }
+    if (native_view<i32>(ints) != 3) { return 3; }
+    if (native_view<Pair>(pairs) != 3) { return 4; }
+    if (math<bool>(true,4.5) != 4.5) { return 5; }
+    if (math<i32>(7,-2.25) != -2.25) { return 6; }
+    if (storage<bool>(true) != 30) { return 7; }
+    if (empty<Pair>() != 0) { return 8; }
+    return 42;
+}
+"#;
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.options.batch_rows = 8;
+        for (source, code, stdout) in [
+            (success, 42, "42\n42\n"),
+            (
+                "module app::main; import intrinsic::lib; fn main()->i32 { trap<u8>(1); return 0; }",
+                101,
+                "",
+            ),
+        ] {
+            std::fs::write(&app, source).unwrap();
+            let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+                ExplicitSourceLibraryPaths {
+                    library_id: 1,
+                    paths: vec![lib.clone()],
+                    dependency_library_ids: vec![],
+                },
+                ExplicitSourceLibraryPaths {
+                    library_id: 2,
+                    paths: vec![app.clone()],
+                    dependency_library_ids: vec![1],
+                },
+            ])
+            .unwrap();
+            let before = fallback_counters();
+            let elf = pollster::block_on(
+                compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+            )
+            .unwrap_or_else(|e| panic!("intrinsics: {e:?}"));
+            assert_eq!(fallback_counters().1, before.1);
+            let output =
+                common::run_x86_64_elf_output("retained intrinsics", "retained_intrinsics", &elf);
+            if code == 101 {
+                // The assert intrinsic traps with UD2; bounds failures have
+                // a separate exit-101 runtime path.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    assert_eq!(output.status.signal(), Some(4), "{output:?}");
+                }
+                assert_eq!(output.stderr, b"lanius: assertion failed\n");
+            } else {
+                assert_eq!(output.status.code(), Some(code), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+            assert_eq!(output.stdout, stdout.as_bytes());
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

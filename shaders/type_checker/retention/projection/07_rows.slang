@@ -69,18 +69,19 @@ void write_call(uint row, uint rank, uint rel, uint4 facts)
     uint4 route = pj_routes[q1.x + use];
     uint4 p = pj_row(rank, rel, 2u);
     uint b = row * PJ_CALL_WORDS;
+    bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
     ob_calls[b + 0u] = RT_INVALID;      // target token
     ob_calls[b + 1u] = route.x;         // dependency library
     ob_calls[b + 2u] = route.y;         // dependency unit (instance namespace)
     ob_calls[b + 3u] = route.z;         // dependency local (rank)
     ob_calls[b + 4u] = RT_INVALID;      // host service
-    ob_calls[b + 5u] = 0u;              // intrinsic
+    ob_calls[b + 5u] = intrinsic ? pj_use(rank,use,2u).x : 0u;              // intrinsic
     ob_calls[b + 6u] = facts.w;         // return type (scalar code)
     ob_calls[b + 7u] = RT_INVALID;      // receiver row
     ob_calls[b + 8u] = p.z;             // arguments
     ob_calls[b + 9u] = facts.x;         // return reference
     ob_calls[b + 10u] = facts.y;
-    ob_calls[b + 11u] = 3u;             // CHECKED_CALLABLE_DEPENDENCY
+    ob_calls[b + 11u] = intrinsic ? 2u : 3u;             // CHECKED_CALLABLE_DEPENDENCY
     ob_calls[b + 12u] = RT_INVALID;     // generic requirements
     ob_calls[b + 13u] = RT_INVALID;     // callable row
     ob_calls[b + 14u] = RT_INVALID;     // callable ordinal

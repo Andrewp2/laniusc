@@ -39,7 +39,7 @@ void main(uint3 id: SV_DispatchThreadID)
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     uint form = u0.z & 0xffu;
     // Non-call syntax contributes row and layout types during projection.
-    if (form == 3u || form == 4u) return;
+    if (form == 3u || form == 4u || form == 5u) return;
     // A concrete method called by an original body is already emitted in
     // its defining unit, with the frontend's checked receiver adjustment.
     // Generic methods and calls inside instances still need GPU routing.

@@ -201,7 +201,8 @@ step falls back to replay.
 v1 projects free functions whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `break`, `continue`, assignment, unary and binary operators,
 integer, float, boolean and string literals, names of locals and parameters, member
-reads of nominal structs, struct literals, plain array literals, indexing and direct calls.
+reads of nominal structs, struct literals, plain array literals, indexing, direct calls
+and language intrinsic calls.
 Types include scalars, arrays, slices, references and closed nominal structs
 whose fields are closed terms or the struct's own type parameters. Arrays
 keep exact element types and checked constant-atom length references.
@@ -220,7 +221,7 @@ Every other form fails closed with its template location:
 | --- | --- |
 | enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
 | `for`, `?` | `FORM` or `TYPE` |
-| methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
+| methods, receiver adjustments, host calls, constructors, function references | `USE` |
 | const-generic nominal layouts and named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
@@ -377,3 +378,20 @@ checks exact stdout for empty, escaped Unicode and long strings, multiple
 strings per template, one shared batch and several batches, then shrinking
 and growing the pools in the same build allocations. All three executions
 exit 42 with zero source replay. The full `retained_` filter passes 21 tests.
+
+### Intrinsics inside instances
+
+Discovery keeps intrinsic uses as non-symbol routes. Projection validates
+the retained tag, arity, accepted result and concrete operands, then writes
+an intrinsic checked-call artifact for ordinary lowering. Print, length and
+bit-cast argument rules share `intrinsic_operand_rules.slang` with the
+frontend. View constructors require a complete element layout, a pointer
+(or the allowed null spelling), and an integer count.
+
+`retained_native_intrinsics_execute_inside_generic_bodies` executes slice
+and string queries, typed views over scalar and record elements, storage
+views, float bit casts, printing and an assertion trap in generic bodies.
+It checks exact output and zero replay. The `retained_ intrinsic` test
+filter passes 28 tests, including the existing intrinsic checks. The driver
+printed `NVVM compilation failed: 3` after the passing test summary; no test
+or dispatch failure was reported.
