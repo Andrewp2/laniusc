@@ -205,8 +205,8 @@ v1 projects free functions whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `for`, `break`, `continue`, assignment, unary and binary operators,
 integer, float, boolean and string literals, names of locals and parameters, member
 reads of nominal structs, struct literals, plain array literals, indexing, direct calls
-and language intrinsic calls.
-Types include scalars, arrays, slices, references and closed nominal structs
+language intrinsic calls, enum construction and matches with nested patterns.
+Types include scalars, arrays, slices, references and closed nominal structs and enums
 with compound generic fields and constant operands. Field terms are
 instantiated under the nominal's own exact parameter identities. Arrays
 keep exact element types and checked constant-atom length references.
@@ -223,9 +223,8 @@ Every other form fails closed with its template location:
 
 | Form | Error |
 | --- | --- |
-| enums, `match`, patterns (role PATTERN) | `ROLE` or `FORM` |
 | `?`, named range objects | `FORM` or `TYPE` |
-| methods, receiver adjustments, host calls, constructors, function references | `USE` |
+| methods, receiver adjustments, host calls, function references | `USE` |
 | named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
@@ -233,8 +232,8 @@ Every other form fails closed with its template location:
 
 | Obligation | State |
 | --- | --- |
-| Pattern rows are not constructor uses; enum instances are reached from signature, parameter, scrutinee and row terms | Enums and `match` are rejected (`FORM`, `ROLE`). The producer reaches instances only through DIRECT uses. |
-| A nested pattern's matched type is the enclosing payload's schema-substituted type | Not implemented; patterns are rejected. |
+| Pattern rows are not constructor uses; enum instances are reached from signature, parameter, scrutinee and row terms | Schema realization reaches enum types from the stored type graph; pattern syntax creates no call use. |
+| A nested pattern's matched type is the enclosing payload's schema-substituted type | Implemented by a lane per arm/payload, taking each nested payload type from its parent variant's realized schema. |
 | Substitute u1.z/u1.w under the instance ENV and validate the adjustment | Not implemented; any receiver adjustment or METHOD use is rejected (`USE`). The receiver contract to port: `enter`/`read`/`peek` borrow mode 2, deref 1; by-value `(2, 0)`; twice borrowed `(2, 2)`; consuming self `(1, 0)`. |
 | r3.y is a predicate ordinal only when r3.z is BOUND (4), a use index otherwise | Implemented in `05_check` and `07_rows`. |
 | The accepted call result (u1.y, `67555902e`) | `05_check` requires u1.y to be resolved: a term, or a bare type parameter of the caller (the `T` of `keep(v)` in a body generic over T). Its substitution must equal the row type and the target's result. |
@@ -442,6 +441,33 @@ body substitution publication stays current throughout projection.
 `retained_native_compound_generic_fields_have_exact_layouts` executes nested
 records with arrays of scalar and record elements, slice fields, and a
 constant-generic array field, with small and combined batches. Both builds
-exit 42 with zero replay. Enum payload terms can be realized by this stage;
-enum construction and matching are still not lowered by projection.
+exit 42 with zero replay. Enum payload terms use the same schema stage; enum layout is one discriminant word plus the widest variant payload.
 The complete `retained_` filter passes 27 tests after schema realization.
+
+## Enum construction and patterns
+
+Constructors validate the accepted result's exact enum declaration, variant
+ordinal, payload arity and every realized payload type before emitting the
+existing checked constructor artifact. Unit variants carry an ordinal marker
+without depending on a frontend variant table.
+
+Match tables preserve canonical arm and payload order within each batch. Root
+patterns take the scrutinee's referent type. Payload lanes take their types from
+the parent variant's realized schema; the current implementation records 64
+dependent dispatches when payloads exist. Pattern checks verify declaration,
+ordinal, child count and any retained type before publishing lowering facts.
+Borrowed enum matching reads the pattern's concrete type identity, avoiding a
+collision between batch token indices and retained type indices. The lowering's
+local-variable passes recognize the imported variant marker, so nested variants
+are comparisons rather than declarations of nonexistent locals.
+
+The two native enum tests execute integer, float, struct and array payloads,
+unit variants, nested variants and literal subpatterns, scalar matches and
+borrowed enum matches. They use both one-instance and combined lowering batches
+and assert zero replay. A projection fault test changes a variant ordinal to
+one with a different arity, then changes a payload's type; each must reject
+before lowering, and a restored store must succeed with the same allocations.
+
+Validation: 42 focused tests passed (`retained_`, compiler defect fixtures,
+and the slice enum payload case); receipt:
+`target/retained-native-integration-evidence/match-regression.log`.

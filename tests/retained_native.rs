@@ -930,3 +930,123 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_enum_constructors_keep_payload_layouts() {
+    common::run_with_timeout("retained enum constructors", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-enums-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module enums::lib;
+pub enum Choice<T> { Empty, One(T), Two(T,i32), Array([T;2]) }
+pub fn one<T>(value:T)->Choice<T> { return One(value); }
+pub fn two<T>(value:T, tail:i32)->Choice<T> { return Choice::Two(value,tail); }
+pub fn array<T>(values:[T;2])->Choice<T> { return Array(values); }
+pub fn empty<T>()->Choice<T> { return Empty; }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import enums::lib;
+struct Pair { x:i32, y:f64 }
+fn main()->i32 {
+    let a:Choice<i32> = one<i32>(11);
+    if ((match (a) { One(v) -> v, _ -> 0 }) != 11) { return 1; }
+    let b:Choice<f64> = two<f64>(2.5,9);
+    if ((match (b) { Two(v,_) -> v, _ -> 0.0 }) != 2.5) { return 2; }
+    if ((match (b) { Two(_,v) -> v, _ -> 0 }) != 9) { return 3; }
+    let p:Pair=Pair{x:13,y:4.25};
+    let c:Choice<Pair> = one<Pair>(p);
+    let q:Pair=match (c) { One(v) -> v, _ -> Pair{x:0,y:0.0} };
+    if (q.x != 13 || q.y != 4.25) { return 4; }
+    let d:Choice<Pair> = array<Pair>([p,p]);
+    let qs:[Pair;2]=match (d) { Array(v) -> v, _ -> [p,p] };
+    if (qs[1].x != 13 || qs[0].y != 4.25) { return 5; }
+    let e:Choice<Pair> = empty<Pair>();
+    if (!(match (e) { Empty -> true, _ -> false })) { return 6; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let output=common::run_x86_64_elf_output("retained enums","retained_enums",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_matches_realize_nested_payloads() {
+    common::run_with_timeout("retained nested matches", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-matches-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module matches::lib;
+pub enum Choice<T> { Empty, One(T), Two(i32,T) }
+pub enum Nest<T> { Nested(Choice<T>,bool), Absent }
+pub fn extract<T>(value:Choice<T>, fallback:T)->T {
+    return match (value) { One(v) -> v, Two(_,v) -> v, _ -> fallback };
+}
+pub fn nested<T>(value:Nest<T>, fallback:T)->T {
+    return match (value) {
+        Nested(Two(7,v),true) -> v,
+        Nested(One(v),_) -> v,
+        _ -> fallback
+    };
+}
+pub fn borrowed<T>(value:&Choice<T>, fallback:T)->T {
+    return match (value) { One(v) -> v, _ -> fallback };
+}
+pub fn scalar<T>(tag:T,value:i32)->i32 { return match (value) { 1 -> 11, 2 -> 22, _ -> 33 }; }
+pub fn create<T>(v:T)->Nest<T> { return Nested(Two(7,v),true); }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import matches::lib;
+struct Pair { x:i32, y:f64 }
+impl Choice<Pair> { fn borrow(&self)->&Choice<Pair> { return self; } }
+fn main()->i32 {
+    if (extract<i32>(One(11),0) != 11) { return 1; }
+    if (extract<f64>(Two(2,3.25),0.0) != 3.25) { return 2; }
+    if (extract<i32>(Empty,9) != 9) { return 3; }
+    let p:Pair=Pair{x:17,y:4.5}; let z:Pair=Pair{x:0,y:0.0};
+    let v:Nest<Pair> = create<Pair>(p);
+    let q:Pair=nested<Pair>(v,z);
+    if (q.x != 17 || q.y != 4.5) { return 4; }
+    let other:Nest<Pair> = Nested(Two(8,p),true);
+    let q2:Pair=nested<Pair>(other,z);
+    if (q2.x != 0 || q2.y != 0.0) { return 5; }
+    let other2:Nest<Pair> = Nested(One(p),false);
+    let q3:Pair=nested<Pair>(other2,z);
+    if (q3.x != 17 || q3.y != 4.5) { return 6; }
+    let owned:Choice<Pair> = One(p);
+    let q4:Pair=borrowed<Pair>(owned.borrow(),z);
+    if (q4.x != 17 || q4.y != 4.5) { return 7; }
+    if (scalar<i32>(9,1) != 11 || scalar<u8>(9,2) != 22 || scalar<i64>(9,4) != 33) { return 8; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            let output=common::run_x86_64_elf_output("retained matches","retained_matches",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

@@ -60,6 +60,8 @@ impl GpuCompiler<'_> {
             match pipeline.finish_x86_object(device, queue, library, unit) {
                 Ok((object, _)) => return Ok(object),
                 Err(error) => {
+                    crate::gpu::dispatch_capture::debug_write_capture(device, queue);
+                    crate::gpu::passes_core::debug_dump_buffers(device, queue, "retained_lowering");
                     let demand = pipeline
                         .output_demand_for_retry(&error)
                         .map_err(anyhow::Error::msg)?;

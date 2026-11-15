@@ -3,8 +3,7 @@
 // indices; a field keeps its struct-init ordinal and a parameter receives
 // its substituted declared type as the lowering's parameter reference.
 // Array elements retain their owner, value and ordinal.
-// (Match tables are empty: step 5 rejects their
-// rows.)
+// Match arm and payload indices retain canonical order within each body.
 import type_checker.retention.projection.pj_out;
 
 void copy(Batch b, uint k, uint index)
@@ -31,6 +30,14 @@ void copy(Batch b, uint k, uint index)
         ob_param_ref_tag[index] = ref.x;
         ob_param_ref_payload[index] = ref.y;
     }
+    else if (k == PJ_SIDE_MATCH_ARMS)
+    {
+        ob_match_arms[index] = uint4(pj_abs_row(m,record.x),pj_abs_row(m,record.y),pj_abs_row(m,record.z),record.w);
+        ob_match_payload_start[index] = pj_abs_side(m,PJ_SIDE_MATCH_PAYLOADS,extra.x);
+        ob_match_payload_count[index] = extra.y;
+    }
+    else if (k == PJ_SIDE_MATCH_PAYLOADS)
+        ob_match_payloads[index] = uint4(pj_abs_side(m,PJ_SIDE_MATCH_ARMS,record.x),pj_abs_row(m,record.y),record.z,pj_abs_row(m,record.w));
     else if (k == PJ_SIDE_ARRAY_ELEMENTS)
         ob_array_elements[index] = uint4(pj_abs_row(m, record.x), pj_abs_row(m, record.y), record.z, record.w);
     else if (k == PJ_SIDE_STRINGS)
@@ -51,6 +58,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     copy(b, PJ_SIDE_CALL_ARGS, index);
     copy(b, PJ_SIDE_FIELDS, index);
     copy(b, PJ_SIDE_PARAMS, index);
+    copy(b, PJ_SIDE_MATCH_ARMS, index);
+    copy(b, PJ_SIDE_MATCH_PAYLOADS, index);
     copy(b, PJ_SIDE_ARRAY_ELEMENTS, index);
     copy(b, PJ_SIDE_STRINGS, index);
 }

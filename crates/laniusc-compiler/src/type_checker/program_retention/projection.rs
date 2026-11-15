@@ -189,6 +189,8 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/projection/10b_certify_finish",
     "type_checker/retention/projection/04c_string_scan",
     "type_checker/retention/projection/08b_string_bytes",
+    "type_checker/retention/projection/04d_pattern_roots",
+    "type_checker/retention/projection/04e_pattern_payloads",
 ];
 const K_PLAN: usize = 0;
 const K_SCAN: usize = 1;
@@ -207,6 +209,8 @@ const K_CERTIFY: usize = 13;
 const K_CERTIFY_FINISH: usize = 14;
 const K_STRING_SCAN: usize = 15;
 const K_STRING_BYTES: usize = 16;
+const K_PATTERN_ROOTS: usize = 17;
+const K_PATTERN_PAYLOADS: usize = 18;
 
 /// The root routes of original objects and the caller ABI facts of their
 /// calls (docs/compiler-retained-projection.md, "Native compilation").
@@ -525,8 +529,8 @@ const WORD_COLUMNS: &[(&str, Size, u64, u32)] = &[
     ("z_variant_payload_start", Size::Rows, 1, 0),
     ("z_variant_payload_count", Size::Rows, 1, 0),
     ("z_variant_payload_row_count", Size::One, 1, 0),
-    ("z_match_payload_start", Size::Side, 1, 0),
-    ("z_match_payload_count", Size::Side, 1, 0),
+    ("ob_match_payload_start", Size::Side, 1, 0),
+    ("ob_match_payload_count", Size::Side, 1, 0),
     ("ob_string_data", Size::StringWords, 1, 0),
     ("ob_string_pool_len", Size::One, 1, 0),
     ("z_method_count", Size::One, 1, 0),
@@ -615,8 +619,8 @@ impl BatchColumns {
         let generic_param_ranges = typed!("ob_generic_param_ranges", rows, 2);
         let variants = typed!("z_variants", rows, 4);
         let variant_payloads = typed!("z_variant_payloads", rows, 4);
-        let match_arms = typed!("z_match_arms", side, 4);
-        let match_payloads = typed!("z_match_payloads", side, 4);
+        let match_arms = typed!("ob_match_arms", side, 4);
+        let match_payloads = typed!("ob_match_payloads", side, 4);
         let array_elements = typed!("ob_array_elements", side, 4);
         let strings = typed!("ob_strings", side, 4);
         let method_cores = typed!("z_method_cores", rows, 4);
@@ -665,6 +669,8 @@ impl BatchColumns {
             "ob_payload" => &self.payload.buffer,
             "ob_call_args" => &self.call_args.buffer,
             "ob_fields" => &self.fields.buffer,
+            "ob_match_arms" => &self.match_arms.buffer,
+            "ob_match_payloads" => &self.match_payloads.buffer,
             "ob_array_elements" => &self.array_elements.buffer,
             "ob_strings" => &self.strings.buffer,
             "ob_params" => &self.params.buffer,
@@ -712,8 +718,8 @@ impl BatchColumns {
             variant_payloads: &self.variant_payloads,
             match_arm_count,
             match_arms: &self.match_arms,
-            match_payload_start: self.w("z_match_payload_start"),
-            match_payload_count: self.w("z_match_payload_count"),
+            match_payload_start: self.w("ob_match_payload_start"),
+            match_payload_count: self.w("ob_match_payload_count"),
             match_payload_row_count,
             match_payloads: &self.match_payloads,
             array_element_start: self.w("ob_array_element_start"),
@@ -1302,6 +1308,16 @@ impl RetainedProjection {
         }
         r.dispatch(K_ROWS_INIT, &guard, inputs, &extra, report.rows.max(1))?;
         r.dispatch(K_EDGES, &guard, inputs, &extra, report.rows.max(1))?;
+        let arms = totals[S_TOTALS + 4];
+        let payloads = totals[S_TOTALS + 5];
+        if arms != 0 || payloads != 0 {
+            r.dispatch(K_PATTERN_ROOTS, &guard, inputs, &extra, arms.max(payloads))?;
+            if payloads != 0 {
+                for _ in 0..64 {
+                    r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
+                }
+            }
+        }
         if totals[S_TOTALS + 7] != 0 {
             let mut input = 0u32;
             let mut distance = 0u32;

@@ -10,8 +10,8 @@ void main()
     ob_count_rows[0u] = b.rows;
     ob_count_call_args[0u] = pj_batch_side(PJ_SIDE_CALL_ARGS);
     ob_count_fields[0u] = pj_batch_side(PJ_SIDE_FIELDS);
-    ob_count_match_arms[0u] = 0u;
-    ob_count_match_payloads[0u] = 0u;
+    ob_count_match_arms[0u] = pj_batch_side(PJ_SIDE_MATCH_ARMS);
+    ob_count_match_payloads[0u] = pj_batch_side(PJ_SIDE_MATCH_PAYLOADS);
     ob_count_array_elements[0u] = pj_batch_side(PJ_SIDE_ARRAY_ELEMENTS);
     ob_count_strings[0u] = pj_batch_side(PJ_SIDE_STRINGS);
     ob_string_pool_len[0u] = 4u * (pj_string_offsets[pj_base_at(b.hi,PJ_C_ROWS)] -

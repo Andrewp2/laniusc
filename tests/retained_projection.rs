@@ -436,3 +436,51 @@ fn main() -> i32 { return start<u8>(); }
         }
     }
 }
+
+#[test]
+fn retained_projection_rejects_wrong_pattern_schema_and_payload_type() {
+    use laniusc_compiler::type_checker::program_retention::{
+        discovery::{DiscoveryCapacity,DiscoveryOutcome,RetainedDiscovery},
+        projection::{ProjectionOptions,ProjectionOutcome,RetainedProjection,error},
+        substitution::SubstitutionCapacity,
+    };
+    common::run_with_timeout("retained pattern rejection",|| {
+        let lib=r#"module lib::a;
+pub enum Choice<T> { One(T), Pair(T,T) }
+pub fn unwrap<T>(value:Choice<T>, fallback:T)->T {
+    return match (value) { One(inner) -> inner, _ -> fallback };
+}
+"#;
+        let app=r#"module app::b;
+import lib::a;
+fn main()->i32 { return unwrap<i32>(One(3),4); }
+"#;
+        let store=retain(&[("lib",lib),("app",app)]);
+        let mut discovery=RetainedDiscovery::new(DiscoveryCapacity::tiny(),SubstitutionCapacity::tiny()).unwrap();
+        let publication=match discovery.run(&store).unwrap() {
+            DiscoveryOutcome::Published(p)=>p,
+            DiscoveryOutcome::Rejected(e)=>panic!("{e:?}"),
+        };
+        let count=store.status().unwrap()[10] as usize;
+        let rows=store.read_store_words("rt_seg_rows",count*28).unwrap();
+        let pattern=(0..count).filter(|&r|rows[r*28+14]==5 && rows[r*28+20]==3).collect::<Vec<_>>();
+        assert_eq!(pattern.len(),1);
+        let root=pattern[0];
+        let payload=root+1;
+        assert_eq!(rows[payload*28+20],1,"the inner payload binds a local");
+        let compiler=pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).unwrap();
+        let mut projection=RetainedProjection::new(SubstitutionCapacity::tiny()).unwrap();
+        for (word,value,code) in [(root*28+22,1,error::FIELD),(payload*28+12,2,error::SIGNATURE)] {
+            store.write_store_words("rt_seg_rows",word as u64,&[value]).unwrap();
+            match projection.run(&compiler,&store,&publication.inputs,&ProjectionOptions::default()).unwrap() {
+                ProjectionOutcome::Rejected{error,report}=>{
+                    assert_eq!(error.code,code,"{error}");
+                    assert!(report.batches.is_empty(),"a bad pattern lowers no object");
+                }
+                ProjectionOutcome::Objects{..}=>panic!("malformed pattern was published"),
+            }
+            store.write_store_words("rt_seg_rows",word as u64,&[rows[word]]).unwrap();
+        }
+        assert!(matches!(projection.run(&compiler,&store,&publication.inputs,&ProjectionOptions::default()).unwrap(),ProjectionOutcome::Objects{..}));
+    });
+}

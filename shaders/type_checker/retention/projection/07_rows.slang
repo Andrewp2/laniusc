@@ -8,6 +8,7 @@
 // symbol, the function's result and entry tag, and the tree relations
 // (expression parent and root, nearest loop, control depth).
 import type_checker.retention.projection.pj_out;
+import type_checker.retention.projection.pj_patterns;
 
 void defaults(uint row)
 {
@@ -70,6 +71,7 @@ void write_call(uint row, uint rank, uint rel, uint4 facts)
     uint4 p = pj_row(rank, rel, 2u);
     uint b = row * PJ_CALL_WORDS;
     bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
+    bool constructor = (pj_use(rank,use,0u).z & 0xffu) == 4u;
     ob_calls[b + 0u] = RT_INVALID;      // target token
     ob_calls[b + 1u] = route.x;         // dependency library
     ob_calls[b + 2u] = route.y;         // dependency unit (instance namespace)
@@ -81,10 +83,10 @@ void write_call(uint row, uint rank, uint rel, uint4 facts)
     ob_calls[b + 8u] = p.z;             // arguments
     ob_calls[b + 9u] = facts.x;         // return reference
     ob_calls[b + 10u] = facts.y;
-    ob_calls[b + 11u] = intrinsic ? 2u : 3u;             // CHECKED_CALLABLE_DEPENDENCY
+    ob_calls[b + 11u] = intrinsic ? 2u : constructor ? 4u : 3u;
     ob_calls[b + 12u] = RT_INVALID;     // generic requirements
     ob_calls[b + 13u] = RT_INVALID;     // callable row
-    ob_calls[b + 14u] = RT_INVALID;     // callable ordinal
+    ob_calls[b + 14u] = constructor ? pj_use(rank,use,2u).x : RT_INVALID;
     ob_calls[b + 15u] = 0u;             // receiver adjustment
     ob_calls[b + 16u] = 0u;
     ob_calls[b + 17u] = 0u;
@@ -166,6 +168,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     ob_value_decl[row] = r5.x == RT_BIND_LOCAL ? pj_abs_token(m, r5.y) : RT_INVALID;
     ob_value_const[row] = r6.zw;
     ob_value_const_present[row] = r6.y;
+    uint4 r3 = pj_row(rank,rel,3u);
+    if (aux.w != 0u)
+    {
+        uint variant = pj_pattern_variant(rank,rel);
+        if (variant != RT_INVALID)
+        {
+            ob_value_const[row] = uint2(variant,0u);
+            ob_value_const_present[row] = RT_CONST_VARIANT;
+        }
+    }
+    if ((kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) && r3.z != RT_ROLE_BOUND &&
+        r3.y != RT_NONE && (pj_use(rank,r3.y,0u).z & 0xffu) == 4u)
+    {
+        // Imported and local unit variants use the same ordinal artifact.
+        // The lowering recognizes it on a path without a local enum table.
+        ob_core[row].x = RT_HIR_PATH_EXPR;
+        ob_value_const[row] = uint2(pj_use(rank,r3.y,2u).x,0u);
+        ob_value_const_present[row] = RT_CONST_VARIANT;
+    }
     if (r6.y == RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE)
     {
         uint status;

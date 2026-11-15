@@ -20,6 +20,7 @@ import type_checker.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;
 import type_checker.retention.projection.pj_types;
 import type_checker.retention.projection.pj_schema;
+import type_checker.retention.projection.pj_patterns;
 
 static const uint STMT_LET = 1u;
 static const uint STMT_RETURN = 2u;
@@ -31,6 +32,7 @@ static const uint EXPR_FLOAT = 27u;
 static const uint EXPR_STRING = 28u;
 static const uint USE_DIRECT = 1u;
 static const uint USE_RECORD = 3u;
+static const uint USE_CONSTRUCTOR = 4u;
 
 struct Row
 {
@@ -245,7 +247,7 @@ void check_call(Row at, uint4 p, uint t, uint use)
 {
     uint4 u0 = pj_use(at.rank, use, 0u);
     uint form = u0.z & 0xffu;
-    if ((form != USE_DIRECT && form != 5u) || ((u0.z >> 8u) & 0xffffu) != 0u)
+    if ((form != USE_DIRECT && form != USE_CONSTRUCTOR && form != 5u) || ((u0.z >> 8u) & 0xffffu) != 0u)
     {
         fail(at, PJ_E_USE, u0.z);
         return;
@@ -278,6 +280,30 @@ void check_call(Row at, uint4 p, uint t, uint use)
     uint count = pj_side_len(at.rank,PJ_SIDE_CALL_ARGS);
     if (p.y > count || args > count - p.y)
     { fail(at,PJ_E_INCOMPLETE,args); return; }
+    if (form == USE_CONSTRUCTOR)
+    {
+        uint entry = pj_dir_entry(u0.w);
+        uint variant = pj_use(at.rank,use,2u).x;
+        if (route.x != PJ_ROUTE_NONE || !rt_is_stored_term(t) || rt_term_kind(t) != RT_KIND_NAMED ||
+            rt_term_words(t).x != u0.w || entry == RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y != 6u)
+        { fail(at,PJ_E_USE,form); return; }
+        uint4 d1 = rt_dir[entry*RT_DIR_WORDS+1u];
+        uint4 d2 = rt_dir[entry*RT_DIR_WORDS+2u];
+        if (variant >= d1.w || variant >= d2.z)
+        { fail(at,PJ_E_FIELD,variant); return; }
+        uint4 v = rt_schema[d2.y+variant];
+        if (v.x != u0.w || v.y != (RT_SCHEMA_VARIANT | (variant << 8u)) || v.z != args ||
+            v.w > d2.z || v.z > d2.z-v.w)
+        { fail(at,PJ_E_SIGNATURE,variant); return; }
+        for (uint k = 0u; k < args; k++)
+        {
+            uint value = pj_side(at.rank,PJ_SIDE_CALL_ARGS,p.y+k,0u).y;
+            if (value >= pj_inf(at.rank,1u).x || !pj_argument_compatible(pj_schema_type(t,v.w+k),
+                row_type(at,value),pj_row(at.rank,value,6u).x & 0xffu))
+            { fail(at,PJ_E_SIGNATURE,k); return; }
+        }
+        return;
+    }
     if (form == 5u)
     {
         if (route.x != PJ_ROUTE_NONE) { fail(at,PJ_E_ROUTE,3u); return; }
@@ -425,7 +451,7 @@ bool supported_form(uint kind, uint4 p)
         kind == RT_HIR_BREAK_STMT || kind == RT_HIR_CONTINUE_STMT || kind == RT_HIR_BINARY_EXPR ||
         kind == RT_HIR_UNARY_EXPR || kind == RT_HIR_CALL_EXPR || kind == RT_HIR_MEMBER_EXPR ||
         kind == RT_HIR_NAME_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR || kind == RT_HIR_PATH_EXPR ||
-        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR || kind == RT_HIR_FOR_STMT)
+        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR || kind == RT_HIR_FOR_STMT || kind == RT_HIR_MATCH_EXPR)
         return true;
     if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID || p.x == 37u || p.x == 38u;
     if (kind == RT_HIR_STMT)
@@ -490,7 +516,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         return;
     }
-    if (r3.z == RT_ROLE_PATTERN)
+    uint pattern_type = pj_g_aux[g].w;
+    bool pattern = pattern_type != 0u;
+    if (r3.z == RT_ROLE_PATTERN && !pattern)
     {
         fail(at, PJ_E_ROLE, r3.z);
         return;
@@ -501,16 +529,33 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     if (!supported_form(kind, p) || (r4.w != 0u && kind != RT_HIR_ARRAY_EXPR) ||
-        (r6.y != 0u && r6.y != RT_CONST_CONCRETE && r6.y != RT_CONST_SYMBOLIC && kind != RT_HIR_TYPE) ||
+        (r6.y != 0u && r6.y != RT_CONST_CONCRETE && r6.y != RT_CONST_SYMBOLIC && r6.y != RT_CONST_VARIANT && kind != RT_HIR_TYPE) ||
         (((r6.x >> 8u) & 0xffu) != 0u && kind != RT_HIR_FOR_STMT && !(kind == RT_HIR_STMT && p.x == 7u)) ||
         (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE &&
-            (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) || r5.x == RT_BIND_VARIANT ||
+            (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) ||
+        (r5.x == RT_BIND_VARIANT && !pattern && r3.z != RT_ROLE_CALLEE && r3.y == RT_NONE) ||
         (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE))
     {
         fail(at, PJ_E_FORM, kind | (p.x << 8u));
         return;
     }
     uint t = RT_INVALID;
+    if (pattern)
+    {
+        if (!supported_type(at,pattern_type)) return;
+        uint variant = pj_pattern_variant(at.rank,at.row);
+        uint children = pj_g_facts[g].w;
+        if (variant != RT_INVALID)
+        {
+            uint4 schema = pj_variant_schema(pattern_type,variant);
+            if (schema.x == RT_INVALID || schema.z != children ||
+                (r5.x == RT_BIND_VARIANT && r5.y != schema.x) ||
+                (r5.x != RT_BIND_VARIANT && !rt_is_resolved(r3.x)))
+            { fail(at,PJ_E_FIELD,variant); return; }
+        }
+        else if (children != 0u || (kind != RT_HIR_LITERAL_EXPR && r5.x != RT_BIND_LOCAL))
+        { fail(at,PJ_E_ROLE,r3.z); return; }
+    }
     if (rt_is_resolved(r3.x))
     {
         t = result_or_fail(at, pj_req_row(at.rank, at.row));
@@ -528,9 +573,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // runtime value. The enclosing array term owns its evaluated count.
         if (kind == RT_HIR_TYPE && rt_is_stored_term(t) &&
             (rt_term_kind(t) == RT_KIND_CC_COUNT || rt_term_kind(t) == RT_KIND_CC_VALUE)) return;
+        if (pattern && pj_referent(t) != pattern_type)
+        { fail(at,PJ_E_SIGNATURE,0xfffau); return; }
+        if (pattern) t = pattern_type;
         if (!supported_type(at, t)) return;
         uint2 ref = pj_ref_of(t);
         pj_g_facts[g] = uint4(ref, pj_words(t), t < RT_FIRST_TERM ? t : 0u);
+    }
+    else if (pattern)
+    {
+        t = pattern_type;
+        uint2 ref = pj_ref_of(t);
+        pj_g_facts[g] = uint4(ref,pj_words(t),t < RT_FIRST_TERM ? t : 0u);
     }
     bool changed = rt_is_resolved(r3.x) && !rt_term_closed(r3.x);
 
@@ -554,7 +608,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
     }
-    if (kind == RT_HIR_ARRAY_EXPR)
+    if (kind == RT_HIR_MATCH_EXPR)
+    {
+        uint arms = pj_side_len(at.rank,PJ_SIDE_MATCH_ARMS);
+        if (p.x >= pj_inf(at.rank,1u).x || p.y > arms || p.z > arms-p.y)
+        { fail(at,PJ_E_INCOMPLETE,p.y); return; }
+        for (uint k = 0u; k < p.z; k++)
+        {
+            uint4 arm = pj_side(at.rank,PJ_SIDE_MATCH_ARMS,p.y+k,0u);
+            uint result = row_type(at,arm.z);
+            if (arm.x != at.row || arm.w != k || (result != t && result != SCALAR_NEVER))
+            { fail(at,PJ_E_SIGNATURE,k); return; }
+        }
+    }
+    else if (kind == RT_HIR_ARRAY_EXPR)
     {
         uint count = pj_array_count(t);
         // Zero-repeat retains its literal element in HIR; lowering emits
@@ -661,6 +728,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         check_destination(at, row_type(at, p.y), p.z, !template_closed(at, p.y) || !template_closed(at, p.z));
 
     if (failed) return;
+    if (pattern) return;
     uint use = r3.z != RT_ROLE_BOUND ? r3.y : RT_NONE;
     if (kind == RT_HIR_CALL_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR)
     {
@@ -673,7 +741,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else check_struct_literal(at, p, t, use);
     }
     else if (use != RT_NONE)
-        fail(at, PJ_E_USE, kind);
+    {
+        if ((kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) && use < pj_inf(at.rank,1u).w &&
+            (pj_use(at.rank,use,0u).z & 0xffu) == USE_CONSTRUCTOR)
+            check_call(at,uint4(0u,0u,0u,0u),t,use);
+        else fail(at, PJ_E_USE, kind);
+    }
     else if (kind == RT_HIR_MEMBER_EXPR)
         check_member(at, p, t, r5.w);
 }

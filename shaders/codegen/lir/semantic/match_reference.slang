@@ -67,6 +67,17 @@ bool semantic_match_pattern_accepts_enum(uint pattern, uint tag, uint payload, u
     bool nominal = tag == 3u && payload < capacity && type_instance_kind[payload] == 1u;
     if (semantic_value_const_present_by_hir[pattern] == 0x40000000u)
     {
+        // Projected patterns carry a concrete checked nominal reference.
+        // Its identity is indexed by the type instance, independent of the
+        // batch token namespace. Ordinary frontend artifacts can still use
+        // their retained token identity below when no such reference exists.
+        uint pattern_type = semantic_expr_ref_payload[pattern];
+        if (semantic_expr_ref_tag[pattern] == 3u && pattern_type < capacity &&
+            type_instance_kind[pattern_type] == 1u && external_type_library_id[pattern_type] != LIR_INVALID &&
+            external_type_unit_id[pattern_type] != LIR_INVALID && external_type_local_index[pattern_type] != LIR_INVALID)
+            return nominal && external_type_library_id[pattern_type] == external_type_library_id[payload] &&
+                external_type_unit_id[pattern_type] == external_type_unit_id[payload] &&
+                external_type_local_index[pattern_type] == external_type_local_index[payload];
         // The checker retained the enum parent's identity on the pattern's
         // token; these are stable identity columns, never resident page rows.
         uint token = compact_hir_core[pattern].token_start;

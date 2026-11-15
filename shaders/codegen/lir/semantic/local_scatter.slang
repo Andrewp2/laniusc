@@ -18,6 +18,7 @@ StructuredBuffer<uint> semantic_local_prefix;
 StructuredBuffer<uint> semantic_function_id;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
+StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_iterable_kind;
@@ -41,8 +42,9 @@ bool match_payload_binding(uint hir)
     }
     if (lo >= count || compact_match_payloads[lo].pattern != hir)
         return false;
-    // A literal sub-pattern is compared, not bound.
-    if (compact_hir_core[hir].kind == HIR_LITERAL_EXPR)
+    // Literal and imported variant sub-patterns compare; neither declares a local.
+    if (compact_hir_core[hir].kind == HIR_LITERAL_EXPR ||
+        semantic_value_const_present_by_hir[hir] == 0x40000000u)
         return false;
     uint declaration_token = semantic_value_decl_by_hir[hir];
     uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);

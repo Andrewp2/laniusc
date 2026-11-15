@@ -1,7 +1,8 @@
 // Closed layouts, one lane per TermId per level. The schema substitution
 // stage supplies each nominal's exact field types, including compound and
 // constant-generic fields. Arrays depend on their element layout; slices
-// and references have fixed widths. Enum layouts remain unsupported here.
+// and references have fixed widths. Enums carry a discriminant followed by
+// storage for their widest realized variant payload.
 import type_checker.retention.projection.pj_types;
 import native_value_layout;
 import type_checker.retention.projection.pj_schema;
@@ -60,21 +61,48 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 d1 = rt_dir[entry * RT_DIR_WORDS + 1u];
     uint4 d2 = rt_dir[entry * RT_DIR_WORDS + 2u];
     uint4 d3 = rt_dir[entry * RT_DIR_WORDS + 3u];
-    if (d0.y != DIR_STRUCT || d0.w != RT_DIR_COMMITTED || d3.w != 0u) return;
+    if ((d0.y != DIR_STRUCT && d0.y != 6u) || d0.w != RT_DIR_COMMITTED || d3.w != 0u) return;
     uint types = d1.y & 0xffffu;
     if (rt_term_arity(t) != types + (d1.y >> 16u)) return;
     uint fields = 0u;
     uint total = 0u;
-    for (uint k = 0u; k < d2.z; k++)
+    if (d0.y == 6u)
     {
-        uint4 record = rt_schema[d2.y + k];
-        if ((record.y & 0xffu) != RT_SCHEMA_FIELD) continue;
-        uint field = pj_schema_type(t,k);
-        uint w = pj_words(field);
-        if (w == RT_INVALID) return;
-        if (w >= RT_INVALID-total) return;
-        total += w;
-        fields++;
+        uint widest = 0u;
+        if (d1.w > d2.z) return;
+        for (uint variant = 0u; variant < d1.w; variant++)
+        {
+            uint4 record = rt_schema[d2.y+variant];
+            if (record.x != words.x || record.y != (RT_SCHEMA_VARIANT | (variant << 8u)) ||
+                record.w > d2.z || record.z > d2.z-record.w) return;
+            uint payload = 0u;
+            for (uint k = 0u; k < record.z; k++)
+            {
+                uint4 field = rt_schema[d2.y+record.w+k];
+                if (field.x != words.x || field.y != (RT_SCHEMA_PAYLOAD | (k << 8u)) || field.z != variant) return;
+                uint w = pj_words(pj_schema_type(t,record.w+k));
+                if (w >= RT_INVALID-payload) return;
+                payload += w;
+            }
+            widest = max(widest,payload);
+        }
+        if (widest >= RT_INVALID-1u) return;
+        total = widest+1u;
+        fields = d1.w;
+    }
+    else
+    {
+        for (uint k = 0u; k < d2.z; k++)
+        {
+            uint4 record = rt_schema[d2.y + k];
+            if ((record.y & 0xffu) != RT_SCHEMA_FIELD) continue;
+            uint field = pj_schema_type(t,k);
+            uint w = pj_words(field);
+            if (w == RT_INVALID) return;
+            if (w >= RT_INVALID-total) return;
+            total += w;
+            fields++;
+        }
     }
     if (fields != d1.w || total == 0u) return;
     pj_layout[t] = uint4(total, 1u, fields, 0u);
@@ -85,6 +113,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     ob_ext_library[t] = key.x;
     ob_ext_unit[t] = key.y;
     ob_ext_local[t] = key.w;
-    ob_imported_layout_kind[t] = PJ_IMPORTED_STRUCT | PJ_IMPORTED_COMPLETE;
+    ob_imported_layout_kind[t] = (d0.y == 6u ? 7u : PJ_IMPORTED_STRUCT) | PJ_IMPORTED_COMPLETE;
     InterlockedAdd(pj_status[PJ_S_LAYOUT_CHANGED], 1u);
 }
