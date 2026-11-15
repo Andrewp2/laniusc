@@ -12,7 +12,7 @@ replays sources, and this path does not remove that replay. The list under
 | Part | Location |
 | --- | --- |
 | Producer passes | `shaders/type_checker/trait_solver/retained/producer.slang` |
-| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` (binding sort), `09_fill_words` |
+| Producer kernels | `shaders/type_checker/trait_solver/retained/entries/00_mark` … `06_fill_jobs`, `02a`–`02c` and `02g` (binding sort), `09_fill_words` |
 | Publication kernels | `retained/publish.slang`, entries `07_publish_routes`, `08_publish_finish` |
 | Route ABI | `retained/route_abi.slang` |
 | GPU consumer (test) | `shaders/tests/retained_route_query.slang` |
@@ -133,10 +133,14 @@ required-member count comes from one `InterlockedAdd` per member in pass
 
 The solver admits an impl's methods in strictly increasing required
 symbol. Pass `02a_sort_init` keys every trait record as (impl entry,
-symbol, record); other records sort last. `02b_sort_step` is a bitonic
-compare-exchange over a power-of-two width P ≥ the trait record count. The
-host dispatches it log2(P)·(log2(P)+1)/2 times, one lane per key, with
-(k, j) from a 256-byte-strided stage buffer. `02c_sort_finish` writes each
+symbol, record); other records sort last. The sort is a bitonic network
+over a power-of-two width P ≥ the trait record count, with (k, j) from a
+256-byte-strided stage buffer. Steps with j < 256 stay inside one 512-key
+block: `02g_sort_block` runs them in shared memory, one workgroup per
+block, with the same compare-exchange network. `02b_sort_step` runs each
+step with j ≥ 512, one lane per key. The host records one block pass for
+every stage up to 512, then per stage k one dispatch per step j ≥ 512 and
+one block pass: 3 dispatches for P = 1024 (settings) instead of 55. `02c_sort_finish` writes each
 binding's sorted position, which is its method row, and each impl's first
 row. Equal (impl, symbol) neighbours fail with `BINDING_COVERAGE`.
 `02_count` checks that each trait impl's segment has exactly its recorded

@@ -40,7 +40,7 @@ use crate::{
     type_checker::program_retention::{ProgramRetention, counts},
 };
 
-const KEYS: [&str; 22] = [
+const KEYS: [&str; 23] = [
     "type_checker/trait_solver/retained/entries/00_mark",
     "type_checker/trait_solver/retained/entries/01_units",
     "type_checker/trait_solver/retained/entries/02_count",
@@ -63,7 +63,11 @@ const KEYS: [&str; 22] = [
     "type_checker/trait_solver/retained/entries/02d_closure_roots",
     "type_checker/trait_solver/retained/entries/02e_closure_wave",
     "type_checker/trait_solver/retained/entries/02f_closure_expand",
+    "type_checker/trait_solver/retained/entries/02g_sort_block",
 ];
+const SORT_BLOCK: usize = 22;
+/// Keys one workgroup sorts in shared memory (producer.slang RC_SORT_BLOCK).
+const SORT_BLOCK_KEYS: u32 = 512;
 const FILL_WORDS: usize = 18;
 const CLOSURE_ROOTS: usize = 19;
 const CLOSURE_WAVE: usize = 20;
@@ -478,16 +482,20 @@ pub(in crate::compiler::gpu_compiler) fn publish(
     Ok((report, publication))
 }
 
-/// The (k, j) of every bitonic step over `width` keys.
+/// The recorded steps of a bitonic sort over `width` keys: (k, j) is one
+/// global compare-exchange step (j >= 256), (k, 0) a shared-memory block
+/// pass over the steps j < 256 of stage k, and (0, 0) the block pass that
+/// sorts each block completely.
 fn bitonic_steps(width: u32) -> Vec<(u32, u32)> {
-    let mut steps = Vec::new();
-    let mut k = 2;
+    let mut steps = vec![(0, 0)];
+    let mut k = SORT_BLOCK_KEYS * 2;
     while k <= width {
         let mut j = k / 2;
-        while j > 0 {
+        while j >= SORT_BLOCK_KEYS {
             steps.push((k, j));
             j /= 2;
         }
+        steps.push((k, 0));
         k *= 2;
     }
     steps
@@ -664,8 +672,9 @@ fn run(
             producer.record(&mut encoder, CLOSURE_EXPAND, 0, &scratch, store, idle)?;
         }
         producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
-        for stage in 0..steps.len() as u32 {
-            producer.record(&mut encoder, SORT_STEP, sort_width, &scratch, store, Bound { stage, ..idle })?;
+        for (stage, &(_, j)) in steps.iter().enumerate() {
+            let (pass, lanes) = if j == 0 { (SORT_BLOCK, sort_width / 2) } else { (SORT_STEP, sort_width) };
+            producer.record(&mut encoder, pass, lanes, &scratch, store, Bound { stage: u32::try_from(stage)?, ..idle })?;
         }
         producer.record(&mut encoder, SORT_FINISH, sort_width, &scratch, store, idle)?;
         for pass in [COUNT, SCAN_LOCAL, SCAN_BLOCKS, SCAN_APPLY] {
