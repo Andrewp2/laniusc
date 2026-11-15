@@ -78,7 +78,7 @@ same way and does not select an implementation.
 
 One uint4 `(generation, flags, instance count, route count)`. Flags bit 0
 routes published, bit 1 ABI certified by the producer. Projection requires
-bit 0, checks the generation and the counts against the buffers, and
+bit 0; bit 2 records discovery's bounded-direct-call proof admission. It checks the generation and the counts against the buffers, and
 performs its own signature check (above) regardless of bit 1.
 
 The GPU validates this header even when the instance count is zero. A
@@ -90,8 +90,9 @@ current, ready header with zero instances produces no objects.
 ## Stages
 
 All semantic work is GPU lane work. The host allocates, records, submits and
-reads three compact status records: the plan totals, the check status with
-the first error and batch maxima, and the batch table. It reads no instance,
+reads the plan totals, the check status with the first error and batch
+maxima, and the batch table. Schema realization additionally reads frontier
+counts and substitution receipts. It reads no instance,
 term, row or route.
 
 | Kernel | Lanes | Work |
@@ -100,6 +101,7 @@ term, row or route.
 | `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
 | `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results |
 | substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
+| schema plan, scan, requests, substitution, consume | one per new stored term or schema record | realize fields/payloads under the nominal's binder; repeat for newly created nominal types |
 | `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
 | `04c_string_scan` | one per global row, logarithmic scan steps only when strings exist | exclusive decoded-word offsets in instance/row order |
@@ -205,7 +207,8 @@ integer, float, boolean and string literals, names of locals and parameters, mem
 reads of nominal structs, struct literals, plain array literals, indexing, direct calls
 and language intrinsic calls.
 Types include scalars, arrays, slices, references and closed nominal structs
-whose fields are closed terms or the struct's own type parameters. Arrays
+with compound generic fields and constant operands. Field terms are
+instantiated under the nominal's own exact parameter identities. Arrays
 keep exact element types and checked constant-atom length references.
 Slices use the native three-word descriptor (data, length, signed stride).
 References keep pointer storage while indexing follows the referent.
@@ -223,7 +226,7 @@ Every other form fails closed with its template location:
 | enums, `match`, patterns (role PATTERN) | `ROLE` or `FORM` |
 | `?`, named range objects | `FORM` or `TYPE` |
 | methods, receiver adjustments, host calls, constructors, function references | `USE` |
-| const-generic nominal layouts and named constant declarations outside the body | `FORM` or `LAYOUT` |
+| named constant declarations outside the body | `FORM` or `LAYOUT` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
 ## Root obligations
@@ -420,3 +423,25 @@ wrapper whose impl has its own prerequisite. It checks nine instances, small
 and combined lowering batches, a valid GPU proof publication, exit 42 and zero
 replay. Bound-member dispatch remains a separate routing obligation.
 The complete `retained_` filter passes 25 tests after proof integration.
+
+### Compound nominal schemas
+
+After body substitution, schema realization scans each newly appended term
+frontier. A parallel prefix scan places one request per nominal schema record;
+each request substitutes the declared field or payload under the closed nominal
+application itself. A lane per result writes a closed field map. Newly created
+nominal field types enter the next frontier. The host reads only counts and
+receipts; it never constructs an environment or a field type.
+
+Struct layout, member access and initializer checks share that field map.
+A failed substitution leaves the field unavailable, so a used type cannot get
+a complete layout. The field map resets each run; growth preserves the already
+realized prefix. Schema substitution has a separate engine allocation so the
+body substitution publication stays current throughout projection.
+
+`retained_native_compound_generic_fields_have_exact_layouts` executes nested
+records with arrays of scalar and record elements, slice fields, and a
+constant-generic array field, with small and combined batches. Both builds
+exit 42 with zero replay. Enum payload terms can be realized by this stage;
+enum construction and matching are still not lowered by projection.
+The complete `retained_` filter passes 27 tests after schema realization.

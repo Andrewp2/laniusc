@@ -17,6 +17,9 @@
 //! record one lowering job per nonempty batch). It reads no instance,
 //! term, row or route.
 
+mod schema;
+pub use schema::SchemaReport;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail};
@@ -352,6 +355,7 @@ pub struct ProjectionReport {
     pub requests: u32,
     pub batches: Vec<ProjectionBatch>,
     pub substitution: Option<SubstitutionReport>,
+    pub schema: SchemaReport,
     /// Projection dispatches (the substitution and lowering count their own).
     pub dispatches: u32,
     /// Host readbacks of projection status and the batch table.
@@ -800,6 +804,7 @@ pub struct RetainedProjection {
     queue: std::sync::Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     substitution: RetainedSubstitution,
+    schema: schema::SchemaProjection,
     requests: Option<SubstitutionRequests>,
     /// Rank tables for `rank_capacity` ranks.
     rank_capacity: u32,
@@ -854,6 +859,7 @@ impl RetainedProjection {
             queue: gpu.queue.clone(),
             passes,
             substitution: RetainedSubstitution::new(substitution)?,
+            schema: schema::SchemaProjection::new(substitution)?,
             requests: None,
             rank_capacity: 0,
             ranks: BTreeMap::new(),
@@ -1025,6 +1031,7 @@ impl RetainedProjection {
             }
             .or_else(|| self.ranks.get(n))
             .or_else(|| self.rows.get(n))
+            .or_else(|| self.schema.binding(n))
             .or_else(|| {
                 inputs
                     .buffers()
@@ -1252,6 +1259,10 @@ impl RetainedProjection {
         ));
         report.substitution = Some(substitution);
         report.substitution_us = started.elapsed().as_micros() as u64;
+
+        // Realize nominal schema fields using their own exact binders. New
+        // field types form the next frontier; no body is rechecked.
+        report.schema = self.schema.run(store)?;
 
         // Layout, edges, check and the batch plan.
         let started = std::time::Instant::now();

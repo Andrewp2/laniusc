@@ -19,6 +19,7 @@ import type_checker.operator_operand_rules;
 import type_checker.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;
 import type_checker.retention.projection.pj_types;
+import type_checker.retention.projection.pj_schema;
 
 static const uint STMT_LET = 1u;
 static const uint STMT_RETURN = 2u;
@@ -361,12 +362,7 @@ uint3 struct_field(uint t, uint ordinal)
     {
         uint4 record = rt_schema[d2.y + k];
         if ((record.y & 0xffu) != RT_SCHEMA_FIELD) continue;
-        uint declared = record.w;
-        uint field = RT_INVALID;
-        if (rt_term_closed(declared)) field = declared;
-        else if (rt_is_param_leaf(declared))
-            for (uint j = 0u; j < types; j++)
-                if (rt_binders[d1.x + j] == rt_leaf_param(declared)) field = rt_term_arg(t, j);
+        uint field = pj_schema_type(t,k);
         uint words = pj_words(field);
         uint o = record.y >> 8u;
         if (o == ordinal) found = uint3(field, 0u, words);

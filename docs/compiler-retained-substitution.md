@@ -4,9 +4,9 @@ Retained substitution is the production engine that instantiates retained
 terms ([program retention](compiler-program-retention.md)) under closed
 environments on the GPU. It replaces the probe walk in
 `retention_subst.slang` for production consumers. The probe stays for the
-retention acceptance test until integration. No production code path calls
-this engine yet. Discovery and projection are the planned consumers, and
-source replay is still the active instantiation path.
+retention acceptance test. Retained discovery and native projection use this
+engine, including schema-field realization. The ordinary compiler still uses
+source replay until the retained path covers the remaining forms.
 
 | Part | Location |
 | --- | --- |
@@ -27,7 +27,7 @@ A GPU producer writes requests into `sb_requests` and their count into
 | Word | Contents |
 | --- | --- |
 | x | `DeclId` of the declaration whose binder chain the term uses |
-| y | ENV `TermId`: the normalized closed environment the declaration owns |
+| y | normalized closed binding context: an ENV, or a NAMED application of the requested struct/enum |
 | z | the term reference to substitute |
 | w | a producer tag, returned unchanged |
 
@@ -46,6 +46,14 @@ A GPU producer writes requests into `sb_requests` and their count into
   only when that evaluation returns the ENV itself. Every binding's fit is
   therefore checked, including a binding that the term never reads, and a
   normalized ENV is the one identity of an instance.
+- **Nominal schema context.** A closed NAMED struct/enum application may bind
+  its own field/payload schema directly. Its declaration, argument count,
+  domain mask, argument classes and declared constant scalars must match the
+  committed binder. Parameter lookup uses exact ParamId and the nominal's
+  domain mask, including interleaved type/constant operands. This avoids
+  allocating a second ENV with the same bindings. The nominal context is
+  normalized through the same closed-evaluation check as an ENV. Function
+  requests still require an ENV.
 - **Slot leaves.** A dependency-signature slot leaf is reported as
   `SLOT_PENDING`, never bound by slot position. Binding it needs the
   dependency's defining binder, which discovery knows and the term does
@@ -87,7 +95,7 @@ ENV causes (r2.x of an `ENV` result):
 
 | Code | Cause | Failed node | Failed value |
 | --- | --- | --- | --- |
-| 1 | `NOT_ENV`: not a stored, closed `ENV` term | the request ENV | — |
+| 1 | `NOT_ENV`: not a stored, closed binding context allowed for this declaration | the request ENV | — |
 | 2 | `OWNER`: owner word 0, or not the request's declaration | the ENV | — |
 | 3 | `SHAPE`: a mask beyond the binder, or a wrong arity or type-slot count | the ENV | — |
 | 4 | `BINDING`: a binding of the wrong class or constant scalar | the binding | the slot's parameter leaf |
@@ -427,3 +435,9 @@ interner. The host encodes only the script and the expected outcomes.
   coordination with the exporter.
 - The engine does not remove source replay. Replay deletion depends on
   discovery, projection and publication.
+
+`retained_substitution_binds_nominal_schemas_by_exact_parameter` checks nested
+array/slice fields, interleaved operand domains, swapped type bindings, exact
+constant values, and rejection of wrong owners, wrong constant scalars and
+missing operands. Its expected types are constructed independently of the
+substitution engine.

@@ -1,34 +1,12 @@
-// Projection step 3: closed-type layouts. One lane per TermId of the
-// store's term table; the host records PJ_LAYOUT_ROUNDS rounds after the
-// initializing step 3a. A round lays out each closed
-// NAMED struct term whose field types all have layouts: a field's declared
-// term is closed, or a type-parameter leaf of the struct's own binder,
-// which is the term's operand. Each round therefore completes one more
-// level of struct nesting. The lowering's type-instance tables, indexed by
-// TermId, receive every laid-out term as an imported struct with its
-// complete native width.
-//
-// References and slices have fixed widths; arrays depend on their element
-// layout and retain their checked count. Unsupported here (a use reports
-// PJ_E_LAYOUT or PJ_E_TYPE): enums,
-// constant operands and a field whose declared type is a compound term over
-// the struct's parameters (it would need its own substitution).
+// Closed layouts, one lane per TermId per level. The schema substitution
+// stage supplies each nominal's exact field types, including compound and
+// constant-generic fields. Arrays depend on their element layout; slices
+// and references have fixed widths. Enum layouts remain unsupported here.
 import type_checker.retention.projection.pj_types;
 import native_value_layout;
+import type_checker.retention.projection.pj_schema;
 
 static const uint DIR_STRUCT = 5u;
-
-// The closed field type of struct term `t` for a declared field term, or
-// RT_INVALID.
-uint field_type(uint t, uint binder, uint types, uint declared)
-{
-    if (rt_term_closed(declared)) return declared;
-    if (!rt_is_param_leaf(declared)) return RT_INVALID;
-    uint param = rt_leaf_param(declared);
-    for (uint j = 0u; j < types; j++)
-        if (rt_binders[binder + j] == param) return rt_term_arg(t, j);
-    return RT_INVALID;
-}
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -76,7 +54,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if (kind != RT_KIND_NAMED) return;
     uint3 words = rt_term_words(t);
-    if (words.y != 0u) return;
     uint entry = pj_dir_entry(words.x);
     if (entry == RT_INVALID) return;
     uint4 d0 = rt_dir[entry * RT_DIR_WORDS + 0u];
@@ -85,16 +62,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint4 d3 = rt_dir[entry * RT_DIR_WORDS + 3u];
     if (d0.y != DIR_STRUCT || d0.w != RT_DIR_COMMITTED || d3.w != 0u) return;
     uint types = d1.y & 0xffffu;
-    if ((d1.y >> 16u) != 0u || rt_term_arity(t) != types) return;
+    if (rt_term_arity(t) != types + (d1.y >> 16u)) return;
     uint fields = 0u;
     uint total = 0u;
     for (uint k = 0u; k < d2.z; k++)
     {
         uint4 record = rt_schema[d2.y + k];
         if ((record.y & 0xffu) != RT_SCHEMA_FIELD) continue;
-        uint field = field_type(t, d1.x, types, record.w);
+        uint field = pj_schema_type(t,k);
         uint w = pj_words(field);
         if (w == RT_INVALID) return;
+        if (w >= RT_INVALID-total) return;
         total += w;
         fields++;
     }

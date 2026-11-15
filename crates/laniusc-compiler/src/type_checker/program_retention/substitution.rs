@@ -130,7 +130,8 @@ pub const RESULT_WORDS: usize = 12;
 /// Task levels (sb_common.slang SB_LEVELS). Expansion has at most this many
 /// nonempty rounds and evaluation at most this many nonempty levels.
 pub const LEVELS: u32 = 256;
-/// Words per request: `(DeclId, ENV TermId, term reference, tag)`.
+/// Words per request: `(DeclId, binding context TermId, term reference, tag)`.
+/// A context is an ENV or the declaration's closed struct/enum application.
 pub const REQUEST_WORDS: usize = 4;
 
 const KERNELS: &[&str] = &[

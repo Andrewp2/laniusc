@@ -870,3 +870,63 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_compound_generic_fields_have_exact_layouts() {
+    common::run_with_timeout("retained compound fields", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-fields-{}",std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
+        std::fs::write(&lib,r#"module fields::lib;
+pub struct Inner<T> { items:[T;2] }
+pub struct Outer<T> { nested:Inner<[T;2]>, tail:T }
+pub struct View<T> { items:[T] }
+pub struct Counted<T,const N:usize> { items:[T;N], tail:T }
+pub fn wrap<T>(values:[[T;2];2], tail:T)->Outer<T> {
+    return Outer { nested:Inner{items:values}, tail:tail };
+}
+fn pick<T>(value:Outer<T>)->T { return value.nested.items[1][0]; }
+pub fn round<T>(values:[[T;2];2], tail:T)->T { return pick<T>(wrap<T>(values,tail)); }
+pub fn view<T>(values:[T])->View<T> { return View{items:values}; }
+pub fn first<T>(value:View<T>)->T { return value.items[0]; }
+pub fn counted<T,const N:usize>(value:Counted<T,N>)->T { return value.items[N-1]; }
+"#).unwrap();
+        std::fs::write(&app,r#"module app::main;
+import fields::lib;
+struct Pair { x:i32, y:f64 }
+fn main()->i32 {
+    let ints:[[i32;2];2]=[[1,2],[11,4]];
+    let floats:[[f64;2];2]=[[1.5,2.5],[4.25,5.5]];
+    if (round<i32>(ints,0) != 11) { return 1; }
+    if (round<f64>(floats,0.0) != 4.25) { return 2; }
+    let a:Pair=Pair{x:3,y:1.5}; let b:Pair=Pair{x:7,y:2.5};
+    let pairs:[[Pair;2];2]=[[a,a],[b,a]];
+    let chosen:Pair=round<Pair>(pairs,a);
+    if (chosen.x != 7 || chosen.y != 2.5) { return 3; }
+    let values:[Pair;2]=[b,a];
+    let v:View<Pair> = view<Pair>(values);
+    let chosen2:Pair=first<Pair>(v);
+    if (chosen2.x != 7 || chosen2.y != 2.5) { return 4; }
+    let c:Counted<i32,3> = Counted{items:[5,6,9],tail:1};
+    if (counted<i32,3>(c) != 9) { return 5; }
+    return 42;
+}
+"#).unwrap();
+        let manifest=ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
+            ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
+        ]).unwrap();
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let before=fallback_counters();
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            assert_eq!(fallback_counters().1,before.1);
+            assert!(build.report.projection.schema.requests>0);
+            let output=common::run_x86_64_elf_output("retained fields","retained_fields",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

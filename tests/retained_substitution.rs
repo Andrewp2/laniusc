@@ -1819,3 +1819,56 @@ fn retained_substitution_instantiates_exported_foreign_templates() {
     assert_eq!(head(local)[0] & 0xff, NAMED);
     assert_eq!(arg(local, 0), BOOL, "Local<bool>");
 }
+
+#[test]
+fn retained_substitution_binds_nominal_schemas_by_exact_parameter() {
+    let store = ProgramRetention::new(bigger_store()).unwrap();
+    let mut engine = RetainedSubstitution::new(SubstitutionCapacity::default()).unwrap();
+    let mut s = Script::new(220, true);
+    let decl = s.decl(NS_NOMINAL, 1);
+    let other = s.decl(NS_NOMINAL, 2);
+    let t = s.param(decl, TYPE, 0, 0);
+    let u = s.param(decl, TYPE, 1, 0);
+    let n = s.param(decl, CONST, 0, U8);
+    let m = s.param(decl, CONST, 1, USIZE);
+    s.entry(decl, 5, None, &[t,u], &[n,m], COMMITTED, 0);
+    s.entry(other, 6, None, &[t,u], &[n,m], COMMITTED, 0);
+    let t = s.leaf(t); let u = s.leaf(u); let n = s.leaf(n); let m = s.leaf(m);
+    let int = s.set(I32); let boolean = s.set(BOOL);
+    let three = s.value(U8,3); let five = s.value(USIZE,5);
+    let three_count = s.count(3); let five_count = s.count(5);
+    // Source operand order can interleave domains; the binder groups them.
+    let named = s.named(decl,0b0101,&[three,int,five,boolean]);
+    let field = s.array(t,n);
+    let expected = s.array(int,three_count);
+    s.ok(decl,named,field,Some(expected));
+    let inner = s.array(u,m);
+    let field = s.unary(SLICE,inner);
+    let expected_inner = s.array(boolean,five_count);
+    let expected = s.unary(SLICE,expected_inner);
+    s.ok(decl,named,field,Some(expected));
+    s.ok(decl,named,n,Some(three));
+    s.ok(decl,named,m,Some(five));
+    // Reordering the type arguments must change each exact parameter's binding.
+    let swapped = s.named(decl,0b0101,&[three,boolean,five,int]);
+    s.ok(decl,swapped,t,Some(boolean));
+    s.ok(decl,swapped,u,Some(int));
+    let wrong_owner = s.named(other,0b0101,&[three,int,five,boolean]);
+    s.fails(decl,wrong_owner,t,Failure {
+        status:status::ENV,node:Some(wrong_owner),env:Some(wrong_owner),
+        cause:Some([env_cause::OWNER,0,0]),..Default::default()
+    });
+    let wrong_scalar = s.named(decl,0b0101,&[five,int,five,boolean]);
+    s.fails(decl,wrong_scalar,t,Failure {
+        status:status::ENV,node:Some(five),env:Some(wrong_scalar),value:Some(n),
+        cause:Some([env_cause::BINDING,0,0]),..Default::default()
+    });
+    let missing = s.named(decl,0b0001,&[three,int,boolean]);
+    s.fails(decl,missing,t,Failure {
+        status:status::ENV,node:Some(missing),env:Some(missing),
+        cause:Some([env_cause::SHAPE,0,0]),..Default::default()
+    });
+    let fixture=build_fixture(&store,&s);
+    let (_,results)=run(&mut engine,&store,&fixture);
+    check(&fixture,&results);
+}

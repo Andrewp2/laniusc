@@ -200,6 +200,43 @@ public SbCheck sb_check_env<A : IRtArgs>(uint env, uint4 head, A args, uint owne
     return sb_check_ok();
 }
 
+// A closed nominal application is already a complete binding context for
+// its own schema. Keep it as the memo key instead of allocating a duplicate
+// ENV. Nominal arguments may interleave domains; binders group types first.
+uint sb_nth(uint mask, uint ordinal)
+{
+    for (uint i = 0u; i < ordinal; i++) mask &= mask - 1u;
+    return uint(firstbitlow(mask));
+}
+struct SbNominalArgs : IRtArgs
+{
+    uint term;
+    uint types;
+    uint arg(uint index)
+    {
+        uint mask = rt_term_head[term].z;
+        uint slots = index < types ? (~mask & sb_mask(rt_term_arity(term))) : mask;
+        return rt_term_arg(term, sb_nth(slots, index < types ? index : index-types));
+    }
+}
+
+SbCheck sb_check_nominal(uint decl, uint term, uint counts)
+{
+    uint4 head = rt_term_head[term];
+    uint types = counts & 0xffffu;
+    uint constants = counts >> 16u;
+    uint arity = rt_term_arity(term);
+    if (arity > 32u) return sb_check(SB_LIMIT, SB_ENV_NONE, term, RT_NONE);
+    if (arity != types+constants || (head.x >> 16u) != types ||
+        (head.z & ~sb_mask(arity)) != 0u || countbits(head.z) != constants)
+        return sb_check(SB_ENV, SB_ENV_SHAPE, term, RT_NONE);
+    SbNominalArgs args;
+    args.term = term; args.types = types;
+    uint4 env_head = uint4(RT_KIND_ENV | (arity << 8u) | (types << 16u),
+        head.y, sb_mask(types), sb_mask(constants));
+    return sb_check_env(term, env_head, args, decl, true);
+}
+
 // Validates request (decl, env, term) before it creates any task.
 public SbCheck sb_validate(uint decl, uint env, uint term)
 {
@@ -209,8 +246,13 @@ public SbCheck sb_validate(uint decl, uint env, uint term)
         return sb_check(SB_DECL, SB_ENV_NONE, term, RT_NONE);
     uint counts = rt_dir[(def - 1u) * RT_DIR_WORDS + 1u].y;
     if ((counts & 0xffffu) > 32u || (counts >> 16u) > 32u) return sb_check(SB_LIMIT, SB_ENV_NONE, env, RT_NONE);
-    if (!rt_is_stored_term(env) || env >= rt_counts[RT_A_TERMS] || rt_term_kind(env) != RT_KIND_ENV ||
+    if (!rt_is_stored_term(env) || env >= rt_counts[RT_A_TERMS] ||
         !rt_term_closed(env)) return sb_check(SB_ENV, SB_ENV_NOT_ENV, env, RT_NONE);
+    uint kind = rt_term_kind(env);
+    uint owner_kind = rt_dir[(def - 1u) * RT_DIR_WORDS].y;
+    if (kind == RT_KIND_NAMED && (owner_kind == 5u || owner_kind == 6u))
+        return sb_check_nominal(decl,env,counts);
+    if (kind != RT_KIND_ENV) return sb_check(SB_ENV, SB_ENV_NOT_ENV, env, RT_NONE);
     RtStoredArgs args;
     args.base = rt_term_meta[env].x;
     return sb_check_env(env, rt_term_head[env], args, decl, true);
@@ -263,6 +305,12 @@ SbChild sb_bind_leaf(SbBinder b, uint leaf)
     bool is_const = (leaf & RT_CONST_BIT) != 0u;
     if (is_const != (slot >= b.type_count)) return sb_immediate(leaf, SB_INVARIANT);
     uint4 head = rt_term_head[b.env];
+    if ((head.x & 0xffu) == RT_KIND_NAMED)
+    {
+        uint mask = is_const ? head.z : (~head.z & sb_mask(rt_term_arity(b.env)));
+        uint index = sb_nth(mask, is_const ? slot-b.type_count : slot);
+        return sb_value(rt_term_arg(b.env,index));
+    }
     uint index;
     if (!is_const)
     {
