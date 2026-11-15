@@ -26,6 +26,7 @@ import type_checker.match.ct_match;
 import constant_value;
 import status;
 import type_checker.intrinsic_operand_rules;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -319,6 +320,7 @@ void collect_row_argument(uint row)
     uint callee = callee_token_for_hir_call(call);
     uint param = call_arg_param_row[row];
     if (!valid_node(call) || !valid_node(node) || !valid_token(callee)) return;
+    if (!inference_item_active(compact_hir_core[call].token_start)) return;
     uint intrinsic = call_intrinsic_tag[callee];
     if (intrinsic == INTRINSIC_PRINT || intrinsic == INTRINSIC_SLICE_LEN ||
         intrinsic == INTRINSIC_STRING_LEN ||

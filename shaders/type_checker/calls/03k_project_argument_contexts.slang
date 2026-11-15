@@ -16,6 +16,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -112,7 +113,7 @@ void report(uint token, uint failure)
 {
     if (failure == CT_REALIZE_CAPACITY || failure == CT_REALIZE_LIMIT)
         record_min_token_error(status, token, 6u, 0x474e0000u | failure);
-    if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (failure == CT_REALIZE_BUSY) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }
 
 [shader("compute")]
@@ -125,6 +126,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint node = argument_context_root(call_arg_row_node[row], hir_count(),
         compact_hir_core, compact_hir_payload);
     if (call >= hir_count() || node >= hir_count()) return;
+    if (!inference_item_active(compact_hir_core[call].token_start)) return;
     uint callee = compact_hir_payload[call].a;
     if (callee >= hir_count()) return;
     bool dotted = compact_hir_core[callee].kind == 21u;
@@ -178,5 +180,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (argument_expected_ref_tag[node] == operand.x && argument_expected_ref_payload[node] == operand.y) return;
     argument_expected_ref_tag[node] = operand.x;
     argument_expected_ref_payload[node] = operand.y;
-    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
+    uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
 }

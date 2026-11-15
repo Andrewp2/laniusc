@@ -34,6 +34,7 @@ import type_checker.match.ct_context_publish;
 import type_checker.match.field_expected;
 import type_checker.local_struct_layout;
 import type_checker.argument_context;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -68,7 +69,6 @@ StructuredBuffer<uint> compact_array_element_count;
 StructuredBuffer<uint> compact_array_element_row_count;
 StructuredBuffer<HirArrayElement> compact_array_elements;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
@@ -594,7 +594,7 @@ void validate_dependency_result(
             operand = uint2(0u, INVALID);
             continue;
         }
-        if (outcome == CT_PUBLISH_BUSY) return;
+        if (outcome == CT_PUBLISH_BUSY) { inference_note_item_change(); return; }
         if (outcome != CT_PUBLISHED)
         {
             mismatch(callee_token);
@@ -611,6 +611,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
     if (!valid_node(node) || compact_hir_core[node].kind != HIR_CALL_EXPR) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     substitute_direct_generic_call(node);
     // One call lane owns its result environment, including assignments.
     // The receiving-place projection supplies the complete destination type.

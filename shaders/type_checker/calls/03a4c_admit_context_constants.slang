@@ -7,9 +7,12 @@
 import type_checker.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
 import type_checker.constant_atoms_identity;
+import type_checker.calls.inference_activity;
+import hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> call_context_constant_mask;
 StructuredBuffer<uint> call_context_constant_kind;
 StructuredBuffer<uint> call_context_constant_payload;
@@ -24,6 +27,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint capacity; uint stride;
     call_context_constant_mask.GetDimensions(capacity, stride);
     if (call >= gParams.n_hir_nodes || call >= capacity) return;
+    uint nodes;
+    compact_hir_core.GetDimensions(nodes, stride);
+    if (!inference_item_active(call < nodes ? compact_hir_core[call].token_start : 0xffffffffu)) return;
     uint mask = call_context_constant_mask[call];
     if (mask == 0u) return;
     uint tokens = checked_source_constant_parameter_capacity();

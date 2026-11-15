@@ -6,6 +6,7 @@ import type_checker.checked_canonical;
 import type_checker.canonical.canonical_candidates;
 import hir_match_patterns;
 import status;
+import type_checker.calls.inference_activity;
 
 // GPU HIR enum unit-variant consumer.
 //
@@ -238,7 +239,7 @@ void publish_unit_reference(uint path, uint token, uint declaration, bool import
         type_expr_ref_tag[token], type_expr_ref_payload[token], reference.x, reference.y);
     type_expr_ref_tag[token] = reference.x;
     type_expr_ref_payload[token] = reference.y;
-    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }
 
 [shader("compute")]
@@ -253,7 +254,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
         return;
     uint owner_token = path_owner_token[path_i];
-    if (owner_token >= gParams.n_tokens)
+    if (owner_token >= gParams.n_tokens || !inference_item_active(owner_token))
         return;
     if (module_value_path_call_head[owner_token] != 0u)
         return;

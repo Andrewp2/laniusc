@@ -6,6 +6,7 @@ import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
+import type_checker.calls.inference_activity;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -32,6 +33,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint capacity; uint stride;
     call_inference_result_tag.GetDimensions(capacity, stride);
     if (node >= count || node >= capacity) return;
+    if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint kind = compact_hir_core[node].kind;
     if (kind != 14u && kind != 16u && kind != 17u && kind != 20u &&
         kind != 21u && kind != 22u && kind != 23u && kind != 28u &&
@@ -52,7 +54,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             call_inference_result_tag[node] = 0u;
             call_inference_result_payload[node] = 0xffffffffu;
-            uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored);
+            uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change();
         }
         return;
     }
@@ -65,5 +67,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
             checked_type_capacity(), gParams.n_tokens);
     call_inference_result_tag[node] = tag;
     call_inference_result_payload[node] = payload;
-    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }

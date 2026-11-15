@@ -38,6 +38,7 @@ import type_checker.substitution.source_slots;
 import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.calls.bound_tables;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -381,6 +382,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = dtid.x + dtid.y * 16776960u;
     if (!valid_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return;
+    if (!inference_item_active(compact_hir_core[call].token_start)) return;
     // Incomplete tables could hide a second implementation.
     if (bound_inference_counts[BOUND_COUNT_OVERFLOW] != 0u) return;
     uint callee = callee_token_for_hir_call(call);
@@ -424,5 +426,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
         after = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 3u];
         if (infer_from_bound(call, callee, predicate, spare)) changed = true;
     }
-    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }

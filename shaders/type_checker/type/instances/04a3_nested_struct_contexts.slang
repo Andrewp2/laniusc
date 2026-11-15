@@ -13,6 +13,7 @@ import type_checker.substitution.ct_scoped;
 import type_checker.type.instances.struct_field_lookup;
 import status;
 import type_checker.dependencies.record_fields;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -135,6 +136,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint root = dtid.x + dtid.y * 16776960u;
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
     if (root >= count || compact_hir_core[root].kind != HIR_STRUCT_LITERAL) return;
+    if (!inference_item_active(compact_hir_core[root].token_start)) return;
     if (literal_parent(root, count) != INVALID) return;
     if (struct_lit_context_decl_token[root] >= gParams.n_tokens &&
         !imported_record_fields_available(struct_lit_context_instance[root])) return;

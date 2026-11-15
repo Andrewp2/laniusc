@@ -48,6 +48,13 @@ const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_const_claim_arg_row", AccessMode::Write),
 ];
 
+/// Opens an inference round: zeroes its change count and counts the round
+/// (`compiler_graph::CALLS_INFERENCE_ROUND_RESET_PASS`).
+pub(in crate::type_checker) const CALLS_BEGIN_INFERENCE_ROUND: ReflectedComputeSpec = call_pass!(
+    "inference.round_reset",
+    DispatchArguments,
+    "type_checker/calls/03z_begin_inference_round"
+);
 pub(in crate::type_checker) const CALLS_CLEAR: ReflectedComputeSpec =
     call_pass!("clear", Calls, "type_checker/calls/01_resolve").initializer();
 pub(in crate::type_checker) const CALLS_ENTRYPOINT_CLEAR: ReflectedComputeSpec = call_pass!(

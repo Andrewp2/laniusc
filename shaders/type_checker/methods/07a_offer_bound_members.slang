@@ -29,6 +29,7 @@ import type_checker.methods.candidate;
 import type_checker.predicates.owner_lookup;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.type.instances.generic_param_lookup;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -41,7 +42,6 @@ StructuredBuffer<HirLinks> compact_hir_links;
 StructuredBuffer<HirRange> compact_type_arg_ranges;
 StructuredBuffer<HirTypeArg> compact_type_args;
 StructuredBuffer<uint> compact_type_arg_count;
-StructuredBuffer<uint> enclosing_fn;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<uint> compact_predicate_count;
 StructuredBuffer<uint> method_call_selection_owned;
@@ -274,6 +274,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint call = linear_thread_id_2d(dtid, 65535u, 256u);
     uint2 aliases;
     uint token = method_call_token(call, aliases);
+    if (!inference_item_active(token)) return;
     // A path call `P::member(...)` has no receiver value (methods/06).
     bool dotted = aliases.x == INVALID;
     if (token >= min(token_count[0u], gParams.n_tokens) ||

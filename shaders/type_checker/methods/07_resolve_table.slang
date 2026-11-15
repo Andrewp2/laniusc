@@ -18,6 +18,7 @@ import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
 import type_checker.match.ct_match;
+import type_checker.calls.inference_activity;
 
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -221,7 +222,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id(dtid);
     if (token >= active_token_count() || method_call_selection_owned[token] == 0u ||
-        method_call_name_id[token] == INVALID) return;
+        method_call_name_id[token] == INVALID || !inference_item_active(token)) return;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
     // An external canonical receiver (a bare imported generic qualifier,

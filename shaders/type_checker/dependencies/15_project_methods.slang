@@ -4,6 +4,7 @@
 import dependency_return_layout;
 import type_checker.calls.explicit_dependency_binding;
 import type_checker.calls.explicit_constant_operand;
+import type_checker.calls.inference_activity;
 
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
@@ -117,7 +118,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint call = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint token; uint owner_token; uint receiver; bool dotted;
-    if (!imported_method_call(call, token, owner_token, receiver, dotted)) return;
+    if (!imported_method_call(call, token, owner_token, receiver, dotted) || !inference_item_active(token)) return;
     MethodCandidate winner = method_candidate[token];
     if (winner.state != METHOD_CANDIDATE_UNIQUE ||
         winner.callable_kind != METHOD_CALLABLE_DEPENDENCY) return;

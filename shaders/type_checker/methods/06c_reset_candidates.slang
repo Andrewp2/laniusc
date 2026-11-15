@@ -1,5 +1,6 @@
 import gpu_index;
 import type_checker.methods.candidate;
+import type_checker.calls.inference_activity;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -18,7 +19,7 @@ RWStructuredBuffer<MethodCandidate> method_candidate;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = linear_thread_id_2d(dtid, 65535u, 256u);
-    if (token >= min(token_count[0u], gParams.n_tokens)) return;
+    if (token >= min(token_count[0u], gParams.n_tokens) || !inference_item_active(token)) return;
     // A record whose state is NO_MATCH is the empty record: every producer
     // writes method_candidate_empty() or a record with another state (or a
     // copy of one), and 01_clear empties every record at the job's start.

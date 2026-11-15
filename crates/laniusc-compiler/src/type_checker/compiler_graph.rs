@@ -486,8 +486,13 @@ pub(super) const SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS: &str =
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
 /// Zeroes the round's change count before each inference round, so one
-/// submission can carry several rounds.
+/// submission can carry several rounds, and counts the round
+/// (`CALLS_BEGIN_INFERENCE_ROUND`).
 pub(super) const CALLS_INFERENCE_ROUND_RESET_PASS: &str = "type_check.calls.inference.round_reset";
+/// Zeroes the per-function change rounds before a job's first inference
+/// round (shaders/type_checker/calls/inference_activity.slang).
+pub(super) const CALLS_INFERENCE_ACTIVITY_CLEAR_PASS: &str =
+    "type_check.calls.inference.activity_clear";
 /// Inference rounds one submission can carry; the readback keeps one slot of
 /// `CALL_INFERENCE_READBACK_SLOT_BYTES` per round.
 pub(super) const CALL_INFERENCE_MAX_BATCH: u32 = 16;
@@ -3983,6 +3988,7 @@ fn build_graph(
         _status_readback as "status_readback" in Bytes => 16;
         status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
+        _call_inference_round as "call_inference_round" in Calls => 8;
         call_inference_readback as "call_inference_readback" in Calls =>
             CALL_INFERENCE_READBACK_SLOT_BYTES * CALL_INFERENCE_MAX_BATCH as u64;
     });
@@ -4073,6 +4079,7 @@ fn build_graph(
         _array_literal_element_ref_tag as "array_literal_element_ref_tag" in Calls => hir_rows * 4;
         _array_literal_element_ref_payload as "array_literal_element_ref_payload" in Calls => hir_rows * 4;
         _call_inference_result_tag as "call_inference_result_tag" in Calls => hir_rows * 4;
+        call_inference_fn_stamp as "call_inference_fn_stamp" in Calls => (hir_rows + 1) * 4;
         _call_inference_result_payload as "call_inference_result_payload" in Calls => hir_rows * 4;
         generic_claim_index_dispatch_args as "call_generic_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_const_claim_callee as "call_const_claim_callee" in CallArguments => claim_rows * 4;
@@ -5653,11 +5660,15 @@ fn build_graph(
         graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
     }
     graph.add_buffer_clear_pass(
-        CALLS_INFERENCE_ROUND_RESET_PASS,
+        CALLS_INFERENCE_ACTIVITY_CLEAR_PASS,
         CompilerPhase::TypeCheck,
-        "call_inference_state",
-        call_inference_state,
+        "call_inference_fn_stamp",
+        call_inference_fn_stamp,
     )?;
+    // Passes outside the rounds bind the stamps but read them only in round
+    // 2 and later (inference_activity.slang), after this clear.
+    graph.mark_zero_initialized(call_inference_fn_stamp)?;
+    CALLS_BEGIN_INFERENCE_ROUND.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
