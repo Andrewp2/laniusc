@@ -164,11 +164,17 @@ uint imported_constructor_ordinal(uint call)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    // This HIR-keyed table is sparse by contract: consumers inspect it only
-    // for call-expression rows. Avoid writing an empty record for every
-    // other syntax node. Active call rows are still rewritten in full on every
-    // daemon job, so stale workspace contents cannot cross the semantic ABI.
-    if (!valid_hir(row) || compact_hir_core[row].kind != HIR_CALL_EXPR) return;
+    if (!valid_hir(row)) return;
+    uint row_kind = compact_hir_core[row].kind;
+    if (row_kind == HIR_NAME_EXPR || row_kind == HIR_PATH_EXPR)
+    {
+        // Projection may publish a symbol-backed function value on these
+        // rows. Original jobs use their local declaration map; clearing the
+        // discriminator prevents old projected artifacts from being consumed.
+        semantic_calls_by_hir[row].callable_kind = CALLABLE_NONE;
+        return;
+    }
+    if (row_kind != HIR_CALL_EXPR) return;
     semantic_aggregate_word_count_by_hir[row] = 0u;
 
     CheckedCallArtifact call;

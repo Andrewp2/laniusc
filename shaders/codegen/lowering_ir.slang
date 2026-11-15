@@ -865,6 +865,10 @@ static const uint X86_LIR_OP_INTRINSIC_IDENTITY = 39u;
 // resolution and is removed by final machine selection.
 // IR_OPCODE
 static const uint X86_LIR_OP_LABEL = 74u;
+// A function value's inline C-entry stub calling an external symbol. The
+// operands are (library, unit, local), local_ordinal the six-bit narrow mask.
+// IR_OPCODE
+static const uint X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL = 75u;
 
 // Operation payloads consumed by the existing x86 instruction selector.
 // IR_OPCODE

@@ -205,6 +205,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : checked.arg_count +
                     (semantic_call_receiver[node] != INVALID ? 1u : 0u);
     }
+    else if ((core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR) &&
+        semantic_calls_by_hir[node].callable_kind == 5u)
+    {
+        CheckedCallArtifact checked = semantic_calls_by_hir[node];
+        semantic_call_kind[node] = 7u; // symbol-backed C entry address
+        semantic_call_target[node] = checked.callable_ordinal; // parameter narrow mask
+        semantic_call_result_type[node] = checked.return_type;
+        semantic_call_symbol_library_id[node] = checked.dependency_library_id;
+        semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
+        semantic_call_symbol_local_index[node] = checked.dependency_local_index;
+    }
     else if (core.kind == HIR_PATH_EXPR &&
              semantic_value_const_present_by_hir[node] == IMPORTED_UNIT_VARIANT_PRESENT)
     {

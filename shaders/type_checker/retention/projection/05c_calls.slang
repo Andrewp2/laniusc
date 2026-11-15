@@ -14,6 +14,7 @@
 //   symbolic.
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
+import native_c_entry;
 import type_checker.operator_operand_rules;
 import type_checker.intrinsic_operand_rules;
 import type_checker.calls.intrinsic_result;
@@ -97,6 +98,32 @@ void check_intrinsic(Row at, uint4 p, uint t, uint tag)
 }
 
 // The instance-routed call at `at` (use `use`).
+void check_function_value(Row at, uint t, uint use)
+{
+    uint4 u0 = pj_use(at.rank,use,0u);
+    uint4 r5 = pj_row(at.rank,at.row,5u);
+    uint4 route = pj_routes[pj_instances[at.rank*PJ_INSTANCE_WORDS+1u].x+use];
+    uint entry = pj_dir_entry(u0.w);
+    if (entry == RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y != 1u || u0.z != 8u ||
+        r5.x != RT_BIND_DECL || r5.y != u0.w || t != SCALAR_PTR ||
+        pj_use(at.rank,use,1u).y != t || pj_use(at.rank,use,1u).x != RT_NONE)
+    { fail(at,PJ_E_USE,8u); return; }
+    uint4 key = rt_decl_key[u0.w];
+    if (any(route.xyz != uint3(key.x,key.y,key.w)) || route.w != rt_counts[RT_C_GENERATION])
+    { fail(at,PJ_E_ROUTE,2u); return; }
+    uint4 d1 = rt_dir[entry*RT_DIR_WORDS+1u];
+    if (d1.y != 0u || d1.w > 6u || !native_c_entry_scalar(rt_sigs[d1.z],true))
+    { fail(at,PJ_E_SIGNATURE,8u); return; }
+    uint narrow = 0u;
+    for (uint k = 0u; k < d1.w; k++)
+    {
+        uint param = rt_sigs[d1.z+1u+k];
+        if (!native_c_entry_scalar(param,false)) { fail(at,PJ_E_SIGNATURE,k); return; }
+        if (param == SCALAR_I32 || param == SCALAR_U32) narrow |= 1u << k;
+    }
+    pj_g_aux[at.g].y = narrow;
+}
+
 void check_call(Row at, uint4 p, uint t, uint use)
 {
     uint4 u0 = pj_use(at.rank, use, 0u);
@@ -295,6 +322,11 @@ void main(uint3 dtid:SV_DispatchThreadID)
     if (kind != RT_HIR_CALL_EXPR && kind != RT_HIR_NAME_EXPR && kind != RT_HIR_PATH_EXPR) return;
     if (r3.y >= pj_inf(at.rank,1u).w) return;
     failed = false;
+    if ((pj_use(at.rank,r3.y,0u).z & 0xffu) == 8u)
+    {
+        check_function_value(at,row_type(at,at.row),r3.y);
+        return;
+    }
     check_call(at,kind == RT_HIR_CALL_EXPR ? pj_row(at.rank,at.row,2u) : uint4(0u,0u,0u,0u),
         row_type(at,at.row),r3.y);
 }

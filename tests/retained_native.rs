@@ -1366,3 +1366,60 @@ fn main()->i32 {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_function_values_call_originals_across_batches() {
+    common::run_with_timeout("retained function values", || {
+        let directory = common::temp_artifact_path("retained_function_values", "sources", None);
+        std::fs::create_dir_all(&directory).unwrap();
+        let library = directory.join("library.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(&library, r#"module callbacks::library;
+extern "lanius_std" fn write_text(handle:i32,text:str)->i32;
+fn callback(first:ptr,second:ptr,third:ptr) { write_text(1,"R"); }
+fn narrow(first:u32,second:i64,third:ptr) {
+    assert(first == 5 && second == 7); write_text(1,"N");
+}
+pub fn keep<T>(value:T)->T {
+    let entry:ptr = callback;
+    call_ptr(entry,0,0,0);
+    let first:ptr = 0; let high:i64 = 4294967301; first += high;
+    let second:ptr = 0; second += 7;
+    let other:ptr = narrow;
+    call_ptr(other,first,second,0);
+    return value;
+}
+"#).unwrap();
+        std::fs::write(&app, r#"module app::main;
+import callbacks::library;
+fn main()->i32 {
+    let value:i32 = keep<i32>(42);
+    if (keep<bool>(false)) { return 1; }
+    return value;
+}
+"#).unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths { library_id: 1, paths: vec![library], dependency_library_ids: vec![] },
+            ExplicitSourceLibraryPaths { library_id: 2, paths: vec![app], dependency_library_ids: vec![1] },
+        ]).unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for native in [false, true] {
+            build.native_link = native.then(laniusc_compiler::compiler::NativeLinkOptions::default);
+            for batch_rows in [1, 65536] {
+                build.options.batch_rows = batch_rows;
+                let before = fallback_counters();
+                let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build))
+                    .unwrap_or_else(|e| panic!("function values native={native}, batch={batch_rows}: {e:?}"));
+                assert_eq!(fallback_counters().1, before.1);
+                assert_eq!(build.report.projection.instances, 2);
+                assert_eq!(build.report.instance_objects, if batch_rows == 1 { 2 } else { 1 });
+                let out = common::run_x86_64_elf_output("retained function values", "function_values", &elf);
+                assert_eq!(out.status.code(), Some(42), "native={native}, batch={batch_rows}: {out:?}");
+                assert_eq!(out.stdout, b"RNRN");
+                assert!(out.stderr.is_empty(), "{out:?}");
+            }
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

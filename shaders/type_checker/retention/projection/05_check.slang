@@ -235,13 +235,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fail(at, PJ_E_INCOMPLETE, r3.w);
         return;
     }
+    bool function_value = (kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) &&
+        r3.z != RT_ROLE_BOUND && r3.y != RT_NONE && r3.y < pj_inf(at.rank,1u).w &&
+        (pj_use(at.rank,r3.y,0u).z & 0xffu) == 8u;
     if (!supported_form(kind, p) || (r4.w != 0u && kind != RT_HIR_ARRAY_EXPR) ||
         (r6.y != 0u && r6.y != RT_CONST_CONCRETE && r6.y != RT_CONST_SYMBOLIC && r6.y != RT_CONST_VARIANT && kind != RT_HIR_TYPE) ||
         (((r6.x >> 8u) & 0xffu) != 0u && kind != RT_HIR_FOR_STMT && !(kind == RT_HIR_STMT && p.x == 7u)) ||
         (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE &&
             (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) ||
         (r5.x == RT_BIND_VARIANT && !pattern && r3.z != RT_ROLE_CALLEE && r3.y == RT_NONE) ||
-        (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE && r6.y != RT_CONST_CONCRETE))
+        (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE && r6.y != RT_CONST_CONCRETE && !function_value))
     {
         fail(at, PJ_E_FORM, kind | (p.x << 8u));
         return;
@@ -283,7 +286,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { fail(at,PJ_E_SIGNATURE,0xfffau); return; }
         if (pattern) t = pattern_type;
         if (!supported_type(at, t)) return;
-        if (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE)
+        if (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE && !function_value)
         {
             // A folded constant name still names its declaration. Its
             // value and type must match that declaration's retained schema;
@@ -479,7 +482,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (use != RT_NONE)
     {
         if ((kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) && use < pj_inf(at.rank,1u).w &&
-            (pj_use(at.rank,use,0u).z & 0xffu) == USE_CONSTRUCTOR)
+            ((pj_use(at.rank,use,0u).z & 0xffu) == USE_CONSTRUCTOR || function_value))
             return; // Constructor call validation follows in 05c.
         else fail(at, PJ_E_USE, kind);
     }

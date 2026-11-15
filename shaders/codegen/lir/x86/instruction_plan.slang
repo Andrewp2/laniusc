@@ -18,6 +18,7 @@ import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.encoding;
+import codegen.lir.x86.c_entry;
 
 struct X86PlanInput
 {
@@ -347,7 +348,6 @@ void plan_footer(X86PlanInput input)
 // displacement is 0 in an object and the length of the load in a raw
 // executable. An object records the displacement as a relocation that only
 // the raw link applies (emit.slang, X86_RUNTIME_REFERENCE_RAW_REL32).
-static const uint X86_C_ENTRY_BYTES = 63u;
 static const uint X86_C_ENTRY_VECTOR_LOAD_BYTES = 10u;
 void plan_c_entry(X86PlanInput input)
 {
@@ -369,8 +369,10 @@ void plan_c_entry(X86PlanInput input)
     // mov r8d,r8d; mov r9d,r9d, or a 3-byte nop.
     plan_bytes(3u, (mask & 16u) != 0u ? 0xc08945u : 0x001f0fu);
     plan_bytes(3u, (mask & 32u) != 0u ? 0xc98945u : 0x001f0fu);
+    bool symbol = input.core.op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL;
     plan_op(X86_OP_BYTES | (1u << 8u) | X86_BYTES_ONE_WORD |
-        (X86_RESOLVE_ROW << 13u) | X86_BYTES_REL, 0xe8u, input.callee_row, 0u);
+        (symbol ? 0u : (X86_RESOLVE_ROW << 13u) | X86_BYTES_REL),
+        0xe8u, symbol ? 0u : input.callee_row, 0u);
     plan_bytes(4u, 0x08c48348u);                       // add rsp, 8
     plan_bytes(4u, 0x5e415f41u);                       // pop r15; pop r14
     plan_bytes(4u, 0x5c415d41u);                       // pop r13; pop r12
@@ -832,9 +834,11 @@ void plan_ordinary(X86PlanInput input)
         }
         if (stack_argument) plan_bytes(1u, 0x50u); // push rax
     }
-    else if (op == X86_LIR_OP_CALL && (metadata & X86_LIR_METADATA_NATIVE_C) != 0u)
+    else if (op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL ||
+        (op == X86_LIR_OP_CALL && (metadata & X86_LIR_METADATA_NATIVE_C) != 0u))
     {
-        if (input.callee_row != X86_PLAN_INVALID) plan_c_entry(input);
+        if (op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL || input.callee_row != X86_PLAN_INVALID)
+            plan_c_entry(input);
     }
     else if (op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL)
     {

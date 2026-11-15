@@ -71,6 +71,7 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     uint4 p = pj_row(rank, rel, 2u);
     uint b = row * PJ_CALL_WORDS;
     uint4 use_record = pj_use(rank,use,0u);
+    bool function_value = (use_record.z & 0xffu) == 8u;
     bool host = (use_record.z & 0xffu) == 6u;
     bool method = (use_record.z & 0xffu) == 2u || (host && (use_record.z >> 8u) != 0u);
     bool intrinsic = (pj_use(rank,use,0u).z & 0xffu) == 5u;
@@ -84,13 +85,14 @@ void write_call(uint row, uint rank, uint rel, uint4 facts, Map m)
     ob_calls[b + 5u] = intrinsic ? pj_use(rank,use,2u).x : 0u;              // intrinsic
     ob_calls[b + 6u] = facts.w;         // return type (scalar code)
     ob_calls[b + 7u] = method ? pj_abs_row(m,pj_row(rank,p.x,2u).y) : RT_INVALID;      // receiver row
-    ob_calls[b + 8u] = p.z;             // arguments
+    ob_calls[b + 8u] = function_value ? 0u : p.z;             // arguments
     ob_calls[b + 9u] = facts.x;         // return reference
     ob_calls[b + 10u] = facts.y;
-    ob_calls[b + 11u] = intrinsic ? 2u : constructor ? 4u : 3u;
+    ob_calls[b + 11u] = function_value ? 5u : intrinsic ? 2u : constructor ? 4u : 3u;
     ob_calls[b + 12u] = RT_INVALID;     // generic requirements
     ob_calls[b + 13u] = RT_INVALID;     // callable row
-    ob_calls[b + 14u] = constructor ? pj_use(rank,use,2u).x : RT_INVALID;
+    ob_calls[b + 14u] = function_value ? pj_g_aux[pj_base_at(rank,PJ_C_ROWS)+rel].y :
+        constructor ? pj_use(rank,use,2u).x : RT_INVALID;
     ob_calls[b + 15u] = 0u;             // receiver adjustment
     ob_calls[b + 16u] = 0u;
     ob_calls[b + 17u] = 0u;
@@ -271,5 +273,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ob_value_type[row] = facts.y;
         ob_expr_scalar_type[row] = (facts.y << SCALAR_TYPE_SHIFT) | PJ_SCALAR_LINK_NONE;
     }
-    if (kind == RT_HIR_CALL_EXPR) write_call(row, rank, rel, facts, m);
+    if (kind == RT_HIR_CALL_EXPR || ((kind == RT_HIR_NAME_EXPR || kind == RT_HIR_PATH_EXPR) &&
+        r3.z != RT_ROLE_BOUND && r3.y != RT_NONE && (pj_use(rank,r3.y,0u).z & 0xffu) == 8u))
+        write_call(row, rank, rel, facts, m);
 }

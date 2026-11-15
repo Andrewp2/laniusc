@@ -24,7 +24,9 @@ struct CheckedCallArtifact
     // when the callable is not a dependency.
     uint generic_requirements;
     // Dense local declaration-family HIR row and declaration-specific
-    // ordinal. Both are INVALID when the callable is not a local declaration.
+    // ordinal. Kind 5 is a symbol-backed function value: callable_hir is
+    // INVALID and callable_ordinal is the six-bit C-entry parameter narrow
+    // mask. Other nonlocal callable kinds leave both fields INVALID.
     uint callable_hir;
     uint callable_ordinal;
     // Method lookup owns the adjustment. The source expression retains its
@@ -44,4 +46,6 @@ struct CheckedCallArtifact
 };
 
 // `semantic_calls_by_hir` is sparse by HIR kind. Every HIR_CALL_EXPR row is
-// initialized in full; no consumer may inspect a row of any other kind.
+// initialized in full. NAME/PATH rows initialize callable_kind; only kind 5
+// permits reading their remaining fields (a symbol-backed function value).
+// No consumer may inspect a row of any other kind.

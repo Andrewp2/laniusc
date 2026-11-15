@@ -1166,7 +1166,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     // explicit call expressions. Imported constants are projected directly
     // from interface metadata and never receive this call kind.
     // A pattern's scrutinee read is not its variant's constructor call.
-    if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 1u &&
+    if (op == SEMANTIC_LIR_OP_VALUE_GET && (semantic_call_kind[node] == 1u || semantic_call_kind[node] == 7u) &&
         pattern_payload_row == LIR_INVALID)
         op = SEMANTIC_LIR_OP_CALL;
     if (op == SEMANTIC_LIR_OP_VALUE_GET && semantic_call_kind[node] == 5u &&
@@ -1179,7 +1179,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 3u)
         op = SEMANTIC_LIR_OP_CALL_HOST;
     else if (op == SEMANTIC_LIR_OP_CALL &&
-        (semantic_call_kind[node] == 4u || semantic_call_kind[node] == 6u))
+        (semantic_call_kind[node] == 4u || semantic_call_kind[node] == 6u || semantic_call_kind[node] == 7u))
         op = SEMANTIC_LIR_OP_CALL_SYMBOL;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
@@ -1419,7 +1419,9 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     // Field word offsets and indexed-array lengths are mutually exclusive
     // projection metadata. They share the existing per-row side table instead
     // of widening every semantic instruction.
-    uint projection_metadata = LIR_INVALID;
+    // A symbol-backed function value uses the per-row layout word for its
+    // C-entry parameter narrow mask; it is neither a field nor an index.
+    uint projection_metadata = semantic_call_kind[node] == 7u ? semantic_call_target[node] : LIR_INVALID;
     uint value_node = (match_scrutinee_set || match_address_load) ? payload.a
         : op == SEMANTIC_LIR_OP_VALUE_SET && payload.c < hir_count
         ? payload.c : node;

@@ -274,8 +274,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         report_unsupported(page_row, core.source_hir);
     }
-    if (core.op == X86_LIR_OP_CALL_SYMBOL &&
-        ((operands.a == INVALID) != (operands.b == INVALID) || operands.c == INVALID))
+    if ((core.op == X86_LIR_OP_CALL_SYMBOL || core.op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL) &&
+        ((operands.a == INVALID) != (operands.b == INVALID) || operands.c == INVALID ||
+         (core.op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL && core.local_ordinal > 63u)))
     {
         report_unsupported(page_row, core.source_hir);
     }

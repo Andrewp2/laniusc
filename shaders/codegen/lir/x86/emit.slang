@@ -171,7 +171,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (callee_index < target_function_count[0u])
             input.callee_row = target_functions[callee_index].instruction_start;
     }
-    input.c_entry_narrow_mask = 0u;
+    input.c_entry_narrow_mask = core.op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL ? core.local_ordinal : 0u;
     if (core.op == X86_LIR_OP_CALL && (operands.metadata & X86_LIR_METADATA_NATIVE_C) != 0u &&
         operands.a < semantic_function_count)
     {

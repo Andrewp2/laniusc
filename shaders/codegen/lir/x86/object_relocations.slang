@@ -4,6 +4,7 @@ import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.frame_layout;
 import gpu_index;
+import codegen.lir.x86.c_entry;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
 struct ObjectIdentity { uint library_id; uint unit_id; uint reserved0; uint reserved1; };
@@ -74,7 +75,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86LirCore target_core = target_lir_core[target_row];
     X86LirLocations locations = target_lir_locations[target_row];
     uint aggregate_words = x86_symbol_call_result_words(target_core.local_ordinal);
-    uint instruction_bytes = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
+    bool symbol_entry = target_core.op == X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL;
+    uint instruction_bytes = symbol_entry ? X86_C_ENTRY_PREFIX_BYTES + X86_C_ENTRY_BYTES +
+        x86_move64_from_fixed_bytes(0u, locations.result) : opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
         ? x86_call_result_instruction_bytes(
             target_operands.metadata, aggregate_words, locations.result) +
             (x86_symbol_call_stack_bytes(target_core.local_ordinal) != 0u
@@ -98,7 +101,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     uint wrapper_length = layout.body_offset - layout.text_offset;
     relocation.site_offset = wrapper_length + target_byte_offset[target_row] + prefix_bytes +
-        (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
+        (symbol_entry ? X86_C_ENTRY_REL32_OFFSET : opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? (target_operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
               aggregate_words > 2u
                 ? x86_stack64_operand_bytes(

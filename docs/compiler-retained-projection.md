@@ -227,7 +227,6 @@ Every other form fails closed with its template location:
 | Form | Error |
 | --- | --- |
 | named range objects | `FORM` or `TYPE` |
-| function references | `USE` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
 
 ## Root obligations
@@ -594,3 +593,26 @@ previous executable byte-for-byte unchanged. The original-main test also
 executes file-backed GPU linking without native C, then verifies that an ABI
 rejection preserves the executable. These two tests and the focused private-C
 call test passed together (3 tests, 4.73 s).
+
+### Function values across lowering batches
+
+A retained `FN_REF` use resolves to the nongeneric free function's native
+symbol. Projection checks its closed signature against the existing C-entry
+contract (at most six integer/pointer register parameters and a scalar/unit
+result). It emits checked callable kind 5 on the name/path row, with the native
+identity and a six-bit parameter normalization mask. Original frontend jobs
+clear that discriminator on every name/path row, so reused storage cannot
+supply a stale projected function reference.
+
+Semantic lowering preserves the identity as a symbol call and the mask in its
+per-row layout word. Native lowering emits `FUNCTION_ADDRESS_SYMBOL`: the
+existing inline C-entry stub with a symbol relocation for its inner call. The
+referenced function stays in its original object. No function body is replayed
+or copied into the instance batch merely to take its address.
+
+`retained_native_function_values_call_originals_across_batches` exercises two
+instances from another unit, private callback targets, 32-bit normalization
+with nonzero upper input bits, pointer parameters, and both raw and native-C
+linking. Separate and combined batches return 42 and write `RNRN`; replay
+counters remain unchanged. The retained tests and existing qsort, bsearch,
+pthread and generic-body callback tests passed together (42 tests, 43.49 s).

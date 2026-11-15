@@ -2,6 +2,7 @@ import primitive_types;
 import native_value_layout;
 import codegen.lir.x86.common;
 import codegen.lir.x86.c_entry;
+import native_c_entry;
 import codegen.lir.x86.storage_layout;
 import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
@@ -413,21 +414,14 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
 
 // A C entry admits the System V integer class only: at most six
 // register parameters and a scalar or unit result (docs/library-native-c.md).
-bool c_entry_scalar(uint type, bool result)
-{
-    return type == SCALAR_I32 || type == SCALAR_U32 || type == SCALAR_I64 ||
-        type == SCALAR_U64 || type == SCALAR_ISIZE || type == SCALAR_USIZE ||
-        type == SCALAR_PTR || (result && (type == SCALAR_UNIT || type == SCALAR_UNKNOWN));
-}
-
 bool c_entry_signature(uint function, uint function_count)
 {
     if (function >= function_count) return false;
     SemanticLirFunction callee = semantic_lir_functions[function];
     if (callee.param_count > 6u || callee.result_word_count != 0u ||
-        !c_entry_scalar(callee.result_type, true)) return false;
+        !native_c_entry_scalar(callee.result_type, true)) return false;
     for (uint ordinal = 0u; ordinal < callee.param_count; ordinal++)
-        if (!c_entry_scalar(semantic_lir_params[callee.param_start + ordinal].type_id, false))
+        if (!native_c_entry_scalar(semantic_lir_params[callee.param_start + ordinal].type_id, false))
             return false;
     return true;
 }
@@ -672,6 +666,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
     uint op = x86_lir_opcode(source);
+    bool symbol_entry = c_entry && op == X86_LIR_OP_CALL_SYMBOL;
+    if (symbol_entry) op = X86_LIR_OP_FUNCTION_ADDRESS_SYMBOL;
     uint copy_words = 0u;
     bool zero_source = false;
     bool store_array_pair = false;
@@ -1612,7 +1608,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_HOST ||
          op == X86_LIR_OP_PRINT_I32) && args.a == INVALID)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
-    if (c_entry && !c_entry_signature(args.a, function_count))
+    if (c_entry && !symbol_entry && !c_entry_signature(args.a, function_count))
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // A local call's c is its result width, zero included: the emitter
     // passes a hidden result address above two words, and the default
@@ -1644,7 +1640,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : argument_rows + (call_result_words > 2u ? 1u : 0u) > 6u
         ? argument_rows + (call_result_words > 2u ? 1u : 0u) - 6u : 0u;
     uint aligned_stack_words = (stack_words + 1u) & ~1u;
-    core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+    core.local_ordinal = symbol_entry ? semantic_lir_layout_word_offset[semantic_row]
+        : op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
         op == X86_LIR_OP_SELECT_STORE || op == X86_LIR_OP_FIELD_STORE ||
         op == X86_LIR_OP_BRANCH
         ? local_ordinal

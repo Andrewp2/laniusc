@@ -42,6 +42,19 @@ void main(uint3 id: SV_DispatchThreadID)
     uint form = u0.z & 0xffu;
     // Non-call syntax contributes row and layout types during projection.
     if (form == 3u || form == 4u || form == 5u) return;
+    if (form == 8u)
+    {
+        // A function value names an ordinary out-of-line function. Its C
+        // entry is emitted in the caller batch and calls this symbol.
+        uint callee = dg_entry(u0.w);
+        if (callee == RT_INVALID || rt_dir[callee*RT_DIR_WORDS].y != 1u ||
+            dg_generic(callee) || dg_predicates(callee))
+        { dg_fail(root,lane,use,4u,u0.w); return; }
+        uint4 route = uint4(2u,u0.w,0u,dg_config[15]);
+        if (root != 0u) dg_roots[lane] = route;
+        else { dg_edges[lane] = route; dg_targets[lane] = uint2(u0.w,RT_NONE); }
+        return;
+    }
     // Required members use this same substitution request. The closed
     // solver wave selects their concrete implementation after substitution.
     if ((form != 1u && form != 2u && form != 6u) || (form == 1u && (u0.z >> 8u) != 0u))

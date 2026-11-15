@@ -109,6 +109,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // It is a CALL row from a name (lir/x86/scatter c_entry_call); a const
     // named as a value is one too, so also check the callee is a fn item.
     uint source_kind = compact_hir_core[opt_ir_source_hir[semantic_row]].kind;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL && (source_kind == 22u || source_kind == 33u))
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && (source_kind == 22u || source_kind == 33u) &&
         compact_hir_core[semantic_lir_functions[operands.a].hir_function].kind == 3u)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
