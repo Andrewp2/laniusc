@@ -6,7 +6,7 @@
 //   r3 (type term, use index within the body or RT_NONE, role, flags)
 //   r4 (return-type row, constant-value row, array-element start, count)
 //   r5 (binding kind, binding value, binding aux, member field ordinal)
-//   r6 (argument mode | iterable kind << 8, constant flags, value lo, value hi)
+//   r6 (argument mode | iterable kind << 8 | float status << 16, constant flags, value lo, value hi)
 // A type row's term is its checked type (type_row_term); a variant
 // constructor's callee keeps none; every other row's is its checked
 // expression reference. A VALUE or TYPE row without a resolved term is
@@ -215,7 +215,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (param == RT_INVALID) { foreign++; value.x = RT_REL_FOREIGN; }
         else value.x = rt_param_leaf(param);
     }
-    uint4 r6 = uint4((semantic_argument_mode_by_hir[row] & 0xffu) | ((semantic_iterable_kind_by_hir[row] & 0xffu) << 8u),
+    uint float_status = core.kind == RT_HIR_LITERAL_EXPR && p.a == 27u
+        ? compact_hir_semantic_facts[row].literal_status & 0xffffu : 0u;
+    uint4 r6 = uint4((semantic_argument_mode_by_hir[row] & 0xffu) | ((semantic_iterable_kind_by_hir[row] & 0xffu) << 8u) | (float_status << 16u),
         present, value.x, value.y);
 
     uint flags = (rt_is_resolved(term) ? RT_ROW_TYPED : 0u) | (foreign != 0u ? RT_ROW_FOREIGN : 0u) |

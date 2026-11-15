@@ -438,6 +438,52 @@ fn main() -> i32 { return start<u8>(); }
 }
 
 #[test]
+fn retained_projection_selects_float_status_at_the_instance_width() {
+    use laniusc_compiler::type_checker::program_retention::{
+        discovery::{DiscoveryCapacity, DiscoveryOutcome, RetainedDiscovery},
+        projection::{ProjectionOptions, ProjectionOutcome, RetainedProjection, error},
+        substitution::SubstitutionCapacity,
+    };
+    common::run_with_timeout("retained float status", || {
+        let lib = "module lib::a; pub fn number<T>(v:T)->T { return v + 1e39; }";
+        let app = "module app::b; import lib::a; fn main()->i32 { let n:f64 = number<f64>(1.0); return 0; }";
+        let store = retain(&[("lib", lib), ("app", app)]);
+        let count = store.status().unwrap()[10] as usize;
+        let rows = store.read_store_words("rt_seg_rows", count * 28).unwrap();
+        let literals: Vec<_> = (0..count).filter(|&r| rows[r*28] == 23 && rows[r*28+8] == 27).collect();
+        assert_eq!(literals.len(), 1);
+        let word = literals[0] * 28 + 24;
+        assert_eq!(rows[word] >> 16, 2, "1e39 overflows f32 but is valid f64");
+        let mut discovery = RetainedDiscovery::new(DiscoveryCapacity::tiny(), SubstitutionCapacity::tiny()).unwrap();
+        let publication = match discovery.run(&store).unwrap() {
+            DiscoveryOutcome::Published(p) => p,
+            DiscoveryOutcome::Rejected(e) => panic!("{e:?}"),
+        };
+        let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).unwrap();
+        let mut projection = RetainedProjection::new(SubstitutionCapacity::tiny()).unwrap();
+        let options = ProjectionOptions::default();
+        assert!(matches!(projection.run(&compiler, &store, &publication.inputs, &options).unwrap(), ProjectionOutcome::Objects { .. }));
+        // A failed parser status for the selected width must stop publication,
+        // even when the retained rounded bits still describe a finite value.
+        for status in [1, 2, 5] {
+            store.write_store_words("rt_seg_rows", word as u64, &[rows[word] | (status << 24)]).unwrap();
+            match projection.run(&compiler, &store, &publication.inputs, &options).unwrap() {
+                ProjectionOutcome::Rejected { error, report } => {
+                    assert_eq!(error.code, error::RULE, "{error}");
+                    assert_eq!(error.detail >> 24, error::RULE_FLOAT_LITERAL);
+                    assert_eq!(error.detail & 0xff, status);
+                    assert_eq!(error.byte as usize, lib.find("1e39").unwrap());
+                    assert!(report.batches.is_empty());
+                }
+                ProjectionOutcome::Objects { .. } => panic!("failed f64 literal was published"),
+            }
+        }
+        store.write_store_words("rt_seg_rows", word as u64, &[rows[word]]).unwrap();
+        assert!(matches!(projection.run(&compiler, &store, &publication.inputs, &options).unwrap(), ProjectionOutcome::Objects { .. }));
+    });
+}
+
+#[test]
 fn retained_projection_rejects_wrong_pattern_schema_and_payload_type() {
     use laniusc_compiler::type_checker::program_retention::{
         discovery::{DiscoveryCapacity,DiscoveryOutcome,RetainedDiscovery},

@@ -343,7 +343,7 @@ A row, `rt_seg_rows`, is 7 × uint4:
 | r3 | `(term, use index within the body or RT_NONE, role, TYPED 1 \| FOREIGN 2 \| MISSING 4)` |
 | r4 | `(return-type row, constant-value row, array-element start, array-element count)` |
 | r5 | `(binding kind, binding value, binding aux, member field ordinal)` |
-| r6 | `(argument mode \| iterable kind << 8, constant flags, value lo, value hi)` |
+| r6 | `(argument mode \| iterable kind << 8 \| float status << 16, constant flags, value lo, value hi)` |
 
 Row terms and roles:
 

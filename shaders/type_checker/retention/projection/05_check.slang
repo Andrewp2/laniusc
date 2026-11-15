@@ -15,6 +15,7 @@
 // pj_g_facts receives (reference tag, payload, native words, scalar) and a
 // member row's field range goes to pj_g_aux.yz.
 import integer_words;
+import type_checker.float_literal_selection;
 import type_checker.operator_operand_rules;
 import type_checker.retention.projection.pj_types;
 import type_checker.retention.projection.pj_schema;
@@ -68,13 +69,10 @@ void check_literal(Row at, uint4 p, uint t, bool changed)
             rule(at, PJ_RULE_ASSIGN_MISMATCH, operator_detail_code(t) * 256u + SCALAR_F32);
             return;
         }
-        // The f32 rounding of a finite literal overflows: its f32 word is
-        // infinite while its f64 words are finite. (The frontend's other
-        // literal statuses are not retained.)
-        bool f32_infinite = (p.y & 0x7fffffffu) == 0x7f800000u;
-        bool f64_finite = (p.w & 0x7ff00000u) != 0x7ff00000u;
-        if (t == SCALAR_F32 && f32_infinite && f64_finite)
-            rule(at, PJ_RULE_FLOAT_LITERAL, (t << 8u) | 1u);
+        uint status;
+        uint packed = pj_row(at.rank, at.row, 6u).x >> 16u;
+        if (selected_float_literal_status(packed, t, status) && status != 0u)
+            rule(at, PJ_RULE_FLOAT_LITERAL, (t << 8u) | status);
     }
 }
 

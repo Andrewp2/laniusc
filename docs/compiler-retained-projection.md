@@ -241,11 +241,6 @@ Every other form fails closed with its template location:
 
 ## Gaps
 
-- **Inherent method choice.** Discovery currently follows the template's
-  accepted inherent method. It must recheck ambiguity under the closed receiver
-  before this becomes the default path.
-- **Float literal status.** Only f32 overflow is detected; the frontend's
-  other float statuses are not retained.
 - **Lowering retry.** `lower_projected_x86_batch` retries once at the
   lowering's output demand. No test forces that retry.
 
@@ -502,9 +497,19 @@ borrowed reads, mutation through `&self`, consuming `self`, method-to-method
 calls, and inherited and shadowing type parameters across units and batches.
 Both builds exit 42 with zero replay.
 
-Before this path becomes the default, inherent-method choice must be checked
-again for the closed receiver: a more specific impl can introduce ambiguity
-that the symbolic template did not see.
+Inherent calls retain the template's accepted method. A forced-replay probe
+with both `impl<T> Wrap<T>` and `impl Wrap<[i32;2]>` defining `marker` accepts
+the generic template's choice, as the existing GPU-copy path does. This differs
+from a direct concrete receiver, for which the frontend reports LNC0027.
+The replay result does not justify introducing a new closed-instance ambiguity
+rejection. The probe and its forced-replay receipt are in
+`target/retained-native-integration-evidence/ambiguity-forced-replay.log`.
+
+Float rows retain both parser decode statuses alongside both rounded values.
+Projection selects the status at the realized f32/f64 width with the same
+helper as the frontend. `retained_projection_selects_float_status_at_the_instance_width`
+checks that `1e39` succeeds at f64 despite f32 overflow, and that a failed
+selected-width status rejects before any object is lowered.
 
 ### Required trait members
 
