@@ -9,6 +9,8 @@ pub(crate) mod job_sized;
 mod link_byte_source;
 pub(crate) mod link_layout;
 pub(crate) mod lowering;
+#[doc(hidden)]
+pub mod lowering_capture;
 /// GPU-resident target-independent and target-specific lowering contracts.
 pub mod lowering_ir;
 pub(crate) mod lowering_pipeline;

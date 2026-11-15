@@ -721,6 +721,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                     &semantic,
                 )
                 .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
+            if crate::codegen::lowering_capture::armed() {
+                crate::codegen::lowering_capture::record(device, encoder,
+                    crate::codegen::lowering::named_lowering_inputs((&hir).into(), semantic.view()));
+            }
             pipeline
                 .record(device, queue, encoder, timer.as_deref_mut(), lowering_bounds)
                 .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
@@ -748,6 +752,10 @@ impl<'gpu> GpuCompiler<'gpu> {
                 | gpu_type_checker::FrontendTraitCheck::PendingOriginal =>
                     crate::codegen::lowering::ReplaySelection::Functions(&[]),
             };
+            if crate::codegen::lowering_capture::armed() {
+                crate::codegen::lowering_capture::record(device, encoder,
+                    crate::codegen::lowering::named_lowering_inputs((&hir).into(), semantic.view()));
+            }
             pipeline
                 .record_object(device, queue, encoder, library_id, unit_id, selected_replay,
                     timer.as_deref_mut(), lowering_bounds)

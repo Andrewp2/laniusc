@@ -78,6 +78,8 @@ mod program_retention;
 mod program_retention_readiness;
 #[path = "../program_retention_traits.rs"]
 mod program_retention_traits;
+#[path = "../retained_projection.rs"]
+mod retained_projection;
 #[path = "../retained_substitution.rs"]
 mod retained_substitution;
 #[path = "../retained_trait_catalog.rs"]
