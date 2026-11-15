@@ -401,8 +401,10 @@ impl GpuX86Linker {
             )
         });
         let mut emitted_len = 0usize;
+        let span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.splices");
         let splices =
             super::splice::call_splices(input, relocations).map_err(anyhow::Error::msg)?;
+        drop(span);
         for page in &plan.pages {
             if emitted_len != page.output_base as usize {
                 bail!(
@@ -411,6 +413,7 @@ impl GpuX86Linker {
                     emitted_len
                 );
             }
+            let upload_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.upload");
             let page_capacity = (page.output_len as usize).div_ceil(4).max(1) * 4;
             let text_bytes = input
                 .read_text_range_borrowed(page.text_input.clone())
@@ -502,6 +505,8 @@ impl GpuX86Linker {
                 .len()
                 .div_ceil(max_relocations_per_batch)
                 .max(1);
+            drop(upload_span);
+            let record_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.record");
             let mut graph_guard = self
                 .executable_page_graph
                 .lock()
@@ -746,6 +751,8 @@ impl GpuX86Linker {
                 "codegen.x86.link.page",
                 encoder.finish(),
             );
+            drop(record_span);
+            let wait_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.wait");
             let slice = readback.slice(..);
             crate::gpu::passes_core::wait_for_readback_map(
                 device,
@@ -768,7 +775,10 @@ impl GpuX86Linker {
             if relocation_status_words[0] != 1 || relocation_status_words[1] != 0 {
                 bail!("x86 GPU linker relocation failed with status {relocation_status_words:?}");
             }
+            drop(wait_span);
+            let consume_span = crate::codegen::x86::TailSpan::new("codegen.x86.link.pages.consume");
             consume_page(page.output_base, &mapped[..page.output_len as usize])?;
+            drop(consume_span);
             emitted_len += page.output_len as usize;
             drop(mapped);
             readback.unmap();
