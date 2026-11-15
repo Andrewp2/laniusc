@@ -362,6 +362,18 @@ impl Producer {
         store: &BTreeMap<&'static str, wgpu::Buffer>,
         bound: Bound<'_>,
     ) -> Result<()> {
+        let bind = self.bind_group(pass, scratch, store, bound)?;
+        self.dispatch(encoder, pass, lanes, scratch, &bind);
+        Ok(())
+    }
+
+    fn bind_group(
+        &self,
+        pass: usize,
+        scratch: &Scratch,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        bound: Bound<'_>,
+    ) -> Result<wgpu::BindGroup> {
         let data = &self.passes[pass];
         let names = reflected_names(data);
         let mut entries = Vec::with_capacity(names.len());
@@ -402,20 +414,25 @@ impl Producer {
             };
             entries.push((name.as_str(), resource));
         }
-        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+        passes_core::bind_group::create_bind_group_from_bindings(
             &self.device,
             Some(&data.shader_id),
             data,
             0,
             &entries,
-        )?;
+        )
+    }
+
+    /// Records `pass` with a bind group from `bind_group` for the same pass.
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, scratch: &Scratch, bind: &wgpu::BindGroup) {
+        let data = &self.passes[pass];
         let (x, y) = if matches!(pass, SCAN_BLOCKS | PUBLISH_FINISH | CLOSURE_WAVE) { (1, 1) } else { groups(lanes) };
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some("trait_solver.retained_producer"), timestamp_writes: None },
         );
         compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
+        compute.set_bind_group(0, bind, &[]);
         passes_core::record_compute_dispatch();
         if pass == CLOSURE_EXPAND {
             passes_core::record_indirect_compute_dispatch();
@@ -423,7 +440,6 @@ impl Producer {
         } else {
             compute.dispatch_workgroups(x, y, 1);
         }
-        Ok(())
     }
 }
 
@@ -667,9 +683,12 @@ fn run(
         }
         // Term closure: roots, then one indirect wave per frontier depth.
         producer.record(&mut encoder, CLOSURE_ROOTS, root_lanes, &scratch, store, idle)?;
+        // Every wave binds the same buffers.
+        let wave = producer.bind_group(CLOSURE_WAVE, &scratch, store, idle)?;
+        let expand = producer.bind_group(CLOSURE_EXPAND, &scratch, store, idle)?;
         for _ in 0..closure_waves {
-            producer.record(&mut encoder, CLOSURE_WAVE, 1, &scratch, store, idle)?;
-            producer.record(&mut encoder, CLOSURE_EXPAND, 0, &scratch, store, idle)?;
+            producer.dispatch(&mut encoder, CLOSURE_WAVE, 1, &scratch, &wave);
+            producer.dispatch(&mut encoder, CLOSURE_EXPAND, 0, &scratch, &expand);
         }
         producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
         for (stage, &(_, j)) in steps.iter().enumerate() {

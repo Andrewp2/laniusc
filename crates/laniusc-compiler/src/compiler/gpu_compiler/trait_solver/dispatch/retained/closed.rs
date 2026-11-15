@@ -138,6 +138,18 @@ impl ClosedProducer {
         external: &[(&str, wgpu::BindingResource<'_>)],
         step: u32,
     ) -> Result<()> {
+        let bind = self.bind_group(pass, store, external, step)?;
+        self.dispatch(encoder, pass, lanes, &bind);
+        Ok(())
+    }
+
+    fn bind_group(
+        &self,
+        pass: usize,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        external: &[(&str, wgpu::BindingResource<'_>)],
+        step: u32,
+    ) -> Result<wgpu::BindGroup> {
         let data = &self.reader.passes[pass];
         let names = reflected_names(data);
         let mut entries = Vec::new();
@@ -165,13 +177,18 @@ impl ClosedProducer {
             };
             entries.push((name.as_str(), binding));
         }
-        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+        passes_core::bind_group::create_bind_group_from_bindings(
             &self.reader.device,
             Some(&data.shader_id),
             data,
             0,
             &entries,
-        )?;
+        )
+    }
+
+    /// Records `pass` with a bind group from `bind_group` for the same pass.
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
+        let data = &self.reader.passes[pass];
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {
@@ -180,7 +197,7 @@ impl ClosedProducer {
             },
         );
         compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
+        compute.set_bind_group(0, bind, &[]);
         passes_core::record_compute_dispatch();
         if pass == 4 {
             let indirect = &self.buffers["cw_indirect"];
@@ -194,7 +211,6 @@ impl ClosedProducer {
             };
             compute.dispatch_workgroups(x, y, 1);
         }
-        Ok(())
     }
 }
 
@@ -416,10 +432,13 @@ impl RetainedTraitPublication {
         // rounds is a producer failure (code 7).
         let mut recorded = 0;
         let mut rounds = FIRST_ROUNDS;
+        // Every round binds the same buffers.
+        let wave = producer.bind_group(3, store, &ext, 0)?;
+        let expand = producer.bind_group(4, store, &ext, 0)?;
         let state = loop {
             for _ in 0..rounds {
-                producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
-                producer.record(&mut encoder, 4, 0, store, &ext, 0)?;
+                producer.dispatch(&mut encoder, 3, 1, &wave);
+                producer.dispatch(&mut encoder, 4, 0, &expand);
             }
             recorded += rounds;
             producer.record(&mut encoder, 5, terms, store, &ext, 0)?;

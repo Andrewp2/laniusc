@@ -191,7 +191,11 @@ The host records 16 waves by default
 (`RetainedTraitOptions::closure_waves`). If terms remain unexpanded after
 the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
 the waves and runs every count pass again, as it does for a full unit
-table. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
+table. Every wave binds the same buffers, so the host creates one bind
+group per closure pass and reuses it for all waves. The closed instance
+producer does the same for its BFS rounds, and the method routes create
+one bind group per (kernel, config slot) for their fixed-point rounds.
+`02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
 closed.
 

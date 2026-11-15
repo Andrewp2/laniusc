@@ -142,12 +142,17 @@ impl MethodRoutes {
         // Reachability marking, then bottom-up evaluation. Each loop stops
         // changing at its fixed point, and the environment pass runs once
         // both have. A batch that ends before then reports MR_PENDING and
-        // the next batch continues the rounds.
-        for round in recorded..recorded + rounds {
-            record(encoder, 2, nodes, round as usize % ROUND_CONFIGS)?;
-        }
-        for round in recorded..recorded + rounds {
-            record(encoder, 3, nodes, round as usize % ROUND_CONFIGS)?;
+        // the next batch continues the rounds. A round binds its kernel
+        // with its config slot, so each (kernel, slot) needs one bind group.
+        for kernel in [2, 3] {
+            let mut binds: Vec<Option<wgpu::BindGroup>> = vec![None; ROUND_CONFIGS];
+            for round in recorded..recorded + rounds {
+                let slot = round as usize % ROUND_CONFIGS;
+                if binds[slot].is_none() {
+                    binds[slot] = Some(self.bind_group(kernel, slot, guard, view, sub, metadata, instances)?);
+                }
+                self.dispatch(encoder, kernel, nodes, binds[slot].as_ref().expect("bound above"));
+            }
         }
         let total = recorded + rounds;
         let last = config.at(1, (total - 1) % 3, total >= ROUND_BOUND);
@@ -265,6 +270,7 @@ impl MethodRoutes {
         }
         result
     }
+    #[allow(clippy::too_many_arguments)]
     fn record(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -277,6 +283,21 @@ impl MethodRoutes {
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
     ) -> Result<()> {
+        let bind = self.bind_group(kernel, config, store, view, sub, metadata, instances)?;
+        self.dispatch(encoder, kernel, lanes, &bind);
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn bind_group(
+        &self,
+        kernel: usize,
+        config: usize,
+        store: &Store,
+        view: &RetainedTraitView<'_>,
+        sub: (&wgpu::Buffer, &wgpu::Buffer),
+        metadata: &wgpu::Buffer,
+        instances: &wgpu::Buffer,
+    ) -> Result<wgpu::BindGroup> {
         let pass = &self.passes[kernel];
         let names = reflected_names(pass);
         let mut entries = Vec::new();
@@ -299,13 +320,17 @@ impl MethodRoutes {
             };
             entries.push((name.as_str(), binding));
         }
-        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+        passes_core::bind_group::create_bind_group_from_bindings(
             &self.device,
             Some(&pass.shader_id),
             pass,
             0,
             &entries,
-        )?;
+        )
+    }
+    /// Records `kernel` with a bind group from `bind_group` for it.
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, bind: &wgpu::BindGroup) {
+        let pass = &self.passes[kernel];
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor {
@@ -314,7 +339,7 @@ impl MethodRoutes {
             },
         );
         compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
+        compute.set_bind_group(0, bind, &[]);
         passes_core::record_compute_dispatch();
         let groups = if kernel == 5 {
             1
@@ -322,7 +347,6 @@ impl MethodRoutes {
             lanes.div_ceil(256).max(1)
         };
         compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
-        Ok(())
     }
 }
 
