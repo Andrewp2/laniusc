@@ -898,6 +898,7 @@ fn run(
         route_words,
         identity,
         rt_counts: rt_counts.clone(),
+        store_counts: std::sync::Mutex::new(None),
     };
     Ok((report, Some(publication)))
 }
@@ -959,6 +960,8 @@ pub struct RetainedTraitPublication {
     route_words: u32,
     identity: RetainedTraitIdentity,
     rt_counts: wgpu::Buffer,
+    /// The store's counters, read with the last `status`.
+    store_counts: std::sync::Mutex<Option<Vec<u32>>>,
 }
 
 impl RetainedTraitPublication {
@@ -985,12 +988,26 @@ impl RetainedTraitPublication {
     }
 
     /// Header words 8-10: status (0 building, 1 valid, 2 failed), route
-    /// failures, first failure. One 12-byte readback.
+    /// failures, first failure. The same readback returns the store's
+    /// counters, which `take_store_counts` hands to the next consumer.
     pub fn status(&self) -> Result<[u32; 3]> {
-        let region = ReadbackRegion::from_buffer(&self.routes.buffer, RP_H_STATUS as u64 * 4, 12, "retained publication status")?;
-        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &[region], "retained publication status")?;
+        let bytes = counts::WORDS as u64 * 4;
+        let counters = LaniusBuffer::<u32>::new((self.rt_counts.clone(), bytes), counts::WORDS);
+        let regions = [
+            ReadbackRegion::from_buffer(&self.routes.buffer, RP_H_STATUS as u64 * 4, 12, "retained publication status")?,
+            ReadbackRegion::from_buffer(&counters, 0, bytes as usize, "retained publication store counters")?,
+        ];
+        let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &regions, "retained publication status")?;
         let words = super::words(&raw[0])?;
+        *self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(super::words(&raw[1])?);
         Ok([words[0], words[1], words[2]])
+    }
+
+    /// The store counters read with the last `status`, once. A consumer
+    /// that checked `view` against the same store may size its work with
+    /// them; a later export changes the extent the GPU checks.
+    pub fn take_store_counts(&self) -> Option<Vec<u32>> {
+        self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
     }
 
     /// GPU-selected source span of the first hard-refuted call. No proof,

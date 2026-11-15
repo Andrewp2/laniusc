@@ -48,7 +48,11 @@ word 0 is 2 and `MR_PENDING` is clear, so the routes' state, the
 discovery status and the store counters come back in one readback. Term
 ranking takes the term count from the last status readback and does not
 read the status after the sort. Settings: 90 to 81 readbacks per build,
-with the same executable.
+with the same executable. Discovery takes the store's counters from the
+catalog's publication-status readback, the retention export reads its
+two counter blocks together, and the original-call symbol pass
+(`native_calls.rs`) returns its status and both symbol columns in one
+readback: 77 per build.
 
 A parallel prefix scan assigns each frontier instance a range of use edges.
 Request production and result consumption use one lane per edge or request;

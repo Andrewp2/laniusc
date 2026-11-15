@@ -273,6 +273,9 @@ rows, proof rows and substitutions; they choose nothing.
 (catalog epoch, batch arena id, serial, store generation). It fails when
 `store` has another `rt_counts` buffer or another build generation.
 `status()` reads header words 8-10; production consumers need not call it.
+The same readback returns the store's `rt_counts`. `take_store_counts`
+hands them, once, to the next consumer: discovery sizes its root pass with
+them instead of reading the counters again.
 The route header occupies 64 words. Publication reduces hard-refuted calls
 to the smallest retained use and copies its `rt_use_spans` record to words
 48–51. `diagnostic_span()` reads that record on failure, allowing the compiler

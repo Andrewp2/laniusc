@@ -185,7 +185,12 @@ impl RetainedDiscovery {
         result
     }
     fn run_inner(&mut self, store: &ProgramRetention, mut publication: Option<&mut RetainedTraitPublication>) -> Result<DiscoveryOutcome> {
-        let initial = store.status()?;
+        // The catalog read the store's counters with its publication
+        // status; nothing writes the store between them.
+        let initial = match publication.as_deref().and_then(|p| p.take_store_counts()) {
+            Some(words) => words,
+            None => store.status()?,
+        };
         let uses = initial[8];
         let generation = store.generation();
         let mut report = DiscoveryReport::default();
