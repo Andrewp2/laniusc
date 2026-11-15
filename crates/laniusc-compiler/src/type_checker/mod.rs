@@ -402,6 +402,8 @@ pub struct GpuTypeChecker {
     /// The inference round's number (0 outside the rounds) and the last
     /// round with a change outside every function (inference_activity.slang).
     call_inference_round: LaniusBuffer<u32>,
+    /// Word r is r, for the copy that numbers round r.
+    call_inference_round_numbers: LaniusBuffer<u32>,
     /// Per inference round of a batch, the state words and status words
     /// after the round (`CALL_INFERENCE_HISTORY_WORDS` each).
     call_inference_readback: LaniusBuffer<u32>,

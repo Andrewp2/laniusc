@@ -14,7 +14,7 @@ Before this change each round cost about 1.7 to 2.0 ms of GPU time, independent 
 
 `shaders/type_checker/calls/inference_activity.slang` decides which items a round recomputes.
 
-- `call_inference_round[0]` is the round number. It is 0 outside the rounds and 1 in the first round. `03z_begin_inference_round` increments it and clears the change count.
+- `call_inference_round[0]` is the round number. It is 0 outside the rounds and 1 in the first round. Before each round the host records a clear of the change count and a copy of the round's number from the table `call_inference_round_numbers`. Neither is a dispatch.
 - `call_inference_round[1]` is the last round that changed a fact with no owning function.
 - `call_inference_fn_stamp[g]` is the last round that changed a fact of function `g`. `g` is `enclosing_fn[token]`, the function's HIR row plus 1. Row 0 means outside every function.
 - Every site that adds to `call_inference_state[1]` also calls `inference_note_item_change()`. Sites that leave an item unfinished (BUSY outcomes) also stamp it.
@@ -59,8 +59,37 @@ Settings app, minimum per pass over at least 3 timestamp traces:
 | Rounds | 11 | 11 |
 | Settings executable | | byte-identical |
 
-The 9 extra dispatches are the one-lane round start, one per round, less the clear it replaces.
+The round start was first a one-lane kernel. It is now a buffer clear and a buffer copy, so it adds no dispatch. The bound-table clear (`03l0`) zeroed only four counts and is now a buffer clear as well. Settings at c44f3c2dc, minimum per pass over 3 timestamp traces:
 
-A round in which every function is inactive still costs about 0.9 to 1.0 ms. The unmasked passes take most of that time: claim emit about 90 µs, local collection 25 µs, call roots 25 µs, imported fields 20 µs, type indexes about 18 µs each. Each masked pass still launches a lane per row and costs 10 to 20 µs.
+| | c44f3c2dc | Round start and bound clear as buffer operations |
+|---|---|---|
+| Inference GPU time | 17,588 µs | 17,100 µs |
+| Inference dispatches | 836 | 816 |
+| Dispatches per round | 76 | 74 |
+| Build dispatches | 5,336 | 5,315 |
 
-Late rounds stay expensive because a few large functions, such as the float tables, remain active. Most masked lanes in an active function have nothing to change. Finer granularity, or compacting the active items and dispatching indirectly, would reduce this further.
+## How many rounds run
+
+The host does not read back a change count per round on a warm build. It records as many rounds as the last two builds of the same workspace shape converged in, and the final pass stands for the round that changes nothing (`call_inference_unwaited_rounds` in `resident.rs`). Settings converges in 10 rounds plus the final pass. Round 10 is the last round that changes a fact, with 1 to 8 changes. So no round runs after convergence, and a GPU "converged" flag would not remove any round.
+
+## What a dispatch costs
+
+Measured untraced on the settings build: a block of 760 dispatches was recorded after the rounds and submitted alone, and the host timed the GPU from submit to idle. Minimum of 10 builds:
+
+| Block of 760 dispatches | GPU time | Per dispatch |
+|---|---|---|
+| Empty submission | 0.031 ms | |
+| Zero-sized indirect dispatches | 0.194 ms | 0.21 µs |
+| One-workgroup direct dispatches of a trivial kernel | 0.825 ms | 1.0 µs |
+| 10 masked rounds after convergence | 5.90 ms | 7.7 µs |
+
+The timestamp traces add about 4 µs to every dispatch, so their 5 to 12 µs floor is not the real cost. A converged round costs about 0.59 ms of GPU time, and most of it is the work of the passes, not the dispatches. Recording costs the host about 8 µs per dispatch: the batch of rounds took 6.95 ms to record for 836 dispatches, and the GPU waits for that recording.
+
+## Compaction of active items (tried, not kept)
+
+Each round's active functions were listed in one workgroup at the round start. The heaviest HIR passes (`03d`, `03e`, `03f`, `03g`, `03k1`) were dispatched over those functions' rows only, through a lane-to-row map. The result matched, but inference GPU time fell only from 17,588 to 17,198 µs, and the one-workgroup round start cost 22 µs more per round. A late round recomputes a few large functions, and their items do long serial work: receiver binding still took 77 µs in round 10. The inactive lanes the masks already skip were cheap. The patch is kept in the evidence directory (`compaction-experiment.patch`) and is not part of the compiler.
+
+## What remains
+
+- Finer activity than whole functions: an item whose inputs did not change in the last round need not recompute. In round 10 only 8 facts change, but every item of the active functions recomputes.
+- Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.
