@@ -22,6 +22,7 @@ use std::{
 
 use anyhow::{Result, anyhow, bail};
 
+pub mod discovery;
 pub mod projection;
 pub mod substitution;
 

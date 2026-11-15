@@ -1,0 +1,686 @@
+//! GPU discovery of closed instances from retained call uses.
+//!
+//! The first production slice handles direct free-function calls. A reachable
+//! method or predicate fails closed until the solver's wave producer supplies
+//! its evidence. No unsupported call is omitted or sent to source replay.
+use std::collections::BTreeMap;
+
+use anyhow::{Result, anyhow, bail};
+
+use super::{
+    ProgramRetention,
+    Store,
+    counts,
+    projection::ProjectionInputs,
+    reflected_names,
+    storage,
+    substitution::{
+        RetainedSubstitution,
+        SubstitutionCapacity,
+        SubstitutionRequests,
+        SubstitutionRun,
+    },
+    words_bytes,
+};
+use crate::gpu::{
+    buffers::LaniusBuffer,
+    passes_core::{self, PassData, make_pass_data_from_shader_key, map_readback_blocking},
+};
+
+const KERNELS: &[&str] = &[
+    "type_checker/retention/discovery/00_requests",
+    "type_checker/retention/discovery/01_resolve",
+    "type_checker/retention/discovery/02_scan",
+    "type_checker/retention/discovery/03_term_order",
+    "type_checker/retention/discovery/04_instance_order",
+    "type_checker/retention/discovery/05_publish",
+];
+const STATUS_WORDS: usize = 32;
+const FIRST_ERROR: usize = 6;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiscoveryCapacity {
+    pub instances: u32,
+    pub edges: u32,
+    pub requests: u32,
+}
+impl Default for DiscoveryCapacity {
+    fn default() -> Self {
+        Self {
+            instances: 4096,
+            edges: 16384,
+            requests: 16384,
+        }
+    }
+}
+impl DiscoveryCapacity {
+    pub fn tiny() -> Self {
+        Self {
+            instances: 2,
+            edges: 2,
+            requests: 2,
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct DiscoveryReport {
+    pub attempts: u32,
+    pub waves: u32,
+    pub dispatches: u32,
+    pub readbacks: u32,
+    pub instances: u32,
+    pub edges: u32,
+    pub roots: u32,
+    pub substitution_dispatches: u32,
+}
+#[derive(Clone, Debug)]
+pub struct DiscoveryError {
+    pub code: u32,
+    pub use_index: u32,
+    pub instance: u32,
+    pub detail: u32,
+}
+pub enum DiscoveryOutcome {
+    Published(DiscoveryPublication),
+    Rejected(DiscoveryError),
+}
+pub struct DiscoveryPublication {
+    pub inputs: ProjectionInputs,
+    pub root_routes: LaniusBuffer<u32>,
+    pub root_readiness: LaniusBuffer<u32>,
+    pub root_route_capacity: u32,
+    pub generation: u32,
+    pub report: DiscoveryReport,
+}
+
+pub struct RetainedDiscovery {
+    device: std::sync::Arc<wgpu::Device>,
+    queue: std::sync::Arc<wgpu::Queue>,
+    passes: Vec<PassData>,
+    capacity: DiscoveryCapacity,
+    substitution: RetainedSubstitution,
+    scratch: BTreeMap<&'static str, wgpu::Buffer>,
+    configs: Vec<wgpu::Buffer>,
+    config_cursor: usize,
+    hash_mask: u32,
+}
+impl RetainedDiscovery {
+    pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
+        let gpu = crate::gpu::device::global();
+        let passes = KERNELS
+            .iter()
+            .map(|key| make_pass_data_from_shader_key(&gpu.device, key, "main", key))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            device: gpu.device.clone(),
+            queue: gpu.queue.clone(),
+            passes,
+            capacity,
+            substitution: RetainedSubstitution::new(substitution)?,
+            scratch: BTreeMap::new(),
+            configs: Vec::new(),
+            config_cursor: 0,
+            hash_mask: u32::MAX,
+        })
+    }
+    pub fn set_hash_mask(&mut self, mask: u32) {
+        self.hash_mask = mask;
+    }
+    pub fn run(&mut self, store: &ProgramRetention) -> Result<DiscoveryOutcome> {
+        let result = self.run_inner(store);
+        if result.is_err() {
+            let guard = store.store.lock().unwrap();
+            self.queue.write_buffer(
+                &guard.buffers["rt_counts"],
+                (counts::READY * 4) as u64,
+                &0u32.to_le_bytes(),
+            );
+            self.queue.submit(None);
+        }
+        result
+    }
+    fn run_inner(&mut self, store: &ProgramRetention) -> Result<DiscoveryOutcome> {
+        let initial = store.status()?;
+        let uses = initial[8];
+        let generation = store.generation();
+        let mut report = DiscoveryReport::default();
+        'attempt: loop {
+            report.attempts += 1;
+            report.waves = 0;
+            self.capacity.instances = self
+                .capacity
+                .instances
+                .max(2)
+                .checked_next_power_of_two()
+                .ok_or_else(|| anyhow!("discovery instance capacity exhausted"))?;
+            self.capacity.edges = self.capacity.edges.max(1);
+            self.capacity.requests = self.capacity.requests.max(1);
+            self.allocate(uses)?;
+            let inputs = ProjectionInputs::new(self.capacity.instances, self.capacity.edges);
+            let root_routes = self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?;
+            let root_readiness = self.buffer("dg_root_readiness", 16)?;
+            let requests = SubstitutionRequests::new(self.capacity.requests);
+            let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
+            extra.extend([
+                ("dg_root_routes", &root_routes),
+                ("dg_root_readiness", &root_readiness),
+            ]);
+            extra.extend(requests.buffers());
+            let mut config = [0u32; 16];
+            config[4] = 1;
+            config[6] = 1;
+            config[7] = self.hash_mask;
+            config[15] = generation;
+            let mut encoder = self.encoder();
+            for name in ["dg_slots", "dg_instances", "dg_roots", "dg_status"] {
+                encoder.clear_buffer(&self.scratch[name], 0, None);
+            }
+            for (_, buffer) in inputs.buffers() {
+                encoder.clear_buffer(buffer, 0, None);
+            }
+            encoder.clear_buffer(&root_routes, 0, None);
+            encoder.clear_buffer(&root_readiness, 0, None);
+            encoder.clear_buffer(requests.buffers()[1].1, 0, None);
+            self.queue.submit(Some(encoder.finish()));
+            self.queue.write_buffer(
+                &self.scratch["dg_status"],
+                (FIRST_ERROR * 4) as u64,
+                &u32::MAX.to_le_bytes(),
+            );
+            self.config_cursor = 0;
+            let guard = store.store.lock().unwrap();
+            let mut encoder = self.encoder();
+            self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
+            self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
+            self.queue.submit(Some(encoder.finish()));
+            drop(guard);
+            let mut status = self.read_status(&mut report)?;
+            if self.grow(&status)? {
+                continue 'attempt;
+            }
+            if let Some(error) = failure(&status) {
+                return Ok(DiscoveryOutcome::Rejected(error));
+            }
+            self.resolve(store, &requests, &extra, config, &mut report)?;
+            status = self.read_status(&mut report)?;
+            if self.grow(&status)? {
+                continue 'attempt;
+            }
+            if let Some(error) = failure(&status) {
+                return Ok(DiscoveryOutcome::Rejected(error));
+            }
+            let mut lo = 0;
+            let mut hi = status[0];
+            let mut edges = 0;
+            let mut depth = 1;
+            while lo < hi {
+                // Each wave expands precisely the newly interned instances.
+                // A prefix scan places uses; one lane then handles each use.
+                report.waves += 1;
+                config[0] = 0;
+                config[1] = lo;
+                config[2] = hi;
+                config[3] = edges;
+                config[4] = 0;
+                config[6] = depth + 1;
+                config[9] = 0;
+                self.config_cursor = 0;
+                let guard = store.store.lock().unwrap();
+                let mut encoder = self.encoder();
+                self.record(
+                    &mut encoder,
+                    &guard,
+                    2,
+                    config,
+                    &extra,
+                    hi - lo,
+                    &mut report,
+                )?;
+                let mut distance = 1;
+                while distance < hi - lo {
+                    config[0] = 1;
+                    config[8] = distance;
+                    self.record(
+                        &mut encoder,
+                        &guard,
+                        2,
+                        config,
+                        &extra,
+                        hi - lo,
+                        &mut report,
+                    )?;
+                    config[9] ^= 1;
+                    distance = distance
+                        .checked_mul(2)
+                        .ok_or_else(|| anyhow!("discovery scan exhausted"))?;
+                }
+                config[0] = 2;
+                self.record(
+                    &mut encoder,
+                    &guard,
+                    2,
+                    config,
+                    &extra,
+                    hi - lo,
+                    &mut report,
+                )?;
+                self.queue.submit(Some(encoder.finish()));
+                drop(guard);
+                status = self.read_status(&mut report)?;
+                if self.grow(&status)? {
+                    continue 'attempt;
+                }
+                let end = status[2];
+                self.config_cursor = 0;
+                let guard = store.store.lock().unwrap();
+                let mut encoder = self.encoder();
+                encoder.clear_buffer(requests.buffers()[1].1, 0, None);
+                encoder.clear_buffer(&self.scratch["dg_status"], 28, Some(4));
+                config[0] = 0;
+                self.record(
+                    &mut encoder,
+                    &guard,
+                    0,
+                    config,
+                    &extra,
+                    end - edges,
+                    &mut report,
+                )?;
+                self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
+                self.queue.submit(Some(encoder.finish()));
+                drop(guard);
+                status = self.read_status(&mut report)?;
+                if self.grow(&status)? {
+                    continue 'attempt;
+                }
+                if let Some(error) = failure(&status) {
+                    return Ok(DiscoveryOutcome::Rejected(error));
+                }
+                self.resolve(store, &requests, &extra, config, &mut report)?;
+                status = self.read_status(&mut report)?;
+                if self.grow(&status)? {
+                    continue 'attempt;
+                }
+                if let Some(error) = failure(&status) {
+                    return Ok(DiscoveryOutcome::Rejected(error));
+                }
+                lo = hi;
+                hi = status[0];
+                edges = end;
+                depth += 1;
+                if depth > 65 {
+                    bail!("discovery exceeded its depth contract");
+                }
+            }
+            report.instances = status[1];
+            report.edges = status[2];
+            report.roots = status[9];
+            // Rank by full structure, height by height. Hashes never decide
+            // equality or output order, even with forced table collisions.
+            self.rank_terms(store, &extra, config, &mut report)?;
+            self.config_cursor = 0;
+            let guard = store.store.lock().unwrap();
+            let mut encoder = self.encoder();
+            config[13] = status[0].max(1).next_power_of_two();
+            config[0] = 0;
+            self.record(
+                &mut encoder,
+                &guard,
+                4,
+                config,
+                &extra,
+                config[13],
+                &mut report,
+            )?;
+            self.sort(&mut encoder, &guard, 4, 1, config, &extra, &mut report)?;
+            config[0] = 2;
+            self.record(
+                &mut encoder,
+                &guard,
+                4,
+                config,
+                &extra,
+                config[13],
+                &mut report,
+            )?;
+            config[0] = 1;
+            self.record(
+                &mut encoder,
+                &guard,
+                5,
+                config,
+                &extra,
+                uses.max(status[1]).max(status[2]),
+                &mut report,
+            )?;
+            config[0] = 2;
+            self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
+            self.queue.submit(Some(encoder.finish()));
+            drop(guard);
+            status = self.read_status(&mut report)?;
+            if let Some(error) = failure(&status) {
+                return Ok(DiscoveryOutcome::Rejected(error));
+            }
+            drop(extra);
+            let root_route_capacity = uses.max(1);
+            return Ok(DiscoveryOutcome::Published(DiscoveryPublication {
+                inputs,
+                root_routes: LaniusBuffer::new(
+                    (root_routes, root_route_capacity as u64 * 16),
+                    root_route_capacity as usize * 4,
+                ),
+                root_readiness: LaniusBuffer::new((root_readiness, 16), 4),
+                root_route_capacity,
+                generation,
+                report,
+            }));
+        }
+    }
+    fn resolve(
+        &mut self,
+        store: &ProgramRetention,
+        requests: &SubstitutionRequests,
+        extra: &[(&str, &wgpu::Buffer)],
+        mut config: [u32; 16],
+        report: &mut DiscoveryReport,
+    ) -> Result<()> {
+        let sub = match self.substitution.run(store, requests)? {
+            SubstitutionRun::Published(r) => r,
+            SubstitutionRun::RequestCapacity {
+                requested,
+                capacity,
+            } => bail!("discovery failed to grow requests ({requested} > {capacity})"),
+        };
+        report.substitution_dispatches += sub.dispatches;
+        config[5] = sub.publication.run;
+        config[0] = 0;
+        let publication = self
+            .substitution
+            .publication(store)
+            .ok_or_else(|| anyhow!("missing discovery substitution publication"))?;
+        let results = publication.results.clone();
+        let counts = publication.counts.clone();
+        let mut bindings = extra.to_vec();
+        bindings.extend([("sb_results", &results), ("sb_counts", &counts)]);
+        self.config_cursor = 0;
+        let guard = store.store.lock().unwrap();
+        let mut encoder = self.encoder();
+        self.record(
+            &mut encoder,
+            &guard,
+            1,
+            config,
+            &bindings,
+            sub.publication.requests,
+            report,
+        )?;
+        self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+        self.queue.submit(Some(encoder.finish()));
+        Ok(())
+    }
+    fn rank_terms(
+        &mut self,
+        store: &ProgramRetention,
+        extra: &[(&str, &wgpu::Buffer)],
+        mut config: [u32; 16],
+        report: &mut DiscoveryReport,
+    ) -> Result<()> {
+        let status = store.status()?;
+        let terms = status[2];
+        self.ensure("dg_term_rank", terms.max(1) as u64 * 4)?;
+        self.ensure("dg_term_order", terms.max(1) as u64 * 8)?;
+        self.config_cursor = 0;
+        config[0] = 0;
+        let guard = store.store.lock().unwrap();
+        let mut encoder = self.encoder();
+        encoder.clear_buffer(&self.scratch["dg_levels"], 0, None);
+        encoder.clear_buffer(&self.scratch["dg_term_rank"], 0, None);
+        self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
+        self.queue.submit(Some(encoder.finish()));
+        drop(guard);
+        let levels = self.read(&self.scratch["dg_levels"], 128, report)?;
+        let mut bases = [0u32; 128];
+        let mut sizes = [0u32; 128];
+        let mut end = 0u32;
+        for height in 1..128 {
+            bases[height] = end;
+            if levels[height] != 0 {
+                sizes[height] = levels[height]
+                    .checked_next_power_of_two()
+                    .ok_or_else(|| anyhow!("term sort capacity exhausted"))?;
+            }
+            end = end
+                .checked_add(sizes[height])
+                .ok_or_else(|| anyhow!("term sort capacity exhausted"))?;
+        }
+        self.ensure("dg_term_order", end.max(1) as u64 * 4)?;
+        self.queue
+            .write_buffer(&self.scratch["dg_levels"], 128 * 4, &words_bytes(&bases));
+        // Padding has one sentinel key; a GPU fill avoids arena-sized host data.
+        self.config_cursor = 0;
+        let guard = store.store.lock().unwrap();
+        let mut encoder = self.encoder();
+        config[0] = 4;
+        config[13] = end;
+        self.record(&mut encoder, &guard, 3, config, extra, end, report)?;
+        config[0] = 1;
+        self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
+        for height in 1..128 {
+            if sizes[height] == 0 {
+                continue;
+            }
+            config[12] = bases[height];
+            config[13] = sizes[height];
+            config[14] = height as u32;
+            self.sort(&mut encoder, &guard, 3, 2, config, extra, report)?;
+            config[0] = 3;
+            self.record(
+                &mut encoder,
+                &guard,
+                3,
+                config,
+                extra,
+                sizes[height],
+                report,
+            )?;
+        }
+        self.queue.submit(Some(encoder.finish()));
+        drop(guard);
+        let _ = self.read_status(report)?;
+        Ok(())
+    }
+    fn sort(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &Store,
+        kernel: usize,
+        mode: u32,
+        mut config: [u32; 16],
+        extra: &[(&str, &wgpu::Buffer)],
+        report: &mut DiscoveryReport,
+    ) -> Result<()> {
+        config[0] = mode;
+        let mut k = 2;
+        while k <= config[13] {
+            let mut j = k / 2;
+            while j != 0 {
+                config[10] = k;
+                config[11] = j;
+                self.record(encoder, store, kernel, config, extra, config[13], report)?;
+                j /= 2;
+            }
+            if k == config[13] {
+                break;
+            }
+            k *= 2;
+        }
+        Ok(())
+    }
+    fn grow(&mut self, s: &[u32]) -> Result<bool> {
+        if s[3] == 0 {
+            return Ok(false);
+        }
+        let grow = |old: u32, demand: u32| -> Result<u32> {
+            old.max(demand)
+                .checked_mul(2)
+                .ok_or_else(|| anyhow!("discovery capacity exhausted"))
+        };
+        if s[3] & 1 != 0 {
+            self.capacity.instances = grow(self.capacity.instances, s[4])?;
+        }
+        if s[3] & 2 != 0 {
+            self.capacity.edges = grow(self.capacity.edges, s[5])?;
+        }
+        if s[3] & 4 != 0 {
+            self.capacity.requests = grow(self.capacity.requests, s[7])?;
+        }
+        Ok(true)
+    }
+    fn allocate(&mut self, uses: u32) -> Result<()> {
+        let c = self.capacity;
+        let i = c.instances as u64;
+        let e = c.edges as u64;
+        let r = c.requests as u64;
+        for (name, bytes) in [
+            ("dg_status", STATUS_WORDS as u64 * 4),
+            ("dg_instances", i * 32),
+            ("dg_slots", i * 8),
+            ("dg_scan_a", i * 4),
+            ("dg_scan_b", i * 4),
+            ("dg_edges", e * 16),
+            ("dg_edge_owner", e * 8),
+            ("dg_roots", uses.max(1) as u64 * 16),
+            ("dg_errors", (uses as u64 + e) * 16),
+            ("dg_req_meta", r * 16),
+            ("dg_order", i * 4),
+            ("dg_rank", i * 4),
+            ("dg_term_order", 4),
+            ("dg_term_rank", 4),
+            ("dg_levels", 384 * 4),
+        ] {
+            self.ensure(name, bytes)?;
+        }
+        Ok(())
+    }
+    fn buffer(&self, name: &str, bytes: u64) -> Result<wgpu::Buffer> {
+        let limits = self.device.limits();
+        if bytes > limits.max_storage_buffer_binding_size as u64 || bytes > limits.max_buffer_size {
+            bail!("discovery {name} requires {bytes} bytes beyond the device limit");
+        }
+        Ok(storage(&self.device, name, bytes.max(4), false))
+    }
+    fn ensure(&mut self, name: &'static str, bytes: u64) -> Result<()> {
+        if self.scratch.get(name).is_none_or(|b| b.size() < bytes) {
+            let b = self.buffer(name, bytes)?;
+            self.scratch.insert(name, b);
+        }
+        Ok(())
+    }
+    fn encoder(&self) -> wgpu::CommandEncoder {
+        self.device.create_command_encoder(&Default::default())
+    }
+    fn record(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        store: &Store,
+        kernel: usize,
+        config: [u32; 16],
+        extra: &[(&str, &wgpu::Buffer)],
+        lanes: u32,
+        report: &mut DiscoveryReport,
+    ) -> Result<()> {
+        if self.config_cursor == self.configs.len() {
+            self.configs.push(self.buffer("dg_config", 64)?);
+        }
+        let config_buffer = &self.configs[self.config_cursor];
+        self.config_cursor += 1;
+        self.queue
+            .write_buffer(config_buffer, 0, &words_bytes(&config));
+        let pass = &self.passes[kernel];
+        let names = reflected_names(pass);
+        let mut entries = Vec::new();
+        for name in &names {
+            let n = name.as_str();
+            let buffer = if n == "dg_config" {
+                Some(config_buffer)
+            } else {
+                None
+            }
+            .or_else(|| self.scratch.get(n))
+            .or_else(|| extra.iter().find(|(key, _)| *key == n).map(|(_, b)| *b))
+            .or_else(|| store.buffers.get(n))
+            .ok_or_else(|| anyhow!("{} binds unknown {n}", pass.shader_id))?;
+            entries.push((n, buffer.as_entire_binding()));
+        }
+        let bind = passes_core::bind_group::create_bind_group_from_bindings(
+            &self.device,
+            Some(&pass.shader_id),
+            pass,
+            0,
+            &entries,
+        )?;
+        let mut compute = passes_core::begin_counted_compute_pass(
+            encoder,
+            &wgpu::ComputePassDescriptor {
+                label: Some("retained_discovery"),
+                timestamp_writes: None,
+            },
+        );
+        compute.set_pipeline(&pass.pipeline);
+        compute.set_bind_group(0, &bind, &[]);
+        let groups = lanes.div_ceil(256).max(1);
+        compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+        passes_core::record_compute_dispatch();
+        report.dispatches += 1;
+        Ok(())
+    }
+    fn read_status(&self, report: &mut DiscoveryReport) -> Result<Vec<u32>> {
+        self.read(&self.scratch["dg_status"], STATUS_WORDS, report)
+    }
+    fn read(
+        &self,
+        buffer: &wgpu::Buffer,
+        words: usize,
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let bytes = words as u64 * 4;
+        report.readbacks += 1;
+        let rb = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("discovery.status"),
+            size: bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.encoder();
+        encoder.copy_buffer_to_buffer(buffer, 0, &rb, 0, bytes);
+        self.queue.submit(Some(encoder.finish()));
+        let slice = rb.slice(..);
+        map_readback_blocking(&self.device, &slice, "discovery.status")?;
+        let data = slice
+            .get_mapped_range()
+            .chunks_exact(4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+            .collect();
+        rb.unmap();
+        Ok(data)
+    }
+}
+fn failure(s: &[u32]) -> Option<DiscoveryError> {
+    if s[10] != 0 {
+        Some(DiscoveryError {
+            code: s[10],
+            use_index: u32::MAX,
+            instance: u32::MAX,
+            detail: 0,
+        })
+    } else if s[FIRST_ERROR] != u32::MAX {
+        Some(DiscoveryError {
+            code: s[16],
+            use_index: s[17],
+            detail: s[18],
+            instance: s[19],
+        })
+    } else {
+        None
+    }
+}

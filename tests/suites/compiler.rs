@@ -202,3 +202,6 @@ fn every_test_file_is_in_a_suite() {
         "list these files in a suite under tests/suites/: {unlisted:?}"
     );
 }
+
+#[path = "../retained_discovery.rs"]
+mod retained_discovery;
