@@ -240,7 +240,7 @@ impl X86SymbolColumns {
 
     pub(crate) fn apply_to_file_object(&self, object: &mut GpuX86FileObject) -> Result<()> {
         let symbols = self.matching_symbols(&object.symbols, object.identity_bytes.len())?;
-        object.validate().map_err(anyhow::Error::msg)?;
+        debug_assert_eq!(object.validate(), Ok(()));
         super::object::validate_link_object_columns(
             object.layout.version,
             object.layout.entry_offset,

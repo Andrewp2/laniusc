@@ -343,16 +343,35 @@ impl GpuX86LinkInput {
                 Ok(std::borrow::Cow::Owned(bytes))
             },
         )?;
-        let mut input = Self::empty(
-            GpuLinkByteSource::file_segments("x86 link text bytes"),
-            GpuLinkByteSource::file_segments("x86 link rodata bytes"),
-        );
+        let in_files = objects.iter().all(|object| object.payload_path().is_some());
+        let mut input = if in_files {
+            Self::empty(
+                GpuLinkByteSource::file_segments("x86 link text bytes"),
+                GpuLinkByteSource::file_segments("x86 link rodata bytes"),
+            )
+        } else {
+            Self::empty(
+                GpuLinkByteSource::resident("x86 link text bytes", Vec::new()),
+                GpuLinkByteSource::resident("x86 link rodata bytes", Vec::new()),
+            )
+        };
         for (index, object) in objects.iter().enumerate() {
             let plan = &plans[index];
             input.append_object_columns(index, object.layout.entry_offset, plan,
                 object.layout.rodata_byte_len, &object.relocations, &object.symbols,
                 &object.identity_bytes)?;
-            let path = object.payload_path();
+            if !in_files {
+                let mut text = Vec::with_capacity(plan.copy.len());
+                object.copy_text_range_to(plan.copy.clone(), &mut text)?;
+                input.text.extend_resident(&text);
+                let mut rodata = Vec::with_capacity(object.layout.rodata_byte_len as usize);
+                object.copy_rodata_to(&mut rodata)?;
+                input.rodata.extend_resident(&rodata);
+                checked_u32_count("flat text byte", input.text_len())?;
+                checked_u32_count("flat rodata byte", input.rodata_len())?;
+                continue;
+            }
+            let path = object.payload_path().expect("file payload");
             input.text.push_file_segment(path.clone(), u64::from(plan.copy.start)..u64::from(plan.copy.end))?;
             let base = u64::from(object.layout.text_byte_len);
             input.rodata.push_file_segment(path, base..base + u64::from(object.layout.rodata_byte_len))?;

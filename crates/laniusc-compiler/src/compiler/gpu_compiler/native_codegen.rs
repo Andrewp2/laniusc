@@ -118,7 +118,7 @@ impl GpuCompiler<'_> {
         job: &SourcePackJob,
         source_files: &[ExplicitSourcePathFile],
         dependencies: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
-        spill: bool,
+        store: super::typecheck::NativeObjectStore,
     ) -> Result<typecheck::PendingOriginalUnit, CompileError> {
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_|
             source_pack_artifact_store_error("pending native source-unit index exceeds u32"))?;
@@ -131,7 +131,7 @@ impl GpuCompiler<'_> {
             target, sources.into(), job.library_id, unit_id,
             dependencies, Some(&paths), false,
         ).await?;
-        if spill { pending.spill_native() } else { Ok(pending) }
+        pending.spill_native(store)
     }
 }
 
