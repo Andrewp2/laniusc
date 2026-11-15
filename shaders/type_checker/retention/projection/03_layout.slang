@@ -104,7 +104,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             fields++;
         }
     }
-    if (fields != d1.w || total == 0u) return;
+    // Zero native words is a complete layout (empty records and records
+    // containing only zero-length fields). RT_INVALID alone means pending.
+    if (fields != d1.w) return;
     pj_layout[t] = uint4(total, 1u, fields, 0u);
     uint4 key = rt_decl_key[words.x];
     ob_ti_kind[t] = 1u;

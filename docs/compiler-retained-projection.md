@@ -555,3 +555,10 @@ passes after adding static calls and an impl proof whose child uses a caller
 assumption. Settings now passes discovery across its two original frontend
 jobs; projection still rejects an unsupported layout. This is not yet the
 default compiler path.
+
+Zero-word struct layouts are complete, including structs containing only
+zero-length arrays. The compound-field execution test covers empty records,
+zero-length generic fields, generic returns of empty values, and offsets of
+ordinary fields after empty ones. Folded named constants retain their exact
+value and declaration; projection checks both the value and type against the
+constant schema before native materialization.

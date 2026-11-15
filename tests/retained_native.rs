@@ -883,6 +883,16 @@ pub struct Inner<T> { items:[T;2] }
 pub struct Outer<T> { nested:Inner<[T;2]>, tail:T }
 pub struct View<T> { items:[T] }
 pub struct Counted<T,const N:usize> { items:[T;N], tail:T }
+pub struct Empty {}
+pub struct Zero<T> { items:[T;0] }
+pub struct WithZero<T> { empty:T, value:i32 }
+const ANSWER:i32=42;
+pub fn size<T>()->isize {
+    let view:[T]=slice_from_raw_parts(0,0); let stride:isize=slice_stride(view);
+    if (stride<0) { return 0-stride; }
+    return stride;
+}
+pub fn tail<T>(empty:T)->i32 { let v:WithZero<T> = WithZero{empty:empty,value:ANSWER}; return v.value; }
 pub fn wrap<T>(values:[[T;2];2], tail:T)->Outer<T> {
     return Outer { nested:Inner{items:values}, tail:tail };
 }
@@ -910,6 +920,13 @@ fn main()->i32 {
     if (chosen2.x != 7 || chosen2.y != 2.5) { return 4; }
     let c:Counted<i32,3> = Counted{items:[5,6,9],tail:1};
     if (counted<i32,3>(c) != 9) { return 5; }
+    let empty:Empty=Empty{};
+    let zero:Zero<Pair> = Zero{items:[]};
+    if (size<Empty>()!=0) { return 6; }
+    if (size<Zero<Pair>>()!=0) { return 8; }
+    if (size<WithZero<Empty>>()!=8) { return 9; }
+    let again:Empty=round<Empty>([[empty,empty],[empty,empty]],empty);
+    if (tail<Empty>(again)!=42 || tail<Zero<Pair>>(zero)!=42) { return 7; }
     return 42;
 }
 "#).unwrap();

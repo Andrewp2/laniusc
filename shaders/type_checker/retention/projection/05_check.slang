@@ -241,7 +241,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE &&
             (!rt_is_param_leaf(r5.y) || (r5.y & RT_CONST_BIT) == 0u || r6.y != RT_CONST_SYMBOLIC)) ||
         (r5.x == RT_BIND_VARIANT && !pattern && r3.z != RT_ROLE_CALLEE && r3.y == RT_NONE) ||
-        (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE))
+        (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE && r6.y != RT_CONST_CONCRETE))
     {
         fail(at, PJ_E_FORM, kind | (p.x << 8u));
         return;
@@ -283,6 +283,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         { fail(at,PJ_E_SIGNATURE,0xfffau); return; }
         if (pattern) t = pattern_type;
         if (!supported_type(at, t)) return;
+        if (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE)
+        {
+            // A folded constant name still names its declaration. Its
+            // value and type must match that declaration's retained schema;
+            // no declaration token is needed by native materialization.
+            uint entry = pj_dir_entry(r5.y);
+            if (entry == RT_INVALID || rt_dir[entry*RT_DIR_WORDS].y != 9u)
+            { fail(at,PJ_E_DECL,r5.y); return; }
+            uint4 d1 = rt_dir[entry*RT_DIR_WORDS+1u];
+            uint4 d2 = rt_dir[entry*RT_DIR_WORDS+2u];
+            if (d2.z != 1u || d1.z == RT_INVALID || rt_sigs[d1.z] != t ||
+                any(rt_schema[d2.y] != uint4(r5.y,RT_SCHEMA_CONST | 0x100u,r6.zw)))
+            { fail(at,PJ_E_SIGNATURE,r5.y); return; }
+        }
         uint2 ref = pj_ref_of(t);
         pj_g_facts[g] = uint4(ref, pj_words(t), t < RT_FIRST_TERM ? t : 0u);
     }
