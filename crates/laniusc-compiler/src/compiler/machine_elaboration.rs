@@ -198,6 +198,27 @@ pub(crate) fn elaborate_source_loads(
 /// `elaborate_sources`. With a `batch_limit`, `None` instead of a pack the
 /// rewrites cannot read, or of more than `batch_limit` bytes to read.
 fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Result<Option<Vec<String>>, CompileError> {
+    use crate::gpu::passes_core::{host_timing_enabled, readback_round_trips, recorded_compute_dispatch_count};
+    let timing = host_timing_enabled().then(|| {
+        (std::time::Instant::now(), readback_round_trips(), recorded_compute_dispatch_count())
+    });
+    let file_count = sources.len();
+    let result = elaborate_untimed(sources, batch_limit);
+    if let (Some((started, (trips, wait_ns), dispatches)), Ok(Some(texts))) = (timing, &result) {
+        let (trips_now, wait_now) = readback_round_trips();
+        let rewritten = texts.iter().filter(|text| text.contains(RESERVED_PREFIX)).count();
+        eprintln!(
+            "[gpu_compile_host_timer] machine_elaboration: files={file_count} rewritten={rewritten} wall_ms={:.3} readbacks={} readback_wait_ms={:.3} dispatches={}",
+            started.elapsed().as_secs_f64() * 1000.0,
+            trips_now - trips,
+            (wait_now - wait_ns) as f64 / 1e6,
+            recorded_compute_dispatch_count() - dispatches,
+        );
+    }
+    result
+}
+
+fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Result<Option<Vec<String>>, CompileError> {
     let mut files = Vec::with_capacity(sources.len());
     for (path, source) in sources {
         let hash = blake3::hash(source.as_bytes());
