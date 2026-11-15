@@ -100,11 +100,11 @@ public static const uint RC_S_FILL_FAULTS = 3u;
 public static const uint RC_S_UNIT_SLOTS_FULL = 4u; // the host grows rc_unit_slot and runs again
 public static const uint RC_S_UNSUPPORTED_CALLEES = 5u;
 public static const uint RC_S_PLAIN_CALLS = 6u;
-public static const uint RC_S_TOTALS = 8u;
+public static const uint RC_S_TOTALS = 8u;         // + counter
 public static const uint RC_S_CLOSURE_SHORT = 24u; // frontier not empty after the last wave: the host adds waves
 public static const uint RC_S_CLOSURE_TERMS = 25u; // stored terms in the closure
-public static const uint RC_S_CLOSURE_WAVES = 26u; // expansion waves that had work         // + counter
-public static const uint RC_S_WORDS = 24u;
+public static const uint RC_S_CLOSURE_WAVES = 26u; // expansion waves that had work
+public static const uint RC_S_WORDS = 28u;
 
 // Failure codes (docs/compiler-retained-trait-catalog.md, "Failures").
 public static const uint RC_E_NOT_READY = 1u;
