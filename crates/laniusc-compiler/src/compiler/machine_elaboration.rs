@@ -16,7 +16,7 @@
 //! rewritten byte back to the source, so diagnostics point at the source.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
@@ -84,13 +84,6 @@ impl Elaborated {
 fn registry() -> &'static Mutex<HashMap<blake3::Hash, Arc<Elaborated>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<blake3::Hash, Arc<Elaborated>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Texts the rewrites read and left as they were. A pack that reaches two
-/// entry points is read once.
-fn unchanged() -> &'static Mutex<HashSet<blake3::Hash>> {
-    static UNCHANGED: OnceLock<Mutex<HashSet<blake3::Hash>>> = OnceLock::new();
-    UNCHANGED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// Frees the buffers the rewrites keep between runs, for a resident compiler
@@ -223,10 +216,10 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
 fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Result<Option<Vec<String>>, CompileError> {
     let mut files = Vec::with_capacity(sources.len());
     for (path, source) in sources {
-        let hash = blake3::hash(source.as_bytes());
-        let known = unchanged().lock().is_ok_and(|unchanged| unchanged.contains(&hash))
-            || (source.contains(RESERVED_PREFIX)
-                && registry().lock().is_ok_and(|registry| registry.contains_key(&hash)));
+        // Only a text that names a reserved identifier can be the output of
+        // an elaboration.
+        let known = source.contains(RESERVED_PREFIX)
+            && registry().lock().is_ok_and(|registry| registry.contains_key(&blake3::hash(source.as_bytes())));
         files.push(Pending { path, source, known, stages: None, flags: 0 });
     }
     if let Some(limit) = batch_limit
@@ -234,11 +227,6 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
     {
         return Ok(None);
     }
-
-    // False when a file that does not lex or parse stopped the rewrites
-    // before they read every file. The frontend then reports the error, and
-    // no file is recorded as unchanged: a later build must read them again.
-    let mut read = true;
 
     // Closures, for the files that can hold one. The parser does not read a
     // closure, so they go before the machines.
@@ -255,7 +243,8 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         })?;
         match outcome {
             Some(closures::Outcome::Unlexed) if batch_limit.is_some() => return Ok(None),
-            Some(closures::Outcome::Unlexed) => read = false,
+            // The frontend reports a file that does not lex.
+            Some(closures::Outcome::Unlexed) => {}
             None => {}
             Some(closures::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
@@ -294,10 +283,7 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         })?;
         let (outputs, flag) = match outcome {
             Some(machines::Outcome::Unparsed) if batch_limit.is_some() => return Ok(None),
-            Some(machines::Outcome::Unparsed) => {
-                read = false;
-                break;
-            }
+            Some(machines::Outcome::Unparsed) => break,
             None => break,
             Some(machines::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
@@ -329,9 +315,6 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
     for file in files {
         texts.push(match file.stages {
             None => {
-                if read && !file.known && let Ok(mut unchanged) = unchanged().lock() {
-                    unchanged.insert(blake3::hash(file.source.as_bytes()));
-                }
                 file.source
             }
             Some(elaborated) => {
