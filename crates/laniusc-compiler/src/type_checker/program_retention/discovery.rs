@@ -122,6 +122,13 @@ pub struct RetainedDiscovery {
     admission: Option<TraitAdmission>,
     /// Taken while the bound routes record into the method routes' submit.
     method_routes: Option<super::method_routes::MethodRoutes>,
+    /// The projection inputs of the last attempt. Every attempt clears
+    /// them, so a build reuses the buffers, and the bind groups over them,
+    /// while the capacities are unchanged.
+    projection_inputs: Option<ProjectionInputs>,
+    /// The root routes and readiness of the last attempt, reused at the same
+    /// size for the same reason.
+    root_buffers: Option<(wgpu::Buffer, wgpu::Buffer)>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -145,6 +152,8 @@ impl RetainedDiscovery {
             hash_mask: u32::MAX,
             admission: None,
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
+            projection_inputs: None,
+            root_buffers: None,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -210,9 +219,31 @@ impl RetainedDiscovery {
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
             self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
-            let inputs = ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges);
-            let root_routes = self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?;
-            let root_readiness = self.buffer("dg_root_readiness", 16)?;
+            let inputs = match &self.projection_inputs {
+                Some(inputs)
+                    if inputs.instance_capacity() == self.capacity.instances.max(1)
+                        && inputs.route_capacity() == self.capacity.edges.max(1) =>
+                {
+                    inputs.clone()
+                }
+                _ => {
+                    let inputs = ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges);
+                    self.projection_inputs = Some(inputs.clone());
+                    inputs
+                }
+            };
+            let route_bytes = (uses.max(1) as u64 * 16).max(4);
+            let (root_routes, root_readiness) = match &self.root_buffers {
+                Some((routes, readiness)) if routes.size() == route_bytes => (routes.clone(), readiness.clone()),
+                _ => {
+                    let buffers = (
+                        self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
+                        self.buffer("dg_root_readiness", 16)?,
+                    );
+                    self.root_buffers = Some(buffers.clone());
+                    buffers
+                }
+            };
             let requests = SubstitutionRequests::new_with_device(&self.device, self.capacity.requests);
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([

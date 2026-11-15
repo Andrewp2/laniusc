@@ -235,6 +235,7 @@ pub const PRODUCER_KERNEL: &str = "tests/retention_projection_producer";
 /// The producer's GPU buffers: `pj_instances` (two uint4 per rank),
 /// `pj_routes` (one uint4 per route) and `pj_readiness` (one uint4). The
 /// host never writes or reads a row of them.
+#[derive(Clone)]
 pub struct ProjectionInputs {
     instances: wgpu::Buffer,
     routes: wgpu::Buffer,
@@ -849,6 +850,8 @@ pub struct RetainedProjection {
     /// One config buffer per string-scan step (`04c_string_scan`), kept
     /// between runs; each run rewrites the steps it records.
     string_scan_configs: Vec<wgpu::Buffer>,
+    /// The root certification result (`10_certify`), rewritten every run.
+    cert: wgpu::Buffer,
 }
 
 fn grown(current: u32, need: u32) -> u32 {
@@ -894,6 +897,7 @@ impl RetainedProjection {
             no_results: storage(&device, "pj_no_results", 64, false),
             no_counts: storage(&device, "pj_no_counts", 256, false),
             string_scan_configs: Vec::new(),
+            cert: storage(&device, "nc_cert", 16, false),
             device,
             queue: gpu.queue.clone(),
             passes,
@@ -1106,7 +1110,7 @@ impl RetainedProjection {
         counts: &wgpu::Buffer,
         report: &mut ProjectionReport,
     ) -> Result<Option<ProjectionError>> {
-        let cert = storage(&self.device, "nc_cert", 16, false);
+        let cert = &self.cert;
         self.queue
             .write_buffer(&cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
         let extra = [
@@ -1116,13 +1120,13 @@ impl RetainedProjection {
             ("nc_use_args", &roots.calls.args),
             ("rr_routes", roots.routes),
             ("rr_readiness", roots.readiness),
-            ("nc_cert", &cert),
+            ("nc_cert", cert),
         ];
         let mut r = self.recorder();
         r.dispatch(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())?;
         r.dispatch_groups(K_CERTIFY_FINISH, guard, inputs, &extra, 1)?;
         report.dispatches += r.finish();
-        let cert = self.read(&cert, 3, report)?;
+        let cert = self.read(cert, 3, report)?;
         trace(&format!("certify: {cert:?}"));
         if cert[0] == 0 && cert[2] == 0 {
             return Ok(None);

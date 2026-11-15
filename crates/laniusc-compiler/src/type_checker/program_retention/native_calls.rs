@@ -29,6 +29,18 @@ pub struct NativeCallTables {
     uses: u64,
     arguments: u32,
     generation: u32,
+    /// The provisional kernel's own buffers, grown to cover each job and
+    /// kept, so a warm build creates no buffer or bind group for them.
+    io: Option<ProvisionalBuffers>,
+}
+
+/// Inputs and results of `00_provisional`, rewritten by every call.
+struct ProvisionalBuffers {
+    config: wgpu::Buffer,
+    status: wgpu::Buffer,
+    hirs: wgpu::Buffer,
+    rows: wgpu::Buffer,
+    identity: wgpu::Buffer,
 }
 
 impl NativeCallTables {
@@ -45,6 +57,7 @@ impl NativeCallTables {
             uses,
             arguments: 0,
             generation: 0,
+            io: None,
         }
     }
 
@@ -120,16 +133,33 @@ impl ProgramRetention {
         let mut encoder = device.create_command_encoder(&Default::default());
         tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
         self.queue.submit(Some(encoder.finish()));
-        let config = storage(device, "nc_config", 16, false);
-        let upload = |label: &str, bytes: &[u8]| {
-            let buffer = storage(device, label, (bytes.len() as u64).max(16).next_multiple_of(16), false);
-            self.queue.write_buffer(&buffer, 0, bytes);
-            buffer
+        let hir_bytes = words_bytes(call_hirs);
+        let need = |bytes: usize| (bytes as u64).max(16).next_power_of_two();
+        let fits = |io: &ProvisionalBuffers| {
+            io.hirs.size() >= need(hir_bytes.len())
+                && io.rows.size() >= need(columns.symbol_rows.len())
+                && io.identity.size() >= need(columns.identity_bytes.len())
         };
-        let hirs = upload("nc_call_hirs", &words_bytes(call_hirs));
-        let rows = upload("nc_symbols", &columns.symbol_rows);
-        let identity = upload("nc_identity", &columns.identity_bytes);
-        let status = storage(device, "nc_status", 16, false);
+        if !tables.io.as_ref().is_some_and(fits) {
+            let grow = |label: &str, old: Option<&wgpu::Buffer>, bytes: usize| {
+                let bytes = need(bytes).max(old.map_or(0, wgpu::Buffer::size));
+                storage(device, label, bytes, false)
+            };
+            let old = tables.io.as_ref();
+            tables.io = Some(ProvisionalBuffers {
+                config: storage(device, "nc_config", 16, false),
+                status: storage(device, "nc_status", 16, false),
+                hirs: grow("nc_call_hirs", old.map(|io| &io.hirs), hir_bytes.len()),
+                rows: grow("nc_symbols", old.map(|io| &io.rows), columns.symbol_rows.len()),
+                identity: grow("nc_identity", old.map(|io| &io.identity), columns.identity_bytes.len()),
+            });
+        }
+        let io = tables.io.as_ref().expect("provisional buffers were just ensured");
+        let (config, status, hirs, rows, identity) =
+            (io.config.clone(), io.status.clone(), io.hirs.clone(), io.rows.clone(), io.identity.clone());
+        self.queue.write_buffer(&hirs, 0, &hir_bytes);
+        self.queue.write_buffer(&rows, 0, &columns.symbol_rows);
+        self.queue.write_buffer(&identity, 0, &columns.identity_bytes);
         let names = reflected_names(pass);
         loop {
         self.queue.write_buffer(&config, 0, &words_bytes(&[
