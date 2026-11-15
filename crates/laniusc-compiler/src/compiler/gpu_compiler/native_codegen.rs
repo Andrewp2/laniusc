@@ -63,21 +63,22 @@ impl GpuCompiler<'_> {
         plan: &SourcePackBuildPlan,
     ) -> PreparedUnitSources<'_> {
         let guard = PreparedUnitSources { compiler: self };
+        let frontend_jobs = || plan.schedule.jobs.iter()
+            .filter(|job| job.phase == crate::codegen::unit::SourcePackJobPhase::LibraryFrontend);
+        // One unit reads and elaborates its own files when it compiles.
+        // Reading them here as well would read every file twice.
+        if frontend_jobs().count() < 2 {
+            return guard;
+        }
         let mut units = Vec::new();
         let mut loads = Vec::new();
-        for job in &plan.schedule.jobs {
-            if job.phase != crate::codegen::unit::SourcePackJobPhase::LibraryFrontend {
-                continue;
-            }
+        for job in frontend_jobs() {
             let files = source_pack.source_files_for_job(job);
             let Ok(texts) = read_explicit_source_path_texts(UNIT_SOURCES_LABEL, files) else {
                 return guard;
             };
             units.push((job.library_id, job.phase_unit_index, files.to_vec()));
             loads.push(texts);
-        }
-        if loads.len() < 2 {
-            return guard;
         }
         // No more than the largest unit, which the frontend reads anyway.
         let max_bytes = loads
