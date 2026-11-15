@@ -788,24 +788,11 @@ fn run(
         }
         Ok(())
     })?;
-    let readback = gpu.readback_admission(&scratch.state, &mut producer)?;
-    report.catalog_status = Some(readback.0);
-    report.recipe_status = Some(readback.1);
-    report.fill_faults = readback.2[S_FILL_FAULTS];
-    if report.fill_faults != 0 {
-        report.stage = RetainedTraitStage::Fill;
-    } else if readback.0[0] != 1 || readback.1[0] != 1 {
-        report.stage = RetainedTraitStage::Admission;
-    }
-    if report.stage != RetainedTraitStage::Producer {
-        if options.read_rows {
-            report.tables = gpu.read_tables(None)?;
-        }
-        report.producer_readback_bytes = producer.readback_bytes;
-        return Ok((report, None));
-    }
-
-    // Batch rows (bound goals of the retained uses), then the solver.
+    // Batch rows (bound goals of the retained uses), then the solver. The
+    // GPU admits the catalog while the host records them: the admission
+    // receipts and the producer state after the fill come with the solve's
+    // first readback, which leaves their verdict to this function.
+    *gpu.admission_state.lock().unwrap() = Some((scratch.state.clone(), S_WORDS));
     let mut packet = gpu.new_packet()?;
     let mut batch_counts = [0; TABLE_COUNT];
     for table in 11..=16 {
@@ -818,7 +805,7 @@ fn run(
     }
     scratch.config.write(&queue, 0, &words_bytes(&config));
     let input_words = submission.plan.input_word_count;
-    let (readback, output_layout) = gpu.check_retained(&mut packet, &submission, options.read_rows, |encoder, input| {
+    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, false, |encoder, input| {
         if options.poison_arenas && input_words > BATCH_FIXED_WORDS {
             let range = (BATCH_FIXED_WORDS, input_words - BATCH_FIXED_WORDS, RETAINED_POISON);
             producer.fill_words(encoder, &workspace, &scratch, store, &input.buffer, &[range])?;
@@ -836,7 +823,35 @@ fn run(
             producer.record(encoder, FILL[region], regions[region].1, &scratch, store, bound)?;
         }
         Ok(())
-    })?;
+    });
+    *gpu.admission_state.lock().unwrap() = None;
+    // A solve that failed before its readback read no receipts: they
+    // decide whether the catalog or the solve failed.
+    let admission = match &solved {
+        Ok((Some(readback), _)) => readback.admission.clone().map(|(recipe, state)| (readback.catalog_status, recipe, state)),
+        _ => None,
+    };
+    let (catalog_status, recipe_status, state) = match admission {
+        Some(admission) => admission,
+        None => gpu.readback_admission(&scratch.state, &mut producer)?,
+    };
+    report.catalog_status = Some(catalog_status);
+    report.recipe_status = Some(recipe_status);
+    report.fill_faults = state[S_FILL_FAULTS];
+    if report.fill_faults != 0 {
+        report.stage = RetainedTraitStage::Fill;
+    } else if catalog_status[0] != 1 || recipe_status[0] != 1 {
+        report.stage = RetainedTraitStage::Admission;
+    }
+    if report.stage != RetainedTraitStage::Producer {
+        if options.read_rows {
+            report.tables = gpu.read_tables(None)?;
+        }
+        report.producer_readback_bytes = producer.readback_bytes;
+        return Ok((report, None));
+    }
+    let (readback, output_layout) = solved?;
+    let readback = readback.ok_or_else(|| anyhow!("retained catalog solve deferred its readback"))?;
     report.stage = RetainedTraitStage::Solved;
     report.batch_status = Some(readback.batch_status);
     report.contexts = readback.contexts;
@@ -1194,8 +1209,9 @@ impl GpuTraitSolver {
         packet: &mut GpuPacket,
         submission: &Submission,
         semantic_rows: bool,
+        defer: bool,
         fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
-    ) -> Result<(WaveReadback, OutputLayout)> {
+    ) -> Result<(Option<WaveReadback>, OutputLayout)> {
         ensure!(
             Arc::ptr_eq(&packet.gpu_owner, &self.gpu_owner) && Arc::ptr_eq(&packet.packet.catalog, &self.catalog),
             "retained packet belongs to another solver"
@@ -1229,7 +1245,11 @@ impl GpuTraitSolver {
         let mut templates = std::mem::take(&mut self.wave_templates);
         // Production publication reads no semantic rows; diagnostics opt in.
         self.semantic_rows = semantic_rows;
-        let solved = self.solve(&mut templates, packet, &layout, &plan, submission);
+        let solved = if defer {
+            self.solve_deferred(&mut templates, packet, &layout, &plan, submission).map(|()| None)
+        } else {
+            self.solve(&mut templates, packet, &layout, &plan, submission).map(Some)
+        };
         self.semantic_rows = true;
         self.wave_templates = templates;
         let readback = solved?;

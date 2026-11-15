@@ -43,8 +43,13 @@ replays sources, and this path does not remove that replay. The list under
    The catalog arena is cleared, or poisoned in tests. The fill kernels
    write every row at its scanned rank. The solver's catalog admission,
    coherence and native-recipe kernels run in the same submit.
-6. One readback returns the catalog receipt, the recipe receipt and the
-   fill-fault count. A rejected catalog stops at stage `Admission`.
+6. No readback follows the admission submit. The solver's first wave
+   readback returns the catalog receipt, the recipe receipt and the
+   producer state after the fill (`admission_state`), and the catalog
+   judges them before it accepts the solve: a fill fault stops the check at
+   stage `Fill` and a rejected catalog at stage `Admission`. A solve that
+   fails before that readback leaves them to one explicit admission
+   readback.
 7. The host places batch tables 11-16 (`prepare_retained_submission`) and
    uploads only the directory header. The fill kernels of the directory and
    use regions write contexts, assumptions, calls, environments, bindings
@@ -335,7 +340,7 @@ node terms, with 8 edges. Three of the 16 waves had work.
 | Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 1 + 2·waves closure dispatches (33 by default), 7 catalog fills, 2 batch fills and up to 5 word fills |
 | Publication dispatches | 2, in one submit with no readback |
 | Dispatches, `retained_trait_publish` | 353 |
-| Host round trips, `retained_trait_publish` | 4: store counters, producer state, admission receipts, one solver wave readback |
+| Host round trips, `retained_trait_publish` | 3: store counters, producer state, one solver wave readback with the admission receipts |
 | Producer readback bytes | 672 (store counters 384, producer state 112, two receipts and state 176) |
 | Closure retry (one-wave start) | 3 attempts, 2 extra round trips |
 | Host readback wait | about 4.5 ms per check |

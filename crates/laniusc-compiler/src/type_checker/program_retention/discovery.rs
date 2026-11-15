@@ -122,6 +122,10 @@ pub struct RetainedDiscovery {
     admission: Option<TraitAdmission>,
     /// Taken while the bound routes record into the method routes' submit.
     method_routes: Option<super::method_routes::MethodRoutes>,
+    /// Set for the rest of this discovery's life after a closed solve did
+    /// not finish in its first submit: later closed waves read the solver's
+    /// progress before their resolution, as the solve requires.
+    eager_closed: bool,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -145,6 +149,7 @@ impl RetainedDiscovery {
             hash_mask: u32::MAX,
             admission: None,
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
+            eager_closed: false,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -298,6 +303,7 @@ impl RetainedDiscovery {
                         hi,
                         Some(&status[STATUS_WORDS..]),
                         true,
+                        !self.eager_closed,
                     )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {
@@ -393,8 +399,13 @@ impl RetainedDiscovery {
                     }
                     None => {
                         let words = self.read_status_counts(store, receipt_read.as_slice(), &mut report)?;
-                        if let Some(error) = closed_receipt_failure(closed.as_mut(), &words, lo)? {
-                            return Ok(DiscoveryOutcome::Rejected(error));
+                        match closed_receipt_failure(closed.as_mut(), &words, lo)? {
+                            Closed::Rejected(error) => return Ok(DiscoveryOutcome::Rejected(error)),
+                            Closed::Unfinished => {
+                                self.eager_closed = true;
+                                continue 'attempt;
+                            }
+                            Closed::Accepted => {}
                         }
                         if self.grow(&words)? {
                             continue 'attempt;
@@ -402,8 +413,16 @@ impl RetainedDiscovery {
                         bail!("discovery request capacity exceeded without a growth request");
                     }
                 };
-                if let Some(error) = closed_receipt_failure(closed.as_mut(), &status, lo)? {
-                    return Ok(DiscoveryOutcome::Rejected(error));
+                // A deferred closed solve that did not finish leaves this
+                // wave's routes incomplete: the attempt runs again with
+                // eager closed solves.
+                match closed_receipt_failure(closed.as_mut(), &status, lo)? {
+                    Closed::Rejected(error) => return Ok(DiscoveryOutcome::Rejected(error)),
+                    Closed::Unfinished => {
+                        self.eager_closed = true;
+                        continue 'attempt;
+                    }
+                    Closed::Accepted => {}
                 }
                 if self.grow(&status)? {
                     continue 'attempt;
@@ -1070,19 +1089,26 @@ enum Dispatch<'a> {
 /// Accepts a deferred closed publication receipt, which follows the status
 /// words and store counters in `words`. A publication that did not finish
 /// rejects the wave, before any growth or discovery failure is reported.
+enum Closed {
+    Accepted,
+    Rejected(DiscoveryError),
+    /// The wave's deferred closed solve did not finish in its first submit.
+    Unfinished,
+}
 fn closed_receipt_failure(
     closed: Option<&mut ClosedTraitPublication>,
     words: &[u32],
     first: u32,
-) -> Result<Option<DiscoveryError>> {
-    let Some(closed) = closed else { return Ok(None) };
-    let status = closed.accept_receipt(&words[STATUS_WORDS + counts::WORDS..])?;
-    Ok((status != [1, 0, u32::MAX]).then(|| DiscoveryError {
-        code: 8,
-        use_index: u32::MAX,
-        instance: first,
-        detail: status[2],
-    }))
+) -> Result<Closed> {
+    let Some(closed) = closed else { return Ok(Closed::Accepted) };
+    let Some(status) = closed.accept_receipt(&words[STATUS_WORDS + counts::WORDS..])? else {
+        return Ok(Closed::Unfinished);
+    };
+    Ok(if status != [1, 0, u32::MAX] {
+        Closed::Rejected(DiscoveryError { code: 8, use_index: u32::MAX, instance: first, detail: status[2] })
+    } else {
+        Closed::Accepted
+    })
 }
 fn failure(s: &[u32]) -> Option<DiscoveryError> {
     if s[10] != 0 {

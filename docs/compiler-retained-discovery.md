@@ -42,7 +42,14 @@ publication's receipt (its route header) is copied on the GPU into
 `dg_receipt` in the wave's scan submit and comes back with the
 resolution readback; the host checks it before any growth or failure of
 that wave, and before the method routes size their tables from its proof
-node count. The bound-route pass `06_bound_routes` and the publish pass
+node count. The closed solve itself is deferred: the solver records its
+first wave submit (the batch admission, five rounds and the finish point)
+and returns without its progress readback. The receipt copy also carries
+the solver's wave state and batch receipt, so the resolution readback
+shows whether the solve finished in that submit. When it did not, the
+wave's routes are incomplete: the attempt runs again, and this discovery
+reads every later closed solve's progress before its resolution
+(`eager_closed`). Settings: 73 to 70 readbacks per build. The bound-route pass `06_bound_routes` and the publish pass
 record into each method-route batch. They do nothing unless `mr_state`
 word 0 is 2 and `MR_PENDING` is clear, so the routes' state, the
 discovery status and the store counters come back in one readback. Term

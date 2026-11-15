@@ -5,6 +5,10 @@ use super::*;
 /// BFS rounds of the first producer batch, and the bound over all batches.
 const FIRST_ROUNDS: u32 = 8;
 const ROUND_BOUND: u32 = 65;
+/// Receipt words after the route header: a deferred solve's wave state and
+/// its batch receipt row.
+const SOLVER_WORDS: usize = wave::READ_WORDS as usize + 8;
+use super::super::kernels::wave;
 
 const CLOSED_KEYS: [&str; 12] = [
     "type_checker/trait_solver/retained/closed/00_init",
@@ -40,6 +44,10 @@ pub struct ClosedTraitPublication {
     status: [u32; 3],
     /// False until the receipt words have been read.
     received: bool,
+    /// A deferred solve's wave state and batch receipt location: the
+    /// receipt copy carries them, and `accept_receipt` checks the solve
+    /// finished in its first submit.
+    solver: Option<(LaniusBuffer<u32>, wgpu::Buffer, u64)>,
 }
 impl ClosedTraitPublication {
     pub fn proof_node_count(&self) -> u32 { self.proof_nodes }
@@ -48,8 +56,9 @@ impl ClosedTraitPublication {
     /// read: node rows are 8 words of the proof arena.
     pub fn proof_node_bound(&self) -> u32 { self.packet.proof.logical_words / 8 }
 
-    /// Words of the publication receipt, the header of the route arena.
-    pub const RECEIPT_WORDS: usize = RP_HEADER_WORDS as usize;
+    /// Words of the publication receipt: the header of the route arena,
+    /// then a deferred solve's wave state and batch receipt.
+    pub const RECEIPT_WORDS: usize = RP_HEADER_WORDS as usize + SOLVER_WORDS;
 
     /// Records a copy of the receipt into `target` at byte `offset`, for a
     /// caller that reads it with a later readback.
@@ -61,17 +70,38 @@ impl ClosedTraitPublication {
             offset,
             u64::from(RP_HEADER_WORDS) * 4,
         );
+        if let Some((state, batch, at)) = &self.solver {
+            let after = offset + u64::from(RP_HEADER_WORDS) * 4;
+            encoder.copy_buffer_to_buffer(
+                &state.buffer,
+                state.byte_offset,
+                target,
+                after,
+                u64::from(wave::READ_WORDS) * 4,
+            );
+            encoder.copy_buffer_to_buffer(batch, *at, target, after + u64::from(wave::READ_WORDS) * 4, 32);
+        }
     }
 
     /// Accepts the receipt words of a publication made with a deferred
     /// receipt. They are read after the publication finished on the GPU.
-    /// Returns the publication's status words.
-    pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<[u32; 3]> {
+    /// Returns the publication's status words, or None when its deferred
+    /// solve did not finish in its first submit: the publication is then
+    /// incomplete and the caller solves again eagerly.
+    pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<Option<[u32; 3]>> {
         ensure!(receipt.len() >= RP_HEADER_WORDS as usize, "closed publication receipt is short");
+        if self.solver.is_some() {
+            ensure!(receipt.len() >= Self::RECEIPT_WORDS, "closed publication receipt has no solver state");
+            let state = &receipt[RP_HEADER_WORDS as usize..][..wave::READ_WORDS as usize];
+            super::super::wave_fault(state)?;
+            if state[wave::STOP] != wave::DONE {
+                return Ok(None);
+            }
+        }
         self.proof_nodes = receipt[24];
         self.status = [receipt[RP_H_STATUS], receipt[RP_H_STATUS + 1], receipt[RP_H_STATUS + 2]];
         self.received = true;
-        Ok(self.status)
+        Ok(Some(self.status))
     }
 
     /// The status words `(RP_H_STATUS..+3)`. Publication writes them last;
@@ -216,7 +246,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
-        self.solve_instances_with_counts(store, instances, first, end, None, false)
+        self.solve_instances_with_counts(store, instances, first, end, None, false, false)
     }
 
     /// `solve_instances` with the store's current `rt_counts` words, when
@@ -233,7 +263,9 @@ impl RetainedTraitPublication {
         end: u32,
         store_counts: Option<&[u32]>,
         defer_receipt: bool,
+        defer_solve: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
+        ensure!(defer_receipt || !defer_solve, "a deferred closed solve needs a deferred receipt");
         self.view(store)?;
         ensure!(
             store_counts.is_none_or(|c| c.len() >= counts::WORDS),
@@ -244,7 +276,7 @@ impl RetainedTraitPublication {
             "closed instance range exceeds buffer"
         );
         store.with_store_buffers(|buffers, generation| {
-            self.solve_closed(buffers, generation, instances, first, end, store_counts, defer_receipt)
+            self.solve_closed(buffers, generation, instances, first, end, store_counts, defer_receipt, defer_solve)
         })
     }
 
@@ -276,6 +308,7 @@ impl RetainedTraitPublication {
         end: u32,
         store_counts: Option<&[u32]>,
         defer_receipt: bool,
+        defer_solve: bool,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         let workspace = self.gpu.workspace.clone();
         let device = self.gpu.device.clone();
@@ -518,7 +551,7 @@ impl RetainedTraitPublication {
         let catalog_buffer = self.gpu.storage.buffer.clone();
         let (readback, output_layout) =
             self.gpu
-                .check_retained(&mut packet, &submission, false, |encoder, input| {
+                .check_retained(&mut packet, &submission, false, defer_solve, |encoder, input| {
                     routes
                         .buffer
                         .clear(encoder, 0, Some(u64::from(route_words) * 4));
@@ -538,7 +571,21 @@ impl RetainedTraitPublication {
                     ];
                     producer.record(encoder, 9, lanes, store, &ext, 0)
                 })?;
-        report.batch_status = Some(readback.batch_status);
+        report.batch_status = readback.map(|r| r.batch_status);
+        let solver = if defer_solve {
+            let state = self
+                .gpu
+                .last_wave_state
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or_else(|| anyhow!("deferred closed solve has no wave state"))?;
+            let output = &packet.output.buffer;
+            let at = output.byte_offset + u64::from(output_layout.slices[10].offset) * 4;
+            Some((state, output.buffer.clone(), at))
+        } else {
+            None
+        };
         let identity = RetainedTraitIdentity {
             epoch: catalog.epoch,
             arena_id: submission.arena_id,
@@ -620,6 +667,7 @@ impl RetainedTraitPublication {
             proof_nodes: 0,
             status: [0; 3],
             received: false,
+            solver,
         };
         // Later submissions on this queue run after the publication, so a
         // caller may read the receipt with its own next readback.
