@@ -134,6 +134,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         decode(m, rt_word_class(classes, 2u), p.z), decode(m, rt_word_class(classes, 3u), p.w));
     ob_fn_return_type[row] = pj_abs_row(m, r4.x);
     ob_const_value[row] = pj_abs_row(m, r4.y);
+    ob_array_element_start[row] = pj_abs_side(m, PJ_SIDE_ARRAY_ELEMENTS, r4.z);
+    ob_array_element_count[row] = r4.w;
 
     // Tree relations.
     ob_expr_parent[row] = pj_batch_row(b, aux.x);
@@ -175,6 +177,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ob_expr_ref_tag[row] = facts.x;
         ob_expr_ref_payload[row] = facts.y;
         ob_value_type[row] = facts.x == PJ_REF_SCALAR ? facts.y : 0u;
+        if (facts.x == PJ_REF_INSTANCE)
+        {
+            uint type_kind = rt_term_kind(facts.y);
+            if (type_kind == RT_KIND_REF) ob_value_type[row] = SCALAR_PTR;
+            else if (type_kind == RT_KIND_ARRAY)
+            {
+                uint element = rt_term_arg(facts.y, 0u);
+                if (element < RT_FIRST_TERM) ob_value_type[row] = 128u + element;
+            }
+            uint container = pj_referent(facts.y);
+            if (rt_is_stored_term(container))
+            {
+                uint container_kind = rt_term_kind(container);
+                if (container_kind == RT_KIND_ARRAY) ob_array_length[row] = pj_array_count(container);
+                else if (container_kind == RT_KIND_SLICE) ob_array_length[row] = 0xfffffffeu;
+            }
+        }
         ob_expr_scalar_type[row] = (facts.w << SCALAR_TYPE_SHIFT) | PJ_SCALAR_LINK_NONE;
         ob_aggregate_word_count[row] = facts.x == PJ_REF_INSTANCE ? facts.z : 0u;
     }
@@ -185,6 +204,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint4 i1 = pj_inf(rank, 1u);
         ob_param_ranges[row] = i1.z != 0u ? uint2(pj_abs_side(m, PJ_SIDE_PARAMS, 0u), i1.z) : uint2(RT_INVALID, 0u);
         ob_function_return_type[row] = result < RT_FIRST_TERM ? result : 0u;
+        if (rt_is_stored_term(result) && rt_term_kind(result) == RT_KIND_ARRAY)
+            ob_function_result_word_count[row] = pj_words(result);
         ob_function_entrypoint[row] = (pj_inf(rank, 4u).w & PJ_FLAG_ENTRY) != 0u ? 1u : 0u;
         ob_function_host_service[row] = RT_INVALID;
         ob_public_decl_index[row] = rank;

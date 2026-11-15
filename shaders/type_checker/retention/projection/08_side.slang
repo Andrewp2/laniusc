@@ -2,7 +2,8 @@
 // for each table. Copies call arguments, fields and parameters with batch
 // indices; a field keeps its struct-init ordinal and a parameter receives
 // its substituted declared type as the lowering's parameter reference.
-// (Match, array-element and string tables are empty: step 5 rejects their
+// Array elements retain their owner, value and ordinal.
+// (Match and string tables are empty: step 5 rejects their
 // rows.)
 import type_checker.retention.projection.pj_out;
 
@@ -30,6 +31,8 @@ void copy(Batch b, uint k, uint index)
         ob_param_ref_tag[index] = ref.x;
         ob_param_ref_payload[index] = ref.y;
     }
+    else if (k == PJ_SIDE_ARRAY_ELEMENTS)
+        ob_array_elements[index] = uint4(pj_abs_row(m, record.x), pj_abs_row(m, record.y), record.z, record.w);
 }
 
 [shader("compute")]
@@ -42,4 +45,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     copy(b, PJ_SIDE_CALL_ARGS, index);
     copy(b, PJ_SIDE_FIELDS, index);
     copy(b, PJ_SIDE_PARAMS, index);
+    copy(b, PJ_SIDE_ARRAY_ELEMENTS, index);
 }

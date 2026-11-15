@@ -506,7 +506,7 @@ const WORD_COLUMNS: &[(&str, Size, u64, u32)] = &[
     ("z_ti_arg_row_ref_payload", Size::Rows, 1, u32::MAX),
     ("z_generic_param_slot", Size::Types, 1, u32::MAX),
     ("z_const_param_slot", Size::Types, 1, u32::MAX),
-    ("z_constant_atoms", Size::Rows, 4, 0),
+    ("ob_constant_atoms", Size::Types, 4, 0),
     ("z_constant_projections", Size::Rows, 4, 0),
     ("z_const_param_scalar", Size::Types, 1, 0),
     ("z_const_param_value", Size::Types, 1, u32::MAX),
@@ -606,7 +606,7 @@ impl BatchColumns {
         let variant_payloads = typed!("z_variant_payloads", rows, 4);
         let match_arms = typed!("z_match_arms", side, 4);
         let match_payloads = typed!("z_match_payloads", side, 4);
-        let array_elements = typed!("z_array_elements", side, 4);
+        let array_elements = typed!("ob_array_elements", side, 4);
         let strings = typed!("z_strings", side, 4);
         let method_cores = typed!("z_method_cores", rows, 4);
         let method_signatures = typed!("z_method_signatures", rows, 4);
@@ -654,6 +654,7 @@ impl BatchColumns {
             "ob_payload" => &self.payload.buffer,
             "ob_call_args" => &self.call_args.buffer,
             "ob_fields" => &self.fields.buffer,
+            "ob_array_elements" => &self.array_elements.buffer,
             "ob_params" => &self.params.buffer,
             "ob_param_ranges" => &self.param_ranges.buffer,
             "ob_generic_param_ranges" => &self.generic_param_ranges.buffer,
@@ -765,7 +766,7 @@ impl BatchColumns {
             imported_layout_kind: self.w("ob_imported_layout_kind"),
             type_generic_param_slot: self.w("z_generic_param_slot"),
             type_const_param_slot: self.w("z_const_param_slot"),
-            checked_constant_atoms: self.w("z_constant_atoms"),
+            checked_constant_atoms: self.w("ob_constant_atoms"),
             checked_constant_projections: self.w("z_constant_projections"),
             type_const_param_scalar: self.w("z_const_param_scalar"),
             type_const_param_value: self.w("z_const_param_value"),

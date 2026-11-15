@@ -100,7 +100,7 @@ term, row or route.
 | `01_scan` | one workgroup | exclusive scan of rows, tokens, seven side tables and requests |
 | `02_requests` | one per request | `(DeclId, ENV, term, tag)`: result, parameters, rows, use environments, use results |
 | substitution | engine | `RetainedSubstitution::run`; capacity overflow retries inside the engine |
-| `03a_layout_init`, `03_layout` × 32 | one per TermId | closed nominal struct layouts and the lowering type tables, indexed by TermId |
+| `03a_layout_init`, `03_layout` × 32 | one per TermId | closed struct, array, slice and reference layouts and the lowering type tables, indexed by TermId |
 | `04a_rows_init`, `04b_edges` | one per global row | clear row facts; expression parents |
 | `05_check` | one per global row | forms, types, literal, operator and destination rules, calls, record literals, members |
 | `05b_report` | 1 | first error in (rank, row) order, or CHECKED |
@@ -199,16 +199,25 @@ step falls back to replay.
 v1 projects free functions whose bodies use: parameters, `let`, `return`,
 `if`, `while`, `break`, `continue`, assignment, unary and binary operators,
 integer, float and boolean literals, names of locals and parameters, member
-reads of nominal structs, struct literals and direct calls. Types are scalars
-and closed nominal structs whose fields are scalars, closed structs or the
-struct's own type parameters.
+reads of nominal structs, struct literals, plain array literals, indexing and direct calls.
+Types include scalars, arrays, slices, references and closed nominal structs
+whose fields are closed terms or the struct's own type parameters. Arrays
+keep exact element types and checked constant-atom length references.
+Slices use the native three-word descriptor (data, length, signed stride).
+References keep pointer storage while indexing follows the referent.
+
+A checked argument mode 2 permits an array-to-slice borrow with equal
+element types, in both projected calls and original-object ABI certification.
+The original ABI record packs eight two-bit argument modes above its eight
+flag bits. Every other argument requires exact type equality. Nongeneric
+method calls from original bodies retain their frontend-checked native routes.
 
 Every other form fails closed with its template location:
 
 | Form | Error |
 | --- | --- |
 | enums, `match`, patterns (role PATTERN) and bound rows (role BOUND) | `ROLE` or `FORM` |
-| arrays, slices, references, strings, index expressions, `for`, `?` | `FORM` or `TYPE` |
+| repeated arrays, string literals, `for`, `?` | `FORM` or `TYPE` |
 | methods, receiver adjustments, intrinsics, host calls, constructors, function references | `USE` |
 | constant generics, constant values of rows | `FORM` |
 | a use whose recorded result is unresolved | `USE` (detail `0xfffe`) |
@@ -316,3 +325,15 @@ Work is O(rows + requests + terms × 32 layout rounds). The span is the
 substitution's term height plus 32 layout rounds and two tree walks of at
 most 256 steps per row. Memory is O(ranks + rows + TermIds) for the check
 and O(largest batch) for the lowering columns.
+
+### Array and borrowed-value execution
+
+`retained_native_arrays_keep_element_layout_and_value_semantics` executes
+cross-unit arrays of integers, floats, booleans, records and nested arrays
+through multiple lowering batches. It checks copy semantics and exits 42.
+`retained_native_borrowed_values_keep_aliases_stride_and_bounds` checks
+one/two-level references, mutations, whole-array replacement, slice stride,
+and array-to-slice arguments from original and projected callers. Its valid
+program exits 42; negative and upper-bound accesses exit 101. All builds
+assert zero source replay. These tests use real discovery, ABI certification,
+projection, native finalization and linking.

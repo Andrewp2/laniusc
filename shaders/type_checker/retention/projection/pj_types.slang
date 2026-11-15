@@ -14,6 +14,7 @@ public RWStructuredBuffer<uint> ob_ext_library;
 public RWStructuredBuffer<uint> ob_ext_unit;
 public RWStructuredBuffer<uint> ob_ext_local;
 public RWStructuredBuffer<uint> ob_imported_layout_kind;
+public RWStructuredBuffer<uint4> ob_constant_atoms;
 
 
 public uint pj_type_rows()

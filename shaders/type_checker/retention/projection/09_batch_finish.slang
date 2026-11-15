@@ -12,7 +12,7 @@ void main()
     ob_count_fields[0u] = pj_batch_side(PJ_SIDE_FIELDS);
     ob_count_match_arms[0u] = 0u;
     ob_count_match_payloads[0u] = 0u;
-    ob_count_array_elements[0u] = 0u;
+    ob_count_array_elements[0u] = pj_batch_side(PJ_SIDE_ARRAY_ELEMENTS);
     ob_count_strings[0u] = 0u;
     ob_count_params[0u] = pj_batch_side(PJ_SIDE_PARAMS);
     pj_status[PJ_S_BATCH + 0u] = b.lo;

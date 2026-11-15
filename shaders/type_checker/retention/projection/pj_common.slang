@@ -178,3 +178,38 @@ public uint pj_words(uint term)
     pj_layout.GetDimensions(n, s);
     return term < n ? pj_layout[term].x : RT_INVALID;
 }
+
+// References retain pointer storage while a member/index reads the terminal
+// referent. The checked type graph has at most 64 levels.
+public uint pj_referent(uint term)
+{
+    for (uint level = 0u; level < 64u; level++)
+    {
+        if (!rt_is_stored_term(term) || rt_term_kind(term) != RT_KIND_REF) return term;
+        if (rt_term_arity(term) != 1u) return RT_INVALID;
+        term = rt_term_arg(term, 0u);
+    }
+    return RT_INVALID;
+}
+
+public uint pj_array_count(uint term)
+{
+    if (!rt_is_stored_term(term) || rt_term_kind(term) != RT_KIND_ARRAY || rt_term_arity(term) != 2u)
+        return RT_INVALID;
+    uint length = rt_term_arg(term, 1u);
+    if (!rt_is_stored_term(length) || rt_term_kind(length) != RT_KIND_CC_COUNT) return RT_INVALID;
+    uint count = rt_term_words(length).x;
+    // The two top words are native unknown/runtime-length markers.
+    return count < 0xfffffffeu ? count : RT_INVALID;
+}
+
+// Argument mode 2 is the frontend's checked array-to-slice borrow. It
+// changes the ABI to a descriptor, preserving the exact element identity.
+// Other argument modes never authorize a type conversion.
+public bool pj_argument_compatible(uint expected, uint actual, uint mode)
+{
+    if (expected == actual) return true;
+    return mode == 2u && rt_is_stored_term(expected) && rt_is_stored_term(actual) &&
+        rt_term_kind(expected) == RT_KIND_SLICE && rt_term_kind(actual) == RT_KIND_ARRAY &&
+        rt_term_arg(expected, 0u) == rt_term_arg(actual, 0u);
+}

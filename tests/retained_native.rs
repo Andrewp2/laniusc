@@ -283,3 +283,164 @@ fn retained_native_build_rejects_uncalled_conflicting_impls() {
         std::fs::remove_dir_all(directory).ok();
     });
 }
+
+#[test]
+fn retained_native_arrays_keep_element_layout_and_value_semantics() {
+    common::run_with_timeout("retained array projection", || {
+        let directory =
+            std::env::temp_dir().join(format!("lanius-retained-arrays-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            r#"module arrays::lib;
+pub fn copy<T>(value:T)->T { return value; }
+pub fn pair<T>(a:T,b:T)->[T;2] { return [a,b]; }
+pub fn pick<T>(values:[T;2], index:i32)->T { return values[index]; }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &app,
+            r#"module arrays::app;
+import arrays::lib;
+struct Pair { a:i32, b:i32 }
+fn main()->i32 {
+    let original:[i32;2]=[19,23];
+    let a:[i32;2]=copy(original);
+    a[0]=7;
+    if (original[0]!=19 || a[1]!=23) { return 1; }
+    let b:[u8;2]=pair<u8>(5,9);
+    if (pick(b,1)!=9) { return 2; }
+    let c:[f64;2]=pair<f64>(1.5,2.5);
+    if (pick(c,0)!=1.5 || pick(c,1)!=2.5) { return 3; }
+    let d:[Pair;2]=pair(Pair{a:11,b:12},Pair{a:21,b:22});
+    let q:Pair=pick(d,1);
+    if (q.a!=21 || q.b!=22) { return 4; }
+    let e:[[i32;2];2]=pair(original,a);
+    let f:[i32;2]=pick(e,1);
+    if (f[0]!=7 || f[1]!=23) { return 5; }
+    let flags:[bool;2]=copy([false,true]);
+    if (pick(flags,0) || !pick(flags,1)) { return 6; }
+    return 42;
+}
+"#,
+        )
+        .unwrap();
+        let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+            ExplicitSourceLibraryPaths {
+                library_id: 1,
+                paths: vec![lib],
+                dependency_library_ids: vec![],
+            },
+            ExplicitSourceLibraryPaths {
+                library_id: 2,
+                paths: vec![app],
+                dependency_library_ids: vec![1],
+            },
+        ])
+        .unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.options.batch_rows = 16;
+        let before = fallback_counters();
+        let elf = pollster::block_on(
+            compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+        )
+        .unwrap();
+        assert_eq!(
+            fallback_counters().1,
+            before.1,
+            "array instances never replay"
+        );
+        assert!(build.report.instance_objects > 1);
+        let out = common::run_x86_64_elf_output("retained arrays", "retained_arrays", &elf);
+        assert_eq!(out.status.code(), Some(42), "{out:?}");
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_borrowed_values_keep_aliases_stride_and_bounds() {
+    common::run_with_timeout("retained borrowed projection", || {
+        let directory =
+            std::env::temp_dir().join(format!("lanius-retained-borrows-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            r#"module borrowed::lib;
+pub fn keep<T>(v:T)->T { return v; }
+pub fn read<T>(v:&[T;3], index:i32)->T { return v[index]; }
+pub fn read_twice<T>(v:& &[T;3], index:i32)->T { return v[index]; }
+pub fn read_slice<T>(v:[T], index:i32)->T { return v[index]; }
+pub fn pick_view<T>(v:[T;3], index:i32)->T { return read_slice<T>(v,index); }
+pub fn write<T>(v:&[T;3], index:i32, value:T) { v[index]=value; }
+"#,
+        )
+        .unwrap();
+        let source = r#"module borrowed::app;
+import borrowed::lib;
+impl [i32;3] { fn borrow(&self)->&[i32;3] { return self; } }
+impl &[i32;3] { fn outer(&self)->& &[i32;3] { return self; } }
+impl [f64;3] { fn borrow(&self)->&[f64;3] { return self; } }
+fn view(v:[i32])->[i32] { return v; }
+fn main()->i32 {
+    let data:[i32;3]=[11,13,17];
+    let first:&[i32;3]=keep(data.borrow());
+    let second:& &[i32;3]=keep(first.outer());
+    if (read(first,0)!=11 || read_twice(second,2)!=17) { return 1; }
+    write(first,1,19);
+    if (data[1]!=19 || read_twice(second,1)!=19) { return 2; }
+    data=[23,29,31];
+    if (read(first,0)!=23 || read_twice(second,2)!=31) { return 3; }
+    let slice:[i32]=keep(view(data));
+    if (read_slice(slice,1)!=29) { return 4; }
+    slice[1]=37;
+    if (data[1]!=37 || read(first,1)!=37) { return 5; }
+    if (read_slice<i32>(data,2)!=31 || pick_view(data,1)!=37) { return 7; }
+    let floating:[f64;3]=[1.5,2.5,3.5];
+    if (read(floating.borrow(),2)!=3.5) { return 6; }
+    return 42;
+}
+"#;
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.options.batch_rows = 16;
+        let before = fallback_counters();
+        for (tail, expected) in [
+            ("return 42;", 42),
+            ("return read(first,-1);", 101),
+            ("return read_slice(slice,3);", 101),
+        ] {
+            std::fs::write(&app, source.replace("return 42;", tail)).unwrap();
+            let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+                ExplicitSourceLibraryPaths {
+                    library_id: 1,
+                    paths: vec![lib.clone()],
+                    dependency_library_ids: vec![],
+                },
+                ExplicitSourceLibraryPaths {
+                    library_id: 2,
+                    paths: vec![app.clone()],
+                    dependency_library_ids: vec![1],
+                },
+            ])
+            .unwrap();
+            let elf = pollster::block_on(
+                compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build),
+            )
+            .unwrap();
+            assert_eq!(
+                fallback_counters().1,
+                before.1,
+                "borrowed instances never replay"
+            );
+            let out = common::run_x86_64_elf_output("retained borrows", "retained_borrows", &elf);
+            assert_eq!(out.status.code(), Some(expected), "{tail}: {out:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}

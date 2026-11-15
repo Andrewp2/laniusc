@@ -60,8 +60,7 @@ bool template_closed(Row at, uint row)
     return row != RT_INVALID && rt_term_closed(pj_row(at.rank, row, 3u).x);
 }
 
-// A supported closed value type: a scalar other than str, or a laid-out
-// struct.
+// A closed runtime type with a complete lowering layout.
 bool supported_type(Row at, uint t)
 {
     if (!rt_is_term(t))
@@ -71,7 +70,7 @@ bool supported_type(Row at, uint t)
     }
     if (t < RT_FIRST_TERM)
     {
-        if (t == SCALAR_STR || t == SCALAR_UNKNOWN)
+        if (t == SCALAR_UNKNOWN)
         {
             fail(at, PJ_E_TYPE, t);
             return false;
@@ -79,12 +78,12 @@ bool supported_type(Row at, uint t)
         return true;
     }
     uint kind = rt_term_kind(t);
-    if (kind != RT_KIND_NAMED)
+    if (kind != RT_KIND_NAMED && kind != RT_KIND_ARRAY && kind != RT_KIND_SLICE && kind != RT_KIND_REF)
     {
         fail(at, PJ_E_TYPE, kind);
         return false;
     }
-    if (pj_layout[t].x == RT_INVALID || pj_layout[t].y != 1u)
+    if (pj_layout[t].x == RT_INVALID || pj_layout[t].y == 0u)
     {
         fail(at, PJ_E_LAYOUT, t);
         return false;
@@ -238,7 +237,7 @@ void check_call(Row at, uint4 p, uint t, uint use)
             uint value = pj_side(at.rank, PJ_SIDE_CALL_ARGS, p.y + k, 0u).y;
             uint expected = result_or_fail(at, pj_req_param(target, k));
             if (failed) return;
-            if (row_type(at, value) != expected)
+            if (!pj_argument_compatible(expected, row_type(at, value), pj_row(at.rank, value, 6u).x & 0xffu))
             {
                 fail(at, PJ_E_SIGNATURE, k);
                 return;
@@ -264,7 +263,7 @@ void check_call(Row at, uint4 p, uint t, uint use)
     for (uint k = 0u; k < args; k++)
     {
         uint value = pj_side(at.rank, PJ_SIDE_CALL_ARGS, p.y + k, 0u).y;
-        if (row_type(at, value) != rt_sigs[d1.z + 1u + k])
+        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], row_type(at, value), pj_row(at.rank, value, 6u).x & 0xffu))
         {
             fail(at, PJ_E_SIGNATURE, k);
             return;
@@ -333,7 +332,7 @@ void check_struct_literal(Row at, uint4 p, uint t, uint use)
 
 void check_member(Row at, uint4 p, uint t, uint ordinal)
 {
-    uint receiver = row_type(at, p.y);
+    uint receiver = pj_referent(row_type(at, p.y));
     if (receiver == RT_INVALID || receiver < RT_FIRST_TERM || rt_term_kind(receiver) != RT_KIND_NAMED)
     {
         fail(at, PJ_E_FIELD, 0xffffu);
@@ -356,8 +355,11 @@ bool supported_form(uint kind, uint4 p)
         kind == RT_HIR_BREAK_STMT || kind == RT_HIR_CONTINUE_STMT || kind == RT_HIR_BINARY_EXPR ||
         kind == RT_HIR_UNARY_EXPR || kind == RT_HIR_CALL_EXPR || kind == RT_HIR_MEMBER_EXPR ||
         kind == RT_HIR_NAME_EXPR || kind == RT_HIR_STRUCT_LITERAL_EXPR || kind == RT_HIR_PATH_EXPR ||
-        kind == RT_HIR_ASSIGN_EXPR)
+        kind == RT_HIR_ASSIGN_EXPR || kind == RT_HIR_INDEX_EXPR)
         return true;
+    // Repeated arrays have their own count/value semantics; keep them gated
+    // until their retained count expressions are materialized.
+    if (kind == RT_HIR_ARRAY_EXPR) return p.x == RT_INVALID;
     if (kind == RT_HIR_STMT)
         return p.x == STMT_LET || p.x == STMT_RETURN || p.x == STMT_IF || p.x == STMT_ASSIGN ||
             p.x == STMT_WHILE || p.x == 0u;
@@ -417,8 +419,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         fail(at, PJ_E_INCOMPLETE, r3.w);
         return;
     }
-    if (!supported_form(kind, p) || r4.w != 0u || r6.y != 0u || ((r6.x >> 8u) & 0xffu) != 0u ||
-        r5.x == RT_BIND_PARAM || r5.x == RT_BIND_VARIANT ||
+    if (!supported_form(kind, p) || (r4.w != 0u && kind != RT_HIR_ARRAY_EXPR) ||
+        (r6.y != 0u && kind != RT_HIR_TYPE) || ((r6.x >> 8u) & 0xffu) != 0u ||
+        (r5.x == RT_BIND_PARAM && kind != RT_HIR_TYPE) || r5.x == RT_BIND_VARIANT ||
         (r5.x == RT_BIND_DECL && r3.z != RT_ROLE_CALLEE))
     {
         fail(at, PJ_E_FORM, kind | (p.x << 8u));
@@ -428,13 +431,53 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (rt_is_resolved(r3.x))
     {
         t = result_or_fail(at, pj_req_row(at.rank, at.row));
-        if (failed || !supported_type(at, t)) return;
+        if (failed) return;
+        // An array annotation's count row is a constant operand, not a
+        // runtime value. The enclosing array term owns its evaluated count.
+        if (kind == RT_HIR_TYPE && rt_is_stored_term(t) &&
+            (rt_term_kind(t) == RT_KIND_CC_COUNT || rt_term_kind(t) == RT_KIND_CC_VALUE)) return;
+        if (!supported_type(at, t)) return;
         uint2 ref = pj_ref_of(t);
         pj_g_facts[g] = uint4(ref, pj_words(t), t < RT_FIRST_TERM ? t : 0u);
     }
     bool changed = rt_is_resolved(r3.x) && !rt_term_closed(r3.x);
 
-    if (kind == RT_HIR_LITERAL_EXPR || (kind == RT_HIR_EXPR && (p.x == EXPR_INT || p.x == EXPR_FLOAT)))
+    // Each element value validates its own array slot. The expression-parent
+    // edge was published from that element's side record in step 4b.
+    uint parent = pj_g_aux[g].x;
+    if (parent != RT_INVALID && parent >= at.base &&
+        pj_row(at.rank, parent - at.base, 0u).x == RT_HIR_ARRAY_EXPR)
+    {
+        uint container = row_type(at, parent - at.base);
+        if (!rt_is_stored_term(container) || rt_term_kind(container) != RT_KIND_ARRAY ||
+            rt_term_arg(container, 0u) != t)
+        {
+            fail(at, PJ_E_SIGNATURE, 0xfffcu);
+            return;
+        }
+    }
+    if (kind == RT_HIR_ARRAY_EXPR)
+    {
+        uint count = pj_array_count(t);
+        if (count == RT_INVALID || count != r4.w ||
+            (r4.w != 0u && (r4.z > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) ||
+             r4.w > pj_side_len(at.rank, PJ_SIDE_ARRAY_ELEMENTS) - r4.z)))
+            fail(at, PJ_E_FORM, kind | (p.x << 8u));
+    }
+    else if (kind == RT_HIR_INDEX_EXPR)
+    {
+        uint container = pj_referent(row_type(at, p.y));
+        uint detail;
+        if (!rt_is_stored_term(container) ||
+            (rt_term_kind(container) != RT_KIND_ARRAY && rt_term_kind(container) != RT_KIND_SLICE))
+            rule(at, PJ_RULE_ASSIGN_MISMATCH, 0u);
+        else if (operator_index_violation(operand_class(row_type(at, p.z)), detail))
+            rule(at, PJ_RULE_ASSIGN_MISMATCH, detail);
+        else if (rt_term_arg(container, 0u) != t || pj_words(t) == RT_INVALID)
+            fail(at, PJ_E_SIGNATURE, 0xfffbu);
+    }
+
+    else if (kind == RT_HIR_LITERAL_EXPR || (kind == RT_HIR_EXPR && (p.x == EXPR_INT || p.x == EXPR_FLOAT)))
         check_literal(at, p, t, changed);
     else if (kind == RT_HIR_BINARY_EXPR)
     {

@@ -22,5 +22,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     ob_ext_unit[t] = RT_INVALID;
     ob_ext_local[t] = RT_INVALID;
     ob_imported_layout_kind[t] = 0u;
+    ob_constant_atoms[t] = uint4(0u, 0u, 0u, 0u);
 }
 

@@ -21,7 +21,8 @@ StructuredBuffer<uint> nc_call_hirs;
 // GPU_X86_SYMBOL_ROW_BYTES / 4 words per symbol, as the object stores them.
 RWStructuredBuffer<uint> nc_symbols;
 RWStructuredBuffer<uint> nc_identity;
-// Per global use: (accepted result term, argument count, flags, generation).
+// Per global use: (accepted result term, argument count, flags | modes<<8,
+// generation). Eight two-bit checked argument modes follow the low flags.
 RWStructuredBuffer<uint4> nc_use_abi;
 // Per global use: NC_ARGS argument terms.
 RWStructuredBuffer<uint> nc_use_args;
@@ -29,6 +30,7 @@ RWStructuredBuffer<uint> nc_status;
 
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_payload_by_hir;
+StructuredBuffer<uint> semantic_argument_mode_by_hir;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 
@@ -101,7 +103,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint value = compact_call_args[p.b + i].value;
             if (value < hir_count())
+            {
                 term = translate_checked(semantic_expr_ref_tag_by_hir[value], semantic_expr_ref_payload_by_hir[value]);
+                uint mode = semantic_argument_mode_by_hir[value];
+                if (mode > 3u) flags |= NC_FLAG_ARG_UNTRANSLATED;
+                else flags |= mode << (8u + 2u * i);
+            }
         }
         if (!rt_is_term(term) || !rt_term_closed(term)) flags |= NC_FLAG_ARG_UNTRANSLATED;
         nc_use_args[use * NC_ARGS + i] = term;

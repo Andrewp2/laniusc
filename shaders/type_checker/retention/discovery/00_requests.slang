@@ -40,6 +40,19 @@ void main(uint3 id: SV_DispatchThreadID)
     uint form = u0.z & 0xffu;
     // Non-call syntax contributes row and layout types during projection.
     if (form == 3u || form == 4u) return;
+    // A concrete method called by an original body is already emitted in
+    // its defining unit, with the frontend's checked receiver adjustment.
+    // Generic methods and calls inside instances still need GPU routing.
+    if (root != 0u && form == 2u)
+    {
+        uint method = dg_entry(u0.w);
+        if (method != RT_INVALID && rt_dir[method * RT_DIR_WORDS].y == 2u &&
+            !dg_generic(method) && !dg_predicates(method))
+        {
+            dg_roots[lane] = uint4(2u,u0.w,0u,dg_config[15]);
+            return;
+        }
+    }
     if (form != 1u || (u0.z >> 8u) != 0u)
     {
         // Ordinary intrinsic/native calls already have their own targets.

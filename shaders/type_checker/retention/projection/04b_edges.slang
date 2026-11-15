@@ -32,6 +32,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint g = pj_lane(dtid);
     uint n = pj_instance_count();
+    // Every array-element record owns a distinct value row, so the element
+    // count is bounded by the row dispatch. No array-sized lane walk.
+    uint column = PJ_C_SIDE + PJ_SIDE_ARRAY_ELEMENTS;
+    if (g < pj_total(column))
+    {
+        uint owner = pj_rank_of(column, g, 0u, n);
+        uint4 element = pj_side(owner, PJ_SIDE_ARRAY_ELEMENTS, g - pj_base_at(owner, column), 0u);
+        uint start = pj_base_at(owner, PJ_C_ROWS);
+        publish(start + element.x, pj_inf(owner, 1u).x, start, element.y);
+    }
     if (g >= pj_total(PJ_C_ROWS)) return;
     uint rank = pj_rank_of(PJ_C_ROWS, g, 0u, n);
     uint base = pj_base_at(rank, PJ_C_ROWS);
@@ -44,10 +54,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
         kind != RT_HIR_CALL_EXPR && kind != RT_HIR_MEMBER_EXPR;
     if (fixed)
     {
-        if (p.x == EXPR_NOT || p.x == EXPR_NEG || p.x == EXPR_CAST) publish(g, rows, base, p.y);
+        if (p.x == 1u || p.x == EXPR_NOT || p.x == EXPR_NEG || p.x == EXPR_CAST) publish(g, rows, base, p.y);
         else if (binary_form(p.x)) { publish(g, rows, base, p.y); publish(g, rows, base, p.z); }
     }
-    if (kind == RT_HIR_MEMBER_EXPR || kind == RT_HIR_TRY_EXPR) publish(g, rows, base, p.y);
+    if (kind == RT_HIR_INDEX_EXPR)
+    {
+        publish(g, rows, base, p.y);
+        publish(g, rows, base, p.z);
+    }
+    else if (kind == RT_HIR_MEMBER_EXPR || kind == RT_HIR_TRY_EXPR) publish(g, rows, base, p.y);
     else if ((kind == RT_HIR_STMT || kind == RT_HIR_ASSIGN_EXPR) && p.x == STMT_ASSIGN) publish(g, rows, base, p.y);
     else if (kind == RT_HIR_FOR_STMT || (kind == RT_HIR_STMT && p.x == 7u)) publish(g, rows, base, p.z);
     else if (kind == RT_HIR_CALL_EXPR)

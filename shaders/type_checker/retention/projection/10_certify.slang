@@ -54,7 +54,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint generation = rt_counts[RT_C_GENERATION];
     uint4 abi = nc_use_abi[use];
     if (abi.w != generation) return;
-    if (abi.z != 0u) { reject(use, C_FLAGS); return; }
+    if ((abi.z & 0xffu) != 0u) { reject(use, C_FLAGS); return; }
     uint4 u0 = rt_uses[use * RT_USE_WORDS];
     uint4 u1 = rt_uses[use * RT_USE_WORDS + 1u];
     if ((u0.z & 0xffu) != USE_DIRECT || ((u0.z >> 8u) & 0xffffu) != 0u || !rt_is_term(abi.x) ||
@@ -83,7 +83,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint status;
         if (pj_result(pj_req_result(target), status) != abi.x) { reject(use, C_RESULT); return; }
         for (uint k = 0u; k < args; k++)
-            if (pj_result(pj_req_param(target, k), status) != nc_use_args[use * NC_ARGS + k])
+            if (!pj_argument_compatible(pj_result(pj_req_param(target, k), status),
+                nc_use_args[use * NC_ARGS + k], (abi.z >> (8u + 2u * k)) & 3u))
             {
                 reject(use, C_PARAM);
                 return;
@@ -101,5 +102,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (d1.y != 0u || d1.w != args) { reject(use, C_ARITY); return; }
     if (rt_sigs[d1.z] != abi.x) { reject(use, C_RESULT); return; }
     for (uint k = 0u; k < args; k++)
-        if (rt_sigs[d1.z + 1u + k] != nc_use_args[use * NC_ARGS + k]) { reject(use, C_PARAM); return; }
+        if (!pj_argument_compatible(rt_sigs[d1.z + 1u + k], nc_use_args[use * NC_ARGS + k],
+            (abi.z >> (8u + 2u * k)) & 3u)) { reject(use, C_PARAM); return; }
 }

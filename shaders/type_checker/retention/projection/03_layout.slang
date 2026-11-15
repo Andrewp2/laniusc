@@ -8,11 +8,13 @@
 // TermId, receive every laid-out term as an imported struct with its
 // complete native width.
 //
-// Unsupported here, and left without a layout (a use is a PJ_E_LAYOUT or
-// PJ_E_TYPE error with its location): enums, arrays, slices, references,
+// References and slices have fixed widths; arrays depend on their element
+// layout and retain their checked count. Unsupported here (a use reports
+// PJ_E_LAYOUT or PJ_E_TYPE): enums,
 // constant operands and a field whose declared type is a compound term over
 // the struct's parameters (it would need its own substitution).
 import type_checker.retention.projection.pj_types;
+import native_value_layout;
 
 static const uint DIR_STRUCT = 5u;
 
@@ -36,7 +38,43 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint terms = min(rt_counts[RT_A_TERMS], rt_capacity(RT_A_TERMS));
     if (t < RT_FIRST_TERM || t >= min(terms, pj_type_rows())) return;
     if (pj_layout[t].x != RT_INVALID) return;
-    if (rt_term_kind(t) != RT_KIND_NAMED || !rt_term_closed(t)) return;
+    if (!rt_term_closed(t)) return;
+    uint kind = rt_term_kind(t);
+    if (kind == RT_KIND_REF || kind == RT_KIND_SLICE || kind == RT_KIND_ARRAY)
+    {
+        if (rt_term_arity(t) != (kind == RT_KIND_ARRAY ? 2u : 1u)) return;
+        uint element = rt_term_arg(t, 0u);
+        uint2 ref = pj_ref_of(element);
+        if (ref.x == 0u) return;
+        uint native_kind = kind == RT_KIND_REF ? 4u : kind == RT_KIND_SLICE ? 3u : 2u;
+        uint width = kind == RT_KIND_REF ? 1u : NATIVE_SLICE_WORDS;
+        uint count = RT_INVALID;
+        if (kind == RT_KIND_ARRAY)
+        {
+            count = pj_array_count(t);
+            uint stride = pj_words(element);
+            if (count == RT_INVALID || stride == RT_INVALID ||
+                (stride != 0u && count > (RT_INVALID - 1u) / stride)) return;
+            width = stride * count;
+        }
+        ob_ti_kind[t] = native_kind;
+        ob_ti_native_words[t] = width;
+        ob_ti_elem_ref_tag[t] = ref.x;
+        ob_ti_elem_ref_payload[t] = ref.y;
+        if (kind == RT_KIND_ARRAY)
+        {
+            // Native length references name checked atoms, not raw counts.
+            // The atom namespace is independent of the type namespace.
+            ob_constant_atoms[t] = uint4(SCALAR_USIZE, count, 0u, 0u);
+            ob_ti_len_kind[t] = 1u;
+            ob_ti_len_payload[t] = t;
+        }
+        DeviceMemoryBarrier();
+        pj_layout[t] = uint4(width, native_kind, count, 0u);
+        InterlockedAdd(pj_status[PJ_S_LAYOUT_CHANGED], 1u);
+        return;
+    }
+    if (kind != RT_KIND_NAMED) return;
     uint3 words = rt_term_words(t);
     if (words.y != 0u) return;
     uint entry = pj_dir_entry(words.x);
