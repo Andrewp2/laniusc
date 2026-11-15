@@ -23,7 +23,8 @@ public globallycoherent RWStructuredBuffer<uint> dg_levels;
 //         level, generation.
 // status: allocated instances, live instances, edges, overflow bits,
 //         instance demand, edge demand, first error+1 (INVALID when none),
-//         request demand, generation, roots, reserved...
+//         request demand, generation, roots, failure, predicated instances,
+//         reserved...
 public uint dg_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint dg_entry(uint decl)
 {
@@ -70,7 +71,14 @@ public uint dg_insert(uint decl, uint env, uint root, uint index, uint use)
             }
             DeviceMemoryBarrier();
             InterlockedCompareExchange(dg_slots[slot], 0u, candidate + 1u, value);
-            if (value == 0u) { InterlockedAdd(dg_status[1], 1u); return candidate; }
+            if (value == 0u)
+            {
+                InterlockedAdd(dg_status[1], 1u);
+                // Instances whose closed predicates need a solver wave.
+                uint entry = dg_entry(decl);
+                if (entry != RT_INVALID && dg_predicates(entry)) InterlockedAdd(dg_status[11], 1u);
+                return candidate;
+            }
         }
         DeviceMemoryBarrier();
         uint4 key = dg_instances[2u * (value - 1u)];

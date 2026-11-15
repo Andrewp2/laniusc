@@ -245,7 +245,7 @@ impl RetainedDiscovery {
                 return Ok(DiscoveryOutcome::Rejected(error));
             }
             self.resolve(store, &requests, &extra, config, &mut report)?;
-            status = self.read_status(&mut report)?;
+            status = self.read_status_counts(store, &mut report)?;
             if self.grow(&status)? {
                 continue 'attempt;
             }
@@ -256,15 +256,28 @@ impl RetainedDiscovery {
             let mut hi = status[0];
             let mut edges = 0;
             let mut depth = 1;
+            let mut predicated = 0;
             while lo < hi {
                 // Concrete instances have closed goals, even when their
                 // source call was proved parametrically. Reuse the admitted
                 // catalog; the GPU writes and solves this wave's hard goals.
-                let closed = if let Some(source) = publication.as_deref_mut() {
+                // The GPU counts inserted instances with closed predicates
+                // (status 11); a wave without any needs no solver work.
+                let wave_predicated = status[11] - predicated;
+                predicated = status[11];
+                let closed = if let Some(source) = publication.as_deref_mut()
+                    && wave_predicated != 0
+                {
                     let buffer = self.scratch["dg_instances"].clone();
                     let bytes = buffer.size();
                     let instances = LaniusBuffer::new((buffer, bytes), bytes as usize / 4);
-                    let (check, proofs) = source.solve_instances(store, &instances, lo, hi)?;
+                    let (check, proofs) = source.solve_instances_with_counts(
+                        store,
+                        &instances,
+                        lo,
+                        hi,
+                        Some(&status[STATUS_WORDS..]),
+                    )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {
                         return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
@@ -380,7 +393,7 @@ impl RetainedDiscovery {
                     self.record(&mut encoder,&guard,5,config,&extra,1,&mut report)?;
                     self.queue.submit(Some(encoder.finish()));
                 }
-                status = self.read_status(&mut report)?;
+                status = self.read_status_counts(store, &mut report)?;
                 if self.grow(&status)? {
                     continue 'attempt;
                 }
@@ -734,13 +747,36 @@ impl RetainedDiscovery {
     fn read_status(&self, report: &mut DiscoveryReport) -> Result<Vec<u32>> {
         self.read(&self.scratch["dg_status"], STATUS_WORDS, report)
     }
+    /// The status words followed by the store's `rt_counts`, in one readback.
+    fn read_status_counts(
+        &self,
+        store: &ProgramRetention,
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let counts = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        self.read_many(
+            &[
+                (&self.scratch["dg_status"], STATUS_WORDS),
+                (&counts, counts::WORDS),
+            ],
+            report,
+        )
+    }
     fn read(
         &self,
         buffer: &wgpu::Buffer,
         words: usize,
         report: &mut DiscoveryReport,
     ) -> Result<Vec<u32>> {
-        let bytes = words as u64 * 4;
+        self.read_many(&[(buffer, words)], report)
+    }
+    /// The leading `words` of each buffer, concatenated, in one readback.
+    fn read_many(
+        &self,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut DiscoveryReport,
+    ) -> Result<Vec<u32>> {
+        let bytes = parts.iter().map(|(_, words)| *words as u64 * 4).sum();
         report.readbacks += 1;
         let rb = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("discovery.status"),
@@ -749,7 +785,11 @@ impl RetainedDiscovery {
             mapped_at_creation: false,
         });
         let mut encoder = self.encoder();
-        encoder.copy_buffer_to_buffer(buffer, 0, &rb, 0, bytes);
+        let mut at = 0;
+        for (buffer, words) in parts {
+            encoder.copy_buffer_to_buffer(buffer, 0, &rb, at, *words as u64 * 4);
+            at += *words as u64 * 4;
+        }
         self.queue.submit(Some(encoder.finish()));
         let slice = rb.slice(..);
         map_readback_blocking(&self.device, &slice, "discovery.status")?;

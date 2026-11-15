@@ -397,15 +397,25 @@ by discovery instance index, rather than the source publication's use index.
 Multiple wave publications can coexist. A new build, changed source-store
 extent, malformed ENV or stale instance rejects the wave.
 
-Retained native discovery invokes this check before expanding each wave.
+Retained native discovery invokes this check before expanding each wave
+that has new instances with closed predicates. Discovery's interner counts
+those instances on the GPU, and a wave without one skips the producer and
+the solver. Discovery passes the store counters from its own status
+readback, so the producer does not read them again. The publication
+receipt, read once after publication, also carries the status words that
+`ClosedTraitPublication::status` returns.
 This supplies concrete implementation evidence for bound-member routing;
 the method-routing bridge is still being connected. Direct bounded calls
 continue to check their source proof as well.
 
-The current producer scans live term slots, walks the reached graph in 65
-bounded GPU rounds, and scans eight counters per term or instance. Constant
-atoms share the catalog's identity when present. These fixed rounds and the
-whole-term scans are not yet optimized for the rebuild time target.
+The producer scans live term slots, walks the reached graph in bounded GPU
+rounds, and scans eight counters per term or instance. Constant atoms share
+the catalog's identity when present. The first batch records 8 rounds. The
+count pass sets producer state word 5 when the frontier is still pending.
+The host then records twice as many further rounds and repeats the
+idempotent constant, count, scan and total passes, up to 65 rounds in all.
+A frontier still pending after 65 rounds is failure code 7, as before. The
+settings app needs one batch per wave. The whole-term scans remain.
 
 Focused validation includes seven concrete calls, generic impl bindings,
 constant arguments, a 40-method impl, concurrent wave publications, stale
