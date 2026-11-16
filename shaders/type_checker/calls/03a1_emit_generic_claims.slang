@@ -28,6 +28,7 @@ import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.match.ct_match;
 import constant_value;
+import type_checker.calls.inference_activity;
 
 struct Params
 {
@@ -56,6 +57,9 @@ StructuredBuffer<uint> call_generic_claim_prefix;
 StructuredBuffer<uint> call_const_claim_scan_input;
 StructuredBuffer<uint> call_const_claim_pattern_mask;
 StructuredBuffer<uint> call_const_claim_prefix;
+// The generic and constant claim spans (start, count) each argument row last
+// emitted at. Written whenever the row is recomputed.
+RWStructuredBuffer<uint4> call_claim_emitted_span;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_dependency_library_id;
@@ -301,6 +305,16 @@ void emit_argument_claims(uint arg_row)
 {
     if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
     uint call = call_arg_row_call_node[arg_row];
+    // An argument of an inactive function recomputes nothing
+    // (inference_activity.slang), unless the claim scan moved its spans: the
+    // spans are prefixes over every argument, so another function's change can
+    // move them. Spans at the same place hold the claims this lane would
+    // write again.
+    uint4 span = uint4(call_generic_claim_prefix[arg_row], call_generic_claim_scan_input[arg_row],
+        call_const_claim_prefix[arg_row], call_const_claim_scan_input[arg_row]);
+    if (!inference_item_active(valid_node(call) ? compact_hir_core[call].token_start : INVALID) &&
+        all(call_claim_emitted_span[arg_row] == span)) return;
+    call_claim_emitted_span[arg_row] = span;
     uint callee = callee_token_for_hir_call(call);
     if (!valid_token(callee) || !parameter_pattern_page_contains(
         call_dependency_library_id[callee], call_dependency_unit_id[callee],

@@ -4046,6 +4046,7 @@ fn build_graph(
         _call_generic_claim_scan_input as "call_generic_claim_scan_input" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_pattern_mask as "call_generic_claim_pattern_mask" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_prefix as "call_generic_claim_prefix" in CallArguments => call_arg_rows * 4;
+        _call_claim_emitted_span as "call_claim_emitted_span" in CallArguments => call_arg_rows * 16;
         _call_generic_claim_scan_block_sum as "call_generic_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
         _call_generic_claim_scan_prefix_a as "call_generic_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
         _call_const_claim_scan_local_prefix as "call_const_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
@@ -5753,6 +5754,10 @@ fn build_graph(
     CALLS_GENERIC_CLAIM_CLEAR.register_kernel(&mut graph, kernels)?;
     CALL_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
+    // Emit reads a row's last spans only in a round after the one that wrote
+    // them; every row is recomputed, and writes its spans, in the job's first
+    // invocation.
+    graph.mark_pass_bindings_initialize(CALLS_GENERIC_CLAIM_EMIT.name, &["call_claim_emitted_span"])?;
     graph.add_kernel_pass_by_name(
         GENERIC_CLAIM_INDEX_PREPARE_PASS,
         CompilerPhase::TypeCheck,

@@ -37,11 +37,15 @@ The argument has three parts.
 
 The per-round change counts vary by a few between runs even without masking, because some passes count races between lanes. Settings converges in the same 11 rounds with and without masking. The final round runs unmasked with `call_inference_round[0] = 0`, so it writes every final fact.
 
+## Claim emission
+
+`03a1` writes each argument's claims into spans that the claim scan places by prefix over all arguments. A change in one function can move the spans of arguments in other functions. So `03a1` skips an argument only when its function is inactive and both spans (generic and constant, start and count) equal the spans it last emitted at, kept in `call_claim_emitted_span`. No other pass writes the claim rows. The other locations `03a1` writes (`call_return_type`, `call_result_instance`, `semantic_argument_mode_by_hir`) are written in the round only by masked passes of the same function, so a skipped argument keeps the values a recomputation would write again. On settings `03a1` costs about 45 µs in the late rounds instead of 89 µs. The rest is lanes of active functions.
+
 ## Passes that stay unmasked
 
 These passes work on global rows or on compacted rows with no stable owner:
 
-- claim scan and emit (`03a1`), claim index clear and build (`03a2`, `03a3`)
+- the claim scan, claim index clear and build (`03a2`, `03a3`)
 - bound clear and local collection (`03l0`, `03l2`), `03l1`, explicit admission `03a0b`
 - required generics mark and scan, constant claim index and environment
 - aggregate scans and conditions, the type index `02c`
