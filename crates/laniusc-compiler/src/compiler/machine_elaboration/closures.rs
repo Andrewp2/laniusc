@@ -543,8 +543,6 @@ impl Gpu<'_> {
     }
 }
 
-/// Rewrites the closures of `sources`, one GPU run for all of them. `None`
-/// when no file has a closure.
 /// Per file, the rewrites it needs: `SELECT_CLOSURES` when a closure starts
 /// in it, `SELECT_MACHINES` when the machine pass must parse it. One lex of
 /// all files and one map. `None` when a file does not lex: the frontend
@@ -570,6 +568,13 @@ pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
         flags.truncate(sources.len());
         Ok(Some(flags))
     }))?
+}
+
+/// The bytes a rewrite's output holds before the rewritten length is
+/// known: twice the input, which a rewrite rarely outgrows. The library's
+/// unit tests use a quarter of the input, so their rewrites emit again.
+pub(super) fn emit_capacity(input_bytes: usize) -> usize {
+    if cfg!(test) { input_bytes / 4 } else { input_bytes * 2 + 4096 }
 }
 
 /// File flags of `select`.
@@ -830,6 +835,41 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize, closure
         piece_count,
     )?;
     let piece_scan = gpu.scan(&mut encoder, &scan_kernel, &pieces, &piece_work, piece_count)?;
+
+    // The rewritten bytes, in the same submission as their pieces: the
+    // output holds `emit_capacity` bytes, and a text that outgrows it is
+    // emitted again once its length is known.
+    let emit = |encoder: &mut wgpu::CommandEncoder, capacity: usize| -> Result<Readback> {
+        let out_words = capacity.div_ceil(4).max(1);
+        let output = gpu.rows("closures.output", out_words, 1);
+        let params = gpu.uniform(
+            "closures.emit.params",
+            &EmitParams {
+                out_len: u32::try_from(capacity).context("rewritten source is too large")?,
+                piece_count,
+                reserved0: 0,
+                reserved1: 0,
+            },
+        );
+        gpu.dispatch(
+            encoder,
+            &gpu.kernel("closures/emit")?,
+            "closures.emit",
+            &[
+                ("gEmit", params.as_entire_binding()),
+                ("in_bytes", bufs.in_bytes.as_entire_binding()),
+                ("pieces", pieces.as_entire_binding()),
+                ("piece_scan", piece_scan.as_entire_binding()),
+                ("const_index", const_index.as_entire_binding()),
+                ("const_bytes", const_bytes.as_entire_binding()),
+                ("out_words", output.as_entire_binding()),
+            ],
+            u32::try_from(out_words).context("rewritten source is too large")?,
+        )?;
+        Ok(gpu.read(encoder, &output, 0, out_words))
+    };
+    let capacity = emit_capacity(total);
+    let output_read = emit(&mut encoder, capacity)?;
     let pieces_read = gpu.read(&mut encoder, &pieces, 0, pieces_len * 4);
     let piece_scan_read = gpu.read(&mut encoder, piece_scan, 0, pieces_len * 4);
     let file_info_read = gpu.read(&mut encoder, &file_info, 0, (sources.len() + 1) * 4);
@@ -837,34 +877,15 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize, closure
     let piece_rows = gpu.words(&pieces_read)?;
     let piece_ends = gpu.words(&piece_scan_read)?;
     let file_rows = gpu.words(&file_info_read)?;
-    let out_len = piece_ends[(pieces_len - 1) * 4];
-
-    // The rewritten bytes.
-    let out_words = (out_len as usize).div_ceil(4);
-    let output = gpu.rows("closures.output", out_words, 1);
-    let emit = gpu.uniform(
-        "closures.emit.params",
-        &EmitParams { out_len, piece_count, reserved0: 0, reserved1: 0 },
-    );
-    let mut encoder = gpu.encoder("closures.emit");
-    gpu.dispatch(
-        &mut encoder,
-        &gpu.kernel("closures/emit")?,
-        "closures.emit",
-        &[
-            ("gEmit", emit.as_entire_binding()),
-            ("in_bytes", bufs.in_bytes.as_entire_binding()),
-            ("pieces", pieces.as_entire_binding()),
-            ("piece_scan", piece_scan.as_entire_binding()),
-            ("const_index", const_index.as_entire_binding()),
-            ("const_bytes", const_bytes.as_entire_binding()),
-            ("out_words", output.as_entire_binding()),
-        ],
-        u32::try_from(out_words).context("rewritten source is too large")?,
-    )?;
-    let output_read = gpu.read(&mut encoder, &output, 0, out_words);
-    gpu.submit("closures.emit", encoder);
-    let bytes = gpu.bytes(&output_read, out_len as usize)?;
+    let out_len = piece_ends[(pieces_len - 1) * 4] as usize;
+    let bytes = if out_len <= capacity {
+        gpu.bytes(&output_read, out_len)?
+    } else {
+        let mut encoder = gpu.encoder("closures.emit");
+        let output_read = emit(&mut encoder, out_len)?;
+        gpu.submit("closures.emit", encoder);
+        gpu.bytes(&output_read, out_len)?
+    };
 
     split_files(sources, &file_rows, &piece_rows, &piece_ends, &bytes).map(|files| Some(Outcome::Rewritten(files)))
 }
