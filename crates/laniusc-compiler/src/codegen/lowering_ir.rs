@@ -1928,6 +1928,12 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Tokens,
         LoweringCapacities::bytes::<u32>(capacities.tokens),
     ))?;
+    // First payload-free enum variant row named by each declaration token.
+    let semantic_unit_variant_row_by_token = graph.add_resource(workspace(
+        "lir.semantic.unit_variant_row_by_token",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
     let semantic_struct_field_count_by_hir = graph.add_resource(workspace(
         "lir.semantic.struct_field_count_by_hir",
         ResourceDomain::HirNodes,
@@ -2499,6 +2505,10 @@ fn lowering_compiler_graph_builder(
                 "semantic_function_id_by_token",
                 semantic_function_id_by_token,
             ),
+            PassAccess::write(
+                "semantic_unit_variant_row_by_token",
+                semantic_unit_variant_row_by_token,
+            ),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -2512,6 +2522,12 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
             PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read_write(
+                "semantic_unit_variant_row_by_token",
+                semantic_unit_variant_row_by_token,
+            ),
             PassAccess::write(
                 "semantic_layout_dispatch_args",
                 semantic_layout_dispatch_args,
@@ -3048,6 +3064,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read(
                 "semantic_function_id_by_token",
                 semantic_function_id_by_token,
+            ),
+            PassAccess::read(
+                "semantic_unit_variant_row_by_token",
+                semantic_unit_variant_row_by_token,
             ),
             PassAccess::read("public_decl_index_by_hir", public_decl_index_by_hir),
             PassAccess::read("semantic_lir_functions", semantic_functions),

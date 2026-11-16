@@ -832,7 +832,7 @@ pub(super) fn register_resources(
     // Bounded storage, independent of token/tree capacity. No private 768-word
     // array is added to ordinary parser lanes.
     workspace(graph, "hir_float_workspace", ResourceDomain::HirNodes,
-        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 2048 * 768 * 4 } else { 4 })?;
+        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 4096 * 768 * 4 } else { 4 })?;
     // One slot per float literal; a job has at most one per token.
     workspace(graph, "hir_float_nodes", ResourceDomain::HirNodes,
         if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 {
@@ -1374,7 +1374,7 @@ fn register_enum_ranking(
         ],
     )?;
 
-    let steps = crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity);
+    let steps = crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity);
     register_ping_pong_walk(
         graph,
         passes.hir_enum_variant_rank_step.graph_pass(),
@@ -2647,7 +2647,7 @@ fn register_matches(
         FINALIZE,
         "hir_match_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
+        crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity),
         &[
             ("tree_count_status", "partial_parse_status", None),
             ("hir_match_rank_node", "hir_match_rank_node", None),
@@ -3001,7 +3001,7 @@ fn register_struct_fields(
         FINALIZE,
         "hir_struct_rank_dispatch_args",
         true,
-        crate::parser::passes::hir::bounded_walk_step_capacity(capacity.tree_capacity),
+        crate::parser::passes::hir::bounded_walk_even_step_capacity(capacity.tree_capacity),
         &[
             ("tree_count_status", "partial_parse_status", None),
             ("hir_struct_rank_node", "hir_struct_rank_node", None),

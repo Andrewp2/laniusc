@@ -3500,7 +3500,7 @@ mod tests {
         let float_pass = float_graph.pass_id("parser_hir_float_values").unwrap();
         assert!(float_graph.pass_id("parser_hir_literal_values").unwrap().index() < float_pass.index());
         assert!(float_pass.index() < float_graph.pass_id("hir_canonical_core").unwrap().index());
-        assert_eq!(float_graph.resource(float_graph.resource_id("hir_float_workspace").unwrap()).unwrap().bytes, 2048 * 768 * 4);
+        assert_eq!(float_graph.resource(float_graph.resource_id("hir_float_workspace").unwrap()).unwrap().bytes, 4096 * 768 * 4);
         assert_eq!(float_graph.resource(float_graph.resource_id("hir_expr_float_bits").unwrap()).unwrap().bytes, u64::from(capacity.token_capacity) * 16);
         // Structural header recovery reads the raw delimiter search relation.
         // Semantic bracket roles require the later statement context instead.
