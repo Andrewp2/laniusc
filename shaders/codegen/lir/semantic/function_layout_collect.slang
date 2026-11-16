@@ -10,6 +10,11 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_variant_payload_count;
+// The first payload-free variant row named by each declaration token, for
+// semantic/project.slang.
+RWStructuredBuffer<uint> semantic_unit_variant_row_by_token;
 RWStructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
@@ -46,6 +51,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             semantic_aggregate_hir_by_name_token[name_token] = row;
         if (compact_hir_core[row].kind == HIR_ENUM_ITEM)
             semantic_struct_word_count_by_hir[row] = 1u;
+    }
+
+    uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    if (row < variant_count && compact_variant_payload_count[row] == 0u)
+    {
+        uint name_token = compact_variants[row].name_token;
+        if (name_token < gParams.n_tokens)
+        {
+            uint ignored;
+            InterlockedMin(semantic_unit_variant_row_by_token[name_token], row, ignored);
+        }
     }
 
     uint field_count = min(compact_field_count[0u], gParams.n_hir_nodes);

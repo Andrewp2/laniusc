@@ -9,6 +9,7 @@ RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_field_word_offset_by_row;
 RWStructuredBuffer<uint> semantic_struct_field_word_count_by_row;
 RWStructuredBuffer<uint> semantic_function_id_by_token;
+RWStructuredBuffer<uint> semantic_unit_variant_row_by_token;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -22,6 +23,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         semantic_aggregate_hir_by_name_token[row] = INVALID;
         semantic_function_id_by_token[row] = INVALID;
+        semantic_unit_variant_row_by_token[row] = INVALID;
     }
     if (row < gParams.n_hir_nodes)
     {

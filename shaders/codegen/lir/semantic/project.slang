@@ -27,6 +27,7 @@ StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
 StructuredBuffer<uint> semantic_function_id_by_token;
+StructuredBuffer<uint> semantic_unit_variant_row_by_token;
 StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 StructuredBuffer<uint> semantic_const_function_by_root;
@@ -67,17 +68,13 @@ static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
+// The first payload-free variant row named by the token, from
+// function_layout_collect.slang.
 uint unit_variant_ordinal(uint declaration_token)
 {
     uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
-    for (uint row = 0u; row < count; row += 1u)
-    {
-        HirVariant variant = compact_variants[row];
-        if (variant.name_token == declaration_token &&
-            compact_variant_payload_count[row] == 0u)
-            return variant.ordinal;
-    }
-    return INVALID;
+    uint row = semantic_unit_variant_row_by_token[declaration_token];
+    return row < count ? compact_variants[row].ordinal : INVALID;
 }
 
 [shader("compute")]
