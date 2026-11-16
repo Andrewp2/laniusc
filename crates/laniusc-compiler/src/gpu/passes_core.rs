@@ -3233,7 +3233,7 @@ pub mod bind_group {
             .filter(|parameter| parameter.binding.index.is_some() && parameter.ty.kind.is_some())
             .map(|parameter| parameter.name.as_str())
             .collect::<HashSet<_>>();
-        let provided = bindings
+        let mut provided = bindings
             .iter()
             .map(|(name, _)| *name)
             .collect::<HashSet<_>>();
@@ -3243,6 +3243,15 @@ pub mod bind_group {
                 pass.shader_id
             ));
         }
+        // A resource for a binding the entry point does not use is dropped,
+        // not an error: the caller binds what the module declares.
+        provided.retain(|name| {
+            !pass
+                .reflection
+                .unused_parameters
+                .iter()
+                .any(|parameter| parameter.name == *name)
+        });
         if reflected != provided {
             let mut missing = reflected.difference(&provided).copied().collect::<Vec<_>>();
             let mut unexpected = provided.difference(&reflected).copied().collect::<Vec<_>>();
