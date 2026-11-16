@@ -245,13 +245,15 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
     let with = |flag: u32| -> Vec<usize> {
         unread.iter().zip(&selected).filter(|(_, selected)| *selected & flag != 0).map(|(index, _)| *index).collect()
     };
+    let selected_of = |index: usize| selected[unread.binary_search(&index).expect("a selected file was unread")];
 
     // Closures, for the files where one starts. The parser does not read a
     // closure, so they go before the machines.
     let candidates = with(closures::SELECT_CLOSURES);
     if !candidates.is_empty() {
         let texts: Vec<&str> = candidates.iter().map(|&index| files[index].text()).collect();
-        let outcome = closures::rewrite(&texts).map_err(|err| {
+        let count = candidates.iter().map(|&index| closures::closure_count(selected_of(index))).sum();
+        let outcome = closures::rewrite(&texts, count).map_err(|err| {
             super::compiler_execution_failed_error(
                 "the compiler stopped while rewriting closures",
                 "rewrite closures",
@@ -484,7 +486,8 @@ pub machine Door on Input -> Reply {
         sources.push("fn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n".to_string());
 
         let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
-        let outputs = match closures::rewrite(&texts).unwrap() {
+        let count = closures::select(&texts).unwrap().unwrap().into_iter().map(closures::closure_count).sum();
+        let outputs = match closures::rewrite(&texts, count).unwrap() {
             Some(closures::Outcome::Rewritten(outputs)) => outputs,
             Some(closures::Outcome::Invalid(invalid)) => panic!(
                 "{}: {} at byte {}",

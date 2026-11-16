@@ -8,7 +8,9 @@
 // rewrite"): SELECT_CLOSURES when
 // a closure starts in it, SELECT_MACHINES when it holds a token that only a
 // machine or a generator can use, or a name with the reserved prefix. The
-// machine pass parses only the files with SELECT_MACHINES.
+// machine pass parses only the files with SELECT_MACHINES. Above the two
+// flags, from bit 2 up, it counts the closures that start in the file, so
+// the closure pass sizes its records without reading the marks back.
 import gpu_index;
 import byte_packing;
 import generated_token_ids;
@@ -31,6 +33,7 @@ RWStructuredBuffer<uint> file_flags;
 
 static const uint SELECT_CLOSURES = 1u;
 static const uint SELECT_MACHINES = 2u;
+static const uint CLOSURE_COUNT_UNIT = 4u;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -114,5 +117,6 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         uint prior;
         InterlockedAdd(summary[1], 1u, prior);
+        InterlockedAdd(file_flags[file], CLOSURE_COUNT_UNIT, prior);
     }
 }

@@ -14,7 +14,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 
 use super::Segment;
 use crate::{
@@ -576,6 +576,11 @@ pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
 pub(super) const SELECT_CLOSURES: u32 = 1;
 pub(super) const SELECT_MACHINES: u32 = 2;
 
+/// The closures that start in a file, from its `select` flags.
+pub(super) fn closure_count(flags: u32) -> u32 {
+    flags >> 2
+}
+
 /// Records closures/mark over the lexed pack: the marks, the summary and
 /// the selection flags of each file.
 fn record_mark(
@@ -606,47 +611,34 @@ fn record_mark(
     Ok((marks, summary, file_flags))
 }
 
-pub(super) fn rewrite(sources: &[&str]) -> Result<Option<Outcome>> {
+/// Rewrites the closures of `sources`, where `closure_count` closures start
+/// (the sum of `closure_count` over their `select` flags).
+pub(super) fn rewrite(sources: &[&str], closure_count: u32) -> Result<Option<Outcome>> {
     let total: usize = sources.iter().map(|source| source.len()).sum();
-    if total == 0 {
+    if total == 0 || closure_count == 0 {
         return Ok(None);
     }
     let _run = begin_run();
     let lexer = try_global_lexer()?;
     pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
-        run(&Gpu { device, queue }, bufs, sources, total)
+        run(&Gpu { device, queue }, bufs, sources, total, closure_count)
     }))?
 }
 
-fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Result<Option<Outcome>> {
+fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize, closure_count: u32) -> Result<Option<Outcome>> {
     let total_u32 = u32::try_from(total).context("source pack is too large")?;
     let file_count = u32::try_from(sources.len()).context("too many source files")?;
     let scan_kernel = gpu.kernel("closures/scan")?;
     let summary_kernel = gpu.kernel("closures/summary")?;
 
-    // Depth changes and closure starts per token. The mark kernel counts
-    // starts in the freshly cleared summary; the existing readback then
-    // gates all depth/role work for packs without closures.
-    let mut encoder = gpu.encoder("closures.mark");
-    let (marks, summary, _) = record_mark(gpu, bufs, &mut encoder, total, sources.len())?;
-    let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
-    let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
-    gpu.submit("closures.mark", encoder);
-    let counts = gpu.words(&summary_read)?;
-    let closure_count = counts[1];
-    if gpu.words(&lex_error_read)?[0] != 0 {
-        return Ok(Some(Outcome::Unlexed));
-    }
-    if closure_count == 0 {
-        return Ok(None);
-    }
-
-    // The parts of each closure and the locals it captures.
+    // Depth changes and closure starts per token. `select` counted the
+    // starts already, so the records follow in the same submission.
     let records = gpu.rows("closures.records", closure_count as usize * RECORD_WORDS, 1);
     let status = gpu.words_from("closures.status", &[NO_ERROR]);
     let capture_marks = gpu.rows("closures.capture_marks", total, 4);
     let capture_work = [gpu.rows("closures.capture.a", total, 4), gpu.rows("closures.capture.b", total, 4)];
     let mut encoder = gpu.encoder("closures.records");
+    let (marks, summary, _) = record_mark(gpu, bufs, &mut encoder, total, sources.len())?;
     let depth_work = [gpu.rows("closures.depth.a", total, 4), gpu.rows("closures.depth.b", total, 4)];
     let depth_scan = gpu.scan(&mut encoder, &scan_kernel, &marks, &depth_work, total_u32)?;
     // Capture discovery needs binder roles only when a closure exists. Its
@@ -748,8 +740,16 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     gpu.summary(&mut encoder, &summary_kernel, bufs, capture_scan, &summary, 2, 0)?;
     let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
     let status_read = gpu.read(&mut encoder, &status, 0, 1);
+    let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
     gpu.submit("closures.records", encoder);
-    let capture_count = gpu.words(&summary_read)?[2];
+    if gpu.words(&lex_error_read)?[0] != 0 {
+        return Ok(Some(Outcome::Unlexed));
+    }
+    let counts = gpu.words(&summary_read)?;
+    if counts[1] != closure_count {
+        bail!("the closure pass found {} closures where the selection counted {closure_count}", counts[1]);
+    }
+    let capture_count = counts[2];
     let failure = gpu.words(&status_read)?[0];
     if failure != NO_ERROR {
         return invalid(gpu, bufs, sources, failure).map(|invalid| Some(Outcome::Invalid(invalid)));
