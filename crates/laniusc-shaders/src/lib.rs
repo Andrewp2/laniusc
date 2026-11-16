@@ -118,6 +118,12 @@ mod spirv_size;
 #[path = "../reflection_names.rs"]
 mod reflection_names;
 
+// The used-binding analysis runs in build.rs; compile it here so its tests run.
+#[cfg(test)]
+#[path = "../used_bindings.rs"]
+#[allow(dead_code)]
+mod used_bindings;
+
 // The kernel-key check runs in build.rs; compile it here so its tests run.
 #[cfg(test)]
 #[path = "../kernel_keys.rs"]

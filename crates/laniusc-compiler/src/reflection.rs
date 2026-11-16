@@ -19,7 +19,73 @@ pub struct SlangReflection {
     /// Named type layouts emitted by Slang for user-defined types.
     #[serde(default)]
     pub type_layouts: HashMap<String, TypeLayout>,
+    /// Reflected binding indices the kernel keeps, in their new order, added
+    /// by the shader build (`laniusc-shaders/used_bindings.rs`), which also
+    /// renumbers the SPIR-V. See [`SlangReflection::retain_used_bindings`].
+    #[serde(default, rename = "laniusBindings")]
+    pub kept_bindings: Option<Vec<u32>>,
+    /// Top-level parameters [`SlangReflection::retain_used_bindings`]
+    /// dropped, without a binding index. The compiler graph still tracks
+    /// their resources, so its dependency analysis and the names callers
+    /// declare do not change; layouts and bind groups leave them out.
+    #[serde(skip)]
+    pub unused_parameters: Vec<ParameterReflection>,
 }
+
+impl SlangReflection {
+    /// Drops the bindings the kernel does not keep and renumbers the kept
+    /// ones by their position in `kept_bindings`, as the build renumbered the
+    /// SPIR-V.
+    ///
+    /// Slang reflection lists every global of a module in each kernel of the
+    /// module, and wgpu tracks every buffer of a bound group on every
+    /// dispatch, so layouts, bind groups and the names callers iterate cover
+    /// only the bindings the entry point uses, plus every constant buffer.
+    /// Reflection without the list is left whole.
+    pub fn retain_used_bindings(&mut self) {
+        let Some(kept) = self.kept_bindings.take() else {
+            return;
+        };
+        let renumber = |parameters: &mut Vec<ParameterReflection>,
+                        dropped: &mut Vec<ParameterReflection>| {
+            let mut kept_parameters = Vec::with_capacity(parameters.len());
+            for mut parameter in parameters.drain(..) {
+                if parameter.binding.kind != "descriptorTableSlot" {
+                    kept_parameters.push(parameter);
+                    continue;
+                }
+                let Some(index) = parameter.binding.index else {
+                    kept_parameters.push(parameter);
+                    continue;
+                };
+                match kept.iter().position(|kept| *kept == index) {
+                    Some(position) => {
+                        parameter.binding.index = Some(position as u32);
+                        kept_parameters.push(parameter);
+                    }
+                    None => {
+                        parameter.binding.index = None;
+                        dropped.push(parameter);
+                    }
+                }
+            }
+            *parameters = kept_parameters;
+        };
+        let mut dropped = Vec::new();
+        renumber(&mut self.parameters, &mut dropped);
+        self.unused_parameters = dropped;
+        for entry in &mut self.entry_points {
+            if let Some(layout) = entry.program_layout.as_mut() {
+                for set in &mut layout.parameters {
+                    if set.space == 0 {
+                        renumber(&mut set.parameters, &mut Vec::new());
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 /// Custom Slang attribute attached to a reflected parameter.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -170,15 +236,19 @@ pub fn parse_reflection_from_file(path: impl AsRef<Path>) -> Result<SlangReflect
     log::debug!("Parsing reflection from: {}", path_ref.display());
     let file_content = fs::read_to_string(path_ref)
         .map_err(|e| format!("Failed to read reflection file {path_ref:?}: {e}"))?;
-    serde_json::from_str(&file_content)
-        .map_err(|e| format!("Failed to parse reflection JSON {path_ref:?}: {e}"))
+    let mut reflection: SlangReflection = serde_json::from_str(&file_content)
+        .map_err(|e| format!("Failed to parse reflection JSON {path_ref:?}: {e}"))?;
+    reflection.retain_used_bindings();
+    Ok(reflection)
 }
 
 /// Parses embedded or externally loaded Slang reflection JSON bytes.
 pub fn parse_reflection_from_bytes(data: &[u8]) -> Result<SlangReflection, String> {
     log::debug!("Parsing reflection from embedded bytes");
-    serde_json::from_slice(data)
-        .map_err(|e| format!("Failed to parse reflection JSON from bytes: {e}"))
+    let mut reflection: SlangReflection = serde_json::from_slice(data)
+        .map_err(|e| format!("Failed to parse reflection JSON from bytes: {e}"))?;
+    reflection.retain_used_bindings();
+    Ok(reflection)
 }
 
 /// Converts one reflected Slang parameter/type pair to a wgpu binding type.

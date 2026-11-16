@@ -12,13 +12,14 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 
 // The compiler's build script uses the rest of this module.
 #[allow(dead_code)]
 mod kernel_keys;
 mod reflection_names;
 mod spirv_size;
+mod used_bindings;
 
 fn main() -> Result<()> {
     const DEFAULT_SHADER_COMPILE_TIMEOUT_MS: u64 = 120_000;
@@ -85,16 +86,18 @@ fn main() -> Result<()> {
         let source_digest = shader_source_digest(&shader_root, &ep)?;
         // The stamp lists everything that changes the compiled artifact. A
         // shader compiled with LANIUS_SHADER_DEBUG has different reflection
-        // data, so the stamp records the debug setting too.
+        // data, so the stamp records the debug setting too. `used_bindings`
+        // versions the used-binding list the build adds to the reflection.
         let debug = env_truthy("LANIUS_SHADER_DEBUG");
         let compile_stamp = format!(
-            "slangc={}\nopt={}\nminimum_slang_opt={}\ndebug={}\nsource_digest={}\nextra={}\n",
+            "slangc={}\nopt={}\nminimum_slang_opt={}\ndebug={}\nsource_digest={}\nextra={}\nused_bindings={}\n",
             slangc.display(),
             opt_level,
             minimum_slang_opt,
             debug,
             source_digest,
-            extra
+            extra,
+            USED_BINDINGS_VERSION,
         );
         if shader_outputs_fresh(
             &shader_root,
@@ -872,9 +875,46 @@ fn compile_shader_job(
         ));
     }
     validate_shader_artifact_size(&job.ep, &job.spv_out, max_shader_spv_bytes)?;
+    record_used_bindings(&job.spv_out, &job.refl_out)
+        .with_context(|| format!("record used bindings of {}", job.artifact_key))?;
     fs::write(&job.stamp_out, &job.compile_stamp)
         .with_context(|| format!("write shader stamp {}", job.stamp_out.display()))?;
     Ok((job.artifact_key, job.spv_out, job.refl_out))
+}
+
+/// Version of the used-binding pass in the stamp (see `used_bindings.rs`):
+/// a change rebuilds every artifact, so no SPIR-V or reflection keeps an
+/// older numbering.
+const USED_BINDINGS_VERSION: u32 = 2;
+
+/// Keeps the bindings the kernel's entry point uses and numbers them densely,
+/// in the SPIR-V and in the reflection (see `used_bindings.rs`).
+fn record_used_bindings(spv_path: &Path, reflection_path: &Path) -> Result<()> {
+    let bytes = fs::read(spv_path)
+        .with_context(|| format!("read shader SPIR-V {}", spv_path.display()))?;
+    ensure!(bytes.len() % 4 == 0, "SPIR-V size is not a multiple of 4");
+    let mut words: Vec<u32> = bytes
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
+        .collect();
+    let reflection = fs::read_to_string(reflection_path)
+        .with_context(|| format!("read shader reflection {}", reflection_path.display()))?;
+    let Some(reflected) = reflection_names::descriptor_bindings(&reflection)? else {
+        return Ok(());
+    };
+    let module = used_bindings::module_bindings(&words)?;
+    let Some(kept) = used_bindings::plan(&module, &reflected) else {
+        return Ok(());
+    };
+    used_bindings::rewrite_bindings(&mut words, &used_bindings::renumbering(&kept, &reflected))?;
+    let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+    fs::write(spv_path, bytes)
+        .with_context(|| format!("write shader SPIR-V {}", spv_path.display()))?;
+    fs::write(
+        reflection_path,
+        used_bindings::annotate_reflection(&reflection, &kept)?,
+    )
+    .with_context(|| format!("write shader reflection {}", reflection_path.display()))
 }
 
 fn command_output_with_timeout(
