@@ -405,30 +405,12 @@ impl GpuCompiler<'_> {
             let words = vec![term; (calls.args.size() / 4) as usize];
             self.gpu.queue.write_buffer(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
         }
-        let outcome = build
-            .projection
-            .run_with_lowerer(
-                &store,
-                &roots.inputs,
-                &build.options,
-                Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
-                |bytes,tokens,rows,hir,semantic| {
-                    let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
-                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE)?;
-                    let _span = x86::TailSpan::new("tail.instance.spill");
-                    object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))
-                },
-            )
-            .map_err(|e| retained_error("projection", format!("{e:#}")))?;
-        let (instances, report) = match outcome {
-            ProjectionOutcome::Objects { objects, report } => (objects, report),
-            ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
-        };
-        let _tail = x86::TailSpan::new("tail.after_projection");
-        let finalize_span = x86::TailSpan::new("tail.finalize");
+        // The symbol finalizer reads only the original objects and the root
+        // routes, so it is submitted while the GPU lowers the first projected
+        // batch and read after the projection.
         let finalizer = match &mut build.finalizer {
-            Some(finalizer) => finalizer,
-            slot => slot.insert(
+            Some(finalizer) => &*finalizer,
+            slot => &*slot.insert(
                 GpuX86SymbolFinalizer::new_with_device(self.gpu).map_err(|e| retained_error("finalizer", e))?,
             ),
         };
@@ -444,8 +426,40 @@ impl GpuCompiler<'_> {
             route_capacity: roots.root_route_capacity,
             readiness: &roots.root_readiness,
         };
+        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
+        let mut finalize_submitted = None;
+        let mut submit_finalize = || {
+            if finalize_submitted.is_none() {
+                finalize_submitted = Some(finalizer.submit_once(device, queue, &columns, &table, generation));
+            }
+        };
+        let outcome = build
+            .projection
+            .run_with_lowerer(
+                &store,
+                &roots.inputs,
+                &build.options,
+                Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
+                |bytes,tokens,rows,hir,semantic| {
+                    let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
+                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE,&mut submit_finalize)?;
+                    let _span = x86::TailSpan::new("tail.instance.spill");
+                    object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))
+                },
+            )
+            .map_err(|e| retained_error("projection", format!("{e:#}")))?;
+        let (instances, report) = match outcome {
+            ProjectionOutcome::Objects { objects, report } => (objects, report),
+            ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
+        };
+        let _tail = x86::TailSpan::new("tail.after_projection");
+        let finalize_span = x86::TailSpan::new("tail.finalize");
+        let submitted = match finalize_submitted {
+            Some(submitted) => submitted,
+            None => finalizer.submit_once(device, queue, &columns, &table, generation),
+        };
         let published = finalizer
-            .finalize(&self.gpu.device, &self.gpu.queue, &columns, &table, generation)
+            .finish(device, queue, submitted, &columns, &table, generation)
             .map_err(|e| retained_error("finalize", format!("{e:#}")))?
             .map_err(|failure| retained_error("finalizer rejected the objects", format!("{failure:?}")))?;
         for (object, columns) in originals.iter_mut().zip(&published) {
