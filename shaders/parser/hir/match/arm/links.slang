@@ -40,6 +40,12 @@ RWStructuredBuffer<uint> hir_match_arm_previous;
 RWStructuredBuffer<uint> hir_match_payload_owner_a;
 RWStructuredBuffer<uint> hir_match_payload_link_a;
 RWStructuredBuffer<uint> hir_match_payload_rank_a;
+RWStructuredBuffer<uint> hir_match_arm_owner_b;
+RWStructuredBuffer<uint> hir_match_arm_link_b;
+RWStructuredBuffer<uint> hir_match_arm_rank_b;
+RWStructuredBuffer<uint> hir_match_payload_owner_b;
+RWStructuredBuffer<uint> hir_match_payload_link_b;
+RWStructuredBuffer<uint> hir_match_payload_rank_b;
 RWStructuredBuffer<uint> hir_match_pattern_parent;
 
 static const uint INVALID = 0xffffffffu;
@@ -311,6 +317,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_match_payload_rank_a[node] = 0u;
     hir_match_pattern_parent[node] = INVALID;
 
+    // The rank steps write every `_b` row they read, so only row 0 is
+    // written here. That write keeps `_b` live from this pass in the graph's
+    // slot plan; letting its lifetime start at the rank step changes slot
+    // sharing and breaks enum match payload checking (cause not yet found).
+    if (node == 0u)
+    {
+        hir_match_arm_owner_b[0u] = INVALID;
+        hir_match_arm_link_b[0u] = INVALID;
+        hir_match_arm_rank_b[0u] = 0u;
+        hir_match_payload_owner_b[0u] = INVALID;
+        hir_match_payload_link_b[0u] = INVALID;
+        hir_match_payload_rank_b[0u] = 0u;
+    }
     if (!valid_node(node))
         return;
 
