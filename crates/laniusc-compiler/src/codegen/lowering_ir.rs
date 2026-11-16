@@ -4683,11 +4683,12 @@ fn lowering_compiler_graph_builder(
             block_prefix: "lir.opt.ssa.demand_seed_scan_block_prefix",
         },
     )?;
+    // The status, then the job's semantic and target row totals.
     let lowering_status_readback = graph.add_storage(
         "lowering.status_readback",
         ResourceDomain::ArtifactBytes,
         ResourceClass::External,
-        LoweringCapacities::bytes::<LoweringStatus>(1),
+        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2]>(1),
     )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
@@ -10727,15 +10728,10 @@ fn lowering_compiler_graph_builder(
         "status_readback",
         lowering_status_readback,
     )?;
-    // The job's semantic and target row totals, read back with the status:
-    // a job lowered in a workspace larger than its own capacities checks
-    // them against those capacities (GpuLoweringPipeline::finish_status).
-    let job_totals_readback = graph.add_storage(
-        "lowering.job_totals_readback",
-        ResourceDomain::ArtifactBytes,
-        ResourceClass::External,
-        LoweringCapacities::bytes::<u32>(2),
-    )?;
+    // The job's semantic and target row totals, read back after the status
+    // in its buffer: a job lowered in a workspace larger than its own
+    // capacities checks them against those capacities
+    // (GpuLoweringPipeline::finish_status).
     for (name, source_binding, source) in [
         ("lowering.semantic_total.readback", "semantic_total", semantic_total),
         ("lowering.target_total.readback", "target_total", target_total),
@@ -10745,8 +10741,8 @@ fn lowering_compiler_graph_builder(
             CompilerPhase::Artifact,
             source_binding,
             source,
-            "job_totals_readback",
-            job_totals_readback,
+            "status_readback",
+            lowering_status_readback,
         )?;
     }
     Ok(graph)

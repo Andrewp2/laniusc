@@ -200,10 +200,9 @@ pub(crate) struct GpuLoweringPipeline {
     semantic: GpuSemanticLoweringStage,
     optimizer: GpuOptimizationStage,
     target: TargetStage,
+    /// The status, then the job's semantic and target row totals: one map.
     status_readback: LaniusBuffer<u8>,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
-    /// The job's semantic and target row totals, copied with the status.
-    job_totals_readback: LaniusBuffer<u8>,
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
     phase_reset_plans: Mutex<Vec<(LoweringCapacities, Arc<PhaseResetPlan>)>>,
@@ -211,7 +210,7 @@ pub(crate) struct GpuLoweringPipeline {
     /// fit them, as it would in a fresh workspace for the job.
     recorded_job: Mutex<LoweringCapacities>,
     /// The semantic rows the last finished job counted on the GPU
-    /// (`job_totals_readback`).
+    /// (read with the status).
     measured_semantic_rows: std::sync::atomic::AtomicU32,
     // Per-workspace fault injection: exercise output retries without making
     // unrelated concurrent tests run with artificially small capacities.
@@ -972,8 +971,8 @@ impl GpuLoweringPipeline {
         let status_readback = readback_bytes(
             device,
             "lowering.status.readback",
-            status_bytes,
-            status_bytes,
+            status_bytes + 8,
+            status_bytes + 8,
         );
         let status_allocations = workspace.allocations();
         let status_readback_copy = crate::gpu::operations::CopyBufferOperation::new(
@@ -987,7 +986,6 @@ impl GpuLoweringPipeline {
             0,
             status_bytes as u64,
         )?;
-        let job_totals_readback = readback_bytes(device, "lowering.job_totals.readback", 8, 8);
         let target_total = workspace
             .alias::<u32>(
                 &graph,
@@ -1004,9 +1002,9 @@ impl GpuLoweringPipeline {
                 "semantic_total",
                 semantic.output().count,
                 0,
-                "job_totals_readback",
-                &job_totals_readback,
-                0,
+                "status_readback",
+                &status_readback,
+                status_bytes as u64,
                 4,
             )?,
             crate::gpu::operations::CopyBufferOperation::new(
@@ -1015,9 +1013,9 @@ impl GpuLoweringPipeline {
                 "target_total",
                 &target_total,
                 0,
-                "job_totals_readback",
-                &job_totals_readback,
-                4,
+                "status_readback",
+                &status_readback,
+                status_bytes as u64 + 4,
                 4,
             )?,
         ];
@@ -1032,7 +1030,6 @@ impl GpuLoweringPipeline {
             target,
             status_readback,
             status_readback_copy,
-            job_totals_readback,
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
             recorded_job: Mutex::new(capacities),
@@ -1151,19 +1148,11 @@ impl GpuLoweringPipeline {
     /// analysis clears cover only its capacities; rows past them could read
     /// stale words. Target rows use an initial frontend estimate
     /// plus explicit GPU demand from this compilation's earlier attempt.
-    fn check_job_totals(&self, device: &wgpu::Device, status: &mut LoweringStatus) -> Result<()> {
+    fn check_job_totals(&self, status: &mut LoweringStatus, semantic_rows: u32, target_rows: u32) {
         let job = *self
             .recorded_job
             .lock()
             .expect("lowering recorded job poisoned");
-        let slice = self.job_totals_readback.slice(..);
-        map_readback_blocking(device, &slice, "lowering job totals readback")?;
-        let mapped = slice.get_mapped_range();
-        let word =
-            |index: usize| u32::from_le_bytes(mapped[index * 4..index * 4 + 4].try_into().unwrap());
-        let (semantic_rows, target_rows) = (word(0), word(1));
-        drop(mapped);
-        self.job_totals_readback.unmap();
         self.measured_semantic_rows
             .store(semantic_rows, std::sync::atomic::Ordering::Relaxed);
         if crate::options::get().report.buffers {
@@ -1174,7 +1163,6 @@ impl GpuLoweringPipeline {
         if job != self.capacities {
             flag_job_totals(status, job, semantic_rows, target_rows);
         }
-        Ok(())
     }
 
     /// Fails an artifact the job's capacities could not hold, as a fresh
@@ -1486,9 +1474,11 @@ impl GpuLoweringPipeline {
             diagnostic_detail: word(8),
             first_unsupported_target_op: word(9),
         };
+        let totals = std::mem::size_of::<LoweringStatus>() / 4;
+        let (semantic_rows, target_rows) = (word(totals), word(totals + 1));
         drop(mapped);
         self.status_readback.unmap();
-        self.check_job_totals(device, &mut status)?;
+        self.check_job_totals(&mut status, semantic_rows, target_rows);
         Ok(status)
     }
 
