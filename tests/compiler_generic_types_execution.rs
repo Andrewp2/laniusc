@@ -8657,6 +8657,31 @@ fn main() -> i32 {{
     );
 }
 
+/// A type's layout completes one projection round after its field layouts.
+/// The nesting here is deeper than the rounds a new projection records, so
+/// the projection must detect the unfinished layout and add rounds.
+#[test]
+fn generic_struct_layouts_nest_deeper_than_the_first_layout_round_count() {
+    let depth = 48;
+    let ty = (0..depth).fold("i32".to_owned(), |inner, _| format!("Wrap<{inner}>"));
+    let value = (0..depth).fold("7".to_owned(), |inner, _| {
+        format!("Wrap {{ value: {inner} }}")
+    });
+    let access = ".value".repeat(depth);
+    let source = format!(
+        r#"
+struct Wrap<T> {{ value: T }}
+fn keep<T>(value: T) -> T {{ return value; }}
+fn main() -> i32 {{
+    let nested: {ty} = keep({value});
+    if (nested{access} != 7) {{ return 1; }}
+    return 0;
+}}
+"#
+    );
+    execute("deep generic layout", &source);
+}
+
 #[test]
 fn generic_result_only_constants_reject_imported_conflicts() {
     let stdlib = ReceiverTestStdlib::new();

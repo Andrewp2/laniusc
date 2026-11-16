@@ -165,9 +165,12 @@ const S_BATCH_SIDE: usize = 42;
 const S_BATCH_NONEMPTY: usize = 43;
 const S_BATCH_STRING_WORDS: usize = 44;
 const S_BATCHES: usize = 9;
+const S_LAYOUT_CHANGED: usize = 10;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
 const STATE_CHECKED: u32 = 1;
+/// Layout rounds recorded by a new projection. One round completes at least
+/// one nesting level of every type whose layout is still pending.
 const LAYOUT_ROUNDS: u32 = 32;
 const CALL_WORDS: u64 = 22;
 
@@ -839,6 +842,9 @@ pub struct RetainedProjection {
     /// Layouts for `type_capacity` TermIds.
     type_capacity: u32,
     layout: Option<wgpu::Buffer>,
+    /// Layout rounds recorded per check. The count doubles when the last
+    /// round still completed a layout, and it is kept for later runs.
+    layout_rounds: u32,
     batch_capacity: u32,
     batches: Option<wgpu::Buffer>,
     columns: Option<BatchColumns>,
@@ -914,6 +920,7 @@ impl RetainedProjection {
             rows: BTreeMap::new(),
             type_capacity: 0,
             layout: None,
+            layout_rounds: LAYOUT_ROUNDS,
             batch_capacity: 0,
             batches: None,
             columns: None,
@@ -1403,82 +1410,108 @@ impl RetainedProjection {
                 .push(storage(&self.device, "pj_string_scan_config", 16, false));
         }
         let extra = [("sb_results", &results), ("sb_counts", &counts)];
-        let mut r = self.recorder();
-        trace("check: recording");
-        r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
-        r.dispatch(K_TYPE_ARGUMENTS, &guard, inputs, &extra, self.type_capacity)?;
-        for _ in 0..LAYOUT_ROUNDS {
-            r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
-        }
-        r.dispatch(K_ROWS_INIT, &guard, inputs, &extra, report.rows.max(1))?;
-        r.dispatch(K_EDGES, &guard, inputs, &extra, report.rows.max(1))?;
-        let arms = totals[S_TOTALS + 4];
-        let payloads = totals[S_TOTALS + 5];
-        if arms != 0 || payloads != 0 {
-            r.dispatch(K_PATTERN_ROOTS, &guard, inputs, &extra, arms.max(payloads))?;
-            if payloads != 0 {
-                for _ in 0..64 {
-                    r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
-                }
+        // A type's layout completes one round after its element and field
+        // layouts. The last round runs after its status word is cleared, so
+        // the word reports whether that round still completed a layout. If
+        // it did, the fixed point is not proven: the check reruns from the
+        // plan's status with twice the rounds.
+        let (table, cert, status) = loop {
+            let mut r = self.recorder();
+            trace("check: recording");
+            r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
+            r.dispatch(K_TYPE_ARGUMENTS, &guard, inputs, &extra, self.type_capacity)?;
+            for _ in 1..self.layout_rounds {
+                r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
             }
-        }
-        if totals[S_TOTALS + 7] != 0 {
-            let mut input = 0u32;
-            let mut distance = 0u32;
-            for config in &self.string_scan_configs {
-                self.queue
-                    .write_buffer(config, 0, &words_bytes(&[distance, input, 0, 0]));
-                let scan_extra = [
-                    ("sb_results", &results),
-                    ("sb_counts", &counts),
-                    ("pj_string_scan_config", config),
-                ];
-                r.dispatch(K_STRING_SCAN, &guard, inputs, &scan_extra, report.rows + 1)?;
-                if distance == 0 {
-                    distance = 1;
-                } else {
-                    input ^= 1;
-                    if distance > report.rows / 2 {
-                        break;
+            r.dispatch(K_ROWS_INIT, &guard, inputs, &extra, report.rows.max(1))?;
+            r.dispatch(K_EDGES, &guard, inputs, &extra, report.rows.max(1))?;
+            let arms = totals[S_TOTALS + 4];
+            let payloads = totals[S_TOTALS + 5];
+            if arms != 0 || payloads != 0 {
+                r.dispatch(K_PATTERN_ROOTS, &guard, inputs, &extra, arms.max(payloads))?;
+                if payloads != 0 {
+                    for _ in 0..64 {
+                        r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
                     }
-                    distance *= 2;
                 }
             }
-            if input == 1 {
-                r.encoder().copy_buffer_to_buffer(
-                    &self.rows["pj_string_scratch"],
-                    0,
-                    &self.rows["pj_string_offsets"],
-                    0,
-                    (report.rows as u64 + 1) * 4,
+            if totals[S_TOTALS + 7] != 0 {
+                let mut input = 0u32;
+                let mut distance = 0u32;
+                for config in &self.string_scan_configs {
+                    self.queue
+                        .write_buffer(config, 0, &words_bytes(&[distance, input, 0, 0]));
+                    let scan_extra = [
+                        ("sb_results", &results),
+                        ("sb_counts", &counts),
+                        ("pj_string_scan_config", config),
+                    ];
+                    r.dispatch(K_STRING_SCAN, &guard, inputs, &scan_extra, report.rows + 1)?;
+                    if distance == 0 {
+                        distance = 1;
+                    } else {
+                        input ^= 1;
+                        if distance > report.rows / 2 {
+                            break;
+                        }
+                        distance *= 2;
+                    }
+                }
+                if input == 1 {
+                    r.encoder().copy_buffer_to_buffer(
+                        &self.rows["pj_string_scratch"],
+                        0,
+                        &self.rows["pj_string_offsets"],
+                        0,
+                        (report.rows as u64 + 1) * 4,
+                    );
+                }
+            } else {
+                r.encoder()
+                    .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
+            }
+            // The row, edge, pattern and string kernels above do not read
+            // layouts, so the last layout round is recorded after them.
+            r.encoder()
+                .clear_buffer(&self.status, S_LAYOUT_CHANGED as u64 * 4, Some(4));
+            r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
+            r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
+            r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
+            r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
+            r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
+            // The certification and the batch table are read with the status;
+            // they are used only when the check passed.
+            if let Some(roots) = &roots {
+                self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
+            }
+            let (dispatches, mut read) = r.finish_read(
+                &[
+                    (&self.status, STATUS_WORDS),
+                    (&self.cert, if roots.is_some() { 3 } else { 0 }),
+                    (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
+                ],
+                &mut report,
+            )?;
+            report.dispatches += dispatches;
+            let table = read.pop().unwrap();
+            let cert = read.pop().unwrap();
+            let status = read.pop().unwrap();
+            trace(&format!("check: {status:?}"));
+            if status[S_LAYOUT_CHANGED] == 0 {
+                break (table, cert, status);
+            }
+            // Every unfinished round completes a layout, so the rounds a fixed
+            // point needs do not exceed the layout rows.
+            if self.layout_rounds > self.type_capacity {
+                bail!(
+                    "retained projection layout did not settle in {} rounds",
+                    self.layout_rounds
                 );
             }
-        } else {
-            r.encoder()
-                .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
-        }
-        r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
-        r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
-        r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
-        r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
-        // The certification and the batch table are read with the status;
-        // they are used only when the check passed.
-        if let Some(roots) = &roots {
-            self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
-        }
-        let (dispatches, mut read) = r.finish_read(
-            &[
-                (&self.status, STATUS_WORDS),
-                (&self.cert, if roots.is_some() { 3 } else { 0 }),
-                (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
-            ],
-            &mut report,
-        )?;
-        report.dispatches += dispatches;
-        let table = read.pop().unwrap();
-        let cert = read.pop().unwrap();
-        let status = read.pop().unwrap();
-        trace(&format!("check: {status:?}"));
+            self.layout_rounds = self.layout_rounds.saturating_mul(2);
+            self.queue
+                .write_buffer(&self.status, 0, &words_bytes(&totals));
+        };
         report.check_us = started.elapsed().as_micros() as u64;
         if status[S_STATE] != STATE_CHECKED {
             let f = &status[S_FIRST..S_FIRST + 8];

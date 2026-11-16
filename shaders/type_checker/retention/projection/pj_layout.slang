@@ -53,8 +53,9 @@ public static const uint PJ_S_MAX_ROWS = 6u;       // largest instance, in rows
 public static const uint PJ_S_MAX_TOKENS = 7u;
 public static const uint PJ_S_MAX_SIDE = 8u;
 public static const uint PJ_S_BATCHES = 9u;
-public static const uint PJ_S_LAYOUT_CHANGED = 10u; // terms laid out in the current round
-public static const uint PJ_S_LAYOUT_ROUNDS = 11u;
+// Layouts completed since the host last cleared the word. The host clears
+// it before the last layout round and reruns with more rounds if it is set.
+public static const uint PJ_S_LAYOUT_CHANGED = 10u;
 public static const uint PJ_S_IDENTITY_OVERFLOW = 12u;
 public static const uint PJ_S_INPUT_ERROR = 13u;   // header error, even with no ranks
 public static const uint PJ_S_INPUT_DETAIL = 14u;
@@ -117,4 +118,3 @@ public static const uint PJ_IMPORTED_COMPLETE = 0x80000000u;
 // Per global row facts (pj_g_facts): (ref tag, ref payload, native words,
 // scalar code or 0). pj_g_member: (field word offset, field word count).
 public static const uint PJ_EXPR_DEPTH = 256u;
-public static const uint PJ_LAYOUT_ROUNDS = 32u;
