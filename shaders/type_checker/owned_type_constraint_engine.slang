@@ -588,6 +588,16 @@ public OwnedConstraintStatus owned_constraints_begin<PatternGraph : IOwnedConstr
         identity_capacity, false, limits, frame, state);
 }
 
+// owned_constraint_roots_disjoint for a head match's pattern and goal roots.
+public bool owned_constraints_roots_disjoint<
+    PatternGraph : IOwnedConstraintPatternGraph, GoalGraph : IConstraintMatchGraph>(
+    uint2 pattern, uint2 goal, uint2 node_capacities, uint identity_capacity)
+{
+    return owned_constraint_roots_disjoint<
+        OwnedConstraintGraphPair<PatternGraph, RigidConstraintGoalGraph<GoalGraph>>>(
+        pattern, goal, node_capacities, identity_capacity);
+}
+
 // A head match (fixed = false: before finish, with inference) or a fixed
 // prerequisite recheck (fixed = true, see owned_constraints_match_fixed),
 // through one unification call site: a caller that runs both, such as
@@ -736,6 +746,42 @@ public OwnedConstraintStatus owned_overlap_begin_pair<Pair : IOwnedConstraintPai
 {
     return owned_constraint_initialize<Pair>(uint2(left_owner, right_owner),
         uint2(left_node_capacity, right_node_capacity), identity_capacity, true, limits, frame, state);
+}
+
+// The first step of a unification (overlap or head match) over two unbound
+// roots, without its state: true exactly when that step returns NoMatch (one
+// side constant, or two terms of different shape, atom or nominal header). A
+// caller that compares many pairs skips the state setup for these; every other
+// outcome (a type parameter, a constant pair, equal compound headers, an
+// invalid term) runs the full traversal, which repeats this step. Callers
+// admit the owners first, so the setup cannot fail before the step.
+public bool owned_constraint_roots_disjoint<Pair : IOwnedConstraintPair>(
+    uint2 left, uint2 right, uint2 node_capacities, uint identity_capacity)
+{
+    bool a_constant = owned_constraint_constant(left.x);
+    bool b_constant = owned_constraint_constant(right.x);
+    if (a_constant || b_constant) return a_constant != b_constant;
+    // Atoms (1) and compound rows (3) resolve to themselves; anything else is
+    // a parameter or an invalid tag, for the traversal.
+    if ((left.x != 1u && left.x != 3u) || (right.x != 1u && right.x != 3u)) return false;
+    if (left.x == 1u && (left.y == 0u || left.y >= 128u)) return false;
+    if (right.x == 1u && (right.y == 0u || right.y >= 128u)) return false;
+    if (left.x != right.x) return true;
+    if (left.x == 1u) return left.y != right.y;
+    ConstraintNodeHeader a_header = (ConstraintNodeHeader)0;
+    ConstraintNodeHeader b_header = (ConstraintNodeHeader)0;
+    [loop]
+    for (uint side = 0u; side < 2u; side++)
+    {
+        ConstraintNodeHeader header;
+        uint row = side == 0u ? left.y : right.y;
+        if (row >= node_capacities[side] ||
+            !Pair.node_header(side, row, node_capacities[side], identity_capacity, header))
+            return false;
+        if (side == 0u) a_header = header; else b_header = header;
+    }
+    return a_header.kind != b_header.kind ||
+        (a_header.kind == 1u && !constraint_nominal_headers_equal(a_header, b_header));
 }
 
 public OwnedConstraintStatus owned_overlap_match_pair<Pair : IOwnedConstraintPair>(

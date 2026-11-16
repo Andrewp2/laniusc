@@ -235,6 +235,7 @@ pub const PRODUCER_KERNEL: &str = "tests/retention_projection_producer";
 /// The producer's GPU buffers: `pj_instances` (two uint4 per rank),
 /// `pj_routes` (one uint4 per route) and `pj_readiness` (one uint4). The
 /// host never writes or reads a row of them.
+#[derive(Clone)]
 pub struct ProjectionInputs {
     instances: wgpu::Buffer,
     routes: wgpu::Buffer,

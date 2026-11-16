@@ -42,7 +42,14 @@ publication's receipt (its route header) is copied on the GPU into
 `dg_receipt` in the wave's scan submit and comes back with the
 resolution readback; the host checks it before any growth or failure of
 that wave, and before the method routes size their tables from its proof
-node count. The bound-route pass `06_bound_routes` and the publish pass
+node count. The closed solve itself is deferred: the solver records its
+first wave submit (the batch admission, five rounds and the finish point)
+and returns without its progress readback. The receipt copy also carries
+the solver's wave state and batch receipt, so the resolution readback
+shows whether the solve finished in that submit. When it did not, the
+wave's routes are incomplete: the attempt runs again, and this discovery
+reads every later closed solve's progress before its resolution
+(`eager_closed`). Settings: 73 to 70 readbacks per build. The bound-route pass `06_bound_routes` and the publish pass
 record into each method-route batch. They do nothing unless `mr_state`
 word 0 is 2 and `MR_PENDING` is clear, so the routes' state, the
 discovery status and the store counters come back in one readback. Term
@@ -186,3 +193,19 @@ each route. Projection checks the selected target's receiver, arguments, result
 and layout before any native lowering. Required-member calls from original
 nongeneric bodies are not admitted through this route; concrete method calls
 there use their frontend-selected implementation.
+
+## Buffers across warm builds
+
+A warm build creates no bind group in discovery, method routes, the
+retained catalog, closed waves or native calls. Their buffers persist in
+the daemon, and buffers whose size follows the term count grow by powers of
+two, so a build whose term count grew a little binds the same buffers and
+reuses the cached bind groups. The method-route view binds its whole route
+arena, since the route header bounds every read. Discovery keeps the
+published projection inputs, root routes and requests while their capacities
+are unchanged; every attempt clears them before use. `dg_instances` and
+`dg_edges` keep their exact size, because the kernels read their capacity
+from the buffer length and it must match the projection inputs.
+
+In the settings census, a late warm job created 364 bind groups before
+this change (all stages) and 2 after, none of them in these stages.

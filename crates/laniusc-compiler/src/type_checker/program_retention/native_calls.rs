@@ -123,16 +123,29 @@ impl ProgramRetention {
         let mut encoder = device.create_command_encoder(&Default::default());
         tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
         self.queue.submit(Some(encoder.finish()));
-        let config = storage(device, "nc_config", 16, false);
-        let upload = |label: &str, bytes: &[u8]| {
-            let buffer = storage(device, label, (bytes.len() as u64).max(16).next_multiple_of(16), false);
+        let mut kept = self.native_call_scratch.lock().unwrap();
+        let mut keep = |label: &'static str, bytes: u64| {
+            let bytes = bytes.max(16).next_power_of_two();
+            kept.entry(label)
+                .and_modify(|buffer| {
+                    if buffer.size() < bytes {
+                        *buffer = storage(device, label, bytes, false);
+                    }
+                })
+                .or_insert_with(|| storage(device, label, bytes, false))
+                .clone()
+        };
+        let config = keep("nc_config", 16);
+        let mut upload = |label: &'static str, bytes: &[u8]| {
+            let buffer = keep(label, bytes.len() as u64);
             self.queue.write_buffer(&buffer, 0, bytes);
             buffer
         };
         let hirs = upload("nc_call_hirs", &words_bytes(call_hirs));
         let rows = upload("nc_symbols", &columns.symbol_rows);
         let identity = upload("nc_identity", &columns.identity_bytes);
-        let status = storage(device, "nc_status", 16, false);
+        let status = keep("nc_status", 16);
+        drop(kept);
         let names = reflected_names(pass);
         loop {
         self.queue.write_buffer(&config, 0, &words_bytes(&[
@@ -176,17 +189,12 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        {
-            let mut cpass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.native_calls"), timestamp_writes: None },
-            );
-            cpass.set_pipeline(&pass.pipeline);
-            cpass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            let groups = undefined.div_ceil(256).max(1);
-            cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
-        }
+        let groups = undefined.div_ceil(256).max(1);
+        super::substitution::record_timed(
+            &mut encoder,
+            "program_retention.native_calls",
+            &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         // The status and both symbol columns in one readback; the columns
         // are used only when the status is clean.

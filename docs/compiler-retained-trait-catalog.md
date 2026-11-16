@@ -43,8 +43,13 @@ replays sources, and this path does not remove that replay. The list under
    The catalog arena is cleared, or poisoned in tests. The fill kernels
    write every row at its scanned rank. The solver's catalog admission,
    coherence and native-recipe kernels run in the same submit.
-6. One readback returns the catalog receipt, the recipe receipt and the
-   fill-fault count. A rejected catalog stops at stage `Admission`.
+6. No readback follows the admission submit. The solver's first wave
+   readback returns the catalog receipt, the recipe receipt and the
+   producer state after the fill (`admission_state`), and the catalog
+   judges them before it accepts the solve: a fill fault stops the check at
+   stage `Fill` and a rejected catalog at stage `Admission`. A solve that
+   fails before that readback leaves them to one explicit admission
+   readback.
 7. The host places batch tables 11-16 (`prepare_retained_submission`) and
    uploads only the directory header. The fill kernels of the directory and
    use regions write contexts, assumptions, calls, environments, bindings
@@ -335,7 +340,7 @@ node terms, with 8 edges. Three of the 16 waves had work.
 | Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 1 + 2·waves closure dispatches (33 by default), 7 catalog fills, 2 batch fills and up to 5 word fills |
 | Publication dispatches | 2, in one submit with no readback |
 | Dispatches, `retained_trait_publish` | 353 |
-| Host round trips, `retained_trait_publish` | 4: store counters, producer state, admission receipts, one solver wave readback |
+| Host round trips, `retained_trait_publish` | 3: store counters, producer state, one solver wave readback with the admission receipts |
 | Producer readback bytes | 672 (store counters 384, producer state 112, two receipts and state 176) |
 | Closure retry (one-wave start) | 3 attempts, 2 extra round trips |
 | Host readback wait | about 4.5 ms per check |
@@ -441,3 +446,43 @@ constant arguments, a 40-method impl, concurrent wave publications, stale
 instances, and a fault changing a previously proven Local binding to an
 unimplemented i32. The native bounded forwarding fixture executes through
 three concrete discovery waves with zero replay.
+
+## Proof-store row reservation
+
+`pps_reserve` (`proof_work.slang`) takes rows of a proof-store table with a
+compare-exchange on the table's counter. The active lanes of a subgroup that
+reserve rows of one table now take them with one exchange: the subgroup
+leader reserves the lanes' total, and each lane takes its prefix of it. The
+total fits exactly when every lane's rows fit after the others', so success,
+the reported limit and the final counter are those of the lane-by-lane
+reservation; only the order of rows inside one subgroup's span differs, as it
+did between lanes before. With a compare-exchange per lane, every lane of a
+large stage (58 emit ready proofs, 53 select work) retried against the same
+counter. Settings, census readback waits of the catalog and closed solves
+(GPU shared with other agents): 17.5 and 18.0 ms before, 9.7 and 6.4 ms after
+over the first eight solve and substitution readbacks.
+
+## Disjoint self roots
+
+The coarse implementation index has one chain per trait and argument count,
+so coherence (10 check coherence) compares each implementation with every
+earlier one of its trait, and coarse selection (phase 65, kernel 53 select
+implementations) matches a goal against every implementation of its trait.
+Each comparison set up a full unification state, which reads both owners'
+parameter inventories, and that setup was the cost: with the overlap call
+removed, coherence took 0.02 ms instead of 0.61 ms. Most pairs differ at the
+self type, where the unification's first step returns NoMatch.
+`owned_constraint_roots_disjoint` (`owned_type_constraint_engine.slang`)
+repeats exactly that step on the two unbound self roots: one side constant,
+different tags, different atoms, or compound rows with different kinds or
+nominal headers. Only when it reports NoMatch is the pair skipped; a type
+parameter, a constant pair, equal headers or an invalid term run the full
+unification as before. Admission has already validated both owners, so the
+state setup could not have failed before that step.
+`ts_begin_implementation_goal` applies it with `filter` for selection, after
+the goal checks that `pps_goal_root` would report; substitution admission
+passes `false`, since there a missing candidate is an error.
+
+Profiled settings job (cold, GPU shared): all trait-solver kernels 21.05 ms
+before, 17.42 ms after; coherence 0.61 → 0.21 ms; the 50 select
+implementation dispatches 2.00 → 1.31 ms, the largest 0.75 → 0.41 ms.

@@ -441,6 +441,9 @@ pub struct ProgramRetention {
     /// Only the native retained driver withholds all original generic bodies.
     native_projection: bool,
     native_call_pass: std::sync::OnceLock<PassData>,
+    /// The native call pass's own buffers, kept across builds (grown by
+    /// powers of two) so a warm build binds the same ones.
+    native_call_scratch: Mutex<BTreeMap<&'static str, wgpu::Buffer>>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
@@ -528,6 +531,7 @@ impl ProgramRetention {
         let this = Arc::new(Self {
             native_projection,
             native_call_pass: std::sync::OnceLock::new(),
+            native_call_scratch: Mutex::new(BTreeMap::new()),
             device,
             queue,
             passes,
@@ -744,22 +748,14 @@ impl ProgramRetention {
         }
         let indirect = &store.scratch["rt_x_dispatch"];
         {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.export"), timestamp_writes: None },
-            );
+            let mut steps = Vec::new();
             let mut run = |index: usize, dispatch: Dispatch| {
                 let kernel = index.checked_sub(EXPORT_KERNELS.len()).map_or(index, |k| 9 + k);
-                pass.set_pipeline(&self.passes[kernel].pipeline);
-                pass.set_bind_group(0, &bind_groups[index], &[]);
-                passes_core::record_compute_dispatch();
-                match dispatch {
-                    Dispatch::Direct([x, y, z]) => pass.dispatch_workgroups(x, y, z),
-                    Dispatch::Indirect(slot) => {
-                        passes_core::record_indirect_compute_dispatch();
-                        pass.dispatch_workgroups_indirect(indirect, 3 * slot * 4)
-                    }
-                }
+                let launch = match dispatch {
+                    Dispatch::Direct([x, y, z]) => substitution::Launch::Groups(x, y, z),
+                    Dispatch::Indirect(slot) => substitution::Launch::Indirect(indirect, 3 * slot * 4),
+                };
+                steps.push((&self.passes[kernel], &bind_groups[index], launch));
             };
             use Dispatch::{Direct, Indirect};
             let one = Direct([1, 1, 1]);
@@ -798,6 +794,7 @@ impl ProgramRetention {
             run(25, one);
             run(26, Indirect(D_COMMIT_DIR));
             run(27, Indirect(D_ROLLBACK));
+            substitution::record_timed(&mut encoder, "program_retention.export", &steps);
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())
@@ -874,17 +871,12 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.rehash"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&self.rehash.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            let g = lanes.div_ceil(256).max(1);
-            pass.dispatch_workgroups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1);
-        }
+        let g = lanes.div_ceil(256).max(1);
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.rehash",
+            &[(&self.rehash, &bind, substitution::Launch::Groups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         Ok(())
     }

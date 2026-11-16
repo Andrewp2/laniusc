@@ -71,9 +71,13 @@ impl MethodRoutes {
         {
             bail!("method routes {name} exceeds device capacity");
         }
+        // Powers of two: the proof node bound grows between builds, and a
+        // kept buffer keeps its cached bind groups.
         if self.buffers.get(name).is_none_or(|b| b.size() < bytes) {
-            self.buffers
-                .insert(name, storage(&self.device, name, bytes.max(4), false));
+            let limit = u64::from(limits.max_storage_buffer_binding_size).min(limits.max_buffer_size);
+            let rounded = bytes.max(4).next_power_of_two();
+            let bytes = if rounded <= limit { rounded } else { bytes.max(4) };
+            self.buffers.insert(name, storage(&self.device, name, bytes, false));
         }
         Ok(())
     }
@@ -313,7 +317,9 @@ impl MethodRoutes {
         let mut entries = Vec::new();
         for name in &names {
             let binding = match name.as_str() {
-                "mr_routes" => view.routes.binding(),
+                // The route header bounds every read; the whole arena keeps
+                // the bind group across builds whose route counts differ.
+                "mr_routes" => view.routes.whole_binding(),
                 "mr_catalog" => view.catalog.binding(),
                 "mr_proof" => view.proof.binding(),
                 "mr_instances" => instances.as_entire_binding(),

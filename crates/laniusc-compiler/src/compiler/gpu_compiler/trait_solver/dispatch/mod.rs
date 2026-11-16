@@ -149,6 +149,13 @@ pub(super) struct GpuTraitSolver {
     /// Wave readbacks include the context, call, result and evidence rows.
     /// A retained publication clears it: its consumers bind the arenas.
     semantic_rows: bool,
+    /// The wave state of the last solver attempt (kernels::wave_state), for
+    /// a deferred check that copies it out with a later readback.
+    last_wave_state: std::sync::Mutex<Option<LaniusBuffer<u32>>>,
+    /// A retained catalog's producer state: while the admission receipts
+    /// are pending, the first wave readback reads it with them and leaves
+    /// their verdict to the catalog (`WaveReadback::admission`).
+    admission_state: std::sync::Mutex<Option<(LaniusBuffer<u32>, usize)>>,
 }
 
 /// A host packet and precisely the GPU arenas that contain its row closure.
@@ -323,6 +330,8 @@ impl GpuTraitSolver {
             wave_templates: Vec::new(),
             admission_pending: std::sync::atomic::AtomicBool::new(true),
             semantic_rows: true,
+            last_wave_state: std::sync::Mutex::new(None),
+            admission_state: std::sync::Mutex::new(None),
         })
     }
 
@@ -447,7 +456,8 @@ impl GpuTraitSolver {
         submission: &Submission,
         capacities: [u32; PROOF_STORE_TABLES],
         retry: bool,
-    ) -> Result<AttemptEnd> {
+        defer: bool,
+    ) -> Result<Option<AttemptEnd>> {
         let batch = self.batch_kernels.as_ref().expect("loaded batch kernels");
         let solver = self.proof_kernels.as_ref().expect("loaded proof kernels");
         let mut commands = self.wave_encoder();
@@ -500,15 +510,16 @@ impl GpuTraitSolver {
         record(packet, &mut commands, 48, plan.obligations)?;
         let state = kernels::wave_state(&self.device, &self.storage, plan.calls)?;
         let demand = kernels::proof_demand(&self.storage)?;
+        *self.last_wave_state.lock().unwrap() = Some(state.clone());
         // The GPU admits the batch while the host records the rounds.
         self.submit_wave(commands);
         #[cfg(test)]
         if packet.constant_admission_fault.read().unwrap().is_some()
             || packet.proof_admission_fault.read().unwrap().is_some()
         {
-            return self.run_paused_solver_waves(templates, packet, layout, plan, submission, &state, &demand);
+            return self.run_paused_solver_waves(templates, packet, layout, plan, submission, &state, &demand).map(Some);
         }
-        self.run_solver_waves(templates, packet, layout, plan, submission, &state, &demand)
+        self.run_solver_waves(templates, packet, layout, plan, submission, &state, &demand, defer)
     }
 
     fn wave_encoder(&self) -> wgpu::CommandEncoder {
@@ -699,7 +710,8 @@ impl GpuTraitSolver {
         submission: &Submission,
         state: &LaniusBuffer<u32>,
         demand: &LaniusBuffer<u32>,
-    ) -> Result<AttemptEnd> {
+        defer: bool,
+    ) -> Result<Option<AttemptEnd>> {
         use kernels::{WavePiece, WavePoint, wave};
         let pieces = |points: &[WavePoint]| points.iter().map(|&point| WavePiece::whole(point)).collect::<Vec<_>>();
         // The first work and the first round span every source obligation.
@@ -738,14 +750,18 @@ impl GpuTraitSolver {
             for order in submits.iter().filter(|order| !order.is_empty()) {
                 self.submit_templates(templates, order);
             }
+            // A deferred check reads the state with its caller's readback.
+            if defer {
+                return Ok(None);
+            }
             let readback = self.wave_readback(packet, layout, submission, state, demand)?;
             wave_fault(&readback.state)?;
             if readback.state[wave::STOP] == wave::DONE {
-                return Ok(AttemptEnd { stopped: None, readback });
+                return Ok(Some(AttemptEnd { stopped: None, readback }));
             }
             let progress = readback.progress(packet, submission)?;
             if !progress.is_building() {
-                return Ok(AttemptEnd { stopped: Some(progress), readback });
+                return Ok(Some(AttemptEnd { stopped: Some(progress), readback }));
             }
             let words = &readback.state;
             match words[wave::STOP] {
@@ -838,6 +854,11 @@ impl GpuTraitSolver {
         }
         let recipe_region = regions.len();
         let admission_pending = self.admission_pending.load(std::sync::atomic::Ordering::Relaxed);
+        let admission_state = if admission_pending {
+            self.admission_state.lock().unwrap().clone()
+        } else {
+            None
+        };
         if admission_pending {
             let status = self.catalog.native_layout.status;
             regions.push(ReadbackRegion::from_buffer(
@@ -847,6 +868,9 @@ impl GpuTraitSolver {
                 "native recipe receipt",
             )?);
         }
+        if let Some((state, words)) = &admission_state {
+            regions.push(ReadbackRegion::from_buffer(state, 0, arena::byte_len(u32::try_from(*words)?)?, "retained producer state")?);
+        }
         let raw = self.readback.read_regions(
             &self.device,
             &self.queue,
@@ -854,9 +878,14 @@ impl GpuTraitSolver {
             "program proof wave progress",
         )?;
         let catalog_status = one_status(&raw[4])?;
+        let mut admission = None;
         // The catalog's admission ran in the first submit; its receipts come
         // with the first check's readback, before any batch result.
-        if admission_pending {
+        if admission_state.is_some() {
+            // The retained catalog judges its own receipts.
+            admission = Some((one_status(&raw[recipe_region])?, words(&raw[recipe_region + 1])?));
+            self.admission_pending.store(false, std::sync::atomic::Ordering::Relaxed);
+        } else if admission_pending {
             ensure!(
                 catalog_status[0] == 1,
                 "program catalog GPU admission/coherence failed: {catalog_status:?}"
@@ -867,6 +896,7 @@ impl GpuTraitSolver {
             self.admission_pending.store(false, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(WaveReadback {
+            admission,
             proof_header: words(&raw[0])?,
             batch_status: one_status(&raw[1])?,
             state: words(&raw[2])?,
@@ -896,7 +926,9 @@ impl GpuTraitSolver {
         )?;
         let mut retry = false;
         loop {
-            let end = self.run_solver_attempt(templates, packet, layout, plan, submission, capacities, retry)?;
+            let end = self
+                .run_solver_attempt(templates, packet, layout, plan, submission, capacities, retry, false)?
+                .ok_or_else(|| anyhow!("solver attempt deferred its readback"))?;
             let Some(stopped) = end.stopped else {
                 return Ok(end.readback);
             };
@@ -907,6 +939,27 @@ impl GpuTraitSolver {
             capacities = grown;
             retry = true;
         }
+    }
+
+    /// The first submit of `solve` without its readback: the caller reads
+    /// the wave state later (`last_wave_state`) and retries eagerly when
+    /// the solve did not finish in it.
+    fn solve_deferred(
+        &self,
+        templates: &mut Vec<kernels::WaveTemplate>,
+        packet: &mut GpuPacket,
+        layout: &OutputLayout,
+        plan: &BatchPlan,
+        submission: &Submission,
+    ) -> Result<()> {
+        let capacities = proof::with_floor(
+            proof::initial_capacities(&packet.packet.proof_store, submission.obligation_span.count)?,
+            &self.workspace.proof_capacity_floor(),
+            &packet.packet.proof_store,
+        )?;
+        let end = self.run_solver_attempt(templates, packet, layout, plan, submission, capacities, false, true)?;
+        ensure!(end.is_none(), "a deferred solver attempt read its state");
+        Ok(())
     }
 
     /// Gate before body reuse/specialization and after each replay's fresh calls.
@@ -1077,6 +1130,9 @@ struct AttemptEnd {
 
 /// The words of one wave readback (`GpuTraitSolver::wave_readback`).
 struct WaveReadback {
+    /// The native recipe receipt and the retained producer state, when this
+    /// readback carried a retained catalog's admission (`admission_state`).
+    admission: Option<([u32; 8], Vec<u32>)>,
     proof_header: Vec<u32>,
     batch_status: [u32; 8],
     state: Vec<u32>,
