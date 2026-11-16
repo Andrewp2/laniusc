@@ -14,7 +14,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 
 use super::Segment;
 use crate::{
@@ -213,6 +213,29 @@ struct ResidentState {
     /// Bind groups by kernel and by the name, allocation, offset and size of
     /// each binding.
     groups: HashMap<(String, Vec<(&'static str, [u64; 3])>), Arc<wgpu::BindGroup>>,
+    /// The readback batch that `Gpu::read` adds to, until the host maps it.
+    batch: Option<Arc<ReadBatch>>,
+}
+
+/// The reads recorded between two maps (`Gpu::read`). They share one
+/// staging buffer, so the host maps it once for all of them. A read that
+/// does not fit goes to a buffer of its own, and the next run's staging
+/// buffer of this batch covers both.
+struct ReadBatch {
+    /// The key of the staging buffer.
+    key: String,
+    /// The staging buffers and the bytes the reads use of each.
+    segments: Mutex<Vec<(LaniusBuffer<u8>, usize)>>,
+    /// The bytes of each segment, once mapped.
+    mapped: std::sync::OnceLock<Vec<Vec<u8>>>,
+}
+
+/// One read of `Gpu::read`: `len` bytes at `offset` of segment `segment`.
+pub(super) struct Readback {
+    batch: Arc<ReadBatch>,
+    segment: usize,
+    offset: usize,
+    len: usize,
 }
 
 static RESIDENT: LazyLock<Resident> = LazyLock::new(Resident::default);
@@ -429,69 +452,154 @@ impl Gpu<'_> {
         )
     }
 
-    /// Records a copy of `words` words of `source` for the host to read.
+    /// Records a copy of `words` words of `source` for the host to read,
+    /// into the open readback batch.
     pub(super) fn read<T>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         source: &LaniusBuffer<T>,
         first_word: usize,
         words: usize,
-    ) -> LaniusBuffer<u8> {
-        let words = words.max(1);
-        let readback = self
-            .resident(&mut RESIDENT.state(), "closures.readback", words * 4, READBACK)
-            .subrange(0, words as u64 * 4, words)
-            .expect("the readback buffer covers the words it was sized for");
-        source.copy_to(encoder, first_word as u64 * 4, &readback, 0, words as u64 * 4);
-        readback
+    ) -> Readback {
+        let len = words.max(1) * 4;
+        let mut state = RESIDENT.state();
+        let batch = match &state.batch {
+            Some(batch) => batch.clone(),
+            None => {
+                let (key, capacity) = state.take("closures.readback", 0);
+                let buffer = RESIDENT.buffers.binding_capacity(self.device, &key, capacity, READBACK);
+                let batch = Arc::new(ReadBatch {
+                    key,
+                    segments: Mutex::new(vec![(buffer, 0)]),
+                    mapped: std::sync::OnceLock::new(),
+                });
+                state.batch = Some(batch.clone());
+                batch
+            }
+        };
+        let mut segments = batch.segments.lock().unwrap_or_else(PoisonError::into_inner);
+        let used: usize = segments.iter().map(|(_, used)| used).sum();
+        let last = segments.len() - 1;
+        let (segment, offset) = if segments[last].1 + len <= segments[last].0.byte_size {
+            (last, segments[last].1)
+        } else {
+            // The next run's staging buffer covers every read of this one.
+            let held = state.capacity.entry(batch.key.clone()).or_default();
+            let total = used + len;
+            if *held < total {
+                *held = (total + total / 64).next_multiple_of(BUCKET_BYTES);
+            }
+            let (key, capacity) = state.take("closures.readback.overflow", len);
+            segments.push((RESIDENT.buffers.binding_capacity(self.device, &key, capacity, READBACK), 0));
+            (segments.len() - 1, 0)
+        };
+        let (buffer, at) = &mut segments[segment];
+        source.copy_to(encoder, first_word as u64 * 4, buffer, offset as u64, len as u64);
+        *at = offset + len;
+        drop(segments);
+        Readback { batch, segment, offset, len }
     }
 
     pub(super) fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
         passes_core::submit_with_progress(self.queue, label, encoder.finish());
     }
 
-    pub(super) fn words(&self, readback: &LaniusBuffer<u8>) -> Result<Vec<u32>> {
-        let slice = readback.buffer.slice(readback.byte_offset..readback.byte_offset + readback.byte_size as u64);
-        map_readback_blocking(self.device, &slice, "closures.readback")?;
-        let mapped = slice.get_mapped_range();
-        let words = mapped
+    /// The bytes of a read. The first of its batch to be asked for maps the
+    /// whole batch, once; the next read starts a new batch.
+    fn read_bytes<'r>(&self, readback: &'r Readback) -> Result<&'r [u8]> {
+        let batch = &readback.batch;
+        if batch.mapped.get().is_none() {
+            {
+                let mut state = RESIDENT.state();
+                if state.batch.as_ref().is_some_and(|open| Arc::ptr_eq(open, batch)) {
+                    state.batch = None;
+                }
+            }
+            let segments = batch.segments.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut mapped = Vec::with_capacity(segments.len());
+            for (buffer, used) in segments.iter() {
+                let slice = buffer.buffer.slice(buffer.byte_offset..buffer.byte_offset + (*used).max(4) as u64);
+                map_readback_blocking(self.device, &slice, "closures.readback")?;
+                mapped.push(slice.get_mapped_range()[..*used].to_vec());
+                buffer.unmap();
+            }
+            let _ = batch.mapped.set(mapped);
+        }
+        let mapped = batch.mapped.get().expect("the batch was mapped");
+        Ok(&mapped[readback.segment][readback.offset..readback.offset + readback.len])
+    }
+
+    pub(super) fn words(&self, readback: &Readback) -> Result<Vec<u32>> {
+        Ok(self
+            .read_bytes(readback)?
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]]))
-            .collect();
-        drop(mapped);
-        readback.unmap();
-        Ok(words)
+            .collect())
+    }
+
+    /// The first `len` bytes of a read, as the GPU wrote them.
+    pub(super) fn bytes(&self, readback: &Readback, len: usize) -> Result<Vec<u8>> {
+        Ok(self.read_bytes(readback)?.get(..len).context("readback is shorter than its text")?.to_vec())
     }
 }
 
-/// Rewrites the closures of `sources`, one GPU run for all of them. `None`
-/// when no file has a closure.
-pub(super) fn rewrite(sources: &[&str]) -> Result<Option<Outcome>> {
+/// Per file, the rewrites it needs: `SELECT_CLOSURES` when a closure starts
+/// in it, `SELECT_MACHINES` when the machine pass must parse it. One lex of
+/// all files and one map. `None` when a file does not lex: the frontend
+/// reports that.
+pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
     let total: usize = sources.iter().map(|source| source.len()).sum();
     if total == 0 {
-        return Ok(None);
+        return Ok(Some(vec![0; sources.len()]));
     }
     let _run = begin_run();
     let lexer = try_global_lexer()?;
     pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
-        run(&Gpu { device, queue }, bufs, sources, total)
+        let gpu = Gpu { device, queue };
+        let mut encoder = gpu.encoder("closures.select");
+        let (_, _, file_flags) = record_mark(&gpu, bufs, &mut encoder, total, sources.len())?;
+        let flags_read = gpu.read(&mut encoder, &file_flags, 0, sources.len());
+        let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
+        gpu.submit("closures.select", encoder);
+        if gpu.words(&lex_error_read)?[0] != 0 {
+            return Ok(None);
+        }
+        let mut flags = gpu.words(&flags_read)?;
+        flags.truncate(sources.len());
+        Ok(Some(flags))
     }))?
 }
 
-fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Result<Option<Outcome>> {
-    let total_u32 = u32::try_from(total).context("source pack is too large")?;
-    let file_count = u32::try_from(sources.len()).context("too many source files")?;
-    let scan_kernel = gpu.kernel("closures/scan")?;
-    let summary_kernel = gpu.kernel("closures/summary")?;
+/// The bytes a rewrite's output holds before the rewritten length is
+/// known: twice the input, which a rewrite rarely outgrows. The library's
+/// unit tests use a quarter of the input, so their rewrites emit again.
+pub(super) fn emit_capacity(input_bytes: usize) -> usize {
+    if cfg!(test) { input_bytes / 4 } else { input_bytes * 2 + 4096 }
+}
 
-    // Depth changes and closure starts per token. The mark kernel counts
-    // starts in the freshly cleared summary; the existing readback then
-    // gates all depth/role work for packs without closures.
+/// File flags of `select`.
+pub(super) const SELECT_CLOSURES: u32 = 1;
+pub(super) const SELECT_MACHINES: u32 = 2;
+
+/// The closures that start in a file, from its `select` flags.
+pub(super) fn closure_count(flags: u32) -> u32 {
+    flags >> 2
+}
+
+/// Records closures/mark over the lexed pack: the marks, the summary and
+/// the selection flags of each file.
+fn record_mark(
+    gpu: &Gpu<'_>,
+    bufs: &GpuBuffers,
+    encoder: &mut wgpu::CommandEncoder,
+    total: usize,
+    file_count: usize,
+) -> Result<(LaniusBuffer<u8>, LaniusBuffer<u8>, LaniusBuffer<u8>)> {
     let marks = gpu.rows("closures.marks", total, 4);
     let summary = gpu.rows("closures.summary", 4, 1);
-    let mut encoder = gpu.encoder("closures.mark");
+    let file_flags = gpu.rows("closures.file_flags", file_count, 1);
     gpu.dispatch(
-        &mut encoder,
+        encoder,
         &gpu.kernel("closures/mark")?,
         "closures.mark",
         &[
@@ -501,27 +609,41 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
             ("in_bytes", bufs.in_bytes.as_entire_binding()),
             ("marks", marks.as_entire_binding()),
             ("summary", summary.as_entire_binding()),
+            ("file_flags", file_flags.as_entire_binding()),
         ],
-        total_u32,
+        u32::try_from(total).context("source pack is too large")?,
     )?;
-    let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
-    let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
-    gpu.submit("closures.mark", encoder);
-    let counts = gpu.words(&summary_read)?;
-    let closure_count = counts[1];
-    if gpu.words(&lex_error_read)?[0] != 0 {
-        return Ok(Some(Outcome::Unlexed));
-    }
-    if closure_count == 0 {
+    Ok((marks, summary, file_flags))
+}
+
+/// Rewrites the closures of `sources`, where `closure_count` closures start
+/// (the sum of `closure_count` over their `select` flags).
+pub(super) fn rewrite(sources: &[&str], closure_count: u32) -> Result<Option<Outcome>> {
+    let total: usize = sources.iter().map(|source| source.len()).sum();
+    if total == 0 || closure_count == 0 {
         return Ok(None);
     }
+    let _run = begin_run();
+    let lexer = try_global_lexer()?;
+    pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
+        run(&Gpu { device, queue }, bufs, sources, total, closure_count)
+    }))?
+}
 
-    // The parts of each closure and the locals it captures.
+fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize, closure_count: u32) -> Result<Option<Outcome>> {
+    let total_u32 = u32::try_from(total).context("source pack is too large")?;
+    let file_count = u32::try_from(sources.len()).context("too many source files")?;
+    let scan_kernel = gpu.kernel("closures/scan")?;
+    let summary_kernel = gpu.kernel("closures/summary")?;
+
+    // Depth changes and closure starts per token. `select` counted the
+    // starts already, so the records follow in the same submission.
     let records = gpu.rows("closures.records", closure_count as usize * RECORD_WORDS, 1);
     let status = gpu.words_from("closures.status", &[NO_ERROR]);
     let capture_marks = gpu.rows("closures.capture_marks", total, 4);
     let capture_work = [gpu.rows("closures.capture.a", total, 4), gpu.rows("closures.capture.b", total, 4)];
     let mut encoder = gpu.encoder("closures.records");
+    let (marks, summary, _) = record_mark(gpu, bufs, &mut encoder, total, sources.len())?;
     let depth_work = [gpu.rows("closures.depth.a", total, 4), gpu.rows("closures.depth.b", total, 4)];
     let depth_scan = gpu.scan(&mut encoder, &scan_kernel, &marks, &depth_work, total_u32)?;
     // Capture discovery needs binder roles only when a closure exists. Its
@@ -623,8 +745,16 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     gpu.summary(&mut encoder, &summary_kernel, bufs, capture_scan, &summary, 2, 0)?;
     let summary_read = gpu.read(&mut encoder, &summary, 0, 4);
     let status_read = gpu.read(&mut encoder, &status, 0, 1);
+    let lex_error_read = gpu.read(&mut encoder, &bufs.lex_error_offset, 0, 1);
     gpu.submit("closures.records", encoder);
-    let capture_count = gpu.words(&summary_read)?[2];
+    if gpu.words(&lex_error_read)?[0] != 0 {
+        return Ok(Some(Outcome::Unlexed));
+    }
+    let counts = gpu.words(&summary_read)?;
+    if counts[1] != closure_count {
+        bail!("the closure pass found {} closures where the selection counted {closure_count}", counts[1]);
+    }
+    let capture_count = counts[2];
     let failure = gpu.words(&status_read)?[0];
     if failure != NO_ERROR {
         return invalid(gpu, bufs, sources, failure).map(|invalid| Some(Outcome::Invalid(invalid)));
@@ -705,6 +835,41 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
         piece_count,
     )?;
     let piece_scan = gpu.scan(&mut encoder, &scan_kernel, &pieces, &piece_work, piece_count)?;
+
+    // The rewritten bytes, in the same submission as their pieces: the
+    // output holds `emit_capacity` bytes, and a text that outgrows it is
+    // emitted again once its length is known.
+    let emit = |encoder: &mut wgpu::CommandEncoder, capacity: usize| -> Result<Readback> {
+        let out_words = capacity.div_ceil(4).max(1);
+        let output = gpu.rows("closures.output", out_words, 1);
+        let params = gpu.uniform(
+            "closures.emit.params",
+            &EmitParams {
+                out_len: u32::try_from(capacity).context("rewritten source is too large")?,
+                piece_count,
+                reserved0: 0,
+                reserved1: 0,
+            },
+        );
+        gpu.dispatch(
+            encoder,
+            &gpu.kernel("closures/emit")?,
+            "closures.emit",
+            &[
+                ("gEmit", params.as_entire_binding()),
+                ("in_bytes", bufs.in_bytes.as_entire_binding()),
+                ("pieces", pieces.as_entire_binding()),
+                ("piece_scan", piece_scan.as_entire_binding()),
+                ("const_index", const_index.as_entire_binding()),
+                ("const_bytes", const_bytes.as_entire_binding()),
+                ("out_words", output.as_entire_binding()),
+            ],
+            u32::try_from(out_words).context("rewritten source is too large")?,
+        )?;
+        Ok(gpu.read(encoder, &output, 0, out_words))
+    };
+    let capacity = emit_capacity(total);
+    let output_read = emit(&mut encoder, capacity)?;
     let pieces_read = gpu.read(&mut encoder, &pieces, 0, pieces_len * 4);
     let piece_scan_read = gpu.read(&mut encoder, piece_scan, 0, pieces_len * 4);
     let file_info_read = gpu.read(&mut encoder, &file_info, 0, (sources.len() + 1) * 4);
@@ -712,35 +877,15 @@ fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize) -> Resu
     let piece_rows = gpu.words(&pieces_read)?;
     let piece_ends = gpu.words(&piece_scan_read)?;
     let file_rows = gpu.words(&file_info_read)?;
-    let out_len = piece_ends[(pieces_len - 1) * 4];
-
-    // The rewritten bytes.
-    let out_words = (out_len as usize).div_ceil(4);
-    let output = gpu.rows("closures.output", out_words, 1);
-    let emit = gpu.uniform(
-        "closures.emit.params",
-        &EmitParams { out_len, piece_count, reserved0: 0, reserved1: 0 },
-    );
-    let mut encoder = gpu.encoder("closures.emit");
-    gpu.dispatch(
-        &mut encoder,
-        &gpu.kernel("closures/emit")?,
-        "closures.emit",
-        &[
-            ("gEmit", emit.as_entire_binding()),
-            ("in_bytes", bufs.in_bytes.as_entire_binding()),
-            ("pieces", pieces.as_entire_binding()),
-            ("piece_scan", piece_scan.as_entire_binding()),
-            ("const_index", const_index.as_entire_binding()),
-            ("const_bytes", const_bytes.as_entire_binding()),
-            ("out_words", output.as_entire_binding()),
-        ],
-        u32::try_from(out_words).context("rewritten source is too large")?,
-    )?;
-    let output_read = gpu.read(&mut encoder, &output, 0, out_words);
-    gpu.submit("closures.emit", encoder);
-    let mut bytes: Vec<u8> = gpu.words(&output_read)?.into_iter().flat_map(u32::to_le_bytes).collect();
-    bytes.truncate(out_len as usize);
+    let out_len = piece_ends[(pieces_len - 1) * 4] as usize;
+    let bytes = if out_len <= capacity {
+        gpu.bytes(&output_read, out_len)?
+    } else {
+        let mut encoder = gpu.encoder("closures.emit");
+        let output_read = emit(&mut encoder, out_len)?;
+        gpu.submit("closures.emit", encoder);
+        gpu.bytes(&output_read, out_len)?
+    };
 
     split_files(sources, &file_rows, &piece_rows, &piece_ends, &bytes).map(|files| Some(Outcome::Rewritten(files)))
 }
