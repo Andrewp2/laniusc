@@ -876,9 +876,10 @@ struct Recorder<'a> {
     /// store lock and resizes no projection table, so the other bindings of
     /// a kernel cannot change within it.
     binds: Vec<(usize, Vec<(String, wgpu::Buffer)>, wgpu::BindGroup)>,
-    /// The open compute pass. Consecutive dispatches share it; wgpu orders
-    /// their storage accesses. `encoder()` ends it before a copy or clear.
-    pass: super::TimedPass,
+    /// Dispatches not yet recorded: kernel, bind group and workgroups.
+    /// Consecutive dispatches share one timed compute pass; wgpu orders their
+    /// storage accesses. `encoder()` records them before a copy or clear.
+    pending: Vec<(usize, wgpu::BindGroup, u32)>,
 }
 
 impl RetainedProjection {
@@ -1175,7 +1176,7 @@ impl RetainedProjection {
                 }),
             dispatches: 0,
             binds: Vec::new(),
-            pass: super::TimedPass::new("retained_projection"),
+            pending: Vec::new(),
         }
     }
 
@@ -1645,27 +1646,29 @@ impl Recorder<'_> {
                 bind
             }
         };
-        let pass_data = &self.projection.passes[kernel];
-        let pass = self.pass.pass(&mut self.encoder);
-        pass.set_pipeline(&pass_data.pipeline);
-        pass.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
-        let x = groups.min(65535);
-        let y = groups.div_ceil(65535);
-        pass.dispatch_workgroups(x, y, 1);
-        self.pass.dispatched(&mut self.encoder, &pass_data.shader_id);
+        self.pending.push((kernel, bind, groups));
         self.dispatches += 1;
         Ok(())
     }
 
-    /// The encoder, after ending the open compute pass.
+    /// The encoder, after recording the pending dispatches in one pass.
     fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
-        self.pass.end();
+        let passes = &self.projection.passes;
+        let steps = self
+            .pending
+            .iter()
+            .map(|&(kernel, ref bind, groups)| {
+                let launch = super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1);
+                (&passes[kernel], bind, launch)
+            })
+            .collect::<Vec<_>>();
+        super::substitution::record_timed(&mut self.encoder, "retained_projection", &steps);
+        self.pending.clear();
         &mut self.encoder
     }
 
     fn finish(mut self) -> u32 {
-        self.pass.end();
+        self.encoder();
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
     }
@@ -1677,7 +1680,7 @@ impl Recorder<'_> {
         parts: &[(&wgpu::Buffer, usize)],
         report: &mut ProjectionReport,
     ) -> Result<(u32, Vec<Vec<u32>>)> {
-        self.pass.end();
+        self.encoder();
         let read = self.projection.submit_read(self.encoder, parts, report)?;
         Ok((self.dispatches, read))
     }
@@ -1760,20 +1763,11 @@ pub fn run_producer_kernel(
         &entries,
     )?;
     let mut encoder = device.create_command_encoder(&Default::default());
-    {
-        let mut cpass = passes_core::begin_counted_compute_pass(
-            &mut encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_projection.producer"),
-                timestamp_writes: None,
-            },
-        );
-        cpass.set_pipeline(&pass.pipeline);
-        cpass.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
-        cpass.dispatch_workgroups(lanes.div_ceil(64).max(1), 1, 1);
-    }
-    crate::gpu::timer::stamp_active_operation(&mut encoder, key);
+    super::substitution::record_timed(
+        &mut encoder,
+        "retained_projection.producer",
+        &[(&pass, &bind, super::substitution::Launch::Groups(lanes.div_ceil(64).max(1), 1, 1))],
+    );
     queue.submit(Some(encoder.finish()));
     Ok(())
 }

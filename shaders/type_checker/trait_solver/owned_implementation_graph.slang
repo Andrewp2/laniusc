@@ -117,6 +117,14 @@ public SolverStatus ts_implementation_heads_overlap(uint left, uint right,
         !ts_catalog_count(5u, nodes) || !ts_catalog_count(1u, atoms))
         return ts_invalid(1u, left, right);
     if (a.z != b.z || aa.y != ba.y) return ts_ok();
+    // Implementations of one trait share a coherence chain; most differ at
+    // the self type, where the traversal's first step returns NoMatch. Decide
+    // those without the per-pair state setup, which reads both inventories.
+    uint2 a0; uint2 b0;
+    if (ts_read_root(a.w, a0) && ts_read_root(b.w, b0) &&
+        owned_constraint_roots_disjoint<OwnedConstraintSameGraphPair<CatalogImplementationPatternGraph>>(
+            a0, b0, uint2(nodes, nodes), atoms))
+        return ts_ok();
     OwnedConstraintState state;
     // Both heads live in the one catalog graph: share its code for both sides.
     OwnedConstraintStatus status = owned_overlap_begin_pair<

@@ -118,6 +118,12 @@ pub(crate) struct GpuX86ObjectStage {
     /// of [`Self::payload_regions`]. A job copies about that much for the
     /// host while it runs.
     last_payload_bytes: std::sync::Mutex<Option<[usize; 7]>>,
+    /// The metadata words' sources, as the resident link store copies them:
+    /// (buffer, byte offset, bytes, destination word).
+    park_meta: [(wgpu::Buffer, u64, u64, u64); 5],
+    /// The object the last projection parked for the resident link, until
+    /// `finish` publishes it.
+    parked: std::sync::Mutex<Option<super::x86::ParkTicket>>,
 }
 
 impl GpuX86ObjectStage {
@@ -496,6 +502,18 @@ impl GpuX86ObjectStage {
         )))
         .collect::<Result<Vec<_>>>()?;
 
+        let park_meta = [
+            (relocation_total.buffer.clone(), relocation_total.byte_offset, 4, 1),
+            (symbol_total.buffer.clone(), symbol_total.byte_offset, 4, 2),
+            (definition_total.buffer.clone(), definition_total.byte_offset, 4, 3),
+            (artifact.layout.buffer.clone(), artifact.layout.byte_offset, 48, 4),
+            (
+                runtime_relocation_total.buffer.clone(),
+                runtime_relocation_total.byte_offset,
+                4,
+                16,
+            ),
+        ];
         Ok(Self {
             relocation_capacity,
             runtime_relocation_capacity,
@@ -533,6 +551,8 @@ impl GpuX86ObjectStage {
             metadata_readback,
             payload_readback,
             last_payload_bytes: std::sync::Mutex::new(None),
+            park_meta,
+            parked: std::sync::Mutex::new(None),
         })
     }
 
@@ -594,7 +614,66 @@ impl GpuX86ObjectStage {
         });
         self.payload_readback
             .record_prefetch(encoder, regions.as_ref().map_or(&[], |regions| &regions[..]));
+        self.record_park(encoder, job);
         Ok(())
+    }
+
+    /// Copies the projection into the resident link store when a native
+    /// build has one active. The job's grids bound every region.
+    fn record_park(&self, encoder: &mut wgpu::CommandEncoder, job: Option<LoweringCapacities>) {
+        let rows = |extent: Option<u32>, capacity: u32| extent.map_or(capacity, |e| e.min(capacity)) as u64;
+        let relocation_rows = rows(job.map(object_extent::relocations), self.relocation_capacity);
+        let runtime_rows = rows(job.map(object_extent::target_rows), self.runtime_relocation_capacity);
+        let definition_rows = rows(job.map(object_extent::functions), self.function_capacity);
+        let section_bytes = rows(job.map(object_extent::artifact_bytes), self.artifact_capacity);
+        fn region(buffer: &wgpu::Buffer, offset: u64, bytes: u64, size: usize) -> super::x86::ParkRegion<'_> {
+            super::x86::ParkRegion { buffer, offset, bytes: bytes.min(size as u64 / 4 * 4) }
+        }
+        let meta = std::array::from_fn(|index| {
+            let (buffer, offset, bytes, word) = &self.park_meta[index];
+            (buffer, *offset, *bytes, *word)
+        });
+        let sources = super::x86::ParkSources {
+            meta,
+            relocations: region(
+                &self.relocations.buffer,
+                self.relocations.byte_offset,
+                relocation_rows * 32,
+                self.relocations.byte_size,
+            ),
+            runtime_relocations: region(
+                &self.runtime_relocations.buffer,
+                self.runtime_relocations.byte_offset,
+                runtime_rows * 32,
+                self.runtime_relocations.byte_size,
+            ),
+            undefined: region(
+                &self.undefined_symbols.buffer,
+                self.undefined_symbols.byte_offset,
+                relocation_rows * 16,
+                self.undefined_symbols.byte_size,
+            ),
+            definitions: region(
+                &self.definitions.buffer,
+                self.definitions.byte_offset,
+                definition_rows * 32,
+                self.definitions.byte_size,
+            ),
+            text: region(
+                &self.text_words.buffer,
+                self.text_words.byte_offset,
+                section_bytes.next_multiple_of(4),
+                self.text_words.byte_size,
+            ),
+            rodata: region(
+                &self.rodata_words.buffer,
+                self.rodata_words.byte_offset,
+                section_bytes.next_multiple_of(4),
+                self.rodata_words.byte_size,
+            ),
+        };
+        let ticket = super::x86::park_resident_object(encoder, &sources);
+        *self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = ticket;
     }
 
     /// The byte capacity of each payload region.
@@ -810,6 +889,9 @@ impl GpuX86ObjectStage {
             identity_bytes,
         };
         object.validate().map_err(anyhow::Error::msg)?;
+        if let Some(ticket) = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+            ticket.commit(library_id, unit_id);
+        }
         Ok((object, decode_words(&call_hir_bytes)))
     }
 }

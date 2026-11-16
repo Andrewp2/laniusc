@@ -486,9 +486,15 @@ pub(super) const SEMANTIC_LOCAL_CONST_FOLD_PUBLISH_PASS: &str =
 pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 
 /// Zeroes the round's change count before each inference round, so one
-/// submission can carry several rounds, and counts the round
-/// (`CALLS_BEGIN_INFERENCE_ROUND`).
+/// submission can carry several rounds.
 pub(super) const CALLS_INFERENCE_ROUND_RESET_PASS: &str = "type_check.calls.inference.round_reset";
+/// Copies the round's number from `call_inference_round_numbers` into word 0
+/// of `call_inference_round` before each inference round
+/// (shaders/type_checker/calls/inference_activity.slang).
+pub(super) const CALLS_BOUND_TABLES_CLEAR_PASS: &str = "type_check.calls.bound_inference.clear";
+/// Copies the round's number into word 0 of `call_inference_round`.
+pub(super) const CALLS_INFERENCE_ROUND_NUMBER_PASS: &str =
+    "type_check.calls.inference.round_number";
 /// Zeroes the per-function change rounds before a job's first inference
 /// round (shaders/type_checker/calls/inference_activity.slang).
 pub(super) const CALLS_INFERENCE_ACTIVITY_CLEAR_PASS: &str =
@@ -3124,9 +3130,9 @@ fn build_graph(
     // Bound-directed inference tables (calls/bound_tables.slang): 16-word
     // rows, rebuilt in every inference round.
     graph_resources!(graph, Workspace {
-        _bound_inference_counts as "bound_inference_counts" in Calls => 16;
-        _bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
-        _bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
+        bound_inference_counts as "bound_inference_counts" in Calls => 16;
+        bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
+        bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
     });
     graph_resources!(graph, Input {
         _token_count as "token_count" in Tokens => 4;
@@ -3988,7 +3994,8 @@ fn build_graph(
         _status_readback as "status_readback" in Bytes => 16;
         status_prior as "status_prior" in Bytes => 16;
         call_inference_state as "call_inference_state" in Calls => 8;
-        _call_inference_round as "call_inference_round" in Calls => 8;
+        call_inference_round as "call_inference_round" in Calls => 8;
+        call_inference_round_numbers as "call_inference_round_numbers" in Calls => (u64::from(CALL_INFERENCE_DEPTH_LIMIT) + 1) * 4;
         call_inference_readback as "call_inference_readback" in Calls =>
             CALL_INFERENCE_READBACK_SLOT_BYTES * CALL_INFERENCE_MAX_BATCH as u64;
     });
@@ -5668,7 +5675,20 @@ fn build_graph(
     // Passes outside the rounds bind the stamps but read them only in round
     // 2 and later (inference_activity.slang), after this clear.
     graph.mark_zero_initialized(call_inference_fn_stamp)?;
-    CALLS_BEGIN_INFERENCE_ROUND.register_kernel(&mut graph, kernels)?;
+    graph.add_buffer_clear_pass(
+        CALLS_INFERENCE_ROUND_RESET_PASS,
+        CompilerPhase::TypeCheck,
+        "call_inference_state",
+        call_inference_state,
+    )?;
+    graph.add_buffer_copy_pass(
+        CALLS_INFERENCE_ROUND_NUMBER_PASS,
+        CompilerPhase::TypeCheck,
+        "call_inference_round_numbers",
+        call_inference_round_numbers,
+        "call_inference_round",
+        call_inference_round,
+    )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -5802,8 +5822,17 @@ fn build_graph(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
         "hir_active_dispatch_args",
     )?;
+    // A round empties the bound tables by zeroing their counts; rows past a
+    // count are never read.
+    graph.add_buffer_clear_pass(
+        CALLS_BOUND_TABLES_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "bound_inference_counts",
+        bound_inference_counts,
+    )?;
+    graph.mark_zero_initialized(bound_implementation_rows)?;
+    graph.mark_zero_initialized(bound_predicate_rows)?;
     for spec in [
-        CALLS_BOUND_TABLES_CLEAR,
         CALLS_BOUND_DEPENDENCY_COLLECT,
         CALLS_BOUND_LOCAL_COLLECT,
         CALLS_BOUND_INFER,

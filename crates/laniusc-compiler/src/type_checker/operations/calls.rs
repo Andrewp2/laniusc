@@ -48,13 +48,6 @@ const GENERIC_CLAIM_OUTPUTS: &[(&str, AccessMode)] = &[
     ("call_const_claim_arg_row", AccessMode::Write),
 ];
 
-/// Opens an inference round: zeroes its change count and counts the round
-/// (`compiler_graph::CALLS_INFERENCE_ROUND_RESET_PASS`).
-pub(in crate::type_checker) const CALLS_BEGIN_INFERENCE_ROUND: ReflectedComputeSpec = call_pass!(
-    "inference.round_reset",
-    DispatchArguments,
-    "type_checker/calls/03z_begin_inference_round"
-);
 pub(in crate::type_checker) const CALLS_CLEAR: ReflectedComputeSpec =
     call_pass!("clear", Calls, "type_checker/calls/01_resolve").initializer();
 pub(in crate::type_checker) const CALLS_ENTRYPOINT_CLEAR: ReflectedComputeSpec = call_pass!(
@@ -324,12 +317,6 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: Reflecte
 
 // Bound-directed generic call inference (calls/03l*), recorded in each
 // inference round after the dependency result passes.
-pub(in crate::type_checker) const CALLS_BOUND_TABLES_CLEAR: ReflectedComputeSpec = call_pass!(
-    "bound_inference.clear",
-    Calls,
-    "type_checker/calls/03l0_clear_bound_tables"
-)
-.initializer();
 pub(in crate::type_checker) const CALLS_BOUND_DEPENDENCY_COLLECT: ReflectedComputeSpec = call_pass!(
     "bound_inference.collect_dependency",
     Calls,

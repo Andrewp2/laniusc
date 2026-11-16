@@ -78,24 +78,44 @@ public SolverStatus pps_reserve(uint table, uint count, uint subject, out uint f
         return ts_invalid(66u, subject, table);
     if (count == 0u) { first = 0u; return ts_ok(); }
     uint address = PPS_DIRECTORY + table * 6u + 1u;
-    uint expected = span.y;
-    [loop]
-    for (uint attempt = 0u; attempt < PPS_ATOMIC_ATTEMPTS; attempt++)
+    uint limit = table == PPS_WORK ? PPS_LOGICAL_WORK_LIMIT :
+        (table == PPS_REDUCTION_QUEUE ? 2u * PPS_LOGICAL_WORK_LIMIT : TS_INVALID);
+    // The active lanes of a subgroup that reserve rows of one table take
+    // them with one exchange: a compare-exchange per lane on the table's
+    // counter serializes every lane of a large stage. The total fits
+    // exactly when every lane's rows fit after the others', so success and
+    // the counter are those of the lane-by-lane reservation.
+    bool shared = WaveActiveAllEqual(table) && WaveActiveMax(count) <= 4096u;
+    uint lanes = shared ? WaveActiveSum(count) : count;
+    uint before = shared ? WavePrefixSum(count) : 0u;
+    bool leader = !shared || WaveIsFirstLane();
+    uint outcome = 0u; uint expected = span.y;
+    if (leader)
     {
-        uint limit = table == PPS_WORK ? PPS_LOGICAL_WORK_LIMIT :
-            (table == PPS_REDUCTION_QUEUE ? 2u * PPS_LOGICAL_WORK_LIMIT : TS_INVALID);
-        if (expected > limit || count > limit - expected)
-            return ts_limit(72u, table,
-                count > TS_INVALID - expected ? TS_INVALID : expected + count, limit);
-        if (expected > span.z || count > span.z - expected || count >= TS_INVALID - expected)
-            return ts_limit(69u, table,
-                count > TS_INVALID - expected ? TS_INVALID : expected + count, span.z);
-        uint previous;
-        InterlockedCompareExchange(trait_solver_proof_store[address], expected, expected + count, previous);
-        if (previous == expected) { first = expected; return ts_ok(); }
-        expected = previous;
+        outcome = 3u;
+        [loop]
+        for (uint attempt = 0u; attempt < PPS_ATOMIC_ATTEMPTS; attempt++)
+        {
+            if (expected > limit || lanes > limit - expected) { outcome = 1u; break; }
+            if (expected > span.z || lanes > span.z - expected || lanes >= TS_INVALID - expected)
+            { outcome = 2u; break; }
+            uint previous;
+            InterlockedCompareExchange(trait_solver_proof_store[address], expected, expected + lanes, previous);
+            if (previous == expected) { outcome = 0u; break; }
+            expected = previous;
+        }
     }
-    return ts_limit(8u, subject, PPS_ATOMIC_ATTEMPTS + 1u, PPS_ATOMIC_ATTEMPTS);
+    if (shared)
+    {
+        outcome = WaveReadLaneFirst(outcome);
+        expected = WaveReadLaneFirst(expected);
+    }
+    uint required = lanes > TS_INVALID - expected ? TS_INVALID : expected + lanes;
+    if (outcome == 1u) return ts_limit(72u, table, required, limit);
+    if (outcome == 2u) return ts_limit(69u, table, required, span.z);
+    if (outcome == 3u) return ts_limit(8u, subject, PPS_ATOMIC_ATTEMPTS + 1u, PPS_ATOMIC_ATTEMPTS);
+    first = expected + before;
+    return ts_ok();
 }
 
 public bool pps_goal_equal(uint left, uint right)

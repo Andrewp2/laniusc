@@ -122,13 +122,15 @@ pub struct RetainedDiscovery {
     admission: Option<TraitAdmission>,
     /// Taken while the bound routes record into the method routes' submit.
     method_routes: Option<super::method_routes::MethodRoutes>,
-    /// The projection inputs of the last attempt. Every attempt clears
-    /// them, so a build reuses the buffers, and the bind groups over them,
-    /// while the capacities are unchanged.
-    projection_inputs: Option<ProjectionInputs>,
-    /// The root routes and readiness of the last attempt, reused at the same
-    /// size for the same reason.
-    root_buffers: Option<(wgpu::Buffer, wgpu::Buffer)>,
+    /// Set for the rest of this discovery's life after a closed solve did
+    /// not finish in its first submit: later closed waves read the solver's
+    /// progress before their resolution, as the solve requires.
+    eager_closed: bool,
+    /// The published buffers of the last attempt, with the capacities
+    /// (instances, edges, uses, requests) they hold: a warm build with the
+    /// same capacities binds the same buffers, so its bind groups are the
+    /// cached ones.
+    published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -152,8 +154,8 @@ impl RetainedDiscovery {
             hash_mask: u32::MAX,
             admission: None,
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
-            projection_inputs: None,
-            root_buffers: None,
+            eager_closed: false,
+            published: None,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -219,32 +221,18 @@ impl RetainedDiscovery {
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
             self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
-            let inputs = match &self.projection_inputs {
-                Some(inputs)
-                    if inputs.instance_capacity() == self.capacity.instances.max(1)
-                        && inputs.route_capacity() == self.capacity.edges.max(1) =>
-                {
-                    inputs.clone()
-                }
-                _ => {
-                    let inputs = ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges);
-                    self.projection_inputs = Some(inputs.clone());
-                    inputs
-                }
-            };
-            let route_bytes = (uses.max(1) as u64 * 16).max(4);
-            let (root_routes, root_readiness) = match &self.root_buffers {
-                Some((routes, readiness)) if routes.size() == route_bytes => (routes.clone(), readiness.clone()),
-                _ => {
-                    let buffers = (
-                        self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
-                        self.buffer("dg_root_readiness", 16)?,
-                    );
-                    self.root_buffers = Some(buffers.clone());
-                    buffers
-                }
-            };
-            let requests = SubstitutionRequests::new_with_device(&self.device, self.capacity.requests);
+            let key = [self.capacity.instances, self.capacity.edges, uses.max(1), self.capacity.requests];
+            if self.published.as_ref().is_none_or(|(held, ..)| *held != key) {
+                self.published = Some((
+                    key,
+                    ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges),
+                    self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
+                    self.buffer("dg_root_readiness", 16)?,
+                    SubstitutionRequests::new_with_device(&self.device, self.capacity.requests),
+                ));
+            }
+            let (_, inputs, root_routes, root_readiness, requests) =
+                self.published.clone().ok_or_else(|| anyhow!("discovery buffers are not allocated"))?;
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([
                 ("dg_root_routes", &root_routes),
@@ -329,6 +317,7 @@ impl RetainedDiscovery {
                         hi,
                         Some(&status[STATUS_WORDS..]),
                         true,
+                        !self.eager_closed,
                     )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {
@@ -424,8 +413,13 @@ impl RetainedDiscovery {
                     }
                     None => {
                         let words = self.read_status_counts(store, receipt_read.as_slice(), &mut report)?;
-                        if let Some(error) = closed_receipt_failure(closed.as_mut(), &words, lo)? {
-                            return Ok(DiscoveryOutcome::Rejected(error));
+                        match closed_receipt_failure(closed.as_mut(), &words, lo)? {
+                            Closed::Rejected(error) => return Ok(DiscoveryOutcome::Rejected(error)),
+                            Closed::Unfinished => {
+                                self.eager_closed = true;
+                                continue 'attempt;
+                            }
+                            Closed::Accepted => {}
                         }
                         if self.grow(&words)? {
                             continue 'attempt;
@@ -433,8 +427,16 @@ impl RetainedDiscovery {
                         bail!("discovery request capacity exceeded without a growth request");
                     }
                 };
-                if let Some(error) = closed_receipt_failure(closed.as_mut(), &status, lo)? {
-                    return Ok(DiscoveryOutcome::Rejected(error));
+                // A deferred closed solve that did not finish leaves this
+                // wave's routes incomplete: the attempt runs again with
+                // eager closed solves.
+                match closed_receipt_failure(closed.as_mut(), &status, lo)? {
+                    Closed::Rejected(error) => return Ok(DiscoveryOutcome::Rejected(error)),
+                    Closed::Unfinished => {
+                        self.eager_closed = true;
+                        continue 'attempt;
+                    }
+                    Closed::Accepted => {}
                 }
                 if self.grow(&status)? {
                     continue 'attempt;
@@ -906,7 +908,6 @@ impl RetainedDiscovery {
         ] {
             self.ensure(name, bytes)?;
         }
-        self.ensure("dg_indirect_idle", 16)?;
         if !self.scratch.contains_key("dg_indirect") {
             self.scratch
                 .insert("dg_indirect", storage(&self.device, "dg_indirect", 16, true));
@@ -920,9 +921,18 @@ impl RetainedDiscovery {
         }
         Ok(storage(&self.device, name, bytes.max(4), false))
     }
+    /// Grows `name` to at least `bytes`, by powers of two: sizes that grow
+    /// from build to build (the term count) then keep their buffer, and so
+    /// their cached bind groups, across warm builds. The instance and edge
+    /// tables keep their exact size, since the kernels read their capacity
+    /// from the buffer length and it must match the projection inputs.
     fn ensure(&mut self, name: &'static str, bytes: u64) -> Result<()> {
         if self.scratch.get(name).is_none_or(|b| b.size() < bytes) {
-            let b = self.buffer(name, bytes)?;
+            let limits = self.device.limits();
+            let limit = u64::from(limits.max_storage_buffer_binding_size).min(limits.max_buffer_size);
+            let rounded = bytes.max(4).next_power_of_two();
+            let exact = matches!(name, "dg_instances" | "dg_edges") || rounded > limit;
+            let b = self.buffer(name, if exact { bytes } else { rounded })?;
             self.scratch.insert(name, b);
         }
         Ok(())
@@ -975,13 +985,8 @@ impl RetainedDiscovery {
                 entries.push((n, binding));
                 continue;
             }
-            // Every kernel includes dg_common.slang, so its reflection lists
-            // dg_indirect. A pass dispatched from that buffer may not also
-            // bind it as storage.
             let buffer = if n == "dg_config" {
                 Some(config_buffer)
-            } else if n == "dg_indirect" && matches!(dispatch, Dispatch::Indirect(_)) {
-                self.scratch.get("dg_indirect_idle")
             } else {
                 None
             }
@@ -998,26 +1003,14 @@ impl RetainedDiscovery {
             0,
             &entries,
         )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_discovery"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, &bind, &[]);
-        match dispatch {
+        let launch = match dispatch {
             Dispatch::Lanes(lanes) => {
                 let groups = lanes.div_ceil(256).max(1);
-                compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
+                super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1)
             }
-            Dispatch::Indirect(buffer) => {
-                passes_core::record_indirect_compute_dispatch();
-                compute.dispatch_workgroups_indirect(buffer, 0);
-            }
-        }
-        passes_core::record_compute_dispatch();
+            Dispatch::Indirect(buffer) => super::substitution::Launch::Indirect(buffer, 0),
+        };
+        super::substitution::record_timed(encoder, "retained_discovery", &[(pass, &bind, launch)]);
         report.dispatches += 1;
         Ok(())
     }
@@ -1101,19 +1094,26 @@ enum Dispatch<'a> {
 /// Accepts a deferred closed publication receipt, which follows the status
 /// words and store counters in `words`. A publication that did not finish
 /// rejects the wave, before any growth or discovery failure is reported.
+enum Closed {
+    Accepted,
+    Rejected(DiscoveryError),
+    /// The wave's deferred closed solve did not finish in its first submit.
+    Unfinished,
+}
 fn closed_receipt_failure(
     closed: Option<&mut ClosedTraitPublication>,
     words: &[u32],
     first: u32,
-) -> Result<Option<DiscoveryError>> {
-    let Some(closed) = closed else { return Ok(None) };
-    let status = closed.accept_receipt(&words[STATUS_WORDS + counts::WORDS..])?;
-    Ok((status != [1, 0, u32::MAX]).then(|| DiscoveryError {
-        code: 8,
-        use_index: u32::MAX,
-        instance: first,
-        detail: status[2],
-    }))
+) -> Result<Closed> {
+    let Some(closed) = closed else { return Ok(Closed::Accepted) };
+    let Some(status) = closed.accept_receipt(&words[STATUS_WORDS + counts::WORDS..])? else {
+        return Ok(Closed::Unfinished);
+    };
+    Ok(if status != [1, 0, u32::MAX] {
+        Closed::Rejected(DiscoveryError { code: 8, use_index: u32::MAX, instance: first, detail: status[2] })
+    } else {
+        Closed::Accepted
+    })
 }
 fn failure(s: &[u32]) -> Option<DiscoveryError> {
     if s[10] != 0 {

@@ -29,18 +29,6 @@ pub struct NativeCallTables {
     uses: u64,
     arguments: u32,
     generation: u32,
-    /// The provisional kernel's own buffers, grown to cover each job and
-    /// kept, so a warm build creates no buffer or bind group for them.
-    io: Option<ProvisionalBuffers>,
-}
-
-/// Inputs and results of `00_provisional`, rewritten by every call.
-struct ProvisionalBuffers {
-    config: wgpu::Buffer,
-    status: wgpu::Buffer,
-    hirs: wgpu::Buffer,
-    rows: wgpu::Buffer,
-    identity: wgpu::Buffer,
 }
 
 impl NativeCallTables {
@@ -57,7 +45,6 @@ impl NativeCallTables {
             uses,
             arguments: 0,
             generation: 0,
-            io: None,
         }
     }
 
@@ -95,7 +82,8 @@ impl ProgramRetention {
         call_hirs: &[u32],
     ) -> Result<()> {
         let columns = X86SymbolColumns::of_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_object(object)
+        let unit = Some((object.library_id, object.unit_id));
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs,unit)?.apply_to_object(object)
     }
 
     pub(crate) fn provisionalize_wasm_calls(
@@ -103,11 +91,13 @@ impl ProgramRetention {
         object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],
     ) -> Result<()> {
         let columns=X86SymbolColumns::of_wasm_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_wasm_object(object)
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs,None)?.apply_to_wasm_object(object)
     }
 
+    /// `unit` names an x86 object whose rewritten identities the resident
+    /// native link keeps (`codegen/x86/link/resident.rs`).
     fn provisionalize_calls(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
-        columns:X86SymbolColumns,call_hirs:&[u32]) -> Result<X86SymbolColumns> {
+        columns:X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>) -> Result<X86SymbolColumns> {
         if call_hirs.is_empty() { return Ok(columns); }
         let symbol_words = columns.symbol_rows.len() / 4;
         if symbol_words == 0 || columns.identity_bytes.len() % 4 != 0 {
@@ -133,33 +123,29 @@ impl ProgramRetention {
         let mut encoder = device.create_command_encoder(&Default::default());
         tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
         self.queue.submit(Some(encoder.finish()));
-        let hir_bytes = words_bytes(call_hirs);
-        let need = |bytes: usize| (bytes as u64).max(16).next_power_of_two();
-        let fits = |io: &ProvisionalBuffers| {
-            io.hirs.size() >= need(hir_bytes.len())
-                && io.rows.size() >= need(columns.symbol_rows.len())
-                && io.identity.size() >= need(columns.identity_bytes.len())
+        let mut kept = self.native_call_scratch.lock().unwrap();
+        let mut keep = |label: &'static str, bytes: u64| {
+            let bytes = bytes.max(16).next_power_of_two();
+            kept.entry(label)
+                .and_modify(|buffer| {
+                    if buffer.size() < bytes {
+                        *buffer = storage(device, label, bytes, false);
+                    }
+                })
+                .or_insert_with(|| storage(device, label, bytes, false))
+                .clone()
         };
-        if !tables.io.as_ref().is_some_and(fits) {
-            let grow = |label: &str, old: Option<&wgpu::Buffer>, bytes: usize| {
-                let bytes = need(bytes).max(old.map_or(0, wgpu::Buffer::size));
-                storage(device, label, bytes, false)
-            };
-            let old = tables.io.as_ref();
-            tables.io = Some(ProvisionalBuffers {
-                config: storage(device, "nc_config", 16, false),
-                status: storage(device, "nc_status", 16, false),
-                hirs: grow("nc_call_hirs", old.map(|io| &io.hirs), hir_bytes.len()),
-                rows: grow("nc_symbols", old.map(|io| &io.rows), columns.symbol_rows.len()),
-                identity: grow("nc_identity", old.map(|io| &io.identity), columns.identity_bytes.len()),
-            });
-        }
-        let io = tables.io.as_ref().expect("provisional buffers were just ensured");
-        let (config, status, hirs, rows, identity) =
-            (io.config.clone(), io.status.clone(), io.hirs.clone(), io.rows.clone(), io.identity.clone());
-        self.queue.write_buffer(&hirs, 0, &hir_bytes);
-        self.queue.write_buffer(&rows, 0, &columns.symbol_rows);
-        self.queue.write_buffer(&identity, 0, &columns.identity_bytes);
+        let config = keep("nc_config", 16);
+        let mut upload = |label: &'static str, bytes: &[u8]| {
+            let buffer = keep(label, bytes.len() as u64);
+            self.queue.write_buffer(&buffer, 0, bytes);
+            buffer
+        };
+        let hirs = upload("nc_call_hirs", &words_bytes(call_hirs));
+        let rows = upload("nc_symbols", &columns.symbol_rows);
+        let identity = upload("nc_identity", &columns.identity_bytes);
+        let status = keep("nc_status", 16);
+        drop(kept);
         let names = reflected_names(pass);
         loop {
         self.queue.write_buffer(&config, 0, &words_bytes(&[
@@ -203,18 +189,12 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        {
-            let mut cpass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.native_calls"), timestamp_writes: None },
-            );
-            cpass.set_pipeline(&pass.pipeline);
-            cpass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            let groups = undefined.div_ceil(256).max(1);
-            cpass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
-        }
-        crate::gpu::timer::stamp_active_operation(&mut encoder, KERNEL);
+        let groups = undefined.div_ceil(256).max(1);
+        super::substitution::record_timed(
+            &mut encoder,
+            "program_retention.native_calls",
+            &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         // The status and both symbol columns in one readback; the columns
         // are used only when the status is clean.
@@ -240,6 +220,9 @@ impl ProgramRetention {
             continue;
         }
         tables.arguments = result[1];
+        if let Some((library_id, unit_id)) = unit {
+            crate::codegen::x86::park_resident_identities(device, &self.queue, library_id, unit_id, &identity, undefined);
+        }
         let identity_bytes = words_to_bytes(&read.pop().unwrap_or_default());
         let symbol_rows = words_to_bytes(&read.pop().unwrap_or_default());
         drop(store);

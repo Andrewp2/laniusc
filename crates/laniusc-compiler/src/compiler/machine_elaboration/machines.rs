@@ -12,7 +12,7 @@ use anyhow::{Context, Result, anyhow};
 
 use super::{
     Segment,
-    closures::{Gpu, Rewritten},
+    closures::{Gpu, Readback, Rewritten},
 };
 use crate::{
     gpu::{
@@ -398,11 +398,12 @@ pub(super) struct Marked {
     status: LaniusBuffer<u32>,
     detail: LaniusBuffer<u8>,
     /// The last row of `scan`: the number of machines, states and transitions.
-    totals: LaniusBuffer<u8>,
-    /// The first status word: the reserved names.
-    reserved: LaniusBuffer<u8>,
+    totals: Readback,
+    /// The first status word: the reserved names. `None` until `mark`
+    /// records its read.
+    reserved: Option<Readback>,
     /// The word after the status words: the first `gen` or `yield` token.
-    generators: LaniusBuffer<u8>,
+    generators: Option<Readback>,
 }
 
 /// The parse tree of the pack, for the generator kernels.
@@ -512,15 +513,15 @@ fn mark(
         marks,
         totals: gpu.read(encoder, &scan, (rows - 1) * 4, 4),
         scan,
-        reserved: gpu.rows("machines.reserved", 1, 1),
-        generators: gpu.rows("machines.generators", 1, 1),
+        reserved: None,
+        generators: None,
         status,
         detail,
     };
     record_reserved(gpu, encoder, &marked, [NO_ERROR; 2])?;
     let reserved = gpu.read(encoder, &marked.status, 0, 1);
     let generators = gpu.read(encoder, &marked.status, STATUS_WORDS, 1);
-    Ok(Some(Marked { reserved, generators, ..marked }))
+    Ok(Some(Marked { reserved: Some(reserved), generators: Some(generators), ..marked }))
 }
 
 /// Records the kernel that checks the reserved names.
@@ -584,14 +585,14 @@ fn lists(
 /// Checks the rules, then writes the pieces of every machine and the
 /// expanded bytes.
 fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outcome>> {
-    let reserved = gpu.words(&marked.reserved)?[0];
+    let reserved = gpu.words(marked.reserved.as_ref().context("the reserved names were not read")?)?[0];
     if reserved != NO_ERROR {
         let mut encoder = gpu.encoder("machines.explain");
         record_reserved(gpu, &mut encoder, marked, [0, reserved])?;
         return explain(gpu, encoder, sources, marked, 0, reserved).map(Some);
     }
     // Generators become machines first. The caller runs the pack again.
-    if gpu.words(&marked.generators)?[0] != NO_ERROR {
+    if gpu.words(marked.generators.as_ref().context("the generator tokens were not read")?)?[0] != NO_ERROR {
         return super::generators::expand(gpu, sources, marked);
     }
     let totals = gpu.words(&marked.totals)?;
@@ -821,6 +822,39 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     let mut encoder = gpu.encoder("machines.pieces");
     record_pieces(&mut encoder, 1, [count_scan0, count_scan1], &pieces, &piece_sources)?;
     let piece_scan = gpu.scan(&mut encoder, &scan_kernel, &pieces, &piece_work, piece_count)?;
+
+    // The expanded bytes, in the same submission as their pieces: the
+    // output holds `emit_capacity` bytes, and a text that outgrows it is
+    // emitted again once its length is known.
+    let emit = |encoder: &mut wgpu::CommandEncoder, capacity: usize| -> Result<Readback> {
+        let out_words = capacity.div_ceil(4).max(1);
+        let output = gpu.rows("machines.output", out_words, 1);
+        let params = params(
+            gpu,
+            "machines.emit.params",
+            u32::try_from(capacity).context("expanded source is too large")?,
+            piece_count,
+        );
+        gpu.dispatch(
+            encoder,
+            &gpu.kernel("machines/emit")?,
+            "machines.emit",
+            &[
+                ("gEmit", params.as_entire_binding()),
+                ("in_bytes", marked.in_bytes.as_entire_binding()),
+                ("tokens_out", marked.tokens_out.as_entire_binding()),
+                ("pieces", pieces.as_entire_binding()),
+                ("piece_scan", piece_scan.as_entire_binding()),
+                ("const_index", const_index.as_entire_binding()),
+                ("const_bytes", const_bytes.as_entire_binding()),
+                ("out_words", output.as_entire_binding()),
+            ],
+            u32::try_from(out_words).context("expanded source is too large")?,
+        )?;
+        Ok(gpu.read(encoder, &output, 0, out_words))
+    };
+    let capacity = super::closures::emit_capacity(sources.iter().map(|source| source.len()).sum());
+    let output_read = emit(&mut encoder, capacity)?;
     let pieces_read = gpu.read(&mut encoder, &pieces, 0, pieces_len * 4);
     let piece_scan_read = gpu.read(&mut encoder, piece_scan, 0, pieces_len * 4);
     let piece_sources_read = gpu.read(&mut encoder, &piece_sources, 0, pieces_len * 4);
@@ -828,33 +862,15 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     let piece_rows = gpu.words(&pieces_read)?;
     let piece_ends = gpu.words(&piece_scan_read)?;
     let piece_anchors = gpu.words(&piece_sources_read)?;
-    let out_len = piece_ends[(pieces_len - 1) * 4];
-
-    // The expanded bytes.
-    let out_words = (out_len as usize).div_ceil(4);
-    let output = gpu.rows("machines.output", out_words, 1);
-    let emit_params = params(gpu, "machines.emit.params", out_len, piece_count);
-    let mut encoder = gpu.encoder("machines.emit");
-    gpu.dispatch(
-        &mut encoder,
-        &gpu.kernel("machines/emit")?,
-        "machines.emit",
-        &[
-            ("gEmit", emit_params.as_entire_binding()),
-            ("in_bytes", marked.in_bytes.as_entire_binding()),
-            ("tokens_out", marked.tokens_out.as_entire_binding()),
-            ("pieces", pieces.as_entire_binding()),
-            ("piece_scan", piece_scan.as_entire_binding()),
-            ("const_index", const_index.as_entire_binding()),
-            ("const_bytes", const_bytes.as_entire_binding()),
-            ("out_words", output.as_entire_binding()),
-        ],
-        u32::try_from(out_words.max(1)).context("expanded source is too large")?,
-    )?;
-    let output_read = gpu.read(&mut encoder, &output, 0, out_words);
-    gpu.submit("machines.emit", encoder);
-    let mut bytes: Vec<u8> = gpu.words(&output_read)?.into_iter().flat_map(u32::to_le_bytes).collect();
-    bytes.truncate(out_len as usize);
+    let out_len = piece_ends[(pieces_len - 1) * 4] as usize;
+    let bytes = if out_len <= capacity {
+        gpu.bytes(&output_read, out_len)?
+    } else {
+        let mut encoder = gpu.encoder("machines.emit");
+        let output_read = emit(&mut encoder, out_len)?;
+        gpu.submit("machines.emit", encoder);
+        gpu.bytes(&output_read, out_len)?
+    };
 
     split_files(sources, &piece_rows, &piece_ends, &piece_anchors, &bytes).map(|files| Some(Outcome::Expanded(files)))
 }
@@ -1008,7 +1024,7 @@ pub(super) fn split_files(
 }
 
 #[cfg(test)]
-fn read_all(gpu: &Gpu<'_>, encoder: &mut wgpu::CommandEncoder, buffer: &LaniusBuffer<u32>, words: u32) -> LaniusBuffer<u8> {
+fn read_all(gpu: &Gpu<'_>, encoder: &mut wgpu::CommandEncoder, buffer: &LaniusBuffer<u32>, words: u32) -> Readback {
     gpu.read(encoder, buffer, 0, words as usize)
 }
 

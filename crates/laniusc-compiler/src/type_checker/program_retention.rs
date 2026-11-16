@@ -441,6 +441,9 @@ pub struct ProgramRetention {
     /// Only the native retained driver withholds all original generic bodies.
     native_projection: bool,
     native_call_pass: std::sync::OnceLock<PassData>,
+    /// The native call pass's own buffers, kept across builds (grown by
+    /// powers of two) so a warm build binds the same ones.
+    native_call_scratch: Mutex<BTreeMap<&'static str, wgpu::Buffer>>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
@@ -528,6 +531,7 @@ impl ProgramRetention {
         let this = Arc::new(Self {
             native_projection,
             native_call_pass: std::sync::OnceLock::new(),
+            native_call_scratch: Mutex::new(BTreeMap::new()),
             device,
             queue,
             passes,
@@ -781,21 +785,14 @@ impl ProgramRetention {
         }
         let indirect = &store.scratch["rt_x_dispatch"];
         {
-            let mut timed = TimedPass::new("program_retention.export");
+            let mut steps = Vec::new();
             let mut run = |index: usize, dispatch: Dispatch| {
                 let kernel = index.checked_sub(EXPORT_KERNELS.len()).map_or(index, |k| 9 + k);
-                let pass = timed.pass(&mut encoder);
-                pass.set_pipeline(&self.passes[kernel].pipeline);
-                pass.set_bind_group(0, &bind_groups[index], &[]);
-                passes_core::record_compute_dispatch();
-                match dispatch {
-                    Dispatch::Direct([x, y, z]) => pass.dispatch_workgroups(x, y, z),
-                    Dispatch::Indirect(slot) => {
-                        passes_core::record_indirect_compute_dispatch();
-                        pass.dispatch_workgroups_indirect(indirect, 3 * slot * 4)
-                    }
-                }
-                timed.dispatched(&mut encoder, &self.passes[kernel].shader_id);
+                let launch = match dispatch {
+                    Dispatch::Direct([x, y, z]) => substitution::Launch::Groups(x, y, z),
+                    Dispatch::Indirect(slot) => substitution::Launch::Indirect(indirect, 3 * slot * 4),
+                };
+                steps.push((&self.passes[kernel], &bind_groups[index], launch));
             };
             use Dispatch::{Direct, Indirect};
             let one = Direct([1, 1, 1]);
@@ -834,8 +831,7 @@ impl ProgramRetention {
             run(25, one);
             run(26, Indirect(D_COMMIT_DIR));
             run(27, Indirect(D_ROLLBACK));
-            drop(run);
-            timed.end();
+            substitution::record_timed(&mut encoder, "program_retention.export", &steps);
         }
         self.queue.submit(Some(encoder.finish()));
         Ok(())
@@ -912,18 +908,12 @@ impl ProgramRetention {
             0,
             &entries,
         )?;
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.rehash"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&self.rehash.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            let g = lanes.div_ceil(256).max(1);
-            pass.dispatch_workgroups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1);
-        }
-        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.rehash");
+        let g = lanes.div_ceil(256).max(1);
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.rehash",
+            &[(&self.rehash, &bind, substitution::Launch::Groups(g.min(65535) as u32, g.div_ceil(65535) as u32, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         Ok(())
     }
@@ -1078,17 +1068,11 @@ impl ProgramRetention {
             &entries_bound,
         )?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.trait_probe"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&pass_data.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(entries.div_ceil(64).max(1) as u32, 1, 1);
-        }
-        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.trait_probe");
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.trait_probe",
+            &[(pass_data, &bind, substitution::Launch::Groups(entries.div_ceil(64).max(1) as u32, 1, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, entries as usize * TRAIT_PROBE_WORDS)
@@ -1186,72 +1170,14 @@ impl ProgramRetention {
             &entries,
         )?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.resolve"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&pass_data.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(lanes.div_ceil(64).max(1) as u32, 1, 1);
-        }
-        crate::gpu::timer::stamp_active_operation(&mut encoder, "program_retention.resolve");
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.resolve",
+            &[(pass_data, &bind, substitution::Launch::Groups(lanes.div_ceil(64).max(1) as u32, 1, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, lanes as usize * PROBE_WORDS)
-    }
-}
-
-/// A compute pass shared by several dispatches. Under an operation capture
-/// scope it stamps each dispatch, and it ends the pass after each one when
-/// the adapter cannot stamp inside a pass. Outside a capture scope it only
-/// checks one flag per dispatch.
-pub(crate) struct TimedPass {
-    pass: Option<wgpu::ComputePass<'static>>,
-    label: &'static str,
-    timed: bool,
-    split: bool,
-}
-
-impl TimedPass {
-    pub(crate) fn new(label: &'static str) -> Self {
-        Self {
-            pass: None,
-            label,
-            timed: crate::gpu::timer::operation_capture_active(),
-            split: crate::gpu::timer::operation_capture_requires_split_passes(),
-        }
-    }
-
-    /// The open pass, begun on `encoder` if none is open.
-    pub(crate) fn pass(&mut self, encoder: &mut wgpu::CommandEncoder) -> &mut wgpu::ComputePass<'static> {
-        let label = self.label;
-        self.pass.get_or_insert_with(|| {
-            passes_core::begin_counted_compute_pass(
-                encoder,
-                &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
-            )
-            .forget_lifetime()
-        })
-    }
-
-    /// Stamps the dispatch just recorded as `operation`.
-    pub(crate) fn dispatched(&mut self, encoder: &mut wgpu::CommandEncoder, operation: &str) {
-        if !self.timed {
-            return;
-        }
-        if self.split {
-            self.pass = None;
-            crate::gpu::timer::stamp_active_operation(encoder, operation);
-        } else if let Some(pass) = &mut self.pass {
-            crate::gpu::timer::stamp_active_operation_in_pass(pass, operation);
-        }
-    }
-
-    /// Ends the open pass, so `encoder` can record copies or clears.
-    pub(crate) fn end(&mut self) {
-        self.pass = None;
     }
 }
 

@@ -15,6 +15,7 @@ use anyhow::{Result, anyhow};
 
 enum Json {
     Scalar,
+    Int(u64),
     Str(String),
     Array(Vec<Json>),
     Object(Vec<(String, Json)>),
@@ -115,7 +116,12 @@ impl Parser<'_> {
                 let number = word
                     .first()
                     .is_some_and(|b| b.is_ascii_digit() || *b == b'-');
-                if number || matches!(word, b"true" | b"false" | b"null") {
+                if let Some(int) = std::str::from_utf8(word)
+                    .ok()
+                    .and_then(|word| word.parse::<u64>().ok())
+                {
+                    Ok(Json::Int(int))
+                } else if number || matches!(word, b"true" | b"false" | b"null") {
                     Ok(Json::Scalar)
                 } else {
                     Err(self.error("expected a value"))
@@ -173,9 +179,7 @@ impl Parser<'_> {
     }
 }
 
-/// Names that two or more top-level reflected parameters with a binding
-/// share, sorted.
-pub fn duplicate_binding_names(json: &str) -> Result<Vec<String>> {
+fn parse(json: &str) -> Result<Json> {
     let mut parser = Parser {
         bytes: json.as_bytes(),
         at: 0,
@@ -185,6 +189,47 @@ pub fn duplicate_binding_names(json: &str) -> Result<Vec<String>> {
     if parser.at != parser.bytes.len() {
         return Err(parser.error("trailing data"));
     }
+    Ok(root)
+}
+
+/// The descriptor bindings of the top-level parameters: binding index and
+/// whether the parameter is a resource (a buffer or texture rather than a
+/// constant buffer). `None` when a parameter has a binding of another kind or
+/// several bindings, which the used-binding pass leaves alone.
+pub fn descriptor_bindings(json: &str) -> Result<Option<Vec<(u32, bool)>>> {
+    let root = parse(json)?;
+    let Some(Json::Array(parameters)) = root.get("parameters") else {
+        return Ok(Some(Vec::new()));
+    };
+    let mut out = Vec::new();
+    for parameter in parameters {
+        if parameter.get("bindings").is_some() {
+            return Ok(None);
+        }
+        let Some(binding) = parameter.get("binding") else {
+            continue;
+        };
+        let (Some(Json::Str(kind)), Some(Json::Int(index))) =
+            (binding.get("kind"), binding.get("index"))
+        else {
+            return Ok(None);
+        };
+        if kind != "descriptorTableSlot" || binding.get("space").is_some() {
+            return Ok(None);
+        }
+        let resource = matches!(
+            parameter.get("type").and_then(|ty| ty.get("kind")),
+            Some(Json::Str(kind)) if kind == "resource"
+        );
+        out.push((u32::try_from(*index)?, resource));
+    }
+    Ok(Some(out))
+}
+
+/// Names that two or more top-level reflected parameters with a binding
+/// share, sorted.
+pub fn duplicate_binding_names(json: &str) -> Result<Vec<String>> {
+    let root = parse(json)?;
     let Some(Json::Array(parameters)) = root.get("parameters") else {
         return Ok(Vec::new());
     };

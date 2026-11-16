@@ -235,6 +235,33 @@ of the executable:
 | Entry | `_start` passes `main`, argc, argv and envp to `__libc_start_main`; the return from `main` reaches `exit`, which flushes stdio |
 | Symbols | `.symtab` with `_start`, `main` and the sized `__lanius_*` functions, and section headers |
 
+#### Resident link
+
+A native build that compiles its objects in memory links them on the GPU from
+the buffers the lowering wrote. The host does not read or upload object bytes
+for the link. `codegen/x86/link/resident.rs` runs the link:
+
+1. Lowering copies each object's metadata, relocation rows, symbol rows, text
+   and rodata into a store the linker keeps. The original-call rewrite in
+   `program_retention/native_calls.rs` adds the rewritten undefined
+   identities. Publishing an object commits its slot under
+   `(library, unit)`.
+2. Before finalization the first submission runs. It plans the text copies,
+   places every symbol and applies the discovery routes to provisional uses.
+   It indexes definitions and C bindings, and marks the C names the program
+   references.
+3. A worker thread reads the plan and resolves the marked names against the
+   shared libraries, as listed above. It then packs the dynamic writer's rows.
+4. After finalization the second submission runs. It writes the Lanius symbol
+   rows, gathers the section bytes and writes the ELF dynamic parts. It then
+   applies the relocations and inlines tiny leaf calls, as `splice.rs` does.
+   The host reads the finished image once and writes the file.
+
+The shaders are in `shaders/codegen/x86/link/resident/`. Every check the host
+link makes has a GPU error bit. Any error, a C driver link, or a store that
+does not hold the build's objects falls back to the host link, which reports
+the exact diagnostic.
+
 The C driver remains the link path in these cases:
 
 - A `--native-object` input is an object file or archive.

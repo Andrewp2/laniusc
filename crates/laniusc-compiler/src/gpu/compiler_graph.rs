@@ -2469,8 +2469,12 @@ pub(crate) fn compiler_graph_diagnostics() -> Vec<CompilerGraphDiagnostic> {
         .collect()
 }
 
+/// The reflected parameters, including those the kernel does not use (see
+/// `SlangReflection::retain_used_bindings`): the graph orders passes by the
+/// resources their module declares, as before unused bindings were dropped
+/// from layouts.
 fn reflected_parameters(reflection: &SlangReflection) -> Vec<&ParameterReflection> {
-    reflection
+    let mut parameters: Vec<&ParameterReflection> = reflection
         .entry_points
         .iter()
         .find(|entry| entry.stage.as_deref() == Some("compute"))
@@ -2482,7 +2486,9 @@ fn reflected_parameters(reflection: &SlangReflection) -> Vec<&ParameterReflectio
                 .flat_map(|set| set.parameters.iter())
                 .collect()
         })
-        .unwrap_or_else(|| reflection.parameters.iter().collect())
+        .unwrap_or_else(|| reflection.parameters.iter().collect());
+    parameters.extend(reflection.unused_parameters.iter());
+    parameters
 }
 
 /// A cohesive compiler operation which contributes logical resources and

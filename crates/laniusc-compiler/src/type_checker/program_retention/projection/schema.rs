@@ -123,20 +123,12 @@ impl SchemaProjection {
             0,
             &bindings,
         )?;
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_schema"),
-                timestamp_writes: None,
-            },
-        );
-        compute.set_pipeline(&pass.pipeline);
-        compute.set_bind_group(0, &group, &[]);
         let groups = lanes.div_ceil(256).max(1);
-        compute.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
-        passes_core::record_compute_dispatch();
-        drop(compute);
-        crate::gpu::timer::stamp_active_operation(encoder, &pass.shader_id);
+        super::super::substitution::record_timed(
+            encoder,
+            "retained_schema",
+            &[(pass, &group, super::super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
+        );
         report.dispatches += 1;
         Ok(())
     }

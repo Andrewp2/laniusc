@@ -192,9 +192,14 @@ impl X86DynamicImage {
     /// The shader's `dynamic_layout`, from the same counts.
     pub(super) fn layout(&self, input: &GpuX86LinkInput) -> Result<X86DynamicLayout> {
         let (symbols, stride) = self.symbols(input);
+        self.layout_for(input.text_len() as u64, input.rodata_len() as u64, symbols.len() as u64, stride)
+    }
+
+    /// `layout` from the section lengths (text including the import stubs),
+    /// the defined Lanius symbol count and the strtab name stride.
+    fn layout_for(&self, text_len: u64, rodata_len: u64, symbols: u64, stride: u32) -> Result<X86DynamicLayout> {
         let n = u64::from(self.import_count);
-        let rodata_end =
-            u64::from(TEXT_OFFSET) + input.text_len() as u64 + input.rodata_len() as u64;
+        let rodata_end = u64::from(TEXT_OFFSET) + text_len + rodata_len;
         let tail = align_up(rodata_end, 8);
         let interp = tail + u64::from(PROGRAM_HEADERS) * 56;
         let hash = align_up(interp + u64::from(INTERP_BYTES), 8);
@@ -207,8 +212,8 @@ impl X86DynamicImage {
         let rw = align_up(rx_end, 4096);
         let got = rw + 16 * (self.needed_rows.len() as u64 + u64::from(FIXED_DYNAMIC));
         let symtab = align_up(got + 8 * n, 8);
-        let strtab = symtab + 24 * (3 + symbols.len() as u64);
-        let shstrtab = strtab + u64::from(STRTAB_PREFIX) + symbols.len() as u64 * u64::from(stride);
+        let strtab = symtab + 24 * (3 + symbols);
+        let shstrtab = strtab + u64::from(STRTAB_PREFIX) + symbols * u64::from(stride);
         let sh = align_up(shstrtab + u64::from(SHSTRTAB_BYTES), 8);
         let total = sh + 64 * u64::from(SECTIONS);
         Ok(X86DynamicLayout {
@@ -216,6 +221,69 @@ impl X86DynamicImage {
             total: u32::try_from(total)
                 .context("dynamic executable exceeds the 32-bit ELF model")?,
         })
+    }
+
+    /// The writer's inputs for a link whose Lanius symbol rows the GPU
+    /// writes: `words` holds the import, needed and version-need rows, and
+    /// the symbol rows follow at `params[19]`. `lanius_text_len` excludes the
+    /// import stubs; `main_offset` is the bridge's offset from the start of
+    /// .text. Returns the rows and the executable length.
+    pub(super) fn resident_rows(
+        &self,
+        lanius_text_len: u32,
+        rodata_len: u32,
+        symbol_count: u32,
+        stride: u32,
+        main_offset: u32,
+    ) -> Result<(X86DynamicRows, u32)> {
+        let import_text = Self::import_text_len(self.import_count as usize)?;
+        let text_len = lanius_text_len
+            .checked_add(import_text)
+            .context("x86 text exceeds u32")?;
+        let layout = self.layout_for(text_len.into(), rodata_len.into(), symbol_count.into(), stride)?;
+        let mut words = Vec::with_capacity(
+            self.import_rows.len() + self.needed_rows.len() + self.verneed_rows.len(),
+        );
+        words.extend_from_slice(&self.import_rows);
+        let needed_rows = words.len() as u32;
+        words.extend_from_slice(&self.needed_rows);
+        let verneed_rows = words.len() as u32;
+        words.extend_from_slice(&self.verneed_rows);
+        let symbol_rows = words.len() as u32;
+        let element_count = TEXT_OFFSET
+            .checked_add(import_text)
+            .and_then(|count| count.checked_add(layout.total - layout.tail))
+            .context("dynamic writer element count exceeds u32")?;
+        let params = [
+            0,
+            layout.total,
+            TEXT_OFFSET + text_len + rodata_len,
+            TEXT_OFFSET + lanius_text_len,
+            TEXT_OFFSET + main_offset,
+            self.import_count,
+            self.needed_rows.len() as u32,
+            (self.verneed_rows.len() / 4) as u32,
+            self.verneed_libraries,
+            self.strings.len() as u32,
+            symbol_count,
+            stride,
+            text_len,
+            rodata_len,
+            layout.total,
+            element_count,
+            0,
+            needed_rows,
+            verneed_rows,
+            symbol_rows,
+            self.main.byte_len,
+            0,
+            0,
+            0,
+        ];
+        Ok((
+            X86DynamicRows { params, words, strings: self.strings.clone(), element_count },
+            layout.total,
+        ))
     }
 
     /// Rows for `dynamic_write.slang`, with Lanius symbol file offsets from

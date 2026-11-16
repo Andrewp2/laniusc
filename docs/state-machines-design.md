@@ -953,6 +953,68 @@ the host.
   nine rejections. `tests/machines_execution.rs` passes unchanged, and
   `generator_closure.lani` runs a generator whose `yield` holds a closure.
 
+## Selecting the files to rewrite
+
+Done 2026-11-15. It replaces the cross-build set of unchanged sources, which
+let a later build skip the files an earlier build had read.
+
+Every build lexes all files of a load once (`closures::select`). The kernel
+`closures/mark` ORs two bits per file, and the host reads the bits of all
+files and the lexer's error word in one map:
+
+- `SELECT_CLOSURES`: a closure starts in the file, by the rule the closure
+  pass itself uses (a `|` or `||` where a binary operator cannot stand, or
+  after `move` there). The closure pass reads only these files. For any
+  other file it would find no closure start and write nothing.
+- `SELECT_MACHINES`: the file holds a token of kind `machine`, `state`,
+  `start`, `final`, `goto`, `stay`, `gen` or `yield`, or a name that starts
+  with `__lanius_`. The machine pass lexes and parses only these files.
+
+Why a file without `SELECT_MACHINES` needs no parse. The machine pass does
+four things to a file: it expands its machines, rewrites its generators,
+rejects reserved names, and rejects a `goto` or `stay` outside a machine
+arm.
+
+1. A machine, a state, a transition and a generator are productions that
+   start at one of the eight token kinds above. The lexer gives these kinds
+   only to those words in their places (`machine` before a name, `goto`
+   before a name, `stay` before `with` or after an arm's arrow, `gen`, and
+   `yield`), and the parser's token passes never turn another kind into one
+   of them. A file without them has no `PROD_MACHINE`, `PROD_GOTO`,
+   `PROD_STAY` or generator node, so expansion and the generator rewrite
+   write nothing for it, and no transition can stand outside an arm.
+2. The reserved-name rule (`machines/reserved`) rejects a name token that
+   starts with `__lanius_`. A file without such a name passes it.
+
+So the pass finds nothing in that file and reports nothing about it, and
+leaving it out changes neither the output nor the diagnostics. A file that
+does not parse is still the frontend's to report, as before. A file that
+the closure pass rewrote and that has no machine token is not parsed for
+machines: its new `__lanius_closure_` names are allowed there anyway.
+
+Above the two bits, `closures/mark` also counts the closures that start in
+each file. The closure pass sizes its records from the sum over its files,
+so it records the mark and the records in one submission and does not read
+the marks back.
+
+Each pass emits its text in the submission that lays out the pieces: the
+output holds twice the input bytes, and a text longer than that is emitted
+again once its length is known. In settings the closure output is 1.1
+times its input and the machine output 1.4 times.
+
+Readbacks per elaboration: one for the selection; the closure pass reads
+its records and then its pieces with the text; the machine pass reads the
+lexer's token count, the parser status, its counts, and then its pieces
+with the text. That is 8, down from 11.
+
+Settings, warm: the closure pass reads the files where a closure starts,
+and the machine pass parses 30,632 tokens of its 445,357. Elaboration with
+no state between builds takes 10.9 ms (median, untimed) where reading every
+file took 25.6 ms; with the old cross-build set it took 10.5 ms. With the
+fused readbacks it took 11.9 ms median and 10.0 ms minimum, on a machine
+with load average 7; the medians move by a few milliseconds with load.
+Recording the machine parse is the largest remaining host cost, about 3 ms.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.
