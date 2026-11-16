@@ -413,6 +413,34 @@ impl GpuCompiler<'_> {
             let words = vec![term; (calls.args.size() / 4) as usize];
             self.gpu.queue.write_buffer(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
         }
+        // The symbol finalizer reads only the original objects and the root
+        // routes, so it is submitted while the GPU lowers the first projected
+        // batch and read after the projection.
+        let finalizer = match &mut build.finalizer {
+            Some(finalizer) => &*finalizer,
+            slot => &*slot.insert(
+                GpuX86SymbolFinalizer::new_with_device(self.gpu).map_err(|e| retained_error("finalizer", e))?,
+            ),
+        };
+        let columns = originals.iter().map(|object| match object {
+            CompiledSourcePackObject::X86_64(object) => X86SymbolColumns::of_object(object),
+            CompiledSourcePackObject::X86_64File(object) => X86SymbolColumns::of_file_object(object),
+            CompiledSourcePackObject::Wasm(object) => X86SymbolColumns::of_wasm_object(object),
+        }).collect::<Vec<_>>();
+        let generation = NonZeroU32::new(roots.generation)
+            .ok_or_else(|| retained_error("finalize", "build generation zero"))?;
+        let table = X86RouteTable {
+            routes: &roots.root_routes,
+            route_capacity: roots.root_route_capacity,
+            readiness: &roots.root_readiness,
+        };
+        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
+        let mut finalize_submitted = None;
+        let mut submit_finalize = || {
+            if finalize_submitted.is_none() {
+                finalize_submitted = Some(finalizer.submit_once(device, queue, &columns, &table, generation));
+            }
+        };
         let outcome = build
             .projection
             .run_with_lowerer(
@@ -422,7 +450,7 @@ impl GpuCompiler<'_> {
                 Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
                 |bytes,tokens,rows,hir,semantic| {
                     let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
-                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE)?;
+                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE,&mut submit_finalize)?;
                     let _span = x86::TailSpan::new("tail.instance.spill");
                     object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))
                 },
@@ -465,26 +493,12 @@ impl GpuCompiler<'_> {
             _ => None,
         };
         let finalize_span = x86::TailSpan::new("tail.finalize");
-        let finalizer = match &mut build.finalizer {
-            Some(finalizer) => finalizer,
-            slot => slot.insert(
-                GpuX86SymbolFinalizer::new_with_device(self.gpu).map_err(|e| retained_error("finalizer", e))?,
-            ),
-        };
-        let columns = originals.iter().map(|object| match object {
-            CompiledSourcePackObject::X86_64(object) => X86SymbolColumns::of_object(object),
-            CompiledSourcePackObject::X86_64File(object) => X86SymbolColumns::of_file_object(object),
-            CompiledSourcePackObject::Wasm(object) => X86SymbolColumns::of_wasm_object(object),
-        }).collect::<Vec<_>>();
-        let generation = NonZeroU32::new(roots.generation)
-            .ok_or_else(|| retained_error("finalize", "build generation zero"))?;
-        let table = X86RouteTable {
-            routes: &roots.root_routes,
-            route_capacity: roots.root_route_capacity,
-            readiness: &roots.root_readiness,
+        let submitted = match finalize_submitted {
+            Some(submitted) => submitted,
+            None => finalizer.submit_once(device, queue, &columns, &table, generation),
         };
         let published = finalizer
-            .finalize(&self.gpu.device, &self.gpu.queue, &columns, &table, generation)
+            .finish(device, queue, submitted, &columns, &table, generation)
             .map_err(|e| retained_error("finalize", format!("{e:#}")))?
             .map_err(|failure| retained_error("finalizer rejected the objects", format!("{failure:?}")))?;
         for (object, columns) in originals.iter_mut().zip(&published) {

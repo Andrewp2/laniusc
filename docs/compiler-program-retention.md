@@ -53,9 +53,14 @@ under "Not exported completely".
   reuse type-check arenas, and two tables that share one arena cannot be
   bound read-write (`canonical_api` declares `ct_*` writable) and read-only in
   one dispatch.
-- `finish_checked_source_pack_pipeline` calls `ProgramRetention::export_job`
-  on that snapshot after the type-check status is accepted and all
-  lowering-output retry points have passed. An attempt abandoned for an
+- `finish_checked_source_pack_pipeline` calls
+  `ProgramRetention::submit_export_job` on that snapshot after the type-check
+  status is accepted and all lowering-output retry points have passed. For an
+  x86 object those are the lowering status and the object's byte check, both
+  known from the object metadata, so the export is submitted before the
+  payload is decoded and read by `finish_export_job` after it. An object that
+  fails after the submission calls `abandon_export`, which clears readiness as
+  an export error does. An attempt abandoned for an
   output retry drops its snapshot and exports nothing; the retried job takes
   its own. Only original interface jobs export. Explicit body-specialization
   and authorized-replay jobs never capture the store, even when they request
@@ -464,7 +469,7 @@ leave a scheduling-dependent pointer, but `rt_binding` itself rejects a build
 whose readiness bit is clear. An export error on the host also clears that
 bit, including a readback failure after the GPU committed the job.
 
-`export_job` returns a `JobReport` with that readiness bit and retains it in
+`finish_export_job` returns a `JobReport` with that readiness bit and retains it in
 `job_reports()`. A successful transaction alone does not certify completeness.
 This bit checks the current exported schema; it is not code-generation
 admission and does not certify the missing fields listed below. Tests check

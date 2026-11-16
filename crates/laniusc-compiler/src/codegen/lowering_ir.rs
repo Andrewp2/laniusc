@@ -305,6 +305,9 @@ struct WasmObjectGraphResources {
     metadata_readback: ResourceId,
 }
 
+/// The x86 object metadata words at the start of its metadata readback.
+pub(crate) const X86_OBJECT_METADATA_BYTES: u64 = 80;
+
 #[derive(Clone, Copy)]
 struct X86ObjectGraphResources {
     relocation_flags: ResourceId,
@@ -4703,11 +4706,12 @@ fn lowering_compiler_graph_builder(
             block_prefix: "lir.opt.ssa.demand_seed_scan_block_prefix",
         },
     )?;
+    // The status, then the job's semantic and target row totals.
     let lowering_status_readback = graph.add_storage(
         "lowering.status_readback",
         ResourceDomain::ArtifactBytes,
         ResourceClass::External,
-        LoweringCapacities::bytes::<LoweringStatus>(1),
+        LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2]>(1),
     )?;
     let target_domain = match target {
         LoweringTarget::X86_64 => ResourceDomain::X86Instructions,
@@ -5597,11 +5601,13 @@ fn lowering_compiler_graph_builder(
                 bytes: u64::from(capacities.artifact_bytes.max(1).div_ceil(4) * 4),
                 usage: WorkspaceUsageClass::Storage,
             })?,
+            // The object metadata (80 bytes), then the lowering status and
+            // the job's row totals: one map (GpuLoweringPipeline::finish_status).
             metadata_readback: graph.add_storage(
                 "artifact.x86.object.metadata_readback",
                 ResourceDomain::ArtifactBytes,
                 ResourceClass::External,
-                80,
+                X86_OBJECT_METADATA_BYTES + LoweringCapacities::bytes::<[u32; std::mem::size_of::<LoweringStatus>() / 4 + 2]>(1),
             )?,
         })
     } else {
@@ -10739,23 +10745,23 @@ fn lowering_compiler_graph_builder(
             )?;
         }
     }
+    // An x86 object job reads its status with the object metadata.
+    let (status_binding, status_destination) = match x86_object {
+        Some(object) => ("metadata_readback", object.metadata_readback),
+        None => ("status_readback", lowering_status_readback),
+    };
     graph.add_buffer_copy_pass(
         "lowering.status.readback",
         CompilerPhase::Artifact,
         "lowering_status",
         lowering_status,
-        "status_readback",
-        lowering_status_readback,
+        status_binding,
+        status_destination,
     )?;
-    // The job's semantic and target row totals, read back with the status:
-    // a job lowered in a workspace larger than its own capacities checks
-    // them against those capacities (GpuLoweringPipeline::finish_status).
-    let job_totals_readback = graph.add_storage(
-        "lowering.job_totals_readback",
-        ResourceDomain::ArtifactBytes,
-        ResourceClass::External,
-        LoweringCapacities::bytes::<u32>(2),
-    )?;
+    // The job's semantic and target row totals, read back after the status
+    // in its buffer: a job lowered in a workspace larger than its own
+    // capacities checks them against those capacities
+    // (GpuLoweringPipeline::finish_status).
     for (name, source_binding, source) in [
         ("lowering.semantic_total.readback", "semantic_total", semantic_total),
         ("lowering.target_total.readback", "target_total", target_total),
@@ -10765,8 +10771,8 @@ fn lowering_compiler_graph_builder(
             CompilerPhase::Artifact,
             source_binding,
             source,
-            "job_totals_readback",
-            job_totals_readback,
+            status_binding,
+            status_destination,
         )?;
     }
     Ok(graph)

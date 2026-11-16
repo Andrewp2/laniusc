@@ -630,20 +630,45 @@ impl ProgramRetention {
         Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone() })
     }
 
-    pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
-        let result = self.export_job_attempts(job);
+    /// Records and submits the job's first export attempt without waiting
+    /// for it; [`Self::finish_export_job`] reads it. Until then the caller
+    /// may do host work while the GPU exports. A caller that does not finish
+    /// it calls [`Self::abandon_export`].
+    pub(crate) fn submit_export_job(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+    ) -> Result<ExportSubmitted> {
+        let result = self.submit_export_attempt(job);
         if result.is_err() {
-            // An incomplete transfer/readback invalidates this build even if
-            // its last GPU attempt committed. A driver must not reuse the
-            // preceding successful prefix after an export error.
-            let store = self.store.lock().unwrap();
-            self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
-            self.queue.submit(None);
+            self.abandon_export();
         }
         result
     }
 
-    fn export_job_attempts(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
+    /// Reads the submitted export and retries it with grown capacity until
+    /// it commits.
+    pub(crate) fn finish_export_job(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+        submitted: ExportSubmitted,
+    ) -> Result<JobReport> {
+        let result = self.export_job_attempts(job, submitted.shape);
+        if result.is_err() {
+            self.abandon_export();
+        }
+        result
+    }
+
+    /// Invalidates this build's store. An incomplete transfer/readback
+    /// invalidates it even if its last GPU attempt committed. A driver must
+    /// not reuse the preceding successful prefix after an export error.
+    pub(crate) fn abandon_export(&self) {
+        let store = self.store.lock().unwrap();
+        self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
+        self.queue.submit(None);
+    }
+
+    fn submit_export_attempt(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<ExportSubmitted> {
         let rows = table_words(job, "compact_hir_core")? / 4;
         let records = table_words(job, "ct_head")? / 4;
         let args = table_words(job, "ct_args")?;
@@ -677,8 +702,20 @@ impl ProgramRetention {
             store.scratch = allocate_scratch(&self.device, shape);
             store.scratch_shape = Some(shape);
         }
+        self.record_export(&store, job, shape)?;
+        Ok(ExportSubmitted { shape })
+    }
+
+    fn export_job_attempts(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+        shape: ScratchShape,
+    ) -> Result<JobReport> {
+        let mut store = self.store.lock().unwrap();
         for attempt in 1..=8u32 {
-            self.record_export(&store, job, shape)?;
+            if attempt > 1 {
+                self.record_export(&store, job, shape)?;
+            }
             let mut read = self.read_parts(&[
                 (&store.buffers["rt_counts"], counts::WORDS),
                 (&store.scratch["rt_x_counts"], X_WORDS),
@@ -1031,16 +1068,11 @@ impl ProgramRetention {
             &entries_bound,
         )?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.trait_probe"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&pass_data.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(entries.div_ceil(64).max(1) as u32, 1, 1);
-        }
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.trait_probe",
+            &[(pass_data, &bind, substitution::Launch::Groups(entries.div_ceil(64).max(1) as u32, 1, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, entries as usize * TRAIT_PROBE_WORDS)
@@ -1138,20 +1170,21 @@ impl ProgramRetention {
             &entries,
         )?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = passes_core::begin_counted_compute_pass(
-                &mut encoder,
-                &wgpu::ComputePassDescriptor { label: Some("program_retention.resolve"), timestamp_writes: None },
-            );
-            pass.set_pipeline(&pass_data.pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            passes_core::record_compute_dispatch();
-            pass.dispatch_workgroups(lanes.div_ceil(64).max(1) as u32, 1, 1);
-        }
+        substitution::record_timed(
+            &mut encoder,
+            "program_retention.resolve",
+            &[(pass_data, &bind, substitution::Launch::Groups(lanes.div_ceil(64).max(1) as u32, 1, 1))],
+        );
         self.queue.submit(Some(encoder.finish()));
         drop(store);
         self.read(&out, lanes as usize * PROBE_WORDS)
     }
+}
+
+/// An export attempt submitted by [`ProgramRetention::submit_export_job`].
+#[must_use]
+pub(crate) struct ExportSubmitted {
+    shape: ScratchShape,
 }
 
 #[derive(Clone, Copy)]

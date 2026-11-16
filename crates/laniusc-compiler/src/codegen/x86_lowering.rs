@@ -980,17 +980,26 @@ impl GpuX86LirStage {
         self.artifact.finish(device, queue)
     }
 
+    /// The object's metadata readback, when this job emits an object.
+    pub(crate) fn object_metadata_readback(&self) -> Option<&LaniusBuffer<u8>> {
+        self.object.as_ref().map(|object| object.metadata_readback())
+    }
+
+    /// The object from its `metadata` words; `checked` gets its text and
+    /// rodata bytes before the payload is read.
     pub(crate) fn finish_object(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
+        metadata: &[u32],
+        checked: impl FnOnce(usize) -> Result<()>,
     ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("x86 object projection was not allocated for this lowering job")?
-            .finish(device, queue, library_id, unit_id)
+            .finish(device, queue, library_id, unit_id, metadata, checked)
     }
 }
 

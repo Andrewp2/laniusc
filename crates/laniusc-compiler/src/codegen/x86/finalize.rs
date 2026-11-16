@@ -390,6 +390,19 @@ const COPY_IDENTITY: &str = "codegen.x86.finalize.identity.readback";
 
 /// Resident pipelines and retained storage for symbol finalization. Retained
 /// storage carries no state between jobs: every job clears or overwrites it.
+/// A finalization attempt on the GPU, read by
+/// [`GpuX86SymbolFinalizer::read_once`].
+#[must_use]
+pub(crate) struct X86FinalizeSubmitted {
+    transfer: Transfer,
+    output: OutputCapacity,
+    readback: LaniusBuffer<u8>,
+    symbol_copy_bytes: usize,
+    identity_copy_bytes: usize,
+    identity_at: usize,
+    generation: NonZeroU32,
+}
+
 pub(crate) struct GpuX86SymbolFinalizer {
     clear: PassData,
     objects: PassData,
@@ -475,10 +488,31 @@ impl GpuX86SymbolFinalizer {
         routes: &X86RouteTable<'_>,
         generation: NonZeroU32,
     ) -> Result<std::result::Result<Vec<X86SymbolColumns>, X86FinalizeFailure>> {
+        let submitted = self.submit_once(device, queue, objects, routes, generation);
+        self.finish(device, queue, submitted, objects, routes, generation)
+    }
+
+    /// Completes [`Self::finalize`] from an attempt submitted by
+    /// [`Self::submit_once`] with the same inputs. The caller may do host
+    /// work between the two while the GPU runs the attempt.
+    pub(crate) fn finish(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        submitted: Result<X86FinalizeSubmitted>,
+        objects: &[X86SymbolColumns],
+        routes: &X86RouteTable<'_>,
+        generation: NonZeroU32,
+    ) -> Result<std::result::Result<Vec<X86SymbolColumns>, X86FinalizeFailure>> {
+        let mut submitted = Some(submitted?);
         // Output demand never exceeds the input size, so one growth suffices;
         // the bound only stops a broken status word from looping.
         for _ in 0..4 {
-            match self.finalize_once(device, queue, objects, routes, generation)? {
+            let submitted = match submitted.take() {
+                Some(submitted) => submitted,
+                None => self.submit_once(device, queue, objects, routes, generation)?,
+            };
+            match self.read_once(device, submitted)? {
                 X86FinalizeAttempt::Published(columns) => return Ok(Ok(columns)),
                 X86FinalizeAttempt::Rejected(failure) => return Ok(Err(failure)),
                 X86FinalizeAttempt::NeedsCapacity {
@@ -503,6 +537,20 @@ impl GpuX86SymbolFinalizer {
         routes: &X86RouteTable<'_>,
         generation: NonZeroU32,
     ) -> Result<X86FinalizeAttempt> {
+        let submitted = self.submit_once(device, queue, objects, routes, generation)?;
+        self.read_once(device, submitted)
+    }
+
+    /// Records and submits one attempt with the current output staging
+    /// capacity; [`Self::read_once`] reads it.
+    pub(crate) fn submit_once(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        objects: &[X86SymbolColumns],
+        routes: &X86RouteTable<'_>,
+        generation: NonZeroU32,
+    ) -> Result<X86FinalizeSubmitted> {
         // Allocation bounds are a host transfer invariant. Never trust a
         // caller's capacity to make unchecked SPIR-V buffer reads safe.
         if u64::from(routes.route_capacity) * 16 > routes.routes.byte_size as u64 {
@@ -574,21 +622,17 @@ impl GpuX86SymbolFinalizer {
             "codegen.x86.finalize.identity_in",
             &transfer.identity_words,
         );
-        let status_readback =
-            self.readback(device, "rb.codegen.x86.finalize.status", STATUS_WORDS * 4);
         let symbol_copy_bytes =
             transfer.symbol_count.min(output.symbols) as usize * GPU_X86_SYMBOL_ROW_BYTES;
         let identity_copy_bytes =
             transfer.identity_word_count().min(output.identity_words) as usize * 4;
-        let symbols_readback = self.readback(
+        // The status, the symbols and the identity words in one buffer.
+        let symbols_at = STATUS_WORDS * 4;
+        let identity_at = symbols_at + output.symbols as usize * GPU_X86_SYMBOL_ROW_BYTES;
+        let readback = self.readback(
             device,
-            "rb.codegen.x86.finalize.symbols",
-            output.symbols as usize * GPU_X86_SYMBOL_ROW_BYTES,
-        );
-        let identity_readback = self.readback(
-            device,
-            "rb.codegen.x86.finalize.identity",
-            output.identity_words as usize * 4,
+            "rb.codegen.x86.finalize",
+            identity_at + output.identity_words as usize * 4,
         );
 
         let graph_bindings = graph.bindings()?;
@@ -601,9 +645,7 @@ impl GpuX86SymbolFinalizer {
         resources.buffer("fin_identity_in", &identity_in);
         resources.buffer("fin_routes", routes.routes);
         resources.buffer("fin_readiness", routes.readiness);
-        resources.buffer("fin_status_readback", &status_readback);
-        resources.buffer("fin_symbols_readback", &symbols_readback);
-        resources.buffer("fin_identity_readback", &identity_readback);
+        resources.buffer("fin_readback", &readback);
 
         let symbol_lanes = transfer.symbol_count.max(1);
         let operations = [
@@ -645,8 +687,8 @@ impl GpuX86SymbolFinalizer {
             "fin_status",
             &status,
             0,
-            "fin_status_readback",
-            &status_readback,
+            "fin_readback",
+            &readback,
             0,
             (STATUS_WORDS * 4) as u64,
         )?
@@ -658,9 +700,9 @@ impl GpuX86SymbolFinalizer {
                 "fin_symbols_out",
                 &symbols_out,
                 0,
-                "fin_symbols_readback",
-                &symbols_readback,
-                0,
+                "fin_readback",
+                &readback,
+                symbols_at as u64,
                 symbol_copy_bytes as u64,
             )?
             .record(&mut encoder);
@@ -672,9 +714,9 @@ impl GpuX86SymbolFinalizer {
                 "fin_identity_out",
                 &identity_out,
                 0,
-                "fin_identity_readback",
-                &identity_readback,
-                0,
+                "fin_readback",
+                &readback,
+                identity_at as u64,
                 identity_copy_bytes as u64,
             )?
             .record(&mut encoder);
@@ -684,8 +726,43 @@ impl GpuX86SymbolFinalizer {
             "codegen.x86.finalize",
             encoder.finish(),
         );
+        Ok(X86FinalizeSubmitted {
+            transfer,
+            output,
+            readback,
+            symbol_copy_bytes,
+            identity_copy_bytes,
+            identity_at,
+            generation,
+        })
+    }
 
-        let status_words = read_words(device, &status_readback, STATUS_WORDS * 4, "status")?;
+    /// Reads an attempt submitted by [`Self::submit_once`].
+    pub(crate) fn read_once(
+        &self,
+        device: &wgpu::Device,
+        submitted: X86FinalizeSubmitted,
+    ) -> Result<X86FinalizeAttempt> {
+        let X86FinalizeSubmitted {
+            transfer,
+            output,
+            readback,
+            symbol_copy_bytes,
+            identity_copy_bytes,
+            identity_at,
+            generation,
+        } = submitted;
+        let symbols_at = STATUS_WORDS * 4;
+        let end = if identity_copy_bytes != 0 {
+            identity_at + identity_copy_bytes
+        } else {
+            symbols_at + symbol_copy_bytes
+        };
+        let bytes = read_bytes(device, &readback, end, "readback")?;
+        let status_words = bytes[..symbols_at]
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+            .collect::<Vec<_>>();
         if let Some(failure) = FAILURE_KINDS.iter().enumerate().find_map(|(code, &kind)| {
             let detail = status_words[STATUS_FAILURE_BASE + code];
             (detail != u32::MAX).then_some(X86FinalizeFailure { kind, detail })
@@ -718,11 +795,10 @@ impl GpuX86SymbolFinalizer {
                 status_words[0]
             );
         }
-        let symbol_bytes = read_bytes(device, &symbols_readback, symbol_copy_bytes, "symbols")?;
-        let identity_bytes =
-            read_bytes(device, &identity_readback, identity_copy_bytes, "identity")?;
+        let symbol_bytes = &bytes[symbols_at..symbols_at + symbol_copy_bytes];
+        let identity_bytes = &bytes[identity_at..identity_at + identity_copy_bytes];
         Ok(X86FinalizeAttempt::Published(
-            transfer.split(&symbol_bytes, &identity_bytes),
+            transfer.split(symbol_bytes, identity_bytes),
         ))
     }
 
@@ -790,20 +866,13 @@ impl GpuX86SymbolFinalizer {
                 out_symbols * GPU_X86_SYMBOL_ROW_BYTES as u64,
             ),
             ("fin_identity_out", ResourceClass::Workspace, out_words * 4),
+            // The status, the symbols and the identity words, mapped once.
             (
-                "fin_status_readback",
+                "fin_readback",
                 ResourceClass::External,
-                STATUS_WORDS as u64 * 4,
-            ),
-            (
-                "fin_symbols_readback",
-                ResourceClass::External,
-                out_symbols * GPU_X86_SYMBOL_ROW_BYTES as u64,
-            ),
-            (
-                "fin_identity_readback",
-                ResourceClass::External,
-                out_words * 4,
+                STATUS_WORDS as u64 * 4
+                    + out_symbols * GPU_X86_SYMBOL_ROW_BYTES as u64
+                    + out_words * 4,
             ),
         ] {
             graph
@@ -852,9 +921,9 @@ impl GpuX86SymbolFinalizer {
                 .map_err(anyhow::Error::msg)?;
         }
         for (name, source, destination) in [
-            (COPY_STATUS, "fin_status", "fin_status_readback"),
-            (COPY_SYMBOLS, "fin_symbols_out", "fin_symbols_readback"),
-            (COPY_IDENTITY, "fin_identity_out", "fin_identity_readback"),
+            (COPY_STATUS, "fin_status", "fin_readback"),
+            (COPY_SYMBOLS, "fin_symbols_out", "fin_readback"),
+            (COPY_IDENTITY, "fin_identity_out", "fin_readback"),
         ] {
             let source_id = graph.resource_id(source).expect("finalize resource");
             let destination_id = graph.resource_id(destination).expect("finalize resource");
@@ -1018,18 +1087,6 @@ fn read_bytes(
     drop(mapped);
     readback.buffer.unmap();
     Ok(out)
-}
-
-fn read_words(
-    device: &wgpu::Device,
-    readback: &LaniusBuffer<u8>,
-    bytes: usize,
-    label: &str,
-) -> Result<Vec<u32>> {
-    Ok(read_bytes(device, readback, bytes, label)?
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
-        .collect())
 }
 
 #[cfg(test)]

@@ -27,16 +27,19 @@ impl GpuCompiler<'_> {
         library: u32,
         unit: u32,
     ) -> anyhow::Result<GpuX86RelocatableObject> {
-        match self.lower_projected_batch(SourcePackArtifactTarget::X86_64,source_bytes,tokens,hir_nodes,hir,semantic,library,unit)? {
+        match self.lower_projected_batch(SourcePackArtifactTarget::X86_64,source_bytes,tokens,hir_nodes,hir,semantic,library,unit,&mut ||{})? {
             typecheck::CompiledSourcePackObject::X86_64(object)=>Ok(object),
             _=>unreachable!("x86 lowering requested"),
         }
     }
 
+    /// `submitted` runs after each lowering attempt is submitted and before
+    /// its status is read: host work there overlaps the GPU lowering.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_projected_batch(
         &self,target:SourcePackArtifactTarget,source_bytes:u32,tokens:u32,hir_nodes:u32,
         hir:GpuSemanticHirInputs<'_>,semantic:crate::type_checker::GpuSemanticArtifactView<'_>,library:u32,unit:u32,
+        submitted:&mut dyn FnMut(),
     )->anyhow::Result<typecheck::CompiledSourcePackObject> {
         let lowering_target=match target { SourcePackArtifactTarget::X86_64=>LoweringTarget::X86_64,SourcePackArtifactTarget::Wasm=>LoweringTarget::Wasm,
             SourcePackArtifactTarget::Generic=>anyhow::bail!("projection requires an executable target") };
@@ -76,6 +79,7 @@ impl GpuCompiler<'_> {
                 bounds,
             )?;
             queue.submit(Some(encoder.finish()));
+            submitted();
             let _span = x86::TailSpan::new("tail.instance.finish_object");
             let result=match target {
                 SourcePackArtifactTarget::X86_64=>pipeline.finish_x86_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::X86_64(o)),

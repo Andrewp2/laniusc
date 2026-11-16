@@ -850,6 +850,10 @@ pub struct RetainedProjection {
     /// One config buffer per string-scan step (`04c_string_scan`), kept
     /// between runs; each run rewrites the steps it records.
     string_scan_configs: Vec<wgpu::Buffer>,
+    /// The root certification result (`10_certify`), rewritten every run.
+    cert: wgpu::Buffer,
+    /// Mappable staging for readbacks, grown to the largest one.
+    staging: std::sync::Mutex<Option<wgpu::Buffer>>,
 }
 
 fn grown(current: u32, need: u32) -> u32 {
@@ -872,9 +876,10 @@ struct Recorder<'a> {
     /// store lock and resizes no projection table, so the other bindings of
     /// a kernel cannot change within it.
     binds: Vec<(usize, Vec<(String, wgpu::Buffer)>, wgpu::BindGroup)>,
-    /// The open compute pass. Consecutive dispatches share it; wgpu orders
-    /// their storage accesses. `encoder()` ends it before a copy or clear.
-    pass: Option<wgpu::ComputePass<'static>>,
+    /// Dispatches not yet recorded: kernel, bind group and workgroups.
+    /// Consecutive dispatches share one timed compute pass; wgpu orders their
+    /// storage accesses. `encoder()` records them before a copy or clear.
+    pending: Vec<(usize, wgpu::BindGroup, u32)>,
 }
 
 impl RetainedProjection {
@@ -895,6 +900,8 @@ impl RetainedProjection {
             no_results: storage(&device, "pj_no_results", 64, false),
             no_counts: storage(&device, "pj_no_counts", 256, false),
             string_scan_configs: Vec::new(),
+            cert: storage(&device, "nc_cert", 16, false),
+            staging: std::sync::Mutex::new(None),
             device,
             queue: gpu.queue.clone(),
             passes,
@@ -1029,25 +1036,60 @@ impl RetainedProjection {
         words: usize,
         report: &mut ProjectionReport,
     ) -> Result<Vec<u32>> {
-        let bytes = (words as u64 * 4).min(buffer.size());
+        let encoder = self.device.create_command_encoder(&Default::default());
+        Ok(self.submit_read(encoder, &[(buffer, words)], report)?.pop().unwrap_or_default())
+    }
+
+    /// Submits `encoder` with copies of the leading words of each buffer (at
+    /// most its size) appended, and maps them: one readback for all parts.
+    fn submit_read(
+        &self,
+        mut encoder: wgpu::CommandEncoder,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut ProjectionReport,
+    ) -> Result<Vec<Vec<u32>>> {
+        let sizes: Vec<u64> = parts
+            .iter()
+            .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
+            .collect();
+        let bytes: u64 = sizes.iter().sum::<u64>().max(4);
         report.readbacks += 1;
         report.readback_bytes += bytes;
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("retained_projection.readback"),
-            size: bytes.max(4),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, bytes);
+        let mut staging = self.staging.lock().unwrap();
+        if staging.as_ref().is_none_or(|b| b.size() < bytes) {
+            *staging = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("retained_projection.readback"),
+                size: bytes.next_power_of_two().max(256),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            }));
+        }
+        let readback = staging.as_ref().unwrap();
+        let mut at = 0;
+        for ((buffer, _), size) in parts.iter().zip(&sizes) {
+            if *size != 0 {
+                encoder.copy_buffer_to_buffer(buffer, 0, readback, at, *size);
+            }
+            at += size;
+        }
         self.queue.submit(Some(encoder.finish()));
-        let slice = readback.slice(..);
+        let slice = readback.slice(..bytes);
         map_readback_blocking(&self.device, &slice, "retained_projection.readback")?;
-        let out = slice
-            .get_mapped_range()
-            .chunks_exact(4)
-            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
-            .collect();
+        let mut out = Vec::with_capacity(parts.len());
+        {
+            let mapped = slice.get_mapped_range();
+            let mut at = 0usize;
+            for size in sizes {
+                let end = at + size as usize;
+                out.push(
+                    mapped[at..end]
+                        .chunks_exact(4)
+                        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+                        .collect(),
+                );
+                at = end;
+            }
+        }
         readback.unmap();
         Ok(out)
     }
@@ -1096,20 +1138,21 @@ impl RetainedProjection {
         )
     }
 
-    /// Certifies the root calls (10_certify) against this run's checked
-    /// instances; `None` when every recorded call matches its target.
-    fn certify(
+    /// Records the root-call certification (10_certify) against this run's
+    /// checked instances into `r`. Its result is `self.cert`; see
+    /// [`cert_error`].
+    fn record_certify(
         &self,
+        r: &mut Recorder<'_>,
         guard: &Store,
         inputs: &ProjectionInputs,
         roots: &RootCertification<'_>,
         results: &wgpu::Buffer,
         counts: &wgpu::Buffer,
-        report: &mut ProjectionReport,
-    ) -> Result<Option<ProjectionError>> {
-        let cert = storage(&self.device, "nc_cert", 16, false);
+    ) -> Result<()> {
+        let cert = &self.cert;
         self.queue
-            .write_buffer(&cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
+            .write_buffer(cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
         let extra = [
             ("sb_results", results),
             ("sb_counts", counts),
@@ -1117,29 +1160,10 @@ impl RetainedProjection {
             ("nc_use_args", &roots.calls.args),
             ("rr_routes", roots.routes),
             ("rr_readiness", roots.readiness),
-            ("nc_cert", &cert),
+            ("nc_cert", cert),
         ];
-        let mut r = self.recorder();
         r.dispatch(K_CERTIFY, guard, inputs, &extra, roots.calls.rows())?;
-        r.dispatch_groups(K_CERTIFY_FINISH, guard, inputs, &extra, 1)?;
-        report.dispatches += r.finish();
-        let cert = self.read(&cert, 3, report)?;
-        trace(&format!("certify: {cert:?}"));
-        if cert[0] == 0 && cert[2] == 0 {
-            return Ok(None);
-        }
-        Ok(Some(ProjectionError {
-            code: error::ROOT_ABI,
-            detail: cert[2],
-            rank: u32::MAX,
-            decl: u32::MAX,
-            row: cert[1],
-            token: u32::MAX,
-            file: u32::MAX,
-            byte: u32::MAX,
-            job: u32::MAX,
-            len: 0,
-        }))
+        r.dispatch_groups(K_CERTIFY_FINISH, guard, inputs, &extra, 1)
     }
 
     fn recorder(&self) -> Recorder<'_> {
@@ -1152,7 +1176,7 @@ impl RetainedProjection {
                 }),
             dispatches: 0,
             binds: Vec::new(),
-            pass: None,
+            pending: Vec::new(),
         }
     }
 
@@ -1270,14 +1294,18 @@ impl RetainedProjection {
         if report.instances == 0 {
             if let Some(roots) = &roots {
                 let guard = store.store.lock().unwrap();
-                if let Some(error) = self.certify(
+                let mut r = self.recorder();
+                self.record_certify(
+                    &mut r,
                     &guard,
                     inputs,
                     roots,
                     &self.no_results,
                     &self.no_counts,
-                    &mut report,
-                )? {
+                )?;
+                let (dispatches, mut read) = r.finish_read(&[(&self.cert, 3)], &mut report)?;
+                report.dispatches += dispatches;
+                if let Some(error) = cert_error(&read.pop().unwrap_or_default()) {
                     return Ok(ProjectionOutcome::Rejected { error, report });
                 }
             }
@@ -1433,8 +1461,23 @@ impl RetainedProjection {
         r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
         r.dispatch_groups(K_REPORT, &guard, inputs, &extra, 1)?;
         r.dispatch(K_BATCH_PLAN, &guard, inputs, &extra, batches.max(1))?;
-        report.dispatches += r.finish();
-        let status = self.read(&self.status, STATUS_WORDS, &mut report)?;
+        // The certification and the batch table are read with the status;
+        // they are used only when the check passed.
+        if let Some(roots) = &roots {
+            self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
+        }
+        let (dispatches, mut read) = r.finish_read(
+            &[
+                (&self.status, STATUS_WORDS),
+                (&self.cert, if roots.is_some() { 3 } else { 0 }),
+                (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
+            ],
+            &mut report,
+        )?;
+        report.dispatches += dispatches;
+        let table = read.pop().unwrap();
+        let cert = read.pop().unwrap();
+        let status = read.pop().unwrap();
         trace(&format!("check: {status:?}"));
         report.check_us = started.elapsed().as_micros() as u64;
         if status[S_STATE] != STATE_CHECKED {
@@ -1456,9 +1499,8 @@ impl RetainedProjection {
             }
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
-        if let Some(roots) = &roots
-            && let Some(error) =
-                self.certify(&guard, inputs, roots, &results, &counts, &mut report)?
+        if roots.is_some()
+            && let Some(error) = cert_error(&cert)
         {
             return Ok(ProjectionOutcome::Rejected { error, report });
         }
@@ -1468,11 +1510,6 @@ impl RetainedProjection {
                 status[S_BATCHES]
             );
         }
-        let table = self.read(
-            self.batches.as_ref().unwrap(),
-            batches as usize * BATCH_WORDS,
-            &mut report,
-        )?;
         let all: Vec<ProjectionBatch> = table
             .chunks_exact(BATCH_WORDS)
             .map(|w| ProjectionBatch {
@@ -1609,41 +1646,65 @@ impl Recorder<'_> {
                 bind
             }
         };
-        let pass_data = &self.projection.passes[kernel];
-        let pass = match &mut self.pass {
-            Some(pass) => pass,
-            slot => slot.insert(
-                passes_core::begin_counted_compute_pass(
-                    &mut self.encoder,
-                    &wgpu::ComputePassDescriptor {
-                        label: Some("retained_projection"),
-                        timestamp_writes: None,
-                    },
-                )
-                .forget_lifetime(),
-            ),
-        };
-        pass.set_pipeline(&pass_data.pipeline);
-        pass.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
-        let x = groups.min(65535);
-        let y = groups.div_ceil(65535);
-        pass.dispatch_workgroups(x, y, 1);
+        self.pending.push((kernel, bind, groups));
         self.dispatches += 1;
         Ok(())
     }
 
-    /// The encoder, after ending the open compute pass.
+    /// The encoder, after recording the pending dispatches in one pass.
     fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
-        self.pass = None;
+        let passes = &self.projection.passes;
+        let steps = self
+            .pending
+            .iter()
+            .map(|&(kernel, ref bind, groups)| {
+                let launch = super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1);
+                (&passes[kernel], bind, launch)
+            })
+            .collect::<Vec<_>>();
+        super::substitution::record_timed(&mut self.encoder, "retained_projection", &steps);
+        self.pending.clear();
         &mut self.encoder
     }
 
     fn finish(mut self) -> u32 {
-        self.pass = None;
+        self.encoder();
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
     }
+
+    /// Submits the recording with a readback of `parts` (see
+    /// [`RetainedProjection::submit_read`]); returns the dispatch count.
+    fn finish_read(
+        mut self,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut ProjectionReport,
+    ) -> Result<(u32, Vec<Vec<u32>>)> {
+        self.encoder();
+        let read = self.projection.submit_read(self.encoder, parts, report)?;
+        Ok((self.dispatches, read))
+    }
+}
+
+/// The certification's error, or `None` when every recorded root call
+/// matches its target.
+fn cert_error(cert: &[u32]) -> Option<ProjectionError> {
+    trace(&format!("certify: {cert:?}"));
+    if cert[0] == 0 && cert[2] == 0 {
+        return None;
+    }
+    Some(ProjectionError {
+        code: error::ROOT_ABI,
+        detail: cert[2],
+        rank: u32::MAX,
+        decl: u32::MAX,
+        row: cert[1],
+        token: u32::MAX,
+        file: u32::MAX,
+        byte: u32::MAX,
+        job: u32::MAX,
+        len: 0,
+    })
 }
 
 fn trace(message: &str) {
@@ -1702,19 +1763,11 @@ pub fn run_producer_kernel(
         &entries,
     )?;
     let mut encoder = device.create_command_encoder(&Default::default());
-    {
-        let mut cpass = passes_core::begin_counted_compute_pass(
-            &mut encoder,
-            &wgpu::ComputePassDescriptor {
-                label: Some("retained_projection.producer"),
-                timestamp_writes: None,
-            },
-        );
-        cpass.set_pipeline(&pass.pipeline);
-        cpass.set_bind_group(0, &bind, &[]);
-        passes_core::record_compute_dispatch();
-        cpass.dispatch_workgroups(lanes.div_ceil(64).max(1), 1, 1);
-    }
+    super::substitution::record_timed(
+        &mut encoder,
+        "retained_projection.producer",
+        &[(&pass, &bind, super::substitution::Launch::Groups(lanes.div_ceil(64).max(1), 1, 1))],
+    );
     queue.submit(Some(encoder.finish()));
     Ok(())
 }
