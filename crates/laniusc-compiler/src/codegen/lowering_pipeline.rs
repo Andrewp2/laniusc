@@ -201,7 +201,10 @@ pub(crate) struct GpuLoweringPipeline {
     optimizer: GpuOptimizationStage,
     target: TargetStage,
     /// The status, then the job's semantic and target row totals: one map.
+    /// An x86 object job's is its object metadata readback, with the status
+    /// at `status_base` after the metadata.
     status_readback: LaniusBuffer<u8>,
+    status_base: usize,
     status_readback_copy: crate::gpu::operations::CopyBufferOperation,
     job_totals_copies: [crate::gpu::operations::CopyBufferOperation; 2],
     /// Phase resets of recent job capacities (`job_capacities`).
@@ -968,12 +971,24 @@ impl GpuLoweringPipeline {
             ),
         };
         let status_bytes = std::mem::size_of::<LoweringStatus>();
-        let status_readback = readback_bytes(
-            device,
-            "lowering.status.readback",
-            status_bytes + 8,
-            status_bytes + 8,
-        );
+        // An x86 object job copies its status after the object metadata,
+        // so one map reads both.
+        let object_readback = match &target {
+            TargetStage::X86_64(stage) => stage.object_metadata_readback().cloned(),
+            TargetStage::Wasm(_) => None,
+        };
+        let (status_readback, status_binding, status_base) = match object_readback {
+            Some(buffer) => (
+                buffer,
+                "metadata_readback",
+                super::lowering_ir::X86_OBJECT_METADATA_BYTES as usize,
+            ),
+            None => (
+                readback_bytes(device, "lowering.status.readback", status_bytes + 8, status_bytes + 8),
+                "status_readback",
+                0,
+            ),
+        };
         let status_allocations = workspace.allocations();
         let status_readback_copy = crate::gpu::operations::CopyBufferOperation::new(
             &(&graph, &status_allocations),
@@ -981,9 +996,9 @@ impl GpuLoweringPipeline {
             "lowering_status",
             semantic.status(),
             0,
-            "status_readback",
+            status_binding,
             &status_readback,
-            0,
+            status_base as u64,
             status_bytes as u64,
         )?;
         let target_total = workspace
@@ -1002,9 +1017,9 @@ impl GpuLoweringPipeline {
                 "semantic_total",
                 semantic.output().count,
                 0,
-                "status_readback",
+                status_binding,
                 &status_readback,
-                status_bytes as u64,
+                (status_base + status_bytes) as u64,
                 4,
             )?,
             crate::gpu::operations::CopyBufferOperation::new(
@@ -1013,9 +1028,9 @@ impl GpuLoweringPipeline {
                 "target_total",
                 &target_total,
                 0,
-                "status_readback",
+                status_binding,
                 &status_readback,
-                status_bytes as u64 + 4,
+                (status_base + status_bytes) as u64 + 4,
                 4,
             )?,
         ];
@@ -1029,6 +1044,7 @@ impl GpuLoweringPipeline {
             optimizer,
             target,
             status_readback,
+            status_base,
             status_readback_copy,
             job_totals_copies,
             phase_reset_plans: Mutex::new(Vec::new()),
@@ -1444,11 +1460,14 @@ impl GpuLoweringPipeline {
         unit_id: u32,
         checked: impl FnOnce(),
     ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
-        self.ensure_success(device)?;
         let TargetStage::X86_64(stage) = &self.target else {
             anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
         };
-        stage.finish_object(device, queue, library_id, unit_id, |bytes| {
+        let (status, metadata) = self.read_status(device)?;
+        if status.flags != 0 {
+            return Err(LoweringFailure { status }.into());
+        }
+        stage.finish_object(device, queue, library_id, unit_id, &metadata, |bytes| {
             // The object's artifact words hold its text and rodata together.
             self.check_job_artifact_bytes("x86 object text and rodata", bytes)?;
             checked();
@@ -1457,11 +1476,23 @@ impl GpuLoweringPipeline {
     }
 
     pub(crate) fn finish_status(&self, device: &wgpu::Device) -> Result<LoweringStatus> {
+        Ok(self.read_status(device)?.0)
+    }
+
+    /// The status, and the words before it in its readback (an x86 object's
+    /// metadata, otherwise none).
+    fn read_status(&self, device: &wgpu::Device) -> Result<(LoweringStatus, Vec<u32>)> {
         let slice = self.status_readback.slice(..);
         map_readback_blocking(device, &slice, "lowering status readback")?;
         let mapped = slice.get_mapped_range();
-        let word =
-            |index: usize| u32::from_le_bytes(mapped[index * 4..index * 4 + 4].try_into().unwrap());
+        let words = mapped
+            .chunks_exact(4)
+            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        drop(mapped);
+        self.status_readback.unmap();
+        let base = self.status_base / 4;
+        let word = |index: usize| words[base + index];
         let mut status = LoweringStatus {
             flags: word(0),
             first_unsupported_hir: word(1),
@@ -1476,10 +1507,10 @@ impl GpuLoweringPipeline {
         };
         let totals = std::mem::size_of::<LoweringStatus>() / 4;
         let (semantic_rows, target_rows) = (word(totals), word(totals + 1));
-        drop(mapped);
-        self.status_readback.unmap();
         self.check_job_totals(&mut status, semantic_rows, target_rows);
-        Ok(status)
+        let mut prefix = words;
+        prefix.truncate(base);
+        Ok((status, prefix))
     }
 
     pub(crate) fn output_demand_for_retry(

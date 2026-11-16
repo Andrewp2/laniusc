@@ -626,11 +626,6 @@ impl ProgramRetention {
         Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone() })
     }
 
-    pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
-        let submitted = self.submit_export_job(job)?;
-        self.finish_export_job(job, submitted)
-    }
-
     /// Records and submits the job's first export attempt without waiting
     /// for it; [`Self::finish_export_job`] reads it. Until then the caller
     /// may do host work while the GPU exports. A caller that does not finish

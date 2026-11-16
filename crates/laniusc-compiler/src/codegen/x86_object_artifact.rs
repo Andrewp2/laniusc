@@ -55,7 +55,7 @@ use crate::gpu::{
     compiler_graph::{CompilerGraph, CompilerGraphAllocations, CompilerGraphWorkspace},
     kernels::KernelRegistry,
     operations::{ComputeOperation, CopyBufferOperation},
-    passes_core::{PassData, map_readback_blocking},
+    passes_core::PassData,
     readback::{PagedReadback, ReadbackRegion},
     resource_registry::ResourceMap,
 };
@@ -210,8 +210,17 @@ impl GpuX86ObjectStage {
             "artifact.x86.object.rodata_bytes",
             artifact_capacity.div_ceil(4),
         )?;
-        let metadata_readback =
-            readback_bytes(device, "artifact.x86.object.metadata.readback", 80, 80);
+        // The metadata, then the lowering status and job totals the lowering
+        // pipeline copies after it (`metadata_readback()`).
+        let metadata_bytes = super::lowering_ir::X86_OBJECT_METADATA_BYTES as usize
+            + std::mem::size_of::<super::lowering_ir::LoweringStatus>()
+            + 8;
+        let metadata_readback = readback_bytes(
+            device,
+            "artifact.x86.object.metadata.readback",
+            metadata_bytes,
+            metadata_bytes,
+        );
         // One page holds the whole payload up to 16 MiB, so the prefetch in
         // the job's submission answers `finish` without a submission of its
         // own. A 4 MiB page made a 5 MB object take two extra round trips.
@@ -631,29 +640,31 @@ impl GpuX86ObjectStage {
         ])
     }
 
-    /// Reads the object. `checked` gets its text and rodata bytes once the
-    /// metadata is validated, before the payload is read.
+    /// The readback the object metadata is copied into. The lowering
+    /// pipeline copies its status and job totals after the metadata
+    /// (`X86_OBJECT_METADATA_BYTES`), and maps it once for all of them.
+    pub(crate) fn metadata_readback(&self) -> &LaniusBuffer<u8> {
+        &self.metadata_readback
+    }
+
+    /// Reads the object from its `metadata` words (`metadata_readback`).
+    /// `checked` gets its text and rodata bytes once the metadata is
+    /// validated, before the payload is read.
     pub(crate) fn finish(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
+        metadata: &[u32],
         checked: impl FnOnce(usize) -> Result<()>,
     ) -> Result<(GpuX86RelocatableObject, Vec<u32>)> {
-        let metadata_slice = self.metadata_readback.slice(..);
-        map_readback_blocking(device, &metadata_slice, "x86 object metadata readback")?;
-        let metadata = metadata_slice.get_mapped_range();
-        let word = |index: usize| {
-            u32::from_le_bytes(metadata[index * 4..index * 4 + 4].try_into().unwrap())
-        };
+        let word = |index: usize| metadata[index];
         let relocation_count = word(1) as usize;
         let symbol_count = word(2) as usize;
         let definition_count = word(3) as usize;
         let runtime_relocation_count = word(16) as usize;
         let layout = (4..16).map(word).collect::<Vec<_>>();
-        drop(metadata);
-        self.metadata_readback.unmap();
         let body_len = layout[0] as usize;
         let wrapper_len = layout[6]
             .checked_sub(layout[5])
