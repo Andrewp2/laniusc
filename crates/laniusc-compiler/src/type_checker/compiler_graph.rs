@@ -5757,7 +5757,15 @@ fn build_graph(
     // Emit reads a row's last spans only in a round after the one that wrote
     // them; every row is recomputed, and writes its spans, in the job's first
     // invocation.
-    graph.mark_pass_bindings_initialize(CALLS_GENERIC_CLAIM_EMIT.name, &["call_claim_emitted_span"])?;
+    // It also clears both claim indexes' bucket heads, which it never reads.
+    graph.mark_pass_bindings_initialize(
+        CALLS_GENERIC_CLAIM_EMIT.name,
+        &[
+            "call_claim_emitted_span",
+            "call_generic_claim_lookup_head",
+            "call_const_claim_lookup_head",
+        ],
+    )?;
     graph.add_kernel_pass_by_name(
         GENERIC_CLAIM_INDEX_PREPARE_PASS,
         CompilerPhase::TypeCheck,
@@ -5769,7 +5777,6 @@ fn build_graph(
             "dispatch_args" => generic_claim_index_dispatch_args: Write,
         ],
     )?;
-    CALLS_GENERIC_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
     REQUIRED_GENERIC_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(hir_blocks))?;
@@ -5795,7 +5802,6 @@ fn build_graph(
             "dispatch_args" => const_claim_index_dispatch_args: Write,
         ],
     )?;
-    CALLS_CONST_CLAIM_INDEX_CLEAR.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
     // Recorded before each 03a4b invocation and before the final validation

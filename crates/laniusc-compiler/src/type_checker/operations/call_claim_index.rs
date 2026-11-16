@@ -15,13 +15,10 @@ impl CallClaimKind {
         }
     }
 
-    fn specs(self) -> (ReflectedComputeSpec, ReflectedComputeSpec) {
+    fn build_spec(self) -> ReflectedComputeSpec {
         match self {
-            Self::Generic => (
-                CALLS_GENERIC_CLAIM_INDEX_CLEAR,
-                CALLS_GENERIC_CLAIM_INDEX_BUILD,
-            ),
-            Self::Const => (CALLS_CONST_CLAIM_INDEX_CLEAR, CALLS_CONST_CLAIM_INDEX_BUILD),
+            Self::Generic => CALLS_GENERIC_CLAIM_INDEX_BUILD,
+            Self::Const => CALLS_CONST_CLAIM_INDEX_BUILD,
         }
     }
 
@@ -43,13 +40,14 @@ pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
 
 /// Exact GPU index over call claims keyed by `(callee, slot)`.
 ///
-/// The active count prepares one indirect domain shared by clearing, building,
-/// validation, and every downstream lookup consumer. No ordering is created.
+/// The active count prepares one indirect domain shared by building,
+/// validation, and every downstream lookup consumer. Claim emission
+/// (03a1_emit_generic_claims) clears the bucket heads.
 pub(in crate::type_checker) struct CallClaimIndexOperation {
     _dispatch_params: LaniusBuffer<CountDispatchParams>,
     dispatch: ComputeOperation,
     dispatch_args: LaniusBuffer<u32>,
-    index: ExactLookupOperation,
+    build: ComputeOperation,
 }
 
 impl CallClaimIndexOperation {
@@ -108,15 +106,12 @@ impl CallClaimIndexOperation {
             &dispatch_params,
             1,
         )?;
-        let (clear, build) = input.kind.specs();
-        let index = ExactLookupOperation::new_with_indirect_clear(
+        let build = ComputeOperation::indirect_spec(
             device,
             input.graph,
             &resources,
             passes,
-            clear,
-            build,
-            input.dispatch_args,
+            input.kind.build_spec(),
             input.dispatch_args,
         )?;
 
@@ -124,13 +119,13 @@ impl CallClaimIndexOperation {
             _dispatch_params: dispatch_params,
             dispatch,
             dispatch_args: input.dispatch_args.clone(),
-            index,
+            build,
         })
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.dispatch.record(encoder)?;
-        self.index.record(encoder)
+        self.build.record(encoder)
     }
 
     pub(in crate::type_checker) fn dispatch_args(&self) -> &LaniusBuffer<u32> {

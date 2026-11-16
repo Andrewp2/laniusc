@@ -29,6 +29,7 @@ import type_checker.substitution.ct_realize;
 import type_checker.match.ct_match;
 import constant_value;
 import type_checker.calls.inference_activity;
+import type_checker.calls.claim_lookup;
 
 struct Params
 {
@@ -51,6 +52,10 @@ StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_param_row;
 StructuredBuffer<uint> call_generic_claim_count_out;
+StructuredBuffer<uint> call_const_claim_count_out;
+// Emission also clears both claim indexes (03a3_build_claim_lookup builds them).
+RWStructuredBuffer<uint> call_generic_claim_lookup_head;
+RWStructuredBuffer<uint> call_const_claim_lookup_head;
 StructuredBuffer<uint> call_generic_claim_scan_input;
 StructuredBuffer<uint> call_generic_claim_pattern_mask;
 StructuredBuffer<uint> call_generic_claim_prefix;
@@ -301,6 +306,25 @@ bool generic_param_in_scope(uint token, uint site)
     return true;
 }
 
+// Zero the bucket heads of both claim indexes. The index build hashes into
+// call_claim_lookup_capacity(count) buckets with count at most the claim
+// capacity, so clearing up to the head buffer's length covers them. One lane
+// per active HIR row, as this pass is dispatched.
+void clear_claim_lookups(uint lane)
+{
+    uint lanes = max(active_hir_node_count(), 1u);
+    if (lane >= lanes) return;
+    uint capacity; uint stride;
+    call_generic_claim_lookup_head.GetDimensions(capacity, stride);
+    uint buckets = min(call_claim_lookup_capacity(call_generic_claim_count_out[0u]), capacity);
+    for (uint bucket = lane; bucket < buckets; bucket += lanes)
+        call_generic_claim_lookup_head[bucket] = 0u;
+    call_const_claim_lookup_head.GetDimensions(capacity, stride);
+    buckets = min(call_claim_lookup_capacity(call_const_claim_count_out[0u]), capacity);
+    for (uint bucket = lane; bucket < buckets; bucket += lanes)
+        call_const_claim_lookup_head[bucket] = 0u;
+}
+
 void emit_argument_claims(uint arg_row)
 {
     if (arg_row >= min(call_arg_row_count_out[0u], active_hir_node_count())) return;
@@ -505,5 +529,6 @@ void emit_argument_claims(uint arg_row)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    clear_claim_lookups(linear_thread_id(dtid));
     emit_argument_claims(linear_thread_id(dtid));
 }
