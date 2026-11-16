@@ -1442,19 +1442,30 @@ impl GpuLoweringPipeline {
         library_id: u32,
         unit_id: u32,
     ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+        self.finish_x86_object_then(device, queue, library_id, unit_id, || {})
+    }
+
+    /// [`Self::finish_x86_object`], running `checked` once every retry point
+    /// has passed (the status, and the object's bytes against the job's
+    /// capacities) and before the payload is read and decoded.
+    pub(crate) fn finish_x86_object_then(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        checked: impl FnOnce(),
+    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
         self.ensure_success(device)?;
-        let finished = match &self.target {
-            TargetStage::X86_64(stage) => stage.finish_object(device, queue, library_id, unit_id),
-            TargetStage::Wasm(_) => {
-                anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
-            }
-        }?;
-        // The object's artifact words hold its text and rodata together.
-        self.check_job_artifact_bytes(
-            "x86 object text and rodata",
-            finished.0.text.len() + finished.0.rodata.len(),
-        )?;
-        Ok(finished)
+        let TargetStage::X86_64(stage) = &self.target else {
+            anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
+        };
+        stage.finish_object(device, queue, library_id, unit_id, |bytes| {
+            // The object's artifact words hold its text and rodata together.
+            self.check_job_artifact_bytes("x86 object text and rodata", bytes)?;
+            checked();
+            Ok(())
+        })
     }
 
     pub(crate) fn finish_status(&self, device: &wgpu::Device) -> Result<LoweringStatus> {

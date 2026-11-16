@@ -627,19 +627,49 @@ impl ProgramRetention {
     }
 
     pub(crate) fn export_job(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
-        let result = self.export_job_attempts(job);
+        let submitted = self.submit_export_job(job)?;
+        self.finish_export_job(job, submitted)
+    }
+
+    /// Records and submits the job's first export attempt without waiting
+    /// for it; [`Self::finish_export_job`] reads it. Until then the caller
+    /// may do host work while the GPU exports. A caller that does not finish
+    /// it calls [`Self::abandon_export`].
+    pub(crate) fn submit_export_job(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+    ) -> Result<ExportSubmitted> {
+        let result = self.submit_export_attempt(job);
         if result.is_err() {
-            // An incomplete transfer/readback invalidates this build even if
-            // its last GPU attempt committed. A driver must not reuse the
-            // preceding successful prefix after an export error.
-            let store = self.store.lock().unwrap();
-            self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
-            self.queue.submit(None);
+            self.abandon_export();
         }
         result
     }
 
-    fn export_job_attempts(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<JobReport> {
+    /// Reads the submitted export and retries it with grown capacity until
+    /// it commits.
+    pub(crate) fn finish_export_job(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+        submitted: ExportSubmitted,
+    ) -> Result<JobReport> {
+        let result = self.export_job_attempts(job, submitted.shape);
+        if result.is_err() {
+            self.abandon_export();
+        }
+        result
+    }
+
+    /// Invalidates this build's store. An incomplete transfer/readback
+    /// invalidates it even if its last GPU attempt committed. A driver must
+    /// not reuse the preceding successful prefix after an export error.
+    pub(crate) fn abandon_export(&self) {
+        let store = self.store.lock().unwrap();
+        self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
+        self.queue.submit(None);
+    }
+
+    fn submit_export_attempt(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<ExportSubmitted> {
         let rows = table_words(job, "compact_hir_core")? / 4;
         let records = table_words(job, "ct_head")? / 4;
         let args = table_words(job, "ct_args")?;
@@ -673,8 +703,20 @@ impl ProgramRetention {
             store.scratch = allocate_scratch(&self.device, shape);
             store.scratch_shape = Some(shape);
         }
+        self.record_export(&store, job, shape)?;
+        Ok(ExportSubmitted { shape })
+    }
+
+    fn export_job_attempts(
+        &self,
+        job: &BTreeMap<&'static str, JobTable>,
+        shape: ScratchShape,
+    ) -> Result<JobReport> {
+        let mut store = self.store.lock().unwrap();
         for attempt in 1..=8u32 {
-            self.record_export(&store, job, shape)?;
+            if attempt > 1 {
+                self.record_export(&store, job, shape)?;
+            }
             let mut read = self.read_parts(&[
                 (&store.buffers["rt_counts"], counts::WORDS),
                 (&store.scratch["rt_x_counts"], X_WORDS),
@@ -1216,6 +1258,12 @@ impl TimedPass {
     pub(crate) fn end(&mut self) {
         self.pass = None;
     }
+}
+
+/// An export attempt submitted by [`ProgramRetention::submit_export_job`].
+#[must_use]
+pub(crate) struct ExportSubmitted {
+    shape: ScratchShape,
 }
 
 #[derive(Clone, Copy)]

@@ -631,12 +631,15 @@ impl GpuX86ObjectStage {
         ])
     }
 
+    /// Reads the object. `checked` gets its text and rodata bytes once the
+    /// metadata is validated, before the payload is read.
     pub(crate) fn finish(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
+        checked: impl FnOnce(usize) -> Result<()>,
     ) -> Result<(GpuX86RelocatableObject, Vec<u32>)> {
         let metadata_slice = self.metadata_readback.slice(..);
         map_readback_blocking(device, &metadata_slice, "x86 object metadata readback")?;
@@ -684,6 +687,7 @@ impl GpuX86ObjectStage {
                 self.artifact_capacity,
             );
         }
+        checked(text_len + rodata_len)?;
 
         let payload_bytes = [
             relocation_count * 32,
