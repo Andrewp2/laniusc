@@ -992,10 +992,28 @@ does not parse is still the frontend's to report, as before. A file that
 the closure pass rewrote and that has no machine token is not parsed for
 machines: its new `__lanius_closure_` names are allowed there anyway.
 
+Above the two bits, `closures/mark` also counts the closures that start in
+each file. The closure pass sizes its records from the sum over its files,
+so it records the mark and the records in one submission and does not read
+the marks back.
+
+Each pass emits its text in the submission that lays out the pieces: the
+output holds twice the input bytes, and a text longer than that is emitted
+again once its length is known. In settings the closure output is 1.1
+times its input and the machine output 1.4 times.
+
+Readbacks per elaboration: one for the selection; the closure pass reads
+its records and then its pieces with the text; the machine pass reads the
+lexer's token count, the parser status, its counts, and then its pieces
+with the text. That is 8, down from 11.
+
 Settings, warm: the closure pass reads the files where a closure starts,
 and the machine pass parses 30,632 tokens of its 445,357. Elaboration with
 no state between builds takes 10.9 ms (median, untimed) where reading every
-file took 25.6 ms; with the old cross-build set it took 10.5 ms.
+file took 25.6 ms; with the old cross-build set it took 10.5 ms. With the
+fused readbacks it took 11.9 ms median and 10.0 ms minimum, on a machine
+with load average 7; the medians move by a few milliseconds with load.
+Recording the machine parse is the largest remaining host cost, about 3 ms.
 
 ## Open questions
 
