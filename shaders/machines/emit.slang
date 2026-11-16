@@ -1,6 +1,8 @@
 // Per output word: four bytes of the expanded pack. `piece_scan.x` is the
 // output offset just past each piece, so the piece of a byte is the first
-// one that ends after it.
+// one that ends after it. `gEmit.out_len` is the bytes `out_words` holds;
+// the expanded text ends at the last piece's end, or there when it does
+// not fit, and the host emits again into a buffer that holds it.
 import gpu_index;
 import byte_packing;
 import machine_common;
@@ -92,13 +94,14 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint word = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     uint first = word * 4u;
-    if (first >= gEmit.out_len)
+    uint out_len = min(gEmit.out_len, piece_scan[gEmit.piece_count - 1u].x);
+    if (first >= out_len)
         return;
     uint packed = 0u;
     for (uint j = 0u; j < 4u; j += 1u)
     {
         uint at = first + j;
-        if (at < gEmit.out_len)
+        if (at < out_len)
             packed |= output_byte(at) << (j * 8u);
     }
     out_words[word] = packed;

@@ -822,6 +822,39 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     let mut encoder = gpu.encoder("machines.pieces");
     record_pieces(&mut encoder, 1, [count_scan0, count_scan1], &pieces, &piece_sources)?;
     let piece_scan = gpu.scan(&mut encoder, &scan_kernel, &pieces, &piece_work, piece_count)?;
+
+    // The expanded bytes, in the same submission as their pieces: the
+    // output holds `emit_capacity` bytes, and a text that outgrows it is
+    // emitted again once its length is known.
+    let emit = |encoder: &mut wgpu::CommandEncoder, capacity: usize| -> Result<Readback> {
+        let out_words = capacity.div_ceil(4).max(1);
+        let output = gpu.rows("machines.output", out_words, 1);
+        let params = params(
+            gpu,
+            "machines.emit.params",
+            u32::try_from(capacity).context("expanded source is too large")?,
+            piece_count,
+        );
+        gpu.dispatch(
+            encoder,
+            &gpu.kernel("machines/emit")?,
+            "machines.emit",
+            &[
+                ("gEmit", params.as_entire_binding()),
+                ("in_bytes", marked.in_bytes.as_entire_binding()),
+                ("tokens_out", marked.tokens_out.as_entire_binding()),
+                ("pieces", pieces.as_entire_binding()),
+                ("piece_scan", piece_scan.as_entire_binding()),
+                ("const_index", const_index.as_entire_binding()),
+                ("const_bytes", const_bytes.as_entire_binding()),
+                ("out_words", output.as_entire_binding()),
+            ],
+            u32::try_from(out_words).context("expanded source is too large")?,
+        )?;
+        Ok(gpu.read(encoder, &output, 0, out_words))
+    };
+    let capacity = super::closures::emit_capacity(sources.iter().map(|source| source.len()).sum());
+    let output_read = emit(&mut encoder, capacity)?;
     let pieces_read = gpu.read(&mut encoder, &pieces, 0, pieces_len * 4);
     let piece_scan_read = gpu.read(&mut encoder, piece_scan, 0, pieces_len * 4);
     let piece_sources_read = gpu.read(&mut encoder, &piece_sources, 0, pieces_len * 4);
@@ -829,32 +862,15 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
     let piece_rows = gpu.words(&pieces_read)?;
     let piece_ends = gpu.words(&piece_scan_read)?;
     let piece_anchors = gpu.words(&piece_sources_read)?;
-    let out_len = piece_ends[(pieces_len - 1) * 4];
-
-    // The expanded bytes.
-    let out_words = (out_len as usize).div_ceil(4);
-    let output = gpu.rows("machines.output", out_words, 1);
-    let emit_params = params(gpu, "machines.emit.params", out_len, piece_count);
-    let mut encoder = gpu.encoder("machines.emit");
-    gpu.dispatch(
-        &mut encoder,
-        &gpu.kernel("machines/emit")?,
-        "machines.emit",
-        &[
-            ("gEmit", emit_params.as_entire_binding()),
-            ("in_bytes", marked.in_bytes.as_entire_binding()),
-            ("tokens_out", marked.tokens_out.as_entire_binding()),
-            ("pieces", pieces.as_entire_binding()),
-            ("piece_scan", piece_scan.as_entire_binding()),
-            ("const_index", const_index.as_entire_binding()),
-            ("const_bytes", const_bytes.as_entire_binding()),
-            ("out_words", output.as_entire_binding()),
-        ],
-        u32::try_from(out_words.max(1)).context("expanded source is too large")?,
-    )?;
-    let output_read = gpu.read(&mut encoder, &output, 0, out_words);
-    gpu.submit("machines.emit", encoder);
-    let bytes = gpu.bytes(&output_read, out_len as usize)?;
+    let out_len = piece_ends[(pieces_len - 1) * 4] as usize;
+    let bytes = if out_len <= capacity {
+        gpu.bytes(&output_read, out_len)?
+    } else {
+        let mut encoder = gpu.encoder("machines.emit");
+        let output_read = emit(&mut encoder, out_len)?;
+        gpu.submit("machines.emit", encoder);
+        gpu.bytes(&output_read, out_len)?
+    };
 
     split_files(sources, &piece_rows, &piece_ends, &piece_anchors, &bytes).map(|files| Some(Outcome::Expanded(files)))
 }

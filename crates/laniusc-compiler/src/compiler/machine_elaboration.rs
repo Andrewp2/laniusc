@@ -16,7 +16,7 @@
 //! rewritten byte back to the source, so diagnostics point at the source.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
@@ -84,13 +84,6 @@ impl Elaborated {
 fn registry() -> &'static Mutex<HashMap<blake3::Hash, Arc<Elaborated>>> {
     static REGISTRY: OnceLock<Mutex<HashMap<blake3::Hash, Arc<Elaborated>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Texts the rewrites read and left as they were. A pack that reaches two
-/// entry points is read once.
-fn unchanged() -> &'static Mutex<HashSet<blake3::Hash>> {
-    static UNCHANGED: OnceLock<Mutex<HashSet<blake3::Hash>>> = OnceLock::new();
-    UNCHANGED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// Frees the buffers the rewrites keep between runs, for a resident compiler
@@ -223,10 +216,10 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
 fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Result<Option<Vec<String>>, CompileError> {
     let mut files = Vec::with_capacity(sources.len());
     for (path, source) in sources {
-        let hash = blake3::hash(source.as_bytes());
-        let known = unchanged().lock().is_ok_and(|unchanged| unchanged.contains(&hash))
-            || (source.contains(RESERVED_PREFIX)
-                && registry().lock().is_ok_and(|registry| registry.contains_key(&hash)));
+        // Only a text that names a reserved identifier can be the output of
+        // an elaboration.
+        let known = source.contains(RESERVED_PREFIX)
+            && registry().lock().is_ok_and(|registry| registry.contains_key(&blake3::hash(source.as_bytes())));
         files.push(Pending { path, source, known, stages: None, flags: 0 });
     }
     if let Some(limit) = batch_limit
@@ -235,18 +228,32 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         return Ok(None);
     }
 
-    // False when a file that does not lex or parse stopped the rewrites
-    // before they read every file. The frontend then reports the error, and
-    // no file is recorded as unchanged: a later build must read them again.
-    let mut read = true;
+    // One lex of every file selects the files each rewrite reads
+    // (`closures::select`). A file that does not lex is the frontend's to
+    // report; nothing is rewritten then.
+    let unread: Vec<usize> = (0..files.len()).filter(|&index| !files[index].known).collect();
+    let texts: Vec<&str> = unread.iter().map(|&index| files[index].text()).collect();
+    let selected = closures::select(&texts).map_err(|err| {
+        super::compiler_execution_failed_error("the compiler stopped while selecting files to rewrite", "select files", err)
+    })?;
+    let Some(selected) = selected else {
+        if batch_limit.is_some() {
+            return Ok(None);
+        }
+        return Ok(Some(files.into_iter().map(|file| file.source).collect()));
+    };
+    let with = |flag: u32| -> Vec<usize> {
+        unread.iter().zip(&selected).filter(|(_, selected)| *selected & flag != 0).map(|(index, _)| *index).collect()
+    };
+    let selected_of = |index: usize| selected[unread.binary_search(&index).expect("a selected file was unread")];
 
-    // Closures, for the files that can hold one. The parser does not read a
+    // Closures, for the files where one starts. The parser does not read a
     // closure, so they go before the machines.
-    let candidates: Vec<usize> =
-        (0..files.len()).filter(|&index| !files[index].known && files[index].text().contains('|')).collect();
+    let candidates = with(closures::SELECT_CLOSURES);
     if !candidates.is_empty() {
         let texts: Vec<&str> = candidates.iter().map(|&index| files[index].text()).collect();
-        let outcome = closures::rewrite(&texts).map_err(|err| {
+        let count = candidates.iter().map(|&index| closures::closure_count(selected_of(index))).sum();
+        let outcome = closures::rewrite(&texts, count).map_err(|err| {
             super::compiler_execution_failed_error(
                 "the compiler stopped while rewriting closures",
                 "rewrite closures",
@@ -255,7 +262,8 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         })?;
         match outcome {
             Some(closures::Outcome::Unlexed) if batch_limit.is_some() => return Ok(None),
-            Some(closures::Outcome::Unlexed) => read = false,
+            // The frontend reports a file that does not lex.
+            Some(closures::Outcome::Unlexed) => {}
             None => {}
             Some(closures::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
@@ -281,7 +289,10 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
     // no transition outside a machine. When a file declares a generator the
     // pass rewrites the generators into machines instead, and runs again on
     // the result.
-    let candidates: Vec<usize> = (0..files.len()).filter(|&index| !files[index].known).collect();
+    // Only the files with a machine's or a generator's token, or a reserved
+    // name, can break these rules or need the machine pass
+    // (docs/state-machines-design.md, "Selecting the files to rewrite").
+    let candidates = with(closures::SELECT_MACHINES);
     for round in 0..2 {
         let texts: Vec<&str> = candidates.iter().map(|&index| files[index].text()).collect();
         let flags: Vec<u32> = candidates.iter().map(|&index| files[index].flags).collect();
@@ -294,10 +305,7 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
         })?;
         let (outputs, flag) = match outcome {
             Some(machines::Outcome::Unparsed) if batch_limit.is_some() => return Ok(None),
-            Some(machines::Outcome::Unparsed) => {
-                read = false;
-                break;
-            }
+            Some(machines::Outcome::Unparsed) => break,
             None => break,
             Some(machines::Outcome::Invalid(invalid)) => {
                 let file = &files[candidates[invalid.file]];
@@ -329,9 +337,6 @@ fn elaborate_untimed(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>
     for file in files {
         texts.push(match file.stages {
             None => {
-                if read && !file.known && let Ok(mut unchanged) = unchanged().lock() {
-                    unchanged.insert(blake3::hash(file.source.as_bytes()));
-                }
                 file.source
             }
             Some(elaborated) => {
@@ -413,6 +418,40 @@ pub machine Door on Input -> Reply {
         assert!(start < source.len());
     }
 
+    /// The selection of `closures::select` leaves out the files with no
+    /// machine token and no reserved name, and still applies the rules
+    /// every file follows to the files that have one.
+    #[test]
+    fn selected_files_keep_the_rules_of_every_file() {
+        let plain = "fn plain(a: i32, b: i32) -> i32 {\n    return a | b;\n}\n";
+        let rejected = |second: &str| {
+            let sources = vec![
+                (PathBuf::from("plain.lani"), plain.to_string()),
+                (PathBuf::from("second.lani"), second.to_string()),
+            ];
+            match elaborate_sources(sources) {
+                Err(CompileError::Diagnostic(diagnostic)) => format!("{diagnostic:?}"),
+                Err(other) => panic!("not a diagnostic: {other:?}"),
+                Ok(_) => String::new(),
+            }
+        };
+        let reserved = rejected("fn f() -> i32 {\n    let __lanius_state: i32 = 1;\n    return __lanius_state;\n}\n");
+        assert!(reserved.contains("reserved for the compiler") && reserved.contains("second.lani"), "{reserved}");
+        let outside = rejected("fn f() -> i32 {\n    goto Next;\n    return 0;\n}\n");
+        assert!(outside.contains("transitions of a machine") && outside.contains("second.lani"), "{outside}");
+
+        let closure = "fn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n";
+        let texts = elaborate_sources(vec![
+            (PathBuf::from("plain.lani"), plain.to_string()),
+            (PathBuf::from("door.lani"), DOOR.to_string()),
+            (PathBuf::from("closure.lani"), closure.to_string()),
+        ])
+        .unwrap();
+        assert_eq!(texts[0], plain);
+        assert!(texts[1].contains("enum DoorState"), "{}", texts[1]);
+        assert!(texts[2].contains("__lanius_closure_"), "{}", texts[2]);
+    }
+
     fn lani_files(dir: &Path, files: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
@@ -447,7 +486,8 @@ pub machine Door on Input -> Reply {
         sources.push("fn main() -> i32 {\n    let f: i32 = 2;\n    return call(|x: i32| x * f);\n}\n".to_string());
 
         let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
-        let outputs = match closures::rewrite(&texts).unwrap() {
+        let count = closures::select(&texts).unwrap().unwrap().into_iter().map(closures::closure_count).sum();
+        let outputs = match closures::rewrite(&texts, count).unwrap() {
             Some(closures::Outcome::Rewritten(outputs)) => outputs,
             Some(closures::Outcome::Invalid(invalid)) => panic!(
                 "{}: {} at byte {}",
