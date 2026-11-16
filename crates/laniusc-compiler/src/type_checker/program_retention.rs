@@ -441,6 +441,9 @@ pub struct ProgramRetention {
     /// Only the native retained driver withholds all original generic bodies.
     native_projection: bool,
     native_call_pass: std::sync::OnceLock<PassData>,
+    /// The native call pass's own buffers, kept across builds (grown by
+    /// powers of two) so a warm build binds the same ones.
+    native_call_scratch: Mutex<BTreeMap<&'static str, wgpu::Buffer>>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
@@ -528,6 +531,7 @@ impl ProgramRetention {
         let this = Arc::new(Self {
             native_projection,
             native_call_pass: std::sync::OnceLock::new(),
+            native_call_scratch: Mutex::new(BTreeMap::new()),
             device,
             queue,
             passes,

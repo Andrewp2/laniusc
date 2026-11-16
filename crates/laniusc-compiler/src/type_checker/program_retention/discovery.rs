@@ -126,6 +126,11 @@ pub struct RetainedDiscovery {
     /// not finish in its first submit: later closed waves read the solver's
     /// progress before their resolution, as the solve requires.
     eager_closed: bool,
+    /// The published buffers of the last attempt, with the capacities
+    /// (instances, edges, uses, requests) they hold: a warm build with the
+    /// same capacities binds the same buffers, so its bind groups are the
+    /// cached ones.
+    published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -150,6 +155,7 @@ impl RetainedDiscovery {
             admission: None,
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
             eager_closed: false,
+            published: None,
         })
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
@@ -215,10 +221,18 @@ impl RetainedDiscovery {
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
             self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
-            let inputs = ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges);
-            let root_routes = self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?;
-            let root_readiness = self.buffer("dg_root_readiness", 16)?;
-            let requests = SubstitutionRequests::new_with_device(&self.device, self.capacity.requests);
+            let key = [self.capacity.instances, self.capacity.edges, uses.max(1), self.capacity.requests];
+            if self.published.as_ref().is_none_or(|(held, ..)| *held != key) {
+                self.published = Some((
+                    key,
+                    ProjectionInputs::new_with_device(&self.device, self.capacity.instances, self.capacity.edges),
+                    self.buffer("dg_root_routes", uses.max(1) as u64 * 16)?,
+                    self.buffer("dg_root_readiness", 16)?,
+                    SubstitutionRequests::new_with_device(&self.device, self.capacity.requests),
+                ));
+            }
+            let (_, inputs, root_routes, root_readiness, requests) =
+                self.published.clone().ok_or_else(|| anyhow!("discovery buffers are not allocated"))?;
             let mut extra: Vec<(&str, &wgpu::Buffer)> = inputs.buffers().into_iter().collect();
             extra.extend([
                 ("dg_root_routes", &root_routes),
@@ -908,9 +922,18 @@ impl RetainedDiscovery {
         }
         Ok(storage(&self.device, name, bytes.max(4), false))
     }
+    /// Grows `name` to at least `bytes`, by powers of two: sizes that grow
+    /// from build to build (the term count) then keep their buffer, and so
+    /// their cached bind groups, across warm builds. The instance and edge
+    /// tables keep their exact size, since the kernels read their capacity
+    /// from the buffer length and it must match the projection inputs.
     fn ensure(&mut self, name: &'static str, bytes: u64) -> Result<()> {
         if self.scratch.get(name).is_none_or(|b| b.size() < bytes) {
-            let b = self.buffer(name, bytes)?;
+            let limits = self.device.limits();
+            let limit = u64::from(limits.max_storage_buffer_binding_size).min(limits.max_buffer_size);
+            let rounded = bytes.max(4).next_power_of_two();
+            let exact = matches!(name, "dg_instances" | "dg_edges") || rounded > limit;
+            let b = self.buffer(name, if exact { bytes } else { rounded })?;
             self.scratch.insert(name, b);
         }
         Ok(())

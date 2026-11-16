@@ -307,6 +307,7 @@ fn grow_to(current: u32, demand: u32) -> u32 {
 /// A GPU request buffer. Producers write `(DeclId, ENV, term, tag)` rows
 /// into `sb_requests` and the row count into `sb_request_count[0]`; the
 /// host never reads them.
+#[derive(Clone)]
 pub struct SubstitutionRequests {
     requests: wgpu::Buffer,
     count: wgpu::Buffer,

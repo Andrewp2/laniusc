@@ -389,12 +389,13 @@ impl RetainedTraitPublication {
             ("cw_decl", mul(status[A_DECLS], 4, "closed declarations")?),
             ("cw_param", status[A_PARAMS]),
             ("cw_atom_slots", slots),
-            ("cw_reach", terms),
-            ("cw_front", terms),
+            // Term-sized buffers grow by powers of two (see `pow2`).
+            ("cw_reach", pow2(terms)),
+            ("cw_front", pow2(terms)),
             ("cw_indirect", 3),
-            ("cw_scan_a", mul(lanes, 8, "closed scan")?),
-            ("cw_scan_b", mul(lanes, 8, "closed scan")?),
-            ("cw_blocks", mul(lanes.div_ceil(256), 8, "closed scan blocks")?),
+            ("cw_scan_a", pow2(mul(lanes, 8, "closed scan")?)),
+            ("cw_scan_b", pow2(mul(lanes, 8, "closed scan")?)),
+            ("cw_blocks", pow2(mul(lanes.div_ceil(256), 8, "closed scan blocks")?)),
             ("cw_step", step_words.len() as u32),
             ("idle", 4),
         ] {

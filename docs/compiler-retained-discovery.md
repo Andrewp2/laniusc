@@ -193,3 +193,19 @@ each route. Projection checks the selected target's receiver, arguments, result
 and layout before any native lowering. Required-member calls from original
 nongeneric bodies are not admitted through this route; concrete method calls
 there use their frontend-selected implementation.
+
+## Buffers across warm builds
+
+A warm build creates no bind group in discovery, method routes, the
+retained catalog, closed waves or native calls. Their buffers persist in
+the daemon, and buffers whose size follows the term count grow by powers of
+two, so a build whose term count grew a little binds the same buffers and
+reuses the cached bind groups. The method-route view binds its whole route
+arena, since the route header bounds every read. Discovery keeps the
+published projection inputs, root routes and requests while their capacities
+are unchanged; every attempt clears them before use. `dg_instances` and
+`dg_edges` keep their exact size, because the kernels read their capacity
+from the buffer length and it must match the projection inputs.
+
+In the settings census, a late warm job created 364 bind groups before
+this change (all stages) and 2 after, none of them in these stages.

@@ -286,6 +286,11 @@ struct Producer {
     readback_bytes: u64,
 }
 
+/// `words` rounded up to a power of two when that is representable.
+fn pow2(words: u32) -> u32 {
+    words.checked_next_power_of_two().unwrap_or(words)
+}
+
 fn groups(lanes: u32) -> (u32, u32) {
     let groups = lanes.div_ceil(256).max(1);
     (groups.min(65_535), groups.div_ceil(65_535))
@@ -633,9 +638,11 @@ fn run(
         let scratch = Scratch {
             config: workspace.initialized("trait_solver.retained_config", CFG_WORDS as u32, usage, Some(&config))?,
             state: workspace.initialized("trait_solver.retained_state", S_WORDS as u32, usage, Some(&initial_state))?,
-            flags: workspace.initialized("trait_solver.retained_flags", lanes.max(1) * 16, usage, None)?,
-            scan: workspace.initialized("trait_solver.retained_scan", lanes.max(1) * 16, usage, None)?,
-            blocks: workspace.initialized("trait_solver.retained_blocks", blocks * 16, usage, None)?,
+            // Term-sized buffers grow by powers of two: the term count grows
+            // between builds, and a kept buffer keeps its bind groups.
+            flags: workspace.initialized("trait_solver.retained_flags", pow2(lanes.max(1) * 16), usage, None)?,
+            scan: workspace.initialized("trait_solver.retained_scan", pow2(lanes.max(1) * 16), usage, None)?,
+            blocks: workspace.initialized("trait_solver.retained_blocks", pow2(blocks * 16), usage, None)?,
             entry: workspace.initialized("trait_solver.retained_entry", dir_entries.max(1) * 2, usage, None)?,
             snapshot: workspace.initialized(
                 "trait_solver.retained_snapshot",
@@ -653,8 +660,8 @@ fn run(
                 usage,
                 Some(&stage_words),
             )?,
-            reach: workspace.initialized("trait_solver.retained_reach", terms, usage, None)?,
-            front: workspace.initialized("trait_solver.retained_front", terms, usage, None)?,
+            reach: workspace.initialized("trait_solver.retained_reach", pow2(terms), usage, None)?,
+            front: workspace.initialized("trait_solver.retained_front", pow2(terms), usage, None)?,
             cursor: workspace.initialized("trait_solver.retained_cursor", 4, usage, None)?,
             indirect: workspace.initialized(
                 "trait_solver.retained_indirect",
@@ -956,10 +963,27 @@ pub struct RetainedBufferRange<'a> {
     pub buffer: &'a wgpu::Buffer,
     pub offset: u64,
     pub size: u64,
+    /// Bytes of the whole allocation behind the range, from `offset`.
+    pub capacity: u64,
 }
 impl<'a> RetainedBufferRange<'a> {
     fn of(buffer: &'a LaniusBuffer<u32>, words: u32) -> Self {
-        Self { buffer: &buffer.buffer, offset: buffer.byte_offset, size: u64::from(words) * 4 }
+        Self {
+            buffer: &buffer.buffer,
+            offset: buffer.byte_offset,
+            size: u64::from(words) * 4,
+            capacity: buffer.byte_size as u64,
+        }
+    }
+    /// The whole allocation behind the range: the same binding for every
+    /// logical size it holds, so a consumer that never reads past the
+    /// logical words keeps its cached bind groups as the size changes.
+    pub fn whole_binding(&self) -> wgpu::BindingResource<'a> {
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: self.buffer,
+            offset: self.offset,
+            size: std::num::NonZeroU64::new(self.capacity.max(self.size)),
+        })
     }
     pub fn binding(&self) -> wgpu::BindingResource<'a> {
         wgpu::BindingResource::Buffer(wgpu::BufferBinding {
