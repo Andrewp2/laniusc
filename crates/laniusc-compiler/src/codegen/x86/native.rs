@@ -159,35 +159,7 @@ impl<'a> NativeSymbols<'a> {
             "native main bridge must exactly match its GPU-emitted versioned trailer"
         );
 
-        let mut foreign = BTreeMap::<Identity, &NativeCFunction>::new();
-        let mut signatures = BTreeMap::<&str, &NativeCSignature>::new();
-        for binding in bindings {
-            validate_foreign_name(&binding.name)?;
-            ensure!(
-                binding.signature.parameters.len() <= 32,
-                "native symbol {} exceeds the 32-parameter C profile",
-                binding.name
-            );
-            ensure!(
-                !binding.signature.parameters.contains(&NativeCType::Void),
-                "native symbol {} has a void parameter",
-                binding.name
-            );
-            if let Some(previous) = foreign.insert(binding.identity, binding) {
-                ensure!(
-                    previous == binding,
-                    "native declaration {:?} has conflicting bindings",
-                    binding.identity
-                );
-            }
-            if let Some(previous) = signatures.insert(&binding.name, &binding.signature) {
-                ensure!(
-                    previous == &binding.signature,
-                    "native symbol {} has conflicting checked signatures",
-                    binding.name
-                );
-            }
-        }
+        let foreign = validate_bindings(bindings)?;
 
         let mut definitions = BTreeMap::<Identity, usize>::new();
         for (object_index, object) in objects.iter().enumerate() {
@@ -242,6 +214,44 @@ impl<'a> NativeSymbols<'a> {
             |binding| binding.name.clone(),
         )
     }
+}
+
+/// Checks the program's C bindings: names, the C profile, and that an
+/// identity or a name is never bound two ways. Returns them by identity.
+pub(crate) fn validate_bindings(
+    bindings: &[NativeCFunction],
+) -> Result<BTreeMap<Identity, &NativeCFunction>> {
+    let mut foreign = BTreeMap::<Identity, &NativeCFunction>::new();
+    let mut signatures = BTreeMap::<&str, &NativeCSignature>::new();
+    for binding in bindings {
+        validate_foreign_name(&binding.name)?;
+        ensure!(
+            binding.signature.parameters.len() <= 32,
+            "native symbol {} exceeds the 32-parameter C profile",
+            binding.name
+        );
+        ensure!(
+            !binding.signature.parameters.contains(&NativeCType::Void),
+            "native symbol {} has a void parameter",
+            binding.name
+        );
+        if let Some(previous) = foreign.insert(binding.identity, binding) {
+            ensure!(
+                previous == binding,
+                "native declaration {:?} has conflicting bindings",
+                binding.identity
+            );
+        }
+        if let Some(previous) = signatures.insert(&binding.name, &binding.signature) {
+            ensure!(
+                previous == &binding.signature,
+                "native symbol {} has conflicting checked signatures",
+                binding.name
+            );
+        }
+    }
+
+    Ok(foreign)
 }
 
 fn validate_foreign_name(name: &str) -> Result<()> {

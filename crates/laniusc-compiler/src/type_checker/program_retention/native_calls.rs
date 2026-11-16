@@ -82,7 +82,8 @@ impl ProgramRetention {
         call_hirs: &[u32],
     ) -> Result<()> {
         let columns = X86SymbolColumns::of_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_object(object)
+        let unit = Some((object.library_id, object.unit_id));
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs,unit)?.apply_to_object(object)
     }
 
     pub(crate) fn provisionalize_wasm_calls(
@@ -90,11 +91,13 @@ impl ProgramRetention {
         object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],
     ) -> Result<()> {
         let columns=X86SymbolColumns::of_wasm_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs)?.apply_to_wasm_object(object)
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs,None)?.apply_to_wasm_object(object)
     }
 
+    /// `unit` names an x86 object whose rewritten identities the resident
+    /// native link keeps (`codegen/x86/link/resident.rs`).
     fn provisionalize_calls(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
-        columns:X86SymbolColumns,call_hirs:&[u32]) -> Result<X86SymbolColumns> {
+        columns:X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>) -> Result<X86SymbolColumns> {
         if call_hirs.is_empty() { return Ok(columns); }
         let symbol_words = columns.symbol_rows.len() / 4;
         if symbol_words == 0 || columns.identity_bytes.len() % 4 != 0 {
@@ -209,6 +212,9 @@ impl ProgramRetention {
             continue;
         }
         tables.arguments = result[1];
+        if let Some((library_id, unit_id)) = unit {
+            crate::codegen::x86::park_resident_identities(device, &self.queue, library_id, unit_id, &identity, undefined);
+        }
         let identity_bytes = words_to_bytes(&read.pop().unwrap_or_default());
         let symbol_rows = words_to_bytes(&read.pop().unwrap_or_default());
         drop(store);

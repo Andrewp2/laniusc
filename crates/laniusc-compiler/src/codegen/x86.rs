@@ -17,6 +17,13 @@ use crate::gpu::{
 mod link;
 pub(crate) use link::{
     GpuX86LinkInput,
+    ParkRegion,
+    ParkSources,
+    ParkTicket,
+    ResidentObjectKey,
+    ResidentRoutes,
+    park as park_resident_object,
+    park_identities as park_resident_identities,
     GpuX86MissingSymbolDefinition,
     X86_LINK_NO_ENTRY_OBJECT,
     X86DynamicImage,
@@ -61,6 +68,16 @@ pub struct GpuX86Linker {
     link_relocate_pass: PassData,
     elf_write_pass: PassData,
     elf_dynamic_write_pass: PassData,
+    rl_compare_pass: PassData,
+    rl_plan_pass: PassData,
+    rl_bind_pass: PassData,
+    rl_define_pass: PassData,
+    rl_insert_pass: PassData,
+    rl_undefined_pass: PassData,
+    rl_dynsym_pass: PassData,
+    rl_gather_pass: PassData,
+    rl_reloc_pass: PassData,
+    resident_store: Mutex<Option<std::sync::Arc<link::GpuX86LinkStore>>>,
     job_buffers: CapacityBufferCache,
     executable_page_graph: Mutex<Option<link::X86ExecutablePageGraph>>,
     layout_chunk_graph: Mutex<Option<link::X86LayoutChunkGraph>>,
@@ -142,6 +159,52 @@ impl GpuX86Linker {
                 "codegen/x86/elf/dynamic_write.spv",
                 "codegen/x86/elf/dynamic_write.reflect.json"
             ),
+            rl_compare_pass: load_x86_pass!(
+                "link_resident_rl_compare",
+                "codegen/x86/link/resident/rl_compare.spv",
+                "codegen/x86/link/resident/rl_compare.reflect.json"
+            ),
+            rl_plan_pass: load_x86_pass!(
+                "link_resident_rl_plan",
+                "codegen/x86/link/resident/rl_plan.spv",
+                "codegen/x86/link/resident/rl_plan.reflect.json"
+            ),
+            rl_bind_pass: load_x86_pass!(
+                "link_resident_rl_bind",
+                "codegen/x86/link/resident/rl_bind.spv",
+                "codegen/x86/link/resident/rl_bind.reflect.json"
+            ),
+            rl_define_pass: load_x86_pass!(
+                "link_resident_rl_define",
+                "codegen/x86/link/resident/rl_define.spv",
+                "codegen/x86/link/resident/rl_define.reflect.json"
+            ),
+            rl_insert_pass: load_x86_pass!(
+                "link_resident_rl_insert",
+                "codegen/x86/link/resident/rl_insert.spv",
+                "codegen/x86/link/resident/rl_insert.reflect.json"
+            ),
+            rl_undefined_pass: load_x86_pass!(
+                "link_resident_rl_undefined",
+                "codegen/x86/link/resident/rl_undefined.spv",
+                "codegen/x86/link/resident/rl_undefined.reflect.json"
+            ),
+            rl_dynsym_pass: load_x86_pass!(
+                "link_resident_rl_dynsym",
+                "codegen/x86/link/resident/rl_dynsym.spv",
+                "codegen/x86/link/resident/rl_dynsym.reflect.json"
+            ),
+            rl_gather_pass: load_x86_pass!(
+                "link_resident_rl_gather",
+                "codegen/x86/link/resident/rl_gather.spv",
+                "codegen/x86/link/resident/rl_gather.reflect.json"
+            ),
+            rl_reloc_pass: load_x86_pass!(
+                "link_resident_rl_reloc",
+                "codegen/x86/link/resident/rl_reloc.spv",
+                "codegen/x86/link/resident/rl_reloc.reflect.json"
+            ),
+            resident_store: Mutex::new(None),
             job_buffers: CapacityBufferCache::default(),
             executable_page_graph: Mutex::new(None),
             layout_chunk_graph: Mutex::new(None),

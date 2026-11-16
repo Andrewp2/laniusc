@@ -221,7 +221,7 @@ impl GpuCompiler<'_> {
         if !native.is_empty() {
             return Err(super::x86_codegen::x86_native_link_required_error(&native));
         }
-        match self.link_retained(target,vec![pending.release_closed()], &[], build, typecheck::NativeObjectStore::Keep, None)? {
+        match self.link_retained(target,vec![pending.release_closed()], &[], build, typecheck::NativeObjectStore::Keep, None, false)? {
             ResidentLinkedOutput::Bytes(bytes) => Ok(bytes),
             ResidentLinkedOutput::File(_) => unreachable!("no output file requested"),
         }
@@ -260,7 +260,7 @@ impl GpuCompiler<'_> {
         }.await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
-        match self.link_retained(SourcePackArtifactTarget::X86_64, originals?, &[], build, false, None)? {
+        match self.link_retained(SourcePackArtifactTarget::X86_64, originals?, &[], build, false, None, false)? {
             ResidentLinkedOutput::Bytes(bytes)=>Ok(bytes),
             ResidentLinkedOutput::File(_)=>unreachable!(),
         }
@@ -321,13 +321,20 @@ impl GpuCompiler<'_> {
         };
         build.store.begin_build().map_err(|e| retained_error("begin build", e))?;
         *self.retained_native_calls.lock().unwrap() = build.calls.take();
+        // A native C build's objects stay on the GPU for the resident link.
+        let resident = (target == SourcePackArtifactTarget::X86_64
+            && store == typecheck::NativeObjectStore::Memory
+            && build.native_link.is_some())
+            .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device)))
+            .flatten();
         self.attach_program_retention(Some(build.store.clone()));
         let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), store).await;
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
         let (originals, native_functions, sources) = originals?;
         build.sources = sources;
-        self.link_retained(target,originals, &native_functions, build, store, output)
+        let resident_active = resident.as_ref().is_some_and(|active| active.is_active());
+        self.link_retained(target,originals, &native_functions, build, store, output, resident_active)
     }
 
     async fn compile_retained_originals(
@@ -364,6 +371,7 @@ impl GpuCompiler<'_> {
         build: &mut RetainedNativeBuild,
         object_store: typecheck::NativeObjectStore,
         output: Option<&Path>,
+        resident: bool,
     ) -> Result<ResidentLinkedOutput, CompileError> {
         let spill = object_store.file_object();
         let store = build.store.clone();
@@ -425,6 +433,37 @@ impl GpuCompiler<'_> {
             ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
         };
         let _tail = x86::TailSpan::new("tail.after_projection");
+        // The resident link's first half needs only the routes, so it runs
+        // on the GPU while the host finalizes.
+        let resident_plan = match (&build.native_link, self.x86_linker()) {
+            (Some(options), Ok(linker)) if resident && target == SourcePackArtifactTarget::X86_64 => {
+                let keys = originals.iter().chain(&instances).map(|object| match object {
+                    CompiledSourcePackObject::X86_64File(object) => Some(x86::ResidentObjectKey {
+                        library_id: object.layout.library_id,
+                        unit_id: object.layout.unit_id,
+                        text_len: object.layout.text_byte_len,
+                        rodata_len: object.layout.rodata_byte_len,
+                        relocation_count: object.layout.relocation_count,
+                        symbol_count: object.layout.symbol_count,
+                    }),
+                    _ => None,
+                }).collect::<Option<Vec<_>>>();
+                let routes = x86::ResidentRoutes {
+                    routes: &roots.root_routes,
+                    route_capacity: roots.root_route_capacity,
+                };
+                match keys.map(|keys| linker.begin_resident_dynamic(
+                    &self.gpu.device, &self.gpu.queue, &keys, native_functions, options, routes)) {
+                    Some(Ok(plan)) => plan,
+                    Some(Err(error)) => {
+                        log::warn!("resident x86 link failed, linking on the host: {error:#}");
+                        None
+                    }
+                    None => None,
+                }
+            }
+            _ => None,
+        };
         let finalize_span = x86::TailSpan::new("tail.finalize");
         let finalizer = match &mut build.finalizer {
             Some(finalizer) => finalizer,
@@ -493,6 +532,27 @@ impl GpuCompiler<'_> {
         let linker = self.x86_linker().map_err(|e| retained_error("native linker", e))?;
         let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         if let Some(options) = &build.native_link {
+            if let Some(plan) = resident_plan {
+                let span = x86::TailSpan::new("tail.native.resident");
+                match linker.finish_resident_dynamic(device, queue, plan) {
+                    Ok(Some(image)) => {
+                        drop(span);
+                        let _write_span = x86::TailSpan::new("tail.native.write");
+                        let len = image.len();
+                        return match output {
+                            Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                                path, SourcePackArtifactTarget::X86_64, |file| image
+                                    .with_bytes(|bytes| std::io::Write::write_all(file, bytes))
+                                    .map(|()| len as u64)
+                                    .map_err(|e| retained_error("write native executable", e)))
+                                .map(ResidentLinkedOutput::File),
+                            None => Ok(ResidentLinkedOutput::Bytes(image.with_bytes(<[u8]>::to_vec))),
+                        };
+                    }
+                    Ok(None) => {}
+                    Err(error) => log::warn!("resident x86 link failed, linking on the host: {error:#}"),
+                }
+            }
             let bridge = super::native_codegen::native_main_bridge(&objects)?;
             let plan_span = x86::TailSpan::new("tail.native.plan");
             let plan = x86::native::plan_native_link(&objects, native_functions, bridge, options)
