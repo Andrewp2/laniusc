@@ -461,3 +461,28 @@ large stage (58 emit ready proofs, 53 select work) retried against the same
 counter. Settings, census readback waits of the catalog and closed solves
 (GPU shared with other agents): 17.5 and 18.0 ms before, 9.7 and 6.4 ms after
 over the first eight solve and substitution readbacks.
+
+## Disjoint self roots
+
+The coarse implementation index has one chain per trait and argument count,
+so coherence (10 check coherence) compares each implementation with every
+earlier one of its trait, and coarse selection (phase 65, kernel 53 select
+implementations) matches a goal against every implementation of its trait.
+Each comparison set up a full unification state, which reads both owners'
+parameter inventories, and that setup was the cost: with the overlap call
+removed, coherence took 0.02 ms instead of 0.61 ms. Most pairs differ at the
+self type, where the unification's first step returns NoMatch.
+`owned_constraint_roots_disjoint` (`owned_type_constraint_engine.slang`)
+repeats exactly that step on the two unbound self roots: one side constant,
+different tags, different atoms, or compound rows with different kinds or
+nominal headers. Only when it reports NoMatch is the pair skipped; a type
+parameter, a constant pair, equal headers or an invalid term run the full
+unification as before. Admission has already validated both owners, so the
+state setup could not have failed before that step.
+`ts_begin_implementation_goal` applies it with `filter` for selection, after
+the goal checks that `pps_goal_root` would report; substitution admission
+passes `false`, since there a missing candidate is an error.
+
+Profiled settings job (cold, GPU shared): all trait-solver kernels 21.05 ms
+before, 17.42 ms after; coherence 0.61 → 0.21 ms; the 50 select
+implementation dispatches 2.00 → 1.31 ms, the largest 0.75 → 0.41 ms.

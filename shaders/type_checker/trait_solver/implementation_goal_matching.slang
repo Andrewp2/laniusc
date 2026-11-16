@@ -62,10 +62,14 @@ public SolverStatus ts_match_roots(TsRootMatch match, inout OwnedConstraintState
 
 // The match state uses owned constraint frame `frame` (owned_constraint_frame).
 // A head whose trait or argument count differs from the goal's is no
-// candidate (and leaves the state zero); a candidate's state has begun.
+// candidate (and leaves the state zero); a candidate's state has begun. With
+// `filter`, a head whose self root differs from the goal's at the first
+// unification step (owned_constraints_roots_disjoint) is no candidate either:
+// its match would return NoMatch there. Selection walks every implementation
+// of a trait, and this skips the match state for most of them.
 public SolverStatus ts_begin_implementation_goal(uint implementation, uint goal,
     OwnedConstraintLimits limits, uint frame, out OwnedConstraintState state,
-    out TsRootMatch match, out bool candidate)
+    out TsRootMatch match, out bool candidate, bool filter)
 {
     state = (OwnedConstraintState)0; candidate = false;
     uint4 pattern; uint4 args; uint4 actual; uint4 extra; uint pattern_nodes; uint goal_nodes; uint atoms;
@@ -76,6 +80,14 @@ public SolverStatus ts_begin_implementation_goal(uint implementation, uint goal,
     match = { implementation, goal, pattern.w, args.x, args.y, true };
     if (!read) return ts_invalid(1u, implementation, goal);
     if (pattern.z != actual.x || args.y != extra.x) return ts_ok();
+    // The goal checks are pps_goal_root's for ordinal 0, which the match
+    // would otherwise report.
+    uint2 self;
+    if (filter && extra.x <= 32u && extra.z <= 1u && extra.w == 0u &&
+        pps_type_reference(actual.yz) && ts_read_root(pattern.w, self) &&
+        owned_constraints_roots_disjoint<CatalogImplementationPatternGraph, SolverProofTermGraph>(
+            self, actual.yz, uint2(pattern_nodes, goal_nodes), atoms))
+        return ts_ok();
     candidate = true;
     owned_constraints_begin<CatalogImplementationPatternGraph>(
         pattern.y, pattern_nodes, goal_nodes, atoms, limits, frame, state);
@@ -101,7 +113,7 @@ public SolverStatus ts_match_implementation_goal(uint implementation, uint goal,
     matches = false;
     TsRootMatch match; bool candidate;
     SolverStatus status = ts_begin_implementation_goal(implementation, goal, limits, frame,
-        state, match, candidate);
+        state, match, candidate, true);
     if (status.state != TS_VALID || !candidate) return status;
     status = ts_match_roots(match, state);
     if (status.state != TS_VALID) return status;
