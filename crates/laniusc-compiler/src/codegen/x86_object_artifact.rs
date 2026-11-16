@@ -212,10 +212,24 @@ impl GpuX86ObjectStage {
         )?;
         let metadata_readback =
             readback_bytes(device, "artifact.x86.object.metadata.readback", 80, 80);
+        // One page holds the whole payload up to 16 MiB, so the prefetch in
+        // the job's submission answers `finish` without a submission of its
+        // own. A 4 MiB page made a 5 MB object take two extra round trips.
+        let payload_capacity = [
+            &relocations.byte_size,
+            &runtime_relocations.byte_size,
+            &undefined_symbols.byte_size,
+            &definitions.byte_size,
+            &text_words.byte_size,
+            &rodata_words.byte_size,
+            &call_hir_by_symbol.byte_size,
+        ]
+        .into_iter()
+        .sum::<usize>();
         let payload_readback = PagedReadback::new(
             device,
             "artifact.x86.object.payload.readback",
-            (artifact_capacity as usize).min(4 << 20),
+            payload_capacity.min(16 << 20),
         );
         let params = uniform_from_val(
             device,
