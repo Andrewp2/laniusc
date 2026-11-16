@@ -3,9 +3,16 @@
 // HIR type collection scatters from parser nodes into token-indexed records, so
 // clearing must be a separate pass to avoid clear/write races.
 //
-// The whole-table clears (every type row's kind, the lookup index and the
-// imported field tables) give later passes their invariant: a row without a
-// kind owns nothing (live_type_rows.slang). They stride over one lane per
+// The whole-table clears (every type row's kind, the lookup index and each
+// row's imported field and layout ranges) give later passes their invariant: a
+// row without a kind owns nothing (live_type_rows.slang).
+//
+// The imported field and layout pools are not cleared. Their totals and every
+// row's range are zeroed here, 07_project_imported_fields writes each slot it
+// allocates from the totals, and readers reach a slot only through a row's
+// range. Slot 0 is written so that this pass stays the pools' producer in the
+// graph: declaring them as a logical write instead changed the workspace
+// arenas and failed compiler_generic_types_execution with two test threads. They stride over one lane per
 // workspace token row, the lanes this pass is dispatched with, so a small job
 // in a workspace retained from a larger one clears it in parallel.
 
@@ -176,16 +183,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             imported_layout_group_start[instance] = INVALID;
             imported_layout_group_count[instance] = 0u;
         }
-        imported_field_ref_tag.GetDimensions(capacity, stride);
-        for (uint row = i; row < capacity; row += lanes)
+        // See the header: the pools need no clear.
+        if (i == 0u)
         {
-            imported_field_ref_tag[row] = 0u;
-            imported_field_ref_payload[row] = INVALID;
-            imported_field_name_hash[row] = uint2(0u, 0u);
+            imported_field_ref_tag[0u] = 0u;
+            imported_field_ref_payload[0u] = INVALID;
+            imported_field_name_hash[0u] = uint2(0u, 0u);
+            imported_layout_groups[0u] = uint2(0u, 0u);
         }
-        imported_layout_groups.GetDimensions(capacity, stride);
-        for (uint row = i; row < capacity; row += lanes)
-            imported_layout_groups[row] = uint2(0u, 0u);
     }
 
     if (i >= gParams.n_tokens)
