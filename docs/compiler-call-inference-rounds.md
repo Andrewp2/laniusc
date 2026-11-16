@@ -93,7 +93,28 @@ The timestamp traces add about 4 µs to every dispatch, so their 5 to 12 µs flo
 
 Each round's active functions were listed in one workgroup at the round start. The heaviest HIR passes (`03d`, `03e`, `03f`, `03g`, `03k1`) were dispatched over those functions' rows only, through a lane-to-row map. The result matched, but inference GPU time fell only from 17,588 to 17,198 µs, and the one-workgroup round start cost 22 µs more per round. A late round recomputes a few large functions, and their items do long serial work: receiver binding still took 77 µs in round 10. The inactive lanes the masks already skip were cheap. The patch is kept in the evidence directory (`compaction-experiment.patch`) and is not part of the compiler.
 
+## Activity finer than whole functions (measured, not built)
+
+Two rounds were added after convergence (a temporary `LANIUS_EXTRA_ROUNDS` setting, not kept). They change nothing, so their cost is the floor of a fully masked round: 927 µs traced. Rounds 3 to 10 cost 3,677 µs above that floor in total. The largest parts:
+
+| Pass | Above the floor, rounds 3 to 10 (µs) | Round 10 | Floor |
+|---|---|---|---|
+| `03d` receiver binding | 644 | 77 | 9 |
+| `03l3` bound inference | 409 | 18 | 11 |
+| `03a4b` contextual result requests | 402 | 66 | 23 |
+| `03a1` claim emission (before skipping) | 343 | 45 | 9 |
+| `03a` argument matching | 314 | 44 | 11 |
+| `methods/07` resolve table | 296 | 41 | 11 |
+| `substitution/02` call environments | 238 | 33 | 13 |
+
+Two diagnostics masked a pass to the items whose own token had a counted change in the previous round. Neither was kept.
+
+- Receiver binding with this mask built settings byte-identically, and still cost 72 µs in round 10. Its late cost is in calls that themselves change or stay BUSY. Activity per item would not lower it.
+- Argument matching and contextual result requests with this mask failed to compile settings (LNC0006). Their items read facts that other items of the function change, so a mask per item needs the dependency edges between items.
+
+A mask per item that keeps the fixed point needs, for each masked pass, the set of items whose facts an item reads: its argument and receiver expressions, the expression that gives it a context type, and the declarations of the locals it reads. Each change would stamp the changed item's readers through an adjacency built once per job. Every masked pass's reads would then have to be checked against that adjacency, in the same way as the writer table check for the masks per function.
+
 ## What remains
 
-- Finer activity than whole functions: an item whose inputs did not change in the last round need not recompute. In round 10 only 8 facts change, but every item of the active functions recomputes.
+- Activity per item, as above.
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.
