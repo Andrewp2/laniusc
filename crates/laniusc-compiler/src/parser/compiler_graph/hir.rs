@@ -832,7 +832,7 @@ pub(super) fn register_resources(
     // Bounded storage, independent of token/tree capacity. No private 768-word
     // array is added to ordinary parser lanes.
     workspace(graph, "hir_float_workspace", ResourceDomain::HirNodes,
-        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 2048 * 768 * 4 } else { 4 })?;
+        if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 { 4096 * 768 * 4 } else { 4 })?;
     // One slot per float literal; a job has at most one per token.
     workspace(graph, "hir_float_nodes", ResourceDomain::HirNodes,
         if capacity.parser_feature_flags & PARSER_FEATURE_FLOAT_LITERALS != 0 {

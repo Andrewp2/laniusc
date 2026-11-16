@@ -98,7 +98,7 @@ impl HirFloatValuesPass {
             &self.data,
             bind_group.as_ref(),
             "parser_hir_float_values",
-            (8, 1, 1),
+            (64, 1, 1),
         );
         Ok(())
     }
