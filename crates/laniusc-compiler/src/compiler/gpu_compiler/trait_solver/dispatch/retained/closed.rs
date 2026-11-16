@@ -163,8 +163,6 @@ impl ClosedProducer {
                     offset: b.byte_offset + u64::from(step) * STAGE_STRIDE,
                     size: std::num::NonZeroU64::new(8),
                 })
-            } else if name == "cw_indirect" && pass == 4 {
-                self.buffers["idle"].as_entire_binding()
             } else if matches!(name.as_str(), "cw_batch" | "cw_routes") {
                 self.buffers["idle"].as_entire_binding()
             } else if let Some(b) = self.buffers.get(name.as_str()) {

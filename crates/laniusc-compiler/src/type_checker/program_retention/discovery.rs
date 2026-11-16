@@ -875,7 +875,6 @@ impl RetainedDiscovery {
         ] {
             self.ensure(name, bytes)?;
         }
-        self.ensure("dg_indirect_idle", 16)?;
         if !self.scratch.contains_key("dg_indirect") {
             self.scratch
                 .insert("dg_indirect", storage(&self.device, "dg_indirect", 16, true));
@@ -944,13 +943,8 @@ impl RetainedDiscovery {
                 entries.push((n, binding));
                 continue;
             }
-            // Every kernel includes dg_common.slang, so its reflection lists
-            // dg_indirect. A pass dispatched from that buffer may not also
-            // bind it as storage.
             let buffer = if n == "dg_config" {
                 Some(config_buffer)
-            } else if n == "dg_indirect" && matches!(dispatch, Dispatch::Indirect(_)) {
-                self.scratch.get("dg_indirect_idle")
             } else {
                 None
             }
