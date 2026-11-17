@@ -18,6 +18,7 @@ pub(crate) use resident::{
     ParkSources,
     ParkTicket,
     ParkedSlot,
+    ResidentEmitFault,
     ResidentObjectKey,
     ResidentRoutes,
     ResidentSections,

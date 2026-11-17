@@ -16,6 +16,7 @@ import type_checker.canonical.canonical_mutable_rows;
 import type_checker.substitution.ct_checked;
 import type_checker.substitution.source_slots;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -315,7 +316,7 @@ void publish_target(uint token, MethodCandidate candidate, uint2 parameter, uint
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id_2d(dtid, 65535u, 256u);
+    uint token = inference_listed_token(linear_thread_id_2d(dtid, 65535u, 256u));
     if (token >= min(token_count[0u], gParams.n_tokens) ||
         method_call_selection_owned[token] == 0u || !inference_item_active(token)) return;
     MethodCandidate candidate = method_candidate[token];

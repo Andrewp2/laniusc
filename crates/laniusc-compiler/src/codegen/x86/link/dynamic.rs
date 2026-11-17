@@ -69,6 +69,48 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     value.div_ceil(alignment) * alignment
 }
 
+/// The counts the dynamic tail's layout derives from: imports, string table
+/// bytes, version-need rows, needed libraries, section lengths (text with
+/// the import stubs), defined Lanius symbols and the strtab name stride.
+pub(super) struct DynamicCounts {
+    pub imports: u64,
+    pub strings: u64,
+    pub verneed_rows: u64,
+    pub needed: u64,
+    pub text_len: u64,
+    pub rodata_len: u64,
+    pub symbols: u64,
+    pub stride: u64,
+}
+
+/// The tail offset and the executable length (`dynamic_layout` in
+/// `dynamic_write.slang`; `rl_dynamic_rows.slang` repeats it). Each grows
+/// with every count, so counts that bound a link bound its length.
+pub(super) fn dynamic_layout(counts: DynamicCounts) -> (u64, u64) {
+    let n = counts.imports;
+    let rodata_end = u64::from(TEXT_OFFSET) + counts.text_len + counts.rodata_len;
+    let tail = align_up(rodata_end, 8);
+    let interp = tail + u64::from(PROGRAM_HEADERS) * 56;
+    let hash = align_up(interp + u64::from(INTERP_BYTES), 8);
+    let dynsym = align_up(hash + 4 * (n + 4), 8);
+    let dynstr = dynsym + 24 * (n + 1);
+    let versym = align_up(dynstr + counts.strings, 2);
+    let verneed = align_up(versym + 2 * (n + 1), 8);
+    let rela = verneed + 16 * counts.verneed_rows;
+    let rx_end = rela + 24 * n;
+    let rw = align_up(rx_end, 4096);
+    let got = rw + 16 * (counts.needed + u64::from(FIXED_DYNAMIC));
+    let symtab = align_up(got + 8 * n, 8);
+    let strtab = symtab + 24 * (3 + counts.symbols);
+    let shstrtab = strtab + u64::from(STRTAB_PREFIX) + counts.symbols * counts.stride;
+    let sh = align_up(shstrtab + u64::from(SHSTRTAB_BYTES), 8);
+    (tail, sh + 64 * u64::from(SECTIONS))
+}
+
+/// The longest strtab name of a Lanius symbol: `lanius_s_` and three
+/// decimal identity words with separators and a NUL.
+pub(super) const MAX_NAME_STRIDE: u64 = 9 + 10 + 1 + 10 + 1 + 10 + 1;
+
 fn decimal_digits(value: u32) -> u32 {
     value.checked_ilog10().unwrap_or(0) + 1
 }
@@ -198,92 +240,21 @@ impl X86DynamicImage {
     /// `layout` from the section lengths (text including the import stubs),
     /// the defined Lanius symbol count and the strtab name stride.
     fn layout_for(&self, text_len: u64, rodata_len: u64, symbols: u64, stride: u32) -> Result<X86DynamicLayout> {
-        let n = u64::from(self.import_count);
-        let rodata_end = u64::from(TEXT_OFFSET) + text_len + rodata_len;
-        let tail = align_up(rodata_end, 8);
-        let interp = tail + u64::from(PROGRAM_HEADERS) * 56;
-        let hash = align_up(interp + u64::from(INTERP_BYTES), 8);
-        let dynsym = align_up(hash + 4 * (n + 4), 8);
-        let dynstr = dynsym + 24 * (n + 1);
-        let versym = align_up(dynstr + self.strings.len() as u64, 2);
-        let verneed = align_up(versym + 2 * (n + 1), 8);
-        let rela = verneed + 16 * (self.verneed_rows.len() as u64 / 4);
-        let rx_end = rela + 24 * n;
-        let rw = align_up(rx_end, 4096);
-        let got = rw + 16 * (self.needed_rows.len() as u64 + u64::from(FIXED_DYNAMIC));
-        let symtab = align_up(got + 8 * n, 8);
-        let strtab = symtab + 24 * (3 + symbols);
-        let shstrtab = strtab + u64::from(STRTAB_PREFIX) + symbols * u64::from(stride);
-        let sh = align_up(shstrtab + u64::from(SHSTRTAB_BYTES), 8);
-        let total = sh + 64 * u64::from(SECTIONS);
+        let (tail, total) = dynamic_layout(DynamicCounts {
+            imports: u64::from(self.import_count),
+            strings: self.strings.len() as u64,
+            verneed_rows: self.verneed_rows.len() as u64 / 4,
+            needed: self.needed_rows.len() as u64,
+            text_len,
+            rodata_len,
+            symbols,
+            stride: u64::from(stride),
+        });
         Ok(X86DynamicLayout {
             tail: u32::try_from(tail).context("dynamic executable exceeds the 32-bit ELF model")?,
             total: u32::try_from(total)
                 .context("dynamic executable exceeds the 32-bit ELF model")?,
         })
-    }
-
-    /// The writer's inputs for a link whose Lanius symbol rows the GPU
-    /// writes: `words` holds the import, needed and version-need rows, and
-    /// the symbol rows follow at `params[19]`. `lanius_text_len` excludes the
-    /// import stubs; `main_offset` is the bridge's offset from the start of
-    /// .text. Returns the rows and the executable length.
-    pub(super) fn resident_rows(
-        &self,
-        lanius_text_len: u32,
-        rodata_len: u32,
-        symbol_count: u32,
-        stride: u32,
-        main_offset: u32,
-    ) -> Result<(X86DynamicRows, u32)> {
-        let import_text = Self::import_text_len(self.import_count as usize)?;
-        let text_len = lanius_text_len
-            .checked_add(import_text)
-            .context("x86 text exceeds u32")?;
-        let layout = self.layout_for(text_len.into(), rodata_len.into(), symbol_count.into(), stride)?;
-        let mut words = Vec::with_capacity(
-            self.import_rows.len() + self.needed_rows.len() + self.verneed_rows.len(),
-        );
-        words.extend_from_slice(&self.import_rows);
-        let needed_rows = words.len() as u32;
-        words.extend_from_slice(&self.needed_rows);
-        let verneed_rows = words.len() as u32;
-        words.extend_from_slice(&self.verneed_rows);
-        let symbol_rows = words.len() as u32;
-        let element_count = TEXT_OFFSET
-            .checked_add(import_text)
-            .and_then(|count| count.checked_add(layout.total - layout.tail))
-            .context("dynamic writer element count exceeds u32")?;
-        let params = [
-            0,
-            layout.total,
-            TEXT_OFFSET + text_len + rodata_len,
-            TEXT_OFFSET + lanius_text_len,
-            TEXT_OFFSET + main_offset,
-            self.import_count,
-            self.needed_rows.len() as u32,
-            (self.verneed_rows.len() / 4) as u32,
-            self.verneed_libraries,
-            self.strings.len() as u32,
-            symbol_count,
-            stride,
-            text_len,
-            rodata_len,
-            layout.total,
-            element_count,
-            0,
-            needed_rows,
-            verneed_rows,
-            symbol_rows,
-            self.main.byte_len,
-            0,
-            0,
-            0,
-        ];
-        Ok((
-            X86DynamicRows { params, words, strings: self.strings.clone(), element_count },
-            layout.total,
-        ))
     }
 
     /// Rows for `dynamic_write.slang`, with Lanius symbol file offsets from

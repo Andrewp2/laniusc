@@ -166,6 +166,7 @@ fn physical_gpu_single_dispatch_interning_is_unique_under_contention() {
     ] {
         resources.insert(name, storage_rw_for_array::<u32>(device, name, words));
     }
+    passes_core::add_cached_views(&mut resources);
     let mut totals = [0u64; ERROR_WORDS];
     let mut intern_ms_total = 0.0f64;
     let mut intern_ms_max = 0.0f64;
@@ -283,6 +284,7 @@ fn physical_gpu_canonical_bridge_decodes_interned_records() {
     ] {
         resources.insert(name, storage_rw_for_array::<u32>(device, name, words));
     }
+    passes_core::add_cached_views(&mut resources);
     // The candidate tables and the checked graph are empty here.
     for name in [
         "canonical_row",

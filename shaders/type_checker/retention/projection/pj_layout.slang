@@ -37,10 +37,19 @@ public static const uint PJ_CFG_BATCH_ROWS = 1u; // rows that start a new batch
 public static const uint PJ_CFG_BATCH = 2u;      // current batch
 public static const uint PJ_CFG_ROUND = 3u;      // layout round
 public static const uint PJ_CFG_IDENTITY_MASK = 4u;
-public static const uint PJ_CFG_ROW_CAP = 5u;    // batch column capacities
+// The capacities a batch lowering was recorded with, before the check was
+// read back (09_batch_finish's gate).
+public static const uint PJ_CFG_ROW_CAP = 5u;
 public static const uint PJ_CFG_TOKEN_CAP = 6u;
 public static const uint PJ_CFG_SIDE_CAP = 7u;
-public static const uint PJ_CFG_WORDS = 8u;
+// PJ_GATE_*: whether 09_batch_finish gates the batch on the check and the
+// capacities above.
+public static const uint PJ_CFG_GATE = 8u;
+public static const uint PJ_CFG_WORDS = 12u;
+
+public static const uint PJ_GATE_OFF = 0u;
+public static const uint PJ_GATE_ON = 1u;
+public static const uint PJ_GATE_FORCE_FAIL = 2u;   // tests: fail the gate
 
 // Status words (pj_status).
 public static const uint PJ_S_STATE = 0u;          // PJ_STATE_*
@@ -77,8 +86,15 @@ public static const uint PJ_S_BATCH_NONEMPTY = 43u;
 public static const uint PJ_S_BATCH_STRING_WORDS = 44u;
 public static const uint PJ_S_ERROR_JOB = 45u;
 public static const uint PJ_S_ERROR_LEN = 46u;
+// The gate's verdict on the current batch (09_batch_finish): PJ_VERDICT_*.
+public static const uint PJ_S_GATE = 60u;
 public static const uint PJ_STATUS_WORDS = 64u;
 public static const uint PJ_BATCH_WORDS = 3u;
+
+public static const uint PJ_VERDICT_NONE = 0u;      // the gate is off
+public static const uint PJ_VERDICT_PASSED = 1u;
+public static const uint PJ_VERDICT_CAPACITY = 2u;  // the batch exceeds a capacity
+public static const uint PJ_VERDICT_FAILED = 3u;    // the check failed (or a test forced it)
 
 public static const uint PJ_STATE_CHECKED = 1u;
 public static const uint PJ_STATE_FAILED = 2u;

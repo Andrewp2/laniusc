@@ -43,5 +43,23 @@ pub(in crate::type_checker) fn create_method_bind_groups(
             finalize_candidates: lookup(METHODS_FINALIZE_CANDIDATES, METHOD_LOOKUP_TOKEN_ARGS_OFFSET)?,
             gate: single(METHODS_GATE_LOOKUP_SWEEP)?,
         },
+        inference: MethodInferenceOperations {
+            mark_call_return_keys: indirect(
+                METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
+                &typed_buffer_from_resources(resources, "inference_hir_list_args")?,
+            )?,
+            resolve_table: indirect(
+                METHODS_RESOLVE_TABLE_INFERENCE,
+                &typed_buffer_from_resources(resources, "inference_token_list_args")?,
+            )?,
+            offer_bound_members: indirect(
+                METHODS_OFFER_BOUND_MEMBERS_INFERENCE,
+                &typed_buffer_from_resources(resources, "inference_hir_list_args")?,
+            )?,
+            finalize_candidates: indirect(
+                METHODS_FINALIZE_CANDIDATES_INFERENCE,
+                &typed_buffer_from_resources(resources, "inference_token_list_args")?,
+            )?,
+        },
     })
 }

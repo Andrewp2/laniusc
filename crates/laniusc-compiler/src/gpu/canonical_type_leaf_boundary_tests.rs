@@ -266,6 +266,7 @@ fn run<const N: usize>(key: &str, cases: &[Case<N>]) {
         buffer.write(&gpu.queue, 0, &bytes);
         resources.insert(name, buffer);
     }
+    crate::gpu::passes_core::add_cached_views(&mut resources);
     let intern = make_pass_data_from_shader_key(&gpu.device, INTERN, "main", INTERN).unwrap();
     let intern_group = group(&gpu.device, &intern, &resources, &params);
     let pass = make_pass_data_from_shader_key(&gpu.device, key, "main", key).unwrap();

@@ -34,6 +34,7 @@ use crate::{
         ProgramRetentionCapacity,
         discovery::{DiscoveryCapacity, DiscoveryOutcome, DiscoveryReport, RetainedDiscovery},
         projection::{
+            ProjectionGateFault,
             ProjectionOptions,
             ProjectionOutcome,
             ProjectionReport,
@@ -62,6 +63,8 @@ pub struct RetainedNativeReport {
     /// Trait checks run again with their solver state read back, after a
     /// deferred solve's publication was not valid.
     pub trait_check_retries: usize,
+    /// Whether the executable came from the resident GPU link.
+    pub resident_link: bool,
 }
 
 /// The state of retained builds that reuse one store, discovery,
@@ -84,6 +87,22 @@ pub struct RetainedNativeBuild {
     /// unfinished, so the check runs again with its state read back.
     #[doc(hidden)]
     pub test_unfinished_solve: bool,
+    /// Fault injection for tests on the resident link's emit.
+    #[doc(hidden)]
+    pub test_resident_emit_fault: ResidentEmitFault,
+}
+
+/// A fault the tests force on the resident link's emit.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResidentEmitFault {
+    #[default]
+    None,
+    /// The C-name step's gate fails, so the host links.
+    Gate,
+    /// The first emit's output is one word long, so the emit is recorded
+    /// again at the length the GPU read.
+    Capacity,
 }
 
 impl RetainedNativeBuild {
@@ -111,6 +130,7 @@ impl RetainedNativeBuild {
             native_link: None,
             test_caller_arg_fault: None,
             test_unfinished_solve: false,
+            test_resident_emit_fault: ResidentEmitFault::None,
         })
     }
 
@@ -128,6 +148,87 @@ impl RetainedNativeBuild {
         projection.set_schema_rows_for_test(schema_rows);
         self.projection = projection;
         Ok(())
+    }
+
+    /// Test hook: fails the gate of the instance lowering the projection
+    /// records before its check readback, so it lowers the batch again.
+    #[doc(hidden)]
+    pub fn set_projection_gate_fault_for_test(&mut self, fault: ProjectionGateFault) {
+        self.projection.set_gate_fault_for_test(fault);
+    }
+}
+
+/// Lowers the projection's instance batches. The last batch's lowering may be
+/// recorded before the projection reads its check back; the finalizer and
+/// the resident link plan are submitted behind it (`submitted`).
+struct InstanceLowerer<'c, 'g, S> {
+    compiler: &'c GpuCompiler<'g>,
+    target: SourcePackArtifactTarget,
+    object_store: typecheck::NativeObjectStore,
+    resident_key: fn(&CompiledSourcePackObject) -> Option<x86::ResidentObjectKey>,
+    /// The keys of the batches finished so far.
+    instance_keys: Vec<Option<x86::ResidentObjectKey>>,
+    /// Runs after each lowering submission and after a discard.
+    event: S,
+}
+
+enum InstanceEvent<'k> {
+    /// A batch lowering was submitted: its parked slot, whether the batch is
+    /// the last, and the keys of the batches finished before it.
+    Submitted { parked: Option<x86::ParkedSlot>, last: bool, keys: &'k [Option<x86::ResidentObjectKey>] },
+    /// The projection discarded a lowering it recorded before its check
+    /// readback.
+    Discarded,
+}
+
+impl<S> crate::type_checker::program_retention::projection::BatchLowerer for InstanceLowerer<'_, '_, S>
+where
+    S: FnMut(InstanceEvent<'_>),
+{
+    type Recorded = (super::retained_projection::RecordedProjectedBatch, bool);
+    type Object = CompiledSourcePackObject;
+
+    fn early(&self) -> bool {
+        true
+    }
+
+    fn record(
+        &mut self,
+        source_bytes: u32,
+        tokens: u32,
+        rows: u32,
+        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
+        last: bool,
+    ) -> anyhow::Result<Self::Recorded> {
+        let (keys, event) = (&self.instance_keys, &mut self.event);
+        let recorded = self.compiler.record_projected_batch(
+            self.target, source_bytes, tokens, rows, hir, semantic,
+            x86::finalize::NATIVE_RESERVED_LIBRARY, x86::finalize::NATIVE_NS_INSTANCE,
+            &mut |parked| event(InstanceEvent::Submitted { parked, last, keys }),
+        )?;
+        Ok((recorded, last))
+    }
+
+    fn finish(
+        &mut self,
+        (recorded, last): Self::Recorded,
+        hir: crate::codegen::lowering::GpuSemanticHirInputs<'_>,
+        semantic: crate::type_checker::GpuSemanticArtifactView<'_>,
+    ) -> anyhow::Result<CompiledSourcePackObject> {
+        let (keys, event) = (&self.instance_keys, &mut self.event);
+        let object = self.compiler.finish_projected_batch(
+            recorded, hir, semantic, &mut |parked| event(InstanceEvent::Submitted { parked, last, keys }),
+        )?;
+        let _span = x86::TailSpan::new("tail.instance.spill");
+        let object = object.spill_native(self.object_store).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        self.instance_keys.push((self.resident_key)(&object));
+        Ok(object)
+    }
+
+    fn discard(&mut self, recorded: Self::Recorded) {
+        drop(recorded);
+        (self.event)(InstanceEvent::Discarded);
     }
 }
 
@@ -489,11 +590,6 @@ impl GpuCompiler<'_> {
         };
         let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         let mut finalize_submitted = None;
-        let mut submit_finalize = || {
-            if finalize_submitted.is_none() {
-                finalize_submitted = Some(finalizer.submit_once(device, queue, &columns, &table, generation));
-            }
-        };
         // The resident link's plan needs only the routes and the parked
         // objects, so it runs on the GPU while the host finishes the objects
         // and finalizes. It is submitted behind the last batch's lowering,
@@ -519,9 +615,15 @@ impl GpuCompiler<'_> {
             routes: &roots.root_routes,
             route_capacity: roots.root_route_capacity,
         };
+        let emit_fault = build.test_resident_emit_fault;
         let begin_resident = |keys: &[x86::ResidentObjectKey], pending: Option<&x86::ParkedSlot>| {
             let (options, linker) = resident_link.as_ref()?;
-            match linker.begin_resident_dynamic(device, queue, keys, pending, native_functions, options, routes()) {
+            let fault = match emit_fault {
+                ResidentEmitFault::None => x86::ResidentEmitFault::None,
+                ResidentEmitFault::Gate => x86::ResidentEmitFault::Gate,
+                ResidentEmitFault::Capacity => x86::ResidentEmitFault::Capacity,
+            };
+            match linker.begin_resident_dynamic(device, queue, keys, pending, native_functions, options, routes(), fault) {
                 Ok(plan) => plan,
                 Err(error) => {
                     log::warn!("resident x86 link failed, linking on the host: {error:#}");
@@ -530,40 +632,50 @@ impl GpuCompiler<'_> {
             }
         };
         let original_keys = originals.iter().map(resident_key).collect::<Option<Vec<_>>>();
-        let mut instance_keys = Vec::new();
         let mut early_plan = None;
+        let mut lowerer = InstanceLowerer {
+            compiler: self,
+            target,
+            object_store,
+            resident_key,
+            instance_keys: Vec::new(),
+            event: |event: InstanceEvent<'_>| {
+                let InstanceEvent::Submitted { parked, last, keys: instance_keys } = event else {
+                    // The finalizer ran behind a check that did not stand, so
+                    // it may have read readiness the check had not certified.
+                    finalize_submitted = None;
+                    early_plan = None;
+                    return;
+                };
+                if finalize_submitted.is_none() {
+                    finalize_submitted = Some(finalizer.submit_once(device, queue, &columns, &table, generation));
+                }
+                if !last {
+                    return;
+                }
+                // A retried lowering parks its object again.
+                early_plan = None;
+                let keys = original_keys.iter().flatten().copied()
+                    .map(Some)
+                    .chain(instance_keys.iter().copied())
+                    .collect::<Option<Vec<_>>>();
+                if let (Some(_), Some(keys), Some(parked)) = (&original_keys, keys, parked) {
+                    early_plan = begin_resident(&keys, Some(&parked));
+                }
+            },
+        };
         let outcome = build
             .projection
-            .run_with_lowerer(
+            .run_with_batch_lowerer(
                 &store,
                 &roots.inputs,
                 &build.options,
                 Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
-                |bytes,tokens,rows,hir,semantic,last| {
-                    let mut submitted = |parked: Option<x86::ParkedSlot>| {
-                        submit_finalize();
-                        if !last {
-                            return;
-                        }
-                        // A retried lowering parks its object again.
-                        early_plan = None;
-                        let keys = original_keys.iter().flatten().copied()
-                            .map(Some)
-                            .chain(instance_keys.iter().copied())
-                            .collect::<Option<Vec<_>>>();
-                        if let (Some(_), Some(keys), Some(parked)) = (&original_keys, keys, parked) {
-                            early_plan = begin_resident(&keys, Some(&parked));
-                        }
-                    };
-                    let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
-                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE,&mut submitted)?;
-                    let _span = x86::TailSpan::new("tail.instance.spill");
-                    let object = object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))?;
-                    instance_keys.push(resident_key(&object));
-                    Ok(object)
-                },
+                &mut lowerer,
             )
-            .map_err(|e| retained_error("projection", format!("{e:#}")))?;
+            .map_err(|e| retained_error("projection", format!("{e:#}")));
+        drop(lowerer);
+        let outcome = outcome?;
         let (instances, report) = match outcome {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
             ProjectionOutcome::Rejected { error, .. } => {
@@ -614,6 +726,7 @@ impl GpuCompiler<'_> {
             discovery: roots.report.clone(),
             projection: report,
             trait_check_retries,
+            resident_link: false,
         };
         originals.extend(instances);
         if target==SourcePackArtifactTarget::Wasm {
@@ -649,19 +762,35 @@ impl GpuCompiler<'_> {
                 match linker.finish_resident_dynamic(device, queue, plan) {
                     Ok(Some(mut image)) => {
                         drop(span);
+                        build.report.resident_link = true;
                         let _write_span = x86::TailSpan::new("tail.native.write");
-                        let len = image.len();
-                        return match output {
+                        let len = image.len() as u64;
+                        // The file is created and its blocks allocated while the
+                        // GPU copies the image.
+                        let mut emitted = true;
+                        let written = match output {
                             Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                                path, SourcePackArtifactTarget::X86_64, |file| image
-                                    .for_each_chunk(|bytes| std::io::Write::write_all(file, bytes))
-                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?
-                                    .map(|()| len as u64)
-                                    .map_err(|e| retained_error("write native executable", e)))
-                                .map(ResidentLinkedOutput::File),
-                            None => image.to_vec().map(ResidentLinkedOutput::Bytes)
-                                .map_err(|e| retained_error("read native executable", format!("{e:#}"))),
+                                path, SourcePackArtifactTarget::X86_64, |file| {
+                                    super::bounded_path_codegen::preallocate(file, len);
+                                    emitted = image.finish()
+                                        .map_err(|e| retained_error("read native executable", format!("{e:#}")))?;
+                                    if !emitted {
+                                        return Err(retained_error("link", "the resident emit failed"));
+                                    }
+                                    let _span = x86::TailSpan::new("tail.native.write.file");
+                                    image.with_bytes(|bytes| std::io::Write::write_all(file, bytes))
+                                        .map(|()| len)
+                                        .map_err(|e| retained_error("write native executable", e))
+                                }).map(ResidentLinkedOutput::File),
+                            None => {
+                                emitted = image.finish()
+                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?;
+                                Ok(ResidentLinkedOutput::Bytes(image.with_bytes(<[u8]>::to_vec)))
+                            }
                         };
+                        if emitted {
+                            return written;
+                        }
                     }
                     Ok(None) => {}
                     Err(error) => log::warn!("resident x86 link failed, linking on the host: {error:#}"),

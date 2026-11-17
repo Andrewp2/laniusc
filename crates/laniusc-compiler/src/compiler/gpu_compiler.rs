@@ -6,7 +6,7 @@ use crate::codegen::{
 
 mod backends;
 pub use backends::GpuCompilerBackends;
-pub use retained_native::{RetainedNativeBuild, RetainedNativeReport};
+pub use retained_native::{ResidentEmitFault, RetainedNativeBuild, RetainedNativeReport};
 mod benchmarks;
 mod trait_solver;
 pub use trait_solver::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};

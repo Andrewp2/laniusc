@@ -8,6 +8,7 @@ import type_checker.concrete_type_equality;
 import type_checker.calls.constant_claim_identity;
 import type_checker.constant_atoms_identity;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 import hir_records;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
@@ -23,7 +24,7 @@ RWStructuredBuffer<uint> call_context_constant_valid_mask;
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     uint capacity; uint stride;
     call_context_constant_mask.GetDimensions(capacity, stride);
     if (call >= gParams.n_hir_nodes || call >= capacity) return;

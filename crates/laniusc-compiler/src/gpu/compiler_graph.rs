@@ -2458,7 +2458,10 @@ impl CompilerGraph {
                 })
                 .expect("declared binding presence checked above");
             for right_access in &desc.accesses[left_index + 1..] {
-                if !left_access.mode.writes() && !right_access.mode.writes() {
+                // Two views of one logical resource (add_pass) are one buffer.
+                if (!left_access.mode.writes() && !right_access.mode.writes())
+                    || left_access.resource == right_access.resource
+                {
                     continue;
                 }
                 let right = bindings
@@ -4255,7 +4258,7 @@ impl CompilerGraphBuilder {
                 desc.name, desc.phase, previous.phase,
             ));
         }
-        let mut resources = BTreeMap::<ResourceId, (AccessMode, u16)>::new();
+        let mut resources = BTreeMap::<ResourceId, (AccessMode, u16, &'static str)>::new();
         for access in &desc.accesses {
             if access.resource.index() >= self.resources.len() {
                 return Err(format!(
@@ -4264,8 +4267,14 @@ impl CompilerGraphBuilder {
                     access.resource.index(),
                 ));
             }
-            if let Some((mode, invocation)) = resources.get(&access.resource) {
+            if let Some((mode, invocation, binding)) = resources.get(&access.resource) {
                 if *mode == AccessMode::Read && access.mode == AccessMode::Read {
+                    continue;
+                }
+                // Two shader variables of one invocation may name one buffer
+                // through an alias, such as a coherent and a cached view of
+                // the canonical tables: one dispatch, one access.
+                if *invocation == access.invocation && *binding != access.binding {
                     continue;
                 }
                 let reason = if *invocation == access.invocation {
@@ -4281,7 +4290,7 @@ impl CompilerGraphBuilder {
                     self.resources[access.resource.index()].name,
                 ));
             }
-            resources.insert(access.resource, (access.mode, access.invocation));
+            resources.insert(access.resource, (access.mode, access.invocation, access.binding));
         }
         let id = PassId(self.passes.len());
         self.passes.push(desc);

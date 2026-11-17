@@ -7,6 +7,7 @@ import type_checker.checked_type_graph;
 import type_checker.scoped_type_equality;
 import type_checker.scoped_type_hash;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
@@ -28,7 +29,7 @@ RWStructuredBuffer<uint> call_inference_state;
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = dtid.x + dtid.y * 16776960u;
+    uint node = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     uint capacity; uint stride;
     call_inference_result_tag.GetDimensions(capacity, stride);

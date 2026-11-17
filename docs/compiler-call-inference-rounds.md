@@ -256,10 +256,161 @@ The largest changes by pass: bound inference 929 to 558 µs, the three listed ro
 
 Measured and not kept: removing `globallycoherent` from the canonical tables, the row-of map, the substitution memo and the call environments (an unsafe diagnostic) lowered rounds 1 to 10 by about 0.9 ms and raised some passes (contextual result requests by about 0.26 ms). The latency of the late rounds' active items is mostly not the L2 round trips of coherent loads.
 
+## Listed active blocks (2026-11-17, third pass)
+
+The masked passes of a round now visit only the blocks of 256 rows that hold an item of an active function. A lane still checks its own item with `inference_item_active`, so the list only removes workgroups whose lanes would all return.
+
+Once per job, before the rounds:
+
+- `03m0_inference_ranges` records each function's HIR row range and token range, and lists the functions. A row without an owning function marks its block as always active.
+- `03m2_inference_list_args` sizes the writer's dispatch: one lane per listed function and per always-active block.
+
+At the start of each round's passes, `03m1_inference_block_list` writes the block lists and the listed passes' dispatch arguments:
+
+- In round 1, outside the rounds, and in a round after a change without an owning function (the global word), it copies the full HIR and token grids and sets the list flag to 0.
+- Otherwise each lane takes one function. If the function is active in the round, the lane lists the blocks of its two ranges. A per-block mark holds the last round that listed the block, so a block is listed once.
+- The last workgroup reads the two counts, clears them for the next round, and writes the arguments. A list longer than 65,535 blocks falls back to the full grid.
+
+A listed pass dispatches from `inference_hir_list_args` or `inference_token_list_args`. Its kernel maps a lane to its row with `inference_listed_hir_row` or `inference_listed_token` (`inference_blocks.slang`). The block lists are in a separate module, imported only by the listed kernels, because Slang keeps an unused module global in a kernel's bindings.
+
+Listed passes:
+
+| Domain | Passes |
+|---|---|
+| HIR rows | `03a`, `03a4a`, `03a4b`, `03a4c`, `03d`, `03e`, `03f`, `03g`, `03h`, `03i`, `03k1`, `03k3`, `03l3`, `substitution/02`, `type/instances/03_member_results`, `03a_member_receivers`, `04a3`, `methods/06b`, `07a`, `dependencies/15`, `15a`, `15b` |
+| Tokens | `methods/07_resolve_table`, `methods/08_finalize_candidates`, `type/instances/03b_member_substitute` |
+
+The final pass dispatches the same kernels over the full grid. Its specs (`*.final`, `explicit_applications.validate.admit_constants`) keep the HIR grid arguments.
+
+A change inside a round can make a function active in that round's later passes, through its own stamp or the global word. The list was written at the round's start, so those passes do not visit it until the next round. In the next round its stamp, or the global word, makes it active, and the list includes it or the passes visit every row. The fixed point is the same, because the rounds stop only after a round with no changes. The settings build converges in the same 10 rounds.
+
+Settings at this change, idle round after convergence, untraced (`LANIUS_EXTRA_ROUNDS` diagnostic, minimum of 4 builds):
+
+| | µs per round |
+|---|---|
+| Before | 352 |
+| First 7 HIR passes listed | 334 |
+| The call specs listed | 298 |
+| All passes in the table | 229 |
+| Writer with one lane per function (kept) | 225.9 |
+| Of that, the writer | 6.9 |
+
+Two earlier writers were not kept. One workgroup for the whole list cost 66 µs traced per round. One slot per block left 192 HIR blocks listed in an idle round, which raised the floor.
+
+Traced, sum of the per-pass minimum over 3 builds:
+
+| | Before | After |
+|---|---|---|
+| Rounds 1 to 10 | 12.75 ms | 12.13 ms |
+| Type check | 27.93 ms | 27.22 ms |
+| Writer, per round | | 17 to 20 µs |
+
+The writer's traced cost includes the copy-to-compute barrier after the round number copy, about 10 µs. The first pass of the round paid it before. Per round, traced: 1,864, 1,640, 1,406, 1,213, 1,100, 1,028, 1,000, 940, 892 and 847 µs. The settings executable stayed `115a4d52a2ae77e0`.
+
+Masked passes not yet listed: claim emission `03a1` (its span check visits inactive items), `methods/06_mark_call_keys` (one grid over both domains), `16_project_struct_literals` through the imported fields group, the argument-row passes (`03a0_match_arg_params_init`, argument consumption, `03k`, parameter scatter), the gated explicit binding `03a0`, and the match and enum passes.
+
+## Unmasked passes on lists (2026-11-17, third pass)
+
+Each pass below visited every token or every HIR row in every round. Each now visits a list of the rows it can act on, built before the rounds or appended to by the one pass that adds a row.
+
+| Pass | Rows it can act on | Who adds a row | List |
+|---|---|---|---|
+| `03a0b` explicit constant admission | applying tokens with reserved binding rows. Only those can have a valid constant. | `03a0`, when a token reserves its rows (once per job) | `call_explicit_application_list`, appended by `03a0`, which raises the dispatch arguments `call_explicit_admission_args` with `InterlockedMax`. `calls/01_resolve` resets them. An overflowing list makes `03a0b` visit every token. |
+| `substitution/04` call-root expansion | call rows (their result) and argument rows (their context root) | none: both depend on the HIR and the argument rows only | `call_root_list`, built by `04a_list_call_roots` before the rounds. Each entry keeps the instance row it last pushed. A row interns to one ID for the job, and the ID's mark is set once it is pushed, so an unchanged row is skipped before interning. |
+| `match/01` field expectations | name tokens of struct-literal field rows | `type/instances/04`, `04b` and `dependencies/16` write only those tokens | `struct_literal_field_rows` (`calls/03k5`). The rounds use `01b_listed_field_expected_ids`. The early pass still writes every token, so the other tokens keep `CT_NONE`. |
+| `03k4` record fields and references | struct-literal field rows, and member and struct-literal HIR rows | none (HIR) | `struct_literal_field_rows` then `struct_literal_hir_rows`, sized by `03k6` |
+
+Two more changes removed unmasked work:
+
+- **Empty closure runs.** A field-closure run whose roots queued nothing now closes in its opening advance (`06`). It sets the state that four empty level rounds would leave (start = end = queue length, round count 0, no progress) and writes zero arguments to both level buffers. On settings, rounds 6, 7, 9 and 10 skip their four level dispatches.
+- **The calls-stage aggregate comparison.** Inside the rounds and the final pass, the only writers of `aggregate_compare_scan_input` are `03a4a` and `03a4b`, and both write 0. `03a4a` zeroes every active row in round 1 and in the final pass, so the calls-stage scan always summed zeros and its comparison dispatched no workgroup. The scan, its apply and `conditions.aggregate_args.calls` were removed. `conditions/compact_aggregate_requests` fills the input after the rounds, and the final-stage comparison reads it, as before.
+
+Idle round after convergence, untraced (minimum of 4 builds). "Unmasked" is the round with the masked passes at zero workgroups, minus the round with every pass at zero:
+
+| | Round | Unmasked passes |
+|---|---|---|
+| After the listed active blocks | 225.9 µs | 134.7 µs |
+| After the lists and the two removals | 166.7 µs | 76.2 µs |
+
+## Per-item latency: cached record reads (2026-11-17, third pass)
+
+A shader clock (`getRealtimeClock`, diagnostic only, not committed) timed each changed item's lane in the seven passes above the floor. One lane takes 20 to 50 µs. The matcher `ct_match` is the largest common part: 15 to 19 µs per lane in receiver binding, contextual results and argument matching by round 10. Its walk re-descends from the root at every step and repeats the walk for each bound slot. Every read is of `ct_head`, `ct_meta` and `ct_args`, which are `globallycoherent`. Each such load goes to L2, and most addresses in a walk are read again and again.
+
+A record never changes once published, and a record written in an earlier dispatch is safe to read through L1: the barrier between dispatches invalidates it. A record written in the same dispatch can share a cache line with one read through L1, so it must still be read coherently.
+
+- `calls/03m1` (the round's first pass) copies the record count into `ct_counts[13]` (`CT_COUNT_FROZEN`). Every record below it was written by an earlier dispatch. The job's clear zeroes it.
+- `canonical_api.slang` declares `ct_head_cached`, `ct_meta_cached`, `ct_args_cached` and `ct_counts_cached`. They are graph aliases of the same buffers, without `globallycoherent` (`CACHED_BUFFER_VIEWS` in `passes_core.rs`). `ct_kind`, `ct_arity` and `ct_arg` read a record below the bound through them and every other record coherently. The other accessors are unchanged.
+- The graph allows two bindings of one resource in one invocation when their names differ, and the host bind-group check allows the listed view pairs.
+- `ct_closed`, `ct_flags` and `ct_height` no longer compute the leaf hash that `ct_facts` builds, which they never used. That keeps every kernel under 40,000 instructions (`03l3`: 37,644 before, 39,430 after).
+
+Making all accessors and the probe compares cached gave the same time and put four kernels over the limit.
+
+Traced rounds 1 to 10 (minimum of 3 builds), sum over the rounds:
+
+| Pass | Before | After |
+|---|---|---|
+| receiver binding `03d` | 922 µs | 815 µs |
+| contextual result requests `03a4b` | 792 | 739 |
+| resolve table `methods/07` | 662 | 514 |
+| claim emission `03a1` | 594 | 547 |
+| argument matching (consume) | 579 | 525 |
+| bound inference `03l3` | 530 | 524 |
+| call environments | 457 | 446 |
+| rounds 1 to 10 | 11,942 | 11,495 |
+
+## Per-item latency: repeats, chains and the type table (2026-11-17, third pass)
+
+Three more changes shorten the lane of one changed item.
+
+- **Receiver binding's second match.** `03d` matches the receiver pattern, then matches the self parameter against the same receiver. When the second pair is the first pair, or a reference to each side of it, the second match cannot fail or bind anything new. The lane now publishes after the first match in that case (`repeats_receiver_match`).
+- **Bound inference chains.** `03l3` scanned every implementation row once per bound and every predicate row once per bound step. Its round-1 lane took about 285 µs. The collectors `03l1` and `03l2` now link each row into a chain:
+  - an implementation row into the chain for a hash of its trait and argument count;
+  - a predicate row into the chain for a hash of its owner.
+
+  The chain heads are words 4 to 515 of `bound_inference_counts`, before the owner filter. The snapshot and restore copy them with the counts, so each round starts from the local rows' chains. A local row's next word names only local rows. A dependency row's next word is written again when the row is linked in a later round. `03l3` walks one chain. It keeps the highest matching row, which is the row the scan in row order ended on. slangc 2026.2 crashes on `InterlockedExchange` into a module's buffers, so the link is a compare-exchange loop, as in `instance_closure.slang`.
+- **Type slots bound by the shape pass.** `ct_match` walked the pattern once for its shape and once more for each bound slot. The shape pass now keeps up to four type-slot bindings in registers (`TypeTable`) and checks every occurrence of those slots. A slot in the table needs no slot pass. The slot loop checks the table's binding against the prior environment, where it already read the prior binding. A fifth type slot, and every constant slot, still has its own pass. To keep `03l3` under 40,000 instructions, it now reads every slot binding at one call site: the open-slot check and the bound subjects share one loop (39,467 instructions after the change).
+
+Traced, sum over rounds 1 to 10, minimum of 3 builds:
+
+| Pass | Before the third pass | After |
+|---|---|---|
+| receiver binding `03d` | 922 µs | 467 µs |
+| contextual result requests `03a4b` | 792 | 646 |
+| resolve table `methods/07` | 662 | 424 |
+| claim emission `03a1` | 594 | 482 |
+| argument matching (consume) | 579 | 435 |
+| bound inference `03l3` | 530 | 263 |
+| call environments | 457 | 439 |
+
+Rounds 1 to 10 after each change:
+
+| Change | µs |
+|---|---|
+| Before the third pass's latency work | 11,942 |
+| Cached record reads | 11,495 |
+| Receiver binding's second match | 11,282 |
+| Bound inference chains | 10,798 |
+| Type slots bound by the shape pass (final) | 10,531 |
+
+Per round, final: 1,517, 1,414, 1,296, 1,103, 1,004, 905, 879, 864, 790 and 759 µs. The settings executable stayed `115a4d52a2ae77e0`.
+
+The shader clock (`getRealtimeClock`, not committed) gives the cost of a changed item's lane in round 10. In `03a4b` the lane takes about 30 µs, and the segments account for about half:
+
+| Segment | µs |
+|---|---|
+| Callee and return lookup | 3.4 |
+| Result expression context | 5.3 |
+| Interning the two operands | 1.4 |
+| `ct_match` | 4.3 |
+
+The remainder is a sequence of dependent loads from buffers that are not in L2 by a late round, about 0.5 µs each. A lane of `call_envs` takes about 20 µs, with no loop that grows with the program. These lanes have no scan left to replace: further gains need fewer dependent loads per item, or fewer items per round.
+
+
 ## What remains
 
 - Activity per item, as above.
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.
-- Unmasked passes over every HIR row or token in each round, with their idle cost in a late round (traced): explicit constant admission `03a0b` (17 µs, every token), call-root expansion (16), field expectations `match/01` (15 to 16, every token), record fields and references `03k4` (15). A list built before the rounds needs, for each, the set of rows it can act on and every pass inside the rounds that can add one, as for the type rows above. `03a0b` acts on tokens whose explicit application status is 1, which `03a0` sets inside the rounds.
+- Rounds 1 to 10 cost 10.53 ms traced, against a target of 9 ms. Above the floor, the cost is the lanes of changed items. Each lane is a chain of 40 to 60 dependent loads (see the clock figures above). The matcher's re-descent from the root at each step is the largest shared part left. Holding the path's nodes in registers for shallow patterns would remove most of it, at a size cost in kernels close to 40,000 instructions (`03l3`, `08a`, `03k3`).
+- A pattern with more than four type slots, or with constant slots, still takes one matcher pass per such slot.
 - The instance closure records 16 levels, 3 passes each, and 17 export retries. On settings levels 7 to 16 and the export retries after the first find nothing (4 to 6 µs traced each, about 240 µs). Recording fewer needs the depth, which the host does not read.
 - `interface.validate` (546 µs, after the rounds): `04_scopes` alone takes about 205 µs. Each member row scans its owner's member range several times (`count_scoped`, `slots_exact`, `has_method`), so a large owner costs quadratic time in one lane.

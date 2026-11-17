@@ -82,6 +82,7 @@ fn physical_gpu_ct_match_cases() {
     ] {
         resources.insert(name, storage_rw_for_array::<u32>(device, name, words));
     }
+    passes_core::add_cached_views(&mut resources);
     let group = bind(device, &pass, &resources);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(CASES_KERNEL) });
     for buffer in resources.values() {

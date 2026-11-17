@@ -769,6 +769,7 @@ dependencies = [
  "futures-intrusive",
  "hashbrown 0.15.5",
  "laniusc-shaders",
+ "libc",
  "log",
  "pollster",
  "proptest",

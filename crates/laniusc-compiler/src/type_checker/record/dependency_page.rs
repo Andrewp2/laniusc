@@ -288,10 +288,18 @@ pub(in crate::type_checker) fn record_dependency_methods(
                 visibility.scatter_method_params_lookup.record(encoder)
             };
         }
-        MethodSelectionStage::Inference => (
-            DEPENDENCY_METHODS_COLLECT_INFERENCE, DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE,
-            DEPENDENCY_METHODS_PROJECT_INFERENCE, DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE,
-        ),
+        // The rounds' invocations visit the listed active blocks.
+        MethodSelectionStage::Inference => {
+            return if collect {
+                visibility.collect_methods_inference.record(encoder)?;
+                visibility.offer_bound_members_inference.record(encoder)
+            } else {
+                visibility.project_methods_inference.record(encoder)?;
+                visibility
+                    .scatter_call_params_group
+                    .record_as(encoder, DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name)
+            };
+        }
     };
     if collect {
         visibility.collect_methods_group.record_as(encoder, collector.name)?;

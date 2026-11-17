@@ -29,24 +29,22 @@ impl MethodBindGroups {
         if matches!(stage, MethodSelectionStage::Lookup) {
             return self.lookup.record_sweep(encoder, &mut dependency_phase);
         }
-        let (direct, returns, local, bound, finalize) = match stage {
-            MethodSelectionStage::Direct => (
-                METHODS_MARK_CALL_KEYS, METHODS_MARK_CALL_RETURN_KEYS_DIRECT,
-                METHODS_RESOLVE_TABLE_DIRECT,
-                METHODS_OFFER_BOUND_MEMBERS_DIRECT, METHODS_FINALIZE_CANDIDATES_DIRECT,
-            ),
-            MethodSelectionStage::Inference | MethodSelectionStage::Lookup => (
-                METHODS_MARK_CALL_KEYS_INFERENCE, METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
-                METHODS_RESOLVE_TABLE_INFERENCE,
-                METHODS_OFFER_BOUND_MEMBERS_INFERENCE, METHODS_FINALIZE_CANDIDATES_INFERENCE,
-            ),
-        };
-        self.mark_call_keys.record_as(encoder, direct.name)?;
-        self.mark_call_return_keys.record_as(encoder, returns.name)?;
-        self.resolve_table.record_as(encoder, local.name)?;
-        self.offer_bound_members.record_as(encoder, bound.name)?;
+        if matches!(stage, MethodSelectionStage::Direct) {
+            self.mark_call_keys.record_as(encoder, METHODS_MARK_CALL_KEYS.name)?;
+            self.mark_call_return_keys.record(encoder)?;
+            self.resolve_table.record(encoder)?;
+            self.offer_bound_members.record(encoder)?;
+            dependency_phase(encoder, true)?;
+            self.finalize_candidates.record(encoder)?;
+            return dependency_phase(encoder, false);
+        }
+        // The rounds' invocations visit the listed active blocks.
+        self.mark_call_keys.record_as(encoder, METHODS_MARK_CALL_KEYS_INFERENCE.name)?;
+        self.inference.mark_call_return_keys.record(encoder)?;
+        self.inference.resolve_table.record(encoder)?;
+        self.inference.offer_bound_members.record(encoder)?;
         dependency_phase(encoder, true)?;
-        self.finalize_candidates.record_as(encoder, finalize.name)?;
+        self.inference.finalize_candidates.record(encoder)?;
         dependency_phase(encoder, false)
     }
 

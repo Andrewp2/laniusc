@@ -13,7 +13,11 @@ void main(uint3 id: SV_DispatchThreadID)
     uint end = pj_base_at(b.hi,PJ_C_ROWS);
     uint base = pj_string_offsets[start];
     uint words = pj_string_offsets[end] - base;
-    if (word >= words) return;
+    // A batch recorded before the check was read back may exceed the
+    // column; 09_batch_finish's gate then discards it.
+    uint capacity; uint stride;
+    ob_string_data.GetDimensions(capacity, stride);
+    if (word >= words || word >= capacity) return;
     uint absolute = base + word;
     uint lo = start;
     uint hi = end;

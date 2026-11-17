@@ -29,6 +29,10 @@ import atomics;
 public RWStructuredBuffer<uint> bound_inference_counts;
 public RWStructuredBuffer<uint> bound_implementation_rows;
 public RWStructuredBuffer<uint> bound_predicate_rows;
+// One word per row: the next row of its chain plus one, or 0 at the chain's
+// end (bound_link_implementation, bound_link_predicate).
+public RWStructuredBuffer<uint> bound_implementation_next;
+public RWStructuredBuffer<uint> bound_predicate_next;
 
 public static const uint BOUND_ROW_WORDS = 16u;
 public static const uint BOUND_IMPLEMENTATION_ARGUMENTS = 8u;
@@ -39,21 +43,94 @@ public static const uint BOUND_COUNT_PREDICATES = 1u;
 // nothing, since a missing implementation could make a selection ambiguous.
 public static const uint BOUND_COUNT_OVERFLOW = 2u;
 public static const uint BOUND_LOCAL_IMPLEMENTATION = 0xfffffffdu;
+// Words BOUND_IMPLEMENTATION_HEADS.. and BOUND_PREDICATE_HEADS.. of
+// bound_inference_counts: the first row plus one (0: none) of each chain.
+// An implementation row is linked into the chain of a hash of its trait and
+// argument count, a predicate row into the chain of a hash of its owner.
+// 03l3 walks one chain instead of every row. The heads come before the owner
+// filter, so the snapshot and restore of the counts (BOUND_LOCAL_WORDS) also
+// return the heads to the local rows'. A local row's next word then names
+// only local rows, and a dependency row's is written when it is linked again.
+public static const uint BOUND_HEAD_COUNT = 256u;
+public static const uint BOUND_IMPLEMENTATION_HEADS = 4u;
+public static const uint BOUND_PREDICATE_HEADS = BOUND_IMPLEMENTATION_HEADS + BOUND_HEAD_COUNT;
+public static const uint BOUND_LOCAL_WORDS = BOUND_PREDICATE_HEADS + BOUND_HEAD_COUNT;
 // Words BOUND_OWNER_FILTER.. of bound_inference_counts: one bit per hash of
 // the owner of every predicate row collected since the job's clear. 03l3
 // skips a callee whose bit is clear, which then has no predicate row. A
 // round's restore of the counts keeps the bits, so the rows of an earlier
-// dependency page only leave bits that cost a scan.
-public static const uint BOUND_OWNER_FILTER = 4u;
+// dependency page only leave bits that cost a chain walk.
+public static const uint BOUND_OWNER_FILTER = BOUND_LOCAL_WORDS;
 public static const uint BOUND_OWNER_FILTER_WORDS = 256u;
 public static const uint BOUND_COUNT_WORDS = BOUND_OWNER_FILTER + BOUND_OWNER_FILTER_WORDS;
 
+uint bound_hash(uint3 key)
+{
+    uint h = key.x * 0x9e3779b1u ^ key.y * 0x85ebca77u ^ key.z * 0xc2b2ae3du;
+    h ^= h >> 15u; h *= 0x2c1b3c6du; h ^= h >> 12u;
+    return h;
+}
+
 uint bound_owner_bit(uint3 owner)
 {
-    uint h = owner.x * 0x9e3779b1u ^ owner.y * 0x85ebca77u ^ owner.z * 0xc2b2ae3du;
-    h ^= h >> 15u; h *= 0x2c1b3c6du; h ^= h >> 12u;
-    return h % (BOUND_OWNER_FILTER_WORDS * 32u);
+    return bound_hash(owner) % (BOUND_OWNER_FILTER_WORDS * 32u);
 }
+
+uint bound_implementation_head(uint3 trait, uint arguments)
+{
+    return BOUND_IMPLEMENTATION_HEADS + bound_hash(trait ^ uint3(0u, 0u, arguments * 0x27d4eb2fu)) % BOUND_HEAD_COUNT;
+}
+
+uint bound_predicate_head(uint3 owner)
+{
+    return BOUND_PREDICATE_HEADS + bound_hash(owner) % BOUND_HEAD_COUNT;
+}
+
+// Pushes `row` onto the chain whose head is word `head` of the counts, with a
+// compare-exchange: slangc 2026.2 segfaults on InterlockedExchange into a
+// module's buffers (as type_checker/closure/instance_closure.slang). Each
+// failed exchange means another lane linked a row, so a row capacity of
+// attempts always suffices. No pass reads a chain in the dispatch that links
+// it.
+void bound_link(RWStructuredBuffer<uint> next, uint head, uint row)
+{
+    uint first = bound_inference_counts[head];
+    uint words; uint stride;
+    next.GetDimensions(words, stride);
+    for (uint attempt = 0u; attempt < words; attempt++)
+    {
+        next[row] = first;
+        uint previous = atomic_u32_compare_exchange(bound_inference_counts, head, first, row + 1u);
+        if (previous == first) return;
+        first = previous;
+    }
+}
+
+// Links a row the collectors have reserved.
+public void bound_link_implementation(uint row, uint3 trait, uint arguments)
+{
+    bound_link(bound_implementation_next, bound_implementation_head(trait, arguments), row);
+}
+
+public void bound_link_predicate(uint row, uint3 owner)
+{
+    bound_link(bound_predicate_next, bound_predicate_head(owner), row);
+}
+
+// The first row of a chain, or 0xffffffff.
+public uint bound_first_implementation(uint3 trait, uint arguments)
+{
+    return bound_inference_counts[bound_implementation_head(trait, arguments)] - 1u;
+}
+
+public uint bound_next_implementation(uint row) { return bound_implementation_next[row] - 1u; }
+
+public uint bound_first_predicate(uint3 owner)
+{
+    return bound_inference_counts[bound_predicate_head(owner)] - 1u;
+}
+
+public uint bound_next_predicate(uint row) { return bound_predicate_next[row] - 1u; }
 
 // Records that `owner` has a predicate row (the collectors, after writing it).
 public void bound_mark_owner(uint3 owner)

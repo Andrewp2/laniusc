@@ -61,6 +61,23 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         )
         .map(Some)
     };
+    // The rounds' masked passes over HIR rows visit the listed active blocks.
+    let listed_hir_args: LaniusBuffer<u32> =
+        typed_buffer_from_resources(resources, "inference_hir_list_args")?;
+    let listed_inference = |name, kernel| {
+        ComputeOperation::indirect(
+            device,
+            graph,
+            resources,
+            name,
+            &passes.kernel(kernel),
+            &listed_hir_args,
+        )
+        .map(Some)
+    };
+    let listed_spec = |spec| {
+        ComputeOperation::indirect_spec(device, graph, resources, passes, spec, &listed_hir_args)
+    };
     let lookup_work = token_capacity
         .saturating_mul(CALL_PARAM_CACHE_STRIDE as u32)
         .max(token_capacity.saturating_mul(2))
@@ -225,12 +242,15 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             passes,
             resources,
             hir_dispatch_args,
-            &token_dispatch_args,
+            &listed_hir_args,
+            &typed_buffer_from_resources(resources, "call_explicit_admission_args")?,
             struct_init_passes_required(parser_feature_flags),
         )?,
-        contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
-        clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
+        contextual_result_requests: listed_spec(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
+        contextual_results_final: indirect(CALLS_CONTEXTUAL_RESULTS_FINAL)?,
+        clear_generic_claim_type_args: listed_spec(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
+        apply_final_row_args: listed_spec(CALLS_APPLY_FINAL_ARGUMENTS)?,
         // Local generic functions infer from their own bounds, so every unit
         // records bound inference; only the dependency collector needs pages.
         bound_inference: Some(BoundInferenceOperations {
@@ -249,7 +269,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 "bound_inference_local_counts",
                 &typed_buffer_from_resources::<u32>(resources, "bound_inference_local_counts")?,
                 0,
-                16,
+                compiler_graph::BOUND_INFERENCE_LOCAL_BYTES,
             )?,
             restore: crate::gpu::operations::CopyBufferOperation::new(
                 graph,
@@ -260,7 +280,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 "bound_inference_counts",
                 &typed_buffer_from_resources::<u32>(resources, "bound_inference_counts")?,
                 0,
-                16,
+                compiler_graph::BOUND_INFERENCE_LOCAL_BYTES,
             )?,
             // One lane per implementation or predicate row of the slot.
             collect_dependency: if has_dependency_interfaces {
@@ -269,13 +289,13 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 None
             },
             collect_local: indirect(CALLS_BOUND_LOCAL_COLLECT)?,
-            infer: indirect(CALLS_BOUND_INFER)?,
+            infer: listed_spec(CALLS_BOUND_INFER)?,
         }),
-        bind_method_receiver_environment: inference(
+        bind_method_receiver_environment: listed_inference(
             compiler_graph::CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
             "type_checker/calls/03d_bind_method_receiver_environment",
         )?,
-        materialize_return_types: inference(
+        materialize_return_types: listed_inference(
             compiler_graph::CALLS_MATERIALIZE_RETURN_TYPES_PASS,
             "type_checker/calls/03e_materialize_return_types",
         )?,
@@ -285,7 +305,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             resources,
             passes,
             &substitution_passes::CALL_FIELD_CLOSURE,
-            hir_dispatch_args,
+            &typed_buffer_from_resources(resources, "call_root_args")?,
         )?,
         project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
@@ -294,7 +314,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 resources,
                 substitution_passes::SUBSTITUTION_CALL_ENVS_PASS,
                 &passes.kernel(substitution_passes::SUBSTITUTION_CALL_ENVS_KERNEL),
-                hir_dispatch_args,
+                &listed_hir_args,
             )?,
             contexts: ComputeOperation::indirect(
                 device,
@@ -318,6 +338,57 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             "type_checker/type/instances/02c_index_closed_applications",
             &token_dispatch_args,
         )?,
+        call_roots: CallRootListOperations {
+            clear_count: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_CALL_ROOTS_COUNT_CLEAR_PASS,
+                "call_root_count",
+                &typed_buffer_from_resources::<u32>(resources, "call_root_count")?,
+            )?,
+            clear_args: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_CALL_ROOTS_ARGS_CLEAR_PASS,
+                "call_root_args",
+                &typed_buffer_from_resources::<u32>(resources, "call_root_args")?,
+            )?,
+            list: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_CALL_ROOTS_LIST_PASS,
+                &passes.kernel(compiler_graph::CALLS_CALL_ROOTS_LIST_KERNEL),
+                hir_dispatch_args,
+            )?,
+        },
+        inference_blocks: InferenceBlockOperations {
+            clear: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_INFERENCE_BLOCKS_CLEAR_PASS,
+                "inference_block_tables",
+                &typed_buffer_from_resources::<u32>(resources, "inference_block_tables")?,
+            )?,
+            ranges: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_INFERENCE_RANGES_PASS,
+                &passes.kernel(compiler_graph::CALLS_INFERENCE_RANGES_KERNEL),
+                &typed_buffer_from_resources(resources, "token_hir_active_dispatch_args")?,
+            )?,
+            args: direct_name(
+                compiler_graph::CALLS_INFERENCE_LIST_ARGS_PASS,
+                &passes.kernel(compiler_graph::CALLS_INFERENCE_LIST_ARGS_KERNEL),
+                1,
+            )?,
+            list: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_INFERENCE_BLOCK_LIST_PASS,
+                &passes.kernel(compiler_graph::CALLS_INFERENCE_BLOCK_LIST_KERNEL),
+                &typed_buffer_from_resources(resources, "inference_list_writer_args")?,
+            )?,
+        },
         type_row_list: if generic_param_record_passes_required(parser_feature_flags)
             || has_dependency_interfaces
         {
@@ -370,33 +441,56 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             compiler_graph::LISTED_IMPORTED_FIELDS_KERNEL,
             &type_row_args,
         )?,
-        project_expression_types: inference(
+        project_expression_types: listed_inference(
             compiler_graph::CALLS_PROJECT_EXPRESSION_TYPES_PASS,
             "type_checker/calls/03g_project_expression_types",
         )?,
         record_literal_inference: if struct_init_passes_required(parser_feature_flags) {
-            let operation = |name, kernel| {
+            let listed = |name, kernel| {
                 ComputeOperation::indirect(
                     device,
                     graph,
                     resources,
                     name,
                     &passes.kernel(kernel),
-                    hir_dispatch_args,
+                    &listed_hir_args,
                 )
             };
             Some(RecordLiteralInferenceOperations {
-                contexts: operation(
+                contexts: listed(
                     compiler_graph::CALLS_RECORD_CONTEXTS_PASS,
                     "type_checker/calls/03k3_project_record_contexts",
                 )?,
-                nested_contexts: operation(
+                nested_contexts: listed(
                     compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
                     "type_checker/type/instances/04a3_nested_struct_contexts",
                 )?,
-                fields_and_references: operation(
+                fields_and_references: ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
                     compiler_graph::CALLS_RECORD_FIELDS_AND_REFS_PASS,
-                    "type_checker/calls/03k4_record_fields_and_refs",
+                    &passes.kernel("type_checker/calls/03k4_record_fields_and_refs"),
+                    &typed_buffer_from_resources(resources, "struct_literal_record_args")?,
+                )?,
+                rows_clear: crate::gpu::operations::ClearBufferOperation::entire(
+                    graph,
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS,
+                    "struct_literal_row_counts",
+                    &typed_buffer_from_resources::<u32>(resources, "struct_literal_row_counts")?,
+                )?,
+                rows_list: ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROWS_PASS,
+                    &passes.kernel(compiler_graph::CALLS_STRUCT_LITERAL_ROWS_KERNEL),
+                    &typed_buffer_from_resources(resources, "token_hir_active_dispatch_args")?,
+                )?,
+                rows_args: direct_name(
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROW_ARGS_PASS,
+                    &passes.kernel(compiler_graph::CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL),
+                    1,
                 )?,
             })
         } else {
@@ -416,7 +510,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             passes,
             hir_dispatch_args,
         )?,
-        project_literal_contexts: inference(
+        project_literal_contexts: listed_inference(
             compiler_graph::CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
             "type_checker/calls/03k1_project_literal_contexts",
         )?,
@@ -431,7 +525,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             None
         },
         project_array_literal_elements: if array_passes_required(parser_feature_flags) {
-            inference(
+            listed_inference(
                 compiler_graph::CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
                 "type_checker/calls/03h_project_array_literal_elements",
             )?
@@ -439,7 +533,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             None
         },
         materialize_array_literals: if array_passes_required(parser_feature_flags) {
-            inference(
+            listed_inference(
                 compiler_graph::CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
                 "type_checker/calls/03i_materialize_array_literals",
             )?
@@ -454,7 +548,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         } else {
             None
         },
-        infer_return_bindings: inference(
+        infer_return_bindings: listed_inference(
             compiler_graph::CALLS_INFER_RETURN_BINDINGS_PASS,
             "type_checker/calls/03f_infer_return_bindings",
         )?,

@@ -151,6 +151,15 @@ fn physical_gpu_checked_type_identity_by_canonical_id() {
     .into_iter()
     .map(|(name, words)| (name, storage_rw_for_array::<u32>(device, name, words)))
     .collect();
+    let mut views = std::collections::BTreeMap::new();
+    for (name, buffer) in &buffers {
+        views.insert(*name, buffer.clone());
+    }
+    passes_core::add_cached_views(&mut views);
+    let buffers: Vec<_> = views
+        .into_iter()
+        .filter(|(name, _)| !name.ends_with("_cached") || passes_core::bind_group::declares_binding(&pass, 0, name))
+        .collect();
     let entries: Vec<_> = buffers.iter().map(|(name, buffer)| (*name, buffer.as_entire_binding())).collect();
     passes_core::bind_group::validate_exact_binding_names(&pass, 0, &entries).unwrap();
     let group = passes_core::bind_group::create_bind_group_from_bindings(

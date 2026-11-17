@@ -146,12 +146,21 @@ const INFO_WORDS: u64 = 6;
 const COLUMNS: u64 = 10;
 const C_ROWS: usize = 0;
 const C_TOKENS: usize = 1;
+const C_SIDE: usize = 2;
+const SIDE_TABLES: usize = 7;
 const C_REQUESTS: usize = 9;
-const CFG_WORDS: usize = 8;
+const CFG_WORDS: usize = 12;
 const CFG_RUN: usize = 0;
 const CFG_BATCH_ROWS: usize = 1;
 const CFG_BATCH: usize = 2;
 const CFG_IDENTITY_MASK: usize = 4;
+const CFG_ROW_CAP: usize = 5;
+const CFG_TOKEN_CAP: usize = 6;
+const CFG_SIDE_CAP: usize = 7;
+const CFG_GATE: usize = 8;
+const GATE_ON: u32 = 1;
+const GATE_FORCE_FAIL: u32 = 2;
+const VERDICT_PASSED: u32 = 1;
 const S_STATE: usize = 0;
 const S_ERRORS: usize = 1;
 const S_ERROR_RANK: usize = 2;
@@ -169,6 +178,7 @@ const S_BATCH_STRING_WORDS: usize = 44;
 const S_BATCHES: usize = 9;
 const S_LAYOUT_CHANGED: usize = 10;
 const S_PATTERN_CHANGED: usize = 11;
+const S_GATE: usize = 60;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
 const STATE_CHECKED: u32 = 1;
@@ -398,6 +408,10 @@ pub struct ProjectionReport {
     pub substitution_us: u64,
     pub check_us: u64,
     pub lowering_us: u64,
+    /// Lowerings recorded before the check readback, and those of them
+    /// discarded because the check did not pass them.
+    pub early_lowerings: u32,
+    pub early_discarded: u32,
 }
 
 /// The outcome of [`RetainedProjection::run`].
@@ -868,6 +882,101 @@ pub struct RetainedProjection {
     cert: wgpu::Buffer,
     /// Mappable staging for readbacks, grown to the largest one.
     staging: std::sync::Mutex<Option<wgpu::Buffer>>,
+    gate_fault: ProjectionGateFault,
+}
+
+/// Test hook: how the gate of a batch recorded before the check readback
+/// (`09_batch_finish.slang`) fails.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProjectionGateFault {
+    #[default]
+    None,
+    /// The gate fails as it does after a failed check.
+    Fail,
+    /// The batch exceeds the token capacity it was recorded with.
+    Capacity,
+}
+
+/// Lowers the projected batches of [`RetainedProjection::run_with_batch_lowerer`].
+pub(crate) trait BatchLowerer {
+    /// A batch lowering that is submitted and not yet read back.
+    type Recorded;
+    type Object;
+    /// Whether the last batch may be recorded before the check is read back.
+    /// A discarded recording is dropped, so it must leave nothing that a
+    /// second recording of the batch does not replace.
+    fn early(&self) -> bool;
+    /// Records and submits the lowering of one batch over the columns `hir`
+    /// and `semantic`. `last` tells whether it is the last batch.
+    fn record(
+        &mut self,
+        source_bytes: u32,
+        tokens: u32,
+        rows: u32,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
+        last: bool,
+    ) -> Result<Self::Recorded>;
+    /// Drops a lowering recorded before the check readback that the check
+    /// did not pass.
+    fn discard(&mut self, recorded: Self::Recorded) {
+        drop(recorded);
+    }
+    /// Reads a recorded lowering back. The columns are the ones it was
+    /// recorded over, for a retry.
+    fn finish(
+        &mut self,
+        recorded: Self::Recorded,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
+    ) -> Result<Self::Object>;
+}
+
+/// A lowering closure that records and reads back in one call.
+struct LowerNow<F>(F);
+
+impl<T, F> BatchLowerer for LowerNow<F>
+where
+    F: for<'a> FnMut(u32, u32, u32, GpuSemanticHirInputs<'a>, GpuSemanticArtifactView<'a>, bool) -> Result<T>,
+{
+    type Recorded = T;
+    type Object = T;
+
+    fn early(&self) -> bool {
+        false
+    }
+
+    fn record(
+        &mut self,
+        source_bytes: u32,
+        tokens: u32,
+        rows: u32,
+        hir: GpuSemanticHirInputs<'_>,
+        semantic: GpuSemanticArtifactView<'_>,
+        last: bool,
+    ) -> Result<T> {
+        (self.0)(source_bytes, tokens, rows, hir, semantic, last)
+    }
+
+    fn finish(&mut self, recorded: T, _: GpuSemanticHirInputs<'_>, _: GpuSemanticArtifactView<'_>) -> Result<T> {
+        Ok(recorded)
+    }
+}
+
+/// A readback `RetainedProjection::submit_read_begin` submitted.
+struct PendingRead {
+    staging: wgpu::Buffer,
+    sizes: Vec<u64>,
+    bytes: u64,
+    map: passes_core::PendingReadbackMap,
+}
+
+/// The source bytes a batch lowering is sized for: the lowering sizes its
+/// string pool from them, so they cover the batch's decoded strings.
+fn lowering_source_bytes(token_capacity: u32, shape: ColumnShape) -> u32 {
+    let string_bytes = u32::try_from(shape.string_words.saturating_mul(4)).unwrap_or(u32::MAX);
+    token_capacity.saturating_mul(16).max(string_bytes).max(4096)
 }
 
 fn grown(current: u32, need: u32) -> u32 {
@@ -916,6 +1025,7 @@ impl RetainedProjection {
             string_scan_configs: Vec::new(),
             cert: storage(&device, "nc_cert", 16, false),
             staging: std::sync::Mutex::new(None),
+            gate_fault: ProjectionGateFault::None,
             device,
             queue: gpu.queue.clone(),
             passes,
@@ -945,6 +1055,13 @@ impl RetainedProjection {
     #[doc(hidden)]
     pub fn set_schema_rows_for_test(&mut self, rows: u32) {
         self.schema.set_rows(rows);
+    }
+
+    /// Test hook: fails the gate of every batch recorded before the check
+    /// readback, so the projection discards it and lowers the batch again.
+    #[doc(hidden)]
+    pub fn set_gate_fault_for_test(&mut self, fault: ProjectionGateFault) {
+        self.gate_fault = fault;
     }
 
     fn ensure_ranks(&mut self, capacity: u32, report: &mut ProjectionReport) {
@@ -1066,10 +1183,21 @@ impl RetainedProjection {
     /// most its size) appended, and maps them: one readback for all parts.
     fn submit_read(
         &self,
-        mut encoder: wgpu::CommandEncoder,
+        encoder: wgpu::CommandEncoder,
         parts: &[(&wgpu::Buffer, usize)],
         report: &mut ProjectionReport,
     ) -> Result<Vec<Vec<u32>>> {
+        let pending = self.submit_read_begin(encoder, parts, report);
+        self.finish_read(pending)
+    }
+
+    /// `submit_read` up to the submission; `finish_read` waits for the map.
+    fn submit_read_begin(
+        &self,
+        mut encoder: wgpu::CommandEncoder,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut ProjectionReport,
+    ) -> PendingRead {
         let sizes: Vec<u64> = parts
             .iter()
             .map(|(buffer, words)| (*words as u64 * 4).min(buffer.size()))
@@ -1086,18 +1214,24 @@ impl RetainedProjection {
                 mapped_at_creation: false,
             }));
         }
-        let readback = staging.as_ref().unwrap();
+        let staging = staging.as_ref().unwrap().clone();
         let mut at = 0;
         for ((buffer, _), size) in parts.iter().zip(&sizes) {
             if *size != 0 {
-                encoder.copy_buffer_counted(buffer, 0, readback, at, *size);
+                encoder.copy_buffer_counted(buffer, 0, &staging, at, *size);
             }
             at += size;
         }
         self.queue.submit(Some(encoder.finish()));
-        let slice = readback.slice(..bytes);
-        map_readback_blocking(&self.device, &slice, "retained_projection.readback")?;
-        let mut out = Vec::with_capacity(parts.len());
+        let map = passes_core::begin_readback_map(&staging.slice(..bytes), "retained_projection.readback");
+        PendingRead { staging, sizes, bytes, map }
+    }
+
+    fn finish_read(&self, pending: PendingRead) -> Result<Vec<Vec<u32>>> {
+        let PendingRead { staging, sizes, bytes, map } = pending;
+        passes_core::finish_readback_map_blocking(&self.device, map)?;
+        let slice = staging.slice(..bytes);
+        let mut out = Vec::with_capacity(sizes.len());
         {
             let mapped = slice.get_mapped_range();
             let mut at = 0usize;
@@ -1112,7 +1246,7 @@ impl RetainedProjection {
                 at = end;
             }
         }
-        readback.unmap();
+        staging.unmap();
         Ok(out)
     }
 
@@ -1212,6 +1346,21 @@ impl RetainedProjection {
             .write_buffer_counted(&self.config, 0, &words_bytes(&words));
     }
 
+    /// `write_config` for batch 0 recorded before the check readback: the
+    /// gate (`GATE_*`) and the row, token and side capacities it checks.
+    fn write_gated_config(&self, run: u32, options: &ProjectionOptions, caps: [u32; 3], gate: u32) {
+        let mut words = [0u32; CFG_WORDS];
+        words[CFG_RUN] = run;
+        words[CFG_BATCH_ROWS] = options.batch_rows.max(1);
+        words[CFG_IDENTITY_MASK] = options.identity_mask;
+        words[CFG_ROW_CAP] = caps[0];
+        words[CFG_TOKEN_CAP] = caps[1];
+        words[CFG_SIDE_CAP] = caps[2];
+        words[CFG_GATE] = gate;
+        self.queue
+            .write_buffer_counted(&self.config, 0, &words_bytes(&words));
+    }
+
     /// Projects and lowers the producer's instances against `store`.
     pub fn run(
         &mut self,
@@ -1258,8 +1407,18 @@ impl RetainedProjection {
     pub(crate) fn run_with_lowerer<T>(
         &mut self, store:&ProgramRetention, inputs:&ProjectionInputs,
         options:&ProjectionOptions, roots:Option<RootCertification<'_>>,
-        mut lower:impl for<'a> FnMut(u32,u32,u32,GpuSemanticHirInputs<'a>,GpuSemanticArtifactView<'a>,bool)->Result<T>,
+        lower:impl for<'a> FnMut(u32,u32,u32,GpuSemanticHirInputs<'a>,GpuSemanticArtifactView<'a>,bool)->Result<T>,
     ) -> Result<ProjectionOutcome<T>> {
+        self.run_with_batch_lowerer(store, inputs, options, roots, &mut LowerNow(lower))
+    }
+
+    /// [`Self::run_with_lowerer`] with a lowerer that may record the last
+    /// batch before the check is read back ([`BatchLowerer::early`]).
+    pub(crate) fn run_with_batch_lowerer<L: BatchLowerer>(
+        &mut self, store:&ProgramRetention, inputs:&ProjectionInputs,
+        options:&ProjectionOptions, roots:Option<RootCertification<'_>>,
+        lowerer:&mut L,
+    ) -> Result<ProjectionOutcome<L::Object>> {
         let mut report = ProjectionReport::default();
         let started = std::time::Instant::now();
 
@@ -1409,7 +1568,29 @@ impl RetainedProjection {
         // it did, the fixed point is not proven: the check reruns from the
         // plan's status with twice the rounds.
         let mut chain = true;
+        // With one batch, the batch and its lowering are recorded behind the
+        // check, before its readback, so the GPU lowers while the host waits
+        // for the check. They are sized from the plan's totals, which bound
+        // every batch, and from the string column's capacity;
+        // 09_batch_finish gates them on the check and those sizes.
+        let early = lowerer.early()
+            && batches == 1
+            && std::env::var_os("LANIUS_PROJECTION_TRACE").is_none();
+        let early_rows = report.rows.saturating_add(1);
+        let early_tokens = report.tokens.saturating_add(1);
+        let early_side = (0..SIDE_TABLES)
+            .map(|k| totals[S_TOTALS + C_SIDE + k])
+            .max()
+            .unwrap_or(0)
+            .max(1);
+        let mut recorded_early = None;
         let (table, cert, status) = loop {
+            // A check that runs again discards the lowering recorded behind
+            // the previous one.
+            if let Some(recorded) = recorded_early.take() {
+                report.early_discarded += 1;
+                lowerer.discard(recorded);
+            }
             let guard = store.store.lock().unwrap();
             // A substitution on the full path may have grown the term arena.
             let terms = guard.capacity.arenas[A_TERMS];
@@ -1418,17 +1599,35 @@ impl RetainedProjection {
             self.ensure_batches(batches, &mut report);
             // The type tables are lowering inputs; the columns hold them.
             let current = self.columns.as_ref().map(|c| c.shape);
+            let (rows, side) = if early {
+                (u64::from(early_rows), u64::from(early_side.max(early_rows)))
+            } else {
+                (0, 0)
+            };
             self.ensure_columns(
                 ColumnShape {
-                    rows: current.map_or(64, |c| c.rows),
-                    side: current.map_or(64, |c| c.side),
+                    rows: current.map_or(64, |c| c.rows).max(rows),
+                    side: current.map_or(64, |c| c.side).max(side),
                     types: self.type_capacity as u64,
                     type_args: guard.capacity.arenas[A_TERM_ARGS] as u64,
                     string_words: current.map_or(1, |c| c.string_words),
                 },
                 &mut report,
             );
-            self.write_config(run, options, 0);
+            if early {
+                let mode = match self.gate_fault {
+                    ProjectionGateFault::Fail => GATE_FORCE_FAIL,
+                    _ => GATE_ON,
+                };
+                let tokens = match self.gate_fault {
+                    ProjectionGateFault::Capacity => 1,
+                    _ => early_tokens,
+                };
+                let shape = self.columns.as_ref().unwrap().shape;
+                self.write_gated_config(run, options, [shape.rows as u32, tokens, shape.side as u32], mode);
+            } else {
+                self.write_config(run, options, 0);
+            }
             let (results, counts) = self
                 .substitution
                 .chain_buffers()
@@ -1508,6 +1707,13 @@ impl RetainedProjection {
             if let Some(roots) = &roots {
                 self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
             }
+            if early {
+                let string_words = self.columns.as_ref().unwrap().shape.string_words as u32;
+                r.dispatch(K_ROWS, &guard, inputs, &extra, early_rows)?;
+                r.dispatch(K_SIDE, &guard, inputs, &extra, early_side)?;
+                r.dispatch(K_STRING_BYTES, &guard, inputs, &extra, string_words)?;
+                r.dispatch_groups(K_BATCH_FINISH, &guard, inputs, &extra, 1)?;
+            }
             let schema_status = self.schema.status_buffer().clone();
             let mut parts = vec![
                 (&self.status, STATUS_WORDS),
@@ -1517,7 +1723,24 @@ impl RetainedProjection {
             if chain {
                 parts.extend([(&counts, sub_words::COUNT), (&schema_status, schema::STATUS_WORDS)]);
             }
-            let (dispatches, mut read) = r.finish_read(&parts, &mut report)?;
+            let (dispatches, pending) = r.finish_read_begin(&parts, &mut report);
+            let recorded = early.then(|| {
+                let columns = self.columns.as_ref().unwrap();
+                let shape = columns.shape;
+                report.early_lowerings += 1;
+                lowerer.record(
+                    lowering_source_bytes(early_tokens, shape),
+                    early_tokens,
+                    shape.rows as u32,
+                    columns.hir(),
+                    columns.semantic(),
+                    true,
+                )
+            });
+            // The map finishes even when the recording failed, so the
+            // staging buffer is free for the next readback.
+            let mut read = self.finish_read(pending)?;
+            recorded_early = recorded.transpose()?;
             drop(guard);
             report.dispatches += dispatches;
             if chain {
@@ -1641,6 +1864,28 @@ impl RetainedProjection {
             bail!("retained projection batch table disagrees with its status");
         }
 
+        // The lowering recorded before the readback stands when the gate
+        // passed the one batch at the capacities it was recorded with.
+        if let Some(recorded) = recorded_early.take() {
+            let exact_tokens = status[S_BATCH_TOKENS].max(1);
+            if status[S_GATE] == VERDICT_PASSED
+                && status[S_BATCHES] == 1
+                && report.batches.len() == 1
+                && exact_tokens <= early_tokens
+            {
+                let started = std::time::Instant::now();
+                trace(&format!("lowering batch 0 early: {:?}", report.batches[0]));
+                let columns = self.columns.as_ref().unwrap();
+                let object = lowerer.finish(recorded, columns.hir(), columns.semantic())?;
+                drop(guard);
+                report.lowering_us = started.elapsed().as_micros() as u64;
+                return Ok(ProjectionOutcome::Objects { objects: vec![object], report });
+            }
+            trace(&format!("early lowering discarded: gate {}", status[S_GATE]));
+            report.early_discarded += 1;
+            lowerer.discard(recorded);
+        }
+
         // Batch columns and lowering.
         let started = std::time::Instant::now();
         let shape = ColumnShape {
@@ -1713,13 +1958,11 @@ impl RetainedProjection {
                     }
                 }
             }
-            // Lowering sizes its string pool from the source bytes, so they
-            // cover the batch's decoded strings.
-            let string_bytes = u32::try_from(shape.string_words.saturating_mul(4)).unwrap_or(u32::MAX);
-            objects.push(lower(
-                token_capacity.saturating_mul(16).max(string_bytes).max(4096), token_capacity,
+            let recorded = lowerer.record(
+                lowering_source_bytes(token_capacity, shape), token_capacity,
                 shape.rows as u32, columns.hir(), columns.semantic(), last == Some(b),
-            )?);
+            )?;
+            objects.push(lowerer.finish(recorded, columns.hir(), columns.semantic())?);
         }
         drop(guard);
         report.lowering_us = started.elapsed().as_micros() as u64;
@@ -1787,6 +2030,17 @@ impl Recorder<'_> {
         self.encoder();
         self.projection.queue.submit(Some(self.encoder.finish()));
         self.dispatches
+    }
+
+    /// `finish_read` up to the submission.
+    fn finish_read_begin(
+        mut self,
+        parts: &[(&wgpu::Buffer, usize)],
+        report: &mut ProjectionReport,
+    ) -> (u32, PendingRead) {
+        self.encoder();
+        let read = self.projection.submit_read_begin(self.encoder, parts, report);
+        (self.dispatches, read)
     }
 
     /// Submits the recording with a readback of `parts` (see

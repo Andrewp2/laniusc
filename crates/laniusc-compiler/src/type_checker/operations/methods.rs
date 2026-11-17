@@ -157,12 +157,20 @@ pub(in crate::type_checker) const METHODS_RESOLVE: ReflectedComputeSpec =
 // These invocations participate in the same convergence region as those facts.
 pub(in crate::type_checker) const METHODS_MARK_CALL_KEYS_INFERENCE: ReflectedComputeSpec =
     METHODS_MARK_CALL_KEYS.with_name("type_check.methods.mark_call_keys.inference");
+// Except for the call keys, the rounds' invocations visit the listed active
+// blocks (calls/inference_blocks.slang).
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS_INFERENCE: ReflectedComputeSpec =
-    MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.inference");
+    MARK_CALL_RETURN_KEYS
+        .with_name("type_check.methods.mark_call_return_keys.inference")
+        .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_INFERENCE: ReflectedComputeSpec =
-    RESOLVE_TABLE.with_name("type_check.methods.resolve_table.inference");
+    RESOLVE_TABLE
+        .with_name("type_check.methods.resolve_table.inference")
+        .with_indirect_dispatch("inference_token_list_args");
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_INFERENCE: ReflectedComputeSpec =
-    OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.inference");
+    OFFER_BOUND_MEMBERS
+        .with_name("type_check.methods.offer_bound_members.inference")
+        .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const METHODS_RESOLVE_INFERENCE: ReflectedComputeSpec =
     METHODS_RESOLVE.with_name("type_check.methods.resolve.inference");
 
@@ -177,4 +185,6 @@ pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_DIRECT: ReflectedC
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_DIRECT: ReflectedComputeSpec =
     FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.direct");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_INFERENCE: ReflectedComputeSpec =
-    FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.inference");
+    FINALIZE_CANDIDATES
+        .with_name("type_check.methods.finalize_candidates.inference")
+        .with_indirect_dispatch("inference_token_list_args");
