@@ -36,6 +36,20 @@ fn in_place_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
     }
 }
 
+fn total_dispatch_passes(kernels: &KernelRegistry) -> PrefixScanPasses<'_> {
+    PrefixScanPasses {
+        local: kernels.kernel("scan/counted/00_local"),
+        apply: kernels.kernel("scan/counted/02_apply_dispatch"),
+    }
+}
+
+fn pair_total_dispatch_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
+    Some(PrefixScanPasses {
+        local: kernels.optional("scan/counted_pair/00_local")?,
+        apply: kernels.optional("scan/counted_pair/03_apply_dispatch")?,
+    })
+}
+
 fn pair_passes(kernels: &KernelRegistry) -> Option<PrefixScanPasses<'_>> {
     Some(PrefixScanPasses {
         local: kernels.optional("scan/counted_pair/00_local")?,
@@ -63,6 +77,15 @@ where
         Some((queue, cache)) => cache.uniform(device, queue, label, value),
         None => uniform_from_val(device, label, value),
     }
+}
+
+/// Indirect dispatch arguments an apply writes for its scan's total
+/// (scan/total_dispatch.slang): the `ScanTotalDispatchParams` uniform and
+/// the argument buffer.
+#[derive(Clone, Copy)]
+pub(crate) struct ScanTotalDispatch<'a> {
+    pub(crate) params: TrackedBufferView<'a>,
+    pub(crate) dispatch_args: TrackedBufferView<'a>,
 }
 
 pub(crate) struct PrefixScanBuffers<'a> {
@@ -99,6 +122,58 @@ impl PrefixScanOperation {
             spec.passes,
             resources,
             spec.resources,
+        )
+    }
+
+    /// The scan of `spec` with an apply that also writes indirect dispatch
+    /// arguments for the total into the resource `dispatch_args`.
+    pub(crate) fn from_spec_with_total_dispatch(
+        device: &wgpu::Device,
+        kernels: &KernelRegistry,
+        resources: &ResourceMap<'_>,
+        spec: PrefixScanSpec,
+        params: TrackedBufferView<'_>,
+        dispatch_args: &str,
+    ) -> Result<Self> {
+        resources.validate_graph_passes_if_present(spec.passes.names())?;
+        Self::from_resource_names_with_total_dispatch(
+            device,
+            spec.passes.local,
+            spec.passes,
+            kernels,
+            resources,
+            spec.resources,
+            params,
+            dispatch_args,
+        )
+    }
+
+    /// [`Self::from_resource_names`] with an apply that also writes indirect
+    /// dispatch arguments for the total into the resource `dispatch_args`.
+    pub(crate) fn from_resource_names_with_total_dispatch(
+        device: &wgpu::Device,
+        label: &'static str,
+        graph_passes: PrefixScanGraphPasses,
+        kernels: &KernelRegistry,
+        resources: &ResourceMap<'_>,
+        names: PrefixScanResources<&str>,
+        params: TrackedBufferView<'_>,
+        dispatch_args: &str,
+    ) -> Result<Self> {
+        let (scan_params, buffers) = scan_buffers_from_names(resources, names)?;
+        let total_dispatch = ScanTotalDispatch {
+            params,
+            dispatch_args: resources.tracked_view(dispatch_args)?,
+        };
+        Self::new_with_total_dispatch(
+            device,
+            None,
+            label,
+            scan_params,
+            total_dispatch_passes(kernels),
+            graph_passes,
+            buffers,
+            Some(total_dispatch),
         )
     }
 
@@ -142,24 +217,6 @@ impl PrefixScanOperation {
         )
     }
 
-    pub(crate) fn from_resource_names(
-        device: &wgpu::Device,
-        label: &'static str,
-        graph_passes: PrefixScanGraphPasses,
-        kernels: &KernelRegistry,
-        resources: &ResourceMap<'_>,
-        names: PrefixScanResources<&str>,
-    ) -> Result<Self> {
-        Self::from_resource_names_with_passes(
-            device,
-            label,
-            kernels,
-            graph_passes,
-            resources,
-            names,
-        )
-    }
-
     fn from_resource_names_with_passes(
         device: &wgpu::Device,
         label: &'static str,
@@ -186,6 +243,28 @@ impl PrefixScanOperation {
         graph_passes: PrefixScanGraphPasses,
         buffers: PrefixScanBuffers<'_>,
     ) -> Result<Self> {
+        Self::new_with_total_dispatch(
+            device,
+            reusable,
+            label,
+            params,
+            passes,
+            graph_passes,
+            buffers,
+            None,
+        )
+    }
+
+    fn new_with_total_dispatch(
+        device: &wgpu::Device,
+        reusable: Option<(&wgpu::Queue, &CapacityBufferCache)>,
+        label: &'static str,
+        params: PrefixScanParams,
+        passes: PrefixScanPasses<'_>,
+        graph_passes: PrefixScanGraphPasses,
+        buffers: PrefixScanBuffers<'_>,
+        total_dispatch: Option<ScanTotalDispatch<'_>>,
+    ) -> Result<Self> {
         let params_buffer = scan_uniform(device, reusable, &format!("{label}.params"), &params);
         let bind =
             |suffix: &str, pass: &PassData, bindings: &[(&str, wgpu::BindingResource<'_>)]| {
@@ -198,6 +277,11 @@ impl PrefixScanOperation {
                 )
             };
         let in_place = same_view(buffers.input, buffers.output_prefix);
+        if in_place && total_dispatch.is_some() {
+            return Err(anyhow!(
+                "prefix scan {label} writes total dispatch arguments only out of place"
+            ));
+        }
         let local = if in_place {
             bind(
                 "local",
@@ -238,24 +322,28 @@ impl PrefixScanOperation {
                 ],
             )?
         } else {
-            bind(
-                "apply",
-                passes.apply,
-                &[
-                    ("gScan", params_buffer.as_entire_binding()),
-                    ("scan_count", buffers.count.as_entire_binding()),
-                    (
-                        "scan_local_prefix",
-                        buffers.local_prefix.as_entire_binding(),
-                    ),
-                    ("scan_block_sum", buffers.block_sum.as_entire_binding()),
-                    (
-                        "scan_output_prefix",
-                        buffers.output_prefix.as_entire_binding(),
-                    ),
-                    ("scan_total", buffers.total.as_entire_binding()),
-                ],
-            )?
+            let mut bindings = vec![
+                ("gScan", params_buffer.as_entire_binding()),
+                ("scan_count", buffers.count.as_entire_binding()),
+                (
+                    "scan_local_prefix",
+                    buffers.local_prefix.as_entire_binding(),
+                ),
+                ("scan_block_sum", buffers.block_sum.as_entire_binding()),
+                (
+                    "scan_output_prefix",
+                    buffers.output_prefix.as_entire_binding(),
+                ),
+                ("scan_total", buffers.total.as_entire_binding()),
+            ];
+            if let Some(total_dispatch) = total_dispatch {
+                bindings.push(("gTotalDispatch", total_dispatch.params.as_entire_binding()));
+                bindings.push((
+                    "scan_total_dispatch_args",
+                    total_dispatch.dispatch_args.as_entire_binding(),
+                ));
+            }
+            bind("apply", passes.apply, &bindings)?
         };
         Ok(Self {
             graph_passes,
@@ -398,6 +486,7 @@ impl FusedPrefixScanPair {
         params: PrefixScanParams,
         left: PrefixScanBuffers<'_>,
         right: PrefixScanBuffers<'_>,
+        total_dispatch: Option<(ScanTotalDispatch<'_>, ScanTotalDispatch<'_>)>,
     ) -> Result<Self> {
         let label = format!("{}+{}", labels.0, labels.1);
         let params_buffer = uniform_from_val(device, &format!("{label}.params"), &params);
@@ -463,26 +552,34 @@ impl FusedPrefixScanPair {
                 ],
             )?
         } else {
-            bind(
-                "apply",
-                passes.apply,
-                &[
-                    ("gScan", params_buffer.as_entire_binding()),
-                    ("scan_count", left.count.as_entire_binding()),
-                    ("scan_block_sum_left", left.block_sum.as_entire_binding()),
-                    ("scan_block_sum_right", right.block_sum.as_entire_binding()),
-                    (
-                        "scan_output_prefix_left",
-                        left.output_prefix.as_entire_binding(),
-                    ),
-                    (
-                        "scan_output_prefix_right",
-                        right.output_prefix.as_entire_binding(),
-                    ),
-                    ("scan_total_left", left.total.as_entire_binding()),
-                    ("scan_total_right", right.total.as_entire_binding()),
-                ],
-            )?
+            let mut bindings = vec![
+                ("gScan", params_buffer.as_entire_binding()),
+                ("scan_count", left.count.as_entire_binding()),
+                ("scan_block_sum_left", left.block_sum.as_entire_binding()),
+                ("scan_block_sum_right", right.block_sum.as_entire_binding()),
+                (
+                    "scan_output_prefix_left",
+                    left.output_prefix.as_entire_binding(),
+                ),
+                (
+                    "scan_output_prefix_right",
+                    right.output_prefix.as_entire_binding(),
+                ),
+                ("scan_total_left", left.total.as_entire_binding()),
+                ("scan_total_right", right.total.as_entire_binding()),
+            ];
+            if let Some((left_dispatch, right_dispatch)) = total_dispatch {
+                bindings.push(("gTotalDispatch", left_dispatch.params.as_entire_binding()));
+                bindings.push((
+                    "scan_total_dispatch_args_left",
+                    left_dispatch.dispatch_args.as_entire_binding(),
+                ));
+                bindings.push((
+                    "scan_total_dispatch_args_right",
+                    right_dispatch.dispatch_args.as_entire_binding(),
+                ));
+            }
+            bind("apply", passes.apply, &bindings)?
         };
         Ok(Self {
             graph_passes,
@@ -531,6 +628,40 @@ impl PrefixScanPairOperation {
         resources: &ResourceMap<'_>,
         spec: PrefixScanPairSpec,
     ) -> Result<Self> {
+        Self::from_spec_and_total_dispatch(device, kernels, resources, spec, None)
+    }
+
+    /// The pair of `spec` with an apply that also writes indirect dispatch
+    /// arguments for each total into the resources `[left, right]`; both use
+    /// the `ScanTotalDispatchParams` uniform `params`.
+    pub(crate) fn from_spec_with_total_dispatch(
+        device: &wgpu::Device,
+        kernels: &KernelRegistry,
+        resources: &ResourceMap<'_>,
+        spec: PrefixScanPairSpec,
+        params: TrackedBufferView<'_>,
+        dispatch_args: [&str; 2],
+    ) -> Result<Self> {
+        let total_dispatch = (
+            ScanTotalDispatch {
+                params,
+                dispatch_args: resources.tracked_view(dispatch_args[0])?,
+            },
+            ScanTotalDispatch {
+                params,
+                dispatch_args: resources.tracked_view(dispatch_args[1])?,
+            },
+        );
+        Self::from_spec_and_total_dispatch(device, kernels, resources, spec, Some(total_dispatch))
+    }
+
+    fn from_spec_and_total_dispatch(
+        device: &wgpu::Device,
+        kernels: &KernelRegistry,
+        resources: &ResourceMap<'_>,
+        spec: PrefixScanPairSpec,
+        total_dispatch: Option<(ScanTotalDispatch<'_>, ScanTotalDispatch<'_>)>,
+    ) -> Result<Self> {
         resources.validate_graph_passes_if_present(spec.passes.names())?;
         let (left_params, left) = scan_buffers_from_names(resources, spec.left)?;
         let (right_params, right) = scan_buffers_from_names(resources, spec.right)?;
@@ -545,8 +676,15 @@ impl PrefixScanPairOperation {
                 "paired prefix scans must use the same storage mode in both lanes"
             ));
         }
+        if left_in_place && total_dispatch.is_some() {
+            return Err(anyhow!(
+                "paired prefix scans write total dispatch arguments only out of place"
+            ));
+        }
         let fused_passes = if left_in_place {
             pair_in_place_passes(kernels)
+        } else if total_dispatch.is_some() {
+            pair_total_dispatch_passes(kernels)
         } else {
             pair_passes(kernels)
         };
@@ -562,18 +700,21 @@ impl PrefixScanPairOperation {
                     left_params,
                     left,
                     right,
+                    total_dispatch,
                 )?),
             });
         }
 
         let scalar = if left_in_place {
             in_place_passes(kernels)
+        } else if total_dispatch.is_some() {
+            total_dispatch_passes(kernels)
         } else {
             standard_passes(kernels)
         };
         Ok(Self {
             execution: PrefixScanPairExecution::Separate(Box::new((
-                PrefixScanOperation::new(
+                PrefixScanOperation::new_with_total_dispatch(
                     device,
                     None,
                     spec.left_label,
@@ -581,8 +722,9 @@ impl PrefixScanPairOperation {
                     scalar,
                     spec.passes,
                     left,
+                    total_dispatch.map(|(left, _)| left),
                 )?,
-                PrefixScanOperation::new(
+                PrefixScanOperation::new_with_total_dispatch(
                     device,
                     None,
                     spec.right_label,
@@ -590,6 +732,7 @@ impl PrefixScanPairOperation {
                     scalar,
                     spec.passes,
                     right,
+                    total_dispatch.map(|(_, right)| right),
                 )?,
             ))),
         })

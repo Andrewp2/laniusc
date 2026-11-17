@@ -153,8 +153,6 @@ pub(super) const CONDITIONS_AGGREGATE_ARGS_CALLS_PASS: &str =
     "type_check.conditions.aggregate_args.calls";
 pub(super) const AGGREGATE_CALL_SCAN_PASSES: PrefixScanGraphPasses =
     prefix_scan_graph_passes!("type_check.aggregate_requests.calls.scan");
-pub(super) const AGGREGATE_CALL_DISPATCH_PASS: &str =
-    "type_check.aggregate_requests.calls.dispatch";
 pub(super) const AGGREGATE_FINAL_SCAN_PASSES: PrefixScanGraphPasses =
     prefix_scan_graph_passes!("type_check.aggregate_requests.final.scan");
 pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
@@ -167,8 +165,16 @@ pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
     };
-pub(super) const AGGREGATE_FINAL_DISPATCH_PASS: &str =
-    "type_check.aggregate_requests.final.dispatch";
+/// The aggregate-request scan at one of its two positions. Its apply writes
+/// the comparison dispatch arguments for the total.
+pub(super) const fn aggregate_scan(passes: PrefixScanGraphPasses) -> PrefixScanSpec {
+    PrefixScanSpec {
+        phase: CompilerPhase::TypeCheck,
+        dispatch_domain: ResourceDomain::HirNodes,
+        passes,
+        resources: AGGREGATE_SCAN_RESOURCES,
+    }
+}
 pub(super) const TYPE_SEMANTIC_CLEAR_PASS: &str = "type_check.type_semantic.clear";
 pub(super) const TYPE_SEMANTIC_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
@@ -726,10 +732,6 @@ pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         block_sum: "call_const_claim_scan_block_sum",
     },
 };
-pub(super) const GENERIC_CLAIM_INDEX_PREPARE_PASS: &str =
-    "type_check.calls.generic_claims.index.prepare";
-pub(super) const CONST_CLAIM_INDEX_PREPARE_PASS: &str =
-    "type_check.calls.const_claims.index.prepare";
 pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::HirNodes,
@@ -744,8 +746,6 @@ pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         block_sum: "call_required_generic_scan_block_sum",
     },
 };
-pub(super) const REQUIRED_GENERIC_DISPATCH_PASS: &str =
-    "type_check.calls.required_generics.dispatch";
 const MODULE_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.module_scan.local";
 const MODULE_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.module_scan.apply";
 const IMPORT_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.import_scan.local";
@@ -3959,8 +3959,8 @@ fn build_graph(
         _call_required_generic_prefix as "call_required_generic_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_local_prefix as "call_required_generic_scan_local_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_block_sum as "call_required_generic_scan_block_sum" in HirNodes => hir_blocks * 4;
-        required_generic_count_out as "call_required_generic_count_out" in CallArguments => 4;
-        required_generic_dispatch_args as "call_required_generic_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _required_generic_count_out as "call_required_generic_count_out" in CallArguments => 4;
+        _required_generic_dispatch_args as "call_required_generic_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_generic_claim_callee as "call_generic_claim_callee" in CallArguments => claim_rows * 4;
         _call_generic_claim_slot as "call_generic_claim_slot" in CallArguments => claim_rows * 4;
         _call_generic_claim_type as "call_generic_claim_type" in CallArguments => claim_rows * 4;
@@ -3988,7 +3988,7 @@ fn build_graph(
         _call_inference_result_tag as "call_inference_result_tag" in Calls => hir_rows * 4;
         call_inference_fn_stamp as "call_inference_fn_stamp" in Calls => (hir_rows + 1) * 4;
         _call_inference_result_payload as "call_inference_result_payload" in Calls => hir_rows * 4;
-        generic_claim_index_dispatch_args as "call_generic_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _generic_claim_index_dispatch_args as "call_generic_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_const_claim_callee as "call_const_claim_callee" in CallArguments => claim_rows * 4;
         _call_const_claim_slot as "call_const_claim_slot" in CallArguments => claim_rows * 4;
         _call_const_claim_ref_kind as "call_const_claim_ref_kind" in CallArguments => claim_rows * 4;
@@ -3999,12 +3999,12 @@ fn build_graph(
         _call_const_claim_lookup_head as "call_const_claim_lookup_head" in CallArguments => claim_rows * 4;
         _call_const_claim_lookup_next as "call_const_claim_lookup_next" in CallArguments => claim_rows * 4;
         _call_const_env_binding as "call_const_env_binding" in CallArguments => claim_rows * 16;
-        const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
+        _const_claim_index_dispatch_args as "call_const_claim_index_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
         _call_arg_row_count_out as "call_arg_row_count_out" in CallArguments => 4;
-        generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
-        const_claim_count_out as "call_const_claim_count_out" in CallArguments => 4;
+        _generic_claim_count_out as "call_generic_claim_count_out" in CallArguments => 4;
+        _const_claim_count_out as "call_const_claim_count_out" in CallArguments => 4;
     });
     graph_resources!(graph, Output {
         semantic_value_decl_by_hir in HirNodes => hir_rows * 4;
@@ -4047,13 +4047,13 @@ fn build_graph(
         _aggregate_compare_error_token as "aggregate_compare_error_token" in HirNodes => hir_rows * 4;
         _aggregate_compare_error_detail as "aggregate_compare_error_detail" in HirNodes => hir_rows * 4;
         _aggregate_compare_prefix as "aggregate_compare_prefix" in HirNodes => hir_rows * 4;
-        aggregate_compare_count_out in HirNodes => 4;
+        _aggregate_compare_count_out as "aggregate_compare_count_out" in HirNodes => 4;
     });
     let aggregate_blocks = hir_rows.div_ceil(256);
     graph_resources!(graph, Workspace {
         _aggregate_compare_scan_local_prefix as "aggregate_compare_scan_local_prefix" in HirNodes => hir_rows * 4;
         _aggregate_compare_scan_block_sum as "aggregate_compare_scan_block_sum" in HirNodes => aggregate_blocks * 4;
-        aggregate_compare_dispatch_args in HirNodes [StorageIndirect] => 12;
+        _aggregate_compare_dispatch_args as "aggregate_compare_dispatch_args" in HirNodes [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
         type_semantic_row_by_token in Tokens => (token_capacity.max(1) as u64) * 4;
@@ -4750,25 +4750,10 @@ fn build_graph(
                 "type_checker/conditions/compact_aggregate_requests",
                 &[],
             )?;
-            let aggregate_scan_resources =
-                graph.resolve_prefix_scan_resources(AGGREGATE_SCAN_RESOURCES)?;
-            graph.add_fragment(PrefixScanGraph {
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::HirNodes,
-                hierarchy_levels: prefix_scan_hierarchy_levels(hir_blocks),
-                passes: AGGREGATE_FINAL_SCAN_PASSES,
-                resources: aggregate_scan_resources,
-            })?;
-            graph.add_kernel_pass_by_name(
-                AGGREGATE_FINAL_DISPATCH_PASS,
-                CompilerPhase::TypeCheck,
-                ResourceDomain::HirNodes,
-                kernels,
-                "type_checker/count/dispatch_args",
-                reflected_bindings![
-                    "count_in" => aggregate_compare_count_out,
-                    "dispatch_args" => aggregate_compare_dispatch_args: Write,
-                ],
+            aggregate_scan(AGGREGATE_FINAL_SCAN_PASSES).register_with_total_dispatch(
+                graph,
+                prefix_scan_hierarchy_levels(hir_blocks),
+                "aggregate_compare_dispatch_args",
             )?;
             graph.add_kernel_pass_by_name(
                 CONDITIONS_AGGREGATE_ARGS_FINAL_PASS,
@@ -5642,7 +5627,14 @@ fn build_graph(
     // neither the claim inputs nor the delayed apply inputs can be colored
     // onto scratch used by the intervening operations.
     CALLS_GENERIC_CLAIM_CLEAR.register_kernel(&mut graph, kernels)?;
-    CALL_CLAIM_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(call_arg_blocks))?;
+    CALL_CLAIM_SCAN.register_with_total_dispatch(
+        &mut graph,
+        prefix_scan_hierarchy_levels(call_arg_blocks),
+        [
+            "call_generic_claim_index_dispatch_args",
+            "call_const_claim_index_dispatch_args",
+        ],
+    )?;
     CALLS_GENERIC_CLAIM_EMIT.register_kernel(&mut graph, kernels)?;
     // Emit reads a row's last spans only in a round after the one that wrote
     // them; every row is recomputed, and writes its spans, in the job's first
@@ -5656,41 +5648,12 @@ fn build_graph(
             "call_const_claim_lookup_head",
         ],
     )?;
-    graph.add_kernel_pass_by_name(
-        GENERIC_CLAIM_INDEX_PREPARE_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => generic_claim_count_out,
-            "dispatch_args" => generic_claim_index_dispatch_args: Write,
-        ],
-    )?;
     CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
-    REQUIRED_GENERIC_SCAN.register(&mut graph, prefix_scan_hierarchy_levels(hir_blocks))?;
-    graph.add_kernel_pass_by_name(
-        REQUIRED_GENERIC_DISPATCH_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => required_generic_count_out,
-            "dispatch_args" => required_generic_dispatch_args: Write,
-        ],
-    )?;
-    graph.add_kernel_pass_by_name(
-        CONST_CLAIM_INDEX_PREPARE_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::DispatchArguments,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => const_claim_count_out,
-            "dispatch_args" => const_claim_index_dispatch_args: Write,
-        ],
+    REQUIRED_GENERIC_SCAN.register_with_total_dispatch(
+        &mut graph,
+        prefix_scan_hierarchy_levels(hir_blocks),
+        "call_required_generic_dispatch_args",
     )?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
@@ -5740,24 +5703,10 @@ fn build_graph(
     ] {
         spec.register_kernel(&mut graph, kernels)?;
     }
-    let aggregate_scan_resources = graph.resolve_prefix_scan_resources(AGGREGATE_SCAN_RESOURCES)?;
-    graph.add_fragment(PrefixScanGraph {
-        phase: CompilerPhase::TypeCheck,
-        dispatch_domain: ResourceDomain::HirNodes,
-        hierarchy_levels: prefix_scan_hierarchy_levels(hir_blocks),
-        passes: AGGREGATE_CALL_SCAN_PASSES,
-        resources: aggregate_scan_resources,
-    })?;
-    graph.add_kernel_pass_by_name(
-        AGGREGATE_CALL_DISPATCH_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::HirNodes,
-        kernels,
-        "type_checker/count/dispatch_args",
-        reflected_bindings![
-            "count_in" => aggregate_compare_count_out,
-            "dispatch_args" => aggregate_compare_dispatch_args: Write,
-        ],
+    aggregate_scan(AGGREGATE_CALL_SCAN_PASSES).register_with_total_dispatch(
+        &mut graph,
+        prefix_scan_hierarchy_levels(hir_blocks),
+        "aggregate_compare_dispatch_args",
     )?;
     graph.add_kernel_pass_by_name(
         CONDITIONS_AGGREGATE_ARGS_CALLS_PASS,

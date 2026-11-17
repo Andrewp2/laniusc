@@ -2907,7 +2907,14 @@ fn assign_prefix_scan_kernels(
     graph: &mut CompilerGraphBuilder,
     passes: PrefixScanGraphPasses,
     in_place: bool,
+    total_dispatch: bool,
 ) -> Result<(), String> {
+    if in_place && total_dispatch {
+        return Err(format!(
+            "prefix scan {} writes total dispatch arguments only out of place",
+            passes.local,
+        ));
+    }
     graph.assign_kernel(
         passes.local,
         if in_place {
@@ -2920,6 +2927,8 @@ fn assign_prefix_scan_kernels(
         passes.apply,
         if in_place {
             "scan/counted/02_apply_in_place"
+        } else if total_dispatch {
+            "scan/counted/02_apply_dispatch"
         } else {
             "scan/counted/02_apply"
         },
@@ -2992,6 +3001,31 @@ impl PrefixScanSpec {
             resources,
         })
     }
+
+    /// Registers the scan with an apply that also writes indirect dispatch
+    /// arguments for the total into `dispatch_args`
+    /// (scan/counted/02_apply_dispatch), in place of a one-lane pass that
+    /// would read the total afterwards.
+    pub(crate) fn register_with_total_dispatch(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        hierarchy_levels: u32,
+        dispatch_args: &'static str,
+    ) -> Result<(ResourceId, ResourceId), String> {
+        let resources = graph.resolve_prefix_scan_resources(self.resources)?;
+        let dispatch_args = graph.prefix_scan_resource(dispatch_args)?;
+        add_prefix_scan(
+            graph,
+            PrefixScanGraph {
+                phase: self.phase,
+                dispatch_domain: self.dispatch_domain,
+                hierarchy_levels,
+                passes: self.passes,
+                resources,
+            },
+            Some(dispatch_args),
+        )
+    }
 }
 
 /// A stable compaction expressed as flag production, exclusive prefix scan,
@@ -3059,6 +3093,34 @@ impl PrefixScanPairSpec {
             right,
         })
     }
+
+    /// Registers the pair with an apply that also writes indirect dispatch
+    /// arguments for each total, `[left, right]`.
+    pub fn register_with_total_dispatch(
+        self,
+        graph: &mut CompilerGraphBuilder,
+        hierarchy_levels: u32,
+        dispatch_args: [&'static str; 2],
+    ) -> Result<((ResourceId, ResourceId), (ResourceId, ResourceId)), String> {
+        let left = graph.resolve_prefix_scan_resources(self.left)?;
+        let right = graph.resolve_prefix_scan_resources(self.right)?;
+        let dispatch_args = [
+            graph.prefix_scan_resource(dispatch_args[0])?,
+            graph.prefix_scan_resource(dispatch_args[1])?,
+        ];
+        add_prefix_scan_pair(
+            graph,
+            PrefixScanPairGraph {
+                phase: self.phase,
+                dispatch_domain: self.dispatch_domain,
+                hierarchy_levels,
+                passes: self.passes,
+                left,
+                right,
+            },
+            Some(dispatch_args),
+        )
+    }
 }
 
 struct PrefixScanPassSet {
@@ -3079,6 +3141,12 @@ impl PrefixScanPassSet {
             .find(|access| access.resource == output && access.binding == "scan_output_prefix")
             .expect("prefix scan apply output access");
         output_access.mode = AccessMode::ReadWrite;
+    }
+
+    fn write_total_dispatch(&mut self, dispatch_args: ResourceId, invocation: u16) {
+        self.apply.accesses.push(
+            PassAccess::write("scan_total_dispatch_args", dispatch_args).in_invocation(invocation),
+        );
     }
 
     fn batch(self, other: Self) -> Self {
@@ -3215,66 +3283,90 @@ impl CompilerGraphFragment for PrefixScanPairGraph {
     type Output = ((ResourceId, ResourceId), (ResourceId, ResourceId));
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        let left_in_place = self.left.input == self.left.output_prefix;
-        let right_in_place = self.right.input == self.right.output_prefix;
-        if left_in_place != right_in_place {
-            return Err(format!(
-                "paired prefix scan {} must use the same storage mode in both lanes",
-                self.passes.local,
-            ));
-        }
-        let mut left = prefix_scan_passes(
-            graph,
-            self.phase,
-            self.dispatch_domain,
-            self.hierarchy_levels,
-            self.passes,
-            self.left,
-            0,
-        )?;
-        let mut right = prefix_scan_passes(
-            graph,
-            self.phase,
-            self.dispatch_domain,
-            self.hierarchy_levels,
-            self.passes,
-            self.right,
-            1,
-        )?;
-        if !left_in_place {
-            left.use_output_as_local_prefix(self.left.output_prefix, 0);
-            right.use_output_as_local_prefix(self.right.output_prefix, 1);
-        }
-        add_prefix_scan_passes(graph, self.hierarchy_levels, left.batch(right))?;
-        assign_prefix_scan_kernels(graph, self.passes, left_in_place)?;
-        Ok((
-            (self.left.output_prefix, self.left.total),
-            (self.right.output_prefix, self.right.total),
-        ))
+        add_prefix_scan_pair(graph, self, None)
     }
+}
+
+fn add_prefix_scan_pair(
+    graph: &mut CompilerGraphBuilder,
+    scan: PrefixScanPairGraph,
+    total_dispatch: Option<[ResourceId; 2]>,
+) -> Result<((ResourceId, ResourceId), (ResourceId, ResourceId)), String> {
+    let left_in_place = scan.left.input == scan.left.output_prefix;
+    let right_in_place = scan.right.input == scan.right.output_prefix;
+    if left_in_place != right_in_place {
+        return Err(format!(
+            "paired prefix scan {} must use the same storage mode in both lanes",
+            scan.passes.local,
+        ));
+    }
+    let mut left = prefix_scan_passes(
+        graph,
+        scan.phase,
+        scan.dispatch_domain,
+        scan.hierarchy_levels,
+        scan.passes,
+        scan.left,
+        0,
+    )?;
+    let mut right = prefix_scan_passes(
+        graph,
+        scan.phase,
+        scan.dispatch_domain,
+        scan.hierarchy_levels,
+        scan.passes,
+        scan.right,
+        1,
+    )?;
+    if !left_in_place {
+        left.use_output_as_local_prefix(scan.left.output_prefix, 0);
+        right.use_output_as_local_prefix(scan.right.output_prefix, 1);
+    }
+    if let Some([left_args, right_args]) = total_dispatch {
+        left.write_total_dispatch(left_args, 0);
+        right.write_total_dispatch(right_args, 1);
+    }
+    add_prefix_scan_passes(graph, scan.hierarchy_levels, left.batch(right))?;
+    assign_prefix_scan_kernels(graph, scan.passes, left_in_place, total_dispatch.is_some())?;
+    Ok((
+        (scan.left.output_prefix, scan.left.total),
+        (scan.right.output_prefix, scan.right.total),
+    ))
 }
 
 impl CompilerGraphFragment for PrefixScanGraph {
     type Output = (ResourceId, ResourceId);
 
     fn add_to(self, graph: &mut CompilerGraphBuilder) -> Result<Self::Output, String> {
-        let passes = prefix_scan_passes(
-            graph,
-            self.phase,
-            self.dispatch_domain,
-            self.hierarchy_levels,
-            self.passes,
-            self.resources,
-            0,
-        )?;
-        add_prefix_scan_passes(graph, self.hierarchy_levels, passes)?;
-        assign_prefix_scan_kernels(
-            graph,
-            self.passes,
-            self.resources.input == self.resources.output_prefix,
-        )?;
-        Ok((self.resources.output_prefix, self.resources.total))
+        add_prefix_scan(graph, self, None)
     }
+}
+
+fn add_prefix_scan(
+    graph: &mut CompilerGraphBuilder,
+    scan: PrefixScanGraph,
+    total_dispatch: Option<ResourceId>,
+) -> Result<(ResourceId, ResourceId), String> {
+    let mut passes = prefix_scan_passes(
+        graph,
+        scan.phase,
+        scan.dispatch_domain,
+        scan.hierarchy_levels,
+        scan.passes,
+        scan.resources,
+        0,
+    )?;
+    if let Some(dispatch_args) = total_dispatch {
+        passes.write_total_dispatch(dispatch_args, 0);
+    }
+    add_prefix_scan_passes(graph, scan.hierarchy_levels, passes)?;
+    assign_prefix_scan_kernels(
+        graph,
+        scan.passes,
+        scan.resources.input == scan.resources.output_prefix,
+        total_dispatch.is_some(),
+    )?;
+    Ok((scan.resources.output_prefix, scan.resources.total))
 }
 
 #[derive(Default)]
@@ -3597,6 +3689,11 @@ impl CompilerGraphBuilder {
 
     /// Resolves the one shared named resource specification used by both a
     /// runtime prefix scan and its compiler-graph fragment.
+    fn prefix_scan_resource(&self, name: &str) -> Result<ResourceId, String> {
+        self.resource_id(name)
+            .ok_or_else(|| format!("prefix scan resource `{name}` is not registered"))
+    }
+
     pub fn resolve_prefix_scan_resources(
         &self,
         names: PrefixScanResources<&str>,

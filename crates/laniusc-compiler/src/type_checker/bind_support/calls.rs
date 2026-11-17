@@ -86,21 +86,22 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             reserved1: 0,
         },
     );
-    let required_generic_dispatch = ComputeOperation::direct_with_uniform(
+    // Both claim scans' applies size the claim indexes from their totals.
+    let claim_dispatch_params = uniform_from_val(
         device,
-        graph,
-        resources,
-        compiler_graph::REQUIRED_GENERIC_DISPATCH_PASS,
-        &passes.kernel("type_checker/count/dispatch_args"),
-        &required_generic_dispatch_params,
-        1,
-    )?;
+        "type_check.calls.claim_index_dispatch.params",
+        &CountDispatchParams {
+            capacity: claim_capacity,
+            multiplier: 1,
+            reserved0: 0,
+            reserved1: 0,
+        },
+    );
     let generic_claim_index = CallClaimIndexOperation::new(
         device,
         passes,
         CallClaimIndexBuild {
             kind: CallClaimKind::Generic,
-            claim_capacity,
             dispatch_args: &call_generic_claim_index_dispatch_args,
             graph,
             resources,
@@ -111,7 +112,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         passes,
         CallClaimIndexBuild {
             kind: CallClaimKind::Const,
-            claim_capacity,
             dispatch_args: &call_const_claim_index_dispatch_args,
             graph,
             resources,
@@ -124,11 +124,16 @@ pub(in crate::type_checker) fn create_call_bind_groups(
     );
     let generic_claim_validation =
         CallGenericClaimValidationOperation::new(CallGenericClaimValidationBuild {
-            claim_scans: PrefixScanPairOperation::from_spec(
+            claim_scans: PrefixScanPairOperation::from_spec_with_total_dispatch(
                 device,
                 passes,
                 resources,
                 compiler_graph::CALL_CLAIM_SCAN,
+                (&claim_dispatch_params).into(),
+                [
+                    "call_generic_claim_index_dispatch_args",
+                    "call_const_claim_index_dispatch_args",
+                ],
             )?,
             emit_claims: indirect(CALLS_GENERIC_CLAIM_EMIT)?,
             validate_generic: ComputeOperation::indirect_spec(
@@ -141,9 +146,15 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             )?,
             generic_index: generic_claim_index,
             mark_required: indirect(CALLS_REQUIRED_GENERIC_MARK)?,
-            required_scan: prefix_scan_spec(compiler_graph::REQUIRED_GENERIC_SCAN)?,
-            required_dispatch: required_generic_dispatch,
-            required_dispatch_params: required_generic_dispatch_params,
+            required_scan: PrefixScanOperation::from_spec_with_total_dispatch(
+                device,
+                passes,
+                resources,
+                compiler_graph::REQUIRED_GENERIC_SCAN,
+                (&required_generic_dispatch_params).into(),
+                "call_required_generic_dispatch_args",
+            )?,
+            dispatch_params: [claim_dispatch_params, required_generic_dispatch_params],
             validate_required: ComputeOperation::indirect_spec(
                 device,
                 graph,
