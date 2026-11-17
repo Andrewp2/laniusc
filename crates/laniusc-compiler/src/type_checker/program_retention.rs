@@ -301,6 +301,73 @@ const EXPORT_KERNELS: &[&str] = &[
     "type_checker/retention/export/18_rollback",
 ];
 const REHASH_KERNEL: &str = "type_checker/retention/store_rehash";
+const SNAPSHOT_ROWS_KERNEL: &str = "type_checker/retention/snapshot_rows";
+
+/// Job tables the snapshot copies by their counted rows
+/// (`snapshot_rows.slang`): the table, the table whose word 0 counts its
+/// rows, its words per row, and whether it holds one row per HIR row. The
+/// export kernels read these tables only below that count
+/// (retention_job.slang `valid_row`, side_tables.slang `side_rows`,
+/// trait_common.slang `method_rows` and `predicate_rows`). A table whose
+/// size does not match its rows is copied whole.
+const SNAPSHOT_ROW_TABLES: &[(&str, &str, u64, bool)] = &[
+    ("compact_hir_core", "compact_hir_count", 4, true),
+    ("compact_hir_links", "compact_hir_count", 4, true),
+    ("compact_hir_payload", "compact_hir_count", 4, true),
+    ("compact_hir_semantic_facts", "compact_hir_count", 8, true),
+    ("compact_hir_nearest_fn", "compact_hir_count", 1, true),
+    ("compact_fn_return_type", "compact_hir_count", 1, true),
+    ("compact_const_value", "compact_hir_count", 1, true),
+    ("compact_const_type", "compact_hir_count", 1, true),
+    ("compact_array_element_start", "compact_hir_count", 1, true),
+    ("compact_array_element_count", "compact_hir_count", 1, true),
+    ("compact_generic_param_ranges", "compact_hir_count", 2, true),
+    ("compact_type_arg_ranges", "compact_hir_count", 2, true),
+    ("semantic_calls_by_hir", "compact_hir_count", 22, true),
+    ("semantic_value_const_by_hir", "compact_hir_count", 2, true),
+    ("semantic_value_decl_by_hir", "compact_hir_count", 1, true),
+    ("semantic_value_const_present_by_hir", "compact_hir_count", 1, true),
+    ("semantic_type_ref_tag_by_hir", "compact_hir_count", 1, true),
+    ("semantic_type_ref_payload_by_hir", "compact_hir_count", 1, true),
+    ("semantic_member_field_ordinal_by_hir", "compact_hir_count", 1, true),
+    ("semantic_iterable_kind_by_hir", "compact_hir_count", 1, true),
+    ("semantic_function_native_abi_by_hir", "compact_hir_count", 1, true),
+    ("semantic_function_host_service_by_hir", "compact_hir_count", 1, true),
+    ("semantic_expr_ref_tag_by_hir", "compact_hir_count", 1, true),
+    ("semantic_expr_ref_payload_by_hir", "compact_hir_count", 1, true),
+    ("semantic_call_native_abi_by_hir", "compact_hir_count", 1, true),
+    ("semantic_argument_mode_by_hir", "compact_hir_count", 1, true),
+    ("compact_type_args", "compact_type_arg_count", 5, true),
+    ("compact_variants", "compact_variant_count", 4, true),
+    ("compact_variant_payloads", "compact_variant_payload_row_count", 4, true),
+    ("compact_strings", "compact_string_count", 4, true),
+    ("compact_predicates", "compact_predicate_count", 4, true),
+    ("compact_params", "compact_param_count", 4, true),
+    ("compact_method_cores", "compact_method_count", 4, true),
+    ("compact_method_signatures", "compact_method_count", 4, true),
+    ("compact_match_payloads", "compact_match_payload_row_count", 4, true),
+    ("compact_match_arms", "compact_match_arm_count", 4, true),
+    ("compact_generic_params", "compact_generic_param_count", 4, true),
+    ("compact_fields", "compact_field_count", 4, true),
+    ("compact_call_args", "compact_call_arg_count", 4, true),
+    ("compact_array_elements", "compact_array_element_row_count", 4, true),
+    // Keyed by parameter, field or match arm index (12_side.slang, 13_schema.slang).
+    ("semantic_param_ref_tag_by_row", "compact_param_count", 1, true),
+    ("semantic_param_ref_payload_by_row", "compact_param_count", 1, true),
+    ("struct_init_field_ordinal_by_row", "compact_field_count", 1, true),
+    ("compact_match_payload_start", "compact_match_arm_count", 1, false),
+    ("compact_match_payload_count", "compact_match_arm_count", 1, false),
+];
+/// Tables per `snapshot_rows` dispatch, and that dispatch's parameter words.
+const SNAPSHOT_ROWS_PER_DISPATCH: usize = 16;
+const SNAPSHOT_ROWS_PARAM_WORDS: usize = 4 + 4 * SNAPSHOT_ROWS_PER_DISPATCH;
+/// Pool keys of the parameter buffers, one per dispatch.
+const SNAPSHOT_ROWS_PARAMS: [&str; 4] = [
+    "snapshot_rows.params0",
+    "snapshot_rows.params1",
+    "snapshot_rows.params2",
+    "snapshot_rows.params3",
+];
 const RESOLVE_KERNEL: &str = "tests/retention_resolve";
 const TRAIT_PROBE_KERNEL: &str = "tests/retention_traits";
 
@@ -341,6 +408,30 @@ impl JobTable {
             size: buffer.byte_size as u64,
         }
     }
+}
+
+/// The `snapshot_rows.slang` entry of job table `name` (source word,
+/// words per row, words, count word) and its count table, or `None` when the
+/// table is copied whole.
+fn snapshot_row_entry<'a>(
+    name: &str,
+    table: &JobTable,
+    live: &'a BTreeMap<&'static str, JobTable>,
+    hir_rows: u64,
+) -> Option<(&'a JobTable, [u32; 4])> {
+    let &(_, count_name, stride, by_hir) = SNAPSHOT_ROW_TABLES.iter().find(|row| row.0 == name)?;
+    let count = live.get(count_name)?;
+    let row_bytes = stride * 4;
+    let fits = if by_hir { table.size == hir_rows * row_bytes } else { table.size % row_bytes == 0 };
+    if !fits || count.offset % 4 != 0 || count.size < 4 {
+        return None;
+    }
+    Some((count, [
+        u32::try_from(table.offset / 4).ok()?,
+        stride as u32,
+        u32::try_from(table.size / 4).ok()?,
+        u32::try_from(count.offset / 4).ok()?,
+    ]))
 }
 
 /// The lexer tables of the job being recorded that the export copies body
@@ -452,6 +543,8 @@ pub struct ProgramRetention {
     queue: Arc<wgpu::Queue>,
     passes: Vec<PassData>,
     rehash: PassData,
+    /// Copies the counted rows of the snapshot's row tables.
+    snapshot_rows: PassData,
     resolve: Mutex<Option<PassData>>,
     trait_probe: Mutex<Option<PassData>>,
     /// Test fault applied to the export's snapshot, never the frontend.
@@ -602,6 +695,8 @@ impl ProgramRetention {
             .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
             .collect::<Result<Vec<_>>>()?;
         let rehash = make_pass_data_from_shader_key(&device, REHASH_KERNEL, "main", REHASH_KERNEL)?;
+        let snapshot_rows =
+            make_pass_data_from_shader_key(&device, SNAPSHOT_ROWS_KERNEL, "main", SNAPSHOT_ROWS_KERNEL)?;
         let mut store = Store {
             capacity,
             buffers: BTreeMap::new(),
@@ -631,6 +726,7 @@ impl ProgramRetention {
             queue,
             passes,
             rehash,
+            snapshot_rows,
             resolve: Mutex::new(None),
             trait_probe: Mutex::new(None),
             export_fault: Mutex::new(None),
@@ -694,14 +790,20 @@ impl ProgramRetention {
     /// Exports the current job. `job` names every job table the kernels
     /// read. Retries after growth until the job commits.
     /// Records copies of the job tables every export kernel reads into
-    /// store-owned buffers, in `encoder` after the job's type check.
+    /// store-owned buffers, in `encoder` after the job's type check. The
+    /// tables of [`SNAPSHOT_ROW_TABLES`] are copied up to their counted rows
+    /// on the GPU; `hir_rows` is the job's HIR row capacity.
     pub(crate) fn record_job_snapshot(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         live: &BTreeMap<&'static str, JobTable>,
+        hir_rows: u64,
     ) -> Result<JobSnapshot> {
         let mut buffers = self.snapshot_pool.lock().unwrap().pop().unwrap_or_default();
         let mut tables = BTreeMap::new();
+        // Copies and dispatches below must follow the job's recorded work.
+        passes_core::flush_deferred_compute(encoder);
+        let mut by_rows: Vec<(&JobTable, wgpu::Buffer, &JobTable, [u32; 4])> = Vec::new();
         for (&name, table) in live {
             if !self.job_inputs.contains(name) {
                 continue;
@@ -723,9 +825,59 @@ impl ProgramRetention {
                 }));
             }
             let buffer = buffers[name].clone();
-            encoder.copy_buffer_counted(&table.buffer, table.offset, &buffer, 0, table.size);
+            match snapshot_row_entry(name, table, live, hir_rows) {
+                Some((count, entry)) => by_rows.push((table, buffer.clone(), count, entry)),
+                None => encoder.copy_buffer_counted(&table.buffer, table.offset, &buffer, 0, table.size),
+            }
             tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
         }
+        for (dispatch, group) in by_rows.chunks(SNAPSHOT_ROWS_PER_DISPATCH).enumerate() {
+            let key = *SNAPSHOT_ROWS_PARAMS
+                .get(dispatch)
+                .ok_or_else(|| anyhow!("program retention snapshot has too many row tables"))?;
+            let params = buffers
+                .entry(key)
+                .or_insert_with(|| {
+                    self.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("program_retention.snapshot_rows.params"),
+                        size: (SNAPSHOT_ROWS_PARAM_WORDS * 4) as u64,
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    })
+                })
+                .clone();
+            let mut words = [0u32; SNAPSHOT_ROWS_PARAM_WORDS];
+            let largest = group.iter().map(|(_, _, _, entry)| entry[2]).max().unwrap_or(0);
+            let workgroups = largest.div_ceil(256).clamp(1, 1024);
+            words[0] = workgroups * 256;
+            words[1] = group.len() as u32;
+            for (slot, (_, _, _, entry)) in group.iter().enumerate() {
+                words[4 + 4 * slot..8 + 4 * slot].copy_from_slice(entry);
+            }
+            self.queue.write_buffer_counted(&params, 0, &words_bytes(&words));
+            let names = (0..SNAPSHOT_ROWS_PER_DISPATCH)
+                .flat_map(|slot| [format!("sr_src{slot}"), format!("sr_count{slot}"), format!("sr_dst{slot}")])
+                .collect::<Vec<_>>();
+            let mut entries = vec![("gSR", params.as_entire_binding())];
+            for slot in 0..SNAPSHOT_ROWS_PER_DISPATCH {
+                // Unused slots repeat the first table; `tables` stops the kernel before them.
+                let (src, dst, count, _) = &group[if slot < group.len() { slot } else { 0 }];
+                entries.push((names[3 * slot].as_str(), src.buffer.as_entire_binding()));
+                entries.push((names[3 * slot + 1].as_str(), count.buffer.as_entire_binding()));
+                entries.push((names[3 * slot + 2].as_str(), dst.as_entire_binding()));
+            }
+            let label = "program_retention.snapshot_rows";
+            let bind = passes_core::bind_group::create_bind_group_from_bindings(
+                &self.device,
+                Some(label),
+                &self.snapshot_rows,
+                0,
+                &entries,
+            )?;
+            passes_core::record_or_defer_compute_direct(encoder, &self.snapshot_rows, &bind, label, (workgroups, 1, 1));
+        }
+        // Work recorded after the snapshot may rewrite its sources.
+        passes_core::flush_deferred_compute(encoder);
         Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None), early: Mutex::new(None) })
     }
 

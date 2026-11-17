@@ -632,7 +632,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             .map(|store| {
                 let mut tables = self.type_checker.program_retention_tables(&hir)?;
                 tables.extend(crate::type_checker::program_retention::retention_source_tables(bufs));
-                store.record_job_snapshot(encoder, &tables)
+                store.record_job_snapshot(encoder, &tables, hir.core.count as u64)
             })
             .transpose()
             .map_err(|err| CompileError::GpuFrontend(format!("program retention snapshot: {err:#}")))?;
