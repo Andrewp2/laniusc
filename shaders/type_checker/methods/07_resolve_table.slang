@@ -261,7 +261,10 @@ bool reset_candidate(uint token)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = inference_listed_token(linear_thread_id(dtid));
-    if (token >= active_token_count() || !inference_item_active(token)) return;
+    // A token without a method name has no candidate to reset or resolve, so
+    // its lane exits before it reads the function activity tables.
+    if (token >= active_token_count() || method_call_name_id[token] == INVALID) return;
+    if (!inference_item_active(token)) return;
     if (!reset_candidate(token)) return;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
