@@ -5,6 +5,9 @@ RWStructuredBuffer<uint2> pj_targets;
 RWStructuredBuffer<uint4> pj_readiness;
 RWStructuredBuffer<uint4> dg_root_routes;
 RWStructuredBuffer<uint4> dg_root_readiness;
+// A chain of waves (mode 3): words 0-2 the current wave's (lo, hi, edges),
+// then (lo, hi) of chained wave i at 4 + 2i.
+RWStructuredBuffer<uint> dg_wave;
 uint4 route_of(uint4 route,bool root)
 {
     if(route.x==1u) return uint4(0xfffffffeu,0xffff0002u,dg_rank[route.y],dg_config[15]);
@@ -16,6 +19,25 @@ uint4 route_of(uint4 route,bool root)
 void main(uint3 id: SV_DispatchThreadID)
 {
     uint lane=dg_lane(id);
+    if(dg_config[0]==3u)
+    {
+        // The next chained wave expands the instances the last one
+        // inserted, unless the host must decide first: a failure or
+        // overflow, or new instances with closed predicates (status 11
+        // differs from config 14), which need the closed solver. Then the
+        // wave's frontier is empty and it does nothing.
+        if(lane==0u)
+        {
+            uint lo=dg_wave[1];
+            bool go=dg_status[11]==dg_config[14] && dg_status[12]==0u && dg_status[3]==0u
+                && dg_status[10]==0u && dg_status[6]==RT_INVALID;
+            uint hi=go ? max(dg_status[0],lo) : lo;
+            dg_wave[0]=lo; dg_wave[1]=hi; dg_wave[2]=dg_status[2];
+            uint at=4u+2u*(dg_config[8]-1u);
+            dg_wave[at]=lo; dg_wave[at+1u]=hi;
+        }
+        return;
+    }
     if(dg_config[0]==0u)
     {
         if(lane==0u)

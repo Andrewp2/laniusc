@@ -465,6 +465,9 @@ pub struct RetainedSubstitution {
     hash_mask: u32,
     /// The current publication; None after a run that published nothing.
     published: Option<PublicationId>,
+    /// Run numbers of a chain (`begin_chain`), copied into `sb_config` in
+    /// encoder order.
+    chain_runs: Option<wgpu::Buffer>,
 }
 
 impl RetainedSubstitution {
@@ -489,6 +492,7 @@ impl RetainedSubstitution {
             results: None,
             hash_mask: u32::MAX,
             published: None,
+            chain_runs: None,
         })
     }
 
@@ -577,20 +581,7 @@ impl RetainedSubstitution {
         mut consumer: Option<&mut Consumer<'_>>,
         extra: &[(&wgpu::Buffer, usize)],
     ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
-        if self
-            .results
-            .as_ref()
-            .is_none_or(|(n, _, _)| *n < requests.capacity)
-        {
-            let n = requests.capacity.next_power_of_two();
-            let results = n as u64 * RESULT_WORDS as u64 * 4;
-            self.check_limit("sb_results", results)?;
-            self.results = Some((
-                n,
-                storage(&self.device, "sb_results", results, false),
-                storage(&self.device, "sb_req_root", n as u64 * 32, false),
-            ));
-        }
+        self.ensure_results(requests)?;
         let mut report = SubstitutionReport {
             attempts: 0,
             batches: 0,
@@ -718,6 +709,90 @@ impl RetainedSubstitution {
                 );
             }
         }
+    }
+
+    fn ensure_results(&mut self, requests: &SubstitutionRequests) -> Result<()> {
+        if self
+            .results
+            .as_ref()
+            .is_none_or(|(n, _, _)| *n < requests.capacity)
+        {
+            let n = requests.capacity.next_power_of_two();
+            let results = n as u64 * RESULT_WORDS as u64 * 4;
+            self.check_limit("sb_results", results)?;
+            self.results = Some((
+                n,
+                storage(&self.device, "sb_results", results, false),
+                storage(&self.device, "sb_req_root", n as u64 * 32, false),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Starts a chain of `runs` runs that one submit records back to back
+    /// (`record_chained`), with one readback after the last. Ends the
+    /// current publication and returns the runs' numbers.
+    pub(super) fn begin_chain(&mut self, requests: &SubstitutionRequests, runs: usize) -> Result<Vec<u32>> {
+        self.published = None;
+        self.ensure_results(requests)?;
+        self.ensure_scratch()?;
+        let numbers = (0..runs).map(|_| next_run()).collect::<Result<Vec<_>>>()?;
+        let bytes = (runs.max(4) * 4) as u64;
+        if self.chain_runs.as_ref().is_none_or(|b| b.size() < bytes) {
+            self.chain_runs = Some(storage(&self.device, "sb_chain_runs", bytes, false));
+        }
+        let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain runs are not allocated"))?;
+        self.queue.write_buffer(chain_runs, 0, &words_bytes(&numbers));
+        self.queue.write_buffer(&self.scratch["sb_config"], 0, &words_bytes(&[self.hash_mask, 0, 0, 0]));
+        Ok(numbers)
+    }
+
+    /// Records chained run `index` of `begin_chain`: the memo and status
+    /// words cleared, its run number, the first batch, then `consumer`
+    /// (which must check on the GPU that this run published and stop the
+    /// chain otherwise). Returns the dispatches of the batch. A run that is
+    /// not final after the first batch is not continued: its consumer sees
+    /// no publication.
+    pub(super) fn record_chained(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        guard: &Store,
+        requests: &SubstitutionRequests,
+        index: usize,
+        run: u32,
+        consumer: &mut Consumer<'_>,
+    ) -> Result<u32> {
+        let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
+        encoder.clear_buffer(&self.scratch["sb_memo"], 0, None);
+        encoder.clear_buffer(&self.scratch["sb_counts"], 0, None);
+        encoder.copy_buffer_to_buffer(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
+        let binds = self.bind_all(guard, requests)?;
+        let mut dispatches = 0;
+        self.record_batch(encoder, &binds, true, FIRST_BATCH_ROUNDS, &mut dispatches);
+        let (_, results, _) = self
+            .results
+            .as_ref()
+            .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
+        consumer(encoder, guard, run, results, &self.scratch["sb_counts"])?;
+        passes_core::flush_deferred_compute(encoder);
+        Ok(dispatches)
+    }
+
+    /// The status words a chain's readback returns for its last run.
+    pub(super) fn counts_buffer(&self) -> Option<&wgpu::Buffer> {
+        self.scratch.get("sb_counts")
+    }
+
+    /// Accepts the status words of a chain's last run `run` (store build
+    /// `generation`): it becomes the current publication when it published.
+    pub(super) fn finish_chain(&mut self, counts: &[u32], run: u32, generation: u32) -> bool {
+        let published = counts.len() >= words::COUNT
+            && counts[words::PHASE] == words::PHASE_FINAL
+            && counts[words::STATE] == words::STATE_PUBLISHED
+            && counts[words::RUN] == run
+            && counts[words::GENERATION] == generation;
+        self.published = published.then_some(PublicationId { generation, run, requests: counts[words::REQUESTS] });
+        published
     }
 
     /// Fails when `bytes` exceed what one storage binding of this device
