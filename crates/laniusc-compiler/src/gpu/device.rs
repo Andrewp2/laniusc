@@ -414,6 +414,7 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         })
     }).clone();
+    super::process_exit::note_driver_loaded();
 
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -706,7 +707,7 @@ fn spawn_background_persist(global: &'static GpuDevice) {
     }
 }
 
-fn wait_for_background_persist() {
+pub(crate) fn wait_for_background_persist() {
     while BACKGROUND_PERSIST_RUNNING.load(Ordering::Acquire) {
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -873,6 +874,8 @@ static NAMED_DRIVER_SHARD_UNDECIDED: AtomicBool = AtomicBool::new(false);
 /// Runs `configure_driver_shader_cache` before `main` in every binary that
 /// links the compiler (the CLI, test binaries, tools), while the process has
 /// its only thread: environment writes would race with other threads later.
+/// It also registers the main thread's exit wait for the driver's worker
+/// threads (`process_exit`).
 #[cfg(target_os = "linux")]
 #[used]
 #[unsafe(link_section = ".init_array")]
@@ -880,6 +883,11 @@ static CONFIGURE_DRIVER_SHADER_CACHE_BEFORE_MAIN: extern "C" fn() = {
     extern "C" fn configure() {
         // SAFETY: .init_array functions run before main, on the only thread.
         unsafe { configure_driver_shader_cache() }
+        // SAFETY: this is the main thread, which later calls `exit`.
+        #[cfg(target_env = "gnu")]
+        unsafe {
+            super::process_exit::register_before_main()
+        }
     }
     configure
 };

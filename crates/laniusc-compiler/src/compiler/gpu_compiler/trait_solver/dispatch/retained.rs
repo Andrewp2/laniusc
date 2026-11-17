@@ -510,8 +510,10 @@ pub(in crate::compiler::gpu_compiler) fn publish(
         Some((count, _)) => count.workspace.clone(),
         None => workspace(),
     };
-    let (mut report, mut publication) =
-        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, &capacity, options, followed))?;
+    let device = workspace.device().clone();
+    let (mut report, mut publication) = gpu_errors_as_result(&device, "retained trait catalog", || {
+        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, &capacity, options, followed))
+    })?;
     if let Some(publication) = &mut publication {
         publication.store_jobs = committed;
     }
@@ -532,7 +534,13 @@ pub(in crate::compiler::gpu_compiler) fn record_count_follower(
 ) -> Result<Option<ExportFollower>> {
     let (capacity, _) = store.capacity();
     let generation = store.generation();
-    let count = CountPass::new(workspace.clone(), generation, &capacity, CLOSURE_WAVES, 0)?;
+    // Without a follower, `publish` runs the count passes itself and reports
+    // an allocation failure there.
+    let Ok(count) = gpu_errors_as_result(workspace.device(), "retained count passes", || {
+        CountPass::new(workspace.clone(), generation, &capacity, CLOSURE_WAVES, 0)
+    }) else {
+        return Ok(None);
+    };
     let mut encoder = workspace.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("trait_solver.retained_count"),
     });
@@ -546,6 +554,24 @@ pub(in crate::compiler::gpu_compiler) fn record_count_follower(
     ensure!(count.scratch.state.byte_offset == 0, "retained producer state is not at the start of its buffer");
     let reads = vec![(count.scratch.state.buffer.clone(), COUNT_READ_WORDS)];
     Ok(Some(ExportFollower { commands: encoder.finish(), reads, state: Box::new(count) }))
+}
+
+/// `f`'s result, or the first out-of-memory or validation error this
+/// thread's wgpu calls raised inside it (wgpu error scopes are per thread).
+/// Without the scope such an error only reaches the uncaptured-error
+/// handler: a buffer that failed to allocate makes its submit invalid, the
+/// producer state then reads as zeros, and the run would report a catalog
+/// with no jobs instead of an error.
+fn gpu_errors_as_result<T>(device: &wgpu::Device, what: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    let out_of_memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let result = f();
+    let validation = pollster::block_on(validation.pop());
+    let out_of_memory = pollster::block_on(out_of_memory.pop());
+    match out_of_memory.or(validation) {
+        Some(err) => Err(anyhow!("{what}: GPU error: {err}")),
+        None => result,
+    }
 }
 
 /// The recorded steps of a bitonic sort over `width` keys: (k, j) is one

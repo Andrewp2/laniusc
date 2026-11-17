@@ -857,8 +857,13 @@ fn retained_trait_catalog_selects_cross_unit_implementations_on_gpu() {
     assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
 
     // A second publication keeps the first alive and valid; identities differ.
-    let (_, second) = compiler.retained_trait_publish(&store, &RetainedTraitOptions::default()).unwrap();
-    let second = second.unwrap();
+    let (second_report, second) = compiler.retained_trait_publish(&store, &RetainedTraitOptions::default()).unwrap();
+    let second = second.unwrap_or_else(|| {
+        panic!(
+            "no second publication ({} uncaptured GPU errors in the process): {second_report:#?}",
+            laniusc_compiler::gpu::device::uncaptured_error_count()
+        )
+    });
     assert_ne!(second.identity(), id);
     assert_answers(&queries, &publication.query_for_test(&store, id, &requests).unwrap());
     assert!(publication.query_for_test(&store, second.identity(), &requests).unwrap().iter().all(|a| a[0] == RQ_HEADER));

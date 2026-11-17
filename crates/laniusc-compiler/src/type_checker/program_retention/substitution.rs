@@ -153,6 +153,9 @@ pub mod words {
     pub const MAX_FRONTIER: usize = 18;
     pub const STATE: usize = 19;
     pub const RUN: usize = 20;
+    /// The store's term count when the committed attempt began; plus
+    /// `STORE_NEW_TERMS` it is the store's term count after the run.
+    pub const STORE_TERMS_BASE: usize = 21;
     pub const STORE_OVERFLOW: usize = 28;
     pub const STORE_DEMAND_TERMS: usize = 29;
     pub const STORE_DEMAND_ARGS: usize = 30;

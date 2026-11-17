@@ -1305,7 +1305,12 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
     // retries from the same requests, with the full hash and with every
     // store key on one probe chain.
     let status = reference_store.status().unwrap();
-    let new_args = status[3] - reference_before[3];
+    // Published terms and argument words: a lane that loses a slot to an
+    // equal key keeps its record as a counted spare, and how many lanes
+    // race depends on timing, so allocations alone are not deterministic.
+    let published = |status: &[u32], arena: usize| status[arena] - status[counts::SPARE + arena];
+    let new_args = published(&status, 3) - published(&reference_before, 3);
+    let new_published_terms = published(&status, 2) - published(&reference_before, 2);
     let new_terms = reference_report.counts[words::STORE_NEW_TERMS];
     let fixture_terms = status[2] - new_terms;
     let mut tight = bigger_store();
@@ -1341,11 +1346,11 @@ fn retained_substitution_grows_retries_and_resets_per_build() {
         assert_eq!(after[counts::DEMAND + 2], committed[counts::DEMAND + 2]);
         assert_eq!(after[counts::DEMAND + 3], committed[counts::DEMAND + 3]);
         assert_eq!(
-            after[2] - committed[2],
-            new_terms,
+            published(&after, 2) - published(&committed, 2),
+            new_published_terms,
             "rolled-back attempts leave no terms behind"
         );
-        assert_eq!(after[3] - committed[3], new_args, "rolled-back attempts leave no argument words behind");
+        assert_eq!(published(&after, 3) - published(&committed, 3), new_args, "rolled-back attempts leave no argument words behind");
         check_store_terms(&store, &old);
         kept = Some((store, fixture, tiny, results));
     }

@@ -150,8 +150,11 @@ impl SchemaProjection {
         Ok(words)
     }
 
-    pub fn run(&mut self, store: &ProgramRetention) -> Result<SchemaReport> {
-        let result = self.run_inner(store);
+    /// `terms` is the store's term count when the caller already read it
+    /// (the substitution run that ends just before reports it); otherwise
+    /// the run reads the store's status.
+    pub fn run(&mut self, store: &ProgramRetention, terms: Option<u32>) -> Result<SchemaReport> {
+        let result = self.run_inner(store, terms);
         if result.is_err() {
             let guard = store.store.lock().unwrap();
                 self.queue.write_buffer_counted(
@@ -164,11 +167,16 @@ impl SchemaProjection {
         result
     }
 
-    fn run_inner(&mut self, store: &ProgramRetention) -> Result<SchemaReport> {
+    fn run_inner(&mut self, store: &ProgramRetention, terms: Option<u32>) -> Result<SchemaReport> {
         let mut report = SchemaReport::default();
         let mut lo = 32;
-        let mut hi = store.status()?[A_TERMS];
-        report.readbacks += 1;
+        let mut hi = match terms {
+            Some(terms) => terms,
+            None => {
+                report.readbacks += 1;
+                store.status()?[A_TERMS]
+            }
+        };
         let mut base = 0u32;
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.clear_buffer_counted(&self.buffers["pj_schema_ranges"], 0, None);
