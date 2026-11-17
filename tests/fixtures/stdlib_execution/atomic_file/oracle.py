@@ -372,8 +372,10 @@ def common(result, session):
         args = ledger.arguments(entry["args"])
         assert args[0] == str(anchor_fd) and args[2] == "0"
         assert ledger.quoted(args[1]) == result["temporary"] != result["destination"], "cleanup touched destination or another name"
+    pairs, named = session.suite.profile
+    sources = {a for a, _ in pairs} | set(named)
     for entry in selected(result, "mmap"):
-        if "MAP_32BIT" in entry["args"]:
+        if entry["ip"] in sources or "MAP_32BIT" in entry["args"]:
             assert entry["phase"] == "C", ("atomic continuation allocated", entry)
     raw_skipped = set()
     if session.repair:

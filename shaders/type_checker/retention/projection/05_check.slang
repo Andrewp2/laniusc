@@ -122,7 +122,9 @@ void check_struct_literal(Row at, uint4 p, uint t, uint use)
         uint4 record = pj_side(at.rank, PJ_SIDE_FIELDS, p.y + k, 0u);
         uint ordinal = pj_side(at.rank, PJ_SIDE_FIELDS, p.y + k, 1u).x;
         uint3 field = struct_field(t, ordinal);
-        if (field.x == RT_INVALID || row_type(at, record.z) != field.x)
+        // The frontend accepts a fixed array as a slice field's value
+        // (`View { values: scratch }`); the element identity must match.
+        if (field.x == RT_INVALID || !pj_argument_compatible(field.x, row_type(at, record.z), 2u))
         {
             fail(at, PJ_E_FIELD, ordinal);
             return;
