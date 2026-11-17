@@ -19,8 +19,6 @@ StructuredBuffer<uint> tokens_out;
 StructuredBuffer<uint> token_file_id;
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> records;
-// Inclusive prefix sums: machines, states, transitions, bracket depth.
-StructuredBuffer<uint4> scan_a;
 // Inclusive prefix sums: generators, yields, loop depth, statement depth.
 StructuredBuffer<uint4> scan1;
 // Inclusive prefix sums: parameters, locals, locals in scope, depth in the
@@ -78,8 +76,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     uint role = rec(token, GR_ROLE);
     uint kind = token_kind(tokens_out, token);
-    GenPlace place = gen_place(records, scan_a, scan1, gens, token);
-    bool statement = place.inside && place.eligible;
+    GenPlace place = gen_place(records, scan1, gens, token);
     uint slots = 0u;
     uint pairs = 0u;
     uint pieces = 0u;
@@ -98,7 +95,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     {
         if (!place.inside)
             fail(token, GE_OUTSIDE, token);
-        else if (!place.eligible || role != GROLE_YIELD)
+        else if (role != GROLE_YIELD)
             fail(token, GE_PLACE, token);
         else
         {
@@ -106,18 +103,18 @@ void main(uint3 tid: SV_DispatchThreadID)
             pieces = YIELD_PIECES + 2u * slots;
         }
     }
-    if (role == GROLE_YIELD_END && statement)
+    if (role == GROLE_YIELD_END)
         pieces = YIELD_END_PIECES;
     if (kind == TK_RETURN && place.inside)
     {
-        if (!place.eligible)
+        if (role != GROLE_RETURN)
             fail(token, GE_PLACE, token);
         else if (kind_of(token + 1u) != TK_SEMICOLON)
             fail(token + 1u, GE_RETURN_VALUE, token);
         else
             pieces = RETURN_PIECES;
     }
-    if (role == GROLE_LET && statement)
+    if (role == GROLE_LET)
     {
         uint name = token + 1u;
         if (rec(token, GR_END) == 0u)

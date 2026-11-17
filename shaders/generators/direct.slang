@@ -13,11 +13,6 @@ struct DirectParams
 
 ConstantBuffer<DirectParams> gDirect;
 StructuredBuffer<uint> records;
-// Inclusive prefix sums: machines, states, transitions, bracket depth.
-StructuredBuffer<uint4> scan_a;
-// Inclusive prefix sums: generators, yields, loop depth, statement depth.
-StructuredBuffer<uint4> scan1;
-StructuredBuffer<uint> gens;
 RWStructuredBuffer<uint> direct;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -27,10 +22,8 @@ static const uint DISPATCH_X_STRIDE = 16776960u;
 void main(uint3 tid: SV_DispatchThreadID)
 {
     uint token = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
+    // Only a `let` at a statement position has the role.
     if (token >= gDirect.token_count || records[token * GR_WORDS + GR_ROLE] != GROLE_LET)
-        return;
-    GenPlace place = gen_place(records, scan_a, scan1, gens, token);
-    if (!place.eligible)
         return;
     uint close = records[token * GR_WORDS + GR_CLOSE];
     if (close < gDirect.token_count)

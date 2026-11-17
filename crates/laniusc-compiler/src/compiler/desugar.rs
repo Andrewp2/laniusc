@@ -54,11 +54,12 @@ use crate::{
     lexer::{
         buffers::GpuBuffers,
         debug::DebugOutput,
-        features::PARSER_FEATURE_MACHINES,
+        features::{PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES},
         tables::tokens::TokenKind,
     },
 };
 
+mod generators;
 mod machines;
 
 /// The bit the lexer's feature word carries when the generated text did not
@@ -69,7 +70,7 @@ pub(crate) const DESUGAR_RULE_ERROR: u32 = 0x8000_0000;
 /// The bits that stop a build: the host grows the floors or explains a rule.
 const DESUGAR_STOPS: u32 = DESUGAR_REGION_OVERFLOW | DESUGAR_RULE_ERROR;
 /// The bits of the feature word that are not parser families.
-pub(crate) const DESUGAR_BITS: u32 = DESUGAR_STOPS;
+pub(crate) const DESUGAR_BITS: u32 = DESUGAR_STOPS | PARSER_FEATURE_GENERATORS;
 
 /// Bytes of the region after the source that the next lexer allocation
 /// reserves for generated token text. It starts at zero, so a build without
@@ -97,8 +98,8 @@ thread_local! {
 }
 
 /// The rounds, in the order they run: the feature bit each one desugars.
-const ROUND_FEATURES: [u32; ROUNDS] = [PARSER_FEATURE_MACHINES];
-const ROUNDS: usize = 1;
+const ROUND_FEATURES: [u32; ROUNDS] = [PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES];
+const ROUNDS: usize = 2;
 
 /// The byte extent of a lexer input of `n` source bytes, `aligned_len` of
 /// them with word padding: the source alone when no region is reserved or
@@ -332,6 +333,7 @@ struct LastRun {
     tokens_out: LaniusBuffer<u8>,
     token_file_id: LaniusBuffer<u8>,
     in_bytes: LaniusBuffer<u8>,
+    generators: Option<generators::Run>,
     machines: Option<machines::Run>,
 }
 
@@ -570,6 +572,13 @@ fn explain(text: impl Fn(usize, usize) -> String) -> Result<RuleError> {
         device: &device.device,
         queue: &device.queue,
     };
+    // A broken rule stops the rounds after it, so the first round with an
+    // error has the error the run reports.
+    if let Some(run) = &last.generators
+        && let Some(rule) = generators::explain(&gpu, &last, run, &text)?
+    {
+        return Ok(rule);
+    }
     if let Some(run) = &last.machines
         && let Some(rule) = machines::explain(&gpu, &last, run, &text)?
     {
@@ -819,6 +828,10 @@ impl<'a> Round<'a> {
                 (
                     "lex_error_offset",
                     self.bufs.lex_error_offset.as_entire_binding(),
+                ),
+                (
+                    "source_file_count",
+                    self.bufs.source_file_count.as_entire_binding(),
                 ),
                 ("sizes", shared.sizes.as_entire_binding()),
                 (
@@ -1121,6 +1134,7 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
             .clone()
             .reinterpret::<u8>(bufs.token_file_id.byte_size),
         in_bytes: bufs.in_bytes.clone(),
+        generators: None,
         machines: None,
     };
     let mut previous = None;
@@ -1137,7 +1151,9 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
             previous,
             feature,
         };
-        if feature == PARSER_FEATURE_MACHINES {
+        if feature == PARSER_FEATURE_GENERATORS {
+            last.generators = Some(generators::record(&round, encoder)?);
+        } else if feature == PARSER_FEATURE_MACHINES {
             last.machines = Some(machines::record(&round, encoder)?);
         }
         previous = Some(slot);

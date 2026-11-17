@@ -35,6 +35,7 @@ ConstantBuffer<LexParams> gLex;
 RWStructuredBuffer<uint> token_count;
 RWStructuredBuffer<uint> parser_feature_flags;
 StructuredBuffer<uint> lex_error_offset;
+StructuredBuffer<uint> source_file_count;
 // The sizes of every round: the round's own slice at `gPlan.slot`, the
 // round before it at `gPlan.previous`.
 RWStructuredBuffer<uint> sizes;
@@ -59,6 +60,8 @@ static const uint PLAN_FINISH = 4u;
 // Machines.
 static const uint PLAN_M_MACHINES = 8u;
 static const uint PLAN_M_PIECES = 9u;
+// Generators.
+static const uint PLAN_G_PIECES = 10u;
 
 // Machine layout: dispatches and parameter blocks from A_FEATURE and
 // P_FEATURE (desugar.rs mirrors them).
@@ -88,6 +91,23 @@ static const uint MP_STATES = 31u;
 static const uint MP_STATE_CHECK = 32u;
 static const uint MP_COUNT = 33u;
 static const uint MP_WRITE = 34u;
+// Generator layout (desugar/generators.rs mirrors it).
+static const uint GA_TOKENS = 16u;
+static const uint GA_RECORD_WORDS = 17u;
+static const uint GA_SCAN = 18u;
+static const uint GA_SCAN_ONE = 19u;
+static const uint GA_FILES = 20u;
+static const uint GA_PAIRS = 21u;
+static const uint GA_WRITE = 22u;
+static const uint GP_TOKENS = 16u;
+static const uint GP_CLEAR_RECORDS = 17u;
+static const uint GP_SCAN = 18u;
+static const uint GP_CHECK = 21u;
+static const uint GP_FILES = 22u;
+static const uint GP_SCOPE = 23u;
+static const uint GP_WRITE = 24u;
+static const uint G_REC_WORDS = 7u;
+static const uint G_STATUS_WORDS = 1u;
 static const uint M_STATUS_WORDS = 4u;
 static const uint M_INFO_WORDS = 3u;
 static const uint M_STATE_ROW_WORDS = 8u;
@@ -212,6 +232,62 @@ void start_machines()
     scan(MP_SCAN_TOKENS, MA_TOKEN_SCAN, MA_TOKEN_SCAN_ONE, tokens);
 }
 
+// Every per-token kernel of a generator round reads all the tokens: the
+// round runs only when the stream has a `gen` or `yield` token.
+void start_generators()
+{
+    uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_TOKENS];
+    uint files = source_file_count[0];
+    sizes[gPlan.slot * SIZE_WORDS + S_LIVE] = tokens;
+    block(GP_TOKENS, tokens, 0u, 0u, 0u);
+    block(GP_CLEAR_RECORDS, tokens * G_REC_WORDS, 0u, 0u, 0u);
+    block(GP_CHECK, tokens, 0u, DESUGAR_NO_ERROR, DESUGAR_NO_ERROR);
+    block(GP_FILES, files, 0u, 0u, 0u);
+    set_lanes(GA_TOKENS, tokens);
+    set_lanes(GA_RECORD_WORDS, tokens * G_REC_WORDS);
+    set_lanes(GA_FILES, files);
+    scan(GP_SCAN, GA_SCAN, GA_SCAN_ONE, tokens);
+}
+
+// feat_a: the inclusive prefix sums of generators and yields. feat_b: of
+// the slots of yields and the pairs of locals and yields. feat_c: of the
+// piece counts.
+void plan_generator_pieces()
+{
+    uint live = sizes[gPlan.slot * SIZE_WORDS + S_LIVE];
+    if (live == 0u)
+        return;
+    if (status_failed(G_STATUS_WORDS))
+    {
+        raise_flag(DESUGAR_RULE_ERROR);
+        return;
+    }
+    uint gens = feat_a[live - 1u].x;
+    uint slots = feat_b[live - 1u].x;
+    uint pairs = feat_b[live - 1u].y;
+    uint fpieces = feat_c[live - 1u].x;
+    if (gens == 0u || fpieces == 0u)
+        return;
+    // The slots of every yield are rows of the scope list.
+    if (slots > gPlan.token_cap)
+    {
+        overflow(S_NEED_TOKENS, slots);
+        return;
+    }
+    if (fpieces > gPlan.piece_cap)
+    {
+        overflow(S_NEED_PIECES, fpieces);
+        return;
+    }
+    sizes[gPlan.slot * SIZE_WORDS + S_F0] = gens;
+    sizes[gPlan.slot * SIZE_WORDS + S_F1] = pairs;
+    block(GP_SCOPE, live, pairs, 0u, 0u);
+    block(GP_WRITE, live, 1u, fpieces, gens);
+    set_lanes(GA_PAIRS, pairs);
+    set_lanes(GA_WRITE, fpieces);
+    expand(fpieces);
+}
+
 // feat_a: the inclusive prefix sums of machines, states, transitions and
 // bracket depth.
 void plan_machines()
@@ -283,6 +359,13 @@ void main()
             return;
         if (gPlan.feature == FEATURE_MACHINES)
             start_machines();
+        else if (gPlan.feature == FEATURE_GENERATORS)
+            start_generators();
+        return;
+    }
+    if (mode == PLAN_G_PIECES)
+    {
+        plan_generator_pieces();
         return;
     }
     if (mode == PLAN_M_MACHINES)

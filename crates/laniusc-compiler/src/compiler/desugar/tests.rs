@@ -532,3 +532,114 @@ fn the_rules_reject_their_violations() {
     }
     assert!(failures.is_empty(), "{failures}");
 }
+
+/// The first token where two streams differ, with the tokens around it.
+fn first_difference(actual: &[(u32, String, u32)], expected: &[(u32, String, u32)]) -> Option<String> {
+    let at = (0..actual.len().max(expected.len())).find(|&at| actual.get(at) != expected.get(at))?;
+    let window = |tokens: &[(u32, String, u32)]| {
+        tokens[at.saturating_sub(8).min(tokens.len())..(at + 8).min(tokens.len())]
+            .iter()
+            .map(|(kind, text, file)| format!("{text}:{kind}@{file}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    Some(format!(
+        "token {at} differs ({} and {} tokens)\n--- recorded ---\n{}\n--- gpu ---\n{}",
+        expected.len(),
+        actual.len(),
+        window(expected),
+        window(actual)
+    ))
+}
+
+/// Generators in one file and in several, with text around them, a public
+/// one, yields in `if` and nested `while` blocks, and the library's
+/// iterator. The recorded texts are the ones the text rewrite before the
+/// frontend wrote before generators moved to the token stream: the
+/// desugared stream of each pack is the desugared stream of its recorded
+/// text, token by token, with each token in its file.
+#[test]
+fn generators_desugar_to_the_recorded_machines() {
+    let _one = one_at_a_time();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/machines/expansion");
+    let mut failures = String::new();
+    for pack in 0..4 {
+        let mut sources = Vec::new();
+        let mut expected = Vec::new();
+        for file in 0.. {
+            let read = |kind: &str| std::fs::read_to_string(dir.join(format!("generator_{pack}_{file}.{kind}.txt")));
+            let Ok(source) = read("source") else { break };
+            sources.push(source);
+            expected.push(read("expanded").expect("a recorded text"));
+        }
+        let texts: Vec<&str> = sources.iter().map(String::as_str).collect();
+        let actual = desugar_pack(&texts).unwrap_or_else(|verdict| panic!("pack {pack}: {verdict}")).tokens;
+        let texts: Vec<&str> = expected.iter().map(String::as_str).collect();
+        let expected = desugar_pack(&texts).unwrap_or_else(|verdict| panic!("recorded pack {pack}: {verdict}")).tokens;
+        if let Some(difference) = first_difference(&actual, &expected) {
+            failures.push_str(&format!("pack {pack}: {difference}\n"));
+        }
+    }
+    assert!(failures.is_empty(), "{failures}");
+}
+
+const EVENS: &str = "import core::option;
+gen fn evens(limit: i32) -> i32 {
+    let i: i32 = 0;
+    while (i < limit) {
+        yield i;
+        i += 2;
+    }
+}
+";
+
+#[test]
+fn generators_stay_in_their_subset() {
+    let _one = one_at_a_time();
+    let rejected = |source: String| desugar_pack(&[source.as_str()]).err().unwrap_or_else(|| format!("accepted: {source}"));
+    let cases = [
+        (EVENS.replace("i += 2;", "limit = 1;"), "parameters are read-only"),
+        (EVENS.replace("i += 2;", "i += 2; break;"), "no `break` or `continue`"),
+        (EVENS.replace("let i: i32 = 0;", "let i = 0;"), "declare their type"),
+        (EVENS.replace("yield i;", "{ yield i; }"), "not inside a `match`, `for` or plain block"),
+        (EVENS.replace("import core::option;\n", ""), "imports `core::option`"),
+        (EVENS.replace("i += 2;", "let i: i32 = 1;"), "`i` is declared again"),
+        (EVENS.replace("i += 2;", "return 3;"), "takes no value"),
+        (EVENS.replace("-> i32 {", "{"), "declares the type it yields"),
+        (EVENS.replace("gen fn evens(", "gen fn evens<T>("), "no type parameters"),
+    ];
+    let mut failures = String::new();
+    for (index, (source, expected)) in cases.iter().enumerate() {
+        let verdict = rejected(source.clone());
+        if !verdict.contains(expected) {
+            failures.push_str(&format!("case {index}: expected {expected}\n  found {verdict}\n"));
+        }
+    }
+    assert!(failures.is_empty(), "{failures}");
+
+    let outside = "fn main() -> i32 {\n    yield 1;\n    return 0;\n}\n";
+    let rule = desugar_or_reject(&[outside]).err().expect("a yield outside a generator");
+    let text = format!("{:?}", rejected_in_source(Path::new("main.lani"), outside, rule));
+    assert!(text.contains("write it in a `gen fn`") && text.contains("line: 2"), "{text}");
+}
+
+/// The token table of the generator strings is the GPU lexer's, with the
+/// machine keywords the lexer reads where the strings put them.
+#[test]
+fn the_generator_token_table_matches_the_lexer() {
+    let lexer = test_lexer();
+    let (strings, keyword) = generators::constant_strings();
+    for &text in strings {
+        let tokens = without_desugaring(|| pollster::block_on(lexer.lex(text))).expect("lex a constant");
+        let mut expected = vec![0u32; text.len()];
+        for token in tokens {
+            let word = &text[token.start..token.start + token.len];
+            let kind = keyword(word).map_or(token.kind as u32, |kind| kind as u32);
+            expected[token.start] = 1 | 2 | (kind << 8);
+            for byte in &mut expected[token.start + 1..token.start + token.len] {
+                *byte = 1 | (kind << 8);
+            }
+        }
+        assert_eq!(token_info(text, keyword), expected, "{text:?}");
+    }
+}
