@@ -61,14 +61,6 @@ public static const uint CH_RUN = 6u;
 public static const uint CH_RUN_FNS = 7u;
 public static const uint CHANNELS = 8u;
 
-// Piece kinds. A piece row is `(length, kind, value, anchor token)`: a copy
-// of source bytes from `value`, constant string `value`, the decimal digits
-// of `value`, or the snake_case form of the anchor token.
-public static const uint PIECE_COPY = 0u;
-public static const uint PIECE_CONST = 1u;
-public static const uint PIECE_NUMBER = 2u;
-public static const uint PIECE_SNAKE = 3u;
-
 // No well-formed program reaches these. They bound the loops of a kernel
 // that runs before the host has read whether the parser accepted the files.
 public static const uint MAX_LIST = 65536u;
@@ -173,8 +165,6 @@ public static const uint STATUS_RESERVED = 0u;
 public static const uint STATUS_TOKENS = 1u;
 public static const uint STATUS_EVENTS = 2u;
 public static const uint STATUS_GRAPH = 3u;
-// Not a rule: the first `gen` or `yield` token of the pack.
-public static const uint STATUS_GENERATORS = 4u;
 
 public static const uint E_RESERVED = 1u;
 
@@ -320,12 +310,3 @@ public bool ascii_digit(uint c)
     return c >= 48u && c <= 57u;
 }
 
-// Whether snake_case puts `_` before `current`: an upper-case letter after a
-// lower-case letter or a digit, or the last upper-case letter of a run that
-// a lower-case letter follows. A missing neighbour is 0.
-public bool snake_boundary(uint previous, uint current, uint next)
-{
-    if (!ascii_upper(current))
-        return false;
-    return ascii_lower(previous) || ascii_digit(previous) || (ascii_upper(previous) && ascii_lower(next));
-}

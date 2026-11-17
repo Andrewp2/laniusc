@@ -29,6 +29,14 @@ pub const PARSER_FEATURE_FLOAT_LITERALS: u32 = 0x0000_0800;
 /// Source contains a `machine` item. The token build also claims the families
 /// of the tokens the desugaring writes for it (`compiler::desugar`).
 pub const PARSER_FEATURE_MACHINES: u32 = 0x0000_1000;
+/// Source contains a `gen` or `yield` token. The token build also claims the
+/// families of the machine the desugaring writes for a generator. The bit is
+/// not a parser family.
+pub const PARSER_FEATURE_GENERATORS: u32 = 0x0000_2000;
+/// Set by the token build where a closure starts (`|` or `||` where a
+/// binary operator cannot stand). The desugaring rewrites closures; the bit
+/// is not a parser family.
+pub const PARSER_FEATURE_CLOSURES: u32 = 0x0000_4000;
 
 /// Parser families whose absence can be proven directly from final lexical tokens.
 pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS

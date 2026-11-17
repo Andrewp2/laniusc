@@ -558,7 +558,7 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     late_round_args: ComputeInvocation,
     late_round: ComputeInvocation,
     late_counts_readback: crate::gpu::operations::CopyBufferOperation,
-    early_rearm: ComputeInvocation,
+    early_rearm: ComputeOperation,
     early_rearm_args: ComputeInvocation,
     body_rearm: ComputeInvocation,
     body_rearm_args: ComputeInvocation,
@@ -637,8 +637,15 @@ impl CanonicalTypeOperations {
                 .max(dependency_rows)
                 .max(canonical_passes::CANONICAL_VALIDATION_WORDS as u32),
         )?;
+        // The early stage's re-arm visits every candidate; the body and late
+        // stages' visit the allocated ones (03c_rearm_live_list).
         let rearm = direct(
             canonical_passes::CANONICAL_REARM_PASS,
+            canonical_passes::CANONICAL_REARM_LIVE_LIST_KERNEL,
+            candidates,
+        )?;
+        let early_rearm = direct(
+            canonical_passes::CANONICAL_EARLY_REARM_PASS,
             canonical_passes::CANONICAL_REARM_LIST_KERNEL,
             candidates,
         )?;
@@ -669,7 +676,6 @@ impl CanonicalTypeOperations {
         let late_round_args = round_args.invocation(graph, late.round_args)?;
         let late_round = round.invocation(graph, late.round)?;
         let late_counts_readback = counts_copy(late.counts_readback)?;
-        let early_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_PASS)?;
         let early_rearm_args =
             rearm_args.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_ARGS_PASS)?;
         let body = &canonical_passes::CANONICAL_BODY_ROUNDS;
@@ -833,7 +839,7 @@ impl CanonicalTypeOperations {
                 self.round_args.record_invocation(encoder, &self.dependency_round_args)?;
             }
             CanonicalStage::Early => {
-                self.rearm.record_invocation(encoder, &self.early_rearm)?;
+                self.early_rearm.record(encoder)?;
                 self.rearm_args.record_invocation(encoder, &self.early_rearm_args)?;
                 self.round0.record(encoder)?;
                 self.round_args.record(encoder)?;

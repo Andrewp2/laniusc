@@ -46,7 +46,7 @@ The per-round change counts vary by a few between runs even without masking, bec
 These passes work on global rows or on compacted rows with no stable owner:
 
 - the claim scan, claim index clear and build (`03a2`, `03a3`)
-- bound clear and local collection (`03l0`, `03l2`), `03l1`, explicit admission `03a0b`
+- dependency bound collection `03l1`, explicit admission `03a0b` (the bound clear and the local collection `03l2` run once before the rounds)
 - constant claim index and environment
 - aggregate scans and conditions, the type index `02c`
 - substitution expansion `04` to `06`, and imported fields `07`. Progress in these stamps the global word.
@@ -160,7 +160,45 @@ Settings, 618f4be1b against the two changes, sum of the per-pass minimum over 6 
 | Rounds | 10 + final pass | 10 + final pass |
 | Settings executable | `115a4d52a2ae77e0` | byte-identical |
 
+## Where an idle dispatch's time goes (2026-11-17)
+
+A late round of the traced settings build costs 1.0 to 1.3 ms for 58 dispatches, 16 to 22 µs each, while a dispatch that does nothing costs a few µs. Untimed encoder timestamps around whole rounds (a temporary diagnostic, `idle-dispatch-diag.patch` in the evidence directory) and two forced variants of extra rounds after convergence separate the parts:
+
+| Converged round, untraced | µs per round | Per dispatch |
+|---|---|---|
+| Every pass at zero workgroups (indirect arguments zeroed) | about 40 | 0.7 |
+| Every pass at one workgroup | 180 to 250 | 3 to 4 |
+| Every pass at its normal grid | 380 to 460 minimum | 6 to 7 |
+| The 28 masked passes at zero workgroups, the rest normal | 275 minimum | |
+
+- The timestamp traces add about 4 µs to every dispatch. That is most of the gap between a traced 16 µs and an untraced idle dispatch.
+- Barriers, bind groups and pipeline switches cost under 1 µs per dispatch. The round's passes bind 69 to 126 buffers each, and nearly all are indirect over the HIR grid (828 workgroups) or the token grid (1,773). Removing per-dispatch overhead (read-only declarations, shared layouts, pass order) cannot save more than that 0.7 µs.
+- A one-workgroup dispatch of a real round kernel costs 2 to 3 µs more than a trivial one. That is the cost of launching a large kernel and draining it before the next dependent one.
+- The rest of an idle round is the passes' own grids. Masked lanes that test their function's stamp and return cost at most about 0.1 ms per round together, so a compacted list of active rows (option b of the task) would save at most that, minus the dispatches that build the list. The earlier compaction experiment above measured the same. Most of the idle cost is in unmasked passes that visit every HIR row or every live type row and do real work there (interning, atomics) in every round.
+- A late round's real changes add to this: in round 10, receiver binding (75 µs traced), contextual result requests (60), claim emission and argument matching (45 each) and the resolve table (40) spend their time on the few changed functions' items, as described under "Activity finer than whole functions".
+
+Idle cost per pass, traced, in a round after convergence (minimum of 5 builds, fef2db596): bound collection 31.7 µs, call-root expansion 26.6, the two type indexes (`02c`) 19.5 each, method collection 18.4, imported fields 18.4, explicit admission 18.4, field expectations 17.4, call environments 16.4. The floor of a traced dispatch is 5 to 6 µs.
+
+Two of these were changed:
+
+- **Bound collection.** `03l2` collected the unit's trait implementations and the bounds of its generic functions in every round, after a clear of the tables' counts. Those are declaration facts. The clear and the collection now run once before the rounds (and before the final pass of a job without rounds), and a copy keeps the counts (`bound_inference_local_counts`). A unit with dependency interfaces restores the counts at the start of each round and collects the resident pages' rows again on top of the local ones. The table order changes from dependency rows first to local rows first. `03l3` does not depend on it: the rows of one pass were already appended in atomic order.
+- **Call-root expansion.** `substitution/04` pushes every accepted call result and argument context in every round. The push is once per job (a mark bit per canonical ID), but each push was an atomic OR on the mark bitmap. `ct_expand_push` now reads the mark first and returns when it is set. Marks are only set during a job, so a stale read falls through to the atomic.
+
+Settings at ab296f5f6 with the canonical re-arm change, traced, sum of the per-pass minimum over the last 3 builds:
+
+| | Before | Bound collection once | Expand mark check |
+|---|---|---|---|
+| Call-root expansion per round | 23 to 24 µs | 23 to 24 µs | 15 to 16 µs |
+| Round totals, rounds 1 to 10 plus final pass | 15,977 µs | 15,783 µs | 15,503 µs |
+| Dispatches per round | 58 | 57 | 57 |
+| Type-check GPU time | 29.05 ms | 28.56 ms | 28.11 ms |
+| Type-check dispatches | 1,431 | 1,421 | 1,421 |
+| Settings executable | `115a4d52a2ae77e0` | byte-identical | byte-identical |
+
+Tried and not kept: skipping complete imported applications inside the rounds in `07_project_imported_fields` left its 17 µs unchanged. Its cost is the visit of every live type row (one per token), not the work on the imported ones. The two `02c` indexes have the same shape: they visit every live row and skip the ones already indexed. A list of the rows that can hold a type would serve all three.
+
 ## What remains
 
 - Activity per item, as above.
+- A list of the live type rows that can hold a type, for the passes that visit every live row in each round (`02c` twice, imported fields twice).
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.

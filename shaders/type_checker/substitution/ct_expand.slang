@@ -79,6 +79,9 @@ public bool ct_expand_push(uint id, uint word)
     ct_expand_mark.GetDimensions(words, stride);
     if ((id >> 5u) >= words) return false;
     uint bit = 1u << (id & 31u);
+    // Marks are only set during a job: an ID already marked needs no atomic.
+    // The inference rounds push every accepted root again each round.
+    if ((ct_expand_mark[id >> 5u] & bit) != 0u) return true;
     uint prior;
     InterlockedOr(ct_expand_mark[id >> 5u], bit, prior);
     return (prior & bit) != 0u || ct_expand_append(id, word);

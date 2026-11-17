@@ -1,0 +1,86 @@
+import core::option;
+
+fn before() -> i32 { return 1; }
+
+pub enum GridCellsResume { Next }
+pub machine GridCells on GridCellsResume -> core::option::Option<i32> {
+    rows: i32,
+    cols: i32,
+    start Start;
+    state Start {
+        GridCellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = 0;
+    while (r < rows) {
+        let c: i32 = 0;
+        if (r == 3) { goto Done with core::option::None(); } else { goto Yield0(r, c) with core::option::Some(0 - 1); }
+        while (c < cols) {
+            goto Yield1(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1;
+    }
+    goto Yield2(r) with core::option::Some(999); goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_r: i32, __lanius_gen_c: i32) {
+        GridCellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = __lanius_gen_r; { let c: i32 = __lanius_gen_c; {  } while (c < cols) {
+            goto Yield1(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1; } while (r < rows) {
+        let c: i32 = 0;
+        if (r == 3) { goto Done with core::option::None(); } else { goto Yield0(r, c) with core::option::Some(0 - 1); }
+        while (c < cols) {
+            goto Yield1(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1;
+    }goto Yield2(r) with core::option::Some(999); goto Done with core::option::None(); },
+    }
+    state Yield1(__lanius_gen_r: i32, __lanius_gen_c: i32) {
+        GridCellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = __lanius_gen_r; { let c: i32 = __lanius_gen_c; { c += 1; } while (c < cols) {
+            goto Yield1(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }r += 1; } while (r < rows) {
+        let c: i32 = 0;
+        if (r == 3) { goto Done with core::option::None(); } else { goto Yield0(r, c) with core::option::Some(0 - 1); }
+        while (c < cols) {
+            goto Yield1(r, c) with core::option::Some(r * 10 + c);
+            c += 1;
+        }
+        r += 1;
+    }goto Yield2(r) with core::option::Some(999); goto Done with core::option::None(); },
+    }
+    state Yield2(__lanius_gen_r: i32) {
+        GridCellsResume::Next -> { let rows: i32 = self.rows; let cols: i32 = self.cols; let r: i32 = __lanius_gen_r;  goto Done with core::option::None(); },
+    }
+    final state Done {
+        GridCellsResume::Next -> stay with core::option::None(),
+    }
+}
+pub fn grid_cells(rows: i32, cols: i32) -> GridCells { return grid_cells_start(rows, cols); }
+pub impl GridCells {
+    pub fn next(&mut self) -> core::option::Option<i32> { return self.step(GridCellsResume::Next); }
+}
+
+
+fn between() -> i32 { return 2; }
+
+enum OnceResume { Next }
+machine Once on OnceResume -> core::option::Option<bool> {
+    start Start;
+    state Start {
+        OnceResume::Next -> { goto Yield0 with core::option::Some(true); goto Done with core::option::None(); },
+    }
+    state Yield0 {
+        OnceResume::Next -> {  goto Done with core::option::None(); },
+    }
+    final state Done {
+        OnceResume::Next -> stay with core::option::None(),
+    }
+}
+fn once() -> Once { return once_start(); }
+impl Once {
+    fn next(&mut self) -> core::option::Option<bool> { return self.step(OnceResume::Next); }
+}
+
+
+fn after() -> i32 { return 3; }

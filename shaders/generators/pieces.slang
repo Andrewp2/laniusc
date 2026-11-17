@@ -1,21 +1,24 @@
-// The pieces of generated text. Three kinds of token own pieces: `gen` owns
-// the text before its generator, the machine's head and the `Start` state;
-// a `yield` owns its state; the `}` of the body owns the `Done` state, the
-// constructor, the impl and, for a file's last generator, the text after it.
+// The pieces of a generator's text (desugar_common.slang has their rows).
+// Three kinds of token write pieces: `gen` writes the machine's head and the
+// `Start` state, a `yield` its state, and the `}` of the body the `Done`
+// state, the constructor and the impl. Every piece goes where the
+// generator's item stood: its owner is the item's first token, and the
+// counting run marks the item's tokens to drop.
 //
 // The kernel runs twice with the same control flow. The first run has one
 // thread per token and counts the token's pieces. The second has one thread
-// per piece: it finds the owner from the prefix sums of those counts, walks
-// the owner's sections to the piece and writes it.
+// per piece: it finds the token that writes it from the prefix sums of those
+// counts, walks the token's sections to the piece and writes it.
 //
 // A section that copies statements of the body is a run of tokens. In it a
 // `yield`, the `;` after it and a `return` are replaced, so the run's pieces
-// are the replacements with the copied text between them. The prefix sums
-// of the replacement sizes give a run's piece count and the token of a
-// piece without a walk over the run.
+// are the replacements with ranges of the copied tokens between them. The
+// prefix sums of the replacement sizes give a run's piece count and the
+// token of a piece without a walk over the run.
 import gpu_index;
 import generated_token_ids;
 import generator_common;
+import desugar.desugar_common;
 
 struct PieceParams
 {
@@ -26,11 +29,6 @@ struct PieceParams
 };
 
 ConstantBuffer<PieceParams> gPieces;
-StructuredBuffer<uint> tokens_out;
-StructuredBuffer<uint> token_file_id;
-ByteAddressBuffer in_bytes;
-StructuredBuffer<uint> source_file_start;
-StructuredBuffer<uint> source_file_len;
 StructuredBuffer<uint> records;
 // Inclusive prefix sums: generators, yields, loop depth, statement depth.
 StructuredBuffer<uint4> scan1;
@@ -44,13 +42,12 @@ StructuredBuffer<uint> gens;
 StructuredBuffer<uint> params;
 // The locals in scope at each yield, outermost first.
 StructuredBuffer<uint> scope;
-StructuredBuffer<uint> const_index;
 // Inclusive prefix sums of the piece counts, read by the writing run.
 StructuredBuffer<uint4> count_scan;
 RWStructuredBuffer<uint4> counts;
 RWStructuredBuffer<uint4> pieces;
-// Per piece: the file, start and length of its anchor token.
-RWStructuredBuffer<uint4> piece_sources;
+RWStructuredBuffer<uint> piece_owner;
+RWStructuredBuffer<uint> drop;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -85,16 +82,6 @@ uint rec(uint token, uint word)
     return records[token * GR_WORDS + word];
 }
 
-uint start_of(uint token)
-{
-    return token_start(tokens_out, token);
-}
-
-uint end_of(uint token)
-{
-    return token_end(tokens_out, token);
-}
-
 uint replaced_through(uint token)
 {
     return scan3[token].z;
@@ -105,52 +92,43 @@ bool within(Cursor cur, uint count)
     return cur.target != GN_NONE && cur.target >= cur.at && cur.target - cur.at < count;
 }
 
-void put(inout Cursor cur, uint len, uint kind, uint value, uint anchor)
+void put(inout Cursor cur, uint4 row)
 {
     if (cur.at == cur.target)
-        cur.row = uint4(len, kind, value, anchor);
+        cur.row = row;
     cur.at += 1u;
+}
+
+uint4 range_row(uint first, uint end)
+{
+    return uint4(end > first ? end - first : 0u, PIECE_RANGE, first, first);
 }
 
 void text(inout Cursor cur, uint id, uint anchor)
 {
-    put(cur, const_index[id * 2u + 1u], PIECE_CONST, id, anchor);
-}
-
-void bytes(inout Cursor cur, uint from, uint to, uint anchor)
-{
-    put(cur, to > from ? to - from : 0u, PIECE_COPY, from, anchor);
+    put(cur, uint4(1u, PIECE_CONST, id, anchor));
 }
 
 void token(inout Cursor cur, uint t)
 {
-    bytes(cur, start_of(t), end_of(t), t);
+    put(cur, range_row(t, t + 1u));
 }
 
-// The source text of tokens `[first, end)`.
+// Tokens `[first, end)`.
 void span(inout Cursor cur, uint first, uint end)
 {
-    bytes(cur, start_of(first), end > first ? end_of(end - 1u) : start_of(first), first);
-}
-
-uint digits(uint value)
-{
-    uint count = 1u;
-    for (uint rest = value; rest >= 10u; rest /= 10u)
-        count += 1u;
-    return count;
+    put(cur, range_row(first, end));
 }
 
 void number(inout Cursor cur, uint value, uint anchor)
 {
-    put(cur, digits(value), PIECE_NUMBER, value, anchor);
+    put(cur, uint4(1u, PIECE_NUMBER, value, anchor));
 }
 
-// The machine's name: the CamelCase form of the function's. The writing
-// run fills in the length.
+// The machine's name: the CamelCase form of the function's.
 void camel(inout Cursor cur, uint name)
 {
-    put(cur, 0u, PIECE_CAMEL, 0u, name);
+    put(cur, uint4(1u, PIECE_CAMEL, 0u, name));
 }
 
 Gen gen_at(uint head)
@@ -316,21 +294,9 @@ void prologue(inout Cursor cur, Gen g, uint y, uint first_slot, uint slots, uint
     cur.at = base + count;
 }
 
-// The text before the generator, the machine's head and its `Start` state.
+// The machine's head and its `Start` state.
 void head(inout Cursor cur, Gen g)
 {
-    uint file = token_file_id[g.head];
-    uint item = (g.flags & GF_PUBLIC) != 0u ? g.head - 1u : g.head;
-    uint from = source_file_start[file];
-    uint ordinal = scan1[g.head].x;
-    if (ordinal >= 2u)
-    {
-        uint previous = gens[ordinal - 2u];
-        if (token_file_id[previous] == file)
-            from = end_of(rec(previous, GR_END) - 1u);
-    }
-    bytes(cur, from, start_of(item), item);
-
     public_word(cur, g);
     text(cur, GC_ENUM, g.name);
     camel(cur, g.name);
@@ -388,8 +354,8 @@ void state(inout Cursor cur, uint y)
     text(cur, GC_ARM_END, y);
 }
 
-// The `Done` state, the function that constructs the machine, the impl with
-// `next`, and the text after the file's last generator.
+// The `Done` state, the function that constructs the machine and the impl
+// with `next`.
 void tail(inout Cursor cur, uint close)
 {
     Gen g = gen_of(close);
@@ -405,7 +371,7 @@ void tail(inout Cursor cur, uint close)
     text(cur, GC_RETURNS, g.name);
     camel(cur, g.name);
     text(cur, GC_RETURN, g.name);
-    put(cur, 0u, PIECE_CAMEL_SNAKE, 0u, g.name);
+    put(cur, uint4(1u, PIECE_CAMEL_SNAKE, 0u, g.name));
     text(cur, GC_START_CALL, g.name);
     param_list(cur, g, false);
     text(cur, GC_FN_END, g.name);
@@ -420,12 +386,6 @@ void tail(inout Cursor cur, uint close)
     text(cur, GC_NEXT_BODY, g.name);
     camel(cur, g.name);
     text(cur, GC_NEXT_END, g.name);
-
-    uint file = token_file_id[close];
-    uint ordinal = scan1[close].x;
-    bool last = ordinal >= gPieces.gen_count || token_file_id[gens[ordinal]] != file;
-    uint end = end_of(close);
-    bytes(cur, end, last ? source_file_start[file] + source_file_len[file] : end, close);
 }
 
 void sections(inout Cursor cur, uint owner)
@@ -458,12 +418,7 @@ uint token_of_piece(uint first, uint end, uint want)
 
 uint4 constant(uint id, uint anchor)
 {
-    return uint4(const_index[id * 2u + 1u], PIECE_CONST, id, anchor);
-}
-
-uint4 copy(uint from, uint to, uint anchor)
-{
-    return uint4(to > from ? to - from : 0u, PIECE_COPY, from, anchor);
+    return uint4(1u, PIECE_CONST, id, anchor);
 }
 
 // Piece `index` of the copy of tokens `[first, end)` of the body that opens
@@ -475,19 +430,20 @@ uint4 range_piece(uint first, uint end, uint index, uint body_open)
     uint t = token_of_piece(first, end, want);
     uint prior = replaced_through(t - 1u);
 
-    // The copied text before `t` starts after the replaced token before it.
-    uint from = start_of(first);
+    // The copied tokens before `t` start after the replaced token before
+    // it: the value after a `yield`, the `;` of a yield statement, and the
+    // `;` after a `return`.
+    uint from = first;
     if (prior > before)
     {
         uint p = token_of_piece(first, t, prior - 1u);
-        uint role = rec(p, GR_ROLE);
-        from = role == GROLE_YIELD ? start_of(p + 1u) : (role == GROLE_YIELD_END ? start_of(p) : end_of(p));
+        from = rec(p, GR_ROLE) == GROLE_YIELD_END ? p : p + 1u;
     }
     if (t >= end)
-        return copy(from, end_of(end - 1u), first);
+        return range_row(from, end);
     uint k = want - prior;
     if (k == 0u)
-        return copy(from, start_of(t), t);
+        return range_row(from, t);
     uint role = rec(t, GR_ROLE);
     if (role == GROLE_YIELD_END)
         return constant(GC_RPAREN, rec(t, GR_OPEN));
@@ -501,7 +457,7 @@ uint4 range_piece(uint first, uint end, uint index, uint body_open)
     if (k == 2u)
     {
         uint ordinal = scan1[t].y - 1u - scan1[body_open].y;
-        return uint4(digits(ordinal), PIECE_NUMBER, ordinal, t);
+        return uint4(1u, PIECE_NUMBER, ordinal, t);
     }
     if (k == 3u + 2u * slots)
         return constant(slots != 0u ? GC_SOME_AFTER_DATA : GC_SOME, t);
@@ -509,7 +465,7 @@ uint4 range_piece(uint first, uint end, uint index, uint body_open)
     if (((k - 3u) & 1u) == 0u)
         return constant(r == 0u ? GC_LPAREN : GC_COMMA, t);
     uint name = scope[scan3[t].x - slots + r] + 1u;
-    return copy(start_of(name), end_of(name), name);
+    return range_row(name, name + 1u);
 }
 
 Cursor cursor(uint target)
@@ -517,7 +473,7 @@ Cursor cursor(uint target)
     Cursor cur;
     cur.at = 0u;
     cur.target = target;
-    cur.row = uint4(0u, PIECE_COPY, 0u, 0u);
+    cur.row = uint4(0u, PIECE_RANGE, 0u, 0u);
     cur.in_range = false;
     cur.range_first = 0u;
     cur.range_end = 0u;
@@ -537,6 +493,12 @@ void main(uint3 tid: SV_DispatchThreadID)
         Cursor counter = cursor(GN_NONE);
         sections(counter, index);
         counts[index] = uint4(counter.at, 0u, 0u, 0u);
+        // The tokens of a generator's item, with the `pub` before it.
+        uint ordinal = scan1[index].x;
+        bool in_item = ordinal > 0u && index < rec(gens[ordinal - 1u], GR_END);
+        bool public_head = index + 1u < gPieces.token_count && rec(index + 1u, GR_ROLE) == GROLE_GEN &&
+                           (rec(index + 1u, GR_KIND) & GF_PUBLIC) != 0u;
+        drop[index] = in_item || public_head ? 1u : 0u;
         return;
     }
     if (index >= gPieces.piece_count)
@@ -560,8 +522,7 @@ void main(uint3 tid: SV_DispatchThreadID)
     uint4 row = cur.row;
     if (cur.in_range)
         row = range_piece(cur.range_first, cur.range_end, cur.range_index, gen_of(owner).open);
-    if (row.y == PIECE_CAMEL || row.y == PIECE_CAMEL_SNAKE)
-        row.x = camel_text(in_bytes, start_of(row.w), token_len(tokens_out, row.w), row.y == PIECE_CAMEL_SNAKE, GN_NONE);
+    Gen g = gen_of(owner);
     pieces[index] = row;
-    piece_sources[index] = uint4(token_file_id[row.w], start_of(row.w), token_len(tokens_out, row.w), 0u);
+    piece_owner[index] = (g.flags & GF_PUBLIC) != 0u ? g.head - 1u : g.head;
 }

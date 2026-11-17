@@ -78,6 +78,9 @@ static const uint TK_WITH = 212;
 static const uint TK_GEN = 217;
 static const uint TK_YIELD = 218;
 static const uint TK_COLON = 38;
+static const uint TK_LPAREN = 4;
+static const uint TK_OROR = 18;
+static const uint TK_PIPE = 26;
 static const uint TK_PLUS_ASSIGN = 46;
 static const uint TK_DEC = 57;
 // A word of up to eight bytes, packed low byte first into two words.
@@ -117,6 +120,17 @@ static const uint PARSER_FEATURES_OF_MACHINE_OUTPUT = PARSER_FEATURE_MACHINES |
     PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES | PARSER_FEATURE_STRUCTS |
     PARSER_FEATURE_PREDICATES | PARSER_FEATURE_MEMBERS | PARSER_FEATURE_ARRAYS |
     PARSER_FEATURE_REFERENCES;
+// A generator desugars to a machine (crates/laniusc-compiler/src/compiler/desugar).
+static const uint PARSER_FEATURE_GENERATORS = 0x00002000u;
+// A closure desugars to a struct and impls.
+static const uint PARSER_FEATURE_CLOSURES = 0x00004000u;
+// The families of the struct, the impls and the import a closure becomes.
+static const uint PARSER_FEATURES_OF_CLOSURE_OUTPUT = PARSER_FEATURE_CLOSURES |
+    PARSER_FEATURE_TYPE_ARGS | PARSER_FEATURE_STRUCTS | PARSER_FEATURE_PREDICATES |
+    PARSER_FEATURE_MEMBERS | PARSER_FEATURE_IMPORTS | PARSER_FEATURE_REFERENCES;
+// A name with the prefix of generated names stops the build; the
+// desugaring reports it.
+static const uint DESUGAR_RESERVED = 0x20000000u;
 
 uint parser_features_for_lexical_token(uint kind)
 {
@@ -140,6 +154,8 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_TYPE_ALIASES;
     if (kind == TK_MACHINE)
         flags |= PARSER_FEATURES_OF_MACHINE_OUTPUT;
+    if (kind == TK_GEN || kind == TK_YIELD)
+        flags |= PARSER_FEATURE_GENERATORS | PARSER_FEATURES_OF_MACHINE_OUTPUT;
     // A transition outside a machine is an error the desugaring reports.
     if (kind == TK_GOTO || kind == TK_STAY)
         flags |= PARSER_FEATURE_MACHINES;
@@ -563,6 +579,48 @@ uint machine_keyword_kind(uint token_index, uint start, uint end_excl, uint file
     return keyword ? candidate : TK_IDENT;
 }
 
+// Where `|` or `||` cannot be a binary operator (shaders/closures/mark.slang).
+bool closure_prefix(uint kind)
+{
+    return kind == TK_LPAREN || kind == TK_COMMA || kind == TK_ASSIGN || kind == TK_RETURN ||
+        kind == TK_COLON || kind == TK_ARROW;
+}
+
+// Whether a closure starts at this `|` or `||`, also after the word `move`.
+bool closure_starts(uint token_index, uint kind, uint file_id)
+{
+    if (kind != TK_PIPE && kind != TK_OROR)
+        return false;
+    uint previous = previous_compact_kind(token_index, file_id);
+    if (closure_prefix(previous))
+        return true;
+    if (previous != TK_IDENT || token_index < 2u)
+        return false;
+    uint previous_end = end_positions[token_index - 1u];
+    uint previous_start = max(compact_token_start(token_index - 1u),
+        file_start_and_id_for_token_end(previous_end).x);
+    // "move"
+    return previous_end == previous_start + 4u &&
+        load_byte_at(in_bytes, previous_start) == 109u && load_byte_at(in_bytes, previous_start + 1u) == 111u &&
+        load_byte_at(in_bytes, previous_start + 2u) == 118u && load_byte_at(in_bytes, previous_start + 3u) == 101u &&
+        closure_prefix(previous_compact_kind(token_index - 1u, file_id));
+}
+
+// A name that starts with `__lanius_`, the prefix of generated names.
+bool reserved_name(uint kind, uint start, uint end_excl)
+{
+    if (kind != TK_IDENT || end_excl < start + 9u)
+        return false;
+    // "__la", "nius", "_", packed low byte first.
+    for (uint k = 0u; k < 9u; k += 1u)
+    {
+        uint word = k < 4u ? 0x616c5f5fu : (k < 8u ? 0x7375696eu : 0x5fu);
+        if (load_byte_at(in_bytes, start + k) != ((word >> ((k & 3u) * 8u)) & 255u))
+            return false;
+    }
+    return true;
+}
+
 bool string_may_be_expression(uint token_index, uint kind, uint file_id)
 {
     if (kind != TK_STRING)
@@ -648,6 +706,10 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
         parser_features |= PARSER_FEATURE_STRING_EXPRS;
     if (ampersand_may_start_reference(k, kind, file_info.y))
         parser_features |= PARSER_FEATURE_REFERENCES;
+    if (closure_starts(k, kind, file_info.y))
+        parser_features |= PARSER_FEATURES_OF_CLOSURE_OUTPUT;
+    if (reserved_name(kind, start, end_excl))
+        parser_features |= DESUGAR_RESERVED;
     if (parser_features != 0u)
         atomic_u32_or(parser_feature_flags, 0u, parser_features);
 }

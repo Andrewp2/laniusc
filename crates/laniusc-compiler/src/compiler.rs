@@ -163,7 +163,6 @@ mod diagnostics;
 pub use diagnostics::*;
 
 pub(crate) mod desugar;
-mod machine_elaboration;
 
 /// Error returned by public compile/check operations.
 ///

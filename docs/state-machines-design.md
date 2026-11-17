@@ -952,8 +952,15 @@ the host.
   one generator, two generators in one file beside a file without one, and
   nine rejections. `tests/machines_execution.rs` passes unchanged, and
   `generator_closure.lani` runs a generator whose `yield` holds a closure.
+- **Superseded.** The rewrite and its parse are deleted. Generators are
+  desugared in the token stream: see
+  [Desugaring in the lexer](#desugaring-in-the-lexer).
 
 ## Selecting the files to rewrite
+
+Superseded 2026-11-17: the pass this section selected files for is deleted
+(see [Desugaring in the lexer](#desugaring-in-the-lexer)). The record below
+is kept for its measurements.
 
 Done 2026-11-15. It replaces the cross-build set of unchanged sources, which
 let a later build skip the files an earlier build had read.
@@ -1017,13 +1024,13 @@ Recording the machine parse is the largest remaining host cost, about 3 ms.
 
 ## Desugaring in the lexer
 
-Status: machines are desugared in the token stream since 2026-11-17
-(`crates/laniusc-compiler/src/compiler/desugar.rs`, `shaders/desugar` and
-the kernels of `shaders/machines`). Generators and closures move next. Until
-they do, the text rewrites of [M8](#m8-generators-on-the-gpu) and the
-closure pass handle them as described there, and the machine pass of
-[M7](#m7-expansion-on-the-gpu) keeps only the check of the reserved prefix
-and the rewrite of generators into machines.
+Status: since 2026-11-17 machines, generators and closures are desugared
+in the token stream (`crates/laniusc-compiler/src/compiler/desugar.rs` and
+its modules, `shaders/desugar`, and the kernels of `shaders/machines`,
+`shaders/generators` and `shaders/closures`). The pass before the frontend
+(`compiler/machine_elaboration`) is deleted with its lexes, its parse, its
+readbacks and its registry of rewritten texts: the frontend reads the
+source files as they are. The token build checks the reserved prefix.
 
 The text rewrites of M7 and M8 lex and parse the files a second time before
 the frontend, read the rewritten text back and upload it again. They cost
@@ -1059,11 +1066,69 @@ machine are copied as tokens and parsed where the expansion puts them, so
 an error inside them is the parser's or the type checker's, at its source
 position.
 
+### Rounds
+
+The desugaring runs one round per feature, in the order the features
+desugar into each other: closures, generators, machines. A generator
+becomes a machine, so the machine round after it desugars that machine
+like one the source wrote. Each round reads the stream the round before it
+left and writes the next one, and its region of generated text follows the
+region of the round before it.
+
+A round's own kernels read the stream into records, check the feature's
+rules and write pieces. A piece is a range of tokens of the round's input
+stream to copy, a constant string, a number, or a name formed from a token
+(`DoorState` from `Door`). Each piece has an owner: the token it goes
+before. The round also marks the tokens its items replace. The shared
+kernels of `shaders/desugar` then do the rest the same way for every
+round: expand each range into one piece per token, lay out the text, build
+its tokens and splice them in before their owners, dropping the marked
+tokens.
+
+A round is recorded only once a build of the process used its feature, so
+a program without generators records no generator round.
+
+Closures (`desugar/closures.rs`, `shaders/closures`): the round runs first,
+so its kernels read the lexer's own tokens. `mark` and a prefix sum give
+every token its bracket depth and the number of the closure that starts at
+it; a heap of minimum depths finds the bracket around a binder (`roles`);
+`records` reads each closure's parameter, result type and body and checks
+its form; `captures` finds the first use of each typed local of the
+enclosing function in a body. `pieces` counts the pieces of each token and
+writes them: the struct literal at the site, owned by the closure's first
+token, whose tokens are dropped; `import core::function;` after the module
+line of a file with a closure; and the struct and its impls of each of the
+file's closures, owned by the token after the file's last token. A piece
+names the file of its anchor, so the appendix stays in its file. A
+rejected closure stops the round before its splice, and the host reads the
+token and the code from the status word (`LNC0078`). A test compares the
+desugared stream of a closure with the stream of its text as the deleted
+rewrite wrote it, and settings, which has closures in four files, builds
+the same executable.
+
+Reserved names: the token build sets `DESUGAR_RESERVED` in the feature
+word for an identifier that starts with `__lanius_`. Every round then
+stops, and the host runs `machines/reserved` over the lexer's tokens to
+find the first one (`LNC0076`). Only source tokens pass the token build, so
+the names the rounds generate are never checked.
+
+Generators (`desugar/generators.rs`, `shaders/generators/read.slang`): the
+thread of each `gen` token reads its header and walks its body's
+statements, and the statements of the blocks of its `while` and `if`
+statements, without a stack: when a block ends, the records of the
+statement it belongs to give the next statement and the `}` around it.
+The prefix sums, the rules and the pieces of [M8](#m8-generators-on-the-gpu)
+follow, with copies as token ranges. The text the generator round writes is
+the machine of [M5 decisions](#m5-decisions), token for token: a test
+desugars the source and the text the deleted rewrite wrote for four packs
+and compares the streams.
+
 ### Token rows
 
 - **Copied tokens.** A token of the item that the expansion uses again
   (a pattern, an arm body, a type) is copied with its kind, so its bytes
-  are the source bytes.
+  are the bytes it had in the round's input. A copied token keeps one space
+  before it where its input had a gap, so two copied tokens never join.
 - **Generated tokens.** The text the expansion writes (keywords, names
   such as `DoorState`, `__lanius_in_Opened`, `door_start`) is written into
   a region of the lexer's byte buffer after the source bytes. A generated
@@ -1081,18 +1146,27 @@ position.
   read back and no map is kept between builds. The region starts four bytes
   after the padded source, so a span at the end of the source is never a
   region byte.
-- **Splice.** Each expanded item is a replacement of a token range. A
-  prefix sum over the replacements gives every unchanged token its shift.
-  One kernel moves the unchanged tokens, the expansion kernels write their
-  tokens, and a last kernel copies the stream back into `tokens_out`,
-  `token_file_id` and `token_count`. The token build sets the parser
-  feature flags of the generated items (enums, matches, structs, members,
-  arrays, references, impls) when it sees a `machine` token.
+- **Splice.** Each round marks the tokens to drop, and each generated
+  token has an owner. A prefix sum over the kept tokens and the generated
+  tokens before each owner gives every token its place. One kernel moves
+  the kept tokens, one writes the generated ones, and a last kernel copies
+  the stream back into `tokens_out`, `token_file_id` and `token_count`. The
+  token build sets the parser feature flags of the generated items (enums,
+  matches, structs, members, arrays, references, impls) when it sees a
+  `machine`, `gen` or `yield` token.
+- **Diagnostics.** A byte one round copied from an earlier round's text is
+  anchored in that text, so a diagnostic follows the anchors to the
+  source. The last run's buffers are global, so a compile reads the
+  positions of its own run only: the thread that recorded a run keeps its
+  number, and reading another compile's run is an assertion failure, not a
+  wrong position.
 
 ### Cost
 
 - The token build sets `PARSER_FEATURE_MACHINES` for a `machine`, `goto` or
-  `stay` token. The host reads that word with the token count it already
+  `stay` token, `PARSER_FEATURE_GENERATORS` with it for a `gen` or `yield`
+  token, and `PARSER_FEATURE_CLOSURES` with the families of a struct and its
+  impls where a closure starts, by the rule of `closures/mark`. The host reads that word with the token count it already
   reads.
 - The lexer reserves no region until a build has a machine. Without a
   region the desugaring records nothing, so a build without a machine runs
@@ -1102,24 +1176,32 @@ position.
   (`shaders/desugar/plan.slang`) turns the counts of one stage into the
   workgroup counts and parameters of the next on the GPU, so the host
   records all of them before it knows a count. When the lexer has a region
-  but the pack has no machine, the 56 dispatches run with zero workgroups.
+  but the pack has no machine, the round's dispatches run with zero
+  workgroups. A round is recorded only once a build of the process used its
+  feature, so a program without generators records no generator round.
 - The region, the per-token buffers, the pieces and the spliced tokens have
   floors that the plan checks against the counts. A count over its floor
   sets `DESUGAR_REGION_OVERFLOW` in the feature word and writes what it
   needed; the host raises the floors with an eighth to spare and runs the
   build again. The floors do not shrink, so later builds of the same
   program run once.
-- A broken machine rule (`LNC0076`) sets `DESUGAR_RULE_ERROR`. The host
+- A broken machine or closure rule (`LNC0076`, `LNC0078`) sets
+  `DESUGAR_RULE_ERROR`. The host
   then runs the rule kernels again to write the spans of the first error and
   reads them. Nothing is read when no rule fails.
 
-Settings, 2026-11-17: 445,357 tokens, 112 machines. The desugaring runs 56
-dispatches in the frontend's lexer submission and keeps the GPU busy for
-1.15 ms. Its buffers hold 501,092 token rows, 112,667 pieces, 450,666 region
-bytes and 613,759 spliced rows, about 160 MB. The first build with machines
-runs the lexer twice. The machine pass of M7 no longer expands machines,
-which removes 29 dispatches and 2 readbacks from the elaboration before the
-frontend. The executable is unchanged.
+Settings, 2026-11-17: 445,357 tokens, 112 machines, closures, no
+generators. The desugaring runs the closure round and the machine round, 94
+dispatches in the frontend's lexer submission, and keeps the GPU busy for
+about 2.2 ms per build (1.1 ms of it the closure round). A third of that
+time is the shared scan, 39 dispatches of 8 to 45 microseconds each; the
+closure capture search is the costliest single kernel at 0.3 ms. The first
+build with machines runs the lexer twice. No pass runs before the frontend:
+the closure rewrite, its lex and readbacks and the reserved-name check are
+gone, and the token build marks a reserved name in the lexer submission. A
+settings build runs 3,681 dispatches and 33 round trips where origin/main
+d2c63b1db runs 3,713 and 38, with a peak of 5.55 GB of GPU buffers against
+5.61 GB. The executable is unchanged.
 
 ## Open questions
 
