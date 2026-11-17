@@ -1,4 +1,5 @@
-//! Lets the GPU driver's worker threads finish before the process exits.
+//! Ends a process that loaded the GPU driver without running library exit
+//! handlers beside the driver's worker threads.
 //!
 //! NVIDIA's Vulkan driver compiles some pipelines on its own worker threads
 //! after `vkCreateComputePipelines` has returned. A warm run of the `retained`
@@ -7,14 +8,23 @@
 //! handlers and its libraries' destructors on the main thread while a worker
 //! still compiles. The worker aborts on a corrupted heap (`malloc_printerr`
 //! inside `libnvidia-gpucomp`, with the main thread inside `libEGL_nvidia`'s
-//! exit handler), or it spins and the process never ends.
+//! exit handler), or it spins and the process never ends. Waiting until the
+//! workers are idle is not enough: a worker woke during the exit handlers and
+//! crashed in `libnvidia-glvkspirv` while the main thread ran `libLLVM`'s exit
+//! handler. The Vulkan loader loads every installed driver, and Mesa's `lvp`
+//! and `radeon` drivers and Mesa's EGL link `libLLVM`.
 //!
 //! `exit` runs the exiting thread's TLS destructors before any `atexit` or
 //! `__cxa_atexit` handler, whatever order the libraries registered those in.
 //! [`register_before_main`] registers one such destructor for the main thread.
 //! If the process loaded the driver, the destructor waits for the
-//! pipeline-cache writer and then until no other thread of the process is
-//! running. Only then do the driver's own exit handlers run.
+//! pipeline-cache writer and until no other thread of the process is running,
+//! then registers an `on_exit` handler. glibc runs a handler registered during
+//! `exit` first, and passes it the exit status: it flushes C stdio and ends the
+//! process with `_exit(status)`, so no library exit handler runs. The kernel
+//! releases the device as it does for a killed process. Rust has already
+//! flushed its standard streams when `exit` runs, and the compiler writes its
+//! pipeline cache before `main` returns.
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -46,6 +56,12 @@ unsafe extern "C" {
         obj: *mut std::ffi::c_void,
         dso_symbol: *mut std::ffi::c_void,
     ) -> std::ffi::c_int;
+    fn on_exit(
+        function: extern "C" fn(std::ffi::c_int, *mut std::ffi::c_void),
+        arg: *mut std::ffi::c_void,
+    ) -> std::ffi::c_int;
+    fn fflush(stream: *mut std::ffi::c_void) -> std::ffi::c_int;
+    fn _exit(status: std::ffi::c_int) -> !;
 }
 
 /// Registers the exit wait as a destructor of the calling thread. Call it on
@@ -58,7 +74,19 @@ unsafe extern "C" {
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 pub(crate) unsafe fn register_before_main() {
     unsafe extern "C" fn wait_at_exit(_: *mut std::ffi::c_void) {
-        wait_for_driver_threads();
+        if wait_for_driver_threads() {
+            // SAFETY: registering an exit function while `exit` runs is
+            // allowed; glibc calls it before the functions registered earlier.
+            unsafe { on_exit(end_process, std::ptr::null_mut()) };
+        }
+    }
+    extern "C" fn end_process(status: std::ffi::c_int, _: *mut std::ffi::c_void) {
+        // SAFETY: flushing every C stream and ending the process; nothing
+        // runs after it.
+        unsafe {
+            fflush(std::ptr::null_mut());
+            _exit(status)
+        }
     }
     // glibc uses the symbol only to find the object that registered it.
     let dso_symbol = register_before_main as *const () as *mut std::ffi::c_void;
@@ -67,16 +95,17 @@ pub(crate) unsafe fn register_before_main() {
 }
 
 /// Waits until no other thread of this process is running, if the driver was
-/// loaded. It must not panic: it runs inside `exit`.
+/// loaded, and returns whether it was. It must not panic: it runs inside
+/// `exit`.
 #[cfg_attr(not(all(target_os = "linux", target_env = "gnu")), allow(dead_code))]
-fn wait_for_driver_threads() {
+fn wait_for_driver_threads() -> bool {
     if !DRIVER_LOADED.load(Ordering::Acquire) {
-        return;
+        return false;
     }
     let start = Instant::now();
     super::device::wait_for_background_persist();
     let Some(own) = own_tid() else {
-        return;
+        return true;
     };
     let mut quiet = 0;
     let mut busy_seen = false;
@@ -98,6 +127,7 @@ fn wait_for_driver_threads() {
             start.elapsed().as_secs_f64() * 1000.0
         );
     }
+    true
 }
 
 /// This thread's id, from `/proc/thread-self` (`<pid>/task/<tid>`).
