@@ -7,8 +7,8 @@
 // minimum is p + 1. Roots wrap parent + 1 to 0, so a root's index counts the
 // earlier roots in [0, r).
 //
-// The heaps use the semantic-end layout (parent/end_tree.slang): index_rows
-// builds one local heap per 256-row block, index_blocks one per group of 256
+// The heaps use the semantic-end layout (parent/end_tree.slang): the
+// semantic nav pass (semantic/nav.slang) builds one local heap per 256-row block, index_blocks one per group of 256
 // blocks, and index_top the heap over the groups. Entries hold
 // (minimum, occurrences).
 

@@ -1,6 +1,8 @@
 // Validates compact dominator-tree ranges independently of scatter order.
 // One invocation checks one parent cursor and, when present, one child row;
 // no parent thread walks a potentially project-sized child range.
+// It also clears this block's row of the inverse child-row index that the
+// Euler tour fills next; the validation never reads that index.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -22,6 +24,7 @@ StructuredBuffer<uint> opt_ir_dominator_child_cursor;
 StructuredBuffer<uint> opt_ir_dominator_children;
 StructuredBuffer<uint> opt_ir_immediate_dominator;
 RWStructuredBuffer<LoweringStatus> lowering_status;
+RWStructuredBuffer<uint> opt_ir_dominator_child_row_by_block;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -39,6 +42,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint block_id = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint block_total = min(opt_ir_block_total[0u], gParams.block_capacity);
     if (block_id >= block_total) return;
+    opt_ir_dominator_child_row_by_block[block_id] = OPT_IR_DOMINATOR_INVALID;
 
     uint child_total = min(opt_ir_dominator_child_total[0u], block_total);
     uint start = opt_ir_dominator_child_prefix[block_id];

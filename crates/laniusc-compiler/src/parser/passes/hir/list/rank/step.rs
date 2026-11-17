@@ -238,9 +238,9 @@ mod tests {
     #[test]
     fn bounded_walk_replaces_binary_capacity_rounds() {
         assert_eq!(list_rank_step_capacity(1), 0);
-        assert_eq!(list_rank_step_capacity(16), 2);
-        assert_eq!(list_rank_step_capacity(256), 2);
-        assert_eq!(list_rank_step_capacity(257), 4);
-        assert_eq!(list_rank_step_capacity(1_687_524), 6);
+        assert_eq!(list_rank_step_capacity(64), 2);
+        assert_eq!(list_rank_step_capacity(4096), 2);
+        assert_eq!(list_rank_step_capacity(4097), 4);
+        assert_eq!(list_rank_step_capacity(1_687_524), 4);
     }
 }

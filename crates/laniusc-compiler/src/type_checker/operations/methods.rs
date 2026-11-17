@@ -100,15 +100,13 @@ const MARK_CALL_RETURN_KEYS: ReflectedComputeSpec = method_pass!(
     "type_checker/methods/06b_mark_call_return_keys"
 )
 .with_indirect_dispatch("method_hir_dispatch_args");
-// Reset is per transaction, after source producers; it preserves the accepted
-// result and selection ownership. Only the per-job clear initializes ownership.
-const RESET_CANDIDATES: ReflectedComputeSpec =
-    method_pass!("reset_candidates", Calls, "type_checker/methods/06c_reset_candidates")
-        .with_indirect_dispatch("method_token_dispatch_args");
 const FINALIZE_CANDIDATES: ReflectedComputeSpec =
     method_pass!("finalize_candidates", Calls, "type_checker/methods/08_finalize_candidates")
         .with_indirect_dispatch("method_token_dispatch_args");
-// This operation only contributes local candidates; finalization publishes.
+// Each transaction's lane first resets the token's record, after source
+// producers; the reset preserves the accepted result and selection ownership
+// (only the per-job clear initializes ownership). The lane then only
+// contributes local candidates; finalization publishes.
 const RESOLVE_TABLE: ReflectedComputeSpec =
     method_pass!("resolve_table", Calls, "type_checker/methods/07_resolve_table")
         .with_indirect_dispatch("method_token_dispatch_args");
@@ -145,8 +143,6 @@ pub(in crate::type_checker) const METHODS_GATE_LOOKUP_SWEEP: ReflectedComputeSpe
 );
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS: ReflectedComputeSpec =
     MARK_CALL_RETURN_KEYS.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
-pub(in crate::type_checker) const METHODS_RESET_CANDIDATES: ReflectedComputeSpec =
-    RESET_CANDIDATES.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES: ReflectedComputeSpec =
     FINALIZE_CANDIDATES.with_indirect_dispatch(METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE: ReflectedComputeSpec =
@@ -174,15 +170,11 @@ pub(in crate::type_checker) const METHODS_RESOLVE_INFERENCE: ReflectedComputeSpe
 // transaction. The unqualified operations own the eight preliminary sweeps.
 pub(in crate::type_checker) const METHODS_MARK_CALL_RETURN_KEYS_DIRECT: ReflectedComputeSpec =
     MARK_CALL_RETURN_KEYS.with_name("type_check.methods.mark_call_return_keys.direct");
-pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_DIRECT: ReflectedComputeSpec =
-    RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.direct");
 pub(in crate::type_checker) const METHODS_RESOLVE_TABLE_DIRECT: ReflectedComputeSpec =
     RESOLVE_TABLE.with_name("type_check.methods.resolve_table.direct");
 pub(in crate::type_checker) const METHODS_OFFER_BOUND_MEMBERS_DIRECT: ReflectedComputeSpec =
     OFFER_BOUND_MEMBERS.with_name("type_check.methods.offer_bound_members.direct");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_DIRECT: ReflectedComputeSpec =
     FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.direct");
-pub(in crate::type_checker) const METHODS_RESET_CANDIDATES_INFERENCE: ReflectedComputeSpec =
-    RESET_CANDIDATES.with_name("type_check.methods.reset_candidates.inference");
 pub(in crate::type_checker) const METHODS_FINALIZE_CANDIDATES_INFERENCE: ReflectedComputeSpec =
     FINALIZE_CANDIDATES.with_name("type_check.methods.finalize_candidates.inference");

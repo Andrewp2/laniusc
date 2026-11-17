@@ -884,22 +884,18 @@ pub(crate) struct GpuOptimizationStage {
     dominator_seed: JobSized,
     dominator_resolve: JobSized,
     dominator_validate: JobSized,
-    dominator_child_clear: JobSized,
     dominator_child_count: JobSized,
     dominator_child_scan: PrefixScanOperation,
     dominator_child_prepare: JobSized,
     dominator_child_scatter: JobSized,
     dominator_child_validate: JobSized,
-    dominator_tour_child_rows_clear: JobSized,
     dominator_tour_child_rows: JobSized,
     dominator_tour_init: JobSized,
     dominator_tour_a_to_b: JobSized,
     dominator_tour_b_to_a: JobSized,
     dominator_tour_finalize: JobSized,
-    dominator_preorder_inverse_clear: JobSized,
     dominator_preorder_inverse_scatter: JobSized,
     dominator_preorder_validate: JobSized,
-    dominator_depth_init: JobSized,
     dominator_depth_a_to_b: JobSized,
     dominator_depth_b_to_a: JobSized,
     dominator_depth_finalize: JobSized,
@@ -1870,15 +1866,6 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
-        let dominator_child_clear = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.children.clear",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_child_clear"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
         let dominator_child_count = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -1918,15 +1905,6 @@ impl GpuOptimizationStage {
             &resources,
             "lir.opt.dominators.children.validate",
             kernels.kernel("codegen/lir/optimization/structure_dominator_child_validate"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_tour_child_rows_clear = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.tour.child_rows.clear",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_tour_child_rows_clear"),
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
@@ -1975,15 +1953,6 @@ impl GpuOptimizationStage {
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
-        let dominator_preorder_inverse_clear = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.preorder.inverse_clear",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_preorder_inverse_clear"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
         let dominator_preorder_inverse_scatter = JobSized::new(ComputeOperation::direct_with_uniform(
             device,
             &(graph, &allocations),
@@ -1999,15 +1968,6 @@ impl GpuOptimizationStage {
             &resources,
             "lir.opt.dominators.preorder.validate",
             kernels.kernel("codegen/lir/optimization/structure_dominator_preorder_validate"),
-            &params,
-            block_capacity,
-        )?, opt_extent::block, capacities)?;
-        let dominator_depth_init = JobSized::new(ComputeOperation::direct_with_uniform(
-            device,
-            &(graph, &allocations),
-            &resources,
-            "lir.opt.dominators.depth.init",
-            kernels.kernel("codegen/lir/optimization/structure_dominator_depth_init"),
             &params,
             block_capacity,
         )?, opt_extent::block, capacities)?;
@@ -2894,22 +2854,18 @@ impl GpuOptimizationStage {
             dominator_seed,
             dominator_resolve,
             dominator_validate,
-            dominator_child_clear,
             dominator_child_count,
             dominator_child_scan,
             dominator_child_prepare,
             dominator_child_scatter,
             dominator_child_validate,
-            dominator_tour_child_rows_clear,
             dominator_tour_child_rows,
             dominator_tour_init,
             dominator_tour_a_to_b,
             dominator_tour_b_to_a,
             dominator_tour_finalize,
-            dominator_preorder_inverse_clear,
             dominator_preorder_inverse_scatter,
             dominator_preorder_validate,
-            dominator_depth_init,
             dominator_depth_a_to_b,
             dominator_depth_b_to_a,
             dominator_depth_finalize,
@@ -3158,13 +3114,11 @@ impl GpuOptimizationStage {
             self.dominator_seed.record_job(encoder, job)?;
             self.dominator_resolve.record_job(encoder, job)?;
             self.dominator_validate.record_job(encoder, job)?;
-            self.dominator_child_clear.record_job(encoder, job)?;
             self.dominator_child_count.record_job(encoder, job)?;
             self.dominator_child_scan.record(encoder)?;
             self.dominator_child_prepare.record_job(encoder, job)?;
             self.dominator_child_scatter.record_job(encoder, job)?;
             self.dominator_child_validate.record_job(encoder, job)?;
-            self.dominator_tour_child_rows_clear.record_job(encoder, job)?;
             self.dominator_tour_child_rows.record_job(encoder, job)?;
             self.dominator_tour_init.record_job(encoder, job)?;
             for _ in 0..jump_pairs.dominator_tour {
@@ -3172,10 +3126,8 @@ impl GpuOptimizationStage {
                 self.dominator_tour_b_to_a.record_job(encoder, job)?;
             }
             self.dominator_tour_finalize.record_job(encoder, job)?;
-            self.dominator_preorder_inverse_clear.record_job(encoder, job)?;
             self.dominator_preorder_inverse_scatter.record_job(encoder, job)?;
             self.dominator_preorder_validate.record_job(encoder, job)?;
-            self.dominator_depth_init.record_job(encoder, job)?;
             for _ in 0..jump_pairs.dominator_depth {
                 self.dominator_depth_a_to_b.record_job(encoder, job)?;
                 self.dominator_depth_b_to_a.record_job(encoder, job)?;

@@ -1,6 +1,7 @@
 // Apply prefix-scanned impl-header context rows.
 
 import prefix_scan;
+import parser.tokens.context.before_block;
 
 struct Params
 {
@@ -20,7 +21,11 @@ struct TokenIn
 
 StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> lexer_token_count;
-StructuredBuffer<uint> statement_event_block_prefix;
+StructuredBuffer<uint> statement_event_block;
+// Written with each block's prefix, as the removed scan did. The row keeps
+// this buffer's graph lifetime: dropping it changed the parser slot plan and
+// broke type_checker_checks_enum_field_assignment_categories after earlier tests.
+RWStructuredBuffer<uint> statement_event_block_prefix;
 StructuredBuffer<int> depth_bracket_inblock;
 StructuredBuffer<int> block_prefix_bracket;
 
@@ -78,13 +83,17 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint count = active_token_count();
     uint kind = token_i < count ? token_words[token_i].kind : 0u;
     uint event = token_i < count ? impl_event_for(token_i, kind) : 0u;
+    uint block_before = context_event_before_block(
+        statement_event_block, block_idx, lane, WG_SIZE);
+    if (lane == 0u)
+        statement_event_block_prefix[block_idx] = block_before;
     prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,
         event,
         impl_prefix_values);
 
     uint local_before = lane == 0u ? 0u : impl_prefix_values[lane - 1u];
-    uint before = max(statement_event_block_prefix[block_idx], local_before);
+    uint before = max(block_before, local_before);
     if (token_i < gParams.n_tokens)
         token_impl_context_event[token_i] = before;
 

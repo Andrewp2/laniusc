@@ -5,7 +5,8 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Builds dense navigation and computes exact semantic depth in one row pass.
+/// Builds dense navigation and computes exact semantic depth in one row pass,
+/// and builds the per-block child-index heaps over the semantic parents.
 pub struct HirSemanticNavPass {
     data: PassData,
 }
@@ -65,6 +66,10 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticNavPa
             (
                 "hir_semantic_depth".into(),
                 b.hir_semantic_depth.as_entire_binding(),
+            ),
+            (
+                "hir_semantic_child_local".into(),
+                b.hir_semantic_child_local.as_entire_binding(),
             ),
         ])
     }
