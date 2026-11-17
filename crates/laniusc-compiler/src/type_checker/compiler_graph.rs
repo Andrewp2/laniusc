@@ -1047,6 +1047,12 @@ pub(super) const DEPENDENCY_CALL_RESULTS_VALIDATE_PASS: &str =
 /// Rows of each bound-directed inference table: implementations of every
 /// resident page and of the unit, and free-function bounds.
 pub(super) const BOUND_INFERENCE_ROWS: u64 = 16384;
+/// Bytes of `bound_inference_local_counts`: the counts and the chain heads
+/// (BOUND_LOCAL_WORDS in calls/bound_tables.slang), which the snapshot and
+/// restore copy.
+pub(super) const BOUND_INFERENCE_LOCAL_BYTES: u64 = (4 + 2 * 256) * 4;
+/// Bytes of `bound_inference_counts`: the local words and the owner filter.
+pub(super) const BOUND_INFERENCE_COUNT_BYTES: u64 = BOUND_INFERENCE_LOCAL_BYTES + 256 * 4;
 pub(super) const DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS: &str =
     "type_check.dependencies.resolve_generic_call_results";
 
@@ -3097,13 +3103,15 @@ fn build_graph(
     // the dependency rows are collected again in every round, after the
     // counts return to the local rows' (`bound_inference_local_counts`).
     graph_resources!(graph, Workspace {
-        // Three counts, a spare word, then the owner filter
-        // (BOUND_COUNT_WORDS in bound_tables.slang). The local copy keeps
-        // only the counts.
-        bound_inference_counts as "bound_inference_counts" in Calls => (4 + 256) * 4;
-        bound_inference_local_counts as "bound_inference_local_counts" in Calls => 16;
+        // Three counts, a spare word, the chain heads, then the owner
+        // filter (BOUND_COUNT_WORDS in bound_tables.slang). The local copy
+        // keeps the counts and the chain heads.
+        bound_inference_counts as "bound_inference_counts" in Calls => BOUND_INFERENCE_COUNT_BYTES;
+        bound_inference_local_counts as "bound_inference_local_counts" in Calls => BOUND_INFERENCE_LOCAL_BYTES;
         bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
         bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
+        bound_implementation_next as "bound_implementation_next" in Calls => BOUND_INFERENCE_ROWS * 4;
+        bound_predicate_next as "bound_predicate_next" in Calls => BOUND_INFERENCE_ROWS * 4;
     });
     graph_resources!(graph, Input {
         _token_count as "token_count" in Tokens => 4;
@@ -5773,6 +5781,8 @@ fn build_graph(
     )?;
     graph.mark_zero_initialized(bound_implementation_rows)?;
     graph.mark_zero_initialized(bound_predicate_rows)?;
+    graph.mark_zero_initialized(bound_implementation_next)?;
+    graph.mark_zero_initialized(bound_predicate_next)?;
     CALLS_BOUND_LOCAL_COLLECT.register_kernel(&mut graph, kernels)?;
     graph.add_buffer_copy_pass(
         CALLS_BOUND_TABLES_SNAPSHOT_PASS,

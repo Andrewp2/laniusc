@@ -180,6 +180,7 @@ void collect_predicate(uint row)
         bound_predicate_rows[base + 9u + ordinal] = ordinal < range.count ? id : CT_NONE;
     }
     bound_mark_owner(uint3(BOUND_LOCAL_IMPLEMENTATION, 1u, owner));
+    bound_link_predicate(target, uint3(BOUND_LOCAL_IMPLEMENTATION, 1u, owner));
 }
 
 [shader("compute")]
@@ -227,5 +228,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bound_implementation_rows[base + 4u] = 0u;
     bound_implementation_rows[base + 5u] = node;
     bound_implementation_rows[base + 6u] = complete ? subject : CT_UNKNOWN;
-    bound_implementation_rows[base + 7u] = complete ? count : range.count;
+    uint arguments = complete ? count : range.count;
+    bound_implementation_rows[base + 7u] = arguments;
+    bound_link_implementation(target, trait, arguments);
 }

@@ -269,7 +269,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 "bound_inference_local_counts",
                 &typed_buffer_from_resources::<u32>(resources, "bound_inference_local_counts")?,
                 0,
-                16,
+                compiler_graph::BOUND_INFERENCE_LOCAL_BYTES,
             )?,
             restore: crate::gpu::operations::CopyBufferOperation::new(
                 graph,
@@ -280,7 +280,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                 "bound_inference_counts",
                 &typed_buffer_from_resources::<u32>(resources, "bound_inference_counts")?,
                 0,
-                16,
+                compiler_graph::BOUND_INFERENCE_LOCAL_BYTES,
             )?,
             // One lane per implementation or predicate row of the slot.
             collect_dependency: if has_dependency_interfaces {
