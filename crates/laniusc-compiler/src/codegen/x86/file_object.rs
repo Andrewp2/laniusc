@@ -56,6 +56,8 @@ struct FilePayload {
 enum PayloadStorage {
     File(PrivateDirectory),
     Memory(Vec<u8>),
+    /// In the GPU link store; read back the first time the host needs it.
+    Gpu(super::ResidentSections, std::sync::OnceLock<Result<Vec<u8>, String>>),
 }
 
 #[derive(Debug)]
@@ -138,6 +140,27 @@ impl GpuX86FileObject {
             }),
         };
         stored.refresh_layout()?;
+        Ok(stored)
+    }
+
+    /// An object whose text and rodata stay in the GPU link store. `object`
+    /// holds every other column and empty sections. The host reads the
+    /// sections only if it links the object itself.
+    pub(crate) fn parked(
+        object: GpuX86RelocatableObject,
+        sections: super::ResidentSections,
+    ) -> Result<Self, String> {
+        if !object.text.is_empty() || !object.rodata.is_empty() {
+            return Err("a parked native object keeps its sections on the GPU".into());
+        }
+        let (text_len, rodata_len) = (sections.text_len, sections.rodata_len);
+        let stored = Self::from_payload(
+            object,
+            PayloadStorage::Gpu(sections, std::sync::OnceLock::new()),
+            text_len,
+            rodata_len,
+        )?;
+        stored.validate()?;
         Ok(stored)
     }
 
@@ -230,6 +253,9 @@ impl GpuX86FileObject {
                 .map_err(|error| format!("stat native object payload: {error}"))?
                 .len(),
             PayloadStorage::Memory(bytes) => bytes.len() as u64,
+            PayloadStorage::Gpu(sections, _) => {
+                u64::from(sections.text_len) + u64::from(sections.rodata_len)
+            }
         };
         if actual != u64::from(self.payload.text_len) + u64::from(self.payload.rodata_len) {
             return Err("native object payload length changed after spilling".into());
@@ -259,7 +285,7 @@ impl GpuX86FileObject {
     pub(super) fn payload_path(&self) -> Option<PathBuf> {
         match &self.payload.storage {
             PayloadStorage::File(directory) => Some(directory.0.join("payload")),
-            PayloadStorage::Memory(_) => None,
+            PayloadStorage::Memory(_) | PayloadStorage::Gpu(..) => None,
         }
     }
 
@@ -286,6 +312,17 @@ impl GpuX86FileObject {
     fn copy_range<W: Write>(&self, start: u64, len: u32, output: &mut W) -> Result<u64, String> {
         let directory = match &self.payload.storage {
             PayloadStorage::File(directory) => directory,
+            PayloadStorage::Gpu(sections, read) => {
+                let bytes = read.get_or_init(|| sections.read()).as_ref().map_err(Clone::clone)?;
+                let bytes = usize::try_from(start)
+                    .ok()
+                    .and_then(|start| bytes.get(start..start + len as usize))
+                    .ok_or("native object payload was truncated")?;
+                output
+                    .write_all(bytes)
+                    .map_err(|error| format!("copy native object payload: {error}"))?;
+                return Ok(u64::from(len));
+            }
             PayloadStorage::Memory(bytes) => {
                 let bytes = usize::try_from(start)
                     .ok()

@@ -10,6 +10,13 @@ use encase::ShaderType;
 
 use super::job_sized::JobSized;
 
+/// A finished x86 object: on the host, or parked in the GPU link store with
+/// its text and rodata left there (`codegen/x86/link/resident.rs`).
+pub(crate) enum GpuX86FinishedObject {
+    Host(GpuX86RelocatableObject),
+    Parked(super::x86::GpuX86FileObject),
+}
+
 /// Element counts of the object projection's direct operations for given
 /// capacities (`JobSized`), as `GpuX86ObjectProjection::new` builds them.
 mod object_extent {
@@ -595,6 +602,8 @@ impl GpuX86ObjectStage {
         for copy in &self.metadata_readback_copies {
             copy.record(encoder);
         }
+        self.record_park(encoder, job);
+        let parked = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_some();
         // The payload's lengths are known only after the job ran. Copy as
         // much of each region as the last object had, with some room, in this
         // submission, so `finish` usually needs no round trip of its own.
@@ -606,6 +615,9 @@ impl GpuX86ObjectStage {
         let regions = expected.and_then(|last| {
             let capacities = self.payload_capacities();
             let expected = std::array::from_fn(|index| {
+                if parked && matches!(index, PAYLOAD_TEXT | PAYLOAD_RODATA) {
+                    return 0;
+                }
                 (last[index] + last[index] / 8 + 256)
                     .next_multiple_of(4)
                     .min(capacities[index] / 4 * 4)
@@ -614,7 +626,6 @@ impl GpuX86ObjectStage {
         });
         self.payload_readback
             .record_prefetch(encoder, regions.as_ref().map_or(&[], |regions| &regions[..]));
-        self.record_park(encoder, job);
         Ok(())
     }
 
@@ -728,7 +739,8 @@ impl GpuX86ObjectStage {
 
     /// Reads the object from its `metadata` words (`metadata_readback`).
     /// `checked` gets its text and rodata bytes once the metadata is
-    /// validated, before the payload is read.
+    /// validated, before the payload is read. An object parked in the link
+    /// store keeps its text and rodata on the GPU.
     pub(crate) fn finish(
         &self,
         device: &wgpu::Device,
@@ -737,7 +749,8 @@ impl GpuX86ObjectStage {
         unit_id: u32,
         metadata: &[u32],
         checked: impl FnOnce(usize) -> Result<()>,
-    ) -> Result<(GpuX86RelocatableObject, Vec<u32>)> {
+    ) -> Result<(GpuX86FinishedObject, Vec<u32>)> {
+        let parked = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         let word = |index: usize| metadata[index];
         let relocation_count = word(1) as usize;
         let symbol_count = word(2) as usize;
@@ -792,6 +805,11 @@ impl GpuX86ObjectStage {
             .last_payload_bytes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(payload_bytes);
+        let mut payload_bytes = payload_bytes;
+        if parked.is_some() {
+            payload_bytes[PAYLOAD_TEXT] = 0;
+            payload_bytes[PAYLOAD_RODATA] = 0;
+        }
         let [
             relocation_bytes,
             runtime_relocation_bytes,
@@ -888,13 +906,21 @@ impl GpuX86ObjectStage {
             symbols,
             identity_bytes,
         };
-        object.validate().map_err(anyhow::Error::msg)?;
-        if let Some(ticket) = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
-            ticket.commit(library_id, unit_id);
-        }
-        Ok((object, decode_words(&call_hir_bytes)))
+        let call_hirs = decode_words(&call_hir_bytes);
+        let Some(ticket) = parked else {
+            object.validate().map_err(anyhow::Error::msg)?;
+            return Ok((GpuX86FinishedObject::Host(object), call_hirs));
+        };
+        let sections = ticket.sections(text_len as u32, rodata_len as u32);
+        let object = super::x86::GpuX86FileObject::parked(object, sections).map_err(anyhow::Error::msg)?;
+        ticket.commit(library_id, unit_id);
+        Ok((GpuX86FinishedObject::Parked(object), call_hirs))
     }
 }
+
+/// Indexes of the text and rodata regions in `payload_regions`.
+const PAYLOAD_TEXT: usize = 4;
+const PAYLOAD_RODATA: usize = 5;
 
 fn decode_words(bytes: &[u8]) -> Vec<u32> {
     bytes

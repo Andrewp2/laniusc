@@ -1445,7 +1445,7 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         self.finish_x86_object_then(device, queue, library_id, unit_id, || {})
     }
 
@@ -1459,7 +1459,7 @@ impl GpuLoweringPipeline {
         library_id: u32,
         unit_id: u32,
         checked: impl FnOnce(),
-    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         let TargetStage::X86_64(stage) = &self.target else {
             anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
         };

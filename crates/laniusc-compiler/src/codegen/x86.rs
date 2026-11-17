@@ -22,6 +22,7 @@ pub(crate) use link::{
     ParkTicket,
     ResidentObjectKey,
     ResidentRoutes,
+    ResidentSections,
     park as park_resident_object,
     park_identities as park_resident_identities,
     GpuX86MissingSymbolDefinition,

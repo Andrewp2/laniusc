@@ -1076,7 +1076,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             export_submitted = Some(store.submit_export_job(snapshot));
                         }
                     })
-                    .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
+                    .map(|(object, hirs)| (CompiledSourcePackObject::from(object), hirs)),
                 LoweringTarget::Wasm => pipeline
                     .finish_wasm_object(device, queue, library_id, unit_id)
                     .map(|(object, hirs)| (CompiledSourcePackObject::Wasm(object), hirs)),
@@ -1131,7 +1131,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 match object {
                     CompiledSourcePackObject::X86_64(object) => store.provisionalize_x86_calls(snapshot,tables,object,call_hirs),
                     CompiledSourcePackObject::Wasm(object) => store.provisionalize_wasm_calls(snapshot,tables,object,call_hirs),
-                    CompiledSourcePackObject::X86_64File(_) => unreachable!("object has not been spilled"),
+                    CompiledSourcePackObject::X86_64File(object) => store.provisionalize_x86_file_calls(snapshot,tables,object,call_hirs),
                 }
                     .map_err(|err| CompileError::GpuFrontend(format!("retained original call symbols: {err:#}")))?;
             }
@@ -2671,6 +2671,16 @@ pub(in crate::compiler) enum NativeObjectStore {
 impl NativeObjectStore {
     pub(in crate::compiler) fn file_object(self) -> bool {
         self != Self::Keep
+    }
+}
+
+impl From<crate::codegen::x86_object_artifact::GpuX86FinishedObject> for CompiledSourcePackObject {
+    fn from(object: crate::codegen::x86_object_artifact::GpuX86FinishedObject) -> Self {
+        use crate::codegen::x86_object_artifact::GpuX86FinishedObject;
+        match object {
+            GpuX86FinishedObject::Host(object) => Self::X86_64(object),
+            GpuX86FinishedObject::Parked(object) => Self::X86_64File(object),
+        }
     }
 }
 

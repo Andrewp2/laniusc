@@ -86,6 +86,20 @@ impl ProgramRetention {
         self.provisionalize_calls(snapshot,tables,columns,call_hirs,unit)?.apply_to_object(object)
     }
 
+    /// [`Self::provisionalize_x86_calls`] for an object whose sections stay
+    /// in the GPU link store.
+    pub(crate) fn provisionalize_x86_file_calls(
+        &self,
+        snapshot: &JobSnapshot,
+        tables: &mut NativeCallTables,
+        object: &mut crate::codegen::x86::GpuX86FileObject,
+        call_hirs: &[u32],
+    ) -> Result<()> {
+        let columns = X86SymbolColumns::of_file_object(object);
+        let unit = Some((object.layout.library_id, object.layout.unit_id));
+        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit)?.apply_to_file_object(object)
+    }
+
     pub(crate) fn provisionalize_wasm_calls(
         &self, snapshot:&JobSnapshot, tables:&mut NativeCallTables,
         object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],

@@ -995,7 +995,7 @@ impl GpuX86LirStage {
         unit_id: u32,
         metadata: &[u32],
         checked: impl FnOnce(usize) -> Result<()>,
-    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("x86 object projection was not allocated for this lowering job")?

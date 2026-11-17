@@ -82,7 +82,7 @@ impl GpuCompiler<'_> {
             submitted();
             let _span = x86::TailSpan::new("tail.instance.finish_object");
             let result=match target {
-                SourcePackArtifactTarget::X86_64=>pipeline.finish_x86_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::X86_64(o)),
+                SourcePackArtifactTarget::X86_64=>pipeline.finish_x86_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::from(o)),
                 SourcePackArtifactTarget::Wasm=>pipeline.finish_wasm_object(device,queue,library,unit).map(|(o,_)|typecheck::CompiledSourcePackObject::Wasm(o)),
                 SourcePackArtifactTarget::Generic=>unreachable!("executable target checked above"),
             };
