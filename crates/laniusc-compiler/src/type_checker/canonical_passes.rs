@@ -29,6 +29,8 @@ pub(super) const CANONICAL_REARM_KERNEL: &str = "type_checker/canonical/03_rearm
 /// A stage's re-arm also lists the candidates it left pending
 /// (`canonical_pending`); the args pass sizes round 0 over that list.
 pub(super) const CANONICAL_REARM_LIST_KERNEL: &str = "type_checker/canonical/03a_rearm_list";
+pub(super) const CANONICAL_REARM_LIVE_LIST_KERNEL: &str =
+    "type_checker/canonical/03c_rearm_live_list";
 pub(super) const CANONICAL_REARM_ARGS_KERNEL: &str = "type_checker/canonical/03b_rearm_args";
 pub(super) const CANONICAL_EARLY_REARM_ARGS_PASS: &str = "type_check.canonical.rearm_args";
 pub(super) const CANONICAL_BODY_REARM_ARGS_PASS: &str = "type_check.canonical.body.rearm_args";
@@ -468,7 +470,13 @@ pub(super) fn register_canonical_early_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
 ) -> Result<(), String> {
-    register_rearm(graph, kernels, CANONICAL_EARLY_REARM_PASS, CANONICAL_EARLY_REARM_ARGS_PASS)?;
+    register_rearm(
+        graph,
+        kernels,
+        CANONICAL_EARLY_REARM_PASS,
+        CANONICAL_REARM_LIST_KERNEL,
+        CANONICAL_EARLY_REARM_ARGS_PASS,
+    )?;
     // Lanes past the list's count never read it.
     graph.mark_pass_bindings_initialize(CANONICAL_EARLY_REARM_PASS, &["canonical_pending"])?;
     register_rounds(graph, kernels, &CANONICAL_EARLY_ROUNDS, CANONICAL_INTERN_KERNEL, &[])?;
@@ -482,21 +490,29 @@ pub(super) fn register_canonical_body_passes(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
 ) -> Result<(), String> {
-    register_rearm(graph, kernels, CANONICAL_BODY_REARM_PASS, CANONICAL_BODY_REARM_ARGS_PASS)?;
+    register_rearm(
+        graph,
+        kernels,
+        CANONICAL_BODY_REARM_PASS,
+        CANONICAL_REARM_LIVE_LIST_KERNEL,
+        CANONICAL_BODY_REARM_ARGS_PASS,
+    )?;
     register_rounds(graph, kernels, &CANONICAL_BODY_ROUNDS, CANONICAL_INTERN_KERNEL, &[])?;
     graph.add_indirect_dispatch(CANONICAL_BODY_ROUNDS.round0, "canonical_round_args")
 }
 
 /// A stage's re-arm, which lists the pending candidates, and the pass that
-/// sizes round 0 over the list.
+/// sizes round 0 over the list. The early stage's list kernel visits every
+/// candidate; the later stages' visits only the allocated ones.
 fn register_rearm(
     graph: &mut CompilerGraphBuilder,
     kernels: &impl crate::gpu::kernels::KernelReflections,
     rearm: &'static str,
+    list_kernel: &'static str,
     args: &'static str,
 ) -> Result<(), String> {
     for (name, kernel) in [
-        (rearm, CANONICAL_REARM_LIST_KERNEL),
+        (rearm, list_kernel),
         (args, CANONICAL_REARM_ARGS_KERNEL),
     ] {
         graph.add_kernel_pass_by_name(
@@ -560,7 +576,13 @@ pub(super) fn register_canonical_late_passes(
     kernels: &impl crate::gpu::kernels::KernelReflections,
     type_rows: u64,
 ) -> Result<(), String> {
-    register_rearm(graph, kernels, CANONICAL_REARM_PASS, CANONICAL_REARM_ARGS_PASS)?;
+    register_rearm(
+        graph,
+        kernels,
+        CANONICAL_REARM_PASS,
+        CANONICAL_REARM_LIVE_LIST_KERNEL,
+        CANONICAL_REARM_ARGS_PASS,
+    )?;
     register_rounds(graph, kernels, &CANONICAL_LATE_ROUNDS, CANONICAL_INTERN_KERNEL, &[])?;
     graph.add_indirect_dispatch(CANONICAL_LATE_ROUNDS.round0, "canonical_round_args")?;
     if canonical_validation_enabled() {

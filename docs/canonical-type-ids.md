@@ -345,8 +345,8 @@ result.
   node to `CT_PENDING`.
 - **`01_intern`** performs one round.
   - Round 0 of the early, body and late stages is an indirect dispatch over
-    `canonical_pending`, the candidates the stage's re-arm (`03a_rearm_list`)
-    left pending, listed constants first, then rows from the last;
+    `canonical_pending`, the candidates the stage's re-arm (`03a_rearm_list`,
+    or `03c_rearm_live_list` after the early stage) left pending, listed constants first, then rows from the last;
     `03b_rearm_args` sizes it. A dependency page's round 0 is a direct
     dispatch over the page's nodes.
   - Rounds after that are indirect dispatches over the frontier list the
@@ -428,7 +428,7 @@ Each job interns into one table, so an ID stays valid for the whole job.
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and
   the constants that exist by then.
-- **Late** (`03a_rearm_list`, `03b_rearm_args`, then rounds). It is
+- **Late** (`03c_rearm_live_list`, `03b_rearm_args`, then rounds). It is
   recorded before `semantic_artifact.generic_native_words`. The re-arm
   (`canonical_rearm.slang`) sets every candidate that is `CT_NONE` or
   `CT_UNKNOWN` back to `CT_PENDING`, keeps the rest, and lists the pending
@@ -438,11 +438,23 @@ Each job interns into one table, so an ID stays valid for the whole job.
   interns nor visits the empty slots of the capacity-sized tables (5.4
   million candidates on the settings app, about 11,000 records). The list
   holds every candidate (`canonical_pending`, four bytes per candidate), so
-  it cannot overflow. This stage
+  it cannot overflow. Only the early stage's re-arm visits every candidate.
+  The body and late re-arms (`03c_rearm_live_list`, and `03_rearm` in the
+  body specialization) visit only the allocated ones: the source rows, the
+  generated rows below `type_application_count`, and the constant rows below
+  the dynamic arena's fill (`checked_constant_storage_state`). The early
+  sweep left every other candidate `CT_NONE`, nothing writes one later, and
+  both counters only grow during a job. The early sweep also skips reading
+  the contents of those candidates (`canonical_live_rearm_holds`). On the
+  settings app that is about 2.5 of the 5.4 million candidates; a later
+  re-arm went from 135 to 75 µs and the early one from 146 to 128 µs.
+  The counters are loaded once per wave from non-coherent bindings: one
+  load per wave from the coherent `ct_counts` reached one L2 address from
+  every wave and made the sweeps slower than before. This stage
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
-- **Body** (`03a_rearm_list`, `03b_rearm_args`, then rounds). A job with body specialization
+- **Body** (`03c_rearm_live_list`, `03b_rearm_args`, then rounds). A job with body specialization
   records it right after `body_specialization.bindings`, then restarts the
   substitution state (`substitution.body.clear`, `substitution.body.seed`),
   so the body passes after it read the IDs of the specialized rows. It
