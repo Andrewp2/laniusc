@@ -27,7 +27,7 @@ uint step_capacity(uint items)
 {
     uint steps = 0u;
     uint span = 1u;
-    while (steps < 8u && span < items) { steps += 1u; span *= 16u; }
+    while (steps < 8u && span < items) { steps += 1u; span *= 64u; }
     return steps;
 }
 

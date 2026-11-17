@@ -22,7 +22,7 @@ RWStructuredBuffer<uint> hir_binary_span_start_out;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LINKS_PER_STEP = 16u;
+static const uint LINKS_PER_STEP = 64u;
 
 uint active_row_count()
 {
