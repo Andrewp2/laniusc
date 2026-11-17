@@ -26,6 +26,9 @@ pub const PARSER_FEATURE_STRING_EXPRS: u32 = 0x0000_0200;
 pub const PARSER_FEATURE_REFERENCES: u32 = 0x0000_0400;
 /// Final lexical tokens contain decimal floating literals.
 pub const PARSER_FEATURE_FLOAT_LITERALS: u32 = 0x0000_0800;
+/// Source contains a `machine` item. The token build also claims the families
+/// of the tokens the desugaring writes for it (`compiler::desugar`).
+pub const PARSER_FEATURE_MACHINES: u32 = 0x0000_1000;
 
 /// Parser families whose absence can be proven directly from final lexical tokens.
 pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS

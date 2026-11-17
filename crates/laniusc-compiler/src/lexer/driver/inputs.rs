@@ -146,6 +146,7 @@ impl GpuLexer {
         let input_bytes = input.as_bytes();
         let n = input_bytes.len() as u32;
         let aligned_len = align_to_word(n);
+        let extent = crate::compiler::desugar::byte_extent(n, aligned_len);
 
         let mut guard = self
             .buffers
@@ -169,7 +170,7 @@ impl GpuLexer {
 
         if guard.is_none() {
             *guard = Some(recreate(capacity_bucket(
-                grown_resident_capacity(0, aligned_len),
+                grown_resident_capacity(0, extent.max(aligned_len)),
                 SOURCE_BYTE_CAPACITY_GRANULARITY,
             ))?);
         }
@@ -181,12 +182,12 @@ impl GpuLexer {
 
             let nb_dfa = dfa_blocks(n);
             let nb_sum = sum_blocks(n);
-            let desired_cap = aligned_len.max(n).max(1);
+            let desired_cap = extent.max(aligned_len).max(1);
             let cap_n = bufs.in_bytes.count as u32;
             let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_nb_dfa = (bufs.dfa_02_ping.count / crate::lexer::tables::dfa::N_STATES) as u32;
 
-            let needs_resize = desired_cap > cap_bytes || nb_dfa > cap_nb_dfa || n > cap_n;
+            let needs_resize = desired_cap > cap_bytes || nb_dfa > cap_nb_dfa || extent > cap_n;
             if needs_resize {
                 let new_bytes = capacity_bucket(
                     grown_resident_capacity(cap_bytes.max(cap_n), desired_cap),
@@ -198,6 +199,7 @@ impl GpuLexer {
                     &mut new_bufs,
                     input_bytes,
                     n,
+                    extent,
                     nb_dfa,
                     nb_sum,
                     start_state,
@@ -210,6 +212,7 @@ impl GpuLexer {
                     bufs,
                     input_bytes,
                     n,
+                    extent,
                     nb_dfa,
                     nb_sum,
                     start_state,
@@ -231,6 +234,7 @@ impl GpuLexer {
         let _span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.source-pack.prepare_buffers");
         let (n, source_files) = source_pack_metadata(sources)?;
         let aligned_len = align_to_word(n);
+        let extent = crate::compiler::desugar::byte_extent(n, aligned_len);
         let source_file_capacity = source_files.capacity();
 
         let mut guard = self
@@ -256,7 +260,7 @@ impl GpuLexer {
         if guard.is_none() {
             let (floor_bytes, floor_files) = self.source_pack_capacity_floor();
             let bytes = capacity_bucket(
-                grown_resident_capacity(floor_bytes, aligned_len),
+                grown_resident_capacity(floor_bytes, extent.max(aligned_len)),
                 SOURCE_BYTE_CAPACITY_GRANULARITY,
             );
             let files = capacity_bucket(
@@ -275,7 +279,7 @@ impl GpuLexer {
 
             let nb_dfa = dfa_blocks(n);
             let nb_sum = sum_blocks(n);
-            let desired_cap = aligned_len.max(n).max(1);
+            let desired_cap = extent.max(aligned_len).max(1);
             let cap_n = bufs.in_bytes.count as u32;
             let cap_bytes = bufs.in_bytes.byte_size as u32;
             let cap_files = bufs.source_file_start.count as u32;
@@ -283,7 +287,7 @@ impl GpuLexer {
 
             let needs_resize = desired_cap > cap_bytes
                 || nb_dfa > cap_nb_dfa
-                || n > cap_n
+                || extent > cap_n
                 || source_file_capacity > cap_files;
             if needs_resize {
                 // Grow every dimension and never shrink one: a pack with more
@@ -306,6 +310,7 @@ impl GpuLexer {
                     sources,
                     &source_files,
                     n,
+                    extent,
                     nb_dfa,
                     nb_sum,
                     start_state,
@@ -319,6 +324,7 @@ impl GpuLexer {
                     sources,
                     &source_files,
                     n,
+                    extent,
                     nb_dfa,
                     nb_sum,
                     start_state,
@@ -335,15 +341,16 @@ impl GpuLexer {
         bufs: &mut buffers::GpuBuffers,
         input_bytes: &[u8],
         n: u32,
+        extent: u32,
         nb_dfa: u32,
         nb_sum: u32,
         start_state: u32,
         skip_kinds: [u32; 4],
     ) {
         self.write_input_bytes(bufs, input_bytes, n);
-        self.write_lex_params(bufs, n, start_state, skip_kinds);
+        self.write_lex_params(bufs, n, extent, start_state, skip_kinds);
         self.write_current_source_file_metadata(bufs, n);
-        set_runtime_sizes(bufs, n, nb_dfa, nb_sum);
+        set_runtime_sizes(bufs, n, extent, nb_dfa, nb_sum);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -353,6 +360,7 @@ impl GpuLexer {
         sources: &[S],
         source_files: &SourceFileMetadata,
         n: u32,
+        extent: u32,
         nb_dfa: u32,
         nb_sum: u32,
         start_state: u32,
@@ -373,9 +381,9 @@ impl GpuLexer {
                 &bufs.resident_source_bytes[changed],
             );
         }
-        self.write_lex_params(bufs, n, start_state, skip_kinds);
+        self.write_lex_params(bufs, n, extent, start_state, skip_kinds);
         self.write_source_pack_metadata(bufs, source_files);
-        set_runtime_sizes(bufs, n, nb_dfa, nb_sum);
+        set_runtime_sizes(bufs, n, extent, nb_dfa, nb_sum);
     }
 
     fn write_input_bytes(&self, bufs: &mut buffers::GpuBuffers, input_bytes: &[u8], n: u32) {
@@ -400,11 +408,13 @@ impl GpuLexer {
         &self,
         bufs: &buffers::GpuBuffers,
         n: u32,
+        extent: u32,
         start_state: u32,
         skip_kinds: [u32; 4],
     ) {
         let params = crate::lexer::types::LexParams {
             n,
+            extent,
             m: self.token_map.len() as u32,
             start_state,
             skip0: skip_kinds[0],
@@ -477,8 +487,15 @@ fn sum_blocks(n: u32) -> u32 {
     n.div_ceil(256)
 }
 
-fn set_runtime_sizes(bufs: &mut buffers::GpuBuffers, n: u32, nb_dfa: u32, nb_sum: u32) {
-    bufs.n = n;
+fn set_runtime_sizes(
+    bufs: &mut buffers::GpuBuffers,
+    n: u32,
+    extent: u32,
+    nb_dfa: u32,
+    nb_sum: u32,
+) {
+    bufs.n = extent;
+    bufs.lexed_n = n;
     bufs.nb_dfa = nb_dfa;
     bufs.nb_sum = nb_sum;
 }

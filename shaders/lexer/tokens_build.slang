@@ -109,6 +109,14 @@ static const uint PARSER_FEATURE_TYPE_ALIASES = 0x00000100u;
 static const uint PARSER_FEATURE_STRING_EXPRS = 0x00000200u;
 static const uint PARSER_FEATURE_REFERENCES = 0x00000400u;
 static const uint PARSER_FEATURE_FLOAT_LITERALS = 0x00000800u;
+static const uint PARSER_FEATURE_MACHINES = 0x00001000u;
+// The families of the tokens the desugaring of a machine writes: its state
+// enum, its struct, its `impl` with `&mut self` methods, `match`, member
+// access and the `[E]` event slice of `run`.
+static const uint PARSER_FEATURES_OF_MACHINE_OUTPUT = PARSER_FEATURE_MACHINES |
+    PARSER_FEATURE_ENUMS | PARSER_FEATURE_MATCHES | PARSER_FEATURE_STRUCTS |
+    PARSER_FEATURE_PREDICATES | PARSER_FEATURE_MEMBERS | PARSER_FEATURE_ARRAYS |
+    PARSER_FEATURE_REFERENCES;
 
 uint parser_features_for_lexical_token(uint kind)
 {
@@ -130,6 +138,11 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_IMPORTS;
     if (kind == TK_TYPE)
         flags |= PARSER_FEATURE_TYPE_ALIASES;
+    if (kind == TK_MACHINE)
+        flags |= PARSER_FEATURES_OF_MACHINE_OUTPUT;
+    // A transition outside a machine is an error the desugaring reports.
+    if (kind == TK_GOTO || kind == TK_STAY)
+        flags |= PARSER_FEATURE_MACHINES;
     return flags;
 }
 

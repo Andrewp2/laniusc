@@ -20,7 +20,6 @@ ConstantBuffer<ResolveParams> gResolve;
 StructuredBuffer<uint> tokens_out;
 StructuredBuffer<uint> token_file_id;
 ByteAddressBuffer in_bytes;
-StructuredBuffer<uint> semantic_token_kinds;
 StructuredBuffer<uint> records;
 StructuredBuffer<uint4> scan_a;
 StructuredBuffer<uint4> scan_b;
@@ -45,10 +44,6 @@ uint raw(uint token)
     return token_kind(tokens_out, token);
 }
 
-uint semantic(uint token)
-{
-    return semantic_token_kinds[token + 1u];
-}
 
 bool same(uint a, uint b)
 {
@@ -191,7 +186,7 @@ void check_transition(uint t, MachinePlace place)
         // A statement of a block arm: it starts a statement and `;` ends it.
         uint before = raw(t - 1u);
         bool starts = before == TK_LBRACE || before == TK_RBRACE || before == TK_SEMICOLON;
-        if (semantic(body) != TK_IF_LBRACE || !starts)
+        if (raw(body) != TK_LBRACE || !starts)
         {
             fail(t, E_TRANSITION_VALUE);
             return;
@@ -208,7 +203,7 @@ void check_transition(uint t, MachinePlace place)
         fail(with_token, E_WITH_NO_OUTPUT);
     if (with_token == 0u && output)
         fail(t, E_NEEDS_WITH);
-    if (semantic(t) != TK_GOTO)
+    if (raw(t) != TK_GOTO)
         return;
 
     uint first = scan_a[head].y;
@@ -278,15 +273,15 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_state(t, place.machine);
         return;
     }
-    uint meaning = semantic(t);
-    if ((meaning == TK_PARAM_SELF_VALUE || meaning == TK_PARAM_SELF_REF_VALUE) && t < rec(place.state, REC_BLOCK))
+    // `self`, `&self` or `&mut self` in a state's data.
+    if (kind == TK_SELF_VALUE && t < rec(place.state, REC_BLOCK))
         fail(t, E_STATE_DATA);
     if (place.arm == MC_NONE)
         return;
 
     uint body = rec(place.arm, REC_ARROW) + 1u;
-    uint body_kind = semantic(body);
-    bool block_arm = body_kind == TK_IF_LBRACE;
+    uint body_kind = raw(body);
+    bool block_arm = body_kind == TK_LBRACE;
     if (t == place.arm && !block_arm && body_kind != TK_GOTO && body_kind != TK_STAY)
         fail(body, E_ARM_BODY);
     if (block_arm && t > body)

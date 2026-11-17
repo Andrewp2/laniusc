@@ -1015,6 +1015,112 @@ fused readbacks it took 11.9 ms median and 10.0 ms minimum, on a machine
 with load average 7; the medians move by a few milliseconds with load.
 Recording the machine parse is the largest remaining host cost, about 3 ms.
 
+## Desugaring in the lexer
+
+Status: machines are desugared in the token stream since 2026-11-17
+(`crates/laniusc-compiler/src/compiler/desugar.rs`, `shaders/desugar` and
+the kernels of `shaders/machines`). Generators and closures move next. Until
+they do, the text rewrites of [M8](#m8-generators-on-the-gpu) and the
+closure pass handle them as described there, and the machine pass of
+[M7](#m7-expansion-on-the-gpu) keeps only the check of the reserved prefix
+and the rewrite of generators into machines.
+
+The text rewrites of M7 and M8 lex and parse the files a second time before
+the frontend, read the rewritten text back and upload it again. They cost
+10 to 12 ms of a 103 ms settings build: 8 readbacks and 447 dispatches. The
+desugaring replaces them. Each file is lexed once and parsed once, by the
+frontend.
+
+### Why tokens, not the parse tree or the HIR
+
+Every HIR and type-check record names a declaration by its source token:
+`HirParam.name_token`, `HirCore.token_start`, the owner token of a generic.
+The type-check kernels read names, literals and paths from the bytes of
+those tokens. An enum, struct or method that a machine stands for has no
+source tokens, so a desugaring on the tree or the HIR would still have to
+create token rows and name bytes for it and then build its tree and HIR
+rows by hand. That is a second parser for the output of each feature.
+
+The latest stage where the generated code becomes ordinary input is the
+token stream. The desugaring is the last stage of the frontend lexer: it
+reads the token rows the lexer built and writes the token rows of the
+desugared program. The parser parses that stream once. Every later stage
+reads the same kinds of rows as before.
+
+### What the grammar still does
+
+`machine`, `gen fn`, `yield` and the transitions stay in
+`grammar/lanius.bnf`. The desugaring replaces only what it recognizes as a
+whole item: a machine whose keywords, braces, arms and transitions are in
+place. Anything else stays in the token stream, the parser reads it with
+the M6 and M8 productions, and a malformed machine is still a syntax error
+(`LNC0016`) at its own token. The expressions, patterns and types inside a
+machine are copied as tokens and parsed where the expansion puts them, so
+an error inside them is the parser's or the type checker's, at its source
+position.
+
+### Token rows
+
+- **Copied tokens.** A token of the item that the expansion uses again
+  (a pattern, an arm body, a type) is copied with its kind, so its bytes
+  are the source bytes.
+- **Generated tokens.** The text the expansion writes (keywords, names
+  such as `DoorState`, `__lanius_in_Opened`, `door_start`) is written into
+  a region of the lexer's byte buffer after the source bytes. A generated
+  token row points into that region, so every kernel that reads a name or a
+  literal from token bytes reads it unchanged. The region holds the text of
+  the whole expansion, as M7 wrote it, and the token rows cover it. Token
+  boundaries come from the pieces of the expansion: a copied piece takes
+  the boundaries of its source tokens, a constant piece the boundaries of
+  a table built from the constant strings, and adjacent pieces whose
+  boundary bytes are both name characters form one token.
+- **Source anchors.** Each byte of the region records a source byte: the
+  byte it copies, or for inserted text the first byte of the token the
+  piece was written for. A diagnostic at a byte of the region reads that
+  anchor on the error path and labels the source there. No source text is
+  read back and no map is kept between builds. The region starts four bytes
+  after the padded source, so a span at the end of the source is never a
+  region byte.
+- **Splice.** Each expanded item is a replacement of a token range. A
+  prefix sum over the replacements gives every unchanged token its shift.
+  One kernel moves the unchanged tokens, the expansion kernels write their
+  tokens, and a last kernel copies the stream back into `tokens_out`,
+  `token_file_id` and `token_count`. The token build sets the parser
+  feature flags of the generated items (enums, matches, structs, members,
+  arrays, references, impls) when it sees a `machine` token.
+
+### Cost
+
+- The token build sets `PARSER_FEATURE_MACHINES` for a `machine`, `goto` or
+  `stay` token. The host reads that word with the token count it already
+  reads.
+- The lexer reserves no region until a build has a machine. Without a
+  region the desugaring records nothing, so a build without a machine runs
+  the dispatches it ran before. A build with a machine and no region runs
+  again with one.
+- Every desugaring dispatch is indirect. A plan kernel
+  (`shaders/desugar/plan.slang`) turns the counts of one stage into the
+  workgroup counts and parameters of the next on the GPU, so the host
+  records all of them before it knows a count. When the lexer has a region
+  but the pack has no machine, the 56 dispatches run with zero workgroups.
+- The region, the per-token buffers, the pieces and the spliced tokens have
+  floors that the plan checks against the counts. A count over its floor
+  sets `DESUGAR_REGION_OVERFLOW` in the feature word and writes what it
+  needed; the host raises the floors with an eighth to spare and runs the
+  build again. The floors do not shrink, so later builds of the same
+  program run once.
+- A broken machine rule (`LNC0076`) sets `DESUGAR_RULE_ERROR`. The host
+  then runs the rule kernels again to write the spans of the first error and
+  reads them. Nothing is read when no rule fails.
+
+Settings, 2026-11-17: 445,357 tokens, 112 machines. The desugaring runs 56
+dispatches in the frontend's lexer submission and keeps the GPU busy for
+1.15 ms. Its buffers hold 501,092 token rows, 112,667 pieces, 450,666 region
+bytes and 613,759 spliced rows, about 160 MB. The first build with machines
+runs the lexer twice. The machine pass of M7 no longer expands machines,
+which removes 29 dispatches and 2 readbacks from the elaboration before the
+frontend. The executable is unchanged.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.
