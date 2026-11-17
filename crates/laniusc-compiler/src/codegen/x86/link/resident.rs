@@ -637,39 +637,7 @@ impl Drop for ResidentPlan {
     }
 }
 
-/// The resolution of every C name a build binds, started before the link
-/// (`prefetch_native_imports`). It reads only the system's libraries and
-/// the build's link options, so it runs while the GPU works; the plan
-/// worker then keeps the names the program references.
-pub(crate) struct NativeImportPrefetch(
-    std::thread::JoinHandle<Option<native::resolve::ResolvedNativeNames>>,
-);
-
-/// Starts resolving the C names of `bindings` on a worker thread. `None`
-/// when the bindings are invalid; the link then reports them.
-pub(crate) fn prefetch_native_imports(
-    bindings: &[NativeCFunction],
-    options: &native::NativeLinkOptions,
-) -> Option<NativeImportPrefetch> {
-    let foreign = native::validate_bindings(bindings).ok()?;
-    let mut names = foreign.values().map(|binding| binding.name.clone()).collect::<Vec<_>>();
-    names.sort_unstable();
-    names.dedup();
-    let options = options.clone();
-    std::thread::Builder::new()
-        .name("laniusc-native-imports".into())
-        .spawn(move || {
-            let names = names.iter().map(String::as_str).collect::<Vec<_>>();
-            // A driver fallback or a diagnostic for the whole set is decided
-            // again for the referenced names alone.
-            native::resolve::resolve_native_names(&names, &options).ok()?.ok()
-        })
-        .ok()
-        .map(NativeImportPrefetch)
-}
-
 /// The worker of a `ResidentPlan`.
-#[allow(clippy::too_many_arguments)]
 fn prepare(
     device: wgpu::Device,
     first: LaniusBuffer<u8>,
@@ -678,7 +646,6 @@ fn prepare(
     names: Vec<String>,
     options: native::NativeLinkOptions,
     object_count: u32,
-    prefetch: Option<NativeImportPrefetch>,
 ) -> Result<Option<Prepared>> {
     crate::gpu::passes_core::finish_readback_map(&device, pending, std::time::Duration::from_secs(30))?;
     let words = words_of(&first.buffer.slice(..first_bytes as u64).get_mapped_range());
@@ -694,15 +661,9 @@ fn prepare(
         .filter(|(_, flag)| **flag != 0)
         .map(|(name, _)| name.as_str())
         .collect::<Vec<_>>();
-    let prefetched = prefetch
-        .and_then(|prefetch| prefetch.0.join().ok().flatten())
-        .and_then(|resolved| resolved.imports_of(&referenced));
-    let imports = match prefetched {
-        Some(imports) => imports,
-        None => match native::resolve::resolve_native_imports(&referenced, &options) {
-            Ok(native::NativeResolution::Dynamic(imports)) => imports,
-            _ => return Ok(None),
-        },
+    let imports = match native::resolve::resolve_native_imports(&referenced, &options) {
+        Ok(native::NativeResolution::Dynamic(imports)) => imports,
+        _ => return Ok(None),
     };
     let import_index = imports
         .imports
@@ -781,7 +742,6 @@ impl GpuX86Linker {
         bindings: &[NativeCFunction],
         options: &native::NativeLinkOptions,
         routes: ResidentRoutes<'_>,
-        prefetch: Option<NativeImportPrefetch>,
     ) -> Result<Option<ResidentPlan>> {
         if !cfg!(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))
             || objects.is_empty()
@@ -968,7 +928,7 @@ impl GpuX86Linker {
             let options = options.clone();
             std::thread::Builder::new()
                 .name("laniusc-resident-link".into())
-                .spawn(move || prepare(device, first, first_bytes, pending, names, options, object_count, prefetch))
+                .spawn(move || prepare(device, first, first_bytes, pending, names, options, object_count))
                 .context("spawn the resident x86 link worker")?
         };
         Ok(Some(ResidentPlan {

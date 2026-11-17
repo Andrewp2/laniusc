@@ -153,66 +153,10 @@ pub(crate) fn resolve_native_imports(
     names: &[&str],
     options: &NativeLinkOptions,
 ) -> Result<NativeResolution> {
-    Ok(match resolve_native_names(names, options)? {
-        Ok(resolved) => NativeResolution::Dynamic(resolved.imports_of(names).expect("every name was resolved")),
-        Err(reason) => NativeResolution::Driver(reason),
-    })
-}
-
-/// The defining library and default version of each of a set of C names,
-/// before the link keeps the libraries its imports need.
-#[derive(Debug)]
-pub(crate) struct ResolvedNativeNames {
-    /// Every shared library the search read, in link order.
-    libraries: Vec<String>,
-    /// Name to (index into `libraries`, default version).
-    names: HashMap<String, (usize, Option<String>)>,
-}
-
-impl ResolvedNativeNames {
-    /// The imports of `names`, a subset of the resolved names, as
-    /// [`resolve_native_imports`] gives them for `names` alone: each
-    /// name's library does not depend on the other names, and a library
-    /// is needed only when it is the first to define an import. `None`
-    /// when a name was not resolved.
-    pub(crate) fn imports_of(&self, names: &[&str]) -> Option<NativeDynamicImports> {
-        let mut all = vec![LIBC_START_MAIN];
-        all.extend(names.iter().copied().filter(|name| *name != LIBC_START_MAIN));
-        all[1..].sort_unstable();
-        all.dedup();
-        let resolved = all.iter().map(|name| self.names.get(*name)).collect::<Option<Vec<_>>>()?;
-        // As the driver's default --as-needed does, a library is needed only
-        // when it is the first to define an imported symbol.
-        let mut used = BTreeMap::new();
-        for (library, _) in &resolved {
-            used.insert(*library, 0);
-        }
-        let mut needed = Vec::with_capacity(used.len());
-        for (library, index) in &mut used {
-            *index = needed.len();
-            needed.push(self.libraries[*library].clone());
-        }
-        let imports = all
-            .iter()
-            .zip(resolved)
-            .map(|(name, (library, version))| NativeImport {
-                name: (*name).to_owned(),
-                version: version.clone().map(|version| (used[library], version)),
-            })
-            .collect();
-        Some(NativeDynamicImports { needed, imports })
-    }
-}
-
-/// Resolves `names` with `__libc_start_main`. `Ok(Err(reason))` when the
-/// C driver has to link; `Err` is a diagnostic as for
-/// [`resolve_native_imports`].
-pub(crate) fn resolve_native_names(
-    names: &[&str],
-    options: &NativeLinkOptions,
-) -> Result<std::result::Result<ResolvedNativeNames, String>> {
     if options.linker.is_some() {
-        return Ok(Err("the request names its own C linker driver".into()));
+        return Ok(NativeResolution::Driver(
+            "the request names its own C linker driver".into(),
+        ));
     }
     let mut all = vec![LIBC_START_MAIN];
     all.extend(
@@ -243,7 +187,7 @@ pub(crate) fn resolve_native_names(
         match input_kind(object)? {
             InputKind::Shared => resolver.shared(object, object.to_string_lossy().into_owned())?,
             _ => {
-                return Ok(Err(format!(
+                return Ok(NativeResolution::Driver(format!(
                     "native object {} is not a shared library",
                     object.display()
                 )));
@@ -252,7 +196,7 @@ pub(crate) fn resolve_native_names(
     }
     for library in options.libraries.iter().map(String::as_str).chain(["c"]) {
         if let Some(reason) = resolver.library(library, 0)? {
-            return Ok(Err(reason));
+            return Ok(NativeResolution::Driver(reason));
         }
     }
     let unresolved = resolver
@@ -272,13 +216,33 @@ pub(crate) fn resolve_native_names(
         }
         .into());
     }
-    let names = resolver
+    // As the driver's default --as-needed does, a library is needed only when
+    // it is the first to define an imported symbol.
+    let mut used = BTreeMap::new();
+    for (library, _) in resolver.resolved.iter().flatten() {
+        used.insert(*library, 0);
+    }
+    let mut needed = Vec::with_capacity(used.len());
+    for (library, index) in &mut used {
+        *index = needed.len();
+        needed.push(resolver.needed[*library].clone());
+    }
+    let imports = resolver
         .names
         .iter()
         .zip(resolver.resolved)
-        .map(|(name, resolved)| ((*name).to_owned(), resolved.expect("every name is resolved")))
+        .map(|(name, resolved)| {
+            let (library, version) = resolved.expect("every import is resolved");
+            NativeImport {
+                name: (*name).to_owned(),
+                version: version.map(|version| (used[&library], version)),
+            }
+        })
         .collect();
-    Ok(Ok(ResolvedNativeNames { libraries: resolver.needed, names }))
+    Ok(NativeResolution::Dynamic(NativeDynamicImports {
+        needed,
+        imports,
+    }))
 }
 
 impl Resolver<'_> {
