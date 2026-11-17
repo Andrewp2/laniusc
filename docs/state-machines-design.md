@@ -1156,10 +1156,11 @@ and compares the streams.
   `machine`, `gen` or `yield` token.
 - **Diagnostics.** A byte one round copied from an earlier round's text is
   anchored in that text, so a diagnostic follows the anchors to the
-  source. The last run's buffers are global, so a compile reads the
-  positions of its own run only: the thread that recorded a run keeps its
-  number, and reading another compile's run is an assertion failure, not a
-  wrong position.
+  source. Each lexer owns its desugaring: buffers, bind groups, floors and
+  the rounds it records, on the lexer's device. The thread that recorded a
+  run keeps it, and the lexer keeps the number of its latest run, so
+  reading a run that a later recording on the same lexer overwrote is an
+  assertion failure, not a wrong position.
 
 ### Cost
 
@@ -1177,8 +1178,13 @@ and compares the streams.
   workgroup counts and parameters of the next on the GPU, so the host
   records all of them before it knows a count. When the lexer has a region
   but the pack has no machine, the round's dispatches run with zero
-  workgroups. A round is recorded only once a build of the process used its
+  workgroups. A round is recorded only once a build on the lexer used its
   feature, so a program without generators records no generator round.
+- The lexer submits its own passes before the host records the rounds, and
+  the rounds go in a second command buffer as one ordered compute pass, so
+  the GPU lexes while the host records them. Wgpu encodes a command buffer
+  at `finish`; one pass per dispatch made that take 2 to 6 ms on settings,
+  one pass takes 0.3 ms.
 - The region, the per-token buffers, the pieces and the spliced tokens have
   floors that the plan checks against the counts. A count over its floor
   sets `DESUGAR_REGION_OVERFLOW` in the feature word and writes what it
