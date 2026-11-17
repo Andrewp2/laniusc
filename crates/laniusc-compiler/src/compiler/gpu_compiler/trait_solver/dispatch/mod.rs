@@ -195,6 +195,11 @@ pub(super) struct GpuTraitSolver {
     /// The wave state of the last solver attempt (kernels::wave_state), for
     /// a deferred check that copies it out with a later readback.
     last_wave_state: std::sync::Mutex<Option<LaniusBuffer<u32>>>,
+    /// Some while a chained closed solve records (`retained::closed`): the
+    /// caller's encoder, parked between the solve's recordings. Every
+    /// submit of the solve records into it instead, and the caller submits
+    /// its wave once.
+    chained: std::sync::Mutex<Option<Option<wgpu::CommandEncoder>>>,
     /// A retained catalog's producer state: while the admission receipts
     /// are pending, the first wave readback reads it with them and leaves
     /// their verdict to the catalog (`WaveReadback::admission`).
@@ -386,6 +391,7 @@ impl GpuTraitSolver {
             admission_pending: std::sync::atomic::AtomicBool::new(true),
             semantic_rows: true,
             last_wave_state: std::sync::Mutex::new(None),
+            chained: std::sync::Mutex::new(None),
             admission_state: std::sync::Mutex::new(None),
             closed_role: (Arc::new(()), closed_slots),
         })
@@ -610,15 +616,36 @@ impl GpuTraitSolver {
         self.run_solver_waves(templates, packet, layout, plan, submission, &state, &demand, defer)
     }
 
+    /// A new encoder, or the parked one of a chained solve (`chained`).
     fn wave_encoder(&self) -> wgpu::CommandEncoder {
+        if let Some(parked) = self.chained.lock().unwrap().as_mut() {
+            return parked.take().expect("a chained solve's encoder is parked");
+        }
         self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("trait_solver.proof_wave"),
         })
     }
 
+    /// Submits the commands, or parks them while a chained solve records.
     fn submit_wave(&self, mut commands: wgpu::CommandEncoder) {
         passes_core::flush_deferred_compute(&mut commands);
+        if let Some(parked) = self.chained.lock().unwrap().as_mut() {
+            *parked = Some(commands);
+            return;
+        }
         self.queue.submit(Some(commands.finish()));
+    }
+
+    /// Starts a chained solve over `encoder` (`chained`). The queue writes
+    /// of the solve apply before the caller's submit, so the solve writes
+    /// nothing that commands recorded earlier into `encoder` read.
+    fn park_chained(&self, encoder: wgpu::CommandEncoder) {
+        *self.chained.lock().unwrap() = Some(Some(encoder));
+    }
+
+    /// Ends a chained solve: its encoder, unless a failed recording took it.
+    fn take_chained(&self) -> Option<wgpu::CommandEncoder> {
+        self.chained.lock().unwrap().take().flatten()
     }
 
     /// The template of `pieces` with `chunks` chunk steps over this packet's

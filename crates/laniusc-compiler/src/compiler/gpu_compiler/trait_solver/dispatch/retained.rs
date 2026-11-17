@@ -1467,9 +1467,7 @@ impl GpuTraitSolver {
             packet.completed_input_offsets,
             &submission.plan,
         )?;
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("trait_solver.retained_batch"),
-        });
+        let mut encoder = self.wave_encoder();
         packet.input.prepare(&mut encoder, submission.plan.input_word_count, &submission.plan.copies)?;
         packet.output.prepare(&mut encoder, submission.plan.output_word_count, &submission.plan.output_copies)?;
         packet.input.upload(&mut encoder, &submission.plan.writes)?;
@@ -1478,8 +1476,7 @@ impl GpuTraitSolver {
         if let Some((counts, first_word)) = gpu_counts {
             super::record_gpu_batch_counts(&mut encoder, &packet.input, counts, first_word)?;
         }
-        passes_core::flush_deferred_compute(&mut encoder);
-        self.queue.submit(Some(encoder.finish()));
+        self.submit_wave(encoder);
         let mut templates = std::mem::take(&mut self.wave_templates);
         // Production publication reads no semantic rows; diagnostics opt in.
         self.semantic_rows = semantic_rows;
