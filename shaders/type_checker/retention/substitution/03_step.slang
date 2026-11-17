@@ -1,4 +1,17 @@
-// Substitution step 6: one lane per task of the current level. Every child
+// Substitution step 3: the work of one round, chosen by the phase that
+// step 2 left. No lane of a step writes the phase, so every lane of one
+// dispatch takes the same branch.
+//
+// Expansion: one lane per (frontier task, child index). Resolves the child
+// under the task's environment and writes the task's edge: an immediate
+// value or failure, or the child's (possibly new) task. Each lane handles
+// exactly one edge (and compares its argument with the earlier ones, at
+// most 63); new tasks form the next frontier.
+//
+// Scatter: one lane per task. Places each live task in its level's block of
+// sb_order.
+//
+// Evaluation: one lane per task of the current level. Every child
 // result is final (children have lower levels). The first failing child in
 // argument order decides the task's failure and its provenance, which is
 // copied from that child's own result: provenance never depends on which
@@ -64,9 +77,46 @@ void store_failed(uint task, uint term, uint env)
     fail(task, SB_CAPACITY, term, env, RT_NONE);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void expand_round(uint3 dtid)
+{
+    uint lane = sb_lane(dtid);
+    uint arity_stride = sb_counts[SB_C_FRONTIER_ARITY];
+    if (arity_stride == 0u) return;
+    uint task = sb_counts[SB_C_FRONTIER_LO] + lane / arity_stride;
+    uint index = lane % arity_stride;
+    if (task >= sb_counts[SB_C_FRONTIER_HI]) return;
+    uint4 key = sb_task_key[task];
+    if ((key.z & SB_DEAD) != 0u) return;
+    if (index >= rt_term_arity(key.y)) return;
+    // A repeated argument (Pair<D, D>) shares the first occurrence's edge,
+    // so two lanes of one task never race to create one child task.
+    uint child = rt_term_arg(key.y, index);
+    for (uint j = 0u; j < index; j++)
+    {
+        if (rt_term_arg(key.y, j) == child)
+        {
+            sb_edges[key.w + index] = uint2(j, SB_EDGE_SAME);
+            return;
+        }
+    }
+    SbBinder b = sb_binder(key.x);
+    sb_edges[key.w + index] = sb_edge(sb_resolve(b, child));
+    InterlockedAdd(sb_counts[SB_C_EDGES_RESOLVED], 1u);
+}
+
+void scatter_round(uint3 dtid)
+{
+    uint task = sb_lane(dtid);
+    if (sb_counts[SB_C_PHASE] != SB_PHASE_SCATTER) return;
+    if (task >= min(sb_counts[SB_C_TASKS], sb_task_capacity())) return;
+    uint level = sb_task_key[task].z;
+    if ((level & SB_DEAD) != 0u) return;
+    uint at;
+    InterlockedAdd(sb_counts[SB_C_LEVEL_CURSOR + level], 1u, at);
+    sb_order[sb_counts[SB_C_LEVEL_BASE + level] + at] = task;
+}
+
+void eval_round(uint3 dtid)
 {
     uint lane = sb_lane(dtid);
     if (sb_counts[SB_C_PHASE] != SB_PHASE_EVAL) return;
@@ -190,4 +240,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!rt_is_term(result)) { store_failed(task, term, env); return; }
     if (!rt_term_closed(result)) { fail(task, SB_INVARIANT, term, env, result); return; }
     finish(task, result, SB_OK, RT_NONE, 0u, RT_NONE, SB_ENV_NONE);
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint phase = sb_counts[SB_C_PHASE];
+    if (phase == SB_PHASE_EXPAND) expand_round(dtid);
+    else if (phase == SB_PHASE_SCATTER) scatter_round(dtid);
+    else if (phase == SB_PHASE_EVAL) eval_round(dtid);
 }

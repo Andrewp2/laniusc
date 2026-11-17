@@ -104,6 +104,10 @@ public static const uint RC_S_TOTALS = 8u;         // + counter
 public static const uint RC_S_CLOSURE_SHORT = 24u; // frontier not empty after the last wave: the host adds waves
 public static const uint RC_S_CLOSURE_TERMS = 25u; // stored terms in the closure
 public static const uint RC_S_CLOSURE_WAVES = 26u; // expansion waves that had work
+// The store's counters differ from the ones the host sized this run with
+// (it took them from an earlier readback): the host reads them and runs
+// again. Nothing this run wrote is used.
+public static const uint RC_S_STALE_COUNTS = 27u;
 public static const uint RC_S_WORDS = 28u;
 
 // Failure codes (docs/compiler-retained-trait-catalog.md, "Failures").
@@ -862,6 +866,16 @@ void count_use(uint lane, uint use, inout Counts n)
     n.set(RC_C_BIND, k);
     n.set(RC_C_ROOT, k);
     n.set(RC_C_OBLIG, applicable_count(callee));
+}
+// Lane 0 of the first pass: the counters the host configured must be the
+// store's current ones (RC_S_STALE_COUNTS).
+public void check_counts()
+{
+    if (rt_counts[RT_A_DECLS] != cfg(RC_CFG_DECLS) || rt_counts[RT_A_PARAMS] != cfg(RC_CFG_PARAMS)
+        || rt_counts[RT_A_TERMS] != cfg(RC_CFG_TERMS) || rt_counts[RT_A_DIR] != cfg(RC_CFG_DIR)
+        || rt_counts[RT_A_TRAITS] != cfg(RC_CFG_TRAITS) || rt_counts[RT_A_USES] != cfg(RC_CFG_USES)
+        || rt_counts[RT_C_JOBS] != cfg(RC_CFG_JOBS))
+        rc_state[RC_S_STALE_COUNTS] = 1u;
 }
 public void count_lane(uint lane)
 {
