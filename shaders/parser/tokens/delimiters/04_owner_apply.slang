@@ -9,6 +9,9 @@ struct Params
     uint n_tokens;
     uint n_blocks;
     uint scan_step;
+    // The resident min trees' physical leaf base (see 02_build_min_tree);
+    // n_blocks covers only the current job.
+    uint match_tree_leaf_base;
 };
 
 ConstantBuffer<Params> gParams;
@@ -219,7 +222,7 @@ public struct OwnerHeaderParenTree : IRangeSearchTree<int>
     public static uint n_blocks() { return gParams.n_blocks; }
     public static uint leaf_base()
     {
-        return range_search_leaf_base_for_block_count(gParams.n_blocks);
+        return max(gParams.match_tree_leaf_base, 1u);
     }
     public static int leaf_value(uint block) { return paren_match_block_min[block]; }
     public static int tree_value(uint node) { return paren_match_min_tree[node]; }
@@ -257,7 +260,7 @@ uint parenthesized_header_owner(uint close_i)
 public struct ConstructorAngleTree : IRangeSearchTree<int>
 {
     public static uint n_blocks() { return gParams.n_blocks; }
-    public static uint leaf_base() { return range_search_leaf_base_for_block_count(gParams.n_blocks); }
+    public static uint leaf_base() { return max(gParams.match_tree_leaf_base, 1u); }
     public static int leaf_value(uint block) { return angle_match_block_min[block]; }
     public static int tree_value(uint node) { return angle_match_min_tree[node]; }
 }
