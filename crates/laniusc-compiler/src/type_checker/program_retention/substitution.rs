@@ -193,34 +193,26 @@ pub const REQUEST_WORDS: usize = 4;
 const KERNELS: &[&str] = &[
     "type_checker/retention/substitution/00_begin",
     "type_checker/retention/substitution/01_roots",
-    "type_checker/retention/substitution/02_expand_plan",
-    "type_checker/retention/substitution/03_expand",
-    "type_checker/retention/substitution/04_scatter",
-    "type_checker/retention/substitution/05_eval_plan",
-    "type_checker/retention/substitution/06_eval",
-    "type_checker/retention/substitution/07_publish",
-    "type_checker/retention/substitution/08_finish",
-    "type_checker/retention/substitution/09_rollback",
+    "type_checker/retention/substitution/02_plan",
+    "type_checker/retention/substitution/03_step",
+    "type_checker/retention/substitution/04_publish",
+    "type_checker/retention/substitution/05_finish",
+    "type_checker/retention/substitution/06_rollback",
 ];
 const K_BEGIN: usize = 0;
 const K_ROOTS: usize = 1;
-const K_EXPAND_PLAN: usize = 2;
-const K_EXPAND: usize = 3;
-const K_SCATTER: usize = 4;
-const K_EVAL_PLAN: usize = 5;
-const K_EVAL: usize = 6;
-const K_PUBLISH: usize = 7;
-const K_FINISH: usize = 8;
-const K_ROLLBACK: usize = 9;
+const K_PLAN: usize = 2;
+const K_STEP: usize = 3;
+const K_PUBLISH: usize = 4;
+const K_FINISH: usize = 5;
+const K_ROLLBACK: usize = 6;
 
 // Indirect slots (sb_common.slang SB_D_*).
 const D_ROOTS: u64 = 0;
-const D_EXPAND: u64 = 1;
-const D_SCATTER: u64 = 2;
-const D_EVAL: u64 = 3;
-const D_PUBLISH: u64 = 4;
-const D_ROLLBACK: u64 = 5;
-const D_SLOTS: u64 = 6;
+const D_STEP: u64 = 1;
+const D_PUBLISH: u64 = 2;
+const D_ROLLBACK: u64 = 3;
+const D_SLOTS: u64 = 4;
 
 /// Test kernel: single-lane construction script (shaders/tests/retention_subst_fixture.slang).
 #[doc(hidden)]
@@ -233,12 +225,15 @@ pub const USES_KERNEL: &str = "tests/retention_subst_uses";
 pub const CONSUMER_KERNEL: &str = "tests/retention_subst_consumer";
 
 /// Rounds of the first batch; each further batch of one attempt doubles.
+/// A round is one expansion round, the scatter or one evaluation level, so
+/// an attempt with `e` nonempty expansion rounds and `v` nonempty levels
+/// needs `e + v + 2` rounds. The settings app's runs need at most 7.
 const FIRST_BATCH_ROUNDS: u32 = 8;
 /// Rounds one attempt can need: every expansion round lowers the frontier's
 /// largest level and every evaluation round raises the level, so each side
-/// has at most `LEVELS` nonempty rounds plus the round that ends it. An
-/// attempt that is not final after this many recorded rounds of each kind
-/// lost its phase; the run fails closed.
+/// has at most `LEVELS` nonempty rounds plus the round that ends it (the
+/// scatter ends expansion). An attempt that is not final after this many
+/// recorded rounds lost its phase; the run fails closed.
 const ROUND_BOUND: u32 = 2 * (LEVELS + 1);
 
 /// Run numbers, shared by every engine of the process: a run number names
@@ -470,6 +465,9 @@ pub struct RetainedSubstitution {
     hash_mask: u32,
     /// The current publication; None after a run that published nothing.
     published: Option<PublicationId>,
+    /// Run numbers of a chain (`begin_chain`), copied into `sb_config` in
+    /// encoder order.
+    chain_runs: Option<wgpu::Buffer>,
 }
 
 impl RetainedSubstitution {
@@ -494,6 +492,7 @@ impl RetainedSubstitution {
             results: None,
             hash_mask: u32::MAX,
             published: None,
+            chain_runs: None,
         })
     }
 
@@ -582,20 +581,7 @@ impl RetainedSubstitution {
         mut consumer: Option<&mut Consumer<'_>>,
         extra: &[(&wgpu::Buffer, usize)],
     ) -> Result<(SubstitutionRun, Option<Vec<u32>>)> {
-        if self
-            .results
-            .as_ref()
-            .is_none_or(|(n, _, _)| *n < requests.capacity)
-        {
-            let n = requests.capacity.next_power_of_two();
-            let results = n as u64 * RESULT_WORDS as u64 * 4;
-            self.check_limit("sb_results", results)?;
-            self.results = Some((
-                n,
-                storage(&self.device, "sb_results", results, false),
-                storage(&self.device, "sb_req_root", n as u64 * 32, false),
-            ));
-        }
+        self.ensure_results(requests)?;
         let mut report = SubstitutionReport {
             attempts: 0,
             batches: 0,
@@ -654,7 +640,7 @@ impl RetainedSubstitution {
             while counts[words::PHASE] != words::PHASE_FINAL {
                 if recorded >= ROUND_BOUND {
                     bail!(
-                        "retained substitution is not final after {recorded} rounds of each kind (phase {})",
+                        "retained substitution is not final after {recorded} rounds (phase {})",
                         counts[words::PHASE]
                     );
                 }
@@ -723,6 +709,90 @@ impl RetainedSubstitution {
                 );
             }
         }
+    }
+
+    fn ensure_results(&mut self, requests: &SubstitutionRequests) -> Result<()> {
+        if self
+            .results
+            .as_ref()
+            .is_none_or(|(n, _, _)| *n < requests.capacity)
+        {
+            let n = requests.capacity.next_power_of_two();
+            let results = n as u64 * RESULT_WORDS as u64 * 4;
+            self.check_limit("sb_results", results)?;
+            self.results = Some((
+                n,
+                storage(&self.device, "sb_results", results, false),
+                storage(&self.device, "sb_req_root", n as u64 * 32, false),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Starts a chain of `runs` runs that one submit records back to back
+    /// (`record_chained`), with one readback after the last. Ends the
+    /// current publication and returns the runs' numbers.
+    pub(super) fn begin_chain(&mut self, requests: &SubstitutionRequests, runs: usize) -> Result<Vec<u32>> {
+        self.published = None;
+        self.ensure_results(requests)?;
+        self.ensure_scratch()?;
+        let numbers = (0..runs).map(|_| next_run()).collect::<Result<Vec<_>>>()?;
+        let bytes = (runs.max(4) * 4) as u64;
+        if self.chain_runs.as_ref().is_none_or(|b| b.size() < bytes) {
+            self.chain_runs = Some(storage(&self.device, "sb_chain_runs", bytes, false));
+        }
+        let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain runs are not allocated"))?;
+        self.queue.write_buffer(chain_runs, 0, &words_bytes(&numbers));
+        self.queue.write_buffer(&self.scratch["sb_config"], 0, &words_bytes(&[self.hash_mask, 0, 0, 0]));
+        Ok(numbers)
+    }
+
+    /// Records chained run `index` of `begin_chain`: the memo and status
+    /// words cleared, its run number, the first batch, then `consumer`
+    /// (which must check on the GPU that this run published and stop the
+    /// chain otherwise). Returns the dispatches of the batch. A run that is
+    /// not final after the first batch is not continued: its consumer sees
+    /// no publication.
+    pub(super) fn record_chained(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        guard: &Store,
+        requests: &SubstitutionRequests,
+        index: usize,
+        run: u32,
+        consumer: &mut Consumer<'_>,
+    ) -> Result<u32> {
+        let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
+        encoder.clear_buffer(&self.scratch["sb_memo"], 0, None);
+        encoder.clear_buffer(&self.scratch["sb_counts"], 0, None);
+        encoder.copy_buffer_to_buffer(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
+        let binds = self.bind_all(guard, requests)?;
+        let mut dispatches = 0;
+        self.record_batch(encoder, &binds, true, FIRST_BATCH_ROUNDS, &mut dispatches);
+        let (_, results, _) = self
+            .results
+            .as_ref()
+            .ok_or_else(|| anyhow!("retained substitution results are not allocated"))?;
+        consumer(encoder, guard, run, results, &self.scratch["sb_counts"])?;
+        passes_core::flush_deferred_compute(encoder);
+        Ok(dispatches)
+    }
+
+    /// The status words a chain's readback returns for its last run.
+    pub(super) fn counts_buffer(&self) -> Option<&wgpu::Buffer> {
+        self.scratch.get("sb_counts")
+    }
+
+    /// Accepts the status words of a chain's last run `run` (store build
+    /// `generation`): it becomes the current publication when it published.
+    pub(super) fn finish_chain(&mut self, counts: &[u32], run: u32, generation: u32) -> bool {
+        let published = counts.len() >= words::COUNT
+            && counts[words::PHASE] == words::PHASE_FINAL
+            && counts[words::STATE] == words::STATE_PUBLISHED
+            && counts[words::RUN] == run
+            && counts[words::GENERATION] == generation;
+        self.published = published.then_some(PublicationId { generation, run, requests: counts[words::REQUESTS] });
+        published
     }
 
     /// Fails when `bytes` exceed what one storage binding of this device
@@ -826,10 +896,10 @@ impl RetainedSubstitution {
             .collect()
     }
 
-    /// One batch: `rounds` expansion rounds, the scatter, `rounds`
-    /// evaluation rounds, then publication and the transaction's end. Each
-    /// kernel checks the GPU phase, so the rounds an attempt does not need
-    /// dispatch no workgroups.
+    /// One batch: `rounds` rounds of the planner and the step (expansion,
+    /// the scatter, then evaluation), then publication and the
+    /// transaction's end. Each kernel checks the GPU phase, so the rounds an
+    /// attempt does not need dispatch no workgroups.
     fn record_batch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -853,13 +923,8 @@ impl RetainedSubstitution {
             run(K_ROOTS, Some(D_ROOTS));
         }
         for _ in 0..rounds {
-            run(K_EXPAND_PLAN, None);
-            run(K_EXPAND, Some(D_EXPAND));
-        }
-        run(K_SCATTER, Some(D_SCATTER));
-        for _ in 0..rounds {
-            run(K_EVAL_PLAN, None);
-            run(K_EVAL, Some(D_EVAL));
+            run(K_PLAN, None);
+            run(K_STEP, Some(D_STEP));
         }
         run(K_PUBLISH, Some(D_PUBLISH));
         run(K_FINISH, None);

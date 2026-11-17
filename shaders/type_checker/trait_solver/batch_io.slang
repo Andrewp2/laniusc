@@ -17,6 +17,21 @@ public bool ts_batch_is_building()
         state == TS_BATCH_BUILDING && ts_output_read(10u, 0u, 6u, serial) &&
         serial == trait_solver_batch[4u];
 }
+// The building test of a committing thread after lanes of its own dispatch
+// (proof_commit_audit.slang, pca_last_group): the receipt word, which those
+// lanes may have failed, is read with an atomic. A failure only leaves
+// BUILDING, so the plain reads after it agree.
+public bool ts_batch_is_building_atomic()
+{
+    uint arena; uint address;
+    if (ts_output_address(10u, 0u, 0u, arena, address) && arena == 1u)
+    {
+        uint state;
+        InterlockedOr(trait_solver_output[address], 0u, state);
+        if (state != TS_BATCH_BUILDING) return false;
+    }
+    return ts_batch_is_building();
+}
 public void ts_batch_failure(SolverStatus status)
 {
     if (status.state == TS_VALID) return;

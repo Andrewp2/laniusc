@@ -391,13 +391,11 @@ impl GpuX86LirStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.target.count_scan.local",
-                block_prefix_pass: "lir.target.count_scan.block_prefix",
                 apply_pass: "lir.target.count_scan.apply",
                 count: "lir.opt.total",
                 input: "lir.x86.count_by_semantic",
                 local: "lir.target.count_scan_local",
                 block_sum: "lir.target.count_scan_block_sum",
-                block_prefix: "lir.target.count_scan_block_prefix",
                 output: "lir.x86.offset_by_semantic",
                 total: "lir.x86.total",
             },
@@ -528,13 +526,11 @@ impl GpuX86LirStage {
             device, kernels, graph, workspace, &allocations,
             GraphScanContract {
                 local_pass: "lir.x86.place_scan.local",
-                block_prefix_pass: "lir.x86.place_scan.block_prefix",
                 apply_pass: "lir.x86.place_scan.apply",
                 count: "lir.semantic.local_total",
                 input: "lir.x86.place_words_by_local",
                 local: "lir.x86.place_scan_local",
                 block_sum: "lir.x86.place_scan_block_sum",
-                block_prefix: "lir.x86.place_scan_block_prefix",
                 output: "lir.x86.place_prefix_by_local",
                 total: "lir.x86.place_word_total",
             },
@@ -654,13 +650,11 @@ impl GpuX86LirStage {
             &allocations,
             GraphScanContract {
                 local_pass: "lir.x86.stack_scan.local",
-                block_prefix_pass: "lir.x86.stack_scan.block_prefix",
                 apply_pass: "lir.x86.stack_scan.apply",
                 count: "lir.opt.total",
                 input: "lir.x86.stack_words_by_position",
                 local: "lir.x86.stack_scan_local",
                 block_sum: "lir.x86.stack_scan_block_sum",
-                block_prefix: "lir.x86.stack_scan_block_prefix",
                 output: "lir.x86.stack_prefix_by_position",
                 total: "lir.x86.stack_word_total",
             },
@@ -985,8 +979,17 @@ impl GpuX86LirStage {
         self.object.as_ref().map(|object| object.metadata_readback())
     }
 
-    /// The object from its `metadata` words; `checked` gets its text and
-    /// rodata bytes before the payload is read.
+    /// The text and rodata bytes of the object its `metadata` words
+    /// describe, once they are validated.
+    pub(crate) fn object_section_bytes(&self, metadata: &[u32]) -> Result<usize> {
+        self.object
+            .as_ref()
+            .context("x86 object projection was not allocated for this lowering job")?
+            .section_bytes(metadata)
+    }
+
+    /// The object from its `metadata` words, which `object_section_bytes`
+    /// accepted.
     pub(crate) fn finish_object(
         &self,
         device: &wgpu::Device,
@@ -994,12 +997,12 @@ impl GpuX86LirStage {
         library_id: u32,
         unit_id: u32,
         metadata: &[u32],
-        checked: impl FnOnce(usize) -> Result<()>,
-    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("x86 object projection was not allocated for this lowering job")?
-            .finish(device, queue, library_id, unit_id, metadata, checked)
+            .finish(device, queue, library_id, unit_id, metadata, keep)
     }
 }
 

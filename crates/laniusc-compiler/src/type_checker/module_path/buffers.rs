@@ -66,7 +66,6 @@ module_path_buffers! {
     pub(super) decl_record_prefix: LaniusBuffer<u32>,
     pub(super) record_scan_local_prefix: LaniusBuffer<u32>,
     pub(super) record_scan_block_sum: LaniusBuffer<u32>,
-    pub(super) record_scan_prefix_a: LaniusBuffer<u32>,
     pub(super) module_count_out: LaniusBuffer<u32>,
     pub(super) import_count_out: LaniusBuffer<u32>,
     pub(super) decl_count_out: LaniusBuffer<u32>,
@@ -147,7 +146,6 @@ module_path_buffers! {
     pub(super) path_record_prefix: LaniusBuffer<u32>,
     pub(super) path_scan_local_prefix: LaniusBuffer<u32>,
     pub(super) path_scan_block_sum: LaniusBuffer<u32>,
-    pub(super) path_scan_prefix_a: LaniusBuffer<u32>,
     pub(super) path_segment_count: LaniusBuffer<u32>,
     pub(super) path_len: LaniusBuffer<u32>,
     pub(super) path_segment_base: LaniusBuffer<u32>,
@@ -222,10 +220,6 @@ impl Buffers {
         let record_scan_block_sum = inputs
             .module_record_scan_workspace
             .block_sum
-            .alias(n_blocks.max(1) as usize);
-        let record_scan_prefix_a = inputs
-            .module_record_scan_workspace
-            .block_prefix
             .alias(n_blocks.max(1) as usize);
         module_storage_buffers!(graph;
             module_count_out: 1;
@@ -368,7 +362,6 @@ impl Buffers {
         let path_record_prefix = module_record_prefix.clone();
         let path_scan_local_prefix = record_scan_local_prefix.clone();
         let path_scan_block_sum = record_scan_block_sum.clone();
-        let path_scan_prefix_a = record_scan_prefix_a.clone();
         let path_segment_count = graph.u32_buffer("path_segment_count")?;
         let path_len = graph.u32_buffer("path_len")?;
         let path_segment_base = graph.u32_buffer("path_segment_base")?;
@@ -424,7 +417,6 @@ impl Buffers {
             decl_record_prefix,
             record_scan_local_prefix,
             record_scan_block_sum,
-            record_scan_prefix_a,
             module_count_out,
             import_count_out,
             decl_count_out,
@@ -506,7 +498,6 @@ impl Buffers {
             path_record_prefix,
             path_scan_local_prefix,
             path_scan_block_sum,
-            path_scan_prefix_a,
             path_segment_count,
             path_len,
             path_segment_base,

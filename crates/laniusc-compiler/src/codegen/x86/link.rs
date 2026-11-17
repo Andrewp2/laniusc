@@ -19,6 +19,7 @@ pub(crate) use resident::{
     ParkTicket,
     ResidentObjectKey,
     ResidentRoutes,
+    ResidentSections,
     park,
     park_identities,
 };

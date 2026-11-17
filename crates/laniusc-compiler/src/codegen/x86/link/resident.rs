@@ -108,6 +108,7 @@ struct StoreState {
 /// Lowered objects of the current native build, parked on the GPU.
 pub(crate) struct GpuX86LinkStore {
     device: wgpu::Device,
+    queue: wgpu::Queue,
     state: Mutex<StoreState>,
 }
 
@@ -164,6 +165,23 @@ pub(crate) struct ParkTicket {
 }
 
 impl ParkTicket {
+    /// The parked object's text and rodata, which the host reads only if it
+    /// links the object itself ([`ResidentSections::read`]).
+    pub(crate) fn sections(&self, text_len: u32, rodata_len: u32) -> ResidentSections {
+        ResidentSections {
+            store: self.store.clone(),
+            generation: self.generation,
+            slot: self.slot,
+            text_len,
+            rodata_len,
+        }
+    }
+
+    /// Whether the object parked in `store`.
+    pub(crate) fn is_in(&self, store: &Arc<GpuX86LinkStore>) -> bool {
+        Arc::ptr_eq(&self.store, store)
+    }
+
     pub(crate) fn commit(self, library_id: u32, unit_id: u32) {
         let mut state = self.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.generation == self.generation
@@ -171,6 +189,79 @@ impl ParkTicket {
         {
             slot.key = Some((library_id, unit_id));
         }
+    }
+}
+
+/// The text and rodata of an object parked in the store. A resident link
+/// reads them on the GPU; a host link of the same build reads them back.
+pub(crate) struct ResidentSections {
+    store: Arc<GpuX86LinkStore>,
+    generation: u64,
+    slot: usize,
+    pub(crate) text_len: u32,
+    pub(crate) rodata_len: u32,
+}
+
+impl std::fmt::Debug for ResidentSections {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResidentSections")
+            .field("generation", &self.generation)
+            .field("slot", &self.slot)
+            .field("text_len", &self.text_len)
+            .field("rodata_len", &self.rodata_len)
+            .finish()
+    }
+}
+
+impl ResidentSections {
+    /// Text then rodata, read from the store while it still holds this
+    /// build's objects.
+    pub(crate) fn read(&self) -> Result<Vec<u8>, String> {
+        let store = &self.store;
+        let (text, rodata) = (u64::from(self.text_len), u64::from(self.rodata_len));
+        let readback = store.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rb.codegen.x86.link.resident.sections"),
+            size: (text.next_multiple_of(4) + rodata.next_multiple_of(4)).max(4),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        {
+            let state = store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let slot = state
+                .slots
+                .get(self.slot)
+                .filter(|_| state.generation == self.generation)
+                .ok_or("the parked native object belongs to an earlier build")?;
+            if u64::from(slot.caps[4]) < text || u64::from(slot.caps[5]) < rodata {
+                return Err("the parked native object is shorter than its sections".into());
+            }
+            let chunk = &state.chunks[slot.chunk];
+            let mut encoder = store.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("codegen.x86.link.resident.sections"),
+            });
+            if text != 0 {
+                encoder.copy_buffer_to_buffer(&chunk.buffers[4].buffer, slot.base[4] * 4, &readback, 0, text.next_multiple_of(4));
+            }
+            if rodata != 0 {
+                encoder.copy_buffer_to_buffer(
+                    &chunk.buffers[5].buffer,
+                    slot.base[5] * 4,
+                    &readback,
+                    text.next_multiple_of(4),
+                    rodata.next_multiple_of(4),
+                );
+            }
+            store.queue.submit(Some(encoder.finish()));
+        }
+        let slice = readback.slice(..);
+        crate::gpu::passes_core::map_readback_blocking(&store.device, &slice, "codegen.x86.link.resident.sections")
+            .map_err(|error| format!("read parked native object sections: {error:#}"))?;
+        let mapped = slice.get_mapped_range();
+        let mut bytes = Vec::with_capacity((text + rodata) as usize);
+        bytes.extend_from_slice(&mapped[..text as usize]);
+        let rodata_at = text.next_multiple_of(4) as usize;
+        bytes.extend_from_slice(&mapped[rodata_at..rodata_at + rodata as usize]);
+        Ok(bytes)
     }
 }
 
@@ -278,9 +369,10 @@ pub(crate) fn park_identities(
 }
 
 impl GpuX86LinkStore {
-    fn new(device: &wgpu::Device) -> Self {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         Self {
             device: device.clone(),
+            queue: queue.clone(),
             state: Mutex::new(StoreState { generation: 0, chunks: Vec::new(), slots: Vec::new() }),
         }
     }
@@ -368,24 +460,75 @@ pub(crate) struct ResidentRoutes<'a> {
 
 /// The finished executable in a mapped readback buffer.
 pub(crate) struct ResidentImage {
-    buffer: LaniusBuffer<u8>,
+    device: wgpu::Device,
+    /// The image in order; each chunk's copy has its own submission.
+    chunks: Vec<ImageChunk>,
     len: usize,
 }
+
+struct ImageChunk {
+    buffer: LaniusBuffer<u8>,
+    len: usize,
+    /// Until the chunk is mapped.
+    map: Option<crate::gpu::passes_core::PendingReadbackMap>,
+}
+
+/// Chunks of the image readback (`ResidentImage`).
+const IMAGE_CHUNKS: u64 = 4;
+const IMAGE_CHUNK_LABELS: [&str; IMAGE_CHUNKS as usize] = [
+    "rb.codegen.x86.link.resident.image.0",
+    "rb.codegen.x86.link.resident.image.1",
+    "rb.codegen.x86.link.resident.image.2",
+    "rb.codegen.x86.link.resident.image.3",
+];
 
 impl ResidentImage {
     pub(crate) fn len(&self) -> usize {
         self.len
     }
 
-    pub(crate) fn with_bytes<R>(&self, consume: impl FnOnce(&[u8]) -> R) -> R {
-        let view = self.buffer.buffer.slice(..self.len as u64).get_mapped_range();
-        consume(&view)
+    /// Hands each chunk to `consume` in order as soon as it is mapped.
+    pub(crate) fn for_each_chunk<E>(
+        &mut self,
+        mut consume: impl FnMut(&[u8]) -> std::result::Result<(), E>,
+    ) -> Result<std::result::Result<(), E>> {
+        for chunk in &mut self.chunks {
+            if let Some(map) = chunk.map.take() {
+                crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
+            }
+            let view = chunk.buffer.buffer.slice(..chunk.len as u64).get_mapped_range();
+            if let Err(error) = consume(&view) {
+                return Ok(Err(error));
+            }
+        }
+        Ok(Ok(()))
+    }
+
+    pub(crate) fn to_vec(&mut self) -> Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(self.len);
+        self.for_each_chunk(|chunk| {
+            bytes.extend_from_slice(chunk);
+            Ok::<(), std::convert::Infallible>(())
+        })?
+        .unwrap_or_else(|never| match never {});
+        Ok(bytes)
     }
 }
 
 impl Drop for ResidentImage {
     fn drop(&mut self) {
-        self.buffer.buffer.unmap();
+        for chunk in &mut self.chunks {
+            if let Some(map) = chunk.map.take() {
+                // A chunk nobody read: finish its map so the buffer can be
+                // unmapped and reused.
+                let _ = crate::gpu::passes_core::finish_readback_map(
+                    &self.device,
+                    map,
+                    std::time::Duration::from_secs(30),
+                );
+            }
+            chunk.buffer.buffer.unmap();
+        }
     }
 }
 
@@ -561,17 +704,26 @@ fn prepare(
 }
 
 impl GpuX86Linker {
-    fn resident_store(&self, device: &wgpu::Device) -> Arc<GpuX86LinkStore> {
+    fn resident_store(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Arc<GpuX86LinkStore> {
         self.resident_store
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device)))
+            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue)))
             .clone()
     }
 
+    /// This linker's store while it is the one objects park into. The
+    /// active store is process-wide, so a build checks that an object it
+    /// lowered parked in its own linker's store before it relies on it.
+    pub(crate) fn parking_store(&self) -> Option<Arc<GpuX86LinkStore>> {
+        let own = self.resident_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()?;
+        let active = ACTIVE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        active.as_ref().is_some_and(|store| Arc::ptr_eq(store, &own)).then_some(own)
+    }
+
     /// Parks the objects lowered until the returned guard drops.
-    pub(crate) fn activate_resident_store(&self, device: &wgpu::Device) -> ActiveLinkStore {
-        self.resident_store(device).activate()
+    pub(crate) fn activate_resident_store(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> ActiveLinkStore {
+        self.resident_store(device, queue).activate()
     }
 
     fn link_storage(&self, device: &wgpu::Device, label: &str, words: usize) -> LaniusBuffer<u32> {
@@ -600,7 +752,7 @@ impl GpuX86Linker {
             return Ok(None);
         };
         let _span = TailSpan::new("tail.native.resident.record");
-        let store = self.resident_store(device);
+        let store = self.resident_store(device, queue);
         let mut state = store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // The committed slot of each object, by unit.
         let mut by_key = std::collections::HashMap::with_capacity(state.slots.len());
@@ -895,51 +1047,60 @@ impl GpuX86Linker {
             )?;
         }
         flush_deferred_compute(&mut encoder);
+        // The status in one small readback with the emit, then the image in
+        // chunks of their own submissions: the host writes one chunk while
+        // the GPU copies the next.
         let image_bytes = u64::from(output_words) * 4;
-        let readback_bytes = image_bytes as usize + (STATUS_WORDS + 4) * 4;
-        let second = self.reusable_readback(device, "rb.codegen.x86.link.resident.image", readback_bytes);
-        encoder.copy_buffer_to_buffer(&output.buffer, output.byte_offset, &second.buffer, 0, image_bytes);
+        let status_bytes = (STATUS_WORDS + 4) * 4;
+        let status = self.reusable_readback(device, "rb.codegen.x86.link.resident.status", status_bytes);
         encoder.copy_buffer_to_buffer(
             &buffers.status.buffer,
             buffers.status.byte_offset,
-            &second.buffer,
-            image_bytes,
+            &status.buffer,
+            0,
             STATUS_WORDS as u64 * 4,
         );
         encoder.copy_buffer_to_buffer(
             &dyn_status.buffer,
             dyn_status.byte_offset,
-            &second.buffer,
-            image_bytes + STATUS_WORDS as u64 * 4,
+            &status.buffer,
+            STATUS_WORDS as u64 * 4,
             16,
         );
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.emit", encoder.finish());
+        let status_slice = status.buffer.slice(..status_bytes as u64);
+        let status_map = crate::gpu::passes_core::begin_readback_map(&status_slice, "codegen.x86.link.resident.emit");
+        let chunk_bytes = image_bytes.div_ceil(IMAGE_CHUNKS).next_multiple_of(4).max(4);
+        let mut chunks = Vec::with_capacity(IMAGE_CHUNKS as usize);
+        let mut at = 0;
+        while at < u64::from(total) {
+            let bytes = chunk_bytes.min(image_bytes - at);
+            let buffer = self.reusable_readback(
+                device,
+                IMAGE_CHUNK_LABELS[chunks.len()],
+                bytes as usize,
+            );
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("codegen.x86.link.resident.image.encoder"),
+            });
+            encoder.copy_buffer_to_buffer(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
+            crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
+            let len = (u64::from(total) - at).min(bytes);
+            let map = crate::gpu::passes_core::begin_readback_map(
+                &buffer.buffer.slice(..len),
+                "codegen.x86.link.resident.image",
+            );
+            chunks.push(ImageChunk { buffer, len: len as usize, map: Some(map) });
+            at += bytes;
+        }
         drop(span);
 
         let wait = TailSpan::new("tail.native.resident.wait_emit");
-        let slice = second.buffer.slice(..readback_bytes as u64);
-        crate::gpu::passes_core::wait_for_readback_map(
-            device,
-            &slice,
-            "codegen.x86.link.resident.emit",
-            std::time::Duration::from_secs(30),
-        )?;
+        crate::gpu::passes_core::finish_readback_map(device, status_map, std::time::Duration::from_secs(30))?;
         drop(wait);
-        let tail = words_of(&slice.get_mapped_range()[image_bytes as usize..]);
-        let image = ResidentImage { buffer: second, len: total as usize };
-        if tail[ST_ERRORS] != 0
-            || tail[ST_EMIT_ERRORS] != 0
-            || tail[STATUS_WORDS] != 1
-            || tail[STATUS_WORDS + 1] != 0
-        {
-            log::debug!(
-                "resident x86 link emit failed: errors {:#x}, emit errors {:#x}, dynamic status {:?}",
-                tail[ST_ERRORS],
-                tail[ST_EMIT_ERRORS],
-                &tail[STATUS_WORDS..],
-            );
-            return Ok(None);
-        }
+        let tail = words_of(&status_slice.get_mapped_range());
+        status.buffer.unmap();
+        let image = ResidentImage { device: device.clone(), chunks, len: total as usize };
         Ok(Some(image))
     }
 }

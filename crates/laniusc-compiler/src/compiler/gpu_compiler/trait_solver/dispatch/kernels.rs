@@ -650,35 +650,42 @@ const WAVE_PLAN_PHASE: u32 = 70;
 pub(super) const COUNT_ORIGINAL_NORMALIZATION: u32 = 67;
 pub(super) const COUNT_PREREQUISITE_NORMALIZATION: u32 = 68;
 const AUDIT_TERMS: &str = "type_checker/trait_solver/entries/45_audit_normalized_terms";
-const COMMIT_TERMS: &str = "type_checker/trait_solver/entries/45_commit_normalized_terms";
 const AUDIT_GOALS: &str = "type_checker/trait_solver/entries/47_audit_normalized_goals";
-const COMMIT_GOALS: &str = "type_checker/trait_solver/entries/47_commit_normalized_goals";
 const MARK_GOALS: &str = "type_checker/trait_solver/entries/47_mark_normalized_goals";
 const AUDIT_WORK: &str = "type_checker/trait_solver/entries/50_audit_work";
-const RESERVE_GOAL_INDEX: &str = "type_checker/trait_solver/entries/50_reserve_goal_index";
 const WRITE_GOAL_INDEX: &str = "type_checker/trait_solver/entries/50_write_goal_index";
-const COMMIT_WORK: &str = "type_checker/trait_solver/entries/50_commit_work";
 const AUDIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/entries/55_audit_substitutions";
-const COMMIT_SUBSTITUTIONS: &str = "type_checker/trait_solver/entries/55_commit_substitutions";
 /// Commit stages over the whole grid (proof_commit_audit.slang): audit lanes
-/// over the owner rows, then one committing thread; 47 and 50 go on with the
-/// lanes, and for 50 the thread, that finish what the commit let through.
-/// The lanes of 45, 47 and 55 take every admitted Work, those of 50 the
-/// pending Work rows; each thread takes the one-row span (0, 1).
+/// over the owner rows, whose last workgroup runs the committing thread; 47
+/// and 50 go on with lanes that finish what the commit let through, and the
+/// last workgroup of 50's goal-index lanes commits the Work. The lanes of
+/// 45, 47 and 55 take every admitted Work, those of 50 the pending Work rows.
 const COMMIT_STAGES: [(u32, &[&str]); 4] = [
-    (45, &[AUDIT_TERMS, COMMIT_TERMS]),
-    (47, &[AUDIT_GOALS, COMMIT_GOALS, MARK_GOALS]),
-    (50, &[AUDIT_WORK, RESERVE_GOAL_INDEX, WRITE_GOAL_INDEX, COMMIT_WORK]),
-    (55, &[AUDIT_SUBSTITUTIONS, COMMIT_SUBSTITUTIONS]),
+    (45, &[AUDIT_TERMS]),
+    (47, &[AUDIT_GOALS, MARK_GOALS]),
+    (50, &[AUDIT_WORK, WRITE_GOAL_INDEX]),
+    (55, &[AUDIT_SUBSTITUTIONS]),
+];
+/// Lanes whose last workgroup runs a committing thread (pca_last_group):
+/// one dispatch over the whole span, with one workgroup while the thread's
+/// one-row span is planned (WaveSpan::commit_one).
+const COMMITTING_KERNELS: [&str; 6] = [
+    AUDIT_TERMS,
+    AUDIT_GOALS,
+    AUDIT_WORK,
+    WRITE_GOAL_INDEX,
+    AUDIT_SUBSTITUTIONS,
+    PROOF_EDGE_ROWS,
 ];
 /// Lanes that use no thread-scratch slot: one dispatch over the whole span.
-const WHOLE_SPAN_KERNELS: [&str; 6] = [
+const WHOLE_SPAN_KERNELS: [&str; 7] = [
     AUDIT_TERMS,
     AUDIT_GOALS,
     MARK_GOALS,
     AUDIT_WORK,
     WRITE_GOAL_INDEX,
     AUDIT_SUBSTITUTIONS,
+    PROOF_EDGE_ROWS,
 ];
 fn commit_stage(phase: u32) -> Option<&'static [&'static str]> {
     COMMIT_STAGES.iter().find(|(entry, _)| *entry == phase).map(|(_, keys)| *keys)
@@ -711,14 +718,12 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     ),
     // Commit stages 45, 47, 50 and 55: see COMMIT_STAGES.
     (45, AUDIT_TERMS, 256),
-    (45, COMMIT_TERMS, 1),
     (
         46,
         "type_checker/trait_solver/entries/46_hash_normalized_goals",
         256,
     ),
     (47, AUDIT_GOALS, 256),
-    (47, COMMIT_GOALS, 1),
     (47, MARK_GOALS, 256),
     (
         48,
@@ -731,9 +736,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         256,
     ),
     (50, AUDIT_WORK, 256),
-    (50, RESERVE_GOAL_INDEX, 1),
     (50, WRITE_GOAL_INDEX, 256),
-    (50, COMMIT_WORK, 1),
     (
         51,
         "type_checker/trait_solver/entries/51_index_work",
@@ -763,7 +766,6 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (54, WALK_BINDINGS, 256),
     (54, BINDING_ROWS, 256),
     (55, AUDIT_SUBSTITUTIONS, 256),
-    (55, COMMIT_SUBSTITUTIONS, 1),
     (
         56,
         "type_checker/trait_solver/entries/56_expand_work",
@@ -782,24 +784,9 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (59, ASSUMPTION_PROOFS, 256),
     (59, PROOF_EDGE_ROWS, 256),
     (
-        60,
-        "type_checker/trait_solver/entries/60_commit_proofs",
-        1,
-    ),
-    (
         61,
         "type_checker/trait_solver/entries/61_publish_work_proofs",
         256,
-    ),
-    (
-        62,
-        "type_checker/trait_solver/entries/62_notify_work",
-        256,
-    ),
-    (
-        63,
-        "type_checker/trait_solver/entries/63_commit_queue",
-        1,
     ),
     (
         64,
@@ -920,6 +907,9 @@ pub(super) mod wave {
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
     pub const GROW: u32 = 5;
+    /// A round start found Work its recorded steps do not take, before any
+    /// of them ran; `OVERFLOW_POINT` names the round start.
+    pub const FULL_ROUND: u32 = 6;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
     pub const FAULT_RECEIPT: u32 = 3;
@@ -933,6 +923,7 @@ const SLOT_SPAN: usize = 11;
 const SLOT_CHUNK: usize = 12;
 const SLOT_THREADS: usize = 13;
 const SLOT_LIMIT: usize = 14;
+const SLOT_ONE: usize = 15;
 const SLOT_MIN_WORDS: u32 = 64;
 /// Chunk steps per span at most; with 4096-row chunks this is any span a
 /// 32-bit row count allows.
@@ -946,21 +937,66 @@ pub(super) enum WavePoint {
     Round = 1,
     Selected = 2,
     Expanded = 3,
+    /// After work admission: ready-proof emission (58) over the queue span,
+    /// then the emitted steps over the same rows. Word 5 is unused.
     Queue = 4,
-    Emitted = 5,
     /// After the recorded rounds: the quiescence test, then the finish.
     Finish = 6,
+    /// The start of a queue round (`QUEUE_ROUND`): a round start that stops
+    /// the solve with `wave::FULL_ROUND` when Work is pending, then the
+    /// queue point, with the queue point's steps.
+    QueueRound = 7,
+    /// Round starts of rounds that normalize only original Works (the
+    /// opening round, from Work cursor zero) or only prerequisite Works
+    /// (every later round): `OPENING_ROUND` and `LATER_ROUND`. Either
+    /// stops the solve with `wave::FULL_ROUND` when its Work span starts
+    /// elsewhere.
+    OpeningRound = 8,
+    LaterRound = 9,
+    /// The only point of a solve without source obligations: the finish
+    /// point after a test that no Work exists and the first work would
+    /// commit nothing. Otherwise it stops the solve with `wave::FULL_ROUND`
+    /// before any step.
+    NoWork = 10,
 }
 impl WavePoint {
-    pub const ROUND: [WavePoint; 5] = [
+    pub const ROUND: [WavePoint; 4] = [
         WavePoint::Round,
         WavePoint::Selected,
         WavePoint::Expanded,
         WavePoint::Queue,
-        WavePoint::Emitted,
     ];
+    /// A round without Work: its Round, Selected and Expanded points plan
+    /// nothing, so it runs only the queue steps. A queue round records just
+    /// those, after a round start that checks that no Work is pending; that
+    /// planner also plans the queue point.
+    pub const QUEUE_ROUND: [WavePoint; 1] = [WavePoint::QueueRound];
+    /// A full round with the normalization of one Work kind.
+    pub const OPENING_ROUND: [WavePoint; 4] = [
+        WavePoint::OpeningRound,
+        WavePoint::Selected,
+        WavePoint::Expanded,
+        WavePoint::Queue,
+    ];
+    pub const LATER_ROUND: [WavePoint; 4] = [
+        WavePoint::LaterRound,
+        WavePoint::Selected,
+        WavePoint::Expanded,
+        WavePoint::Queue,
+    ];
+    /// A round start of a full round.
+    pub fn starts_full_round(self) -> bool {
+        matches!(self, WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound)
+    }
     pub fn from_word(word: u32) -> Option<Self> {
-        [WavePoint::FirstWork, WavePoint::Finish]
+        [
+            WavePoint::FirstWork,
+            WavePoint::Finish,
+            WavePoint::QueueRound,
+            WavePoint::OpeningRound,
+            WavePoint::LaterRound,
+            WavePoint::NoWork,
+        ]
             .into_iter()
             .chain(Self::ROUND)
             .find(|point| *point as u32 == word)
@@ -971,6 +1007,10 @@ impl WavePoint {
         match self {
             WavePoint::FirstWork => &[WavePoint::FirstWork],
             WavePoint::Finish => &[WavePoint::Finish],
+            WavePoint::NoWork => &[WavePoint::NoWork],
+            WavePoint::QueueRound => &Self::QUEUE_ROUND,
+            WavePoint::OpeningRound => &Self::OPENING_ROUND,
+            WavePoint::LaterRound => &Self::LATER_ROUND,
             point => &Self::ROUND[point as usize - 1..],
         }
     }
@@ -988,8 +1028,13 @@ impl WavePiece {
     pub fn whole(point: WavePoint) -> Self {
         Self { point, first: 0, end: usize::MAX }
     }
-    /// Groups `first..end` of the point, for a test pause inside it.
-    #[cfg(test)]
+    /// The no-Work point, with the call reduction only when the check has
+    /// calls.
+    pub fn no_work(calls: u32) -> Self {
+        Self::groups(WavePoint::NoWork, usize::from(calls == 0), usize::MAX)
+    }
+    /// Groups `first..end` of the point: a test pause inside it, or the
+    /// no-Work point without its call reduction.
     pub fn groups(point: WavePoint, first: usize, end: usize) -> Self {
         Self { point, first, end }
     }
@@ -1041,7 +1086,20 @@ impl WaveSpan {
     /// Every admitted Work, for the commit audits: one step over the whole
     /// span, however long.
     fn is_whole(self) -> bool {
-        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork)
+        matches!(self, WaveSpan::AllWork | WaveSpan::SelectedAllWork | WaveSpan::ProofEdges)
+    }
+    /// The one-row span of the committing thread that a committing kernel's
+    /// last workgroup runs over this span: planned exactly when this span
+    /// is, and the commit runs then even when this span has no row.
+    fn commit_one(self) -> Option<WaveSpan> {
+        match self {
+            WaveSpan::FirstWork => Some(WaveSpan::FirstOne),
+            WaveSpan::AllWork => Some(WaveSpan::WorkOne),
+            WaveSpan::SelectedAllWork => Some(WaveSpan::SelectedOne),
+            WaveSpan::ExpandedWork => Some(WaveSpan::ExpandedOne),
+            WaveSpan::ProofEdges => Some(WaveSpan::EmittedOne),
+            _ => None,
+        }
     }
 }
 
@@ -1056,15 +1114,10 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             .map(|(_, key, _)| (*key, phase))
             .ok_or_else(|| anyhow!("unregistered proof stage {phase}"))
     };
-    // A commit stage (COMMIT_STAGES): its lanes over `rows`, its threads once.
-    let commit = |phase: u32, rows: WaveSpan, one: WaveSpan| -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
+    // A commit stage (COMMIT_STAGES): its lanes over `rows`.
+    let commit = |phase: u32, rows: WaveSpan| -> Result<Vec<(WaveSpan, Vec<(&'static str, u32)>)>> {
         let keys = commit_stage(phase).ok_or_else(|| anyhow!("proof stage {phase} is not a commit"))?;
-        keys.iter()
-            .map(|&key| {
-                let threads = PROOF_KEYS[proof_key_index(key)?].2;
-                Ok((if threads == 1 { one } else { rows }, vec![(key, phase)]))
-            })
-            .collect()
+        Ok(keys.iter().map(|&key| (rows, vec![(key, phase)])).collect())
     };
     use WaveSpan::*;
     Ok(match point {
@@ -1072,16 +1125,23 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
         // reserves, so the store can grow in place before it runs.
         WavePoint::FirstWork => {
             let mut groups = vec![(FirstWork, vec![stage(49)?])];
-            groups.extend(commit(50, FirstWork, FirstOne)?);
+            groups.extend(commit(50, FirstWork)?);
             groups.push((FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]));
             groups
         }
-        WavePoint::Round => {
-            // Normalization (41 to 47), 51, 52, 57, then selection.
+        WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound => {
+            // Normalization (41 to 47), 51, 52, 57, then selection. The
+            // opening round leaves out the prerequisite Works' 42 and 44,
+            // a later round the original Works' 41 and 43.
             let mut groups = Vec::new();
             for phase in 41..=47 {
+                if (point == WavePoint::OpeningRound && matches!(phase, 42 | 44))
+                    || (point == WavePoint::LaterRound && matches!(phase, 41 | 43))
+                {
+                    continue;
+                }
                 if matches!(phase, 45 | 47) {
-                    groups.extend(commit(phase, AllWork, WorkOne)?);
+                    groups.extend(commit(phase, AllWork)?);
                 } else {
                     groups.push((Work, vec![stage(phase)?]));
                 }
@@ -1097,26 +1157,33 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
                 (SelectedWork, SUBSTITUTION_STEPS.to_vec()),
                 (Bindings, vec![(BINDING_ROWS, SUBSTITUTION_PHASE)]),
             ];
-            groups.extend(commit(55, SelectedAllWork, SelectedOne)?);
+            groups.extend(commit(55, SelectedAllWork)?);
             groups.push((SelectedWork, vec![stage(56)?]));
             groups
         }
         WavePoint::Expanded => {
             let mut groups = vec![(ExpandedWork, vec![stage(49)?])];
-            groups.extend(commit(50, ExpandedWork, ExpandedOne)?);
+            groups.extend(commit(50, ExpandedWork)?);
             groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
             groups
         }
-        WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
-        WavePoint::Emitted => vec![
+        // Ready-proof emission, then the emitted steps over the same queue
+        // rows. The edge admission takes the edges 58 reserved, one thread
+        // per queue row, in one dispatch.
+        WavePoint::Queue | WavePoint::QueueRound => vec![
+            (Queue, vec![stage(58)?]),
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
             (EmittedQueue, vec![(ASSUMPTION_PROOFS, IMPLEMENTATION_PROOF_PHASE)]),
+            // Its last workgroup commits the proofs and their edges.
             (ProofEdges, vec![(PROOF_EDGE_ROWS, IMPLEMENTATION_PROOF_PHASE)]),
-            (EmittedOne, vec![stage(60)?]),
             (EmittedQueue, vec![stage(61)?]),
-            (EmittedQueue, vec![stage(62)?]),
-            (EmittedOne, vec![stage(63)?]),
+            // The reduction queue commits at the next planner
+            // (proof_solver_wave.slang, psw_commit_queue).
         ],
+        // The no-Work point's test found no root link, so it has no root to
+        // publish. Its call reduction is left out when the check has no
+        // call (no_work_piece).
+        WavePoint::NoWork => vec![(FinishCalls, vec![stage(18)?]), (FinishOne, vec![stage(19)?])],
         // Root publication, call reduction and the batch receipt.
         WavePoint::Finish => vec![
             (FinishRoots, vec![stage(64)?]),
@@ -1208,6 +1275,8 @@ struct WaveSlot {
     chunk: u32,
     /// Rows the template recorded for the span.
     limit: u32,
+    /// A committing kernel's one-row span (WaveSpan::commit_one).
+    one: Option<WaveSpan>,
 }
 
 /// Recorded steps of some planning points with bind groups built once per
@@ -1245,6 +1314,7 @@ impl WaveTemplate {
             row[SLOT_CHUNK] = slot.chunk;
             row[SLOT_THREADS] = PROOF_KEYS[slot.pass].2;
             row[SLOT_LIMIT] = slot.limit;
+            row[SLOT_ONE] = slot.one.map_or(0, |one| one as u32 + 1);
         }
         words
     }
@@ -1387,8 +1457,12 @@ impl ProofKernels {
             let groups = wave_segment(point)?;
             let end = piece.end.min(groups.len());
             for (span, steps) in groups.into_iter().take(end).skip(piece.first) {
-                let span_chunks = if span.is_one() || span.is_whole() { 1 } else { chunks };
-                let limit = if span.is_whole() {
+                // A committing kernel's lanes are one dispatch, so that its
+                // last workgroup follows all of them.
+                let committing = steps.iter().all(|(key, _)| COMMITTING_KERNELS.contains(key));
+                let whole = span.is_whole() || committing;
+                let span_chunks = if span.is_one() || whole { 1 } else { chunks };
+                let limit = if whole {
                     u32::MAX
                 } else {
                     span_chunks.saturating_mul(THREAD_SCRATCH_SLOTS)
@@ -1404,15 +1478,21 @@ impl ProofKernels {
                             "singleton proof stage needs exactly one dispatch"
                         );
                         ensure!(
-                            !span.is_whole() || WHOLE_SPAN_KERNELS.contains(&PROOF_KEYS[pass].1),
+                            !whole || WHOLE_SPAN_KERNELS.contains(&PROOF_KEYS[pass].1),
                             "a whole-span step needs a kernel without scratch slots"
                         );
+                        let one = if committing {
+                            Some(span.commit_one().ok_or_else(|| anyhow!("a committing step over a span without a commit"))?)
+                        } else {
+                            None
+                        };
                         slots.push(WaveSlot {
                             pass,
                             phase,
                             span,
-                            chunk: if span.is_whole() { 0 } else { chunk },
+                            chunk: if whole { 0 } else { chunk },
                             limit,
+                            one,
                         });
                     }
                 }

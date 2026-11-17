@@ -385,6 +385,9 @@ struct Store {
     builds: u32,
     /// Build generation of the current build (`counts::GENERATION`).
     generation: u32,
+    /// Changes whenever `buffers` or `scratch` are replaced, so a prepared
+    /// export knows whether the buffers it bound are still the store's.
+    epoch: u64,
 }
 
 /// Next build generation, shared by every store of the process, so a
@@ -457,6 +460,44 @@ pub struct ProgramRetention {
     job_inputs: std::collections::BTreeSet<String>,
     /// Snapshot buffer sets of finished jobs, reused by later jobs.
     snapshot_pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
+    /// Records the GPU work that follows an export ([`ExportFollower`]).
+    follower_recorder: Mutex<Option<ExportFollowerRecorder>>,
+    /// That work, recorded and not yet submitted.
+    follower: Mutex<Option<PreparedFollower>>,
+    /// The words its reads returned, for the build's next consumer.
+    followed: Mutex<Option<FollowedWords>>,
+}
+
+/// GPU work that a later stage records before a job's export has produced
+/// the store's counters, sized from the store's capacities: the native
+/// call rewrite submits it right behind itself and reads `reads` with its
+/// own readback, so the work runs without the GPU waiting on the host.
+pub(crate) struct ExportFollower {
+    pub(crate) commands: wgpu::CommandBuffer,
+    /// Buffers whose first `words` words are read with the rewrite.
+    pub(crate) reads: Vec<(wgpu::Buffer, usize)>,
+}
+
+/// Records the [`ExportFollower`] of the store's current state, or none.
+pub(crate) type ExportFollowerRecorder =
+    Box<dyn Fn(&ProgramRetention) -> Result<Option<ExportFollower>> + Send + Sync>;
+
+struct PreparedFollower {
+    follower: ExportFollower,
+    epoch: u64,
+    generation: u32,
+}
+
+/// What an [`ExportFollower`]'s reads returned, and after which committed
+/// export of which build.
+// The trait catalog's count pass will set and consume the follower.
+#[allow(dead_code)]
+pub(crate) struct FollowedWords {
+    pub(crate) generation: u32,
+    /// Committed exports of the build when the follower ran (it followed
+    /// the last one).
+    pub(crate) jobs: usize,
+    pub(crate) words: Vec<Vec<u32>>,
 }
 
 /// One job's export inputs, copied into buffers the store owns when the
@@ -469,6 +510,18 @@ pub(crate) struct JobSnapshot {
     tables: BTreeMap<&'static str, JobTable>,
     buffers: BTreeMap<&'static str, wgpu::Buffer>,
     pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
+    /// The export's first attempt, recorded while the host waits for the
+    /// job's GPU work ([`ProgramRetention::prepare_export_job`]).
+    prepared: Mutex<Option<PreparedExport>>,
+}
+
+/// An export attempt recorded but not submitted, and the store state it
+/// bound.
+struct PreparedExport {
+    commands: wgpu::CommandBuffer,
+    shape: ScratchShape,
+    epoch: u64,
+    generation: u32,
 }
 
 impl JobSnapshot {
@@ -519,6 +572,7 @@ impl ProgramRetention {
             growths: 0,
             builds: 0,
             generation: 0,
+            epoch: 0,
         };
         store.buffers = allocate_store(&device, &capacity, None);
         let job_inputs = passes
@@ -542,6 +596,9 @@ impl ProgramRetention {
             store: Mutex::new(store),
             job_inputs,
             snapshot_pool: Arc::new(Mutex::new(Vec::new())),
+            follower_recorder: Mutex::new(None),
+            follower: Mutex::new(None),
+            followed: Mutex::new(None),
         });
         this.begin_build()?;
         Ok(this)
@@ -572,6 +629,7 @@ impl ProgramRetention {
         );
         self.queue.submit(Some(encoder.finish()));
         store.reports.clear();
+        *self.followed.lock().unwrap() = None;
         store.builds += 1;
         store.generation = generation;
         Ok(())
@@ -627,22 +685,92 @@ impl ProgramRetention {
             encoder.copy_buffer_to_buffer(&table.buffer, table.offset, &buffer, 0, table.size);
             tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
         }
-        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone() })
+        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None) })
     }
 
     /// Records and submits the job's first export attempt without waiting
     /// for it; [`Self::finish_export_job`] reads it. Until then the caller
     /// may do host work while the GPU exports. A caller that does not finish
     /// it calls [`Self::abandon_export`].
-    pub(crate) fn submit_export_job(
-        &self,
-        job: &BTreeMap<&'static str, JobTable>,
-    ) -> Result<ExportSubmitted> {
-        let result = self.submit_export_attempt(job);
+    pub(crate) fn submit_export_job(&self, snapshot: &JobSnapshot) -> Result<ExportSubmitted> {
+        let result = self.submit_export_attempt(snapshot);
         if result.is_err() {
             self.abandon_export();
         }
         result
+    }
+
+    /// Records the job's first export attempt without submitting it, so the
+    /// host can record it while it waits for the job's GPU work.
+    /// [`Self::submit_export_job`] submits it if the store still has the
+    /// buffers it bound, and records the attempt again otherwise. A job that
+    /// is retried or fails drops it with its snapshot.
+    /// Sets the recorder of the work that follows each export.
+    #[allow(dead_code)]
+    pub(crate) fn set_export_follower(&self, recorder: Option<ExportFollowerRecorder>) {
+        *self.follower_recorder.lock().unwrap() = recorder;
+        *self.follower.lock().unwrap() = None;
+    }
+
+    /// Records the export follower while the host waits for a job, after
+    /// [`Self::prepare_export_job`]. The store lock is not held while the
+    /// recorder runs.
+    pub(crate) fn prepare_export_follower(&self) -> Result<()> {
+        if self.follower.lock().unwrap().is_some() {
+            return Ok(());
+        }
+        let recorder = self.follower_recorder.lock().unwrap();
+        let Some(recorder) = recorder.as_ref() else {
+            return Ok(());
+        };
+        let (epoch, generation) = {
+            let store = self.store.lock().unwrap();
+            (store.epoch, store.generation)
+        };
+        if let Some(follower) = recorder(self)? {
+            *self.follower.lock().unwrap() = Some(PreparedFollower { follower, epoch, generation });
+        }
+        Ok(())
+    }
+
+    /// The prepared follower if it bound the store's current buffers.
+    fn take_follower(&self, store: &Store) -> Option<ExportFollower> {
+        self.follower
+            .lock()
+            .unwrap()
+            .take()
+            .filter(|prepared| prepared.epoch == store.epoch && prepared.generation == store.generation)
+            .map(|prepared| prepared.follower)
+    }
+
+    /// The words of the follower that ran behind this build's last export.
+    #[allow(dead_code)]
+    pub(crate) fn take_followed_words(&self) -> Option<FollowedWords> {
+        let followed = self.followed.lock().unwrap().take()?;
+        let store = self.store.lock().unwrap();
+        (followed.generation == store.generation && followed.jobs == store.reports.len()).then_some(followed)
+    }
+
+    pub(crate) fn prepare_export_job(&self, snapshot: &JobSnapshot) -> Result<()> {
+        if self.export_fault.lock().unwrap().is_some() || snapshot.prepared.lock().unwrap().is_some() {
+            return Ok(());
+        }
+        let job = &snapshot.tables;
+        let shape = export_shape(job)?;
+        let mut store = self.store.lock().unwrap();
+        self.ensure_scratch(&mut store, shape);
+        let commands = self.record_export(&store, job, shape)?;
+        *snapshot.prepared.lock().unwrap() =
+            Some(PreparedExport { commands, shape, epoch: store.epoch, generation: store.generation });
+        Ok(())
+    }
+
+    fn ensure_scratch(&self, store: &mut Store, shape: ScratchShape) {
+        if store.scratch_shape != Some(shape) {
+            store.scratch = allocate_scratch(&self.device, shape);
+            store.scratch_shape = Some(shape);
+            store.epoch += 1;
+        }
     }
 
     /// Reads the submitted export and retries it with grown capacity until
@@ -668,19 +796,16 @@ impl ProgramRetention {
         self.queue.submit(None);
     }
 
-    fn submit_export_attempt(&self, job: &BTreeMap<&'static str, JobTable>) -> Result<ExportSubmitted> {
-        let rows = table_words(job, "compact_hir_core")? / 4;
-        let records = table_words(job, "ct_head")? / 4;
-        let args = table_words(job, "ct_args")?;
-        let generic = table_words(job, "compact_generic_params")? / 4;
-        let shape = ScratchShape {
-            rows: rows.max(1),
-            records: records.max(1),
-            args: args.max(1),
-            param_slots: (2 * generic + rows / 4 + 64).next_power_of_two(),
-            tokens: table_words(job, "decl_id_by_name_token")?.max(1),
-            job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
-        };
+    fn submit_export_attempt(&self, snapshot: &JobSnapshot) -> Result<ExportSubmitted> {
+        let job = &snapshot.tables;
+        if let Some(prepared) = snapshot.prepared.lock().unwrap().take() {
+            let store = self.store.lock().unwrap();
+            if store.epoch == prepared.epoch && store.generation == prepared.generation {
+                self.queue.submit(Some(prepared.commands));
+                return Ok(ExportSubmitted { shape: prepared.shape });
+            }
+        }
+        let shape = export_shape(job)?;
         if let Some(fault) = *self.export_fault.lock().unwrap() {
             match fault {
                 ExportFault::Fill(name, word) => {
@@ -698,11 +823,8 @@ impl ProgramRetention {
             }
         }
         let mut store = self.store.lock().unwrap();
-        if store.scratch_shape != Some(shape) {
-            store.scratch = allocate_scratch(&self.device, shape);
-            store.scratch_shape = Some(shape);
-        }
-        self.record_export(&store, job, shape)?;
+        self.ensure_scratch(&mut store, shape);
+        self.queue.submit(Some(self.record_export(&store, job, shape)?));
         Ok(ExportSubmitted { shape })
     }
 
@@ -714,7 +836,7 @@ impl ProgramRetention {
         let mut store = self.store.lock().unwrap();
         for attempt in 1..=8u32 {
             if attempt > 1 {
-                self.record_export(&store, job, shape)?;
+                self.queue.submit(Some(self.record_export(&store, job, shape)?));
             }
             let mut read = self.read_parts(&[
                 (&store.buffers["rt_counts"], counts::WORDS),
@@ -722,13 +844,7 @@ impl ProgramRetention {
             ])?;
             let x = read.pop().unwrap_or_default();
             let words = read.pop().unwrap_or_default();
-            if words[counts::JOB_STATE] == counts::JOB_COMMITTED {
-                let report = JobReport {
-                    attempts: attempt,
-                    ready: words[counts::READY] != 0,
-                    counts: words,
-                    untranslated_records: x[188],
-                };
+            if let Some(report) = committed_export(attempt, words.clone(), &x) {
                 store.reports.push(report.clone());
                 return Ok(report);
             }
@@ -751,7 +867,7 @@ impl ProgramRetention {
         store: &Store,
         job: &BTreeMap<&'static str, JobTable>,
         shape: ScratchShape,
-    ) -> Result<()> {
+    ) -> Result<wgpu::CommandBuffer> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("program_retention.export"),
         });
@@ -833,8 +949,7 @@ impl ProgramRetention {
             run(27, Indirect(D_ROLLBACK));
             substitution::record_timed(&mut encoder, "program_retention.export", &steps);
         }
-        self.queue.submit(Some(encoder.finish()));
-        Ok(())
+        Ok(encoder.finish())
     }
 
     /// Binds `pass` by reflected name; `aliases` binds a name to another
@@ -896,6 +1011,7 @@ impl ProgramRetention {
         store.buffers = fresh;
         store.capacity = capacity;
         store.growths += 1;
+        store.epoch += 1;
         let names = reflected_names(&self.rehash);
         let entries = names
             .iter()
@@ -1191,6 +1307,33 @@ pub(crate) struct ExportSubmitted {
 enum Dispatch {
     Direct([u32; 3]),
     Indirect(u64),
+}
+
+/// The report of an export attempt whose counters (`rt_counts`,
+/// `rt_x_counts`) show that it committed.
+fn committed_export(attempt: u32, words: Vec<u32>, x: &[u32]) -> Option<JobReport> {
+    (words[counts::JOB_STATE] == counts::JOB_COMMITTED).then(|| JobReport {
+        attempts: attempt,
+        ready: words[counts::READY] != 0,
+        counts: words,
+        untranslated_records: x[188],
+    })
+}
+
+/// The export scratch a job needs.
+fn export_shape(job: &BTreeMap<&'static str, JobTable>) -> Result<ScratchShape> {
+    let rows = table_words(job, "compact_hir_core")? / 4;
+    let records = table_words(job, "ct_head")? / 4;
+    let args = table_words(job, "ct_args")?;
+    let generic = table_words(job, "compact_generic_params")? / 4;
+    Ok(ScratchShape {
+        rows: rows.max(1),
+        records: records.max(1),
+        args: args.max(1),
+        param_slots: (2 * generic + rows / 4 + 64).next_power_of_two(),
+        tokens: table_words(job, "decl_id_by_name_token")?.max(1),
+        job_tokens: (table_words(job, "rt_job_tokens")? / 3).max(1),
+    })
 }
 
 fn reflected_names(pass: &PassData) -> Vec<String> {

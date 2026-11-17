@@ -325,7 +325,7 @@ impl GpuCompiler<'_> {
         let resident = (target == SourcePackArtifactTarget::X86_64
             && store == typecheck::NativeObjectStore::Memory
             && build.native_link.is_some())
-            .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device)))
+            .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device, &self.gpu.queue)))
             .flatten();
         self.attach_program_retention(Some(build.store.clone()));
         let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), store).await;
@@ -378,9 +378,12 @@ impl GpuCompiler<'_> {
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
         // cannot replace catalog admission.
-        let (mut catalog, publication) = self.retained_trait_publish(&store, &RetainedTraitOptions::default())
+        let (mut catalog, mut publication) = self.retained_trait_publish(&store, &RetainedTraitOptions::default())
             .map_err(|e| retained_error("trait catalog", format!("{e:#}")))?;
-        catalog.publication_status = publication.as_ref().map(|p| p.status()).transpose()
+        // Discovery reads the publication's status with its first readback
+        // and rejects an invalid publication; that status decides first.
+        let discovered = publication.as_mut().map(|publication| build.discovery.run_with_traits(&store, publication));
+        catalog.publication_status = publication.as_ref().map(|p| p.checked_status()).transpose()
             .map_err(|e| retained_error("trait publication", e))?;
         if catalog.publication_status != Some([1, 0, u32::MAX]) {
             if let Some(publication) = &publication
@@ -397,8 +400,9 @@ impl GpuCompiler<'_> {
                 catalog.publication_status,
             ))));
         }
-        let mut publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
-        let roots = match build.discovery.run_with_traits(&store, &mut publication).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
+        let publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
+        let discovered = discovered.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
+        let roots = match discovered.map_err(|e| retained_error("discovery", format!("{e:#}")))? {
             DiscoveryOutcome::Published(roots) => roots,
             DiscoveryOutcome::Rejected(e) => {
                 return Err(retained_error("discovery rejected the program", format!("{e:?}")));
@@ -549,18 +553,20 @@ impl GpuCompiler<'_> {
             if let Some(plan) = resident_plan {
                 let span = x86::TailSpan::new("tail.native.resident");
                 match linker.finish_resident_dynamic(device, queue, plan) {
-                    Ok(Some(image)) => {
+                    Ok(Some(mut image)) => {
                         drop(span);
                         let _write_span = x86::TailSpan::new("tail.native.write");
                         let len = image.len();
                         return match output {
                             Some(path) => super::bounded_path_codegen::write_output_file_atomically(
                                 path, SourcePackArtifactTarget::X86_64, |file| image
-                                    .with_bytes(|bytes| std::io::Write::write_all(file, bytes))
+                                    .for_each_chunk(|bytes| std::io::Write::write_all(file, bytes))
+                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?
                                     .map(|()| len as u64)
                                     .map_err(|e| retained_error("write native executable", e)))
                                 .map(ResidentLinkedOutput::File),
-                            None => Ok(ResidentLinkedOutput::Bytes(image.with_bytes(<[u8]>::to_vec))),
+                            None => image.to_vec().map(ResidentLinkedOutput::Bytes)
+                                .map_err(|e| retained_error("read native executable", format!("{e:#}"))),
                         };
                     }
                     Ok(None) => {}

@@ -76,9 +76,6 @@ pub(super) const OPT_IR_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationNodes,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.blocks.scan.local",
-        hierarchy_up_first: "lir.opt.blocks.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.blocks.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.blocks.scan.block_prefix.down",
         apply: "lir.opt.blocks.scan.apply",
     },
     resources: PrefixScanResources {
@@ -89,7 +86,6 @@ pub(super) const OPT_IR_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.block_scan_dispatch_args",
         local_prefix: "lir.opt.block_scan_local_prefix",
         block_sum: "lir.opt.block_scan_block_sum",
-        block_prefix: "lir.opt.block_scan_block_prefix",
     },
 };
 
@@ -98,9 +94,6 @@ pub(super) const OPT_IR_REGION_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationNodes,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.regions.scan.local",
-        hierarchy_up_first: "lir.opt.regions.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.regions.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.regions.scan.block_prefix.down",
         apply: "lir.opt.regions.scan.apply",
     },
     resources: PrefixScanResources {
@@ -111,7 +104,6 @@ pub(super) const OPT_IR_REGION_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.block_scan_dispatch_args",
         local_prefix: "lir.opt.block_scan_local_prefix",
         block_sum: "lir.opt.block_scan_block_sum",
-        block_prefix: "lir.opt.block_scan_block_prefix",
     },
 };
 
@@ -120,9 +112,6 @@ pub(super) const OPT_IR_EDGE_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationBlocks,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.edges.scan.local",
-        hierarchy_up_first: "lir.opt.edges.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.edges.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.edges.scan.block_prefix.down",
         apply: "lir.opt.edges.scan.apply",
     },
     resources: PrefixScanResources {
@@ -133,7 +122,6 @@ pub(super) const OPT_IR_EDGE_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.edge_scan_dispatch_args",
         local_prefix: "lir.opt.edge_scan_local_prefix",
         block_sum: "lir.opt.edge_scan_block_sum",
-        block_prefix: "lir.opt.edge_scan_block_prefix",
     },
 };
 
@@ -142,9 +130,6 @@ pub(super) const OPT_IR_PREDECESSOR_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationBlocks,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.predecessors.scan.local",
-        hierarchy_up_first: "lir.opt.predecessors.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.predecessors.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.predecessors.scan.block_prefix.down",
         apply: "lir.opt.predecessors.scan.apply",
     },
     resources: PrefixScanResources {
@@ -155,7 +140,6 @@ pub(super) const OPT_IR_PREDECESSOR_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.edge_scan_dispatch_args",
         local_prefix: "lir.opt.edge_scan_local_prefix",
         block_sum: "lir.opt.edge_scan_block_sum",
-        block_prefix: "lir.opt.edge_scan_block_prefix",
     },
 };
 
@@ -164,9 +148,6 @@ pub(super) const OPT_IR_DOMINATOR_CHILD_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationBlocks,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.dominators.children.scan.local",
-        hierarchy_up_first: "lir.opt.dominators.children.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.dominators.children.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.dominators.children.scan.block_prefix.down",
         apply: "lir.opt.dominators.children.scan.apply",
     },
     resources: PrefixScanResources {
@@ -177,7 +158,6 @@ pub(super) const OPT_IR_DOMINATOR_CHILD_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.edge_scan_dispatch_args",
         local_prefix: "lir.opt.edge_scan_local_prefix",
         block_sum: "lir.opt.edge_scan_block_sum",
-        block_prefix: "lir.opt.edge_scan_block_prefix",
     },
 };
 
@@ -186,9 +166,6 @@ pub(super) const OPT_IR_ACCESS_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationNodes,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.access.scan.local",
-        hierarchy_up_first: "lir.opt.access.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.access.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.access.scan.block_prefix.down",
         apply: "lir.opt.access.scan.apply",
     },
     resources: PrefixScanResources {
@@ -199,7 +176,6 @@ pub(super) const OPT_IR_ACCESS_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.access_scan_dispatch_args",
         local_prefix: "lir.opt.access_scan_local_prefix",
         block_sum: "lir.opt.access_scan_block_sum",
-        block_prefix: "lir.opt.access_scan_block_prefix",
     },
 };
 
@@ -208,9 +184,6 @@ pub(super) const OPT_IR_ACCESS_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationAccesses,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.access.groups.scan.local",
-        hierarchy_up_first: "lir.opt.access.groups.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.access.groups.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.access.groups.scan.block_prefix.down",
         apply: "lir.opt.access.groups.scan.apply",
     },
     resources: PrefixScanResources {
@@ -221,7 +194,6 @@ pub(super) const OPT_IR_ACCESS_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.access_radix_dispatch_args",
         local_prefix: "lir.opt.access_group_scan_local_prefix",
         block_sum: "lir.opt.access_group_scan_block_sum",
-        block_prefix: "lir.opt.access_group_scan_block_prefix",
     },
 };
 
@@ -230,9 +202,6 @@ pub(super) const OPT_IR_DECLARATION_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec 
     dispatch_domain: ResourceDomain::OptimizationAccesses,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.access.declaration_blocks.scan.local",
-        hierarchy_up_first: "lir.opt.access.declaration_blocks.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.access.declaration_blocks.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.access.declaration_blocks.scan.block_prefix.down",
         apply: "lir.opt.access.declaration_blocks.scan.apply",
     },
     resources: PrefixScanResources {
@@ -243,7 +212,6 @@ pub(super) const OPT_IR_DECLARATION_BLOCK_SCAN: PrefixScanSpec = PrefixScanSpec 
         dispatch_args: "lir.opt.access_radix_dispatch_args",
         local_prefix: "lir.opt.access_group_scan_local_prefix",
         block_sum: "lir.opt.access_group_scan_block_sum",
-        block_prefix: "lir.opt.access_group_scan_block_prefix",
     },
 };
 
@@ -252,9 +220,6 @@ pub(super) const OPT_IR_SSA_DEMAND_SEED_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationAccessGroups,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.demands.seed.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.demands.seed.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.demands.seed.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.demands.seed.scan.block_prefix.down",
         apply: "lir.opt.ssa.demands.seed.scan.apply",
     },
     resources: PrefixScanResources {
@@ -265,7 +230,6 @@ pub(super) const OPT_IR_SSA_DEMAND_SEED_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.access_radix_dispatch_args",
         local_prefix: "lir.opt.ssa.demand_seed_scan_local_prefix",
         block_sum: "lir.opt.ssa.demand_seed_scan_block_sum",
-        block_prefix: "lir.opt.ssa.demand_seed_scan_block_prefix",
     },
 };
 
@@ -276,9 +240,6 @@ pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_SCAN: PrefixScanPairSpec = PrefixScan
     dispatch_domain: ResourceDomain::OptimizationSsaDemands,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.block_arguments.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.block_arguments.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.block_arguments.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.block_arguments.scan.block_prefix.down",
         apply: "lir.opt.ssa.block_arguments.scan.apply",
     },
     left: PrefixScanResources {
@@ -289,7 +250,6 @@ pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_SCAN: PrefixScanPairSpec = PrefixScan
         dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
         local_prefix: "lir.opt.ssa.block_argument_flag",
         block_sum: "lir.opt.ssa.block_argument_scan_block_sum",
-        block_prefix: "lir.opt.ssa.block_argument_scan_block_prefix",
     },
     right: PrefixScanResources {
         count: "lir.opt.ssa.demand_total",
@@ -299,7 +259,6 @@ pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_SCAN: PrefixScanPairSpec = PrefixScan
         dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
         local_prefix: "lir.opt.ssa.block_argument_incoming_count",
         block_sum: "lir.opt.ssa.block_argument_incoming_scan_block_sum",
-        block_prefix: "lir.opt.ssa.block_argument_incoming_scan_block_prefix",
     },
 };
 
@@ -308,9 +267,6 @@ pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_USER_SCAN: PrefixScanSpec = PrefixSca
     dispatch_domain: ResourceDomain::OptimizationSsaBlockArguments,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.block_argument_users.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.block_argument_users.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.block_argument_users.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.block_argument_users.scan.block_prefix.down",
         apply: "lir.opt.ssa.block_argument_users.scan.apply",
     },
     resources: PrefixScanResources {
@@ -321,7 +277,6 @@ pub(super) const OPT_IR_SSA_BLOCK_ARGUMENT_USER_SCAN: PrefixScanSpec = PrefixSca
         dispatch_args: "lir.opt.ssa.demand_radix_dispatch_args",
         local_prefix: "lir.opt.ssa.block_argument_user_scan_local_prefix",
         block_sum: "lir.opt.ssa.block_argument_user_scan_block_sum",
-        block_prefix: "lir.opt.ssa.block_argument_user_scan_block_prefix",
     },
 };
 
@@ -332,9 +287,6 @@ pub(super) const OPT_IR_SSA_VALUE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec 
     dispatch_domain: ResourceDomain::OptimizationValues,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.values.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.values.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.values.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.values.scan.block_prefix.down",
         apply: "lir.opt.ssa.values.scan.apply",
     },
     left: PrefixScanResources {
@@ -345,7 +297,6 @@ pub(super) const OPT_IR_SSA_VALUE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec 
         dispatch_args: "lir.opt.ssa.node_value_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.node_value_flag",
         block_sum: "lir.opt.ssa.node_value_scan_block_sum",
-        block_prefix: "lir.opt.ssa.node_value_scan_block_prefix",
     },
     right: PrefixScanResources {
         count: "lir.opt.ssa.block_argument_total",
@@ -355,7 +306,6 @@ pub(super) const OPT_IR_SSA_VALUE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec 
         dispatch_args: "lir.opt.ssa.block_argument_value_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.block_argument_value_flag",
         block_sum: "lir.opt.ssa.block_argument_value_scan_block_sum",
-        block_prefix: "lir.opt.ssa.block_argument_value_scan_block_prefix",
     },
 };
 
@@ -366,9 +316,6 @@ pub(super) const OPT_IR_SSA_USE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
     dispatch_domain: ResourceDomain::OptimizationNodes,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.uses.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.uses.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.uses.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.uses.scan.block_prefix.down",
         apply: "lir.opt.ssa.uses.scan.apply",
     },
     left: PrefixScanResources {
@@ -379,7 +326,6 @@ pub(super) const OPT_IR_SSA_USE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         dispatch_args: "lir.opt.ssa.node_use_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.node_use_count",
         block_sum: "lir.opt.ssa.node_use_scan_block_sum",
-        block_prefix: "lir.opt.ssa.node_use_scan_block_prefix",
     },
     right: PrefixScanResources {
         count: "lir.semantic.call_arg_total",
@@ -389,7 +335,6 @@ pub(super) const OPT_IR_SSA_USE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         dispatch_args: "lir.opt.ssa.call_use_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.call_use_flag",
         block_sum: "lir.opt.ssa.call_use_scan_block_sum",
-        block_prefix: "lir.opt.ssa.call_use_scan_block_prefix",
     },
 };
 
@@ -398,9 +343,6 @@ pub(super) const OPT_IR_SSA_AGGREGATE_USE_SCAN: PrefixScanSpec = PrefixScanSpec 
     dispatch_domain: ResourceDomain::OptimizationUses,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.aggregate_uses.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.aggregate_uses.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.aggregate_uses.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.aggregate_uses.scan.block_prefix.down",
         apply: "lir.opt.ssa.aggregate_uses.scan.apply",
     },
     resources: PrefixScanResources {
@@ -411,7 +353,6 @@ pub(super) const OPT_IR_SSA_AGGREGATE_USE_SCAN: PrefixScanSpec = PrefixScanSpec 
         dispatch_args: "lir.opt.ssa.aggregate_use_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.aggregate_use_flag",
         block_sum: "lir.opt.ssa.aggregate_use_scan_block_sum",
-        block_prefix: "lir.opt.ssa.aggregate_use_scan_block_prefix",
     },
 };
 
@@ -513,9 +454,6 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::OptimizationUses,
     passes: PrefixScanGraphPasses {
         local: "lir.opt.ssa.use_groups.scan.local",
-        hierarchy_up_first: "lir.opt.ssa.use_groups.scan.block_prefix",
-        hierarchy_up_rest: "lir.opt.ssa.use_groups.scan.block_prefix.rest",
-        hierarchy_down: "lir.opt.ssa.use_groups.scan.block_prefix.down",
         apply: "lir.opt.ssa.use_groups.scan.apply",
     },
     resources: PrefixScanResources {
@@ -526,7 +464,6 @@ pub(super) const OPT_IR_SSA_USE_GROUP_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "lir.opt.ssa.use_group_scan_dispatch_args",
         local_prefix: "lir.opt.ssa.use_group_start_flag",
         block_sum: "lir.opt.ssa.use_group_scan_block_sum",
-        block_prefix: "lir.opt.ssa.use_group_scan_block_prefix",
     },
 };
 
