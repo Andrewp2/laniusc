@@ -1,4 +1,5 @@
 //! Solver proof bindings become closed method environments on the GPU.
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail, ensure};
@@ -109,10 +110,10 @@ impl MethodRoutes {
     /// Writes the round and begin configs of one run.
     fn write_configs(&self, words: &Config) {
         // Selection marks before level 0, whose predecessor flag is round 2's.
-        self.queue.write_buffer(&self.configs[BEGIN_CONFIG], 0, &words_bytes(&words.at(0, 2)));
+        self.queue.write_buffer_counted(&self.configs[BEGIN_CONFIG], 0, &words_bytes(&words.at(0, 2)));
         // Both value buffers are equal at a fixed point; at the level bound
         // the last level (64, parity 0) wrote buffer b.
-        self.queue.write_buffer(&self.configs[FINAL_CONFIG], 0, &words_bytes(&words.at(1, 1)));
+        self.queue.write_buffer_counted(&self.configs[FINAL_CONFIG], 0, &words_bytes(&words.at(1, 1)));
     }
     /// Records one run: the begin and selection passes, each fixed-point
     /// loop as one workgroup that runs its levels (02_expand, 03_terms),
@@ -165,8 +166,8 @@ impl MethodRoutes {
         let config = Config::new(run, guard.generation, 0, nodes.2, view.identity);
         self.write_configs(&config);
         for target in &self.configs {
-            encoder.copy_buffer_to_buffer(requests.0, requests.1, target, 8, 4);
-            encoder.copy_buffer_to_buffer(nodes.0, nodes.1, target, 12, 4);
+            encoder.copy_buffer_counted(requests.0, requests.1, target, 8, 4);
+            encoder.copy_buffer_counted(nodes.0, nodes.1, target, 12, 4);
         }
         self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2)
     }
@@ -229,7 +230,7 @@ impl MethodRoutes {
             }
         })();
         if result.is_err() {
-            self.queue.write_buffer(
+            self.queue.write_buffer_counted(
                 &guard.buffers["rt_counts"],
                 (counts::READY * 4) as u64,
                 &0u32.to_le_bytes(),

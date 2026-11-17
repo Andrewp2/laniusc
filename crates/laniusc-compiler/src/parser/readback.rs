@@ -1,5 +1,6 @@
 //! Parser debug/readback buffers and parser-owned HIR validators.
 
+use crate::gpu::copies::CountedCommands;
 use anyhow::{Result, anyhow};
 use wgpu;
 
@@ -152,6 +153,7 @@ use crate::gpu::buffers::LaniusBuffer;
 struct LogicalCopyEncoder<'a>(&'a mut wgpu::CommandEncoder);
 
 impl LogicalCopyEncoder<'_> {
+    #[track_caller]
     fn copy_buffer_to_buffer<T>(
         &mut self,
         source: &LaniusBuffer<T>,
@@ -164,7 +166,7 @@ impl LogicalCopyEncoder<'_> {
             source_offset.saturating_add(size) <= source.byte_size as u64,
             "parser readback copy exceeds its logical source view"
         );
-        self.0.copy_buffer_to_buffer(
+        self.0.copy_buffer_counted(
             &source.buffer,
             source.absolute_offset(source_offset),
             destination,

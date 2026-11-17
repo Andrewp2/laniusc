@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 // src/compiler/gpu_compiler/typecheck.rs
 
 use super::*;
@@ -3361,7 +3362,7 @@ fn read_hir_token_start_for_diagnostic(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("compiler.lowering.diagnostic-hir-readback.encoder"),
     });
-    encoder.copy_buffer_to_buffer(&hir.core.buffer, offset, &readback, 0, stride);
+    encoder.copy_buffer_counted(&hir.core.buffer, offset, &readback, 0, stride);
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "compiler.lowering.diagnostic-hir-readback",
@@ -4720,7 +4721,7 @@ fn read_single_token_from_buffer(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("compiler.typecheck.diagnostic-token-readback.encoder"),
     });
-    encoder.copy_buffer_to_buffer(token_buffer, token_offset, &token_readback, 0, token_stride);
+    encoder.copy_buffer_counted(token_buffer, token_offset, &token_readback, 0, token_stride);
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "compiler.typecheck.diagnostic-token-readback",

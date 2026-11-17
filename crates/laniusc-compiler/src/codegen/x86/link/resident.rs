@@ -24,6 +24,7 @@
 //! objects returns `None`, and the caller links on the host, which also
 //! reports the exact diagnostic.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -240,10 +241,10 @@ impl ResidentSections {
                 label: Some("codegen.x86.link.resident.sections"),
             });
             if text != 0 {
-                encoder.copy_buffer_to_buffer(&chunk.buffers[4].buffer, slot.base[4] * 4, &readback, 0, text.next_multiple_of(4));
+                encoder.copy_buffer_counted(&chunk.buffers[4].buffer, slot.base[4] * 4, &readback, 0, text.next_multiple_of(4));
             }
             if rodata != 0 {
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     &chunk.buffers[5].buffer,
                     slot.base[5] * 4,
                     &readback,
@@ -310,11 +311,11 @@ pub(crate) fn park(encoder: &mut wgpu::CommandEncoder, sources: &ParkSources<'_>
     flush_deferred_compute(encoder);
     let meta = &chunk.buffers[0];
     for (buffer, offset, bytes, word) in sources.meta {
-        encoder.copy_buffer_to_buffer(buffer, offset, &meta.buffer, (base[0] + word) * 4, bytes);
+        encoder.copy_buffer_counted(buffer, offset, &meta.buffer, (base[0] + word) * 4, bytes);
     }
     let mut copy = |region: &ParkRegion<'_>, store_region: usize, word: u64| {
         if region.bytes != 0 {
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 region.buffer,
                 region.offset,
                 &chunk.buffers[store_region].buffer,
@@ -363,7 +364,7 @@ pub(crate) fn park_identities(
         label: Some("codegen.x86.link.resident.identities"),
     });
     if bytes != 0 {
-        encoder.copy_buffer_to_buffer(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
+        encoder.copy_buffer_counted(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
     }
     crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.identities", encoder.finish());
 }
@@ -419,7 +420,7 @@ impl GpuX86LinkStore {
             rebase.push(merged.cursor);
             for region in 0..REGIONS {
                 if chunk.cursor[region] != 0 {
-                    encoder.copy_buffer_to_buffer(
+                    encoder.copy_buffer_counted(
                         &chunk.buffers[region].buffer,
                         0,
                         &merged.buffers[region].buffer,
@@ -867,7 +868,7 @@ impl GpuX86Linker {
         drop(state);
         let mut status_init = [0u32; STATUS_WORDS];
         status_init[ST_NAME_STRIDE] = 1;
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             super::super::support::u32_words_bytes(&status_init),
@@ -879,7 +880,7 @@ impl GpuX86Linker {
             (&buffers.bind_hash, hash_size as usize),
             (&buffers.name_ref, names.len().max(1)),
         ] {
-            encoder.clear_buffer(&buffer.buffer, buffer.byte_offset, Some(words as u64 * 4));
+            encoder.clear_buffer_counted(&buffer.buffer, buffer.byte_offset, Some(words as u64 * 4));
         }
         let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
         // The dynamic writer's buffers are sized after the plan; the first
@@ -901,7 +902,7 @@ impl GpuX86Linker {
         flush_deferred_compute(&mut encoder);
         let first_bytes = (STATUS_WORDS + names.len()) * 4;
         let first = self.reusable_readback(device, "rb.codegen.x86.link.resident.plan", first_bytes);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             &first.buffer,
@@ -909,7 +910,7 @@ impl GpuX86Linker {
             STATUS_WORDS as u64 * 4,
         );
         if !names.is_empty() {
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 &buffers.name_ref.buffer,
                 buffers.name_ref.byte_offset,
                 &first.buffer,
@@ -972,7 +973,7 @@ impl GpuX86Linker {
         let buffers = &plan.buffers;
         let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
         if !import_of_name.is_empty() {
-            queue.write_buffer(
+            queue.write_buffer_counted(
                 &buffers.import_of_name.buffer,
                 buffers.import_of_name.byte_offset,
                 super::super::support::u32_words_bytes(&import_of_name),
@@ -980,7 +981,7 @@ impl GpuX86Linker {
         }
         let dyn_word_count = rows.words.len() + words[ST_DEF_COUNT] as usize * SYMBOL_WORDS;
         let dyn_words = self.link_storage(device, "codegen.x86.link.resident.dyn_words", dyn_word_count);
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &dyn_words.buffer,
             dyn_words.byte_offset,
             super::super::support::u32_words_bytes(&rows.words),
@@ -995,7 +996,7 @@ impl GpuX86Linker {
         );
         let gdyn = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.dyn_params", &rows.params);
         let dyn_status = self.link_storage(device, "codegen.x86.link.resident.dyn_status", 4);
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &dyn_status.buffer,
             dyn_status.byte_offset,
             super::super::support::u32_words_bytes(&[1, 0, u32::MAX, 0]),
@@ -1003,7 +1004,7 @@ impl GpuX86Linker {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.resident.emit.encoder"),
         });
-        encoder.clear_buffer(&output.buffer, output.byte_offset, Some(u64::from(output_words) * 4));
+        encoder.clear_buffer_counted(&output.buffer, output.byte_offset, Some(u64::from(output_words) * 4));
         {
             let resources = buffers.resources(&gparams, &dyn_words, &output);
             dispatch(
@@ -1053,14 +1054,14 @@ impl GpuX86Linker {
         let image_bytes = u64::from(output_words) * 4;
         let status_bytes = (STATUS_WORDS + 4) * 4;
         let status = self.reusable_readback(device, "rb.codegen.x86.link.resident.status", status_bytes);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             &status.buffer,
             0,
             STATUS_WORDS as u64 * 4,
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &dyn_status.buffer,
             dyn_status.byte_offset,
             &status.buffer,
@@ -1083,7 +1084,7 @@ impl GpuX86Linker {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.resident.image.encoder"),
             });
-            encoder.copy_buffer_to_buffer(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
+            encoder.copy_buffer_counted(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
             crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
             let len = (u64::from(total) - at).min(bytes);
             let map = crate::gpu::passes_core::begin_readback_map(

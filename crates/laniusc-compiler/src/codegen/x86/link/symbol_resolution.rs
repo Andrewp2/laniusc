@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedWrites;
 use anyhow::{Result, anyhow, bail};
 
 use super::{
@@ -391,7 +392,7 @@ fn resolve_partition(
         .collect::<Vec<_>>();
     for batch_index in 0..batches.len().max(1) {
         let batch = batches.get(batch_index).copied().unwrap_or(&[]);
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &params.buffer,
             0,
             u32_words_bytes(&[
@@ -403,7 +404,7 @@ fn resolve_partition(
         );
         if !batch.is_empty() {
             let query_words = query_words(input, batch)?;
-            queue.write_buffer(&queries.buffer, 0, u32_words_bytes(&query_words));
+            queue.write_buffer_counted(&queries.buffer, 0, u32_words_bytes(&query_words));
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.symbol_partition.encoder"),

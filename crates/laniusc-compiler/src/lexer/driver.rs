@@ -1,5 +1,6 @@
 //! GPU lexer driver (device init, pass orchestration, and readback).
 
+use crate::gpu::copies::CountedCommands;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
@@ -300,14 +301,14 @@ impl GpuLexer {
                 mapped_at_creation: false,
             });
 
-            enc.copy_buffer_to_buffer(
+            enc.copy_buffer_counted(
                 &bufs.token_count.buffer,
                 bufs.token_count.byte_offset,
                 &readback_tokens_count,
                 0,
                 4,
             );
-            enc.copy_buffer_to_buffer(
+            enc.copy_buffer_counted(
                 &bufs.lex_error_offset.buffer,
                 bufs.lex_error_offset.byte_offset,
                 &readback_tokens_count,
@@ -375,7 +376,7 @@ impl GpuLexer {
                 label: Some("lex-enc-readback-tokens"),
             });
 
-        encoder_two.copy_buffer_to_buffer(
+        encoder_two.copy_buffer_counted(
             &bufs.tokens_out.buffer,
             bufs.tokens_out.byte_offset,
             &readback_tokens_buffer,
@@ -456,7 +457,7 @@ impl GpuLexer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("lexer.parser_feature_flags.debug.encoder"),
             });
-        encoder.copy_buffer_to_buffer(&bufs.parser_feature_flags, 0, &readback, 0, 4);
+        encoder.copy_buffer_counted(&bufs.parser_feature_flags, 0, &readback, 0, 4);
         crate::gpu::passes_core::submit_with_progress(
             &self.queue,
             "lexer.parser-feature-flags.debug",

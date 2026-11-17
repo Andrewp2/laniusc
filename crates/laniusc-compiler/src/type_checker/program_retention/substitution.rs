@@ -21,6 +21,7 @@
 //! ([`SubstitutionRun::RequestCapacity`]). A host error clears the store's
 //! `READY` bit and the publication.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicU32, Ordering},
@@ -558,14 +559,14 @@ impl RetainedSubstitution {
                 // finish, with store terms interned and the store's status
                 // words cleared. As for an export error, the build is no
                 // longer ready, and no consumer may accept these buffers.
-                self.queue.write_buffer(
+                self.queue.write_buffer_counted(
                     &guard.buffers["rt_counts"],
                     (counts::READY * 4) as u64,
                     &0u32.to_le_bytes(),
                 );
                 if let Some(counts) = self.scratch.get("sb_counts") {
                     self.queue
-                        .write_buffer(counts, (words::STATE * 4) as u64, &0u32.to_le_bytes());
+                        .write_buffer_counted(counts, (words::STATE * 4) as u64, &0u32.to_le_bytes());
                 }
                 self.queue.submit(None);
             }
@@ -605,9 +606,9 @@ impl RetainedSubstitution {
             self.ensure_scratch()?;
             let run = next_run()?;
             let mut encoder = self.device.create_command_encoder(&Default::default());
-            encoder.clear_buffer(&self.scratch["sb_memo"], 0, None);
-            encoder.clear_buffer(&self.scratch["sb_counts"], 0, None);
-            self.queue.write_buffer(
+            encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
+            encoder.clear_buffer_counted(&self.scratch["sb_counts"], 0, None);
+            self.queue.write_buffer_counted(
                 &self.scratch["sb_config"],
                 0,
                 &words_bytes(&[self.hash_mask, run, 0, 0]),
@@ -742,8 +743,8 @@ impl RetainedSubstitution {
             self.chain_runs = Some(storage(&self.device, "sb_chain_runs", bytes, false));
         }
         let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain runs are not allocated"))?;
-        self.queue.write_buffer(chain_runs, 0, &words_bytes(&numbers));
-        self.queue.write_buffer(&self.scratch["sb_config"], 0, &words_bytes(&[self.hash_mask, 0, 0, 0]));
+        self.queue.write_buffer_counted(chain_runs, 0, &words_bytes(&numbers));
+        self.queue.write_buffer_counted(&self.scratch["sb_config"], 0, &words_bytes(&[self.hash_mask, 0, 0, 0]));
         Ok(numbers)
     }
 
@@ -763,9 +764,9 @@ impl RetainedSubstitution {
         consumer: &mut Consumer<'_>,
     ) -> Result<u32> {
         let chain_runs = self.chain_runs.as_ref().ok_or_else(|| anyhow!("retained substitution chain was not started"))?;
-        encoder.clear_buffer(&self.scratch["sb_memo"], 0, None);
-        encoder.clear_buffer(&self.scratch["sb_counts"], 0, None);
-        encoder.copy_buffer_to_buffer(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
+        encoder.clear_buffer_counted(&self.scratch["sb_memo"], 0, None);
+        encoder.clear_buffer_counted(&self.scratch["sb_counts"], 0, None);
+        encoder.copy_buffer_counted(chain_runs, index as u64 * 4, &self.scratch["sb_config"], 4, 4);
         let binds = self.bind_all(guard, requests)?;
         let mut dispatches = 0;
         self.record_batch(encoder, &binds, true, FIRST_BATCH_ROUNDS, &mut dispatches);
@@ -1000,7 +1001,7 @@ pub(super) fn read_many_labeled(
     let mut encoder = device.create_command_encoder(&Default::default());
     let mut at = 0;
     for ((buffer, _), size) in parts.iter().zip(&sizes) {
-        encoder.copy_buffer_to_buffer(buffer, 0, &readback, at, *size);
+        encoder.copy_buffer_counted(buffer, 0, &readback, at, *size);
         at += size;
     }
     queue.submit(Some(encoder.finish()));
@@ -1038,11 +1039,11 @@ pub fn run_test_kernel(
     let config_buffer = storage(device, "fx_config", (config.len().max(4) * 4) as u64, false);
     let mut words = config.to_vec();
     words.resize(config.len().max(4), 0);
-    queue.write_buffer(&config_buffer, 0, &words_bytes(&words));
+    queue.write_buffer_counted(&config_buffer, 0, &words_bytes(&words));
     let out = storage(device, "fx_out", (out_words.max(4) * 4) as u64, false);
     let mut encoder = device.create_command_encoder(&Default::default());
-    encoder.clear_buffer(&out, 0, None);
-    encoder.clear_buffer(&requests.count, 0, None);
+    encoder.clear_buffer_counted(&out, 0, None);
+    encoder.clear_buffer_counted(&requests.count, 0, None);
     let names = reflected_names(&pass);
     let mut entries = Vec::new();
     for name in &names {

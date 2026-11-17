@@ -14,6 +14,7 @@
 //! translation, ownership validation, relative encoding, commit) runs on the
 //! GPU.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::{
     collections::BTreeMap,
     num::NonZeroU64,
@@ -549,7 +550,7 @@ impl PendingCommit {
 impl Drop for PendingCommit {
     fn drop(&mut self) {
         if let Some(commands) = self.commands.take() {
-            self.queue.write_buffer(&self.counts, (counts::OVERFLOW * 4) as u64, &1u32.to_le_bytes());
+            self.queue.write_buffer_counted(&self.counts, (counts::OVERFLOW * 4) as u64, &1u32.to_le_bytes());
             self.queue.submit(Some(commands));
         }
     }
@@ -652,7 +653,7 @@ impl ProgramRetention {
         let generation = next_generation()?;
         let mut encoder = self.device.create_command_encoder(&Default::default());
         for name in ["rt_decl_slot", "rt_param_slot", "rt_term_slot"] {
-            encoder.clear_buffer(&store.buffers[name], 0, None);
+            encoder.clear_buffer_counted(&store.buffers[name], 0, None);
         }
         let mut words = vec![0u32; counts::WORDS];
         words[A_DECLS] = 1;
@@ -661,8 +662,8 @@ impl ProgramRetention {
         words[counts::FIRST_INVARIANT] = u32::MAX;
         words[counts::READY] = 1;
         words[counts::GENERATION] = generation;
-        self.queue.write_buffer(&store.buffers["rt_counts"], 0, &words_bytes(&words));
-        self.queue.write_buffer(
+        self.queue.write_buffer_counted(&store.buffers["rt_counts"], 0, &words_bytes(&words));
+        self.queue.write_buffer_counted(
             &store.buffers["rt_config"],
             0,
             &words_bytes(&[store.hash_mask, 0, 0, 0]),
@@ -687,7 +688,7 @@ impl ProgramRetention {
     pub fn set_hash_mask(&self, mask: u32) {
         let mut store = self.store.lock().unwrap();
         store.hash_mask = mask;
-        self.queue.write_buffer(&store.buffers["rt_config"], 0, &words_bytes(&[mask]));
+        self.queue.write_buffer_counted(&store.buffers["rt_config"], 0, &words_bytes(&[mask]));
     }
 
     /// Exports the current job. `job` names every job table the kernels
@@ -722,7 +723,7 @@ impl ProgramRetention {
                 }));
             }
             let buffer = buffers[name].clone();
-            encoder.copy_buffer_to_buffer(&table.buffer, table.offset, &buffer, 0, table.size);
+            encoder.copy_buffer_counted(&table.buffer, table.offset, &buffer, 0, table.size);
             tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
         }
         Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None), early: Mutex::new(None) })
@@ -869,7 +870,7 @@ impl ProgramRetention {
     /// not reuse the preceding successful prefix after an export error.
     pub(crate) fn abandon_export(&self) {
         let store = self.store.lock().unwrap();
-        self.queue.write_buffer(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
+        self.queue.write_buffer_counted(&store.buffers["rt_counts"], (counts::READY * 4) as u64, &0u32.to_le_bytes());
         self.queue.submit(None);
     }
 
@@ -897,14 +898,14 @@ impl ProgramRetention {
             match fault {
                 ExportFault::Fill(name, word) => {
                     let table = job.get(name).ok_or_else(|| anyhow!("export fault names absent job table {name}"))?;
-                    self.queue.write_buffer(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
+                    self.queue.write_buffer_counted(&table.buffer, table.offset, &words_bytes(&vec![word; (table.size / 4) as usize]));
                 }
                 ExportFault::MissingCallResults => {
                     let table = &job["semantic_calls_by_hir"];
                     let stride = std::mem::size_of::<super::GpuCheckedCallArtifact>();
                     let field = std::mem::offset_of!(super::GpuCheckedCallArtifact, return_ref_tag) as u64;
                     for row in (0..table.size).step_by(stride) {
-                        self.queue.write_buffer(&table.buffer, table.offset + row + field, &[0; 8]);
+                        self.queue.write_buffer_counted(&table.buffer, table.offset + row + field, &[0; 8]);
                     }
                 }
             }
@@ -961,7 +962,7 @@ impl ProgramRetention {
         });
         for (name, buffer) in &store.scratch {
             if *name != "rt_s_stack" {
-                encoder.clear_buffer(buffer, 0, None);
+                encoder.clear_buffer_counted(buffer, 0, None);
             }
         }
         let groups = |lanes: u64| -> [u32; 3] {
@@ -1101,7 +1102,7 @@ impl ProgramRetention {
                 continue;
             }
             let old = &store.buffers[name];
-            encoder.copy_buffer_to_buffer(old, 0, &fresh[name], 0, old.size().min(fresh[name].size()));
+            encoder.copy_buffer_counted(old, 0, &fresh[name], 0, old.size().min(fresh[name].size()));
         }
         let lanes = capacity.arenas[A_DECLS]
             .max(capacity.arenas[A_PARAMS])
@@ -1156,7 +1157,7 @@ impl ProgramRetention {
         let mut at = 0;
         for ((buffer, _), size) in parts.iter().zip(&sizes) {
             if *size != 0 {
-                encoder.copy_buffer_to_buffer(buffer, 0, &readback, at, *size);
+                encoder.copy_buffer_counted(buffer, 0, &readback, at, *size);
             }
             at += size;
         }
@@ -1245,7 +1246,7 @@ impl ProgramRetention {
     pub fn write_store_words(&self, name: &str, offset: u64, words: &[u32]) -> Result<()> {
         let store = self.store.lock().unwrap();
         let buffer = store.buffers.get(name).ok_or_else(|| anyhow!("no store buffer {name}"))?;
-        self.queue.write_buffer(buffer, offset * 4, &words_bytes(words));
+        self.queue.write_buffer_counted(buffer, offset * 4, &words_bytes(words));
         self.queue.submit(None);
         Ok(())
     }
@@ -1300,7 +1301,7 @@ impl ProgramRetention {
         let store = self.store.lock().unwrap();
         for buffer in store.scratch.values() {
             let words = vec![0xa5a5_a5a5u32; (buffer.size() / 4) as usize];
-            self.queue.write_buffer(buffer, 0, &words_bytes(&words));
+            self.queue.write_buffer_counted(buffer, 0, &words_bytes(&words));
         }
         self.queue.submit(None);
     }
@@ -1358,9 +1359,9 @@ impl ProgramRetention {
         let out = storage(&self.device, "rt_test_out", lanes.max(1) * PROBE_WORDS as u64 * 4, false);
         let request_words = requests.iter().flatten().copied().collect::<Vec<_>>();
         let request_buffer = storage(&self.device, "rt_test_requests", (request_words.len() as u64 * 4).max(16), false);
-        self.queue.write_buffer(&request_buffer, 0, &words_bytes(&request_words));
+        self.queue.write_buffer_counted(&request_buffer, 0, &words_bytes(&request_words));
         let meta = storage(&self.device, "rt_test_meta", 16, false);
-        self.queue.write_buffer(&meta, 0, &words_bytes(&[requests.len() as u32, 0, 0, 0]));
+        self.queue.write_buffer_counted(&meta, 0, &words_bytes(&[requests.len() as u32, 0, 0, 0]));
         let names = reflected_names(pass_data);
         let mut entries = Vec::new();
         for name in &names {

@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use anyhow::Result;
 
 use super::{GpuParser, Ll1AcceptResult, ParserFailure, support::read_u32_words};
@@ -87,14 +88,14 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &bufs.token_count,
             bufs.token_count.byte_offset,
             &count_readback,
             0,
             4,
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &bufs.semantic_token_kinds,
             bufs.semantic_token_kinds.byte_offset,
             &kinds_readback,
@@ -175,14 +176,14 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &bufs.token_count,
             bufs.token_count.byte_offset,
             &count_readback,
             0,
             4,
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &bufs.semantic_token_kinds,
             bufs.semantic_token_kinds.byte_offset,
             &kinds_readback,
@@ -257,7 +258,7 @@ impl GpuParser {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &bufs.token_feature_flags,
             bufs.token_feature_flags.byte_offset,
             &flags_readback,

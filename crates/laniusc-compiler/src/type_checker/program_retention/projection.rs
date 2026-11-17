@@ -17,6 +17,7 @@
 //! record one lowering job per nonempty batch). It reads no instance,
 //! term, row or route.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 mod schema;
 pub use schema::SchemaReport;
 
@@ -1082,7 +1083,7 @@ impl RetainedProjection {
         let mut at = 0;
         for ((buffer, _), size) in parts.iter().zip(&sizes) {
             if *size != 0 {
-                encoder.copy_buffer_to_buffer(buffer, 0, readback, at, *size);
+                encoder.copy_buffer_counted(buffer, 0, readback, at, *size);
             }
             at += size;
         }
@@ -1166,7 +1167,7 @@ impl RetainedProjection {
     ) -> Result<()> {
         let cert = &self.cert;
         self.queue
-            .write_buffer(cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
+            .write_buffer_counted(cert, 0, &words_bytes(&[0, u32::MAX, 0, 0]));
         let extra = [
             ("sb_results", results),
             ("sb_counts", counts),
@@ -1201,7 +1202,7 @@ impl RetainedProjection {
         words[CFG_BATCH] = batch;
         words[CFG_IDENTITY_MASK] = options.identity_mask;
         self.queue
-            .write_buffer(&self.config, 0, &words_bytes(&words));
+            .write_buffer_counted(&self.config, 0, &words_bytes(&words));
     }
 
     /// Projects and lowers the producer's instances against `store`.
@@ -1267,11 +1268,11 @@ impl RetainedProjection {
         status[S_ERROR_RANK] = u32::MAX;
         status[S_ERROR_ROW] = u32::MAX;
         self.queue
-            .write_buffer(&self.status, 0, &words_bytes(&status));
+            .write_buffer_counted(&self.status, 0, &words_bytes(&status));
         let totals = {
             let guard = store.store.lock().unwrap();
             let mut r = self.recorder();
-            r.encoder().clear_buffer(&self.ranks["pj_identity"], 0, None);
+            r.encoder().clear_buffer_counted(&self.ranks["pj_identity"], 0, None);
             let none = [
                 ("sb_results", &self.no_results),
                 ("sb_counts", &self.no_counts),
@@ -1443,7 +1444,7 @@ impl RetainedProjection {
                         r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
                     }
                     r.encoder()
-                        .clear_buffer(&self.status, S_PATTERN_CHANGED as u64 * 4, Some(4));
+                        .clear_buffer_counted(&self.status, S_PATTERN_CHANGED as u64 * 4, Some(4));
                     r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
                 }
             }
@@ -1452,7 +1453,7 @@ impl RetainedProjection {
                 let mut distance = 0u32;
                 for config in &self.string_scan_configs {
                     self.queue
-                        .write_buffer(config, 0, &words_bytes(&[distance, input, 0, 0]));
+                        .write_buffer_counted(config, 0, &words_bytes(&[distance, input, 0, 0]));
                     let scan_extra = [
                         ("sb_results", &results),
                         ("sb_counts", &counts),
@@ -1470,7 +1471,7 @@ impl RetainedProjection {
                     }
                 }
                 if input == 1 {
-                    r.encoder().copy_buffer_to_buffer(
+                    r.encoder().copy_buffer_counted(
                         &self.rows["pj_string_scratch"],
                         0,
                         &self.rows["pj_string_offsets"],
@@ -1480,12 +1481,12 @@ impl RetainedProjection {
                 }
             } else {
                 r.encoder()
-                    .clear_buffer(&self.rows["pj_string_offsets"], 0, None);
+                    .clear_buffer_counted(&self.rows["pj_string_offsets"], 0, None);
             }
             // The row, edge, pattern and string kernels above do not read
             // layouts, so the last layout round is recorded after them.
             r.encoder()
-                .clear_buffer(&self.status, S_LAYOUT_CHANGED as u64 * 4, Some(4));
+                .clear_buffer_counted(&self.status, S_LAYOUT_CHANGED as u64 * 4, Some(4));
             r.dispatch(K_LAYOUT, &guard, inputs, &extra, self.type_capacity)?;
             r.dispatch(K_CHECK, &guard, inputs, &extra, report.rows.max(1))?;
             r.dispatch(K_CALLS, &guard, inputs, &extra, report.rows.max(1))?;
@@ -1534,7 +1535,7 @@ impl RetainedProjection {
                 self.pattern_rounds = self.pattern_rounds.saturating_mul(2);
             }
             self.queue
-                .write_buffer(&self.status, 0, &words_bytes(&totals));
+                .write_buffer_counted(&self.status, 0, &words_bytes(&totals));
         };
         report.check_us = started.elapsed().as_micros() as u64;
         if status[S_STATE] != STATE_CHECKED {
@@ -1791,7 +1792,7 @@ pub fn run_producer_kernel(
     let config_buffer = storage(device, "fx_config", (config.len().max(4) * 4) as u64, false);
     let mut words = config.to_vec();
     words.resize(config.len().max(4), 0);
-    queue.write_buffer(&config_buffer, 0, &words_bytes(&words));
+    queue.write_buffer_counted(&config_buffer, 0, &words_bytes(&words));
     let names = reflected_names(&pass);
     let [request_rows, request_count] = requests.buffers();
     let mut entries = Vec::new();
@@ -1852,7 +1853,7 @@ pub fn read_test_buffer(buffer: &wgpu::Buffer, words: usize) -> Result<Vec<u32>>
         mapped_at_creation: false,
     });
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-    encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, bytes);
+    encoder.copy_buffer_counted(buffer, 0, &readback, 0, bytes);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
     map_readback_blocking(&gpu.device, &slice, "retained_projection.test_readback")?;

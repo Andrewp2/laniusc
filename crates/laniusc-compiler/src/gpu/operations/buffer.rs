@@ -1,5 +1,6 @@
 //! Graph-validated non-shader buffer operations.
 
+use crate::gpu::copies::CountedCommands;
 use anyhow::Result;
 
 use super::ComputeGraph;
@@ -85,6 +86,7 @@ impl ClearBuffersOperation {
         })
     }
 
+    #[track_caller]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
         // Debug bisection drops clears and copies past the limit too.
@@ -94,7 +96,7 @@ impl ClearBuffersOperation {
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for buffer in &self.buffers {
             crate::gpu::passes_core::trace_clear(self.name, buffer.byte_size as u64);
-            encoder.clear_buffer(
+            encoder.clear_buffer_counted(
                 &buffer.buffer,
                 buffer.byte_offset,
                 Some(buffer.byte_size as u64),
@@ -144,6 +146,7 @@ impl ResetGraphAllocationsOperation {
     /// Resets an active prefix of each allocation. This preserves capacity-
     /// based reuse without writing inactive rows of a large resident parser
     /// workspace on every smaller job.
+    #[track_caller]
     pub(crate) fn record_ranges<I>(&self, encoder: &mut wgpu::CommandEncoder, byte_sizes: I) -> u64
     where
         I: IntoIterator<Item = u64>,
@@ -173,7 +176,7 @@ impl ResetGraphAllocationsOperation {
                 "compiler reset range is not copy-aligned"
             );
             crate::gpu::passes_core::trace_clear(self.name, byte_size);
-            encoder.clear_buffer(&buffer.buffer, 0, Some(byte_size));
+            encoder.clear_buffer_counted(&buffer.buffer, 0, Some(byte_size));
             cleared = cleared.saturating_add(byte_size);
         }
         assert!(
@@ -257,6 +260,7 @@ impl EmptyRelationsOperation {
         })
     }
 
+    #[track_caller]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
         // Debug bisection drops clears and copies past the limit too.
@@ -266,7 +270,7 @@ impl EmptyRelationsOperation {
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for count in &self.count_headers {
             debug_assert_eq!(count.byte_size, std::mem::size_of::<u32>());
-            encoder.clear_buffer(
+            encoder.clear_buffer_counted(
                 &count.buffer,
                 count.byte_offset,
                 Some(count.byte_size as u64),
@@ -324,6 +328,7 @@ impl ClearBufferOperation {
         Ok(Self { name, buffer })
     }
 
+    #[track_caller]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
         // Debug bisection drops clears and copies past the limit too.
@@ -332,7 +337,7 @@ impl ClearBufferOperation {
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         crate::gpu::passes_core::trace_clear(self.name, self.buffer.byte_size as u64);
-        encoder.clear_buffer(
+        encoder.clear_buffer_counted(
             &self.buffer.buffer,
             self.buffer.byte_offset,
             Some(self.buffer.byte_size as u64),
@@ -446,6 +451,7 @@ impl CopyBuffersOperation {
         })
     }
 
+    #[track_caller]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         record_compiler_operation(self.name);
         // Debug bisection drops clears and copies past the limit too.
@@ -454,7 +460,7 @@ impl CopyBuffersOperation {
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
         for (source, destination, size) in &self.copies {
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 &source.buffer,
                 source.byte_offset,
                 &destination.buffer,
@@ -617,6 +623,7 @@ impl CopyBufferOperation {
         })
     }
 
+    #[track_caller]
     pub(crate) fn record(&self, encoder: &mut wgpu::CommandEncoder) {
         self.record_size(encoder, self.size);
     }
@@ -628,6 +635,7 @@ impl CopyBufferOperation {
 
     /// Records the validated copy from `shift` bytes further into the source:
     /// one row of a source table per invocation, such as a round's number.
+    #[track_caller]
     pub(crate) fn record_shifted(&self, encoder: &mut wgpu::CommandEncoder, shift: u64) {
         assert!(
             self.source_offset + shift + self.size <= self.source.size(),
@@ -638,7 +646,7 @@ impl CopyBufferOperation {
             return;
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &self.source,
             self.source_base_offset + self.source_offset + shift,
             &self.destination.buffer,
@@ -650,6 +658,7 @@ impl CopyBufferOperation {
     /// Records an active prefix of a capacity-sized copy operation. This lets
     /// daemon jobs retain the graph validation and buffer identities while
     /// varying only the number of rows copied by the current request.
+    #[track_caller]
     pub(crate) fn record_size(&self, encoder: &mut wgpu::CommandEncoder, size: u64) {
         assert!(
             size <= self.size,
@@ -664,7 +673,7 @@ impl CopyBufferOperation {
             return;
         }
         crate::gpu::passes_core::flush_deferred_compute(encoder);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &self.source,
             self.source_base_offset + self.source_offset,
             &self.destination.buffer,

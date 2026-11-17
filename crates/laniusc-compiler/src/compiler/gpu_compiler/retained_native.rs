@@ -16,6 +16,7 @@
 //! No step replays a source or falls back to a frontend: a rejected
 //! catalog, discovery, projection, certification or finalization fails the build.
 
+use crate::gpu::copies::CountedWrites;
 use std::{num::NonZeroU32, sync::Arc};
 
 use super::{
@@ -419,7 +420,7 @@ impl GpuCompiler<'_> {
         let calls = build.calls.as_ref().ok_or_else(|| retained_error("certify", "no caller ABI tables"))?;
         if let Some(term) = build.test_caller_arg_fault {
             let words = vec![term; (calls.args.size() / 4) as usize];
-            self.gpu.queue.write_buffer(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
+            self.gpu.queue.write_buffer_counted(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
         }
         // The symbol finalizer reads only the original objects and the root
         // routes, so it is submitted while the GPU lowers the first projected

@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedWrites;
 use anyhow::{Result, anyhow};
 
 use super::{
@@ -446,8 +447,8 @@ fn resolve_partition(
                 0,
             )?;
             let relocation_words = relocation_words(input, batch)?;
-            queue.write_buffer(&params, 0, bytemuck_words(&params_words));
-            queue.write_buffer(&relocations, 0, bytemuck_words(&relocation_words));
+            queue.write_buffer_counted(&params, 0, bytemuck_words(&params_words));
+            queue.write_buffer_counted(&relocations, 0, bytemuck_words(&relocation_words));
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.wasm.link.resolve.encoder"),

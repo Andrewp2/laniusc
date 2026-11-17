@@ -13,6 +13,7 @@
 //! decides which symbol is provisional or reads a use.
 
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
 use crate::codegen::x86::{GpuX86RelocatableObject, finalize::X86SymbolColumns};
 
@@ -64,7 +65,7 @@ impl NativeCallTables {
         }
         let n = uses.next_power_of_two();
         let abi = storage(device, "nc_use_abi", n * 32, false);
-        encoder.copy_buffer_to_buffer(&self.abi, 0, &abi, 0, self.abi.size());
+        encoder.copy_buffer_counted(&self.abi, 0, &abi, 0, self.abi.size());
         self.abi = abi;
         self.uses = n;
     }
@@ -188,7 +189,7 @@ impl ProgramRetention {
         let config = keep("nc_config", 16);
         let mut upload = |label: &'static str, bytes: &[u8]| {
             let buffer = keep(label, bytes.len() as u64);
-            self.queue.write_buffer(&buffer, 0, bytes);
+            self.queue.write_buffer_counted(&buffer, 0, bytes);
             buffer
         };
         let hirs = upload("nc_call_hirs", &words_bytes(call_hirs));
@@ -198,10 +199,10 @@ impl ProgramRetention {
         drop(kept);
         let names = reflected_names(pass);
         loop {
-        self.queue.write_buffer(&config, 0, &words_bytes(&[
+        self.queue.write_buffer_counted(&config, 0, &words_bytes(&[
             symbols, undefined, store.generation, (tables.args.size() / 8) as u32,
         ]));
-        self.queue.write_buffer(&status, 0, &words_bytes(&[0, tables.arguments, 0, 0]));
+        self.queue.write_buffer_counted(&status, 0, &words_bytes(&[0, tables.arguments, 0, 0]));
         let mut encoder = device.create_command_encoder(&Default::default());
         let own: [(&str, &wgpu::Buffer); 7] = [
             ("nc_config", &config),
@@ -318,7 +319,7 @@ impl ProgramRetention {
             }
             let args = storage(device, "nc_use_args", bytes, false);
             let mut copy = device.create_command_encoder(&Default::default());
-            copy.copy_buffer_to_buffer(&tables.args, 0, &args, 0, u64::from(tables.arguments) * 8);
+            copy.copy_buffer_counted(&tables.args, 0, &args, 0, u64::from(tables.arguments) * 8);
             self.queue.submit(Some(copy.finish()));
             tables.args = args;
             continue;

@@ -23,6 +23,7 @@
 //! more room and a second run, `DESUGAR_RULE_ERROR` for the diagnostic of a
 //! broken rule.
 
+use crate::gpu::copies::CountedCommands;
 use std::{
     cell::Cell,
     num::NonZeroU64,
@@ -189,7 +190,7 @@ fn read_words(
             (first * 4) as u64 + len <= buffer.byte_size as u64,
             "desugar readback past its buffer"
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &buffer.buffer,
             buffer.byte_offset + (first * 4) as u64,
             &staging,

@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use anyhow::Result;
 
 use super::buffers;
@@ -21,14 +22,14 @@ pub(super) fn read_resident_tokens(
     let mut count_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("lex-source-pack-count-readback"),
     });
-    count_encoder.copy_buffer_to_buffer(
+    count_encoder.copy_buffer_counted(
         &bufs.token_count.buffer,
         bufs.token_count.byte_offset,
         &count_readback,
         0,
         4,
     );
-    count_encoder.copy_buffer_to_buffer(
+    count_encoder.copy_buffer_counted(
         &bufs.lex_error_offset.buffer,
         bufs.lex_error_offset.byte_offset,
         &count_readback,
@@ -73,7 +74,7 @@ pub(super) fn read_resident_tokens(
     let mut tokens_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("lex-source-pack-token-readback"),
     });
-    tokens_encoder.copy_buffer_to_buffer(
+    tokens_encoder.copy_buffer_counted(
         &bufs.tokens_out.buffer,
         bufs.tokens_out.byte_offset,
         &tokens_readback,

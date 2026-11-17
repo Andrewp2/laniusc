@@ -535,6 +535,33 @@ pub(crate) fn stamp_active_submission_begin(encoder: &mut wgpu::CommandEncoder, 
     });
 }
 
+/// Times one command the encoder records outside compute passes (a buffer
+/// copy or clear, `gpu::copies`): `begin` before it, `end` after it. Neither
+/// stamp is an operation stamp, so the job's timestamp coverage check still
+/// counts kernel dispatches only; the command gets a span named `label` in the
+/// trace.
+pub(crate) fn stamp_active_command(encoder: &mut wgpu::CommandEncoder, label: &str, end: bool) {
+    ACTIVE_OPERATION_TIMER.with(|active| {
+        let recording = active.borrow().last().cloned();
+        if let Some(recording) = recording {
+            let room = {
+                let recording = recording
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                recording.next + recording.capacity / 4 < recording.capacity
+            };
+            if room {
+                let label = if end {
+                    label.to_string()
+                } else {
+                    format!("{label}.submission.begin")
+                };
+                stamp_recording(&recording, encoder, label);
+            }
+        }
+    });
+}
+
 /// One GPU timestamp observed at a known host instant: the trace places every
 /// timer's spans of the current job through it.
 #[derive(Clone, Copy, Debug)]

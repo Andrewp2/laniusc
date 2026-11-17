@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedWrites;
 use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, bail};
@@ -494,7 +495,7 @@ impl GpuX86Linker {
                 4,
                 wgpu::BufferUsages::COPY_SRC,
             );
-            queue.write_buffer(
+            queue.write_buffer_counted(
                 &relocation_status.buffer,
                 0,
                 u32_words_bytes(&[1, 0, u32::MAX, page.relocation_indices.len() as u32]),
@@ -713,10 +714,10 @@ impl GpuX86Linker {
                     .ok_or_else(|| anyhow::anyhow!("x86 relocation batch base exceeds u32"))?;
                 let (a_words, b_words, c_words) =
                     relocation_words(input, relocations, resolved.object_bases, indices, &splices)?;
-                queue.write_buffer(&relocation_a.buffer, 0, u32_words_bytes(&a_words));
-                queue.write_buffer(&relocation_b.buffer, 0, u32_words_bytes(&b_words));
-                queue.write_buffer(&relocation_c.buffer, 0, u32_words_bytes(&c_words));
-                queue.write_buffer(
+                queue.write_buffer_counted(&relocation_a.buffer, 0, u32_words_bytes(&a_words));
+                queue.write_buffer_counted(&relocation_b.buffer, 0, u32_words_bytes(&b_words));
+                queue.write_buffer_counted(&relocation_c.buffer, 0, u32_words_bytes(&c_words));
+                queue.write_buffer_counted(
                     &relocation_params.buffer,
                     0,
                     u32_words_bytes(&[

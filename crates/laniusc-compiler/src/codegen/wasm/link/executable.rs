@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedWrites;
 use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Result, anyhow};
@@ -477,8 +478,8 @@ impl GpuWasmLinker {
                         page.data_input.start as u32,
                     )?;
                     let relocation_words = page_relocation_words(&resolved_relocations, batch);
-                    queue.write_buffer(&params, 0, bytemuck_words(&batch_params));
-                    queue.write_buffer(&relocations, 0, bytemuck_words(&relocation_words));
+                    queue.write_buffer_counted(&params, 0, bytemuck_words(&batch_params));
+                    queue.write_buffer_counted(&relocations, 0, bytemuck_words(&relocation_words));
                     relocate.record_elements(&mut encoder, batch.len() as u32)?;
                 }
                 if batch_index + 1 == batch_count {

@@ -11,6 +11,7 @@
 //! module declaration index, rebasing references into flattened storage,
 //! and `module_index` writes the index.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
 use super::dependency_interface::{
     GpuDependencyPageLayout,
@@ -80,7 +81,7 @@ pub(super) fn record_pack(
                             interface.unit_id,
                         );
                     }
-                    encoder.copy_buffer_to_buffer(buffer, 0, &sources.buffer, offset,
+                    encoder.copy_buffer_counted(buffer, 0, &sources.buffer, offset,
                         byte_len.next_multiple_of(4));
                 }
                 None => {
@@ -91,7 +92,7 @@ pub(super) fn record_pack(
                         )
                     })?;
                     bytes.resize(bytes.len().next_multiple_of(4), 0);
-                    queue.write_buffer(&sources.buffer, offset, &bytes);
+                    queue.write_buffer_counted(&sources.buffer, offset, &bytes);
                 }
             }
         }
@@ -321,7 +322,7 @@ pub(crate) fn gpu_packed_dependency_page(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    encoder.copy_buffer_to_buffer(&output.buffer, output.absolute_offset(0), &readback, 0, bytes);
+    encoder.copy_buffer_counted(&output.buffer, output.absolute_offset(0), &readback, 0, bytes);
     gpu.queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
     passes_core::map_readback_blocking(&gpu.device, &slice, "dependency page")
