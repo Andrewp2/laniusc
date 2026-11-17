@@ -33,6 +33,10 @@ pub const PARSER_FEATURE_MACHINES: u32 = 0x0000_1000;
 /// families of the machine the desugaring writes for a generator. The bit is
 /// not a parser family.
 pub const PARSER_FEATURE_GENERATORS: u32 = 0x0000_2000;
+/// Set by the token build where a closure starts (`|` or `||` where a
+/// binary operator cannot stand). The desugaring rewrites closures; the bit
+/// is not a parser family.
+pub const PARSER_FEATURE_CLOSURES: u32 = 0x0000_4000;
 
 /// Parser families whose absence can be proven directly from final lexical tokens.
 pub const LEXICALLY_PROVEN_PARSER_FEATURES: u32 = PARSER_FEATURE_ARRAYS
