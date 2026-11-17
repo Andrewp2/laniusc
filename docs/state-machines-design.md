@@ -1015,6 +1015,91 @@ fused readbacks it took 11.9 ms median and 10.0 ms minimum, on a machine
 with load average 7; the medians move by a few milliseconds with load.
 Recording the machine parse is the largest remaining host cost, about 3 ms.
 
+## Desugaring in the lexer
+
+Status: design, 2026-11-16. Machines move first, then generators, then
+closures. Until a feature moves, the text rewrite of
+[M7](#m7-expansion-on-the-gpu), [M8](#m8-generators-on-the-gpu) and
+[Selecting the files to rewrite](#selecting-the-files-to-rewrite) handles it
+as described there.
+
+The text rewrites of M7 and M8 lex and parse the files a second time before
+the frontend, read the rewritten text back and upload it again. They cost
+10 to 12 ms of a 103 ms settings build: 8 readbacks and 447 dispatches. The
+desugaring replaces them. Each file is lexed once and parsed once, by the
+frontend.
+
+### Why tokens, not the parse tree or the HIR
+
+Every HIR and type-check record names a declaration by its source token:
+`HirParam.name_token`, `HirCore.token_start`, the owner token of a generic.
+The type-check kernels read names, literals and paths from the bytes of
+those tokens. An enum, struct or method that a machine stands for has no
+source tokens, so a desugaring on the tree or the HIR would still have to
+create token rows and name bytes for it and then build its tree and HIR
+rows by hand. That is a second parser for the output of each feature.
+
+The latest stage where the generated code becomes ordinary input is the
+token stream. The desugaring is the last stage of the frontend lexer: it
+reads the token rows the lexer built and writes the token rows of the
+desugared program. The parser parses that stream once. Every later stage
+reads the same kinds of rows as before.
+
+### What the grammar still does
+
+`machine`, `gen fn`, `yield` and the transitions stay in
+`grammar/lanius.bnf`. The desugaring replaces only what it recognizes as a
+whole item: a machine whose keywords, braces, arms and transitions are in
+place. Anything else stays in the token stream, the parser reads it with
+the M6 and M8 productions, and a malformed machine is still a syntax error
+(`LNC0016`) at its own token. The expressions, patterns and types inside a
+machine are copied as tokens and parsed where the expansion puts them, so
+an error inside them is the parser's or the type checker's, at its source
+position.
+
+### Token rows
+
+- **Copied tokens.** A token of the item that the expansion uses again
+  (a pattern, an arm body, a type) is copied with its kind, so its bytes
+  are the source bytes.
+- **Generated tokens.** The text the expansion writes (keywords, names
+  such as `DoorState`, `__lanius_in_Opened`, `door_start`) is written into
+  a region of the lexer's byte buffer after the source bytes. A generated
+  token row points into that region, so every kernel that reads a name or a
+  literal from token bytes reads it unchanged. The region holds the text of
+  the whole expansion, as M7 wrote it, and the token rows cover it. Token
+  boundaries come from the pieces of the expansion: a copied piece takes
+  the boundaries of its source tokens, a constant piece the boundaries of
+  a table built from the constant strings, and adjacent pieces whose
+  boundary bytes are both name characters form one token.
+- **Source anchors.** Each byte of the region records the source span its
+  piece came from (M7's segment map, kept on the GPU). A diagnostic at a
+  byte of the region reads the anchor on the error path and labels the
+  source span. No source text is read back and no map is kept between
+  builds.
+- **Splice.** Each expanded item is a replacement of a token range. A
+  prefix sum over the replacements gives every unchanged token its shift.
+  One kernel moves the unchanged tokens, the expansion kernels write their
+  tokens, and a last kernel copies the stream back into `tokens_out`,
+  `token_file_id` and `token_count`. The lexer's parser feature flags are
+  extended with the flags of the generated tokens.
+
+### Cost
+
+- The lexer's token build appends the index of each `machine` token to a
+  site list. Every desugaring dispatch is indirect and sized from that list
+  on the GPU, so a build without a machine records the dispatches with zero
+  workgroups and makes no readback for them.
+- With a machine, the kernels read only the files that hold one, as the
+  selection of M7 did.
+- No readback is added. The desugared token count and the region length are
+  checked against the capacities on the GPU. An overflow sets a word that
+  the frontend reads with the token count it already reads, and the build
+  runs again with larger capacities.
+- Errors of the machine rules (`LNC0076`) are written to a status word read
+  with the token count. Their spans and messages are read only when a rule
+  failed.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.
