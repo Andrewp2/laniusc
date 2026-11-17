@@ -3103,7 +3103,7 @@ impl GpuOptimizationStage {
         encoder: &mut wgpu::CommandEncoder,
         timer: Option<&mut GpuTimer>,
     ) -> Result<()> {
-        self.record_for_job(encoder, timer, self.jump_pairs, None, true)
+        self.record_for_job(encoder, timer, None, self.jump_pairs, None, true)
     }
 
     /// Records the optimizer with a job's pointer-jump pairs
@@ -3114,10 +3114,16 @@ impl GpuOptimizationStage {
     /// the optimizer's own results: every `*_validate` pass, and the
     /// dominator and region trees, which only validators read. A valid
     /// program lowers to the same bytes either way.
+    ///
+    /// With `split`, everything recorded before the optimizer's region tree
+    /// (the caller's earlier stages included) is submitted as
+    /// `compile.lowering.semantic`, so the GPU runs the first part of the
+    /// optimizer while the host records and finishes the rest.
     pub(crate) fn record_for_job(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         mut timer: Option<&mut GpuTimer>,
+        split: Option<crate::gpu::passes_core::SubmissionSplit<'_>>,
         jump_pairs: LoweringJumpPairs,
         job: Option<LoweringCapacities>,
         validate_structure: bool,
@@ -3182,6 +3188,16 @@ impl GpuOptimizationStage {
             }
             self.dominator_depth_finalize.record_job(encoder, job)?;
             self.dominator_depth_validate.record_job(encoder, job)?;
+        }
+        if let Some(split) = split {
+            split.submit_prefix(
+                encoder,
+                "compile.lowering.semantic",
+                "lowering.optimizer.submission.begin",
+                timer.as_deref_mut(),
+            );
+        }
+        if validate_structure {
             self.region_mark.record_job(encoder, job)?;
             self.region_scan.record(encoder)?;
             self.region_function_clear.record_job(encoder, job)?;
