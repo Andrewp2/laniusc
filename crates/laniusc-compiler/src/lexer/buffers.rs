@@ -387,6 +387,15 @@ impl crate::gpu::passes_core::CompilerGraphBuffers for GpuBuffers {
         self.compiler_graph
             .validate_reflected_runtime_bindings(operation, resources, dispatch_args)
     }
+
+    fn validate_bound_storage(
+        &self,
+        operation: &'static str,
+        bound: &std::collections::HashMap<String, wgpu::BindingResource<'_>>,
+    ) -> anyhow::Result<()> {
+        self.compiler_graph
+            .validate_bound_workspace_bindings(operation, bound)
+    }
 }
 
 impl From<LaniusBuffer<u8>> for LaniusBuffer<super::GpuToken> {
