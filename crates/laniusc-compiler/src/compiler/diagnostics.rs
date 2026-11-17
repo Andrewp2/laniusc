@@ -2263,10 +2263,6 @@ pub(in crate::compiler) fn diagnostic_label_from_source_span(
     {
         return diagnostic_label_from_source_span(path, source, start, len, message);
     }
-    // A span of an elaborated machine file labels the machine's own text.
-    if let Some((elaborated, start, len)) = super::machine_elaboration::original_span(source, start, len) {
-        return diagnostic_label_from_source_span(path, elaborated.original(), start, len, message);
-    }
     let source_len = source.len();
     let requested_start = start.min(source_len);
     let requested_end = requested_start.saturating_add(len).min(source_len);

@@ -7,6 +7,7 @@ use super::{
     Constants,
     LastRun,
     Round,
+    RuleError,
     S_F0,
     S_F1,
     S_LIVE,
@@ -15,24 +16,101 @@ use super::{
     last_sizes,
     read_words,
 };
-use crate::{
-    compiler::machine_elaboration::{
-        closures::Gpu,
-        machines::{
-            CONSTANTS,
-            DETAIL_WORDS,
-            INFO_WORDS,
-            NO_ERROR,
-            REACH_STEPS,
-            RECORD_WORDS,
-            RuleError,
-            STATE_ROW_WORDS,
-            STATUS_WORDS,
-            rule_error,
-        },
-    },
-    gpu::buffers::LaniusBuffer,
-};
+use super::gpu::Gpu;
+use crate::gpu::buffers::LaniusBuffer;
+
+/// The strings the kernels insert, in the order of the `C_*` ids in
+/// shaders/machines/machine_common.slang.
+pub(super) const CONSTANTS: [&str; 77] = [
+    "pub ",
+    "enum ",
+    "State { ",
+    "struct ",
+    " { ",
+    "fn ",
+    "_start(",
+    "impl ",
+    " {\n    ",
+    "fn step(&mut self, __lanius_event: ",
+    ")",
+    " -> ",
+    " {\n        ",
+    "return match",
+    "match",
+    " (self.__lanius_state) {\n",
+    "    ",
+    "fn run(&mut self, __lanius_events: [",
+    "], __lanius_count: i32) {\n        let __lanius_at: i32 = 0;\n        while (__lanius_at < __lanius_count) {\n            __lanius_at = match (self.__lanius_state) {\n",
+    ": ",
+    ", ",
+    "(",
+    " ",
+    "            ",
+    "State::",
+    " -> { ",
+    "return ",
+    "self.__lanius_in_",
+    "__lanius_event)",
+    "; },\n",
+    "; return; },\n",
+    "    fn __lanius_in_",
+    "(&mut self, ",
+    "                ",
+    " -> self.__lanius_run_",
+    "__lanius_events, __lanius_at, __lanius_count),\n",
+    "    fn __lanius_run_",
+    "__lanius_data_",
+    "__lanius_event: ",
+    " (__lanius_event) {",
+    "__lanius_events: [",
+    "], __lanius_from: i32, __lanius_count: i32) -> i32 {\n",
+    "        let ",
+    " = __lanius_data_",
+    ";\n",
+    "        let __lanius_at: i32 = __lanius_from;\n        while (__lanius_at < __lanius_count) {\n            let __lanius_event: ",
+    " = __lanius_events[__lanius_at];\n            __lanius_at += 1;\n            match (__lanius_event) {",
+    "\n            ",
+    "_ ",
+    "{",
+    " let ",
+    " = __lanius_event;",
+    " }",
+    ",",
+    "\n        ",
+    "};\n    }\n",
+    "};\n        }\n        self.__lanius_state = ",
+    ";\n        return __lanius_at;\n    }\n",
+    "}\n",
+    "__lanius_state: ",
+    "State }\n",
+    ") -> ",
+    " { return ",
+    " }; }\n",
+    "        };\n    }\n    ",
+    "fn state(&self) -> ",
+    "State { return self.__lanius_state; }\n",
+    "            };\n        }\n    }\n",
+    "self.__lanius_state = ",
+    "; ",
+    ";",
+    "return;",
+    "continue;",
+    "; return __lanius_at;",
+    " = ",
+    "let __lanius_next_",
+    " = __lanius_next_",
+];
+
+pub(super) const RECORD_WORDS: usize = 6;
+pub(super) const NO_ERROR: u32 = u32::MAX;
+/// The status words of the machine rules.
+pub(super) const STATUS_WORDS: usize = 4;
+pub(super) const DETAIL_WORDS: usize = 8;
+pub(super) const INFO_WORDS: usize = 3;
+pub(super) const STATE_ROW_WORDS: usize = 8;
+/// A row of the transition graph has 256 bits, and 2^8 is 256.
+pub(super) const REACH_STEPS: usize = 8;
+
 
 const READ: &str = "machines/read";
 const MARKS: &str = "machines/marks";
@@ -512,4 +590,60 @@ pub(super) fn explain(
     Ok(Some(rule_error(word, key, &detail, |start, len| {
         text(start as usize, len as usize)
     })))
+}
+
+/// The message of the error `key` of status word `word`. The kernels that
+/// explain it wrote the spans the message names into `detail`: the token of
+/// the error, two more tokens and a number. `text` reads a global span.
+fn rule_error(
+    word: usize,
+    key: u32,
+    detail: &[u32],
+    text: impl Fn(u32, u32) -> String,
+) -> RuleError {
+    let label = text(detail[0], detail[1]);
+    let a = text(detail[2], detail[3]);
+    let b = text(detail[4], detail[5]);
+    let number = detail[6];
+    let mut len = detail[1] as usize;
+    let mut help = None;
+    let message = match (word, key & 31) {
+                (1, 1) => "a machine has at most 256 states".to_string(),
+        (1, 2) => "expected `{` here".to_string(),
+        (1, 3) => format!("state `{label}` is declared twice"),
+        (1, 4) => format!("no state is named `{label}`"),
+        (1, 5) => "the start state takes no data, so construction never chooses a state".to_string(),
+        (1, 6) => {
+            // The event type runs to the end of token `a`.
+            len = (detail[2] + detail[3] - detail[0]) as usize;
+            "a machine's event type is an integer type or an enum declared in the machine's file".to_string()
+        }
+        (1, 7) => format!(
+            "state `{a}` handles the remaining events with `_`; list each event, so adding one makes every state decide what it does"
+        ),
+        (1, 8) => {
+            "a machine arm ends in a transition: `goto State` or `stay`, or a block whose every path does".to_string()
+        }
+        (1, 9) => "expected `,` after this block arm".to_string(),
+        (1, 10) => "a machine arm leaves through `goto` or `stay`, not `return`".to_string(),
+        (1, 11) => "expected `;` after this transition".to_string(),
+        (1, 12) => "this machine has no output, so its transitions take no `with`".to_string(),
+        (1, 13) => "this machine has an output: end the transition with `with value`".to_string(),
+        (1, 14) => format!("state `{a}` takes {number} values"),
+        (1, 15) => "`goto` and `stay` are the transitions of a machine: write them in the arms of a state".to_string(),
+        (1, 16) => "a transition is a statement or the whole body of an arm, and it has no value".to_string(),
+        (1, 17) => "expected a field name here".to_string(),
+        (2, code @ (1 | 2)) => {
+            help = Some(format!("add an arm, e.g. `{a}::{b} -> stay{}`", if code == 2 { " with ..." } else { "" }));
+            format!("state `{label}` does not handle `{a}::{b}`")
+        }
+        (2, _) => format!("state `{label}` must end with a `_` or binding arm, since its events are integers"),
+        (3, 1) => format!("state `{label}` is unreachable from `start {a}`"),
+        (3, 2) => {
+            help = Some(format!("mark it `final state {label}` if the machine is meant to stop here"));
+            format!("state `{label}` has no `goto` to another state")
+        }
+        _ => format!("`final` state `{label}` has a `goto` to another state"),
+    };
+    RuleError::machine(detail[0] as usize, len.max(1), message, help)
 }

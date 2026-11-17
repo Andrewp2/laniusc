@@ -19,6 +19,7 @@ struct TokenOut
     uint len;
 };
 
+// Word 0 of the round's sizes: the tokens it reads.
 StructuredBuffer<uint> token_count;
 StructuredBuffer<TokenOut> tokens_out;
 StructuredBuffer<uint> token_file_id;
@@ -26,7 +27,6 @@ ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> roles;
 StructuredBuffer<uint4> depth_scan;
 StructuredBuffer<uint> records;
-StructuredBuffer<uint> summary;
 RWStructuredBuffer<uint4> capture_marks;
 RWStructuredBuffer<uint> status;
 
@@ -88,8 +88,11 @@ void main(uint3 tid: SV_DispatchThreadID)
 {
     uint u = linear_dispatch_thread_id_2d(tid, DISPATCH_X_STRIDE);
     uint count = token_count[0];
-    uint closure_count = summary[1];
-    if (u >= count || closure_count == 0u)
+    if (u >= count)
+        return;
+    capture_marks[u] = uint4(0u, 0u, 0u, 0u);
+    uint closure_count = depth_scan[count - 1u].y;
+    if (closure_count == 0u)
         return;
     uint kind = tokens_out[u].kind;
     if (kind != TK_IDENT && kind != TK_SELF_VALUE)
