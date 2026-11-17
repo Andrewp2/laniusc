@@ -382,8 +382,12 @@ Row terms and roles:
   variant (`Ok(_)`, `None`, `Error::Busy`), or the wildcard `_` (one token
   spelled `_`). A local variant's identity is its binding (r5). An imported
   variant keeps the checked ordinal in r6; its external declaration-schema
-  reference is not a value type and is omitted. Other pattern rows keep
-  their checked term when the checker publishes one and need none. The
+  reference is not a value type and is omitted. A qualified local variant
+  pattern (`core::range::Bound::Unbounded` in a generic body) is typed with
+  the enum's declared self application. It keeps no term when that term is
+  owned by the enum, and is an ownership failure when another binder owns
+  it. Other pattern rows keep their checked term when the checker publishes
+  one and need none. The
   matched type is the scrutinee's term at the top level, or the enclosing
   payload's substituted schema type for a nested pattern. Named payload
   binders (`inner`) and literal patterns stay VALUE rows with their types.

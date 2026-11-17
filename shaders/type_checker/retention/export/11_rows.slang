@@ -9,7 +9,8 @@
 //   r6 (argument mode | iterable kind << 8 | float status << 16, constant flags, value lo, value hi)
 // A type row's term is its checked type (type_row_term); a variant
 // constructor's callee keeps none; every other row's is its checked
-// expression reference. A VALUE or TYPE row without a resolved term is
+// expression reference. A variant pattern typed with its enum's declared
+// application keeps none either. A VALUE or TYPE row without a resolved term is
 // counted UNTYPED; BOUND, PATTERN and CALLEE rows denote no value. A reference outside the body becomes
 // RT_REL_FOREIGN and is counted FOREIGN; untranslated and unowned terms are
 // counted too. Nothing else of the job (canonical IDs, absolute rows or
@@ -188,6 +189,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (declared == RT_UNKNOWN || declared == RT_FIT_FAILED) untranslated++;
         else if (!owned_by(declared, c.decl, c.parent) &&
             (enum_decl == RT_INVALID || !owned_by(declared, enum_decl, 0u))) unowned++;
+    }
+    else if (role == RT_ROLE_PATTERN && (binding_target(semantic_value_decl_by_hir[row]) & RT_X_VARIANT_BIT) != 0u)
+    {
+        // A qualified variant pattern (`core::range::Bound::Unbounded`) is
+        // typed with the enum's declared self application, a schema fact
+        // over the enum's own parameters. Projection takes the matched
+        // type from the scrutinee or the enclosing payload, so such a row
+        // keeps no term. A term in the caller's scope is kept and checked
+        // against the matched type; a term naming any other binder stays
+        // an error.
+        uint variant = binding_target(semantic_value_decl_by_hir[row]) & ~RT_X_VARIANT_BIT;
+        uint enum_row = compact_variants[variant].owner;
+        uint enum_decl = valid_row(enum_row) ? rt_x_row[enum_row].x : RT_INVALID;
+        uint checked = translate_checked(semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row]);
+        if (checked == RT_UNKNOWN || checked == RT_FIT_FAILED) untranslated++;
+        else if (owned_by(checked, c.decl, c.parent)) term = checked;
+        else if (enum_decl == RT_INVALID || !owned_by(checked, enum_decl, 0u)) unowned++;
     }
     else if (checked_value_row(row, function, core.kind, compact_hir_payload[row].a))
         term = body_term(c, semantic_expr_ref_tag_by_hir[row], semantic_expr_ref_payload_by_hir[row],

@@ -344,7 +344,7 @@ fn diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_bo
             && feature["next_step"]
                 .as_str()
                 .expect("unsupported feature next_step should be a string")
-                .contains("--emit=wasm")
+                .contains("native output requires support for this construct in x86 lowering")
     }));
     assert!(unsupported_features.iter().any(|feature| {
         feature["code"] == "LNC0022"

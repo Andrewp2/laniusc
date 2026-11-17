@@ -76,11 +76,13 @@ def events(text, *, phase_markers=True):
 
 
 def analyze(text, profile, directory, *, final=True, repaired_close=None, repair_phase="M", phase_markers=True):
-    assert all(flags == 0x62 for flags in getattr(profile[0], "mmap_flags", {}).values()), "Atomic checkpoint ledger requires its historical MAP_32BIT profile; full-width source accounting is not migrated"
     entries, epochs = events(text, phase_markers=phase_markers)
     live, generations, acquisitions, closes = {}, Counter(), [], []
     pairs, named = profile
     allocate = {a for a, _ in pairs} | set(named)
+    # Each verified allocation site keeps its own flags: 0x62 maps below
+    # 2 GiB with MAP_32BIT, 0x22 maps at full width (TEMP.source_maps).
+    site_flags = getattr(pairs, "mmap_flags", {a: 0x62 for a, _ in pairs})
     release = {f for _, f in pairs} | set(named)
     mappings, allocations = {}, []
     counts = Counter()
@@ -90,14 +92,18 @@ def analyze(text, profile, directory, *, final=True, repaired_close=None, repair
         result = entry["result"].split()[0]
         counts[name] += 1
         attempts.setdefault(name, []).append(entry)
-        if name == "mmap" and "MAP_32BIT" in entry["args"]:
+        if name == "mmap" and (entry["ip"] in allocate or "MAP_32BIT" in entry["args"]):
             assert entry["ip"] in allocate, ("unverified source allocation", entry)
+            flags = site_flags.get(entry["ip"], 0x62)
+            assert flags in (0x22, 0x62), ("unsupported source mmap profile", entry["ip"], flags)
+            assert ("MAP_32BIT" in entry["args"]) == (flags == 0x62), ("source mmap flags differ from its site", entry)
             length = int(args[1])
             allocation = dict(entry, length=length)
             allocations.append(allocation)
             if result.startswith("0x"):
                 pointer = int(result, 16)
-                assert 0 < pointer < 0x80000000 and pointer not in mappings, (entry, mappings)
+                limit = 0x80000000 if flags == 0x62 else 1 << 64
+                assert 0 < pointer < limit and pointer not in mappings, (entry, mappings)
                 mappings[pointer] = dict(length=length, acquired=allocation)
         elif name == "munmap":
             pointer, length = int(args[0], 16), int(args[1])
@@ -214,15 +220,20 @@ def controls():
     with tempfile.TemporaryDirectory(prefix='atomic-file-ledger-cpu-') as directory:
         class FullWidth(list):
             pass
-        unsupported = FullWidth([(a, f)])
-        unsupported.mmap_flags = {a: 0x22}
-        for final_checkpoint in (False, True):
-            try:
-                analyze('', (unsupported, []), directory, final=final_checkpoint)
-            except AssertionError:
-                count += 1
-            else:
-                raise AssertionError('historical Atomic checkpoint ledger accepted a full-width source profile')
+        full = FullWidth([(a, f)])
+        full.mmap_flags = {a: 0x22}
+        # A full-width site's allocation is owned like a MAP_32BIT one; the
+        # same trace against the other profile is rejected.
+        wide = first.replace('|MAP_32BIT', '').replace('0x41000000', '0x7f0000000000')
+        held = analyze(wide, (full, []), directory, final=False)
+        assert set(held['mappings']) == {0x7f0000000000}
+        count += 1
+        try:
+            analyze(first, (full, []), directory, final=False)
+        except AssertionError:
+            count += 1
+        else:
+            raise AssertionError('Atomic checkpoint ledger accepted MAP_32BIT at a full-width site')
         held = analyze(first, ([(a, f)], []), directory, final=False)
         assert set(held['live']) == {3, 4} and set(held['mappings']) == {0x41000000}
         count += 1
