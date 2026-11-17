@@ -17,13 +17,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = dtid.x + dtid.y * 16776960u;
     uint count = ct_candidate_count();
+    LiveRearm live = canonical_live_rearm();
     uint candidate = 0u;
     bool pending = false;
     if (i < count)
     {
         uint constants = count - ct_row_capacity();
         candidate = i < constants ? count - constants + i : count - 1u - i;
-        pending = canonical_rearm_candidate(candidate);
+        // Past the allocation counters a candidate is empty
+        // (canonical_live_rearm): it gets CT_NONE without reading it.
+        pending = canonical_rearm_candidate(candidate, canonical_live_rearm_holds(live, candidate));
     }
     uint lanes = WaveActiveCountBits(pending);
     uint base = 0u;
