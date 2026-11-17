@@ -350,8 +350,12 @@ pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT: ReflectedComputeSp
     .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT_LOOKUP: ReflectedComputeSpec =
     DEPENDENCY_METHODS_COLLECT.with_name("type_check.dependencies.collect_methods.lookup");
+// The rounds' invocations visit the listed active blocks
+// (calls/inference_blocks.slang).
 pub(in crate::type_checker) const DEPENDENCY_METHODS_COLLECT_INFERENCE: ReflectedComputeSpec =
-    DEPENDENCY_METHODS_COLLECT.with_name("type_check.dependencies.collect_methods.inference");
+    DEPENDENCY_METHODS_COLLECT
+        .with_name("type_check.dependencies.collect_methods.inference")
+        .with_indirect_dispatch("inference_hir_list_args");
 
 /// Required members of imported traits, offered to calls through a bound on
 /// a type parameter while the trait's page is resident.
@@ -368,7 +372,9 @@ pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP: Reflect
         .with_name("type_check.dependencies.offer_bound_members.lookup")
         .with_indirect_dispatch(super::methods::METHOD_LOOKUP_DISPATCH_ARGS);
 pub(in crate::type_checker) const DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE: ReflectedComputeSpec =
-    DEPENDENCY_BOUND_MEMBERS_OFFER.with_name("type_check.dependencies.offer_bound_members.inference");
+    DEPENDENCY_BOUND_MEMBERS_OFFER
+        .with_name("type_check.dependencies.offer_bound_members.inference")
+        .with_indirect_dispatch("inference_hir_list_args");
 
 pub(in crate::type_checker) const DEPENDENCY_METHODS_PROJECT: ReflectedComputeSpec =
     typecheck_pass!(
@@ -422,7 +428,9 @@ pub(in crate::type_checker) const DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE: Refle
 pub(in crate::type_checker) const DEPENDENCY_METHODS_PROJECT_LOOKUP: ReflectedComputeSpec =
     DEPENDENCY_METHODS_PROJECT.with_name("type_check.dependencies.project_methods.lookup");
 pub(in crate::type_checker) const DEPENDENCY_METHODS_PROJECT_INFERENCE: ReflectedComputeSpec =
-    DEPENDENCY_METHODS_PROJECT.with_name("type_check.dependencies.project_methods.inference");
+    DEPENDENCY_METHODS_PROJECT
+        .with_name("type_check.dependencies.project_methods.inference")
+        .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const DEPENDENCY_METHOD_PARAMS_SCATTER: ReflectedComputeSpec =
     DEPENDENCY_CALL_PARAMS_SCATTER.with_name("type_check.dependencies.scatter_method_params");
 pub(in crate::type_checker) const DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP: ReflectedComputeSpec =

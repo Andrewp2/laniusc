@@ -6,6 +6,8 @@ import type_checker.substitution.ct_expand;
 import type_checker.calls.inference_activity;
 
 RWStructuredBuffer<uint> ct_expand_args;
+// The other level rounds' arguments, written only for a run without input.
+RWStructuredBuffer<uint> ct_expand_args_b;
 RWStructuredBuffer<uint> call_inference_state;
 
 [shader("compute")]
@@ -13,6 +15,17 @@ RWStructuredBuffer<uint> call_inference_state;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     if (dtid.x != 0u) return;
+    // A run whose roots queued nothing would expand nothing, report no
+    // progress and leave START = END = the queue length with the round count
+    // at 0. Close it here, and dispatch none of its level rounds.
+    if (ct_expand_run_empty())
+    {
+        ct_expand_close_empty_run();
+        uint3 none = ct_expand_level_args(0u);
+        [unroll]
+        for (uint i = 0u; i < 3u; i++) { ct_expand_args[i] = none[i]; ct_expand_args_b[i] = none[i]; }
+        return;
+    }
     bool progress;
     uint3 args = ct_expand_advance(progress);
     if (progress)

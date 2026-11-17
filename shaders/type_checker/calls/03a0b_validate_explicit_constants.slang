@@ -13,12 +13,21 @@ StructuredBuffer<uint4> call_explicit_environment;
 StructuredBuffer<uint> call_explicit_binding_tag;
 StructuredBuffer<uint> call_explicit_binding_payload;
 RWStructuredBuffer<uint> call_explicit_constant_valid_mask;
+// The applications that reserved binding rows, listed by 03a0. Every other
+// token keeps the empty mask that calls/01_resolve wrote.
+StructuredBuffer<uint> call_explicit_binding_count;
+StructuredBuffer<uint> call_explicit_application_list;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint token = dtid.x + dtid.y * 16776960u;
+    if (call_explicit_binding_count[2u] == 0u)
+    {
+        if (token >= call_explicit_binding_count[1u]) return;
+        token = call_explicit_application_list[token];
+    }
     uint capacity; uint stride;
     call_explicit_application_status.GetDimensions(capacity, stride);
     if (token >= gParams.n_tokens || token >= capacity) return;

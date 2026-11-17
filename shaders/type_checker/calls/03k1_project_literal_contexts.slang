@@ -12,6 +12,7 @@ import type_checker.substitution.ct_subst;
 import type_checker.checked_slots;
 import type_checker.type.instances.generic_param_lookup;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 StructuredBuffer<uint> generic_decl_owner_by_node_a;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> generic_param_count_out;
@@ -406,7 +407,7 @@ uint checked_literal_context(uint literal, inout uint symbolic)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = dtid.x + dtid.y * 16776960u;
+    uint node = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (!valid_hir(node) || compact_hir_core[node].kind != HIR_SEM_KIND_LITERAL_EXPR ||
         (compact_hir_payload[node].a != HIR_SEM_EXPR_INT &&
          compact_hir_payload[node].a != HIR_SEM_EXPR_FLOAT)) return;

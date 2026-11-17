@@ -1,22 +1,14 @@
 use super::super::*;
 
-/// The two semantic positions at which aggregate type relations are checked.
-#[derive(Clone, Copy)]
-pub(in crate::type_checker) enum AggregateComparisonStage {
-    Calls,
-    Final,
-}
-
 /// Aggregate arguments are compared through the complete checked type graph.
 ///
-/// The scans, whose applies write the comparison dispatch arguments, and the
-/// indirect comparison kernels share the same physical resources. Graph invocations distinguish their two semantic
-/// positions without rebuilding pipelines or bind groups.
+/// After the semantic projection has listed the aggregate requests
+/// (conditions/compact_aggregate_requests), a scan whose apply writes the
+/// comparison dispatch arguments, then the indirect comparison.
 pub(in crate::type_checker) struct AggregateComparisonOperation {
     _aggregate_dispatch_params: LaniusBuffer<CountDispatchParams>,
     aggregate_scan: PrefixScanOperation,
     aggregate_arguments: ComputeOperation,
-    aggregate_arguments_calls: ComputeInvocation,
 }
 
 impl AggregateComparisonOperation {
@@ -46,38 +38,17 @@ impl AggregateComparisonOperation {
             &passes.kernel("type_checker/conditions/aggregate_args"),
             aggregate_dispatch_args,
         )?;
-        let aggregate_arguments_calls = aggregate_arguments
-            .invocation(graph, compiler_graph::CONDITIONS_AGGREGATE_ARGS_CALLS_PASS)?;
-
         Ok(Self {
             _aggregate_dispatch_params: aggregate_dispatch_params.clone(),
             aggregate_scan,
             aggregate_arguments,
-            aggregate_arguments_calls,
         })
     }
 
-    pub(in crate::type_checker) fn record(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        stage: AggregateComparisonStage,
-    ) -> Result<()> {
-        let aggregate_scan_passes = match stage {
-            AggregateComparisonStage::Calls => compiler_graph::AGGREGATE_CALL_SCAN_PASSES,
-            AggregateComparisonStage::Final => compiler_graph::AGGREGATE_FINAL_SCAN_PASSES,
-        };
+    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
         self.aggregate_scan
-            .record_with_graph_passes(encoder, aggregate_scan_passes)?;
-        match stage {
-            AggregateComparisonStage::Calls => {
-                self.aggregate_arguments
-                    .record_invocation(encoder, &self.aggregate_arguments_calls)?;
-            }
-            AggregateComparisonStage::Final => {
-                self.aggregate_arguments.record(encoder)?;
-            }
-        }
-        Ok(())
+            .record_with_graph_passes(encoder, compiler_graph::AGGREGATE_FINAL_SCAN_PASSES)?;
+        self.aggregate_arguments.record(encoder)
     }
 }
 

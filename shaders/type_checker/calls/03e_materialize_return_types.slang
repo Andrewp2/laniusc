@@ -24,6 +24,7 @@ import type_checker.substitution.source_slots;
 import type_checker.substitution.call_env;
 import type_checker.calls.intrinsic_result;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -199,7 +200,7 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (call >= hir_count() || !inference_item_active(compact_hir_core[call].token_start)) return;
     bool record = compact_hir_core[call].kind == 28u;
     bool unit = compact_hir_core[call].kind == 33u;

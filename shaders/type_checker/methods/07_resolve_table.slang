@@ -20,6 +20,7 @@ import type_checker.substitution.ct_spare;
 import type_checker.substitution.ct_checked;
 import type_checker.match.ct_match;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_elem_ref_tag;
@@ -259,7 +260,7 @@ bool reset_candidate(uint token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id(dtid);
+    uint token = inference_listed_token(linear_thread_id(dtid));
     if (token >= active_token_count() || !inference_item_active(token)) return;
     if (!reset_candidate(token)) return;
     uint tag = method_call_source_ref_tag[token];

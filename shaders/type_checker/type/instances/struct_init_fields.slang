@@ -302,9 +302,14 @@ void publish_struct_init_field_row(uint field_row)
 // thread of the HIR-active dispatch.
 public void struct_init_field_lane(uint3 dtid)
 {
+    struct_init_field_row(linear_thread_id(dtid));
+}
+
+// The field row `i` (calls/03k4 visits the rows calls/03k5 listed).
+public void struct_init_field_row(uint i)
+{
     if ((gParams.parser_feature_flags & PARSER_FEATURE_STRUCTS) == 0u)
         return;
-    uint i = linear_thread_id(dtid);
     if (!valid_compact_field(i) || !inference_item_active(compact_fields[i].name_token))
         return;
     publish_struct_init_field_row(i);

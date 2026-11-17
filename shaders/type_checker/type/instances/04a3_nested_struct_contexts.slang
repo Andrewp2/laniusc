@@ -14,6 +14,7 @@ import type_checker.type.instances.struct_field_lookup;
 import status;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -133,7 +134,7 @@ bool child_context(uint node, HirField value, uint child, uint count, uint field
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint root = dtid.x + dtid.y * 16776960u;
+    uint root = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     uint count = min(gParams.n_hir_nodes, compact_hir_count[0u]);
     if (root >= count || compact_hir_core[root].kind != HIR_STRUCT_LITERAL) return;
     if (!inference_item_active(compact_hir_core[root].token_start)) return;

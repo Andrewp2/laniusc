@@ -1887,15 +1887,7 @@ impl GpuTypeChecker {
                 if let Some(bound) = bound_inference {
                     bound.infer.record(encoder)?;
                 }
-                if aggregates_required {
-                    bind_groups
-                        .aggregate_comparison
-                        .record(encoder, AggregateComparisonStage::Calls)?;
-                }
-                bind_groups.calls.apply_row_args.record_as(
-                    encoder,
-                    CallArgumentMatchStage::Final.operation_names().2,
-                )?;
+                bind_groups.calls.apply_final_row_args.record(encoder)?;
                 Ok(())
             };
             let materialize_returns = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
@@ -1945,6 +1937,9 @@ impl GpuTypeChecker {
                 Ok(())
             };
             let record_returns = |encoder: &mut wgpu::CommandEncoder| -> Result<()> {
+                // The round's active blocks, for the listed passes; every row
+                // outside the rounds.
+                bind_groups.calls.inference_blocks.list.record(encoder)?;
                 if methods_required {
                     bind_groups.methods.record_call_selection(
                         encoder, MethodSelectionStage::Inference,
@@ -1963,27 +1958,9 @@ impl GpuTypeChecker {
                     materialize_returns(encoder)?;
                 }
                 if members_required {
-                    bind_groups
-                        .type_instances
-                        .member_receivers
-                        .record_invocation(
-                            encoder,
-                            &bind_groups.type_instances.member_receivers_inference,
-                        )?;
-                    bind_groups
-                        .type_instances
-                        .member_results
-                        .record_invocation(
-                            encoder,
-                            &bind_groups.type_instances.member_results_inference,
-                        )?;
-                    bind_groups
-                        .type_instances
-                        .member_substitute
-                        .record_invocation(
-                            encoder,
-                            &bind_groups.type_instances.member_substitute_inference,
-                        )?;
+                    bind_groups.type_instances.member_receivers_inference.record(encoder)?;
+                    bind_groups.type_instances.member_results_inference.record(encoder)?;
+                    bind_groups.type_instances.member_substitute_inference.record(encoder)?;
                 }
                 if matches_required {
                     module_path
@@ -2061,6 +2038,18 @@ impl GpuTypeChecker {
             };
             // The rounds' row passes visit the source rows listed here, which
             // hold a type, and the generated rows.
+            // Each function's rows, for the rounds' listed blocks.
+            bind_groups.calls.inference_blocks.clear.record(encoder);
+            bind_groups.calls.inference_blocks.ranges.record(encoder)?;
+            bind_groups.calls.inference_blocks.args.record(encoder)?;
+            // The call field closure's root locations.
+            bind_groups.calls.call_roots.record(encoder)?;
+            // The rows of the rounds' struct-literal passes.
+            if let Some(records) = &bind_groups.calls.record_literal_inference {
+                records.rows_clear.record(encoder);
+                records.rows_list.record(encoder)?;
+                records.rows_args.record(encoder)?;
+            }
             if let Some(list) = bind_groups.calls.type_row_list.as_ref() {
                 list.clear.record(encoder);
                 list.list.record(encoder)?;
@@ -2285,10 +2274,7 @@ impl GpuTypeChecker {
                 self.call_inference_round.write(queue, 0, &[0; 8]);
                 if aggregates_required {
                     bind_groups.calls.status_prior.record(encoder);
-                    bind_groups
-                        .calls
-                        .contextual_result_requests
-                        .record_as(encoder, CALLS_CONTEXTUAL_RESULTS_FINAL.name)?;
+                    bind_groups.calls.contextual_results_final.record(encoder)?;
                     bind_groups.calls.environment_admission.record_context(
                         encoder,
                         ContextConstantProducer::FinalResultRequests,
@@ -2677,7 +2663,7 @@ impl GpuTypeChecker {
             if aggregates_required {
                 bind_groups
                     .aggregate_comparison
-                    .record(encoder, AggregateComparisonStage::Final)?;
+                    .record(encoder)?;
             }
             if methods_required {
                 // Re-publish method keys after all late call/type projections

@@ -61,7 +61,32 @@ struct KernelBodyNames : IExplicitOperandBodyNames
 RWStructuredBuffer<uint4> call_explicit_environment;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> call_explicit_binding_payload;
+// [0] binding rows, [1] listed applications, [2] 1 when the list overflowed.
 RWStructuredBuffer<uint> call_explicit_binding_count;
+RWStructuredBuffer<uint> call_explicit_application_list;
+RWStructuredBuffer<uint> call_explicit_admission_args;
+
+// Lists an application that has just reserved its rows for the constant
+// admission 03a0b, which visits only listed tokens: a token without rows
+// admits no constant. A token reserves once per job, so it is listed once,
+// apart from lanes that race on one token. A list that would overflow makes
+// 03a0b visit every token instead.
+void list_application(uint token)
+{
+    uint slot; uint capacity; uint stride;
+    InterlockedAdd(call_explicit_binding_count[1u], 1u, slot);
+    call_explicit_application_list.GetDimensions(capacity, stride);
+    uint visited = slot + 1u;
+    if (slot < capacity) call_explicit_application_list[slot] = token;
+    else
+    {
+        call_explicit_binding_count[2u] = 1u;
+        visited = gParams.n_tokens;
+    }
+    uint groups = (visited + 255u) / 256u;
+    InterlockedMax(call_explicit_admission_args[0u], min(groups, 65535u));
+    InterlockedMax(call_explicit_admission_args[1u], (groups + 65534u) / 65535u);
+}
 
 // A bounded compact arena keeps application storage proportional to source
 // size. Each applying token reserves once, including across inference rounds.
@@ -82,6 +107,7 @@ bool reserve_bindings(uint token, uint type_mask, uint constant_mask, out uint b
         if (start >= capacity || count > capacity - start)
         { call_explicit_application_status[token] = 4u; return false; }
         descriptor = uint4(start + 1u, count, 0u, 0u);
+        list_application(token);
     }
     if (descriptor.y < count)
     { call_explicit_application_status[token] = 4u; return false; }

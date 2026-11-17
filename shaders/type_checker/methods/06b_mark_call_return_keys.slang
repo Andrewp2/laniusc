@@ -2,6 +2,7 @@ import hir_records;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 // GPU method-call key marking for call-result receivers.
 //
@@ -299,7 +300,7 @@ uint callee_token_for_call(uint call_hir)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = linear_thread_id(dtid);
+    uint i = inference_listed_hir_row(linear_thread_id(dtid));
 
     if (!valid_dense(i) || compact_hir_core[i].kind != HIR_CALL_EXPR)
         return;

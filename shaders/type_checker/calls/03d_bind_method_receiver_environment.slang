@@ -31,6 +31,7 @@ import type_checker.substitution.source_slots;
 import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -86,11 +87,22 @@ bool dependency_declaration_root(uint root)
     return signature < count && canonical_type_roots[signature] == root;
 }
 
+// Whether matching pair `self` repeats matching `receiver`: the same IDs, or
+// one reference around each (a &self parameter against a borrowed receiver).
+// A reference pair has the same heads and matches exactly when its operands do.
+bool repeats_receiver_match(uint2 self, uint2 receiver)
+{
+    if (!ct_is_resolved(receiver.x) || !ct_is_resolved(receiver.y)) return false;
+    if (all(self == receiver)) return true;
+    return ct_kind(self.x) == CT_KIND_REF && ct_kind(self.y) == CT_KIND_REF &&
+        ct_arg(self.x, 0u) == receiver.x && ct_arg(self.y, 0u) == receiver.y;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (call >= hir_count() || compact_hir_core[call].kind != 19u) return;
     if (!inference_item_active(compact_hir_core[call].token_start)) return;
     uint callee = compact_hir_payload[call].a;
@@ -115,6 +127,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SourceSlots slots;
     CtSpare spare = ct_spare_none();
     uint env = CT_NONE;
+    // Phase 0's matched pair: phase 1 repeats it when its pair is the same.
+    uint2 receiver_pair = uint2(CT_UNKNOWN, CT_UNKNOWN);
     // One call site per matcher, interner and publisher keeps one inlined
     // copy of each.
     [loop]
@@ -246,6 +260,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 if (matching)
                 {
                     matching = false;
+                    if (phase == 0u) receiver_pair = uint2(pattern, id);
+                    else if (repeats_receiver_match(uint2(pattern, id), receiver_pair))
+                    {
+                        // The match under phase 0's environment binds what
+                        // phase 0 bound, so it publishes nothing new.
+                        outcome = CT_PUBLISHED;
+                        break;
+                    }
                     matched = ct_is_resolved(pattern) && ct_is_resolved(id)
                         ? ct_match<SourceSlots>(slots, pattern, id, CT_NONE, CT_NONE, env, 0u, true, spare, count_mask)
                         : CT_MATCH_FAILED;

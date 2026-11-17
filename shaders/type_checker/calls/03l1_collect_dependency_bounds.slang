@@ -64,6 +64,7 @@ void collect_implementation(uint row)
     bound_implementation_rows[out_base + 6u] = complete && ct_is_resolved(subject) && !ct_is_constant(subject)
         ? subject : CT_UNKNOWN;
     bound_implementation_rows[out_base + 7u] = count;
+    bound_link_implementation(target, trait, count);
 }
 
 void collect_predicate(uint row)
@@ -108,6 +109,7 @@ void collect_predicate(uint row)
         bound_predicate_rows[out_base + 9u + ordinal] = ordinal < count
             ? dependency_type(dependency_predicate_argument(first + ordinal)) : CT_NONE;
     bound_mark_owner(uint3(library, unit, local));
+    bound_link_predicate(target, uint3(library, unit, local));
 }
 
 [shader("compute")]

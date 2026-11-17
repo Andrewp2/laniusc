@@ -123,6 +123,25 @@ public uint ct_expand_level_groups()
     return max((end - start + 255u) / 256u, 1u);
 }
 
+// At a run's opening advance (one lane): whether no entry waits past the
+// last level round's end.
+public bool ct_expand_run_empty()
+{
+    uint capacity; uint stride;
+    ct_expand_queue.GetDimensions(capacity, stride);
+    uint appended;
+    InterlockedAdd(ct_expand_counts[CT_EXPAND_LENGTH], 0u, appended);
+    return ct_expand_counts[CT_EXPAND_ROUND] % (CT_EXPAND_LEVELS_PER_RUN + 1u) == 0u &&
+        min(appended, capacity) == ct_expand_counts[CT_EXPAND_END];
+}
+
+// The state an empty run's advances leave (ct_expand_advance).
+public void ct_expand_close_empty_run()
+{
+    ct_expand_counts[CT_EXPAND_START] = ct_expand_counts[CT_EXPAND_END];
+    ct_expand_counts[CT_EXPAND_ROUND] = 0u;
+}
+
 // Close one level round of the run (one lane): the entries the previous
 // round queued become this round's input. Returns the next level's
 // dispatch arguments; the closing advance of a run dispatches no level and

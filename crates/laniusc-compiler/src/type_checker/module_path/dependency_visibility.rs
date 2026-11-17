@@ -149,6 +149,10 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) collect_methods_group: ComputeOperation,
     pub(in crate::type_checker) offer_bound_members_group: ComputeOperation,
     pub(in crate::type_checker) project_methods_group: ComputeOperation,
+    /// The rounds' invocations (listed active blocks).
+    pub(in crate::type_checker) collect_methods_inference: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members_inference: ComputeOperation,
+    pub(in crate::type_checker) project_methods_inference: ComputeOperation,
     /// The preliminary lookup sweeps' method collection, projection and
     /// parameter scatter, dispatched from the gated lookup grids.
     pub(in crate::type_checker) collect_methods_lookup: ComputeOperation,
@@ -456,6 +460,16 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_METHODS_PROJECT,
         inputs.hir_active_dispatch_args,
     )?;
+    // The rounds' invocations visit the listed active blocks.
+    let listed_hir_args = typed_buffer_from_resources::<u32>(resources, "inference_hir_list_args")?;
+    let listed = |spec| {
+        ComputeOperation::indirect_spec(
+            device, graph, &value_path_resources, passes, spec, &listed_hir_args,
+        )
+    };
+    let collect_methods_inference = listed(DEPENDENCY_METHODS_COLLECT_INFERENCE)?;
+    let offer_bound_members_inference = listed(DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE)?;
+    let project_methods_inference = listed(DEPENDENCY_METHODS_PROJECT_INFERENCE)?;
     let lookup_sweep = |spec| {
         ComputeOperation::indirect_spec_at(
             device, graph, &value_path_resources, passes, spec,
@@ -672,6 +686,9 @@ pub(in crate::type_checker) fn create(
         collect_methods_group,
         offer_bound_members_group,
         project_methods_group,
+        collect_methods_inference,
+        offer_bound_members_inference,
+        project_methods_inference,
         collect_methods_lookup,
         offer_bound_members_lookup,
         project_methods_lookup,

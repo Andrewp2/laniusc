@@ -4,6 +4,7 @@ import gpu_index;
 import type_checker.checked_scoped_types;
 import type_checker.checked_type_graph;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -160,7 +161,7 @@ bool call_callee(uint member)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint member = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint member = inference_listed_hir_row(linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE));
     if (!valid_hir(member) || !inference_item_active(compact_hir_core[member].token_start)) return;
     uint kind = compact_hir_core[member].kind;
     if (kind != HIR_MEMBER_EXPR && kind != HIR_INDEX_EXPR) return;

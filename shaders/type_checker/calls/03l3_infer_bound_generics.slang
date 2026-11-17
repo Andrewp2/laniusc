@@ -39,6 +39,7 @@ import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.calls.bound_tables;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -192,21 +193,27 @@ struct BoundRoots : ICtRoots
     }
 }
 
-// The next implementation row of the bound's trait and arity at or after
-// `cursor`, or INVALID.
-uint next_implementation(uint cursor, uint predicate)
+uint3 predicate_trait(uint predicate)
 {
     uint base = predicate * BOUND_ROW_WORDS;
-    uint3 trait = uint3(bound_predicate_rows[base + 5u], bound_predicate_rows[base + 6u],
+    return uint3(bound_predicate_rows[base + 5u], bound_predicate_rows[base + 6u],
         bound_predicate_rows[base + 7u]);
-    uint arguments = bound_predicate_rows[base + 8u];
+}
+
+// The first implementation row of the bound's trait and arity at or after
+// `row` on its chain (bound_tables.slang), or INVALID.
+uint next_implementation(uint row, uint predicate)
+{
+    uint3 trait = predicate_trait(predicate);
+    uint arguments = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 8u];
     uint count = bound_row_count(BOUND_COUNT_IMPLEMENTATIONS);
-    for (uint row = cursor; row < count; row++)
+    for (uint step = 0u; step < count && row < count; step++)
     {
         uint at = row * BOUND_ROW_WORDS;
         if (bound_implementation_rows[at] == trait.x && bound_implementation_rows[at + 1u] == trait.y &&
             bound_implementation_rows[at + 2u] == trait.z && bound_implementation_rows[at + 7u] == arguments)
             return row;
+        row = bound_next_implementation(row);
     }
     return INVALID;
 }
@@ -227,15 +234,18 @@ uint next_predicate(uint3 owner, uint after)
     uint count = bound_row_count(BOUND_COUNT_PREDICATES);
     uint best = INVALID;
     uint best_key = INVALID;
-    for (uint row = 0u; row < count; row++)
+    uint row = bound_first_predicate(owner);
+    for (uint step = 0u; step < count && row < count; step++)
     {
         uint at = row * BOUND_ROW_WORDS;
-        if (bound_predicate_rows[at] != owner.x || bound_predicate_rows[at + 1u] != owner.y ||
-            bound_predicate_rows[at + 2u] != owner.z) continue;
         uint key = bound_predicate_rows[at + 3u];
-        if ((after != INVALID && key <= after) || key >= best_key) continue;
-        best = row;
-        best_key = key;
+        if (bound_predicate_rows[at] == owner.x && bound_predicate_rows[at + 1u] == owner.y &&
+            bound_predicate_rows[at + 2u] == owner.z && (after == INVALID || key > after) && key < best_key)
+        {
+            best = row;
+            best_key = key;
+        }
+        row = bound_next_predicate(row);
     }
     return best;
 }
@@ -255,13 +265,11 @@ void publish_owner(uint call, uint callee)
     }
 }
 
-// Infer from bound `predicate` of the call's callee; true when the call's
-// context changed.
-bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spare)
+// Infer from bound `predicate` of the call's callee, whose subject slot
+// `operand` binds; true when the call's context changed.
+bool infer_from_bound(uint call, uint callee, uint predicate, uint2 operand, inout CtSpare spare)
 {
     uint base = predicate * BOUND_ROW_WORDS;
-    uint2 operand;
-    if (!slot_binding(callee, bound_predicate_rows[base + 4u], operand)) return false;
     uint arguments = bound_predicate_rows[base + 8u];
     SourceSlots slots;
     BoundRoots roots;
@@ -273,7 +281,7 @@ bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spar
     roots.low = uint4(CT_NONE, CT_NONE, CT_NONE, CT_NONE);
     roots.high = roots.low;
     uint phase = PHASE_BINDING;
-    uint cursor = 0u;
+    uint cursor = bound_first_implementation(predicate_trait(predicate), arguments);
     uint candidate = INVALID;
     uint chosen = INVALID;
     uint implementation_env = CT_NONE;
@@ -313,13 +321,13 @@ bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spar
             }
             else
             {
-                cursor = candidate + 1u;
+                cursor = bound_next_implementation(candidate);
                 // A row without a canonical subject may match any subject.
                 if (!ct_is_resolved(implementation_subject(candidate)))
                 {
                     if (chosen != INVALID && any(implementation_identity(chosen) != implementation_identity(candidate)))
                         return false;
-                    chosen = candidate;
+                    chosen = chosen == INVALID ? candidate : max(chosen, candidate);
                     continue;
                 }
             }
@@ -335,7 +343,8 @@ bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spar
                 if (matched != CT_MATCH_OK) continue;
                 if (chosen != INVALID && any(implementation_identity(chosen) != implementation_identity(candidate)))
                     return false;
-                chosen = candidate;
+                // The highest matching row, the one a walk in row order ends on.
+                chosen = chosen == INVALID ? candidate : max(chosen, candidate);
                 continue;
             }
             if (!ct_is_record(matched)) return false;
@@ -380,7 +389,7 @@ bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spar
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (!valid_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return;
     if (!inference_item_active(compact_hir_core[call].token_start)) return;
     // Incomplete tables could hide a second implementation.
@@ -411,22 +420,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     // A callee without a collected bound infers nothing (bound_tables.slang).
     if (!bound_owner_may_have_predicates(owner)) return;
+    // Steps below `types` look for an unbound slot. Each later step takes the
+    // next bound and its subject's binding, read after the earlier bounds
+    // published: one site reads every binding.
     bool open = false;
-    for (uint slot = 0u; slot < types; slot++)
-    {
-        uint2 operand;
-        if (!slot_binding(callee, slot, operand)) open = true;
-    }
-    if (!open) return;
     CtSpare spare = ct_spare_none();
     bool changed = false;
     uint after = INVALID;
-    for (uint step = 0u; step < PREDICATE_LIMIT; step++)
+    for (uint step = 0u; step < types + PREDICATE_LIMIT; step++)
     {
-        uint predicate = next_predicate(owner, after);
-        if (predicate == INVALID) break;
-        after = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 3u];
-        if (infer_from_bound(call, callee, predicate, spare)) changed = true;
+        uint slot = step;
+        uint predicate = INVALID;
+        if (step >= types)
+        {
+            if (!open) return;
+            predicate = next_predicate(owner, after);
+            if (predicate == INVALID) break;
+            after = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 3u];
+            slot = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 4u];
+        }
+        uint2 operand;
+        bool bound = slot_binding(callee, slot, operand);
+        if (step < types) open = open || !bound;
+        else if (bound && infer_from_bound(call, callee, predicate, operand, spare)) changed = true;
     }
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }
