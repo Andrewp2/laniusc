@@ -8,31 +8,16 @@ pub(in crate::type_checker) enum CallClaimKind {
 }
 
 impl CallClaimKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Generic => "type_check.calls.generic_claims.index",
-            Self::Const => "type_check.calls.const_claims.index",
-        }
-    }
-
     fn build_spec(self) -> ReflectedComputeSpec {
         match self {
             Self::Generic => CALLS_GENERIC_CLAIM_INDEX_BUILD,
             Self::Const => CALLS_CONST_CLAIM_INDEX_BUILD,
         }
     }
-
-    fn prepare_pass(self) -> &'static str {
-        match self {
-            Self::Generic => compiler_graph::GENERIC_CLAIM_INDEX_PREPARE_PASS,
-            Self::Const => compiler_graph::CONST_CLAIM_INDEX_PREPARE_PASS,
-        }
-    }
 }
 
 pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
     pub kind: CallClaimKind,
-    pub claim_capacity: u32,
     pub dispatch_args: &'a LaniusBuffer<u32>,
     pub graph: &'a compiler_graph::TypeCheckCompilerGraph,
     pub resources: &'a ResourceMap<'a>,
@@ -40,12 +25,10 @@ pub(in crate::type_checker) struct CallClaimIndexBuild<'a> {
 
 /// Exact GPU index over call claims keyed by `(callee, slot)`.
 ///
-/// The active count prepares one indirect domain shared by building,
+/// The claim scan's apply writes the indirect domain shared by building,
 /// validation, and every downstream lookup consumer. Claim emission
 /// (03a1_emit_generic_claims) clears the bucket heads.
 pub(in crate::type_checker) struct CallClaimIndexOperation {
-    _dispatch_params: LaniusBuffer<CountDispatchParams>,
-    dispatch: ComputeOperation,
     dispatch_args: LaniusBuffer<u32>,
     build: ComputeOperation,
 }
@@ -86,26 +69,6 @@ impl CallClaimIndexOperation {
             resources.alias(binding, resource)?;
         }
 
-        let dispatch_params = uniform_from_val(
-            device,
-            &format!("{}.dispatch.params", input.kind.label()),
-            &CountDispatchParams {
-                capacity: input.claim_capacity,
-                multiplier: 1,
-                reserved0: 0,
-                reserved1: 0,
-            },
-        );
-        resources.buffer("gParams", &dispatch_params);
-        let dispatch = ComputeOperation::direct_with_uniform(
-            device,
-            input.graph,
-            &resources,
-            input.kind.prepare_pass(),
-            &passes.kernel("type_checker/count/dispatch_args"),
-            &dispatch_params,
-            1,
-        )?;
         let build = ComputeOperation::indirect_spec(
             device,
             input.graph,
@@ -116,15 +79,12 @@ impl CallClaimIndexOperation {
         )?;
 
         Ok(Self {
-            _dispatch_params: dispatch_params,
-            dispatch,
             dispatch_args: input.dispatch_args.clone(),
             build,
         })
     }
 
     pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
-        self.dispatch.record(encoder)?;
         self.build.record(encoder)
     }
 

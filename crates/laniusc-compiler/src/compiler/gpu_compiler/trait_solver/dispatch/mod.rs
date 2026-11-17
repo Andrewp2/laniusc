@@ -622,14 +622,15 @@ impl GpuTraitSolver {
                     vec![
                         WavePiece::whole(WavePoint::Selected),
                         WavePiece::whole(WavePoint::Expanded),
-                        WavePiece::whole(WavePoint::Queue),
+                        WavePiece::groups(WavePoint::Queue, 0, 1),
                     ],
                     Hook::ReadyProofs,
                 ));
-                // Each round ends at a finish point: a quiescent solve
-                // finishes there.
+                // The queue point plans again from unchanged counters. Each
+                // round ends at a finish point: a quiescent solve finishes
+                // there.
                 cuts.push_back((
-                    vec![WavePiece::whole(WavePoint::Emitted), WavePiece::whole(WavePoint::Finish)],
+                    vec![WavePiece::groups(WavePoint::Queue, 1, usize::MAX), WavePiece::whole(WavePoint::Finish)],
                     Hook::None,
                 ));
             }
@@ -720,9 +721,11 @@ impl GpuTraitSolver {
         let mut finish_chunks = wave_chunks(plan.obligations.count.max(plan.calls.count));
         // Steps recorded before the regular rounds, with their chunk steps.
         let mut lead = vec![(pieces(&[WavePoint::FirstWork]), opening_chunks)];
-        // A solve with no source obligation has no Work: its finish point
-        // follows the first work. Others record FIRST_SUBMIT_ROUNDS full
-        // rounds, the opening round with the opening chunk steps, then
+        // A solve with no source obligation has no Work: it records only the
+        // no-Work point, which tests that and finishes with the batch
+        // receipt and, when the check has calls, their reduction. Others
+        // record FIRST_SUBMIT_ROUNDS full rounds, the opening round with the
+        // opening chunk steps, then
         // FIRST_SUBMIT_QUEUE_ROUNDS queue rounds. The opening round
         // normalizes only original Works and the later full rounds only
         // prerequisite Works, until a round start finds otherwise
@@ -738,6 +741,10 @@ impl GpuTraitSolver {
         // Full rounds the next FULL_ROUND stop records.
         let mut full_rounds = FIRST_SUBMIT_ROUNDS;
         let mut finish_due = true;
+        if plan.obligations.count == 0 {
+            lead = vec![(vec![WavePiece::no_work(plan.calls.count)], finish_chunks)];
+            finish_due = false;
+        }
         loop {
             // One submit for the lead, then one per later round, so the GPU
             // runs each while the host records the next.
@@ -752,7 +759,7 @@ impl GpuTraitSolver {
                 let regular = self.template(templates, packet, submission, &pieces(later), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
-            // Queue rounds go in one submit: each records 13 dispatches.
+            // Queue rounds go in one submit: each records 9 dispatches.
             if queue_rounds != 0 {
                 let queue = self.template(templates, packet, submission, &pieces(&WavePoint::QUEUE_ROUND), 1, state, demand)?;
                 submits.push(vec![queue; queue_rounds as usize]);
@@ -787,10 +794,13 @@ impl GpuTraitSolver {
                     // opening round follows a resumed first work; a resumed
                     // finish point is the whole submit.
                     lead = vec![(pieces(point.remainder()), chunks)];
+                    if point == WavePoint::NoWork {
+                        lead = vec![(vec![WavePiece::no_work(plan.calls.count)], chunks)];
+                    }
                     if point == WavePoint::FirstWork && plan.obligations.count != 0 {
                         lead.push((pieces(opening), chunks));
                     }
-                    if point == WavePoint::Finish {
+                    if matches!(point, WavePoint::Finish | WavePoint::NoWork) {
                         rounds = 0;
                         queue_rounds = 0;
                         finish_due = false;
@@ -827,6 +837,16 @@ impl GpuTraitSolver {
                     // full round normalizes both Work kinds.
                     let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
                         .ok_or_else(|| anyhow!("solver wave stopped a round at an unknown point"))?;
+                    if point == WavePoint::NoWork {
+                        // The no-Work test failed before any step: record
+                        // the first work and the finish point.
+                        lead = vec![(pieces(&[WavePoint::FirstWork]), opening_chunks)];
+                        rounds = 0;
+                        queue_rounds = 0;
+                        finish_due = true;
+                        state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
+                        continue;
+                    }
                     if matches!(point, WavePoint::OpeningRound | WavePoint::LaterRound) {
                         opening = &WavePoint::ROUND;
                         later = &WavePoint::ROUND;

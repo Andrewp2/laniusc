@@ -1,4 +1,7 @@
-// Adds scanned block carries to an in-place counted exclusive u32 scan.
+// Apply of an in-place counted u32 exclusive scan: adds each block's carry
+// (block_carry.slang) and writes the total from workgroup 0.
+
+import scan.block_carry;
 
 struct Params
 {
@@ -10,7 +13,7 @@ struct Params
 ConstantBuffer<Params> gScan;
 
 StructuredBuffer<uint> scan_count;
-StructuredBuffer<uint> scan_block_prefix;
+StructuredBuffer<uint> scan_block_sum;
 RWStructuredBuffer<uint> scan_values;
 RWStructuredBuffer<uint> scan_total;
 
@@ -24,17 +27,22 @@ uint active_items()
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
+    uint block_i = gid.x + gid.y * MAX_GROUPS_X;
     uint count = active_items();
     uint blocks = (count + WG_SIZE - 1u) / WG_SIZE;
-    if (i == 0u)
-        scan_total[0] = blocks == 0u ? 0u : scan_block_prefix[blocks - 1u];
-    if (i >= count)
+    if (block_i != 0u && block_i >= blocks)
         return;
 
-    uint block_i = i / WG_SIZE;
-    if (block_i != 0u)
-        scan_values[i] += scan_block_prefix[block_i - 1u];
+    uint carry = block_carry_sum(ltid.x, block_i == 0u ? blocks : block_i, scan_block_sum);
+    if (block_i == 0u)
+    {
+        if (ltid.x == 0u)
+            scan_total[0] = carry;
+        return;
+    }
+    uint i = block_i * WG_SIZE + ltid.x;
+    if (i < count)
+        scan_values[i] += carry;
 }

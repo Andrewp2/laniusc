@@ -244,6 +244,12 @@ impl ProgramRetention {
             &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
         );
         self.queue.submit(Some(encoder.finish()));
+        // Work recorded before the export's counters existed runs behind
+        // the rewrite and is read with it.
+        let follower = export.is_some().then(|| self.take_follower(&store)).flatten().map(|follower| {
+            self.queue.submit(Some(follower.commands));
+            follower.reads
+        });
         // The status and the rewritten prefix of both symbol columns in one
         // readback, with the export's counters while it is pending; the
         // columns are used only when the status is clean. Only the first
@@ -266,7 +272,12 @@ impl ProgramRetention {
             parts.push((&store.buffers["rt_counts"], counts::WORDS));
             parts.push((&store.scratch["rt_x_counts"], X_WORDS));
         }
+        let follows = parts.len();
+        for (buffer, words) in follower.iter().flatten() {
+            parts.push((buffer, *words));
+        }
         let mut read = self.read_parts(&parts)?;
+        let followed = read.split_off(follows);
         if export.is_some() {
             let x = read.pop().unwrap_or_default();
             let words = read.pop().unwrap_or_default();
@@ -274,6 +285,13 @@ impl ProgramRetention {
                 Some(report) => {
                     store.reports.push(report);
                     *export = None;
+                    if follower.is_some() {
+                        *self.followed.lock().unwrap() = Some(FollowedWords {
+                            generation: store.generation,
+                            jobs: store.reports.len(),
+                            words: followed,
+                        });
+                    }
                 }
                 None => return Ok(false),
             }

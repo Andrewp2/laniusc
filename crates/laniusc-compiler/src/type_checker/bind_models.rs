@@ -118,8 +118,8 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
 pub(in crate::type_checker) struct RecordLiteralInferenceOperations {
     pub(in crate::type_checker) contexts: ComputeOperation,
     pub(in crate::type_checker) nested_contexts: ComputeOperation,
-    pub(in crate::type_checker) fields: ComputeOperation,
-    pub(in crate::type_checker) references: ComputeOperation,
+    /// Field expectations and struct-literal references, one dispatch.
+    pub(in crate::type_checker) fields_and_references: ComputeOperation,
 }
 
 pub(in crate::type_checker) struct TypeInstanceCollectionOperations {

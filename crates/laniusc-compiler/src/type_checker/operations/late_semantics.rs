@@ -9,14 +9,12 @@ pub(in crate::type_checker) enum AggregateComparisonStage {
 
 /// Aggregate arguments are compared through the complete checked type graph.
 ///
-/// The scans, dispatch generation, and indirect comparison kernels share the
-/// same physical resources. Graph invocations distinguish their two semantic
+/// The scans, whose applies write the comparison dispatch arguments, and the
+/// indirect comparison kernels share the same physical resources. Graph invocations distinguish their two semantic
 /// positions without rebuilding pipelines or bind groups.
 pub(in crate::type_checker) struct AggregateComparisonOperation {
     _aggregate_dispatch_params: LaniusBuffer<CountDispatchParams>,
     aggregate_scan: PrefixScanOperation,
-    aggregate_dispatch: ComputeOperation,
-    aggregate_dispatch_calls: ComputeInvocation,
     aggregate_arguments: ComputeOperation,
     aggregate_arguments_calls: ComputeInvocation,
 }
@@ -30,25 +28,16 @@ impl AggregateComparisonOperation {
         aggregate_dispatch_params: &LaniusBuffer<CountDispatchParams>,
         aggregate_dispatch_args: &LaniusBuffer<u32>,
     ) -> Result<Self> {
-        let aggregate_scan = PrefixScanOperation::from_resource_names(
+        let aggregate_scan = PrefixScanOperation::from_resource_names_with_total_dispatch(
             device,
             "type_check.conditions.aggregate_compare_scan",
             compiler_graph::AGGREGATE_FINAL_SCAN_PASSES,
             passes,
             resources,
             compiler_graph::AGGREGATE_SCAN_RESOURCES,
+            aggregate_dispatch_params.into(),
+            "aggregate_compare_dispatch_args",
         )?;
-        let aggregate_dispatch = ComputeOperation::direct_with_uniform(
-            device,
-            graph,
-            resources,
-            compiler_graph::AGGREGATE_FINAL_DISPATCH_PASS,
-            &passes.kernel("type_checker/count/dispatch_args"),
-            aggregate_dispatch_params,
-            1,
-        )?;
-        let aggregate_dispatch_calls =
-            aggregate_dispatch.invocation(graph, compiler_graph::AGGREGATE_CALL_DISPATCH_PASS)?;
         let aggregate_arguments = ComputeOperation::indirect(
             device,
             graph,
@@ -63,8 +52,6 @@ impl AggregateComparisonOperation {
         Ok(Self {
             _aggregate_dispatch_params: aggregate_dispatch_params.clone(),
             aggregate_scan,
-            aggregate_dispatch,
-            aggregate_dispatch_calls,
             aggregate_arguments,
             aggregate_arguments_calls,
         })
@@ -83,13 +70,10 @@ impl AggregateComparisonOperation {
             .record_with_graph_passes(encoder, aggregate_scan_passes)?;
         match stage {
             AggregateComparisonStage::Calls => {
-                self.aggregate_dispatch
-                    .record_invocation(encoder, &self.aggregate_dispatch_calls)?;
                 self.aggregate_arguments
                     .record_invocation(encoder, &self.aggregate_arguments_calls)?;
             }
             AggregateComparisonStage::Final => {
-                self.aggregate_dispatch.record(encoder)?;
                 self.aggregate_arguments.record(encoder)?;
             }
         }
