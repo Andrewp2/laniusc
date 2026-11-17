@@ -17,6 +17,7 @@ use crate::{
             MaterializedCompilerGraph,
             PassAccess,
             PassDesc,
+            PhaseResetPlan,
             ReflectedResourceBinding,
             ResourceClass,
             ResourceDesc,
@@ -243,6 +244,8 @@ impl ParserStatusReadbackOperations {
 pub(in crate::parser) struct ParserCompilerGraph {
     materialized: MaterializedCompilerGraph,
     bindings: CompilerGraphBindings,
+    /// Clears each zero-initialized resource's own bytes, not its whole slot.
+    zero_initialized_reset: PhaseResetPlan,
 }
 
 pub(in crate::parser) type ParserGraphCopy<'a> = (
@@ -323,9 +326,13 @@ impl ParserCompilerGraph {
         )
         .map_err(anyhow::Error::msg)?;
         let bindings = materialized.bindings()?;
+        let zero_initialized_reset = materialized
+            .resource_sized_phase_reset_plan()
+            .map_err(anyhow::Error::msg)?;
         Ok(Self {
             materialized,
             bindings,
+            zero_initialized_reset,
         })
     }
 
@@ -827,6 +834,23 @@ impl ParserCompilerGraph {
         )
     }
 
+    /// Allocation identities of every workspace slot of the parser graph.
+    pub(in crate::parser) fn workspace_allocation_ids(&self) -> std::collections::BTreeSet<u64> {
+        self.materialized.workspace_allocation_ids()
+    }
+
+    /// Clears the graph's zero-initialized resources and returns the bytes
+    /// cleared.
+    pub(in crate::parser) fn record_zero_initialized_reset(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> u64 {
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
+        self.zero_initialized_reset.record(encoder);
+        self.zero_initialized_reset.record_test_poison(encoder);
+        self.zero_initialized_reset.cleared_bytes()
+    }
+
     pub(in crate::parser) fn job_storage_reset_operation(
         &self,
         buffers: &[crate::gpu::buffers::ResettableBuffer],
@@ -948,11 +972,10 @@ pub(super) fn output(
     bytes: u64,
 ) -> Result<ResourceId, String> {
     let resource = storage(graph, name, domain, ResourceClass::Output, bytes)?;
-    // Parser graph arenas are cleared at the reusable-job boundary. Compact
-    // optional families therefore legitimately publish zero rows when their
+    // A compact optional family publishes zero rows when its
     // feature-specific producer is absent from this capacity-specialized
-    // schedule.
-    graph.mark_zero_initialized(resource)?;
+    // schedule; the job reset clears only such outputs.
+    graph.mark_zero_initialized_unless_written(resource)?;
     Ok(resource)
 }
 
@@ -1724,16 +1747,16 @@ fn build_graph(
             bytes,
         )?;
         if retained_hir_output(name) {
-            graph.mark_zero_initialized(resource)?;
+            graph.mark_zero_initialized_unless_written(resource)?;
         }
     }
     // For a one-pair job the totals reduction has zero ping-pong rounds.
     // `pack_totals_status` still reflects both alternatives although its
-    // `read_from_a` uniform selects A. The physical job reset establishes the
-    // unused B side, making the reflected conditional read valid at every
-    // capacity without inventing a reduction dispatch.
+    // `read_from_a` uniform selects A. The job reset establishes the unused
+    // B side when no round writes it, making the reflected conditional read
+    // valid at every capacity without inventing a reduction dispatch.
     for name in ["pack_sc_prefix_b", "pack_emit_prefix_b"] {
-        graph.mark_zero_initialized(
+        graph.mark_zero_initialized_unless_written(
             graph
                 .resource_id(name)
                 .expect("pack totals secondary workspace resource"),
@@ -1941,7 +1964,7 @@ fn build_graph(
             bytes,
         )?;
         if retained_hir_output(name) {
-            graph.mark_zero_initialized(resource)?;
+            graph.mark_zero_initialized_unless_written(resource)?;
         }
     }
     if !capacity.retain_debug_hir_buffers {
@@ -3454,9 +3477,67 @@ fn build_graph(
             destination,
         )?;
     }
+    // These passes store their compact output rows without reading them.
+    // Reflection reports the read-write bindings as reads, which would make
+    // the job reset clear their slots.
+    for (pass, bindings) in COMPACT_OUTPUT_INITIALIZERS {
+        if graph.has_pass(pass) {
+            graph.mark_pass_bindings_initialize(pass, bindings)?;
+        }
+    }
 
     graph.build()
 }
+
+/// Passes whose listed bindings only store the rows of a retained compact
+/// HIR output.
+const COMPACT_OUTPUT_INITIALIZERS: &[(&str, &[&str])] = &[
+    ("hir_canonical_array_element_scatter", &["hir_array_elements"]),
+    ("hir_canonical_call_arg_scatter", &["hir_call_args"]),
+    (
+        "hir_canonical_core",
+        &[
+            "hir_canonical_const_type",
+            "hir_canonical_const_value",
+            "hir_canonical_fn_return_type",
+            "hir_canonical_scope_end",
+            "hir_canonical_type_alias_target",
+            "hir_canonical_type_root_owner",
+        ],
+    ),
+    ("hir_canonical_expr_forest_root_init", &["expr_parent", "expr_root"]),
+    (
+        "hir_context_relations_scatter",
+        &[
+            "hir_canonical_nearest_block",
+            "hir_canonical_nearest_control",
+            "hir_canonical_nearest_fn",
+            "hir_canonical_nearest_loop",
+        ],
+    ),
+    ("hir_canonical_string_scatter", &["hir_strings"]),
+    ("hir_canonical_field_scatter", &["hir_fields"]),
+    (
+        "hir_canonical_generic_param_scatter",
+        &["hir_generic_params", "hir_generic_param_types"],
+    ),
+    (
+        "hir_canonical_match_arm_scatter",
+        &["hir_match_arms", "payload_count", "payload_start"],
+    ),
+    ("hir_canonical_match_payload_scatter", &["hir_match_payloads"]),
+    ("hir_canonical_method_scatter", &["method_cores", "method_signatures"]),
+    ("hir_canonical_param_scatter", &["hir_params"]),
+    ("hir_canonical_path_scatter", &["paths"]),
+    ("hir_canonical_path_segment_scatter", &["path_segments"]),
+    ("hir_canonical_predicate_scatter", &["predicates"]),
+    ("hir_canonical_type_arg_scatter", &["hir_type_args"]),
+    (
+        "hir_canonical_variant_scatter",
+        &["hir_variants", "variant_payload_count", "variant_payload_start"],
+    ),
+    ("hir_canonical_variant_payload_scatter", &["hir_variant_payloads"]),
+];
 
 #[cfg(test)]
 mod tests {

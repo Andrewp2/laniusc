@@ -707,6 +707,10 @@ impl PhaseResetPlan {
         }
     }
 
+    pub(crate) fn cleared_bytes(&self) -> u64 {
+        self.clears.iter().map(|range| range.byte_size as u64).sum()
+    }
+
     /// The imported bytes this plan does not clear, one view per slot.
     #[cfg(test)]
     pub(crate) fn tails(&self) -> &[LaniusBuffer<u8>] {
@@ -761,11 +765,6 @@ impl PhaseResetPlan {
         }
         #[cfg(not(test))]
         let _ = encoder;
-    }
-
-    #[cfg(test)]
-    fn cleared_bytes(&self) -> u64 {
-        self.clears.iter().map(|range| range.byte_size as u64).sum()
     }
 }
 
@@ -1521,6 +1520,24 @@ impl MaterializedCompilerGraph {
     /// only when the resident workspace is first materialized.
     pub(crate) fn record_phase_reset(&self, encoder: &mut wgpu::CommandEncoder) {
         self.workspace.record_phase_reset(encoder);
+    }
+
+    /// The phase reset that clears each zero-initialized resource's own
+    /// bytes at the front of its slot rather than the whole slot.
+    pub(crate) fn resource_sized_phase_reset_plan(&self) -> Result<PhaseResetPlan, String> {
+        self.workspace.phase_reset_plan(|name| {
+            let resource = self.graph.resource_id(name)?;
+            Some(self.graph.resource(resource)?.bytes)
+        })
+    }
+
+    /// Allocation identities of every workspace slot.
+    pub(crate) fn workspace_allocation_ids(&self) -> BTreeSet<u64> {
+        self.workspace
+            .slots
+            .iter()
+            .filter_map(|view| view.allocation_id())
+            .collect()
     }
 
     /// Validates the concrete storage bindings used by one reflected runtime
@@ -3549,6 +3566,7 @@ pub struct CompilerGraphBuilder {
     paged_regions: Vec<PagedPassRegion>,
     paged_resources: Vec<Option<PagedResourceDesc>>,
     zero_initialized_resources: BTreeSet<ResourceId>,
+    zero_initialized_unless_written: BTreeSet<ResourceId>,
 }
 
 impl CompilerGraphBuilder {
@@ -3567,6 +3585,27 @@ impl CompilerGraphBuilder {
             ));
         }
         self.zero_initialized_resources.insert(resource);
+        Ok(())
+    }
+
+    /// Zero-initializes `resource` only when the graph reads it before any
+    /// pass writes it, or never writes it at all: a compact family whose
+    /// producer this schedule omits then still publishes zero rows, while one
+    /// written first costs no clear.
+    pub(crate) fn mark_zero_initialized_unless_written(
+        &mut self,
+        resource: ResourceId,
+    ) -> Result<(), String> {
+        let desc = self.resources.get(resource.index()).ok_or_else(|| {
+            format!("cannot zero-initialize unknown compiler resource {resource:?}")
+        })?;
+        if !matches!(desc.class, ResourceClass::Workspace | ResourceClass::Output) {
+            return Err(format!(
+                "zero-initialized compiler resource {} must be workspace or output, not {:?}",
+                desc.name, desc.class,
+            ));
+        }
+        self.zero_initialized_unless_written.insert(resource);
         Ok(())
     }
 
@@ -3720,6 +3759,10 @@ impl CompilerGraphBuilder {
 
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn has_pass(&self, name: &str) -> bool {
+        self.pass_names.contains(name)
     }
 
     /// The resources declared so far, in declaration order.
@@ -4919,7 +4962,27 @@ impl CompilerGraphBuilder {
         Ok(ids)
     }
 
-    pub fn build(self) -> Result<CompilerGraph, String> {
+    pub fn build(mut self) -> Result<CompilerGraph, String> {
+        for resource in std::mem::take(&mut self.zero_initialized_unless_written) {
+            let first_accesses = self
+                .passes
+                .iter()
+                .map(|pass| {
+                    pass.accesses
+                        .iter()
+                        .filter(|access| access.resource == resource)
+                        .collect::<Vec<_>>()
+                })
+                .find(|accesses| !accesses.is_empty())
+                .unwrap_or_default();
+            let written_first = first_accesses.iter().any(|access| access.mode.writes())
+                && first_accesses.iter().all(|access| {
+                    !access.mode.reads() || access.initializes_before_read
+                });
+            if !written_first {
+                self.zero_initialized_resources.insert(resource);
+            }
+        }
         if let Some((index, kernel)) =
             self.pass_kernels
                 .iter()

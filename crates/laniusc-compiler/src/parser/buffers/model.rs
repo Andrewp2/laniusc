@@ -548,10 +548,10 @@ pub struct ParserBuffers {
         std::sync::OnceLock<crate::parser::compiler_graph::ParserClearOperations>,
     pub(in crate::parser) job_storage_reset:
         Option<crate::gpu::operations::ResetGraphAllocationsOperation>,
-    /// Every allocation `job_storage_reset` covers is zero from its first to
-    /// its last byte: the clear after the last job ran
-    /// (`clear_job_storage_after_job`) and no parser recording followed.
-    pub(in crate::parser) job_storage_zeroed: std::sync::atomic::AtomicBool,
+    /// Indexes into `resettable_buffers` of the allocations outside the
+    /// compiler graph workspace, in `job_storage_reset` order. The graph's
+    /// own slots reset only their zero-initialized resources.
+    pub(in crate::parser) job_storage_reset_buffers: Vec<usize>,
 
     // pair-to-header
     pub params_llp: LaniusBuffer<super::super::passes::llp_pairs::LLPParams>,

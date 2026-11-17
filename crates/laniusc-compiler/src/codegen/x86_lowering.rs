@@ -93,6 +93,7 @@ pub(crate) struct GpuX86LirStage {
     optimize_close: ComputeOperation,
     optimize_element_liveness: ComputeOperation,
     if_convert: ComputeOperation,
+    allocation_prepare: ComputeOperation,
     allocation_words: ComputeOperation,
     stack_scan: GpuResidentExclusiveScan,
     allocation_locations: ComputeOperation,
@@ -267,6 +268,11 @@ impl GpuX86LirStage {
             "codegen/lir/x86/optimize_element_liveness",
         )?;
         let if_convert_pass = load(kernels, "lir.x86.if_convert", "codegen/lir/x86/if_convert")?;
+        let allocation_prepare_pass = load(
+            kernels,
+            "lir.x86.allocation.prepare",
+            "codegen/lir/x86/allocation_prepare",
+        )?;
         let allocation_words_pass = load(
             kernels,
             "lir.x86.allocation.words",
@@ -633,6 +639,15 @@ impl GpuX86LirStage {
             &analysis_params,
             semantic_capacity,
         )?;
+        let allocation_prepare = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "lir.x86.allocation.prepare",
+            &allocation_prepare_pass,
+            &allocation_params,
+            semantic_capacity,
+        )?;
         let allocation_words = ComputeOperation::direct_with_uniform(
             device,
             &context,
@@ -737,6 +752,7 @@ impl GpuX86LirStage {
             optimize_close,
             optimize_element_liveness,
             if_convert,
+            allocation_prepare,
             allocation_words,
             stack_scan,
             allocation_locations,
@@ -839,6 +855,7 @@ impl GpuX86LirStage {
             stamp(timer, encoder, "codegen.x86.optimize.parallel.done");
             self.if_convert.record(encoder)?;
             stamp(timer, encoder, "codegen.x86.if_convert.done");
+            self.allocation_prepare.record(encoder)?;
             self.allocation_words.record(encoder)?;
             self.stack_scan.record(encoder)?;
             self.allocation_locations.record(encoder)?;

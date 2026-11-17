@@ -4833,6 +4833,16 @@ fn lowering_compiler_graph_builder(
     } else {
         None
     };
+    // X86AllocationPrepared in shaders/codegen/lir/x86/allocation_body.slang.
+    let x86_allocation_prepared = if target == LoweringTarget::X86_64 {
+        Some(graph.add_resource(workspace(
+            "lir.x86.allocation_prepared",
+            ResourceDomain::SemanticInstructions,
+            LoweringCapacities::bytes::<[u32; 8]>(capacities.semantic_instructions),
+        ))?)
+    } else {
+        None
+    };
     let x86_stack_prefix_by_position = if target == LoweringTarget::X86_64 {
         Some(graph.add_resource(workspace(
             "lir.x86.stack_prefix_by_position",
@@ -8306,6 +8316,62 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
+            name: "lir.x86.allocation.prepare",
+            phase: target_phase,
+            dispatch_domain: ResourceDomain::SemanticInstructions,
+            accesses: vec![
+                PassAccess::read("opt_ir_total", opt_total),
+                PassAccess::read("opt_ir_core", opt_core),
+                PassAccess::read("opt_ir_operands", opt_operands),
+                PassAccess::read("semantic_schedule_order", schedule_order),
+                PassAccess::read("opt_ir_source_hir", opt_source_hir),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read(
+                    "semantic_lir_aggregate_element_total",
+                    semantic_aggregate_element_total,
+                ),
+                PassAccess::read(
+                    "semantic_lir_aggregate_elements",
+                    semantic_aggregate_elements,
+                ),
+                PassAccess::read("x86_aggregate_facts", x86_aggregate_facts.unwrap()),
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
+                PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
+                PassAccess::read(
+                    "x86_last_use_by_semantic",
+                    x86_last_use_by_semantic.unwrap(),
+                ),
+                PassAccess::read(
+                    "x86_register_analysis_by_function",
+                    x86_register_analysis_by_function.unwrap(),
+                ),
+                PassAccess::read(
+                    "x86_position_by_semantic",
+                    x86_position_by_semantic.unwrap(),
+                ),
+                PassAccess::read("x86_function_start", x86_function_start.unwrap()),
+                PassAccess::read("x86_function_end", x86_function_end.unwrap()),
+                PassAccess::read("semantic_lir_param_total", semantic_param_total),
+                PassAccess::read("semantic_lir_params", semantic_params),
+                PassAccess::read("semantic_lir_local_total", semantic_local_total),
+                PassAccess::read("semantic_lir_locals", semantic_locals),
+                PassAccess::read_write(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
+                ),
+                PassAccess::write(
+                    "x86_stack_words_by_position",
+                    x86_stack_words_by_position.unwrap(),
+                ),
+                PassAccess::write(
+                    "x86_allocation_prepared",
+                    x86_allocation_prepared.expect("x86 allocation prepared resource"),
+                ),
+                PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
             name: "lir.x86.allocation.words",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
@@ -8350,7 +8416,7 @@ fn lowering_compiler_graph_builder(
                     "x86_location_by_semantic",
                     x86_location_by_semantic.unwrap(),
                 ),
-                PassAccess::write(
+                PassAccess::read_write(
                     "x86_stack_words_by_position",
                     x86_stack_words_by_position.unwrap(),
                 ),
@@ -8363,6 +8429,10 @@ fn lowering_compiler_graph_builder(
                     x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
                 ),
                 PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
+                PassAccess::read(
+                    "x86_allocation_prepared",
+                    x86_allocation_prepared.expect("x86 allocation prepared resource"),
+                ),
             ],
         })?;
         let x86_stack_scan = x86_stack_scan_resources.expect("x86 stack scan resources");
@@ -11966,6 +12036,10 @@ mod tests {
                 "codegen/lir/x86/optimize_element_liveness",
             ),
             ("lir.x86.if_convert", "codegen/lir/x86/if_convert"),
+            (
+                "lir.x86.allocation.prepare",
+                "codegen/lir/x86/allocation_prepare",
+            ),
             (
                 "lir.x86.allocation.words",
                 "codegen/lir/x86/allocation_words",
