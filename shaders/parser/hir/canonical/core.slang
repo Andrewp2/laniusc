@@ -548,7 +548,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         ? semantic_id(hir_method_impl_receiver_type_node[raw])
         : INVALID;
     semantic_facts.expr_result_root = dense_id(hir_expr_result_root_node[raw]);
-    semantic_facts.struct_lit_head = semantic_id(hir_struct_lit_head_node[raw]);
+    // The literal head is defined on struct literal rows only.
+    semantic_facts.struct_lit_head = production == PROD_STRUCT_LIT
+        ? semantic_id(hir_struct_lit_head_node[raw])
+        : INVALID;
     semantic_facts.predicate_owner = INVALID;
     semantic_facts.predicate_subject = INVALID;
     semantic_facts.literal_status = expr_form == HIR_EXPR_FLOAT

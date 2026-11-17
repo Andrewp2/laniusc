@@ -1242,25 +1242,15 @@ impl GpuParser {
                     crate::parser::passes::clear_canonical_match_outputs(&mut ctx)?;
                 }
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_match_compact");
-                self.passes
-                    .hir_struct_fields
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_fields");
-                self.passes
-                    .hir_struct_field_links
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
-                self.passes.hir_struct_rank_prefix_local.record_pass(
+                // The links pass also lists the struct fields, so it covers
+                // every block of the tree.
+                self.passes.hir_struct_field_links.record_pass(
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(
                         bufs.tree_n_node_blocks.saturating_mul(256),
                     ),
                 )?;
-                stamp_timer(
-                    timer_ref,
-                    ctx.encoder,
-                    "parser.hir_struct_rank_prefix_local",
-                );
+                stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_links");
                 self.passes
                     .hir_semantic_prefix_blocks
                     .record_struct_rank_scan(
@@ -1313,7 +1303,7 @@ impl GpuParser {
                 );
                 self.passes
                     .hir_struct_field_scatter
-                    .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
+                    .record_pass_indirect(&mut ctx, &bufs.hir_struct_rank_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_struct_field_scatter");
                 crate::parser::passes::record_canonical_fields(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_field_compact");

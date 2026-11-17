@@ -2876,10 +2876,11 @@ fn register_struct_fields(
 
     static_pass(
         graph,
-        &passes.hir_struct_fields,
+        &passes.hir_struct_field_links,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
         &[
+            ("tree_count_status", "partial_parse_status", None),
             (
                 "hir_struct_field_parent_struct",
                 "hir_struct_field_parent_struct",
@@ -2931,14 +2932,6 @@ fn register_struct_fields(
                 Some(AccessMode::Write),
             ),
         ],
-    )?;
-    indirect(graph, "hir_struct_fields", "tree_active_dispatch_args")?;
-    static_pass(
-        graph,
-        &passes.hir_struct_field_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_struct_field_links",
@@ -2950,24 +2943,10 @@ fn register_struct_fields(
             "hir_struct_lit_field_link_a",
             "hir_struct_lit_field_rank_a",
             "hir_struct_lit_field_previous",
-        ],
-    )?;
-    indirect(graph, "hir_struct_field_links", "tree_active_dispatch_args")?;
-    static_pass(
-        graph,
-        &passes.hir_struct_rank_prefix_local,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_struct_rank_prefix_00_local",
-        &[
             "hir_struct_rank_flag",
             "hir_struct_rank_block_sum",
         ],
     )?;
-
     super::block_scan(
         graph,
         passes,
@@ -3082,7 +3061,7 @@ fn register_struct_fields(
     indirect(
         graph,
         "hir_struct_field_scatter",
-        "tree_active_dispatch_args",
+        "hir_struct_rank_dispatch_args",
     )?;
 
     clear(

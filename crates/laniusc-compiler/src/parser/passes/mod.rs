@@ -386,11 +386,8 @@ pub struct ParserPasses {
         hir::context::relations::step_small::HirContextRelationsStepSmallPass,
     pub hir_context_relations_scatter:
         hir::context::relations::scatter::HirContextRelationsScatterPass,
-    pub hir_struct_fields: hir::structs::fields::HirStructFieldsPass,
     pub hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass,
     pub hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass,
-    pub hir_struct_rank_prefix_local:
-        hir::structs::rank::prefix_local::HirStructRankPrefixLocalPass,
     pub hir_struct_rank_compact_scatter:
         hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass,
     pub hir_struct_field_rank_step: hir::structs::field::rank_step::HirStructFieldRankStepPass,
@@ -691,13 +688,10 @@ impl ParserPasses {
                 hir::context::relations::step_small::HirContextRelationsStepSmallPass::new(device)?,
             hir_context_relations_scatter:
                 hir::context::relations::scatter::HirContextRelationsScatterPass::new(device)?,
-            hir_struct_fields: hir::structs::fields::HirStructFieldsPass::new(device)?,
             hir_struct_field_links: hir::structs::field::links::HirStructFieldLinksPass::new(
                 device,
             )?,
             hir_struct_lit_spans: hir::structs::lit_spans::HirStructLitSpansPass::new(device)?,
-            hir_struct_rank_prefix_local:
-                hir::structs::rank::prefix_local::HirStructRankPrefixLocalPass::new(device)?,
             hir_struct_rank_compact_scatter:
                 hir::structs::rank::compact_scatter::HirStructRankCompactScatterPass::new(device)?,
             hir_struct_field_rank_step:
