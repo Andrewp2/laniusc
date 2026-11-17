@@ -265,13 +265,11 @@ void publish_owner(uint call, uint callee)
     }
 }
 
-// Infer from bound `predicate` of the call's callee; true when the call's
-// context changed.
-bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spare)
+// Infer from bound `predicate` of the call's callee, whose subject slot
+// `operand` binds; true when the call's context changed.
+bool infer_from_bound(uint call, uint callee, uint predicate, uint2 operand, inout CtSpare spare)
 {
     uint base = predicate * BOUND_ROW_WORDS;
-    uint2 operand;
-    if (!slot_binding(callee, bound_predicate_rows[base + 4u], operand)) return false;
     uint arguments = bound_predicate_rows[base + 8u];
     SourceSlots slots;
     BoundRoots roots;
@@ -422,22 +420,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     // A callee without a collected bound infers nothing (bound_tables.slang).
     if (!bound_owner_may_have_predicates(owner)) return;
+    // Steps below `types` look for an unbound slot. Each later step takes the
+    // next bound and its subject's binding, read after the earlier bounds
+    // published: one site reads every binding.
     bool open = false;
-    for (uint slot = 0u; slot < types; slot++)
-    {
-        uint2 operand;
-        if (!slot_binding(callee, slot, operand)) open = true;
-    }
-    if (!open) return;
     CtSpare spare = ct_spare_none();
     bool changed = false;
     uint after = INVALID;
-    for (uint step = 0u; step < PREDICATE_LIMIT; step++)
+    for (uint step = 0u; step < types + PREDICATE_LIMIT; step++)
     {
-        uint predicate = next_predicate(owner, after);
-        if (predicate == INVALID) break;
-        after = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 3u];
-        if (infer_from_bound(call, callee, predicate, spare)) changed = true;
+        uint slot = step;
+        uint predicate = INVALID;
+        if (step >= types)
+        {
+            if (!open) return;
+            predicate = next_predicate(owner, after);
+            if (predicate == INVALID) break;
+            after = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 3u];
+            slot = bound_predicate_rows[predicate * BOUND_ROW_WORDS + 4u];
+        }
+        uint2 operand;
+        bool bound = slot_binding(callee, slot, operand);
+        if (step < types) open = open || !bound;
+        else if (bound && infer_from_bound(call, callee, predicate, operand, spare)) changed = true;
     }
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); inference_note_item_change(); }
 }

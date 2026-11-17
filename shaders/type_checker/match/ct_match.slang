@@ -109,12 +109,65 @@ struct SlotClaims
     uint fit_scalar;
 }
 
+// The type slots the shape pass binds: up to TYPE_TABLE_SIZE slots in
+// registers (`slots` 0xffffffff where unused). The shape pass checks every
+// occurrence of a slot in the table, so the slot passes skip that slot. A
+// slot that does not fit sets `count` to TYPE_TABLE_FULL and is bound by its
+// slot pass, as before.
+struct TypeTable
+{
+    uint4 slots;
+    uint4 ids;
+    uint count;
+}
+
+static const uint TYPE_TABLE_SIZE = 4u;
+static const uint TYPE_TABLE_FULL = TYPE_TABLE_SIZE + 1u;
+
+TypeTable type_table_empty()
+{
+    TypeTable table;
+    table.slots = uint4(0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu);
+    table.ids = uint4(CT_NONE, CT_NONE, CT_NONE, CT_NONE);
+    table.count = 0u;
+    return table;
+}
+
+// The table's binding of type slot `slot`, or CT_NONE.
+uint type_table_get(TypeTable table, uint slot)
+{
+    return table.slots.x == slot ? table.ids.x : table.slots.y == slot ? table.ids.y
+        : table.slots.z == slot ? table.ids.z : table.slots.w == slot ? table.ids.w : CT_NONE;
+}
+
+// The shape pass's fold of a type occurrence of `slot` against `actual`:
+// the checks of its slot pass, except the prior binding's, which the slot
+// loop makes.
+bool type_table_fold(inout TypeTable table, uint slot, uint actual)
+{
+    uint kind = ct_kind(actual);
+    // ct_is_constant, with the kind read once.
+    bool constant = ct_is_param(actual) ? ct_is_const_param(actual)
+        : kind - CC_KIND_VALUE < CT_KIND_ENV - CC_KIND_VALUE;
+    if (!ct_is_resolved(actual) || kind == CT_KIND_ENV || constant) return false;
+    uint bound = type_table_get(table, slot);
+    if (bound != CT_NONE) return bound == actual;
+    if (table.count >= TYPE_TABLE_SIZE) { table.count = TYPE_TABLE_FULL; return true; }
+    uint n = table.count;
+    table.slots = uint4(n == 0u ? slot : table.slots.x, n == 1u ? slot : table.slots.y,
+        n == 2u ? slot : table.slots.z, n == 3u ? slot : table.slots.w);
+    table.ids = uint4(n == 0u ? actual : table.ids.x, n == 1u ? actual : table.ids.y,
+        n == 2u ? actual : table.ids.z, n == 3u ? actual : table.ids.w);
+    table.count = n + 1u;
+    return true;
+}
+
 // Occurrence of pattern parameter `leaf` at `position` against `actual`.
 // The shape pass (item 0) validates the parameter and collects its slot;
 // slot pass `item` (1 + type slot, or 33 + constant slot) folds its own
 // slot's claim.
 bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actual, uint item,
-    inout uint type_mask, inout uint const_mask, inout SlotClaims claims)
+    inout uint type_mask, inout uint const_mask, inout SlotClaims claims, inout TypeTable table)
 {
     bool constant = ct_is_const_param(leaf);
     uint slot = ct_param_slot<S>(slots, leaf);
@@ -129,7 +182,7 @@ bool fold_occurrence<S : ICtSlots>(S slots, uint leaf, uint position, uint actua
         // Type and constant parameters have slots of their own.
         if (constant) const_mask |= 1u << slot;
         else type_mask |= 1u << slot;
-        return true;
+        return constant || type_table_fold(table, slot, actual);
     }
     if (item != (constant ? SLOTS + 1u : 1u) + slot) return true;
     if (!ct_is_resolved(actual) || ct_kind(actual) == CT_KIND_ENV) return false;
@@ -193,7 +246,7 @@ uint next_open_child(uint node, uint other, bool top, uint pattern, uint actual,
 
 // One pass over the root pair (pattern, actual).
 bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, uint item,
-    inout uint type_mask, inout uint const_mask, inout SlotClaims claims)
+    inout uint type_mask, inout uint const_mask, inout SlotClaims claims, inout TypeTable table)
 {
     uint depth = 0u;
     MatchPath path = { uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u), uint4(0u, 0u, 0u, 0u) };
@@ -235,7 +288,7 @@ bool match_pass<S : ICtSlots>(S slots, uint pattern, uint actual, bool slice, ui
                 uint position = top ? (ct_is_const_param(child) ? POSITION_EXACT : POSITION_TYPE)
                     : kind == CT_KIND_ARRAY && index == 1u ? POSITION_COUNT
                     : ((operands >> index) & 1u) != 0u ? POSITION_EXACT : POSITION_TYPE;
-                if (!fold_occurrence<S>(slots, child, position, value, item, type_mask, const_mask, claims))
+                if (!fold_occurrence<S>(slots, child, position, value, item, type_mask, const_mask, claims, table))
                     return false;
             }
             else if (item == 0u && (child != value || !ct_is_resolved(child))) return false;
@@ -326,8 +379,9 @@ public bool ct_pattern_masks<S : ICtSlots>(S slots, uint pattern, out uint type_
     claims.scalar = 0u;
     claims.exact = false;
     claims.fit_scalar = 0u;
+    TypeTable table = type_table_empty();
     return ct_is_resolved(pattern) &&
-        match_pass<S>(slots, pattern, pattern, false, 0u, type_mask, const_mask, claims);
+        match_pass<S>(slots, pattern, pattern, false, 0u, type_mask, const_mask, claims, table);
 }
 
 // ct_match over the roots of `roots`.
@@ -350,6 +404,7 @@ public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R root
     uint pending_constants = 0u;
     CtKey key = ct_key_begin(0u, 0u, 0u, uint3(0u, 0u, 0u));
     uint index = 0u;
+    TypeTable table = type_table_empty();
     // Item 0 is the shape pass. Then visit only its populated slots, types
     // before constants and each in ascending order, at one pass/fold site.
     for (uint step = 0u; step <= 2u * SLOTS; step++)
@@ -368,17 +423,22 @@ public uint ct_match_roots_fit<S : ICtSlots, R : ICtRoots>(S slots, inout R root
         SlotClaims claims;
         claims.binding = item == 0u ? CT_UNKNOWN : ct_env_binding(prior, slot, constant);
         if (!ct_is_resolved(claims.binding)) claims.binding = CT_NONE;
+        // A type slot in the table needs no pass of its own: its binding must
+        // agree with the prior one, as its pass would check.
+        uint known = shape || constant ? CT_NONE : type_table_get(table, slot);
+        if (known != CT_NONE && claims.binding != CT_NONE && claims.binding != known) return CT_MATCH_FAILED;
+        if (known != CT_NONE) claims.binding = known;
         claims.exact = claims.binding != CT_NONE;
         claims.klass = claims.exact && constant ? cc_count_class(claims.binding) : NO_CLASS;
         claims.scalar = 0u;
         claims.fit_scalar = 0u;
-        uint roots_count = roots.count();
+        uint roots_count = known != CT_NONE ? 0u : roots.count();
         for (uint root = 0u; root < roots_count; root++)
         {
             uint pattern; uint actual; bool slice;
             if (!roots.root(root, pattern, actual, slice)) return CT_MATCH_FAILED;
             if (pattern == CT_NONE && actual == CT_NONE) continue;
-            if (!match_pass<S>(slots, pattern, actual, slice, item, type_mask, const_mask, claims))
+            if (!match_pass<S>(slots, pattern, actual, slice, item, type_mask, const_mask, claims, table))
             {
                 fit_scalar = claims.fit_scalar;
                 return CT_MATCH_FAILED;
