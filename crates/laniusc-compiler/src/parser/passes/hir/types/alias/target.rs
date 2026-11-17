@@ -5,7 +5,8 @@ use crate::{
     parser::buffers::ParserBuffers,
 };
 
-/// Pass that records the target type node for each type alias item.
+/// Pass that records the target type node for each type alias item and the
+/// return type node for each function item.
 pub struct HirTypeAliasTargetPass {
     data: PassData,
 }
@@ -68,6 +69,11 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirTypeAliasTarg
             (
                 "hir_type_alias_target_node".into(),
                 b.hir_type_alias_target_node.as_entire_binding(),
+            ),
+            ("node_kind".into(), b.node_kind.as_entire_binding()),
+            (
+                "hir_fn_return_type_node".into(),
+                b.hir_fn_return_type_node.as_entire_binding(),
             ),
         ])
     }

@@ -353,12 +353,9 @@ struct ScheduleGraphResources {
     keys: ResourceId,
     order: ResourceId,
     order_tmp: ResourceId,
-    slot_count: ResourceId,
     histogram: ResourceId,
     global_prefix: ResourceId,
-    scan_local: ResourceId,
-    scan_block_sum: ResourceId,
-    scan_total: ResourceId,
+    bucket_total: ResourceId,
 }
 
 fn add_schedule_graph_passes(
@@ -370,16 +367,14 @@ fn add_schedule_graph_passes(
 ) -> Result<(), String> {
     let names = [
         "lir.semantic.schedule.histogram.even",
-        "lir.semantic.schedule.scan.local.even",
-        "lir.semantic.schedule.scan.apply.even",
+        "lir.semantic.schedule.scan.buckets.even",
         "lir.semantic.schedule.scatter.even",
         "lir.semantic.schedule.histogram.odd",
-        "lir.semantic.schedule.scan.local.odd",
-        "lir.semantic.schedule.scan.apply.odd",
+        "lir.semantic.schedule.scan.buckets.odd",
         "lir.semantic.schedule.scatter.odd",
     ];
     let mut directions = Vec::with_capacity(2);
-    for base in [0usize, 4usize] {
+    for base in [0usize, 3usize] {
         let (order_in, order_out) = if base == 0 {
             (resources.order, resources.order_tmp)
         } else {
@@ -394,7 +389,6 @@ fn add_schedule_graph_passes(
                     PassAccess::read("target_lir_total", resources.total),
                     PassAccess::read("target_schedule_key", resources.keys),
                     PassAccess::initialize_read_write("target_schedule_order_in", order_in),
-                    PassAccess::write("target_schedule_slot_count", resources.slot_count),
                     PassAccess::write("target_schedule_histogram", resources.histogram),
                 ],
             },
@@ -403,10 +397,10 @@ fn add_schedule_graph_passes(
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_input", resources.histogram),
-                    PassAccess::write("scan_local_prefix", resources.scan_local),
-                    PassAccess::write("scan_block_sum", resources.scan_block_sum),
+                    PassAccess::read("target_lir_total", resources.total),
+                    PassAccess::read("target_schedule_histogram", resources.histogram),
+                    PassAccess::write("target_schedule_global_prefix", resources.global_prefix),
+                    PassAccess::write("target_schedule_bucket_total", resources.bucket_total),
                 ],
             },
             PassDesc {
@@ -414,28 +408,17 @@ fn add_schedule_graph_passes(
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_local_prefix", resources.scan_local),
-                    PassAccess::read("scan_block_sum", resources.scan_block_sum),
-                    PassAccess::write("scan_output_prefix", resources.global_prefix),
-                    PassAccess::write("scan_total", resources.scan_total),
-                ],
-            },
-            PassDesc {
-                name: names[base + 3],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
                     PassAccess::read("target_lir_total", resources.total),
                     PassAccess::read("target_schedule_key", resources.keys),
                     PassAccess::read("target_schedule_order_in", order_in),
                     PassAccess::read("target_schedule_global_prefix", resources.global_prefix),
+                    PassAccess::read("target_schedule_bucket_total", resources.bucket_total),
                     PassAccess::write("target_schedule_order_out", order_out),
                 ],
             },
         ]);
     }
-    let mut body = Vec::with_capacity(8);
+    let mut body = Vec::with_capacity(6);
     let starts_in_temporary = radix_steps % 2 != 0;
     if starts_in_temporary {
         body.extend(directions[1].clone());
@@ -879,12 +862,12 @@ pub(crate) fn pointer_jump_pairs(rows: u32) -> u32 {
 /// structure_dominator_tour_step.slang, structure_dominator_depth_step.slang
 /// and ssa_value_resolve_step.slang). A round multiplies the covered distance
 /// by at least this factor.
-pub(crate) const POINTER_JUMP_HOPS: u32 = 16;
+pub(crate) const POINTER_JUMP_HOPS: u32 = 64;
 
 /// Pairs of multi-hop pointer-jump rounds that reach the root of every chain
-/// in a relation of `rows` rows: a pair covers `POINTER_JUMP_HOPS^2 = 2^8`
-/// times the distance, so `ceil(bits(rows) / 8)` pairs cover
-/// `256^pairs > rows` links.
+/// in a relation of `rows` rows: a pair covers `POINTER_JUMP_HOPS^2 = 2^12`
+/// times the distance, so `ceil(bits(rows) / 12)` pairs cover
+/// `4096^pairs > rows` links.
 pub(crate) fn pointer_jump_hop_pairs(rows: u32) -> u32 {
     const BITS_PER_PAIR: u32 = 2 * POINTER_JUMP_HOPS.trailing_zeros();
     (u32::BITS - rows.max(1).leading_zeros()).div_ceil(BITS_PER_PAIR)
@@ -3111,15 +3094,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read_write("semantic_place_function_flags", semantic_place_function_flags),
             PassAccess::read_write("semantic_receiver_call_by_hir", semantic_receiver_call_by_hir),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.execution_rank.init",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("compact_hir_count", hir_count),
-            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_expr_parent", hir_expr_parent),
             PassAccess::write("execution_rank_link", execution_rank_link_a),
             PassAccess::write("execution_rank", execution_rank_a),
@@ -5109,11 +5083,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let schedule_blocks = schedule_capacity.max(1).div_ceil(256);
     let schedule_slots = schedule_blocks.saturating_mul(256);
-    let schedule_slot_count = graph.add_resource(workspace(
-        "lir.semantic.schedule_slot_count",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(1),
-    ))?;
     let schedule_histogram = graph.add_resource(workspace(
         "lir.semantic.schedule_histogram",
         ResourceDomain::SemanticInstructions,
@@ -5124,20 +5093,10 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(schedule_slots),
     ))?;
-    let schedule_scan_local = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_local",
+    let schedule_bucket_total = graph.add_resource(workspace(
+        "lir.semantic.schedule_bucket_total",
         ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots),
-    ))?;
-    let schedule_scan_block_sum = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_block_sum",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
-    ))?;
-    let schedule_scan_total = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_total",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(1),
+        LoweringCapacities::bytes::<u32>(256),
     ))?;
     let byte_lengths = graph.add_resource(workspace(
         match target {
@@ -5724,12 +5683,9 @@ fn lowering_compiler_graph_builder(
         keys: semantic_schedule,
         order: schedule_order,
         order_tmp: schedule_order_tmp,
-        slot_count: schedule_slot_count,
         histogram: schedule_histogram,
         global_prefix: schedule_global_prefix,
-        scan_local: schedule_scan_local,
-        scan_block_sum: schedule_scan_block_sum,
-        scan_total: schedule_scan_total,
+        bucket_total: schedule_bucket_total,
     };
     add_schedule_graph_passes(
         &mut graph,
@@ -6041,14 +5997,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_reachable", opt_reachable),
             PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_dominator_child_count_by_block",
                 opt_edge_count_by_block,
@@ -6104,14 +6052,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
             PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.tour.child_rows.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_dominator_child_row_by_block",
                 opt_dominator_child_row_by_block,
@@ -6196,14 +6136,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::write("opt_ir_dominator_preorder", opt_dominator_preorder),
             PassAccess::write("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.preorder.inverse_clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_block_by_dominator_preorder",
                 opt_block_by_dominator_preorder,
@@ -6241,15 +6173,6 @@ fn lowering_compiler_graph_builder(
                 opt_block_by_dominator_preorder,
             ),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.depth.init",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::write(
                 "opt_ir_dominator_depth_link_out",
                 opt_dominator_depth_link_a,
@@ -10629,8 +10552,8 @@ mod tests {
             );
             assert!(4u64.pow(pointer_jump_pairs(rows)) > u64::from(rows), "{rows}");
             let hop_pairs = pointer_jump_hop_pairs(rows);
-            assert!(256u128.pow(hop_pairs) > u128::from(rows), "{rows}");
-            assert!(hop_pairs == 1 || 256u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
+            assert!(4096u128.pow(hop_pairs) > u128::from(rows), "{rows}");
+            assert!(hop_pairs == 1 || 4096u128.pow(hop_pairs - 1) <= u128::from(rows), "{rows}");
         }
         for target in [LoweringTarget::X86_64, LoweringTarget::Wasm] {
             let fresh = |hir: u32| {
@@ -10650,18 +10573,21 @@ mod tests {
             }
             let small = retained.job_jump_pairs(5_000, target);
             let job = fresh(5_000);
-            assert!(256u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
-            assert!(256u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
+            assert!(4096u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
+            assert!(4096u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
             assert!(
-                256u64.pow(small.dominator_tour)
+                4096u64.pow(small.dominator_tour)
                     > 2 * u64::from(job.optimization_block_capacity())
             );
             assert!(
-                256u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
+                4096u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
             );
             assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
             assert!(small.region_parent < built.region_parent);
-            assert!(small.ssa_value_link < built.ssa_value_link);
+            // Instruction capacity is at least 4096 rows, which already needs
+            // two 4096-link pairs, and two pairs reach 16M rows, so job sizing
+            // never lowers this count below the built one.
+            assert!(small.ssa_value_link <= built.ssa_value_link);
         }
     }
 
@@ -11495,10 +11421,6 @@ mod tests {
             ("lir.status.clear", "codegen/lir/status_clear"),
             ("lir.semantic.project", "codegen/lir/semantic/project"),
             (
-                "lir.semantic.execution_rank.init",
-                "codegen/lir/semantic/execution_rank_init",
-            ),
-            (
                 "lir.semantic.execution_rank.step_a_to_b",
                 "codegen/lir/semantic/execution_rank_step",
             ),
@@ -11562,10 +11484,6 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             (
-                "lir.opt.dominators.tour.child_rows.clear",
-                "codegen/lir/optimization/structure_dominator_tour_child_rows_clear",
-            ),
-            (
                 "lir.opt.dominators.tour.child_rows",
                 "codegen/lir/optimization/structure_dominator_tour_child_rows",
             ),
@@ -11586,20 +11504,12 @@ mod tests {
                 "codegen/lir/optimization/structure_dominator_tour_finalize",
             ),
             (
-                "lir.opt.dominators.preorder.inverse_clear",
-                "codegen/lir/optimization/structure_dominator_preorder_inverse_clear",
-            ),
-            (
                 "lir.opt.dominators.preorder.inverse_scatter",
                 "codegen/lir/optimization/structure_dominator_preorder_inverse_scatter",
             ),
             (
                 "lir.opt.dominators.preorder.validate",
                 "codegen/lir/optimization/structure_dominator_preorder_validate",
-            ),
-            (
-                "lir.opt.dominators.depth.init",
-                "codegen/lir/optimization/structure_dominator_depth_init",
             ),
             (
                 "lir.opt.dominators.depth.step_a_to_b",

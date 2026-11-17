@@ -1,9 +1,9 @@
-// Retained trait catalog producer (producer.slang): the next frontier wave and its indirect dispatch.
+// Retained trait catalog producer (producer.slang): every closure wave in one workgroup.
 import type_checker.trait_solver.retained.producer;
 
 [shader("compute")]
-[numthreads(1, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+[numthreads(256, 1, 1)]
+void main(uint3 local: SV_GroupThreadID)
 {
-    closure_wave();
+    closure_waves(local.x);
 }

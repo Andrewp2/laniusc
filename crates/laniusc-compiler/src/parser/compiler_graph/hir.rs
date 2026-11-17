@@ -1612,17 +1612,6 @@ fn register_function_signatures(
     capacity: ParserGraphCapacity,
     passes: &ParserPasses,
 ) -> Result<(), String> {
-    static_pass(
-        graph,
-        &passes.hir_fn_return_type,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
-            ("raw_to_hir", "hir_canonical_raw_to_dense", None),
-        ],
-    )?;
-    indirect(graph, "hir_fn_return_type", "hir_semantic_dispatch_args")?;
     if capacity.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES != 0 {
         static_pass(
             graph,

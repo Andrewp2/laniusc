@@ -336,11 +336,11 @@ mod tests {
     #[test]
     fn canonical_relation_rounds_cover_the_raw_tree_capacity() {
         assert_eq!(bounded_walk_steps_after_local_span(1, 1), 0);
-        assert_eq!(bounded_walk_steps_after_local_span(16, 1), 1);
-        assert_eq!(bounded_walk_steps_after_local_span(17, 1), 2);
-        assert_eq!(bounded_walk_steps_after_local_span(256, 1), 2);
-        assert_eq!(bounded_walk_steps_after_local_span(257, 1), 3);
-        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 6);
+        assert_eq!(bounded_walk_steps_after_local_span(64, 1), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(65, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(4_096, 1), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(4_097, 1), 3);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 4);
     }
 
     #[test]
@@ -368,10 +368,12 @@ mod tests {
             assert!(scheduled <= capacity);
             assert_eq!(scheduled % 2, capacity % 2);
         }
-        assert_eq!(scheduled_steps(items, 0, span), 0);
-        assert_eq!(scheduled_steps(items, 31, span), 0);
-        assert_eq!(scheduled_steps(items, 32, span), 2);
-        assert_eq!(scheduled_steps(items, 511, span), 2);
+        // 1_687_524 rows over 32-row spans need three 64-link steps, so
+        // every schedule keeps that odd parity.
+        assert_eq!(scheduled_steps(items, 0, span), 1);
+        assert_eq!(scheduled_steps(items, 31, span), 1);
+        assert_eq!(scheduled_steps(items, 2_047, span), 1);
+        assert_eq!(scheduled_steps(items, 2_048, span), 3);
     }
 
     #[test]
@@ -379,10 +381,10 @@ mod tests {
         let span = SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN;
         assert_eq!(bounded_walk_steps_after_local_span(32, span), 0);
         assert_eq!(bounded_walk_steps_after_local_span(33, span), 1);
-        assert_eq!(bounded_walk_steps_after_local_span(512, span), 1);
-        assert_eq!(bounded_walk_steps_after_local_span(513, span), 2);
-        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, span), 4);
-        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 6);
-        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 2), 5);
+        assert_eq!(bounded_walk_steps_after_local_span(2_048, span), 1);
+        assert_eq!(bounded_walk_steps_after_local_span(2_049, span), 2);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, span), 3);
+        assert_eq!(bounded_walk_steps_after_local_span(1_687_524, 1), 4);
+        assert_eq!(bounded_walk_steps_after_local_span(16_777_217, 1), 5);
     }
 }

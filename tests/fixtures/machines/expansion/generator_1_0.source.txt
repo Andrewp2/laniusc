@@ -1,0 +1,25 @@
+import core::option;
+
+fn before() -> i32 { return 1; }
+
+pub gen fn grid_cells(rows: i32, cols: i32) -> i32 {
+    let r: i32 = 0;
+    while (r < rows) {
+        let c: i32 = 0;
+        if (r == 3) { return; } else { yield 0 - 1; }
+        while (c < cols) {
+            yield r * 10 + c;
+            c += 1;
+        }
+        r += 1;
+    }
+    yield 999;
+}
+
+fn between() -> i32 { return 2; }
+
+gen fn once() -> bool {
+    yield true;
+}
+
+fn after() -> i32 { return 3; }

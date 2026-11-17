@@ -235,8 +235,6 @@ pub struct ParserPasses {
         hir::semantic::parent::traverse::HirSemanticParentTraversePass,
     pub hir_tree_relations: hir::semantic::parent::step::TreeRelationOperation,
     pub hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass,
-    pub hir_semantic_child_index_rows:
-        hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass,
     pub hir_semantic_child_index_blocks:
         hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass,
     pub hir_semantic_child_index_top:
@@ -263,7 +261,6 @@ pub struct ParserPasses {
     pub hir_type_alias_owner_init: hir::types::alias::owner::init::HirTypeAliasOwnerInitPass,
     pub hir_type_alias_owner_step: hir::types::alias::owner::step::HirTypeAliasOwnerStepPass,
     pub hir_type_alias_target: hir::types::alias::target::HirTypeAliasTargetPass,
-    pub hir_fn_return_type: hir::functions::return_type::HirFnReturnTypePass,
     pub hir_method_signature_status: hir::method::signature_status::HirMethodSignatureStatusPass,
     pub hir_item_fields: hir::item::fields::HirItemFieldsPass,
     pub hir_canonical_mark: hir::canonical::mark::HirCanonicalMarkPass,
@@ -471,10 +468,6 @@ impl ParserPasses {
                 device,
             )?,
             hir_semantic_nav: hir::semantic::nav::HirSemanticNavPass::new(device)?,
-            hir_semantic_child_index_rows:
-                hir::semantic::child::index::index_tree::HirSemanticChildIndexRowsPass::new(
-                    device,
-                )?,
             hir_semantic_child_index_blocks:
                 hir::semantic::child::index::index_tree::HirSemanticChildIndexBlocksPass::new(
                     device,
@@ -523,7 +516,6 @@ impl ParserPasses {
             hir_type_alias_owner_step:
                 hir::types::alias::owner::step::HirTypeAliasOwnerStepPass::new(device)?,
             hir_type_alias_target: hir::types::alias::target::HirTypeAliasTargetPass::new(device)?,
-            hir_fn_return_type: hir::functions::return_type::HirFnReturnTypePass::new(device)?,
             hir_method_signature_status:
                 hir::method::signature_status::HirMethodSignatureStatusPass::new(device)?,
             hir_item_fields: hir::item::fields::HirItemFieldsPass::new(device)?,

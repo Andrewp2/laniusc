@@ -245,13 +245,21 @@ impl ProgramRetention {
             "program_retention.native_calls",
             &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
         );
-        self.queue.submit(Some(encoder.finish()));
         // Work recorded before the export's counters existed runs behind
-        // the rewrite and is read with it.
-        let follower = export.is_some().then(|| self.take_follower(&store)).flatten().map(|follower| {
-            self.queue.submit(Some(follower.commands));
-            follower.reads
-        });
+        // the rewrite, in the same submit, and is read with it.
+        let follower = export.is_some().then(|| self.take_follower(&store)).flatten();
+        let mut follower_state = None;
+        let follower = match follower {
+            Some(follower) => {
+                self.queue.submit([encoder.finish(), follower.commands]);
+                follower_state = Some(follower.state);
+                Some(follower.reads)
+            }
+            None => {
+                self.queue.submit(Some(encoder.finish()));
+                None
+            }
+        };
         // The status and the rewritten prefix of both symbol columns in one
         // readback, with the export's counters while it is pending; the
         // columns are used only when the status is clean. Only the first
@@ -287,11 +295,12 @@ impl ProgramRetention {
                 Some(report) => {
                     store.reports.push(report);
                     *export = None;
-                    if follower.is_some() {
+                    if let Some(state) = follower_state {
                         *self.followed.lock().unwrap() = Some(FollowedWords {
                             generation: store.generation,
                             jobs: store.reports.len(),
                             words: followed,
+                            state,
                         });
                     }
                 }

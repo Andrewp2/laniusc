@@ -13,7 +13,6 @@ pub mod enums;
 /// Expression form and result-root passes.
 pub mod expr;
 /// Function signature and return-type passes.
-pub mod functions;
 /// Item kind, declaration-token, namespace, visibility, and import passes.
 pub mod item;
 /// Generic list ranking helpers shared by HIR record families.
@@ -58,7 +57,12 @@ pub mod types;
 pub mod walk_state;
 
 /// Number of input links followed by one bounded relation-walk dispatch.
-pub(crate) const BOUNDED_WALK_LINKS_PER_STEP: u32 = 16;
+// The walk kernels (`LINKS_PER_STEP` in shaders/parser/hir) and the
+// GPU-side round schedules (tree/depth/schedule.slang,
+// hir/semantic/dispatch_args.slang) use the same count. At 64 the settings
+// tree (2.9 M nodes) needs 4 rounds instead of 6; a walk that converges in
+// fewer links stops early within the round.
+pub(crate) const BOUNDED_WALK_LINKS_PER_STEP: u32 = 64;
 
 /// Capacity-stable rounds needed when each dispatch follows up to 16 links.
 pub(crate) fn bounded_walk_step_capacity(items: u32) -> u32 {
@@ -90,8 +94,8 @@ mod tests {
     #[test]
     fn bounded_walk_rounds_cover_the_full_tree_capacity() {
         assert_eq!(bounded_walk_step_capacity(1), 0);
-        assert_eq!(bounded_walk_step_capacity(16), 1);
-        assert_eq!(bounded_walk_step_capacity(17), 2);
-        assert_eq!(bounded_walk_step_capacity(16_777_216), 6);
+        assert_eq!(bounded_walk_step_capacity(64), 1);
+        assert_eq!(bounded_walk_step_capacity(65), 2);
+        assert_eq!(bounded_walk_step_capacity(16_777_216), 4);
     }
 }

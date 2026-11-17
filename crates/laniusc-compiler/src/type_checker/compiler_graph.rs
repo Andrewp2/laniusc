@@ -5388,7 +5388,6 @@ fn build_graph(
     METHODS_VALIDATE_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_DIRECT.register_kernel(&mut graph, kernels)?;
-    METHODS_RESET_CANDIDATES_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_DIRECT.register_kernel(&mut graph, kernels)?;
     METHODS_OFFER_BOUND_MEMBERS_DIRECT.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
@@ -5447,7 +5446,6 @@ fn build_graph(
     METHODS_ARM_LOOKUP_SWEEPS.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_KEYS_LOOKUP.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS.register_kernel(&mut graph, kernels)?;
-    METHODS_RESET_CANDIDATES.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE.register_kernel(&mut graph, kernels)?;
     METHODS_OFFER_BOUND_MEMBERS.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
@@ -5569,7 +5567,6 @@ fn build_graph(
     )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
-    METHODS_RESET_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_OFFER_BOUND_MEMBERS_INFERENCE.register_kernel(&mut graph, kernels)?;
     add_dependency_type_index_passes(
@@ -5651,12 +5648,6 @@ fn build_graph(
         ],
     )?;
     CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
-    REQUIRED_GENERIC_SCAN.register_with_total_dispatch(
-        &mut graph,
-        prefix_scan_hierarchy_levels(hir_blocks),
-        "call_required_generic_dispatch_args",
-    )?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
     // Recorded before each 03a4b invocation and before the final validation
@@ -5955,6 +5946,14 @@ fn build_graph(
     )?;
     VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
+    // Marked once from the closed inference facts at the start of
+    // `record_required`; only the required-binding validation reads the marks.
+    CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
+    REQUIRED_GENERIC_SCAN.register_with_total_dispatch(
+        &mut graph,
+        prefix_scan_hierarchy_levels(hir_blocks),
+        "call_required_generic_dispatch_args",
+    )?;
     CALLS_GENERIC_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_VALIDATE.register_kernel(&mut graph, kernels)?;
@@ -7277,17 +7276,6 @@ mod tests {
             3,
             "scan input, local prefix, and block sums are bound together",
         );
-        let hierarchy_bindings = [
-            resource("module_record_scan_block_sum"),
-        ]
-        .map(storage_identity)
-        .into_iter()
-        .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            hierarchy_bindings.len(),
-            2,
-            "scan block sums and block prefixes are bound together",
-        );
         let module_radix_resources = [
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
@@ -8007,17 +7995,17 @@ mod tests {
         assert!(mark_call_return_keys.index() < resolve_table.index());
         assert!(resolve_table.index() < resolve.index());
         for ordered in [
-            [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name, METHODS_RESET_CANDIDATES_DIRECT.name,
+            [METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name,
              METHODS_RESOLVE_TABLE_DIRECT.name, METHODS_OFFER_BOUND_MEMBERS_DIRECT.name,
              DEPENDENCY_METHODS_COLLECT.name, DEPENDENCY_BOUND_MEMBERS_OFFER.name,
              METHODS_FINALIZE_CANDIDATES_DIRECT.name, DEPENDENCY_METHODS_PROJECT.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER.name],
-            [METHODS_MARK_CALL_RETURN_KEYS.name, METHODS_RESET_CANDIDATES.name,
+            [METHODS_MARK_CALL_RETURN_KEYS.name,
              METHODS_RESOLVE_TABLE.name, METHODS_OFFER_BOUND_MEMBERS.name,
              DEPENDENCY_METHODS_COLLECT_LOOKUP.name, DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP.name,
              METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
              DEPENDENCY_METHOD_PARAMS_SCATTER_LOOKUP.name],
-            [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name, METHODS_RESET_CANDIDATES_INFERENCE.name,
+            [METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.name,
              METHODS_RESOLVE_TABLE_INFERENCE.name, METHODS_OFFER_BOUND_MEMBERS_INFERENCE.name,
              DEPENDENCY_METHODS_COLLECT_INFERENCE.name, DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE.name,
              METHODS_FINALIZE_CANDIDATES_INFERENCE.name, DEPENDENCY_METHODS_PROJECT_INFERENCE.name,
@@ -8041,7 +8029,7 @@ mod tests {
         };
         let lookup_sweep = [
             METHODS_MARK_CALL_KEYS_LOOKUP.name, METHODS_MARK_CALL_RETURN_KEYS.name,
-            METHODS_RESET_CANDIDATES.name, METHODS_RESOLVE_TABLE.name,
+            METHODS_RESOLVE_TABLE.name,
             METHODS_OFFER_BOUND_MEMBERS.name, DEPENDENCY_METHODS_COLLECT_LOOKUP.name,
             DEPENDENCY_BOUND_MEMBERS_OFFER_LOOKUP.name,
             METHODS_FINALIZE_CANDIDATES.name, DEPENDENCY_METHODS_PROJECT_LOOKUP.name,
@@ -8052,7 +8040,7 @@ mod tests {
         }
         for name in [
             METHODS_MARK_CALL_KEYS.name, METHODS_MARK_CALL_RETURN_KEYS_DIRECT.name,
-            METHODS_RESET_CANDIDATES_DIRECT.name, METHODS_FINALIZE_CANDIDATES_INFERENCE.name,
+            METHODS_FINALIZE_CANDIDATES_INFERENCE.name,
             METHODS_RESOLVE_TABLE_INFERENCE.name, DEPENDENCY_METHODS_COLLECT_INFERENCE.name,
         ] {
             assert_ne!(indirect_resource(name), METHOD_LOOKUP_DISPATCH_ARGS, "{name}");
@@ -8101,7 +8089,6 @@ mod tests {
         for spec in [
             METHODS_MARK_CALL_KEYS_INFERENCE,
             METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
-            METHODS_RESET_CANDIDATES_INFERENCE,
             METHODS_RESOLVE_TABLE_INFERENCE,
             METHODS_OFFER_BOUND_MEMBERS_INFERENCE,
             DEPENDENCY_METHODS_COLLECT_INFERENCE,

@@ -135,7 +135,7 @@ pub fn record_all_passes(
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
         }
-        return Ok(());
+        return crate::compiler::desugar::record(&mut ctx);
     }
 
     p.source_file_boundaries
@@ -150,5 +150,5 @@ pub fn record_all_passes(
     p.compact_kept.record_pass(&mut ctx, E1(n))?;
     p.compact_all.record_pass(&mut ctx, E1(n))?;
     p.tokens_build.record_pass(&mut ctx, E1(n))?;
-    Ok(())
+    crate::compiler::desugar::record(&mut ctx)
 }

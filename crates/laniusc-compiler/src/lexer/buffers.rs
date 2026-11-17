@@ -27,8 +27,13 @@ pub struct GpuBuffers {
     pub(in crate::lexer) compiler_graph: LexerCompilerGraph,
     job_initialize: ClearBuffersOperation,
     count_readback: [CopyBufferOperation; 3],
-    /// Current byte length, not including word-alignment padding.
+    /// Current byte extent: the source bytes, their word-alignment padding
+    /// and the region where the desugaring writes the text of generated
+    /// tokens. Later stages size their byte-indexed storage from it.
     pub n: u32,
+    /// Current source byte length, not including word-alignment padding.
+    /// The lexer passes read only these bytes.
+    pub lexed_n: u32,
     /// Number of 256-byte DFA blocks for the current input.
     pub nb_dfa: u32,
     /// Number of 256-byte pair-scan blocks for the current input.
@@ -316,6 +321,7 @@ impl GpuBuffers {
 
         let params_val = LexParams {
             n,
+            extent: n,
             m: n_states as u32,
             start_state,
             skip0: skip_kinds[0],
@@ -330,6 +336,7 @@ impl GpuBuffers {
             job_initialize,
             count_readback,
             n,
+            lexed_n: n,
             nb_dfa,
             nb_sum,
             parser_feature_flags_value: 0,

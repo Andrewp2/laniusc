@@ -1,5 +1,7 @@
 // Converts ranked Euler arcs to an exact preorder and half-open subtree range
-// for every reachable dominator-tree block.
+// for every reachable dominator-tree block. It also clears this block's row
+// of the preorder-to-block inverse, which the next pass scatters into; this
+// pass never reads the inverse.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -26,6 +28,7 @@ StructuredBuffer<OptIrDominatorTourLink> opt_ir_dominator_tour_link;
 RWStructuredBuffer<uint> opt_ir_dominator_preorder;
 RWStructuredBuffer<uint> opt_ir_dominator_subtree_end;
 RWStructuredBuffer<LoweringStatus> lowering_status;
+RWStructuredBuffer<uint> opt_ir_block_by_dominator_preorder;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -44,6 +47,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint block = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint block_total = min(opt_ir_block_total[0u], gParams.block_capacity);
     if (block >= block_total) return;
+    opt_ir_block_by_dominator_preorder[block] = INVALID;
 
     uint function_total = min(semantic_function_total[0u],
         gParams.hir_capacity);

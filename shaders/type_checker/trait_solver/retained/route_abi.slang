@@ -36,6 +36,9 @@ public static const uint RP_H_PROOF_EDGES = 25u;
 public static const uint RP_H_PROOF_EDGE_ROWS = 26u;
 public static const uint RP_H_CAT_ATOMS = 27u;
 public static const uint RP_H_CALLS = 30u;
+// A closed publication's producer fault (closed/07_totals.slang): nonzero
+// when its batch was left empty and the host must check the wave eagerly.
+public static const uint RP_H_PRODUCER = 31u;
 // Solver locations, read only by the publish kernels.
 public static const uint RP_H_OUT_RESULTS = 32u;   // output table 3
 public static const uint RP_H_OUT_CALLS = 33u;     // output table 4

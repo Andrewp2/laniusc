@@ -15,9 +15,11 @@
 import primitive_types;
 import constant_value;
 import type_checker.retention.retention_store;
+__exported import type_checker.trait_solver.retained.config_words;
 
-// Host configuration (rc_config words). Counts are the store counters read
-// at the start of the run; table offsets are word offsets in the arenas.
+// Configuration (rc_config words, config_words.slang). 00_configure writes
+// the counts, lane regions, unit slots and sort width from the store's
+// counters; the host writes the rest.
 public StructuredBuffer<uint> rc_config;
 public globallycoherent RWStructuredBuffer<uint> rc_state;
 public RWStructuredBuffer<uint4> rc_flags;   // 4 uint4 (16 counters) per lane
@@ -35,34 +37,14 @@ public RWStructuredBuffer<uint> rc_bind_pos;
 public RWStructuredBuffer<uint> rc_impl_first;
 public StructuredBuffer<uint4> rc_stage;     // (k, j) of one bitonic step
 // Term closure (see "Term closure"): a mark per stored term, the frontier
-// list in discovery order, its cursor (wave first, wave end, appended,
-// waves with work) and the indirect dispatch of the next expansion wave.
+// list in discovery order and its cursor (wave first, wave end, appended).
 public RWStructuredBuffer<uint> rc_reach;
-public RWStructuredBuffer<uint> rc_front;
-public RWStructuredBuffer<uint> rc_cursor;
-public RWStructuredBuffer<uint> rc_indirect;
+public globallycoherent RWStructuredBuffer<uint> rc_front;
+public globallycoherent RWStructuredBuffer<uint> rc_cursor;
 // The route arena of the publication (docs/compiler-retained-trait-catalog.md,
 // "Publication"); the producer writes its atom identity table.
 public RWStructuredBuffer<uint> rc_routes;
 
-public static const uint RC_CFG_DECLS = 0u;
-public static const uint RC_CFG_PARAMS = 1u;
-public static const uint RC_CFG_TERMS = 2u;
-public static const uint RC_CFG_DIR = 3u;
-public static const uint RC_CFG_TRAITS = 4u;
-public static const uint RC_CFG_USES = 5u;
-public static const uint RC_CFG_JOBS = 6u;
-public static const uint RC_CFG_UNIT_SLOTS = 7u;
-public static const uint RC_CFG_LANES = 8u;
-public static const uint RC_CFG_BASE = 9u;          // + region: first lane of the region
-public static const uint RC_CFG_EPOCH = 16u;        // epoch low, epoch high
-public static const uint RC_CFG_GENERATION = 18u;   // store build generation (RT_C_GENERATION)
-public static const uint RC_CFG_PHASE = 19u;        // fill: 0 catalog tables (0-10), 1 batch tables (11-16)
-public static const uint RC_CFG_TABLE = 20u;        // + solver table (0-16): word offset
-public static const uint RC_CFG_SORT = 37u;         // bitonic width: a power of two >= trait records
-public static const uint RC_CFG_ATOM_IDS = 38u;     // word offset of the atom identity table in rc_routes
-public static const uint RC_CFG_ROUTE_USES = 39u;   // word offset of the use map in rc_routes
-public static const uint RC_CFG_WORDS = 40u;
 
 public static const uint RC_R_DECL = 0u;
 public static const uint RC_R_PARAM = 1u;
@@ -104,11 +86,6 @@ public static const uint RC_S_TOTALS = 8u;         // + counter
 public static const uint RC_S_CLOSURE_SHORT = 24u; // frontier not empty after the last wave: the host adds waves
 public static const uint RC_S_CLOSURE_TERMS = 25u; // stored terms in the closure
 public static const uint RC_S_CLOSURE_WAVES = 26u; // expansion waves that had work
-// The store's counters differ from the ones the host sized this run with
-// (it took them from an earlier readback): the host reads them and runs
-// again. Nothing this run wrote is used.
-public static const uint RC_S_STALE_COUNTS = 27u;
-public static const uint RC_S_WORDS = 28u;
 
 // Failure codes (docs/compiler-retained-trait-catalog.md, "Failures").
 public static const uint RC_E_NOT_READY = 1u;
@@ -379,9 +356,10 @@ void count_skipped_use(uint use)
 // subject and trait arguments, and a selected use's environment arguments.
 // A node's arguments are its children. A u32 CC_VALUE that shares a
 // CC_COUNT's atom also reaches that CC_COUNT. Pass 02d marks the roots from
-// the directory, trait and use lanes. Each wave of 02e/02f expands only the
-// terms the previous wave discovered, through an indirect dispatch; a term
-// enters the frontier once. Pass 02 then counts only marked terms.
+// the directory, trait and use lanes. Pass 02e is one workgroup: each wave
+// expands only the terms the previous wave discovered, with a workgroup
+// barrier between waves; a term enters the frontier once. Pass 02 then
+// counts only marked terms.
 void reach(uint ref)
 {
     if (!valid_term(ref)) return;
@@ -423,28 +401,37 @@ public void closure_roots(uint local)
         reach_arguments(rt_uses[record.y * RT_USE_WORDS + 1u].x, 0u);
     }
 }
-// One lane: the next wave is the terms appended since the last one.
-public void closure_wave()
+void expand_term(uint term)
 {
-    uint first = rc_cursor[1];
-    uint end = rc_cursor[2];
-    rc_cursor[0] = first;
-    rc_cursor[1] = end;
-    uint groups = (end - first + 255u) / 256u;
-    rc_indirect[0] = min(groups, 65535u);
-    rc_indirect[1] = groups == 0u ? 0u : (groups + 65534u) / 65535u;
-    rc_indirect[2] = 1u;
-    if (groups != 0u) InterlockedAdd(rc_state[RC_S_CLOSURE_WAVES], 1u);
-}
-public void closure_expand(uint i)
-{
-    uint at = rc_cursor[0] + i;
-    if (at >= rc_cursor[1]) return;
-    uint term = rc_front[at];
     uint4 head = rt_term_head[term];
     uint kind = head.x & 0xffu;
     if (term_has_node(term)) reach_arguments(term, 0u);
     else if (kind == RT_KIND_CC_VALUE && !term_owns_atom(term)) reach(find_count_term(head.z));
+}
+// Waves until one is empty or RC_CFG_CLOSURE_WAVES ran: each wave is the
+// terms appended since the last one.
+groupshared uint rc_wave[2];
+public void closure_waves(uint lane)
+{
+    for (uint wave = 0u; wave < cfg(RC_CFG_CLOSURE_WAVES); wave++)
+    {
+        if (lane == 0u)
+        {
+            uint first = rc_cursor[1];
+            uint end = rc_cursor[2];
+            rc_cursor[0] = first;
+            rc_cursor[1] = end;
+            rc_wave[0] = first;
+            rc_wave[1] = end;
+            if (end != first) InterlockedAdd(rc_state[RC_S_CLOSURE_WAVES], 1u);
+        }
+        AllMemoryBarrierWithGroupSync();
+        uint first = rc_wave[0];
+        uint end = rc_wave[1];
+        if (first == end) break;
+        for (uint at = first + lane; at < end; at += 256u) expand_term(rc_front[at]);
+        AllMemoryBarrierWithGroupSync();
+    }
 }
 
 // The scalar of a constant argument, or RC_INVALID for a type argument.
@@ -866,16 +853,6 @@ void count_use(uint lane, uint use, inout Counts n)
     n.set(RC_C_BIND, k);
     n.set(RC_C_ROOT, k);
     n.set(RC_C_OBLIG, applicable_count(callee));
-}
-// Lane 0 of the first pass: the counters the host configured must be the
-// store's current ones (RC_S_STALE_COUNTS).
-public void check_counts()
-{
-    if (rt_counts[RT_A_DECLS] != cfg(RC_CFG_DECLS) || rt_counts[RT_A_PARAMS] != cfg(RC_CFG_PARAMS)
-        || rt_counts[RT_A_TERMS] != cfg(RC_CFG_TERMS) || rt_counts[RT_A_DIR] != cfg(RC_CFG_DIR)
-        || rt_counts[RT_A_TRAITS] != cfg(RC_CFG_TRAITS) || rt_counts[RT_A_USES] != cfg(RC_CFG_USES)
-        || rt_counts[RT_C_JOBS] != cfg(RC_CFG_JOBS))
-        rc_state[RC_S_STALE_COUNTS] = 1u;
 }
 public void count_lane(uint lane)
 {
