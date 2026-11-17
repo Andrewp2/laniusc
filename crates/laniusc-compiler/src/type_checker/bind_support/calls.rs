@@ -32,6 +32,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         typed_buffer_from_resources(resources, "call_inference_readback")?;
     let status: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "status")?;
     let status_prior: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "status_prior")?;
+    let type_row_args: LaniusBuffer<u32> = typed_buffer_from_resources(resources, "type_live_row_args")?;
     let optional_generic = |name, kernel, dispatch| {
         if generic_param_record_passes_required(parser_feature_flags) || has_dependency_interfaces {
             ComputeOperation::indirect(
@@ -317,15 +318,57 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             "type_checker/type/instances/02c_index_closed_applications",
             &token_dispatch_args,
         )?,
-        return_type_index: optional_generic(
-            compiler_graph::CALLS_RETURN_TYPE_INDEX_PASS,
-            "type_checker/type/instances/02c_index_closed_applications",
-            &token_dispatch_args,
-        )?,
+        type_row_list: if generic_param_record_passes_required(parser_feature_flags)
+            || has_dependency_interfaces
+        {
+            Some(TypeRowListOperations {
+                clear: crate::gpu::operations::ClearBufferOperation::entire(
+                    graph,
+                    compiler_graph::CALLS_TYPE_ROW_LIST_CLEAR_PASS,
+                    "type_live_row_count",
+                    &typed_buffer_from_resources::<u32>(resources, "type_live_row_count")?,
+                )?,
+                list: ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::CALLS_TYPE_ROW_LIST_PASS,
+                    &passes.kernel(compiler_graph::CALLS_TYPE_ROW_LIST_KERNEL),
+                    &token_dispatch_args,
+                )?,
+                args: direct_name(
+                    compiler_graph::CALLS_TYPE_ROW_LIST_ARGS_PASS,
+                    &passes.kernel(compiler_graph::CALLS_TYPE_ROW_LIST_ARGS_KERNEL),
+                    1,
+                )?,
+            })
+        } else {
+            None
+        },
+        return_type_index: if generic_param_record_passes_required(parser_feature_flags)
+            || has_dependency_interfaces
+        {
+            Some(ComputeOperation::indirect_with_uniform(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_RETURN_TYPE_INDEX_PASS,
+                &passes.kernel(compiler_graph::LISTED_APPLICATION_INDEX_KERNEL),
+                &type_row_args,
+                "gTypeRowList",
+                &uniform_from_val(
+                    device,
+                    "type_check.calls.type_row_list.listed",
+                    &TypeRowListParams { listed: 1, reserved0: 0, reserved1: 0, reserved2: 0 },
+                ),
+            )?)
+        } else {
+            None
+        },
         return_imported_fields: optional_generic(
             compiler_graph::CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            compiler_graph::IMPORTED_FIELDS_KERNEL,
-            &token_dispatch_args,
+            compiler_graph::LISTED_IMPORTED_FIELDS_KERNEL,
+            &type_row_args,
         )?,
         project_expression_types: inference(
             compiler_graph::CALLS_PROJECT_EXPRESSION_TYPES_PASS,

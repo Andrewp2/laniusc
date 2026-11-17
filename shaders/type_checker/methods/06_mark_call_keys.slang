@@ -118,6 +118,10 @@ StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 RWStructuredBuffer<uint> type_instance_state;
+// The listed live type rows of the inference rounds
+// (type/instances/live_type_row_list.slang).
+RWStructuredBuffer<uint> type_live_rows;
+RWStructuredBuffer<uint> type_live_row_count;
 
 StructuredBuffer<uint> type_instance_elem_ref_tag;
 StructuredBuffer<uint> type_instance_elem_ref_payload;
@@ -746,7 +750,18 @@ bool associated_receiver_ref(
         return false;
     }
 
-    type_instance_kind[receiver_token] = TYPE_INSTANCE_NAMED;
+    // A source row that gets its first kind here joins the listed live rows.
+    // (Slang 2026.2 fails on the three-argument exchange on SPIR-V.)
+    uint previous_kind;
+    InterlockedCompareExchange(type_instance_kind[receiver_token], 0u, TYPE_INSTANCE_NAMED, previous_kind);
+    if (previous_kind != 0u) type_instance_kind[receiver_token] = TYPE_INSTANCE_NAMED;
+    else
+    {
+        uint slot; uint list; uint stride;
+        InterlockedAdd(type_live_row_count[0u], 1u, slot);
+        type_live_rows.GetDimensions(list, stride);
+        if (slot < list) type_live_rows[slot] = receiver_token;
+    }
     type_instance_decl_token[receiver_token] = decl_token;
     type_instance_state[receiver_token] = TYPE_INSTANCE_RESOLVED;
     receiver_tag = TYPE_REF_INSTANCE;

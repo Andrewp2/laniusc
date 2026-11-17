@@ -278,6 +278,17 @@ pub(in crate::type_checker) struct NameHashParams {
     pub(in crate::type_checker) reserved: u32,
 }
 
+/// Selects the rows `02c_index_closed_applications` visits: `listed` 1 for
+/// the inference rounds' listed live rows, 0 for every live row.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct TypeRowListParams {
+    pub(in crate::type_checker) listed: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+    pub(in crate::type_checker) reserved2: u32,
+}
+
 /// Uniform for shaders that turn a counted row total into dispatch arguments.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]

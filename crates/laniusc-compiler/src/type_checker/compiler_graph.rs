@@ -368,6 +368,22 @@ pub(super) const CALLS_RETURN_TYPE_SOURCE_INDEX_PASS: &str =
 pub(super) const CALLS_RETURN_TYPE_INDEX_PASS: &str = "type_check.calls.return_types.index";
 pub(super) const CALLS_RETURN_IMPORTED_FIELDS_PASS: &str =
     "type_check.calls.return_types.imported_fields";
+/// The inference rounds' row passes (the closed application index twice and
+/// the imported fields) visit the source rows that hold a type, listed once
+/// before the rounds, and the generated rows
+/// (shaders/type_checker/type/instances/live_type_row_list.slang).
+pub(super) const CALLS_TYPE_ROW_LIST_CLEAR_PASS: &str = "type_check.calls.type_rows.clear";
+pub(super) const CALLS_TYPE_ROW_LIST_PASS: &str = "type_check.calls.type_rows.list";
+pub(super) const CALLS_TYPE_ROW_LIST_ARGS_PASS: &str = "type_check.calls.type_rows.args";
+pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/type/instances/02d_list_type_rows";
+pub(super) const CALLS_TYPE_ROW_LIST_ARGS_KERNEL: &str =
+    "type_checker/type/instances/02e_type_row_list_args";
+/// The rounds' closed application index is `02c_index_closed_applications`
+/// with `gTypeRowList.listed` set (`TypeRowListParams`).
+pub(super) const LISTED_APPLICATION_INDEX_KERNEL: &str =
+    "type_checker/type/instances/02c_index_closed_applications";
+pub(super) const LISTED_IMPORTED_FIELDS_KERNEL: &str =
+    "type_checker/substitution/07b_project_listed_imported_fields";
 pub(super) const CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS: &str =
     "type_check.calls.array_literal_elements";
 pub(super) const CALLS_MATERIALIZE_ARRAY_LITERALS_PASS: &str = "type_check.calls.array_literals";
@@ -3050,7 +3066,10 @@ fn build_graph(
     // the dependency rows are collected again in every round, after the
     // counts return to the local rows' (`bound_inference_local_counts`).
     graph_resources!(graph, Workspace {
-        bound_inference_counts as "bound_inference_counts" in Calls => 16;
+        // Three counts, a spare word, then the owner filter
+        // (BOUND_COUNT_WORDS in bound_tables.slang). The local copy keeps
+        // only the counts.
+        bound_inference_counts as "bound_inference_counts" in Calls => (4 + 256) * 4;
         bound_inference_local_counts as "bound_inference_local_counts" in Calls => 16;
         bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
         bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
@@ -3084,6 +3103,18 @@ fn build_graph(
         _token_hir_active_dispatch_args as "token_hir_active_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _hir_active_count as "hir_active_count" in HirNodes => 4;
     });
+    // The listed live type rows of the inference rounds
+    // (type/instances/live_type_row_list.slang).
+    graph_resources!(graph, Workspace {
+        type_live_rows as "type_live_rows" in Tokens => token_rows * 4;
+        type_live_row_count as "type_live_row_count" in Calls => 16;
+        _type_live_row_args as "type_live_row_args" in DispatchArguments [StorageIndirect] => 12;
+    });
+    // Method call keys (methods/06) append to the list wherever they run.
+    // Before the list is built they append to a stale list, which the
+    // clear and the listing then replace, so no pass reads what they wrote.
+    graph.mark_zero_initialized(type_live_rows)?;
+    graph.mark_zero_initialized(type_live_row_count)?;
 
     graph_resources!(graph, Workspace {
         _module_value_path_status as "module_value_path_status" in Tokens => token_rows * 4;
@@ -5556,6 +5587,33 @@ fn build_graph(
         )?;
         graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
     }
+    // The rounds' row passes visit the listed live type rows, listed here
+    // (before the rounds, and before the final pass of a job without rounds).
+    graph.add_buffer_clear_pass(
+        CALLS_TYPE_ROW_LIST_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "type_live_row_count",
+        type_live_row_count,
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_TYPE_ROW_LIST_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        CALLS_TYPE_ROW_LIST_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(CALLS_TYPE_ROW_LIST_PASS, "token_active_dispatch_args")?;
+    graph.mark_pass_bindings_initialize(CALLS_TYPE_ROW_LIST_PASS, &["type_live_rows"])?;
+    graph.add_kernel_pass_by_name(
+        CALLS_TYPE_ROW_LIST_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        CALLS_TYPE_ROW_LIST_ARGS_KERNEL,
+        &[],
+    )?;
+    graph.mark_pass_bindings_initialize(CALLS_TYPE_ROW_LIST_ARGS_PASS, &["type_live_row_args"])?;
     // The unit's own trait implementations and bounds are declaration facts:
     // they are collected once, before the inference rounds (and before the
     // final pass of a job without rounds), and kept for every round.
@@ -5773,13 +5831,13 @@ fn build_graph(
         ),
         (
             CALLS_RETURN_TYPE_INDEX_PASS,
-            "type_checker/type/instances/02c_index_closed_applications",
+            LISTED_APPLICATION_INDEX_KERNEL,
             ResourceDomain::Tokens,
             &[][..],
         ),
         (
             CALLS_RETURN_IMPORTED_FIELDS_PASS,
-            IMPORTED_FIELDS_KERNEL,
+            LISTED_IMPORTED_FIELDS_KERNEL,
             ResourceDomain::Tokens,
             imported_field_ct_overrides,
         ),
@@ -5873,10 +5931,10 @@ fn build_graph(
                 CompilerPhase::TypeCheck,
                 ResourceDomain::Tokens,
                 kernels,
-                "type_checker/type/instances/02c_index_closed_applications",
+                LISTED_APPLICATION_INDEX_KERNEL,
                 &[],
             )?;
-            graph.add_indirect_dispatch(CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS, "token_active_dispatch_args")?;
+            graph.add_indirect_dispatch(CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS, "type_live_row_args")?;
             graph.add_kernel_pass_by_name(
                 CALLS_RECORD_CONTEXTS_PASS,
                 CompilerPhase::TypeCheck,
@@ -5936,6 +5994,8 @@ fn build_graph(
             name,
             if name == MATCH_PAYLOADS_TYPE_INFERENCE.name {
                 "match_hir_dispatch_args"
+            } else if name == CALLS_RETURN_TYPE_INDEX_PASS || name == CALLS_RETURN_IMPORTED_FIELDS_PASS {
+                "type_live_row_args"
             } else if domain == ResourceDomain::HirNodes {
                 "hir_active_dispatch_args"
             } else {

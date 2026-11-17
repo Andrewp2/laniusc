@@ -290,6 +290,14 @@ impl GpuTypeChecker {
         let mut resources = ResourceMap::new();
         typecheck_graph.register_bindings(&graph_bindings, &mut resources);
         resources.buffer("gParams", &self.params_buf);
+        // Every closed application index visits every live row, except the
+        // inference rounds' (bind_support/calls.rs).
+        let type_row_list_all = uniform_from_val(
+            device,
+            "type_check.resident.type_row_list.all",
+            &TypeRowListParams { listed: 0, reserved0: 0, reserved1: 0, reserved2: 0 },
+        );
+        resources.buffer("gTypeRowList", &type_row_list_all);
         resources.buffer("gExplicitOperandParams", &self.params_buf);
         // Dependency kernels with their own gParams layout read this job's
         // lookup capacities here (dependencies/15b).
