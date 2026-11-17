@@ -5,6 +5,15 @@
 // projection:
 //   - first child is row + 1 when its parent is row
 //   - next sibling is subtree_end[row] when it has the same parent
+//
+// The same dispatch builds the first level of the child-index heaps
+// (child/index/index_tree.slang): one local (minimum, count) heap over each
+// block of 256 dense semantic parents, one workgroup per block. That part
+// reads only hir_semantic_parent, which navigation also only reads, and
+// writes only hir_semantic_child_local, which navigation never binds.
+
+import blocked_search_tree;
+import parser.hir.semantic.child.index.index_tree;
 
 struct Params
 {
@@ -23,6 +32,9 @@ StructuredBuffer<uint> hir_semantic_parent;
 RWStructuredBuffer<uint> hir_semantic_first_child;
 RWStructuredBuffer<uint> hir_semantic_next_sibling;
 RWStructuredBuffer<uint> hir_semantic_depth;
+RWStructuredBuffer<uint2> hir_semantic_child_local;
+
+groupshared uint2 s_heap[512];
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -48,12 +60,28 @@ bool valid_semantic_row(uint row, uint semantic_count)
     return row != INVALID && row < semantic_count;
 }
 
+// The whole group leaves together: queries never read blocks past the
+// semantic rows.
+void build_child_index_block(uint block, uint lane, uint semantic_count)
+{
+    if (block * CHILD_INDEX_FANOUT >= semantic_count)
+        return;
+    uint row = block * CHILD_INDEX_FANOUT + lane;
+    uint2 leaf = row < semantic_count
+        ? child_index_leaf(hir_semantic_parent[row])
+        : ChildIndexMinCount.identity();
+    blocked_local_heap_build<uint2, ChildIndexMinCount>(lane, leaf, s_heap);
+    hir_semantic_child_local[block * CHILD_INDEX_FANOUT + lane] = s_heap[max(lane, 1u)];
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 dtid: SV_DispatchThreadID, uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint row = linear_thread_id(dtid);
     uint semantic_count = active_semantic_count();
+    build_child_index_block(gid.x + gid.y * MAX_GROUPS_X, ltid.x, semantic_count);
+
+    uint row = linear_thread_id(dtid);
     if (row >= semantic_count)
         return;
 

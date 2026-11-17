@@ -2933,16 +2933,6 @@ fn build_graph(
                 "hir_semantic_depth",
                 Some(AccessMode::Write),
             ),
-        ],
-    )?;
-    indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
-    static_pass(
-        &mut graph,
-        &passes.hir_semantic_child_index_rows,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
             (
                 "hir_semantic_child_local",
                 "hir_semantic_child_local",
@@ -2950,11 +2940,7 @@ fn build_graph(
             ),
         ],
     )?;
-    indirect(
-        &mut graph,
-        "hir_semantic_child_index_rows",
-        "hir_semantic_dispatch_args",
-    )?;
+    indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
     static_pass(
         &mut graph,
         &passes.hir_semantic_child_index_blocks,
@@ -3752,7 +3738,6 @@ mod tests {
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
             "hir_semantic_nav",
-            "hir_semantic_child_index_rows",
             "hir_semantic_child_index_blocks",
             "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
@@ -3786,7 +3771,6 @@ mod tests {
             crate::parser::passes::hir::types::alias::owner::step::A_TO_B,
             crate::parser::passes::hir::types::alias::owner::step::B_TO_A,
             "hir_type_alias_target",
-            "hir_fn_return_type",
             "hir_param_links",
             "hir_param_rank_prefix_00_local",
             "hir_param_rank_prefix_01_blocks",

@@ -13,7 +13,6 @@ pub mod enums;
 /// Expression form and result-root passes.
 pub mod expr;
 /// Function signature and return-type passes.
-pub mod functions;
 /// Item kind, declaration-token, namespace, visibility, and import passes.
 pub mod item;
 /// Generic list ranking helpers shared by HIR record families.
