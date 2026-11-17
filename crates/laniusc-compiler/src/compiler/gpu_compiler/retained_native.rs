@@ -553,18 +553,20 @@ impl GpuCompiler<'_> {
             if let Some(plan) = resident_plan {
                 let span = x86::TailSpan::new("tail.native.resident");
                 match linker.finish_resident_dynamic(device, queue, plan) {
-                    Ok(Some(image)) => {
+                    Ok(Some(mut image)) => {
                         drop(span);
                         let _write_span = x86::TailSpan::new("tail.native.write");
                         let len = image.len();
                         return match output {
                             Some(path) => super::bounded_path_codegen::write_output_file_atomically(
                                 path, SourcePackArtifactTarget::X86_64, |file| image
-                                    .with_bytes(|bytes| std::io::Write::write_all(file, bytes))
+                                    .for_each_chunk(|bytes| std::io::Write::write_all(file, bytes))
+                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?
                                     .map(|()| len as u64)
                                     .map_err(|e| retained_error("write native executable", e)))
                                 .map(ResidentLinkedOutput::File),
-                            None => Ok(ResidentLinkedOutput::Bytes(image.with_bytes(<[u8]>::to_vec))),
+                            None => image.to_vec().map(ResidentLinkedOutput::Bytes)
+                                .map_err(|e| retained_error("read native executable", format!("{e:#}"))),
                         };
                     }
                     Ok(None) => {}
