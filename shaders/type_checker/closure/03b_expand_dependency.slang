@@ -1,5 +1,5 @@
-// One dependency closure round (D1b; summary.slang): one working lane (of
-// IC_LANES_PER_INSTANCE) per frontier
+// One dependency closure round (D1b; summary.slang): one working lane (the
+// first of IC_LANES_PER_INSTANCE) per frontier
 // instance whose callee is a summary function (SUMMARY_TAG). Each edge of
 // that function has its slot-form bindings substituted under the
 // instance's tagged environment (a dependency slot leaf binds its slot), and

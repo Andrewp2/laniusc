@@ -71,11 +71,13 @@ public static const uint IC_FLAG_DEPTH = 8u;      // a frontier was left at the 
 // (instance_closure_passes.rs, INSTANCE_CLOSURE_LEVELS).
 public static const uint IC_LEVELS = 16u;
 // Lanes per frontier instance in an expansion round (03_expand,
-// 03b_expand_dependency, 03c_expand_bound); only the first of them expands
-// it. Instances take divergent paths through substitution, and a wave runs
-// its lanes' paths one after another, so fewer instances per wave over more
-// workgroups finish sooner.
-public static const uint IC_LANES_PER_INSTANCE = 32u;
+// 03b_expand_dependency). Instances take divergent paths through
+// substitution, and a wave runs its lanes' paths one after another, so a
+// wave works on one instance at most. 03_expand's first lane walks the
+// call edges and lane IC_BOUND_LANE, the first of the next wave, the
+// bound-member edges; 03b uses the first lane only.
+public static const uint IC_LANES_PER_INSTANCE = 64u;
+public static const uint IC_BOUND_LANE = 32u;
 
 static const uint IC_PROBE_LIMIT = 64u;
 static const uint IC_INVALID = 0xffffffffu;
