@@ -7258,12 +7258,13 @@ mod tests {
             "declaration kinds must survive local-constant reference projection",
         );
 
-        assert_eq!(
+        // The instance execution passes after the projection read it too.
+        assert!(
             graph
                 .lifetime(graph.resource_id("decl_id_by_name_token").unwrap())
                 .unwrap()
-                .last_pass,
-            local_const_reference_projection,
+                .last_pass
+                >= local_const_reference_projection,
             "the declaration reverse lookup must survive local-constant projection",
         );
         assert_ne!(
