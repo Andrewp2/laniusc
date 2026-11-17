@@ -144,16 +144,6 @@ public void ts_catalog_build_implementations(uint local)
         if (index + 1u >= max(publications, 1u)) return;
     }
 }
-public void ts_catalog_check_coherence(uint local)
-{
-    if (!ts_catalog_is_building()) return;
-    uint implementations; uint row;
-    if (!ts_catalog_count(9u, implementations) || !ts_dispatch_row(local, implementations, row)) return;
-    SolverStatus status;
-    if (ts_bind_scratch(local, row, status)) status = ts_check_impl_coherence(row);
-    ts_write_status(1u, row, status);
-    ts_catalog_failure(status);
-}
 public void ts_catalog_freeze()
 {
     // Host calls only after every required phase and barrier, including clear

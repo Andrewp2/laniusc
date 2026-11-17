@@ -92,7 +92,8 @@ impl CatalogKernels {
             (7, count(10)),
             (8, clear_count),
             (9, count(9)),
-            (10, count(9)),
+            // One workgroup per implementation (catalog_index.slang).
+            (10, count(9).checked_mul(256).ok_or_else(|| anyhow!("coherence rows overflow"))?),
             (11, 1),
         ];
         ensure!(
@@ -144,6 +145,11 @@ impl CatalogKernels {
 /// INTERIM: the table holds per-thread walker stacks moved out of local
 /// memory. Trait solver on canonical type IDs (plan P7) deletes them.
 pub(super) const THREAD_SCRATCH_SLOTS: u32 = 4096;
+/// Kernels whose workgroup takes COHERENCE_CHECKERS thread-scratch slots
+/// (from its dispatch-local group index): coherence runs one workgroup per
+/// implementation (catalog_index.slang TS_COHERENCE_CHECKERS).
+const GROUP_SLOT_KERNELS: &[&str] = &["type_checker/trait_solver/entries/10_check_coherence"];
+const COHERENCE_CHECKERS: u32 = 8;
 /// uint4 cells per slot; THREAD_SCRATCH_CELLS in shaders/thread_scratch.slang.
 pub(super) const THREAD_SCRATCH_CELLS: u32 = 1808;
 
@@ -268,8 +274,11 @@ fn record_phase_with_resources(
     } else {
         None
     };
-    // Audit lanes take no scratch slot, so they run over their whole span.
-    let max_rows = if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
+    // Audit lanes take no scratch slot, so they run over their whole span. A
+    // group-slot kernel takes one slot per workgroup.
+    let max_rows = if scratch.is_some() && GROUP_SLOT_KERNELS.contains(&pass.shader_id.as_str()) {
+        max_rows.min(THREAD_SCRATCH_SLOTS / COHERENCE_CHECKERS * threads)
+    } else if scratch.is_some() && !WHOLE_SPAN_KERNELS.contains(&pass.shader_id.as_str()) {
         max_rows.min(THREAD_SCRATCH_SLOTS)
     } else {
         max_rows
