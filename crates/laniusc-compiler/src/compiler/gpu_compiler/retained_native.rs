@@ -91,7 +91,12 @@ impl RetainedNativeBuild {
             store,
             projection: RetainedProjection::new_with_device(gpu, SubstitutionCapacity::default())?,
             finalizer: None,
-            discovery: RetainedDiscovery::new_with_device(gpu, discovery, SubstitutionCapacity::default())?,
+            discovery: {
+                // Projection's plan readback reports a failed discovery.
+                let mut discovery = RetainedDiscovery::new_with_device(gpu, discovery, SubstitutionCapacity::default())?;
+                discovery.defer_final_status(true);
+                discovery
+            },
             calls: Some(NativeCallTables::new_with_device(&gpu.device, uses)),
             sources: Vec::new(),
             options: ProjectionOptions::default(),
@@ -533,7 +538,16 @@ impl GpuCompiler<'_> {
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
         let (instances, report) = match outcome {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
-            ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
+            ProjectionOutcome::Rejected { error, .. } => {
+                // A discovery that failed after its last wave published no
+                // inputs; its own error decides.
+                if !roots.status_checked
+                    && let Some(e) = build.discovery.final_failure().map_err(|e| retained_error("discovery", format!("{e:#}")))?
+                {
+                    return Err(retained_error("discovery rejected the program", format!("{e:?}")));
+                }
+                return Err(build.projection_error(error));
+            }
         };
         let _tail = x86::TailSpan::new("tail.after_projection");
         let keys = originals.iter().chain(&instances).map(resident_key).collect::<Option<Vec<_>>>();

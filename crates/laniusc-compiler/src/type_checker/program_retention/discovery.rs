@@ -110,6 +110,12 @@ pub struct DiscoveryPublication {
     pub root_route_capacity: u32,
     pub generation: u32,
     pub report: DiscoveryReport,
+    /// Whether discovery read its final status before publishing. When it
+    /// did not ([`RetainedDiscovery::defer_final_status`]), a failure after
+    /// the last wave leaves the projection inputs not ready, and the caller
+    /// asks [`RetainedDiscovery::final_failure`] when projection rejects
+    /// them.
+    pub status_checked: bool,
 }
 
 struct TraitAdmission {
@@ -142,6 +148,8 @@ pub struct RetainedDiscovery {
     /// same capacities binds the same buffers, so its bind groups are the
     /// cached ones.
     published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
+    /// See [`Self::defer_final_status`].
+    defer_final_status: bool,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -167,7 +175,24 @@ impl RetainedDiscovery {
             method_routes: Some(super::method_routes::MethodRoutes::new_with_device(gpu)?),
             eager_closed: false,
             published: None,
+            defer_final_status: false,
         })
+    }
+    /// With `defer`, discovery publishes without reading the status of its
+    /// ranking and publish passes. Those passes write the projection's and
+    /// the roots' readiness only when nothing failed, so the projection's
+    /// plan rejects the inputs of a failed discovery, and its readback is
+    /// the first one after discovery. The caller then reads the failure
+    /// with [`Self::final_failure`].
+    pub fn defer_final_status(&mut self, defer: bool) {
+        self.defer_final_status = defer;
+    }
+    /// The failure the last discovery's final passes reported, read from
+    /// its status words; for a publication that did not check them.
+    pub fn final_failure(&mut self) -> Result<Option<DiscoveryError>> {
+        let mut report = DiscoveryReport::default();
+        let status = self.read_status(&mut report)?;
+        Ok(failure(&status))
     }
     pub fn set_hash_mask(&mut self, mask: u32) {
         self.hash_mask = mask;
@@ -617,9 +642,11 @@ impl RetainedDiscovery {
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             self.queue.submit(Some(encoder.finish()));
             drop(guard);
-            status = self.read_status(&mut report)?;
-            if let Some(error) = failure(&status) {
-                return Ok(DiscoveryOutcome::Rejected(error));
+            if !self.defer_final_status {
+                let status = self.read_status(&mut report)?;
+                if let Some(error) = failure(&status) {
+                    return Ok(DiscoveryOutcome::Rejected(error));
+                }
             }
             drop(extra);
             let root_route_capacity = uses.max(1);
@@ -633,6 +660,7 @@ impl RetainedDiscovery {
                 root_route_capacity,
                 generation,
                 report,
+                status_checked: !self.defer_final_status,
             }));
         }
     }

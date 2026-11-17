@@ -99,6 +99,13 @@ schema rounds' status, all in one readback. It reads no instance, term, row
 or route. The requests, the substitution, the schema rounds and the check
 are recorded back to back after the plan readback; see "Schema rounds".
 
+In a native build, discovery publishes without reading the status of its
+ranking and publish passes (`RetainedDiscovery::defer_final_status`). Those
+passes write the projection's and the roots' readiness only when nothing
+failed, so the plan rejects the inputs of a failed discovery; the build then
+reads discovery's status (`final_failure`) and reports discovery's error.
+The plan readback is the first one after the last discovery wave.
+
 | Kernel | Lanes | Work |
 | --- | --- | --- |
 | `00_plan` | one per rank | validate readiness, the record and the directory entry; insert the identity; write the rank plan and counts |
