@@ -6,6 +6,9 @@ pub mod buffers;
 pub mod compiler_graph;
 /// Optional debug readback buffer helpers.
 pub mod debug;
+/// Buffer copies, clears and zero writes, counted per call site for the
+/// host-timing report.
+pub(crate) mod copies;
 /// Global device, queue, and pipeline-cache management.
 pub mod device;
 /// Debug capture of one dispatch's inputs and outputs for offline replay.

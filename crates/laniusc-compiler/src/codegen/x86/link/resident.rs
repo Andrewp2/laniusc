@@ -24,6 +24,7 @@
 //! objects returns `None`, and the caller links on the host, which also
 //! reports the exact diagnostic.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -50,6 +51,13 @@ const ST_NAME_STRIDE: usize = 3;
 const ST_ENTRY_OBJECT: usize = 4;
 const ST_MAIN_OFFSET: usize = 5;
 const ST_ERRORS: usize = 16;
+// Object plan words (rl_common.slang `OB_*`) the host checks.
+const OB_TEXT_LEN: usize = 0;
+const OB_RODATA_LEN: usize = 1;
+const OB_UNDEF_COUNT: usize = 15;
+const OB_DEF_COUNT: usize = 16;
+const OB_RELOC_COUNT: usize = 17;
+const OB_RT_COUNT: usize = 18;
 const ST_EMIT_ERRORS: usize = 17;
 
 /// Store regions, in words: metadata, relocation rows (semantic then native
@@ -103,12 +111,17 @@ struct StoreState {
     generation: u64,
     chunks: Vec<Chunk>,
     slots: Vec<Slot>,
+    /// One `rl_park.slang` parameter block per slot index, rewritten by
+    /// each build's park into that slot.
+    park_params: Vec<wgpu::Buffer>,
 }
 
 /// Lowered objects of the current native build, parked on the GPU.
 pub(crate) struct GpuX86LinkStore {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// `rl_park.slang`: copies an object's used rows and bytes into a slot.
+    park_pass: PassData,
     state: Mutex<StoreState>,
 }
 
@@ -182,6 +195,12 @@ impl ParkTicket {
         Arc::ptr_eq(&self.store, store)
     }
 
+    /// The slot this object parked in, for a link planned before the host
+    /// read the object back ([`GpuX86Linker::begin_resident_dynamic`]).
+    pub(crate) fn parked_slot(&self) -> ParkedSlot {
+        ParkedSlot { store: self.store.clone(), generation: self.generation, slot: self.slot }
+    }
+
     pub(crate) fn commit(self, library_id: u32, unit_id: u32) {
         let mut state = self.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.generation == self.generation
@@ -190,6 +209,13 @@ impl ParkTicket {
             slot.key = Some((library_id, unit_id));
         }
     }
+}
+
+/// The slot of a parked object the host has not read back yet.
+pub(crate) struct ParkedSlot {
+    store: Arc<GpuX86LinkStore>,
+    generation: u64,
+    slot: usize,
 }
 
 /// The text and rodata of an object parked in the store. A resident link
@@ -240,10 +266,10 @@ impl ResidentSections {
                 label: Some("codegen.x86.link.resident.sections"),
             });
             if text != 0 {
-                encoder.copy_buffer_to_buffer(&chunk.buffers[4].buffer, slot.base[4] * 4, &readback, 0, text.next_multiple_of(4));
+                encoder.copy_buffer_counted(&chunk.buffers[4].buffer, slot.base[4] * 4, &readback, 0, text.next_multiple_of(4));
             }
             if rodata != 0 {
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     &chunk.buffers[5].buffer,
                     slot.base[5] * 4,
                     &readback,
@@ -310,26 +336,62 @@ pub(crate) fn park(encoder: &mut wgpu::CommandEncoder, sources: &ParkSources<'_>
     flush_deferred_compute(encoder);
     let meta = &chunk.buffers[0];
     for (buffer, offset, bytes, word) in sources.meta {
-        encoder.copy_buffer_to_buffer(buffer, offset, &meta.buffer, (base[0] + word) * 4, bytes);
+        encoder.copy_buffer_counted(buffer, offset, &meta.buffer, (base[0] + word) * 4, bytes);
     }
-    let mut copy = |region: &ParkRegion<'_>, store_region: usize, word: u64| {
-        if region.bytes != 0 {
-            encoder.copy_buffer_to_buffer(
-                region.buffer,
-                region.offset,
-                &chunk.buffers[store_region].buffer,
-                word * 4,
-                region.bytes.next_multiple_of(4),
-            );
-        }
-    };
-    copy(regions[0], 1, base[1]);
-    copy(regions[1], 1, base[1] + words(regions[0]));
-    copy(regions[2], 2, base[2]);
-    copy(regions[3], 3, base[3]);
-    copy(regions[4], 4, base[4]);
-    copy(regions[5], 5, base[5]);
+    // The regions' rows and bytes as far as the object's metadata counts
+    // them (`rl_park.slang`); `need` and `caps` keep the job's bounds, which
+    // the plan checks the counts against.
+    let dst = [base[1], base[1] + words(regions[0]), base[2], base[3], base[4], base[5]];
+    // `ParkParams`: four header words, then source offsets, store bases and
+    // store capacities in words, each as rows (four regions) then bytes
+    // (text, rodata) in one uint4 pair.
+    let mut params = [0u32; 28];
+    let mut words_total = 0u64;
+    for (index, region) in regions.iter().enumerate() {
+        let (src, dst, cap) = (region.offset / 4, dst[index], words(*region));
+        words_total = words_total.max(cap);
+        let (Ok(src), Ok(dst), Ok(cap)) = (u32::try_from(src), u32::try_from(dst), u32::try_from(cap)) else {
+            return None;
+        };
+        params[4 + index] = src;
+        params[12 + index] = dst;
+        params[20 + index] = cap;
+    }
+    let workgroups = u32::try_from(words_total.div_ceil(256).clamp(1, 1024)).unwrap_or(1024);
+    params[0] = u32::try_from(base[0]).ok()?;
+    params[1] = workgroups * 256;
     let slot = state.slots.len();
+    while state.park_params.len() <= slot {
+        state.park_params.push(store.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("codegen.x86.link.resident.park.params"),
+            size: std::mem::size_of_val(&params) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+    }
+    let params_buffer = state.park_params[slot].clone();
+    let bytes: Vec<u8> = params.iter().flat_map(|word| word.to_le_bytes()).collect();
+    store.queue.write_buffer_counted(&params_buffer, 0, &bytes);
+    let chunk = &state.chunks[chunk_index];
+    let meta = &chunk.buffers[0];
+    let resources = [
+        ("gPK", params_buffer.as_entire_binding()),
+        ("pk_meta", meta.as_entire_binding()),
+        ("pk_src_reloc", regions[0].buffer.as_entire_binding()),
+        ("pk_src_runtime", regions[1].buffer.as_entire_binding()),
+        ("pk_src_undef", regions[2].buffer.as_entire_binding()),
+        ("pk_src_def", regions[3].buffer.as_entire_binding()),
+        ("pk_src_text", regions[4].buffer.as_entire_binding()),
+        ("pk_src_rodata", regions[5].buffer.as_entire_binding()),
+        ("pk_reloc", chunk.buffers[1].as_entire_binding()),
+        ("pk_undef", chunk.buffers[2].as_entire_binding()),
+        ("pk_def", chunk.buffers[3].as_entire_binding()),
+        ("pk_text", chunk.buffers[4].as_entire_binding()),
+        ("pk_rodata", chunk.buffers[5].as_entire_binding()),
+    ];
+    let label = "codegen.x86.link.resident.park";
+    let group = bind_group::create_bind_group_from_bindings(&store.device, Some(label), &store.park_pass, 0, &resources).ok()?;
+    record_or_defer_compute_direct(encoder, &store.park_pass, &group, label, (workgroups, 1, 1));
     state.slots.push(Slot { chunk: chunk_index, base, caps, key: None, identities: false });
     Some(ParkTicket { store: store.clone(), generation: state.generation, slot })
 }
@@ -363,17 +425,18 @@ pub(crate) fn park_identities(
         label: Some("codegen.x86.link.resident.identities"),
     });
     if bytes != 0 {
-        encoder.copy_buffer_to_buffer(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
+        encoder.copy_buffer_counted(identity, 0, &state.chunks[chunk].buffers[6].buffer, base * 4, bytes);
     }
     crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.identities", encoder.finish());
 }
 
 impl GpuX86LinkStore {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, park_pass: PassData) -> Self {
         Self {
             device: device.clone(),
             queue: queue.clone(),
-            state: Mutex::new(StoreState { generation: 0, chunks: Vec::new(), slots: Vec::new() }),
+            park_pass,
+            state: Mutex::new(StoreState { generation: 0, chunks: Vec::new(), slots: Vec::new(), park_params: Vec::new() }),
         }
     }
 
@@ -419,7 +482,7 @@ impl GpuX86LinkStore {
             rebase.push(merged.cursor);
             for region in 0..REGIONS {
                 if chunk.cursor[region] != 0 {
-                    encoder.copy_buffer_to_buffer(
+                    encoder.copy_buffer_counted(
                         &chunk.buffers[region].buffer,
                         0,
                         &merged.buffers[region].buffer,
@@ -626,6 +689,38 @@ pub(crate) struct ResidentPlan {
     reloc_cap_total: u32,
     buffers: LinkBuffers,
     prepared: Option<std::thread::JoinHandle<Result<Option<Prepared>>>>,
+    pending: Option<PendingObject>,
+}
+
+/// The last object of a plan recorded before the host read it back: its
+/// slot, where its plan words start in the plan readback, and its lengths
+/// once the host has them ([`ResidentPlan::confirm_pending`]).
+struct PendingObject {
+    store: Arc<GpuX86LinkStore>,
+    generation: u64,
+    slot: usize,
+    words_at: usize,
+    expected: Option<[u32; 4]>,
+}
+
+impl ResidentPlan {
+    /// Whether the plan's pending object is `key`: the host committed the
+    /// object to the slot the plan read. The plan then checks the object's
+    /// lengths against the ones the plan derived from the parked metadata,
+    /// as `rl_plan.slang` does for the objects the host read before it.
+    pub(crate) fn confirm_pending(&mut self, key: &ResidentObjectKey) -> bool {
+        let Some(pending) = &mut self.pending else {
+            return false;
+        };
+        let state = pending.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let committed = state.generation == pending.generation
+            && state.slots.get(pending.slot).is_some_and(|slot| slot.key == Some((key.library_id, key.unit_id)));
+        drop(state);
+        if committed {
+            pending.expected = Some([key.text_len, key.rodata_len, key.relocation_count, key.symbol_count]);
+        }
+        committed
+    }
 }
 
 impl Drop for ResidentPlan {
@@ -708,7 +803,7 @@ impl GpuX86Linker {
         self.resident_store
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue)))
+            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue, self.rl_park_pass.clone())))
             .clone()
     }
 
@@ -739,12 +834,13 @@ impl GpuX86Linker {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         objects: &[ResidentObjectKey],
+        pending: Option<&ParkedSlot>,
         bindings: &[NativeCFunction],
         options: &native::NativeLinkOptions,
         routes: ResidentRoutes<'_>,
     ) -> Result<Option<ResidentPlan>> {
         if !cfg!(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))
-            || objects.is_empty()
+            || objects.len() + usize::from(pending.is_some()) == 0
         {
             return Ok(None);
         }
@@ -763,13 +859,35 @@ impl GpuX86Linker {
                 return Ok(None);
             }
         }
-        let mut chosen = Vec::with_capacity(objects.len());
+        let mut chosen = Vec::with_capacity(objects.len() + 1);
         for object in objects {
             match by_key.get(&(object.library_id, object.unit_id)) {
                 Some(&slot) => chosen.push(slot),
                 None => return Ok(None),
             }
         }
+        // An object the host has not read back is the plan's last; its slot
+        // is uncommitted until the host has read it.
+        if let Some(pending) = pending {
+            let parked = Arc::ptr_eq(&pending.store, &store)
+                && pending.generation == state.generation
+                && state.slots.get(pending.slot).is_some_and(|slot| slot.key.is_none());
+            if !parked {
+                return Ok(None);
+            }
+            chosen.push(pending.slot);
+        }
+        // Lengths of an object the host has not read: `rl_plan.slang` skips
+        // the comparison and `finish_resident_dynamic` makes it.
+        const UNREAD: ResidentObjectKey = ResidentObjectKey {
+            library_id: u32::MAX,
+            unit_id: u32::MAX,
+            text_len: u32::MAX,
+            rodata_len: u32::MAX,
+            relocation_count: u32::MAX,
+            symbol_count: u32::MAX,
+        };
+        let objects = objects.iter().chain(pending.map(|_| &UNREAD)).collect::<Vec<_>>();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.resident.plan.encoder"),
         });
@@ -867,7 +985,7 @@ impl GpuX86Linker {
         drop(state);
         let mut status_init = [0u32; STATUS_WORDS];
         status_init[ST_NAME_STRIDE] = 1;
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             super::super::support::u32_words_bytes(&status_init),
@@ -879,7 +997,7 @@ impl GpuX86Linker {
             (&buffers.bind_hash, hash_size as usize),
             (&buffers.name_ref, names.len().max(1)),
         ] {
-            encoder.clear_buffer(&buffer.buffer, buffer.byte_offset, Some(words as u64 * 4));
+            encoder.clear_buffer_counted(&buffer.buffer, buffer.byte_offset, Some(words as u64 * 4));
         }
         let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
         // The dynamic writer's buffers are sized after the plan; the first
@@ -899,9 +1017,11 @@ impl GpuX86Linker {
         }
         drop(resources);
         flush_deferred_compute(&mut encoder);
-        let first_bytes = (STATUS_WORDS + names.len()) * 4;
+        // The pending object's plan words follow the status and the names.
+        let pending_words_at = STATUS_WORDS + names.len();
+        let first_bytes = (pending_words_at + if pending.is_some() { OBJECT_WORDS } else { 0 }) * 4;
         let first = self.reusable_readback(device, "rb.codegen.x86.link.resident.plan", first_bytes);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             &first.buffer,
@@ -909,7 +1029,7 @@ impl GpuX86Linker {
             STATUS_WORDS as u64 * 4,
         );
         if !names.is_empty() {
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 &buffers.name_ref.buffer,
                 buffers.name_ref.byte_offset,
                 &first.buffer,
@@ -917,8 +1037,18 @@ impl GpuX86Linker {
                 names.len() as u64 * 4,
             );
         }
+        if pending.is_some() {
+            let object = (objects.len() - 1) * OBJECT_WORDS;
+            encoder.copy_buffer_counted(
+                &buffers.objects.buffer,
+                buffers.objects.byte_offset + object as u64 * 4,
+                &first.buffer,
+                pending_words_at as u64 * 4,
+                OBJECT_WORDS as u64 * 4,
+            );
+        }
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.plan", encoder.finish());
-        let pending = crate::gpu::passes_core::begin_readback_map(
+        let plan_read = crate::gpu::passes_core::begin_readback_map(
             &first.buffer.slice(..first_bytes as u64),
             "codegen.x86.link.resident.plan",
         );
@@ -928,7 +1058,7 @@ impl GpuX86Linker {
             let options = options.clone();
             std::thread::Builder::new()
                 .name("laniusc-resident-link".into())
-                .spawn(move || prepare(device, first, first_bytes, pending, names, options, object_count))
+                .spawn(move || prepare(device, first, first_bytes, plan_read, names, options, object_count))
                 .context("spawn the resident x86 link worker")?
         };
         Ok(Some(ResidentPlan {
@@ -937,6 +1067,13 @@ impl GpuX86Linker {
             reloc_cap_total,
             buffers,
             prepared: Some(worker),
+            pending: pending.map(|pending| PendingObject {
+                store: pending.store.clone(),
+                generation: pending.generation,
+                slot: pending.slot,
+                words_at: pending_words_at,
+                expected: None,
+            }),
         }))
     }
 
@@ -957,6 +1094,25 @@ impl GpuX86Linker {
         let Some(Prepared { words, import_count, import_of_name, rows, total }) = prepared else {
             return Ok(None);
         };
+        // The slot holds the object the host published for the pending unit
+        // (rl_plan.slang checks the other objects).
+        if let Some(pending) = &plan.pending {
+            let Some([text_len, rodata_len, relocations, symbols]) = pending.expected else {
+                return Ok(None);
+            };
+            let Some(object) = words.get(pending.words_at..pending.words_at + OBJECT_WORDS) else {
+                return Ok(None);
+            };
+            let word = |index: usize| u64::from(object[index]);
+            if word(OB_TEXT_LEN) != u64::from(text_len)
+                || word(OB_RODATA_LEN) != u64::from(rodata_len)
+                || word(OB_RELOC_COUNT) + word(OB_RT_COUNT) != u64::from(relocations)
+                || word(OB_UNDEF_COUNT) + word(OB_DEF_COUNT) != u64::from(symbols)
+            {
+                log::debug!("resident x86 link plan: the pending object's lengths differ from its readback");
+                return Ok(None);
+            }
+        }
         let rodata_len = words[ST_RODATA_LEN];
         let text_len_total = rows.params[12];
         let output_words = total.div_ceil(4);
@@ -972,7 +1128,7 @@ impl GpuX86Linker {
         let buffers = &plan.buffers;
         let gparams = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.params", &params);
         if !import_of_name.is_empty() {
-            queue.write_buffer(
+            queue.write_buffer_counted(
                 &buffers.import_of_name.buffer,
                 buffers.import_of_name.byte_offset,
                 super::super::support::u32_words_bytes(&import_of_name),
@@ -980,7 +1136,7 @@ impl GpuX86Linker {
         }
         let dyn_word_count = rows.words.len() + words[ST_DEF_COUNT] as usize * SYMBOL_WORDS;
         let dyn_words = self.link_storage(device, "codegen.x86.link.resident.dyn_words", dyn_word_count);
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &dyn_words.buffer,
             dyn_words.byte_offset,
             super::super::support::u32_words_bytes(&rows.words),
@@ -995,7 +1151,7 @@ impl GpuX86Linker {
         );
         let gdyn = self.reusable_uniform_u32(device, queue, "codegen.x86.link.resident.dyn_params", &rows.params);
         let dyn_status = self.link_storage(device, "codegen.x86.link.resident.dyn_status", 4);
-        queue.write_buffer(
+        queue.write_buffer_counted(
             &dyn_status.buffer,
             dyn_status.byte_offset,
             super::super::support::u32_words_bytes(&[1, 0, u32::MAX, 0]),
@@ -1003,7 +1159,7 @@ impl GpuX86Linker {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.resident.emit.encoder"),
         });
-        encoder.clear_buffer(&output.buffer, output.byte_offset, Some(u64::from(output_words) * 4));
+        encoder.clear_buffer_counted(&output.buffer, output.byte_offset, Some(u64::from(output_words) * 4));
         {
             let resources = buffers.resources(&gparams, &dyn_words, &output);
             dispatch(
@@ -1053,14 +1209,14 @@ impl GpuX86Linker {
         let image_bytes = u64::from(output_words) * 4;
         let status_bytes = (STATUS_WORDS + 4) * 4;
         let status = self.reusable_readback(device, "rb.codegen.x86.link.resident.status", status_bytes);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
             &status.buffer,
             0,
             STATUS_WORDS as u64 * 4,
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &dyn_status.buffer,
             dyn_status.byte_offset,
             &status.buffer,
@@ -1083,7 +1239,7 @@ impl GpuX86Linker {
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("codegen.x86.link.resident.image.encoder"),
             });
-            encoder.copy_buffer_to_buffer(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
+            encoder.copy_buffer_counted(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
             crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
             let len = (u64::from(total) - at).min(bytes);
             let map = crate::gpu::passes_core::begin_readback_map(

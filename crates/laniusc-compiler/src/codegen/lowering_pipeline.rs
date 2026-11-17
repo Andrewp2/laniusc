@@ -1500,6 +1500,15 @@ impl GpuLoweringPipeline {
         stage.finish_object(device, queue, library_id, unit_id, &status.metadata, keep)
     }
 
+    /// The slot the recorded x86 object parked in for the resident link,
+    /// before its readback.
+    pub(crate) fn parked_x86_slot(&self) -> Option<super::x86::ParkedSlot> {
+        match &self.target {
+            TargetStage::X86_64(stage) => stage.parked_slot(),
+            TargetStage::Wasm(_) => None,
+        }
+    }
+
     pub(crate) fn finish_status(&self, device: &wgpu::Device) -> Result<LoweringStatus> {
         Ok(self.read_status(device)?.0)
     }

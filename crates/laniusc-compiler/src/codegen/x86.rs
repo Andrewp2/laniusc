@@ -21,6 +21,7 @@ pub(crate) use link::{
     ParkRegion,
     ParkSources,
     ParkTicket,
+    ParkedSlot,
     ResidentObjectKey,
     ResidentRoutes,
     ResidentSections,
@@ -76,6 +77,7 @@ pub struct GpuX86Linker {
     rl_define_pass: PassData,
     rl_insert_pass: PassData,
     rl_undefined_pass: PassData,
+    rl_park_pass: PassData,
     rl_dynsym_pass: PassData,
     rl_gather_pass: PassData,
     rl_reloc_pass: PassData,
@@ -190,6 +192,11 @@ impl GpuX86Linker {
                 "link_resident_rl_undefined",
                 "codegen/x86/link/resident/rl_undefined.spv",
                 "codegen/x86/link/resident/rl_undefined.reflect.json"
+            ),
+            rl_park_pass: load_x86_pass!(
+                "link_resident_rl_park",
+                "codegen/x86/link/resident/rl_park.spv",
+                "codegen/x86/link/resident/rl_park.reflect.json"
             ),
             rl_dynsym_pass: load_x86_pass!(
                 "link_resident_rl_dynsym",

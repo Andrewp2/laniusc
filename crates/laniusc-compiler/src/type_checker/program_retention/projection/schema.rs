@@ -1,6 +1,7 @@
 //! Parallel schema instantiation. A closed nominal is its own binding
 //! context. Each frontier contains the terms appended since the previous
 //! substitution; one request per schema record realizes its field type.
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use super::*;
 
 const KEYS: [&str; 4] = [
@@ -80,7 +81,7 @@ impl SchemaProjection {
         let next = storage(&self.device, name, size, false);
         if preserve && let Some(previous) = self.buffers.get(name) {
             let mut encoder = self.device.create_command_encoder(&Default::default());
-            encoder.copy_buffer_to_buffer(previous, 0, &next, 0, previous.size());
+            encoder.copy_buffer_counted(previous, 0, &next, 0, previous.size());
             self.queue.submit(Some(encoder.finish()));
         }
         self.buffers.insert(name, next);
@@ -103,7 +104,7 @@ impl SchemaProjection {
         }
         let cfg = &self.configs[self.cursor];
         self.cursor += 1;
-        self.queue.write_buffer(cfg, 0, &words_bytes(&config));
+        self.queue.write_buffer_counted(cfg, 0, &words_bytes(&config));
         let pass = &self.passes[kernel];
         let names = reflected_names(pass);
         let mut bindings = Vec::new();
@@ -136,7 +137,7 @@ impl SchemaProjection {
     fn read_status(&self, report: &mut SchemaReport) -> Result<Vec<u32>> {
         report.readbacks += 1;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(&self.buffers["ps_status"], 0, &self.readback, 0, 16);
+        encoder.copy_buffer_counted(&self.buffers["ps_status"], 0, &self.readback, 0, 16);
         self.queue.submit(Some(encoder.finish()));
         let slice = self.readback.slice(..);
         map_readback_blocking(&self.device, &slice, "retained_schema.status")?;
@@ -153,7 +154,7 @@ impl SchemaProjection {
         let result = self.run_inner(store);
         if result.is_err() {
             let guard = store.store.lock().unwrap();
-                self.queue.write_buffer(
+                self.queue.write_buffer_counted(
                 &guard.buffers["rt_counts"],
                 (super::super::counts::READY * 4) as u64,
                 &0u32.to_le_bytes(),
@@ -170,7 +171,7 @@ impl SchemaProjection {
         report.readbacks += 1;
         let mut base = 0u32;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.clear_buffer(&self.buffers["pj_schema_ranges"], 0, None);
+        encoder.clear_buffer_counted(&self.buffers["pj_schema_ranges"], 0, None);
         self.queue.submit(Some(encoder.finish()));
         while lo < hi {
             let n = hi - lo;

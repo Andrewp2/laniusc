@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use anyhow::{Result, anyhow};
 
 mod gather;
@@ -289,7 +290,7 @@ impl PagedReadback {
         let mut prefetched = Vec::with_capacity(regions.len());
         for region in regions {
             if region.byte_len != 0 {
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     region.source,
                     region.source_offset,
                     &self.staging.buffer,
@@ -708,7 +709,7 @@ impl PagedReadback {
                         }
                         _ => {
                             if let Some((source, source_start, page_start, len)) = pending.take() {
-                                encoder.copy_buffer_to_buffer(
+                                encoder.copy_buffer_counted(
                                     source,
                                     source_start,
                                     &self.staging.buffer,
@@ -731,7 +732,7 @@ impl PagedReadback {
             }
 
             if let Some((source, source_start, page_start, len)) = pending.take() {
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     source,
                     source_start,
                     &self.staging.buffer,

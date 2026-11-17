@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use anyhow::Result;
 
 use super::{
@@ -51,7 +52,7 @@ impl U32Readback {
             self.label,
             source.byte_size,
         );
-        encoder.copy_buffer_to_buffer(source, source.byte_offset, &self.buffer, 0, byte_size);
+        encoder.copy_buffer_counted(source, source.byte_offset, &self.buffer, 0, byte_size);
     }
 
     fn map(&self) {

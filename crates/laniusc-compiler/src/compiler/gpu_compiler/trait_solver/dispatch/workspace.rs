@@ -4,6 +4,7 @@
 //! identities, accepted prefixes and receipts are constructed afresh by their
 //! existing owners. A lease outlives every arena that can still use its bytes.
 
+use crate::gpu::copies::CountedWrites;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -209,7 +210,7 @@ impl WorkspaceLease {
         for (chunk, word) in bytes.chunks_exact_mut(4).zip(words) {
             chunk.copy_from_slice(&word.to_le_bytes());
         }
-        self.queue().write_buffer(&ring.pages[page], offset, &bytes);
+        self.queue().write_buffer_counted(&ring.pages[page], offset, &bytes);
         ring.next += 1;
         Ok((ring.pages[page].clone(), u32::try_from(offset)?))
     }

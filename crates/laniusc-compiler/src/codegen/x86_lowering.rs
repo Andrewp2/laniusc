@@ -1004,6 +1004,11 @@ impl GpuX86LirStage {
             .context("x86 object projection was not allocated for this lowering job")?
             .finish(device, queue, library_id, unit_id, metadata, keep)
     }
+
+    /// The slot the recorded object parked in, before the host reads it.
+    pub(crate) fn parked_slot(&self) -> Option<super::x86::ParkedSlot> {
+        self.object.as_ref()?.parked_slot()
+    }
 }
 
 fn stamp(timer: &mut Option<&mut GpuTimer>, encoder: &mut wgpu::CommandEncoder, label: &str) {

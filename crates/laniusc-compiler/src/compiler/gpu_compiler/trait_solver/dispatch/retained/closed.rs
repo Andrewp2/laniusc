@@ -1,5 +1,6 @@
 //! Hard obligations for concrete discovery instances, filled entirely on the
 //! GPU against the already admitted catalog. No lexical assumptions enter.
+use crate::gpu::copies::CountedCommands;
 use super::*;
 
 /// Receipt words after the route header: a deferred solve's wave state and
@@ -74,7 +75,7 @@ impl ClosedTraitPublication {
     /// Records a copy of the receipt into `target` at byte `offset`, for a
     /// caller that reads it with a later readback.
     pub fn copy_receipt(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::Buffer, offset: u64) {
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &self.routes.buffer.buffer,
             self.routes.buffer.byte_offset,
             target,
@@ -83,14 +84,14 @@ impl ClosedTraitPublication {
         );
         if let Some((state, batch, at)) = &self.solver {
             let after = offset + u64::from(RP_HEADER_WORDS) * 4;
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 &state.buffer,
                 state.byte_offset,
                 target,
                 after,
                 u64::from(wave::READ_WORDS) * 4,
             );
-            encoder.copy_buffer_to_buffer(batch, *at, target, after + u64::from(wave::READ_WORDS) * 4, 32);
+            encoder.copy_buffer_counted(batch, *at, target, after + u64::from(wave::READ_WORDS) * 4, 32);
         }
     }
 
@@ -413,7 +414,7 @@ impl RetainedTraitPublication {
                     None,
                 )?;
                 let mut encoder = device.create_command_encoder(&Default::default());
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     &store["rt_counts"],
                     0,
                     &staging.buffer,

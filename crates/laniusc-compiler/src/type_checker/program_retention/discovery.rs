@@ -3,6 +3,7 @@
 //! Direct calls and accepted implementation methods follow exact ENV edges.
 //! Required trait members need concrete solver routes. Bounded direct calls
 //! require a current retained trait publication, checked per use on the GPU. No unsupported call is omitted or sent to source replay.
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail};
@@ -198,7 +199,7 @@ impl RetainedDiscovery {
         self.admission = None;
         if result.is_err() {
             let guard = store.store.lock().unwrap();
-            self.queue.write_buffer(
+            self.queue.write_buffer_counted(
                 &guard.buffers["rt_counts"],
                 (counts::READY * 4) as u64,
                 &0u32.to_le_bytes(),
@@ -233,7 +234,7 @@ impl RetainedDiscovery {
             self.capacity.requests = self.capacity.requests.max(1);
             self.allocate(uses)?;
             let identity = self.admission.as_ref().map_or([0; 8], |a| a.identity);
-            self.queue.write_buffer(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
+            self.queue.write_buffer_counted(&self.scratch["dg_proof_identity"], 0, &words_bytes(&identity));
             let key = [self.capacity.instances, self.capacity.edges, uses.max(1), self.capacity.requests];
             if self.published.as_ref().is_none_or(|(held, ..)| *held != key) {
                 self.published = Some((
@@ -259,16 +260,16 @@ impl RetainedDiscovery {
             config[15] = generation;
             let mut encoder = self.encoder();
             for name in ["dg_slots", "dg_instances", "dg_roots", "dg_status"] {
-                encoder.clear_buffer(&self.scratch[name], 0, None);
+                encoder.clear_buffer_counted(&self.scratch[name], 0, None);
             }
             for (_, buffer) in inputs.buffers() {
-                encoder.clear_buffer(buffer, 0, None);
+                encoder.clear_buffer_counted(buffer, 0, None);
             }
-            encoder.clear_buffer(&root_routes, 0, None);
-            encoder.clear_buffer(&root_readiness, 0, None);
-            encoder.clear_buffer(requests.buffers()[1].1, 0, None);
+            encoder.clear_buffer_counted(&root_routes, 0, None);
+            encoder.clear_buffer_counted(&root_readiness, 0, None);
+            encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
             self.queue.submit(Some(encoder.finish()));
-            self.queue.write_buffer(
+            self.queue.write_buffer_counted(
                 &self.scratch["dg_status"],
                 (FIRST_ERROR * 4) as u64,
                 &u32::MAX.to_le_bytes(),
@@ -281,7 +282,7 @@ impl RetainedDiscovery {
             // first closed wave).
             let receipt_buffer = self.scratch["dg_receipt"].clone();
             if let Some(admission) = &self.admission {
-                encoder.copy_buffer_to_buffer(
+                encoder.copy_buffer_counted(
                     &admission.routes,
                     admission.offset + PUBLICATION_STATUS_WORD * 4,
                     &receipt_buffer,
@@ -426,8 +427,8 @@ impl RetainedDiscovery {
                 // has no workgroups, and resolution skips itself after any
                 // request failure or overflow (status 12). The host reports
                 // both from the wave's status readback, as before.
-                encoder.clear_buffer(requests.buffers()[1].1, 0, None);
-                encoder.clear_buffer(&self.scratch["dg_status"], 28, Some(4));
+                encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
+                encoder.clear_buffer_counted(&self.scratch["dg_status"], 28, Some(4));
                 config[0] = 0;
                 self.record_with(
                     &mut encoder,
@@ -728,7 +729,7 @@ impl RetainedDiscovery {
     ) -> Result<Option<Chained>> {
         let log_words = 4 + 2 * waves as usize;
         let wave_buffer = self.scratch["dg_wave"].clone();
-        self.queue.write_buffer(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, 0]));
+        self.queue.write_buffer_counted(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, 0]));
         let runs = engine.begin_chain(requests, waves as usize)?;
         let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
         let status_buffer = self.scratch["dg_status"].clone();
@@ -757,10 +758,10 @@ impl RetainedDiscovery {
                     self.configs.push(self.buffer("dg_config", 64)?);
                 }
                 for slot in first..first + 7 {
-                    encoder.copy_buffer_to_buffer(&wave_buffer, 0, &self.configs[slot], 4, 12);
+                    encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[slot], 4, 12);
                 }
                 // An empty frontier's scan does not size the request pass.
-                encoder.clear_buffer(&indirect, 0, None);
+                encoder.clear_buffer_counted(&indirect, 0, None);
             }
             for mode in [3, 4, 2] {
                 config[0] = mode;
@@ -771,8 +772,8 @@ impl RetainedDiscovery {
                 };
                 self.record(&mut encoder, &guard, 2, config, extra, lanes, report)?;
             }
-            encoder.clear_buffer(requests.buffers()[1].1, 0, None);
-            encoder.clear_buffer(&status_buffer, 28, Some(4));
+            encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
+            encoder.clear_buffer_counted(&status_buffer, 28, Some(4));
             config[0] = 0;
             self.record_with(&mut encoder, &guard, 0, config, extra, Dispatch::Indirect(&indirect), report)?;
             self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
@@ -797,7 +798,7 @@ impl RetainedDiscovery {
         let mut levels_config = config;
         levels_config[0] = 6;
         levels_config[8] = 0;
-        encoder.clear_buffer(&levels_buffer, 0, None);
+        encoder.clear_buffer_counted(&levels_buffer, 0, None);
         let term_lanes = guard.capacity.arenas[super::A_TERMS];
         self.record(&mut encoder, &guard, 3, levels_config, extra, term_lanes, report)?;
         let generation = guard.generation;
@@ -871,7 +872,7 @@ impl RetainedDiscovery {
                     // the last wave and nothing interns after it.
                     let mut levels_config = config;
                     levels_config[0] = 6;
-                    encoder.clear_buffer(&this.scratch["dg_levels"], 0, None);
+                    encoder.clear_buffer_counted(&this.scratch["dg_levels"], 0, None);
                     let lanes = guard.capacity.arenas[super::A_TERMS];
                     this.record(encoder, guard, 3, levels_config, extra, lanes, report)
                 };
@@ -970,7 +971,7 @@ impl RetainedDiscovery {
                 config[0] = 0;
                 let guard = store.store.lock().unwrap();
                 let mut encoder = self.encoder();
-                encoder.clear_buffer(&self.scratch["dg_levels"], 0, None);
+                encoder.clear_buffer_counted(&self.scratch["dg_levels"], 0, None);
                 self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
                 self.queue.submit(Some(encoder.finish()));
                 drop(guard);
@@ -993,12 +994,12 @@ impl RetainedDiscovery {
         }
         self.ensure("dg_term_order", end.max(1) as u64 * 4)?;
         self.queue
-            .write_buffer(&self.scratch["dg_levels"], 128 * 4, &words_bytes(&bases));
+            .write_buffer_counted(&self.scratch["dg_levels"], 128 * 4, &words_bytes(&bases));
         // Padding has one sentinel key; a GPU fill avoids arena-sized host data.
         self.config_cursor = 0;
         let guard = store.store.lock().unwrap();
         let mut encoder = self.encoder();
-        encoder.clear_buffer(&self.scratch["dg_term_rank"], 0, None);
+        encoder.clear_buffer_counted(&self.scratch["dg_term_rank"], 0, None);
         config[0] = 4;
         config[13] = end;
         self.record(&mut encoder, &guard, 3, config, extra, end, report)?;
@@ -1179,7 +1180,7 @@ impl RetainedDiscovery {
         let config_buffer = &self.configs[self.config_cursor];
         self.config_cursor += 1;
         self.queue
-            .write_buffer(config_buffer, 0, &words_bytes(&config));
+            .write_buffer_counted(config_buffer, 0, &words_bytes(&config));
         let pass = &self.passes[kernel];
         let names = reflected_names(pass);
         let mut entries = Vec::new();
@@ -1266,7 +1267,7 @@ impl RetainedDiscovery {
         let mut encoder = self.encoder();
         let mut at = 0;
         for (buffer, words) in parts {
-            encoder.copy_buffer_to_buffer(buffer, 0, &rb, at, *words as u64 * 4);
+            encoder.copy_buffer_counted(buffer, 0, &rb, at, *words as u64 * 4);
             at += *words as u64 * 4;
         }
         self.queue.submit(Some(encoder.finish()));

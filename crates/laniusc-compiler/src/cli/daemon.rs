@@ -1518,6 +1518,7 @@ async fn run_session(
                 });
             }
         }
+        crate::gpu::copies::report_job();
         crate::gpu::passes_core::finish_reflected_bind_group_job(
             bind_group_job,
             successful && created.buffers > 0,

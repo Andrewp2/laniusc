@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use super::*;
 
 struct TypeCheckRecordHostTimer {
@@ -2959,7 +2960,7 @@ impl GpuTypeChecker {
             *snapshot = Some((buffer, 0));
         }
         let (buffer, taken) = snapshot.as_mut().expect("snapshot buffer");
-        encoder.copy_buffer_to_buffer(&live.buffer, live.byte_offset, buffer, 0, bytes);
+        encoder.copy_buffer_counted(&live.buffer, live.byte_offset, buffer, 0, bytes);
         *taken = bytes;
         Ok(())
     }

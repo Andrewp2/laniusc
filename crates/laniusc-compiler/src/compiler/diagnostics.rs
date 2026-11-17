@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -3981,7 +3982,7 @@ pub(in crate::compiler) fn read_single_token_from_buffer(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("compiler.syntax.diagnostic-token-readback.encoder"),
     });
-    encoder.copy_buffer_to_buffer(token_buffer, token_offset, &token_readback, 0, token_stride);
+    encoder.copy_buffer_counted(token_buffer, token_offset, &token_readback, 0, token_stride);
     crate::gpu::passes_core::submit_with_progress(
         queue,
         "compiler.syntax.diagnostic-token-readback",

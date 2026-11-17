@@ -9,6 +9,7 @@
 //! predicates. Each kernel reports a failure as one key; the smallest key is
 //! the first failure in check order, and the host reads only that word.
 
+use crate::gpu::copies::CountedCommands;
 use anyhow::{Result, anyhow};
 
 use crate::gpu::{
@@ -194,7 +195,7 @@ pub(crate) fn validate_encoded_artifacts(
         let state = record_validation(device, queue, &mut encoder, &buffers, &artifact, &length, None)
             .map_err(|error| format!("{error:#}"))?;
         passes_core::flush_deferred_compute(&mut encoder);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &state.buffer,
             state.absolute_offset(FAILURE_KEY_BYTE_OFFSET),
             &readback.buffer,

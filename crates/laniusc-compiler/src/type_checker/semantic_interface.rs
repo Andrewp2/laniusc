@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use super::*;
 use crate::{
     compiler::{GPU_SEMANTIC_INTERFACE_VERSION, GpuSemanticInterfaceArtifact},
@@ -1066,7 +1067,7 @@ impl GpuTypeChecker {
             &artifact_length,
             Some(&status),
         )?;
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &validation.buffer,
             validation.absolute_offset(0),
             &metadata_readback.buffer,
@@ -2177,7 +2178,7 @@ fn retain_resident_bytes(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("semantic_interface.resident_bytes"),
     });
-    encoder.copy_buffer_to_buffer(
+    encoder.copy_buffer_counted(
         &artifact_words.buffer,
         artifact_words.absolute_offset(0),
         &buffer,

@@ -4,6 +4,7 @@
 //! compiler performs syntax validation as part of its ordinary parse graph;
 //! callers use this API only when they explicitly want a token-only check.
 
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
@@ -603,8 +604,8 @@ impl SyntaxBufferCache {
         self.paren_match_min_tree_steps =
             make_min_tree_build_steps(device, n_blocks, next_power_of_two_u32(n_blocks).max(1));
 
-        queue.write_buffer(&self.status_buf, 0, &status_init_bytes());
-        queue.write_buffer(&self.counters_buf, 0, &zero_i32_bytes(3));
+        queue.write_buffer_counted(&self.status_buf, 0, &status_init_bytes());
+        queue.write_buffer_counted(&self.counters_buf, 0, &zero_i32_bytes(3));
     }
 }
 
@@ -855,7 +856,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
     let token_file_id_buf = if let Some(token_file_id_buf) = token_file_id_buf {
         token_file_id_buf
     } else {
-        encoder.clear_buffer(&buffers.default_token_file_id, 0, None);
+        encoder.clear_buffer_counted(&buffers.default_token_file_id, 0, None);
         &buffers.default_token_file_id
     };
 
@@ -1143,7 +1144,7 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             n_blocks,
         )?;
     }
-    encoder.clear_buffer(&buffers.statement_context_kind, 0, None);
+    encoder.clear_buffer_counted(&buffers.statement_context_kind, 0, None);
     {
         let local_resources: HashMap<String, wgpu::BindingResource<'_>> = HashMap::from([
             (
@@ -1710,8 +1711,8 @@ fn record_token_buffer_check_with_cache_and_file_ids(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    encoder.copy_buffer_to_buffer(&buffers.status_buf, 0, &readback, 0, 16);
-    encoder.copy_buffer_to_buffer(&buffers.counters_buf, 0, &readback, 16, 12);
+    encoder.copy_buffer_counted(&buffers.status_buf, 0, &readback, 0, 16);
+    encoder.copy_buffer_counted(&buffers.counters_buf, 0, &readback, 16, 12);
     Ok(RecordedSyntaxCheck { readback })
 }
 

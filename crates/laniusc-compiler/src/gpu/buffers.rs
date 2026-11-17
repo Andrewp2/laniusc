@@ -1,3 +1,4 @@
+use crate::gpu::copies::{CountedCommands, CountedWrites};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -772,6 +773,7 @@ impl<T> LaniusBuffer<T> {
     }
 
     /// Uploads bytes at an offset relative to this logical view.
+    #[track_caller]
     pub fn write(&self, queue: &wgpu::Queue, relative_offset: u64, data: &[u8]) {
         let end = relative_offset
             .checked_add(data.len() as u64)
@@ -780,11 +782,12 @@ impl<T> LaniusBuffer<T> {
             end <= self.byte_size as u64,
             "GPU buffer upload exceeds its logical view"
         );
-        queue.write_buffer(&self.buffer, self.absolute_offset(relative_offset), data);
+        queue.write_buffer_counted(&self.buffer, self.absolute_offset(relative_offset), data);
     }
 
     /// Clears bytes relative to this logical view. `None` clears only the rest
     /// of the view, never adjacent arena occupants.
+    #[track_caller]
     pub fn clear(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -800,7 +803,7 @@ impl<T> LaniusBuffer<T> {
             "GPU buffer clear exceeds its logical view"
         );
         crate::gpu::passes_core::trace_clear("buffer.clear", size);
-        encoder.clear_buffer(
+        encoder.clear_buffer_counted(
             &self.buffer,
             self.absolute_offset(relative_offset),
             Some(size),
@@ -809,6 +812,7 @@ impl<T> LaniusBuffer<T> {
 
     /// Copies between logical views while translating both relative offsets to
     /// their physical arena offsets.
+    #[track_caller]
     pub fn copy_to<U>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -825,7 +829,7 @@ impl<T> LaniusBuffer<T> {
             destination_offset.saturating_add(size) <= destination.byte_size as u64,
             "GPU buffer copy exceeds its destination view"
         );
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &self.buffer,
             self.absolute_offset(source_offset),
             &destination.buffer,
@@ -996,7 +1000,7 @@ where
         usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
         mapped_at_creation: false,
     });
-    queue.write_buffer(&raw, 0, bytes);
+    queue.write_buffer_counted(&raw, 0, bytes);
     LaniusBuffer::new_labeled((raw, bytes.len() as u64), 1, label)
 }
 
@@ -1201,7 +1205,7 @@ where
             usage: crate::gpu::buffers::with_debug_copy(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
         });
-        queue.write_buffer(&raw, 0, bytes);
+        queue.write_buffer_counted(&raw, 0, bytes);
         raw
     })
 }
@@ -1378,7 +1382,7 @@ pub fn storage_ro_from_u32s_with_queue(
         mapped_at_creation: false,
     });
     if !bytes.is_empty() {
-        queue.write_buffer(&raw, 0, &bytes);
+        queue.write_buffer_counted(&raw, 0, &bytes);
     }
     LaniusBuffer::new_labeled((raw, byte_size as u64), values.len(), label)
 }

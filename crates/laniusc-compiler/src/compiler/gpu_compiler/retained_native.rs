@@ -16,6 +16,7 @@
 //! No step replays a source or falls back to a frontend: a rejected
 //! catalog, discovery, projection, certification or finalization fails the build.
 
+use crate::gpu::copies::CountedWrites;
 use std::{num::NonZeroU32, sync::Arc};
 
 use super::{
@@ -418,7 +419,7 @@ impl GpuCompiler<'_> {
         let calls = build.calls.as_ref().ok_or_else(|| retained_error("certify", "no caller ABI tables"))?;
         if let Some(term) = build.test_caller_arg_fault {
             let words = vec![term; (calls.args.size() / 4) as usize];
-            self.gpu.queue.write_buffer(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
+            self.gpu.queue.write_buffer_counted(&calls.args, 0, &words.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>());
         }
         // The symbol finalizer reads only the original objects and the root
         // routes, so it is submitted while the GPU lowers the first projected
@@ -448,6 +449,44 @@ impl GpuCompiler<'_> {
                 finalize_submitted = Some(finalizer.submit_once(device, queue, &columns, &table, generation));
             }
         };
+        // The resident link's plan needs only the routes and the parked
+        // objects, so it runs on the GPU while the host finishes the objects
+        // and finalizes. It is submitted behind the last batch's lowering,
+        // before the host reads that batch's object back.
+        let resident_link = match (&build.native_link, self.x86_linker()) {
+            (Some(options), Ok(linker)) if resident && target == SourcePackArtifactTarget::X86_64 => {
+                Some((options, linker))
+            }
+            _ => None,
+        };
+        let resident_key = |object: &CompiledSourcePackObject| match object {
+            CompiledSourcePackObject::X86_64File(object) => Some(x86::ResidentObjectKey {
+                library_id: object.layout.library_id,
+                unit_id: object.layout.unit_id,
+                text_len: object.layout.text_byte_len,
+                rodata_len: object.layout.rodata_byte_len,
+                relocation_count: object.layout.relocation_count,
+                symbol_count: object.layout.symbol_count,
+            }),
+            _ => None,
+        };
+        let routes = || x86::ResidentRoutes {
+            routes: &roots.root_routes,
+            route_capacity: roots.root_route_capacity,
+        };
+        let begin_resident = |keys: &[x86::ResidentObjectKey], pending: Option<&x86::ParkedSlot>| {
+            let (options, linker) = resident_link.as_ref()?;
+            match linker.begin_resident_dynamic(device, queue, keys, pending, native_functions, options, routes()) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    log::warn!("resident x86 link failed, linking on the host: {error:#}");
+                    None
+                }
+            }
+        };
+        let original_keys = originals.iter().map(resident_key).collect::<Option<Vec<_>>>();
+        let mut instance_keys = Vec::new();
+        let mut early_plan = None;
         let outcome = build
             .projection
             .run_with_lowerer(
@@ -455,11 +494,28 @@ impl GpuCompiler<'_> {
                 &roots.inputs,
                 &build.options,
                 Some(RootCertification { routes: &roots.root_routes, readiness: &roots.root_readiness, calls }),
-                |bytes,tokens,rows,hir,semantic| {
+                |bytes,tokens,rows,hir,semantic,last| {
+                    let mut submitted = |parked: Option<x86::ParkedSlot>| {
+                        submit_finalize();
+                        if !last {
+                            return;
+                        }
+                        // A retried lowering parks its object again.
+                        early_plan = None;
+                        let keys = original_keys.iter().flatten().copied()
+                            .map(Some)
+                            .chain(instance_keys.iter().copied())
+                            .collect::<Option<Vec<_>>>();
+                        if let (Some(_), Some(keys), Some(parked)) = (&original_keys, keys, parked) {
+                            early_plan = begin_resident(&keys, Some(&parked));
+                        }
+                    };
                     let object=self.lower_projected_batch(target,bytes,tokens,rows,hir,semantic,
-                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE,&mut submit_finalize)?;
+                        x86::finalize::NATIVE_RESERVED_LIBRARY,x86::finalize::NATIVE_NS_INSTANCE,&mut submitted)?;
                     let _span = x86::TailSpan::new("tail.instance.spill");
-                    object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))
+                    let object = object.spill_native(object_store).map_err(|e|anyhow::anyhow!("{e:?}"))?;
+                    instance_keys.push(resident_key(&object));
+                    Ok(object)
                 },
             )
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
@@ -468,36 +524,16 @@ impl GpuCompiler<'_> {
             ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
         };
         let _tail = x86::TailSpan::new("tail.after_projection");
-        // The resident link's first half needs only the routes, so it runs
-        // on the GPU while the host finalizes.
-        let resident_plan = match (&build.native_link, self.x86_linker()) {
-            (Some(options), Ok(linker)) if resident && target == SourcePackArtifactTarget::X86_64 => {
-                let keys = originals.iter().chain(&instances).map(|object| match object {
-                    CompiledSourcePackObject::X86_64File(object) => Some(x86::ResidentObjectKey {
-                        library_id: object.layout.library_id,
-                        unit_id: object.layout.unit_id,
-                        text_len: object.layout.text_byte_len,
-                        rodata_len: object.layout.rodata_byte_len,
-                        relocation_count: object.layout.relocation_count,
-                        symbol_count: object.layout.symbol_count,
-                    }),
-                    _ => None,
-                }).collect::<Option<Vec<_>>>();
-                let routes = x86::ResidentRoutes {
-                    routes: &roots.root_routes,
-                    route_capacity: roots.root_route_capacity,
-                };
-                match keys.map(|keys| linker.begin_resident_dynamic(
-                    &self.gpu.device, &self.gpu.queue, &keys, native_functions, options, routes)) {
-                    Some(Ok(plan)) => plan,
-                    Some(Err(error)) => {
-                        log::warn!("resident x86 link failed, linking on the host: {error:#}");
-                        None
-                    }
-                    None => None,
-                }
-            }
-            _ => None,
+        let keys = originals.iter().chain(&instances).map(resident_key).collect::<Option<Vec<_>>>();
+        // The early plan holds when the last object committed to the slot it
+        // read; otherwise the link is planned now from the committed slots.
+        let early_plan = early_plan.take().and_then(|mut plan| {
+            let last = keys.as_ref()?.last()?;
+            plan.confirm_pending(last).then_some(plan)
+        });
+        let resident_plan = match early_plan {
+            Some(plan) => Some(plan),
+            None => keys.and_then(|keys| begin_resident(&keys, None)),
         };
         let finalize_span = x86::TailSpan::new("tail.finalize");
         let submitted = match finalize_submitted {

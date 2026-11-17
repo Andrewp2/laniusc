@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedWrites;
 use anyhow::{Result, anyhow};
 use log::warn;
 
@@ -375,7 +376,7 @@ impl GpuLexer {
             align_to_word(n) as usize,
         );
         if let Some(changed) = changed {
-            self.queue.write_buffer(
+            self.queue.write_buffer_counted(
                 &bufs.in_bytes,
                 changed.start as u64,
                 &bufs.resident_source_bytes[changed],
@@ -395,12 +396,12 @@ impl GpuLexer {
 
         let aligned_len = align_to_word(n) as usize;
         if aligned_len == input_bytes.len() {
-            self.queue.write_buffer(&bufs.in_bytes, 0, input_bytes);
+            self.queue.write_buffer_counted(&bufs.in_bytes, 0, input_bytes);
         } else {
             let mut tmp = Vec::with_capacity(aligned_len);
             tmp.extend_from_slice(input_bytes);
             tmp.resize(aligned_len, 0u8);
-            self.queue.write_buffer(&bufs.in_bytes, 0, &tmp);
+            self.queue.write_buffer_counted(&bufs.in_bytes, 0, &tmp);
         }
     }
 
@@ -424,21 +425,21 @@ impl GpuLexer {
         };
         let mut uniform = encase::UniformBuffer::new(Vec::<u8>::new());
         uniform.write(&params).expect("failed to encode LexParams");
-        self.queue.write_buffer(&bufs.params, 0, uniform.as_ref());
+        self.queue.write_buffer_counted(&bufs.params, 0, uniform.as_ref());
         self.queue
-            .write_buffer(&bufs.token_count, 0, &0u32.to_le_bytes());
+            .write_buffer_counted(&bufs.token_count, 0, &0u32.to_le_bytes());
         self.queue
-            .write_buffer(&bufs.parser_feature_flags, 0, &0u32.to_le_bytes());
+            .write_buffer_counted(&bufs.parser_feature_flags, 0, &0u32.to_le_bytes());
     }
 
     /// Writes single-file source metadata into resident buffers.
     pub(super) fn write_current_source_file_metadata(&self, bufs: &buffers::GpuBuffers, n: u32) {
         self.queue
-            .write_buffer(&bufs.source_file_count, 0, &1u32.to_le_bytes());
+            .write_buffer_counted(&bufs.source_file_count, 0, &1u32.to_le_bytes());
         self.queue
-            .write_buffer(&bufs.source_file_start, 0, &0u32.to_le_bytes());
+            .write_buffer_counted(&bufs.source_file_start, 0, &0u32.to_le_bytes());
         self.queue
-            .write_buffer(&bufs.source_file_len, 0, &n.to_le_bytes());
+            .write_buffer_counted(&bufs.source_file_len, 0, &n.to_le_bytes());
     }
 
     fn write_source_pack_metadata(
@@ -446,7 +447,7 @@ impl GpuLexer {
         bufs: &buffers::GpuBuffers,
         source_files: &SourceFileMetadata,
     ) {
-        self.queue.write_buffer(
+        self.queue.write_buffer_counted(
             &bufs.source_file_count,
             0,
             &source_files.count().to_le_bytes(),
@@ -463,7 +464,7 @@ impl GpuLexer {
         for value in values {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        self.queue.write_buffer(buffer, 0, &bytes);
+        self.queue.write_buffer_counted(buffer, 0, &bytes);
     }
 
     fn clear_bind_group_cache(&self, message: &str) {

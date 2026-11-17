@@ -1,3 +1,4 @@
+use crate::gpu::copies::CountedCommands;
 use super::*;
 use std::sync::Arc;
 
@@ -484,7 +485,7 @@ impl GpuDependencyInterfacePages {
                 store,
                 &page_words,
             )?;
-            encoder.copy_buffer_to_buffer(
+            encoder.copy_buffer_counted(
                 &store.buffer,
                 store.absolute_offset(0),
                 &resident.words.buffer,
@@ -553,7 +554,7 @@ impl GpuDependencyInterfacePages {
         let offset = self.page_store_offsets[page];
         let bytes = packed.word_count as u64 * 4;
         crate::gpu::passes_core::flush_deferred_compute(encoder);
-        encoder.copy_buffer_to_buffer(
+        encoder.copy_buffer_counted(
             &store.buffer,
             store.absolute_offset(offset),
             &self.state.words.buffer,

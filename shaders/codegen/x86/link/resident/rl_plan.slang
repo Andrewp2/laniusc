@@ -21,10 +21,13 @@ void main(uint3 tid: SV_DispatchThreadID)
             text_len > slot_word(k, 12u) || rodata_len > slot_word(k, 13u) ||
             meta_word(k, 10u) < meta_word(k, 9u))
             fail(1u);
-        // The slot holds the object the host published for this unit.
-        if (text_len != slot_word(k, 14u) || rodata_len != slot_word(k, 15u) ||
+        // The slot holds the object the host published for this unit. An
+        // object the host has not read back yet has INVALID lengths; the
+        // host compares its plan words after its readback.
+        if (slot_word(k, 14u) != INVALID &&
+            (text_len != slot_word(k, 14u) || rodata_len != slot_word(k, 15u) ||
             meta_word(k, 1u) + meta_word(k, 16u) != slot_word(k, 16u) ||
-            meta_word(k, 2u) + meta_word(k, 3u) != slot_word(k, 17u))
+            meta_word(k, 2u) + meta_word(k, 3u) != slot_word(k, 17u)))
             fail(1u);
         if (is_entry != 0u)
         {
