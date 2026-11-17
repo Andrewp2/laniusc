@@ -38,11 +38,21 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/06_bound_routes",
 ];
 const STATUS_WORDS: usize = 32;
+/// Route header words 8-10 of a retained trait publication: status (1
+/// valid), route failures, first failure (route_abi.slang).
+const PUBLICATION_STATUS_WORD: u64 = 8;
+const PUBLICATION_STATUS_WORDS: usize = 3;
 /// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
 const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
 /// Words of dg_levels holding the closed terms per height.
 const LEVELS: usize = 128;
+/// Waves without closed predicates that the first chain of a discovery
+/// records back to back in one submit (`chain_waves`), with one readback
+/// after the last. Each further chain of the same attempt records twice as
+/// many, up to `CHAIN_WAVES_MAX`.
+const CHAIN_WAVES: u32 = 3;
+const CHAIN_WAVES_MAX: u32 = 48;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiscoveryCapacity {
@@ -200,13 +210,16 @@ impl RetainedDiscovery {
     fn run_inner(&mut self, store: &ProgramRetention, mut publication: Option<&mut RetainedTraitPublication>) -> Result<DiscoveryOutcome> {
         // The catalog read the store's counters with its publication
         // status; nothing writes the store between them.
-        let initial = match publication.as_deref().and_then(|p| p.take_store_counts()) {
+        let initial = match publication.as_deref().and_then(|p| p.take_store_counts(store)) {
             Some(words) => words,
             None => store.status()?,
         };
         let uses = initial[8];
         let generation = store.generation();
         let mut report = DiscoveryReport::default();
+        // Waves without closed predicates run as chains until a chain does
+        // not come back clean; the attempt then runs again unchained.
+        let mut chain = true;
         'attempt: loop {
             report.attempts += 1;
             report.waves = 0;
@@ -263,6 +276,20 @@ impl RetainedDiscovery {
             self.config_cursor = 0;
             let guard = store.store.lock().unwrap();
             let mut encoder = self.encoder();
+            // The source publication's status words come back with the
+            // roots' resolution readback (dg_receipt is free until the
+            // first closed wave).
+            let receipt_buffer = self.scratch["dg_receipt"].clone();
+            if let Some(admission) = &self.admission {
+                encoder.copy_buffer_to_buffer(
+                    &admission.routes,
+                    admission.offset + PUBLICATION_STATUS_WORD * 4,
+                    &receipt_buffer,
+                    0,
+                    PUBLICATION_STATUS_WORDS as u64 * 4,
+                );
+            }
+            let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
             self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             self.queue.submit(Some(encoder.finish()));
@@ -272,15 +299,31 @@ impl RetainedDiscovery {
             // Level counts from the last wave's resolution readback, while
             // nothing has interned terms after it.
             let mut levels: Option<Vec<u32>> = None;
-            let resolved = self.resolve(store, &requests, &extra, config, None, None, &mut report)?;
+            let resolved = self.resolve(store, &requests, &extra, config, publication_read, None, &mut report)?;
             let request_capacity = resolved.is_none();
             let mut status = match resolved {
                 Some((words, first)) => {
                     levels = first.then(|| words[words.len() - LEVELS..].to_vec());
                     words
                 }
-                None => self.read_status_counts(store, &[], &mut report)?,
+                None => self.read_status_counts(store, publication_read.as_slice(), &mut report)?,
             };
+            // A source publication that is not valid rejects discovery
+            // before any growth or failure of the roots; the caller reads
+            // the noted status and reports the publication's failure.
+            if let Some(source) = publication.as_deref() {
+                let at = STATUS_WORDS + counts::WORDS;
+                let words = [status[at], status[at + 1], status[at + 2]];
+                source.note_status(words);
+                if words != [1, 0, u32::MAX] {
+                    return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                        code: 10,
+                        use_index: u32::MAX,
+                        instance: u32::MAX,
+                        detail: words[2],
+                    }));
+                }
+            }
 
             if self.grow(&status)? {
                 continue 'attempt;
@@ -296,6 +339,7 @@ impl RetainedDiscovery {
             let mut edges = 0;
             let mut depth = 1;
             let mut predicated = 0;
+            let mut chain_waves = CHAIN_WAVES;
             while lo < hi {
                 // Concrete instances have closed goals, even when their
                 // source call was proved parametrically. Reuse the admitted
@@ -329,6 +373,29 @@ impl RetainedDiscovery {
                     // resolution readback.
                     proofs
                 } else { None };
+                if closed.is_none() && chain {
+                    let waves = chain_waves;
+                    chain_waves = (chain_waves * 2).min(CHAIN_WAVES_MAX);
+                    match self.chain_waves(store, &requests, &extra, config, [lo, hi, edges, depth, predicated, waves], &mut report)? {
+                        Some(chained) => {
+                            status = chained.status;
+                            levels = Some(chained.levels);
+                            report.waves += chained.ran;
+                            lo = chained.lo;
+                            hi = status[0];
+                            edges = status[2];
+                            depth += chained.ran;
+                            if depth > 65 {
+                                bail!("discovery exceeded its depth contract");
+                            }
+                            continue;
+                        }
+                        None => {
+                            chain = false;
+                            continue 'attempt;
+                        }
+                    }
+                }
                 // Each wave expands precisely the newly interned instances.
                 // A prefix scan places uses; one lane then handles each use.
                 report.waves += 1;
@@ -616,6 +683,149 @@ impl RetainedDiscovery {
             &mut then,
             &[(&status_buffer, STATUS_WORDS), (&counts_buffer, counts::WORDS)],
         )
+    }
+    /// Records waves without closed predicates in one submit, starting
+    /// with the frontier `lo..hi` (`wave` is lo, hi, edges, depth, the
+    /// predicated instance count and the number of waves). Wave 0 is the
+    /// host's; before each later wave `05_publish` mode 3 places the
+    /// instances the previous wave inserted, or an empty frontier when the
+    /// host must decide first (a failure, an overflow, new closed
+    /// predicates), and copies (lo, hi, edges) into the wave's configs.
+    /// Each wave substitutes its requests in its own run (`record_chained`)
+    /// and resolves them; a run that did not publish fails resolution with
+    /// code 11. One readback returns the status, the store counters, the
+    /// last run's status words, the waves' frontiers and the level counts.
+    /// Returns None unless the chain came back clean: no failure, no
+    /// overflow, the last run published. The caller then runs the attempt
+    /// again without chaining.
+    fn chain_waves(
+        &mut self,
+        store: &ProgramRetention,
+        requests: &SubstitutionRequests,
+        extra: &[(&str, &wgpu::Buffer)],
+        config: [u32; 16],
+        wave: [u32; 6],
+        report: &mut DiscoveryReport,
+    ) -> Result<Option<Chained>> {
+        let mut engine = self
+            .substitution
+            .take()
+            .ok_or_else(|| anyhow!("discovery substitution is in use"))?;
+        let result = self.record_chain(&mut engine, store, requests, extra, config, wave, report);
+        self.substitution = Some(engine);
+        result
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn record_chain(
+        &mut self,
+        engine: &mut RetainedSubstitution,
+        store: &ProgramRetention,
+        requests: &SubstitutionRequests,
+        extra: &[(&str, &wgpu::Buffer)],
+        mut config: [u32; 16],
+        [lo, hi, edges, depth, predicated, waves]: [u32; 6],
+        report: &mut DiscoveryReport,
+    ) -> Result<Option<Chained>> {
+        let log_words = 4 + 2 * waves as usize;
+        let wave_buffer = self.scratch["dg_wave"].clone();
+        self.queue.write_buffer(&wave_buffer, 0, &words_bytes(&[lo, hi, edges, 0]));
+        let runs = engine.begin_chain(requests, waves as usize)?;
+        let counts_buffer = store.store.lock().unwrap().buffers["rt_counts"].clone();
+        let status_buffer = self.scratch["dg_status"].clone();
+        let levels_buffer = self.scratch["dg_levels"].clone();
+        let indirect = self.scratch["dg_indirect"].clone();
+        let request_lanes = requests.capacity();
+        let instance_lanes = self.capacity.instances;
+        self.config_cursor = 0;
+        let guard = store.store.lock().unwrap();
+        let mut encoder = self.encoder();
+        for i in 0..waves {
+            config[1] = lo;
+            config[2] = hi;
+            config[3] = edges;
+            config[4] = 0;
+            config[6] = depth + 1 + i;
+            config[8] = i + 1;
+            config[9] = 0;
+            config[14] = predicated;
+            if i > 0 {
+                config[0] = 3;
+                self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+                // This wave's seven configs take (lo, hi, edges) from the GPU.
+                let first = self.config_cursor;
+                while self.configs.len() < first + 7 {
+                    self.configs.push(self.buffer("dg_config", 64)?);
+                }
+                for slot in first..first + 7 {
+                    encoder.copy_buffer_to_buffer(&wave_buffer, 0, &self.configs[slot], 4, 12);
+                }
+                // An empty frontier's scan does not size the request pass.
+                encoder.clear_buffer(&indirect, 0, None);
+            }
+            for mode in [3, 4, 2] {
+                config[0] = mode;
+                let lanes = match (mode, i) {
+                    (4, _) => 1,
+                    (_, 0) => hi - lo,
+                    _ => instance_lanes,
+                };
+                self.record(&mut encoder, &guard, 2, config, extra, lanes, report)?;
+            }
+            encoder.clear_buffer(requests.buffers()[1].1, 0, None);
+            encoder.clear_buffer(&status_buffer, 28, Some(4));
+            config[0] = 0;
+            self.record_with(&mut encoder, &guard, 0, config, extra, Dispatch::Indirect(&indirect), report)?;
+            self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+            let mut consumer = |encoder: &mut wgpu::CommandEncoder,
+                                guard: &Store,
+                                run: u32,
+                                results: &wgpu::Buffer,
+                                counts: &wgpu::Buffer|
+             -> Result<()> {
+                let mut config = config;
+                config[5] = run;
+                let mut bindings = extra.to_vec();
+                bindings.extend([("sb_results", results), ("sb_counts", counts)]);
+                self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
+                self.record(encoder, guard, 5, config, extra, 1, report)
+            };
+            let dispatches = engine.record_chained(&mut encoder, &guard, requests, i as usize, runs[i as usize], &mut consumer)?;
+            report.substitution_dispatches += dispatches;
+        }
+        // Level counts for term ranking, valid when the chain ends
+        // discovery and nothing interns after it.
+        let mut levels_config = config;
+        levels_config[0] = 6;
+        levels_config[8] = 0;
+        encoder.clear_buffer(&levels_buffer, 0, None);
+        let term_lanes = guard.capacity.arenas[super::A_TERMS];
+        self.record(&mut encoder, &guard, 3, levels_config, extra, term_lanes, report)?;
+        let generation = guard.generation;
+        self.queue.submit(Some(encoder.finish()));
+        drop(guard);
+        let sb_counts = engine
+            .counts_buffer()
+            .ok_or_else(|| anyhow!("retained substitution has no status words"))?
+            .clone();
+        let words = self.read_many(
+            &[
+                (&status_buffer, STATUS_WORDS),
+                (&counts_buffer, counts::WORDS),
+                (&sb_counts, super::substitution::words::COUNT),
+                (&wave_buffer, log_words),
+                (&levels_buffer, LEVELS),
+            ],
+            report,
+        )?;
+        let (status, rest) = words.split_at(STATUS_WORDS + counts::WORDS);
+        let (sb, rest) = rest.split_at(super::substitution::words::COUNT);
+        let (log, levels) = rest.split_at(log_words);
+        let last = runs[waves as usize - 1];
+        if !engine.finish_chain(sb, last, generation) || status[3] != 0 || failure(status).is_some() {
+            return Ok(None);
+        }
+        let ran = 1 + (1..waves as usize).filter(|&i| log[5 + 2 * i] > log[4 + 2 * i]).count() as u32;
+        Ok(Some(Chained { status: status.to_vec(), levels: levels.to_vec(), lo: log[1], ran }))
     }
     /// Substitutes the requests and records resolution in the same submit.
     /// Returns the status words and store counters after resolution, or
@@ -905,6 +1115,7 @@ impl RetainedDiscovery {
             ("dg_term_rank", 4),
             ("dg_levels", 384 * 4),
             ("dg_receipt", ClosedTraitPublication::RECEIPT_WORDS as u64 * 4),
+            ("dg_wave", u64::from(4 + 2 * CHAIN_WAVES_MAX) * 4),
         ] {
             self.ensure(name, bytes)?;
         }
@@ -1083,6 +1294,17 @@ struct SpeculativeRoutes<'a> {
     nodes_bound: u32,
     metadata: wgpu::Buffer,
     instances: wgpu::Buffer,
+}
+/// The outcome of a clean chain of waves.
+struct Chained {
+    /// Status words and store counters after the last wave.
+    status: Vec<u32>,
+    /// Closed terms per height after the last wave.
+    levels: Vec<u32>,
+    /// The last wave's frontier end: the next wave's first instance.
+    lo: u32,
+    /// Waves with a nonempty frontier.
+    ran: u32,
 }
 /// How many workgroups a recorded pass runs.
 enum Dispatch<'a> {

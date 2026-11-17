@@ -267,14 +267,11 @@ than its parent, and a binding is lower than the ENV that holds it.
 | --- | --- | --- |
 | 00 begin | 1 | refuse an oversized request count; open the attempt, save the store's term watermark and status words |
 | 01 roots | one per request | validate; resolve the term and the ENV's closed evaluation to immediates or root tasks |
-| 02 expand plan | 1 | frontier = tasks created since the last plan; plan `frontier × max arity` lanes |
-| 03 expand | one per (frontier task, argument) | resolve one edge, creating the child task if new; a repeated argument shares the first occurrence's edge |
-| 04 scatter | one per task | bucket live tasks by level (counts are kept at creation) |
-| 05 eval plan | 1 | the next nonempty level |
-| 06 eval | one per task of the level | check the operands' kinds, intern the task's result, or fail |
-| 07 publish | one per request | choose each outcome; `CAPACITY` everywhere after an overflow |
-| 08 finish | 1 | restore the store's status words; commit, or restore the store's term counters |
-| 09 rollback | one per store term slot | clear slots of terms an overflowed attempt interned |
+| 02 plan | 1 | plan one round of step 03: the next frontier (tasks created since the last plan, `frontier × max arity` lanes), the scatter after an empty frontier, or the next nonempty level |
+| 03 step | by phase | expansion: one lane per (frontier task, argument) resolves one edge, creating the child task if new, and a repeated argument shares the first occurrence's edge; scatter: one lane per task buckets live tasks by level (counts are kept at creation); evaluation: one lane per task of the level checks the operands' kinds, interns the task's result, or fails |
+| 04 publish | one per request | choose each outcome; `CAPACITY` everywhere after an overflow |
+| 05 finish | 1 | restore the store's status words; commit, or restore the store's term counters |
+| 06 rollback | one per store term slot | clear slots of terms an overflowed attempt interned |
 
 Work is O(tasks + edges) lane steps. An expansion lane also compares its
 argument with the earlier arguments of the same task (at most 63), and a
@@ -285,32 +282,42 @@ slots). No lane walks a term DAG, a body or a table.
 The dependency span is the number of expansion rounds plus the number of
 nonempty levels. Both are bounded by the term height plus the
 environment height, and each by the 256 task levels. Indirect dispatch
-arguments make empty rounds dispatch no workgroups. The host records one
-batch of `k` expansion rounds, the scatter, `k` evaluation rounds and the
-end steps (`k` = 8). It submits the batch and reads the status words, then
-records batches of `2k`, `4k`, … until the attempt is final. An attempt
-that is not final after `2 × (256 + 1)` = 514 recorded rounds of each kind
+arguments make empty rounds dispatch no workgroups. A round is one
+dispatch of the planner and one of the step. Expansion, the scatter and
+evaluation share the rounds: an attempt with `e` nonempty expansion
+rounds and `v` nonempty levels needs `e + v + 2` rounds (the scatter runs
+in the round whose plan found the frontier empty, and the last plan finds
+no level left). The host records one batch of `k` rounds and the end
+steps (`k` = 8, 21 dispatches). It submits the batch and reads the status
+words, then records batches of `2k`, `4k`, … until the attempt is final.
+An attempt that is not final after `2 × (256 + 1)` = 514 recorded rounds
 lost its phase: the run fails closed (below).
+
+Before the planners and steps were merged, a batch recorded `k`
+expansion rounds, the scatter and `k` evaluation rounds (38 dispatches for
+`k` = 8). Every run of the settings app needs at most 7 rounds (at most 2
+expansion rounds and 3 levels), so its 9 runs per build record 189
+dispatches instead of 342 and still read one batch each.
 
 Measured on the focused tests (this desktop's GPU, release build, host wall
 time per run including readbacks):
 
 | Fixture | Requests | Tasks | Edges resolved | Rounds (expand + eval) | Max frontier | Dispatches | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 40-level shared DAG (2^40 leaves as a tree), three equal requests | 3 | 41 | 44 | 40 + 40 | 6 | 498 | 6 ms |
-| 4096 environments × 2 templates | 8192 | 49152 | 73728 | 8 + 9 | 16384 | 220 (4 attempts) | 5 ms |
-| all contract cases (depth 64, 64-slot ENV, fits, kinds, nested ENVs, invalid requests) | 77 | 326 | 537 | 63 + 65 | 108 | 1014 | 11–12 ms |
-| the same with tiny tables and a store with room for half the results | 77 | 326 | 537 | 63 + 65 | 108 | 1826 (5 attempts) | 23–38 ms |
+| 40-level shared DAG (2^40 leaves as a tree), three equal requests | 3 | 41 | 44 | 40 + 40 | 6 | 254 (4 batches) | 6 ms |
+| 4096 environments × 2 templates | 8192 | 49152 | 73728 | 8 + 9 | 16384 | 119 (4 attempts) | 5 ms |
+| all contract cases (depth 64, 64-slot ENV, fits, kinds, nested ENVs, invalid requests) | 77 | 326 | 537 | 63 + 65 | 108 | 513 (5 batches) | 6–16 ms |
+| the same with tiny tables and a store with room for half the results | 77 | 326 | 537 | 63 + 65 | 108 | 932 (5 attempts, 14 batches) | 16–46 ms |
 | two exported jobs, requests from retained uses | 93 | 13 | 14 | 2 + 2 | — | — | — |
 
 The ENV evaluation adds one task per distinct request ENV with a compound
 record: 1 task for the DAG, 4096 for the 4096 environments. The
 4096-environment run grows its task table three times from the default
 16384 tasks. Its span is the template height, independent of the number
-of environments. A 64-level chain needs about 128 dependent rounds, which
-costs four batches, five readbacks and about 1000 recorded dispatches,
-most of them empty. A run with no tasks costs 38 dispatches and one
-readback (0.7 ms).
+of environments. A 64-level chain needs about 130 dependent rounds, which
+costs five batches, five readbacks and about 510 recorded dispatches,
+most of them empty. A run with no tasks costs 21 dispatches and one
+readback.
 
 ## Capacity, transactions and errors
 

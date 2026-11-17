@@ -1,4 +1,4 @@
-// Substitution step 7: one lane per request, after the attempt finished.
+// Substitution step 4: one lane per request, after the attempt finished.
 // A committed attempt publishes each request's result with its status and
 // provenance. An overflowed attempt publishes SB_CAPACITY for every request:
 // none of its partial results or failures is visible.

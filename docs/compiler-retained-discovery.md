@@ -143,6 +143,59 @@ A failed discovery returns a code, retained-use ordinal, instance index and deta
 It publishes no usable readiness record. This API is not yet the default compiler
 path and does not by itself remove replay from normal compilation.
 
+## Chained waves
+
+A wave whose frontier has no closed predicates needs no host decision
+before the next wave unless it fails, overflows or inserts instances with
+closed predicates. Such waves run as a chain in one submit
+(`chain_waves`): the first chain of an attempt records 3 waves, each later
+chain twice as many (at most 48). Wave 0 has the host's frontier. Before
+each later wave, `05_publish` mode 3 (one lane) places the instances the
+previous wave inserted, `(lo, hi, edges)`, in `dg_wave` and logs `(lo,
+hi)` at word `4 + 2i`; it leaves the frontier empty when status 12, 3, 10
+or 6 shows a failure or overflow, or when status 11 (inserted instances
+with closed predicates) differs from config word 14. Buffer copies then put
+`(lo, hi, edges)` into the wave's seven configs, and `dg_indirect` is
+cleared, so an empty wave dispatches no requests. The scans of a later
+wave run over the instance capacity; the kernels stop at the frontier.
+
+Each wave substitutes its requests in its own run, recorded with
+`RetainedSubstitution::record_chained` (run numbers are copied into
+`sb_config` in encoder order) and followed by resolution and the publish
+pass. Resolution of a chained wave (config word 8 nonzero) whose run did
+not publish (not final after its first batch, overflowed, or more
+requests than the buffers hold) fails with code 11 in status 10, which
+stops the chain. The level count runs once after the last wave. One
+readback returns the status words, the store counters, the last run's
+status words, the wave log and the level counts. The chain is accepted
+only when the last run published, nothing overflowed and nothing failed;
+otherwise the attempt runs again without chaining, which grows, retries
+substitution batches or reports the failure as before. A chained run that
+stopped before its finish step leaves the store's overflow and demand
+words cleared, as an unchained run that hits an error does.
+
+Settings: the three waves after the last closed wave cost one readback
+instead of three; 44 to 42 round trips per build, the same dispatches and
+the same executable. Forcing every chained run to stop after two rounds
+reruns each attempt unchained (52 round trips) and still produces the same
+executable and passes the retained tests.
+
+## Source publication status
+
+The trait catalog's publication status (route header words 8-10) is no
+longer read on its own before discovery. The root submit copies the three
+words into `dg_receipt`, which is free until the first closed wave, and
+they come back with the roots' resolution readback. Discovery notes them in
+the publication (`note_status`); a status other than `[1, 0, u32::MAX]`
+rejects discovery with code 10 (detail: the first failure) before any
+growth or root failure. The native build runs discovery first and then
+checks `checked_status`, which returns the noted words or reads them when
+discovery stopped before its first readback, so a failed publication is
+still reported as the trait diagnostic, before any discovery result. The
+publication keeps the store counters its catalog ran with, and discovery
+sizes its roots from them while the store has the same generation and
+committed exports. Settings: 45 to 44 round trips per build.
+
 ## Bounded direct calls
 
 `run_with_traits` binds the retained solver publication without reading semantic

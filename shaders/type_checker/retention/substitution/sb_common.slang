@@ -19,14 +19,17 @@
 // Phases of one attempt (each a GPU kernel, planners are single lanes):
 //   00 begin        open the transaction, publish the root dispatch
 //   01 roots        one lane per request: validate, create the root tasks
-//   02 expand_plan  next frontier = tasks created by the last round
-//   03 expand       one lane per (frontier task, child index)
-//   04 scatter      one lane per task: bucket by level
-//   05 eval_plan    next nonempty level
-//   06 eval         one lane per task of the level
-//   07 publish      one lane per request
-//   08 finish       commit, or roll back the store terms of the attempt
-//   09 rollback     one lane per store term slot
+//   02 plan         plans one round of step 3: the next expansion
+//                   frontier (tasks created by the last round), the
+//                   scatter, or the next nonempty level
+//   03 step         expansion: one lane per (frontier task, child index);
+//                   scatter: one lane per task, bucket by level;
+//                   evaluation: one lane per task of the level
+//   04 publish      one lane per request
+//   05 finish       commit, or roll back the store terms of the attempt
+//   06 rollback     one lane per store term slot
+// Rounds of (02, 03) run expansion, then the scatter, then evaluation, so
+// the two share the rounds a batch records.
 // A task's level is height(term) + height(env) - 1 (height(term) for
 // env 0). Every child task has a strictly lower level, so evaluation in
 // increasing level order sees every child result.
@@ -438,9 +441,7 @@ public uint2 sb_edge(SbChild c)
 // Dispatch arguments (planners only: a kernel dispatched indirectly must not
 // bind sb_dispatch).
 public static const uint SB_D_ROOTS = 0u;
-public static const uint SB_D_EXPAND = 1u;
-public static const uint SB_D_SCATTER = 2u;
-public static const uint SB_D_EVAL = 3u;
-public static const uint SB_D_PUBLISH = 4u;
-public static const uint SB_D_ROLLBACK = 5u;
-public static const uint SB_D_SLOTS = 6u;
+public static const uint SB_D_STEP = 1u;
+public static const uint SB_D_PUBLISH = 2u;
+public static const uint SB_D_ROLLBACK = 3u;
+public static const uint SB_D_SLOTS = 4u;

@@ -24,9 +24,16 @@ replays sources, and this path does not remove that replay. The list under
 
 ## Boundary
 
-1. The host reads `rt_counts` (96 words) and sizes seven lane regions:
+1. The host takes `rt_counts` (96 words) and sizes seven lane regions:
    declarations, parameters, terms, directory entries, trait records, uses
-   and committed jobs. One lane handles one retained record.
+   and committed jobs. One lane handles one retained record. The counters
+   are those the build's last export returned with its commit readback
+   (`JobReport::counts`), or a readback of its own when the store has no
+   export in this build. Lane 0 of `00_mark` compares the configured
+   counts with `rt_counts`; on a difference it sets producer state word 27
+   and the host reads the counters and runs the producer again. The
+   producer writes nothing into the store, so the first run leaves no
+   trace. Settings: 46 to 45 round trips per build.
 2. Pass `00_mark` reads each committed job's (library, unit) from `rt_jobs`,
    including jobs with no declarations, and checks directory ownership. It also
    counts each trait's required members and marks callers that own a
@@ -340,7 +347,7 @@ node terms, with 8 edges. Three of the 16 waves had work.
 | Producer dispatches | 6 count passes, log2(P)(log2(P)+1)/2 + 2 sort dispatches, 1 + 2·waves closure dispatches (33 by default), 7 catalog fills, 2 batch fills and up to 5 word fills |
 | Publication dispatches | 2, in one submit with no readback |
 | Dispatches, `retained_trait_publish` | 353 |
-| Host round trips, `retained_trait_publish` | 3: store counters, producer state, one solver wave readback with the admission receipts |
+| Host round trips, `retained_trait_publish` | 2 after an export in the same build (producer state, one solver wave readback with the admission receipts), 3 otherwise (store counters first) |
 | Producer readback bytes | 672 (store counters 384, producer state 112, two receipts and state 176) |
 | Closure retry (one-wave start) | 3 attempts, 2 extra round trips |
 | Host readback wait | about 4.5 ms per check |

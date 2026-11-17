@@ -1,4 +1,4 @@
-// Substitution step 9: one lane per store term slot of an overflowed
+// Substitution step 6: one lane per store term slot of an overflowed
 // attempt. Clears every slot that points at a term the attempt allocated.
 // Linear probing stays sound: every key inserted before the attempt
 // stopped at a slot that was occupied then.
