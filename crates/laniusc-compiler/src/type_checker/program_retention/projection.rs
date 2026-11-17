@@ -941,6 +941,12 @@ impl RetainedProjection {
         &self.substitution
     }
 
+    /// Test hook: the schema rounds start with `rows` request and field rows.
+    #[doc(hidden)]
+    pub fn set_schema_rows_for_test(&mut self, rows: u32) {
+        self.schema.set_rows(rows);
+    }
+
     fn ensure_ranks(&mut self, capacity: u32, report: &mut ProjectionReport) {
         if self.rank_capacity >= capacity {
             return;
@@ -1332,7 +1338,14 @@ impl RetainedProjection {
             });
         }
 
-        // Substitution requests and the engine.
+        // Substitution requests, the substitution, the schema rounds and the
+        // check, with one readback. The substitution is a chain of one run;
+        // the schema rounds gate themselves on the GPU (schema.rs). The
+        // check binds the run's buffers before the run is known to have
+        // published, so the readback also carries the run's status words
+        // and the schema's: a run that did not publish is substituted again
+        // on the full path, stopped schema rounds are resumed, and the check
+        // is recorded again.
         let started = std::time::Instant::now();
         if self
             .requests
@@ -1347,9 +1360,13 @@ impl RetainedProjection {
             report.allocations += 1;
             report.allocated_bytes += capacity as u64 * 16;
         }
+        let requests = self.requests.clone().unwrap();
+        let mut run = self.substitution.begin_chain(&requests, 1)?[0];
+        let generation = store.generation();
+        self.schema.begin();
+        let chained_dispatches;
         {
             let guard = store.store.lock().unwrap();
-            let requests = self.requests.as_ref().unwrap();
             let [requests_buffer, count_buffer] = requests.buffers();
             let extra = [
                 requests_buffer,
@@ -1359,80 +1376,65 @@ impl RetainedProjection {
             ];
             let mut r = self.recorder();
             r.dispatch(K_REQUESTS, &guard, inputs, &extra, report.requests.max(1))?;
+            // The schema does not read this run's results; the check does,
+            // and it checks the publication on the GPU.
+            let mut none = |_: &mut wgpu::CommandEncoder,
+                            _: &Store,
+                            _: u32,
+                            _: &wgpu::Buffer,
+                            _: &wgpu::Buffer|
+             -> Result<()> { Ok(()) };
+            chained_dispatches =
+                self.substitution
+                    .record_chained(r.encoder(), &guard, &requests, 0, run, &mut none)?;
             report.dispatches += r.finish();
         }
-        let requests = self.requests.as_ref().unwrap();
-        let substitution = match self.substitution.run(store, requests)? {
-            SubstitutionRun::Published(report) => report,
-            SubstitutionRun::RequestCapacity {
-                requested,
-                capacity,
-            } => {
-                bail!("projection wrote {requested} substitution requests into {capacity} rows")
-            }
-        };
-        let run = substitution.publication.run;
-        trace(&format!(
-            "substitution: run {run}, statuses {:?}",
-            substitution.status_counts()
-        ));
-        // The committed attempt's base plus the terms it added is the
-        // store's term count: the schema run needs no status read for it.
-        let terms = substitution
-            .counts
-            .get(sub_words::STORE_TERMS_BASE)
-            .zip(substitution.counts.get(sub_words::STORE_NEW_TERMS))
-            .and_then(|(base, new)| base.checked_add(*new));
-        report.substitution = Some(substitution);
-        report.substitution_us = started.elapsed().as_micros() as u64;
-
         // Realize nominal schema fields using their own exact binders. New
         // field types form the next frontier; no body is rechecked.
-        report.schema = self.schema.run(store, terms)?;
+        self.schema.record_chain(store, true)?;
+        report.substitution_us = started.elapsed().as_micros() as u64;
 
         // Layout, edges, check and the batch plan.
         let started = std::time::Instant::now();
-        // The publication check reads the store generation, so it runs
-        // before the store lock is taken.
-        let publication = self
-            .substitution
-            .publication(store)
-            .ok_or_else(|| anyhow!("the projection's substitution publication is not current"))?;
-        let results = publication.results.clone();
-        let counts = publication.counts.clone();
-        let guard = store.store.lock().unwrap();
-        // The substitution may have grown the term arena.
-        let terms = guard.capacity.arenas[A_TERMS];
-        self.ensure_types(terms, &mut report);
-        self.ensure_rows(report.rows, &mut report);
         let batches = report.rows.div_ceil(options.batch_rows.max(1));
-        self.ensure_batches(batches, &mut report);
-        // The type tables are lowering inputs; the columns hold them.
-        let current = self.columns.as_ref().map(|c| c.shape);
-        self.ensure_columns(
-            ColumnShape {
-                rows: current.map_or(64, |c| c.rows),
-                side: current.map_or(64, |c| c.side),
-                types: self.type_capacity as u64,
-                type_args: guard.capacity.arenas[A_TERM_ARGS] as u64,
-                string_words: current.map_or(1, |c| c.string_words),
-            },
-            &mut report,
-        );
-        self.write_config(run, options, 0);
         // The scan doubles its distance from 1 past rows / 2: at most 33
         // steps for u32 rows, plus the first.
         while self.string_scan_configs.len() < 34 {
             self.string_scan_configs
                 .push(storage(&self.device, "pj_string_scan_config", 16, false));
         }
-        let extra = [("sb_results", &results), ("sb_counts", &counts)];
         // A type's layout completes one round after its element and field
         // layouts. The last round runs after its status word is cleared, so
         // the word reports whether that round still completed a layout. If
         // it did, the fixed point is not proven: the check reruns from the
         // plan's status with twice the rounds.
+        let mut chain = true;
         let (table, cert, status) = loop {
+            let guard = store.store.lock().unwrap();
+            // A substitution on the full path may have grown the term arena.
+            let terms = guard.capacity.arenas[A_TERMS];
+            self.ensure_types(terms, &mut report);
+            self.ensure_rows(report.rows, &mut report);
+            self.ensure_batches(batches, &mut report);
+            // The type tables are lowering inputs; the columns hold them.
+            let current = self.columns.as_ref().map(|c| c.shape);
+            self.ensure_columns(
+                ColumnShape {
+                    rows: current.map_or(64, |c| c.rows),
+                    side: current.map_or(64, |c| c.side),
+                    types: self.type_capacity as u64,
+                    type_args: guard.capacity.arenas[A_TERM_ARGS] as u64,
+                    string_words: current.map_or(1, |c| c.string_words),
+                },
+                &mut report,
+            );
+            self.write_config(run, options, 0);
+            let (results, counts) = self
+                .substitution
+                .chain_buffers()
+                .map(|(r, c)| (r.clone(), c.clone()))
+                .ok_or_else(|| anyhow!("the projection's substitution buffers are not allocated"))?;
+            let extra = [("sb_results", &results), ("sb_counts", &counts)];
             let mut r = self.recorder();
             trace("check: recording");
             r.dispatch(K_LAYOUT_INIT, &guard, inputs, &extra, self.type_capacity)?;
@@ -1506,15 +1508,53 @@ impl RetainedProjection {
             if let Some(roots) = &roots {
                 self.record_certify(&mut r, &guard, inputs, roots, &results, &counts)?;
             }
-            let (dispatches, mut read) = r.finish_read(
-                &[
-                    (&self.status, STATUS_WORDS),
-                    (&self.cert, if roots.is_some() { 3 } else { 0 }),
-                    (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
-                ],
-                &mut report,
-            )?;
+            let schema_status = self.schema.status_buffer().clone();
+            let mut parts = vec![
+                (&self.status, STATUS_WORDS),
+                (&self.cert, if roots.is_some() { 3 } else { 0 }),
+                (self.batches.as_ref().unwrap(), batches as usize * BATCH_WORDS),
+            ];
+            if chain {
+                parts.extend([(&counts, sub_words::COUNT), (&schema_status, schema::STATUS_WORDS)]);
+            }
+            let (dispatches, mut read) = r.finish_read(&parts, &mut report)?;
+            drop(guard);
             report.dispatches += dispatches;
+            if chain {
+                chain = false;
+                let schema_words = read.pop().unwrap();
+                let sb = read.pop().unwrap();
+                let substitution = self
+                    .substitution
+                    .finish_chain_report(&sb, run, generation, chained_dispatches);
+                let reran = substitution.is_none();
+                let substitution = match substitution {
+                    Some(substitution) => substitution,
+                    None => match self.substitution.run(store, &requests)? {
+                        SubstitutionRun::Published(substitution) => substitution,
+                        SubstitutionRun::RequestCapacity {
+                            requested,
+                            capacity,
+                        } => bail!(
+                            "projection wrote {requested} substitution requests into {capacity} rows"
+                        ),
+                    },
+                };
+                run = substitution.publication.run;
+                trace(&format!(
+                    "substitution: run {run}, statuses {:?}",
+                    substitution.status_counts()
+                ));
+                report.substitution = Some(substitution);
+                // Terms the full path interned need schema rounds of their own.
+                let (schema, resumed) = self.schema.settle(store, &schema_words, reran)?;
+                report.schema = schema;
+                if reran || resumed {
+                    self.queue
+                        .write_buffer_counted(&self.status, 0, &words_bytes(&totals));
+                    continue;
+                }
+            }
             let table = read.pop().unwrap();
             let cert = read.pop().unwrap();
             let status = read.pop().unwrap();
@@ -1535,6 +1575,7 @@ impl RetainedProjection {
                 self.layout_rounds = self.layout_rounds.saturating_mul(2);
             }
             if status[S_PATTERN_CHANGED] != 0 {
+                let payloads = totals[S_TOTALS + 5];
                 if self.pattern_rounds > payloads {
                     bail!(
                         "retained projection pattern payloads did not settle in {} rounds",
@@ -1546,6 +1587,13 @@ impl RetainedProjection {
             self.queue
                 .write_buffer_counted(&self.status, 0, &words_bytes(&totals));
         };
+        let guard = store.store.lock().unwrap();
+        let (results, counts) = self
+            .substitution
+            .chain_buffers()
+            .map(|(r, c)| (r.clone(), c.clone()))
+            .ok_or_else(|| anyhow!("the projection's substitution buffers are not allocated"))?;
+        let extra = [("sb_results", &results), ("sb_counts", &counts)];
         report.check_us = started.elapsed().as_micros() as u64;
         if status[S_STATE] != STATE_CHECKED {
             let f = &status[S_FIRST..S_FIRST + 8];

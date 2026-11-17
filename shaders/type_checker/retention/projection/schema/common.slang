@@ -1,14 +1,41 @@
 __exported import type_checker.retention.retention_store;
+// Schema rounds (docs/compiler-retained-projection.md, "Schema rounds").
+// ps_config is written by the host per dispatch: mode, the substitution run
+// a consumer reads, the run a round gate checks (0: none), the store
+// generation, the request capacity and the field capacity.
 public StructuredBuffer<uint> ps_config;
 public RWStructuredBuffer<uint> ps_scan_a;
 public RWStructuredBuffer<uint> ps_scan_b;
+public RWStructuredBuffer<uint> ps_blocks;
+// Written by one-lane kernels; read by the round's one-lane kernels.
 public globallycoherent RWStructuredBuffer<uint> ps_status;
 public RWStructuredBuffer<uint2> pj_schema_ranges;
 public RWStructuredBuffer<uint2> pj_schema_fields;
-// config: term lo, term hi, output base, scan distance, scan input, run,
-// generation. status: requests, term hi after substitution, overflow.
+public static const uint PS_CFG_MODE = 0u;
+public static const uint PS_CFG_RUN = 1u;
+public static const uint PS_CFG_GATE_RUN = 2u;
+public static const uint PS_CFG_GENERATION = 3u;
+public static const uint PS_CFG_REQUEST_CAPACITY = 4u;
+public static const uint PS_CFG_FIELD_CAPACITY = 5u;
+// ps_status words. The host writes them once per projection (lo 32).
+public static const uint PS_LO = 1u;            // first term of the next round
+public static const uint PS_ERROR = 2u;         // 1: store not ready, 2: scan overflow
+public static const uint PS_STOP = 3u;          // PS_STOP_* below
+public static const uint PS_BASE = 4u;          // fields written by committed rounds
+public static const uint PS_DEMAND_REQUESTS = 5u;
+public static const uint PS_DEMAND_FIELDS = 6u;
+public static const uint PS_ROUNDS = 7u;        // committed rounds
+public static const uint PS_TERMS = 8u;         // store terms at the last close
+public static const uint PS_STOP_RUNNING = 0u;
+public static const uint PS_STOP_CONVERGED = 1u;
+public static const uint PS_STOP_UNPUBLISHED = 2u;
+public static const uint PS_STOP_CAPACITY = 3u;
+public static const uint PS_STOP_FAILED = 4u;
+// ps_round words: lo, hi, base, count, armed. ps_indirect: the term-lane
+// dispatch (hi - lo + 1 lanes) at word 0, the request-lane dispatch
+// (count lanes) at word 3.
 public uint ps_lane(uint3 id) { return id.x + id.y * 16776960u; }
-public uint ps_scan(uint i) { return ps_config[4] == 0u ? ps_scan_a[i] : ps_scan_b[i]; }
+public uint ps_scan(uint i) { return ps_scan_a[i]; }
 public uint ps_entry(uint term)
 {
     if (term < RT_FIRST_TERM || term >= rt_counts[RT_A_TERMS] ||
@@ -21,4 +48,12 @@ public uint ps_entry(uint term)
     uint4 d3 = rt_dir[(def-1u)*RT_DIR_WORDS+3u];
     return d0.x == decl && (d0.y == 5u || d0.y == 6u) &&
         d0.w == RT_DIR_COMMITTED && d3.w == 0u ? def-1u : RT_INVALID;
+}
+// Writes a dispatch of `lanes` lanes (256 per workgroup) at `at`.
+public void ps_write_dispatch(RWStructuredBuffer<uint> args, uint at, uint lanes)
+{
+    uint groups = (lanes + 255u) / 256u;
+    args[at] = min(groups, 65535u);
+    args[at + 1u] = groups == 0u ? 0u : (groups + 65534u) / 65535u;
+    args[at + 2u] = 1u;
 }
