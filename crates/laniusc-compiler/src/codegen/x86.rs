@@ -21,6 +21,7 @@ pub(crate) use link::{
     ParkRegion,
     ParkSources,
     ParkTicket,
+    ParkedSlot,
     ResidentObjectKey,
     ResidentRoutes,
     ResidentSections,

@@ -797,6 +797,15 @@ impl GpuX86ObjectStage {
         })
     }
 
+    /// The slot the recorded object parked in, until [`Self::finish`].
+    pub(crate) fn parked_slot(&self) -> Option<super::x86::ParkedSlot> {
+        self.parked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(super::x86::ParkTicket::parked_slot)
+    }
+
     /// Reads the object from its `metadata` words (`metadata_readback`),
     /// which [`Self::section_bytes`] accepted. An object parked in `keep`,
     /// the caller's link store, keeps its text and rodata on the GPU.

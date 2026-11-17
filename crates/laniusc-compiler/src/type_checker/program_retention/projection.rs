@@ -1240,17 +1240,18 @@ impl RetainedProjection {
         roots: Option<RootCertification<'_>>,
         mut store_object: impl FnMut(GpuX86RelocatableObject) -> Result<T>,
     ) -> Result<ProjectionOutcome<T>> {
-        self.run_with_lowerer(store,inputs,options,roots,|bytes,tokens,rows,hir,semantic| {
+        self.run_with_lowerer(store,inputs,options,roots,|bytes,tokens,rows,hir,semantic,_last| {
             store_object(compiler.lower_projected_x86_batch(bytes,tokens,rows,hir,semantic,NATIVE_LIBRARY,NATIVE_NS_INSTANCE)?)
         })
     }
 
     /// Shared GPU projection; only the final lowering and object storage
     /// depend on the target. All discovery, layout and semantic checks agree.
+    /// `lower` learns whether its batch is the last.
     pub(crate) fn run_with_lowerer<T>(
         &mut self, store:&ProgramRetention, inputs:&ProjectionInputs,
         options:&ProjectionOptions, roots:Option<RootCertification<'_>>,
-        mut lower:impl for<'a> FnMut(u32,u32,u32,GpuSemanticHirInputs<'a>,GpuSemanticArtifactView<'a>)->Result<T>,
+        mut lower:impl for<'a> FnMut(u32,u32,u32,GpuSemanticHirInputs<'a>,GpuSemanticArtifactView<'a>,bool)->Result<T>,
     ) -> Result<ProjectionOutcome<T>> {
         let mut report = ProjectionReport::default();
         let started = std::time::Instant::now();
@@ -1597,6 +1598,7 @@ impl RetainedProjection {
         self.ensure_columns(shape, &mut report);
         let shape = self.columns.as_ref().unwrap().shape;
         let mut objects = Vec::with_capacity(report.batches.len());
+        let last = all.iter().rposition(|batch| batch.lo < batch.hi);
         for (b, batch) in all.iter().enumerate() {
             if batch.lo >= batch.hi {
                 continue;
@@ -1660,7 +1662,7 @@ impl RetainedProjection {
             let string_bytes = u32::try_from(shape.string_words.saturating_mul(4)).unwrap_or(u32::MAX);
             objects.push(lower(
                 token_capacity.saturating_mul(16).max(string_bytes).max(4096), token_capacity,
-                shape.rows as u32, columns.hir(), columns.semantic(),
+                shape.rows as u32, columns.hir(), columns.semantic(), last == Some(b),
             )?);
         }
         drop(guard);

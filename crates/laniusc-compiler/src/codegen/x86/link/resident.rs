@@ -51,6 +51,13 @@ const ST_NAME_STRIDE: usize = 3;
 const ST_ENTRY_OBJECT: usize = 4;
 const ST_MAIN_OFFSET: usize = 5;
 const ST_ERRORS: usize = 16;
+// Object plan words (rl_common.slang `OB_*`) the host checks.
+const OB_TEXT_LEN: usize = 0;
+const OB_RODATA_LEN: usize = 1;
+const OB_UNDEF_COUNT: usize = 15;
+const OB_DEF_COUNT: usize = 16;
+const OB_RELOC_COUNT: usize = 17;
+const OB_RT_COUNT: usize = 18;
 const ST_EMIT_ERRORS: usize = 17;
 
 /// Store regions, in words: metadata, relocation rows (semantic then native
@@ -188,6 +195,12 @@ impl ParkTicket {
         Arc::ptr_eq(&self.store, store)
     }
 
+    /// The slot this object parked in, for a link planned before the host
+    /// read the object back ([`GpuX86Linker::begin_resident_dynamic`]).
+    pub(crate) fn parked_slot(&self) -> ParkedSlot {
+        ParkedSlot { store: self.store.clone(), generation: self.generation, slot: self.slot }
+    }
+
     pub(crate) fn commit(self, library_id: u32, unit_id: u32) {
         let mut state = self.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.generation == self.generation
@@ -196,6 +209,13 @@ impl ParkTicket {
             slot.key = Some((library_id, unit_id));
         }
     }
+}
+
+/// The slot of a parked object the host has not read back yet.
+pub(crate) struct ParkedSlot {
+    store: Arc<GpuX86LinkStore>,
+    generation: u64,
+    slot: usize,
 }
 
 /// The text and rodata of an object parked in the store. A resident link
@@ -669,6 +689,38 @@ pub(crate) struct ResidentPlan {
     reloc_cap_total: u32,
     buffers: LinkBuffers,
     prepared: Option<std::thread::JoinHandle<Result<Option<Prepared>>>>,
+    pending: Option<PendingObject>,
+}
+
+/// The last object of a plan recorded before the host read it back: its
+/// slot, where its plan words start in the plan readback, and its lengths
+/// once the host has them ([`ResidentPlan::confirm_pending`]).
+struct PendingObject {
+    store: Arc<GpuX86LinkStore>,
+    generation: u64,
+    slot: usize,
+    words_at: usize,
+    expected: Option<[u32; 4]>,
+}
+
+impl ResidentPlan {
+    /// Whether the plan's pending object is `key`: the host committed the
+    /// object to the slot the plan read. The plan then checks the object's
+    /// lengths against the ones the plan derived from the parked metadata,
+    /// as `rl_plan.slang` does for the objects the host read before it.
+    pub(crate) fn confirm_pending(&mut self, key: &ResidentObjectKey) -> bool {
+        let Some(pending) = &mut self.pending else {
+            return false;
+        };
+        let state = pending.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let committed = state.generation == pending.generation
+            && state.slots.get(pending.slot).is_some_and(|slot| slot.key == Some((key.library_id, key.unit_id)));
+        drop(state);
+        if committed {
+            pending.expected = Some([key.text_len, key.rodata_len, key.relocation_count, key.symbol_count]);
+        }
+        committed
+    }
 }
 
 impl Drop for ResidentPlan {
@@ -782,12 +834,13 @@ impl GpuX86Linker {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         objects: &[ResidentObjectKey],
+        pending: Option<&ParkedSlot>,
         bindings: &[NativeCFunction],
         options: &native::NativeLinkOptions,
         routes: ResidentRoutes<'_>,
     ) -> Result<Option<ResidentPlan>> {
         if !cfg!(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))
-            || objects.is_empty()
+            || objects.len() + usize::from(pending.is_some()) == 0
         {
             return Ok(None);
         }
@@ -806,13 +859,35 @@ impl GpuX86Linker {
                 return Ok(None);
             }
         }
-        let mut chosen = Vec::with_capacity(objects.len());
+        let mut chosen = Vec::with_capacity(objects.len() + 1);
         for object in objects {
             match by_key.get(&(object.library_id, object.unit_id)) {
                 Some(&slot) => chosen.push(slot),
                 None => return Ok(None),
             }
         }
+        // An object the host has not read back is the plan's last; its slot
+        // is uncommitted until the host has read it.
+        if let Some(pending) = pending {
+            let parked = Arc::ptr_eq(&pending.store, &store)
+                && pending.generation == state.generation
+                && state.slots.get(pending.slot).is_some_and(|slot| slot.key.is_none());
+            if !parked {
+                return Ok(None);
+            }
+            chosen.push(pending.slot);
+        }
+        // Lengths of an object the host has not read: `rl_plan.slang` skips
+        // the comparison and `finish_resident_dynamic` makes it.
+        const UNREAD: ResidentObjectKey = ResidentObjectKey {
+            library_id: u32::MAX,
+            unit_id: u32::MAX,
+            text_len: u32::MAX,
+            rodata_len: u32::MAX,
+            relocation_count: u32::MAX,
+            symbol_count: u32::MAX,
+        };
+        let objects = objects.iter().chain(pending.map(|_| &UNREAD)).collect::<Vec<_>>();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("codegen.x86.link.resident.plan.encoder"),
         });
@@ -942,7 +1017,9 @@ impl GpuX86Linker {
         }
         drop(resources);
         flush_deferred_compute(&mut encoder);
-        let first_bytes = (STATUS_WORDS + names.len()) * 4;
+        // The pending object's plan words follow the status and the names.
+        let pending_words_at = STATUS_WORDS + names.len();
+        let first_bytes = (pending_words_at + if pending.is_some() { OBJECT_WORDS } else { 0 }) * 4;
         let first = self.reusable_readback(device, "rb.codegen.x86.link.resident.plan", first_bytes);
         encoder.copy_buffer_counted(
             &buffers.status.buffer,
@@ -960,8 +1037,18 @@ impl GpuX86Linker {
                 names.len() as u64 * 4,
             );
         }
+        if pending.is_some() {
+            let object = (objects.len() - 1) * OBJECT_WORDS;
+            encoder.copy_buffer_counted(
+                &buffers.objects.buffer,
+                buffers.objects.byte_offset + object as u64 * 4,
+                &first.buffer,
+                pending_words_at as u64 * 4,
+                OBJECT_WORDS as u64 * 4,
+            );
+        }
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.plan", encoder.finish());
-        let pending = crate::gpu::passes_core::begin_readback_map(
+        let plan_read = crate::gpu::passes_core::begin_readback_map(
             &first.buffer.slice(..first_bytes as u64),
             "codegen.x86.link.resident.plan",
         );
@@ -971,7 +1058,7 @@ impl GpuX86Linker {
             let options = options.clone();
             std::thread::Builder::new()
                 .name("laniusc-resident-link".into())
-                .spawn(move || prepare(device, first, first_bytes, pending, names, options, object_count))
+                .spawn(move || prepare(device, first, first_bytes, plan_read, names, options, object_count))
                 .context("spawn the resident x86 link worker")?
         };
         Ok(Some(ResidentPlan {
@@ -980,6 +1067,13 @@ impl GpuX86Linker {
             reloc_cap_total,
             buffers,
             prepared: Some(worker),
+            pending: pending.map(|pending| PendingObject {
+                store: pending.store.clone(),
+                generation: pending.generation,
+                slot: pending.slot,
+                words_at: pending_words_at,
+                expected: None,
+            }),
         }))
     }
 
@@ -1000,6 +1094,25 @@ impl GpuX86Linker {
         let Some(Prepared { words, import_count, import_of_name, rows, total }) = prepared else {
             return Ok(None);
         };
+        // The slot holds the object the host published for the pending unit
+        // (rl_plan.slang checks the other objects).
+        if let Some(pending) = &plan.pending {
+            let Some([text_len, rodata_len, relocations, symbols]) = pending.expected else {
+                return Ok(None);
+            };
+            let Some(object) = words.get(pending.words_at..pending.words_at + OBJECT_WORDS) else {
+                return Ok(None);
+            };
+            let word = |index: usize| u64::from(object[index]);
+            if word(OB_TEXT_LEN) != u64::from(text_len)
+                || word(OB_RODATA_LEN) != u64::from(rodata_len)
+                || word(OB_RELOC_COUNT) + word(OB_RT_COUNT) != u64::from(relocations)
+                || word(OB_UNDEF_COUNT) + word(OB_DEF_COUNT) != u64::from(symbols)
+            {
+                log::debug!("resident x86 link plan: the pending object's lengths differ from its readback");
+                return Ok(None);
+            }
+        }
         let rodata_len = words[ST_RODATA_LEN];
         let text_len_total = rows.params[12];
         let output_words = total.div_ceil(4);

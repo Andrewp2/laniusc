@@ -27,19 +27,20 @@ impl GpuCompiler<'_> {
         library: u32,
         unit: u32,
     ) -> anyhow::Result<GpuX86RelocatableObject> {
-        match self.lower_projected_batch(SourcePackArtifactTarget::X86_64,source_bytes,tokens,hir_nodes,hir,semantic,library,unit,&mut ||{})? {
+        match self.lower_projected_batch(SourcePackArtifactTarget::X86_64,source_bytes,tokens,hir_nodes,hir,semantic,library,unit,&mut |_|{})? {
             typecheck::CompiledSourcePackObject::X86_64(object)=>Ok(object),
             _=>unreachable!("x86 lowering requested"),
         }
     }
 
     /// `submitted` runs after each lowering attempt is submitted and before
-    /// its status is read: host work there overlaps the GPU lowering.
+    /// its status is read: host work there overlaps the GPU lowering. It
+    /// receives the slot the attempt's x86 object parked in.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_projected_batch(
         &self,target:SourcePackArtifactTarget,source_bytes:u32,tokens:u32,hir_nodes:u32,
         hir:GpuSemanticHirInputs<'_>,semantic:crate::type_checker::GpuSemanticArtifactView<'_>,library:u32,unit:u32,
-        submitted:&mut dyn FnMut(),
+        submitted:&mut dyn FnMut(Option<x86::ParkedSlot>),
     )->anyhow::Result<typecheck::CompiledSourcePackObject> {
         let lowering_target=match target { SourcePackArtifactTarget::X86_64=>LoweringTarget::X86_64,SourcePackArtifactTarget::Wasm=>LoweringTarget::Wasm,
             SourcePackArtifactTarget::Generic=>anyhow::bail!("projection requires an executable target") };
@@ -79,7 +80,7 @@ impl GpuCompiler<'_> {
                 bounds,
             )?;
             queue.submit(Some(encoder.finish()));
-            submitted();
+            submitted(pipeline.parked_x86_slot());
             let _span = x86::TailSpan::new("tail.instance.finish_object");
             let result=match target {
                 SourcePackArtifactTarget::X86_64=>pipeline.finish_x86_object(device,queue,library,unit,self.x86_linker().ok().and_then(|linker|linker.parking_store()).as_ref()).map(|(o,_)|typecheck::CompiledSourcePackObject::from(o)),
