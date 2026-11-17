@@ -1,12 +1,23 @@
 import type_checker.retention.method_routes.common;
+// Reachability marking from the selected bindings, all levels in one
+// workgroup.
+struct Expand : IMrLevel
+{
+    void run(uint lane,uint level)
+    {
+        if (mr_state[0]!=1u) return;
+        for (uint i=lane;i<mr_config[3];i+=256u)
+        {
+            if (mr_reach[i]==0u) continue;
+            uint4 lo=mr_node(i,0u); uint4 hi=mr_node(i,1u); uint n=mr_arity(lo);
+            if (lo.x<1u || lo.x>6u || n>32u) { InterlockedOr(mr_state[3],2u); continue; }
+            for (uint k=0u;k<n;k++) mr_mark_at(mr_child(lo,hi,k),level%3u);
+        }
+    }
+}
 [shader("compute")]
 [numthreads(256,1,1)]
-void main(uint3 id:SV_DispatchThreadID)
+void main(uint3 local:SV_GroupThreadID)
 {
-    uint i=mr_lane(id); mr_round_begin(i,MR_EXPAND_CHANGED);
-    if (!mr_previous_changed(MR_EXPAND_CHANGED)) return;
-    if (i>=mr_config[3] || mr_reach[i]==0u || mr_state[0]!=1u) return;
-    uint4 lo=mr_node(i,0u); uint4 hi=mr_node(i,1u); uint n=mr_arity(lo);
-    if (lo.x<1u || lo.x>6u || n>32u) { InterlockedOr(mr_state[3],2u); return; }
-    for (uint k=0u;k<n;k++) mr_mark(mr_child(lo,hi,k));
+    Expand expand; mr_levels(local.x,MR_EXPAND_CHANGED,expand);
 }

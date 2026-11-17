@@ -2,25 +2,21 @@
 //! GPU against the already admitted catalog. No lexical assumptions enter.
 use super::*;
 
-/// BFS rounds of the first producer batch, and the bound over all batches.
-const FIRST_ROUNDS: u32 = 8;
-const ROUND_BOUND: u32 = 65;
 /// Receipt words after the route header: a deferred solve's wave state and
 /// its batch receipt row.
 const SOLVER_WORDS: usize = wave::READ_WORDS as usize + 8;
 use super::super::kernels::wave;
 
-const CLOSED_KEYS: [&str; 12] = [
+const CLOSED_KEYS: [&str; 11] = [
     "type_checker/trait_solver/retained/closed/00_init",
     "type_checker/trait_solver/retained/closed/01_catalog",
     "type_checker/trait_solver/retained/closed/02_roots",
     "type_checker/trait_solver/retained/closed/03_wave",
-    "type_checker/trait_solver/retained/closed/04_expand",
-    "type_checker/trait_solver/retained/closed/05_constants",
-    "type_checker/trait_solver/retained/closed/06_count",
-    "type_checker/trait_solver/retained/closed/07_scan",
-    "type_checker/trait_solver/retained/closed/08_totals",
-    "type_checker/trait_solver/retained/closed/09_fill",
+    "type_checker/trait_solver/retained/closed/04_constants",
+    "type_checker/trait_solver/retained/closed/05_count",
+    "type_checker/trait_solver/retained/closed/06_scan",
+    "type_checker/trait_solver/retained/closed/07_totals",
+    "type_checker/trait_solver/retained/closed/08_fill",
     "type_checker/trait_solver/retained/entries/07_publish_routes",
     "type_checker/trait_solver/retained/entries/08_publish_finish",
 ];
@@ -218,17 +214,12 @@ impl ClosedProducer {
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.reader.passes[pass];
         let label = "trait_solver.closed_instances";
-        if pass == 4 {
-            let indirect = &self.buffers["cw_indirect"];
-            passes_core::record_or_defer_compute_indirect(encoder, data, bind, label, indirect);
+        let (x, y) = if matches!(pass, 3 | 7 | 10) {
+            (1, 1)
         } else {
-            let (x, y) = if matches!(pass, 3 | 8 | 11) {
-                (1, 1)
-            } else {
-                groups(lanes)
-            };
-            passes_core::record_or_defer_compute_direct(encoder, data, bind, label, (x, y, 1));
-        }
+            groups(lanes)
+        };
+        passes_core::record_or_defer_compute_direct(encoder, data, bind, label, (x, y, 1));
     }
 }
 
@@ -390,7 +381,6 @@ impl RetainedTraitPublication {
             // Term-sized buffers grow by powers of two (see `pow2`).
             ("cw_reach", pow2(terms)),
             ("cw_front", pow2(terms)),
-            ("cw_indirect", 3),
             ("cw_scan_a", pow2(mul(lanes, 8, "closed scan")?)),
             ("cw_scan_b", pow2(mul(lanes, 8, "closed scan")?)),
             ("cw_blocks", pow2(mul(lanes.div_ceil(256), 8, "closed scan blocks")?)),
@@ -402,12 +392,7 @@ impl RetainedTraitPublication {
                 "cw_step" => Some(step_words.as_slice()),
                 _ => None,
             };
-            let use_flags = usage
-                | if name == "cw_indirect" {
-                    wgpu::BufferUsages::INDIRECT
-                } else {
-                    wgpu::BufferUsages::empty()
-                };
+            let use_flags = usage;
             let b = workspace.initialized(
                 &format!("closed.{name}"),
                 size.max(1),
@@ -423,7 +408,7 @@ impl RetainedTraitPublication {
         ];
         let mut encoder = device.create_command_encoder(&Default::default());
         // One compute pass per submit, flushed before the submit.
-        let mut batch = passes_core::DeferredComputeBatchGuard::begin(
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
             passes_core::compute_pass_batching_allowed(false),
             "trait_solver.closed_instances",
         );
@@ -451,52 +436,28 @@ impl RetainedTraitPublication {
             0,
         )?;
         producer.record(&mut encoder, 2, end - first, store, &ext, 0)?;
-        // Retained type height is bounded by 64, so 65 rounds consume any
-        // valid frontier. Few terms are that deep: the first batch records
-        // FIRST_ROUNDS, and the count pass reports a pending frontier in
-        // cw_state[5]. The host then records more rounds and repeats the
-        // count, which is idempotent. A frontier still pending after 65
-        // rounds is a producer failure (code 7).
-        let mut recorded = 0;
-        let mut rounds = FIRST_ROUNDS;
-        // Every round binds the same buffers.
-        let wave = producer.bind_group(3, store, &ext, 0)?;
-        let expand = producer.bind_group(4, store, &ext, 0)?;
-        let state = loop {
-            for _ in 0..rounds {
-                producer.dispatch(&mut encoder, 3, 1, &wave);
-                producer.dispatch(&mut encoder, 4, 0, &expand);
-            }
-            recorded += rounds;
-            producer.record(&mut encoder, 5, terms, store, &ext, 0)?;
-            producer.record(&mut encoder, 6, lanes, store, &ext, 0)?;
-            for (i, mode) in steps.iter().enumerate() {
-                let scan_lanes = if *mode == 1 { 1 } else { lanes };
-                producer.record(&mut encoder, 7, scan_lanes, store, &ext, i as u32)?;
-            }
-            producer.record(&mut encoder, 8, 1, store, &ext, 0)?;
-            passes_core::flush_deferred_compute(&mut encoder);
-            drop(batch);
-            queue.submit(Some(encoder.finish()));
-            let mut state =
-                producer
-                    .reader
-                    .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
-            if state[5] == 0 {
-                break state;
-            }
-            if recorded >= ROUND_BOUND {
-                state[0] |= 1 << 7;
-                state[1] = 0;
-                break state;
-            }
-            rounds = (rounds * 2).min(ROUND_BOUND - recorded);
-            encoder = device.create_command_encoder(&Default::default());
-            batch = passes_core::DeferredComputeBatchGuard::begin(
-                passes_core::compute_pass_batching_allowed(false),
-                "trait_solver.closed_instances",
-            );
-        };
+        // One workgroup expands the term closure level by level (03_wave).
+        // Retained type height is bounded by 64, so its 65 levels consume
+        // any valid frontier; the count pass reports a frontier still
+        // pending in cw_state[5], which is a producer failure (code 7).
+        producer.record(&mut encoder, 3, 1, store, &ext, 0)?;
+        producer.record(&mut encoder, 4, terms, store, &ext, 0)?;
+        producer.record(&mut encoder, 5, lanes, store, &ext, 0)?;
+        for (i, mode) in steps.iter().enumerate() {
+            let scan_lanes = if *mode == 1 { 1 } else { lanes };
+            producer.record(&mut encoder, 6, scan_lanes, store, &ext, i as u32)?;
+        }
+        producer.record(&mut encoder, 7, 1, store, &ext, 0)?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
+        queue.submit(Some(encoder.finish()));
+        let mut state = producer
+            .reader
+            .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
+        if state[5] != 0 {
+            state[0] |= 1 << 7;
+            state[1] = 0;
+        }
         let mut report = ClosedTraitCheck {
             producer_failures: state[0],
             first_failure: state[1],
@@ -568,7 +529,7 @@ impl RetainedTraitPublication {
                         ("cw_batch", input.buffer.as_entire_binding()),
                         ("cw_routes", routes.buffer.as_entire_binding()),
                     ];
-                    producer.record(encoder, 9, lanes, store, &ext, 0)
+                    producer.record(encoder, 8, lanes, store, &ext, 0)
                 })?;
         report.batch_status = readback.map(|r| r.batch_status);
         let solver = if defer_solve {
@@ -649,13 +610,13 @@ impl RetainedTraitPublication {
         );
         producer.record(
             &mut encoder,
-            10,
+            9,
             add(uses, obligations, "closed publication lanes")?,
             store,
             &ext,
             0,
         )?;
-        producer.record(&mut encoder, 11, 1, store, &ext, 0)?;
+        producer.record(&mut encoder, 10, 1, store, &ext, 0)?;
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));

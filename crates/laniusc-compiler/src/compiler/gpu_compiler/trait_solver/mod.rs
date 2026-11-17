@@ -39,7 +39,18 @@ impl super::GpuCompiler<'_> {
         store: &crate::type_checker::program_retention::ProgramRetention,
         options: &RetainedTraitOptions,
     ) -> anyhow::Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
-        dispatch::retained_publish(self.trait_solver_workspace.checkout(), store, options)
+        dispatch::retained_publish(|| self.retained_trait_workspace.checkout(), store, options)
+    }
+
+    /// The recorder of the retained trait catalog's count passes, which
+    /// follow each export of a retained build (`ProgramRetention::
+    /// set_export_follower`). Their workspace comes from the pool that
+    /// `retained_trait_publish` uses.
+    pub(in crate::compiler::gpu_compiler) fn retained_count_follower(
+        &self,
+    ) -> crate::type_checker::program_retention::ExportFollowerRecorder {
+        let pool = self.retained_trait_workspace.clone();
+        Box::new(move |store| dispatch::retained_count_follower(&pool.checkout(), store))
     }
 }
 

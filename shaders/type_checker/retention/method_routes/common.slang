@@ -1,9 +1,8 @@
 __exported import type_checker.retention.retention_store;
 __exported import type_checker.trait_solver.retained.route_abi;
 __exported import type_checker.retention.substitution.sb_consumer;
-// config: run, generation, requests, proof nodes, round parity, identity
-// epoch/arena/serial, round mod 3 (the final config: last round mod 3),
-// final batch.
+// config: run, generation, requests, proof nodes, value parity, identity
+// epoch/arena/serial, flag round mod 3, unused.
 public StructuredBuffer<uint> mr_config;
 public StructuredBuffer<uint> mr_routes;
 public StructuredBuffer<uint> mr_catalog;
@@ -13,8 +12,8 @@ public StructuredBuffer<uint4> mr_requests; // discovery metadata: root, edge, u
 public globallycoherent RWStructuredBuffer<uint> mr_state;
 public RWStructuredBuffer<uint4> mr_selected; // target, binding first, count, receiver mode
 public globallycoherent RWStructuredBuffer<uint> mr_reach;
-public RWStructuredBuffer<uint> mr_values_a;
-public RWStructuredBuffer<uint> mr_values_b;
+public globallycoherent RWStructuredBuffer<uint> mr_values_a;
+public globallycoherent RWStructuredBuffer<uint> mr_values_b;
 public RWStructuredBuffer<uint> mr_args; // 64 terms per request
 public RWStructuredBuffer<uint4> mr_out; // target, ENV, receiver mode, status (0 skip, 1 ready, >=2 failure)
 public uint mr_lane(uint3 id) { return id.x+id.y*16776960u; }
@@ -68,28 +67,46 @@ public uint2 mr_child(uint4 low,uint4 high,uint k)
     return k==0u ? high.xy : high.zw;
 }
 public bool mr_compound(uint2 r) { return r.x==3u || r.x==0x80000001u || r.x==0x80000003u; }
-// Fixed-point rounds: round r sets its changed flag state[base + r%3],
-// skips its work when round r-1 changed nothing (a fixed point), and
-// clears the flag of round r+1. Three flags keep that clear apart from
-// the flag this round reads.
-public uint mr_round() { return mr_config[10]; }
-public bool mr_previous_changed(uint base) { return mr_state[base+(mr_round()+2u)%3u]!=0u; }
-public void mr_round_begin(uint lane,uint base) { if (lane==0u) mr_state[base+(mr_round()+1u)%3u]=0u; }
-public void mr_changed(uint base) { mr_state[base+mr_round()]=1u; }
+// Fixed-point levels (02_expand, 03_terms): level r sets its changed flag
+// state[base + r%3], clears the flag of level r+1, and the loop stops at
+// a level whose predecessor changed nothing (a fixed point). Three flags
+// keep that clear apart from the flag a level reads. The selection pass
+// marks with flag round 2, the predecessor of level 0.
+public static const uint MR_LEVELS=65u; // proof depth is at most 64
 public static const uint MR_EXPAND_CHANGED=20u;
 public static const uint MR_TERMS_CHANGED=24u;
+// Kept for consumers of the state words; one dispatch reaches the bound,
+// so no pass sets it.
 public static const uint MR_PENDING=28u;
-public void mr_mark(uint2 r)
+public void mr_mark_at(uint2 r,uint round)
 {
     if (r.x==1u && r.y>0u && r.y<RT_FIRST_TERM) return;
     if (!mr_compound(r) || r.y>=mr_config[3]) { InterlockedOr(mr_state[3],1u); return; }
     uint old; InterlockedOr(mr_reach[r.y],1u,old);
-    if (old==0u) mr_changed(MR_EXPAND_CHANGED);
+    if (old==0u) mr_state[MR_EXPAND_CHANGED+round]=1u;
 }
-public uint mr_value(uint2 r)
+public void mr_mark(uint2 r) { mr_mark_at(r,mr_config[10]); }
+public uint mr_value_in(uint2 r,uint parity)
 {
     if (r.x==1u && r.y>0u && r.y<RT_FIRST_TERM) return r.y;
     if (!mr_compound(r) || r.y>=mr_config[3]) return RT_UNKNOWN;
-    return mr_config[4]==0u ? mr_values_a[r.y] : mr_values_b[r.y];
+    return parity==0u ? mr_values_a[r.y] : mr_values_b[r.y];
+}
+public uint mr_value(uint2 r) { return mr_value_in(r,mr_config[4]); }
+// Runs `level` once per fixed-point level in one 256-lane workgroup, with a
+// workgroup barrier between levels, until a level's predecessor changed
+// nothing or after MR_LEVELS levels.
+groupshared uint mr_go;
+public interface IMrLevel { void run(uint lane,uint level); }
+public void mr_levels<L:IMrLevel>(uint lane,uint base,L level)
+{
+    for (uint r=0u;r<MR_LEVELS;r++)
+    {
+        if (lane==0u) { mr_state[base+(r+1u)%3u]=0u; mr_go=mr_state[base+(r+2u)%3u]; }
+        AllMemoryBarrierWithGroupSync();
+        if (mr_go==0u) break;
+        level.run(lane,r);
+        AllMemoryBarrierWithGroupSync();
+    }
 }
 public struct MrArgs : IRtArgs { public uint base; public uint arg(uint k) { return mr_args[base+k]; } }

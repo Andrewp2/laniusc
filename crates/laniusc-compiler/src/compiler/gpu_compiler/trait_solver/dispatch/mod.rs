@@ -21,7 +21,7 @@ pub(super) use implementation_application::ProjectedImplApplication;
 pub(super) use implementation_application::ImplProjectionLimits;
 mod proof;
 mod retained;
-pub(super) use retained::{check as retained_check, publish as retained_publish};
+pub(super) use retained::{check as retained_check, publish as retained_publish, record_count_follower as retained_count_follower};
 pub use retained::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 #[cfg(test)]
 mod tests;

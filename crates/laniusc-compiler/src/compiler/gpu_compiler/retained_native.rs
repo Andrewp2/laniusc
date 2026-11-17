@@ -328,7 +328,11 @@ impl GpuCompiler<'_> {
             .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device, &self.gpu.queue)))
             .flatten();
         self.attach_program_retention(Some(build.store.clone()));
+        // The trait catalog's count passes follow each export and come back
+        // with its readback; the catalog continues from the last one.
+        build.store.set_export_follower(Some(self.retained_count_follower()));
         let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), store).await;
+        build.store.set_export_follower(None);
         self.attach_program_retention(None);
         build.calls = self.retained_native_calls.lock().unwrap().take();
         let (originals, native_functions, sources) = originals?;

@@ -85,6 +85,10 @@ pub struct GpuCompiler<'gpu> {
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     trait_solver_workspace: trait_solver::SolverWorkspacePool,
+    /// The retained trait catalog's workspace: its count passes are
+    /// recorded behind each export and `retained_trait_publish` continues
+    /// in the same lease, which other solver work must not hold.
+    retained_trait_workspace: trait_solver::SolverWorkspacePool,
     /// Caller ABI tables of the retained native build in progress
     /// (`retained_native.rs`); `None` outside one.
     retained_native_calls: std::sync::Mutex<Option<crate::type_checker::program_retention::NativeCallTables>>,
@@ -493,6 +497,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                 trait_solver_workspace: trait_solver::SolverWorkspacePool::new(
                     gpu.device.clone(), gpu.queue.clone(),
                 ),
+                retained_trait_workspace: trait_solver::SolverWorkspacePool::new(
+                    gpu.device.clone(), gpu.queue.clone(),
+                ),
                 retained_native_calls: std::sync::Mutex::new(None),
                 retained_native_build: Mutex::new(None, false),
             })
@@ -642,6 +649,7 @@ impl<'gpu> GpuCompiler<'gpu> {
     pub async fn release_resident_job_buffers(&self) -> GpuResidentJobBufferTrim {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.trait_solver_workspace.release();
+        self.retained_trait_workspace.release();
         // The rewrites bind lexer buffers, so their storage goes first.
         crate::compiler::machine_elaboration::release_resident_buffers();
         self.lexer.release_current_resident_buffers();

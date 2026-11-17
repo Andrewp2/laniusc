@@ -24,22 +24,41 @@ replays sources, and this path does not remove that replay. The list under
 
 ## Boundary
 
-1. The host takes `rt_counts` (96 words) and sizes seven lane regions:
-   declarations, parameters, terms, directory entries, trait records, uses
-   and committed jobs. One lane handles one retained record. The counters
-   are those the build's last export returned with its commit readback
-   (`JobReport::counts`), or a readback of its own when the store has no
-   export in this build. Lane 0 of `00_mark` compares the configured
-   counts with `rt_counts`; on a difference it sets producer state word 27
-   and the host reads the counters and runs the producer again. The
-   producer writes nothing into the store, so the first run leaves no
-   trace. Settings: 46 to 45 round trips per build.
+1. Pass `00_configure` (one lane) reads `rt_counts` (96 words) and lays out
+   seven lane regions: declarations, parameters, terms, directory entries,
+   trait records, uses and committed jobs. One lane handles one retained
+   record. It writes the counts, region bases, lane count, unit slots and
+   sort width into `rc_config`, the indirect dispatches of the count
+   passes into `rc_dispatch`, and copies `rt_counts` behind the producer
+   state words. The host sizes the count passes' buffers from the store's
+   capacities (`ProgramRetention::capacity`) and records them before it has
+   read any counter. Counters that exceed those capacities, or more than
+   2^24 lanes, set producer state word 27 and nothing runs. The bitonic
+   steps are recorded for the capacity's sort width; steps beyond the
+   store's width dispatch no workgroups. The one state readback returns the
+   counters the host uses for the fill. The producer writes nothing into
+   the store.
+
+   In a retained native build the count passes follow each export
+   (`record_count_follower`, installed with
+   `ProgramRetention::set_export_follower` for the originals). The host
+   records them while it waits on the frontend's metadata read; the
+   native call rewrite submits them with its own command buffer in one
+   submit and reads the producer state with its readback. `publish` takes
+   the words of the build's last committed export
+   (`take_followed_words`) and continues in the follower's workspace
+   lease, without its own count submit or state readback. The lease comes
+   from a pool only the retained catalog uses
+   (`GpuCompiler::retained_trait_workspace`), so other solver work never
+   holds it. Words of an export that did not commit, non-default options,
+   or counters beyond the recorded capacities (state word 27) fall back to
+   the count submit above. Settings: 45 to 44 round trips per build.
 2. Pass `00_mark` reads each committed job's (library, unit) from `rt_jobs`,
    including jobs with no declarations, and checks directory ownership. It also
    counts each trait's required members and marks callers that own a
    selected use. Pass `01_units` indexes the jobs by (library, unit).
    Passes `02a`–`02c` sort the impl bindings (see "Binding ranks").
-   Passes `02d`–`02f` mark the term closure (see "Term closure").
+   Passes `02d` and `02e` mark the term closure (see "Term closure").
 3. Pass `02_count` runs every producer check and counts the rows each lane
    owns in 16 counters, one per solver table. Passes `03`–`05` compute an
    exclusive scan of those counters.
@@ -193,21 +212,17 @@ record and marks its roots. A mark is a compare-exchange on `rc_reach`.
 The first marker appends the term to `rc_front`, so every term enters the
 frontier once.
 
-Each wave is two dispatches. `02e_closure_wave` is one lane: it takes the
-terms appended since the last wave and writes an indirect dispatch.
-`02f_closure_expand` runs one lane per term of that wave and marks its
-children. The work is one lane per closure term and one mark per closure
-edge. Empty waves dispatch no workgroups.
+All waves are one dispatch of one 256-lane workgroup,
+`02e_closure_wave`. Each wave takes the terms appended since the last wave,
+its lanes stride over them and mark their children, and a workgroup barrier
+separates waves. The loop stops at an empty wave. The work is one lane
+visit per closure term and one mark per closure edge. The settings build
+records one closure dispatch instead of 32.
 
-The host records 16 waves by default
-(`RetainedTraitOptions::closure_waves`). If terms remain unexpanded after
-the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
-the waves and runs every count pass again, as it does for a full unit
-table. Every wave binds the same buffers, so the host creates one bind
-group per closure pass and reuses it for all waves. The closed instance
-producer does the same for its BFS rounds, and the method routes create
-one bind group per (kernel, config slot) for their fixed-point rounds.
-`02_count`, `06_fill_terms` and `reference` treat an unmarked term
+The wave bound is 65536 by default (`RetainedTraitOptions::closure_waves`,
+config word 40). If terms remain unexpanded after the last wave, pass
+`02_count` sets `rc_state[24]`. The host then doubles the bound and runs
+every count pass again, as it does for a full unit table. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
 closed.
 
@@ -431,16 +446,18 @@ This supplies concrete implementation evidence for bound-member routing;
 the method-routing bridge is still being connected. Direct bounded calls
 continue to check their source proof as well.
 
-The producer scans live term slots, walks the reached graph in bounded GPU
-rounds, and scans eight counters per term or instance. Constant atoms share
-the catalog's identity when present. The first batch records 8 rounds. The
-count pass sets producer state word 5 when the frontier is still pending.
-The host then records twice as many further rounds and repeats the
-idempotent constant, count, scan and total passes, up to 65 rounds in all.
-A frontier still pending after 65 rounds is failure code 7, as before. The
-settings app needs one batch per wave. The whole-term scans remain.
+The producer scans live term slots, walks the reached graph, and scans eight
+counters per term or instance. Constant atoms share the catalog's identity
+when present. The walk (`closed/03_wave`) is one dispatch of one 256-lane
+workgroup. It loops over levels: each level expands the terms the previous
+level appended to `cw_front`, with a workgroup barrier between levels, and
+the loop stops at an empty level or after 65 levels. Retained type height is
+bounded by 64, so 65 levels consume any valid frontier. The count pass sets
+producer state word 5 when the frontier is still pending, which is failure
+code 7, as before. Each wave needs one submit and one readback. The
+whole-term scans remain.
 
-The counter scan (`closed/07_scan`) is a block scan in three dispatches
+The counter scan (`closed/06_scan`) is a block scan in three dispatches
 for any lane count: each 256-lane workgroup scans its lanes' two `uint4`
 counter blocks in shared memory and writes its totals to `cw_blocks`, one
 workgroup turns the totals into exclusive prefixes, and a last pass adds
