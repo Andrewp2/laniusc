@@ -114,6 +114,52 @@ Two diagnostics masked a pass to the items whose own token had a counted change 
 
 A mask per item that keeps the fixed point needs, for each masked pass, the set of items whose facts an item reads: its argument and receiver expressions, the expression that gives it a context type, and the declarations of the locals it reads. Each change would stamp the changed item's readers through an adjacency built once per job. Every masked pass's reads would then have to be checked against that adjacency, in the same way as the writer table check for the masks per function.
 
+## Why settings needs 10 rounds (measured 2026-11-17)
+
+A temporary diagnostic (not kept; `call-inference-round-diag.patch` in the evidence directory) copied `call_inference_state[1]` after every operation of a round, in waited rounds. Counted changes per round on settings, by the pass that counted them:
+
+| Round | Method selection | `03k` argument contexts | `03e` return types | `03k1` literal contexts | `03g` expression types | `03f` return bindings | Other | Total |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0 | 18,321 | 8,198 | 5,599 | 81,446 | 2,658 | 269 | 116,491 |
+| 2 | 819 | 149 | 907 | 1,241 | 14,745 | 586 | 10 | 18,457 |
+| 3 | 829 | 377 | 845 | 174 | 2,781 | 204 | 8 | 5,218 |
+| 4 | 267 | 108 | 333 | 24 | 770 | 122 | 3 | 1,627 |
+| 5 | 65 | 40 | 98 | 7 | 425 | 63 | 0 | 698 |
+| 6 | 20 | 6 | 33 | 2 | 147 | 26 | 5 | 239 |
+| 7 | 19 | 5 | 20 | 2 | 66 | 5 | 1 | 118 |
+| 8 | 11 | 3 | 14 | 0 | 16 | 8 | 0 | 52 |
+| 9 | 1 | 0 | 1 | 0 | 24 | 0 | 0 | 26 |
+| 10 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
+| 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+"Other" is match payloads, array literal elements, bound inference and the argument-context type index. No other pass counts a change after round 1.
+
+The diagnostic also logged the token of every change from round 3 on. The late changes are chains of statements in which each local's type comes from a method or generic call on the previous local:
+
+```
+let recorded = ...;          // round 7
+if (recorded.is_err()) {     // round 8
+let e = recorded.unwrap_err();
+return Err(Error::Gpu(e));   // round 9
+```
+
+and nested method calls, such as `let target=field(self.target.unwrap().field())?; let point=field(target.insertion())?; let bounds=covered(point.clip); ... bounds.unwrap()`, which reach round 10. One step of such a chain needs method selection (start of the round), then argument matching and claims, receiver and call environments, return materialization, expression projection `03g` and local bindings `03f` (end of the round). The step's result is read by the next step's method selection, so a chain advances one call per round. The passes of the step span the whole round: an ordering of the round's 64 passes by their reads and writes (shared intern tables left out) has 40 dependent layers, and the chain uses nearly all of them. Running a subset of the round more often, or a jump over several steps, would need the same passes again, so the round count was not reduced.
+
+## Passes taken out of the round (2026-11-17)
+
+- The required-generic mark and its scan (three dispatches) ran in every round. Only the required-binding validation after closure reads them, so they now run once at the start of `record_required`.
+- The candidate reset (`06c`) and the local table lookup (`methods/07`) ran as two dispatches over the same token grid in every method transaction (direct, eight lookup sweeps, every round). The reset writes only its token's record and ownership and its call's context masks, and the lookup reads neither the masks nor another token's record. `07` now resets first in the same lane.
+
+Settings, 618f4be1b against the two changes, sum of the per-pass minimum over 6 traced builds each:
+
+| | 618f4be1b | After |
+|---|---|---|
+| Type-check dispatches | 1,425 | 1,375 |
+| Build dispatches | 4,257 | 4,207 |
+| Type-check GPU time (traced) | 28.22 ms | 27.53 ms |
+| Rounds | 10 + final pass | 10 + final pass |
+| Settings executable | `115a4d52a2ae77e0` | byte-identical |
+
 ## What remains
 
 - Activity per item, as above.
