@@ -105,6 +105,22 @@ fn runtime_service_values() -> Vec<(&'static str, u32)> {
         .collect()
 }
 
+/// Import discovery runs before the closure rewrite, so a file with a `|`
+/// (here the `||` operator) also loads `core::function` and its import
+/// `core::mem`. Returns how many files that adds.
+fn assert_closure_trait_files(
+    manifest: &laniusc_compiler::compiler::ExplicitSourcePackPathManifest,
+    stdlib_root: &std::path::Path,
+) -> usize {
+    for module in ["core/function.lani", "core/mem.lani"] {
+        assert!(
+            manifest.files.iter().any(|file| file.path == stdlib_root.join(module)),
+            "path manifest should include the closure trait module's {module}"
+        );
+    }
+    2
+}
+
 fn runtime_bound_api_is_compiler_backed(api_name: &str) -> bool {
     matches!(
         api_name,
@@ -798,6 +814,8 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 | "std::io::flush_stderr"
                 | "std::env::current_dir_len"
                 | "std::linux::call"
+                | "core::panic::panic"
+                | "core::panic::unreachable"
         ) {
             assert_eq!(api.current_status, "executable-stdlib");
             assert_eq!(api.extern_abi, "lanius_stdlib");
@@ -5091,7 +5109,10 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(
+        manifest.files.len(),
+        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+    );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::host aggregate host-service contract",
@@ -6343,7 +6364,10 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(
+        manifest.files.len(),
+        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+    );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root std::gpu runtime contract",
@@ -6545,7 +6569,10 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")),
         "path manifest should include core::runtime from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 3);
+    assert_eq!(
+        manifest.files.len(),
+        3 + assert_closure_trait_files(&manifest, &stdlib_root)
+    );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root test::harness runtime contract",
@@ -6600,7 +6627,10 @@ fn main() {
         }),
         "path manifest should include test::harness from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    assert_eq!(
+        manifest.files.len(),
+        2 + assert_closure_trait_files(&manifest, &stdlib_root)
+    );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root test::harness known-unbound gates",
