@@ -405,23 +405,21 @@ never a wrong value. Parameter and capture types are written out because a
 generic impl body cannot call methods or read fields of a generic value;
 that is why the parameter type is required.
 
-Implementation: the rewrite runs on the GPU over the raw lexer tokens of
-all files of one load (`shaders/closures/`). `mark` flags closure starts
-and binder roles; `scan` computes bracket depth and closure counts by a
-doubling prefix sum; `records` finds each closure's parameter, result type
-and body; `captures` resolves each name in a body to the nearest typed
-binder before the closure; `layout`, `files` and `pieces` compute the list
-of output pieces, where each piece is a span of source bytes, a constant
-string or a closure number; `emit` writes each output byte from the piece
-that covers it. The host (`compiler/machine_elaboration/closures.rs`)
-records the commands and sizes buffers from the counts the kernels publish:
-four submissions when a file has a closure and one when none has. The piece
-table becomes the segment map, so a diagnostic in a closure body points at
-the source (`closure_body_error.lani`). Import discovery loads
-`core::function` for every file that contains a `|`, because the rewrite
-adds that import to a file with a closure. `mark` reads the word `move` before a
-closure start; `records` then starts the site at that word and `pieces`
-ends it with `}` in place of `}.borrow()`. Fixtures:
+Implementation: the frontend desugars closures in its token stream, in the
+first round of the desugaring (`compiler/desugar/closures.rs`,
+`shaders/closures/`; docs/state-machines-design.md, "Desugaring in the
+lexer"). `mark` flags closure starts and a prefix sum gives each token its
+bracket depth and closure number; `roles` finds binders; `records` finds
+each closure's parameter, result type and body; `captures` resolves each
+name in a body to the nearest typed binder before the closure; `pieces`
+writes the site, the import and the struct and impls as pieces that the
+shared stages of the desugaring splice into the stream. A copied token
+keeps its source position, so a diagnostic in a closure body points at the
+source (`closure_body_error.lani`). Import discovery loads
+`core::function` for every file that contains a `|`, because the
+desugaring adds that import to a file with a closure. `mark` reads the word
+`move` before a closure start; `records` then starts the site at that word
+and `pieces` ends it with `}` in place of `}.borrow()`. Fixtures:
 `tests/fixtures/language/closure*.lani` and `closure_modules/`.
 
 ## Stored callbacks
@@ -476,7 +474,7 @@ lacked: a call through an address. The built-in `call_ptr(entry, a, b, c)`
 supplies it (see C callbacks). Everything else is library code and
 generated text:
 
-- For a `move` closure whose result is written, the closure rewrite appends
+- For a `move` closure whose result is written, the desugaring appends
   a function `__lanius_closure_N_entry(e: ptr, i: ptr, o: ptr)` and an impl
   of `core::function::Stored`, whose `entry` method returns that function's
   address. The entry calls `core::function::enter_mapper<Closure, T, U>(e,

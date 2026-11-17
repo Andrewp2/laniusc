@@ -62,6 +62,8 @@ static const uint PLAN_M_MACHINES = 8u;
 static const uint PLAN_M_PIECES = 9u;
 // Generators.
 static const uint PLAN_G_PIECES = 10u;
+// Closures.
+static const uint PLAN_C_PIECES = 11u;
 
 // Machine layout: dispatches and parameter blocks from A_FEATURE and
 // P_FEATURE (desugar.rs mirrors them).
@@ -106,6 +108,18 @@ static const uint GP_CHECK = 21u;
 static const uint GP_FILES = 22u;
 static const uint GP_SCOPE = 23u;
 static const uint GP_WRITE = 24u;
+// Closure layout (desugar/closures.rs mirrors it).
+static const uint CA_TOKENS = 16u;
+static const uint CA_SCAN = 17u;
+static const uint CA_SCAN_ONE = 18u;
+static const uint CA_TREE = 19u; // one per level of the depth heap
+static const uint CA_WRITE = 22u;
+static const uint CP_TOKENS = 16u;
+static const uint CP_SCAN = 17u;
+static const uint CP_TREE = 20u; // one per level of the depth heap
+static const uint CP_WRITE = 23u;
+static const uint C_TREE_STEPS = 3u;
+static const uint C_STATUS_WORDS = 1u;
 static const uint G_REC_WORDS = 7u;
 static const uint G_STATUS_WORDS = 1u;
 static const uint M_STATUS_WORDS = 4u;
@@ -230,6 +244,78 @@ void start_machines()
     set_lanes(MA_TOKENS, tokens);
     set_lanes(MA_RECORD_WORDS, tokens * M_REC_WORDS);
     scan(MP_SCAN_TOKENS, MA_TOKEN_SCAN, MA_TOKEN_SCAN_ONE, tokens);
+}
+
+// The leaves of the minimum heap over the depth of each block of 256
+// tokens: a power of two that covers the blocks of `token_cap` tokens
+// (desugar/closures.rs computes the same).
+uint closure_leaf_base()
+{
+    uint blocks = max((gPlan.token_cap + 255u) / 256u, 1u);
+    uint leaves = 1u;
+    while (leaves < blocks)
+        leaves <<= 1u;
+    return leaves;
+}
+
+// Every per-token kernel of a closure round reads all the tokens: the round
+// runs only when a closure starts in the stream. The heap over the depths is
+// built in the steps of crate::gpu::scan::heap_build_levels for the leaves
+// of the token rows; each step reads the blocks of the round's tokens.
+void start_closures()
+{
+    uint tokens = sizes[gPlan.slot * SIZE_WORDS + S_TOKENS];
+    sizes[gPlan.slot * SIZE_WORDS + S_LIVE] = tokens;
+    block(CP_TOKENS, tokens, 0u, 0u, 0u);
+    set_lanes(CA_TOKENS, tokens);
+    scan(CP_SCAN, CA_SCAN, CA_SCAN_ONE, tokens);
+    uint n_blocks = (tokens + 255u) / 256u;
+    uint leaf_base = closure_leaf_base();
+    uint level_start = leaf_base;
+    uint mode = 0u;
+    for (uint step = 0u; step < C_TREE_STEPS; step += 1u)
+    {
+        uint levels = min(firstbitlow(level_start), 8u);
+        uint at = (CP_TREE + step) * BLOCK_WORDS;
+        blocks[at] = n_blocks;
+        blocks[at + 1u] = leaf_base;
+        blocks[at + 2u] = level_start;
+        blocks[at + 3u] = level_start;
+        blocks[at + 4u] = mode;
+        blocks[at + 5u] = levels;
+        set_lanes(CA_TREE + step, level_start);
+        level_start >>= levels;
+        mode = 1u;
+        if (level_start <= 1u)
+            break;
+    }
+}
+
+// feat_a: the inclusive prefix sums of depth and closure starts. feat_b: of
+// the piece counts.
+void plan_closure_pieces()
+{
+    uint live = sizes[gPlan.slot * SIZE_WORDS + S_LIVE];
+    if (live == 0u)
+        return;
+    if (status_failed(C_STATUS_WORDS))
+    {
+        raise_flag(DESUGAR_RULE_ERROR);
+        return;
+    }
+    uint closures = feat_a[live - 1u].y;
+    uint fpieces = feat_b[live - 1u].x;
+    if (closures == 0u || fpieces == 0u)
+        return;
+    if (fpieces > gPlan.piece_cap)
+    {
+        overflow(S_NEED_PIECES, fpieces);
+        return;
+    }
+    sizes[gPlan.slot * SIZE_WORDS + S_F0] = closures;
+    block(CP_WRITE, live, 1u, fpieces, 0u);
+    set_lanes(CA_WRITE, fpieces);
+    expand(fpieces);
 }
 
 // Every per-token kernel of a generator round reads all the tokens: the
@@ -359,8 +445,15 @@ void main()
             return;
         if (gPlan.feature == FEATURE_MACHINES)
             start_machines();
+        else if (gPlan.feature == FEATURE_CLOSURES)
+            start_closures();
         else if (gPlan.feature == FEATURE_GENERATORS)
             start_generators();
+        return;
+    }
+    if (mode == PLAN_C_PIECES)
+    {
+        plan_closure_pieces();
         return;
     }
     if (mode == PLAN_G_PIECES)

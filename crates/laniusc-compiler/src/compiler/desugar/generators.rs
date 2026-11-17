@@ -45,21 +45,17 @@ use super::{
     LastRun,
     PLAN_START,
     Round,
+    RuleError,
     S_LIVE,
     SIZE_WORDS,
     constants,
+    gpu::Gpu,
     last_sizes,
+    machines::NO_ERROR,
     read_words,
     source_position,
 };
-use crate::{
-    compiler::machine_elaboration::{
-        closures::Gpu,
-        machines::{NO_ERROR, RuleError},
-    },
-    gpu::buffers::LaniusBuffer,
-    lexer::tables::tokens::TokenKind,
-};
+use crate::{gpu::buffers::LaniusBuffer, lexer::tables::tokens::TokenKind};
 
 /// The strings the kernels insert, in the order of the `GC_*` ids in
 /// shaders/generators/generator_common.slang.
@@ -447,12 +443,7 @@ pub(super) fn explain(
     let start = source_position(at).unwrap_or(at);
     let len = (detail[1] as usize).max(1);
     let label = text(start, len);
-    Ok(Some(RuleError {
-        start,
-        len,
-        message: message(key, &label),
-        help: None,
-    }))
+    Ok(Some(RuleError::machine(start, len, message(key, &label), None)))
 }
 
 /// The message of the error `key`, whose token has the text `label`.

@@ -1,6 +1,8 @@
-// Shared layout of the closure rewrite. A closure `|x: T| body` becomes a
-// struct literal at its site and a struct, a `borrow` impl and a trait impl
-// appended to its file. The kernels work on raw lexer tokens.
+// Shared layout of the closure round of the desugaring
+// (crates/laniusc-compiler/src/compiler/desugar/closures.rs). A closure
+// `|x: T| body` becomes a struct literal at its site and a struct, a
+// `borrow` impl and a trait impl after the last token of its file. The
+// kernels read the lexer's tokens: the closure round runs first.
 module closure_common;
 
 import generated_token_ids;
@@ -42,25 +44,17 @@ public static const uint ERR_SELF = 5u;
 public static const uint ERR_CAPTURE_TYPE = 6u;
 public static const uint ERR_RTYPE_BODY = 7u;
 
-// Piece counts. A file has PIECES_PER_FILE pieces plus those of its closures
-// and captures: the text before the import, the import, and the text after
-// the last closure. A closure has one piece of text before it, its site and
-// its appendix. The appendix ends with ENTRY_PIECES pieces: the entry
-// function and the `Stored` impl of a closure that alloc::callback can hold.
-public static const uint PIECES_PER_FILE = 3u;
+// Piece counts in the desugaring's token stream. A closure's site is
+// SITE_FIXED pieces plus SITE_PER_CAPTURE per capture; its appendix, which
+// goes after the last token of its file, APPENDIX_FIXED plus
+// APPENDIX_PER_CAPTURE per capture. The appendix ends with ENTRY_PIECES
+// pieces: the entry function and the `Stored` impl of a closure that
+// alloc::callback can hold. A file with a closure also gets one import.
 public static const uint SITE_FIXED = 4u;
 public static const uint SITE_PER_CAPTURE = 4u;
 public static const uint APPENDIX_FIXED = 39u;
 public static const uint APPENDIX_PER_CAPTURE = 11u;
 public static const uint ENTRY_PIECES = 14u;
-public static const uint PIECES_PER_CLOSURE = 44u;
-public static const uint PIECES_PER_CAPTURE = 15u;
-
-// Piece kinds.
-public static const uint PIECE_COPY = 0u;
-public static const uint PIECE_CONST = 1u;
-public static const uint PIECE_ID = 2u;
-public static const uint ID_DIGITS = 10u;
 
 // Constant strings, in the order of the host table.
 public static const uint C_NAME = 0u;

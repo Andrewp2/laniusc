@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 
-//! A native build elaborates the files of all its units in one run of each
-//! rewrite (closures, generators, machines) before the first unit compiles.
+//! A native build of units with closures, generators and machines: the
+//! frontend of each unit desugars them in its token stream.
 
 use crate::common;
 
@@ -62,10 +62,8 @@ fn a_native_build_rewrites_the_files_of_its_units_together() {
     assert_runs("rewrites");
 }
 
-/// When the program does not parse, the joint run reads no file as
-/// rewritten or unchanged. Each unit then rewrites its own files, the build
-/// reports the parse error, and the standard library's machine still
-/// expands in the next build.
+/// When the program does not parse, the build reports the parse error, and
+/// the standard library's machine still expands in the next build.
 #[test]
 fn a_unit_that_does_not_parse_leaves_the_other_units_rewrites_to_them() {
     let error = build("unparsed").expect_err("the program does not parse");
