@@ -197,7 +197,7 @@ fn elaborate(sources: Vec<(PathBuf, String)>, batch_limit: Option<usize>) -> Res
     });
     let file_count = sources.len();
     crate::gpu::passes_core::host_timing_mark("machine_elaboration.start");
-    let result = elaborate_untimed(sources, batch_limit);
+    let result = super::desugar::without_desugaring(|| elaborate_untimed(sources, batch_limit));
     crate::gpu::passes_core::host_timing_mark("machine_elaboration.end");
     if let (Some((started, (trips, wait_ns), dispatches)), Ok(Some(texts))) = (timing, &result) {
         let (trips_now, wait_now) = readback_round_trips();

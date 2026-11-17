@@ -283,7 +283,7 @@ impl GpuLexer {
 
         let passes = &self.passes;
 
-        record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, passes)?;
+        record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, passes)?;
 
         // Submit the work and copy back the token count.
         let token_count_u32 = {
@@ -529,7 +529,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         crate::gpu::passes_core::submit_with_optional_validation(
@@ -613,7 +613,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         crate::gpu::passes_core::submit_with_optional_validation(
@@ -733,7 +733,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(&mut enc, "lexer.source_pack.done");
@@ -934,7 +934,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
@@ -1145,7 +1145,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
         if let Some(timer) = maybe_timer.as_mut() {
             timer.stamp(&mut enc, "lexer.done");
@@ -1262,7 +1262,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
@@ -1445,7 +1445,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
@@ -1634,7 +1634,7 @@ impl GpuLexer {
                 maybe_dbg: &mut dbg_ref,
                 bg_cache: Some(&mut *cache_guard),
             };
-            record_all_passes(bufs.n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
+            record_all_passes(bufs.lexed_n, bufs.nb_dfa, bufs.nb_sum, ctx, &self.passes)?;
         }
 
         let token_count_readback = &bufs.token_count_readback.buffer;
