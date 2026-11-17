@@ -96,7 +96,10 @@ All semantic work is GPU lane work. The host allocates, records, submits and
 reads the plan totals, the check status with the first error and batch
 maxima, and the batch table. Schema realization additionally reads frontier
 counts and substitution receipts. It reads no instance,
-term, row or route.
+term, row or route. Its first frontier ends at the store's term count, which
+it takes from the projection substitution's receipt (`STORE_TERMS_BASE` plus
+`STORE_NEW_TERMS` of the committed attempt) instead of a store status
+readback.
 
 | Kernel | Lanes | Work |
 | --- | --- | --- |
