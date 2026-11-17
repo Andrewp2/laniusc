@@ -501,9 +501,14 @@ pub(in crate::compiler::gpu_compiler) fn publish(
     // The last export's committed readback returned the store's counters.
     // The producer checks them on the GPU and reports stale ones, and the
     // run then reads them itself.
-    let exported = store.job_reports().pop().map(|report| report.counts);
-    let (mut report, publication) =
+    let mut jobs = store.job_reports();
+    let committed = jobs.len();
+    let exported = jobs.pop().map(|report| report.counts);
+    let (mut report, mut publication) =
         store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options, exported))?;
+    if let Some(publication) = &mut publication {
+        publication.store_jobs = committed;
+    }
     let readbacks = passes_core::readback_round_trips();
     report.dispatches = passes_core::recorded_compute_dispatch_count() - dispatches_before;
     report.readbacks = readbacks.0 - readbacks_before.0;
@@ -960,7 +965,11 @@ fn run(
         route_words,
         identity,
         rt_counts: rt_counts.clone(),
-        store_counts: std::sync::Mutex::new(None),
+        // The counters this check ran with; the producer does not write
+        // the store.
+        store_counts: std::sync::Mutex::new(Some(status)),
+        store_jobs: 0,
+        noted_status: std::sync::Mutex::new(None),
     };
     Ok((report, Some(publication)))
 }
@@ -1041,6 +1050,10 @@ pub struct RetainedTraitPublication {
     rt_counts: wgpu::Buffer,
     /// The store's counters, read with the last `status`.
     store_counts: std::sync::Mutex<Option<Vec<u32>>>,
+    /// Committed exports of the store's build when the check ran.
+    store_jobs: usize,
+    /// Header words 8-10 as a consumer's readback returned them.
+    noted_status: std::sync::Mutex<Option<[u32; 3]>>,
 }
 
 impl RetainedTraitPublication {
@@ -1079,14 +1092,34 @@ impl RetainedTraitPublication {
         let raw = self.gpu.readback.read_regions(&self.gpu.device, &self.gpu.queue, &regions, "retained publication status")?;
         let words = super::words(&raw[0])?;
         *self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(super::words(&raw[1])?);
-        Ok([words[0], words[1], words[2]])
+        let status = [words[0], words[1], words[2]];
+        self.note_status(status);
+        Ok(status)
     }
 
-    /// The store counters read with the last `status`, once. A consumer
-    /// that checked `view` against the same store may size its work with
-    /// them; a later export changes the extent the GPU checks.
-    pub fn take_store_counts(&self) -> Option<Vec<u32>> {
-        self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
+    /// Header words 8-10 that a consumer copied on the GPU and read back
+    /// with its own readback (discovery's root resolution).
+    pub fn note_status(&self, status: [u32; 3]) {
+        *self.noted_status.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(status);
+    }
+
+    /// The status a consumer noted, or `status` when none did.
+    pub fn checked_status(&self) -> Result<[u32; 3]> {
+        let noted = *self.noted_status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match noted {
+            Some(status) => Ok(status),
+            None => self.status(),
+        }
+    }
+
+    /// The store counters the check ran with, or those read with the last
+    /// `status`, once, while `store` is in the same build with the same
+    /// committed exports. A consumer that checked `view` against the same
+    /// store may size its work with them; a later export changes the
+    /// extent the GPU checks.
+    pub fn take_store_counts(&self, store: &ProgramRetention) -> Option<Vec<u32>> {
+        let counts = self.store_counts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()?;
+        (store.generation() == self.identity.generation && store.job_reports().len() == self.store_jobs).then_some(counts)
     }
 
     /// GPU-selected source span of the first hard-refuted call. No proof,

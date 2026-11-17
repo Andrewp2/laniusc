@@ -38,6 +38,10 @@ const KERNELS: &[&str] = &[
     "type_checker/retention/discovery/06_bound_routes",
 ];
 const STATUS_WORDS: usize = 32;
+/// Route header words 8-10 of a retained trait publication: status (1
+/// valid), route failures, first failure (route_abi.slang).
+const PUBLICATION_STATUS_WORD: u64 = 8;
+const PUBLICATION_STATUS_WORDS: usize = 3;
 /// Keys one workgroup sorts in shared memory (dg_common.slang DG_SORT_BLOCK).
 const SORT_BLOCK: u32 = 512;
 const FIRST_ERROR: usize = 6;
@@ -200,7 +204,7 @@ impl RetainedDiscovery {
     fn run_inner(&mut self, store: &ProgramRetention, mut publication: Option<&mut RetainedTraitPublication>) -> Result<DiscoveryOutcome> {
         // The catalog read the store's counters with its publication
         // status; nothing writes the store between them.
-        let initial = match publication.as_deref().and_then(|p| p.take_store_counts()) {
+        let initial = match publication.as_deref().and_then(|p| p.take_store_counts(store)) {
             Some(words) => words,
             None => store.status()?,
         };
@@ -263,6 +267,20 @@ impl RetainedDiscovery {
             self.config_cursor = 0;
             let guard = store.store.lock().unwrap();
             let mut encoder = self.encoder();
+            // The source publication's status words come back with the
+            // roots' resolution readback (dg_receipt is free until the
+            // first closed wave).
+            let receipt_buffer = self.scratch["dg_receipt"].clone();
+            if let Some(admission) = &self.admission {
+                encoder.copy_buffer_to_buffer(
+                    &admission.routes,
+                    admission.offset + PUBLICATION_STATUS_WORD * 4,
+                    &receipt_buffer,
+                    0,
+                    PUBLICATION_STATUS_WORDS as u64 * 4,
+                );
+            }
+            let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
             self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             self.queue.submit(Some(encoder.finish()));
@@ -272,15 +290,31 @@ impl RetainedDiscovery {
             // Level counts from the last wave's resolution readback, while
             // nothing has interned terms after it.
             let mut levels: Option<Vec<u32>> = None;
-            let resolved = self.resolve(store, &requests, &extra, config, None, None, &mut report)?;
+            let resolved = self.resolve(store, &requests, &extra, config, publication_read, None, &mut report)?;
             let request_capacity = resolved.is_none();
             let mut status = match resolved {
                 Some((words, first)) => {
                     levels = first.then(|| words[words.len() - LEVELS..].to_vec());
                     words
                 }
-                None => self.read_status_counts(store, &[], &mut report)?,
+                None => self.read_status_counts(store, publication_read.as_slice(), &mut report)?,
             };
+            // A source publication that is not valid rejects discovery
+            // before any growth or failure of the roots; the caller reads
+            // the noted status and reports the publication's failure.
+            if let Some(source) = publication.as_deref() {
+                let at = STATUS_WORDS + counts::WORDS;
+                let words = [status[at], status[at + 1], status[at + 2]];
+                source.note_status(words);
+                if words != [1, 0, u32::MAX] {
+                    return Ok(DiscoveryOutcome::Rejected(DiscoveryError {
+                        code: 10,
+                        use_index: u32::MAX,
+                        instance: u32::MAX,
+                        detail: words[2],
+                    }));
+                }
+            }
 
             if self.grow(&status)? {
                 continue 'attempt;

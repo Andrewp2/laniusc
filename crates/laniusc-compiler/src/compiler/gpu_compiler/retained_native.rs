@@ -378,9 +378,12 @@ impl GpuCompiler<'_> {
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
         // cannot replace catalog admission.
-        let (mut catalog, publication) = self.retained_trait_publish(&store, &RetainedTraitOptions::default())
+        let (mut catalog, mut publication) = self.retained_trait_publish(&store, &RetainedTraitOptions::default())
             .map_err(|e| retained_error("trait catalog", format!("{e:#}")))?;
-        catalog.publication_status = publication.as_ref().map(|p| p.status()).transpose()
+        // Discovery reads the publication's status with its first readback
+        // and rejects an invalid publication; that status decides first.
+        let discovered = publication.as_mut().map(|publication| build.discovery.run_with_traits(&store, publication));
+        catalog.publication_status = publication.as_ref().map(|p| p.checked_status()).transpose()
             .map_err(|e| retained_error("trait publication", e))?;
         if catalog.publication_status != Some([1, 0, u32::MAX]) {
             if let Some(publication) = &publication
@@ -397,8 +400,9 @@ impl GpuCompiler<'_> {
                 catalog.publication_status,
             ))));
         }
-        let mut publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
-        let roots = match build.discovery.run_with_traits(&store, &mut publication).map_err(|e| retained_error("discovery", format!("{e:#}")))? {
+        let publication = publication.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
+        let discovered = discovered.ok_or_else(|| retained_error("trait catalog", "no GPU publication"))?;
+        let roots = match discovered.map_err(|e| retained_error("discovery", format!("{e:#}")))? {
             DiscoveryOutcome::Published(roots) => roots,
             DiscoveryOutcome::Rejected(e) => {
                 return Err(retained_error("discovery rejected the program", format!("{e:?}")));

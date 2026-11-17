@@ -142,6 +142,22 @@ A failed discovery returns a code, retained-use ordinal, instance index and deta
 It publishes no usable readiness record. This API is not yet the default compiler
 path and does not by itself remove replay from normal compilation.
 
+## Source publication status
+
+The trait catalog's publication status (route header words 8-10) is no
+longer read on its own before discovery. The root submit copies the three
+words into `dg_receipt`, which is free until the first closed wave, and
+they come back with the roots' resolution readback. Discovery notes them in
+the publication (`note_status`); a status other than `[1, 0, u32::MAX]`
+rejects discovery with code 10 (detail: the first failure) before any
+growth or root failure. The native build runs discovery first and then
+checks `checked_status`, which returns the noted words or reads them when
+discovery stopped before its first readback, so a failed publication is
+still reported as the trait diagnostic, before any discovery result. The
+publication keeps the store counters its catalog ran with, and discovery
+sizes its roots from them while the store has the same generation and
+committed exports. Settings: 45 to 44 round trips per build.
+
 ## Bounded direct calls
 
 `run_with_traits` binds the retained solver publication without reading semantic
