@@ -19,52 +19,6 @@ fn tree_count_status(b: &ParserBuffers) -> wgpu::BindingResource<'_> {
     }
 }
 
-/// Builds one local (minimum, count) heap per block of 256 semantic parents.
-pub struct HirSemanticChildIndexRowsPass {
-    data: PassData,
-}
-
-crate::gpu::passes_core::impl_static_shader_pass!(
-    HirSemanticChildIndexRowsPass,
-    label: "hir_semantic_child_index_rows",
-    shader: "parser/hir/semantic/child/index/index_rows"
-);
-
-impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirSemanticChildIndexRowsPass {
-    const NAME: &'static str = "hir_semantic_child_index_rows";
-    const DIM: DispatchDim = DispatchDim::D1;
-
-    fn from_data(data: PassData) -> Self {
-        Self { data }
-    }
-
-    fn data(&self) -> &PassData {
-        &self.data
-    }
-
-    fn create_resource_map<'a>(
-        &self,
-        b: &'a ParserBuffers,
-    ) -> HashMap<String, wgpu::BindingResource<'a>> {
-        HashMap::from([
-            ("gHirSemantic".into(), b.hir_params.as_entire_binding()),
-            ("tree_count_status".into(), tree_count_status(b)),
-            (
-                "hir_semantic_count".into(),
-                b.hir_semantic_count.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_parent".into(),
-                b.hir_semantic_parent.as_entire_binding(),
-            ),
-            (
-                "hir_semantic_child_local".into(),
-                b.hir_semantic_child_local.as_entire_binding(),
-            ),
-        ])
-    }
-}
-
 /// Builds one local (minimum, count) heap per group of 256 block aggregates.
 pub struct HirSemanticChildIndexBlocksPass {
     data: PassData,

@@ -37,7 +37,7 @@ use crate::{
         passes_core::{self, PassData, make_pass_data_from_shader_key},
         readback::{PagedReadback, ReadbackRegion},
     },
-    type_checker::program_retention::{ProgramRetention, counts},
+    type_checker::program_retention::{ExportFollower, ProgramRetention, ProgramRetentionCapacity, counts},
 };
 
 const KEYS: [&str; 23] = [
@@ -62,19 +62,19 @@ const KEYS: [&str; 23] = [
     "type_checker/trait_solver/retained/entries/09_fill_words",
     "type_checker/trait_solver/retained/entries/02d_closure_roots",
     "type_checker/trait_solver/retained/entries/02e_closure_wave",
-    "type_checker/trait_solver/retained/entries/02f_closure_expand",
     "type_checker/trait_solver/retained/entries/02g_sort_block",
+    "type_checker/trait_solver/retained/entries/00_configure",
 ];
-const SORT_BLOCK: usize = 22;
+const SORT_BLOCK: usize = 21;
+const CONFIGURE: usize = 22;
 /// Keys one workgroup sorts in shared memory (producer.slang RC_SORT_BLOCK).
 const SORT_BLOCK_KEYS: u32 = 512;
 const FILL_WORDS: usize = 18;
 const CLOSURE_ROOTS: usize = 19;
 const CLOSURE_WAVE: usize = 20;
-const CLOSURE_EXPAND: usize = 21;
-/// First number of closure expansion waves; doubled while the GPU reports
-/// an unexpanded frontier.
-const CLOSURE_WAVES: u32 = 16;
+/// First bound on closure waves, which one workgroup runs until a wave is
+/// empty; doubled while the GPU reports an unexpanded frontier.
+const CLOSURE_WAVES: u32 = 1 << 16;
 const SORT_INIT: usize = 13;
 const SORT_STEP: usize = 14;
 const SORT_FINISH: usize = 15;
@@ -96,8 +96,6 @@ const FILL: [usize; REGIONS] = [6, 7, 8, 9, 10, 11, 12];
 const BATCH_FILL_REGIONS: [usize; 2] = [3, 5];
 
 // producer.slang rc_config words.
-const CFG_LANES: usize = 8;
-const CFG_BASE: usize = 9;
 const CFG_EPOCH: usize = 16;
 const CFG_GENERATION: usize = 18;
 const CFG_PHASE: usize = 19;
@@ -105,7 +103,18 @@ const CFG_TABLE: usize = 20;
 const CFG_SORT: usize = 37;
 const CFG_ATOM_IDS: usize = 38;
 const CFG_ROUTE_USES: usize = 39;
-const CFG_WORDS: usize = 40;
+const CFG_CLOSURE_WAVES: usize = 40;
+const CFG_REGION_CAP: usize = 41;
+const CFG_UNIT_CAP: usize = 48;
+const CFG_SORT_CAP: usize = 49;
+const CFG_UNIT_REQUEST: usize = 50;
+const CFG_STEPS: usize = 51;
+const CFG_WORDS: usize = 52;
+/// rc_dispatch entries (config_words.slang RC_D_*).
+const D_LANES: u64 = 0;
+const D_ROOTS: u64 = 1;
+const D_SORT: u64 = 2;
+const D_STEP: u64 = 3;
 const REGIONS: usize = 7;
 const COUNTERS: usize = 16;
 
@@ -121,7 +130,7 @@ const S_TOTALS: usize = 8;
 const S_CLOSURE_SHORT: usize = 24;
 const S_CLOSURE_TERMS: usize = 25;
 const S_CLOSURE_WAVES: usize = 26;
-const S_STALE_COUNTS: usize = 27;
+const S_CONFIG_FAULT: usize = 27;
 const S_WORDS: usize = 28;
 
 /// Solver table of each producer counter (producer.slang RC_C_*).
@@ -134,6 +143,7 @@ const A_TERMS: usize = 2;
 const A_DIR: usize = 4;
 const A_USES: usize = 8;
 const A_TRAITS: usize = 14;
+const A_JOBS: usize = 15;
 const RT_FIRST_TERM: u32 = 32;
 
 // route_abi.slang header words.
@@ -160,8 +170,8 @@ pub struct RetainedTraitOptions {
     /// Read every produced row back into `RetainedTraitCheck::tables` (for
     /// assertions only; the check itself reads none).
     pub read_rows: bool,
-    /// First number of term closure waves (default 16). A smaller value
-    /// forces the retry that adds waves.
+    /// First bound on term closure waves (default 65536). A smaller value
+    /// forces the retry that raises it.
     pub closure_waves: Option<u32>,
 }
 
@@ -246,6 +256,8 @@ impl RetainedTraitCheck {
 
 struct Scratch {
     config: LaniusBuffer<u32>,
+    /// Indirect dispatches of the count passes (00_configure).
+    dispatch: LaniusBuffer<u32>,
     state: LaniusBuffer<u32>,
     flags: LaniusBuffer<u32>,
     scan: LaniusBuffer<u32>,
@@ -260,7 +272,6 @@ struct Scratch {
     reach: LaniusBuffer<u32>,
     front: LaniusBuffer<u32>,
     cursor: LaniusBuffer<u32>,
-    indirect: LaniusBuffer<u32>,
     /// Bound as the arena of the other phase; never written.
     idle: LaniusBuffer<u32>,
 }
@@ -369,7 +380,7 @@ impl Producer {
         bound: Bound<'_>,
     ) -> Result<()> {
         let bind = self.bind_group(pass, scratch, store, bound)?;
-        self.dispatch(encoder, pass, lanes, scratch, &bind);
+        self.dispatch(encoder, pass, lanes, &bind);
         Ok(())
     }
 
@@ -399,9 +410,8 @@ impl Producer {
                 "rc_reach" => scratch.reach.as_entire_binding(),
                 "rc_front" => scratch.front.as_entire_binding(),
                 "rc_cursor" => scratch.cursor.as_entire_binding(),
-                // The expansion pass reads it as its indirect argument.
-                "rc_indirect" if pass == CLOSURE_EXPAND => scratch.idle.as_entire_binding(),
-                "rc_indirect" => scratch.indirect.as_entire_binding(),
+                "rc_dispatch" => scratch.dispatch.as_entire_binding(),
+                "rc_stages" => scratch.stages.as_entire_binding(),
                 "rc_stage" => wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &bound.stages.buffer,
                     offset: bound.stages.byte_offset + u64::from(bound.stage) * STAGE_STRIDE,
@@ -430,25 +440,12 @@ impl Producer {
     }
 
     /// Records `pass` with a bind group from `bind_group` for the same pass.
-    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, scratch: &Scratch, bind: &wgpu::BindGroup) {
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.passes[pass];
         let (x, y) = if matches!(pass, SCAN_BLOCKS | PUBLISH_FINISH | CLOSURE_WAVE) { (1, 1) } else { groups(lanes) };
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor { label: Some("trait_solver.retained_producer"), timestamp_writes: None },
-        );
-        compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, bind, &[]);
-        passes_core::record_compute_dispatch();
-        if pass == CLOSURE_EXPAND {
-            passes_core::record_indirect_compute_dispatch();
-            compute.dispatch_workgroups_indirect(&scratch.indirect.buffer, scratch.indirect.byte_offset);
-        } else {
-            compute.dispatch_workgroups(x, y, 1);
-        }
-        drop(compute);
-        // Profiled jobs need one timestamp per recorded dispatch.
-        crate::gpu::timer::stamp_active_operation(encoder, data.shader_id.clone());
+        // Inside a batch the dispatches of a submit share one compute pass;
+        // the kernel key labels each dispatch's timestamp.
+        passes_core::record_or_defer_compute_direct(encoder, data, bind, KEYS[pass], (x, y, 1));
     }
 }
 
@@ -482,7 +479,7 @@ pub(in crate::compiler::gpu_compiler) fn check(
     store: &ProgramRetention,
     options: &RetainedTraitOptions,
 ) -> Result<RetainedTraitCheck> {
-    let (mut report, publication) = publish(workspace, store, options)?;
+    let (mut report, publication) = publish(|| workspace, store, options)?;
     if let Some(publication) = &publication {
         report.publication_status = Some(publication.status()?);
     }
@@ -491,21 +488,30 @@ pub(in crate::compiler::gpu_compiler) fn check(
 
 /// `check`, keeping the solved catalog, packet and proof store alive as a
 /// GPU publication when the solver ran.
+///
+/// When the count passes ran behind the build's last export
+/// ([`record_count_follower`]), the run continues from their state and
+/// workspace and `workspace` is not called.
 pub(in crate::compiler::gpu_compiler) fn publish(
-    workspace: WorkspaceLease,
+    workspace: impl FnOnce() -> WorkspaceLease,
     store: &ProgramRetention,
     options: &RetainedTraitOptions,
 ) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
     let dispatches_before = passes_core::recorded_compute_dispatch_count();
     let readbacks_before = passes_core::readback_round_trips();
-    // The last export's committed readback returned the store's counters.
-    // The producer checks them on the GPU and reports stale ones, and the
-    // run then reads them itself.
-    let mut jobs = store.job_reports();
-    let committed = jobs.len();
-    let exported = jobs.pop().map(|report| report.counts);
+    let committed = store.job_reports().len();
+    let (capacity, _) = store.capacity();
+    let followed = store.take_followed_words().and_then(|followed| {
+        let count = followed.state.downcast::<CountPass>().ok()?;
+        let state = followed.words.into_iter().next()?;
+        (options.unit_slots.is_none() && options.closure_waves.is_none()).then_some((*count, state))
+    });
+    let workspace = match &followed {
+        Some((count, _)) => count.workspace.clone(),
+        None => workspace(),
+    };
     let (mut report, mut publication) =
-        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options, exported))?;
+        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, &capacity, options, followed))?;
     if let Some(publication) = &mut publication {
         publication.store_jobs = committed;
     }
@@ -514,6 +520,32 @@ pub(in crate::compiler::gpu_compiler) fn publish(
     report.readbacks = readbacks.0 - readbacks_before.0;
     report.readback_wait_ns = readbacks.1 - readbacks_before.1;
     Ok((report, publication))
+}
+
+/// Records the producer's count passes for the export the store is about to
+/// commit, sized from the store's capacities: the native call rewrite
+/// submits them behind itself and reads the producer state with its own
+/// readback, and [`publish`] continues from that state (default options).
+pub(in crate::compiler::gpu_compiler) fn record_count_follower(
+    workspace: &WorkspaceLease,
+    store: &ProgramRetention,
+) -> Result<Option<ExportFollower>> {
+    let (capacity, _) = store.capacity();
+    let generation = store.generation();
+    let count = CountPass::new(workspace.clone(), generation, &capacity, CLOSURE_WAVES, 0)?;
+    let mut encoder = workspace.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("trait_solver.retained_count"),
+    });
+    let batch = passes_core::DeferredComputeBatchGuard::begin(
+        passes_core::compute_pass_batching_allowed(false),
+        "trait_solver.retained_count",
+    );
+    store.with_store_buffers(|buffers, _| count.record(&mut encoder, buffers))?;
+    passes_core::flush_deferred_compute(&mut encoder);
+    drop(batch);
+    ensure!(count.scratch.state.byte_offset == 0, "retained producer state is not at the start of its buffer");
+    let reads = vec![(count.scratch.state.buffer.clone(), COUNT_READ_WORDS)];
+    Ok(Some(ExportFollower { commands: encoder.finish(), reads, state: Box::new(count) }))
 }
 
 /// The recorded steps of a bitonic sort over `width` keys: (k, j) is one
@@ -535,26 +567,204 @@ fn bitonic_steps(width: u32) -> Vec<(u32, u32)> {
     steps
 }
 
+/// The count passes of one run, recorded before the store's counters are
+/// read: buffers are sized from the store's capacities, `00_configure`
+/// writes the configuration that depends on the counters and the indirect
+/// dispatches of the other passes, and the producer state carries the
+/// counters (from word `S_WORDS`).
+struct CountPass {
+    workspace: WorkspaceLease,
+    producer: Producer,
+    scratch: Scratch,
+    /// Host words of rc_config; 00_configure writes the others.
+    config: Vec<u32>,
+    /// The bitonic steps recorded for the sort capacity.
+    steps: Vec<(u32, u32)>,
+    closure_waves: u32,
+    unit_request: u32,
+}
+
+/// Words of the count pass's state readback: the producer state, then the
+/// store's counters.
+const COUNT_READ_WORDS: usize = S_WORDS + counts::WORDS;
+
+impl CountPass {
+    /// Allocates the count pass for a store of `capacity` (records per
+    /// arena). `unit_request` is the unit slots to use (0: twice the jobs).
+    fn new(
+        workspace: WorkspaceLease,
+        generation: u32,
+        capacity: &ProgramRetentionCapacity,
+        closure_waves: u32,
+        unit_request: u32,
+    ) -> Result<Self> {
+        let device = workspace.device().clone();
+        let passes = KEYS
+            .iter()
+            .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
+            .collect::<Result<Vec<_>>>()?;
+        let producer = Producer {
+            readback: PagedReadback::new(&device, "trait_solver.retained_readback", 4096),
+            device: device.clone(),
+            queue: workspace.queue().clone(),
+            passes,
+            readback_bytes: 0,
+        };
+        let arenas = &capacity.arenas;
+        let caps = [
+            arenas[A_DECLS].saturating_sub(1),
+            arenas[A_PARAMS].saturating_sub(1),
+            arenas[A_TERMS].saturating_sub(RT_FIRST_TERM),
+            arenas[A_DIR],
+            arenas[A_TRAITS],
+            arenas[A_USES],
+            arenas[A_JOBS],
+        ];
+        let lanes = caps.iter().fold(0u32, |sum, &cap| sum.saturating_add(cap));
+        let dir_entries = caps[3];
+        let traits = caps[4];
+        let jobs = caps[6];
+        let unit_cap = if unit_request != 0 {
+            unit_request
+        } else {
+            jobs.saturating_mul(2).max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained unit table overflow"))?
+        };
+        let sort_cap = traits.max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained binding sort overflow"))?;
+        let steps = bitonic_steps(sort_cap);
+        let stride_words = (STAGE_STRIDE / 4) as usize;
+        let mut stage_words = vec![0u32; steps.len().max(1) * stride_words];
+        for (i, &(k, j)) in steps.iter().enumerate() {
+            stage_words[i * stride_words] = k;
+            stage_words[i * stride_words + 1] = j;
+        }
+        let mut config = vec![0u32; CFG_WORDS];
+        config[CFG_GENERATION] = generation;
+        config[CFG_CLOSURE_WAVES] = closure_waves;
+        config[CFG_REGION_CAP..CFG_REGION_CAP + REGIONS].copy_from_slice(&caps);
+        config[CFG_UNIT_CAP] = unit_cap;
+        config[CFG_SORT_CAP] = sort_cap;
+        config[CFG_UNIT_REQUEST] = unit_request;
+        config[CFG_STEPS] = u32::try_from(steps.len())?;
+        let mut initial_state = vec![0u32; COUNT_READ_WORDS];
+        initial_state[S_FIRST] = u32::MAX;
+        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        let blocks = lanes.div_ceil(256).max(1);
+        let terms = arenas[A_TERMS].max(1);
+        let scratch = Scratch {
+            config: workspace.initialized("trait_solver.retained_config", CFG_WORDS as u32, usage, Some(&config))?,
+            dispatch: workspace.initialized(
+                "trait_solver.retained_dispatch",
+                u32::try_from((D_STEP as usize + steps.len()) * 3)?,
+                usage | wgpu::BufferUsages::INDIRECT,
+                None,
+            )?,
+            state: workspace.initialized("trait_solver.retained_state", COUNT_READ_WORDS as u32, usage, Some(&initial_state))?,
+            // Term-sized buffers grow by powers of two: the term count grows
+            // between builds, and a kept buffer keeps its bind groups.
+            flags: workspace.initialized("trait_solver.retained_flags", pow2(lanes.max(1).saturating_mul(16)), usage, None)?,
+            scan: workspace.initialized("trait_solver.retained_scan", pow2(lanes.max(1).saturating_mul(16)), usage, None)?,
+            blocks: workspace.initialized("trait_solver.retained_blocks", pow2(blocks * 16), usage, None)?,
+            entry: workspace.initialized("trait_solver.retained_entry", dir_entries.max(1) * 2, usage, None)?,
+            snapshot: workspace.initialized(
+                "trait_solver.retained_snapshot",
+                jobs.max(1) * 2,
+                usage,
+                Some(&vec![u32::MAX; jobs.max(1) as usize * 2]),
+            )?,
+            unit_slot: workspace.initialized("trait_solver.retained_unit_slot", unit_cap, usage, None)?,
+            sort: workspace.initialized("trait_solver.retained_sort", sort_cap * 4, usage, None)?,
+            bind_pos: workspace.initialized("trait_solver.retained_bind_pos", traits.max(1), usage, None)?,
+            impl_first: workspace.initialized("trait_solver.retained_impl_first", dir_entries.max(1), usage, None)?,
+            stages: workspace.initialized(
+                "trait_solver.retained_stages",
+                u32::try_from(stage_words.len())?,
+                usage,
+                Some(&stage_words),
+            )?,
+            reach: workspace.initialized("trait_solver.retained_reach", pow2(terms), usage, None)?,
+            front: workspace.initialized("trait_solver.retained_front", pow2(terms), usage, None)?,
+            cursor: workspace.initialized("trait_solver.retained_cursor", 4, usage, None)?,
+            idle: workspace.initialized("trait_solver.retained_idle", 4, usage, None)?,
+        };
+        Ok(Self { workspace, producer, scratch, config, steps, closure_waves, unit_request })
+    }
+
+    /// Records the count passes into `encoder`: 00_configure, mark, units,
+    /// the term closure, the binding sort, count and scan, in one compute
+    /// pass when the caller has no batch open.
+    fn record(&self, encoder: &mut wgpu::CommandEncoder, store: &BTreeMap<&'static str, wgpu::Buffer>) -> Result<()> {
+        let (producer, scratch) = (&self.producer, &self.scratch);
+        scratch.entry.clear(encoder, 0, None);
+        scratch.unit_slot.clear(encoder, 0, None);
+        scratch.impl_first.clear(encoder, 0, None);
+        scratch.reach.clear(encoder, 0, None);
+        scratch.cursor.clear(encoder, 0, None);
+        let idle = Bound {
+            catalog: &scratch.idle,
+            batch: &scratch.idle,
+            routes: &scratch.idle,
+            output: &scratch.idle,
+            proof: &scratch.idle,
+            stage: 0,
+            stages: &scratch.stages,
+        };
+        let indirect = |encoder: &mut wgpu::CommandEncoder, pass: usize, entry: u64, bound: Bound<'_>| -> Result<()> {
+            let bind = producer.bind_group(pass, scratch, store, bound)?;
+            passes_core::record_or_defer_compute_indirect_offset(
+                encoder, &producer.passes[pass], &bind, KEYS[pass], &scratch.dispatch, entry * 12,
+            );
+            Ok(())
+        };
+        producer.record(encoder, CONFIGURE, 1, scratch, store, idle)?;
+        for pass in [MARK, UNITS] {
+            indirect(encoder, pass, D_LANES, idle)?;
+        }
+        // Term closure: roots, then every frontier wave in one workgroup.
+        indirect(encoder, CLOSURE_ROOTS, D_ROOTS, idle)?;
+        producer.record(encoder, CLOSURE_WAVE, 1, scratch, store, idle)?;
+        // The binding sort: steps beyond the store's sort width dispatch
+        // no workgroups.
+        indirect(encoder, SORT_INIT, D_SORT, idle)?;
+        for (stage, &(_, j)) in self.steps.iter().enumerate() {
+            let pass = if j == 0 { SORT_BLOCK } else { SORT_STEP };
+            indirect(encoder, pass, D_STEP + stage as u64, Bound { stage: u32::try_from(stage)?, ..idle })?;
+        }
+        indirect(encoder, SORT_FINISH, D_SORT, idle)?;
+        for pass in [COUNT, SCAN_LOCAL] {
+            indirect(encoder, pass, D_LANES, idle)?;
+        }
+        producer.record(encoder, SCAN_BLOCKS, 1, scratch, store, idle)?;
+        indirect(encoder, SCAN_APPLY, D_LANES, idle)
+    }
+
+    /// Records and submits the count passes and reads the state with the
+    /// store's counters.
+    fn run(&mut self, store: &BTreeMap<&'static str, wgpu::Buffer>) -> Result<Vec<u32>> {
+        let mut encoder = self.producer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("trait_solver.retained_count"),
+        });
+        // One compute pass for the count passes, flushed before the submit.
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.retained_count",
+        );
+        self.record(&mut encoder, store)?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
+        self.producer.queue.submit(Some(encoder.finish()));
+        let state = self.scratch.state.clone();
+        self.producer.read(&state, COUNT_READ_WORDS, "retained producer state")
+    }
+}
+
 fn run(
     workspace: WorkspaceLease,
     store: &BTreeMap<&'static str, wgpu::Buffer>,
     generation: u32,
+    capacity: &ProgramRetentionCapacity,
     options: &RetainedTraitOptions,
-    exported: Option<Vec<u32>>,
+    followed: Option<(CountPass, Vec<u32>)>,
 ) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
-    let device = workspace.device().clone();
-    let queue = workspace.queue().clone();
-    let passes = KEYS
-        .iter()
-        .map(|&key| make_pass_data_from_shader_key(&device, key, "main", key))
-        .collect::<Result<Vec<_>>>()?;
-    let mut producer = Producer {
-        readback: PagedReadback::new(&device, "trait_solver.retained_readback", 4096),
-        device: device.clone(),
-        queue: queue.clone(),
-        passes,
-        readback_bytes: 0,
-    };
     let mut report = RetainedTraitCheck {
         stage: RetainedTraitStage::Producer,
         generation,
@@ -585,168 +795,72 @@ fn run(
         closure_waves: 0,
         closure_active_waves: 0,
     };
-
-    // The store's counters size the lane regions: those of the build's
-    // last export when it returned them, which the first pass checks.
-    let rt_counts = store.get("rt_counts").ok_or_else(|| anyhow!("retention store has no rt_counts"))?;
-    let exported = exported.filter(|words| words.len() >= counts::WORDS && words[counts::GENERATION] == generation);
-    let assumed = exported.is_some();
-    let status = if let Some(words) = exported {
-        words
-    } else {
-        let staging = workspace.initialized(
-            "trait_solver.retained_counts",
-            counts::WORDS as u32,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-            None,
-        )?;
-        let mut encoder = device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(rt_counts, 0, &staging.buffer, staging.byte_offset, counts::WORDS as u64 * 4);
-        queue.submit(Some(encoder.finish()));
-        producer.read(&staging, counts::WORDS, "retention store counters")?
+    let unit_request = match options.unit_slots {
+        Some(slots) => slots.max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained unit table overflow"))?,
+        None => 0,
     };
-    let regions = regions(&status)?;
-    let lanes = regions[REGIONS - 1].0 + regions[REGIONS - 1].1;
-    let jobs = regions[6].1;
-    let dir_entries = regions[3].1;
-    let traits = regions[4].1;
-    let uses = regions[5].1;
-    let blocks = lanes.div_ceil(256).max(1);
-    let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
-    let mut config = vec![0u32; CFG_WORDS];
-    for (word, arena) in [(0, A_DECLS), (1, A_PARAMS), (2, A_TERMS), (3, A_DIR), (4, A_TRAITS), (5, A_USES)] {
-        config[word] = status[arena];
-    }
-    config[6] = jobs;
-    config[CFG_LANES] = lanes;
-    for region in 0..REGIONS {
-        config[CFG_BASE + region] = regions[region].0;
-    }
-    config[CFG_GENERATION] = generation;
-    let sort_width = traits.max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained binding sort overflow"))?;
-    config[CFG_SORT] = sort_width;
-    let steps = bitonic_steps(sort_width);
-    report.sort_width = sort_width;
-    report.sort_steps = u32::try_from(steps.len())?;
-    let stride_words = (STAGE_STRIDE / 4) as usize;
-    let mut stage_words = vec![0u32; steps.len().max(1) * stride_words];
-    for (i, &(k, j)) in steps.iter().enumerate() {
-        stage_words[i * stride_words] = k;
-        stage_words[i * stride_words + 1] = j;
-    }
-    let terms = status[A_TERMS].max(1);
-    let root_lanes = regions[3].1 + regions[4].1 + regions[5].1;
-    let mut closure_waves = options.closure_waves.unwrap_or(CLOSURE_WAVES).max(1);
-    let mut unit_slots = options
-        .unit_slots
-        .unwrap_or_else(|| jobs.saturating_mul(2))
-        .max(1)
-        .checked_next_power_of_two()
-        .ok_or_else(|| anyhow!("retained unit table overflow"))?;
-
-    // Count: mark, units, the binding sort, count, scan. Grown only when the
-    // unit table is full.
-    let (scratch, state) = loop {
+    let closure_waves = options.closure_waves.unwrap_or(CLOSURE_WAVES).max(1);
+    // Count: configure, mark, units, the closure, the binding sort, count,
+    // scan. A count pass recorded behind the last export arrives with its
+    // state; otherwise it runs now. Grown when the unit table is full or the
+    // closure needs more waves.
+    let (mut count, mut state, mut followed_fault) = match followed {
+        Some((count, state)) => (count, state, true),
+        None => {
+            let mut count = CountPass::new(workspace.clone(), generation, capacity, closure_waves, unit_request)?;
+            let state = count.run(store)?;
+            (count, state, false)
+        }
+    };
+    let (status, regions) = loop {
         report.attempts += 1;
-        config[7] = unit_slots;
-        let mut initial_state = vec![0u32; S_WORDS];
-        initial_state[S_FIRST] = u32::MAX;
-        let scratch = Scratch {
-            config: workspace.initialized("trait_solver.retained_config", CFG_WORDS as u32, usage, Some(&config))?,
-            state: workspace.initialized("trait_solver.retained_state", S_WORDS as u32, usage, Some(&initial_state))?,
-            // Term-sized buffers grow by powers of two: the term count grows
-            // between builds, and a kept buffer keeps its bind groups.
-            flags: workspace.initialized("trait_solver.retained_flags", pow2(lanes.max(1) * 16), usage, None)?,
-            scan: workspace.initialized("trait_solver.retained_scan", pow2(lanes.max(1) * 16), usage, None)?,
-            blocks: workspace.initialized("trait_solver.retained_blocks", pow2(blocks * 16), usage, None)?,
-            entry: workspace.initialized("trait_solver.retained_entry", dir_entries.max(1) * 2, usage, None)?,
-            snapshot: workspace.initialized(
-                "trait_solver.retained_snapshot",
-                jobs.max(1) * 2,
-                usage,
-                Some(&vec![u32::MAX; jobs.max(1) as usize * 2]),
-            )?,
-            unit_slot: workspace.initialized("trait_solver.retained_unit_slot", unit_slots, usage, None)?,
-            sort: workspace.initialized("trait_solver.retained_sort", sort_width * 4, usage, None)?,
-            bind_pos: workspace.initialized("trait_solver.retained_bind_pos", traits.max(1), usage, None)?,
-            impl_first: workspace.initialized("trait_solver.retained_impl_first", dir_entries.max(1), usage, None)?,
-            stages: workspace.initialized(
-                "trait_solver.retained_stages",
-                u32::try_from(stage_words.len())?,
-                usage,
-                Some(&stage_words),
-            )?,
-            reach: workspace.initialized("trait_solver.retained_reach", pow2(terms), usage, None)?,
-            front: workspace.initialized("trait_solver.retained_front", pow2(terms), usage, None)?,
-            cursor: workspace.initialized("trait_solver.retained_cursor", 4, usage, None)?,
-            indirect: workspace.initialized(
-                "trait_solver.retained_indirect",
-                4,
-                usage | wgpu::BufferUsages::INDIRECT,
-                None,
-            )?,
-            idle: workspace.initialized("trait_solver.retained_idle", 4, usage, None)?,
-        };
-        let idle = Bound {
-            catalog: &scratch.idle,
-            batch: &scratch.idle,
-            routes: &scratch.idle,
-            output: &scratch.idle,
-            proof: &scratch.idle,
-            stage: 0,
-            stages: &scratch.stages,
-        };
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("trait_solver.retained_count"),
-        });
-        scratch.entry.clear(&mut encoder, 0, None);
-        scratch.unit_slot.clear(&mut encoder, 0, None);
-        scratch.impl_first.clear(&mut encoder, 0, None);
-        scratch.reach.clear(&mut encoder, 0, None);
-        scratch.cursor.clear(&mut encoder, 0, None);
-        for pass in [MARK, UNITS] {
-            producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
+        ensure!(state.len() >= COUNT_READ_WORDS, "retained producer state is short");
+        if state[S_CONFIG_FAULT] != 0 {
+            // The counters did not fit the capacities the pass was sized
+            // with (a pass recorded behind an export, before a growth).
+            ensure!(followed_fault, "retained producer lanes exceed 2^24 or the store's capacity");
+            followed_fault = false;
+            count = CountPass::new(workspace.clone(), generation, capacity, count.closure_waves, count.unit_request)?;
+            state = count.run(store)?;
+            continue;
         }
-        // Term closure: roots, then one indirect wave per frontier depth.
-        producer.record(&mut encoder, CLOSURE_ROOTS, root_lanes, &scratch, store, idle)?;
-        // Every wave binds the same buffers.
-        let wave = producer.bind_group(CLOSURE_WAVE, &scratch, store, idle)?;
-        let expand = producer.bind_group(CLOSURE_EXPAND, &scratch, store, idle)?;
-        for _ in 0..closure_waves {
-            producer.dispatch(&mut encoder, CLOSURE_WAVE, 1, &scratch, &wave);
-            producer.dispatch(&mut encoder, CLOSURE_EXPAND, 0, &scratch, &expand);
-        }
-        producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
-        for (stage, &(_, j)) in steps.iter().enumerate() {
-            let (pass, lanes) = if j == 0 { (SORT_BLOCK, sort_width / 2) } else { (SORT_STEP, sort_width) };
-            producer.record(&mut encoder, pass, lanes, &scratch, store, Bound { stage: u32::try_from(stage)?, ..idle })?;
-        }
-        producer.record(&mut encoder, SORT_FINISH, sort_width, &scratch, store, idle)?;
-        for pass in [COUNT, SCAN_LOCAL, SCAN_BLOCKS, SCAN_APPLY] {
-            producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
-        }
-        passes_core::flush_deferred_compute(&mut encoder);
-        queue.submit(Some(encoder.finish()));
-        let state = producer.read(&scratch.state, S_WORDS, "retained producer state")?;
-        if state[S_STALE_COUNTS] != 0 {
-            // The store changed after its last export: size the run from
-            // its current counters. Nothing this run wrote is kept.
-            ensure!(assumed, "retained producer counters changed while the store was locked");
-            drop(scratch);
-            return run(workspace, store, generation, options, None);
-        }
+        followed_fault = false;
+        let status = state[S_WORDS..COUNT_READ_WORDS].to_vec();
+        let regions = regions(&status)?;
         if state[S_UNIT_SLOTS_FULL] != 0 || state[S_CLOSURE_SHORT] != 0 {
+            let jobs = regions[6].1;
+            let mut unit_request = if count.unit_request != 0 {
+                count.unit_request
+            } else {
+                jobs.saturating_mul(2).max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained unit table overflow"))?
+            };
+            let mut closure_waves = count.closure_waves;
             if state[S_UNIT_SLOTS_FULL] != 0 {
-                unit_slots = unit_slots.checked_mul(2).ok_or_else(|| anyhow!("retained unit table overflow"))?;
+                unit_request = unit_request.checked_mul(2).ok_or_else(|| anyhow!("retained unit table overflow"))?;
             }
             if state[S_CLOSURE_SHORT] != 0 {
                 closure_waves = closure_waves.checked_mul(2).filter(|&w| w <= 1 << 16)
                     .ok_or_else(|| anyhow!("retained term closure needs more than 65536 waves"))?;
             }
+            count = CountPass::new(workspace.clone(), generation, capacity, closure_waves, unit_request)?;
+            state = count.run(store)?;
             continue;
         }
-        break (scratch, state);
+        break (status, regions);
     };
+    let CountPass { workspace, mut producer, scratch, mut config, closure_waves, .. } = count;
+    let device = workspace.device().clone();
+    let queue = workspace.queue().clone();
+    let rt_counts = store.get("rt_counts").ok_or_else(|| anyhow!("retention store has no rt_counts"))?;
+    let lanes = regions[REGIONS - 1].0 + regions[REGIONS - 1].1;
+    let jobs = regions[6].1;
+    let dir_entries = regions[3].1;
+    let traits = regions[4].1;
+    let uses = regions[5].1;
+    let _ = lanes;
+    let sort_width = traits.max(1).checked_next_power_of_two().ok_or_else(|| anyhow!("retained binding sort overflow"))?;
+    report.sort_width = sort_width;
+    report.sort_steps = u32::try_from(bitonic_steps(sort_width).len())?;
     report.producer_failures = state[S_FAILURES];
     report.unsupported_member_bounds = state[S_UNSUPPORTED_MEMBER_BOUNDS];
     report.unsupported_callees = state[S_UNSUPPORTED_CALLEES];
@@ -786,7 +900,7 @@ fn run(
     for table in 0..layout.table_offsets.len() {
         config[CFG_TABLE + table] = layout.table_offsets[table];
     }
-    scratch.config.write(&queue, 0, &words_bytes(&config));
+    write_host_config(&queue, &scratch.config, &config);
     let catalog_words = catalog.word_count()?;
     let storage = Arena::uninitialized(&workspace, "trait_solver.catalog", catalog_words)?;
     let mut gpu = GpuTraitSolver::admit_storage(workspace.clone(), catalog.clone(), storage, |encoder, storage| {
@@ -836,9 +950,9 @@ fn run(
     for table in 11..=16 {
         config[CFG_TABLE + table] = offsets[table];
     }
-    scratch.config.write(&queue, 0, &words_bytes(&config));
+    write_host_config(&queue, &scratch.config, &config);
     let input_words = submission.plan.input_word_count;
-    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, false, |encoder, input| {
+    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, None, |encoder, input| {
         if options.poison_arenas && input_words > BATCH_FIXED_WORDS {
             let range = (BATCH_FIXED_WORDS, input_words - BATCH_FIXED_WORDS, RETAINED_POISON);
             producer.fill_words(encoder, &workspace, &scratch, store, &input.buffer, &[range])?;
@@ -1219,6 +1333,13 @@ fn query_view(gpu: &GpuTraitSolver, store: &ProgramRetention, view: RetainedTrai
     Ok(words.chunks_exact(16).take(requests.len()).map(|c| c.try_into().unwrap()).collect())
 }
 
+/// Writes the host's rc_config words (from the epoch on, except the sort
+/// width), leaving those 00_configure wrote.
+fn write_host_config(queue: &wgpu::Queue, buffer: &LaniusBuffer<u32>, config: &[u32]) {
+    buffer.write(queue, (CFG_EPOCH * 4) as u64, &words_bytes(&config[CFG_EPOCH..CFG_SORT]));
+    buffer.write(queue, (CFG_ATOM_IDS * 4) as u64, &words_bytes(&config[CFG_ATOM_IDS..]));
+}
+
 fn words_bytes(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
@@ -1283,12 +1404,20 @@ impl GpuTraitSolver {
     /// `fill` (the producer's batch rows) in one submit, then the solver's
     /// batch admission and proof waves. No host acceptance follows: the
     /// selected evidence stays in the GPU output arena.
+    ///
+    /// With `gpu_counts` = (buffer, first word), the submission was prepared
+    /// from bounds of the batch's counts, and the counts are in `buffer`
+    /// at `first word + table` when `fill` returns: they are copied into the
+    /// batch directory (`record_gpu_batch_counts`), and the solve is
+    /// deferred, its progress read by the caller's later readback. Without
+    /// it the submission holds the exact counts and the solve reads its
+    /// progress back.
     fn check_retained(
         &mut self,
         packet: &mut GpuPacket,
         submission: &Submission,
         semantic_rows: bool,
-        defer: bool,
+        gpu_counts: Option<(&LaniusBuffer<u32>, u64)>,
         fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
     ) -> Result<(Option<WaveReadback>, OutputLayout)> {
         ensure!(
@@ -1319,6 +1448,10 @@ impl GpuTraitSolver {
         packet.output.prepare(&mut encoder, submission.plan.output_word_count, &submission.plan.output_copies)?;
         packet.input.upload(&mut encoder, &submission.plan.writes)?;
         fill(&mut encoder, &packet.input)?;
+        let defer = gpu_counts.is_some();
+        if let Some((counts, first_word)) = gpu_counts {
+            super::record_gpu_batch_counts(&mut encoder, &packet.input, counts, first_word)?;
+        }
         passes_core::flush_deferred_compute(&mut encoder);
         self.queue.submit(Some(encoder.finish()));
         let mut templates = std::mem::take(&mut self.wave_templates);

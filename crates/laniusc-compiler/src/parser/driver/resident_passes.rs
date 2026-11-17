@@ -305,11 +305,6 @@ impl GpuParser {
                 .hir_semantic_nav
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
             stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_nav");
-            crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
-            self.passes
-                .hir_semantic_child_index_rows
-                .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-            stamp_timer(timer_ref, ctx.encoder, "parser.hir_semantic_child_index_rows");
             self.passes.hir_semantic_child_index_blocks.record_pass(
                 &mut ctx,
                 crate::gpu::passes_core::InputElements::Elements1D(
@@ -709,10 +704,6 @@ impl GpuParser {
                     .hir_type_alias_target
                     .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_type_alias_target");
-                self.passes
-                    .hir_fn_return_type
-                    .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
-                stamp_timer(timer_ref, ctx.encoder, "parser.hir_fn_return_type");
                 if bufs.parser_feature_flags & crate::lexer::features::PARSER_FEATURE_PREDICATES
                     != 0
                 {

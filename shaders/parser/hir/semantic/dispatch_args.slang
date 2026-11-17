@@ -19,7 +19,7 @@ RWStructuredBuffer<uint> hir_semantic_relation_dispatch_args;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-static const uint LINKS_PER_RELATION_STEP = 16u;
+static const uint LINKS_PER_RELATION_STEP = 64u;
 
 uint relation_step_capacity(uint items)
 {

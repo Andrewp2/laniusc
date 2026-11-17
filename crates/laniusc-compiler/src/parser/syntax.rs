@@ -1278,6 +1278,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
                     .as_entire_binding(),
             ),
             (
+                "statement_event_block".into(),
+                buffers.statement_context_event_block.as_entire_binding(),
+            ),
+            (
                 "statement_context_kind".into(),
                 buffers.statement_context_kind.as_entire_binding(),
             ),
@@ -1398,6 +1402,10 @@ fn record_token_buffer_check_with_cache_and_file_ids(
             (
                 "statement_event_block_prefix".into(),
                 buffers.impl_context_event_block_prefix.as_entire_binding(),
+            ),
+            (
+                "statement_event_block".into(),
+                buffers.impl_context_event_block.as_entire_binding(),
             ),
             (
                 "depth_bracket_inblock".into(),

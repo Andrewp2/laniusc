@@ -2933,16 +2933,6 @@ fn build_graph(
                 "hir_semantic_depth",
                 Some(AccessMode::Write),
             ),
-        ],
-    )?;
-    indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
-    static_pass(
-        &mut graph,
-        &passes.hir_semantic_child_index_rows,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
             (
                 "hir_semantic_child_local",
                 "hir_semantic_child_local",
@@ -2950,11 +2940,7 @@ fn build_graph(
             ),
         ],
     )?;
-    indirect(
-        &mut graph,
-        "hir_semantic_child_index_rows",
-        "hir_semantic_dispatch_args",
-    )?;
+    indirect(&mut graph, "hir_semantic_nav", "hir_semantic_dispatch_args")?;
     static_pass(
         &mut graph,
         &passes.hir_semantic_child_index_blocks,
@@ -3701,7 +3687,6 @@ mod tests {
         );
         for name in [
             "parser.tokens.impl_header.local",
-            token_frontend::IMPL_HEADER_SCAN,
             "parser.tokens.impl_header.apply",
             "parser.tokens.delimiters.local",
             token_frontend::DELIMITER_DEPTH_SCAN,
@@ -3714,23 +3699,19 @@ mod tests {
             token_frontend::DELIMITER_OWNER_SCAN,
             "parser.tokens.brace_context",
             "parser.tokens.statement_phase.local",
-            token_frontend::STATEMENT_PHASE_SCAN,
             "parser.tokens.statement_phase.apply",
             "parser.tokens.delimiter_match.depth_blocks",
             "parser.tokens.delimiter_match.build_min_tree",
             "parser.tokens.brace_match.pair_pse",
             "parser.tokens.bracket_match.pair_pse",
             "parser.tokens.match_pattern.local",
-            token_frontend::MATCH_PATTERN_SCAN,
             "parser.tokens.match_pattern.apply",
             "parser.tokens.where_clause.local",
-            token_frontend::WHERE_CLAUSE_SCAN,
             "parser.tokens.where_clause.apply",
             token_frontend::ENCLOSING_OPENS,
             token_frontend::ANGLE_KINDS,
             "parser.tokens_to_kinds.pass",
             "parser.tokens.type_path_context.local",
-            token_frontend::TYPE_PATH_SCAN,
             "parser.tokens.type_path_context.apply",
             "parser.tokens_to_identifier_kinds.pass",
             "parser.tokens.generic_shr.local",
@@ -3757,7 +3738,6 @@ mod tests {
             "hir_semantic_compact_scatter",
             "hir_semantic_dispatch_args",
             "hir_semantic_nav",
-            "hir_semantic_child_index_rows",
             "hir_semantic_child_index_blocks",
             "hir_semantic_child_index_top",
             "hir_semantic_child_index_traverse",
@@ -3791,7 +3771,6 @@ mod tests {
             crate::parser::passes::hir::types::alias::owner::step::A_TO_B,
             crate::parser::passes::hir::types::alias::owner::step::B_TO_A,
             "hir_type_alias_target",
-            "hir_fn_return_type",
             "hir_param_links",
             "hir_param_rank_prefix_00_local",
             "hir_param_rank_prefix_01_blocks",
@@ -3947,11 +3926,6 @@ mod tests {
         let multi_level = build_graph(multi_level_capacity, &passes).unwrap();
         for name in [
             token_frontend::DELIMITER_DEPTH_SCAN,
-            token_frontend::IMPL_HEADER_SCAN,
-            token_frontend::STATEMENT_PHASE_SCAN,
-            token_frontend::MATCH_PATTERN_SCAN,
-            token_frontend::WHERE_CLAUSE_SCAN,
-            token_frontend::TYPE_PATH_SCAN,
             token_frontend::GENERIC_SHR_RAW_SCAN,
             token_frontend::GENERIC_SHR_SCAN,
         ] {
@@ -3979,7 +3953,7 @@ mod tests {
         // This capacity gives the canonical relation walk even parity but the
         // match-owner walk, after its 32-node local traversal, odd parity.
         // The graph must model the exact schedule used by the recorder.
-        match_capacity.tree_capacity = 65_536;
+        match_capacity.tree_capacity = 524_288;
         match_capacity.parser_feature_flags = crate::lexer::features::PARSER_FEATURE_MATCHES;
         let match_graph = build_graph(match_capacity, &passes).unwrap();
         for name in [

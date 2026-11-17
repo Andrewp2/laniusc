@@ -22,8 +22,9 @@ pub(in crate::type_checker) struct CallGenericClaimValidationBuild {
 /// complete generic bindings after expression inference closes.
 ///
 /// Prefix scans, exact indexes, and dispatch generation are private steps.
-/// The recorder schedules claim collection during inference and strict type and constant
-/// conflicts and required bindings together after closure.
+/// The recorder schedules claim collection during inference, and marks required
+/// bindings and validates strict type and constant conflicts and required
+/// bindings together after closure.
 pub(in crate::type_checker) struct CallGenericClaimValidationOperation {
     claim_scans: PrefixScanPairOperation,
     emit_claims: ComputeOperation,
@@ -63,8 +64,6 @@ impl CallGenericClaimValidationOperation {
         self.claim_scans.record(encoder)?;
         pages.record(encoder, |encoder| self.emit_claims.record(encoder))?;
         self.generic_index.record(encoder)?;
-        self.mark_required.record(encoder)?;
-        self.required_scan.record(encoder)?;
         self.const_index.record(encoder)?;
         // Every reader of argument constant bindings loads this selection.
         self.publish_const_environment.record(encoder)
@@ -74,6 +73,10 @@ impl CallGenericClaimValidationOperation {
         &self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<()> {
+        // Only the required-binding validation reads the marks, so they are
+        // made once, from the closed inference facts.
+        self.mark_required.record(encoder)?;
+        self.required_scan.record(encoder)?;
         self.validate_generic.record(encoder)?;
         self.validate_const.record(encoder)?;
         self.validate_required.record(encoder)

@@ -20,7 +20,7 @@ RWStructuredBuffer<OptIrDominatorJump> opt_ir_dominator_depth_link_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
-static const uint POINTER_JUMP_HOPS = 16u;
+static const uint POINTER_JUMP_HOPS = 64u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

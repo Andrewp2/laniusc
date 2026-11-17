@@ -27,17 +27,14 @@ const KEYS: [&str; 7] = [
     "type_checker/retention/method_routes/06_rollback",
 ];
 
-/// Fixed-point rounds of each loop in the first batch, and the bound over
-/// all batches (proof depth is at most 64).
-const FIRST_ROUNDS: u32 = 8;
-const ROUND_BOUND: u32 = 65;
-/// Config buffers: one per round modulo 6 (parity and the flag rotation),
-/// the begin config and the final config.
-const ROUND_CONFIGS: usize = 6;
-const BEGIN_CONFIG: usize = 6;
-const FINAL_CONFIG: usize = 7;
+/// Config buffers: the begin config, which the fixed-point passes also
+/// bind, and the final config.
+const BEGIN_CONFIG: usize = 0;
+const FINAL_CONFIG: usize = 1;
 const CONFIG_WORDS: usize = 12;
-/// mr_state word set while more rounds are needed (common.slang MR_PENDING).
+/// mr_state word that would ask for more rounds (common.slang MR_PENDING).
+/// The fixed-point passes run to their bound in one dispatch, so it stays
+/// clear.
 pub(super) const MR_PENDING: usize = 28;
 
 pub(super) struct MethodRoutes {
@@ -111,16 +108,15 @@ impl MethodRoutes {
     }
     /// Writes the round and begin configs of one run.
     fn write_configs(&self, words: &Config) {
-        for c in 0..ROUND_CONFIGS {
-            let words = words.at(c as u32 % 2, c as u32 % 3, false);
-            self.queue.write_buffer(&self.configs[c], 0, &words_bytes(&words));
-        }
-        // Selection marks before round 0, whose predecessor flag is round 2's.
-        self.queue.write_buffer(&self.configs[BEGIN_CONFIG], 0, &words_bytes(&words.at(0, 2, false)));
+        // Selection marks before level 0, whose predecessor flag is round 2's.
+        self.queue.write_buffer(&self.configs[BEGIN_CONFIG], 0, &words_bytes(&words.at(0, 2)));
+        // Both value buffers are equal at a fixed point; at the level bound
+        // the last level (64, parity 0) wrote buffer b.
+        self.queue.write_buffer(&self.configs[FINAL_CONFIG], 0, &words_bytes(&words.at(1, 1)));
     }
-    /// Records one batch: the begin passes when `begin`, `rounds` rounds of
-    /// each fixed-point loop after `recorded` earlier ones, and the
-    /// environment, finish and rollback passes. Writes the final config.
+    /// Records one run: the begin and selection passes, each fixed-point
+    /// loop as one workgroup that runs its levels (02_expand, 03_terms),
+    /// and the environment, finish and rollback passes.
     #[allow(clippy::too_many_arguments)]
     fn record_batch(
         &self,
@@ -131,36 +127,18 @@ impl MethodRoutes {
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
         config: &Config,
-        (requests, nodes): (u32, u32),
-        begin: bool,
-        recorded: u32,
-        rounds: u32,
+        requests: u32,
     ) -> Result<()> {
         let record = |encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, slot: usize| {
             self.record(encoder, kernel, lanes, slot, guard, view, sub, metadata, instances)
         };
-        if begin {
-            record(encoder, 0, requests.max(nodes).max(1), BEGIN_CONFIG)?;
-            record(encoder, 1, requests, BEGIN_CONFIG)?;
-        }
-        // Reachability marking, then bottom-up evaluation. Each loop stops
-        // changing at its fixed point, and the environment pass runs once
-        // both have. A batch that ends before then reports MR_PENDING and
-        // the next batch continues the rounds. A round binds its kernel
-        // with its config slot, so each (kernel, slot) needs one bind group.
-        for kernel in [2, 3] {
-            let mut binds: Vec<Option<wgpu::BindGroup>> = vec![None; ROUND_CONFIGS];
-            for round in recorded..recorded + rounds {
-                let slot = round as usize % ROUND_CONFIGS;
-                if binds[slot].is_none() {
-                    binds[slot] = Some(self.bind_group(kernel, slot, guard, view, sub, metadata, instances)?);
-                }
-                self.dispatch(encoder, kernel, nodes, binds[slot].as_ref().expect("bound above"));
-            }
-        }
-        let total = recorded + rounds;
-        let last = config.at(1, (total - 1) % 3, total >= ROUND_BOUND);
-        self.queue.write_buffer(&self.configs[FINAL_CONFIG], 0, &words_bytes(&last));
+        let nodes = config.nodes;
+        record(encoder, 0, requests.max(nodes).max(1), BEGIN_CONFIG)?;
+        record(encoder, 1, requests, BEGIN_CONFIG)?;
+        // Reachability marking, then bottom-up evaluation, each to its
+        // fixed point (at most 65 levels) in one workgroup.
+        record(encoder, 2, 1, BEGIN_CONFIG)?;
+        record(encoder, 3, 1, BEGIN_CONFIG)?;
         record(encoder, 4, requests, FINAL_CONFIG)?;
         record(encoder, 5, 1, FINAL_CONFIG)?;
         record(encoder, 6, (guard.buffers["rt_term_slot"].size() / 4) as u32, FINAL_CONFIG)
@@ -170,8 +148,7 @@ impl MethodRoutes {
     /// `nodes.1` are copied into every config before the passes. Lanes and
     /// tables are sized by the bounds, and `prepare` must have covered
     /// them. Kernels that consume a substitution check that `run` is
-    /// current, so a run that did not publish selects nothing. The state
-    /// is final when `MR_PENDING` is clear.
+    /// current, so a run that did not publish selects nothing.
     #[allow(clippy::too_many_arguments)]
     pub fn record_first_batch(
         &self,
@@ -185,15 +162,13 @@ impl MethodRoutes {
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
     ) -> Result<()> {
-        let config = Config::new(run, guard.generation, 0, 0, view.identity);
+        let config = Config::new(run, guard.generation, 0, nodes.2, view.identity);
         self.write_configs(&config);
         for target in &self.configs {
             encoder.copy_buffer_to_buffer(requests.0, requests.1, target, 8, 4);
             encoder.copy_buffer_to_buffer(nodes.0, nodes.1, target, 12, 4);
         }
-        self.record_batch(
-            encoder, guard, view, sub, metadata, instances, &config, (requests.2, nodes.2), true, 0, FIRST_ROUNDS,
-        )
+        self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2)
     }
     /// Runs the routes. Every batch also records `then(encoder, store,
     /// mr_state, mr_out)` after the routes, and its one readback returns
@@ -224,42 +199,21 @@ impl MethodRoutes {
             loop {
                 let mut encoder = self.device.create_command_encoder(&Default::default());
                 // One compute pass per submit, flushed before `then`.
-                let mut batch = passes_core::DeferredComputeBatchGuard::begin(
+                let batch = passes_core::DeferredComputeBatchGuard::begin(
                     passes_core::compute_pass_batching_allowed(false),
                     "retained method routes",
                 );
-                let mut recorded = 0;
-                let mut rounds = FIRST_ROUNDS;
-                let status = loop {
-                    self.record_batch(
-                        &mut encoder, &guard, &view, buffers, metadata, instances, &config,
-                        (requests, nodes), recorded == 0, recorded, rounds,
-                    )?;
-                    recorded += rounds;
-                    passes_core::flush_deferred_compute(&mut encoder);
-                    then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
-                    passes_core::flush_deferred_compute(&mut encoder);
-                    drop(batch);
-                    self.queue.submit(Some(encoder.finish()));
-                    let mut parts = vec![(&self.buffers["mr_state"], 32)];
-                    parts.extend_from_slice(also);
-                    let status = super::substitution::read_many_labeled(
-                        &self.device,
-                        &self.queue,
-                        &parts,
-                        "method_routes.state",
-                    )?;
-                    if status[MR_PENDING] == 0 {
-                        break status;
-                    }
-                    ensure!(recorded < ROUND_BOUND, "method routes pending after the round bound");
-                    rounds = (rounds * 2).min(ROUND_BOUND - recorded);
-                    encoder = self.device.create_command_encoder(&Default::default());
-                    batch = passes_core::DeferredComputeBatchGuard::begin(
-                        passes_core::compute_pass_batching_allowed(false),
-                        "retained method routes",
-                    );
-                };
+                self.record_batch(&mut encoder, &guard, &view, buffers, metadata, instances, &config, requests)?;
+                passes_core::flush_deferred_compute(&mut encoder);
+                then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
+                passes_core::flush_deferred_compute(&mut encoder);
+                drop(batch);
+                self.queue.submit(Some(encoder.finish()));
+                let mut parts = vec![(&self.buffers["mr_state"], 32)];
+                parts.extend_from_slice(also);
+                let status =
+                    super::substitution::read_many_labeled(&self.device, &self.queue, &parts, "method_routes.state")?;
+                ensure!(status[MR_PENDING] == 0, "method routes pending after the level bound");
                 if status[0] != 3 {
                     return Ok(status);
                 }
@@ -362,8 +316,8 @@ impl MethodRoutes {
     }
 }
 
-/// The words of one run's configs; `at` adds the round parity, the flag
-/// round and whether this is the last round.
+/// The words of one run's configs; `at` adds the value parity and the flag
+/// round.
 struct Config {
     run: u32,
     generation: u32,
@@ -375,7 +329,7 @@ impl Config {
     fn new(run: u32, generation: u32, requests: u32, nodes: u32, identity: crate::compiler::RetainedTraitIdentity) -> Self {
         Self { run, generation, requests, nodes, identity }
     }
-    fn at(&self, parity: u32, round: u32, last: bool) -> [u32; CONFIG_WORDS] {
+    fn at(&self, parity: u32, round: u32) -> [u32; CONFIG_WORDS] {
         let id = self.identity;
         [
             self.run,
@@ -389,7 +343,7 @@ impl Config {
             (id.arena_id >> 32) as u32,
             id.serial,
             round,
-            u32::from(last),
+            0,
         ]
     }
 }

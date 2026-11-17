@@ -1,5 +1,7 @@
 // Validate one well-formed immediate dominator per reachable block before
-// declaration-specific SSA work begins.
+// declaration-specific SSA work begins, and clear the reused per-block child
+// count column that dominator-tree compaction counts into next. The clear
+// writes only this block's row of a column the validation never reads.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -21,6 +23,7 @@ StructuredBuffer<OptIrFunction> opt_ir_functions;
 StructuredBuffer<uint> opt_ir_immediate_dominator;
 StructuredBuffer<uint> opt_ir_reachable;
 RWStructuredBuffer<LoweringStatus> lowering_status;
+RWStructuredBuffer<uint> opt_ir_dominator_child_count_by_block;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -42,6 +45,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint block_id = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     uint block_total = min(opt_ir_block_total[0u], gParams.block_capacity);
     if (block_id >= block_total) return;
+    opt_ir_dominator_child_count_by_block[block_id] = 0u;
 
     OptIrBlock block = opt_ir_blocks[block_id];
     uint function_total = min(semantic_function_total[0u], gParams.hir_capacity);

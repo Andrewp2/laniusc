@@ -19,7 +19,7 @@ StructuredBuffer<uint> opt_ir_ssa_value_link_in;
 RWStructuredBuffer<uint> opt_ir_ssa_value_link_out;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
-static const uint POINTER_JUMP_HOPS = 16u;
+static const uint POINTER_JUMP_HOPS = 64u;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]

@@ -29,21 +29,20 @@ impl MethodBindGroups {
         if matches!(stage, MethodSelectionStage::Lookup) {
             return self.lookup.record_sweep(encoder, &mut dependency_phase);
         }
-        let (direct, returns, reset, local, bound, finalize) = match stage {
+        let (direct, returns, local, bound, finalize) = match stage {
             MethodSelectionStage::Direct => (
                 METHODS_MARK_CALL_KEYS, METHODS_MARK_CALL_RETURN_KEYS_DIRECT,
-                METHODS_RESET_CANDIDATES_DIRECT, METHODS_RESOLVE_TABLE_DIRECT,
+                METHODS_RESOLVE_TABLE_DIRECT,
                 METHODS_OFFER_BOUND_MEMBERS_DIRECT, METHODS_FINALIZE_CANDIDATES_DIRECT,
             ),
             MethodSelectionStage::Inference | MethodSelectionStage::Lookup => (
                 METHODS_MARK_CALL_KEYS_INFERENCE, METHODS_MARK_CALL_RETURN_KEYS_INFERENCE,
-                METHODS_RESET_CANDIDATES_INFERENCE, METHODS_RESOLVE_TABLE_INFERENCE,
+                METHODS_RESOLVE_TABLE_INFERENCE,
                 METHODS_OFFER_BOUND_MEMBERS_INFERENCE, METHODS_FINALIZE_CANDIDATES_INFERENCE,
             ),
         };
         self.mark_call_keys.record_as(encoder, direct.name)?;
         self.mark_call_return_keys.record_as(encoder, returns.name)?;
-        self.reset_candidates.record_as(encoder, reset.name)?;
         self.resolve_table.record_as(encoder, local.name)?;
         self.offer_bound_members.record_as(encoder, bound.name)?;
         dependency_phase(encoder, true)?;
@@ -84,7 +83,6 @@ impl MethodLookupSweeps {
     {
         self.mark_call_keys.record(encoder)?;
         self.mark_call_return_keys.record(encoder)?;
-        self.reset_candidates.record(encoder)?;
         self.resolve_table.record(encoder)?;
         self.offer_bound_members.record(encoder)?;
         dependency_phase(encoder, true)?;
