@@ -764,6 +764,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
             hir,
             semantic_interface,
+            early_semantic_interface: None,
         })
     }
 
@@ -976,7 +977,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             ));
         }
         finish_timer.stamp("parser_status");
-        let recorded = deferred.recorded;
+        let mut recorded = deferred.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
         let checked = self
             .type_checker
@@ -1036,12 +1037,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                 store.abandon_export();
             }
         };
+        let early_semantic_interface = recorded.early_semantic_interface.take();
         let semantic_interface = recorded
             .semantic_interface
             .as_ref()
             .map(|identity| {
-                self.type_checker
-                    .finish_semantic_interface(device, queue, identity)
+                early_semantic_interface
+                    .unwrap_or_else(|| self.type_checker.finish_semantic_interface(device, queue, identity))
                     .map_err(|err| {
                         abandon_export(&export_submitted);
                         semantic_interface_error_to_compile_error_for_source_pack(
@@ -1994,8 +1996,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 lowering_output_retry.demand,
                             )
                         },
-                        |device, queue, bufs, parser, recorded| {
+                        |device, queue, bufs, parser, mut recorded| {
                             prepare_retention_export(&recorded);
+                            self.finish_semantic_interface_early(device, queue, &mut recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
@@ -2249,6 +2252,10 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
     diagnostic_tokens: DiagnosticTokenBuffer,
     hir: crate::parser::buffers::GpuHirView,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
+    /// The semantic interface, read and decoded while the host waits for
+    /// the rest of the job ([`finish_semantic_interface_early`]). The
+    /// finish reports its error where it reports the interface's.
+    early_semantic_interface: Option<anyhow::Result<crate::compiler::GpuSemanticInterfaceArtifact>>,
 }
 
 /// Immutable source facts available before original program admission. The
@@ -2724,6 +2731,26 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
 /// Records the job's retention export while the host waits for the job's
 /// GPU work; it is submitted once the job passes its retry points
 /// (`finish_checked_source_pack_pipeline`).
+impl GpuCompiler<'_> {
+    /// Reads and decodes the job's semantic interface while the host waits
+    /// for the rest of the job. The interface has its own submission ahead
+    /// of lowering, so its readback is ready while lowering still runs; the
+    /// decode is host work no later GPU stage waits on. The job's finish
+    /// takes the result in its usual place, after the parser and type
+    /// check statuses.
+    fn finish_semantic_interface_early(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        recorded: &mut RecordedTypeCheckWithDiagnosticBuffers,
+    ) {
+        if let Some(identity) = &recorded.semantic_interface {
+            recorded.early_semantic_interface =
+                Some(self.type_checker.finish_semantic_interface(device, queue, identity));
+        }
+    }
+}
+
 fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
     if let (Some(store), Some(snapshot)) =
         (&recorded.type_check.program_retention, &recorded.retention_snapshot)
