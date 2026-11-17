@@ -22,6 +22,14 @@ public StructuredBuffer<uint2> cw_step;
 public RWStructuredBuffer<uint> cw_batch;
 public RWStructuredBuffer<uint> cw_routes;
 
+// cw_state words from 07_totals: the batch table counts (+ table), then
+// the publication words copied into the route header (obligations, atoms,
+// calls, fault), and the host's bound of each table count in cw_config.
+public static const uint CW_COUNTS = 32u;
+public static const uint CW_PUBLISH = 50u;
+public static const uint CW_FAULT = 53u;
+public static const uint CW_STATE_WORDS = 64u;
+public static const uint CW_BOUNDS = 104u;
 public uint cw_lane(uint3 id) { return id.x + id.y * 16776960u; }
 public uint cw_terms() { return cw_config[0]; }
 public uint cw_first() { return cw_config[3]; }
