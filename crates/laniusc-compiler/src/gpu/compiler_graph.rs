@@ -1116,53 +1116,28 @@ impl CompilerGraphWorkspace {
                 }
             }
         }
-        let phase_reset_slots = imported_by_slot
+        let zero_initialized_in_slot = |slot: u32| -> Vec<&'static str> {
+            graph
+                .workspace
+                .assignments
+                .iter()
+                .filter(|assignment| {
+                    assignment.slot == slot
+                        && graph
+                            .resource_id(assignment.name)
+                            .is_some_and(|resource| graph.is_zero_initialized(resource))
+                })
+                .map(|assignment| assignment.name)
+                .collect()
+        };
+        let mut phase_reset_slots = imported_by_slot
             .iter()
             .map(|(&slot, view)| PhaseResetSlot {
                 view: view.clone(),
-                resources: graph
-                    .workspace
-                    .assignments
-                    .iter()
-                    .filter(|assignment| {
-                        assignment.slot == slot
-                            && graph
-                                .resource_id(assignment.name)
-                                .is_some_and(|resource| graph.is_zero_initialized(resource))
-                    })
-                    .map(|assignment| assignment.name)
-                    .collect(),
+                resources: zero_initialized_in_slot(slot),
             })
             .collect::<Vec<_>>();
-        let mut reset_ranges_by_allocation =
-            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
-        for slot in phase_reset_slots
-            .iter()
-            .filter(|slot| !slot.resources.is_empty())
-        {
-            let Some(allocation_id) = slot.view.allocation_id() else {
-                continue;
-            };
-            let end = slot
-                .view
-                .byte_offset
-                .checked_add(slot.view.byte_size as u64)
-                .ok_or_else(|| "imported compiler graph reset range overflows".to_owned())?;
-            reset_ranges_by_allocation
-                .entry(allocation_id)
-                .or_insert_with(|| (&slot.view.buffer, Vec::new()))
-                .1
-                .push((slot.view.byte_offset, end));
-        }
-        let mut phase_reset_ranges = Vec::new();
-        for (allocation_id, (buffer, ranges)) in reset_ranges_by_allocation {
-            let merged = merge_byte_ranges(ranges);
-            phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
-                let bytes = end - start;
-                TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
-                    .alias::<u8>(bytes as usize)
-            }));
-        }
+        let imported_slots = imported_by_slot.keys().copied().collect::<BTreeSet<_>>();
 
         let unimported = WorkspacePlan {
             assignments: Vec::new(),
@@ -1258,6 +1233,52 @@ impl CompilerGraphWorkspace {
             }
         }
         debug_assert!(imported_by_slot.is_empty());
+        // Arena slots persist across jobs too, and only the parser clears its
+        // own arenas before each job. A zero-initialized resource in an arena
+        // slot of any other phase is cleared at that phase's boundary, as an
+        // imported one is.
+        for plan in &graph.workspace.slots {
+            if imported_slots.contains(&plan.slot) {
+                continue;
+            }
+            let resources = zero_initialized_in_slot(plan.slot);
+            if !resources.is_empty() {
+                phase_reset_slots.push(PhaseResetSlot {
+                    view: slots[plan.slot as usize].clone(),
+                    resources,
+                });
+            }
+        }
+        let mut reset_ranges_by_allocation =
+            BTreeMap::<u64, (&wgpu::Buffer, Vec<(u64, u64)>)>::new();
+        for slot in phase_reset_slots
+            .iter()
+            .filter(|slot| !slot.resources.is_empty())
+        {
+            let Some(allocation_id) = slot.view.allocation_id() else {
+                continue;
+            };
+            let end = slot
+                .view
+                .byte_offset
+                .checked_add(slot.view.byte_size as u64)
+                .ok_or_else(|| "compiler graph reset range overflows".to_owned())?;
+            reset_ranges_by_allocation
+                .entry(allocation_id)
+                .or_insert_with(|| (&slot.view.buffer, Vec::new()))
+                .1
+                .push((slot.view.byte_offset, end));
+        }
+        let mut phase_reset_ranges = Vec::new();
+        for (allocation_id, (buffer, ranges)) in reset_ranges_by_allocation {
+            let merged = merge_byte_ranges(ranges);
+            phase_reset_ranges.extend(merged.into_iter().map(|(start, end)| {
+                let bytes = end - start;
+                TrackedBufferView::from_parts(buffer, start, bytes, Some(allocation_id))
+                    .alias::<u8>(bytes as usize)
+            }));
+        }
+
         let mut slot_by_resource = vec![None; graph.resources.len()];
         for assignment in &graph.workspace.assignments {
             let resource = graph.resource_id(assignment.name).ok_or_else(|| {
@@ -1840,7 +1861,11 @@ impl CompilerGraph {
             })?;
             lifetime.last_pass = graph_end;
         }
-        self.workspace = plan_graph_workspace(&self.resources, &self.lifetimes)?;
+        self.workspace = plan_graph_workspace(
+            &self.resources,
+            &self.lifetimes,
+            &self.zero_initialized_resources,
+        )?;
         Ok(())
     }
 
@@ -5066,7 +5091,8 @@ impl CompilerGraphBuilder {
                 })
             })
             .collect::<Vec<_>>();
-        let workspace = plan_graph_workspace(&self.resources, &lifetimes)?;
+        let workspace =
+            plan_graph_workspace(&self.resources, &lifetimes, &self.zero_initialized_resources)?;
         Ok(CompilerGraph {
             resources: self.resources,
             resource_aliases: self.resource_aliases,
@@ -5084,13 +5110,24 @@ impl CompilerGraphBuilder {
     }
 }
 
+/// Colors graph-allocated resources into workspace slots.
+///
+/// A zero-initialized resource reads its storage before any pass writes it
+/// and relies on the job or phase reset for zeroes. That holds only while no
+/// earlier resource in the same slot has written it, so such a resource is
+/// always the first occupant of its slot: every other occupant's lifetime
+/// starts after its own ends.
 fn plan_graph_workspace(
     resources: &[ResourceDesc],
     lifetimes: &[Option<ResourceLifetime>],
+    zero_initialized: &BTreeSet<ResourceId>,
 ) -> Result<WorkspacePlan, String> {
     struct SlotState {
         plan: WorkspaceSlotPlan,
         lifetimes: Vec<ResourceLifetime>,
+        /// First pass of the slot's zero-initialized occupant, which is
+        /// always its earliest one. Later occupants must start after it.
+        zero_initialized_from: Option<PassId>,
         retained_output: bool,
     }
 
@@ -5131,6 +5168,7 @@ fn plan_graph_workspace(
     let mut assignment_by_resource = BTreeMap::<usize, u32>::new();
     for (resource_index, resource, lifetime) in order {
         let retained_output = resource.class == ResourceClass::Output;
+        let reads_zeroes = zero_initialized.contains(&ResourceId(resource_index));
         let reusable = slots
             .iter()
             .enumerate()
@@ -5139,8 +5177,11 @@ fn plan_graph_workspace(
                     && slot.retained_output == retained_output
                     && slot.lifetimes.iter().all(|other| {
                         lifetime.last_pass < other.first_pass
-                            || other.last_pass < lifetime.first_pass
+                            || (other.last_pass < lifetime.first_pass && !reads_zeroes)
                     })
+                    && slot
+                        .zero_initialized_from
+                        .is_none_or(|first| first < lifetime.first_pass)
             })
             .min_by_key(|(_, slot)| {
                 (
@@ -5159,6 +5200,7 @@ fn plan_graph_workspace(
                     usage: resource.usage,
                 },
                 lifetimes: Vec::new(),
+                zero_initialized_from: None,
                 retained_output,
             });
             index
@@ -5166,6 +5208,9 @@ fn plan_graph_workspace(
         let slot = &mut slots[slot_index];
         slot.plan.bytes = slot.plan.bytes.max(resource.bytes);
         slot.lifetimes.push(lifetime);
+        if reads_zeroes {
+            slot.zero_initialized_from = Some(lifetime.first_pass);
+        }
         assignment_by_resource.insert(resource_index, slot.plan.slot);
     }
 
@@ -6872,34 +6917,47 @@ mod tests {
     }
 
     #[test]
-    fn zero_initialized_workspace_remains_colorable() {
+    fn zero_initialized_workspace_is_the_first_occupant_of_its_slot() {
         let mut builder = CompilerGraphBuilder::new();
-        let first = builder
-            .add_resource(workspace("zero.first", ResourceDomain::Types, 64))
+        let writer = builder
+            .add_resource(workspace("zero.writer", ResourceDomain::Types, 64))
             .unwrap();
-        let second = builder
-            .add_resource(workspace("zero.second", ResourceDomain::Types, 64))
+        let zeroed = builder
+            .add_resource(workspace("zero.zeroed", ResourceDomain::Types, 128))
             .unwrap();
-        builder.mark_zero_initialized(first).unwrap();
-        builder.mark_zero_initialized(second).unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "zero.read.first",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::read("value", first)],
-            })
+        let later = builder
+            .add_resource(workspace("zero.later", ResourceDomain::Types, 64))
             .unwrap();
-        builder
-            .add_pass(PassDesc {
-                name: "zero.read.second",
-                phase: CompilerPhase::TypeCheck,
-                dispatch_domain: ResourceDomain::Types,
-                accesses: vec![PassAccess::read("value", second)],
-            })
-            .unwrap();
+        builder.mark_zero_initialized(zeroed).unwrap();
+        for (name, access) in [
+            ("zero.write.writer", PassAccess::write("value", writer)),
+            ("zero.read.zeroed", PassAccess::read_write("value", zeroed)),
+            ("zero.write.later", PassAccess::write("value", later)),
+        ] {
+            builder
+                .add_pass(PassDesc {
+                    name,
+                    phase: CompilerPhase::TypeCheck,
+                    dispatch_domain: ResourceDomain::Types,
+                    accesses: vec![access],
+                })
+                .unwrap();
+        }
         let graph = builder.build().unwrap();
-        assert_eq!(graph.workspace_plan().slots.len(), 1);
+        let plan = graph.workspace_plan();
+        let slot = |name: &str| {
+            plan.assignments
+                .iter()
+                .find(|assignment| assignment.name == name)
+                .unwrap()
+                .slot
+        };
+        // The larger `zero.zeroed` is placed first. `zero.writer` would leave
+        // its words there for `zero.zeroed` to read, so it takes a new slot.
+        assert_ne!(slot("zero.writer"), slot("zero.zeroed"));
+        // A resource that starts after the zeroed one ends may follow it.
+        assert_eq!(slot("zero.zeroed"), slot("zero.later"));
+        assert_eq!(plan.slots.len(), 2);
     }
 
     #[test]

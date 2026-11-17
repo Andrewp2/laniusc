@@ -80,7 +80,7 @@ pub(crate) fn bounded_walk_step_capacity(items: u32) -> u32 {
 /// always ends in its `_a` buffers and never needs the whole-buffer `_b`
 /// to `_a` finalize copy. The enum, struct-field and match-arm walks read
 /// their `_b` buffers only at worklist rows an earlier round wrote, so their
-/// links passes write only row 0 of `_b`. The extra round, when there is one,
+/// links passes do not initialize `_b`. The extra round, when there is one,
 /// only rewrites rows the walk already resolved.
 pub(crate) fn bounded_walk_even_step_capacity(items: u32) -> u32 {
     let steps = bounded_walk_step_capacity(items);
