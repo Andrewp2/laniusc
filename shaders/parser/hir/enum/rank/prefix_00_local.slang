@@ -1,11 +1,10 @@
-// Mark enum variant/payload nodes and compute block-local prefixes.
+// Mark enum variant/payload nodes and count them per block.
 //
 // The block-prefix scan uses the shared semantic prefix-scan shader, but this
 // rank family owns separate record buffers so it cannot clobber HIR compaction
 // or another list-rank family.
 
 import generated_parse_production_ids;
-import prefix_scan;
 
 struct Params
 {
@@ -20,8 +19,12 @@ StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> hir_kind;
 
 RWStructuredBuffer<uint> hir_enum_rank_flag;
-RWStructuredBuffer<uint> hir_enum_rank_local_prefix;
 RWStructuredBuffer<uint> hir_enum_rank_block_sum;
+
+// One mark bit per node, in the layout of
+// parser/hir/list/rank/prefix_00_local.slang.
+static const uint FLAG_WORDS_PER_BLOCK = 8u;
+groupshared uint g_flag_words[FLAG_WORDS_PER_BLOCK];
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -55,15 +58,23 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint lane = ltid.x;
     uint node = block_i * WG_SIZE + lane;
     uint active = active_node_count();
-    uint flag = enum_rank_flag(node, active);
-    uint inclusive = prefix_scan_u32_256(lane, flag);
 
-    if (node < gHirEnum.n)
+    if (lane < FLAG_WORDS_PER_BLOCK)
+        g_flag_words[lane] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (enum_rank_flag(node, active) != 0u)
+        InterlockedOr(g_flag_words[lane >> 5u], 1u << (lane & 31u));
+    GroupMemoryBarrierWithGroupSync();
+
+    uint word_i = block_i * FLAG_WORDS_PER_BLOCK + lane;
+    if (lane < FLAG_WORDS_PER_BLOCK && word_i < (gHirEnum.n + 31u) / 32u)
+        hir_enum_rank_flag[word_i] = g_flag_words[lane];
+    if (lane == 0u)
     {
-        hir_enum_rank_flag[node] = flag;
-        hir_enum_rank_local_prefix[node] = inclusive - flag;
+        uint total = 0u;
+        for (uint w = 0u; w < FLAG_WORDS_PER_BLOCK; ++w)
+            total += countbits(g_flag_words[w]);
+        hir_enum_rank_block_sum[block_i] = total;
     }
-
-    if (lane == WG_SIZE - 1u)
-        hir_enum_rank_block_sum[block_i] = inclusive;
 }

@@ -55,10 +55,6 @@ impl HirListRankPrefixLocalPass {
                 buffers.hir_list_rank_flag.as_entire_binding(),
             ),
             (
-                "hir_list_rank_local_prefix".into(),
-                buffers.hir_list_rank_local_prefix.as_entire_binding(),
-            ),
-            (
                 "hir_list_rank_block_sum".into(),
                 buffers.hir_list_rank_block_sum.as_entire_binding(),
             ),

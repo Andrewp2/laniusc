@@ -98,8 +98,8 @@ public static const uint CT_COUNT_FINAL = 7u;     // nonzero: pending candidates
 public static const uint CT_COUNT_LIBRARY = 8u;   // job identity of local declarations
 public static const uint CT_COUNT_UNIT = 9u;
 // Nonzero: candidates were interned ahead of the early stage
-// (dependencies/14a), so its 03_rearm re-arms every interned candidate;
-// round 0 of 01_intern clears it.
+// (dependencies/14a), so its re-arm (03a_rearm_list) re-arms every interned
+// candidate; 03b_rearm_args clears it.
 public static const uint CT_COUNT_EARLY_REARM = 10u;
 // Nonzero: some stage of this job still had pending candidates after a
 // batch of CT_ROUNDS_PER_BATCH rounds (02_round_args). Kept until the job's
@@ -107,6 +107,9 @@ public static const uint CT_COUNT_EARLY_REARM = 10u;
 // stage, so the host records it again with readbacks when this is set. It
 // is not an overflow bit: CT_COUNT_OVERFLOW != 0 means capacity failure.
 public static const uint CT_COUNT_BATCH_PENDING = 11u;
+// Candidates a stage's re-arm listed in canonical_pending for round 0
+// (03a_rearm_list); 03b_rearm_args moves it to CT_COUNT_PENDING and zeroes it.
+public static const uint CT_COUNT_REARM_PENDING = 12u;
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes

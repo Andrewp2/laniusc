@@ -565,6 +565,7 @@ impl SemanticProjectionOperations {
 pub(in crate::type_checker) struct CanonicalTypeOperations {
     clear: ComputeOperation,
     rearm: ComputeOperation,
+    rearm_args: ComputeOperation,
     round0: ComputeOperation,
     round_args: ComputeOperation,
     round: ComputeOperation,
@@ -574,7 +575,9 @@ pub(in crate::type_checker) struct CanonicalTypeOperations {
     late_round: ComputeInvocation,
     late_counts_readback: crate::gpu::operations::CopyBufferOperation,
     early_rearm: ComputeInvocation,
+    early_rearm_args: ComputeInvocation,
     body_rearm: ComputeInvocation,
+    body_rearm_args: ComputeInvocation,
     body_round0: ComputeInvocation,
     body_round_args: ComputeInvocation,
     body_round: ComputeInvocation,
@@ -652,10 +655,22 @@ impl CanonicalTypeOperations {
         )?;
         let rearm = direct(
             canonical_passes::CANONICAL_REARM_PASS,
-            canonical_passes::CANONICAL_REARM_KERNEL,
+            canonical_passes::CANONICAL_REARM_LIST_KERNEL,
             candidates,
         )?;
-        let round0 = direct(early.round0, canonical_passes::CANONICAL_INTERN_KERNEL, candidates)?;
+        let rearm_args = direct(
+            canonical_passes::CANONICAL_REARM_ARGS_PASS,
+            canonical_passes::CANONICAL_REARM_ARGS_KERNEL,
+            1,
+        )?;
+        let round0 = ComputeOperation::indirect(
+            device,
+            graph,
+            resources,
+            early.round0,
+            &passes.kernel(canonical_passes::CANONICAL_INTERN_KERNEL),
+            &typed_buffer_from_resources(resources, "canonical_round_args")?,
+        )?;
         let round_args = direct(early.round_args, canonical_passes::CANONICAL_ROUND_ARGS_KERNEL, 1)?;
         let round = ComputeOperation::indirect(
             device,
@@ -671,8 +686,12 @@ impl CanonicalTypeOperations {
         let late_round = round.invocation(graph, late.round)?;
         let late_counts_readback = counts_copy(late.counts_readback)?;
         let early_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_PASS)?;
+        let early_rearm_args =
+            rearm_args.invocation(graph, canonical_passes::CANONICAL_EARLY_REARM_ARGS_PASS)?;
         let body = &canonical_passes::CANONICAL_BODY_ROUNDS;
         let body_rearm = rearm.invocation(graph, canonical_passes::CANONICAL_BODY_REARM_PASS)?;
+        let body_rearm_args =
+            rearm_args.invocation(graph, canonical_passes::CANONICAL_BODY_REARM_ARGS_PASS)?;
         let body_round0 = round0.invocation(graph, body.round0)?;
         let body_round_args = round_args.invocation(graph, body.round_args)?;
         let body_round = round.invocation(graph, body.round)?;
@@ -743,6 +762,7 @@ impl CanonicalTypeOperations {
         Ok(Self {
             clear,
             rearm,
+            rearm_args,
             round0,
             round_args,
             round,
@@ -752,7 +772,9 @@ impl CanonicalTypeOperations {
             late_round,
             late_counts_readback,
             early_rearm,
+            early_rearm_args,
             body_rearm,
+            body_rearm_args,
             body_round0,
             body_round_args,
             body_round,
@@ -828,16 +850,19 @@ impl CanonicalTypeOperations {
             }
             CanonicalStage::Early => {
                 self.rearm.record_invocation(encoder, &self.early_rearm)?;
+                self.rearm_args.record_invocation(encoder, &self.early_rearm_args)?;
                 self.round0.record(encoder)?;
                 self.round_args.record(encoder)?;
             }
             CanonicalStage::Body => {
                 self.rearm.record_invocation(encoder, &self.body_rearm)?;
+                self.rearm_args.record_invocation(encoder, &self.body_rearm_args)?;
                 self.round0.record_invocation(encoder, &self.body_round0)?;
                 self.round_args.record_invocation(encoder, &self.body_round_args)?;
             }
             CanonicalStage::Late => {
                 self.rearm.record(encoder)?;
+                self.rearm_args.record(encoder)?;
                 self.round0.record_invocation(encoder, &self.late_round0)?;
                 self.round_args.record_invocation(encoder, &self.late_round_args)?;
             }

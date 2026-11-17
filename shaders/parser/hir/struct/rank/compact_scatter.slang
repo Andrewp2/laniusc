@@ -12,8 +12,8 @@ struct Params
 ConstantBuffer<Params> gHirStruct;
 
 StructuredBuffer<uint> tree_count_status;
+// One mark bit per node (prefix_00_local.slang).
 StructuredBuffer<uint> hir_struct_rank_flag;
-StructuredBuffer<uint> hir_struct_rank_local_prefix;
 StructuredBuffer<uint> hir_struct_rank_block_prefix;
 
 RWStructuredBuffer<uint> hir_struct_rank_node;
@@ -53,20 +53,28 @@ void write_dispatch_args(uint active_records)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    uint rank_count = inclusive_scan_total(block_count(), hir_struct_rank_block_prefix);
     if (node == 0u)
     {
+        uint rank_count = inclusive_scan_total(block_count(), hir_struct_rank_block_prefix);
         hir_struct_rank_count[0u] = rank_count;
         write_dispatch_args(rank_count);
     }
 
     uint active = active_node_count();
-    if (node >= gHirStruct.n || node >= active || hir_struct_rank_flag[node] == 0u)
+    if (node >= gHirStruct.n || node >= active)
+        return;
+    uint word_i = node >> 5u;
+    uint word = hir_struct_rank_flag[word_i];
+    uint bit = node & 31u;
+    if (((word >> bit) & 1u) == 0u)
         return;
 
     uint block_i = node / WG_SIZE;
     uint block_base = block_i == 0u ? 0u : hir_struct_rank_block_prefix[block_i - 1u];
-    uint dense_row = block_base + hir_struct_rank_local_prefix[node];
+    uint local = countbits(word & ((1u << bit) - 1u));
+    for (uint w = block_i * (WG_SIZE / 32u); w < word_i; ++w)
+        local += countbits(hir_struct_rank_flag[w]);
+    uint dense_row = block_base + local;
     if (dense_row < gHirStruct.n)
         hir_struct_rank_node[dense_row] = node;
 }

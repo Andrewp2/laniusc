@@ -148,7 +148,9 @@ impl GpuLexer {
             expected_words
         );
 
-        // Build packed-next (u8) table for DFA passes: layout [pack4][byte]
+        // Build packed-next (u8) table for DFA passes: layout [byte][pack4], so the
+        // lanes of one DFA chunk, which all read the same byte, gather from one
+        // or two cache lines.
         let n_states = n_states_from_file;
         let n_pack4 = (n_states + 3) / 4;
         let mut next_u8_packed: Vec<u32> = vec![0; 256 * n_pack4];
@@ -186,7 +188,7 @@ impl GpuLexer {
                 } else {
                     s3 as u32
                 };
-                next_u8_packed[p * 256 + b] =
+                next_u8_packed[b * n_pack4 + p] =
                     (v0 & 0xFF) | ((v1 & 0xFF) << 8) | ((v2 & 0xFF) << 16) | ((v3 & 0xFF) << 24);
             }
         }

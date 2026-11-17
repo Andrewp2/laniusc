@@ -51,10 +51,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirMatchRankPref
                 b.hir_match_rank_flag.as_entire_binding(),
             ),
             (
-                "hir_match_rank_local_prefix".into(),
-                b.hir_match_rank_local_prefix.as_entire_binding(),
-            ),
-            (
                 "hir_match_rank_block_sum".into(),
                 b.hir_match_rank_block_sum.as_entire_binding(),
             ),
