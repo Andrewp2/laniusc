@@ -737,20 +737,13 @@ impl GpuX86ObjectStage {
         &self.metadata_readback
     }
 
-    /// Reads the object from its `metadata` words (`metadata_readback`).
-    /// `checked` gets its text and rodata bytes once the metadata is
-    /// validated, before the payload is read. An object parked in the link
-    /// store keeps its text and rodata on the GPU.
-    pub(crate) fn finish(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        library_id: u32,
-        unit_id: u32,
-        metadata: &[u32],
-        checked: impl FnOnce(usize) -> Result<()>,
-    ) -> Result<(GpuX86FinishedObject, Vec<u32>)> {
-        let parked = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+    /// Validates the object's `metadata` words (`metadata_readback`) against
+    /// the stage's capacities; returns its text and rodata bytes.
+    pub(crate) fn section_bytes(&self, metadata: &[u32]) -> Result<usize> {
+        Ok(self.layout(metadata)?.section_bytes)
+    }
+
+    fn layout(&self, metadata: &[u32]) -> Result<ObjectLayout> {
         let word = |index: usize| metadata[index];
         let relocation_count = word(1) as usize;
         let symbol_count = word(2) as usize;
@@ -790,7 +783,51 @@ impl GpuX86ObjectStage {
                 self.artifact_capacity,
             );
         }
-        checked(text_len + rodata_len)?;
+        Ok(ObjectLayout {
+            relocation_count,
+            symbol_count,
+            definition_count,
+            runtime_relocation_count,
+            body_len,
+            wrapper_len,
+            text_len,
+            rodata_len,
+            entrypoint_count,
+            section_bytes: text_len + rodata_len,
+        })
+    }
+
+    /// Reads the object from its `metadata` words (`metadata_readback`),
+    /// which [`Self::section_bytes`] accepted. An object parked in `keep`,
+    /// the caller's link store, keeps its text and rodata on the GPU.
+    pub(crate) fn finish(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        library_id: u32,
+        unit_id: u32,
+        metadata: &[u32],
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+    ) -> Result<(GpuX86FinishedObject, Vec<u32>)> {
+        let ticket = self.parked.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        // An object parked in another build's store is read in full; that
+        // build's store may be cleared before this build links.
+        let (parked, foreign) = match ticket {
+            Some(ticket) if keep.is_some_and(|store| ticket.is_in(store)) => (Some(ticket), None),
+            ticket => (None, ticket),
+        };
+        let ObjectLayout {
+            relocation_count,
+            symbol_count,
+            definition_count,
+            runtime_relocation_count,
+            body_len,
+            wrapper_len,
+            text_len,
+            rodata_len,
+            entrypoint_count,
+            section_bytes: _,
+        } = self.layout(metadata)?;
 
         let payload_bytes = [
             relocation_count * 32,
@@ -909,6 +946,9 @@ impl GpuX86ObjectStage {
         let call_hirs = decode_words(&call_hir_bytes);
         let Some(ticket) = parked else {
             object.validate().map_err(anyhow::Error::msg)?;
+            if let Some(ticket) = foreign {
+                ticket.commit(library_id, unit_id);
+            }
             return Ok((GpuX86FinishedObject::Host(object), call_hirs));
         };
         let sections = ticket.sections(text_len as u32, rodata_len as u32);
@@ -916,6 +956,20 @@ impl GpuX86ObjectStage {
         ticket.commit(library_id, unit_id);
         Ok((GpuX86FinishedObject::Parked(object), call_hirs))
     }
+}
+
+/// An object's counts and section lengths from its metadata words.
+struct ObjectLayout {
+    relocation_count: usize,
+    symbol_count: usize,
+    definition_count: usize,
+    runtime_relocation_count: usize,
+    body_len: usize,
+    wrapper_len: usize,
+    text_len: usize,
+    rodata_len: usize,
+    entrypoint_count: u32,
+    section_bytes: usize,
 }
 
 /// Indexes of the text and rodata regions in `payload_regions`.

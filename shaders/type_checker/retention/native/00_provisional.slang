@@ -1,6 +1,6 @@
 // Provisional call symbols of a retained build's original object
 // (docs/compiler-retained-projection.md, "Native compilation"). Runs after
-// the job's export, while the export scratch still maps the job's HIR rows
+// the job's export commits, while the export scratch still maps the job's HIR rows
 // to their retained uses. One lane per undefined symbol of the object: the
 // k-th undefined symbol is the call at nc_call_hirs[k]
 // (x86_object_artifact.rs). A call whose retained use is DIRECT and whose
@@ -35,6 +35,9 @@ StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 
 static const uint NC_FLAG_ARG_UNTRANSLATED = 2u;
+// nc_status[0] bits: 1 use table too small, 2 malformed symbol, 4 argument
+// pool too small, 8 the job's export did not commit.
+static const uint NC_STATUS_EXPORT_PENDING = 8u;
 static const uint DIR_FREE_FN = 1u;
 static const uint USE_DIRECT = 1u;
 static const uint HIR_CALL = 19u;
@@ -45,6 +48,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint k = finalize_lane(dtid);
     if (k >= nc_config[1]) return;
+    // The host submits this kernel right behind the job's export and reads
+    // both at once; an export that did not commit maps no call yet.
+    if (rt_counts[RT_C_JOB_STATE] != RT_JOB_COMMITTED)
+    {
+        if (k == 0u) InterlockedOr(nc_status[0], NC_STATUS_EXPORT_PENDING);
+        return;
+    }
     uint row = k * SYMBOL_WORDS;
     uint call = nc_call_hirs[k];
     if (call >= hir_count() || compact_hir_core[call].kind != HIR_CALL || rt_x_flags[call].y == 0u) return;

@@ -177,6 +177,11 @@ impl ParkTicket {
         }
     }
 
+    /// Whether the object parked in `store`.
+    pub(crate) fn is_in(&self, store: &Arc<GpuX86LinkStore>) -> bool {
+        Arc::ptr_eq(&self.store, store)
+    }
+
     pub(crate) fn commit(self, library_id: u32, unit_id: u32) {
         let mut state = self.store.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.generation == self.generation
@@ -654,6 +659,15 @@ impl GpuX86Linker {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue)))
             .clone()
+    }
+
+    /// This linker's store while it is the one objects park into. The
+    /// active store is process-wide, so a build checks that an object it
+    /// lowered parked in its own linker's store before it relies on it.
+    pub(crate) fn parking_store(&self) -> Option<Arc<GpuX86LinkStore>> {
+        let own = self.resident_store.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()?;
+        let active = ACTIVE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        active.as_ref().is_some_and(|store| Arc::ptr_eq(store, &own)).then_some(own)
     }
 
     /// Parks the objects lowered until the returned guard drops.

@@ -74,16 +74,19 @@ impl ProgramRetention {
     /// Rewrites the generic-call symbols of the object the job behind
     /// `snapshot` just exported (see the module documentation).
     /// `call_hirs[k]` is the call HIR of the object's k-th undefined symbol.
+    /// With `export`, the job's export was submitted and not yet read: the
+    /// rewrite is submitted behind it and both are read in one round trip.
     pub(crate) fn provisionalize_x86_calls(
         &self,
         snapshot: &JobSnapshot,
         tables: &mut NativeCallTables,
         object: &mut GpuX86RelocatableObject,
         call_hirs: &[u32],
+        export: Option<ExportSubmitted>,
     ) -> Result<()> {
         let columns = X86SymbolColumns::of_object(object);
         let unit = Some((object.library_id, object.unit_id));
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs,unit)?.apply_to_object(object)
+        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, export)?.apply_to_object(object)
     }
 
     /// [`Self::provisionalize_x86_calls`] for an object whose sections stay
@@ -94,25 +97,56 @@ impl ProgramRetention {
         tables: &mut NativeCallTables,
         object: &mut crate::codegen::x86::GpuX86FileObject,
         call_hirs: &[u32],
+        export: Option<ExportSubmitted>,
     ) -> Result<()> {
         let columns = X86SymbolColumns::of_file_object(object);
         let unit = Some((object.layout.library_id, object.layout.unit_id));
-        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit)?.apply_to_file_object(object)
+        self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, export)?.apply_to_file_object(object)
     }
 
     pub(crate) fn provisionalize_wasm_calls(
         &self, snapshot:&JobSnapshot, tables:&mut NativeCallTables,
         object:&mut crate::codegen::wasm::GpuWasmRelocatableObject, call_hirs:&[u32],
+        export: Option<ExportSubmitted>,
     ) -> Result<()> {
         let columns=X86SymbolColumns::of_wasm_object(object);
-        self.provisionalize_calls(snapshot,tables,columns,call_hirs,None)?.apply_to_wasm_object(object)
+        self.provisionalize_calls(snapshot,tables,columns,call_hirs,None,export)?.apply_to_wasm_object(object)
     }
 
     /// `unit` names an x86 object whose rewritten identities the resident
     /// native link keeps (`codegen/x86/link/resident.rs`).
     fn provisionalize_calls(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
-        columns:X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>) -> Result<X86SymbolColumns> {
-        if call_hirs.is_empty() { return Ok(columns); }
+        mut columns:X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>,
+        mut export:Option<ExportSubmitted>) -> Result<X86SymbolColumns> {
+        if call_hirs.is_empty() {
+            if let Some(submitted) = export {
+                self.finish_export_job(snapshot.tables(), submitted)?;
+            }
+            return Ok(columns);
+        }
+        match self.provisionalize_calls_now(snapshot, tables, &mut columns, call_hirs, unit, &mut export) {
+            Ok(true) => Ok(columns),
+            Ok(false) => {
+                // The export's first attempt did not commit and the rewrite
+                // did nothing. Grow and export again, then rewrite.
+                let submitted = export.take().expect("an export that did not commit is pending");
+                self.finish_export_job(snapshot.tables(), submitted)?;
+                self.provisionalize_calls(snapshot, tables, columns, call_hirs, unit, None)
+            }
+            Err(error) => {
+                if export.is_some() {
+                    self.abandon_export();
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Records, submits and reads the rewrite, and the export with it while
+    /// `export` is pending. `false` when that export did not commit.
+    fn provisionalize_calls_now(&self,snapshot:&JobSnapshot,tables:&mut NativeCallTables,
+        columns:&mut X86SymbolColumns,call_hirs:&[u32],unit:Option<(u32,u32)>,
+        export:&mut Option<ExportSubmitted>) -> Result<bool> {
         let symbol_words = columns.symbol_rows.len() / 4;
         if symbol_words == 0 || columns.identity_bytes.len() % 4 != 0 {
             bail!("retained original object has malformed symbol columns");
@@ -129,7 +163,7 @@ impl ProgramRetention {
             let pass = passes_core::make_pass_data_from_shader_key(device, KERNEL, "main", KERNEL)?;
             self.native_call_pass.get_or_init(|| pass)
         };
-        let store = self.store.lock().unwrap();
+        let mut store = self.store.lock().unwrap();
         if tables.generation != store.generation {
             tables.generation = store.generation;
             tables.arguments = 0;
@@ -210,13 +244,40 @@ impl ProgramRetention {
             &[(pass, &bind, super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1))],
         );
         self.queue.submit(Some(encoder.finish()));
-        // The status and both symbol columns in one readback; the columns
-        // are used only when the status is clean.
-        let mut read = self.read_parts(&[
+        // The status and the rewritten prefix of both symbol columns in one
+        // readback, with the export's counters while it is pending; the
+        // columns are used only when the status is clean. Only the first
+        // `undefined` rows and their identity words can change.
+        let identity_words = columns.symbol_rows[..undefined as usize * 32]
+            .chunks_exact(32)
+            .map(|row| {
+                let word = |at: usize| u32::from_le_bytes(row[at..at + 4].try_into().unwrap()) as usize;
+                (word(8) + word(12)).div_ceil(4)
+            })
+            .max()
+            .unwrap_or(0)
+            .min(columns.identity_bytes.len() / 4);
+        let mut parts = vec![
             (&status, 2),
-            (&rows, symbol_words),
-            (&identity, columns.identity_bytes.len() / 4),
-        ])?;
+            (&rows, undefined as usize * 8),
+            (&identity, identity_words),
+        ];
+        if export.is_some() {
+            parts.push((&store.buffers["rt_counts"], counts::WORDS));
+            parts.push((&store.scratch["rt_x_counts"], X_WORDS));
+        }
+        let mut read = self.read_parts(&parts)?;
+        if export.is_some() {
+            let x = read.pop().unwrap_or_default();
+            let words = read.pop().unwrap_or_default();
+            match committed_export(1, words, &x) {
+                Some(report) => {
+                    store.reports.push(report);
+                    *export = None;
+                }
+                None => return Ok(false),
+            }
+        }
         let result = read[0].clone();
         if result[0] & !4 != 0 {
             bail!("retained original call symbols failed on the GPU (status {:#x})", result[0]);
@@ -237,10 +298,12 @@ impl ProgramRetention {
         if let Some((library_id, unit_id)) = unit {
             crate::codegen::x86::park_resident_identities(device, &self.queue, library_id, unit_id, &identity, undefined);
         }
-        let identity_bytes = words_to_bytes(&read.pop().unwrap_or_default());
-        let symbol_rows = words_to_bytes(&read.pop().unwrap_or_default());
+        let identity_prefix = words_to_bytes(&read.pop().unwrap_or_default());
+        let rows_prefix = words_to_bytes(&read.pop().unwrap_or_default());
         drop(store);
-        return Ok(X86SymbolColumns { symbol_rows, identity_bytes });
+        columns.symbol_rows[..rows_prefix.len()].copy_from_slice(&rows_prefix);
+        columns.identity_bytes[..identity_prefix.len()].copy_from_slice(&identity_prefix);
+        return Ok(true);
         }
     }
 }

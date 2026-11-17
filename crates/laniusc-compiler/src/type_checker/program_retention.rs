@@ -756,13 +756,7 @@ impl ProgramRetention {
             ])?;
             let x = read.pop().unwrap_or_default();
             let words = read.pop().unwrap_or_default();
-            if words[counts::JOB_STATE] == counts::JOB_COMMITTED {
-                let report = JobReport {
-                    attempts: attempt,
-                    ready: words[counts::READY] != 0,
-                    counts: words,
-                    untranslated_records: x[188],
-                };
+            if let Some(report) = committed_export(attempt, words.clone(), &x) {
                 store.reports.push(report.clone());
                 return Ok(report);
             }
@@ -1225,6 +1219,17 @@ pub(crate) struct ExportSubmitted {
 enum Dispatch {
     Direct([u32; 3]),
     Indirect(u64),
+}
+
+/// The report of an export attempt whose counters (`rt_counts`,
+/// `rt_x_counts`) show that it committed.
+fn committed_export(attempt: u32, words: Vec<u32>, x: &[u32]) -> Option<JobReport> {
+    (words[counts::JOB_STATE] == counts::JOB_COMMITTED).then(|| JobReport {
+        attempts: attempt,
+        ready: words[counts::READY] != 0,
+        counts: words,
+        untranslated_records: x[188],
+    })
 }
 
 /// The export scratch a job needs.

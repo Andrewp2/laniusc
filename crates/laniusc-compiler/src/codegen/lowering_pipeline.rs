@@ -34,6 +34,12 @@ use crate::{
     type_checker::GpuSemanticArtifactView,
 };
 
+/// A lowering job's status and its x86 object's metadata words.
+pub(crate) struct X86ObjectStatus {
+    status: LoweringStatus,
+    metadata: Vec<u32>,
+}
+
 #[derive(Debug)]
 pub(crate) struct LoweringFailure {
     pub(crate) status: LoweringStatus,
@@ -1445,34 +1451,56 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
     ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
-        self.finish_x86_object_then(device, queue, library_id, unit_id, || {})
+        let status = self.read_x86_object_status(device)?;
+        self.finish_x86_object_then(device, queue, library_id, unit_id, status, keep, || {})
     }
 
-    /// [`Self::finish_x86_object`], running `checked` once every retry point
-    /// has passed (the status, and the object's bytes against the job's
-    /// capacities) and before the payload is read and decoded.
+    /// The job's status and its x86 object's metadata, read once for
+    /// [`Self::check_x86_object`] and [`Self::finish_x86_object_then`].
+    pub(crate) fn read_x86_object_status(&self, device: &wgpu::Device) -> Result<X86ObjectStatus> {
+        if !matches!(self.target, TargetStage::X86_64(_)) {
+            anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
+        }
+        let (status, metadata) = self.read_status(device)?;
+        Ok(X86ObjectStatus { status, metadata })
+    }
+
+    /// Whether the object passed every retry point: the status, and the
+    /// object's bytes against the job's capacities.
+    pub(crate) fn check_x86_object(&self, read: &X86ObjectStatus) -> Result<()> {
+        let TargetStage::X86_64(stage) = &self.target else {
+            anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
+        };
+        if read.status.flags != 0 {
+            return Err(LoweringFailure { status: read.status }.into());
+        }
+        // The object's artifact words hold its text and rodata together.
+        let bytes = stage.object_section_bytes(&read.metadata)?;
+        self.check_job_artifact_bytes("x86 object text and rodata", bytes)
+    }
+
+    /// Reads the object `status` describes, running `checked` once every
+    /// retry point has passed ([`Self::check_x86_object`]) and before the
+    /// payload is read and decoded. An object parked in `keep` keeps its
+    /// sections on the GPU.
     pub(crate) fn finish_x86_object_then(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
+        status: X86ObjectStatus,
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
         checked: impl FnOnce(),
     ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         let TargetStage::X86_64(stage) = &self.target else {
             anyhow::bail!("the selected lowering pipeline does not produce an x86 object")
         };
-        let (status, metadata) = self.read_status(device)?;
-        if status.flags != 0 {
-            return Err(LoweringFailure { status }.into());
-        }
-        stage.finish_object(device, queue, library_id, unit_id, &metadata, |bytes| {
-            // The object's artifact words hold its text and rodata together.
-            self.check_job_artifact_bytes("x86 object text and rodata", bytes)?;
-            checked();
-            Ok(())
-        })
+        self.check_x86_object(&status)?;
+        checked();
+        stage.finish_object(device, queue, library_id, unit_id, &status.metadata, keep)
     }
 
     pub(crate) fn finish_status(&self, device: &wgpu::Device) -> Result<LoweringStatus> {

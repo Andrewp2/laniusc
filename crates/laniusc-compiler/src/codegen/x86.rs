@@ -17,6 +17,7 @@ use crate::gpu::{
 mod link;
 pub(crate) use link::{
     GpuX86LinkInput,
+    GpuX86LinkStore,
     ParkRegion,
     ParkSources,
     ParkTicket,
