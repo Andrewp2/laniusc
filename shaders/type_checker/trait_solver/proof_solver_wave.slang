@@ -103,6 +103,18 @@ public static const uint PSW_POINT_QUEUE_ROUND = 7u;
 // starts elsewhere, and the host records rounds with both kinds.
 public static const uint PSW_POINT_OPENING_ROUND = 8u;
 public static const uint PSW_POINT_LATER_ROUND = 9u;
+// The only point of a solve without source obligations: the finish point,
+// after a test that the first work would admit nothing. Original Works are
+// reserved only by obligation initialization (48), which such a solve does
+// not record, and the transient tables start empty in every attempt. With
+// no row in the tables that the first work commits, its steps admit and
+// publish nothing (proof_frontier_stages.slang, pps_stage_reserve_goal_index
+// and pps_stage_commit_work, over a commit-audit header the host zeroed).
+// It has no root link to publish, so its steps are the call reduction (left
+// out for a check without calls) and the batch receipt. Otherwise this point
+// stops the solve (PSW_FULL_ROUND) before any step, and the host records the
+// first work and the finish point.
+public static const uint PSW_POINT_NO_WORK = 10u;
 
 // Spans (dispatch/kernels.rs, WaveSpan).
 public static const uint PSW_SPAN_FIRST_WORK = 0u;
@@ -211,6 +223,24 @@ void psw_plan_finish()
     psw_span(PSW_SPAN_FINISH_ROOTS, 0u, admitted);
     psw_span(PSW_SPAN_FINISH_CALLS, trait_solver_wave[PSW_CALLS_FIRST], trait_solver_wave[PSW_CALLS_COUNT]);
     psw_span(PSW_SPAN_FINISH_ONE, 0u, 1u);
+}
+
+// The no-Work point's test; false when it stopped the solve.
+bool psw_no_work()
+{
+    if (!psw_running()) return false;
+    bool empty = true;
+    uint tables[5] = { PPS_WORK, PPS_REQUIREMENTS, PPS_GOAL_INDEX, PPS_ROOT_LINKS, PPS_REDUCTION_QUEUE };
+    for (uint i = 0u; i < 5u; i++)
+    {
+        uint admitted; uint reserved;
+        psw_table(tables[i], admitted, reserved);
+        empty = empty && admitted == 0u && reserved == 0u;
+    }
+    if (empty) return true;
+    trait_solver_wave[PSW_STOP] = PSW_FULL_ROUND;
+    trait_solver_wave[PSW_OVERFLOW_POINT] = PSW_POINT_NO_WORK;
+    return false;
 }
 
 // What planning one point decided for psw_plan.
@@ -364,7 +394,10 @@ public void psw_plan()
         select(point == PSW_POINT_EXPANDED, PSW_SPAN_QUEUE,
         select(point == PSW_POINT_QUEUE, PSW_SPAN_FINISH_ROOTS, PSW_SPANS)))));
     for (uint span = first_span; span < end_span; span++) psw_span(span, 0u, 0u);
-    uint planned = psw_plan_spans(point);
+    // The no-Work point plans as the finish point once its test passed.
+    uint planned = PSW_PLANNED;
+    if (point != PSW_POINT_NO_WORK || psw_no_work())
+        planned = psw_plan_spans(select(point == PSW_POINT_NO_WORK, PSW_POINT_FINISH, point));
     if (point == PSW_POINT_QUEUE_ROUND)
     {
         // The queue point's planner, which plans nothing once this round

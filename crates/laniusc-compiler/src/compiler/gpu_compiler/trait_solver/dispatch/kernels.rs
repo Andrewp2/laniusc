@@ -956,6 +956,11 @@ pub(super) enum WavePoint {
     /// elsewhere.
     OpeningRound = 8,
     LaterRound = 9,
+    /// The only point of a solve without source obligations: the finish
+    /// point after a test that no Work exists and the first work would
+    /// commit nothing. Otherwise it stops the solve with `wave::FULL_ROUND`
+    /// before any step.
+    NoWork = 10,
 }
 impl WavePoint {
     pub const ROUND: [WavePoint; 4] = [
@@ -993,6 +998,7 @@ impl WavePoint {
             WavePoint::QueueRound,
             WavePoint::OpeningRound,
             WavePoint::LaterRound,
+            WavePoint::NoWork,
         ]
             .into_iter()
             .chain(Self::ROUND)
@@ -1004,6 +1010,7 @@ impl WavePoint {
         match self {
             WavePoint::FirstWork => &[WavePoint::FirstWork],
             WavePoint::Finish => &[WavePoint::Finish],
+            WavePoint::NoWork => &[WavePoint::NoWork],
             WavePoint::QueueRound => &Self::QUEUE_ROUND,
             WavePoint::OpeningRound => &Self::OPENING_ROUND,
             WavePoint::LaterRound => &Self::LATER_ROUND,
@@ -1024,8 +1031,13 @@ impl WavePiece {
     pub fn whole(point: WavePoint) -> Self {
         Self { point, first: 0, end: usize::MAX }
     }
-    /// Groups `first..end` of the point, for a test pause inside it.
-    #[cfg(test)]
+    /// The no-Work point, with the call reduction only when the check has
+    /// calls.
+    pub fn no_work(calls: u32) -> Self {
+        Self::groups(WavePoint::NoWork, usize::from(calls == 0), usize::MAX)
+    }
+    /// Groups `first..end` of the point: a test pause inside it, or the
+    /// no-Work point without its call reduction.
     pub fn groups(point: WavePoint, first: usize, end: usize) -> Self {
         Self { point, first, end }
     }
@@ -1163,6 +1175,10 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             // The reduction queue commits at the next planner
             // (proof_solver_wave.slang, psw_commit_queue).
         ],
+        // The no-Work point's test found no root link, so it has no root to
+        // publish. Its call reduction is left out when the check has no
+        // call (no_work_piece).
+        WavePoint::NoWork => vec![(FinishCalls, vec![stage(18)?]), (FinishOne, vec![stage(19)?])],
         // Root publication, call reduction and the batch receipt.
         WavePoint::Finish => vec![
             (FinishRoots, vec![stage(64)?]),

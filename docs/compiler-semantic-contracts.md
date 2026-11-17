@@ -425,7 +425,12 @@ A check records its solver rounds, then a finish point
 (`proof_solver_wave.slang`). The finish point runs the round-start quiescence
 test. A quiescent solve publishes its roots, reduces its calls and writes the
 batch receipt there. The first submit records two full rounds and three queue
-rounds, or no round for a check without source obligations.
+rounds. A check without source obligations records only a no-Work point: its
+planner tests that no Work exists and that the transient tables the first work
+commits are empty, then runs the batch receipt, after the call reduction when
+the check has calls; it has no root to publish. Otherwise it stops with
+`FULL_ROUND` before any step, and the host records the first work and the
+finish point.
 
 - Work is admitted only at the first work and at a full round's expansion, so
   a round without Work runs only its queue steps. A queue round records just
