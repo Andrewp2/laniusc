@@ -690,7 +690,7 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
     (
         40,
         "type_checker/trait_solver/entries/40_initialize_proof_store",
-        1,
+        256,
     ),
     (
         41,
