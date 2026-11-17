@@ -9,7 +9,7 @@ pub use backends::GpuCompilerBackends;
 pub use retained_native::{RetainedNativeBuild, RetainedNativeReport};
 mod benchmarks;
 mod trait_solver;
-pub use trait_solver::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+pub use trait_solver::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 mod bounded_path_codegen;
 mod buffers;
 mod descriptor_work_queue;

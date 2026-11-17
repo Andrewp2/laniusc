@@ -823,6 +823,57 @@ fn main()->i32 {
 fn retained_native_bounded_direct_calls_consume_gpu_proofs() {
     common::run_with_timeout("retained bounded direct calls", || {
         let directory = std::env::temp_dir().join(format!("lanius-retained-bounds-{}", std::process::id()));
+        let manifest = bounds_manifest(&directory);
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for batch_rows in [8,4096] {
+            build.options.batch_rows=batch_rows;
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+
+            assert_eq!(build.report.discovery.instances,9);
+            assert!(build.report.discovery.closed_trait_waves >= 3);
+            assert_eq!(build.report.catalog.as_ref().unwrap().publication_status,Some([1,0,u32::MAX]));
+            let output=common::run_x86_64_elf_output("retained bounds","retained_bounds",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+// Tiny discovery capacities overflow inside a chain of closed waves: the
+// chain comes back with the overflow, the capacities grow and the attempt
+// runs the chain again. The second build fits in the grown capacities.
+#[test]
+fn retained_native_closed_chain_retries_with_grown_capacity() {
+    common::run_with_timeout("retained closed chain retry", || {
+        let directory = std::env::temp_dir().join(format!("lanius-retained-closed-retry-{}", std::process::id()));
+        let manifest = bounds_manifest(&directory);
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        for pass in 0..2 {
+            let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build)).unwrap();
+            let discovery = &build.report.discovery;
+            eprintln!("pass {pass}: discovery {discovery:?}");
+            assert_eq!(discovery.instances, 9);
+            assert!(discovery.closed_trait_waves >= 3, "{discovery:?}");
+            assert!(discovery.closed_chains > 0, "{discovery:?}");
+            assert_eq!(discovery.closed_chain_fallbacks, 0, "{discovery:?}");
+            if pass == 0 {
+                assert!(discovery.closed_chain_growths > 0, "tiny capacities grow inside the chain: {discovery:?}");
+            } else {
+                assert_eq!(discovery.closed_chain_growths, 0, "{discovery:?}");
+            }
+            let output = common::run_x86_64_elf_output("retained closed retry", "retained_closed_retry", &elf);
+            assert_eq!(output.status.code(), Some(42), "{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+/// Writes the bounded direct calls program to `directory`: `outer`,
+/// `middle` and `keep` with a `Mark` bound, called with three types, so
+/// discovery solves three waves of closed instances. `main` returns 42.
+fn bounds_manifest(directory: &std::path::Path) -> ExplicitSourcePackPathManifest {
         std::fs::create_dir_all(&directory).unwrap();
         let lib = directory.join("lib.lani");
         let app = directory.join("app.lani");
@@ -850,20 +901,7 @@ fn main()->i32 {
             ExplicitSourceLibraryPaths { library_id:1, paths:vec![lib], dependency_library_ids:vec![] },
             ExplicitSourceLibraryPaths { library_id:2, paths:vec![app], dependency_library_ids:vec![1] },
         ]).unwrap();
-        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
-        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
-        for batch_rows in [8,4096] {
-            build.options.batch_rows=batch_rows;
-            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
-
-            assert_eq!(build.report.discovery.instances,9);
-            assert!(build.report.discovery.closed_trait_waves >= 3);
-            assert_eq!(build.report.catalog.as_ref().unwrap().publication_status,Some([1,0,u32::MAX]));
-            let output=common::run_x86_64_elf_output("retained bounds","retained_bounds",&elf);
-            assert_eq!(output.status.code(),Some(42),"{output:?}");
-        }
-        std::fs::remove_dir_all(directory).ok();
-    });
+        manifest
 }
 
 /// Writes the compound generic fields program to `directory`: generic

@@ -9,7 +9,7 @@
 //! nothing and accepts no result: the solver's catalog admission, coherence
 //! and proof kernels consume the GPU-written rows unchanged.
 mod closed;
-pub use closed::{ClosedTraitCheck, ClosedTraitPublication};
+pub use closed::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication};
 
 use std::{collections::BTreeMap, sync::Arc};
 

@@ -6,8 +6,21 @@ RWStructuredBuffer<uint4> pj_readiness;
 RWStructuredBuffer<uint4> dg_root_routes;
 RWStructuredBuffer<uint4> dg_root_readiness;
 // A chain of waves (mode 3): words 0-2 the current wave's (lo, hi, edges),
-// then (lo, hi) of chained wave i at 4 + 2i.
+// word 3 the instances with closed predicates before it, then (lo, hi) of
+// chained wave i at 4 + 2i.
 RWStructuredBuffer<uint> dg_wave;
+// Mode 4: a chained closed solve's receipt (route header, solver state,
+// batch receipt), and the workgroups of its method routes (seven kernels)
+// and of the bound routes, which the receipt gates.
+StructuredBuffer<uint> dg_receipt;
+RWStructuredBuffer<uint> dg_route_args;
+RWStructuredBuffer<uint> dg_bound_args;
+void write_groups(uint at, uint groups, bool run)
+{
+    dg_route_args[at]=run ? min(groups,65535u) : 0u;
+    dg_route_args[at+1u]=run ? (groups+65534u)/65535u : 0u;
+    dg_route_args[at+2u]=run ? 1u : 0u;
+}
 uint4 route_of(uint4 route,bool root)
 {
     if(route.x==1u) return uint4(0xfffffffeu,0xffff0002u,dg_rank[route.y],dg_config[15]);
@@ -24,17 +37,50 @@ void main(uint3 id: SV_DispatchThreadID)
         // The next chained wave expands the instances the last one
         // inserted, unless the host must decide first: a failure or
         // overflow, or new instances with closed predicates (status 11
-        // differs from config 14), which need the closed solver. Then the
-        // wave's frontier is empty and it does nothing.
+        // differs from dg_wave word 3), which need the closed solver. Then
+        // the wave's frontier is empty and it does nothing. A wave that
+        // records its closed solve (config 11 set) takes new closed
+        // predicates itself.
         if(lane==0u)
         {
             uint lo=dg_wave[1];
-            bool go=dg_status[11]==dg_config[14] && dg_status[12]==0u && dg_status[3]==0u
+            bool go=(dg_config[11]!=0u || dg_status[11]==dg_wave[3]) && dg_status[12]==0u && dg_status[3]==0u
                 && dg_status[10]==0u && dg_status[6]==RT_INVALID;
             uint hi=go ? max(dg_status[0],lo) : lo;
             dg_wave[0]=lo; dg_wave[1]=hi; dg_wave[2]=dg_status[2];
             uint at=4u+2u*(dg_config[8]-1u);
             dg_wave[at]=lo; dg_wave[at+1u]=hi;
+        }
+        return;
+    }
+    if(dg_config[0]==4u)
+    {
+        // A chained closed solve's receipt, copied into dg_receipt. A solve
+        // that ran must have placed its batch (producer word 31 zero) and
+        // finished (solver stop word, receipt word 64, is 2): otherwise
+        // the chain stops with code 12 and the host runs the attempt again
+        // without it. A skipped solve (producer word 16) has no proofs, so
+        // the wave's method and bound routes dispatch no workgroups, as do
+        // those of a failed one. Config words 10, 12 and 13 are the
+        // workgroups of the routes' proof-sized, request-sized and
+        // term-slot-sized kernels (words 1 to 3 hold the frontier).
+        if(lane==0u)
+        {
+            uint producer=dg_receipt[31];
+            bool solved=producer==0u && dg_receipt[64]==2u;
+            if(producer!=16u && !solved && dg_status[10]==0u) dg_status[10]=12u;
+            bool run=solved && dg_status[10]==0u && dg_status[12]==0u;
+            uint requests=dg_config[12];
+            write_groups(0u,dg_config[10],run);
+            write_groups(3u,requests,run);
+            write_groups(6u,1u,run);
+            write_groups(9u,1u,run);
+            write_groups(12u,requests,run);
+            write_groups(15u,1u,run);
+            write_groups(18u,dg_config[13],run);
+            dg_bound_args[0]=run ? min(requests,65535u) : 0u;
+            dg_bound_args[1]=run ? (requests+65534u)/65535u : 0u;
+            dg_bound_args[2]=run ? 1u : 0u;
         }
         return;
     }
