@@ -21,8 +21,6 @@ pub(crate) use link::{
     ParkRegion,
     ParkSources,
     ParkTicket,
-    NativeImportPrefetch,
-    prefetch_native_imports,
     ResidentObjectKey,
     ResidentRoutes,
     ResidentSections,

@@ -379,14 +379,6 @@ impl GpuCompiler<'_> {
     ) -> Result<ResidentLinkedOutput, CompileError> {
         let spill = object_store.file_object();
         let store = build.store.clone();
-        // The resident link's C name resolution reads only the system's
-        // libraries, so it runs on a worker while the GPU works.
-        let import_prefetch = match &build.native_link {
-            Some(options) if resident && spill && target == SourcePackArtifactTarget::X86_64 => {
-                x86::prefetch_native_imports(native_functions, options)
-            }
-            _ => None,
-        };
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
         // cannot replace catalog admission.
@@ -497,7 +489,7 @@ impl GpuCompiler<'_> {
                     route_capacity: roots.root_route_capacity,
                 };
                 match keys.map(|keys| linker.begin_resident_dynamic(
-                    &self.gpu.device, &self.gpu.queue, &keys, native_functions, options, routes, import_prefetch)) {
+                    &self.gpu.device, &self.gpu.queue, &keys, native_functions, options, routes)) {
                     Some(Ok(plan)) => plan,
                     Some(Err(error)) => {
                         log::warn!("resident x86 link failed, linking on the host: {error:#}");
