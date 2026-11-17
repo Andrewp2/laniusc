@@ -344,8 +344,11 @@ result.
 - **`00_clear`** empties the slots and sets every candidate and dependency
   node to `CT_PENDING`.
 - **`01_intern`** performs one round.
-  - Round 0 is a direct dispatch over all candidates: constants first, then
-    rows from the last.
+  - Round 0 of the early, body and late stages is an indirect dispatch over
+    `canonical_pending`, the candidates the stage's re-arm (`03a_rearm_list`)
+    left pending, listed constants first, then rows from the last;
+    `03b_rearm_args` sizes it. A dependency page's round 0 is a direct
+    dispatch over the page's nodes.
   - Rounds after that are indirect dispatches over the frontier list the
     previous round produced.
   - A candidate whose child is still pending appends itself to the next
@@ -417,27 +420,29 @@ Each job interns into one table, so an ID stays valid for the whole job.
   publishing a pending target ID. After the last page, 08 realizes the
   targets as rows (twice with retry, then 08a reports a busy row). Alias
   normalization then rewrites rows 14a interned, so 14a sets
-  `CT_COUNT_EARLY_REARM` and the early `03_rearm` re-arms every interned
-  candidate, as a body replay's late one does; round 0 of `01_intern` clears
-  the flag. An unchanged key adopts its existing record. The post-early
+  `CT_COUNT_EARLY_REARM` and the early re-arm re-arms every interned
+  candidate, as a body replay's late one does; the early `03b_rearm_args`
+  clears the flag. An unchanged key adopts its existing record. The post-early
   substitution clear drops the rows 08 recorded.
-- **Early** (`03_rearm`, then rounds). It is recorded unconditionally after
+- **Early** (`03a_rearm_list`, `03b_rearm_args`, then rounds). It is recorded unconditionally after
   the declaration refs (`type_instances.decl_refs_for_bindings`) and before
   `type_instances.index_closed_applications`. It interns the source rows and
   the constants that exist by then.
-- **Late** (`03_rearm`, then rounds). It is recorded before
-  `semantic_artifact.generic_native_words`. `03_rearm` sets every candidate
-  that is `CT_NONE` or `CT_UNKNOWN` back to `CT_PENDING` and keeps the rest,
-  and round 0 skips every candidate that is not pending. A candidate that is
-  still empty (a row without a kind, an atom without a value, a projection
-  without an operand) gets `CT_NONE` from `03_rearm` directly, the reference
-  interning would give it, so round 0 does not intern the empty slots of the
-  capacity-sized tables (5.4 million candidates on the settings app, about
-  11,000 records). This stage
+- **Late** (`03a_rearm_list`, `03b_rearm_args`, then rounds). It is
+  recorded before `semantic_artifact.generic_native_words`. The re-arm
+  (`canonical_rearm.slang`) sets every candidate that is `CT_NONE` or
+  `CT_UNKNOWN` back to `CT_PENDING`, keeps the rest, and lists the pending
+  ones for round 0. A candidate that is still empty (a row without a kind,
+  an atom without a value, a projection without an operand) gets `CT_NONE`
+  directly, the reference interning would give it, so round 0 neither
+  interns nor visits the empty slots of the capacity-sized tables (5.4
+  million candidates on the settings app, about 11,000 records). The list
+  holds every candidate (`canonical_pending`, four bytes per candidate), so
+  it cannot overflow. This stage
   picks up what was produced in between: materialized and generated
   applications, body specialization, generic call results, and constants
   published during inference.
-- **Body** (`03_rearm`, then rounds). A job with body specialization
+- **Body** (`03a_rearm_list`, `03b_rearm_args`, then rounds). A job with body specialization
   records it right after `body_specialization.bindings`, then restarts the
   substitution state (`substitution.body.clear`, `substitution.body.seed`),
   so the body passes after it read the IDs of the specialized rows. It
@@ -446,7 +451,7 @@ Each job interns into one table, so an ID stays valid for the whole job.
 - **Body replay re-interns.** A replay job (`body_specialization_inputs`
   has a type or constant argument) rewrites rows and constants after the
   early stage: 00f points `T` at the replayed graph, so `[T; 2]` becomes
-  `[i32; 2]` in place. Its body and late `03_rearm` therefore re-arm every
+  `[i32; 2]` in place. Its body and late re-arms therefore re-arm every
   candidate. A candidate adopts an equal published record or takes a new
   one, so unchanged rows keep their IDs, and the early records stay valid
   for the references that still name them. The substitution restart drops
