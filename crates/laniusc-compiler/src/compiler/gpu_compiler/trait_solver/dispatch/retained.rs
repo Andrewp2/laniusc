@@ -37,7 +37,7 @@ use crate::{
         passes_core::{self, PassData, make_pass_data_from_shader_key},
         readback::{PagedReadback, ReadbackRegion},
     },
-    type_checker::program_retention::{ProgramRetention, ProgramRetentionCapacity, counts},
+    type_checker::program_retention::{ExportFollower, ProgramRetention, ProgramRetentionCapacity, counts},
 };
 
 const KEYS: [&str; 23] = [
@@ -479,7 +479,7 @@ pub(in crate::compiler::gpu_compiler) fn check(
     store: &ProgramRetention,
     options: &RetainedTraitOptions,
 ) -> Result<RetainedTraitCheck> {
-    let (mut report, publication) = publish(workspace, store, options)?;
+    let (mut report, publication) = publish(|| workspace, store, options)?;
     if let Some(publication) = &publication {
         report.publication_status = Some(publication.status()?);
     }
@@ -488,8 +488,12 @@ pub(in crate::compiler::gpu_compiler) fn check(
 
 /// `check`, keeping the solved catalog, packet and proof store alive as a
 /// GPU publication when the solver ran.
+///
+/// When the count passes ran behind the build's last export
+/// ([`record_count_follower`]), the run continues from their state and
+/// workspace and `workspace` is not called.
 pub(in crate::compiler::gpu_compiler) fn publish(
-    workspace: WorkspaceLease,
+    workspace: impl FnOnce() -> WorkspaceLease,
     store: &ProgramRetention,
     options: &RetainedTraitOptions,
 ) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
@@ -497,8 +501,17 @@ pub(in crate::compiler::gpu_compiler) fn publish(
     let readbacks_before = passes_core::readback_round_trips();
     let committed = store.job_reports().len();
     let (capacity, _) = store.capacity();
+    let followed = store.take_followed_words().and_then(|followed| {
+        let count = followed.state.downcast::<CountPass>().ok()?;
+        let state = followed.words.into_iter().next()?;
+        (options.unit_slots.is_none() && options.closure_waves.is_none()).then_some((*count, state))
+    });
+    let workspace = match &followed {
+        Some((count, _)) => count.workspace.clone(),
+        None => workspace(),
+    };
     let (mut report, mut publication) =
-        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, &capacity, options, None))?;
+        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, &capacity, options, followed))?;
     if let Some(publication) = &mut publication {
         publication.store_jobs = committed;
     }
@@ -507,6 +520,32 @@ pub(in crate::compiler::gpu_compiler) fn publish(
     report.readbacks = readbacks.0 - readbacks_before.0;
     report.readback_wait_ns = readbacks.1 - readbacks_before.1;
     Ok((report, publication))
+}
+
+/// Records the producer's count passes for the export the store is about to
+/// commit, sized from the store's capacities: the native call rewrite
+/// submits them behind itself and reads the producer state with its own
+/// readback, and [`publish`] continues from that state (default options).
+pub(in crate::compiler::gpu_compiler) fn record_count_follower(
+    workspace: &WorkspaceLease,
+    store: &ProgramRetention,
+) -> Result<Option<ExportFollower>> {
+    let (capacity, _) = store.capacity();
+    let generation = store.generation();
+    let count = CountPass::new(workspace.clone(), generation, &capacity, CLOSURE_WAVES, 0)?;
+    let mut encoder = workspace.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("trait_solver.retained_count"),
+    });
+    let batch = passes_core::DeferredComputeBatchGuard::begin(
+        passes_core::compute_pass_batching_allowed(false),
+        "trait_solver.retained_count",
+    );
+    store.with_store_buffers(|buffers, _| count.record(&mut encoder, buffers))?;
+    passes_core::flush_deferred_compute(&mut encoder);
+    drop(batch);
+    ensure!(count.scratch.state.byte_offset == 0, "retained producer state is not at the start of its buffer");
+    let reads = vec![(count.scratch.state.buffer.clone(), COUNT_READ_WORDS)];
+    Ok(Some(ExportFollower { commands: encoder.finish(), reads, state: Box::new(count) }))
 }
 
 /// The recorded steps of a bitonic sort over `width` keys: (k, j) is one

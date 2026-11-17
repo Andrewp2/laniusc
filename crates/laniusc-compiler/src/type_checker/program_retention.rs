@@ -476,6 +476,9 @@ pub(crate) struct ExportFollower {
     pub(crate) commands: wgpu::CommandBuffer,
     /// Buffers whose first `words` words are read with the rewrite.
     pub(crate) reads: Vec<(wgpu::Buffer, usize)>,
+    /// The recorder's own state (its buffers and plan), returned with the
+    /// words in [`FollowedWords::state`].
+    pub(crate) state: Box<dyn std::any::Any + Send + Sync>,
 }
 
 /// Records the [`ExportFollower`] of the store's current state, or none.
@@ -490,14 +493,14 @@ struct PreparedFollower {
 
 /// What an [`ExportFollower`]'s reads returned, and after which committed
 /// export of which build.
-// The trait catalog's count pass will set and consume the follower.
-#[allow(dead_code)]
 pub(crate) struct FollowedWords {
     pub(crate) generation: u32,
     /// Committed exports of the build when the follower ran (it followed
     /// the last one).
     pub(crate) jobs: usize,
     pub(crate) words: Vec<Vec<u32>>,
+    /// [`ExportFollower::state`].
+    pub(crate) state: Box<dyn std::any::Any + Send + Sync>,
 }
 
 /// One job's export inputs, copied into buffers the store owns when the
@@ -706,7 +709,6 @@ impl ProgramRetention {
     /// buffers it bound, and records the attempt again otherwise. A job that
     /// is retried or fails drops it with its snapshot.
     /// Sets the recorder of the work that follows each export.
-    #[allow(dead_code)]
     pub(crate) fn set_export_follower(&self, recorder: Option<ExportFollowerRecorder>) {
         *self.follower_recorder.lock().unwrap() = recorder;
         *self.follower.lock().unwrap() = None;
@@ -723,6 +725,9 @@ impl ProgramRetention {
         let Some(recorder) = recorder.as_ref() else {
             return Ok(());
         };
+        // A later export supersedes the words of an earlier one; dropping
+        // them first releases the buffers they hold for this recording.
+        *self.followed.lock().unwrap() = None;
         let (epoch, generation) = {
             let store = self.store.lock().unwrap();
             (store.epoch, store.generation)
@@ -744,7 +749,6 @@ impl ProgramRetention {
     }
 
     /// The words of the follower that ran behind this build's last export.
-    #[allow(dead_code)]
     pub(crate) fn take_followed_words(&self) -> Option<FollowedWords> {
         let followed = self.followed.lock().unwrap().take()?;
         let store = self.store.lock().unwrap();

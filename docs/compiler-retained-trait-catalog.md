@@ -38,6 +38,21 @@ replays sources, and this path does not remove that replay. The list under
    store's width dispatch no workgroups. The one state readback returns the
    counters the host uses for the fill. The producer writes nothing into
    the store.
+
+   In a retained native build the count passes follow each export
+   (`record_count_follower`, installed with
+   `ProgramRetention::set_export_follower` for the originals). The host
+   records them while it waits on the frontend's metadata read; the
+   native call rewrite submits them with its own command buffer in one
+   submit and reads the producer state with its readback. `publish` takes
+   the words of the build's last committed export
+   (`take_followed_words`) and continues in the follower's workspace
+   lease, without its own count submit or state readback. The lease comes
+   from a pool only the retained catalog uses
+   (`GpuCompiler::retained_trait_workspace`), so other solver work never
+   holds it. Words of an export that did not commit, non-default options,
+   or counters beyond the recorded capacities (state word 27) fall back to
+   the count submit above. Settings: 45 to 44 round trips per build.
 2. Pass `00_mark` reads each committed job's (library, unit) from `rt_jobs`,
    including jobs with no declarations, and checks directory ownership. It also
    counts each trait's required members and marks callers that own a
