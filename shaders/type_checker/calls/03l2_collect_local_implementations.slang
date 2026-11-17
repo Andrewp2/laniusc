@@ -179,6 +179,7 @@ void collect_predicate(uint row)
         uint id = lane == 0u ? part.x : lane == 1u ? part.y : lane == 2u ? part.z : part.w;
         bound_predicate_rows[base + 9u + ordinal] = ordinal < range.count ? id : CT_NONE;
     }
+    bound_mark_owner(uint3(BOUND_LOCAL_IMPLEMENTATION, 1u, owner));
 }
 
 [shader("compute")]

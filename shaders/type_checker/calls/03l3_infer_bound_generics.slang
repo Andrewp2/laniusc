@@ -409,6 +409,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         owner = uint3(BOUND_LOCAL_IMPLEMENTATION, 1u, function);
         types = min(type_decl_generic_param_count[target], 32u);
     }
+    // A callee without a collected bound infers nothing (bound_tables.slang).
+    if (!bound_owner_may_have_predicates(owner)) return;
     bool open = false;
     for (uint slot = 0u; slot < types; slot++)
     {

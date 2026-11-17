@@ -249,6 +249,33 @@ impl ComputeOperation {
         )
     }
 
+    /// Builds an indirect operation that binds `params` to the uniform
+    /// `binding` in place of the shared one.
+    pub(crate) fn indirect_with_uniform<T>(
+        device: &wgpu::Device,
+        graph: &impl ComputeGraph,
+        resources: &ResourceMap<'_>,
+        name: &'static str,
+        pass: &PassData,
+        dispatch_args: &LaniusBuffer<u32>,
+        binding: &'static str,
+        params: &LaniusBuffer<T>,
+    ) -> Result<Self> {
+        let mut resources = ResourceOverlay::new(resources);
+        resources.buffer(binding, params);
+        Self::new_with_overlay(
+            device,
+            graph,
+            resources,
+            name,
+            pass,
+            Dispatch::Indirect {
+                args: dispatch_args.clone(),
+                offset: 0,
+            },
+        )
+    }
+
     pub(crate) fn indirect(
         device: &wgpu::Device,
         graph: &impl ComputeGraph,

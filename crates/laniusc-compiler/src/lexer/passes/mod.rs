@@ -77,12 +77,37 @@ impl LexerPasses {
     }
 }
 
-/// Records the full lexer pass sequence for the current resident buffers.
+/// Records the full lexer pass sequence for the current resident buffers:
+/// the lexer's passes, then the desugaring.
 pub fn record_all_passes(
     n: u32,
     nb_dfa: u32,
     nb_sum: u32,
     mut ctx: crate::gpu::passes_core::PassContext<'_, GpuBuffers, super::debug::DebugOutput>,
+    p: &LexerPasses,
+) -> Result<(), anyhow::Error> {
+    record_lexer_passes(n, nb_dfa, nb_sum, &mut ctx, p)?;
+    record_desugar_passes(&mut ctx, p)
+}
+
+/// Records the desugaring after the token build of `record_lexer_passes`.
+pub fn record_desugar_passes(
+    ctx: &mut crate::gpu::passes_core::PassContext<'_, GpuBuffers, super::debug::DebugOutput>,
+    p: &LexerPasses,
+) -> Result<(), anyhow::Error> {
+    let _operation_capture = ctx
+        .maybe_timer
+        .as_deref()
+        .map(crate::gpu::timer::GpuTimer::capture_operations);
+    crate::compiler::desugar::record(ctx, &p.desugaring)
+}
+
+/// Records the lexer's passes up to the token build.
+pub fn record_lexer_passes(
+    n: u32,
+    nb_dfa: u32,
+    nb_sum: u32,
+    ctx: &mut crate::gpu::passes_core::PassContext<'_, GpuBuffers, super::debug::DebugOutput>,
     p: &LexerPasses,
 ) -> Result<(), anyhow::Error> {
     use InputElements::Elements1D as E1;
@@ -101,6 +126,7 @@ pub fn record_all_passes(
         && !crate::gpu::timer::operation_capture_requires_split_passes()
         && !validation_scopes_enabled();
     if can_batch {
+        let lexer_span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.record.lexer_passes");
         {
             let bg_cache = ctx
                 .bg_cache
@@ -116,7 +142,7 @@ pub fn record_all_passes(
             )?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_01, E1(n))?;
         }
-        p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
+        p.dfa_02.record_pass(ctx, E1(nb_dfa))?;
         {
             let bg_cache = ctx
                 .bg_cache
@@ -126,7 +152,7 @@ pub fn record_all_passes(
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.dfa_03, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.pair_01, E1(n))?;
         }
-        p.pair_02.record_pass(&mut ctx, E1(nb_sum))?;
+        p.pair_02.record_pass(ctx, E1(nb_sum))?;
         {
             let bg_cache = ctx
                 .bg_cache
@@ -138,20 +164,21 @@ pub fn record_all_passes(
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
         }
-        return crate::compiler::desugar::record(&mut ctx, &p.desugaring);
+        drop(lexer_span);
+        return Ok(());
     }
 
     p.source_file_boundaries
-        .record_pass(&mut ctx, E1(source_file_capacity))?;
-    p.dfa_01.record_pass(&mut ctx, E1(n))?;
-    p.dfa_02.record_pass(&mut ctx, E1(nb_dfa))?;
-    p.dfa_03.record_pass(&mut ctx, E1(n))?;
-    p.pair_01.record_pass(&mut ctx, E1(n))?;
-    p.pair_02.record_pass(&mut ctx, E1(nb_sum))?;
-    p.pair_03.record_pass(&mut ctx, E1(n))?;
+        .record_pass(ctx, E1(source_file_capacity))?;
+    p.dfa_01.record_pass(ctx, E1(n))?;
+    p.dfa_02.record_pass(ctx, E1(nb_dfa))?;
+    p.dfa_03.record_pass(ctx, E1(n))?;
+    p.pair_01.record_pass(ctx, E1(n))?;
+    p.pair_02.record_pass(ctx, E1(nb_sum))?;
+    p.pair_03.record_pass(ctx, E1(n))?;
     // Run KEPT compaction before ALL to enable buffer reuse
-    p.compact_kept.record_pass(&mut ctx, E1(n))?;
-    p.compact_all.record_pass(&mut ctx, E1(n))?;
-    p.tokens_build.record_pass(&mut ctx, E1(n))?;
-    crate::compiler::desugar::record(&mut ctx, &p.desugaring)
+    p.compact_kept.record_pass(ctx, E1(n))?;
+    p.compact_all.record_pass(ctx, E1(n))?;
+    p.tokens_build.record_pass(ctx, E1(n))?;
+    Ok(())
 }

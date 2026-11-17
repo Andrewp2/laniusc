@@ -144,15 +144,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_context_arg_mask[i] = 0u;
         call_context_constant_mask[i] = 0u;
         call_context_constant_valid_mask[i] = 0u;
-        // The 32 slots of the first `contexts` rows, words [0, 32 * contexts):
-        // lane i clears words i, i + contexts, ..., so consecutive lanes
-        // write consecutive words.
-        uint contexts = min(hir_rows, context_capacity);
-        for (uint slot = 0u; slot < 32u; slot++)
-        {
-            call_context_ref_tag[i + slot * contexts] = 0u;
-            call_context_ref_payload[i + slot * contexts] = INVALID;
-        }
+        // The 32 slots per row (call_context_ref_tag and _payload, and the
+        // constant columns) are not cleared: every reader checks the slot's
+        // bit in these masks first, and every writer sets a bit only for a
+        // slot it wrote (docs/compiler-call-inference-rounds.md).
     }
     if (i < gParams.n_tokens)
     {

@@ -177,6 +177,9 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) materialize_match_payloads: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_source_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_type_index_clear: Option<ComputeOperation>,
+    /// Lists the live type rows the rounds' row passes visit, before the
+    /// rounds (type/instances/live_type_row_list.slang).
+    pub(in crate::type_checker) type_row_list: Option<TypeRowListOperations>,
     pub(in crate::type_checker) return_type_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_imported_fields: Option<ComputeOperation>,
     pub(in crate::type_checker) project_expression_types: Option<ComputeOperation>,
@@ -208,6 +211,15 @@ pub(in crate::type_checker) struct CallBindGroups {
 }
 
 /// The passes of bound-directed generic call inference.
+pub(in crate::type_checker) struct TypeRowListOperations {
+    /// Zeroes the list's count.
+    pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
+    /// Lists the source rows that hold a type.
+    pub(in crate::type_checker) list: ComputeOperation,
+    /// Sizes the listed passes' dispatch.
+    pub(in crate::type_checker) args: ComputeOperation,
+}
+
 pub(in crate::type_checker) struct BoundInferenceOperations {
     /// Zeroes the bound tables' counts, before the local collection.
     pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
