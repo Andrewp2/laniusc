@@ -12,8 +12,7 @@ public RWStructuredBuffer<uint4> cw_decl; // nominal atom, owner row, callable r
 public RWStructuredBuffer<uint> cw_param;
 public globallycoherent RWStructuredBuffer<uint> cw_atom_slots;
 public globallycoherent RWStructuredBuffer<uint> cw_reach;
-public RWStructuredBuffer<uint> cw_front;
-public RWStructuredBuffer<uint> cw_indirect;
+public globallycoherent RWStructuredBuffer<uint> cw_front;
 public RWStructuredBuffer<uint4> cw_scan_a;
 public RWStructuredBuffer<uint4> cw_scan_b;
 // Per 256-lane block of the count scan: its two totals, then their

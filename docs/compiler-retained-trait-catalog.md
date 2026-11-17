@@ -204,8 +204,7 @@ The host records 16 waves by default
 the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
 the waves and runs every count pass again, as it does for a full unit
 table. Every wave binds the same buffers, so the host creates one bind
-group per closure pass and reuses it for all waves. The closed instance
-producer does the same for its BFS rounds, and the method routes create
+group per closure pass and reuses it for all waves. The method routes create
 one bind group per (kernel, config slot) for their fixed-point rounds.
 `02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
@@ -431,16 +430,18 @@ This supplies concrete implementation evidence for bound-member routing;
 the method-routing bridge is still being connected. Direct bounded calls
 continue to check their source proof as well.
 
-The producer scans live term slots, walks the reached graph in bounded GPU
-rounds, and scans eight counters per term or instance. Constant atoms share
-the catalog's identity when present. The first batch records 8 rounds. The
-count pass sets producer state word 5 when the frontier is still pending.
-The host then records twice as many further rounds and repeats the
-idempotent constant, count, scan and total passes, up to 65 rounds in all.
-A frontier still pending after 65 rounds is failure code 7, as before. The
-settings app needs one batch per wave. The whole-term scans remain.
+The producer scans live term slots, walks the reached graph, and scans eight
+counters per term or instance. Constant atoms share the catalog's identity
+when present. The walk (`closed/03_wave`) is one dispatch of one 256-lane
+workgroup. It loops over levels: each level expands the terms the previous
+level appended to `cw_front`, with a workgroup barrier between levels, and
+the loop stops at an empty level or after 65 levels. Retained type height is
+bounded by 64, so 65 levels consume any valid frontier. The count pass sets
+producer state word 5 when the frontier is still pending, which is failure
+code 7, as before. Each wave needs one submit and one readback. The
+whole-term scans remain.
 
-The counter scan (`closed/07_scan`) is a block scan in three dispatches
+The counter scan (`closed/06_scan`) is a block scan in three dispatches
 for any lane count: each 256-lane workgroup scans its lanes' two `uint4`
 counter blocks in shared memory and writes its totals to `cw_blocks`, one
 workgroup turns the totals into exclusive prefixes, and a last pass adds
