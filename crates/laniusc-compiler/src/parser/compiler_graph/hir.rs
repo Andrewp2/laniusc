@@ -2319,6 +2319,11 @@ fn register_call_arguments(
             ("canonical_status", "hir_canonical_status", None),
         ],
     )?;
+    indirect(
+        graph,
+        "hir_canonical_call_arg_scatter",
+        "tree_active_dispatch_args",
+    )?;
     register_array_elements(graph, capacity, passes)
 }
 

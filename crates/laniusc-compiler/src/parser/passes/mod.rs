@@ -849,15 +849,16 @@ pub fn record_canonical_call_arguments(
     ctx: &mut PassContext<'_, ParserBuffers, DebugOutput>,
     p: &ParserPasses,
 ) -> Result<(), anyhow::Error> {
-    use InputElements::Elements1D as E1D;
-
     ctx.buffers.clear_operations().record_phase(
         crate::parser::compiler_graph::hir::CANONICAL_CALL_ARGUMENT_CLEAR,
         ctx.encoder,
     )?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::CallArgument)?;
+    // Rows past the active tree were not written by this job's argument
+    // links, so the scatter reads only the active rows.
+    let buffers = ctx.buffers;
     p.hir_canonical_call_arg_scatter
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &buffers.tree_active_dispatch_args)?;
     crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
     Ok(())
 }

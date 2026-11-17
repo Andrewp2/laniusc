@@ -3171,7 +3171,7 @@ fn build_graph(
     });
     graph.add_resource_alias("module_by_canonical_id", _path_prefix_table_state)?;
     graph_resources!(graph, Workspace {
-        predicate_syntax_token in Tokens => predicate_rows * 4;
+        predicate_syntax_token in Tokens => token_rows * 4;
         _type_expr_ref_tag as "type_expr_ref_tag" in Tokens => token_rows * 4;
         _type_expr_ref_payload as "type_expr_ref_payload" in Tokens => token_rows * 4;
         _external_type_library_id as "external_type_library_id" in Tokens => type_rows * 4;
