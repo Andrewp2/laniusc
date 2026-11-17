@@ -87,6 +87,22 @@ pub struct RetainedNativeBuild {
     /// unfinished, so the check runs again with its state read back.
     #[doc(hidden)]
     pub test_unfinished_solve: bool,
+    /// Fault injection for tests on the resident link's emit.
+    #[doc(hidden)]
+    pub test_resident_emit_fault: ResidentEmitFault,
+}
+
+/// A fault the tests force on the resident link's emit.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResidentEmitFault {
+    #[default]
+    None,
+    /// The C-name step's gate fails, so the host links.
+    Gate,
+    /// The first emit's output is one word long, so the emit is recorded
+    /// again at the length the GPU read.
+    Capacity,
 }
 
 impl RetainedNativeBuild {
@@ -114,6 +130,7 @@ impl RetainedNativeBuild {
             native_link: None,
             test_caller_arg_fault: None,
             test_unfinished_solve: false,
+            test_resident_emit_fault: ResidentEmitFault::None,
         })
     }
 
@@ -598,9 +615,15 @@ impl GpuCompiler<'_> {
             routes: &roots.root_routes,
             route_capacity: roots.root_route_capacity,
         };
+        let emit_fault = build.test_resident_emit_fault;
         let begin_resident = |keys: &[x86::ResidentObjectKey], pending: Option<&x86::ParkedSlot>| {
             let (options, linker) = resident_link.as_ref()?;
-            match linker.begin_resident_dynamic(device, queue, keys, pending, native_functions, options, routes()) {
+            let fault = match emit_fault {
+                ResidentEmitFault::None => x86::ResidentEmitFault::None,
+                ResidentEmitFault::Gate => x86::ResidentEmitFault::Gate,
+                ResidentEmitFault::Capacity => x86::ResidentEmitFault::Capacity,
+            };
+            match linker.begin_resident_dynamic(device, queue, keys, pending, native_functions, options, routes(), fault) {
                 Ok(plan) => plan,
                 Err(error) => {
                     log::warn!("resident x86 link failed, linking on the host: {error:#}");

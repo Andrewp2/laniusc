@@ -22,6 +22,7 @@ pub(crate) use link::{
     ParkSources,
     ParkTicket,
     ParkedSlot,
+    ResidentEmitFault,
     ResidentObjectKey,
     ResidentRoutes,
     ResidentSections,
@@ -79,6 +80,9 @@ pub struct GpuX86Linker {
     rl_undefined_pass: PassData,
     rl_park_pass: PassData,
     rl_dynsym_pass: PassData,
+    rl_name_hash_pass: PassData,
+    rl_import_match_pass: PassData,
+    rl_dynamic_rows_pass: PassData,
     rl_gather_pass: PassData,
     rl_reloc_pass: PassData,
     resident_store: Mutex<Option<std::sync::Arc<link::GpuX86LinkStore>>>,
@@ -202,6 +206,21 @@ impl GpuX86Linker {
                 "link_resident_rl_dynsym",
                 "codegen/x86/link/resident/rl_dynsym.spv",
                 "codegen/x86/link/resident/rl_dynsym.reflect.json"
+            ),
+            rl_name_hash_pass: load_x86_pass!(
+                "link_resident_rl_name_hash",
+                "codegen/x86/link/resident/rl_name_hash.spv",
+                "codegen/x86/link/resident/rl_name_hash.reflect.json"
+            ),
+            rl_import_match_pass: load_x86_pass!(
+                "link_resident_rl_import_match",
+                "codegen/x86/link/resident/rl_import_match.spv",
+                "codegen/x86/link/resident/rl_import_match.reflect.json"
+            ),
+            rl_dynamic_rows_pass: load_x86_pass!(
+                "link_resident_rl_dynamic_rows",
+                "codegen/x86/link/resident/rl_dynamic_rows.spv",
+                "codegen/x86/link/resident/rl_dynamic_rows.reflect.json"
             ),
             rl_gather_pass: load_x86_pass!(
                 "link_resident_rl_gather",

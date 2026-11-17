@@ -7,6 +7,7 @@ use laniusc_compiler::{
         ExplicitSourceLibraryPaths,
         ExplicitSourcePackPathManifest,
         GpuCompiler,
+        ResidentEmitFault,
         RetainedNativeBuild,
         frontend_check_count,
     },
@@ -1079,6 +1080,42 @@ fn early_lowering_gate_retries(fault: ProjectionGateFault, name: &'static str) {
         }
         std::fs::remove_dir_all(directory).ok();
     });
+}
+
+fn resident_emit_fault(fault: ResidentEmitFault, name: &'static str) {
+    common::run_with_timeout(name, move || {
+        let directory=std::env::temp_dir().join(format!("lanius-{name}-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::default()).unwrap();
+        build.native_link=Some(laniusc_compiler::compiler::NativeLinkOptions::default());
+        let mut images=Vec::new();
+        for pass in 0..2 {
+            build.test_resident_emit_fault=if pass==0 { fault } else { ResidentEmitFault::None };
+            let path=directory.join(format!("out-{pass}"));
+            pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained_to_file(&manifest,&mut build,&path)).unwrap();
+            // A failed gate links on the host; a short capacity records the
+            // emit again on the GPU.
+            let resident=pass==1 || fault==ResidentEmitFault::Capacity;
+            assert_eq!(build.report.resident_link,resident,"pass {pass}");
+            let elf=std::fs::read(&path).unwrap();
+            let output=common::run_x86_64_elf_output(name,name,&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+            images.push(elf);
+        }
+        assert!(images[0]==images[1],"the retried link writes the same executable");
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_resident_emit_links_on_the_host_after_a_failed_gate() {
+    resident_emit_fault(ResidentEmitFault::Gate, "retained_emit_gate");
+}
+
+#[test]
+fn retained_native_resident_emit_retries_after_a_capacity_failure() {
+    resident_emit_fault(ResidentEmitFault::Capacity, "retained_emit_capacity");
 }
 
 #[test]

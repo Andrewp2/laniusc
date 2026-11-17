@@ -246,23 +246,44 @@ for the link. `codegen/x86/link/resident.rs` runs the link:
    `program_retention/native_calls.rs` adds the rewritten undefined
    identities. Publishing an object commits its slot under
    `(library, unit)`.
-2. Before finalization the first submission runs. It plans the text copies,
-   places every symbol and applies the discovery routes to provisional uses.
-   It indexes definitions and C bindings, and marks the C names the program
-   references.
-3. A worker thread reads the plan and resolves the marked names against the
-   shared libraries, as listed above. It then packs the dynamic writer's rows.
-4. After finalization the second submission runs. It writes the Lanius symbol
-   rows, gathers the section bytes and writes the ELF dynamic parts. It then
-   applies the relocations and inlines tiny leaf calls, as `splice.rs` does.
-   The same submission copies the image and the link status into one
-   readback buffer, so the image costs one round trip. While the GPU copies,
-   the host creates the temporary output file and allocates its blocks. It
-   then checks the status and writes the image with one `write` call. On
-   Linux the finished file replaces an existing executable through
+2. Before the host reads the last object back, one submission plans, resolves
+   and emits the whole link:
+   - It plans the text copies, places every symbol and applies the discovery
+     routes to provisional uses. It indexes definitions and C bindings, and
+     marks the C names the program references.
+   - It resolves the marked names against the link's libraries
+     (`rl_name_hash`, `rl_import_match`, `rl_dynamic_rows`). The host walks
+     the inputs as the GNU linker finds them (the search path, linker
+     scripts, archives and sonames) and uploads each input's exported names
+     and default versions. These are system inputs: the host packs a file's
+     names once per version of the file. The GPU matches the names, picks
+     the first shared object that defines each one and sends the link to the
+     C driver when an archive defines one first. It then numbers the
+     imports, needed libraries and version needs and writes the string
+     table, as `resolve.rs` and `dynamic.rs` do on the host.
+   - It sizes the emit's dispatches from the image the GPU laid out, then
+     writes the Lanius symbol rows, gathers the section bytes, writes the
+     ELF dynamic parts, applies the relocations and inlines tiny leaf calls,
+     as `splice.rs` does. Every buffer is sized from the slot capacities, so
+     the counts the GPU computes cannot exceed them. When a step fails, its
+     gate leaves the later dispatches empty.
+   - It copies every status word (plan, names, emit) to one readback, which
+     the host reads after finalization.
+3. A capacity bit (only a test forces it) makes the host record the C-name
+   rows and the emit again at the lengths the GPU read. Any other bit falls
+   back to the host link.
+4. The host then copies the image, at its exact length, to a readback. While
+   the GPU copies, the host creates the temporary output file and allocates
+   its blocks. It writes the image with one `write` call. On Linux the
+   finished file replaces an existing executable through
    `renameat2(RENAME_EXCHANGE)` and an unlink of the old file. A rename over
    an existing file on ext4 starts writeback of the new file
    (`auto_da_alloc`), which costs 0.5 to 7 ms for a 6 MB image.
+
+The tests `retained_native_resident_emit_links_on_the_host_after_a_failed_gate`
+and `retained_native_resident_emit_retries_after_a_capacity_failure` in
+`tests/retained_native.rs` force each path and compare the executable with
+an unforced build.
 
 The shaders are in `shaders/codegen/x86/link/resident/`. Every check the host
 link makes has a GPU error bit. Any error, a C driver link, or a store that

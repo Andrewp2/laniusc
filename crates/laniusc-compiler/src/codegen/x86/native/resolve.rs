@@ -102,6 +102,7 @@ struct CachedInput {
     kind: InputKind,
     shared: Option<Arc<SharedTable>>,
     archive: Option<Arc<Option<Vec<String>>>>,
+    packed: Option<Arc<PackedTable>>,
 }
 
 static INPUTS: Mutex<Option<HashMap<PathBuf, CachedInput>>> = Mutex::new(None);
@@ -123,7 +124,7 @@ fn cached_input<T>(path: &Path, with: impl FnOnce(&mut CachedInput) -> Result<T>
         let kind = read_input_kind(path)?;
         inputs.insert(
             path.to_path_buf(),
-            CachedInput { stamp, kind, shared: None, archive: None },
+            CachedInput { stamp, kind, shared: None, archive: None, packed: None },
         );
     }
     with(inputs.get_mut(path).expect("cached input"))
@@ -195,7 +196,7 @@ pub(crate) fn resolve_native_imports(
         }
     }
     for library in options.libraries.iter().map(String::as_str).chain(["c"]) {
-        if let Some(reason) = resolver.library(library, 0)? {
+        if let Some(reason) = walk_library(&mut resolver, library, 0)? {
             return Ok(NativeResolution::Driver(reason));
         }
     }
@@ -245,50 +246,17 @@ pub(crate) fn resolve_native_imports(
     }))
 }
 
-impl Resolver<'_> {
-    fn unresolved(&self) -> bool {
-        self.resolved.iter().any(Option::is_none)
-    }
+/// Visits the inputs of a link in the GNU linker's order ([`walk_library`]).
+trait InputVisitor {
+    fn search(&self) -> &[PathBuf];
+    fn shared(&mut self, path: &Path, soname: String) -> Result<()>;
+    /// Returns a driver-fallback reason when one applies.
+    fn archive(&mut self, path: &Path) -> Result<Option<String>>;
+}
 
-    /// Resolve `-lname`. Returns a driver-fallback reason when one applies.
-    fn library(&mut self, name: &str, depth: usize) -> Result<Option<String>> {
-        if driver_private_library(name) {
-            return Ok(Some(format!(
-                "library -l{name} is in the C driver's private directories"
-            )));
-        }
-        let found = self.search.iter().find_map(|directory| {
-            [format!("lib{name}.so"), format!("lib{name}.a")]
-                .into_iter()
-                .map(|file| directory.join(file))
-                .find(|path| path.is_file())
-        });
-        let Some(path) = found else {
-            return Ok(Some(format!(
-                "library -l{name} is not on the linker's default search path"
-            )));
-        };
-        let soname = path
-            .file_name()
-            .expect("library file name")
-            .to_string_lossy()
-            .into_owned();
-        self.input(&path, soname, depth)
-    }
-
-    fn input(&mut self, path: &Path, soname: String, depth: usize) -> Result<Option<String>> {
-        match input_kind(path)? {
-            InputKind::Shared => {
-                self.shared(path, soname)?;
-                Ok(None)
-            }
-            InputKind::Archive => self.archive(path),
-            InputKind::Script => self.script(path, depth),
-            InputKind::Other => Ok(Some(format!(
-                "native input {} is neither a shared library, an archive nor a linker script",
-                path.display()
-            ))),
-        }
+impl InputVisitor for Resolver<'_> {
+    fn search(&self) -> &[PathBuf] {
+        &self.search
     }
 
     fn shared(&mut self, path: &Path, soname: String) -> Result<()> {
@@ -307,7 +275,7 @@ impl Resolver<'_> {
     /// The static linker extracts an archive member only for a symbol still
     /// undefined where the archive appears.
     fn archive(&mut self, path: &Path) -> Result<Option<String>> {
-        if !self.unresolved() {
+        if !self.resolved.iter().any(Option::is_none) {
             return Ok(None);
         }
         let symbols = archive_symbols(path)?;
@@ -329,43 +297,217 @@ impl Resolver<'_> {
         }
         Ok(None)
     }
+}
 
-    fn script(&mut self, path: &Path, depth: usize) -> Result<Option<String>> {
-        if depth >= MAX_SCRIPT_DEPTH {
-            return Ok(Some(format!(
-                "linker script {} nests too deeply",
-                path.display()
-            )));
+/// Resolve `-lname`. Returns a driver-fallback reason when one applies.
+fn walk_library(visitor: &mut impl InputVisitor, name: &str, depth: usize) -> Result<Option<String>> {
+    if driver_private_library(name) {
+        return Ok(Some(format!(
+            "library -l{name} is in the C driver's private directories"
+        )));
+    }
+    let found = visitor.search().iter().find_map(|directory| {
+        [format!("lib{name}.so"), format!("lib{name}.a")]
+            .into_iter()
+            .map(|file| directory.join(file))
+            .find(|path| path.is_file())
+    });
+    let Some(path) = found else {
+        return Ok(Some(format!(
+            "library -l{name} is not on the linker's default search path"
+        )));
+    };
+    let soname = path
+        .file_name()
+        .expect("library file name")
+        .to_string_lossy()
+        .into_owned();
+    walk_input(visitor, &path, soname, depth)
+}
+
+fn walk_input(visitor: &mut impl InputVisitor, path: &Path, soname: String, depth: usize) -> Result<Option<String>> {
+    match input_kind(path)? {
+        InputKind::Shared => {
+            visitor.shared(path, soname)?;
+            Ok(None)
         }
-        let length = std::fs::metadata(path)?.len();
-        ensure!(
-            length <= MAX_LINKER_SCRIPT_BYTES,
-            "linker script {} exceeds {MAX_LINKER_SCRIPT_BYTES} bytes",
+        InputKind::Archive => visitor.archive(path),
+        InputKind::Script => walk_script(visitor, path, depth),
+        InputKind::Other => Ok(Some(format!(
+            "native input {} is neither a shared library, an archive nor a linker script",
             path.display()
-        );
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("read linker script {}", path.display()))?;
-        let entries = match script_inputs(&text) {
-            Ok(entries) => entries,
-            Err(reason) => {
-                return Ok(Some(format!("linker script {}: {reason}", path.display())));
+        ))),
+    }
+}
+
+fn walk_script(visitor: &mut impl InputVisitor, path: &Path, depth: usize) -> Result<Option<String>> {
+    if depth >= MAX_SCRIPT_DEPTH {
+        return Ok(Some(format!(
+            "linker script {} nests too deeply",
+            path.display()
+        )));
+    }
+    let length = std::fs::metadata(path)?.len();
+    ensure!(
+        length <= MAX_LINKER_SCRIPT_BYTES,
+        "linker script {} exceeds {MAX_LINKER_SCRIPT_BYTES} bytes",
+        path.display()
+    );
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read linker script {}", path.display()))?;
+    let entries = match script_inputs(&text) {
+        Ok(entries) => entries,
+        Err(reason) => {
+            return Ok(Some(format!("linker script {}: {reason}", path.display())));
+        }
+    };
+    for entry in entries {
+        let reason = match entry.strip_prefix("-l") {
+            Some(name) => walk_library(visitor, name, depth + 1)?,
+            None => {
+                let entry = PathBuf::from(entry);
+                let soname = entry.to_string_lossy().into_owned();
+                walk_input(visitor, &entry, soname, depth + 1)?
             }
         };
-        for entry in entries {
-            let reason = match entry.strip_prefix("-l") {
-                Some(name) => self.library(name, depth + 1)?,
-                None => {
-                    let entry = PathBuf::from(entry);
-                    let soname = entry.to_string_lossy().into_owned();
-                    self.input(&entry, soname, depth + 1)?
-                }
-            };
-            if reason.is_some() {
-                return Ok(reason);
-            }
+        if reason.is_some() {
+            return Ok(reason);
         }
+    }
+    Ok(None)
+}
+
+/// One input's names for the resident link's GPU name match
+/// (`shaders/codegen/x86/link/resident/rl_cnames.slang`), built once per
+/// version of the file: a system input, like the tables it comes from.
+pub(crate) struct PackedTable {
+    /// Export names, then version names, without terminators.
+    pub bytes: Vec<u8>,
+    /// Per row: byte offset, length and code ([`PACKED_ARCHIVE`],
+    /// [`PACKED_ERROR`], 0 for an unversioned export, else 1 + its version).
+    /// An archive without a symbol index has one row of length `u32::MAX`.
+    pub rows: Vec<u32>,
+    /// Per version: byte offset and length, sorted by name.
+    pub versions: Vec<u32>,
+}
+
+pub(crate) const PACKED_ERROR: u32 = u32::MAX;
+pub(crate) const PACKED_ARCHIVE: u32 = u32::MAX - 1;
+
+/// A link input in the GNU linker's order.
+pub(crate) struct PackedInput {
+    /// The soname of a shared object; `None` for an archive.
+    pub soname: Option<String>,
+    pub table: Arc<PackedTable>,
+}
+
+pub(crate) enum PackedInputs {
+    Inputs(Vec<PackedInput>),
+    Driver(String),
+}
+
+struct Packer {
+    search: Vec<PathBuf>,
+    inputs: Vec<PackedInput>,
+}
+
+impl InputVisitor for Packer {
+    fn search(&self) -> &[PathBuf] {
+        &self.search
+    }
+
+    fn shared(&mut self, path: &Path, soname: String) -> Result<()> {
+        let table = shared_table(path).with_context(|| format!("read shared library {}", path.display()))?;
+        let packed = cached_input(path, |entry| {
+            Ok(entry.packed.get_or_insert_with(|| Arc::new(pack_shared(&table))).clone())
+        })?;
+        self.inputs.push(PackedInput { soname: Some(table.soname.clone().unwrap_or(soname)), table: packed });
+        Ok(())
+    }
+
+    fn archive(&mut self, path: &Path) -> Result<Option<String>> {
+        let symbols = archive_symbols(path)?;
+        let packed = cached_input(path, |entry| {
+            Ok(entry.packed.get_or_insert_with(|| Arc::new(pack_archive(symbols.as_ref().as_deref()))).clone())
+        })?;
+        self.inputs.push(PackedInput { soname: None, table: packed });
         Ok(None)
     }
+}
+
+fn pack_shared(table: &SharedTable) -> PackedTable {
+    let mut versions = table
+        .exports
+        .values()
+        .filter_map(|version| version.as_ref().ok()?.as_deref())
+        .collect::<Vec<_>>();
+    versions.sort_unstable();
+    versions.dedup();
+    let mut bytes = Vec::new();
+    let mut rows = Vec::with_capacity(table.exports.len() * 3);
+    for (name, version) in &table.exports {
+        let code = match version {
+            Err(_) => PACKED_ERROR,
+            Ok(None) => 0,
+            Ok(Some(version)) => versions.binary_search(&version.as_str()).expect("listed version") as u32 + 1,
+        };
+        rows.extend_from_slice(&[bytes.len() as u32, name.len() as u32, code]);
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    let mut version_rows = Vec::with_capacity(versions.len() * 2);
+    for version in versions {
+        version_rows.extend_from_slice(&[bytes.len() as u32, version.len() as u32]);
+        bytes.extend_from_slice(version.as_bytes());
+    }
+    PackedTable { bytes, rows, versions: version_rows }
+}
+
+fn pack_archive(symbols: Option<&[String]>) -> PackedTable {
+    let Some(symbols) = symbols else {
+        return PackedTable { bytes: Vec::new(), rows: vec![0, u32::MAX, PACKED_ARCHIVE], versions: Vec::new() };
+    };
+    let mut bytes = Vec::new();
+    let mut rows = Vec::with_capacity(symbols.len() * 3);
+    for symbol in symbols {
+        rows.extend_from_slice(&[bytes.len() as u32, symbol.len() as u32, PACKED_ARCHIVE]);
+        bytes.extend_from_slice(symbol.as_bytes());
+    }
+    PackedTable { bytes, rows, versions: Vec::new() }
+}
+
+/// The inputs a dynamic link reads, in the GNU linker's order, packed for
+/// the GPU name match; `Driver` when the C driver links instead, for any
+/// program. `resolve_native_imports` makes the same walk for given names.
+pub(crate) fn packed_link_inputs(options: &NativeLinkOptions) -> Result<PackedInputs> {
+    if options.linker.is_some() {
+        return Ok(PackedInputs::Driver("the request names its own C linker driver".into()));
+    }
+    let mut packer = Packer {
+        search: options
+            .library_paths
+            .iter()
+            .cloned()
+            .chain(STANDARD_DIRECTORIES.iter().map(PathBuf::from))
+            .collect(),
+        inputs: Vec::new(),
+    };
+    for object in &options.objects {
+        match input_kind(object)? {
+            InputKind::Shared => packer.shared(object, object.to_string_lossy().into_owned())?,
+            _ => {
+                return Ok(PackedInputs::Driver(format!(
+                    "native object {} is not a shared library",
+                    object.display()
+                )));
+            }
+        }
+    }
+    for library in options.libraries.iter().map(String::as_str).chain(["c"]) {
+        if let Some(reason) = walk_library(&mut packer, library, 0)? {
+            return Ok(PackedInputs::Driver(reason));
+        }
+    }
+    Ok(PackedInputs::Inputs(packer.inputs))
 }
 
 fn driver_private_library(name: &str) -> bool {
@@ -566,12 +708,7 @@ fn shared_definitions(
     wanted: &HashMap<&str, usize>,
     fallback_soname: String,
 ) -> Result<SharedDefinitions> {
-    let table = cached_input(path, |entry| {
-        if entry.shared.is_none() {
-            entry.shared = Some(Arc::new(read_shared_table(path)?));
-        }
-        Ok(entry.shared.clone().expect("shared table"))
-    })?;
+    let table = shared_table(path)?;
     // Definitions in the order of `wanted`'s names, as the symbol table's
     // order does not change which library resolves a name.
     let mut defined = Vec::new();
@@ -585,6 +722,15 @@ fn shared_definitions(
     Ok(SharedDefinitions {
         soname: table.soname.clone().unwrap_or(fallback_soname),
         defined,
+    })
+}
+
+fn shared_table(path: &Path) -> Result<Arc<SharedTable>> {
+    cached_input(path, |entry| {
+        if entry.shared.is_none() {
+            entry.shared = Some(Arc::new(read_shared_table(path)?));
+        }
+        Ok(entry.shared.clone().expect("shared table"))
     })
 }
 
