@@ -470,39 +470,16 @@ const BATCH_KEYS: [&str; 4] = [
 ];
 // Table IDs are paired with literal keys so the phase contract is checked
 // against BatchPlan's ordered input inventory before loading any batch shader.
-const BATCH_ADMISSION_KEYS: [(usize, &str); 11] = [
-    (1, "type_checker/trait_solver/entries/32_01_admit_atoms"),
-    (5, "type_checker/trait_solver/entries/32_05_admit_nodes"),
-    (6, "type_checker/trait_solver/entries/32_06_admit_edges"),
-    (7, "type_checker/trait_solver/entries/32_07_admit_roots"),
-    (
-        11,
-        "type_checker/trait_solver/entries/32_11_admit_environments",
-    ),
-    (
-        12,
-        "type_checker/trait_solver/entries/32_12_admit_bindings",
-    ),
-    (
-        13,
-        "type_checker/trait_solver/entries/32_13_admit_contexts",
-    ),
-    (
-        14,
-        "type_checker/trait_solver/entries/32_14_admit_assumptions",
-    ),
-    (
-        15,
-        "type_checker/trait_solver/entries/32_15_admit_calls",
-    ),
-    (
-        16,
-        "type_checker/trait_solver/entries/32_16_admit_obligations",
-    ),
-    (
-        17,
-        "type_checker/trait_solver/entries/32_17_admit_evidence",
-    ),
+const BATCH_ADMISSION_KEYS: [(&[usize], &str); 8] = [
+    // The value graph's batch rows in one dispatch (phase 33).
+    (&[1, 5, 6, 7], "type_checker/trait_solver/entries/32_01_admit_value_rows"),
+    (&[11], "type_checker/trait_solver/entries/32_11_admit_environments"),
+    (&[12], "type_checker/trait_solver/entries/32_12_admit_bindings"),
+    (&[13], "type_checker/trait_solver/entries/32_13_admit_contexts"),
+    (&[14], "type_checker/trait_solver/entries/32_14_admit_assumptions"),
+    (&[15], "type_checker/trait_solver/entries/32_15_admit_calls"),
+    (&[16], "type_checker/trait_solver/entries/32_16_admit_obligations"),
+    (&[17], "type_checker/trait_solver/entries/32_17_admit_evidence"),
 ];
 pub(super) struct BatchKernels {
     passes: Vec<PassData>,
@@ -513,7 +490,7 @@ impl BatchKernels {
         ensure!(
             BATCH_ADMISSION_KEYS
                 .iter()
-                .map(|(table, _)| *table)
+                .flat_map(|(tables, _)| tables.iter().copied())
                 .eq(super::BATCH_INPUT_TABLES),
             "batch shader table order differs from the retained input plan"
         );
@@ -569,13 +546,21 @@ impl BatchKernels {
         // Complete admission of every new input row precedes any consumer.
         // dispatch_first includes the immutable catalog prefix for mixed tables.
         // Preserved old suffix rows were admitted in earlier successful receipts.
-        for ((table, _), pass) in BATCH_ADMISSION_KEYS.iter().zip(&self.admit_rows) {
+        // A kernel of several tables runs over their whole batch suffixes, in
+        // table order, when any of them has new rows.
+        for ((tables, _), pass) in BATCH_ADMISSION_KEYS.iter().zip(&self.admit_rows) {
+            let span = match tables {
+                [table] => plan.input_spans[*table],
+                _ if tables.iter().all(|&t| plan.input_spans[t].count == 0) => Span::default(),
+                _ => Span::new(0, tables.iter().try_fold(0u32, |sum, &t| sum.checked_add(plan.suffix_rows[t]))
+                    .ok_or_else(|| anyhow::anyhow!("batch value rows overflow"))?)?,
+            };
             record_phase_with_proof(
                 device,
                 encoder,
                 pass,
-                32 + *table as u32,
-                plan.input_spans[*table],
+                32 + tables[0] as u32,
+                span,
                 256,
                 catalog,
                 input,
