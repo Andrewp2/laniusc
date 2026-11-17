@@ -40,7 +40,7 @@ use crate::{
     type_checker::program_retention::{ProgramRetention, counts},
 };
 
-const KEYS: [&str; 23] = [
+const KEYS: [&str; 22] = [
     "type_checker/trait_solver/retained/entries/00_mark",
     "type_checker/trait_solver/retained/entries/01_units",
     "type_checker/trait_solver/retained/entries/02_count",
@@ -62,19 +62,17 @@ const KEYS: [&str; 23] = [
     "type_checker/trait_solver/retained/entries/09_fill_words",
     "type_checker/trait_solver/retained/entries/02d_closure_roots",
     "type_checker/trait_solver/retained/entries/02e_closure_wave",
-    "type_checker/trait_solver/retained/entries/02f_closure_expand",
     "type_checker/trait_solver/retained/entries/02g_sort_block",
 ];
-const SORT_BLOCK: usize = 22;
+const SORT_BLOCK: usize = 21;
 /// Keys one workgroup sorts in shared memory (producer.slang RC_SORT_BLOCK).
 const SORT_BLOCK_KEYS: u32 = 512;
 const FILL_WORDS: usize = 18;
 const CLOSURE_ROOTS: usize = 19;
 const CLOSURE_WAVE: usize = 20;
-const CLOSURE_EXPAND: usize = 21;
-/// First number of closure expansion waves; doubled while the GPU reports
-/// an unexpanded frontier.
-const CLOSURE_WAVES: u32 = 16;
+/// First bound on closure waves, which one workgroup runs until a wave is
+/// empty; doubled while the GPU reports an unexpanded frontier.
+const CLOSURE_WAVES: u32 = 1 << 16;
 const SORT_INIT: usize = 13;
 const SORT_STEP: usize = 14;
 const SORT_FINISH: usize = 15;
@@ -105,7 +103,8 @@ const CFG_TABLE: usize = 20;
 const CFG_SORT: usize = 37;
 const CFG_ATOM_IDS: usize = 38;
 const CFG_ROUTE_USES: usize = 39;
-const CFG_WORDS: usize = 40;
+const CFG_CLOSURE_WAVES: usize = 40;
+const CFG_WORDS: usize = 41;
 const REGIONS: usize = 7;
 const COUNTERS: usize = 16;
 
@@ -160,8 +159,8 @@ pub struct RetainedTraitOptions {
     /// Read every produced row back into `RetainedTraitCheck::tables` (for
     /// assertions only; the check itself reads none).
     pub read_rows: bool,
-    /// First number of term closure waves (default 16). A smaller value
-    /// forces the retry that adds waves.
+    /// First bound on term closure waves (default 65536). A smaller value
+    /// forces the retry that raises it.
     pub closure_waves: Option<u32>,
 }
 
@@ -260,7 +259,6 @@ struct Scratch {
     reach: LaniusBuffer<u32>,
     front: LaniusBuffer<u32>,
     cursor: LaniusBuffer<u32>,
-    indirect: LaniusBuffer<u32>,
     /// Bound as the arena of the other phase; never written.
     idle: LaniusBuffer<u32>,
 }
@@ -369,7 +367,7 @@ impl Producer {
         bound: Bound<'_>,
     ) -> Result<()> {
         let bind = self.bind_group(pass, scratch, store, bound)?;
-        self.dispatch(encoder, pass, lanes, scratch, &bind);
+        self.dispatch(encoder, pass, lanes, &bind);
         Ok(())
     }
 
@@ -399,9 +397,6 @@ impl Producer {
                 "rc_reach" => scratch.reach.as_entire_binding(),
                 "rc_front" => scratch.front.as_entire_binding(),
                 "rc_cursor" => scratch.cursor.as_entire_binding(),
-                // The expansion pass reads it as its indirect argument.
-                "rc_indirect" if pass == CLOSURE_EXPAND => scratch.idle.as_entire_binding(),
-                "rc_indirect" => scratch.indirect.as_entire_binding(),
                 "rc_stage" => wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &bound.stages.buffer,
                     offset: bound.stages.byte_offset + u64::from(bound.stage) * STAGE_STRIDE,
@@ -430,7 +425,7 @@ impl Producer {
     }
 
     /// Records `pass` with a bind group from `bind_group` for the same pass.
-    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, scratch: &Scratch, bind: &wgpu::BindGroup) {
+    fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.passes[pass];
         let (x, y) = if matches!(pass, SCAN_BLOCKS | PUBLISH_FINISH | CLOSURE_WAVE) { (1, 1) } else { groups(lanes) };
         let mut compute = passes_core::begin_counted_compute_pass(
@@ -440,12 +435,7 @@ impl Producer {
         compute.set_pipeline(&data.pipeline);
         compute.set_bind_group(0, bind, &[]);
         passes_core::record_compute_dispatch();
-        if pass == CLOSURE_EXPAND {
-            passes_core::record_indirect_compute_dispatch();
-            compute.dispatch_workgroups_indirect(&scratch.indirect.buffer, scratch.indirect.byte_offset);
-        } else {
-            compute.dispatch_workgroups(x, y, 1);
-        }
+        compute.dispatch_workgroups(x, y, 1);
         drop(compute);
         // Profiled jobs need one timestamp per recorded dispatch.
         crate::gpu::timer::stamp_active_operation(encoder, data.shader_id.clone());
@@ -649,6 +639,7 @@ fn run(
     let (scratch, state) = loop {
         report.attempts += 1;
         config[7] = unit_slots;
+        config[CFG_CLOSURE_WAVES] = closure_waves;
         let mut initial_state = vec![0u32; S_WORDS];
         initial_state[S_FIRST] = u32::MAX;
         let scratch = Scratch {
@@ -679,12 +670,6 @@ fn run(
             reach: workspace.initialized("trait_solver.retained_reach", pow2(terms), usage, None)?,
             front: workspace.initialized("trait_solver.retained_front", pow2(terms), usage, None)?,
             cursor: workspace.initialized("trait_solver.retained_cursor", 4, usage, None)?,
-            indirect: workspace.initialized(
-                "trait_solver.retained_indirect",
-                4,
-                usage | wgpu::BufferUsages::INDIRECT,
-                None,
-            )?,
             idle: workspace.initialized("trait_solver.retained_idle", 4, usage, None)?,
         };
         let idle = Bound {
@@ -707,15 +692,9 @@ fn run(
         for pass in [MARK, UNITS] {
             producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
         }
-        // Term closure: roots, then one indirect wave per frontier depth.
+        // Term closure: roots, then every frontier wave in one workgroup.
         producer.record(&mut encoder, CLOSURE_ROOTS, root_lanes, &scratch, store, idle)?;
-        // Every wave binds the same buffers.
-        let wave = producer.bind_group(CLOSURE_WAVE, &scratch, store, idle)?;
-        let expand = producer.bind_group(CLOSURE_EXPAND, &scratch, store, idle)?;
-        for _ in 0..closure_waves {
-            producer.dispatch(&mut encoder, CLOSURE_WAVE, 1, &scratch, &wave);
-            producer.dispatch(&mut encoder, CLOSURE_EXPAND, 0, &scratch, &expand);
-        }
+        producer.record(&mut encoder, CLOSURE_WAVE, 1, &scratch, store, idle)?;
         producer.record(&mut encoder, SORT_INIT, sort_width, &scratch, store, idle)?;
         for (stage, &(_, j)) in steps.iter().enumerate() {
             let (pass, lanes) = if j == 0 { (SORT_BLOCK, sort_width / 2) } else { (SORT_STEP, sort_width) };

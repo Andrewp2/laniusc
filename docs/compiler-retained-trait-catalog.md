@@ -193,18 +193,17 @@ record and marks its roots. A mark is a compare-exchange on `rc_reach`.
 The first marker appends the term to `rc_front`, so every term enters the
 frontier once.
 
-Each wave is two dispatches. `02e_closure_wave` is one lane: it takes the
-terms appended since the last wave and writes an indirect dispatch.
-`02f_closure_expand` runs one lane per term of that wave and marks its
-children. The work is one lane per closure term and one mark per closure
-edge. Empty waves dispatch no workgroups.
+All waves are one dispatch of one 256-lane workgroup,
+`02e_closure_wave`. Each wave takes the terms appended since the last wave,
+its lanes stride over them and mark their children, and a workgroup barrier
+separates waves. The loop stops at an empty wave. The work is one lane
+visit per closure term and one mark per closure edge. The settings build
+records one closure dispatch instead of 32.
 
-The host records 16 waves by default
-(`RetainedTraitOptions::closure_waves`). If terms remain unexpanded after
-the last wave, pass `02_count` sets `rc_state[24]`. The host then doubles
-the waves and runs every count pass again, as it does for a full unit
-table. Every wave binds the same buffers, so the host creates one bind
-group per closure pass and reuses it for all waves. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
+The wave bound is 65536 by default (`RetainedTraitOptions::closure_waves`,
+config word 40). If terms remain unexpanded after the last wave, pass
+`02_count` sets `rc_state[24]`. The host then doubles the bound and runs
+every count pass again, as it does for a full unit table. `02_count`, `06_fill_terms` and `reference` treat an unmarked term
 as absent. A reference to one has no translation, so the check fails
 closed.
 
