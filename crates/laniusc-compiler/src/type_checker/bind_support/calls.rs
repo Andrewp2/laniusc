@@ -329,13 +329,9 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
                     "type_checker/type/instances/04a3_nested_struct_contexts",
                 )?,
-                fields: operation(
-                    compiler_graph::CALLS_RECORD_FIELDS_PASS,
-                    "type_checker/type/instances/04_struct_init_fields",
-                )?,
-                references: operation(
-                    compiler_graph::CALLS_RECORD_REFS_PASS,
-                    "type_checker/semantic/artifact/01a_struct_literal_refs",
+                fields_and_references: operation(
+                    compiler_graph::CALLS_RECORD_FIELDS_AND_REFS_PASS,
+                    "type_checker/calls/03k4_record_fields_and_refs",
                 )?,
             })
         } else {

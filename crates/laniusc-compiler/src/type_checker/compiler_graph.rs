@@ -354,8 +354,10 @@ pub(super) const CALLS_RECORD_NESTED_CONTEXTS_PASS: &str =
     "type_check.calls.record_nested_contexts";
 pub(super) const CALLS_RECORD_IMPORTED_FIELDS_PASS: &str =
     "type_check.calls.record_imported_fields";
-pub(super) const CALLS_RECORD_FIELDS_PASS: &str = "type_check.calls.record_fields";
-pub(super) const CALLS_RECORD_REFS_PASS: &str = "type_check.calls.record_refs";
+/// Record-literal field expectations and dense struct-literal references in
+/// one dispatch (calls/03k4_record_fields_and_refs).
+pub(super) const CALLS_RECORD_FIELDS_AND_REFS_PASS: &str =
+    "type_check.calls.record_fields_and_refs";
 
 pub(super) const CALLS_MATERIALIZE_MATCH_PAYLOADS_PASS: &str =
     "type_check.calls.match_payload_types";
@@ -5880,13 +5882,8 @@ fn build_graph(
                     reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
                 ),
                 (
-                    CALLS_RECORD_FIELDS_PASS,
-                    "type_checker/type/instances/04_struct_init_fields",
-                    &[][..],
-                ),
-                (
-                    CALLS_RECORD_REFS_PASS,
-                    "type_checker/semantic/artifact/01a_struct_literal_refs",
+                    CALLS_RECORD_FIELDS_AND_REFS_PASS,
+                    "type_checker/calls/03k4_record_fields_and_refs",
                     &[][..],
                 ),
             ] {
@@ -7089,8 +7086,7 @@ mod tests {
         let generic_claim_emit = graph.pass_id(CALLS_GENERIC_CLAIM_EMIT.name).unwrap();
         assert!(early_struct_refs.index() < generic_claim_emit.index());
         let record_contexts = graph.pass_id(CALLS_RECORD_CONTEXTS_PASS).unwrap();
-        let record_fields = graph.pass_id(CALLS_RECORD_FIELDS_PASS).unwrap();
-        let record_refs = graph.pass_id(CALLS_RECORD_REFS_PASS).unwrap();
+        let record_fields_and_refs = graph.pass_id(CALLS_RECORD_FIELDS_AND_REFS_PASS).unwrap();
         let argument_contexts = graph.pass_id(CALLS_PROJECT_ARGUMENT_CONTEXTS_PASS).unwrap();
         let closed_index = graph.pass_id(CALLS_RETURN_TYPE_INDEX_PASS).unwrap();
         let argument_index = graph.pass_id(CALLS_ARGUMENT_CONTEXT_TYPE_INDEX_PASS).unwrap();
@@ -7102,10 +7098,9 @@ mod tests {
             graph.pass_id(CALLS_RECORD_NESTED_CONTEXTS_PASS).unwrap()
                 < graph.pass_id(CALLS_RECORD_IMPORTED_FIELDS_PASS).unwrap()
         );
-        assert!(graph.pass_id(CALLS_RECORD_IMPORTED_FIELDS_PASS).unwrap() < record_fields);
-        assert!(record_fields < record_refs);
-        assert!(record_refs < graph.pass_id(CALLS_PROJECT_LITERAL_CONTEXTS_PASS).unwrap());
-        assert!(record_refs < graph.pass_id(CALLS_INFERENCE_READBACK_PASS).unwrap());
+        assert!(graph.pass_id(CALLS_RECORD_IMPORTED_FIELDS_PASS).unwrap() < record_fields_and_refs);
+        assert!(record_fields_and_refs < graph.pass_id(CALLS_PROJECT_LITERAL_CONTEXTS_PASS).unwrap());
+        assert!(record_fields_and_refs < graph.pass_id(CALLS_INFERENCE_READBACK_PASS).unwrap());
         for (pass, binding, mode) in [
             (
                 record_contexts,
@@ -7118,11 +7113,10 @@ mod tests {
                 AccessMode::ReadWrite,
             ),
             (
-                record_fields,
+                record_fields_and_refs,
                 "struct_lit_context_instance",
                 AccessMode::Read,
             ),
-            (record_refs, "struct_lit_context_instance", AccessMode::Read),
         ] {
             assert!(
                 graph.pass(pass).unwrap().accesses.iter().any(|access| {
@@ -7133,7 +7127,7 @@ mod tests {
                 "record receiving-context access must participate in workspace lifetime planning: {binding}"
             );
         }
-        for pass in [record_contexts, record_fields, record_refs] {
+        for pass in [record_contexts, record_fields_and_refs] {
             assert!(
                 graph.repeated_regions().iter().any(|region| {
                     pass.index() >= region.first_pass.index()
