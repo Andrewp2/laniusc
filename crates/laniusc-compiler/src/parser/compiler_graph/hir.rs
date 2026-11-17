@@ -1899,11 +1899,19 @@ fn register_literals_and_raw_expression_records(
         &passes.hir_string_offset_scatter,
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
-        &[(
-            "hir_list_rank_block_prefix",
-            "hir_list_rank_block_prefix_a",
-            None,
-        )],
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            (
+                "hir_list_rank_block_prefix",
+                "hir_list_rank_block_prefix_a",
+                None,
+            ),
+        ],
+    )?;
+    indirect(
+        graph,
+        "hir_string_offset_scatter",
+        "tree_active_dispatch_args",
     )?;
     graph.mark_pass_bindings_initialize(
         "hir_string_offset_scatter",

@@ -989,12 +989,9 @@ impl GpuParser {
                                 .expect("resident parser requires a bind-group cache"),
                             ListRankInvocation::StringOffsets,
                         )?;
-                    self.passes.hir_string_offset_scatter.record_pass(
-                        &mut ctx,
-                        crate::gpu::passes_core::InputElements::Elements1D(
-                            bufs.tree_n_node_blocks.saturating_mul(256),
-                        ),
-                    )?;
+                    self.passes
+                        .hir_string_offset_scatter
+                        .record_pass_indirect(&mut ctx, &bufs.tree_active_dispatch_args)?;
                     bufs.clear_operations()
                         .record_hir_string_storage(ctx.encoder);
                     self.passes.hir_string_decode.record_with_source(

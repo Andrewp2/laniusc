@@ -27,6 +27,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirStringOffsetS
                 b.hir_literal_values_params.as_entire_binding(),
             ),
             (
+                "tree_count_status".into(),
+                if b.tree_count_uses_status {
+                    b.partial_parse_status.as_entire_binding()
+                } else {
+                    b.ll1_status.as_entire_binding()
+                },
+            ),
+            (
                 "hir_expr_record".into(),
                 b.hir_expr_record.as_entire_binding(),
             ),

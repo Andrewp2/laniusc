@@ -285,9 +285,13 @@ impl ParserBuffers {
     /// tree-indexed allocations clear only their active prefix.
     pub(crate) fn clear_job_storage(
         &self,
+        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         active_tree_capacity: u32,
     ) -> u64 {
+        if let Some(pattern) = parser_poison() {
+            self.record_poison(device, encoder, pattern);
+        }
         let outside_graph = self
             .job_storage_reset
             .as_ref()
@@ -299,6 +303,37 @@ impl ParserBuffers {
                 }),
             );
         outside_graph.saturating_add(self.compiler_graph.record_zero_initialized_reset(encoder))
+    }
+
+    /// Fills every resettable parser buffer with the poison pattern
+    /// (`LANIUS_CHECK=parser-poison`). The job's own reset runs after this
+    /// fill, so only rows the job neither clears nor writes keep the pattern.
+    fn record_poison(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        pattern: crate::options::ParserPoison,
+    ) {
+        crate::gpu::passes_core::flush_deferred_compute(encoder);
+        let source = poison_source(device, pattern);
+        let chunk_bytes = source.size() - POISON_PHASE_BYTES;
+        for (index, buffer) in self
+            .resettable_buffers
+            .iter()
+            .filter(|buffer| Self::clears_before_job(buffer))
+            .enumerate()
+        {
+            // Each buffer starts at its own place in the source, so two
+            // buffers hold different words at the same row.
+            let phase = (index as u64 * 4099 * 4) % POISON_PHASE_BYTES;
+            let size = buffer.byte_size & !(wgpu::COPY_BUFFER_ALIGNMENT - 1);
+            let mut offset = 0;
+            while offset < size {
+                let chunk = chunk_bytes.min(size - offset);
+                encoder.copy_buffer_to_buffer(&source, phase, &buffer.buffer, offset, chunk);
+                offset += chunk;
+            }
+        }
     }
 
     pub(crate) fn resettable_storage_totals(&self) -> (usize, u64) {
@@ -2429,4 +2464,65 @@ impl ParserBuffers {
         );
         buffers
     }
+}
+
+/// The pattern of `LANIUS_CHECK=parser-poison`, or of
+/// [`set_parser_poison_for_tests`] when a test set one.
+fn parser_poison() -> Option<crate::options::ParserPoison> {
+    if PARSER_POISON_FOR_TESTS.get() {
+        Some(crate::options::ParserPoison::Small)
+    } else {
+        crate::options::get().check.parser_poison
+    }
+}
+
+thread_local! {
+    static PARSER_POISON_FOR_TESTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Turns the default poison pattern on for parser jobs recorded on this
+/// thread, or back to `LANIUS_CHECK`.
+#[cfg(test)]
+pub(crate) fn set_parser_poison_for_tests(on: bool) {
+    PARSER_POISON_FOR_TESTS.set(on);
+}
+
+/// The bytes past 16 MiB in the poison source, from which each buffer's copy
+/// starts at its own phase.
+const POISON_PHASE_BYTES: u64 = 64 << 10;
+
+/// A copy source of 16 MiB plus the phase window holding the pattern,
+/// created once per device and pattern.
+fn poison_source(device: &wgpu::Device, pattern: crate::options::ParserPoison) -> wgpu::Buffer {
+    static SOURCE: std::sync::Mutex<
+        Vec<(wgpu::Device, crate::options::ParserPoison, wgpu::Buffer)>,
+    > = std::sync::Mutex::new(Vec::new());
+    let mut sources = SOURCE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, _, buffer)) = sources
+        .iter()
+        .find(|(cached_device, cached, _)| cached_device == device && *cached == pattern)
+    {
+        return buffer.clone();
+    }
+    const BYTES: u64 = (16 << 20) + POISON_PHASE_BYTES;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("parser.poison"),
+        size: BYTES,
+        usage: wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: true,
+    });
+    let bytes: Vec<u8> = pattern
+        .words((BYTES / 4) as usize)
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .copy_from_slice(&bytes);
+    buffer.unmap();
+    sources.push((device.clone(), pattern, buffer.clone()));
+    buffer
 }
