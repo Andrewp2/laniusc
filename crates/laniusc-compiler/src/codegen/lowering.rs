@@ -210,7 +210,6 @@ pub(super) struct ScanParams {
 struct SemanticPasses {
     status_clear: PassData,
     project: PassData,
-    execution_rank_init: PassData,
     execution_rank_step: PassData,
     value_uses_clear: PassData,
     value_uses_mark: PassData,
@@ -245,7 +244,6 @@ impl SemanticPasses {
         Self {
             status_clear: load("codegen/lir/status_clear"),
             project: load("codegen/lir/semantic/project"),
-            execution_rank_init: load("codegen/lir/semantic/execution_rank_init"),
             execution_rank_step: load("codegen/lir/semantic/execution_rank_step"),
             value_uses_clear: load("codegen/lir/semantic/value_uses_clear"),
             value_uses_mark: load("codegen/lir/semantic/value_uses_mark"),
@@ -1077,7 +1075,6 @@ struct GpuSemanticLoweringOperations {
     place_clear: JobSized,
     place_mark: JobSized,
     place_addresses: JobSized,
-    execution_rank_init: JobSized,
     execution_rank_a_to_b: JobSized,
     execution_rank_b_to_a: JobSized,
     value_uses_clear: ComputeOperation,
@@ -1294,10 +1291,6 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.call_arg_scan.apply",
                 passes.scan_apply.reflection.as_ref(),
-            ),
-            (
-                "lir.semantic.execution_rank.init",
-                passes.execution_rank_init.reflection.as_ref(),
             ),
             (
                 "lir.semantic.execution_rank.step_a_to_b",
@@ -1798,12 +1791,6 @@ impl GpuSemanticLoweringStage {
                 "lir.semantic.place.addresses", &passes.place_addresses, &function_params,
                 capacities.parameters.max(capacities.local_capacity()).max(1),
             )?, sem_extent::place_addresses, capacities)?,
-            execution_rank_init: JobSized::new(direct_uniform!(
-                "lir.semantic.execution_rank.init",
-                &passes.execution_rank_init,
-                &count_params,
-                hir_nodes,
-            )?, sem_extent::hir, capacities)?,
             execution_rank_a_to_b,
             execution_rank_b_to_a,
             value_uses_clear: direct_uniform!(
@@ -2022,7 +2009,6 @@ impl GpuSemanticLoweringStage {
         operations.place_clear.record_job(encoder, job)?;
         operations.place_mark.record_job(encoder, job)?;
         stamp!("lowering.semantic.locals.scatter.done");
-        operations.execution_rank_init.record_job(encoder, job)?;
         for _ in 0..execution_rank_pairs.min(self.execution_rank_pairs) {
             operations.execution_rank_a_to_b.record_job(encoder, job)?;
             operations.execution_rank_b_to_a.record_job(encoder, job)?;

@@ -3094,15 +3094,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read_write("semantic_place_function_flags", semantic_place_function_flags),
             PassAccess::read_write("semantic_receiver_call_by_hir", semantic_receiver_call_by_hir),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.semantic.execution_rank.init",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("compact_hir_count", hir_count),
-            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("compact_expr_parent", hir_expr_parent),
             PassAccess::write("execution_rank_link", execution_rank_link_a),
             PassAccess::write("execution_rank", execution_rank_a),
@@ -6006,14 +5997,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_reachable", opt_reachable),
             PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.children.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_dominator_child_count_by_block",
                 opt_edge_count_by_block,
@@ -6069,14 +6052,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_dominator_children", opt_dominator_children),
             PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.tour.child_rows.clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_dominator_child_row_by_block",
                 opt_dominator_child_row_by_block,
@@ -6161,14 +6136,6 @@ fn lowering_compiler_graph_builder(
             PassAccess::write("opt_ir_dominator_preorder", opt_dominator_preorder),
             PassAccess::write("opt_ir_dominator_subtree_end", opt_dominator_subtree_end),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.preorder.inverse_clear",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
             PassAccess::write(
                 "opt_ir_block_by_dominator_preorder",
                 opt_block_by_dominator_preorder,
@@ -6206,15 +6173,6 @@ fn lowering_compiler_graph_builder(
                 opt_block_by_dominator_preorder,
             ),
             PassAccess::read_write("lowering_status", lowering_status),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
-        name: "lir.opt.dominators.depth.init",
-        phase: CompilerPhase::Optimization,
-        dispatch_domain: ResourceDomain::OptimizationBlocks,
-        accesses: vec![
-            PassAccess::read("opt_ir_block_total", opt_block_total),
-            PassAccess::read("opt_ir_immediate_dominator", opt_immediate_dominator),
             PassAccess::write(
                 "opt_ir_dominator_depth_link_out",
                 opt_dominator_depth_link_a,
@@ -11463,10 +11421,6 @@ mod tests {
             ("lir.status.clear", "codegen/lir/status_clear"),
             ("lir.semantic.project", "codegen/lir/semantic/project"),
             (
-                "lir.semantic.execution_rank.init",
-                "codegen/lir/semantic/execution_rank_init",
-            ),
-            (
                 "lir.semantic.execution_rank.step_a_to_b",
                 "codegen/lir/semantic/execution_rank_step",
             ),
@@ -11530,10 +11484,6 @@ mod tests {
         .unwrap();
         for (pass_name, artifact) in [
             (
-                "lir.opt.dominators.tour.child_rows.clear",
-                "codegen/lir/optimization/structure_dominator_tour_child_rows_clear",
-            ),
-            (
                 "lir.opt.dominators.tour.child_rows",
                 "codegen/lir/optimization/structure_dominator_tour_child_rows",
             ),
@@ -11554,20 +11504,12 @@ mod tests {
                 "codegen/lir/optimization/structure_dominator_tour_finalize",
             ),
             (
-                "lir.opt.dominators.preorder.inverse_clear",
-                "codegen/lir/optimization/structure_dominator_preorder_inverse_clear",
-            ),
-            (
                 "lir.opt.dominators.preorder.inverse_scatter",
                 "codegen/lir/optimization/structure_dominator_preorder_inverse_scatter",
             ),
             (
                 "lir.opt.dominators.preorder.validate",
                 "codegen/lir/optimization/structure_dominator_preorder_validate",
-            ),
-            (
-                "lir.opt.dominators.depth.init",
-                "codegen/lir/optimization/structure_dominator_depth_init",
             ),
             (
                 "lir.opt.dominators.depth.step_a_to_b",
