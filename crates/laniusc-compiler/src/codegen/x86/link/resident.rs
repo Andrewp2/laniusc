@@ -39,7 +39,7 @@ use crate::{
     },
 };
 
-const SLOT_WORDS: usize = 20;
+const SLOT_WORDS: usize = 21;
 const META_WORDS: u64 = 32;
 const OBJECT_WORDS: usize = 24;
 const SYMBOL_WORDS: usize = 8;
@@ -912,6 +912,7 @@ impl GpuX86Linker {
                 object.symbol_count,
                 checked_u32(slot.base[6], "identity word")?,
                 u32::from(slot.identities),
+                checked_u32(slot.base[0], "metadata word")?,
             ]);
             symbol_cap_total += u64::from(undefined) + u64::from(definitions);
             reloc_cap_total += u64::from(reloc) + u64::from(runtime);

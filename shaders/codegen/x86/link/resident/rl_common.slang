@@ -38,7 +38,9 @@ public ConstantBuffer<RLParams> gRL;
 // text base byte, rodata base byte, symbol cap base, relocation cap base,
 // text capacity bytes, rodata capacity bytes, then the host object's text
 // length, rodata length, relocation count and symbol count, then the
-// identity base word and whether the slot has rewritten identities.
+// identity base word, whether the slot has rewritten identities, and the
+// metadata base word. A slot's position in the store is not its object's
+// link index: a lowering that is retried or discarded parks again.
 public StructuredBuffer<uint> rl_slots;
 public StructuredBuffer<uint> st_meta;
 public StructuredBuffer<uint> st_reloc;
@@ -64,7 +66,7 @@ public RWStructuredBuffer<uint> rl_name_ref;
 public RWStructuredBuffer<uint> rl_dyn_words;
 public RWStructuredBuffer<uint> rl_out;
 
-public static const uint SLOT_WORDS = 20u;
+public static const uint SLOT_WORDS = 21u;
 public static const uint META_WORDS = 32u;
 public static const uint OBJECT_WORDS = 24u;
 public static const uint SYMBOL_WORDS = 8u;
@@ -115,7 +117,7 @@ public static const uint OB_ENTRY_RT_START = 21u;
 public uint rl_lane(uint3 tid) { return linear_dispatch_thread_id_2d(tid, 16776960u); }
 
 public uint slot_word(uint object, uint word) { return rl_slots[object * SLOT_WORDS + word]; }
-public uint meta_word(uint object, uint word) { return st_meta[object * META_WORDS + word]; }
+public uint meta_word(uint object, uint word) { return st_meta[slot_word(object, 20u) + word]; }
 public uint object_word(uint object, uint word) { return rl_objects[object * OBJECT_WORDS + word]; }
 
 public void fail(uint bit) { atomic_u32_or(rl_status, ST_ERRORS, bit); }
