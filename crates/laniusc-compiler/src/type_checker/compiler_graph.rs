@@ -3692,6 +3692,13 @@ fn build_graph(
         ResourceClass::Workspace,
         u64::from(module_record_capacity.max(1)) * 4 * 4,
     )?;
+    // `type_check.dependencies.clear_workspace` writes the sentinels, but a
+    // job runs it only when it has dependency interfaces. Without them the
+    // readers still run, and a kind word of zero means "not imported" to
+    // every one of them, so the phase reset supplies that state instead.
+    if dependency_capacity.visible_rows == 0 {
+        graph.mark_zero_initialized(resolved_dependency_value_metadata)?;
+    }
     for (alias, canonical) in [
         ("type_const_param_scalar_by_token_out", "type_const_param_scalar_by_token"),
         ("explicit_operand_resolved_value_decl", "resolved_value_decl"),
