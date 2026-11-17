@@ -14,6 +14,7 @@ mod paged;
 mod resident;
 pub(crate) use resident::{
     GpuX86LinkStore,
+    NativeImportPrefetch,
     ParkRegion,
     ParkSources,
     ParkTicket,
@@ -22,6 +23,7 @@ pub(crate) use resident::{
     ResidentSections,
     park,
     park_identities,
+    prefetch_native_imports,
 };
 mod splice;
 mod symbol_partitions;
