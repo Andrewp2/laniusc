@@ -759,7 +759,7 @@ impl GpuTraitSolver {
                 let regular = self.template(templates, packet, submission, &pieces(later), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
-            // Queue rounds go in one submit: each records 10 dispatches.
+            // Queue rounds go in one submit: each records 9 dispatches.
             if queue_rounds != 0 {
                 let queue = self.template(templates, packet, submission, &pieces(&WavePoint::QUEUE_ROUND), 1, state, demand)?;
                 submits.push(vec![queue; queue_rounds as usize]);

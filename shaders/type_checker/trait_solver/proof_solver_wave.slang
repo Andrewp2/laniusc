@@ -63,6 +63,10 @@ public static const uint PSW_SLOT_SPAN = 11u;
 public static const uint PSW_SLOT_CHUNK = 12u;    // 0: the whole span, c: its chunk c - 1
 public static const uint PSW_SLOT_THREADS = 13u;  // 1 or 256
 public static const uint PSW_SLOT_LIMIT = 14u;    // rows the template recorded for the span
+// 0, or a committing step's one-row span plus one: while that span is
+// planned the step launches at least one workgroup, whose last workgroup
+// commits (proof_commit_audit.slang, pca_last_group).
+public static const uint PSW_SLOT_ONE = 15u;
 
 public static const uint PSW_RUNNING = 0u;
 public static const uint PSW_STOPPED = 1u;  // the batch or the store stopped building
@@ -451,8 +455,12 @@ public void psw_plan()
         uint threads = trait_solver_wave_slots[base + PSW_SLOT_THREADS];
         trait_solver_wave_slots[base + PSW_SLOT_FIRST] = first + skip;
         trait_solver_wave_slots[base + PSW_SLOT_COUNT] = rows_here;
-        trait_solver_wave_slots[base + PSW_SLOT_ARGS] = select(threads == 1u, rows_here,
+        uint groups = select(threads == 1u, rows_here,
             (rows_here >> 8u) + select((rows_here & 255u) != 0u, 1u, 0u));
+        uint one = trait_solver_wave_slots[base + PSW_SLOT_ONE];
+        if (one != 0u && running && trait_solver_wave[PSW_SPAN_RECORDS + (one - 1u) * 2u + 1u] != 0u)
+            groups = max(groups, 1u);
+        trait_solver_wave_slots[base + PSW_SLOT_ARGS] = groups;
         trait_solver_wave_slots[base + PSW_SLOT_ARGS + 1u] = 1u;
         trait_solver_wave_slots[base + PSW_SLOT_ARGS + 2u] = 1u;
     }

@@ -434,7 +434,7 @@ finish point.
 
 - Work is admitted only at the first work and at a full round's expansion, so
   a round without Work runs only its queue steps. A queue round records just
-  those (10 dispatches against 43 for a full round). Its round start stops the
+  those (9 dispatches against 37 for a full round). Its round start stops the
   solve with `FULL_ROUND` before any step when Work is pending.
 - Original Works exist only before the first work and prerequisite Works only
   after an expansion. The opening round normalizes only original Works and
@@ -443,6 +443,13 @@ finish point.
 - After `FULL_ROUND` the host records full rounds from that round start (with
   both Work kinds if a kind check stopped it). When the finish point finds
   queue rows left, the host records twice as many queue rounds.
+- A commit stage's one-thread commit runs in the last workgroup of its
+  audit or lane dispatch (`proof_commit_audit.slang`, `pca_last_group`). Each
+  workgroup releases its lanes' accesses at device scope before it counts
+  itself arrived with an atomic add; the last one acquires before it commits.
+  The lanes write the audit header only with atomics, and the commit reads it
+  and the batch receipt with atomics. The planner launches one workgroup when
+  the commit is planned and the lanes have no row.
 - The queue point plans ready-proof emission and the emitted steps after it
   over the same queue rows. The proof-edge admission finds the edges that
   emission reserved in the store, so no planner runs between them. The
