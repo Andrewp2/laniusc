@@ -166,12 +166,16 @@ const S_BATCH_NONEMPTY: usize = 43;
 const S_BATCH_STRING_WORDS: usize = 44;
 const S_BATCHES: usize = 9;
 const S_LAYOUT_CHANGED: usize = 10;
+const S_PATTERN_CHANGED: usize = 11;
 const STATUS_WORDS: usize = 64;
 const BATCH_WORDS: usize = 12;
 const STATE_CHECKED: u32 = 1;
 /// Layout rounds recorded by a new projection. One round completes at least
 /// one nesting level of every type whose layout is still pending.
-const LAYOUT_ROUNDS: u32 = 32;
+const LAYOUT_ROUNDS: u32 = 16;
+/// Pattern payload rounds recorded by a new projection. One round resolves
+/// one nesting level of every pending pattern payload.
+const PATTERN_ROUNDS: u32 = 4;
 const CALL_WORDS: u64 = 22;
 
 const KERNELS: &[&str] = &[
@@ -845,6 +849,8 @@ pub struct RetainedProjection {
     /// Layout rounds recorded per check. The count doubles when the last
     /// round still completed a layout, and it is kept for later runs.
     layout_rounds: u32,
+    /// Pattern payload rounds recorded per check, grown the same way.
+    pattern_rounds: u32,
     batch_capacity: u32,
     batches: Option<wgpu::Buffer>,
     columns: Option<BatchColumns>,
@@ -921,6 +927,7 @@ impl RetainedProjection {
             type_capacity: 0,
             layout: None,
             layout_rounds: LAYOUT_ROUNDS,
+            pattern_rounds: PATTERN_ROUNDS,
             batch_capacity: 0,
             batches: None,
             columns: None,
@@ -1430,9 +1437,14 @@ impl RetainedProjection {
             if arms != 0 || payloads != 0 {
                 r.dispatch(K_PATTERN_ROOTS, &guard, inputs, &extra, arms.max(payloads))?;
                 if payloads != 0 {
-                    for _ in 0..64 {
+                    // The last round runs after its status word is cleared, as
+                    // the last layout round does.
+                    for _ in 1..self.pattern_rounds {
                         r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
                     }
+                    r.encoder()
+                        .clear_buffer(&self.status, S_PATTERN_CHANGED as u64 * 4, Some(4));
+                    r.dispatch(K_PATTERN_PAYLOADS, &guard, inputs, &extra, payloads)?;
                 }
             }
             if totals[S_TOTALS + 7] != 0 {
@@ -1497,18 +1509,30 @@ impl RetainedProjection {
             let cert = read.pop().unwrap();
             let status = read.pop().unwrap();
             trace(&format!("check: {status:?}"));
-            if status[S_LAYOUT_CHANGED] == 0 {
+            if status[S_LAYOUT_CHANGED] == 0 && status[S_PATTERN_CHANGED] == 0 {
                 break (table, cert, status);
             }
-            // Every unfinished round completes a layout, so the rounds a fixed
-            // point needs do not exceed the layout rows.
-            if self.layout_rounds > self.type_capacity {
-                bail!(
-                    "retained projection layout did not settle in {} rounds",
-                    self.layout_rounds
-                );
+            // Every unfinished round completes a layout (resolves a payload),
+            // so the rounds a fixed point needs do not exceed the layout rows
+            // (the payloads).
+            if status[S_LAYOUT_CHANGED] != 0 {
+                if self.layout_rounds > self.type_capacity {
+                    bail!(
+                        "retained projection layout did not settle in {} rounds",
+                        self.layout_rounds
+                    );
+                }
+                self.layout_rounds = self.layout_rounds.saturating_mul(2);
             }
-            self.layout_rounds = self.layout_rounds.saturating_mul(2);
+            if status[S_PATTERN_CHANGED] != 0 {
+                if self.pattern_rounds > payloads {
+                    bail!(
+                        "retained projection pattern payloads did not settle in {} rounds",
+                        self.pattern_rounds
+                    );
+                }
+                self.pattern_rounds = self.pattern_rounds.saturating_mul(2);
+            }
             self.queue
                 .write_buffer(&self.status, 0, &words_bytes(&totals));
         };

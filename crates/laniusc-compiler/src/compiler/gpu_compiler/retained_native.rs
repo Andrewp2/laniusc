@@ -325,7 +325,7 @@ impl GpuCompiler<'_> {
         let resident = (target == SourcePackArtifactTarget::X86_64
             && store == typecheck::NativeObjectStore::Memory
             && build.native_link.is_some())
-            .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device)))
+            .then(|| self.x86_linker().ok().map(|linker| linker.activate_resident_store(&self.gpu.device, &self.gpu.queue)))
             .flatten();
         self.attach_program_retention(Some(build.store.clone()));
         let originals = self.compile_retained_originals(target,source_pack, limits, build.native_link.as_ref(), store).await;

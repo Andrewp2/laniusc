@@ -1,4 +1,6 @@
-// One lane per payload, one dependent level per dispatch. Types are read
+// One lane per payload, one dependent level per dispatch. A lane that
+// resolves its payload sets PJ_S_PATTERN_CHANGED, which the host clears
+// before the last round: a set word means more levels may remain. Types are read
 // only from parents and are immutable once resolved. A nested pattern uses
 // its parent's realized variant schema, never the outer scrutinee's type.
 import type_checker.retention.projection.pj_patterns;
@@ -21,4 +23,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (schema.x == RT_INVALID || payload.z >= schema.z)
     { pj_row_fail(base+payload.y,PJ_E_FIELD,payload.z); return; }
     pj_g_aux[base+payload.y].w = pj_schema_type(parent,schema.w+payload.z);
+    pj_status[PJ_S_PATTERN_CHANGED] = 1u;
 }

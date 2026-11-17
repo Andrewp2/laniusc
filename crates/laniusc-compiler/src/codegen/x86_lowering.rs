@@ -985,8 +985,17 @@ impl GpuX86LirStage {
         self.object.as_ref().map(|object| object.metadata_readback())
     }
 
-    /// The object from its `metadata` words; `checked` gets its text and
-    /// rodata bytes before the payload is read.
+    /// The text and rodata bytes of the object its `metadata` words
+    /// describe, once they are validated.
+    pub(crate) fn object_section_bytes(&self, metadata: &[u32]) -> Result<usize> {
+        self.object
+            .as_ref()
+            .context("x86 object projection was not allocated for this lowering job")?
+            .section_bytes(metadata)
+    }
+
+    /// The object from its `metadata` words, which `object_section_bytes`
+    /// accepted.
     pub(crate) fn finish_object(
         &self,
         device: &wgpu::Device,
@@ -994,12 +1003,12 @@ impl GpuX86LirStage {
         library_id: u32,
         unit_id: u32,
         metadata: &[u32],
-        checked: impl FnOnce(usize) -> Result<()>,
-    ) -> Result<(super::x86::GpuX86RelocatableObject, Vec<u32>)> {
+        keep: Option<&std::sync::Arc<super::x86::GpuX86LinkStore>>,
+    ) -> Result<(super::x86_object_artifact::GpuX86FinishedObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("x86 object projection was not allocated for this lowering job")?
-            .finish(device, queue, library_id, unit_id, metadata, checked)
+            .finish(device, queue, library_id, unit_id, metadata, keep)
     }
 }
 

@@ -17,11 +17,13 @@ use crate::gpu::{
 mod link;
 pub(crate) use link::{
     GpuX86LinkInput,
+    GpuX86LinkStore,
     ParkRegion,
     ParkSources,
     ParkTicket,
     ResidentObjectKey,
     ResidentRoutes,
+    ResidentSections,
     park as park_resident_object,
     park_identities as park_resident_identities,
     GpuX86MissingSymbolDefinition,

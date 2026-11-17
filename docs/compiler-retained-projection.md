@@ -306,9 +306,18 @@ at least its decoded string bytes (`string_words` × 4).
 
 A projection recording puts its dispatches in one compute pass and ends the
 pass only before a copy or clear; wgpu orders the storage accesses between
-dispatches. Repeated rounds of a kernel (32 layout rounds, up to 64 pattern
-payload rounds) bind the same buffers, so a recording creates one bind group
-per kernel and extra-buffer set. The string scan's step configs are resident
+dispatches. Repeated rounds of a kernel (layout rounds, pattern payload
+rounds) bind the same buffers, so a recording creates one bind group per
+kernel and extra-buffer set.
+
+Both round counts grow on demand. A new projection records 16 layout rounds
+and 4 pattern payload rounds, which the settings app needs (its pattern
+payloads are all resolved by `04d_pattern_roots`). The host clears a status
+word before the last round of each kernel (`PJ_S_LAYOUT_CHANGED`,
+`PJ_S_PATTERN_CHANGED`); a round that still completes a layout or resolves a
+payload sets it, and the check reruns from the plan's status with twice the
+rounds of that kernel. The projection keeps the grown counts for its later
+runs. The string scan's step configs are resident
 buffers. In the settings app this took the check from 5.9 ms to 2.3 ms
 (recording 1.45 to 0.55 ms, submission 1.6 to 0.85 ms).
 
@@ -392,8 +401,8 @@ The two-unit slice: 5 instances, 90 rows, 117 requests, 1 batch.
 | plan / substitution / check | 0.6 ms / 1.0 ms / 2.7 ms |
 | lowering of the batch | 45 ms (the first lowering job of the process) |
 
-Work is O(rows + requests + terms × 32 layout rounds). The span is the
-substitution's term height plus 32 layout rounds and two tree walks of at
+Work is O(rows + requests + terms × layout rounds). The span is the
+substitution's term height plus the layout rounds and two tree walks of at
 most 256 steps per row. Memory is O(ranks + rows + TermIds) for the check
 and O(largest batch) for the lowering columns.
 

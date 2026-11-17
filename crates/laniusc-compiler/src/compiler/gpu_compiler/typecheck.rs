@@ -949,6 +949,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         object_request: Option<LoweringObjectRequest>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
+        prepare_retention_export(&deferred.recorded);
         let ll1 = deferred
             .check
             .read_status_result(device)
@@ -998,6 +999,43 @@ impl<'gpu> GpuCompiler<'gpu> {
                 )
             })?;
         finish_timer.stamp("typecheck_status");
+        let retention = match &recorded.type_check.program_retention {
+            Some(store) => Some((
+                store,
+                recorded.retention_snapshot.as_ref().ok_or_else(|| {
+                    CompileError::GpuFrontend("program retention export without the job's snapshot".to_string())
+                })?,
+            )),
+            None => None,
+        };
+        // The export was recorded while the host waited for the job
+        // (`prepare_retention_export`). It is submitted as soon as the x86
+        // object has passed every lowering retry point, so its GPU work
+        // overlaps the semantic interface's finish and the payload decode.
+        let mut export_submitted = None;
+        let object_status = match object_request {
+            Some(request) if request.target() == LoweringTarget::X86_64 => {
+                let pipeline = self
+                    .lowering_pipeline(LoweringTarget::X86_64)
+                    .map_err(CompileError::GpuCodegen)?;
+                let status = pipeline
+                    .read_x86_object_status(device)
+                    .map_err(|err| CompileError::GpuCodegen(format!("{err:#}")))?;
+                if let Some((store, snapshot)) = retention
+                    && pipeline.check_x86_object(&status).is_ok()
+                {
+                    export_submitted = Some(store.submit_export_job(snapshot));
+                }
+                Some(status)
+            }
+            _ => None,
+        };
+        // A failure after the export was submitted leaves the store invalid.
+        let abandon_export = |export_submitted: &Option<anyhow::Result<_>>| {
+            if let (Some((store, _)), Some(Ok(_))) = (retention, export_submitted) {
+                store.abandon_export();
+            }
+        };
         let semantic_interface = recorded
             .semantic_interface
             .as_ref()
@@ -1005,6 +1043,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 self.type_checker
                     .finish_semantic_interface(device, queue, identity)
                     .map_err(|err| {
+                        abandon_export(&export_submitted);
                         semantic_interface_error_to_compile_error_for_source_pack(
                             device,
                             queue,
@@ -1048,18 +1087,11 @@ impl<'gpu> GpuCompiler<'gpu> {
             None
         };
         finish_timer.stamp("target_artifact");
-        let retention = match &recorded.type_check.program_retention {
-            Some(store) => Some((
-                store,
-                recorded.retention_snapshot.as_ref().ok_or_else(|| {
-                    CompileError::GpuFrontend("program retention export without the job's snapshot".to_string())
-                })?,
-            )),
-            None => None,
-        };
-        // The export is submitted once the x86 object has passed every
-        // lowering retry point, so its GPU work overlaps the payload decode.
-        let mut export_submitted = None;
+        // A retained native build's own objects stay in its link store.
+        let keep = retention
+            .filter(|(store, _)| store.native_projection())
+            .and_then(|_| self.x86_linker().ok())
+            .and_then(|linker| linker.parking_store());
         let mut native_object = if let Some(request) = object_request {
             let target = request.target();
             let (library_id, unit_id) = request.ids();
@@ -1068,12 +1100,22 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .map_err(CompileError::GpuCodegen)?;
             let result = match target {
                 LoweringTarget::X86_64 => pipeline
-                    .finish_x86_object_then(device, queue, library_id, unit_id, || {
-                        if let Some((store, snapshot)) = retention {
-                            export_submitted = Some(store.submit_export_job(snapshot.tables()));
-                        }
-                    })
-                    .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
+                    .finish_x86_object_then(
+                        device,
+                        queue,
+                        library_id,
+                        unit_id,
+                        object_status.expect("an x86 object request reads its status"),
+                        keep.as_ref(),
+                        || {
+                            if let Some((store, snapshot)) = retention
+                                && export_submitted.is_none()
+                            {
+                                export_submitted = Some(store.submit_export_job(snapshot));
+                            }
+                        },
+                    )
+                    .map(|(object, hirs)| (CompiledSourcePackObject::from(object), hirs)),
                 LoweringTarget::Wasm => pipeline
                     .finish_wasm_object(device, queue, library_id, unit_id)
                     .map(|(object, hirs)| (CompiledSourcePackObject::Wasm(object), hirs)),
@@ -1081,10 +1123,8 @@ impl<'gpu> GpuCompiler<'gpu> {
             match result {
                 Ok(object) => Some(object),
                 Err(error) => {
-                    if let (Some((store, _)), Some(Ok(_))) = (retention, &export_submitted) {
-                        // The payload failed after the export was submitted.
-                        store.abandon_export();
-                    }
+                    // The payload failed after the export was submitted.
+                    abandon_export(&export_submitted);
                     if let Some(demand) = pipeline
                         .output_demand_for_retry(&error)
                         .map_err(CompileError::GpuCodegen)?
@@ -1116,22 +1156,28 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |err: anyhow::Error| CompileError::GpuFrontend(format!("program retention export: {err:#}"));
             let submitted = match export_submitted {
                 Some(submitted) => submitted,
-                None => store.submit_export_job(snapshot.tables()),
+                None => store.submit_export_job(snapshot),
             }
             .map_err(export_error)?;
-            store.finish_export_job(snapshot.tables(), submitted).map_err(export_error)?;
             // A retained native build: the export scratch still maps this
-            // job's call rows to their retained uses.
-            if let Some((object, call_hirs)) = &mut native_object
-                && let Some(tables) = self.retained_native_calls.lock().unwrap().as_mut()
-            {
-                match object {
-                    CompiledSourcePackObject::X86_64(object) => store.provisionalize_x86_calls(snapshot,tables,object,call_hirs),
-                    CompiledSourcePackObject::Wasm(object) => store.provisionalize_wasm_calls(snapshot,tables,object,call_hirs),
-                    CompiledSourcePackObject::X86_64File(_) => unreachable!("object has not been spilled"),
+            // job's call rows to their retained uses. The rewrite is
+            // submitted behind the export and read with it.
+            let mut calls = self.retained_native_calls.lock().unwrap();
+            match (&mut native_object, calls.as_mut()) {
+                (Some((object, call_hirs)), Some(tables)) => {
+                    let export = Some(submitted);
+                    match object {
+                        CompiledSourcePackObject::X86_64(object) => store.provisionalize_x86_calls(snapshot,tables,object,call_hirs,export),
+                        CompiledSourcePackObject::Wasm(object) => store.provisionalize_wasm_calls(snapshot,tables,object,call_hirs,export),
+                        CompiledSourcePackObject::X86_64File(object) => store.provisionalize_x86_file_calls(snapshot,tables,object,call_hirs,export),
+                    }
+                        .map_err(|err| CompileError::GpuFrontend(format!("program retention export and original call symbols: {err:#}")))?;
                 }
-                    .map_err(|err| CompileError::GpuFrontend(format!("retained original call symbols: {err:#}")))?;
+                _ => {
+                    store.finish_export_job(snapshot.tables(), submitted).map_err(export_error)?;
+                }
             }
+            drop(calls);
             finish_timer.stamp("program_retention");
         }
         let (native_object, native_call_hirs) = match native_object {
@@ -1952,6 +1998,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         },
                         |device, queue, bufs, parser, recorded| {
+                            prepare_retention_export(&recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
@@ -2640,6 +2687,19 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
 }
 
+/// Records the job's retention export while the host waits for the job's
+/// GPU work; it is submitted once the job passes its retry points
+/// (`finish_checked_source_pack_pipeline`).
+fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
+    if let (Some(store), Some(snapshot)) =
+        (&recorded.type_check.program_retention, &recorded.retention_snapshot)
+        && let Err(error) = store.prepare_export_job(snapshot)
+    {
+        // The submission records the export again and reports the error.
+        log::debug!("program retention export was not prepared: {error:#}");
+    }
+}
+
 /// Where a native build keeps object sections between lowering and the link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum NativeObjectStore {
@@ -2654,6 +2714,16 @@ pub(in crate::compiler) enum NativeObjectStore {
 impl NativeObjectStore {
     pub(in crate::compiler) fn file_object(self) -> bool {
         self != Self::Keep
+    }
+}
+
+impl From<crate::codegen::x86_object_artifact::GpuX86FinishedObject> for CompiledSourcePackObject {
+    fn from(object: crate::codegen::x86_object_artifact::GpuX86FinishedObject) -> Self {
+        use crate::codegen::x86_object_artifact::GpuX86FinishedObject;
+        match object {
+            GpuX86FinishedObject::Host(object) => Self::X86_64(object),
+            GpuX86FinishedObject::Parked(object) => Self::X86_64File(object),
+        }
     }
 }
 
