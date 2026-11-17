@@ -14,6 +14,7 @@ import type_checker.substitution.ct_checked;
 import type_checker.substitution.ct_rows;
 import type_checker.substitution.ct_realize;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -33,7 +34,7 @@ static const uint INVALID = 0xffffffffu;
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = dtid.x + dtid.y * 16776960u;
+    uint node = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (node >= min(compact_hir_count[0u], gParams.n_hir_nodes) ||
         compact_hir_core[node].kind != 24u) return;
     if (!inference_item_active(compact_hir_core[node].token_start)) return;

@@ -30,6 +30,7 @@ import type_checker.predicates.owner_lookup;
 import type_checker.predicates.method_contract_lookup;
 import type_checker.type.instances.generic_param_lookup;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -271,7 +272,7 @@ bool publish_trait_arguments(uint call, uint predicate, uint member_trait, uint 
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = linear_thread_id_2d(dtid, 65535u, 256u);
+    uint call = inference_listed_hir_row(linear_thread_id_2d(dtid, 65535u, 256u));
     uint2 aliases;
     uint token = method_call_token(call, aliases);
     if (!inference_item_active(token)) return;

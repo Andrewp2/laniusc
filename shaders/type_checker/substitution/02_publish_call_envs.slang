@@ -28,6 +28,7 @@ import type_checker.calls.explicit_call_environment;
 import type_checker.calls.claim_lookup;
 import type_checker.calls.claim_reference;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -204,7 +205,7 @@ struct CallEnvBindings : ICtEnvBindings
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (call >= hir_count()) return;
     uint token = call_token(call);
     if (token >= gParams.n_tokens || !inference_item_active(token)) return;

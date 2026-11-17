@@ -256,6 +256,59 @@ The largest changes by pass: bound inference 929 to 558 µs, the three listed ro
 
 Measured and not kept: removing `globallycoherent` from the canonical tables, the row-of map, the substitution memo and the call environments (an unsafe diagnostic) lowered rounds 1 to 10 by about 0.9 ms and raised some passes (contextual result requests by about 0.26 ms). The latency of the late rounds' active items is mostly not the L2 round trips of coherent loads.
 
+## Listed active blocks (2026-11-17, third pass)
+
+The masked passes of a round now visit only the blocks of 256 rows that hold an item of an active function. A lane still checks its own item with `inference_item_active`, so the list only removes workgroups whose lanes would all return.
+
+Once per job, before the rounds:
+
+- `03m0_inference_ranges` records each function's HIR row range and token range, and lists the functions. A row without an owning function marks its block as always active.
+- `03m2_inference_list_args` sizes the writer's dispatch: one lane per listed function and per always-active block.
+
+At the start of each round's passes, `03m1_inference_block_list` writes the block lists and the listed passes' dispatch arguments:
+
+- In round 1, outside the rounds, and in a round after a change without an owning function (the global word), it copies the full HIR and token grids and sets the list flag to 0.
+- Otherwise each lane takes one function. If the function is active in the round, the lane lists the blocks of its two ranges. A per-block mark holds the last round that listed the block, so a block is listed once.
+- The last workgroup reads the two counts, clears them for the next round, and writes the arguments. A list longer than 65,535 blocks falls back to the full grid.
+
+A listed pass dispatches from `inference_hir_list_args` or `inference_token_list_args`. Its kernel maps a lane to its row with `inference_listed_hir_row` or `inference_listed_token` (`inference_blocks.slang`). The block lists are in a separate module, imported only by the listed kernels, because Slang keeps an unused module global in a kernel's bindings.
+
+Listed passes:
+
+| Domain | Passes |
+|---|---|
+| HIR rows | `03a`, `03a4a`, `03a4b`, `03a4c`, `03d`, `03e`, `03f`, `03g`, `03h`, `03i`, `03k1`, `03k3`, `03l3`, `substitution/02`, `type/instances/03_member_results`, `03a_member_receivers`, `04a3`, `methods/06b`, `07a`, `dependencies/15`, `15a`, `15b` |
+| Tokens | `methods/07_resolve_table`, `methods/08_finalize_candidates`, `type/instances/03b_member_substitute` |
+
+The final pass dispatches the same kernels over the full grid. Its specs (`*.final`, `explicit_applications.validate.admit_constants`) keep the HIR grid arguments.
+
+A change inside a round can make a function active in that round's later passes, through its own stamp or the global word. The list was written at the round's start, so those passes do not visit it until the next round. In the next round its stamp, or the global word, makes it active, and the list includes it or the passes visit every row. The fixed point is the same, because the rounds stop only after a round with no changes. The settings build converges in the same 10 rounds.
+
+Settings at this change, idle round after convergence, untraced (`LANIUS_EXTRA_ROUNDS` diagnostic, minimum of 4 builds):
+
+| | µs per round |
+|---|---|
+| Before | 352 |
+| First 7 HIR passes listed | 334 |
+| The call specs listed | 298 |
+| All passes in the table | 229 |
+| Writer with one lane per function (kept) | 225.9 |
+| Of that, the writer | 6.9 |
+
+Two earlier writers were not kept. One workgroup for the whole list cost 66 µs traced per round. One slot per block left 192 HIR blocks listed in an idle round, which raised the floor.
+
+Traced, sum of the per-pass minimum over 3 builds:
+
+| | Before | After |
+|---|---|---|
+| Rounds 1 to 10 | 12.75 ms | 12.13 ms |
+| Type check | 27.93 ms | 27.22 ms |
+| Writer, per round | | 17 to 20 µs |
+
+The writer's traced cost includes the copy-to-compute barrier after the round number copy, about 10 µs. The first pass of the round paid it before. Per round, traced: 1,864, 1,640, 1,406, 1,213, 1,100, 1,028, 1,000, 940, 892 and 847 µs. The settings executable stayed `115a4d52a2ae77e0`.
+
+Masked passes not yet listed: claim emission `03a1` (its span check visits inactive items), `methods/06_mark_call_keys` (one grid over both domains), `16_project_struct_literals` through the imported fields group, the argument-row passes (`03a0_match_arg_params_init`, argument consumption, `03k`, parameter scatter), the gated explicit binding `03a0`, and the match and enum passes.
+
 ## What remains
 
 - Activity per item, as above.

@@ -96,15 +96,15 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) member_receivers: ComputeOperation,
     pub(in crate::type_checker) member_receivers_after_match: ComputeInvocation,
     pub(in crate::type_checker) member_receivers_after_array: ComputeInvocation,
-    pub(in crate::type_checker) member_receivers_inference: ComputeInvocation,
+    pub(in crate::type_checker) member_receivers_inference: ComputeOperation,
     pub(in crate::type_checker) member_results: ComputeOperation,
     pub(in crate::type_checker) member_results_after_match: ComputeInvocation,
     pub(in crate::type_checker) member_results_after_array: ComputeInvocation,
-    pub(in crate::type_checker) member_results_inference: ComputeInvocation,
+    pub(in crate::type_checker) member_results_inference: ComputeOperation,
     pub(in crate::type_checker) member_substitute: ComputeOperation,
     pub(in crate::type_checker) member_substitute_after_match: ComputeInvocation,
     pub(in crate::type_checker) member_substitute_after_array: ComputeInvocation,
-    pub(in crate::type_checker) member_substitute_inference: ComputeInvocation,
+    pub(in crate::type_checker) member_substitute_inference: ComputeOperation,
     pub(in crate::type_checker) struct_init_clear: ComputeOperation,
     pub(in crate::type_checker) struct_init_contexts: ComputeOperation,
     pub(in crate::type_checker) nested_struct_init_contexts: ComputeOperation,
@@ -158,8 +158,11 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) generic_claim_validation: CallGenericClaimValidationOperation,
     pub(in crate::type_checker) environment_admission: CallEnvironmentAdmission,
     pub(in crate::type_checker) contextual_result_requests: ComputeOperation,
+    pub(in crate::type_checker) contextual_results_final: ComputeOperation,
     pub(in crate::type_checker) clear_generic_claim_type_args: ComputeOperation,
     pub(in crate::type_checker) apply_row_args: ComputeOperation,
+    /// The rounds' application (listed active blocks).
+    pub(in crate::type_checker) apply_final_row_args: ComputeOperation,
     /// Bound-directed inference (calls/03l*): clear, the resident page's
     /// implementations and bounds, this unit's implementations, inference.
     pub(in crate::type_checker) bound_inference: Option<BoundInferenceOperations>,
@@ -180,6 +183,10 @@ pub(in crate::type_checker) struct CallBindGroups {
     /// Lists the live type rows the rounds' row passes visit, before the
     /// rounds (type/instances/live_type_row_list.slang).
     pub(in crate::type_checker) type_row_list: Option<TypeRowListOperations>,
+    /// Each function's rows once per job, and the list of the round's active
+    /// blocks at the start of each round's passes
+    /// (calls/inference_blocks.slang).
+    pub(in crate::type_checker) inference_blocks: InferenceBlockOperations,
     pub(in crate::type_checker) return_type_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_imported_fields: Option<ComputeOperation>,
     pub(in crate::type_checker) project_expression_types: Option<ComputeOperation>,
@@ -211,6 +218,17 @@ pub(in crate::type_checker) struct CallBindGroups {
 }
 
 /// The passes of bound-directed generic call inference.
+pub(in crate::type_checker) struct InferenceBlockOperations {
+    /// Zeroes the function ranges, marks and always-active lists.
+    pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
+    /// Records each function's HIR rows and tokens.
+    pub(in crate::type_checker) ranges: ComputeOperation,
+    /// Sizes the list's dispatch: a lane per function.
+    pub(in crate::type_checker) args: ComputeOperation,
+    /// Lists the round's active blocks and writes the listed passes' grids.
+    pub(in crate::type_checker) list: ComputeOperation,
+}
+
 pub(in crate::type_checker) struct TypeRowListOperations {
     /// Zeroes the list's count.
     pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
@@ -256,6 +274,16 @@ pub(in crate::type_checker) struct MethodBindGroups {
     pub(in crate::type_checker) finalize_candidates: ComputeOperation,
     pub(in crate::type_checker) resolve: ComputeOperation,
     pub(in crate::type_checker) lookup: MethodLookupSweeps,
+    pub(in crate::type_checker) inference: MethodInferenceOperations,
+}
+
+/// The inference rounds' own operations, which dispatch from the listed
+/// active blocks (calls/inference_blocks.slang).
+pub(in crate::type_checker) struct MethodInferenceOperations {
+    pub(in crate::type_checker) mark_call_return_keys: ComputeOperation,
+    pub(in crate::type_checker) resolve_table: ComputeOperation,
+    pub(in crate::type_checker) offer_bound_members: ComputeOperation,
+    pub(in crate::type_checker) finalize_candidates: ComputeOperation,
 }
 
 /// The preliminary lookup sweeps' own operations. They dispatch from the gated

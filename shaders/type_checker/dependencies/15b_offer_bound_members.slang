@@ -31,6 +31,7 @@ import type_checker.predicates.owner_lookup;
 import type_checker.predicates.trait_reference;
 import type_checker.type.instances.generic_param_lookup;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -261,7 +262,7 @@ bool publish_trait_arguments(uint call, uint predicate)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    uint call = inference_listed_hir_row(linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE));
     uint2 aliases;
     uint token = method_call_token(call, aliases);
     if (!inference_item_active(token)) return;

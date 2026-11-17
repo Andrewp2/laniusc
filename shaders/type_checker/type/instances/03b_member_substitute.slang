@@ -4,6 +4,7 @@
 import type_checker.checked_type_graph;
 import status;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -93,7 +94,7 @@ void publish_substituted_member_ref(uint member_token)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint token = linear_thread_id(dtid);
+    uint token = inference_listed_token(linear_thread_id(dtid));
     if (!valid_token(token) || !inference_item_active(token))
         return;
     publish_substituted_member_ref(token);

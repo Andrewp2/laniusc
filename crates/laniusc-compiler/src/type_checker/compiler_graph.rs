@@ -378,6 +378,32 @@ pub(super) const CALLS_TYPE_ROW_LIST_ARGS_PASS: &str = "type_check.calls.type_ro
 pub(super) const CALLS_TYPE_ROW_LIST_KERNEL: &str = "type_checker/type/instances/02d_list_type_rows";
 pub(super) const CALLS_TYPE_ROW_LIST_ARGS_KERNEL: &str =
     "type_checker/type/instances/02e_type_row_list_args";
+/// The inference rounds' masked passes visit the listed blocks of rows that
+/// hold an item of an active function (shaders/type_checker/calls/
+/// inference_blocks.slang): each function's rows are recorded once before the
+/// rounds, and the list is written at the start of each round's passes.
+pub(super) const CALLS_INFERENCE_BLOCKS_CLEAR_PASS: &str = "type_check.calls.inference_blocks.clear";
+pub(super) const CALLS_INFERENCE_RANGES_PASS: &str = "type_check.calls.inference_blocks.ranges";
+pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/03m0_inference_ranges";
+pub(super) const CALLS_INFERENCE_LIST_ARGS_PASS: &str = "type_check.calls.inference_blocks.list_args";
+pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/03m2_inference_list_args";
+pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
+pub(super) const CALLS_INFERENCE_BLOCK_LIST_KERNEL: &str =
+    "type_checker/calls/03m1_inference_block_list";
+/// The rounds' passes over HIR rows that dispatch from the listed blocks.
+pub(super) const LISTED_HIR_INFERENCE_PASSES: &[&str] = &[
+    CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
+    CALLS_MATERIALIZE_RETURN_TYPES_PASS,
+    CALLS_PROJECT_LITERAL_CONTEXTS_PASS,
+    CALLS_PROJECT_EXPRESSION_TYPES_PASS,
+    CALLS_PROJECT_ARRAY_LITERAL_ELEMENTS_PASS,
+    CALLS_MATERIALIZE_ARRAY_LITERALS_PASS,
+    CALLS_INFER_RETURN_BINDINGS_PASS,
+    TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
+    TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
+];
+/// The rounds' passes over tokens that dispatch from the listed blocks.
+pub(super) const LISTED_TOKEN_INFERENCE_PASSES: &[&str] = &[TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS];
 /// The rounds' closed application index is `02c_index_closed_applications`
 /// with `gTypeRowList.listed` set (`TypeRowListParams`).
 pub(super) const LISTED_APPLICATION_INDEX_KERNEL: &str =
@@ -3110,6 +3136,22 @@ fn build_graph(
         type_live_row_count as "type_live_row_count" in Calls => 16;
         _type_live_row_args as "type_live_row_args" in DispatchArguments [StorageIndirect] => 12;
     });
+    // The listed active blocks of the inference rounds
+    // (calls/03m0_inference_ranges.slang).
+    graph_resources!(graph, Workspace {
+        inference_block_tables as "inference_block_tables" in Calls =>
+            (8 + 5 * (hir_rows + 1) + 2 * (hir_blocks + token_blocks)) * 4;
+        _inference_list_writer_args as "inference_list_writer_args" in DispatchArguments [StorageIndirect] => 12;
+        inference_hir_blocks as "inference_hir_blocks" in Calls => (2 + hir_blocks) * 4;
+        inference_token_blocks as "inference_token_blocks" in Calls => (2 + token_blocks) * 4;
+        _inference_hir_list_args as "inference_hir_list_args" in DispatchArguments [StorageIndirect] => 12;
+        _inference_token_list_args as "inference_token_list_args" in DispatchArguments [StorageIndirect] => 12;
+    });
+    // Listed kernels also run outside the rounds, where they bind the lists
+    // but read them only in a round (inference_blocks.slang), after 03m0 and
+    // 03m1 wrote them.
+    graph.mark_zero_initialized(inference_hir_blocks)?;
+    graph.mark_zero_initialized(inference_token_blocks)?;
     // Method call keys (methods/06) append to the list wherever they run.
     // Before the list is built they append to a stale list, which the
     // clear and the listing then replace, so no pass reads what they wrote.
@@ -5614,6 +5656,35 @@ fn build_graph(
         &[],
     )?;
     graph.mark_pass_bindings_initialize(CALLS_TYPE_ROW_LIST_ARGS_PASS, &["type_live_row_args"])?;
+    // Each function's rows, for the listed blocks of the rounds.
+    graph.add_buffer_clear_pass(
+        CALLS_INFERENCE_BLOCKS_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "inference_block_tables",
+        inference_block_tables,
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_INFERENCE_RANGES_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        CALLS_INFERENCE_RANGES_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(CALLS_INFERENCE_RANGES_PASS, "token_hir_active_dispatch_args")?;
+    graph.mark_pass_bindings_initialize(
+        CALLS_INFERENCE_RANGES_PASS,
+        &["inference_hir_blocks", "inference_token_blocks"],
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_INFERENCE_LIST_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Calls,
+        kernels,
+        CALLS_INFERENCE_LIST_ARGS_KERNEL,
+        &[],
+    )?;
+    graph.mark_pass_bindings_initialize(CALLS_INFERENCE_LIST_ARGS_PASS, &["inference_list_writer_args"])?;
     // The unit's own trait implementations and bounds are declaration facts:
     // they are collected once, before the inference rounds (and before the
     // final pass of a job without rounds), and kept for every round.
@@ -5657,6 +5728,19 @@ fn build_graph(
         "call_inference_round",
         call_inference_round,
     )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_INFERENCE_BLOCK_LIST_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Calls,
+        kernels,
+        CALLS_INFERENCE_BLOCK_LIST_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(CALLS_INFERENCE_BLOCK_LIST_PASS, "inference_list_writer_args")?;
+    graph.mark_pass_bindings_initialize(
+        CALLS_INFERENCE_BLOCK_LIST_PASS,
+        &["inference_hir_list_args", "inference_token_list_args"],
+    )?;
     METHODS_MARK_CALL_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_MARK_CALL_RETURN_KEYS_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE_TABLE_INFERENCE.register_kernel(&mut graph, kernels)?;
@@ -5682,7 +5766,7 @@ fn build_graph(
             "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_INFERENCE.name, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_COLLECT_INFERENCE.name, "inference_hir_list_args")?;
     DEPENDENCY_BOUND_MEMBERS_OFFER_INFERENCE.register_kernel(&mut graph, kernels)?;
     METHODS_FINALIZE_CANDIDATES_INFERENCE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
@@ -5696,7 +5780,7 @@ fn build_graph(
             "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
-    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_INFERENCE.name, "hir_active_dispatch_args")?;
+    graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_INFERENCE.name, "inference_hir_list_args")?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_METHOD_PARAMS_SCATTER_INFERENCE.name,
         CompilerPhase::TypeCheck,
@@ -5943,7 +6027,7 @@ fn build_graph(
                 "type_checker/calls/03k3_project_record_contexts",
                 reflected_bindings!["canonical_type_roots" => dependency_canonical_type_roots: Read,],
             )?;
-            graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "hir_active_dispatch_args")?;
+            graph.add_indirect_dispatch(CALLS_RECORD_CONTEXTS_PASS, "inference_hir_list_args")?;
             CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT.register_kernel(&mut graph, kernels)?;
         }
         if name == CALLS_PROJECT_LITERAL_CONTEXTS_PASS
@@ -5974,7 +6058,14 @@ fn build_graph(
                     record_kernel,
                     record_bindings,
                 )?;
-                graph.add_indirect_dispatch(record_name, "hir_active_dispatch_args")?;
+                graph.add_indirect_dispatch(
+                    record_name,
+                    if record_name == CALLS_RECORD_NESTED_CONTEXTS_PASS {
+                        "inference_hir_list_args"
+                    } else {
+                        "hir_active_dispatch_args"
+                    },
+                )?;
             }
             super::match_passes::register_field_expected_ids_pass(
                 &mut graph,
@@ -5996,6 +6087,10 @@ fn build_graph(
                 "match_hir_dispatch_args"
             } else if name == CALLS_RETURN_TYPE_INDEX_PASS || name == CALLS_RETURN_IMPORTED_FIELDS_PASS {
                 "type_live_row_args"
+            } else if LISTED_HIR_INFERENCE_PASSES.contains(&name) {
+                "inference_hir_list_args"
+            } else if LISTED_TOKEN_INFERENCE_PASSES.contains(&name) {
+                "inference_token_list_args"
             } else if domain == ResourceDomain::HirNodes {
                 "hir_active_dispatch_args"
             } else {

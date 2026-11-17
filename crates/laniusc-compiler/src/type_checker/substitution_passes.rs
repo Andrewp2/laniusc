@@ -262,7 +262,9 @@ pub(super) fn register_call_env_pass(
         SUBSTITUTION_CALL_ENVS_KERNEL,
         &[],
     )?;
-    graph.add_indirect_dispatch(SUBSTITUTION_CALL_ENVS_PASS, "hir_active_dispatch_args")?;
+    // The rounds' call environments visit the listed active blocks
+    // (calls/inference_blocks.slang).
+    graph.add_indirect_dispatch(SUBSTITUTION_CALL_ENVS_PASS, "inference_hir_list_args")?;
     Ok(())
 }
 

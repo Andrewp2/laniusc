@@ -16,6 +16,7 @@ import status;
 import type_checker.type.instances.struct_field_lookup;
 import type_checker.dependencies.record_fields;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -337,7 +338,7 @@ void publish_member_field_chain_for_root(uint member_node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint node = inference_listed_hir_row(linear_thread_id(dtid));
     if (!valid_node(node) || !inference_item_active(compact_hir_core[node].token_start))
         return;
     publish_member_field_chain_for_root(node);

@@ -23,6 +23,7 @@ import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.match.field_expected;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -116,7 +117,7 @@ void record_result_mismatch(uint call)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_dispatch_thread_id_2d(dtid, 16776960u);
+    uint node = inference_listed_hir_row(linear_dispatch_thread_id_2d(dtid, 16776960u));
     if (!valid_hir(node)) return;
     if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint kind = compact_hir_core[node].kind;

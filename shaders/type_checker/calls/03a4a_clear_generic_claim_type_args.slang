@@ -3,6 +3,7 @@
 
 import gpu_index;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 import hir_records;
 
 struct Params
@@ -35,7 +36,7 @@ uint active_hir_count()
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE);
+    uint node = inference_listed_hir_row(linear_thread_id_2d(dtid, MAX_GROUPS_X, WG_SIZE));
     // A node keeps its comparison row while its function is unchanged: the
     // contextual result requests (03a4b) would publish it again.
     if (node >= active_hir_count() || !inference_item_active(compact_hir_core[node].token_start))

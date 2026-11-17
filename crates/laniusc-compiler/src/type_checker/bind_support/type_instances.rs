@@ -160,17 +160,32 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         graph,
         compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
     )?;
-    let member_receivers_inference = member_receivers.invocation(
-        graph,
+    // The rounds' member passes visit the listed active blocks
+    // (calls/inference_blocks.slang).
+    let listed = |name, kernel, args: &str| {
+        ComputeOperation::indirect(
+            device,
+            graph,
+            resources,
+            name,
+            &passes.kernel(kernel),
+            &typed_buffer_from_resources(resources, args)?,
+        )
+    };
+    let member_receivers_inference = listed(
         compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_INFERENCE_PASS,
+        "type_checker/type/instances/03a_member_receivers",
+        "inference_hir_list_args",
     )?;
-    let member_results_inference = member_results.invocation(
-        graph,
+    let member_results_inference = listed(
         compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_INFERENCE_PASS,
+        "type_checker/type/instances/03_member_results",
+        "inference_hir_list_args",
     )?;
-    let member_substitute_inference = member_substitute.invocation(
-        graph,
+    let member_substitute_inference = listed(
         compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_INFERENCE_PASS,
+        "type_checker/type/instances/03b_member_substitute",
+        "inference_token_list_args",
     )?;
     // These scans are recorded before aggregate comparison begins, so the
     // aggregate scan workspace can safely serve both relations without

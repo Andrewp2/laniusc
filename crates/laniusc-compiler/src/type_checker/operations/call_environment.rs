@@ -37,15 +37,17 @@ pub(in crate::type_checker) const CALLS_CONTEXT_CONSTANTS_ADMIT: ReflectedComput
         HirNodes,
         "type_checker/calls/03a4c_admit_context_constants"
     )
-    .with_indirect_dispatch("hir_active_dispatch_args");
+    .with_indirect_dispatch("inference_hir_list_args");
 pub(in crate::type_checker) const CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT: ReflectedComputeSpec =
     CALLS_CONTEXT_CONSTANTS_ADMIT.with_name("type_check.calls.record_contexts.admit_constants");
 pub(in crate::type_checker) const CALLS_FINAL_CONTEXT_CONSTANTS_ADMIT: ReflectedComputeSpec =
     CALLS_CONTEXT_CONSTANTS_ADMIT
-        .with_name("type_check.calls.contextual_results.final.admit_constants");
+        .with_name("type_check.calls.contextual_results.final.admit_constants")
+        .with_indirect_dispatch("hir_active_dispatch_args");
 pub(in crate::type_checker) const CALLS_EXPLICIT_CONTEXT_CONSTANTS_ADMIT: ReflectedComputeSpec =
     CALLS_CONTEXT_CONSTANTS_ADMIT
-        .with_name("type_check.calls.explicit_applications.validate.admit_constants");
+        .with_name("type_check.calls.explicit_applications.validate.admit_constants")
+        .with_indirect_dispatch("hir_active_dispatch_args");
 
 /// The producer whose deferred contextual publications are admitted next.
 #[derive(Clone, Copy)]
@@ -72,11 +74,16 @@ impl CallEnvironmentAdmission {
         passes: &TypeCheckPasses,
         resources: &ResourceMap<'_>,
         hir_dispatch_args: &LaniusBuffer<u32>,
+        listed_hir_args: &LaniusBuffer<u32>,
         token_dispatch_args: &LaniusBuffer<u32>,
         record_contexts: bool,
     ) -> Result<Self> {
         let context = |spec| {
             ComputeOperation::indirect_spec(device, graph, resources, passes, spec, hir_dispatch_args)
+        };
+        // The rounds' admissions visit the listed active blocks.
+        let listed = |spec| {
+            ComputeOperation::indirect_spec(device, graph, resources, passes, spec, listed_hir_args)
         };
         Ok(Self {
             explicit_constants: ComputeOperation::indirect_spec(
@@ -87,9 +94,9 @@ impl CallEnvironmentAdmission {
                 CALLS_EXPLICIT_CONSTANTS_ADMIT,
                 token_dispatch_args,
             )?,
-            result_requests: context(CALLS_CONTEXT_CONSTANTS_ADMIT)?,
+            result_requests: listed(CALLS_CONTEXT_CONSTANTS_ADMIT)?,
             record_contexts: if record_contexts {
-                Some(context(CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT)?)
+                Some(listed(CALLS_RECORD_CONTEXT_CONSTANTS_ADMIT)?)
             } else {
                 None
             },

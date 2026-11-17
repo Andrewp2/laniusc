@@ -2,6 +2,7 @@
 
 import hir_records;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params
 {
@@ -178,5 +179,5 @@ void apply_row_argument_call(uint call_node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    apply_row_argument_call(linear_thread_id(dtid));
+    apply_row_argument_call(inference_listed_hir_row(linear_thread_id(dtid)));
 }

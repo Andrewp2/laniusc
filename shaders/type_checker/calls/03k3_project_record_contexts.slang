@@ -29,6 +29,7 @@ import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.match.field_expected;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -391,7 +392,7 @@ void infer_record_field_constraints(uint node, uint declaration)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = dtid.x + dtid.y * 16776960u;
+    uint node = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (!valid_hir(node) || compact_hir_core[node].kind != 28u) return;
     if (!inference_item_active(compact_hir_core[node].token_start)) return;
     uint source_tag; uint source_payload; uint source_decl;

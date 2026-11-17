@@ -39,6 +39,7 @@ import type_checker.match.ct_match;
 import type_checker.match.ct_context_publish;
 import type_checker.calls.bound_tables;
 import type_checker.calls.inference_activity;
+import type_checker.calls.inference_blocks;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -380,7 +381,7 @@ bool infer_from_bound(uint call, uint callee, uint predicate, inout CtSpare spar
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint call = dtid.x + dtid.y * 16776960u;
+    uint call = inference_listed_hir_row(dtid.x + dtid.y * 16776960u);
     if (!valid_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR) return;
     if (!inference_item_active(compact_hir_core[call].token_start)) return;
     // Incomplete tables could hide a second implementation.
