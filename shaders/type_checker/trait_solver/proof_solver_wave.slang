@@ -87,6 +87,9 @@ public static const uint PSW_POINT_FINISH = 6u;      // after the recorded round
 // The start of a queue round: a round recorded with only its queue steps.
 // A round without Work runs only those, so it plans as a round start and
 // stops the solve (PSW_FULL_ROUND) before any step when Work is pending.
+// Without Work no step runs between a round start and its queue point, so
+// this point plans the queue point too, and its steps are the queue
+// point's.
 public static const uint PSW_POINT_QUEUE_ROUND = 7u;
 
 // Spans (dispatch/kernels.rs, WaveSpan).
@@ -327,6 +330,13 @@ public void psw_plan()
         select(point == PSW_POINT_EMITTED, PSW_SPAN_FINISH_ROOTS, PSW_SPANS))))));
     for (uint span = first_span; span < end_span; span++) psw_span(span, 0u, 0u);
     uint planned = psw_plan_spans(point);
+    if (point == PSW_POINT_QUEUE_ROUND)
+    {
+        // The queue point's planner, which plans nothing once this round
+        // start stopped the solve.
+        for (uint span = PSW_SPAN_QUEUE; span < PSW_SPAN_EMITTED_QUEUE; span++) psw_span(span, 0u, 0u);
+        psw_plan_spans(PSW_POINT_QUEUE);
+    }
     // The finish steps run only after the finish point that ended the solve.
     bool finishing = planned == PSW_PLANNED_FINISH;
 
@@ -347,7 +357,9 @@ public void psw_plan()
     if (overflow != 0u && (trait_solver_wave[PSW_STOP] == PSW_RUNNING || finishing))
     {
         trait_solver_wave[PSW_STOP] = PSW_OVERFLOW;
-        trait_solver_wave[PSW_OVERFLOW_POINT] = point;
+        // A queue round start's steps are the queue point's: the host plans
+        // again from the queue point, and the round start is not repeated.
+        trait_solver_wave[PSW_OVERFLOW_POINT] = select(point == PSW_POINT_QUEUE_ROUND, PSW_POINT_QUEUE, point);
         trait_solver_wave[PSW_OVERFLOW_ROWS] = overflow;
     }
     bool running = trait_solver_wave[PSW_STOP] == PSW_RUNNING ||

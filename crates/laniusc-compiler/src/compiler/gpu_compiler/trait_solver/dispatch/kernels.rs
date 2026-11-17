@@ -953,7 +953,8 @@ pub(super) enum WavePoint {
     /// After the recorded rounds: the quiescence test, then the finish.
     Finish = 6,
     /// The start of a queue round (`QUEUE_ROUND`): a round start that stops
-    /// the solve with `wave::FULL_ROUND` when Work is pending.
+    /// the solve with `wave::FULL_ROUND` when Work is pending, then the
+    /// queue point, with the queue point's steps.
     QueueRound = 7,
 }
 impl WavePoint {
@@ -966,8 +967,9 @@ impl WavePoint {
     ];
     /// A round without Work: its Round, Selected and Expanded points plan
     /// nothing, so it runs only the queue steps. A queue round records just
-    /// those, after a round start that checks that no Work is pending.
-    pub const QUEUE_ROUND: [WavePoint; 3] = [WavePoint::QueueRound, WavePoint::Queue, WavePoint::Emitted];
+    /// those, after a round start that checks that no Work is pending; that
+    /// planner also plans the queue point.
+    pub const QUEUE_ROUND: [WavePoint; 2] = [WavePoint::QueueRound, WavePoint::Emitted];
     pub fn from_word(word: u32) -> Option<Self> {
         [WavePoint::FirstWork, WavePoint::Finish, WavePoint::QueueRound]
             .into_iter()
@@ -1117,9 +1119,8 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
             groups
         }
-        // No steps: the queue round's own Queue and Emitted points follow.
-        WavePoint::QueueRound => Vec::new(),
-        WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
+        // The queue point's steps; the queue round's Emitted point follows.
+        WavePoint::Queue | WavePoint::QueueRound => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
             (EmittedQueue, vec![(ASSUMPTION_PROOFS, IMPLEMENTATION_PROOF_PHASE)]),

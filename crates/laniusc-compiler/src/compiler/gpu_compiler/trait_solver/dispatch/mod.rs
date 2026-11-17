@@ -747,7 +747,7 @@ impl GpuTraitSolver {
                 let regular = self.template(templates, packet, submission, &pieces(&WavePoint::ROUND), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
-            // Queue rounds go in one submit: each records 14 dispatches.
+            // Queue rounds go in one submit: each records 13 dispatches.
             if queue_rounds != 0 {
                 let queue = self.template(templates, packet, submission, &pieces(&WavePoint::QUEUE_ROUND), 1, state, demand)?;
                 submits.push(vec![queue; queue_rounds as usize]);
@@ -1145,7 +1145,7 @@ impl GpuTraitSolver {
 const FIRST_SUBMIT_ROUNDS: u32 = 2;
 /// Queue rounds after them (`WavePoint::QUEUE_ROUND`). The settings app's
 /// solves drain their reduction queue in three more rounds. A full round
-/// records 46 dispatches and a queue round 14, each mostly empty past
+/// records 46 dispatches and a queue round 13, each mostly empty past
 /// quiescence; each further submit costs a readback.
 const FIRST_SUBMIT_QUEUE_ROUNDS: u32 = 3;
 
