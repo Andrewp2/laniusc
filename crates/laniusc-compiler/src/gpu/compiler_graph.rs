@@ -2845,19 +2845,18 @@ impl CompilerGraphFragment for RadixSortPairGraph {
     }
 }
 
-/// Stable pass names for one counted exclusive prefix scan.
+/// Stable pass names for one counted exclusive prefix scan: the local block
+/// scans, then the apply, whose workgroups each sum the earlier blocks' sums
+/// for their carry (scan/block_carry.slang).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrefixScanGraphPasses {
     pub local: &'static str,
-    pub hierarchy_up_first: &'static str,
-    pub hierarchy_up_rest: &'static str,
-    pub hierarchy_down: &'static str,
     pub apply: &'static str,
 }
 
 impl PrefixScanGraphPasses {
-    pub fn names(self) -> [&'static str; 3] {
-        [self.local, self.hierarchy_up_first, self.apply]
+    pub fn names(self) -> [&'static str; 2] {
+        [self.local, self.apply]
     }
 }
 
@@ -2875,7 +2874,6 @@ pub struct PrefixScanResources<T> {
     pub dispatch_args: T,
     pub local_prefix: T,
     pub block_sum: T,
-    pub block_prefix: T,
 }
 
 /// Reusable phase-local storage required by a prefix scan.
@@ -2883,7 +2881,6 @@ pub struct PrefixScanResources<T> {
 pub struct PrefixScanWorkspace<T> {
     pub local_prefix: T,
     pub block_sum: T,
-    pub block_prefix: T,
 }
 
 impl<T> PrefixScanWorkspace<T> {
@@ -2891,7 +2888,6 @@ impl<T> PrefixScanWorkspace<T> {
         PrefixScanWorkspace {
             local_prefix: &self.local_prefix,
             block_sum: &self.block_sum,
-            block_prefix: &self.block_prefix,
         }
     }
 }
@@ -2901,7 +2897,6 @@ impl<T: Copy> PrefixScanResources<T> {
         PrefixScanWorkspace {
             local_prefix: self.local_prefix,
             block_sum: self.block_sum,
-            block_prefix: self.block_prefix,
         }
     }
 }
@@ -2921,7 +2916,6 @@ fn assign_prefix_scan_kernels(
             "scan/counted/00_local"
         },
     )?;
-    graph.assign_kernel(passes.hierarchy_up_first, "scan/counted/04_block_prefix")?;
     graph.assign_kernel(
         passes.apply,
         if in_place {
@@ -2945,7 +2939,6 @@ pub struct PrefixScanGraphResourceNames {
     pub total: &'static str,
     pub local_prefix: &'static str,
     pub block_sum: &'static str,
-    pub block_prefix: &'static str,
 }
 
 impl PrefixScanGraphResourceNames {
@@ -2953,7 +2946,6 @@ impl PrefixScanGraphResourceNames {
         PrefixScanWorkspace {
             local_prefix: self.local_prefix,
             block_sum: self.block_sum,
-            block_prefix: self.block_prefix,
         }
     }
 }
@@ -3071,7 +3063,6 @@ impl PrefixScanPairSpec {
 
 struct PrefixScanPassSet {
     local: PassDesc,
-    hierarchy_up_first: PassDesc,
     apply: PassDesc,
 }
 
@@ -3100,7 +3091,6 @@ impl PrefixScanPassSet {
         }
         Self {
             local: batch(self.local, other.local),
-            hierarchy_up_first: batch(self.hierarchy_up_first, other.hierarchy_up_first),
             apply: batch(self.apply, other.apply),
         }
     }
@@ -3135,7 +3125,6 @@ fn prefix_scan_passes(
             r.total,
             r.dispatch_args,
             r.block_sum,
-            r.block_prefix,
         ]
     } else {
         &[
@@ -3146,7 +3135,6 @@ fn prefix_scan_passes(
             r.dispatch_args,
             r.local_prefix,
             r.block_sum,
-            r.block_prefix,
         ]
     };
     let mut distinct = BTreeSet::new();
@@ -3193,7 +3181,7 @@ fn prefix_scan_passes(
         vec![
             lane(PassAccess::read("scan_count", r.count)),
             lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
-            lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
+            lane(PassAccess::read("scan_block_sum", r.block_sum)),
             lane(PassAccess::read_write("scan_values", r.input)),
             lane(PassAccess::write("scan_total", r.total)),
         ]
@@ -3202,21 +3190,13 @@ fn prefix_scan_passes(
             lane(PassAccess::read("scan_count", r.count)),
             lane(PassAccess::indirect("scan_dispatch_args", r.dispatch_args)),
             lane(PassAccess::read("scan_local_prefix", r.local_prefix)),
-            lane(PassAccess::read("scan_block_prefix", r.block_prefix)),
+            lane(PassAccess::read("scan_block_sum", r.block_sum)),
             lane(PassAccess::write("scan_output_prefix", r.output_prefix)),
             lane(PassAccess::write("scan_total", r.total)),
         ]
     };
     Ok(PrefixScanPassSet {
         local: pass(passes.local, local_accesses),
-        hierarchy_up_first: pass(
-            passes.hierarchy_up_first,
-            vec![
-                lane(PassAccess::read("scan_count", r.count)),
-                lane(PassAccess::read("scan_block_sum", r.block_sum)),
-                lane(PassAccess::write("scan_block_prefix", r.block_prefix)),
-            ],
-        ),
         apply: pass(passes.apply, apply_accesses),
     })
 }
@@ -3227,7 +3207,6 @@ fn add_prefix_scan_passes(
     passes: PrefixScanPassSet,
 ) -> Result<(), String> {
     graph.add_pass(passes.local)?;
-    graph.add_pass(passes.hierarchy_up_first)?;
     graph.add_pass(passes.apply)?;
     Ok(())
 }
@@ -3634,7 +3613,6 @@ impl CompilerGraphBuilder {
             dispatch_args: resource(names.dispatch_args)?,
             local_prefix: resource(names.local_prefix)?,
             block_sum: resource(names.block_sum)?,
-            block_prefix: resource(names.block_prefix)?,
         })
     }
 
@@ -3836,7 +3814,6 @@ impl CompilerGraphBuilder {
             total,
             local_prefix: workspace.local_prefix,
             block_sum: workspace.block_sum,
-            block_prefix: workspace.block_prefix,
         })
     }
 
@@ -3872,7 +3849,6 @@ impl CompilerGraphBuilder {
         Ok(PrefixScanWorkspace {
             local_prefix: add(names.local_prefix, row_bytes)?,
             block_sum: add(names.block_sum, block_bytes)?,
-            block_prefix: add(names.block_prefix, block_bytes)?,
         })
     }
 
@@ -3912,16 +3888,9 @@ impl CompilerGraphBuilder {
             ResourceClass::Workspace,
             block_bytes,
         )?;
-        let block_prefix = self.add_storage(
-            names.block_prefix,
-            domain,
-            ResourceClass::Workspace,
-            block_bytes,
-        )?;
         Ok(PrefixScanWorkspace {
             local_prefix: input,
             block_sum,
-            block_prefix,
         })
     }
 
@@ -6265,7 +6234,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_scan_adds_one_block_prefix_pass_and_derived_accesses() {
+    fn prefix_scan_apply_reads_block_sums_and_derived_accesses() {
         let mut builder = CompilerGraphBuilder::new();
         let count = builder
             .add_resource(ResourceDesc {
@@ -6307,7 +6276,6 @@ mod tests {
                     total: "scan.total",
                     local_prefix: "scan.local_prefix",
                     block_sum: "scan.block_sum",
-                    block_prefix: "scan.block_prefix",
                 },
             )
             .unwrap();
@@ -6318,9 +6286,6 @@ mod tests {
                 hierarchy_levels: 3,
                 passes: PrefixScanGraphPasses {
                     local: "scan.local",
-                    hierarchy_up_first: "scan.up.first",
-                    hierarchy_up_rest: "scan.up.rest",
-                    hierarchy_down: "scan.down",
                     apply: "scan.apply",
                 },
                 resources,
@@ -6337,14 +6302,9 @@ mod tests {
             WorkspaceUsageClass::StorageIndirect,
         );
         assert!(graph.repeated_regions().is_empty());
-        assert!(graph.pass_id("scan.up.rest").is_none());
-        assert!(graph.pass_id("scan.down").is_none());
-        let first_up = graph.pass(graph.pass_id("scan.up.first").unwrap()).unwrap();
-        assert!(first_up.accesses.iter().any(|access| {
+        let apply = graph.pass(graph.pass_id("scan.apply").unwrap()).unwrap();
+        assert!(apply.accesses.iter().any(|access| {
             access.resource == resources.block_sum && access.mode == AccessMode::Read
-        }));
-        assert!(first_up.accesses.iter().any(|access| {
-            access.resource == resources.block_prefix && access.mode == AccessMode::Write
         }));
     }
 
@@ -6379,7 +6339,6 @@ mod tests {
                     total: "pair.left.total",
                     local_prefix: "pair.left.local",
                     block_sum: "pair.left.sum",
-                    block_prefix: "pair.left.prefix",
                 },
             )
             .unwrap();
@@ -6396,7 +6355,6 @@ mod tests {
                     total: "pair.right.total",
                     local_prefix: "pair.right.local",
                     block_sum: "pair.right.sum",
-                    block_prefix: "pair.right.prefix",
                 },
             )
             .unwrap();
@@ -6407,9 +6365,6 @@ mod tests {
                 hierarchy_levels: 2,
                 passes: PrefixScanGraphPasses {
                     local: "pair.local",
-                    hierarchy_up_first: "pair.up.first",
-                    hierarchy_up_rest: "pair.up.rest",
-                    hierarchy_down: "pair.down",
                     apply: "pair.apply",
                 },
                 left,
@@ -6447,7 +6402,6 @@ mod tests {
         };
         assert_ne!(slot(left.local_prefix), slot(right.local_prefix));
         assert_ne!(slot(left.block_sum), slot(right.block_sum));
-        assert_ne!(slot(left.block_prefix), slot(right.block_prefix));
     }
 
     #[test]
@@ -6509,7 +6463,6 @@ mod tests {
                 PrefixScanWorkspace {
                     local_prefix: "in-place.left",
                     block_sum: "in-place.left.sum",
-                    block_prefix: "in-place.left.prefix",
                 },
             )
             .unwrap();
@@ -6522,7 +6475,6 @@ mod tests {
                 PrefixScanWorkspace {
                     local_prefix: "in-place.right",
                     block_sum: "in-place.right.sum",
-                    block_prefix: "in-place.right.prefix",
                 },
             )
             .unwrap();
@@ -6546,7 +6498,6 @@ mod tests {
                 dispatch_args,
                 local_prefix: workspace.local_prefix,
                 block_sum: workspace.block_sum,
-                block_prefix: workspace.block_prefix,
             };
         let left = resources(left_input, left_total, left_workspace);
         let right = resources(right_input, right_total, right_workspace);
@@ -6557,9 +6508,6 @@ mod tests {
                 hierarchy_levels: 1,
                 passes: PrefixScanGraphPasses {
                     local: "in-place.local",
-                    hierarchy_up_first: "in-place.block-prefix",
-                    hierarchy_up_rest: "in-place.block-prefix.rest",
-                    hierarchy_down: "in-place.block-prefix.down",
                     apply: "in-place.apply",
                 },
                 left,
@@ -6604,7 +6552,6 @@ mod tests {
             dispatch_args: add("empty.dispatch", ResourceClass::Workspace),
             local_prefix: add("empty.local", ResourceClass::Workspace),
             block_sum: add("empty.sum", ResourceClass::Workspace),
-            block_prefix: add("empty.prefix", ResourceClass::Workspace),
         };
         let error = builder
             .add_fragment(PrefixScanGraph {
@@ -6613,9 +6560,6 @@ mod tests {
                 hierarchy_levels: 0,
                 passes: PrefixScanGraphPasses {
                     local: "empty.local.pass",
-                    hierarchy_up_first: "empty.up.first",
-                    hierarchy_up_rest: "empty.up.rest",
-                    hierarchy_down: "empty.down",
                     apply: "empty.apply",
                 },
                 resources,

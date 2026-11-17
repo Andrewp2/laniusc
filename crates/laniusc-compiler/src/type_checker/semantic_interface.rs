@@ -117,7 +117,6 @@ fn graph_prefix_scan(
         ("scan_total", total),
         ("scan_local_prefix", workspace.local_prefix),
         ("scan_block_sum", workspace.block_sum),
-        ("scan_block_prefix", workspace.block_prefix),
     ]);
     graph.validate_semantic_interface_scan(scan, &resources)?;
     let graph_passes = graph.semantic_interface_scan_passes(scan)?;
@@ -1494,7 +1493,6 @@ impl GpuTypeChecker {
             ("signature_dispatch_args", &signature_dispatch_args),
             ("scan_local_prefix", scan_scratch.local_prefix),
             ("scan_block_sum", scan_scratch.block_sum),
-            ("scan_block_prefix", scan_scratch.block_prefix),
         ]);
         let key = topology_resources
             .buffer_binding_signature()

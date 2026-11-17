@@ -1,6 +1,9 @@
-// Global prefix apply for GPU-counted u32 scans.
+// Apply of a GPU-counted u32 exclusive scan: adds each block's carry to the
+// local prefixes and writes the total. The carry is the sum of the earlier
+// blocks' sums (block_carry.slang); workgroup 0 sums every block for the
+// total.
 
-import prefix_scan;
+import scan.block_carry;
 
 struct Params
 {
@@ -13,43 +16,36 @@ ConstantBuffer<Params> gScan;
 
 StructuredBuffer<uint> scan_count;
 StructuredBuffer<uint> scan_local_prefix;
-StructuredBuffer<uint> scan_block_prefix;
+StructuredBuffer<uint> scan_block_sum;
 RWStructuredBuffer<uint> scan_output_prefix;
 RWStructuredBuffer<uint> scan_total;
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
-uint linear_thread_id(uint3 dtid)
-{
-    return dtid.x + dtid.y * MAX_GROUPS_X * WG_SIZE;
-}
-
 uint active_items()
 {
     return min(max(scan_count[0], gScan.min_items), gScan.n_items);
 }
 
-uint active_blocks()
-{
-    return (active_items() + WG_SIZE - 1u) / WG_SIZE;
-}
-
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
 {
-    uint i = linear_thread_id(dtid);
-    uint blocks = active_blocks();
-    if (i == 0u)
-        scan_total[0] = blocks == 0u ? 0u : inclusive_scan_total(blocks, scan_block_prefix);
-
-    if (i >= active_items())
+    uint block_i = gid.x + gid.y * MAX_GROUPS_X;
+    uint count = active_items();
+    uint blocks = (count + WG_SIZE - 1u) / WG_SIZE;
+    if (block_i != 0u && block_i >= blocks)
         return;
 
-    scan_output_prefix[i] = global_exclusive_prefix(
-        i,
-        WG_SIZE,
-        scan_local_prefix,
-        scan_block_prefix);
+    uint carry = block_carry_sum(ltid.x, block_i == 0u ? blocks : block_i, scan_block_sum);
+    if (block_i == 0u)
+    {
+        if (ltid.x == 0u)
+            scan_total[0] = carry;
+        carry = 0u;
+    }
+    uint i = block_i * WG_SIZE + ltid.x;
+    if (i < count)
+        scan_output_prefix[i] = carry + scan_local_prefix[i];
 }

@@ -99,8 +99,6 @@ impl GenericParameterRecordOperation {
                     "generic_const_param_scan_local_prefix",
                     "generic_type_param_scan_block_sum",
                     "generic_const_param_scan_block_sum",
-                    "generic_type_param_scan_prefix_a",
-                    "generic_const_param_scan_prefix_a",
                 ],
             )?,
         ))

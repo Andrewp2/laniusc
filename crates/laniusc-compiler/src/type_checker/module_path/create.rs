@@ -146,7 +146,6 @@ pub(in crate::type_checker) fn create_with_passes(
     let Buffers {
         record_scan_local_prefix,
         record_scan_block_sum,
-        record_scan_prefix_a,
         import_count_out,
         decl_count_out,
         module_dispatch_args,
@@ -346,10 +345,6 @@ pub(in crate::type_checker) fn create_with_passes(
         .module_value_scan_workspace
         .block_sum
         .alias(record_n_blocks as usize);
-    let value_scan_prefix_a: LaniusBuffer<u32> = inputs
-        .module_value_scan_workspace
-        .block_prefix
-        .alias(record_n_blocks as usize);
     let mut scan_resources = module_resources.clone();
     scan_resources.buffers([
         ("decl_count_out", &decl_count_out),
@@ -365,10 +360,8 @@ pub(in crate::type_checker) fn create_with_passes(
         ("decl_value_key_count_out", &decl_value_key_count_out),
         ("module_record_scan_local_prefix", &record_scan_local_prefix),
         ("module_record_scan_block_sum", &record_scan_block_sum),
-        ("module_record_scan_prefix_a", &record_scan_prefix_a),
         ("module_value_scan_local_prefix", &value_scan_local_prefix),
         ("module_value_scan_block_sum", &value_scan_block_sum),
-        ("module_value_scan_prefix_a", &value_scan_prefix_a),
         ("decl_status", &decl_status),
         (
             "type_decl_generic_param_count_by_owner_token",

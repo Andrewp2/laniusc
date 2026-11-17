@@ -83,9 +83,6 @@ macro_rules! prefix_scan_graph_passes {
     ($label:literal) => {
         PrefixScanGraphPasses {
             local: $label,
-            hierarchy_up_first: concat!($label, ".hierarchy_up.first"),
-            hierarchy_up_rest: concat!($label, ".hierarchy_up.rest"),
-            hierarchy_down: concat!($label, ".hierarchy_down"),
             apply: concat!($label, ".apply"),
         }
     };
@@ -169,7 +166,6 @@ pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
-        block_prefix: "aggregate_compare_scan_prefix_a",
     };
 pub(super) const AGGREGATE_FINAL_DISPATCH_PASS: &str =
     "type_check.aggregate_requests.final.dispatch";
@@ -186,7 +182,6 @@ pub(super) const TYPE_SEMANTIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "aggregate_compare_scan_local_prefix",
         block_sum: "aggregate_compare_scan_block_sum",
-        block_prefix: "aggregate_compare_scan_prefix_a",
     },
 };
 pub(super) const TYPE_INSTANCE_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -201,7 +196,6 @@ pub(super) const TYPE_INSTANCE_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "token_active_dispatch_args",
         local_prefix: "type_instance_arg_row_scan_local_prefix",
         block_sum: "type_instance_arg_row_scan_block_sum",
-        block_prefix: "type_instance_arg_row_scan_prefix_a",
     },
 };
 pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
@@ -218,7 +212,6 @@ pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpe
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "generic_type_param_scan_local_prefix",
         block_sum: "generic_type_param_scan_block_sum",
-        block_prefix: "generic_type_param_scan_prefix_a",
     },
     right: PrefixScanResources {
         count: "generic_param_count_out",
@@ -228,7 +221,6 @@ pub(super) const GENERIC_PARAM_SLOT_SCAN: PrefixScanPairSpec = PrefixScanPairSpe
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "generic_const_param_scan_local_prefix",
         block_sum: "generic_const_param_scan_block_sum",
-        block_prefix: "generic_const_param_scan_prefix_a",
     },
 };
 pub(super) const LANGUAGE_NAMES_CLEAR_PASS: &str = "type_check.language_names.clear";
@@ -244,7 +236,6 @@ pub(super) const NAMES_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "token_active_dispatch_args",
         local_prefix: "name_scan_local_prefix",
         block_sum: "name_scan_block_sum",
-        block_prefix: "name_scan_prefix_a",
     },
 };
 pub(super) const NAMES_HASH_PREPARE_PASS: &str = "type_check.names.hash_prepare";
@@ -274,7 +265,6 @@ pub(super) const RETAINED_CALLABLE_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "retained_callable_local_prefix",
         block_sum: "retained_callable_block_sum",
-        block_prefix: "retained_callable_block_prefix",
     },
 };
 pub(super) const RETAINED_CALLABLE_COMPACTION: crate::gpu::compiler_graph::CompactionSpec =
@@ -425,18 +415,12 @@ pub(super) const VISIBLE_CLEAR_PASS: &str = "type_check.visible.clear";
 pub(super) const VISIBLE_MATCH_DISPATCH_PASS: &str =
     "type_check.visible.match_payload_dispatch_args";
 const VISIBLE_SCAN_PASS: &str = "type_check.visible.decl_scan";
-const VISIBLE_SCAN_UP_FIRST_PASS: &str = "type_check.visible.decl_scan.hierarchy_up.first";
-const VISIBLE_SCAN_UP_REST_PASS: &str = "type_check.visible.decl_scan.hierarchy_up.rest";
-const VISIBLE_SCAN_DOWN_PASS: &str = "type_check.visible.decl_scan.hierarchy_down";
 const VISIBLE_SCAN_APPLY_PASS: &str = "type_check.visible.decl_scan.apply";
 pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
     phase: CompilerPhase::TypeCheck,
     dispatch_domain: ResourceDomain::Tokens,
     passes: PrefixScanGraphPasses {
         local: VISIBLE_SCAN_PASS,
-        hierarchy_up_first: VISIBLE_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: VISIBLE_SCAN_UP_REST_PASS,
-        hierarchy_down: VISIBLE_SCAN_DOWN_PASS,
         apply: VISIBLE_SCAN_APPLY_PASS,
     },
     resources: PrefixScanResources {
@@ -447,7 +431,6 @@ pub(super) const VISIBLE_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "token_active_dispatch_args",
         local_prefix: "hir_visible_decl_scan_local_prefix",
         block_sum: "hir_visible_decl_scan_block_sum",
-        block_prefix: "hir_visible_decl_scan_prefix_a",
     },
 };
 const VISIBLE_SORT_PASS: &str = "type_check.visible.sort_hir_decl_keys";
@@ -677,7 +660,6 @@ pub(super) const PREDICATES_OBLIGATION_PAIR_SCAN: PrefixScanSpec = PrefixScanSpe
         dispatch_args: "predicate_hir_dispatch_args",
         local_prefix: "predicate_obligation_scan_local_prefix",
         block_sum: "predicate_obligation_scan_block_sum",
-        block_prefix: "predicate_obligation_scan_prefix_a",
     },
 };
 pub(super) const PREDICATES_OBLIGATION_PAIR_DISPATCH_PASS: &str =
@@ -701,7 +683,6 @@ pub(super) const CALL_PARAM_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "token_active_dispatch_args",
         local_prefix: "call_param_row_scan_local_prefix",
         block_sum: "call_param_row_scan_block_sum",
-        block_prefix: "call_param_row_scan_prefix_a",
     },
 };
 pub(super) const CALL_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
@@ -716,7 +697,6 @@ pub(super) const CALL_ARG_ROW_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "call_arg_row_scan_local_prefix",
         block_sum: "call_arg_row_scan_block_sum",
-        block_prefix: "call_arg_row_scan_prefix_a",
     },
 };
 /// The generic and constant claim offsets of each argument row, one paired
@@ -735,7 +715,6 @@ pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "call_generic_claim_scan_local_prefix",
         block_sum: "call_generic_claim_scan_block_sum",
-        block_prefix: "call_generic_claim_scan_prefix_a",
     },
     right: PrefixScanResources {
         count: "call_arg_row_count_out",
@@ -745,7 +724,6 @@ pub(super) const CALL_CLAIM_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "call_const_claim_scan_local_prefix",
         block_sum: "call_const_claim_scan_block_sum",
-        block_prefix: "call_const_claim_scan_prefix_a",
     },
 };
 pub(super) const GENERIC_CLAIM_INDEX_PREPARE_PASS: &str =
@@ -764,31 +742,15 @@ pub(super) const REQUIRED_GENERIC_SCAN: PrefixScanSpec = PrefixScanSpec {
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "call_required_generic_scan_local_prefix",
         block_sum: "call_required_generic_scan_block_sum",
-        block_prefix: "call_required_generic_scan_prefix_a",
     },
 };
 pub(super) const REQUIRED_GENERIC_DISPATCH_PASS: &str =
     "type_check.calls.required_generics.dispatch";
 const MODULE_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.module_scan.local";
-const MODULE_RECORD_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.records.module_scan.hierarchy_up.first";
-const MODULE_RECORD_SCAN_UP_REST_PASS: &str =
-    "type_check.modules.records.module_scan.hierarchy_up.rest";
-const MODULE_RECORD_SCAN_DOWN_PASS: &str = "type_check.modules.records.module_scan.hierarchy_down";
 const MODULE_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.module_scan.apply";
 const IMPORT_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.import_scan.local";
-const IMPORT_RECORD_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.records.import_scan.hierarchy_up.first";
-const IMPORT_RECORD_SCAN_UP_REST_PASS: &str =
-    "type_check.modules.records.import_scan.hierarchy_up.rest";
-const IMPORT_RECORD_SCAN_DOWN_PASS: &str = "type_check.modules.records.import_scan.hierarchy_down";
 const IMPORT_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.import_scan.apply";
 const DECL_RECORD_SCAN_LOCAL_PASS: &str = "type_check.modules.records.decl_scan.local";
-const DECL_RECORD_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.records.decl_scan.hierarchy_up.first";
-const DECL_RECORD_SCAN_UP_REST_PASS: &str =
-    "type_check.modules.records.decl_scan.hierarchy_up.rest";
-const DECL_RECORD_SCAN_DOWN_PASS: &str = "type_check.modules.records.decl_scan.hierarchy_down";
 const DECL_RECORD_SCAN_APPLY_PASS: &str = "type_check.modules.records.decl_scan.apply";
 const MODULE_DECL_KEY_SORT_PASS: &str = "type_check.modules.decl_keys";
 pub(super) const MODULE_DECL_KEY_RADIX_SORT: RadixSortDefinition = RadixSortDefinition {
@@ -840,25 +802,10 @@ const fn visible_decl_radix_start_pass(capacity: u32, steps: u32) -> &'static st
     }
 }
 const DECL_NAMESPACE_SCAN_LOCAL_PASS: &str = "type_check.modules.decl_namespace.scan.local";
-const DECL_NAMESPACE_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.decl_namespace.scan.hierarchy_up.first";
-const DECL_NAMESPACE_SCAN_UP_REST_PASS: &str =
-    "type_check.modules.decl_namespace.scan.hierarchy_up.rest";
-const DECL_NAMESPACE_SCAN_DOWN_PASS: &str = "type_check.modules.decl_namespace.scan.hierarchy_down";
 const DECL_NAMESPACE_SCAN_APPLY_PASS: &str = "type_check.modules.decl_namespace.scan.apply";
 const DECL_PUBLIC_SCAN_LOCAL_PASS: &str = "type_check.modules.decl_public.scan.local";
-const DECL_PUBLIC_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.decl_public.scan.hierarchy_up.first";
-const DECL_PUBLIC_SCAN_UP_REST_PASS: &str = "type_check.modules.decl_public.scan.hierarchy_up.rest";
-const DECL_PUBLIC_SCAN_DOWN_PASS: &str = "type_check.modules.decl_public.scan.hierarchy_down";
 const DECL_PUBLIC_SCAN_APPLY_PASS: &str = "type_check.modules.decl_public.scan.apply";
 const IMPORT_VISIBLE_SCAN_LOCAL_PASS: &str = "type_check.modules.import_visibility.scan.local";
-const IMPORT_VISIBLE_SCAN_UP_FIRST_PASS: &str =
-    "type_check.modules.import_visibility.scan.hierarchy_up.first";
-const IMPORT_VISIBLE_SCAN_UP_REST_PASS: &str =
-    "type_check.modules.import_visibility.scan.hierarchy_up.rest";
-const IMPORT_VISIBLE_SCAN_DOWN_PASS: &str =
-    "type_check.modules.import_visibility.scan.hierarchy_down";
 const IMPORT_VISIBLE_SCAN_APPLY_PASS: &str = "type_check.modules.import_visibility.scan.apply";
 pub(super) const MODULE_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
     module_record_scan_resources("module_record_count_out");
@@ -866,7 +813,6 @@ pub(super) const MODULE_VALUE_SCAN_WORKSPACE: PrefixScanWorkspace<&'static str> 
     PrefixScanWorkspace {
         local_prefix: "module_value_scan_local_prefix",
         block_sum: "module_value_scan_block_sum",
-        block_prefix: "module_value_scan_prefix_a",
     };
 pub(super) const IMPORT_RECORD_SCAN_RESOURCES: PrefixScanResources<&'static str> =
     module_record_scan_resources("import_record_count_out");
@@ -878,9 +824,6 @@ pub(super) const MODULE_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
     dispatch_domain: ResourceDomain::HirNodes,
     passes: PrefixScanGraphPasses {
         local: MODULE_RECORD_SCAN_LOCAL_PASS,
-        hierarchy_up_first: MODULE_RECORD_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: MODULE_RECORD_SCAN_UP_REST_PASS,
-        hierarchy_down: MODULE_RECORD_SCAN_DOWN_PASS,
         apply: MODULE_RECORD_SCAN_APPLY_PASS,
     },
     resources: MODULE_RECORD_SCAN_RESOURCES,
@@ -888,9 +831,6 @@ pub(super) const MODULE_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
 pub(super) const IMPORT_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
     passes: PrefixScanGraphPasses {
         local: IMPORT_RECORD_SCAN_LOCAL_PASS,
-        hierarchy_up_first: IMPORT_RECORD_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: IMPORT_RECORD_SCAN_UP_REST_PASS,
-        hierarchy_down: IMPORT_RECORD_SCAN_DOWN_PASS,
         apply: IMPORT_RECORD_SCAN_APPLY_PASS,
     },
     resources: IMPORT_RECORD_SCAN_RESOURCES,
@@ -899,9 +839,6 @@ pub(super) const IMPORT_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
 pub(super) const DECL_RECORD_SCAN: PrefixScanSpec = PrefixScanSpec {
     passes: PrefixScanGraphPasses {
         local: DECL_RECORD_SCAN_LOCAL_PASS,
-        hierarchy_up_first: DECL_RECORD_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: DECL_RECORD_SCAN_UP_REST_PASS,
-        hierarchy_down: DECL_RECORD_SCAN_DOWN_PASS,
         apply: DECL_RECORD_SCAN_APPLY_PASS,
     },
     resources: DECL_RECORD_SCAN_RESOURCES,
@@ -917,7 +854,6 @@ const fn module_record_scan_resources(total: &'static str) -> PrefixScanResource
         dispatch_args: "hir_active_dispatch_args",
         local_prefix: "module_record_scan_local_prefix",
         block_sum: "module_record_scan_block_sum",
-        block_prefix: "module_record_scan_prefix_a",
     }
 }
 pub(super) const DECL_TYPE_KEY_SCAN_RESOURCES: PrefixScanResources<&'static str> =
@@ -981,9 +917,6 @@ pub(super) const DECL_NAMESPACE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
     dispatch_domain: ResourceDomain::Declarations,
     passes: PrefixScanGraphPasses {
         local: DECL_NAMESPACE_SCAN_LOCAL_PASS,
-        hierarchy_up_first: DECL_NAMESPACE_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: DECL_NAMESPACE_SCAN_UP_REST_PASS,
-        hierarchy_down: DECL_NAMESPACE_SCAN_DOWN_PASS,
         apply: DECL_NAMESPACE_SCAN_APPLY_PASS,
     },
     left: DECL_TYPE_KEY_SCAN_RESOURCES,
@@ -994,9 +927,6 @@ pub(super) const DECL_PUBLIC_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
     right_label: "type_check.modules.decl_value_public_keys",
     passes: PrefixScanGraphPasses {
         local: DECL_PUBLIC_SCAN_LOCAL_PASS,
-        hierarchy_up_first: DECL_PUBLIC_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: DECL_PUBLIC_SCAN_UP_REST_PASS,
-        hierarchy_down: DECL_PUBLIC_SCAN_DOWN_PASS,
         apply: DECL_PUBLIC_SCAN_APPLY_PASS,
     },
     left: DECL_TYPE_PUBLIC_SCAN_RESOURCES,
@@ -1008,9 +938,6 @@ pub(super) const IMPORT_VISIBLE_SCAN: PrefixScanPairSpec = PrefixScanPairSpec {
     right_label: "type_check.modules.import_visible_value",
     passes: PrefixScanGraphPasses {
         local: IMPORT_VISIBLE_SCAN_LOCAL_PASS,
-        hierarchy_up_first: IMPORT_VISIBLE_SCAN_UP_FIRST_PASS,
-        hierarchy_up_rest: IMPORT_VISIBLE_SCAN_UP_REST_PASS,
-        hierarchy_down: IMPORT_VISIBLE_SCAN_DOWN_PASS,
         apply: IMPORT_VISIBLE_SCAN_APPLY_PASS,
     },
     left: IMPORT_VISIBLE_TYPE_SCAN_RESOURCES,
@@ -1043,18 +970,10 @@ const fn module_compact_scan_resources(
     dispatch_args: &'static str,
     value_workspace: bool,
 ) -> PrefixScanResources<&'static str> {
-    let (local_prefix, block_sum, block_prefix) = if value_workspace {
-        (
-            "module_value_scan_local_prefix",
-            "module_value_scan_block_sum",
-            "module_value_scan_prefix_a",
-        )
+    let (local_prefix, block_sum) = if value_workspace {
+        ("module_value_scan_local_prefix", "module_value_scan_block_sum")
     } else {
-        (
-            "module_record_scan_local_prefix",
-            "module_record_scan_block_sum",
-            "module_record_scan_prefix_a",
-        )
+        ("module_record_scan_local_prefix", "module_record_scan_block_sum")
     };
     PrefixScanResources {
         count,
@@ -1064,7 +983,6 @@ const fn module_compact_scan_resources(
         dispatch_args,
         local_prefix,
         block_sum,
-        block_prefix,
     }
 }
 pub(super) const DEPENDENCY_CALL_ARGS_VALIDATE_PASS: &str =
@@ -1261,7 +1179,6 @@ impl SemanticInterfaceScanGraph {
                 PrefixScanWorkspace {
                     local_prefix: "semantic_interface.scan.local_prefix",
                     block_sum: "semantic_interface.scan.block_sum",
-                    block_prefix: "semantic_interface.scan.block_prefix",
                 },
             )
             .map_err(anyhow::Error::msg)?;
@@ -1445,7 +1362,6 @@ impl SemanticInterfaceScanGraph {
                         dispatch_args,
                         local_prefix: scratch.local_prefix,
                         block_sum: scratch.block_sum,
-                        block_prefix: scratch.block_prefix,
                     };
                     let passes = prefix_scan_graph_passes!($label);
                     Ok((resources, passes))
@@ -2410,7 +2326,6 @@ impl SemanticInterfaceScanGraph {
         let scratch_buffers = PrefixScanWorkspace {
             local_prefix: alias(scratch.local_prefix, scan_capacity as usize)?,
             block_sum: alias(scratch.block_sum, block_capacity)?,
-            block_prefix: alias(scratch.block_prefix, block_capacity)?,
         };
         let bindings = materialized.bindings()?;
         Ok(Self {
@@ -2463,7 +2378,6 @@ impl SemanticInterfaceScanGraph {
             (scan_resources.dispatch_args, "scan_dispatch_args"),
             (scan_resources.local_prefix, "scan_local_prefix"),
             (scan_resources.block_sum, "scan_block_sum"),
-            (scan_resources.block_prefix, "scan_block_prefix"),
         ]
         .map(|(resource, registered)| {
             (
@@ -2523,7 +2437,6 @@ impl TypeCheckCompilerGraph {
         Ok(PrefixScanWorkspace {
             local_prefix: self.materialized.u32_buffer(names.local_prefix)?,
             block_sum: self.materialized.u32_buffer(names.block_sum)?,
-            block_prefix: self.materialized.u32_buffer(names.block_prefix)?,
         })
     }
 
@@ -2991,7 +2904,6 @@ fn build_graph(
         _retained_callable_records as "retained_callable_records" in Calls => hir_rows * 12;
         _retained_callable_local_prefix as "retained_callable_local_prefix" in HirNodes => hir_rows * 4;
         _retained_callable_block_sum as "retained_callable_block_sum" in HirNodes => hir_rows.div_ceil(256) * 4;
-        _retained_callable_block_prefix as "retained_callable_block_prefix" in HirNodes => hir_rows.div_ceil(256) * 4;
     });
     let module_rows = u64::from(source_file_capacity.max(1));
     let record_rows = u64::from(module_record_capacity.max(1));
@@ -3327,7 +3239,6 @@ fn build_graph(
         _name_lexeme_prefix as "name_lexeme_prefix" in Tokens => token_rows * 4;
         _name_scan_local_prefix as "name_scan_local_prefix" in Tokens => name_rows * 4;
         _name_scan_block_sum as "name_scan_block_sum" in Tokens => name_blocks * 4;
-        _name_scan_prefix_a as "name_scan_prefix_a" in Tokens => name_blocks * 4;
     });
 
     // These four arrays form the retained name artifact consumed by module
@@ -3354,10 +3265,8 @@ fn build_graph(
         _module_record_prefix as "module_record_prefix" in HirNodes => hir_rows * 4;
         _module_record_scan_local_prefix as "module_record_scan_local_prefix" in HirNodes => hir_rows * 4;
         _module_record_scan_block_sum as "module_record_scan_block_sum" in HirNodes => hir_blocks * 4;
-        _module_record_scan_prefix_a as "module_record_scan_prefix_a" in HirNodes => hir_blocks * 4;
         _module_value_scan_local_prefix as "module_value_scan_local_prefix" in Declarations => hir_rows * 4;
         _module_value_scan_block_sum as "module_value_scan_block_sum" in Declarations => hir_blocks * 4;
-        _module_value_scan_prefix_a as "module_value_scan_prefix_a" in Declarations => hir_blocks * 4;
     });
     if module_record_capacity > MODULE_RELATION_SMALL_SORT_CAPACITY {
         graph_resources!(graph, Workspace {
@@ -3420,7 +3329,6 @@ fn build_graph(
         _type_instance_arg_row_count_out as "type_instance_arg_row_count_out" in Types => 4;
         _type_instance_arg_row_scan_local_prefix as "type_instance_arg_row_scan_local_prefix" in Types => token_rows * 4;
         _type_instance_arg_row_scan_block_sum as "type_instance_arg_row_scan_block_sum" in Types => token_rows.div_ceil(256) * 4;
-        _type_instance_arg_row_scan_prefix_a as "type_instance_arg_row_scan_prefix_a" in Types => token_rows.div_ceil(256) * 4;
         _method_key_status as "method_key_status" in Declarations => token_rows * 4;
         _method_key_duplicate_of as "method_key_duplicate_of" in Declarations => token_rows * 4;
         _method_lookup_head as "method_lookup_head" in Declarations => token_rows.saturating_mul(2) * 4;
@@ -3488,8 +3396,6 @@ fn build_graph(
         _generic_const_param_scan_local_prefix as "generic_const_param_scan_local_prefix" in Declarations => token_rows * 4;
         _generic_type_param_scan_block_sum as "generic_type_param_scan_block_sum" in Declarations => token_rows.div_ceil(256) * 4;
         _generic_const_param_scan_block_sum as "generic_const_param_scan_block_sum" in Declarations => token_rows.div_ceil(256) * 4;
-        _generic_type_param_scan_prefix_a as "generic_type_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
-        _generic_const_param_scan_prefix_a as "generic_const_param_scan_prefix_a" in Declarations => token_rows.div_ceil(256) * 4;
     });
     graph_resources!(graph, Input {
         _compact_generic_param_count as "compact_generic_param_count" in HirNodes => 4;
@@ -3610,7 +3516,6 @@ fn build_graph(
         _predicate_obligation_prefix_by_call as "predicate_obligation_prefix_by_call" in HirNodes => predicate_rows * 4;
         _predicate_obligation_scan_local_prefix as "predicate_obligation_scan_local_prefix" in HirNodes => predicate_rows * 4;
         _predicate_obligation_scan_block_sum as "predicate_obligation_scan_block_sum" in HirNodes => predicate_rows.div_ceil(256) * 4;
-        _predicate_obligation_scan_prefix_a as "predicate_obligation_scan_prefix_a" in HirNodes => predicate_rows.div_ceil(256) * 4;
         predicate_obligation_pair_total in HirNodes => 4;
         predicate_obligation_pair_dispatch_args in DispatchArguments [StorageIndirect] => 12;
         // What the unit leaves for the whole-program trait solver
@@ -3927,7 +3832,6 @@ fn build_graph(
         _hir_visible_decl_prefix as "hir_visible_decl_prefix" in Tokens => token_rows * 4;
         _hir_visible_decl_scan_local_prefix as "hir_visible_decl_scan_local_prefix" in Tokens => token_rows * 4;
         _hir_visible_decl_scan_block_sum as "hir_visible_decl_scan_block_sum" in Tokens => token_blocks * 4;
-        _hir_visible_decl_scan_prefix_a as "hir_visible_decl_scan_prefix_a" in Tokens => token_blocks * 4;
     });
     graph_resources!(graph, Workspace {
         hir_visible_decl_count_out in Declarations => 4;
@@ -4037,29 +3941,24 @@ fn build_graph(
         _call_arg_row_scan_local_prefix as "call_arg_row_scan_local_prefix" in HirNodes => hir_rows * 4;
         _call_param_row_scan_local_prefix as "call_param_row_scan_local_prefix" in Tokens => token_rows * 4;
         _call_param_row_scan_block_sum as "call_param_row_scan_block_sum" in Tokens => token_rows.div_ceil(256) * 4;
-        _call_param_row_scan_prefix_a as "call_param_row_scan_prefix_a" in Tokens => token_rows.div_ceil(256) * 4;
         _call_arg_row_scan_input as "call_arg_row_scan_input" in HirNodes => hir_rows * 4;
         _call_arg_row_prefix as "call_arg_row_prefix" in HirNodes => hir_rows * 4;
         _call_arg_row_scan_block_sum as "call_arg_row_scan_block_sum" in HirNodes => hir_blocks * 4;
-        _call_arg_row_scan_prefix_a as "call_arg_row_scan_prefix_a" in HirNodes => hir_blocks * 4;
         _call_generic_claim_scan_local_prefix as "call_generic_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_scan_input as "call_generic_claim_scan_input" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_pattern_mask as "call_generic_claim_pattern_mask" in CallArguments => call_arg_rows * 4;
         _call_generic_claim_prefix as "call_generic_claim_prefix" in CallArguments => call_arg_rows * 4;
         _call_claim_emitted_span as "call_claim_emitted_span" in CallArguments => call_arg_rows * 16;
         _call_generic_claim_scan_block_sum as "call_generic_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
-        _call_generic_claim_scan_prefix_a as "call_generic_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
         _call_const_claim_scan_local_prefix as "call_const_claim_scan_local_prefix" in CallArguments => call_arg_rows * 4;
         _call_const_claim_scan_input as "call_const_claim_scan_input" in CallArguments => call_arg_rows * 4;
         _call_const_claim_pattern_mask as "call_const_claim_pattern_mask" in CallArguments => call_arg_rows * 4;
         _call_const_claim_prefix as "call_const_claim_prefix" in CallArguments => call_arg_rows * 4;
         _call_const_claim_scan_block_sum as "call_const_claim_scan_block_sum" in CallArguments => call_arg_blocks * 4;
-        _call_const_claim_scan_prefix_a as "call_const_claim_scan_prefix_a" in CallArguments => call_arg_blocks * 4;
         _call_required_generic_scan_input as "call_required_generic_scan_input" in HirNodes => hir_rows * 4;
         _call_required_generic_prefix as "call_required_generic_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_local_prefix as "call_required_generic_scan_local_prefix" in HirNodes => hir_rows * 4;
         _call_required_generic_scan_block_sum as "call_required_generic_scan_block_sum" in HirNodes => hir_blocks * 4;
-        _call_required_generic_scan_prefix_a as "call_required_generic_scan_prefix_a" in HirNodes => hir_blocks * 4;
         required_generic_count_out as "call_required_generic_count_out" in CallArguments => 4;
         required_generic_dispatch_args as "call_required_generic_dispatch_args" in DispatchArguments [StorageIndirect] => 12;
         _call_generic_claim_callee as "call_generic_claim_callee" in CallArguments => claim_rows * 4;
@@ -4154,7 +4053,6 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         _aggregate_compare_scan_local_prefix as "aggregate_compare_scan_local_prefix" in HirNodes => hir_rows * 4;
         _aggregate_compare_scan_block_sum as "aggregate_compare_scan_block_sum" in HirNodes => aggregate_blocks * 4;
-        _aggregate_compare_scan_prefix_a as "aggregate_compare_scan_prefix_a" in HirNodes => aggregate_blocks * 4;
         aggregate_compare_dispatch_args in HirNodes [StorageIndirect] => 12;
     });
     graph_resources!(graph, Workspace {
@@ -4609,14 +4507,6 @@ fn build_graph(
                 PassAccess::write(
                     "generic_const_param_scan_block_sum",
                     _generic_const_param_scan_block_sum,
-                ),
-                PassAccess::write(
-                    "generic_type_param_scan_prefix_a",
-                    _generic_type_param_scan_prefix_a,
-                ),
-                PassAccess::write(
-                    "generic_const_param_scan_prefix_a",
-                    _generic_const_param_scan_prefix_a,
                 ),
             ],
         })?;
@@ -7333,7 +7223,6 @@ mod tests {
             graph.resource_id("name_lexeme_prefix").unwrap(),
             graph.resource_id("name_scan_local_prefix").unwrap(),
             graph.resource_id("name_scan_block_sum").unwrap(),
-            graph.resource_id("name_scan_prefix_a").unwrap(),
             graph.resource_id("name_max_len").unwrap(),
             graph.resource_id("name_hash_table_a").unwrap(),
             graph.resource_id("name_hash_table_b").unwrap(),
@@ -7348,7 +7237,6 @@ mod tests {
             resource("module_record_prefix"),
             resource("module_record_scan_local_prefix"),
             resource("module_record_scan_block_sum"),
-            resource("module_record_scan_prefix_a"),
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
             resource("module_path_key_radix_bucket_total"),
@@ -7397,6 +7285,7 @@ mod tests {
             local_const_reference_projection,
             "declaration kinds must survive local-constant reference projection",
         );
+
         assert_eq!(
             graph
                 .lifetime(graph.resource_id("decl_id_by_name_token").unwrap())
@@ -7447,7 +7336,6 @@ mod tests {
         );
         let hierarchy_bindings = [
             resource("module_record_scan_block_sum"),
-            resource("module_record_scan_prefix_a"),
         ]
         .map(storage_identity)
         .into_iter()
@@ -7492,7 +7380,6 @@ mod tests {
         for resource in [
             resource("module_record_scan_local_prefix"),
             resource("module_record_scan_block_sum"),
-            resource("module_record_scan_prefix_a"),
         ] {
             let lifetime = graph.lifetime(resource).unwrap();
             assert!(
@@ -7559,7 +7446,6 @@ mod tests {
             graph
                 .resource_id("hir_visible_decl_scan_block_sum")
                 .unwrap(),
-            graph.resource_id("hir_visible_decl_scan_prefix_a").unwrap(),
             graph.resource_id("hir_visible_decl_count_out").unwrap(),
             graph.resource_id("hir_visible_decl_owner_fn").unwrap(),
             graph.resource_id("hir_visible_decl_name_id").unwrap(),
@@ -7829,7 +7715,6 @@ mod tests {
             resource("predicate_obligation_prefix_by_call"),
             resource("predicate_obligation_scan_local_prefix"),
             resource("predicate_obligation_scan_block_sum"),
-            resource("predicate_obligation_scan_prefix_a"),
             resource("predicate_obligation_pair_total"),
             resource("predicate_obligation_pair_dispatch_args"),
         ] {
@@ -8002,7 +7887,6 @@ mod tests {
             resource("type_instance_arg_row_count_out"),
             resource("type_instance_arg_row_scan_local_prefix"),
             resource("type_instance_arg_row_scan_block_sum"),
-            resource("type_instance_arg_row_scan_prefix_a"),
             resource("type_instance_arg_row_ref_tag"),
             resource("type_instance_arg_row_ref_payload"),
         ] {
@@ -8039,7 +7923,6 @@ mod tests {
             slot(resource("type_instance_arg_row_count_out")),
             slot(resource("type_instance_arg_row_scan_local_prefix")),
             slot(resource("type_instance_arg_row_scan_block_sum")),
-            slot(resource("type_instance_arg_row_scan_prefix_a")),
         ];
         argument_row_slots.sort_unstable();
         assert!(
@@ -8529,7 +8412,6 @@ mod tests {
             resource("aggregate_compare_count_out"),
             resource("aggregate_compare_scan_local_prefix"),
             resource("aggregate_compare_scan_block_sum"),
-            resource("aggregate_compare_scan_prefix_a"),
         ] {
             assert_eq!(
                 graph.resource(resource).unwrap().class,
@@ -8778,11 +8660,6 @@ mod tests {
                 producer.name,
             );
         }
-        assert_ne!(
-            slot(resource("call_arg_row_scan_block_sum")),
-            slot(resource("call_arg_row_scan_prefix_a")),
-            "simultaneously bound scan hierarchy rows must not alias",
-        );
         assert!(
             graph
                 .lifetime(resource("call_arg_param_row"))

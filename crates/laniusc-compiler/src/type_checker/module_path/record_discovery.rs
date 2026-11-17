@@ -140,7 +140,6 @@ pub(in crate::type_checker) fn create_record_discovery(
             "module_record_scan_block_sum",
             &buffers.record_scan_block_sum,
         ),
-        ("module_record_scan_prefix_a", &buffers.record_scan_prefix_a),
     ]);
     let module_scan = PrefixScanOperation::from_spec(
         device,

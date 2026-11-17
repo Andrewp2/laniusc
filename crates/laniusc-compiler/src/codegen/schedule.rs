@@ -92,11 +92,6 @@ impl GpuStableScheduleSorter {
             } else {
                 "lir.semantic.schedule.scan.local.odd"
             },
-            block_prefix_pass: if direction == "even" {
-                "lir.semantic.schedule.scan.block_prefix.even"
-            } else {
-                "lir.semantic.schedule.scan.block_prefix.odd"
-            },
             apply_pass: if direction == "even" {
                 "lir.semantic.schedule.scan.apply.even"
             } else {
@@ -106,7 +101,6 @@ impl GpuStableScheduleSorter {
             input: "lir.semantic.schedule_histogram",
             local: "lir.semantic.schedule_scan_local",
             block_sum: "lir.semantic.schedule_scan_block_sum",
-            block_prefix: "lir.semantic.schedule_scan_block_prefix",
             output: "lir.semantic.schedule_global_prefix",
             total: "lir.semantic.schedule_scan_total",
         };
