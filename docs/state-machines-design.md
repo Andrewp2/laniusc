@@ -1148,7 +1148,9 @@ and compares the streams.
   (`shaders/desugar/plan.slang`) turns the counts of one stage into the
   workgroup counts and parameters of the next on the GPU, so the host
   records all of them before it knows a count. When the lexer has a region
-  but the pack has no machine, the 56 dispatches run with zero workgroups.
+  but the pack has no machine, the round's dispatches run with zero
+  workgroups. A round is recorded only once a build of the process used its
+  feature, so a program without generators records no generator round.
 - The region, the per-token buffers, the pieces and the spliced tokens have
   floors that the plan checks against the counts. A count over its floor
   sets `DESUGAR_REGION_OVERFLOW` in the feature word and writes what it
@@ -1159,13 +1161,16 @@ and compares the streams.
   then runs the rule kernels again to write the spans of the first error and
   reads them. Nothing is read when no rule fails.
 
-Settings, 2026-11-17: 445,357 tokens, 112 machines. The desugaring runs 56
-dispatches in the frontend's lexer submission and keeps the GPU busy for
-1.15 ms. Its buffers hold 501,092 token rows, 112,667 pieces, 450,666 region
-bytes and 613,759 spliced rows, about 160 MB. The first build with machines
-runs the lexer twice. The machine pass of M7 no longer expands machines,
-which removes 29 dispatches and 2 readbacks from the elaboration before the
-frontend. The executable is unchanged.
+Settings, 2026-11-17: 445,357 tokens, 112 machines, no generators. The
+desugaring runs the machine round, 62 dispatches in the frontend's lexer
+submission, and keeps the GPU busy for about 2.2 ms (measured while another
+process shared the GPU). Its buffers hold 501,092 token rows, 112,667
+pieces, 450,666 region bytes and 613,759 spliced rows, about 160 MB. The
+first build with machines runs the lexer twice. The pass before the
+frontend no longer parses: with the generators in the token stream it lexes
+for the closure rewrite and the reserved-name check only, 77 dispatches
+where it ran 418. A settings build runs 3,713 dispatches and 38 round trips
+where origin/main 9a91a9248 runs 4,012 and 39. The executable is unchanged.
 
 ## Open questions
 
