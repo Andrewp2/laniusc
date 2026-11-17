@@ -1624,6 +1624,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 .read_recorded_count_features_and_error(
                                     device,
                                     "lexer.fused.metadata",
+                                    None,
                                 )
                                 .map_err(|err| {
                                     parser_execution_failed_for_source(&diagnostic_path, src, err)
@@ -1997,12 +1998,15 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         },
                         |device, queue, bufs, parser, mut recorded| {
+                            let frontend = crate::gpu::passes_core::last_submission();
+                            submit_retention_export_early(&recorded);
                             prepare_retention_export(&recorded);
                             self.finish_semantic_interface_early(device, queue, &mut recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
                                     "lexer.source-pack.fused.metadata",
+                                    frontend,
                                 )
                                 .map_err(|err| {
                                     parser_execution_failed_for_source_pack(&diagnostic_files, err)
@@ -2748,6 +2752,22 @@ impl GpuCompiler<'_> {
             recorded.early_semantic_interface =
                 Some(self.type_checker.finish_semantic_interface(device, queue, identity));
         }
+    }
+}
+
+/// Submits a retained native job's export up to its commit behind the
+/// job's frontend, so the GPU exports while the host checks the job's
+/// statuses. The job's finish submits the commit with the provisional
+/// call rewrite; a job it does not reach rolls the export back when its
+/// snapshot drops.
+fn submit_retention_export_early(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
+    if let (Some(store), Some(snapshot)) =
+        (&recorded.type_check.program_retention, &recorded.retention_snapshot)
+        && store.native_projection()
+        && let Err(error) = store.submit_export_early(snapshot)
+    {
+        // The finish records the export again and reports the error.
+        log::debug!("program retention export was not submitted early: {error:#}");
     }
 }
 

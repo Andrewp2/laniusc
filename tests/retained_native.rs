@@ -10,7 +10,7 @@ use laniusc_compiler::{
         RetainedNativeBuild,
         frontend_check_count,
     },
-    type_checker::program_retention::discovery::DiscoveryCapacity,
+    type_checker::program_retention::{counts, discovery::DiscoveryCapacity},
 };
 
 use crate::common;
@@ -1652,6 +1652,54 @@ fn default_native_build_is_one_unit_and_keeps_library_visibility() {
             "{one_unit:?}"
         );
         assert_eq!(format!("{one_unit:?}"), format!("{two_units:?}"));
+        std::fs::remove_dir_all(&directory).ok();
+    });
+}
+
+#[test]
+fn retained_native_build_rolls_back_a_rejected_job() {
+    common::run_with_timeout("retained native rejected job", || {
+        let directory = std::env::temp_dir()
+            .join(format!("lanius-native-rejected-job-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let lib = directory.join("lib.lani");
+        let app = directory.join("app.lani");
+        std::fs::write(
+            &lib,
+            "module lib::a;\npub fn exposed() -> i32 { return 1; }\nfn hidden() -> i32 { return 2; }\n",
+        )
+        .unwrap();
+        let compiler = pollster::block_on(GpuCompiler::new()).expect("compiler");
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::tiny()).expect("retained build");
+        let compile = |build: &mut RetainedNativeBuild, body: &str| {
+            std::fs::write(&app, format!("module app::b;\nimport lib::a;\nfn main() -> i32 {{\n    return {body};\n}}\n"))
+                .unwrap();
+            let manifest = ExplicitSourcePackPathManifest::from_libraries(vec![
+                ExplicitSourceLibraryPaths { library_id: 1, paths: vec![lib.clone()], dependency_library_ids: Vec::new() },
+                ExplicitSourceLibraryPaths { library_id: 2, paths: vec![app.clone()], dependency_library_ids: vec![1] },
+            ])
+            .expect("manifest");
+            pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, build))
+        };
+        // The first build leaves the frontend shapes the later jobs reuse.
+        // A job on a known shape exports up to its commit before the host
+        // reads its statuses. The rejected job must roll that export back,
+        // so the same store then builds the program again with one
+        // committed export per unit.
+        let run = |elf: Vec<u8>| common::run_x86_64_elf_output("retained native rejected job", "retained_rejected_job", &elf);
+        let elf = compile(&mut build, "exposed() + 12").expect("first build");
+        assert_eq!(run(elf).status.code(), Some(13));
+        compile(&mut build, "hidden() + 12").expect_err("a private library function must not be callable from the app");
+        let words = build.store().status().expect("store counters");
+        assert_eq!(words[counts::JOB_STATE], counts::JOB_ROLLED_BACK, "the rejected job rolled back");
+        assert_eq!(
+            words[..counts::JOB_BASE],
+            words[counts::JOB_BASE..2 * counts::JOB_BASE],
+            "every arena is back at the rejected job's watermark"
+        );
+        let elf = compile(&mut build, "exposed() + 13").expect("the build after the rejected one");
+        assert_eq!(build.store().job_reports().len(), build.report.units, "one committed export per unit");
+        assert_eq!(run(elf).status.code(), Some(14));
         std::fs::remove_dir_all(&directory).ok();
     });
 }

@@ -154,16 +154,21 @@ impl GpuBuffers {
         &self,
         device: &wgpu::Device,
         label: &str,
+        through: Option<wgpu::SubmissionIndex>,
     ) -> anyhow::Result<(u32, u32, Option<u32>)> {
-        // The wait polls every submission, so it lasts until the whole
-        // frontend recorded after the lexer has run.
+        // The wait lasts until the whole frontend recorded after the lexer
+        // has run: every submission, or those up to `through` when later
+        // work need not finish first.
         let _span = crate::gpu::trace::HostSpan::new("host.readback", "lexer.source-pack.metadata");
         let slice = self.token_count_readback.buffer.slice(..);
         crate::gpu::passes_core::map_readback_for_progress(&slice, label);
         crate::gpu::passes_core::wait_for_map_progress(
             device,
             label,
-            wgpu::PollType::wait_indefinitely(),
+            match through {
+                Some(index) => wgpu::PollType::Wait { submission_index: Some(index), timeout: None },
+                None => wgpu::PollType::wait_indefinitely(),
+            },
         );
         let bytes = slice.get_mapped_range();
         if bytes.len() < 12 {

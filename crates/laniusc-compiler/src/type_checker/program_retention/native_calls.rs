@@ -170,7 +170,9 @@ impl ProgramRetention {
         }
         let mut encoder = device.create_command_encoder(&Default::default());
         tables.ensure(device, &mut encoder, u64::from(store.capacity.arenas[A_USES]));
-        self.queue.submit(Some(encoder.finish()));
+        // An early export's commit steps run first in the same submission.
+        let commit = export.as_mut().and_then(ExportSubmitted::take_commit);
+        self.queue.submit(commit.into_iter().chain(Some(encoder.finish())));
         let mut kept = self.native_call_scratch.lock().unwrap();
         let mut keep = |label: &'static str, bytes: u64| {
             let bytes = bytes.max(16).next_power_of_two();

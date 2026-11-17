@@ -2178,6 +2178,18 @@ pub(crate) fn trace_gpu_progress(label: &str) {
     }
 }
 
+thread_local! {
+    static LAST_SUBMISSION: std::cell::RefCell<Option<wgpu::SubmissionIndex>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The index of this thread's last submission through
+/// [`submit_with_progress`]. A wait for it does not wait for work the
+/// thread submitted directly afterwards.
+pub(crate) fn last_submission() -> Option<wgpu::SubmissionIndex> {
+    LAST_SUBMISSION.with(|last| last.borrow().clone())
+}
+
 /// Submits one command buffer and records host-side submit timing.
 pub(crate) fn submit_with_progress(
     queue: &wgpu::Queue,
@@ -2192,8 +2204,9 @@ pub(crate) fn submit_with_progress(
             .record_submission(label);
     }
     let start = Instant::now();
-    queue.submit(Some(command_buffer));
+    let index = queue.submit(Some(command_buffer));
     let end = Instant::now();
+    LAST_SUBMISSION.with(|last| *last.borrow_mut() = Some(index));
     crate::gpu::trace::record_host_span("host.submit", label, start, end);
     if host_timing_enabled() {
         let [dispatches, indirect, passes, bind_groups] = recorded_since_last_submission();
