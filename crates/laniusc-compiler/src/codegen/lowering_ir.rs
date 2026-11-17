@@ -236,13 +236,11 @@ struct WasmAbiGraphResources {
     param_prefix: ResourceId,
     param_scan_local: ResourceId,
     param_scan_block_sum: ResourceId,
-    param_scan_block_prefix: ResourceId,
     param_value_total: ResourceId,
     local_widths: ResourceId,
     local_prefix: ResourceId,
     local_scan_local: ResourceId,
     local_scan_block_sum: ResourceId,
-    local_scan_block_prefix: ResourceId,
     local_value_total: ResourceId,
     functions: ResourceId,
     local_index_by_token: ResourceId,
@@ -261,13 +259,11 @@ struct WasmModuleGraphResources {
     type_offsets: ResourceId,
     type_scan_local: ResourceId,
     type_scan_block_sum: ResourceId,
-    type_scan_block_prefix: ResourceId,
     type_total: ResourceId,
     code_lengths: ResourceId,
     code_offsets: ResourceId,
     code_scan_local: ResourceId,
     code_scan_block_sum: ResourceId,
-    code_scan_block_prefix: ResourceId,
     code_total: ResourceId,
     entrypoint_state: ResourceId,
     layout: ResourceId,
@@ -282,19 +278,16 @@ struct WasmObjectGraphResources {
     relocation_prefix: ResourceId,
     relocation_scan_local: ResourceId,
     relocation_scan_block_sum: ResourceId,
-    relocation_scan_block_prefix: ResourceId,
     relocation_total: ResourceId,
     symbol_flags: ResourceId,
     symbol_prefix: ResourceId,
     symbol_scan_local: ResourceId,
     symbol_scan_block_sum: ResourceId,
-    symbol_scan_block_prefix: ResourceId,
     symbol_total: ResourceId,
     definition_flags: ResourceId,
     definition_prefix: ResourceId,
     definition_scan_local: ResourceId,
     definition_scan_block_sum: ResourceId,
-    definition_scan_block_prefix: ResourceId,
     definition_total: ResourceId,
     relocations: ResourceId,
     functions: ResourceId,
@@ -314,24 +307,20 @@ struct X86ObjectGraphResources {
     relocation_prefix: ResourceId,
     relocation_scan_local: ResourceId,
     relocation_scan_block_sum: ResourceId,
-    relocation_scan_block_prefix: ResourceId,
     relocation_total: ResourceId,
     symbol_flags: ResourceId,
     symbol_prefix: ResourceId,
     symbol_scan_local: ResourceId,
     symbol_scan_block_sum: ResourceId,
-    symbol_scan_block_prefix: ResourceId,
     symbol_total: ResourceId,
     definition_flags: ResourceId,
     definition_prefix: ResourceId,
     definition_scan_local: ResourceId,
     definition_scan_block_sum: ResourceId,
-    definition_scan_block_prefix: ResourceId,
     definition_total: ResourceId,
     runtime_relocation_prefix: ResourceId,
     runtime_relocation_scan_local: ResourceId,
     runtime_relocation_scan_block_sum: ResourceId,
-    runtime_relocation_scan_block_prefix: ResourceId,
     runtime_relocation_total: ResourceId,
     relocations: ResourceId,
     runtime_relocations: ResourceId,
@@ -369,7 +358,6 @@ struct ScheduleGraphResources {
     global_prefix: ResourceId,
     scan_local: ResourceId,
     scan_block_sum: ResourceId,
-    scan_block_prefix: ResourceId,
     scan_total: ResourceId,
 }
 
@@ -383,17 +371,15 @@ fn add_schedule_graph_passes(
     let names = [
         "lir.semantic.schedule.histogram.even",
         "lir.semantic.schedule.scan.local.even",
-        "lir.semantic.schedule.scan.block_prefix.even",
         "lir.semantic.schedule.scan.apply.even",
         "lir.semantic.schedule.scatter.even",
         "lir.semantic.schedule.histogram.odd",
         "lir.semantic.schedule.scan.local.odd",
-        "lir.semantic.schedule.scan.block_prefix.odd",
         "lir.semantic.schedule.scan.apply.odd",
         "lir.semantic.schedule.scatter.odd",
     ];
     let mut directions = Vec::with_capacity(2);
-    for base in [0usize, 5usize] {
+    for base in [0usize, 4usize] {
         let (order_in, order_out) = if base == 0 {
             (resources.order, resources.order_tmp)
         } else {
@@ -429,24 +415,14 @@ fn add_schedule_graph_passes(
                 dispatch_domain: domain,
                 accesses: vec![
                     PassAccess::read("scan_count", resources.slot_count),
-                    PassAccess::read("scan_block_sum", resources.scan_block_sum),
-                    PassAccess::write("scan_block_prefix", resources.scan_block_prefix),
-                ],
-            },
-            PassDesc {
-                name: names[base + 3],
-                phase,
-                dispatch_domain: domain,
-                accesses: vec![
-                    PassAccess::read("scan_count", resources.slot_count),
                     PassAccess::read("scan_local_prefix", resources.scan_local),
-                    PassAccess::read("scan_block_prefix", resources.scan_block_prefix),
+                    PassAccess::read("scan_block_sum", resources.scan_block_sum),
                     PassAccess::write("scan_output_prefix", resources.global_prefix),
                     PassAccess::write("scan_total", resources.scan_total),
                 ],
             },
             PassDesc {
-                name: names[base + 4],
+                name: names[base + 3],
                 phase,
                 dispatch_domain: domain,
                 accesses: vec![
@@ -459,7 +435,7 @@ fn add_schedule_graph_passes(
             },
         ]);
     }
-    let mut body = Vec::with_capacity(10);
+    let mut body = Vec::with_capacity(8);
     let starts_in_temporary = radix_steps % 2 != 0;
     if starts_in_temporary {
         body.extend(directions[1].clone());
@@ -1916,11 +1892,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::Declarations,
         LoweringCapacities::bytes::<u32>(param_scan_blocks),
     ))?;
-    let semantic_param_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.param_scan_block_prefix",
-        ResourceDomain::Declarations,
-        LoweringCapacities::bytes::<u32>(param_scan_blocks),
-    ))?;
     let semantic_const_function_by_root = graph.add_resource(workspace(
         "lir.semantic.const_function_by_root",
         ResourceDomain::HirNodes,
@@ -2222,11 +2193,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
-    let semantic_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.scan_block_prefix",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
     let semantic_function_scan_local = graph.add_resource(workspace(
         "lir.semantic.function_scan_local",
         ResourceDomain::HirNodes,
@@ -2234,11 +2200,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let semantic_function_scan_block_sum = graph.add_resource(workspace(
         "lir.semantic.function_scan_block_sum",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
-    let semantic_function_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.function_scan_block_prefix",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
@@ -2252,11 +2213,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
-    let semantic_local_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.local_scan_block_prefix",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
     let semantic_call_arg_scan_local = graph.add_resource(workspace(
         "lir.semantic.call_arg_scan_local",
         ResourceDomain::HirNodes,
@@ -2264,11 +2220,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let semantic_call_arg_scan_block_sum = graph.add_resource(workspace(
         "lir.semantic.call_arg_scan_block_sum",
-        ResourceDomain::HirNodes,
-        LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
-    ))?;
-    let semantic_call_arg_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.call_arg_scan_block_prefix",
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(semantic_scan_blocks),
     ))?;
@@ -2793,23 +2744,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.function_scan.block_prefix",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_block_sum", semantic_function_scan_block_sum),
-            PassAccess::write("scan_block_prefix", semantic_function_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.semantic.function_scan.apply",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_local_prefix", semantic_function_scan_local),
-            PassAccess::read("scan_block_prefix", semantic_function_scan_block_prefix),
+            PassAccess::read("scan_block_sum", semantic_function_scan_block_sum),
             PassAccess::write("scan_output_prefix", semantic_function_prefix),
             PassAccess::write("scan_total", semantic_function_total),
         ],
@@ -2837,23 +2778,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.param_scan.block_prefix",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_param_count),
-            PassAccess::read("scan_block_sum", semantic_param_scan_block_sum),
-            PassAccess::write("scan_block_prefix", semantic_param_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.semantic.param_scan.apply",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::Declarations,
         accesses: vec![
             PassAccess::read("scan_count", hir_param_count),
             PassAccess::read("scan_local_prefix", semantic_param_scan_local),
-            PassAccess::read("scan_block_prefix", semantic_param_scan_block_prefix),
+            PassAccess::read("scan_block_sum", semantic_param_scan_block_sum),
             PassAccess::write("scan_output_prefix", semantic_param_prefix),
             PassAccess::write("scan_total", semantic_param_total),
         ],
@@ -2896,23 +2827,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.local_scan.block_prefix",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_block_sum", semantic_local_scan_block_sum),
-            PassAccess::write("scan_block_prefix", semantic_local_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.semantic.local_scan.apply",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_local_prefix", semantic_local_scan_local),
-            PassAccess::read("scan_block_prefix", semantic_local_scan_block_prefix),
+            PassAccess::read("scan_block_sum", semantic_local_scan_block_sum),
             PassAccess::write("scan_output_prefix", semantic_local_prefix),
             PassAccess::write("scan_total", semantic_local_total),
         ],
@@ -3115,23 +3036,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.call_arg_scan.block_prefix",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_block_sum", semantic_call_arg_scan_block_sum),
-            PassAccess::write("scan_block_prefix", semantic_call_arg_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.semantic.call_arg_scan.apply",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_local_prefix", semantic_call_arg_scan_local),
-            PassAccess::read("scan_block_prefix", semantic_call_arg_scan_block_prefix),
+            PassAccess::read("scan_block_sum", semantic_call_arg_scan_block_sum),
             PassAccess::write("scan_output_prefix", semantic_call_arg_prefix_by_hir),
             PassAccess::write("scan_total", semantic_call_arg_total),
         ],
@@ -3322,23 +3233,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.scan.block_prefix",
-        phase: CompilerPhase::SemanticLowering,
-        dispatch_domain: ResourceDomain::HirNodes,
-        accesses: vec![
-            PassAccess::read("scan_count", hir_count),
-            PassAccess::read("scan_block_sum", semantic_scan_block_sum),
-            PassAccess::write("scan_block_prefix", semantic_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.semantic.scan.apply",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::HirNodes,
         accesses: vec![
             PassAccess::read("scan_count", hir_count),
             PassAccess::read("scan_local_prefix", semantic_scan_local),
-            PassAccess::read("scan_block_prefix", semantic_scan_block_prefix),
+            PassAccess::read("scan_block_sum", semantic_scan_block_sum),
             PassAccess::write("scan_output_prefix", semantic_offsets),
             PassAccess::write("scan_total", semantic_total),
         ],
@@ -4002,7 +3903,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.block_scan_local_prefix",
             block_sum: "lir.opt.block_scan_block_sum",
-            block_prefix: "lir.opt.block_scan_block_prefix",
         },
     )?;
     let opt_edge_count_by_block = graph.add_resource(workspace(
@@ -4123,7 +4023,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.edge_scan_local_prefix",
             block_sum: "lir.opt.edge_scan_block_sum",
-            block_prefix: "lir.opt.edge_scan_block_prefix",
         },
     )?;
     let opt_functions = graph.add_resource(ResourceDesc {
@@ -4196,7 +4095,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.access_scan_local_prefix",
             block_sum: "lir.opt.access_scan_block_sum",
-            block_prefix: "lir.opt.access_scan_block_prefix",
         },
     )?;
     let opt_access_radix = graph.add_radix_sort_resources(
@@ -4250,7 +4148,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.access_group_scan_local_prefix",
             block_sum: "lir.opt.access_group_scan_block_sum",
-            block_prefix: "lir.opt.access_group_scan_block_prefix",
         },
     )?;
     let opt_local_definition_by_access = graph.add_resource(workspace(
@@ -4575,7 +4472,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.use_group_start_flag",
             block_sum: "lir.opt.ssa.use_group_scan_block_sum",
-            block_prefix: "lir.opt.ssa.use_group_scan_block_prefix",
         },
     )?;
     let _opt_ssa_node_use_scan_dispatch_args = graph.add_indirect_storage(
@@ -4604,7 +4500,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.node_use_count",
             block_sum: "lir.opt.ssa.node_use_scan_block_sum",
-            block_prefix: "lir.opt.ssa.node_use_scan_block_prefix",
         },
     )?;
     let _opt_ssa_call_use_scan_workspace = graph.add_in_place_prefix_scan_workspace(
@@ -4615,7 +4510,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.call_use_flag",
             block_sum: "lir.opt.ssa.call_use_scan_block_sum",
-            block_prefix: "lir.opt.ssa.call_use_scan_block_prefix",
         },
     )?;
     let _opt_ssa_aggregate_use_scan_workspace = graph.add_in_place_prefix_scan_workspace(
@@ -4626,7 +4520,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.aggregate_use_flag",
             block_sum: "lir.opt.ssa.aggregate_use_scan_block_sum",
-            block_prefix: "lir.opt.ssa.aggregate_use_scan_block_prefix",
         },
     )?;
     let opt_ssa_node_value_scan_dispatch_args = graph.add_indirect_storage(
@@ -4649,7 +4542,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.node_value_flag",
             block_sum: "lir.opt.ssa.node_value_scan_block_sum",
-            block_prefix: "lir.opt.ssa.node_value_scan_block_prefix",
         },
     )?;
     let _opt_ssa_block_argument_value_scan_workspace = graph.add_in_place_prefix_scan_workspace(
@@ -4660,7 +4552,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.block_argument_value_flag",
             block_sum: "lir.opt.ssa.block_argument_value_scan_block_sum",
-            block_prefix: "lir.opt.ssa.block_argument_value_scan_block_prefix",
         },
     )?;
     let _opt_ssa_block_argument_user_scan_workspace = graph.add_prefix_scan_workspace(
@@ -4670,7 +4561,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.block_argument_user_scan_local_prefix",
             block_sum: "lir.opt.ssa.block_argument_user_scan_block_sum",
-            block_prefix: "lir.opt.ssa.block_argument_user_scan_block_prefix",
         },
     )?;
     let _opt_ssa_block_argument_scan_workspace = graph.add_in_place_prefix_scan_workspace(
@@ -4681,7 +4571,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.block_argument_flag",
             block_sum: "lir.opt.ssa.block_argument_scan_block_sum",
-            block_prefix: "lir.opt.ssa.block_argument_scan_block_prefix",
         },
     )?;
     let _opt_ssa_block_argument_incoming_scan_workspace = graph
@@ -4693,7 +4582,6 @@ fn lowering_compiler_graph_builder(
             crate::gpu::compiler_graph::PrefixScanWorkspace {
                 local_prefix: "lir.opt.ssa.block_argument_incoming_count",
                 block_sum: "lir.opt.ssa.block_argument_incoming_scan_block_sum",
-                block_prefix: "lir.opt.ssa.block_argument_incoming_scan_block_prefix",
             },
         )?;
     let _opt_ssa_demand_seed_scan_workspace = graph.add_prefix_scan_workspace(
@@ -4703,7 +4591,6 @@ fn lowering_compiler_graph_builder(
         crate::gpu::compiler_graph::PrefixScanWorkspace {
             local_prefix: "lir.opt.ssa.demand_seed_scan_local_prefix",
             block_sum: "lir.opt.ssa.demand_seed_scan_block_sum",
-            block_prefix: "lir.opt.ssa.demand_seed_scan_block_prefix",
         },
     )?;
     // The status, then the job's semantic and target row totals.
@@ -4758,11 +4645,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let target_scan_block_sum = graph.add_resource(workspace(
         "lir.target.count_scan_block_sum",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(target_scan_blocks),
-    ))?;
-    let target_scan_block_prefix = graph.add_resource(workspace(
-        "lir.target.count_scan_block_prefix",
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(target_scan_blocks),
     ))?;
@@ -4963,7 +4845,6 @@ fn lowering_compiler_graph_builder(
             crate::gpu::compiler_graph::PrefixScanWorkspace {
                 local_prefix: "lir.x86.place_scan_local",
                 block_sum: "lir.x86.place_scan_block_sum",
-                block_prefix: "lir.x86.place_scan_block_prefix",
             },
         )?)
     } else {
@@ -5004,7 +4885,6 @@ fn lowering_compiler_graph_builder(
             crate::gpu::compiler_graph::PrefixScanWorkspace {
                 local_prefix: "lir.x86.stack_scan_local",
                 block_sum: "lir.x86.stack_scan_block_sum",
-                block_prefix: "lir.x86.stack_scan_block_prefix",
             },
         )?)
     } else {
@@ -5135,11 +5015,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Declarations,
                 LoweringCapacities::bytes::<u32>(param_blocks),
             ))?,
-            param_scan_block_prefix: graph.add_resource(workspace(
-                "lir.wasm.param_scan_block_prefix",
-                ResourceDomain::Declarations,
-                LoweringCapacities::bytes::<u32>(param_blocks),
-            ))?,
             param_value_total: graph.add_resource(workspace(
                 "lir.wasm.param_value_total",
                 ResourceDomain::Declarations,
@@ -5162,11 +5037,6 @@ fn lowering_compiler_graph_builder(
             ))?,
             local_scan_block_sum: graph.add_resource(workspace(
                 "lir.wasm.local_scan_block_sum",
-                ResourceDomain::Declarations,
-                LoweringCapacities::bytes::<u32>(local_blocks),
-            ))?,
-            local_scan_block_prefix: graph.add_resource(workspace(
-                "lir.wasm.local_scan_block_prefix",
                 ResourceDomain::Declarations,
                 LoweringCapacities::bytes::<u32>(local_blocks),
             ))?,
@@ -5264,11 +5134,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
     ))?;
-    let schedule_scan_block_prefix = graph.add_resource(workspace(
-        "lir.semantic.schedule_scan_block_prefix",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(schedule_slots.div_ceil(256)),
-    ))?;
     let schedule_scan_total = graph.add_resource(workspace(
         "lir.semantic.schedule_scan_total",
         ResourceDomain::SemanticInstructions,
@@ -5298,11 +5163,6 @@ fn lowering_compiler_graph_builder(
     ))?;
     let byte_scan_block_sum = graph.add_resource(workspace(
         "lir.target.byte_scan_block_sum",
-        target_domain,
-        LoweringCapacities::bytes::<u32>(byte_scan_blocks),
-    ))?;
-    let byte_scan_block_prefix = graph.add_resource(workspace(
-        "lir.target.byte_scan_block_prefix",
         target_domain,
         LoweringCapacities::bytes::<u32>(byte_scan_blocks),
     ))?;
@@ -5434,12 +5294,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            relocation_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.x86.object.relocation_scan_block_prefix",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.relocation_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5468,12 +5322,6 @@ fn lowering_compiler_graph_builder(
             symbol_scan_block_sum: u32_rows(
                 &mut graph,
                 "artifact.x86.object.symbol_scan_block_sum",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
-            symbol_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.x86.object.symbol_scan_block_prefix",
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
@@ -5508,12 +5356,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::Declarations,
                 function_blocks,
             )?,
-            definition_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.x86.object.definition_scan_block_prefix",
-                ResourceDomain::Declarations,
-                function_blocks,
-            )?,
             definition_total: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.object.definition_total",
                 domain: ResourceDomain::Declarations,
@@ -5536,12 +5378,6 @@ fn lowering_compiler_graph_builder(
             runtime_relocation_scan_block_sum: u32_rows(
                 &mut graph,
                 "artifact.x86.object.runtime_relocation_scan_block_sum",
-                ResourceDomain::X86Instructions,
-                target_row_blocks,
-            )?,
-            runtime_relocation_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.x86.object.runtime_relocation_scan_block_prefix",
                 ResourceDomain::X86Instructions,
                 target_row_blocks,
             )?,
@@ -5647,11 +5483,6 @@ fn lowering_compiler_graph_builder(
                 "lir.wasm.module.type_scan_block_sum",
                 blocks,
             )?,
-            type_scan_block_prefix: u32_rows(
-                &mut graph,
-                "lir.wasm.module.type_scan_block_prefix",
-                blocks,
-            )?,
             type_total: u32_rows(&mut graph, "lir.wasm.module.type_total", 1)?,
             code_lengths: u32_rows(
                 &mut graph,
@@ -5671,11 +5502,6 @@ fn lowering_compiler_graph_builder(
             code_scan_block_sum: u32_rows(
                 &mut graph,
                 "lir.wasm.module.code_scan_block_sum",
-                blocks,
-            )?,
-            code_scan_block_prefix: u32_rows(
-                &mut graph,
-                "lir.wasm.module.code_scan_block_prefix",
                 blocks,
             )?,
             code_total: u32_rows(&mut graph, "lir.wasm.module.code_total", 1)?,
@@ -5754,12 +5580,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            relocation_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.relocation_scan_block_prefix",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             relocation_total: graph.add_resource(ResourceDesc {
                 name: "artifact.wasm.object.relocation_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5791,12 +5611,6 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::SemanticInstructions,
                 relocation_blocks,
             )?,
-            symbol_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.symbol_scan_block_prefix",
-                ResourceDomain::SemanticInstructions,
-                relocation_blocks,
-            )?,
             symbol_total: graph.add_resource(ResourceDesc {
                 name: "artifact.wasm.object.symbol_total",
                 domain: ResourceDomain::SemanticInstructions,
@@ -5825,12 +5639,6 @@ fn lowering_compiler_graph_builder(
             definition_scan_block_sum: u32_rows(
                 &mut graph,
                 "artifact.wasm.object.definition_scan_block_sum",
-                ResourceDomain::Declarations,
-                function_blocks,
-            )?,
-            definition_scan_block_prefix: u32_rows(
-                &mut graph,
-                "artifact.wasm.object.definition_scan_block_prefix",
                 ResourceDomain::Declarations,
                 function_blocks,
             )?,
@@ -5921,7 +5729,6 @@ fn lowering_compiler_graph_builder(
         global_prefix: schedule_global_prefix,
         scan_local: schedule_scan_local,
         scan_block_sum: schedule_scan_block_sum,
-        scan_block_prefix: schedule_scan_block_prefix,
         scan_total: schedule_scan_total,
     };
     add_schedule_graph_passes(
@@ -8648,23 +8455,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.stack_scan.block_prefix",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read("scan_block_sum", x86_stack_scan.block_sum),
-                PassAccess::write("scan_block_prefix", x86_stack_scan.block_prefix),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.x86.stack_scan.apply",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", opt_total),
                 PassAccess::read("scan_local_prefix", x86_stack_scan.local_prefix),
-                PassAccess::read("scan_block_prefix", x86_stack_scan.block_prefix),
+                PassAccess::read("scan_block_sum", x86_stack_scan.block_sum),
                 PassAccess::write("scan_output_prefix", x86_stack_prefix_by_position.unwrap()),
                 PassAccess::write("scan_total", x86_stack_word_total.unwrap()),
             ],
@@ -8747,23 +8544,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.place_scan.block_prefix",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read("scan_block_sum", x86_place_scan.block_sum),
-                PassAccess::write("scan_block_prefix", x86_place_scan.block_prefix),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.x86.place_scan.apply",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_local_total),
                 PassAccess::read("scan_local_prefix", x86_place_scan.local_prefix),
-                PassAccess::read("scan_block_prefix", x86_place_scan.block_prefix),
+                PassAccess::read("scan_block_sum", x86_place_scan.block_sum),
                 PassAccess::write("scan_output_prefix", x86_place_prefix_by_local.unwrap()),
                 PassAccess::write("scan_total", x86_place_word_total.unwrap()),
             ],
@@ -8911,23 +8698,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.frame_scan.block_prefix",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::SemanticInstructions,
-            accesses: vec![
-                PassAccess::read("scan_count", opt_total),
-                PassAccess::read("scan_block_sum", target_scan_block_sum),
-                PassAccess::write("scan_block_prefix", target_scan_block_prefix),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.wasm.frame_scan.apply",
             phase: target_phase,
             dispatch_domain: ResourceDomain::SemanticInstructions,
             accesses: vec![
                 PassAccess::read("scan_count", opt_total),
                 PassAccess::read("scan_local_prefix", target_scan_local),
-                PassAccess::read("scan_block_prefix", target_scan_block_prefix),
+                PassAccess::read("scan_block_sum", target_scan_block_sum),
                 PassAccess::write("scan_output_prefix", wasm.frame_prefix),
                 PassAccess::write("scan_total", wasm.frame_total),
             ],
@@ -9162,23 +8939,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.count_scan.block_prefix",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_block_sum", target_scan_block_sum),
-            PassAccess::write("scan_block_prefix", target_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.target.count_scan.apply",
         phase: target_phase,
         dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("scan_count", opt_total),
             PassAccess::read("scan_local_prefix", target_scan_local),
-            PassAccess::read("scan_block_prefix", target_scan_block_prefix),
+            PassAccess::read("scan_block_sum", target_scan_block_sum),
             PassAccess::write("scan_output_prefix", target_offsets),
             PassAccess::write("scan_total", target_total),
         ],
@@ -9220,23 +8987,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.param_scan.block_prefix",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_param_total),
-                PassAccess::read("scan_block_sum", wasm.param_scan_block_sum),
-                PassAccess::write("scan_block_prefix", wasm.param_scan_block_prefix),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.wasm.abi.param_scan.apply",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_param_total),
                 PassAccess::read("scan_local_prefix", wasm.param_scan_local),
-                PassAccess::read("scan_block_prefix", wasm.param_scan_block_prefix),
+                PassAccess::read("scan_block_sum", wasm.param_scan_block_sum),
                 PassAccess::write("scan_output_prefix", wasm.param_prefix),
                 PassAccess::write("scan_total", wasm.param_value_total),
             ],
@@ -9266,23 +9023,13 @@ fn lowering_compiler_graph_builder(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.wasm.abi.local_scan.block_prefix",
-            phase: target_phase,
-            dispatch_domain: ResourceDomain::Declarations,
-            accesses: vec![
-                PassAccess::read("scan_count", semantic_local_total),
-                PassAccess::read("scan_block_sum", wasm.local_scan_block_sum),
-                PassAccess::write("scan_block_prefix", wasm.local_scan_block_prefix),
-            ],
-        })?;
-        graph.add_pass(PassDesc {
             name: "lir.wasm.abi.local_scan.apply",
             phase: target_phase,
             dispatch_domain: ResourceDomain::Declarations,
             accesses: vec![
                 PassAccess::read("scan_count", semantic_local_total),
                 PassAccess::read("scan_local_prefix", wasm.local_scan_local),
-                PassAccess::read("scan_block_prefix", wasm.local_scan_block_prefix),
+                PassAccess::read("scan_block_sum", wasm.local_scan_block_sum),
                 PassAccess::write("scan_output_prefix", wasm.local_prefix),
                 PassAccess::write("scan_total", wasm.local_value_total),
             ],
@@ -9342,11 +9089,6 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::SemanticInstructions,
         LoweringCapacities::bytes::<u32>(function_scan_blocks),
     ))?;
-    let function_scan_block_prefix = graph.add_resource(workspace(
-        "lir.target.function_scan_block_prefix",
-        ResourceDomain::SemanticInstructions,
-        LoweringCapacities::bytes::<u32>(function_scan_blocks),
-    ))?;
     let function_count = graph.add_resource(ResourceDesc {
         name: "lir.target.function_count",
         domain: ResourceDomain::Declarations,
@@ -9403,23 +9145,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.function_scan.block_prefix",
-        phase: target_phase,
-        dispatch_domain: ResourceDomain::SemanticInstructions,
-        accesses: vec![
-            PassAccess::read("scan_count", opt_total),
-            PassAccess::read("scan_block_sum", function_scan_block_sum),
-            PassAccess::write("scan_block_prefix", function_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.target.function_scan.apply",
         phase: target_phase,
         dispatch_domain: ResourceDomain::SemanticInstructions,
         accesses: vec![
             PassAccess::read("scan_count", opt_total),
             PassAccess::read("scan_local_prefix", function_scan_local),
-            PassAccess::read("scan_block_prefix", function_scan_block_prefix),
+            PassAccess::read("scan_block_sum", function_scan_block_sum),
             PassAccess::write("scan_output_prefix", function_prefix),
             PassAccess::write("scan_total", function_count),
         ],
@@ -9720,23 +9452,13 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.target.byte_scan.block_prefix",
-        phase: target_phase,
-        dispatch_domain: target_domain,
-        accesses: vec![
-            PassAccess::read("scan_count", target_total),
-            PassAccess::read("scan_block_sum", byte_scan_block_sum),
-            PassAccess::write("scan_block_prefix", byte_scan_block_prefix),
-        ],
-    })?;
-    graph.add_pass(PassDesc {
         name: "lir.target.byte_scan.apply",
         phase: target_phase,
         dispatch_domain: target_domain,
         accesses: vec![
             PassAccess::read("scan_count", target_total),
             PassAccess::read("scan_local_prefix", byte_scan_local),
-            PassAccess::read("scan_block_prefix", byte_scan_block_prefix),
+            PassAccess::read("scan_block_sum", byte_scan_block_sum),
             PassAccess::write("scan_output_prefix", byte_offsets),
             PassAccess::write("scan_total", body_length),
         ],
@@ -10072,19 +9794,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.relocation_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.x86.object.relocation_scan.apply",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_local_prefix", object.relocation_scan_local),
-                    PassAccess::read("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.relocation_prefix),
                     PassAccess::write("scan_total", object.relocation_total),
                 ],
@@ -10099,19 +9813,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.symbol_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.x86.object.symbol_scan.apply",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_local_prefix", object.symbol_scan_local),
-                    PassAccess::read("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.symbol_prefix),
                     PassAccess::write("scan_total", object.symbol_total),
                 ],
@@ -10150,19 +9856,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.definition_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.x86.object.definition_scan.apply",
                 vec![
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_local_prefix", object.definition_scan_local),
-                    PassAccess::read("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.definition_prefix),
                     PassAccess::write("scan_total", object.definition_total),
                 ],
@@ -10226,24 +9924,13 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.x86.object.runtime_relocation_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", target_total),
-                    PassAccess::read("scan_block_sum", object.runtime_relocation_scan_block_sum),
-                    PassAccess::write(
-                        "scan_block_prefix",
-                        object.runtime_relocation_scan_block_prefix,
-                    ),
-                ],
-            ),
-            (
                 "artifact.x86.object.runtime_relocation_scan.apply",
                 vec![
                     PassAccess::read("scan_count", target_total),
                     PassAccess::read("scan_local_prefix", object.runtime_relocation_scan_local),
                     PassAccess::read(
-                        "scan_block_prefix",
-                        object.runtime_relocation_scan_block_prefix,
+                        "scan_block_sum",
+                        object.runtime_relocation_scan_block_sum,
                     ),
                     PassAccess::write("scan_output_prefix", object.runtime_relocation_prefix),
                     PassAccess::write("scan_total", object.runtime_relocation_total),
@@ -10328,14 +10015,13 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read_write("wasm_module_entrypoint_state", module.entrypoint_state),
             ],
         })?;
-        for (prefix, lengths, offsets, local, block_sum, block_prefix, total) in [
+        for (prefix, lengths, offsets, local, block_sum, total) in [
             (
                 "lir.wasm.module.type_scan",
                 module.type_lengths,
                 module.type_offsets,
                 module.type_scan_local,
                 module.type_scan_block_sum,
-                module.type_scan_block_prefix,
                 module.type_total,
             ),
             (
@@ -10344,7 +10030,6 @@ fn lowering_compiler_graph_builder(
                 module.code_offsets,
                 module.code_scan_local,
                 module.code_scan_block_sum,
-                module.code_scan_block_prefix,
                 module.code_total,
             ),
         ] {
@@ -10365,20 +10050,6 @@ fn lowering_compiler_graph_builder(
             })?;
             graph.add_pass(PassDesc {
                 name: if prefix.ends_with("type_scan") {
-                    "lir.wasm.module.type_scan.block_prefix"
-                } else {
-                    "lir.wasm.module.code_scan.block_prefix"
-                },
-                phase: CompilerPhase::Artifact,
-                dispatch_domain: ResourceDomain::Declarations,
-                accesses: vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read("scan_block_sum", block_sum),
-                    PassAccess::write("scan_block_prefix", block_prefix),
-                ],
-            })?;
-            graph.add_pass(PassDesc {
-                name: if prefix.ends_with("type_scan") {
                     "lir.wasm.module.type_scan.apply"
                 } else {
                     "lir.wasm.module.code_scan.apply"
@@ -10388,7 +10059,7 @@ fn lowering_compiler_graph_builder(
                 accesses: vec![
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_local_prefix", local),
-                    PassAccess::read("scan_block_prefix", block_prefix),
+                    PassAccess::read("scan_block_sum", block_sum),
                     PassAccess::write("scan_output_prefix", offsets),
                     PassAccess::write("scan_total", total),
                 ],
@@ -10462,19 +10133,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.relocation_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.relocation_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.wasm.object.relocation_scan.apply",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_local_prefix", object.relocation_scan_local),
-                    PassAccess::read("scan_block_prefix", object.relocation_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.relocation_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.relocation_prefix),
                     PassAccess::write("scan_total", object.relocation_total),
                 ],
@@ -10498,19 +10161,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.symbol_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", opt_total),
-                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.symbol_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.wasm.object.symbol_scan.apply",
                 vec![
                     PassAccess::read("scan_count", opt_total),
                     PassAccess::read("scan_local_prefix", object.symbol_scan_local),
-                    PassAccess::read("scan_block_prefix", object.symbol_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.symbol_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.symbol_prefix),
                     PassAccess::write("scan_total", object.symbol_total),
                 ],
@@ -10544,19 +10199,11 @@ fn lowering_compiler_graph_builder(
                 ],
             ),
             (
-                "artifact.wasm.object.definition_scan.block_prefix",
-                vec![
-                    PassAccess::read("scan_count", semantic_function_total),
-                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
-                    PassAccess::write("scan_block_prefix", object.definition_scan_block_prefix),
-                ],
-            ),
-            (
                 "artifact.wasm.object.definition_scan.apply",
                 vec![
                     PassAccess::read("scan_count", semantic_function_total),
                     PassAccess::read("scan_local_prefix", object.definition_scan_local),
-                    PassAccess::read("scan_block_prefix", object.definition_scan_block_prefix),
+                    PassAccess::read("scan_block_sum", object.definition_scan_block_sum),
                     PassAccess::write("scan_output_prefix", object.definition_prefix),
                     PassAccess::write("scan_total", object.definition_total),
                 ],
@@ -11869,10 +11516,6 @@ mod tests {
             ),
             ("lir.semantic.count", "codegen/lir/semantic/count"),
             ("lir.semantic.scan.local", "scan/counted/00_local"),
-            (
-                "lir.semantic.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.semantic.scan.apply", "scan/counted/02_apply"),
             ("lir.semantic.schedule", "codegen/lir/semantic/schedule"),
             ("lir.semantic.scatter", "codegen/lir/semantic/scatter"),
@@ -12145,10 +11788,6 @@ mod tests {
                 "codegen/lir/optimization/structure_mark",
             ),
             ("lir.opt.blocks.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.blocks.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.blocks.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.structure.scatter",
@@ -12163,10 +11802,6 @@ mod tests {
                 "codegen/lir/optimization/structure_edge_mark",
             ),
             ("lir.opt.edges.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.edges.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.edges.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.structure.edge_scatter",
@@ -12189,10 +11824,6 @@ mod tests {
                 "codegen/lir/optimization/access_mark",
             ),
             ("lir.opt.access.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.access.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.access.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.access.scatter",
@@ -12233,10 +11864,6 @@ mod tests {
                 "codegen/lir/optimization/access_group_mark",
             ),
             ("lir.opt.access.groups.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.access.groups.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.access.groups.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.access.groups.scatter",
@@ -12257,28 +11884,16 @@ mod tests {
             ("lir.wasm.frame_views", "codegen/lir/wasm/frame_views"),
             ("lir.wasm.frame_words", "codegen/lir/wasm/frame_words"),
             ("lir.wasm.frame_scan.local", "scan/counted/00_local"),
-            (
-                "lir.wasm.frame_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.wasm.frame_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.frame_bounds", "codegen/lir/wasm/frame_bounds"),
             ("lir.wasm.count", "codegen/lir/wasm/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.count_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.scatter", "codegen/lir/wasm/scatter"),
             ("lir.wasm.scatter.replay", "codegen/lir/wasm/scatter"),
             ("lir.wasm.validate", "codegen/lir/wasm/validate"),
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
             ("lir.target.function_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.function_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.target.functions.scatter_starts",
@@ -12290,10 +11905,6 @@ mod tests {
             ),
             ("lir.wasm.byte_count", "codegen/lir/wasm/byte_count"),
             ("lir.target.byte_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.byte_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             ("lir.wasm.emit", "codegen/lir/wasm/emit"),
             (
@@ -12335,10 +11946,6 @@ mod tests {
                 "codegen/lir/optimization/structure_mark",
             ),
             ("lir.opt.blocks.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.blocks.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.blocks.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.structure.scatter",
@@ -12353,10 +11960,6 @@ mod tests {
                 "codegen/lir/optimization/structure_edge_mark",
             ),
             ("lir.opt.edges.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.edges.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.edges.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.structure.edge_scatter",
@@ -12379,10 +11982,6 @@ mod tests {
                 "codegen/lir/optimization/access_mark",
             ),
             ("lir.opt.access.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.access.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.access.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.access.scatter",
@@ -12423,10 +12022,6 @@ mod tests {
                 "codegen/lir/optimization/access_group_mark",
             ),
             ("lir.opt.access.groups.scan.local", "scan/counted/00_local"),
-            (
-                "lir.opt.access.groups.scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.opt.access.groups.scan.apply", "scan/counted/02_apply"),
             (
                 "lir.opt.access.groups.scatter",
@@ -12466,10 +12061,6 @@ mod tests {
                 "codegen/lir/x86/allocation_words",
             ),
             ("lir.x86.stack_scan.local", "scan/counted/00_local"),
-            (
-                "lir.x86.stack_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.x86.stack_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.x86.allocation.locations",
@@ -12482,10 +12073,6 @@ mod tests {
             ("lir.x86.inline.analyze", "codegen/lir/x86/inline_analyze"),
             ("lir.x86.count", "codegen/lir/x86/count"),
             ("lir.target.count_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.count_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.count_scan.apply", "scan/counted/02_apply"),
             ("lir.x86.scatter", "codegen/lir/x86/scatter"),
             ("lir.x86.scatter.replay", "codegen/lir/x86/scatter"),
@@ -12496,10 +12083,6 @@ mod tests {
             ("lir.x86.resolve.replay", "codegen/lir/x86/resolve"),
             ("lir.target.functions.mark", "codegen/lir/functions/mark"),
             ("lir.target.function_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.function_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.function_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.target.functions.scatter_starts",
@@ -12517,10 +12100,6 @@ mod tests {
             ("lir.x86.byte_count", "codegen/lir/x86/byte_count"),
             ("lir.x86.integer_byte_count", "codegen/lir/x86/integer_byte_count"),
             ("lir.target.byte_scan.local", "scan/counted/00_local"),
-            (
-                "lir.target.byte_scan.block_prefix",
-                "scan/counted/04_block_prefix",
-            ),
             ("lir.target.byte_scan.apply", "scan/counted/02_apply"),
             (
                 "lir.x86.entrypoint.clear",

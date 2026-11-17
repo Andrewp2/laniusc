@@ -2014,8 +2014,7 @@ impl GpuTypeChecker {
                             project(encoder)?;
                         }
                     }
-                    records.fields.record(encoder)?;
-                    records.references.record(encoder)?;
+                    records.fields_and_references.record(encoder)?;
                     bind_groups.calls.field_expected_ids.record_inference(encoder)?;
                 }
                 if enums_required || dependency_types_present {

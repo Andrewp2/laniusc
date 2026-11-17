@@ -262,10 +262,6 @@ pub(in crate::type_checker) fn create(
             "module_record_scan_block_sum",
             inputs.module_record_scan_workspace.block_sum,
         ),
-        (
-            "module_record_scan_prefix_a",
-            inputs.module_record_scan_workspace.block_prefix,
-        ),
     ]);
     let scan = PrefixScanOperation::from_spec(
         device,
