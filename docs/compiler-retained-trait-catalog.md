@@ -24,22 +24,26 @@ replays sources, and this path does not remove that replay. The list under
 
 ## Boundary
 
-1. The host takes `rt_counts` (96 words) and sizes seven lane regions:
-   declarations, parameters, terms, directory entries, trait records, uses
-   and committed jobs. One lane handles one retained record. The counters
-   are those the build's last export returned with its commit readback
-   (`JobReport::counts`), or a readback of its own when the store has no
-   export in this build. Lane 0 of `00_mark` compares the configured
-   counts with `rt_counts`; on a difference it sets producer state word 27
-   and the host reads the counters and runs the producer again. The
-   producer writes nothing into the store, so the first run leaves no
-   trace. Settings: 46 to 45 round trips per build.
+1. Pass `00_configure` (one lane) reads `rt_counts` (96 words) and lays out
+   seven lane regions: declarations, parameters, terms, directory entries,
+   trait records, uses and committed jobs. One lane handles one retained
+   record. It writes the counts, region bases, lane count, unit slots and
+   sort width into `rc_config`, the indirect dispatches of the count
+   passes into `rc_dispatch`, and copies `rt_counts` behind the producer
+   state words. The host sizes the count passes' buffers from the store's
+   capacities (`ProgramRetention::capacity`) and records them before it has
+   read any counter. Counters that exceed those capacities, or more than
+   2^24 lanes, set producer state word 27 and nothing runs. The bitonic
+   steps are recorded for the capacity's sort width; steps beyond the
+   store's width dispatch no workgroups. The one state readback returns the
+   counters the host uses for the fill. The producer writes nothing into
+   the store.
 2. Pass `00_mark` reads each committed job's (library, unit) from `rt_jobs`,
    including jobs with no declarations, and checks directory ownership. It also
    counts each trait's required members and marks callers that own a
    selected use. Pass `01_units` indexes the jobs by (library, unit).
    Passes `02a`–`02c` sort the impl bindings (see "Binding ranks").
-   Passes `02d`–`02f` mark the term closure (see "Term closure").
+   Passes `02d` and `02e` mark the term closure (see "Term closure").
 3. Pass `02_count` runs every producer check and counts the rows each lane
    owns in 16 counters, one per solver table. Passes `03`–`05` compute an
    exclusive scan of those counters.
