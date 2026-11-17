@@ -1,5 +1,6 @@
-// One interning round (docs/canonical-type-ids.md, "Rounds"). Round 0 is a
-// direct dispatch over every candidate; later rounds are indirect over the
+// One interning round (docs/canonical-type-ids.md, "Rounds"). Round 0 is
+// indirect over the candidates the stage's re-arm left pending
+// (canonical_pending, 03a_rearm_list); later rounds are indirect over the
 // frontier of candidates whose children were still pending. Each candidate
 // is interned by its own lane in one pass, and no lane waits for another.
 import type_checker.canonical.canonical_api;
@@ -16,6 +17,7 @@ RWStructuredBuffer<uint> status;
 // candidates (canonical_passes.rs): an append past the end sets
 // CT_OVERFLOW_FRONTIER, and the host records the job again with larger lists.
 RWStructuredBuffer<uint> canonical_frontier;
+StructuredBuffer<uint> canonical_pending;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -30,15 +32,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint candidate;
     if (round == 0u)
     {
-        // The early 03_rearm has read the flag; the late one must not.
-        if (i == 0u) ct_counts[CT_COUNT_EARLY_REARM] = 0u;
-        if (i >= count) return;
-        // Constants first, then rows from the last: within one dispatch the
-        // leaves then tend to publish before the rows that read them.
-        uint constants = count - ct_row_capacity();
-        candidate = i < constants ? count - constants + i : count - 1u - i;
-        // A re-armed job keeps every candidate interned earlier.
-        if (ct_candidate_state(candidate) != CT_PENDING) return;
+        // The list holds constants first, then rows from the last: within
+        // one dispatch the leaves then tend to publish before the rows that
+        // read them.
+        uint pending_rows;
+        canonical_pending.GetDimensions(pending_rows, stride);
+        if (i >= min(ct_counts[CT_COUNT_PENDING], pending_rows)) return;
+        candidate = canonical_pending[i];
+        if (candidate >= count || ct_candidate_state(candidate) != CT_PENDING) return;
     }
     else
     {
