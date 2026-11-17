@@ -201,8 +201,8 @@ Tried and not kept: skipping complete imported applications inside the rounds in
 
 Settings at ab03bbe44, traced, sum of the per-pass minimum over the last 3 builds.
 
-- **Owner filter for bound inference.** `03l3` scanned every predicate row for each generic call's callee (`next_predicate`), in every round, to find out that most callees have no bounds. The collectors (`03l1`, `03l2`) now also set one bit per hash of the row's owner in a 256-word filter after the three counts (`BOUND_OWNER_FILTER` in `bound_tables.slang`). `03l3` returns early when the callee's bit is clear. The filter is cleared with the counts once per job. The per-round restore copies only the counts, so the bits of earlier rounds' dependency rows stay set; they can only cost a scan, never skip a row. Bound inference per round, rounds 3 to 7: 94 to 97 µs before, 22 to 28 µs after. Type check 29.01 to 28.76 ms.
-- **Context slots in `calls.clear`.** `01_resolve` cleared all 32 slots of `call_context_ref_tag` and `call_context_ref_payload` for every HIR row (about 54 MB at settings' size) before the rounds. Every reader checks the slot's bit in `call_context_arg_mask` first: argument and call environments (`contextual_call_environment.slang`), explicit applications (`03a8`), the publisher's priors (`ct_context_publish.slang`, through the same helper), generic call results (`00c`), bound-member routing (`09`, only slots it wrote itself), and the host's readback in `generic_calls.rs`. Every writer sets a bit only for a slot it wrote (`03a8`, `ct_context_publish`, `07a`, `15b`, `09`). The body-specialization rewrite (`00g`) touches every slot but only rewrites tag 2, which no unmasked reader sees. The masks are still cleared. `calls.clear` 200 to 134 µs; type check 28.76 to 28.51 ms.
+- **Owner filter for bound inference.** `03l3` scanned every predicate row for each generic call's callee (`next_predicate`), in every round, to find out that most callees have no bounds. The collectors (`03l1`, `03l2`) now also set one bit per hash of the row's owner in a 256-word filter after the three counts (`BOUND_OWNER_FILTER` in `bound_tables.slang`). `03l3` returns early when the callee's bit is clear. The filter is cleared with the counts once per job. The per-round restore copies only the counts, so the bits of earlier rounds' dependency rows stay set; they can only cost a scan, never skip a row. Bound inference per round, rounds 3 to 7: 94 to 97 µs before, 22 to 28 µs after; 929 to 558 µs over the 11 rounds.
+- **Context slots in `calls.clear`.** `01_resolve` cleared all 32 slots of `call_context_ref_tag` and `call_context_ref_payload` for every HIR row (about 54 MB at settings' size) before the rounds. Every reader checks the slot's bit in `call_context_arg_mask` first: argument and call environments (`contextual_call_environment.slang`), explicit applications (`03a8`), the publisher's priors (`ct_context_publish.slang`, through the same helper), generic call results (`00c`), bound-member routing (`09`, only slots it wrote itself), and the host's readback in `generic_calls.rs`. Every writer sets a bit only for a slot it wrote (`03a8`, `ct_context_publish`, `07a`, `15b`, `09`). The body-specialization rewrite (`00g`) touches every slot but only rewrites tag 2, which no unmasked reader sees. The masks are still cleared. `calls.clear` 205 to 132 µs.
 
 Settings stayed byte-identical (`115a4d52a2ae77e0`, 5 of 5 builds) and the dispatch count is unchanged (1,421).
 
@@ -237,7 +237,29 @@ Settings, traced, per-pass minimum over the last 3 builds:
 
 Type-check dispatches 1,421 to 1,423. The executable stayed byte-identical (5 of 5 builds). A screen recorder shared the GPU during these traces, and whole-build sums moved by more than 1 ms between runs of the same binary, so this change is measured by its passes.
 
+## Measurement of the second pass (2026-11-17)
+
+The traces of this pass were taken while a screen recorder shared the GPU. Whole-build sums of one binary moved by several milliseconds between builds, so each figure here is a minimum over builds: for each pass occurrence, the smallest time over the steady builds, summed. Occurrences are matched by pass name and occurrence number within the build, not by position. Events with nearly equal timestamps change order between builds, and a match by position paired different passes and understated the stage before the rounds by up to 2 ms; whole-build figures computed that way earlier in this pass were dropped.
+
+Settings, traced, 6 steady builds of each binary in alternating runs: `origin/main` at 5336e45f4 against this branch merged with it.
+
+| Stage | Before (ms) | After (ms) |
+|---|---|---|
+| Before the rounds | 6.74 | 6.76 |
+| Rounds 1 to 10 | 13.33 | 12.75 |
+| Final pass | 1.55 | 1.54 |
+| After the rounds | 6.68 | 6.75 |
+| Type check | 28.42 | 27.93 |
+| Dispatches | 1,421 | 1,423 |
+
+The largest changes by pass: bound inference 929 to 558 µs, the three listed row passes 582 to 373 µs, `calls.clear` 205 to 132 µs. Both binaries built settings to `115a4d52a2ae77e0` in every build.
+
+Measured and not kept: removing `globallycoherent` from the canonical tables, the row-of map, the substitution memo and the call environments (an unsafe diagnostic) lowered rounds 1 to 10 by about 0.9 ms and raised some passes (contextual result requests by about 0.26 ms). The latency of the late rounds' active items is mostly not the L2 round trips of coherent loads.
+
 ## What remains
 
 - Activity per item, as above.
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.
+- Unmasked passes over every HIR row or token in each round, with their idle cost in a late round (traced): explicit constant admission `03a0b` (17 µs, every token), call-root expansion (16), field expectations `match/01` (15 to 16, every token), record fields and references `03k4` (15). A list built before the rounds needs, for each, the set of rows it can act on and every pass inside the rounds that can add one, as for the type rows above. `03a0b` acts on tokens whose explicit application status is 1, which `03a0` sets inside the rounds.
+- The instance closure records 16 levels, 3 passes each, and 17 export retries. On settings levels 7 to 16 and the export retries after the first find nothing (4 to 6 µs traced each, about 240 µs). Recording fewer needs the depth, which the host does not read.
+- `interface.validate` (546 µs, after the rounds): `04_scopes` alone takes about 205 µs. Each member row scans its owner's member range several times (`count_scoped`, `slots_exact`, `has_method`), so a large owner costs quadratic time in one lane.
