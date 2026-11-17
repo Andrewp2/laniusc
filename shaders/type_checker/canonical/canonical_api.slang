@@ -78,6 +78,15 @@ public globallycoherent RWStructuredBuffer<uint> ct_args;
 public globallycoherent RWStructuredBuffer<uint> ct_slot;
 // Counters and round state; see CT_COUNT_*. CT_COUNT_WORDS words.
 public globallycoherent RWStructuredBuffer<uint> ct_counts;
+// Non-coherent views of the same buffers (graph aliases), read through L1.
+// Only records below ct_counts[CT_COUNT_FROZEN] are read through them: those
+// were written in an earlier dispatch, and a published record never changes.
+// A record published in this dispatch can share a cache line with one read
+// here, so it is always read through the coherent view.
+public RWStructuredBuffer<uint4> ct_head_cached;
+public RWStructuredBuffer<uint4> ct_meta_cached;
+public RWStructuredBuffer<uint> ct_args_cached;
+public RWStructuredBuffer<uint> ct_counts_cached;
 // Canonical reference of every interning candidate: checked instance rows,
 // constant atoms and constant projections. CT_PENDING until interned.
 public globallycoherent RWStructuredBuffer<uint> canonical_row;
@@ -110,6 +119,9 @@ public static const uint CT_COUNT_BATCH_PENDING = 11u;
 // Candidates a stage's re-arm listed in canonical_pending for round 0
 // (03a_rearm_list); 03b_rearm_args moves it to CT_COUNT_PENDING and zeroes it.
 public static const uint CT_COUNT_REARM_PENDING = 12u;
+// The record count when calls/03m1 ran, in an earlier dispatch than any
+// reader of it; 0 from the job's clear. Records below it are frozen.
+public static const uint CT_COUNT_FROZEN = 13u;
 public static const uint CT_COUNT_WORDS = 16u;
 
 // Interning rounds per job: a candidate still pending at the limit becomes
@@ -226,15 +238,28 @@ public bool ct_is_dep_param(uint ref)
 
 // ---------------------------------------------------------------------------
 // Fact accessors. Valid for any resolved reference.
+// Reads of a stored record's words: through L1 when the record is frozen.
+// Loaded once per lane, at the entry of a kernel that reads records.
+static uint g_ct_frozen_bound = ct_counts_cached[CT_COUNT_FROZEN];
+bool ct_frozen(uint ref) { return ref < g_ct_frozen_bound; }
+
+// Word 0 of a stored record's head: kind | arity << 8 | type_slots << 16.
+uint ct_head_word(uint ref)
+{
+    uint word = ct_head_cached[ref].x;
+    if (!ct_frozen(ref)) word = ct_head[ref].x;
+    return word;
+}
+
 public uint ct_kind(uint ref)
 {
     if (!ct_is_record(ref)) return 0u;
-    return ref <= SCALAR_NEVER ? CT_KIND_SCALAR : ct_head[ref].x & 0xffu;
+    return ref <= SCALAR_NEVER ? CT_KIND_SCALAR : ct_head_word(ref) & 0xffu;
 }
 
 public uint ct_arity(uint ref)
 {
-    return ct_is_stored(ref) ? (ct_head[ref].x >> 8u) & 0xffu : 0u;
+    return ct_is_stored(ref) ? (ct_head_word(ref) >> 8u) & 0xffu : 0u;
 }
 
 // Type-slot count of an environment, type-operand count of a named type.
@@ -252,8 +277,16 @@ public uint3 ct_words(uint ref)
 public uint ct_arg(uint ref, uint index)
 {
     if (!ct_is_stored(ref)) return CT_NONE;
-    uint4 head = ct_head[ref];
-    return index < ((head.x >> 8u) & 0xffu) ? ct_args[ct_meta[ref].x + index] : CT_NONE;
+    uint arity; uint base;
+    if (ct_frozen(ref))
+    {
+        arity = (ct_head_cached[ref].x >> 8u) & 0xffu;
+        base = ct_meta_cached[ref].x;
+        return index < arity ? ct_args_cached[base + index] : CT_NONE;
+    }
+    arity = (ct_head[ref].x >> 8u) & 0xffu;
+    base = ct_meta[ref].x;
+    return index < arity ? ct_args[base + index] : CT_NONE;
 }
 
 public bool ct_is_constant(uint ref)
@@ -296,13 +329,26 @@ public uint4 ct_facts(uint ref)
     return uint4(param ? 0u : 1u, flags, hash);
 }
 
-public uint ct_height(uint ref) { return ct_is_resolved(ref) ? ct_facts(ref).x : 0u; }
-public uint ct_flags(uint ref) { return ct_is_resolved(ref) ? ct_facts(ref).y : 0u; }
+// (height, flags) of ct_facts, without the hash it computes for a leaf.
+uint2 ct_shape_facts(uint ref)
+{
+    if (ct_is_stored(ref))
+    {
+        uint word = ct_meta[ref].y;
+        return uint2(word & 0xffffu, word >> 16u);
+    }
+    bool param = ct_is_param(ref);
+    uint flags = !param ? 0u : ct_is_const_param(ref) ? CTF_CONST_PARAM : CTF_TYPE_PARAM;
+    return uint2(param ? 0u : 1u, flags);
+}
+
+public uint ct_height(uint ref) { return ct_is_resolved(ref) ? ct_shape_facts(ref).x : 0u; }
+public uint ct_flags(uint ref) { return ct_is_resolved(ref) ? ct_shape_facts(ref).y : 0u; }
 public uint2 ct_shash(uint ref) { return ct_is_resolved(ref) ? ct_facts(ref).zw : uint2(0u, 0u); }
 
 public bool ct_closed(uint ref)
 {
-    return ct_is_resolved(ref) && (ct_facts(ref).y & (CTF_TYPE_PARAM | CTF_CONST_PARAM)) == 0u;
+    return ct_is_resolved(ref) && (ct_shape_facts(ref).y & (CTF_TYPE_PARAM | CTF_CONST_PARAM)) == 0u;
 }
 
 // Constant facts: the u32 count of a concrete count-valid value, and the

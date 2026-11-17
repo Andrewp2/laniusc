@@ -280,6 +280,34 @@ static PRUNED_AT_RELEASED_BUFFER_BYTES: AtomicU64 = AtomicU64::new(0);
 /// buffer, so without this a workspace that is replaced or dropped stays
 /// resident as long as the kernel's cache: one-shot parses (parse_fuzz) and
 /// growing resident workspaces kept every earlier allocation.
+/// Shader variables that view the buffer of another binding without
+/// coherence (shaders/type_checker/canonical/canonical_api.slang), as
+/// (cached view, coherent binding). A kernel binds both, writable, in one
+/// dispatch: Vulkan allows it, and the shader reads through the cached view
+/// only words an earlier dispatch wrote.
+pub const CACHED_BUFFER_VIEWS: &[(&str, &str)] = &[
+    ("ct_head_cached", "ct_head"),
+    ("ct_meta_cached", "ct_meta"),
+    ("ct_args_cached", "ct_args"),
+    ("ct_counts_cached", "ct_counts"),
+];
+
+/// Binds each cached view to its table's buffer in a test's named buffers.
+#[cfg(test)]
+pub(crate) fn add_cached_views<B: Clone>(buffers: &mut std::collections::BTreeMap<&'static str, B>) {
+    for &(view, table) in CACHED_BUFFER_VIEWS {
+        if let Some(buffer) = buffers.get(table).cloned() {
+            buffers.insert(view, buffer);
+        }
+    }
+}
+
+fn is_cached_view_pair(left: &str, right: &str) -> bool {
+    CACHED_BUFFER_VIEWS
+        .iter()
+        .any(|&(view, table)| (left == view && right == table) || (left == table && right == view))
+}
+
 pub(crate) fn prune_bind_groups_of_released_buffers() {
     BIND_GROUP_CACHE_EVICTIONS.fetch_add(1, Ordering::Relaxed);
     let live = crate::gpu::buffers::live_tracked_allocation_ids();
@@ -3077,7 +3105,7 @@ pub mod bind_group {
                 |size| size.get(),
             ));
             for prior in &buffers {
-                if binding.buffer != prior.buffer {
+                if binding.buffer != prior.buffer || is_cached_view_pair(prior.name, &parameter.name) {
                     continue;
                 }
                 let overlaps = offset < prior.end && prior.offset < end;

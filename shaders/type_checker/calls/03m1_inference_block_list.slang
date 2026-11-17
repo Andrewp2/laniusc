@@ -20,6 +20,9 @@ RWStructuredBuffer<uint> inference_hir_blocks;
 RWStructuredBuffer<uint> inference_token_blocks;
 RWStructuredBuffer<uint> inference_hir_list_args;
 RWStructuredBuffer<uint> inference_token_list_args;
+// The canonical counters: word 0 is the next record, word 13 the frozen
+// bound (canonical_api.slang's CT_COUNT_NEXT_RECORD and CT_COUNT_FROZEN).
+globallycoherent RWStructuredBuffer<uint> ct_counts;
 
 void list_block(uint domain, uint block)
 {
@@ -69,6 +72,14 @@ void write_listed_args(RWStructuredBuffer<uint> args, RWStructuredBuffer<uint> b
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID, uint3 ltid: SV_GroupThreadID)
 {
+    // Every record allocated so far was written by an earlier dispatch, so
+    // the passes after this one read those records through L1.
+    if (dtid.x == 0u)
+    {
+        uint records;
+        InterlockedAdd(ct_counts[0u], 0u, records);
+        ct_counts[13u] = records;
+    }
     uint round = call_inference_round[0u];
     if (round <= 1u || call_inference_round[1u] + 1u >= round)
     {

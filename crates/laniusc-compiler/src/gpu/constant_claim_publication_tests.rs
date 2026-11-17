@@ -287,6 +287,9 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     // Outside an inference round every call is admitted (03a4c).
     put("call_inference_round", vec![0, 0]);
     put("call_inference_fn_stamp", vec![0]);
+    // Outside the rounds the listed passes visit every row.
+    put("inference_hir_blocks", vec![0, 0]);
+    put("inference_token_blocks", vec![0, 0]);
     put("enclosing_fn", vec![0; TOKENS]);
     let mut payload = vec![0; HIR * 4];
     payload[CALL * 4] = 2;
@@ -410,6 +413,10 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
     put("call_explicit_binding_tag", tags);
     put("call_explicit_binding_payload", payloads);
     put("call_explicit_constant_valid_mask", vec![0; TOKENS]);
+    // 03a0b visits the applications 03a0 listed; an overflowed list (word 2)
+    // visits every token, as this fixture has no 03a0 run.
+    put("call_explicit_binding_count", vec![0, 0, 1]);
+    put("call_explicit_application_list", vec![INVALID; TOKENS]);
     put("explicit_environment_constant_kind", vec![0; HIR]);
     put("explicit_environment_constant_payload", vec![INVALID; HIR]);
 
@@ -465,6 +472,7 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
         ],
     );
     put("results", vec![INVALID; 16]);
+    crate::gpu::passes_core::add_cached_views(&mut resources);
     resources
 }
 

@@ -382,6 +382,12 @@ pub(super) fn register_canonical_passes(
     storage(graph, "ct_args", workspace, argument_bytes)?;
     storage(graph, "ct_slot", workspace, (records * 2).next_power_of_two() * 4)?;
     storage(graph, "ct_counts", workspace, CANONICAL_COUNT_WORDS as u64 * 4)?;
+    // Non-coherent views of the record tables and counters, for records an
+    // earlier dispatch wrote (canonical_api.slang, CT_COUNT_FROZEN).
+    for &(alias, table) in crate::gpu::passes_core::CACHED_BUFFER_VIEWS {
+        let target = resource(graph, table)?;
+        graph.add_resource_alias(alias, target)?;
+    }
     storage(graph, "canonical_row", workspace, type_rows * 4)?;
     storage(graph, "canonical_atom", workspace, constant_rows * 4)?;
     storage(graph, "canonical_projection", workspace, constant_rows * 4)?;

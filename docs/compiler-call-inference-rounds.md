@@ -332,6 +332,32 @@ Idle round after convergence, untraced (minimum of 4 builds). "Unmasked" is the 
 | After the listed active blocks | 225.9 µs | 134.7 µs |
 | After the lists and the two removals | 166.7 µs | 76.2 µs |
 
+## Per-item latency: cached record reads (2026-11-17, third pass)
+
+A shader clock (`getRealtimeClock`, diagnostic only, not committed) timed each changed item's lane in the seven passes above the floor. One lane takes 20 to 50 µs. The matcher `ct_match` is the largest common part: 15 to 19 µs per lane in receiver binding, contextual results and argument matching by round 10. Its walk re-descends from the root at every step and repeats the walk for each bound slot. Every read is of `ct_head`, `ct_meta` and `ct_args`, which are `globallycoherent`. Each such load goes to L2, and most addresses in a walk are read again and again.
+
+A record never changes once published, and a record written in an earlier dispatch is safe to read through L1: the barrier between dispatches invalidates it. A record written in the same dispatch can share a cache line with one read through L1, so it must still be read coherently.
+
+- `calls/03m1` (the round's first pass) copies the record count into `ct_counts[13]` (`CT_COUNT_FROZEN`). Every record below it was written by an earlier dispatch. The job's clear zeroes it.
+- `canonical_api.slang` declares `ct_head_cached`, `ct_meta_cached`, `ct_args_cached` and `ct_counts_cached`. They are graph aliases of the same buffers, without `globallycoherent` (`CACHED_BUFFER_VIEWS` in `passes_core.rs`). `ct_kind`, `ct_arity` and `ct_arg` read a record below the bound through them and every other record coherently. The other accessors are unchanged.
+- The graph allows two bindings of one resource in one invocation when their names differ, and the host bind-group check allows the listed view pairs.
+- `ct_closed`, `ct_flags` and `ct_height` no longer compute the leaf hash that `ct_facts` builds, which they never used. That keeps every kernel under 40,000 instructions (`03l3`: 37,644 before, 39,430 after).
+
+Making all accessors and the probe compares cached gave the same time and put four kernels over the limit.
+
+Traced rounds 1 to 10 (minimum of 3 builds), sum over the rounds:
+
+| Pass | Before | After |
+|---|---|---|
+| receiver binding `03d` | 922 µs | 815 µs |
+| contextual result requests `03a4b` | 792 | 739 |
+| resolve table `methods/07` | 662 | 514 |
+| claim emission `03a1` | 594 | 547 |
+| argument matching (consume) | 579 | 525 |
+| bound inference `03l3` | 530 | 524 |
+| call environments | 457 | 446 |
+| rounds 1 to 10 | 11,942 | 11,495 |
+
 ## What remains
 
 - Activity per item, as above.
