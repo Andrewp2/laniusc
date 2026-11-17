@@ -4,7 +4,11 @@
 
 import segment_tree;
 
-struct Params { uint n_tokens; uint n_blocks; uint scan_step; };
+// n_blocks covers the current job; match_tree_leaf_base is the physical
+// layout of the resident min tree, which 02_build_min_tree builds over every
+// resident block. A leaf base derived from n_blocks addresses the wrong nodes
+// whenever the resident allocation is larger than the job.
+struct Params { uint n_tokens; uint n_blocks; uint scan_step; uint match_tree_leaf_base; };
 ConstantBuffer<Params> gParams;
 struct TokenIn { uint kind; uint start; uint len; };
 StructuredBuffer<TokenIn> token_words;
@@ -32,10 +36,7 @@ static const uint TK_DOT = 35u;
 
 uint tree_leaf_base()
 {
-    uint base = max(gParams.n_blocks, 1u) - 1u;
-    base |= base >> 1u; base |= base >> 2u; base |= base >> 4u;
-    base |= base >> 8u; base |= base >> 16u;
-    return base + 1u;
+    return max(gParams.match_tree_leaf_base, 1u);
 }
 
 public struct AngleDepthTree : IRangeSearchTree<int>
