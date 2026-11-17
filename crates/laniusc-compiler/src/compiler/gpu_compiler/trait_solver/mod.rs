@@ -13,7 +13,7 @@ mod proof_store;
 pub(super) use dispatch::{SolverWorkspacePool, prepare_kernels as prepare_solver_kernels};
 
 
-pub use dispatch::{ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
+pub use dispatch::{ClosedChainInputs, ClosedTraitCheck, ClosedTraitPublication, RETAINED_POISON, RetainedBufferRange, RetainedTraitCheck, RetainedTraitIdentity, RetainedTraitOptions, RetainedTraitPublication, RetainedTraitStage, RetainedTraitView};
 
 impl super::GpuCompiler<'_> {
     /// Builds the program trait catalog and the bound goals of the

@@ -161,7 +161,9 @@ each later wave, `05_publish` mode 3 (one lane) places the instances the
 previous wave inserted, `(lo, hi, edges)`, in `dg_wave` and logs `(lo,
 hi)` at word `4 + 2i`; it leaves the frontier empty when status 12, 3, 10
 or 6 shows a failure or overflow, or when status 11 (inserted instances
-with closed predicates) differs from config word 14. Buffer copies then put
+with closed predicates) differs from `dg_wave` word 3, the count before
+the chain. A wave that records its own closed solve (config word 11) takes
+new closed predicates itself. Buffer copies then put
 `(lo, hi, edges)` into the wave's seven configs, and `dg_indirect` is
 cleared, so an empty wave dispatches no requests. The scans of a later
 wave run over the instance capacity; the kernels stop at the frontier.
@@ -187,6 +189,50 @@ the same executable. Forcing every chained run to stop after two rounds
 reruns each attempt unchained (52 round trips) and still produces the same
 executable and passes the retained tests.
 
+## Chained closed waves
+
+Waves with closed predicates chain too (`chain_closed`,
+`record_closed_chain`). A chain records `CLOSED_CHAIN_WAVES` (3) closed
+waves and then a tail of waves without closed solves, with one status
+readback at the end. Each closed wave records its solve before the host
+has read the status of the wave before it
+(`RetainedTraitPublication::record_chained`):
+
+- Sizes come from capacities: the frontier end is the instance capacity,
+  the terms are the term capacity, and the batch uses `closed_bounds` of
+  twice the predicated instances the host saw (at least 64).
+- `closed/09_plan` (one lane) gates the solve. It reads the frontier from
+  `dg_wave` and the discovery status, and runs the solve only when
+  discovery has no failure or overflow, the frontier is not empty and the
+  wave inserted instances with closed predicates (status 11 differs from
+  `dg_wave` word 3). It then writes the indirect workgroups of every
+  producer and publication pass. A skipped solve writes zeros and the
+  fault word 16, so nothing after it dispatches work.
+- `05_publish` mode 4 checks the solve's receipt, copied into
+  `dg_receipt`. A solve that ran must have placed its batch and finished,
+  or the chain stops with code 12. The mode writes the workgroups of the
+  wave's method routes and bound routes (`dg_route_args`,
+  `dg_bound_args`): none unless the solve finished. `06_bound_routes`
+  stops a chained wave with code 13 when the routes did not finish.
+  A stopped solve publishes nothing that a later wave reads.
+- The solve submits as it records: the GPU runs its producer and batch
+  setup while the host records its rounds. Recording a whole wave (the
+  frontier pass, the solve and the resolution) into one encoder and
+  submitting it once was tried and was slower. It removed that overlap,
+  and the time from the substitution readback to the discovery status
+  went from 8.3 to 9.7 ms (medians of 26 builds).
+
+The host checks the end status (`finish_chain`). A capacity failure grows
+the capacities and runs the attempt again (`closed_chain_growths`); any
+other failure runs the attempt again without chaining
+(`closed_chain_fallbacks`). `retained_native_closed_chain_retries_with_grown_capacity`
+starts with tiny capacities, grows inside the chain and builds the same
+program twice.
+
+Settings: 27 to 24 round trips per build. The span from the proof-wave
+readback to the last projection readback is in the table under "Source
+publication status".
+
 ## Source publication status
 
 The trait catalog's publication status (route header words 8-10) is no
@@ -202,6 +248,41 @@ still reported as the trait diagnostic, before any discovery result. The
 publication keeps the store counters its catalog ran with, and discovery
 sizes its roots from them while the store has the same generation and
 committed exports. Settings: 45 to 44 round trips per build.
+
+The native build's trait solve is deferred (`RetainedTraitOptions::defer_solve`):
+nothing reads its progress before discovery. Its publication is valid only
+when the solve finished in its first submit and the catalog's fill and
+admission held (header words 45 to 47, see the trait catalog guide). The
+root submit runs `05_publish` mode 5 after copying the status words. That
+mode writes the roots pass's workgroups into `dg_bound_args`: config word
+10's workgroups for a valid publication, and none otherwise. So a solve that
+did not finish requests no substitution and appends nothing to the store.
+The roots readback returns the status. When it is not valid, the native
+build checks the traits again with the solver state read back and runs
+discovery again (`trait_check_retries`). The projection is recorded after
+that readback, so its schema gate (`04_round`) needs no verdict input.
+`retained_native_unfinished_deferred_solve_checks_again` forces an
+unfinished solve and builds the same program.
+
+Settings, medians of 26 warm profiled builds per version, interleaved
+with the baseline in the same session, at load average 3 to 4 with other
+agents on the GPU. R is `program_retention.readback`, the readback before
+the proof wave, P is `program proof wave progress` and L is the last
+`retained_projection.readback`. The executable hash is 115a4d52a2ae77e0
+for every version.
+
+| Version | P to L (ms) | R to L (ms) | Round trips | Dispatches |
+| --- | --- | --- | --- | --- |
+| Baseline (f94c4b01a) | 13.43 | 19.36 | 27 | 3,689 |
+| Closed waves chained | 11.17 | 17.34 | 24 | 3,695 |
+| Deferred trait solve | no P | 16.66 | 23 | 3,696 |
+
+An earlier session measured the solver's compute passes per run of
+dispatches against the same baseline: P to L 14.44 to 14.15 ms, with the
+same dispatches and round trips. From the substitution readback to the
+discovery status the chain now waits 0.6 to 2.5 ms for the GPU. The three
+closed solves take 1.2 to 2.2 ms of GPU time each (116 dispatches, traced),
+so the chain is limited by GPU time, not by recording.
 
 ## Bounded direct calls
 

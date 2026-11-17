@@ -129,9 +129,15 @@ impl MethodRoutes {
         instances: &wgpu::Buffer,
         config: &Config,
         requests: u32,
+        gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let record = |encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, slot: usize| {
-            self.record(encoder, kernel, lanes, slot, guard, view, sub, metadata, instances)
+            let bind = self.bind_group(kernel, slot, guard, view, sub, metadata, instances)?;
+            match gate {
+                Some(args) => self.dispatch_gated(encoder, kernel, &bind, args),
+                None => self.dispatch(encoder, kernel, lanes, &bind),
+            }
+            Ok::<(), anyhow::Error>(())
         };
         let nodes = config.nodes;
         record(encoder, 0, requests.max(nodes).max(1), BEGIN_CONFIG)?;
@@ -162,6 +168,7 @@ impl MethodRoutes {
         nodes: (&wgpu::Buffer, u64, u32),
         metadata: &wgpu::Buffer,
         instances: &wgpu::Buffer,
+        gate: Option<&wgpu::Buffer>,
     ) -> Result<()> {
         let config = Config::new(run, guard.generation, 0, nodes.2, view.identity);
         self.write_configs(&config);
@@ -169,7 +176,18 @@ impl MethodRoutes {
             encoder.copy_buffer_counted(requests.0, requests.1, target, 8, 4);
             encoder.copy_buffer_counted(nodes.0, nodes.1, target, 12, 4);
         }
-        self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2)
+        self.record_batch(encoder, guard, view, sub, metadata, instances, &config, requests.2, gate)
+    }
+    /// The workgroups of each kernel of `record_batch`, in its order, for
+    /// a batch the GPU gates (`record_first_batch` with a gate): the
+    /// proof-sized kernel, the request-sized ones and the term-slot one.
+    pub fn gated_groups(&self, guard: &Store, requests: u32, nodes: u32) -> [u32; 3] {
+        let groups = |lanes: u32| lanes.div_ceil(256).max(1);
+        [
+            groups(requests.max(nodes).max(1)),
+            groups(requests),
+            groups((guard.buffers["rt_term_slot"].size() / 4) as u32),
+        ]
     }
     /// Runs the routes. Every batch also records `then(encoder, store,
     /// mr_state, mr_out)` after the routes, and its one readback returns
@@ -204,7 +222,7 @@ impl MethodRoutes {
                     passes_core::compute_pass_batching_allowed(false),
                     "retained method routes",
                 );
-                self.record_batch(&mut encoder, &guard, &view, buffers, metadata, instances, &config, requests)?;
+                self.record_batch(&mut encoder, &guard, &view, buffers, metadata, instances, &config, requests, None)?;
                 passes_core::flush_deferred_compute(&mut encoder);
                 then(&mut encoder, &guard, &self.buffers["mr_state"], &self.buffers["mr_out"])?;
                 passes_core::flush_deferred_compute(&mut encoder);
@@ -238,23 +256,6 @@ impl MethodRoutes {
             self.queue.submit(None);
         }
         result
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn record(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        kernel: usize,
-        lanes: u32,
-        config: usize,
-        store: &Store,
-        view: &RetainedTraitView<'_>,
-        sub: (&wgpu::Buffer, &wgpu::Buffer),
-        metadata: &wgpu::Buffer,
-        instances: &wgpu::Buffer,
-    ) -> Result<()> {
-        let bind = self.bind_group(kernel, config, store, view, sub, metadata, instances)?;
-        self.dispatch(encoder, kernel, lanes, &bind);
-        Ok(())
     }
     #[allow(clippy::too_many_arguments)]
     fn bind_group(
@@ -298,6 +299,20 @@ impl MethodRoutes {
             0,
             &entries,
         )
+    }
+    /// Records `kernel` with the workgroups at `args` (one triple per
+    /// kernel, in kernel order), which the GPU wrote.
+    fn dispatch_gated(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, bind: &wgpu::BindGroup, args: &wgpu::Buffer) {
+        let pass = &self.passes[kernel];
+        let args = crate::gpu::buffers::LaniusBuffer::<u32>::new((args.clone(), args.size()), args.size() as usize / 4);
+        passes_core::record_or_defer_compute_indirect_offset(
+            encoder,
+            pass,
+            bind,
+            "retained method routes",
+            &args,
+            kernel as u64 * 12,
+        );
     }
     /// Records `kernel` with a bind group from `bind_group` for it.
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, kernel: usize, lanes: u32, bind: &wgpu::BindGroup) {

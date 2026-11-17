@@ -56,6 +56,15 @@ public static const uint RP_H_STORE_TRAITS = 41u;
 public static const uint RP_H_STORE_JOBS = 42u;
 public static const uint RP_H_STORE_DECLS = 43u;
 public static const uint RP_H_DIAGNOSTIC_USE = 44u; // smallest hard-refuted use, or INVALID
+// The verdict publish_finish requires, copied on the GPU after the solve
+// (retained.rs): the solver's stop word (kernels::wave::STOP; DONE when the
+// finish point published the batch in the submits recorded), the producer's
+// fill faults and the native recipe status. A solve whose state the host
+// did not read publishes only when all three hold.
+public static const uint RP_H_SOLVE_STOP = 45u;
+public static const uint RP_H_FILL_FAULTS = 46u;
+public static const uint RP_H_RECIPE_STATUS = 47u;
+public static const uint RP_SOLVE_DONE = 2u;
 public static const uint RP_H_DIAGNOSTIC_SPAN = 48u; // job, file, byte, length
 
 public static const uint RP_BUILDING = 0u;

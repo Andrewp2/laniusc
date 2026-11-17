@@ -9,6 +9,10 @@ void main(uint3 id:SV_DispatchThreadID)
 {
     // It may also share resolution's submit: then it runs only when
     // resolution left no failure or overflow (status 12).
+    // In a chain (config 8 set), routes that did not finish or failed
+    // stop it with code 13: the host runs the attempt again without it.
+    if (dg_config[8]!=0u && dg_lane(id)==0u && (mr_state[0]!=2u || mr_state[28]!=0u) && dg_status[10]==0u)
+        dg_status[10]=13u;
     if (mr_state[0]!=2u || mr_state[28]!=0u || dg_status[12]!=0u) return;
     uint i=dg_lane(id); if (i>=dg_status[7]) return;
     uint4 out=mr_out[i]; if (out.w==0u) return;

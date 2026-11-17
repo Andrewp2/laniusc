@@ -23,7 +23,7 @@ const RP_H_OBLIGATIONS: u64 = 12;
 const RP_H_CALLS: u64 = 30;
 const RP_H_PRODUCER: usize = 31;
 
-const CLOSED_KEYS: [&str; 11] = [
+const CLOSED_KEYS: [&str; 12] = [
     "type_checker/trait_solver/retained/closed/00_init",
     "type_checker/trait_solver/retained/closed/01_catalog",
     "type_checker/trait_solver/retained/closed/02_roots",
@@ -35,7 +35,41 @@ const CLOSED_KEYS: [&str; 11] = [
     "type_checker/trait_solver/retained/closed/08_fill",
     "type_checker/trait_solver/retained/entries/07_publish_routes",
     "type_checker/trait_solver/retained/entries/08_publish_finish",
+    "type_checker/trait_solver/retained/closed/09_plan",
 ];
+/// The plan pass of a chained closed solve (09_plan.slang).
+const PLAN_PASS: usize = 11;
+/// cw_config words of 09_plan: the obligation bound of the publication
+/// pass, the catalog pass's lanes and the cw_wave word counting the solves
+/// that ran.
+const CW_CFG_OBLIGATIONS: usize = 20;
+const CW_CFG_CATALOG_LANES: usize = 21;
+const CW_CFG_RAN_WORD: usize = 22;
+/// 09_plan's workgroup triples (cw_indirect), one per producer dispatch in
+/// recording order: passes 0 to 5, the three scan steps, 7, 8 (the fill),
+/// 9 and 10 (the publication).
+const CW_ARG_SLOTS: u32 = 13;
+const CW_ARG_FILL: u32 = 10;
+const CW_ARG_PUBLISH: u32 = 11;
+const CW_ARG_FINISH: u32 = 12;
+
+/// What a chained closed solve takes from the GPU and the bounds that size
+/// it (`RetainedTraitPublication::record_chained`).
+pub struct ClosedChainInputs<'a> {
+    /// Discovery's wave words: the frontier (0, 1) and the instances with
+    /// closed predicates before it (3), which 09_plan advances.
+    pub wave: &'a wgpu::Buffer,
+    /// Discovery's status words.
+    pub discovery: &'a wgpu::Buffer,
+    /// The wave word 09_plan increments when the solve runs.
+    pub ran_word: u32,
+    /// Bound of a wave's instances with closed predicates.
+    pub selected: u32,
+    /// Bound of the frontier end (discovery's instance capacity).
+    pub instances: u32,
+    /// The store's term capacity.
+    pub terms: u32,
+}
 
 #[derive(Debug)]
 pub struct ClosedTraitCheck {
@@ -232,6 +266,30 @@ impl ClosedProducer {
     }
 
     /// Records `pass` with a bind group from `bind_group` for the same pass.
+    /// Records `pass` with the workgroups 09_plan wrote at `slot` of
+    /// `args`.
+    fn record_gated(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pass: usize,
+        args: &LaniusBuffer<u32>,
+        slot: u32,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        external: &[(&str, wgpu::BindingResource<'_>)],
+        step: u32,
+    ) -> Result<()> {
+        let bind = self.bind_group(pass, store, external, step)?;
+        passes_core::record_or_defer_compute_indirect_offset(
+            encoder,
+            &self.reader.passes[pass],
+            &bind,
+            "trait_solver.closed_instances",
+            args,
+            u64::from(slot) * 12,
+        );
+        Ok(())
+    }
+
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.reader.passes[pass];
         let label = "trait_solver.closed_instances";
@@ -287,7 +345,7 @@ impl RetainedTraitPublication {
     /// the atom identities (10) and the use map (11) of the route arena.
     fn place_closed(&self, rows: [u32; TABLE_COUNT], uses: u32, config: &mut [u32]) -> Result<ClosedPlacement> {
         let catalog = &self.gpu.catalog;
-        let mut packet = self.gpu.new_packet()?;
+        let mut packet = self.gpu.role_packet()?;
         let (submission, offsets) = packet.packet.prepare_retained_submission(rows)?;
         config[68..86].copy_from_slice(&offsets);
         let atoms = add(catalog.slices[1].count, rows[1], "closed atoms")?;
@@ -597,7 +655,7 @@ impl RetainedTraitPublication {
         let catalog_buffer = self.gpu.storage.buffer.clone();
         let (readback, output_layout) =
             self.gpu
-                .check_retained(&mut packet, &submission, false, gpu_counts, |encoder, input| {
+                .check_retained(&mut packet, &submission, false, gpu_counts, defer_solve.is_some(), |encoder, input| {
                     routes
                         .buffer
                         .clear(encoder, 0, Some(u64::from(route_words) * 4));
@@ -674,6 +732,11 @@ impl RetainedTraitPublication {
             status[counts::JOBS],
             status[A_DECLS],
         ]);
+        // The verdict publish_finish requires: the solve finished (its stop
+        // word, copied below). The catalog's fill and recipes were checked
+        // with the source publication.
+        header[RP_H_FILL_FAULTS as usize] = 0;
+        header[RP_H_RECIPE_STATUS as usize] = 1;
         let mut encoder = device.create_command_encoder(&Default::default());
         routes.upload(
             &mut encoder,
@@ -682,6 +745,7 @@ impl RetainedTraitPublication {
                 words: header,
             }],
         )?;
+        self.gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
         let state = &producer.buffers["cw_state"];
         state.copy_to(&mut encoder, CW_PUBLISH * 4, &routes.buffer, RP_H_OBLIGATIONS * 4, 8);
         state.copy_to(&mut encoder, (CW_PUBLISH + 2) * 4, &routes.buffer, RP_H_CALLS * 4, 8);
@@ -728,5 +792,248 @@ impl RetainedTraitPublication {
             publication.accept_receipt(&receipt)?;
         }
         Ok((report, Some(publication)))
+    }
+}
+
+impl RetainedTraitPublication {
+    /// Records the closed solve of a chained discovery wave before the host
+    /// has read the status of the wave before it. `status` holds the store
+    /// counters of the last readback: the declarations, parameters and
+    /// traits, which discovery does not change. Everything else is sized
+    /// from `inputs`: the frontier end by the instance capacity, the terms
+    /// by the term capacity and the batch by `closed_bounds` of
+    /// `inputs.selected`. 09_plan takes the frontier, the term count and
+    /// the gate from the GPU, and every later producer pass dispatches the
+    /// workgroups it wrote: none when the wave has no new instances with
+    /// closed predicates or discovery stopped. The solve is deferred and
+    /// its receipt is not read: discovery copies it (`copy_receipt`) and
+    /// checks it on the GPU (05_publish mode 4). A batch over its bounds
+    /// leaves the producer word set, and the check stops the chain.
+    pub fn record_chained(
+        &mut self,
+        store: &ProgramRetention,
+        instances: &LaniusBuffer<u32>,
+        status: &[u32],
+        inputs: &ClosedChainInputs<'_>,
+    ) -> Result<ClosedTraitPublication> {
+        self.view(store)?;
+        ensure!(status.len() >= counts::WORDS, "chained closed solve store counts are short");
+        ensure!(
+            u64::from(inputs.instances) * 32 <= instances.byte_size as u64,
+            "chained closed instance capacity exceeds the instance buffer"
+        );
+        store.with_store_buffers(|buffers, generation| self.record_closed_chained(buffers, generation, instances, status, inputs))
+    }
+
+    fn record_closed_chained(
+        &mut self,
+        store: &BTreeMap<&'static str, wgpu::Buffer>,
+        generation: u32,
+        instances: &LaniusBuffer<u32>,
+        status: &[u32],
+        inputs: &ClosedChainInputs<'_>,
+    ) -> Result<ClosedTraitPublication> {
+        let workspace = self.gpu.workspace.clone();
+        let device = self.gpu.device.clone();
+        let queue = self.gpu.queue.clone();
+        let usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        let producer = ClosedProducer {
+            reader: Producer {
+                device: device.clone(),
+                queue: queue.clone(),
+                readback: PagedReadback::new(&device, "closed trait counters", 4096),
+                readback_bytes: 0,
+                passes: CLOSED_KEYS
+                    .iter()
+                    .map(|key| make_pass_data_from_shader_key(&device, key, "main", key))
+                    .collect::<Result<_>>()?,
+            },
+            buffers: BTreeMap::new(),
+        };
+        let catalog = self.gpu.catalog.clone();
+        let terms = inputs.terms;
+        let end = inputs.instances;
+        let lanes = add(terms, end, "chained closed producer lanes")?;
+        let slots = add(terms, catalog.slices[1].count, "closed atom slots")?
+            .checked_mul(2)
+            .and_then(|n| n.max(1).checked_next_power_of_two())
+            .ok_or_else(|| anyhow!("closed atom slots overflow"))?;
+        let steps = [0u32, 1, 2];
+        let mut config = vec![0; CW_CONFIG_WORDS];
+        // Words 0, 3 and 4 (terms, frontier) are 09_plan's.
+        config[..8].copy_from_slice(&[terms, status[A_PARAMS], status[A_DECLS], 0, 0, generation, slots, 0]);
+        for t in 0..TABLE_COUNT {
+            config[32 + t] = catalog.slices[t].offset;
+            config[50 + t] = catalog.slices[t].count;
+            config[86 + t] = WIDTHS[t];
+        }
+        let bounds = closed_bounds(inputs.selected, terms, u32::MAX, status[A_TRAITS]);
+        config[CW_BOUNDS..].copy_from_slice(&bounds);
+        let ClosedPlacement { mut packet, submission, routes, uses, atom_ids, use_map, route_rows, route_words } =
+            self.place_closed(bounds, end, &mut config)?;
+        config[CW_CFG_OBLIGATIONS] = submission.obligation_span.count;
+        config[CW_CFG_CATALOG_LANES] = catalog.slices[1].count.max(catalog.slices[2].count).max(catalog.slices[4].count);
+        config[CW_CFG_RAN_WORD] = inputs.ran_word;
+        let mut step_words = vec![0; steps.len() * STAGE_STRIDE as usize / 4];
+        for (i, mode) in steps.iter().enumerate() {
+            step_words[i * 64] = *mode;
+        }
+        let mut producer = producer;
+        for (name, size) in [
+            ("cw_config", CW_CONFIG_WORDS as u32),
+            ("cw_state", CW_STATE_WORDS),
+            ("cw_decl", mul(status[A_DECLS], 4, "closed declarations")?),
+            ("cw_param", status[A_PARAMS]),
+            ("cw_atom_slots", slots),
+            ("cw_reach", pow2(terms)),
+            ("cw_front", pow2(terms)),
+            ("cw_scan_a", pow2(mul(lanes, 8, "closed scan")?)),
+            ("cw_scan_b", pow2(mul(lanes, 8, "closed scan")?)),
+            ("cw_blocks", pow2(mul(lanes.div_ceil(256), 8, "closed scan blocks")?)),
+            ("cw_step", step_words.len() as u32),
+            ("cw_indirect", CW_ARG_SLOTS * 3),
+            ("idle", 4),
+        ] {
+            let initial = match name {
+                "cw_config" => Some(config.as_slice()),
+                "cw_step" => Some(step_words.as_slice()),
+                _ => None,
+            };
+            let flags = if name == "cw_indirect" { usage | wgpu::BufferUsages::INDIRECT } else { usage };
+            let b = workspace.initialized(&format!("closed.{name}"), size.max(1), flags, initial)?;
+            producer.buffers.insert(name, b);
+        }
+        let args = producer.buffers["cw_indirect"].clone();
+        let ext = [
+            ("cw_instances", instances.as_entire_binding()),
+            ("cw_source_routes", self.routes.buffer.as_entire_binding()),
+            ("cw_catalog", self.gpu.storage.buffer.as_entire_binding()),
+            ("cw_wave", inputs.wave.as_entire_binding()),
+            ("cw_discovery", inputs.discovery.as_entire_binding()),
+        ];
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
+        producer.record(&mut encoder, PLAN_PASS, 1, store, &ext, 0)?;
+        for (slot, pass) in [(0u32, 0usize), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)] {
+            producer.record_gated(&mut encoder, pass, &args, slot, store, &ext, 0)?;
+        }
+        for (i, _) in steps.iter().enumerate() {
+            producer.record_gated(&mut encoder, 6, &args, 6 + i as u32, store, &ext, i as u32)?;
+        }
+        producer.record_gated(&mut encoder, 7, &args, 9, store, &ext, 0)?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
+        queue.submit(Some(encoder.finish()));
+        let gpu_counts = Some((&producer.buffers["cw_state"], CW_COUNTS));
+        let source_atom_ids = self.route_words - catalog.slices[1].count * 2;
+        let catalog_buffer = self.gpu.storage.buffer.clone();
+        let (_, output_layout) = self.gpu.check_retained(&mut packet, &submission, false, gpu_counts, true, |encoder, input| {
+            routes.buffer.clear(encoder, 0, Some(u64::from(route_words) * 4));
+            self.routes.buffer.copy_to(
+                encoder,
+                u64::from(source_atom_ids) * 4,
+                &routes.buffer,
+                u64::from(atom_ids) * 4,
+                u64::from(catalog.slices[1].count) * 8,
+            );
+            let ext = [
+                ("cw_instances", instances.as_entire_binding()),
+                ("cw_source_routes", self.routes.buffer.as_entire_binding()),
+                ("cw_catalog", catalog_buffer.as_entire_binding()),
+                ("cw_batch", input.buffer.as_entire_binding()),
+                ("cw_routes", routes.buffer.as_entire_binding()),
+            ];
+            producer.record_gated(encoder, 8, &args, CW_ARG_FILL, store, &ext, 0)
+        })?;
+        let state = self
+            .gpu
+            .last_wave_state
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| anyhow!("chained closed solve has no wave state"))?;
+        let output = &packet.output.buffer;
+        let at = output.byte_offset + u64::from(output_layout.slices[10].offset) * 4;
+        let solver = Some((state, output.buffer.clone(), at));
+        let identity = RetainedTraitIdentity {
+            epoch: catalog.epoch,
+            arena_id: submission.arena_id,
+            serial: submission.serial,
+            generation,
+        };
+        let mut header = vec![0; RP_HEADER_WORDS as usize];
+        header[..8].copy_from_slice(&[
+            RP_MAGIC,
+            1,
+            identity.epoch as u32,
+            (identity.epoch >> 32) as u32,
+            identity.arena_id as u32,
+            (identity.arena_id >> 32) as u32,
+            identity.serial,
+            generation,
+        ]);
+        header[10] = INVALID;
+        // The use count (11), the store words 40 to 43 and the producer's
+        // totals are copied on the GPU below.
+        header[11] = uses;
+        header[14] = use_map;
+        header[15] = route_rows;
+        header[16] = atom_ids;
+        for (word, t) in [(17, 9), (18, 10), (27, 1), (28, 5), (29, 6)] {
+            header[word] = catalog.slices[t].offset;
+        }
+        header[19] = catalog.slices[9].count;
+        header[20] = catalog.slices[10].count;
+        for (word, t) in [(32, 3), (33, 4), (34, 5), (35, 10)] {
+            header[word] = output_layout.slices[t].offset;
+        }
+        header[36] = catalog.outputs[0].offset;
+        header[37] = packet.proof.logical_words;
+        header[38] = self.gpu.storage.logical_words;
+        header[39] = packet.output.logical_words;
+        // The verdict publish_finish requires: the solve finished (its stop
+        // word, copied below). The catalog's fill and recipes were checked
+        // with the source publication.
+        header[RP_H_FILL_FAULTS as usize] = 0;
+        header[RP_H_RECIPE_STATUS as usize] = 1;
+        let mut encoder = device.create_command_encoder(&Default::default());
+        routes.upload(&mut encoder, &[ArenaWrite { first_word: 0, words: header }])?;
+        self.gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
+        let cw_state = &producer.buffers["cw_state"];
+        cw_state.copy_to(&mut encoder, CW_PUBLISH * 4, &routes.buffer, RP_H_OBLIGATIONS * 4, 8);
+        cw_state.copy_to(&mut encoder, (CW_PUBLISH + 2) * 4, &routes.buffer, RP_H_CALLS * 4, 8);
+        // The frontier end 09_plan wrote is the use count.
+        producer.buffers["cw_config"].copy_to(&mut encoder, 4 * 4, &routes.buffer, 11 * 4, 4);
+        for (word, arena) in [(40u64, A_DIR), (41, A_TRAITS), (42, counts::JOBS), (43, A_DECLS)] {
+            let target = routes.buffer.byte_offset + word * 4;
+            encoder.copy_buffer_counted(&store["rt_counts"], arena as u64 * 4, &routes.buffer.buffer, target, 4);
+        }
+        let ext = [
+            ("rc_routes", routes.buffer.as_entire_binding()),
+            ("rp_catalog", self.gpu.storage.buffer.as_entire_binding()),
+            ("rp_output", packet.output.buffer.as_entire_binding()),
+            ("rp_proof", packet.proof.buffer.as_entire_binding()),
+        ];
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.closed_instances",
+        );
+        producer.record_gated(&mut encoder, 9, &args, CW_ARG_PUBLISH, store, &ext, 0)?;
+        producer.record_gated(&mut encoder, 10, &args, CW_ARG_FINISH, store, &ext, 0)?;
+        passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
+        queue.submit(Some(encoder.finish()));
+        Ok(ClosedTraitPublication {
+            packet,
+            routes,
+            identity,
+            proof_nodes: 0,
+            status: [0; 3],
+            received: false,
+            solver,
+        })
     }
 }

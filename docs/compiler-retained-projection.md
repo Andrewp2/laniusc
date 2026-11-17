@@ -557,8 +557,10 @@ A stopped round dispatches no workgroups after the stop, and its fields are
 not committed, so a retry never publishes a partial round. When the
 projection substitution itself ran again on the full path, rounds that had
 converged run again for the terms that path interned. The gate takes one
-run's publication word today; another verdict word (such as the proof wave's verdict from `19_finish_batch`)
-can join it as a further input of `04_round` without changing the host.
+run's publication word. The trait solve's verdict needs no input here: it
+is part of the source publication's status, which the roots readback
+returns before the projection is recorded (see "Source publication status"
+in the discovery guide).
 
 `retained_native_schema_rounds_retry_with_grown_capacity` starts the
 projection with a tiny substitution capacity and one schema row: the
