@@ -1249,7 +1249,9 @@ impl GpuLoweringPipeline {
     /// semantic stage and the optimizer are submitted as they are recorded
     /// (`SubmissionSplit`), so the GPU starts on them while the host records
     /// and finishes the rest; finishing costs several microseconds per
-    /// dispatch, and a lowering records several hundred.
+    /// dispatch, and a lowering records several hundred. The semantic stage
+    /// is submitted together with the optimizer's first passes: on its own
+    /// it runs out before the host finishes the optimizer.
     pub(crate) fn record(
         &self,
         device: &wgpu::Device,
@@ -1286,14 +1288,14 @@ impl GpuLoweringPipeline {
             jump_pairs.execution_rank,
             self.sized_job(job),
         )?;
-        split.submit_prefix(
+        self.optimizer.record_for_job(
             encoder,
-            "compile.lowering.semantic",
-            "lowering.optimizer.submission.begin",
             timer.as_deref_mut(),
-        );
-        self.optimizer
-            .record_for_job(encoder, timer.as_deref_mut(), jump_pairs, self.sized_job(job), true)?;
+            Some(split),
+            jump_pairs,
+            self.sized_job(job),
+            true,
+        )?;
         split.submit_prefix(
             encoder,
             "compile.lowering.optimizer",
@@ -1374,15 +1376,10 @@ impl GpuLoweringPipeline {
             jump_pairs.execution_rank,
             self.sized_job(job),
         )?;
-        split.submit_prefix(
-            encoder,
-            "compile.lowering.semantic",
-            "lowering.optimizer.submission.begin",
-            timer.as_deref_mut(),
-        );
         self.optimizer.record_for_job(
             encoder,
             timer.as_deref_mut(),
+            Some(split),
             jump_pairs,
             self.sized_job(job),
             true,
