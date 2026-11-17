@@ -5651,12 +5651,6 @@ fn build_graph(
         ],
     )?;
     CALLS_GENERIC_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
-    CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
-    REQUIRED_GENERIC_SCAN.register_with_total_dispatch(
-        &mut graph,
-        prefix_scan_hierarchy_levels(hir_blocks),
-        "call_required_generic_dispatch_args",
-    )?;
     CALLS_CONST_CLAIM_INDEX_BUILD.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_ENVIRONMENT_PUBLISH.register_kernel(&mut graph, kernels)?;
     // Recorded before each 03a4b invocation and before the final validation
@@ -5955,6 +5949,14 @@ fn build_graph(
     )?;
     VALUE_ENUM_CALLS_CONSUME_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_CALLS_FINALIZE_AFTER_INFERENCE.register_kernel(&mut graph, kernels)?;
+    // Marked once from the closed inference facts at the start of
+    // `record_required`; only the required-binding validation reads the marks.
+    CALLS_REQUIRED_GENERIC_MARK.register_kernel(&mut graph, kernels)?;
+    REQUIRED_GENERIC_SCAN.register_with_total_dispatch(
+        &mut graph,
+        prefix_scan_hierarchy_levels(hir_blocks),
+        "call_required_generic_dispatch_args",
+    )?;
     CALLS_GENERIC_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_CONST_CLAIM_VALIDATE.register_kernel(&mut graph, kernels)?;
     CALLS_REQUIRED_GENERIC_VALIDATE.register_kernel(&mut graph, kernels)?;

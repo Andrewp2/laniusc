@@ -47,7 +47,7 @@ These passes work on global rows or on compacted rows with no stable owner:
 
 - the claim scan, claim index clear and build (`03a2`, `03a3`)
 - bound clear and local collection (`03l0`, `03l2`), `03l1`, explicit admission `03a0b`
-- required generics mark and scan, constant claim index and environment
+- constant claim index and environment
 - aggregate scans and conditions, the type index `02c`
 - substitution expansion `04` to `06`, and imported fields `07`. Progress in these stamps the global word.
 - semantic and artifact passes, `match/01`, method resolution, and `03j` (final round only)
