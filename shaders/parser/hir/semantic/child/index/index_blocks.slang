@@ -1,6 +1,6 @@
 // The second level of the child-index heaps (index_tree.slang): one local
 // (minimum, count) heap over each group of 256 block aggregates from
-// index_rows. One workgroup owns one group.
+// semantic/nav.slang. One workgroup owns one group.
 
 import blocked_search_tree;
 import parser.hir.semantic.parent.end_tree;

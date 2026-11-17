@@ -357,17 +357,6 @@ impl GpuParser {
             "parser.tokens.type_path_context.local.done",
         );
 
-        self.record_statement_event_scan(
-            encoder,
-            bufs,
-            graph_labels::TYPE_PATH_SCAN,
-        )?;
-        stamp_timer(
-            timer_ref,
-            encoder,
-            "parser.tokens.type_path_context.scan.done",
-        );
-
         self.record_cached_token_operation(
             encoder,
             bufs,
@@ -416,13 +405,6 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.local.done");
 
-        self.record_statement_event_scan(
-            encoder,
-            bufs,
-            graph_labels::IMPL_HEADER_SCAN,
-        )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.impl_header.scan.done");
-
         self.record_cached_token_operation(
             encoder,
             bufs,
@@ -459,13 +441,6 @@ impl GpuParser {
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.local.done");
 
-        self.record_statement_event_scan(
-            encoder,
-            bufs,
-            graph_labels::WHERE_CLAUSE_SCAN,
-        )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.where_clause.scan.done");
-
         self.record_cached_token_operation(
             encoder,
             bufs,
@@ -501,13 +476,6 @@ impl GpuParser {
             bufs.token_delimiter_n_blocks.saturating_mul(256),
         )?;
         stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.local.done");
-
-        self.record_statement_event_scan(
-            encoder,
-            bufs,
-            graph_labels::MATCH_PATTERN_SCAN,
-        )?;
-        stamp_timer(timer_ref, encoder, "parser.tokens.match_pattern.scan.done");
 
         self.record_cached_token_operation(
             encoder,
@@ -648,17 +616,6 @@ impl GpuParser {
             timer_ref,
             encoder,
             "parser.tokens.statement_phase.local.done",
-        );
-
-        self.record_statement_event_scan(
-            encoder,
-            bufs,
-            graph_labels::STATEMENT_PHASE_SCAN,
-        )?;
-        stamp_timer(
-            timer_ref,
-            encoder,
-            "parser.tokens.statement_phase.scan.done",
         );
 
         self.record_cached_token_operation(
@@ -812,24 +769,6 @@ impl GpuParser {
             label,
             &self.passes.token_frontend.token_delimiters_02_scan,
             &[("gDelimiterScan", bufs.token_block_scan.params.as_entire_binding())],
-            1,
-        )
-    }
-
-    fn record_statement_event_scan(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        bufs: &ParserBuffers,
-        label: &'static str,
-    ) -> Result<()> {
-        // One workgroup scans every token block.
-        self.record_cached_graph_operation(
-            encoder,
-            bufs,
-            label,
-            label,
-            &self.passes.token_frontend.token_statement_event_scan,
-            &[("gContextScan", bufs.token_block_scan.params.as_entire_binding())],
             1,
         )
     }

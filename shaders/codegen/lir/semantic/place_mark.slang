@@ -26,6 +26,12 @@ RWStructuredBuffer<uint4> semantic_place_storage_by_token;
 RWStructuredBuffer<uint> semantic_place_function_flags;
 RWStructuredBuffer<uint> semantic_receiver_call_by_hir;
 RWStructuredBuffer<LoweringStatus> lowering_status;
+// Seeds of the expression-depth pointer jump (execution_rank_step.slang).
+// Each row reads compact_expr_parent and writes only its own link and rank
+// rows; nothing else in this pass reads or writes those three buffers.
+StructuredBuffer<uint> compact_expr_parent;
+RWStructuredBuffer<uint> execution_rank_link;
+RWStructuredBuffer<uint> execution_rank;
 
 void reject_place(uint node)
 {
@@ -67,12 +73,24 @@ uint4 storage_for_hir(uint node, uint count)
 #include "receiver_words.slang"
 #include "receiver_temporary.slang"
 
+// Every node's distance to its expression result root starts as one link to
+// its compact expression parent. Rows past the HIR count get no link.
+void seed_execution_rank(uint node, uint hir_count)
+{
+    if (node >= gParams.n_hir_nodes) return;
+    uint parent = node < hir_count ? compact_expr_parent[node] : LIR_INVALID;
+    bool linked = parent != LIR_INVALID && parent < hir_count;
+    execution_rank_link[node] = linked ? parent : LIR_INVALID;
+    execution_rank[node] = linked ? 1u : 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint row = linear_dispatch_thread_id_2d(dtid, 16776960u);
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    seed_execution_rank(row, count);
     if (row >= count || compact_hir_core[row].kind != HIR_CALL_EXPR ||
         semantic_function_id[row] == LIR_INVALID) return;
     CheckedCallArtifact call = semantic_calls_by_hir[row];

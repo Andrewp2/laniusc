@@ -22,6 +22,9 @@ StructuredBuffer<uint> opt_ir_dominator_preorder;
 StructuredBuffer<uint> opt_ir_dominator_subtree_end;
 StructuredBuffer<uint> opt_ir_block_by_dominator_preorder;
 RWStructuredBuffer<LoweringStatus> lowering_status;
+// Depth pointer jumping starts from each block's immediate dominator. This
+// pass seeds the link at the block's own row; the validation never reads it.
+RWStructuredBuffer<OptIrDominatorJump> opt_ir_dominator_depth_link_out;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -42,6 +45,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (block >= block_total) return;
 
     uint parent = opt_ir_immediate_dominator[block];
+    OptIrDominatorJump link;
+    link.ancestor = parent;
+    link.distance = parent == block ? 0u : parent < block_total ? 1u : INVALID;
+    opt_ir_dominator_depth_link_out[block] = link;
     uint preorder = opt_ir_dominator_preorder[block];
     uint subtree_end = opt_ir_dominator_subtree_end[block];
     if (parent == OPT_IR_DOMINATOR_UNREACHABLE)

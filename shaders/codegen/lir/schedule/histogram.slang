@@ -7,7 +7,6 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<TargetScheduleKey> target_schedule_key;
 RWStructuredBuffer<uint> target_schedule_order_in;
-RWStructuredBuffer<uint> target_schedule_slot_count;
 RWStructuredBuffer<uint> target_schedule_histogram;
 
 groupshared Atomic<uint> bucket_count[256];
@@ -21,8 +20,6 @@ void main(uint3 gid: SV_GroupID, uint3 tid: SV_GroupThreadID)
     uint lane = tid.x;
     uint total = min(gParams.target_capacity, target_lir_total[0u]);
     uint blocks = min((total + 255u) / 256u, gParams.max_blocks);
-    if (block == 0u && lane == 0u)
-        target_schedule_slot_count[0u] = blocks * 256u;
     if (block >= blocks) return;
 
     bucket_count[lane].store(0u, MemoryOrder::Relaxed);

@@ -13,11 +13,6 @@ pub(in crate::parser) const DELIMITER_DEPTH_SCAN: &str = "parser.tokens.delimite
 pub(in crate::parser) const DELIMITER_OWNER_HEADER_SCAN: &str =
     "parser.tokens.delimiters.owner_header_scan";
 pub(in crate::parser) const DELIMITER_OWNER_SCAN: &str = "parser.tokens.delimiters.owner_scan";
-pub(in crate::parser) const IMPL_HEADER_SCAN: &str = "parser.tokens.impl_header.scan";
-pub(in crate::parser) const STATEMENT_PHASE_SCAN: &str = "parser.tokens.statement_phase.scan";
-pub(in crate::parser) const MATCH_PATTERN_SCAN: &str = "parser.tokens.match_pattern.scan";
-pub(in crate::parser) const WHERE_CLAUSE_SCAN: &str = "parser.tokens.where_clause.scan";
-pub(in crate::parser) const TYPE_PATH_SCAN: &str = "parser.tokens.type_path_context.scan";
 pub(in crate::parser) const GENERIC_SHR_RAW_SCAN: &str = "parser.tokens.generic_shr.raw_scan";
 pub(in crate::parser) const GENERIC_SHR_SCAN: &str = "parser.tokens.generic_shr.scan";
 pub(in crate::parser) const IMPL_HEADER_KIND_CLEAR: &str = "parser.tokens.impl_header_kind.clear";
@@ -179,20 +174,6 @@ fn scan(
     Ok(())
 }
 
-fn statement_scan(
-    graph: &mut CompilerGraphBuilder,
-    name: &'static str,
-    passes: &TokenFrontendPasses,
-) -> Result<(), String> {
-    scan(
-        graph,
-        name,
-        &passes.token_statement_event_scan,
-        &[],
-        &["statement_event_block_prefix"],
-    )
-}
-
 fn delimiter_scan(
     graph: &mut CompilerGraphBuilder,
     name: &'static str,
@@ -317,7 +298,6 @@ pub(super) fn register_schedule(
             Some(AccessMode::Write),
         )],
     )?;
-    statement_scan(graph, IMPL_HEADER_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.impl_header.apply",
@@ -514,7 +494,6 @@ pub(super) fn register_schedule(
         &passes.tokens_statement_phase_01_local,
         &[],
     )?;
-    statement_scan(graph, STATEMENT_PHASE_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.statement_phase.apply",
@@ -544,17 +523,12 @@ pub(super) fn register_schedule(
         &[],
     )?;
 
+    // The local pass stores each token's own event; the apply pass reads it
+    // at the same row and replaces it with the event before the token.
     pass(
         graph,
         "parser.tokens.match_pattern.local",
         &passes.tokens_match_pattern_01_local,
-        &[],
-    )?;
-    statement_scan(graph, MATCH_PATTERN_SCAN, passes)?;
-    pass(
-        graph,
-        "parser.tokens.match_pattern.apply",
-        &passes.tokens_match_pattern_02_apply,
         &[(
             "token_match_pattern_context_event",
             "token_match_pattern_context_event",
@@ -563,11 +537,20 @@ pub(super) fn register_schedule(
     )?;
     pass(
         graph,
+        "parser.tokens.match_pattern.apply",
+        &passes.tokens_match_pattern_02_apply,
+        &[(
+            "token_match_pattern_context_event",
+            "token_match_pattern_context_event",
+            Some(AccessMode::ReadWrite),
+        )],
+    )?;
+    pass(
+        graph,
         "parser.tokens.where_clause.local",
         &passes.tokens_where_clause_01_local,
         &[],
     )?;
-    statement_scan(graph, WHERE_CLAUSE_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.where_clause.apply",
@@ -615,7 +598,6 @@ pub(super) fn register_schedule(
         &passes.tokens_type_path_context_01_local,
         &[("semantic_token_kinds", "token_kinds", None)],
     )?;
-    statement_scan(graph, TYPE_PATH_SCAN, passes)?;
     pass(
         graph,
         "parser.tokens.type_path_context.apply",
