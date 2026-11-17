@@ -8,10 +8,10 @@
 // a prefix of the requests is never substituted.
 //
 // Otherwise this saves the store's term counters as the attempt's
-// watermark: an attempt that overflows restores them (step 08) and clears
-// the hash slots that point past them (step 09), so nothing it interned
+// watermark: an attempt that overflows restores them (step 05) and clears
+// the hash slots that point past them (step 06), so nothing it interned
 // stays reachable. The store's overflow and term demand words are saved
-// and cleared, and step 08 restores them on every outcome.
+// and cleared, and step 05 restores them on every outcome.
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.sb_common;
 import type_checker.retention.substitution.sb_dispatch;
@@ -22,9 +22,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     sb_set_dispatch(SB_D_ROOTS, 0u);
     sb_set_dispatch(SB_D_PUBLISH, 0u);
-    sb_set_dispatch(SB_D_EXPAND, 0u);
-    sb_set_dispatch(SB_D_SCATTER, 0u);
-    sb_set_dispatch(SB_D_EVAL, 0u);
+    sb_set_dispatch(SB_D_STEP, 0u);
     sb_set_dispatch(SB_D_ROLLBACK, 0u);
     sb_counts[SB_C_RUN] = sb_config[SB_CFG_RUN];
     sb_counts[SB_C_GENERATION] = rt_counts[RT_C_GENERATION];

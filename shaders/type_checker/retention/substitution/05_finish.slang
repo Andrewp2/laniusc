@@ -1,11 +1,11 @@
-// Substitution step 8 (one lane): close a finished attempt. Both outcomes
+// Substitution step 5 (one lane): close a finished attempt. Both outcomes
 // record the store's overflow and demand for the host, then restore the
 // store's overflow and term demand words saved by step 0.
 // - A committed attempt publishes its state and keeps the terms it
 //   interned (they are complete, exactly interned records).
 // - An overflowed attempt also restores the store's term counters and spare
 //   counters to the watermark of step 0, counts the store terms it interned
-//   (SB_C_STORE_ROLLED_BACK), and dispatches step 9 to clear their slots.
+//   (SB_C_STORE_ROLLED_BACK), and dispatches step 6 to clear their slots.
 import type_checker.retention.retention_store;
 import type_checker.retention.substitution.sb_common;
 import type_checker.retention.substitution.sb_dispatch;

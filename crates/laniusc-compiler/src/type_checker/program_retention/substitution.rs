@@ -193,34 +193,26 @@ pub const REQUEST_WORDS: usize = 4;
 const KERNELS: &[&str] = &[
     "type_checker/retention/substitution/00_begin",
     "type_checker/retention/substitution/01_roots",
-    "type_checker/retention/substitution/02_expand_plan",
-    "type_checker/retention/substitution/03_expand",
-    "type_checker/retention/substitution/04_scatter",
-    "type_checker/retention/substitution/05_eval_plan",
-    "type_checker/retention/substitution/06_eval",
-    "type_checker/retention/substitution/07_publish",
-    "type_checker/retention/substitution/08_finish",
-    "type_checker/retention/substitution/09_rollback",
+    "type_checker/retention/substitution/02_plan",
+    "type_checker/retention/substitution/03_step",
+    "type_checker/retention/substitution/04_publish",
+    "type_checker/retention/substitution/05_finish",
+    "type_checker/retention/substitution/06_rollback",
 ];
 const K_BEGIN: usize = 0;
 const K_ROOTS: usize = 1;
-const K_EXPAND_PLAN: usize = 2;
-const K_EXPAND: usize = 3;
-const K_SCATTER: usize = 4;
-const K_EVAL_PLAN: usize = 5;
-const K_EVAL: usize = 6;
-const K_PUBLISH: usize = 7;
-const K_FINISH: usize = 8;
-const K_ROLLBACK: usize = 9;
+const K_PLAN: usize = 2;
+const K_STEP: usize = 3;
+const K_PUBLISH: usize = 4;
+const K_FINISH: usize = 5;
+const K_ROLLBACK: usize = 6;
 
 // Indirect slots (sb_common.slang SB_D_*).
 const D_ROOTS: u64 = 0;
-const D_EXPAND: u64 = 1;
-const D_SCATTER: u64 = 2;
-const D_EVAL: u64 = 3;
-const D_PUBLISH: u64 = 4;
-const D_ROLLBACK: u64 = 5;
-const D_SLOTS: u64 = 6;
+const D_STEP: u64 = 1;
+const D_PUBLISH: u64 = 2;
+const D_ROLLBACK: u64 = 3;
+const D_SLOTS: u64 = 4;
 
 /// Test kernel: single-lane construction script (shaders/tests/retention_subst_fixture.slang).
 #[doc(hidden)]
@@ -233,12 +225,15 @@ pub const USES_KERNEL: &str = "tests/retention_subst_uses";
 pub const CONSUMER_KERNEL: &str = "tests/retention_subst_consumer";
 
 /// Rounds of the first batch; each further batch of one attempt doubles.
+/// A round is one expansion round, the scatter or one evaluation level, so
+/// an attempt with `e` nonempty expansion rounds and `v` nonempty levels
+/// needs `e + v + 2` rounds. The settings app's runs need at most 7.
 const FIRST_BATCH_ROUNDS: u32 = 8;
 /// Rounds one attempt can need: every expansion round lowers the frontier's
 /// largest level and every evaluation round raises the level, so each side
-/// has at most `LEVELS` nonempty rounds plus the round that ends it. An
-/// attempt that is not final after this many recorded rounds of each kind
-/// lost its phase; the run fails closed.
+/// has at most `LEVELS` nonempty rounds plus the round that ends it (the
+/// scatter ends expansion). An attempt that is not final after this many
+/// recorded rounds lost its phase; the run fails closed.
 const ROUND_BOUND: u32 = 2 * (LEVELS + 1);
 
 /// Run numbers, shared by every engine of the process: a run number names
@@ -654,7 +649,7 @@ impl RetainedSubstitution {
             while counts[words::PHASE] != words::PHASE_FINAL {
                 if recorded >= ROUND_BOUND {
                     bail!(
-                        "retained substitution is not final after {recorded} rounds of each kind (phase {})",
+                        "retained substitution is not final after {recorded} rounds (phase {})",
                         counts[words::PHASE]
                     );
                 }
@@ -826,10 +821,10 @@ impl RetainedSubstitution {
             .collect()
     }
 
-    /// One batch: `rounds` expansion rounds, the scatter, `rounds`
-    /// evaluation rounds, then publication and the transaction's end. Each
-    /// kernel checks the GPU phase, so the rounds an attempt does not need
-    /// dispatch no workgroups.
+    /// One batch: `rounds` rounds of the planner and the step (expansion,
+    /// the scatter, then evaluation), then publication and the
+    /// transaction's end. Each kernel checks the GPU phase, so the rounds an
+    /// attempt does not need dispatch no workgroups.
     fn record_batch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -853,13 +848,8 @@ impl RetainedSubstitution {
             run(K_ROOTS, Some(D_ROOTS));
         }
         for _ in 0..rounds {
-            run(K_EXPAND_PLAN, None);
-            run(K_EXPAND, Some(D_EXPAND));
-        }
-        run(K_SCATTER, Some(D_SCATTER));
-        for _ in 0..rounds {
-            run(K_EVAL_PLAN, None);
-            run(K_EVAL, Some(D_EVAL));
+            run(K_PLAN, None);
+            run(K_STEP, Some(D_STEP));
         }
         run(K_PUBLISH, Some(D_PUBLISH));
         run(K_FINISH, None);
