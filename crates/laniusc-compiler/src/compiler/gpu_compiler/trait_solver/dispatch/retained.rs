@@ -428,17 +428,9 @@ impl Producer {
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pass: usize, lanes: u32, bind: &wgpu::BindGroup) {
         let data = &self.passes[pass];
         let (x, y) = if matches!(pass, SCAN_BLOCKS | PUBLISH_FINISH | CLOSURE_WAVE) { (1, 1) } else { groups(lanes) };
-        let mut compute = passes_core::begin_counted_compute_pass(
-            encoder,
-            &wgpu::ComputePassDescriptor { label: Some("trait_solver.retained_producer"), timestamp_writes: None },
-        );
-        compute.set_pipeline(&data.pipeline);
-        compute.set_bind_group(0, bind, &[]);
-        passes_core::record_compute_dispatch();
-        compute.dispatch_workgroups(x, y, 1);
-        drop(compute);
-        // Profiled jobs need one timestamp per recorded dispatch.
-        crate::gpu::timer::stamp_active_operation(encoder, data.shader_id.clone());
+        // Inside a batch the dispatches of a submit share one compute pass;
+        // the kernel key labels each dispatch's timestamp.
+        passes_core::record_or_defer_compute_direct(encoder, data, bind, KEYS[pass], (x, y, 1));
     }
 }
 
@@ -689,6 +681,11 @@ fn run(
         scratch.impl_first.clear(&mut encoder, 0, None);
         scratch.reach.clear(&mut encoder, 0, None);
         scratch.cursor.clear(&mut encoder, 0, None);
+        // One compute pass for the count passes, flushed before the submit.
+        let batch = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.retained_count",
+        );
         for pass in [MARK, UNITS] {
             producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
         }
@@ -705,6 +702,7 @@ fn run(
             producer.record(&mut encoder, pass, lanes, &scratch, store, idle)?;
         }
         passes_core::flush_deferred_compute(&mut encoder);
+        drop(batch);
         queue.submit(Some(encoder.finish()));
         let state = producer.read(&scratch.state, S_WORDS, "retained producer state")?;
         if state[S_STALE_COUNTS] != 0 {
