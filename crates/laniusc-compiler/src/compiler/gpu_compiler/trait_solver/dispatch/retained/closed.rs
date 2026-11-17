@@ -287,7 +287,7 @@ impl RetainedTraitPublication {
     /// the atom identities (10) and the use map (11) of the route arena.
     fn place_closed(&self, rows: [u32; TABLE_COUNT], uses: u32, config: &mut [u32]) -> Result<ClosedPlacement> {
         let catalog = &self.gpu.catalog;
-        let mut packet = self.gpu.new_packet()?;
+        let mut packet = self.gpu.role_packet()?;
         let (submission, offsets) = packet.packet.prepare_retained_submission(rows)?;
         config[68..86].copy_from_slice(&offsets);
         let atoms = add(catalog.slices[1].count, rows[1], "closed atoms")?;

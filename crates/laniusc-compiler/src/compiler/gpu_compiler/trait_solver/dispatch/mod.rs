@@ -199,6 +199,11 @@ pub(super) struct GpuTraitSolver {
     /// are pending, the first wave readback reads it with them and leaves
     /// their verdict to the catalog (`WaveReadback::admission`).
     admission_state: std::sync::Mutex<Option<(LaniusBuffer<u32>, usize)>>,
+    /// The input, output and proof roles of closed solves, and the token a
+    /// live packet in them holds (`role_packet`). Closed waves solve one at
+    /// a time, so each binds the buffers of the one before and its solver
+    /// wave templates are found again (kernels::wave_template).
+    closed_role: (Arc<()>, [workspace::WorkspaceSlot; 3]),
 }
 
 /// A host packet and precisely the GPU arenas that contain its row closure.
@@ -217,6 +222,8 @@ pub(super) struct GpuPacket {
     /// submission; see ensure_retained_inputs_unchanged.
     completed_input_offsets: [u32; TABLE_COUNT],
     poisoned: bool,
+    /// Held while this packet uses a controller's shared role.
+    _role: Option<Arc<()>>,
     /// Test-only: the next submission also re-uploads this retained input row.
     #[cfg(test)]
     retained_input_rewrite: std::sync::Mutex<Option<(usize, u32)>>,
@@ -354,6 +361,11 @@ impl GpuTraitSolver {
         queue.submit(Some(encoder.finish()));
         // The first check reads both admission receipts with its results
         // (wave_readback), so the host appends calls while this runs.
+        let closed_slots = [
+            workspace.reserve("trait_solver.closed_input")?,
+            workspace.reserve("trait_solver.closed_output")?,
+            workspace.reserve("trait_solver.closed_proof")?,
+        ];
         Ok(Self {
             device,
             queue,
@@ -375,6 +387,7 @@ impl GpuTraitSolver {
             semantic_rows: true,
             last_wave_state: std::sync::Mutex::new(None),
             admission_state: std::sync::Mutex::new(None),
+            closed_role: (Arc::new(()), closed_slots),
         })
     }
 
@@ -392,17 +405,42 @@ impl GpuTraitSolver {
     }
 
     pub fn new_packet(&self) -> Result<GpuPacket> {
+        self.packet_in(
+            Arena::empty(&self.workspace, "trait_solver.batch_input")?,
+            Arena::empty(&self.workspace, "trait_solver.batch_output")?,
+            Arena::empty(&self.workspace, "trait_solver.proof_store")?,
+            None,
+        )
+    }
+
+    /// A packet in the closed-solve role when no packet holds it, else a
+    /// packet of its own.
+    pub fn role_packet(&self) -> Result<GpuPacket> {
+        let (token, [input, output, proof]) = &self.closed_role;
+        if Arc::strong_count(token) != 1 {
+            return self.new_packet();
+        }
+        self.packet_in(
+            Arena::from_slot_words(input, &[])?,
+            Arena::from_slot_words(output, &[])?,
+            Arena::from_slot_words(proof, &[])?,
+            Some(token.clone()),
+        )
+    }
+
+    fn packet_in(&self, input: Arena, output: Arena, proof: Arena, role: Option<Arc<()>>) -> Result<GpuPacket> {
         Ok(GpuPacket {
             gpu_owner: self.gpu_owner.clone(),
             packet: ProgramPacket::new(self.catalog.clone())?,
-            input: Arena::empty(&self.workspace, "trait_solver.batch_input")?,
-            output: Arena::empty(&self.workspace, "trait_solver.batch_output")?,
-            proof: Arena::empty(&self.workspace, "trait_solver.proof_store")?,
+            input,
+            output,
+            proof,
             arena_id: None,
             completed_serial: 0,
             completed_suffix_counts: [0; TABLE_COUNT],
             completed_input_offsets: [0; TABLE_COUNT],
             poisoned: false,
+            _role: role,
             #[cfg(test)]
             retained_input_rewrite: std::sync::Mutex::new(None),
             #[cfg(test)]
@@ -532,6 +570,12 @@ impl GpuTraitSolver {
             )
         };
         let one = Span::new(0, 1)?;
+        // The setup dispatches share one compute pass, flushed by
+        // submit_wave; no copy or clear is recorded among them.
+        let deferred = passes_core::DeferredComputeBatchGuard::begin(
+            passes_core::compute_pass_batching_allowed(false),
+            "trait_solver.proof_wave",
+        );
         batch.record_initialize(
             &self.device,
             &mut commands,
@@ -556,6 +600,7 @@ impl GpuTraitSolver {
         *self.last_wave_state.lock().unwrap() = Some(state.clone());
         // The GPU admits the batch while the host records the rounds.
         self.submit_wave(commands);
+        drop(deferred);
         #[cfg(test)]
         if packet.constant_admission_fault.read().unwrap().is_some()
             || packet.proof_admission_fault.read().unwrap().is_some()
