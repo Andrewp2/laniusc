@@ -723,8 +723,9 @@ pub fn record_canonical_variants(
         crate::parser::compiler_graph::hir::CANONICAL_VARIANT_CLEAR,
         ctx.encoder,
     )?;
+    // Over the enum family's rows, where the variant arrays are defined.
     p.hir_canonical_variant_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &ctx.buffers.hir_enum_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::Variant)?;
     p.hir_canonical_variant_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -844,11 +845,11 @@ pub fn record_canonical_call_arguments(
         ctx.encoder,
     )?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::CallArgument)?;
-    // Rows past the active tree were not written by this job's argument
-    // links, so the scatter reads only the active rows.
+    // Over the call argument list that the argument links pass built: the
+    // argument arrays are defined on those rows only.
     let buffers = ctx.buffers;
     p.hir_canonical_call_arg_scatter
-        .record_pass_indirect(ctx, &buffers.tree_active_dispatch_args)?;
+        .record_pass_indirect(ctx, &buffers.hir_list_rank_dispatch_args)?;
     Ok(())
 }
 
@@ -864,8 +865,9 @@ pub fn record_canonical_array_elements(
         crate::parser::compiler_graph::hir::CANONICAL_ARRAY_ELEMENT_CLEAR,
         ctx.encoder,
     )?;
+    // Over the array element list that the element links pass built.
     p.hir_canonical_array_element_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &ctx.buffers.hir_list_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::ArrayElement)?;
     p.hir_canonical_array_element_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;

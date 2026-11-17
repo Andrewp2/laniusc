@@ -2356,6 +2356,17 @@ impl ResidentTreeReadbacks {
             hir_compact_predicate_bound,
             hir_compact_predicate_metadata,
         };
+        crate::parser::readback::reset_hir_enum_rows_outside_family(
+            &result.node_kind,
+            &result.hir_kind,
+            [
+                &mut result.hir_variant_parent_enum,
+                &mut result.hir_variant_ordinal,
+                &mut result.hir_variant_payload_start,
+            ],
+            [&mut result.hir_variant_payload_count],
+            &mut result.hir_variant_payload_node,
+        );
         crate::parser::readback::reset_hir_match_rows_outside_family(
             &result.node_kind,
             [

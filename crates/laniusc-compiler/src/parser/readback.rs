@@ -218,31 +218,67 @@ const HIR_MATCH_FAMILY_PRODUCTIONS: [(&str, u32); 10] = [
     ("PROD_PATTERNS_AFTER_COMMA_MORE", 207),
 ];
 
-/// The match kernels write only the match family's rows, so the other rows
-/// of the match arrays hold whatever an earlier job left there. This puts
-/// the defaults (`INVALID` for links, 0 for counts) back on those rows
-/// before a readback is validated or returned.
-pub(crate) fn reset_hir_match_rows_outside_family(
-    node_kind: &[u32],
-    links: [&mut [u32]; 9],
-    counts: [&mut [u32]; 2],
+/// Family kernels write only their own family's rows, so the other rows of a
+/// family array hold whatever an earlier job left there. This puts the
+/// defaults (`INVALID` for links, 0 for counts) back on those rows before a
+/// readback is validated or returned.
+fn reset_rows_outside_family(
+    in_family: impl Fn(usize) -> bool,
+    links: &mut [&mut Vec<u32>],
+    counts: &mut [&mut Vec<u32>],
 ) {
-    let outside = |node: usize| {
-        let kind = node_kind.get(node).copied().unwrap_or(INVALID);
-        !HIR_MATCH_FAMILY_PRODUCTIONS.iter().any(|&(_, id)| id == kind)
-    };
-    for words in links {
+    let mut reset = |words: &mut Vec<u32>, default: u32| {
         for (node, word) in words.iter_mut().enumerate() {
-            if outside(node) {
-                *word = INVALID;
+            if !in_family(node) {
+                *word = default;
             }
         }
+    };
+    for words in links.iter_mut() {
+        reset(words, INVALID);
     }
-    for words in counts {
-        for (node, word) in words.iter_mut().enumerate() {
-            if outside(node) {
-                *word = 0;
-            }
+    for words in counts.iter_mut() {
+        reset(words, 0);
+    }
+}
+
+/// Resets the match arrays outside the match family's rows.
+pub(crate) fn reset_hir_match_rows_outside_family(
+    node_kind: &[u32],
+    mut links: [&mut Vec<u32>; 9],
+    mut counts: [&mut Vec<u32>; 2],
+) {
+    reset_rows_outside_family(
+        |node| {
+            let kind = node_kind.get(node).copied().unwrap_or(INVALID);
+            HIR_MATCH_FAMILY_PRODUCTIONS.iter().any(|&(_, id)| id == kind)
+        },
+        &mut links,
+        &mut counts,
+    );
+}
+
+// The enum family: enum variants and type rows, as in
+// shaders/parser/hir/enum/rank/prefix_00_local.slang.
+const PROD_ENUM_VARIANT: u32 = 215;
+const HIR_KIND_TYPE: u32 = 5;
+
+/// Resets the variant arrays outside the enum family's rows. The payload
+/// node array holds `HIR_VARIANT_PAYLOAD_SLOT_STRIDE` words per row.
+pub(crate) fn reset_hir_enum_rows_outside_family(
+    node_kind: &[u32],
+    hir_kind: &[u32],
+    mut links: [&mut Vec<u32>; 3],
+    mut counts: [&mut Vec<u32>; 1],
+    payload_node: &mut [u32],
+) {
+    let in_family = |node: usize| {
+        node_kind.get(node) == Some(&PROD_ENUM_VARIANT) || hir_kind.get(node) == Some(&HIR_KIND_TYPE)
+    };
+    reset_rows_outside_family(in_family, &mut links, &mut counts);
+    for (slot, word) in payload_node.iter_mut().enumerate() {
+        if !in_family(slot / HIR_VARIANT_PAYLOAD_SLOT_STRIDE as usize) {
+            *word = INVALID;
         }
     }
 }
@@ -264,8 +300,11 @@ mod production_id_tests {
     }
 
     #[test]
-    fn match_family_productions_match_the_generated_production_table() {
-        for (name, id) in super::HIR_MATCH_FAMILY_PRODUCTIONS {
+    fn family_productions_match_the_generated_production_table() {
+        for (name, id) in super::HIR_MATCH_FAMILY_PRODUCTIONS
+            .into_iter()
+            .chain([("PROD_ENUM_VARIANT", super::PROD_ENUM_VARIANT)])
+        {
             let line = format!("static const uint {name} = {id}u;");
             assert!(GENERATED.contains(&line), "expected `{line}` in the generated table");
         }
@@ -1896,6 +1935,17 @@ impl DecodedParserReadbacks {
             hir_struct_lit_field_value_node,
             hir_struct_lit_field_next,
         };
+        reset_hir_enum_rows_outside_family(
+            &decoded.node_kind,
+            &decoded.hir_kind,
+            [
+                &mut decoded.hir_variant_parent_enum,
+                &mut decoded.hir_variant_ordinal,
+                &mut decoded.hir_variant_payload_start,
+            ],
+            [&mut decoded.hir_variant_payload_count],
+            &mut decoded.hir_variant_payload_node,
+        );
         reset_hir_match_rows_outside_family(
             &decoded.node_kind,
             [

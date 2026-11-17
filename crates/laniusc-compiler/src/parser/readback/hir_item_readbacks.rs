@@ -1926,6 +1926,17 @@ impl ParserHirItemReadbacks {
                 u32::MAX,
             ),
         };
+        super::reset_hir_enum_rows_outside_family(
+            &decoded.node_kind,
+            &decoded.hir_kind,
+            [
+                &mut decoded.hir_variant_parent_enum,
+                &mut decoded.hir_variant_ordinal,
+                &mut decoded.hir_variant_payload_start,
+            ],
+            [&mut decoded.hir_variant_payload_count],
+            &mut decoded.hir_variant_payload_node,
+        );
         super::reset_hir_match_rows_outside_family(
             &decoded.node_kind,
             [

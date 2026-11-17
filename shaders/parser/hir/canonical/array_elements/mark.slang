@@ -5,6 +5,10 @@ StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> token_feature_flags;
 StructuredBuffer<uint> element_owner;
 StructuredBuffer<uint> element_ordinal;
+// The array element list from the element links pass: the element arrays
+// are defined on those rows only.
+StructuredBuffer<uint> hir_list_rank_node;
+StructuredBuffer<uint> hir_list_rank_count;
 StructuredBuffer<uint> hir_token_pos;
 RWStructuredBuffer<uint> candidate_raw_by_anchor;
 RWStructuredBuffer<uint> family_flag;
@@ -16,7 +20,9 @@ uint active_count() { return gCanonical.uses_status_count != 0u ? min(gCanonical
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint raw = tid(dtid);
+    uint row = tid(dtid);
+    if (row >= hir_list_rank_count[0u]) return;
+    uint raw = hir_list_rank_node[row];
     if (raw >= gCanonical.raw_capacity) return;
     if (!parser_feature_enabled(token_feature_flags, PARSER_FEATURE_ARRAYS))
         return;
