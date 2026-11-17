@@ -134,15 +134,16 @@ public void pps_stage_reserve_goal_index()
 public void pps_stage_write_goal_index(uint local)
 {
     uint row;
-    if (pca_word(PCA_PUBLISHED) != 50u || !pps_stage_row(local, PPS_WORK, row)) return;
+    if (pca_published() != 50u || !pps_stage_row(local, PPS_WORK, row)) return;
     if (!pps_write4(PPS_GOAL_INDEX, row, 0u, uint4(0u, TS_INVALID, row, 0u)))
         ts_batch_failure(ts_invalid(1u, row, PPS_GOAL_INDEX));
 }
+// After the goal-index lanes of the same dispatch, which may fail the batch.
 public void pps_stage_commit_work()
 {
     bool reserved = pca_word(PCA_PUBLISHED) == 50u;
     pca_reset();
-    if (!reserved || !pps_building() || !ts_batch_is_building()) return;
+    if (!reserved || !pps_building() || !ts_batch_is_building_atomic()) return;
     ts_batch_failure(pps_commit_tables(PPS_WORK | (PPS_REQUIREMENTS << 4u) | (PPS_ROOT_LINKS << 8u) |
         (PPS_REDUCTION_QUEUE << 12u) | (PPS_GOAL_INDEX << 16u), 5u));
 }
@@ -306,11 +307,23 @@ public void pps_stage_admit_assumption_proofs(uint local)
     if (ts_bind_scratch(local, row, status)) status = pps_admit_ready_assumption_proof(row);
     ts_batch_failure(status);
 }
+// The proof edges the ready events of one queue span reserved (58), with one
+// thread per queue row: thread t admits pending rows t, t + n, ... of n
+// threads. No step between 58 and this one reserves or admits an edge, so
+// the pending rows are exactly those edges.
 public void pps_stage_admit_proof_edge_rows(uint local)
-{ uint row; if (pps_stage_row(local, PPS_PROOF_EDGES, row)) ts_batch_failure(pps_admit_proof_edge_row(row)); }
+{
+    uint threads = trait_solver_params.dispatch_count;
+    uint4 span; uint accepted;
+    if (local >= threads || !pps_building() || !ts_batch_is_building() ||
+        !pps_descriptor(PPS_PROOF_EDGES, span, accepted)) return;
+    for (uint row = span.w + local; row < span.y; row += threads)
+        ts_batch_failure(pps_admit_proof_edge_row(row));
+}
+// After the proof-edge lanes of the same dispatch, which may fail the batch.
 public void pps_stage_commit_proofs()
 {
-    if (!pps_building() || !ts_batch_is_building()) return;
+    if (!pps_building() || !ts_batch_is_building_atomic()) return;
     ts_batch_failure(pps_commit_tables(PPS_PROOFS | (PPS_PROOF_EDGES << 4u), 2u));
 }
 // One queue span: a ready event publishes its Work's committed proof, a
