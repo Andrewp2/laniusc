@@ -1,6 +1,7 @@
 // Apply prefix-scanned match-pattern context rows.
 
 import prefix_scan;
+import parser.tokens.context.before_block;
 import segment_tree;
 
 struct Params
@@ -34,7 +35,11 @@ StructuredBuffer<int> brace_match_depth;
 StructuredBuffer<int> brace_match_block_min;
 StructuredBuffer<int> brace_match_min_tree;
 StructuredBuffer<uint> brace_semantic_kind;
-StructuredBuffer<uint> statement_event_block_prefix;
+StructuredBuffer<uint> statement_event_block;
+// Written with each block's prefix, as the removed scan did. The row keeps
+// this buffer's graph lifetime: dropping it changed the parser slot plan and
+// broke type_checker_checks_enum_field_assignment_categories after earlier tests.
+RWStructuredBuffer<uint> statement_event_block_prefix;
 
 RWStructuredBuffer<uint> token_match_pattern_context_event;
 
@@ -204,13 +209,17 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint count = active_token_count();
     uint kind = token_i < count ? token_words[token_i].kind : 0u;
     uint event = token_i < count ? match_pattern_event_for(token_i, kind) : 0u;
+    uint block_before = context_event_before_block(
+        statement_event_block, block_idx, lane, WG_SIZE);
+    if (lane == 0u)
+        statement_event_block_prefix[block_idx] = block_before;
     prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,
         event,
         match_pattern_prefix_values);
 
     uint local_before = lane == 0u ? 0u : match_pattern_prefix_values[lane - 1u];
-    uint before = max(statement_event_block_prefix[block_idx], local_before);
+    uint before = max(block_before, local_before);
     if (token_i < gParams.n_tokens)
         token_match_pattern_context_event[token_i] = before;
 }
