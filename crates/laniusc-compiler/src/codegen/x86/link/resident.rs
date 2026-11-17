@@ -1100,7 +1100,21 @@ impl GpuX86Linker {
         drop(wait);
         let tail = words_of(&status_slice.get_mapped_range());
         status.buffer.unmap();
+        // Dropping the image on a failed emit finishes the chunk maps.
         let image = ResidentImage { device: device.clone(), chunks, len: total as usize };
+        if tail[ST_ERRORS] != 0
+            || tail[ST_EMIT_ERRORS] != 0
+            || tail[STATUS_WORDS] != 1
+            || tail[STATUS_WORDS + 1] != 0
+        {
+            log::debug!(
+                "resident x86 link emit failed: errors {:#x}, emit errors {:#x}, dynamic status {:?}",
+                tail[ST_ERRORS],
+                tail[ST_EMIT_ERRORS],
+                &tail[STATUS_WORDS..],
+            );
+            return Ok(None);
+        }
         Ok(Some(image))
     }
 }

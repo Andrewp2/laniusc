@@ -1,31 +1,21 @@
-// Per byte of generated text where a token starts: the token's row. Its
-// bytes are the text bytes in the region, its kind the kind its first
-// piece gives it, or a name when it joins pieces. Its file and machine are
-// those of its piece's anchor token.
+// Per byte of a round's generated text where a token starts: the token's
+// row. Its bytes are the text bytes in the region, its kind the kind its
+// first piece gives it, or a name when it joins pieces. Its file is that of
+// its piece's anchor token, its owner that of its first piece.
 import gpu_index;
 import generated_token_ids;
-import machines.machine_common;
 import desugar_common;
 
-struct TokenOut
-{
-    uint kind;
-    uint start;
-    uint len;
-};
-
 StructuredBuffer<uint> sizes;
-StructuredBuffer<TokenOut> tokens_out;
 StructuredBuffer<uint> token_file_id;
 StructuredBuffer<uint4> pieces;
+StructuredBuffer<uint> piece_owner;
 StructuredBuffer<uint> byte_piece;
 StructuredBuffer<uint> byte_info;
 StructuredBuffer<uint4> text_scan;
-// Inclusive prefix sums: machines, states, transitions, bracket depth.
-StructuredBuffer<uint4> scan_a;
-RWStructuredBuffer<TokenOut> generated;
+RWStructuredBuffer<TokenRow> generated;
 RWStructuredBuffer<uint> generated_file;
-RWStructuredBuffer<uint> generated_machine;
+RWStructuredBuffer<uint> generated_owner;
 
 static const uint INFO_STARTS = 2u;
 static const uint INFO_CONTINUES = 4u;
@@ -52,12 +42,11 @@ void main(uint3 tid: SV_DispatchThreadID)
             joined = true;
     }
     uint ordinal = text_scan[at].x - 1u;
-    TokenOut row;
+    TokenRow row;
     row.kind = joined ? TK_IDENT : info >> 8u;
     row.start = sizes[S_REGION_BASE] + at;
     row.len = end - at;
     generated[ordinal] = row;
-    uint anchor = pieces[piece].w;
-    generated_file[ordinal] = token_file_id[anchor];
-    generated_machine[ordinal] = scan_a[anchor].x - 1u;
+    generated_file[ordinal] = token_file_id[pieces[piece].w];
+    generated_owner[ordinal] = piece_owner[piece];
 }

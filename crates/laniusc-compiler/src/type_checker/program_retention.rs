@@ -516,6 +516,43 @@ pub(crate) struct JobSnapshot {
     /// The export's first attempt, recorded while the host waits for the
     /// job's GPU work ([`ProgramRetention::prepare_export_job`]).
     prepared: Mutex<Option<PreparedExport>>,
+    /// The export's first steps, submitted behind the job's frontend
+    /// ([`ProgramRetention::submit_export_early`]).
+    early: Mutex<Option<EarlyExport>>,
+}
+
+/// An export whose steps up to the commit were submitted behind the job's
+/// frontend, before the host checked the job's statuses.
+struct EarlyExport {
+    commit: PendingCommit,
+    shape: ScratchShape,
+    epoch: u64,
+    generation: u32,
+}
+
+/// The commit steps (16-18) of an export whose earlier steps were
+/// submitted. Dropped without being submitted, it rolls the job back: the
+/// overflow word makes step 16 restore the watermarks and step 18 clear
+/// the job's hash slots, so a job the host rejected leaves nothing behind.
+pub(crate) struct PendingCommit {
+    commands: Option<wgpu::CommandBuffer>,
+    queue: Arc<wgpu::Queue>,
+    counts: wgpu::Buffer,
+}
+
+impl PendingCommit {
+    fn into_commands(mut self) -> wgpu::CommandBuffer {
+        self.commands.take().expect("a pending commit holds its commands")
+    }
+}
+
+impl Drop for PendingCommit {
+    fn drop(&mut self) {
+        if let Some(commands) = self.commands.take() {
+            self.queue.write_buffer(&self.counts, (counts::OVERFLOW * 4) as u64, &1u32.to_le_bytes());
+            self.queue.submit(Some(commands));
+        }
+    }
 }
 
 /// An export attempt recorded but not submitted, and the store state it
@@ -688,7 +725,7 @@ impl ProgramRetention {
             encoder.copy_buffer_to_buffer(&table.buffer, table.offset, &buffer, 0, table.size);
             tables.insert(name, JobTable { buffer, offset: 0, size: table.size });
         }
-        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None) })
+        Ok(JobSnapshot { tables, buffers, pool: self.snapshot_pool.clone(), prepared: Mutex::new(None), early: Mutex::new(None) })
     }
 
     /// Records and submits the job's first export attempt without waiting
@@ -756,16 +793,49 @@ impl ProgramRetention {
     }
 
     pub(crate) fn prepare_export_job(&self, snapshot: &JobSnapshot) -> Result<()> {
-        if self.export_fault.lock().unwrap().is_some() || snapshot.prepared.lock().unwrap().is_some() {
+        if self.export_fault.lock().unwrap().is_some()
+            || snapshot.prepared.lock().unwrap().is_some()
+            || snapshot.early.lock().unwrap().is_some()
+        {
             return Ok(());
         }
         let job = &snapshot.tables;
         let shape = export_shape(job)?;
         let mut store = self.store.lock().unwrap();
         self.ensure_scratch(&mut store, shape);
-        let commands = self.record_export(&store, job, shape)?;
+        let (commands, _) = self.record_export(&store, job, shape, false)?;
         *snapshot.prepared.lock().unwrap() =
             Some(PreparedExport { commands, shape, epoch: store.epoch, generation: store.generation });
+        Ok(())
+    }
+
+    /// Submits the job's export up to its commit behind the job's frontend,
+    /// before the host has read the job's statuses, so the GPU exports
+    /// while the host checks them. The steps write only past the arenas'
+    /// watermarks and into hash slots the rollback clears.
+    /// [`Self::submit_export_job`] then returns the commit steps for the
+    /// caller to submit with its next work; a job that does not reach it
+    /// drops them with its snapshot, which rolls the job back.
+    pub(crate) fn submit_export_early(&self, snapshot: &JobSnapshot) -> Result<()> {
+        if self.export_fault.lock().unwrap().is_some() || snapshot.early.lock().unwrap().is_some() {
+            return Ok(());
+        }
+        let job = &snapshot.tables;
+        let shape = export_shape(job)?;
+        let mut store = self.store.lock().unwrap();
+        self.ensure_scratch(&mut store, shape);
+        let (commands, commit) = self.record_export(&store, job, shape, true)?;
+        self.queue.submit(Some(commands));
+        *snapshot.early.lock().unwrap() = Some(EarlyExport {
+            commit: PendingCommit {
+                commands: commit,
+                queue: self.queue.clone(),
+                counts: store.buffers["rt_counts"].clone(),
+            },
+            shape,
+            epoch: store.epoch,
+            generation: store.generation,
+        });
         Ok(())
     }
 
@@ -782,8 +852,11 @@ impl ProgramRetention {
     pub(crate) fn finish_export_job(
         &self,
         job: &BTreeMap<&'static str, JobTable>,
-        submitted: ExportSubmitted,
+        mut submitted: ExportSubmitted,
     ) -> Result<JobReport> {
+        if let Some(commit) = submitted.commit.take() {
+            self.queue.submit(Some(commit.into_commands()));
+        }
         let result = self.export_job_attempts(job, submitted.shape);
         if result.is_err() {
             self.abandon_export();
@@ -802,11 +875,21 @@ impl ProgramRetention {
 
     fn submit_export_attempt(&self, snapshot: &JobSnapshot) -> Result<ExportSubmitted> {
         let job = &snapshot.tables;
+        if let Some(early) = snapshot.early.lock().unwrap().take() {
+            let store = self.store.lock().unwrap();
+            if store.epoch == early.epoch && store.generation == early.generation {
+                return Ok(ExportSubmitted { shape: early.shape, commit: Some(early.commit) });
+            }
+            // The store changed under the early export: roll it back and
+            // export again.
+            drop(store);
+            drop(early);
+        }
         if let Some(prepared) = snapshot.prepared.lock().unwrap().take() {
             let store = self.store.lock().unwrap();
             if store.epoch == prepared.epoch && store.generation == prepared.generation {
                 self.queue.submit(Some(prepared.commands));
-                return Ok(ExportSubmitted { shape: prepared.shape });
+                return Ok(ExportSubmitted { shape: prepared.shape, commit: None });
             }
         }
         let shape = export_shape(job)?;
@@ -828,8 +911,8 @@ impl ProgramRetention {
         }
         let mut store = self.store.lock().unwrap();
         self.ensure_scratch(&mut store, shape);
-        self.queue.submit(Some(self.record_export(&store, job, shape)?));
-        Ok(ExportSubmitted { shape })
+        self.queue.submit(Some(self.record_export(&store, job, shape, false)?.0));
+        Ok(ExportSubmitted { shape, commit: None })
     }
 
     fn export_job_attempts(
@@ -840,7 +923,7 @@ impl ProgramRetention {
         let mut store = self.store.lock().unwrap();
         for attempt in 1..=8u32 {
             if attempt > 1 {
-                self.queue.submit(Some(self.record_export(&store, job, shape)?));
+                self.queue.submit(Some(self.record_export(&store, job, shape, false)?.0));
             }
             let mut read = self.read_parts(&[
                 (&store.buffers["rt_counts"], counts::WORDS),
@@ -871,7 +954,8 @@ impl ProgramRetention {
         store: &Store,
         job: &BTreeMap<&'static str, JobTable>,
         shape: ScratchShape,
-    ) -> Result<wgpu::CommandBuffer> {
+        split_commit: bool,
+    ) -> Result<(wgpu::CommandBuffer, Option<wgpu::CommandBuffer>)> {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("program_retention.export"),
         });
@@ -951,9 +1035,19 @@ impl ProgramRetention {
             run(25, one);
             run(26, Indirect(D_COMMIT_DIR));
             run(27, Indirect(D_ROLLBACK));
+            // The commit steps: 16_commit, 17_publish and 18_rollback.
+            let commit_at = steps.len() - 3;
+            if split_commit {
+                substitution::record_timed(&mut encoder, "program_retention.export", &steps[..commit_at]);
+                let mut commit = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("program_retention.export.commit"),
+                });
+                substitution::record_timed(&mut commit, "program_retention.export.commit", &steps[commit_at..]);
+                return Ok((encoder.finish(), Some(commit.finish())));
+            }
             substitution::record_timed(&mut encoder, "program_retention.export", &steps);
         }
-        Ok(encoder.finish())
+        Ok((encoder.finish(), None))
     }
 
     /// Binds `pass` by reflected name; `aliases` binds a name to another
@@ -1305,6 +1399,16 @@ impl ProgramRetention {
 #[must_use]
 pub(crate) struct ExportSubmitted {
     shape: ScratchShape,
+    /// The commit steps of an early export, which the caller submits with
+    /// its next work (dropped, they roll the job back).
+    commit: Option<PendingCommit>,
+}
+
+impl ExportSubmitted {
+    /// The commit steps still to be submitted, if the export was early.
+    pub(crate) fn take_commit(&mut self) -> Option<wgpu::CommandBuffer> {
+        self.commit.take().map(PendingCommit::into_commands)
+    }
 }
 
 #[derive(Clone, Copy)]

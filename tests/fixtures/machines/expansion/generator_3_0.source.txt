@@ -1,0 +1,25 @@
+// The sum of the squares of the odd numbers below LIMIT, pulled from a
+// `gen fn` (M5).
+import core::option;
+const LIMIT: i64 = 200000000;
+
+gen fn odd_squares(limit: i64) -> i64 {
+    let i: i64 = 0;
+    while (i < limit) {
+        if (i % 2 == 1) { yield i * i; }
+        i += 1;
+    }
+}
+
+fn main() -> i32 {
+    let it: OddSquares = odd_squares(LIMIT);
+    let total: i64 = 0;
+    while (true) {
+        match (it.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    print(total);
+    return 0;
+}
