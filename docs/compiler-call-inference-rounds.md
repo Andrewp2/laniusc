@@ -197,6 +197,15 @@ Settings at ab296f5f6 with the canonical re-arm change, traced, sum of the per-p
 
 Tried and not kept: skipping complete imported applications inside the rounds in `07_project_imported_fields` left its 17 µs unchanged. Its cost is the visit of every live type row (one per token), not the work on the imported ones. The two `02c` indexes have the same shape: they visit every live row and skip the ones already indexed. A list of the rows that can hold a type would serve all three.
 
+## Bound inference and call clears (2026-11-17, second pass)
+
+Settings at ab03bbe44, traced, sum of the per-pass minimum over the last 3 builds.
+
+- **Owner filter for bound inference.** `03l3` scanned every predicate row for each generic call's callee (`next_predicate`), in every round, to find out that most callees have no bounds. The collectors (`03l1`, `03l2`) now also set one bit per hash of the row's owner in a 256-word filter after the three counts (`BOUND_OWNER_FILTER` in `bound_tables.slang`). `03l3` returns early when the callee's bit is clear. The filter is cleared with the counts once per job. The per-round restore copies only the counts, so the bits of earlier rounds' dependency rows stay set; they can only cost a scan, never skip a row. Bound inference per round, rounds 3 to 7: 94 to 97 µs before, 22 to 28 µs after. Type check 29.01 to 28.76 ms.
+- **Context slots in `calls.clear`.** `01_resolve` cleared all 32 slots of `call_context_ref_tag` and `call_context_ref_payload` for every HIR row (about 54 MB at settings' size) before the rounds. Every reader checks the slot's bit in `call_context_arg_mask` first: argument and call environments (`contextual_call_environment.slang`), explicit applications (`03a8`), the publisher's priors (`ct_context_publish.slang`, through the same helper), generic call results (`00c`), bound-member routing (`09`, only slots it wrote itself), and the host's readback in `generic_calls.rs`. Every writer sets a bit only for a slot it wrote (`03a8`, `ct_context_publish`, `07a`, `15b`, `09`). The body-specialization rewrite (`00g`) touches every slot but only rewrites tag 2, which no unmasked reader sees. The masks are still cleared. `calls.clear` 200 to 134 µs; type check 28.76 to 28.51 ms.
+
+Settings stayed byte-identical (`115a4d52a2ae77e0`, 5 of 5 builds) and the dispatch count is unchanged (1,421).
+
 ## What remains
 
 - Activity per item, as above.
