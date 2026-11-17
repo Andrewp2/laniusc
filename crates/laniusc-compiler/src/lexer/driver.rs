@@ -62,6 +62,18 @@ impl GpuLexer {
     /// Releases reusable source/token buffers and bind groups while retaining
     /// the lexer pipelines, immutable tables and the source-pack capacity
     /// floor that the next allocation covers.
+    /// The desugaring of this lexer, for the tests that read its runs.
+    #[cfg(test)]
+    pub(crate) fn desugaring(&self) -> &std::sync::Arc<crate::compiler::desugar::Desugaring> {
+        &self.passes.desugaring
+    }
+
+    /// Frees the desugaring's buffers and bind groups. They bind this
+    /// lexer's buffers, so they go first when a compiler trims its storage.
+    pub(crate) fn release_desugar_buffers(&self) {
+        self.passes.desugaring.release_resident_buffers();
+    }
+
     pub fn release_current_resident_buffers(&self) {
         *self
             .buffers
@@ -194,7 +206,7 @@ impl GpuLexer {
             }
         }
 
-        let passes = LexerPasses::new(&device)?;
+        let passes = LexerPasses::new(&device, &queue)?;
 
         Ok(Self {
             device,

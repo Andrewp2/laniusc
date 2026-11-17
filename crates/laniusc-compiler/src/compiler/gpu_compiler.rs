@@ -647,7 +647,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         self.trait_solver_workspace.release();
         self.retained_trait_workspace.release();
         // The desugaring binds lexer buffers, so its storage goes first.
-        crate::compiler::desugar::release_resident_buffers();
+        self.lexer.release_desugar_buffers();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();

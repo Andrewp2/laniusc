@@ -795,8 +795,12 @@ impl GpuX86SymbolFinalizer {
                 status_words[0]
             );
         }
-        let symbol_bytes = &bytes[symbols_at..symbols_at + symbol_copy_bytes];
-        let identity_bytes = &bytes[identity_at..identity_at + identity_copy_bytes];
+        let symbol_bytes = bytes
+            .get(symbols_at..symbols_at + symbol_copy_bytes)
+            .context("GPU symbol finalization read back fewer symbol bytes than it copied")?;
+        let identity_bytes = bytes
+            .get(identity_at..identity_at + identity_copy_bytes)
+            .context("GPU symbol finalization read back fewer identity bytes than it copied")?;
         Ok(X86FinalizeAttempt::Published(
             transfer.split(symbol_bytes, identity_bytes),
         ))
