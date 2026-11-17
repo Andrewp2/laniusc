@@ -358,10 +358,59 @@ Traced rounds 1 to 10 (minimum of 3 builds), sum over the rounds:
 | call environments | 457 | 446 |
 | rounds 1 to 10 | 11,942 | 11,495 |
 
+## Per-item latency: repeats, chains and the type table (2026-11-17, third pass)
+
+Three more changes shorten the lane of one changed item.
+
+- **Receiver binding's second match.** `03d` matches the receiver pattern, then matches the self parameter against the same receiver. When the second pair is the first pair, or a reference to each side of it, the second match cannot fail or bind anything new. The lane now publishes after the first match in that case (`repeats_receiver_match`).
+- **Bound inference chains.** `03l3` scanned every implementation row once per bound and every predicate row once per bound step. Its round-1 lane took about 285 µs. The collectors `03l1` and `03l2` now link each row into a chain:
+  - an implementation row into the chain for a hash of its trait and argument count;
+  - a predicate row into the chain for a hash of its owner.
+
+  The chain heads are words 4 to 515 of `bound_inference_counts`, before the owner filter. The snapshot and restore copy them with the counts, so each round starts from the local rows' chains. A local row's next word names only local rows. A dependency row's next word is written again when the row is linked in a later round. `03l3` walks one chain. It keeps the highest matching row, which is the row the scan in row order ended on. slangc 2026.2 crashes on `InterlockedExchange` into a module's buffers, so the link is a compare-exchange loop, as in `instance_closure.slang`.
+- **Type slots bound by the shape pass.** `ct_match` walked the pattern once for its shape and once more for each bound slot. The shape pass now keeps up to four type-slot bindings in registers (`TypeTable`) and checks every occurrence of those slots. A slot in the table needs no slot pass. The slot loop checks the table's binding against the prior environment, where it already read the prior binding. A fifth type slot, and every constant slot, still has its own pass. To keep `03l3` under 40,000 instructions, it now reads every slot binding at one call site: the open-slot check and the bound subjects share one loop (39,467 instructions after the change).
+
+Traced, sum over rounds 1 to 10, minimum of 3 builds:
+
+| Pass | Before the third pass | After |
+|---|---|---|
+| receiver binding `03d` | 922 µs | 467 µs |
+| contextual result requests `03a4b` | 792 | 646 |
+| resolve table `methods/07` | 662 | 424 |
+| claim emission `03a1` | 594 | 482 |
+| argument matching (consume) | 579 | 435 |
+| bound inference `03l3` | 530 | 263 |
+| call environments | 457 | 439 |
+
+Rounds 1 to 10 after each change:
+
+| Change | µs |
+|---|---|
+| Before the third pass's latency work | 11,942 |
+| Cached record reads | 11,495 |
+| Receiver binding's second match | 11,282 |
+| Bound inference chains | 10,798 |
+| Type slots bound by the shape pass (final) | 10,531 |
+
+Per round, final: 1,517, 1,414, 1,296, 1,103, 1,004, 905, 879, 864, 790 and 759 µs. The settings executable stayed `115a4d52a2ae77e0`.
+
+The shader clock (`getRealtimeClock`, not committed) gives the cost of a changed item's lane in round 10. In `03a4b` the lane takes about 30 µs, and the segments account for about half:
+
+| Segment | µs |
+|---|---|
+| Callee and return lookup | 3.4 |
+| Result expression context | 5.3 |
+| Interning the two operands | 1.4 |
+| `ct_match` | 4.3 |
+
+The remainder is a sequence of dependent loads from buffers that are not in L2 by a late round, about 0.5 µs each. A lane of `call_envs` takes about 20 µs, with no loop that grows with the program. These lanes have no scan left to replace: further gains need fewer dependent loads per item, or fewer items per round.
+
+
 ## What remains
 
 - Activity per item, as above.
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.
-- Unmasked passes over every HIR row or token in each round, with their idle cost in a late round (traced): explicit constant admission `03a0b` (17 µs, every token), call-root expansion (16), field expectations `match/01` (15 to 16, every token), record fields and references `03k4` (15). A list built before the rounds needs, for each, the set of rows it can act on and every pass inside the rounds that can add one, as for the type rows above. `03a0b` acts on tokens whose explicit application status is 1, which `03a0` sets inside the rounds.
+- Rounds 1 to 10 cost 10.53 ms traced, against a target of 9 ms. Above the floor, the cost is the lanes of changed items. Each lane is a chain of 40 to 60 dependent loads (see the clock figures above). The matcher's re-descent from the root at each step is the largest shared part left. Holding the path's nodes in registers for shallow patterns would remove most of it, at a size cost in kernels close to 40,000 instructions (`03l3`, `08a`, `03k3`).
+- A pattern with more than four type slots, or with constant slots, still takes one matcher pass per such slot.
 - The instance closure records 16 levels, 3 passes each, and 17 export retries. On settings levels 7 to 16 and the export retries after the first find nothing (4 to 6 µs traced each, about 240 µs). Recording fewer needs the depth, which the host does not read.
 - `interface.validate` (546 µs, after the rounds): `04_scopes` alone takes about 205 µs. Each member row scans its owner's member range several times (`count_scoped`, `slots_exact`, `has_method`), so a large owner costs quadratic time in one lane.
