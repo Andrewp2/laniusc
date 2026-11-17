@@ -313,10 +313,18 @@ public void pps_stage_commit_proofs()
     if (!pps_building() || !ts_batch_is_building()) return;
     ts_batch_failure(pps_commit_tables(PPS_PROOFS | (PPS_PROOF_EDGES << 4u), 2u));
 }
+// One queue span: a ready event publishes its Work's committed proof, a
+// proven or failed event notifies its Work's parents. The two never share a
+// Work in one span: a Work's proven event reaches the queue one round after
+// its ready event, and only a published Work is notified.
 public void pps_stage_publish_work_proofs(uint local)
-{ uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) ts_batch_failure(pps_publish_work_proof(row)); }
-public void pps_stage_notify_work(uint local)
-{ uint row; if (pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) ts_batch_failure(pps_process_notification(row)); }
+{
+    uint row;
+    if (!pps_stage_row(local, PPS_REDUCTION_QUEUE, row)) return;
+    SolverStatus status = pps_publish_work_proof(row);
+    if (status.state == TS_VALID) status = pps_process_notification(row);
+    ts_batch_failure(status);
+}
 public void pps_stage_commit_queue()
 {
     if (!pps_building() || !ts_batch_is_building()) return;

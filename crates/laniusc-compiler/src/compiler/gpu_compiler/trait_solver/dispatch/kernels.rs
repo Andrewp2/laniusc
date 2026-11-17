@@ -792,11 +792,6 @@ const PROOF_KEYS: &[(u32, &str, u32)] = &[
         256,
     ),
     (
-        62,
-        "type_checker/trait_solver/entries/62_notify_work",
-        256,
-    ),
-    (
         63,
         "type_checker/trait_solver/entries/63_commit_queue",
         1,
@@ -1127,7 +1122,6 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             (ProofEdges, vec![(PROOF_EDGE_ROWS, IMPLEMENTATION_PROOF_PHASE)]),
             (EmittedOne, vec![stage(60)?]),
             (EmittedQueue, vec![stage(61)?]),
-            (EmittedQueue, vec![stage(62)?]),
             (EmittedOne, vec![stage(63)?]),
         ],
         // Root publication, call reduction and the batch receipt.
