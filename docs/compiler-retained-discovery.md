@@ -43,7 +43,8 @@ publication's receipt (its route header) is copied on the GPU into
 resolution readback; the host checks it before any growth or failure of
 that wave, and before the method routes size their tables from its proof
 node count. The closed solve itself is deferred: the solver records its
-first wave submit (the batch admission, five rounds and the finish point)
+first wave submit (the batch admission, two full rounds, three queue
+rounds and the finish point)
 and returns without its progress readback. The receipt copy also carries
 the solver's wave state and batch receipt, so the resolution readback
 shows whether the solve finished in that submit. When it did not, the

@@ -721,13 +721,22 @@ impl GpuTraitSolver {
         // Steps recorded before the regular rounds, with their chunk steps.
         let mut lead = vec![(pieces(&[WavePoint::FirstWork]), opening_chunks)];
         // A solve with no source obligation has no Work: its finish point
-        // follows the first work. Others record FIRST_SUBMIT_ROUNDS rounds,
-        // the opening round with the opening chunk steps.
+        // follows the first work. Others record FIRST_SUBMIT_ROUNDS full
+        // rounds, the opening round with the opening chunk steps, then
+        // FIRST_SUBMIT_QUEUE_ROUNDS queue rounds. The opening round
+        // normalizes only original Works and the later full rounds only
+        // prerequisite Works, until a round start finds otherwise
+        // (WavePoint::OpeningRound): then every full round normalizes both.
         let mut rounds = if plan.obligations.count == 0 { 0 } else { FIRST_SUBMIT_ROUNDS };
+        let mut queue_rounds = if plan.obligations.count == 0 { 0 } else { FIRST_SUBMIT_QUEUE_ROUNDS };
+        let mut opening: &[WavePoint] = &WavePoint::OPENING_ROUND;
+        let mut later: &[WavePoint] = &WavePoint::LATER_ROUND;
         if rounds != 0 {
-            lead.push((pieces(&WavePoint::ROUND), opening_chunks));
+            lead.push((pieces(opening), opening_chunks));
             rounds -= 1;
         }
+        // Full rounds the next FULL_ROUND stop records.
+        let mut full_rounds = FIRST_SUBMIT_ROUNDS;
         let mut finish_due = true;
         loop {
             // One submit for the lead, then one per later round, so the GPU
@@ -740,8 +749,13 @@ impl GpuTraitSolver {
             // stops the rounds at its point, and the rest of that round is
             // recorded again with enough chunk steps.
             if rounds != 0 {
-                let regular = self.template(templates, packet, submission, &pieces(&WavePoint::ROUND), 1, state, demand)?;
+                let regular = self.template(templates, packet, submission, &pieces(later), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
+            }
+            // Queue rounds go in one submit: each records 13 dispatches.
+            if queue_rounds != 0 {
+                let queue = self.template(templates, packet, submission, &pieces(&WavePoint::QUEUE_ROUND), 1, state, demand)?;
+                submits.push(vec![queue; queue_rounds as usize]);
             }
             if finish_due {
                 let finish = self.template(templates, packet, submission, &pieces(&[WavePoint::Finish]), finish_chunks, state, demand)?;
@@ -774,10 +788,11 @@ impl GpuTraitSolver {
                     // finish point is the whole submit.
                     lead = vec![(pieces(point.remainder()), chunks)];
                     if point == WavePoint::FirstWork && plan.obligations.count != 0 {
-                        lead.push((pieces(&WavePoint::ROUND), chunks));
+                        lead.push((pieces(opening), chunks));
                     }
                     if point == WavePoint::Finish {
                         rounds = 0;
+                        queue_rounds = 0;
                         finish_due = false;
                         finish_chunks = chunks;
                     }
@@ -786,21 +801,42 @@ impl GpuTraitSolver {
                 wave::GROW => {
                     // In-place growth at the same point. A count that growth
                     // cannot hold is left to the reservation.
-                    ensure!(
-                        words[wave::OVERFLOW_POINT] == WavePoint::Round as u32,
-                        "solver wave grew at a point without a counted admission"
-                    );
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .filter(|point| point.starts_full_round())
+                        .ok_or_else(|| anyhow!("solver wave grew at a point without a counted admission"))?;
                     self.grow_for_demand(packet, &progress, &readback.demand)?;
                     demand.write(&self.queue, 0, &[0u8; PROOF_STORE_TABLES * 4]);
-                    lead = vec![(pieces(WavePoint::Round.remainder()), wave_chunks(words[wave::OVERFLOW_ROWS]))];
+                    lead = vec![(pieces(point.remainder()), wave_chunks(words[wave::OVERFLOW_ROWS]))];
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
                 }
                 wave::RUNNING => {
-                    // The finish point found more Work: record twice the
-                    // rounds of the last submit, up to 64.
+                    // The finish point found queue rows left: queue rounds
+                    // admit no Work, so record only queue rounds, twice
+                    // those of the last submit, up to 64. A queue round
+                    // that finds Work stops with FULL_ROUND.
                     lead.clear();
-                    rounds = (rounds.max(1) * 2).min(64);
+                    rounds = 0;
+                    queue_rounds = (queue_rounds.max(1) * 2).min(64);
                     finish_due = true;
+                }
+                wave::FULL_ROUND => {
+                    // A round start found Work its steps do not take, before
+                    // any of them ran: record full rounds from there, twice
+                    // those of the last FULL_ROUND, up to 64, then queue
+                    // rounds. After an opening or later round start, every
+                    // full round normalizes both Work kinds.
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .ok_or_else(|| anyhow!("solver wave stopped a round at an unknown point"))?;
+                    if matches!(point, WavePoint::OpeningRound | WavePoint::LaterRound) {
+                        opening = &WavePoint::ROUND;
+                        later = &WavePoint::ROUND;
+                    }
+                    lead.clear();
+                    rounds = full_rounds;
+                    full_rounds = (full_rounds * 2).min(64);
+                    queue_rounds = FIRST_SUBMIT_QUEUE_ROUNDS;
+                    finish_due = true;
+                    state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
                 }
                 wave::STOPPED => {
                     return Err(anyhow!("solver wave stopped while the batch and store are building"));
@@ -1114,11 +1150,16 @@ impl GpuTraitSolver {
     }
 }
 
-/// Rounds the first submit of a solve with source obligations records.
-/// The settings app's solves quiesce after five; each round recorded past
-/// quiescence costs about 0.2 ms of empty dispatches, and each further
-/// submit a readback.
-const FIRST_SUBMIT_ROUNDS: u32 = 5;
+/// Full rounds the first submit of a solve with source obligations
+/// records. Work is admitted only at a solve's first work and at a full
+/// round's expansion; the settings app's solves admit their last Work in
+/// the first or second round.
+const FIRST_SUBMIT_ROUNDS: u32 = 2;
+/// Queue rounds after them (`WavePoint::QUEUE_ROUND`). The settings app's
+/// solves drain their reduction queue in three more rounds. A full round
+/// records 46 dispatches and a queue round 13, each mostly empty past
+/// quiescence; each further submit costs a readback.
+const FIRST_SUBMIT_QUEUE_ROUNDS: u32 = 3;
 
 /// How a solver attempt ended, with the readback of its last submit.
 struct AttemptEnd {
