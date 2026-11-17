@@ -1841,9 +1841,11 @@ impl GpuTypeChecker {
                         ContextConstantProducer::ResultRequests,
                     )?;
                 }
+                // The local bound rows were collected before the rounds; a
+                // round collects the resident pages' rows again on top of them.
                 let bound_inference = bind_groups.calls.bound_inference.as_ref();
-                if let Some(bound) = bound_inference {
-                    bound.clear.record(encoder);
+                if let Some(bound) = bound_inference.filter(|bound| bound.collect_dependency.is_some()) {
+                    bound.restore.record(encoder);
                 }
                 if let Some(visibility) = module_path
                     .dependency_visibility
@@ -1882,7 +1884,6 @@ impl GpuTypeChecker {
                     }
                 }
                 if let Some(bound) = bound_inference {
-                    bound.collect_local.record(encoder)?;
                     bound.infer.record(encoder)?;
                 }
                 if aggregates_required {
@@ -2057,6 +2058,13 @@ impl GpuTypeChecker {
                 }
                 Ok(())
             };
+            // The unit's own trait implementations and bounds are declaration
+            // facts: collect them once for every round and the final pass.
+            if let Some(bound) = bind_groups.calls.bound_inference.as_ref() {
+                bound.clear.record(encoder);
+                bound.collect_local.record(encoder)?;
+                bound.snapshot.record(encoder);
+            }
             if bind_groups.calls.materialize_return_types.is_some() {
                 // A call can depend on an earlier inferred call result. Close
                 // the checked type facts before required-parameter validation;

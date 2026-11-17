@@ -479,10 +479,14 @@ pub(super) const STATUS_READBACK_PASS: &str = "type_check.status.readback";
 /// Zeroes the round's change count before each inference round, so one
 /// submission can carry several rounds.
 pub(super) const CALLS_INFERENCE_ROUND_RESET_PASS: &str = "type_check.calls.inference.round_reset";
-/// Copies the round's number from `call_inference_round_numbers` into word 0
-/// of `call_inference_round` before each inference round
-/// (shaders/type_checker/calls/inference_activity.slang).
+/// Zeroes the bound tables' counts before the unit's own rows are collected.
 pub(super) const CALLS_BOUND_TABLES_CLEAR_PASS: &str = "type_check.calls.bound_inference.clear";
+/// Saves the bound tables' counts after the local collection, before the
+/// inference rounds.
+pub(super) const CALLS_BOUND_TABLES_SNAPSHOT_PASS: &str = "type_check.calls.bound_inference.snapshot";
+/// Returns the counts to the local rows at the start of a round's
+/// dependency collection, which appends the resident pages' rows again.
+pub(super) const CALLS_BOUND_TABLES_RESTORE_PASS: &str = "type_check.calls.bound_inference.restore";
 /// Copies the round's number into word 0 of `call_inference_round`.
 pub(super) const CALLS_INFERENCE_ROUND_NUMBER_PASS: &str =
     "type_check.calls.inference.round_number";
@@ -3042,9 +3046,12 @@ fn build_graph(
         _call_dependency_generic_requirements as "call_dependency_generic_requirements" in Tokens => token_rows * 4;
     });
     // Bound-directed inference tables (calls/bound_tables.slang): 16-word
-    // rows, rebuilt in every inference round.
+    // rows. The local rows are collected once before the inference rounds;
+    // the dependency rows are collected again in every round, after the
+    // counts return to the local rows' (`bound_inference_local_counts`).
     graph_resources!(graph, Workspace {
         bound_inference_counts as "bound_inference_counts" in Calls => 16;
+        bound_inference_local_counts as "bound_inference_local_counts" in Calls => 16;
         bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
         bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
     });
@@ -5542,6 +5549,26 @@ fn build_graph(
         )?;
         graph.add_indirect_dispatch(name, "token_active_dispatch_args")?;
     }
+    // The unit's own trait implementations and bounds are declaration facts:
+    // they are collected once, before the inference rounds (and before the
+    // final pass of a job without rounds), and kept for every round.
+    graph.add_buffer_clear_pass(
+        CALLS_BOUND_TABLES_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "bound_inference_counts",
+        bound_inference_counts,
+    )?;
+    graph.mark_zero_initialized(bound_implementation_rows)?;
+    graph.mark_zero_initialized(bound_predicate_rows)?;
+    CALLS_BOUND_LOCAL_COLLECT.register_kernel(&mut graph, kernels)?;
+    graph.add_buffer_copy_pass(
+        CALLS_BOUND_TABLES_SNAPSHOT_PASS,
+        CompilerPhase::TypeCheck,
+        "bound_inference_counts",
+        bound_inference_counts,
+        "bound_inference_local_counts",
+        bound_inference_local_counts,
+    )?;
     graph.add_buffer_clear_pass(
         CALLS_INFERENCE_ACTIVITY_CLEAR_PASS,
         CompilerPhase::TypeCheck,
@@ -5679,21 +5706,17 @@ fn build_graph(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
         "hir_active_dispatch_args",
     )?;
-    // A round empties the bound tables by zeroing their counts; rows past a
-    // count are never read.
-    graph.add_buffer_clear_pass(
-        CALLS_BOUND_TABLES_CLEAR_PASS,
+    // A round returns the counts to the local rows and appends the resident
+    // pages' rows again; rows past a count are never read.
+    graph.add_buffer_copy_pass(
+        CALLS_BOUND_TABLES_RESTORE_PASS,
         CompilerPhase::TypeCheck,
+        "bound_inference_local_counts",
+        bound_inference_local_counts,
         "bound_inference_counts",
         bound_inference_counts,
     )?;
-    graph.mark_zero_initialized(bound_implementation_rows)?;
-    graph.mark_zero_initialized(bound_predicate_rows)?;
-    for spec in [
-        CALLS_BOUND_DEPENDENCY_COLLECT,
-        CALLS_BOUND_LOCAL_COLLECT,
-        CALLS_BOUND_INFER,
-    ] {
+    for spec in [CALLS_BOUND_DEPENDENCY_COLLECT, CALLS_BOUND_INFER] {
         spec.register_kernel(&mut graph, kernels)?;
     }
     aggregate_scan(AGGREGATE_CALL_SCAN_PASSES).register_with_total_dispatch(
