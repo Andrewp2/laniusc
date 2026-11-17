@@ -215,6 +215,21 @@ public SolverStatus ts_batch_call_header(uint call, out uint4 low, out uint4 hig
     return ts_batch_owner_header(call, true, low, high);
 }
 
+// A call's or context's environment: the owner checks of
+// ts_admit_batch_environment. 32_11 admitted every new environment row with
+// its own (form, owner) before 32_13 and 32_15 run, and failures are sticky,
+// so an environment that names this owner was admitted with these arguments.
+// A preserved row never names a new owner: it passed this test against an
+// owner row that existed when it was admitted.
+public SolverStatus ts_batch_environment_owner(uint environment, uint owner_kind, uint owner_row)
+{
+    uint form; uint backlink;
+    if (!ts_batch_row(11u, environment) || !ts_word(11u, environment, 3u, form) ||
+        !ts_word(11u, environment, 4u, backlink)) return ts_invalid(1u, environment, 11u);
+    if (owner_kind > 1u || form != owner_kind || backlink != owner_row)
+        return ts_invalid(3u, environment, owner_row);
+    return ts_ok();
+}
 public SolverStatus ts_admit_batch_environment(uint environment, uint owner_kind, uint owner_row)
 {
     uint4 env; uint backlink;
@@ -410,7 +425,7 @@ public SolverStatus ts_admit_batch_context(uint context)
             if (count != extra.x) return ts_invalid(22u, context, count);
             if (extra.y == 1u)
             {
-                status = ts_admit_batch_environment(row.z, 0u, context);
+                status = ts_batch_environment_owner(row.z, 0u, context);
                 if (status.state != TS_VALID) return status;
             }
             assumptions = extra.x;
@@ -449,7 +464,7 @@ public SolverStatus ts_admit_batch_call(uint call)
         uint owner; uint predicate_ordinal = 0u;
         if (ordinal == 0u)
         {
-            status = ts_admit_batch_environment(extra.x, 1u, call);
+            status = ts_batch_environment_owner(extra.x, 1u, call);
             if (status.state != TS_VALID) return status;
             uint4 callee;
             if (!ts_read4(4u, header.w, 0u, callee)) return ts_invalid(14u, call, header.w);
