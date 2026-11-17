@@ -949,6 +949,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         object_request: Option<LoweringObjectRequest>,
     ) -> Result<DeferredParserFinish<CheckedSourcePackArtifacts>, CompileError> {
         let mut finish_timer = CompilerHostTimer::new("compile.source-pack.finish");
+        prepare_retention_export(&deferred.recorded);
         let ll1 = deferred
             .check
             .read_status_result(device)
@@ -1057,8 +1058,10 @@ impl<'gpu> GpuCompiler<'gpu> {
             )),
             None => None,
         };
-        // The export is submitted once the x86 object has passed every
-        // lowering retry point, so its GPU work overlaps the payload decode.
+        // The export was recorded while the host waited for the job
+        // (`prepare_retention_export`). It is submitted once the x86 object
+        // has passed every lowering retry point, so its GPU work overlaps
+        // the payload decode.
         let mut export_submitted = None;
         let mut native_object = if let Some(request) = object_request {
             let target = request.target();
@@ -1070,7 +1073,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 LoweringTarget::X86_64 => pipeline
                     .finish_x86_object_then(device, queue, library_id, unit_id, || {
                         if let Some((store, snapshot)) = retention {
-                            export_submitted = Some(store.submit_export_job(snapshot.tables()));
+                            export_submitted = Some(store.submit_export_job(snapshot));
                         }
                     })
                     .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
@@ -1116,7 +1119,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 |err: anyhow::Error| CompileError::GpuFrontend(format!("program retention export: {err:#}"));
             let submitted = match export_submitted {
                 Some(submitted) => submitted,
-                None => store.submit_export_job(snapshot.tables()),
+                None => store.submit_export_job(snapshot),
             }
             .map_err(export_error)?;
             store.finish_export_job(snapshot.tables(), submitted).map_err(export_error)?;
@@ -1952,6 +1955,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             )
                         },
                         |device, queue, bufs, parser, recorded| {
+                            prepare_retention_export(&recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
@@ -2638,6 +2642,19 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
     /// Native C storage keeps opaque sections in a private guarded file.
     X86_64File(crate::codegen::x86::GpuX86FileObject),
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
+}
+
+/// Records the job's retention export while the host waits for the job's
+/// GPU work; it is submitted once the job passes its retry points
+/// (`finish_checked_source_pack_pipeline`).
+fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
+    if let (Some(store), Some(snapshot)) =
+        (&recorded.type_check.program_retention, &recorded.retention_snapshot)
+        && let Err(error) = store.prepare_export_job(snapshot)
+    {
+        // The submission records the export again and reports the error.
+        log::debug!("program retention export was not prepared: {error:#}");
+    }
 }
 
 /// Where a native build keeps object sections between lowering and the link.
