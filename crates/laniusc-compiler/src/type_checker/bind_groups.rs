@@ -298,6 +298,14 @@ impl GpuTypeChecker {
             &TypeRowListParams { listed: 0, reserved0: 0, reserved1: 0, reserved2: 0 },
         );
         resources.buffer("gTypeRowList", &type_row_list_all);
+        // Body reference specialization visits every row unless its pass
+        // binds its own extent (late_semantics.rs).
+        let reference_extent_all = uniform_from_val(
+            device,
+            "type_check.resident.reference_extent.all",
+            &ReferenceExtentParams { mode: 0, lanes: 0, reserved0: 0, reserved1: 0 },
+        );
+        resources.buffer("gReferenceExtent", &reference_extent_all);
         resources.buffer("gExplicitOperandParams", &self.params_buf);
         // Dependency kernels with their own gParams layout read this job's
         // lookup capacities here (dependencies/15b).

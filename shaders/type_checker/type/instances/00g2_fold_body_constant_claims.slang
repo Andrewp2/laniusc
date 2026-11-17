@@ -25,30 +25,14 @@ StructuredBuffer<uint> call_context_constant_mask;
 RWStructuredBuffer<uint> call_context_constant_kind;
 RWStructuredBuffer<uint> call_context_constant_payload;
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void main(uint3 dtid: SV_DispatchThreadID)
+StructuredBuffer<uint> compact_hir_count;
+
+// Lanes this pass launches (late_semantics.rs, BODY_REFERENCE_LANES): it
+// strides the live claims, then the live HIR calls.
+static const uint LANES = 1u << 18u;
+
+void fold(bool claim, uint row)
 {
-    uint lane = dtid.x + dtid.y * 16776960u;
-    uint claims; uint contexts; uint selected; uint masks; uint stride;
-    call_const_claim_ref_kind.GetDimensions(claims, stride);
-    call_const_claim_selected.GetDimensions(selected, stride);
-    call_context_constant_kind.GetDimensions(contexts, stride);
-    call_context_constant_mask.GetDimensions(masks, stride);
-    claims = min(min(claims, selected), call_const_claim_count_out[0u]);
-    // Lanes [0, claims) read the selected constant claims; the next lanes the
-    // contextual constants, 32 slots per call.
-    bool claim = lane < claims;
-    uint row = claim ? lane : lane - claims;
-    if (claim)
-    {
-        if (call_const_claim_selected[row] == 0u) return;
-    }
-    else
-    {
-        if (lane - claims >= contexts || row / 32u >= masks ||
-            (call_context_constant_mask[row / 32u] & (1u << (row % 32u))) == 0u) return;
-    }
     uint kind = claim ? call_const_claim_ref_kind[row] : call_context_constant_kind[row];
     uint payload = claim ? call_const_claim_ref_payload[row] : call_context_constant_payload[row];
     // A bare parameter is substituted by its readers; only projections fold.
@@ -67,5 +51,37 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         call_context_constant_kind[row] = reference.x;
         call_context_constant_payload[row] = reference.y;
+    }
+}
+
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void main(uint3 dtid: SV_DispatchThreadID)
+{
+    uint lane = dtid.x + dtid.y * 16776960u;
+    uint claims; uint contexts; uint selected; uint masks; uint stride;
+    call_const_claim_ref_kind.GetDimensions(claims, stride);
+    call_const_claim_selected.GetDimensions(selected, stride);
+    call_context_constant_kind.GetDimensions(contexts, stride);
+    call_context_constant_mask.GetDimensions(masks, stride);
+    claims = min(min(claims, selected), call_const_claim_count_out[0u]);
+    // The selected constant claims, then the contextual constants of each
+    // live HIR call, 32 slots per call.
+    uint calls = min(min(masks, contexts / 32u), min(compact_hir_count[0u], gParams.n_hir_nodes));
+    for (uint index = lane; index < claims + calls; index += LANES)
+    {
+        if (index < claims)
+        {
+            if (call_const_claim_selected[index] != 0u) fold(true, index);
+            continue;
+        }
+        uint call = index - claims;
+        uint mask = call_context_constant_mask[call];
+        while (mask != 0u)
+        {
+            uint slot = firstbitlow(mask);
+            mask &= mask - 1u;
+            fold(false, call * 32u + slot);
+        }
     }
 }

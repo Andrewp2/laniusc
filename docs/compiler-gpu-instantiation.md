@@ -361,10 +361,11 @@ itself; dispatch overhead, memory traffic and the dependency critical path
 must be measured.
 
 Current migration code has explicit remaining bottlenecks:
-`05b_table_rank.slang` compares all instance keys in every lane;
 `08b_exec_layout.slang` assigns ranges and propagates some failures on one
-lane; `03_expand.slang` and `03c_expand_bound.slang` walk a function's call
-edges in one lane per instance. `06_table_rows`, `09_exec_rows` and
+lane; `03_expand.slang` walks a function's call edges in one lane per
+instance and its bound-member edges in a second lane, one wave apart.
+`05b_table_rank.slang` splits each instance's key comparisons over eight
+lanes. `06_table_rows`, `09_exec_rows` and
 `09b_exec_tables` already expose row/element work. Performance validation must
 include many small instances, a few very wide instances, and deep dependency
 chains so one workload does not hide the others' scaling limits.

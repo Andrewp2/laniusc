@@ -228,6 +228,10 @@ public uint walk_thread_index(uint3 gid, uint3 ltid)
     return gid.x * WALK_WG + ltid.x;
 }
 
+// Kernels with one workgroup per row split their rows over y past this
+// many workgroups (00_plan, write_row_args).
+public static const uint MAX_ROW_GROUPS_X = 65535u;
+
 public bool framed()
 {
     return validate_state[STATE_FRAMED] == 1u;

@@ -41,6 +41,16 @@ void write_args(uint kernel, uint threads, uint group)
     validate_dispatch_args[at + 2u] = 1u;
 }
 
+// One workgroup per row, split over y past MAX_ROW_GROUPS_X.
+void write_row_args(uint kernel, uint rows)
+{
+    uint at = 3u * kernel;
+    uint x = min(rows, MAX_ROW_GROUPS_X);
+    validate_dispatch_args[at] = x;
+    validate_dispatch_args[at + 1u] = x == 0u ? 0u : (rows + MAX_ROW_GROUPS_X - 1u) / MAX_ROW_GROUPS_X;
+    validate_dispatch_args[at + 2u] = 1u;
+}
+
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void main()
@@ -153,7 +163,7 @@ void main()
     write_args(ARGS_CLEAR, scratch, WG);
     write_args(ARGS_OWNERS, owners, WG);
     write_args(ARGS_RECORDS, records, WG);
-    write_args(ARGS_SCOPES, scopes, WALK_WG);
+    write_row_args(ARGS_SCOPES, scopes);
     write_args(ARGS_IMPLEMENTATION_ROWS, implementation_rows, WALK_WG);
     write_args(ARGS_IMPLEMENTATIONS, implementations, WALK_WG);
     write_args(ARGS_PREDICATES, predicates, WALK_WG);

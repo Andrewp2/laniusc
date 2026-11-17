@@ -289,6 +289,19 @@ pub(in crate::type_checker) struct TypeRowListParams {
     pub(in crate::type_checker) reserved2: u32,
 }
 
+/// Selects the rows a body reference specialization pass visits
+/// (00g_specialize_checked_references.slang): `mode` 0 visits every row with
+/// one lane per row; another mode visits the rows below its allocation
+/// count, strided over `lanes` lanes.
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub(in crate::type_checker) struct ReferenceExtentParams {
+    pub(in crate::type_checker) mode: u32,
+    pub(in crate::type_checker) lanes: u32,
+    pub(in crate::type_checker) reserved0: u32,
+    pub(in crate::type_checker) reserved1: u32,
+}
+
 /// Uniform for shaders that turn a counted row total into dispatch arguments.
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
