@@ -359,7 +359,6 @@ impl GpuCompiler<'_> {
                 .map_err(|e| retained_error("native link options", e))?;
             executor = executor.with_native_link(options);
         }
-        let _prepared = self.prepare_unit_sources(source_pack, &build_plan);
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor).await?;
         let originals = executor
             .take_retained_originals()

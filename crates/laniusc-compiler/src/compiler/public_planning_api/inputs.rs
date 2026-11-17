@@ -360,12 +360,12 @@ struct SourceRootImport {
     column: usize,
     source_line: String,
     label_len: usize,
-    /// Not written in the file: the closure rewrite may add it. A missing
+    /// Not written in the file: the closure desugaring may add it. A missing
     /// module is then not an error here.
     implicit: bool,
 }
 
-/// The module of the traits a closure implements. The closure rewrite
+/// The module of the traits a closure implements. The desugaring
 /// imports it into a file with a closure, so discovery loads it for every
 /// file that can hold one: a file with a `|`.
 const CLOSURE_TRAIT_MODULE: &str = "core::function";

@@ -41,12 +41,6 @@ use super::{
     Diagnostic,
     DiagnosticSourceFile,
     diagnostic_label_from_source_span,
-    machine_elaboration::{
-        MACHINE_CODE,
-        MACHINE_TITLE,
-        closures::{Binding, Gpu},
-        machines::RuleError,
-    },
     source_pack_file_for_global_span,
 };
 use crate::{
@@ -54,23 +48,59 @@ use crate::{
     lexer::{
         buffers::GpuBuffers,
         debug::DebugOutput,
-        features::{PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES},
+        features::{PARSER_FEATURE_CLOSURES, PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES},
         tables::tokens::TokenKind,
     },
 };
 
+mod closures;
 mod generators;
+mod gpu;
 mod machines;
 
+use gpu::{Binding, Gpu};
+pub(crate) use gpu::release_resident_buffers;
+
+const MACHINE_CODE: &str = "LNC0076";
+const MACHINE_TITLE: &str = "invalid machine";
+const CLOSURE_CODE: &str = "LNC0078";
+const CLOSURE_TITLE: &str = "invalid closure";
+
+/// A broken rule of a desugared feature: a global byte span, its message and
+/// the diagnostic it is reported as.
+pub(in crate::compiler) struct RuleError {
+    pub(in crate::compiler) start: usize,
+    pub(in crate::compiler) len: usize,
+    pub(in crate::compiler) message: String,
+    pub(in crate::compiler) help: Option<String>,
+    code: &'static str,
+    title: &'static str,
+}
+
+impl RuleError {
+    /// A broken rule of a machine or a generator (LNC0076).
+    fn machine(start: usize, len: usize, message: String, help: Option<String>) -> Self {
+        Self { start, len, message, help, code: MACHINE_CODE, title: MACHINE_TITLE }
+    }
+
+    /// A closure the desugaring rejects (LNC0078).
+    fn closure(start: usize, len: usize, message: String) -> Self {
+        Self { start, len, message, help: None, code: CLOSURE_CODE, title: CLOSURE_TITLE }
+    }
+}
+
+/// The bit the lexer's feature word carries when a source name has the
+/// prefix of generated names, `__lanius_` (R5).
+pub(crate) const DESUGAR_RESERVED: u32 = 0x2000_0000;
 /// The bit the lexer's feature word carries when the generated text did not
 /// fit the region; the build runs again with a larger one.
 pub(crate) const DESUGAR_REGION_OVERFLOW: u32 = 0x4000_0000;
 /// The bit the lexer's feature word carries when a feature breaks a rule.
 pub(crate) const DESUGAR_RULE_ERROR: u32 = 0x8000_0000;
 /// The bits that stop a build: the host grows the floors or explains a rule.
-const DESUGAR_STOPS: u32 = DESUGAR_REGION_OVERFLOW | DESUGAR_RULE_ERROR;
+const DESUGAR_STOPS: u32 = DESUGAR_RESERVED | DESUGAR_REGION_OVERFLOW | DESUGAR_RULE_ERROR;
 /// The bits of the feature word that are not parser families.
-pub(crate) const DESUGAR_BITS: u32 = DESUGAR_STOPS | PARSER_FEATURE_GENERATORS;
+pub(crate) const DESUGAR_BITS: u32 = DESUGAR_STOPS | PARSER_FEATURE_GENERATORS | PARSER_FEATURE_CLOSURES;
 
 /// Bytes of the region after the source that the next lexer allocation
 /// reserves for generated token text. It starts at zero, so a build without
@@ -98,8 +128,8 @@ thread_local! {
 }
 
 /// The rounds, in the order they run: the feature bit each one desugars.
-const ROUND_FEATURES: [u32; ROUNDS] = [PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES];
-const ROUNDS: usize = 2;
+const ROUND_FEATURES: [u32; ROUNDS] = [PARSER_FEATURE_CLOSURES, PARSER_FEATURE_GENERATORS, PARSER_FEATURE_MACHINES];
+const ROUNDS: usize = 3;
 
 /// The byte extent of a lexer input of `n` source bytes, `aligned_len` of
 /// them with word padding: the source alone when no region is reserved or
@@ -224,7 +254,8 @@ fn read_words(
 
 /// The sizes of every round of the last run, read from the GPU.
 fn last_sizes(last: &LastRun) -> Result<Vec<u32>> {
-    Ok(read_words(&[(&last.sizes, 0, ROUNDS * SIZE_WORDS)], None)?.remove(0))
+    let sizes = last.sizes.as_ref().context("the last run recorded no round")?;
+    Ok(read_words(&[(sizes, 0, ROUNDS * SIZE_WORDS)], None)?.remove(0))
 }
 
 /// What the last run needed of each floor, read from the GPU after it
@@ -246,8 +277,8 @@ fn last_needs() -> [u32; 4] {
 }
 
 /// Runs `f` with the desugaring switched off for lexer recordings on this
-/// thread. The text rewrites of generators and closures lex the source for
-/// their own selection and parse; those lexes must see the source tokens.
+/// thread, for the tests that lex the source tokens of a feature.
+#[cfg(test)]
 pub(crate) fn without_desugaring<T>(f: impl FnOnce() -> T) -> T {
     let previous = SUSPENDED.with(|s| s.replace(true));
     let out = f();
@@ -260,7 +291,6 @@ const S_LIVE: usize = 1;
 const S_F0: usize = 2;
 const S_F1: usize = 3;
 const S_REGION: usize = 8;
-const S_REGION_BASE: usize = 11;
 const S_ANCHOR_BASE: usize = 14;
 const S_NEED_TOKENS: usize = 15;
 const SIZE_WORDS: usize = 64;
@@ -308,6 +338,7 @@ const SPLICE_INSERTED: &str = "desugar/splice_inserted";
 const SPLICE_KEPT: &str = "desugar/splice_kept";
 const SPLICE_GENERATED: &str = "desugar/splice_generated";
 const COPY_BACK: &str = "desugar/copy_back";
+const RESERVED: &str = "machines/reserved";
 
 #[derive(encase::ShaderType)]
 struct PlanParams {
@@ -322,17 +353,19 @@ struct PlanParams {
 }
 
 /// What a diagnostic or the explanation of a broken rule needs from the last
-/// run: where the region starts, the anchor of each of its bytes, the sizes
-/// of each round and the buffers each round's rules read and wrote.
+/// run: the lexer's buffers and, when a round was recorded, where the region
+/// starts, the anchor of each of its bytes, the sizes of each round and the
+/// buffers each round's rules read and wrote.
 #[derive(Clone)]
 struct LastRun {
     run: u64,
     first_base: u32,
-    anchors: LaniusBuffer<u8>,
-    sizes: LaniusBuffer<u8>,
+    anchors: Option<LaniusBuffer<u8>>,
+    sizes: Option<LaniusBuffer<u8>>,
     tokens_out: LaniusBuffer<u8>,
     token_file_id: LaniusBuffer<u8>,
     in_bytes: LaniusBuffer<u8>,
+    closures: Option<closures::Run>,
     generators: Option<generators::Run>,
     machines: Option<machines::Run>,
 }
@@ -487,10 +520,11 @@ pub(crate) fn source_position(at: usize) -> Option<usize> {
             // A source byte: the end of the chain, or not a region byte.
             return (step > 0).then_some(at);
         };
-        if offset >= filled || (offset + 1) * 4 > last.anchors.byte_size {
+        let anchors = last.anchors.as_ref()?;
+        if offset >= filled || (offset + 1) * 4 > anchors.byte_size {
             return None;
         }
-        at = read_words(&[(&last.anchors, offset, 1)], None).ok()?[0][0] as usize;
+        at = read_words(&[(anchors, offset, 1)], None).ok()?[0][0] as usize;
     }
     None
 }
@@ -533,15 +567,25 @@ pub(in crate::compiler) fn stop(
     source_bytes: usize,
     text: impl Fn(usize, usize) -> String,
 ) -> Option<Stop> {
+    if raw_features & DESUGAR_RESERVED != 0 {
+        return Some(Stop::Rejected(reserved(token_count).unwrap_or_else(|err| {
+            RuleError::machine(
+                0,
+                1,
+                format!("the compiler stopped while finding a reserved name: {err:#}"),
+                None,
+            )
+        })));
+    }
     if raw_features & DESUGAR_RULE_ERROR != 0 {
         return Some(match explain(text) {
             Ok(rule) => Stop::Rejected(rule),
-            Err(err) => Stop::Rejected(RuleError {
-                start: 0,
-                len: 1,
-                message: format!("the compiler stopped while explaining a broken rule: {err:#}"),
-                help: None,
-            }),
+            Err(err) => Stop::Rejected(RuleError::machine(
+                0,
+                1,
+                format!("the compiler stopped while explaining a broken rule: {err:#}"),
+                None,
+            )),
         });
     }
     // A build records only the rounds of the features earlier builds used.
@@ -574,6 +618,11 @@ fn explain(text: impl Fn(usize, usize) -> String) -> Result<RuleError> {
     };
     // A broken rule stops the rounds after it, so the first round with an
     // error has the error the run reports.
+    if let Some(run) = &last.closures
+        && let Some(rule) = closures::explain(&last, run)?
+    {
+        return Ok(rule);
+    }
     if let Some(run) = &last.generators
         && let Some(rule) = generators::explain(&gpu, &last, run, &text)?
     {
@@ -585,6 +634,49 @@ fn explain(text: impl Fn(usize, usize) -> String) -> Result<RuleError> {
         return Ok(rule);
     }
     anyhow::bail!("no rule of the desugaring failed")
+}
+
+#[derive(encase::ShaderType)]
+struct ReservedParams {
+    token_count: u32,
+    reserved0: u32,
+    reserved1: u32,
+    reserved2: u32,
+}
+
+/// The first name with the reserved prefix, which the lexer's token build
+/// found. No round ran, so the lexer's tokens are the source's.
+fn reserved(token_count: u32) -> Result<RuleError> {
+    let last = last_run().context("the desugaring kept no run to explain")?;
+    let device = crate::gpu::device::global();
+    let gpu = Gpu { device: &device.device, queue: &device.queue };
+    let status = gpu.fixed_words_from("desugar.reserved.status", &[u32::MAX]);
+    let params = gpu.fixed_uniform(
+        "desugar.reserved.params",
+        &ReservedParams { token_count, reserved0: 0, reserved1: 0, reserved2: 0 },
+    );
+    let mut encoder = gpu.encoder("desugar.reserved");
+    gpu.fixed_dispatch(
+        &mut encoder,
+        &gpu.kernel(RESERVED)?,
+        RESERVED,
+        &[
+            ("gReserved", params.as_entire_binding()),
+            ("tokens_out", last.tokens_out.as_entire_binding()),
+            ("in_bytes", last.in_bytes.as_entire_binding()),
+            ("status", status.as_entire_binding()),
+        ],
+        token_count,
+    )?;
+    let token = read_words(&[(&status, 0, 1)], Some(encoder))?[0][0] as usize;
+    anyhow::ensure!(token < token_count as usize, "the lexer found a reserved name the check does not");
+    let row = read_words(&[(&last.tokens_out, token * 3, 3)], None)?.remove(0);
+    Ok(RuleError::machine(
+        row[1] as usize,
+        (row[2] as usize).max(1),
+        "identifiers starting with `__lanius_` are reserved for the compiler".to_string(),
+        None,
+    ))
 }
 
 /// The text of global span `[start, start + len)` of a single source.
@@ -632,7 +724,7 @@ pub(in crate::compiler) fn rejected_in_source_pack(
 }
 
 fn rule_diagnostic(path: &Path, source: &str, start: usize, rule: RuleError) -> CompileError {
-    let diagnostic = Diagnostic::error(MACHINE_CODE, MACHINE_TITLE).with_primary_label(
+    let diagnostic = Diagnostic::error(rule.code, rule.title).with_primary_label(
         diagnostic_label_from_source_span(path, source, start, rule.len, rule.message),
     );
     CompileError::Diagnostic(match rule.help {
@@ -715,10 +807,15 @@ impl<'a> Round<'a> {
     }
 
     fn block(&self, index: u32) -> wgpu::BindingResource<'a> {
+        self.block_of(index, 16)
+    }
+
+    /// Parameter block `index` as a uniform of `bytes` bytes.
+    fn block_of(&self, index: u32, bytes: u64) -> wgpu::BindingResource<'a> {
         slice(
             &self.shared.blocks,
             (self.slot as u64 * u64::from(BLOCKS) + u64::from(index)) * BLOCK_BYTES,
-            16,
+            bytes,
         )
     }
 
@@ -1047,6 +1144,9 @@ fn scan_work(gpu: &Gpu<'_>, label: &str, rows: usize) -> [LaniusBuffer<u8>; 2] {
 /// Records the desugaring after the lexer's token build.
 pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Result<()> {
     if SUSPENDED.with(|s| s.get()) {
+        // This recording overwrites the lexer's tokens, so the last run can
+        // no longer be explained from them.
+        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = None;
         return Ok(());
     }
     let device = crate::gpu::device::global();
@@ -1062,12 +1162,34 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
     let first_base = bufs.lexed_n.next_multiple_of(4) + 4;
     let region_cap = bufs.n.saturating_sub(first_base) as usize;
     let used = ROUNDS_USED.load(Ordering::Relaxed);
+    let run = RUNS.fetch_add(1, Ordering::Relaxed) + 1;
+    let mut last = LastRun {
+        run,
+        first_base,
+        anchors: None,
+        sizes: None,
+        tokens_out: bufs
+            .tokens_out
+            .clone()
+            .reinterpret::<u8>(bufs.tokens_out.byte_size),
+        token_file_id: bufs
+            .token_file_id
+            .clone()
+            .reinterpret::<u8>(bufs.token_file_id.byte_size),
+        in_bytes: bufs.in_bytes.clone(),
+        closures: None,
+        generators: None,
+        machines: None,
+    };
     // Without a region nothing is recorded: the host sees a feature in the
-    // feature word and runs the build again with a region (`stop`).
+    // feature word and runs the build again with a region (`stop`). The
+    // lexer's buffers are kept for the reserved names (`reserved`).
     if region_cap == 0 || used == 0 {
-        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        RECORDED.with(|recorded| recorded.set(run));
+        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = Some(last);
         return Ok(());
     }
+    gpu::drop_stale_bind_groups();
     let caps = Caps {
         tokens: (TOKEN_ROWS.load(Ordering::Relaxed) as usize).max(1),
         pieces: (PIECE_ROWS.load(Ordering::Relaxed) as usize).max(1),
@@ -1119,24 +1241,8 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
         );
     }
 
-    let run = RUNS.fetch_add(1, Ordering::Relaxed) + 1;
-    let mut last = LastRun {
-        run,
-        first_base,
-        anchors: shared.anchors.clone(),
-        sizes: shared.sizes.clone(),
-        tokens_out: bufs
-            .tokens_out
-            .clone()
-            .reinterpret::<u8>(bufs.tokens_out.byte_size),
-        token_file_id: bufs
-            .token_file_id
-            .clone()
-            .reinterpret::<u8>(bufs.token_file_id.byte_size),
-        in_bytes: bufs.in_bytes.clone(),
-        generators: None,
-        machines: None,
-    };
+    last.anchors = Some(shared.anchors.clone());
+    last.sizes = Some(shared.sizes.clone());
     let mut previous = None;
     for (slot, &feature) in ROUND_FEATURES.iter().enumerate() {
         if used & feature == 0 {
@@ -1151,7 +1257,9 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
             previous,
             feature,
         };
-        if feature == PARSER_FEATURE_GENERATORS {
+        if feature == PARSER_FEATURE_CLOSURES {
+            last.closures = Some(closures::record(&round, encoder)?);
+        } else if feature == PARSER_FEATURE_GENERATORS {
             last.generators = Some(generators::record(&round, encoder)?);
         } else if feature == PARSER_FEATURE_MACHINES {
             last.machines = Some(machines::record(&round, encoder)?);
