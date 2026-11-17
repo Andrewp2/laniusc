@@ -3,6 +3,9 @@
 // Match arm lists and tuple-pattern payload lists are right-recursive. First
 // entries seed the owning match/arm, and later entries point at their previous
 // sibling. A separate pointer-jump pass computes owners and ordinals.
+//
+// The pass runs over the match family's rows (hir_match_rank_node) and writes
+// only those rows. Every reader of these arrays reads family rows only.
 
 import generated_parse_production_ids;
 
@@ -23,6 +26,8 @@ StructuredBuffer<uint> first_child;
 StructuredBuffer<uint> next_sibling;
 StructuredBuffer<uint> prev_sibling;
 StructuredBuffer<uint> hir_kind;
+StructuredBuffer<uint> hir_match_rank_node;
+StructuredBuffer<uint> hir_match_rank_count;
 
 RWStructuredBuffer<uint> hir_match_scrutinee_node;
 RWStructuredBuffer<uint> hir_match_arm_pattern_node;
@@ -278,7 +283,10 @@ void seed_payload_pattern(uint node)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_match_rank_count[0u])
+        return;
+    uint node = hir_match_rank_node[row];
     if (node >= gHirMatch.n)
         return;
 
@@ -293,7 +301,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_match_arm_payload_start[node] = INVALID;
         hir_match_arm_payload_count[node] = 0u;
     }
-    else if (node == 0u)
+    else if (row == 0u)
     {
         hir_match_arm_start[0u] = INVALID;
         hir_match_arm_count[0u] = 0u;

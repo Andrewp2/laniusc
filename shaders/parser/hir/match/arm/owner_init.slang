@@ -8,7 +8,9 @@
 // node between a pattern and its nearest arm is a pattern or pattern-list
 // production (grammar/lanius.bnf, `pattern` and `pattern_tail`), so only
 // those nodes walk, and every link they leave points at another such node.
-// All other rows keep INVALID.
+// The pass runs over the match family's rows (hir_match_rank_node), which
+// hold every such node; other family rows keep INVALID, and rows outside the
+// family are not written.
 
 import generated_parse_production_ids;
 
@@ -24,6 +26,8 @@ ConstantBuffer<Params> gHirSemantic;
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> node_kind;
 StructuredBuffer<uint> parent;
+StructuredBuffer<uint> hir_match_rank_node;
+StructuredBuffer<uint> hir_match_rank_count;
 
 RWStructuredBuffer<uint> hir_semantic_parent_link_a;
 RWStructuredBuffer<uint> hir_match_nearest_arm;
@@ -61,7 +65,10 @@ bool in_pattern_path(uint prod)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint node = linear_thread_id(dtid);
+    uint row = linear_thread_id(dtid);
+    if (row >= hir_match_rank_count[0u])
+        return;
+    uint node = hir_match_rank_node[row];
     if (node >= gHirSemantic.n)
         return;
 

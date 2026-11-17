@@ -1683,7 +1683,7 @@ impl ParserHirItemReadbacks {
             read_u32_vec_padded(&self.hir_variant_payload_count, tree_len, 0);
         let hir_item_decl_token = project_hir_item_decl_tokens(&hir_item_kind, &hir_token_pos);
 
-        let decoded = DecodedParserHirItemReadbacks {
+        let mut decoded = DecodedParserHirItemReadbacks {
             ll1_status,
             node_kind: read_u32_vec(&self.node_kind, tree_len),
             hir_kind: read_u32_vec(&self.hir_kind, tree_len),
@@ -1926,6 +1926,24 @@ impl ParserHirItemReadbacks {
                 u32::MAX,
             ),
         };
+        super::reset_hir_match_rows_outside_family(
+            &decoded.node_kind,
+            [
+                &mut decoded.hir_match_scrutinee_node,
+                &mut decoded.hir_match_arm_start,
+                &mut decoded.hir_match_arm_next,
+                &mut decoded.hir_match_arm_pattern_node,
+                &mut decoded.hir_match_arm_payload_start,
+                &mut decoded.hir_match_arm_result_node,
+                &mut decoded.hir_match_payload_owner_arm,
+                &mut decoded.hir_match_payload_match_node,
+                &mut decoded.hir_match_payload_ordinal,
+            ],
+            [
+                &mut decoded.hir_match_arm_count,
+                &mut decoded.hir_match_arm_payload_count,
+            ],
+        );
         validate_hir_source_address_records(
             &decoded.hir_kind,
             &decoded.hir_token_pos,

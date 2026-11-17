@@ -203,19 +203,72 @@ const HIR_VARIANT_PAYLOAD_SLOT_STRIDE: u32 = 4;
 // compares this copy with the generated table.
 const PROD_BOUND_TYPE_IDENT: u32 = 243;
 
+// The match family's productions: the rows the match kernels visit. Match
+// arrays hold defined words only on these rows.
+const HIR_MATCH_FAMILY_PRODUCTIONS: [(&str, u32); 10] = [
+    ("PROD_MATCH_EXPR", 189),
+    ("PROD_MATCH_ARM", 192),
+    ("PROD_PATTERN_IDENT", 197),
+    ("PROD_PATTERN_INT", 198),
+    ("PROD_PATTERN_TRUE", 199),
+    ("PROD_PATTERN_FALSE", 200),
+    ("PROD_PATTERN_TUPLE", 202),
+    ("PROD_PATTERNS_SOME", 204),
+    ("PROD_PATTERNS_MORE", 205),
+    ("PROD_PATTERNS_AFTER_COMMA_MORE", 207),
+];
+
+/// The match kernels write only the match family's rows, so the other rows
+/// of the match arrays hold whatever an earlier job left there. This puts
+/// the defaults (`INVALID` for links, 0 for counts) back on those rows
+/// before a readback is validated or returned.
+pub(crate) fn reset_hir_match_rows_outside_family(
+    node_kind: &[u32],
+    links: [&mut [u32]; 9],
+    counts: [&mut [u32]; 2],
+) {
+    let outside = |node: usize| {
+        let kind = node_kind.get(node).copied().unwrap_or(INVALID);
+        !HIR_MATCH_FAMILY_PRODUCTIONS.iter().any(|&(_, id)| id == kind)
+    };
+    for words in links {
+        for (node, word) in words.iter_mut().enumerate() {
+            if outside(node) {
+                *word = INVALID;
+            }
+        }
+    }
+    for words in counts {
+        for (node, word) in words.iter_mut().enumerate() {
+            if outside(node) {
+                *word = 0;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod production_id_tests {
+    const GENERATED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../shaders/parser/generated_parse_production_ids.slang"
+    ));
+
     #[test]
     fn bound_type_ident_matches_the_generated_production_table() {
-        let generated = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../shaders/parser/generated_parse_production_ids.slang"
-        ));
         let line = format!(
             "static const uint PROD_BOUND_TYPE_IDENT = {}u;",
             super::PROD_BOUND_TYPE_IDENT
         );
-        assert!(generated.contains(&line), "expected `{line}` in the generated table");
+        assert!(GENERATED.contains(&line), "expected `{line}` in the generated table");
+    }
+
+    #[test]
+    fn match_family_productions_match_the_generated_production_table() {
+        for (name, id) in super::HIR_MATCH_FAMILY_PRODUCTIONS {
+            let line = format!("static const uint {name} = {id}u;");
+            assert!(GENERATED.contains(&line), "expected `{line}` in the generated table");
+        }
     }
 }
 
@@ -1747,7 +1800,7 @@ impl DecodedParserReadbacks {
         let hir_struct_lit_field_value_node = decode_tree_vec(&rb.hir_struct_lit_field_value_node);
         let hir_struct_lit_field_next = decode_tree_vec(&rb.hir_struct_lit_field_next);
 
-        let decoded = Self {
+        let mut decoded = Self {
             ll1_status,
             headers,
             sc_stream,
@@ -1843,6 +1896,24 @@ impl DecodedParserReadbacks {
             hir_struct_lit_field_value_node,
             hir_struct_lit_field_next,
         };
+        reset_hir_match_rows_outside_family(
+            &decoded.node_kind,
+            [
+                &mut decoded.hir_match_scrutinee_node,
+                &mut decoded.hir_match_arm_start,
+                &mut decoded.hir_match_arm_next,
+                &mut decoded.hir_match_arm_pattern_node,
+                &mut decoded.hir_match_arm_payload_start,
+                &mut decoded.hir_match_arm_result_node,
+                &mut decoded.hir_match_payload_owner_arm,
+                &mut decoded.hir_match_payload_match_node,
+                &mut decoded.hir_match_payload_ordinal,
+            ],
+            [
+                &mut decoded.hir_match_arm_count,
+                &mut decoded.hir_match_arm_payload_count,
+            ],
+        );
         validate_hir_semantic_tree_records(
             &decoded.hir_kind,
             &decoded.subtree_end,

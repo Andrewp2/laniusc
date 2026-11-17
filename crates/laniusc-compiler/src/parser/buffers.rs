@@ -1901,12 +1901,6 @@ impl ParserBuffers {
                     hir_struct_lit_field_link_b => hir_struct_lit_field_link_a,
                     hir_struct_lit_field_rank_b => hir_struct_lit_field_rank_a,
                 ),
-                finalizer!(
-                    crate::parser::passes::hir::semantic::parent::step::MATCH_ARM_OWNER.finalize,
-                    tree_bytes;
-                    hir_semantic_parent_link_b => hir_semantic_parent_link_a,
-                    hir_semantic_parent_value_b => hir_match_pattern_owner_arm,
-                ),
             ],
         )
         .expect("parser finalizers must match the compiler graph");

@@ -885,8 +885,9 @@ pub fn record_canonical_matches(
         crate::parser::compiler_graph::hir::CANONICAL_MATCH_ARM_CLEAR,
         ctx.encoder,
     )?;
+    let buffers = ctx.buffers;
     p.hir_canonical_match_arm_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &buffers.hir_match_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::MatchArm)?;
     p.hir_canonical_match_arm_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;
@@ -896,7 +897,7 @@ pub fn record_canonical_matches(
         ctx.encoder,
     )?;
     p.hir_canonical_match_payload_mark
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
+        .record_pass_indirect(ctx, &buffers.hir_match_rank_dispatch_args)?;
     record_canonical_compaction_prefix(ctx, p, CanonicalConstruct::MatchPayload)?;
     p.hir_canonical_match_payload_scatter
         .record_pass(ctx, E1D(ctx.buffers.hir_canonical_capacity))?;

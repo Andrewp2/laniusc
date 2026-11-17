@@ -2498,82 +2498,12 @@ fn register_matches(
         CanonicalConstruct,
         hir::{
             matches::arm::rank_step::{A_TO_B, A_TO_B_FINAL, B_TO_A, FINALIZE},
-            nodes::SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
-            semantic::parent::step::{MATCH_ARM_OWNER, bounded_walk_steps_after_local_span},
+            semantic::parent::step::{MATCH_ARM_OWNER, family_relation_steps},
         },
     };
 
-    static_pass(
-        graph,
-        &passes.hir_match_arm_owner_init,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[
-            ("tree_count_status", "partial_parse_status", None),
-            ("hir_match_nearest_arm", "hir_match_pattern_owner_arm", None),
-        ],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_match_arm_owner_init",
-        &["hir_semantic_parent_link_a", "hir_match_nearest_arm"],
-    )?;
-    register_ping_pong_walk(
-        graph,
-        passes.hir_tree_relations.graph_single_pass(),
-        MATCH_ARM_OWNER.a_to_b,
-        MATCH_ARM_OWNER.b_to_a,
-        MATCH_ARM_OWNER.a_to_b_final,
-        MATCH_ARM_OWNER.finalize,
-        "hir_local_relation_dispatch_args",
-        true,
-        bounded_walk_steps_after_local_span(
-            capacity.tree_capacity,
-            SEMANTIC_PARENT_LOCAL_ANCESTOR_SPAN,
-        ),
-        &[("tree_count_status", "partial_parse_status", None)],
-        &[
-            PingPongBinding {
-                input_binding: "hir_semantic_parent_link_in",
-                output_binding: "hir_semantic_parent_link_out",
-                a: "hir_semantic_parent_link_a",
-                b: "hir_semantic_parent_link_b",
-            },
-            PingPongBinding {
-                input_binding: "hir_semantic_parent_value_in",
-                output_binding: "hir_semantic_parent_value_out",
-                a: "hir_match_pattern_owner_arm",
-                b: "hir_semantic_parent_value_b",
-            },
-        ],
-    )?;
-    static_pass(
-        graph,
-        &passes.hir_match_arm_links,
-        CompilerPhase::Hir,
-        ResourceDomain::HirNodes,
-        &[("tree_count_status", "partial_parse_status", None)],
-    )?;
-    graph.mark_pass_bindings_initialize(
-        "hir_match_arm_links",
-        &[
-            "hir_match_scrutinee_node",
-            "hir_match_arm_pattern_node",
-            "hir_match_arm_result_node",
-            "hir_match_arm_start",
-            "hir_match_arm_count",
-            "hir_match_arm_next",
-            "hir_match_arm_payload_start",
-            "hir_match_arm_payload_count",
-            "hir_match_arm_owner_a",
-            "hir_match_arm_link_a",
-            "hir_match_arm_rank_a",
-            "hir_match_arm_previous",
-            "hir_match_payload_owner_a",
-            "hir_match_payload_link_a",
-            "hir_match_payload_rank_a",
-            "hir_match_pattern_parent",
-        ],
-    )?;
+    // The match family's rows first: every match kernel below runs over them
+    // only, through their indirect dispatch args.
     static_pass(
         graph,
         &passes.hir_match_rank_prefix_local,
@@ -2624,6 +2554,80 @@ fn register_matches(
             "hir_match_rank_dispatch_args",
         ],
     )?;
+    static_pass(
+        graph,
+        &passes.hir_match_arm_owner_init,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            ("hir_match_nearest_arm", "hir_match_pattern_owner_arm", None),
+        ],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_match_arm_owner_init",
+        &["hir_semantic_parent_link_a", "hir_match_nearest_arm"],
+    )?;
+    indirect(graph, "hir_match_arm_owner_init", "hir_match_rank_dispatch_args")?;
+    register_ping_pong_walk(
+        graph,
+        passes.hir_tree_relations.graph_rows_pass(),
+        MATCH_ARM_OWNER.a_to_b,
+        MATCH_ARM_OWNER.b_to_a,
+        MATCH_ARM_OWNER.a_to_b_final,
+        MATCH_ARM_OWNER.finalize,
+        "hir_match_rank_dispatch_args",
+        true,
+        family_relation_steps(capacity.tree_capacity),
+        &[
+            ("tree_count_status", "partial_parse_status", None),
+            ("hir_list_rank_node", "hir_match_rank_node", None),
+            ("hir_list_rank_count", "hir_match_rank_count", None),
+        ],
+        &[
+            PingPongBinding {
+                input_binding: "hir_semantic_parent_link_in",
+                output_binding: "hir_semantic_parent_link_out",
+                a: "hir_semantic_parent_link_a",
+                b: "hir_semantic_parent_link_b",
+            },
+            PingPongBinding {
+                input_binding: "hir_semantic_parent_value_in",
+                output_binding: "hir_semantic_parent_value_out",
+                a: "hir_match_pattern_owner_arm",
+                b: "hir_semantic_parent_value_b",
+            },
+        ],
+    )?;
+    static_pass(
+        graph,
+        &passes.hir_match_arm_links,
+        CompilerPhase::Hir,
+        ResourceDomain::HirNodes,
+        &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_match_arm_links",
+        &[
+            "hir_match_scrutinee_node",
+            "hir_match_arm_pattern_node",
+            "hir_match_arm_result_node",
+            "hir_match_arm_start",
+            "hir_match_arm_count",
+            "hir_match_arm_next",
+            "hir_match_arm_payload_start",
+            "hir_match_arm_payload_count",
+            "hir_match_arm_owner_a",
+            "hir_match_arm_link_a",
+            "hir_match_arm_rank_a",
+            "hir_match_arm_previous",
+            "hir_match_payload_owner_a",
+            "hir_match_payload_link_a",
+            "hir_match_payload_rank_a",
+            "hir_match_pattern_parent",
+        ],
+    )?;
+    indirect(graph, "hir_match_arm_links", "hir_match_rank_dispatch_args")?;
     register_ping_pong_walk(
         graph,
         passes.hir_match_arm_rank_step.graph_pass(),
@@ -2699,6 +2703,7 @@ fn register_matches(
             "hir_match_payload_ordinal",
         ],
     )?;
+    indirect(graph, "hir_match_arm_scatter", "hir_match_rank_dispatch_args")?;
 
     clear(
         graph,
@@ -2727,6 +2732,7 @@ fn register_matches(
             ("family_flag", "hir_match_arm_family_flag", None),
         ],
     )?;
+    indirect(graph, "hir_canonical_match_arm_mark", "hir_match_rank_dispatch_args")?;
     register_canonical_compaction_prefix(
         graph,
         passes,
@@ -2790,6 +2796,11 @@ fn register_matches(
             ),
             ("family_flag", "hir_match_payload_family_flag", None),
         ],
+    )?;
+    indirect(
+        graph,
+        "hir_canonical_match_payload_mark",
+        "hir_match_rank_dispatch_args",
     )?;
     register_canonical_compaction_prefix(
         graph,
