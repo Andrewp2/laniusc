@@ -87,6 +87,17 @@ bool dependency_declaration_root(uint root)
     return signature < count && canonical_type_roots[signature] == root;
 }
 
+// Whether matching pair `self` repeats matching `receiver`: the same IDs, or
+// one reference around each (a &self parameter against a borrowed receiver).
+// A reference pair has the same heads and matches exactly when its operands do.
+bool repeats_receiver_match(uint2 self, uint2 receiver)
+{
+    if (!ct_is_resolved(receiver.x) || !ct_is_resolved(receiver.y)) return false;
+    if (all(self == receiver)) return true;
+    return ct_kind(self.x) == CT_KIND_REF && ct_kind(self.y) == CT_KIND_REF &&
+        ct_arg(self.x, 0u) == receiver.x && ct_arg(self.y, 0u) == receiver.y;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -116,6 +127,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SourceSlots slots;
     CtSpare spare = ct_spare_none();
     uint env = CT_NONE;
+    // Phase 0's matched pair: phase 1 repeats it when its pair is the same.
+    uint2 receiver_pair = uint2(CT_UNKNOWN, CT_UNKNOWN);
     // One call site per matcher, interner and publisher keeps one inlined
     // copy of each.
     [loop]
@@ -247,6 +260,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 if (matching)
                 {
                     matching = false;
+                    if (phase == 0u) receiver_pair = uint2(pattern, id);
+                    else if (repeats_receiver_match(uint2(pattern, id), receiver_pair))
+                    {
+                        // The match under phase 0's environment binds what
+                        // phase 0 bound, so it publishes nothing new.
+                        outcome = CT_PUBLISHED;
+                        break;
+                    }
                     matched = ct_is_resolved(pattern) && ct_is_resolved(id)
                         ? ct_match<SourceSlots>(slots, pattern, id, CT_NONE, CT_NONE, env, 0u, true, spare, count_mask)
                         : CT_MATCH_FAILED;
