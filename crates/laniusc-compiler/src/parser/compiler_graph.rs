@@ -3898,7 +3898,6 @@ mod tests {
             "hir_canonical_variant_prefix_01_blocks",
             "hir_canonical_variant_scatter",
             "hir_canonical_variant_payload_owner_init",
-            "hir_variant_payload_owner_rank_prefix_00_local",
             "hir_variant_payload_owner_rank_prefix_01_blocks",
             "hir_variant_payload_owner_rank_compact_scatter",
             crate::parser::passes::hir::semantic::parent::step::CANONICAL_VARIANT_PAYLOAD_OWNER

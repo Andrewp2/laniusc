@@ -734,23 +734,12 @@ pub fn record_canonical_variants(
         crate::parser::compiler_graph::hir::CANONICAL_VARIANT_PAYLOAD_CLEAR,
         ctx.encoder,
     )?;
+    // The owner init also lists the payload types and the variant-field
+    // chains above them, so it covers every block of the tree; the walk runs
+    // over that list only.
     p.hir_canonical_variant_payload_owner_init
-        .record_pass(ctx, E1D(ctx.buffers.tree_capacity))?;
-    // Only payload types and the variant-field chains above them link to a
-    // parent: compact those rows and walk only them.
+        .record_pass(ctx, E1D(ctx.buffers.tree_n_node_blocks.saturating_mul(256)))?;
     let invocation = hir::list::rank::ListRankInvocation::VariantPayloadOwners;
-    p.hir_list_rank_prefix_local.record_for_owner_link(
-        ctx.device,
-        ctx.encoder,
-        ctx.buffers,
-        &ctx.buffers.hir_type_fields_params,
-        &ctx.buffers.hir_semantic_parent_value_a,
-        &ctx.buffers.hir_semantic_parent_link_a,
-        ctx.bg_cache
-            .as_deref_mut()
-            .expect("debug parser requires a bind-group cache"),
-        invocation,
-    )?;
     p.hir_semantic_prefix_blocks.record_list_rank_scan(
         ctx.device,
         ctx.encoder,

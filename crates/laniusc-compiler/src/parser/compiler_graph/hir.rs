@@ -2142,13 +2142,13 @@ fn register_canonical_variants(
         "hir_canonical_variant_payload_owner_init",
         &["owner_link_a", "owner_value_a", "owner_link_b", "owner_value_b"],
     )?;
-    register_list_rank_compaction(
-        graph,
-        passes,
-        ListRankInvocation::VariantPayloadOwners,
-        "hir_semantic_parent_value_a",
-        "hir_semantic_parent_link_a",
+    // The owner init marks the walk's rows itself; the scan and the compact
+    // scatter list them.
+    graph.mark_pass_bindings_initialize(
+        "hir_canonical_variant_payload_owner_init",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
+    register_list_rank_listing(graph, passes, ListRankInvocation::VariantPayloadOwners)?;
     register_ping_pong_walk(
         graph,
         passes.hir_tree_relations.graph_rows_pass(),

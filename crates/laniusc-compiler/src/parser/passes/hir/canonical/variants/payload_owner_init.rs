@@ -66,6 +66,14 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput>
                 "owner_value_b".into(),
                 b.hir_semantic_parent_value_b.as_entire_binding(),
             ),
+            (
+                "hir_list_rank_flag".into(),
+                b.hir_list_rank_flag.as_entire_binding(),
+            ),
+            (
+                "hir_list_rank_block_sum".into(),
+                b.hir_list_rank_block_sum.as_entire_binding(),
+            ),
         ])
     }
 }
