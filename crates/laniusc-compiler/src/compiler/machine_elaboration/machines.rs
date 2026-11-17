@@ -457,24 +457,18 @@ fn mark(
     let status = gpu.words_from("machines.status", &[NO_ERROR; STATUS_WORDS + 1]);
     let detail = gpu.rows("machines.detail", DETAIL_WORDS, 1);
     let file_flags = gpu.words_from("machines.file_flags", flags);
-    let node_params = params(gpu, "machines.nodes.params", parsed.tree_capacity, tokens);
+    let read_params = params(gpu, "machines.read.params", tokens, 0);
     gpu.dispatch(
         encoder,
-        &gpu.kernel("machines/nodes")?,
-        "machines.nodes",
+        &gpu.kernel("machines/read")?,
+        "machines.read",
         &[
-            ("gNodes", node_params.as_entire_binding()),
-            ("tree_count_status", parser.ll1_status.as_entire_binding()),
-            ("node_kind", parser.node_kind.as_entire_binding()),
-            ("parent", parser.parent.as_entire_binding()),
-            ("first_child", parser.first_child.as_entire_binding()),
-            ("next_sibling", parser.next_sibling.as_entire_binding()),
-            ("hir_token_pos", parser.hir_token_pos.as_entire_binding()),
-            ("hir_token_end", parser.hir_token_end.as_entire_binding()),
-            ("semantic_token_kinds", parser.semantic_token_kinds.as_entire_binding()),
+            ("gRead", read_params.as_entire_binding()),
+            ("tokens_out", lexer.tokens_out.as_entire_binding()),
+            ("token_file_id", lexer.token_file_id.as_entire_binding()),
             ("records", records.as_entire_binding()),
         ],
-        parsed.tree_capacity,
+        tokens,
     )?;
     let token_params = params(gpu, "machines.marks.params", tokens, 0);
     gpu.dispatch(
@@ -664,7 +658,6 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
                 ("tokens_out", marked.tokens_out.as_entire_binding()),
                 ("token_file_id", marked.token_file_id.as_entire_binding()),
                 ("in_bytes", marked.in_bytes.as_entire_binding()),
-                ("semantic_token_kinds", marked.semantic_token_kinds.as_entire_binding()),
                 ("records", marked.records.as_entire_binding()),
                 ("scan_a", marked.scan.as_entire_binding()),
                 ("scan_b", scan_b.as_entire_binding()),
@@ -769,7 +762,6 @@ fn write(gpu: &Gpu<'_>, sources: &[&str], marked: &Marked) -> Result<Option<Outc
                 ("in_bytes", marked.in_bytes.as_entire_binding()),
                 ("source_file_start", marked.source_file_start.as_entire_binding()),
                 ("source_file_len", marked.source_file_len.as_entire_binding()),
-                ("semantic_token_kinds", marked.semantic_token_kinds.as_entire_binding()),
                 ("records", marked.records.as_entire_binding()),
                 ("scan_a", marked.scan.as_entire_binding()),
                 ("scan_b", scan_b.as_entire_binding()),

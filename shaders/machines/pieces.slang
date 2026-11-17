@@ -33,7 +33,6 @@ StructuredBuffer<uint> token_file_id;
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> source_file_start;
 StructuredBuffer<uint> source_file_len;
-StructuredBuffer<uint> semantic_token_kinds;
 StructuredBuffer<uint> records;
 // Inclusive prefix sums: machines, states, transitions, bracket depth.
 StructuredBuffer<uint4> scan_a;
@@ -88,10 +87,6 @@ uint rec(uint token, uint word)
     return records[token * REC_WORDS + word];
 }
 
-uint semantic(uint token)
-{
-    return semantic_token_kinds[token + 1u];
-}
 
 uint start_of(uint token)
 {
@@ -556,7 +551,7 @@ void state_close(inout Cursor cur, uint ch, Machine m, State s)
 // stores it and returns the position.
 void transition(inout Cursor cur, bool run, Machine m, State s, uint at)
 {
-    bool is_goto = semantic(at) == TK_GOTO;
+    bool is_goto = tokens_out[at].kind == TK_GOTO;
     uint target = at + 1u;
     uint end = rec(at, REC_END);
     uint with_token = rec(at, REC_WITH);
@@ -661,8 +656,8 @@ void arm_token(inout Cursor cur, bool run, Machine m, State s, uint t, uint role
         return;
     uint arrow = rec(arm, REC_ARROW);
     uint body = arrow + 1u;
-    uint body_kind = semantic(body);
-    bool block_arm = body_kind == TK_IF_LBRACE;
+    uint body_kind = tokens_out[body].kind;
+    bool block_arm = body_kind == TK_LBRACE;
     bool transition_arm = body_kind == TK_GOTO || body_kind == TK_STAY;
 
     if (t == arm)
