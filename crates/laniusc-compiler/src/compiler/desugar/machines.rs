@@ -495,7 +495,7 @@ pub(super) fn explain(
     text: &impl Fn(usize, usize) -> String,
 ) -> Result<Option<RuleError>> {
     let sizes = last_sizes(last)?;
-    let status = read_words(&[(&run.status, 0, STATUS_WORDS)], None)?.remove(0);
+    let status = read_words(gpu, &[(&run.status, 0, STATUS_WORDS)], None)?.remove(0);
     let Some(word) = status.iter().position(|&key| key != NO_ERROR) else {
         return Ok(None);
     };
@@ -586,7 +586,7 @@ pub(super) fn explain(
             state_count,
         )?;
     }
-    let detail = read_words(&[(&run.detail, 0, DETAIL_WORDS)], Some(encoder))?.remove(0);
+    let detail = read_words(gpu, &[(&run.detail, 0, DETAIL_WORDS)], Some(encoder))?.remove(0);
     Ok(Some(rule_error(word, key, &detail, |start, len| {
         text(start as usize, len as usize)
     })))

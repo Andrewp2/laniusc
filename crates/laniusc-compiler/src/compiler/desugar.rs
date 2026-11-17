@@ -25,12 +25,11 @@
 
 use crate::gpu::copies::CountedCommands;
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     num::NonZeroU64,
     path::Path,
     sync::{
-        Mutex,
-        PoisonError,
+        Arc,
         atomic::{AtomicU32, AtomicU64, Ordering},
     },
 };
@@ -59,8 +58,7 @@ mod generators;
 mod gpu;
 mod machines;
 
-use gpu::{Binding, Gpu};
-pub(crate) use gpu::release_resident_buffers;
+use gpu::{Binding, Gpu, Resident};
 
 const MACHINE_CODE: &str = "LNC0076";
 const MACHINE_TITLE: &str = "invalid machine";
@@ -103,29 +101,82 @@ const DESUGAR_STOPS: u32 = DESUGAR_RESERVED | DESUGAR_REGION_OVERFLOW | DESUGAR_
 /// The bits of the feature word that are not parser families.
 pub(crate) const DESUGAR_BITS: u32 = DESUGAR_STOPS | PARSER_FEATURE_GENERATORS | PARSER_FEATURE_CLOSURES;
 
-/// Bytes of the region after the source that the next lexer allocation
-/// reserves for generated token text. It starts at zero, so a build without
-/// a feature allocates and dispatches nothing for the desugaring. A build
-/// whose generated text does not fit raises it and runs again; it does not
-/// shrink, so later builds of the same program do not run twice.
-static REGION_FLOOR: AtomicU32 = AtomicU32::new(0);
-/// Rows of the per-token buffers, of the pieces and of the spliced tokens.
-/// The plan kernel checks each against its count, and the floors grow like
-/// the region.
-static TOKEN_ROWS: AtomicU32 = AtomicU32::new(0);
-static PIECE_ROWS: AtomicU32 = AtomicU32::new(0);
-static OUT_ROWS: AtomicU32 = AtomicU32::new(0);
-/// The feature bits of the rounds the lexer records: those a build of this
-/// process has used.
-static ROUNDS_USED: AtomicU32 = AtomicU32::new(0);
+/// The desugaring of one lexer: its device, its buffers and bind groups,
+/// the floors its allocations grow to and the rounds it records. A lexer
+/// owns one, so compilers on other devices or with other lexers share
+/// nothing with it.
+pub(crate) struct Desugaring {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    resident: Resident,
+    /// Bytes of the region after the source that the next lexer allocation
+    /// reserves for generated token text. It starts at zero, so a build
+    /// without a feature allocates and dispatches nothing for the
+    /// desugaring. A build whose generated text does not fit raises it and
+    /// runs again; it does not shrink, so later builds of the same program
+    /// do not run twice.
+    region_floor: AtomicU32,
+    /// Rows of the per-token buffers, of the pieces and of the spliced
+    /// tokens. The plan kernel checks each against its count, and the floors
+    /// grow like the region.
+    token_rows: AtomicU32,
+    piece_rows: AtomicU32,
+    out_rows: AtomicU32,
+    /// The feature bits of the rounds the lexer records: those a build on
+    /// this lexer has used.
+    rounds_used: AtomicU32,
+    /// The run of the lexer's latest recording. A run whose number differs
+    /// was overwritten by a later recording on the same lexer.
+    latest: AtomicU64,
+}
+
 /// Numbers the recorded runs, so a diagnostic reads only the run of its own
 /// build (`source_position`).
 static RUNS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     static SUSPENDED: Cell<bool> = const { Cell::new(false) };
-    /// The run this thread's last lexer recording recorded.
-    static RECORDED: Cell<u64> = const { Cell::new(0) };
+    /// The run of this thread's last lexer recording. A compile reads it
+    /// after the lexer is free, on the thread that recorded it.
+    static LAST_RUN: RefCell<Option<LastRun>> = const { RefCell::new(None) };
+}
+
+impl Desugaring {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Arc<Self> {
+        Arc::new(Self {
+            device: device.clone(),
+            queue: queue.clone(),
+            resident: Resident::default(),
+            region_floor: AtomicU32::new(0),
+            token_rows: AtomicU32::new(0),
+            piece_rows: AtomicU32::new(0),
+            out_rows: AtomicU32::new(0),
+            rounds_used: AtomicU32::new(0),
+            latest: AtomicU64::new(0),
+        })
+    }
+
+    fn gpu(&self) -> Gpu<'_> {
+        Gpu {
+            device: &self.device,
+            queue: &self.queue,
+            resident: &self.resident,
+        }
+    }
+
+    /// Frees the buffers of the desugaring, for a resident compiler that
+    /// trims its idle storage. The next build allocates them again. A run
+    /// recorded before can no longer be explained.
+    pub(crate) fn release_resident_buffers(&self) {
+        self.latest.store(RUNS.fetch_add(1, Ordering::Relaxed) + 1, Ordering::Relaxed);
+        LAST_RUN.with(|last| {
+            let mut last = last.borrow_mut();
+            if last.as_ref().is_some_and(|run| std::ptr::eq(Arc::as_ptr(&run.desugaring), self)) {
+                *last = None;
+            }
+        });
+        self.resident.release();
+    }
 }
 
 /// The rounds, in the order they run: the feature bit each one desugars.
@@ -135,11 +186,11 @@ const ROUNDS: usize = 3;
 /// The byte extent of a lexer input of `n` source bytes, `aligned_len` of
 /// them with word padding: the source alone when no region is reserved or
 /// the desugaring is off, otherwise the padded source and the region.
-pub(crate) fn byte_extent(n: u32, aligned_len: u32) -> u32 {
+pub(crate) fn byte_extent(desugaring: &Desugaring, n: u32, aligned_len: u32) -> u32 {
     if SUSPENDED.with(|s| s.get()) {
         return n;
     }
-    match REGION_FLOOR.load(Ordering::Relaxed) {
+    match desugaring.region_floor.load(Ordering::Relaxed) {
         0 => n,
         region => aligned_len.saturating_add(region),
     }
@@ -161,19 +212,26 @@ fn raise(floor: &AtomicU32, value: u32) {
 /// stage that stopped needed, zero for the stages it did not reach. A floor
 /// that is still zero gets an estimate from the pack, so the next run most
 /// likely fits.
-fn grow(needs: [u32; 4], token_count: u32, source_bytes: u32) {
+fn grow(desugaring: &Desugaring, needs: [u32; 4], token_count: u32, source_bytes: u32) {
     let [tokens, pieces, region, out] = needs;
-    let first = REGION_FLOOR.load(Ordering::Relaxed) == 0;
+    let Desugaring {
+        region_floor,
+        token_rows,
+        piece_rows,
+        out_rows,
+        ..
+    } = desugaring;
+    let first = region_floor.load(Ordering::Relaxed) == 0;
     let region_guess = if first {
         (source_bytes / 4).max(1 << 16)
     } else {
         0
     };
-    raise(&TOKEN_ROWS, headroom(tokens.max(token_count + 1)));
-    raise(&REGION_FLOOR, headroom(region).max(region_guess));
-    raise(&PIECE_ROWS, headroom(pieces).max(region_guess / 4));
+    raise(token_rows, headroom(tokens.max(token_count + 1)));
+    raise(region_floor, headroom(region).max(region_guess));
+    raise(piece_rows, headroom(pieces).max(region_guess / 4));
     raise(
-        &OUT_ROWS,
+        out_rows,
         headroom(out).max(if first {
             headroom(token_count) + region_guess / 4
         } else {
@@ -183,10 +241,10 @@ fn grow(needs: [u32; 4], token_count: u32, source_bytes: u32) {
     if crate::gpu::passes_core::host_timing_enabled() {
         eprintln!(
             "[gpu_compile_host_timer] desugar.grow: needs={needs:?} tokens={token_count} rows={} pieces={} region={} out={}",
-            TOKEN_ROWS.load(Ordering::Relaxed),
-            PIECE_ROWS.load(Ordering::Relaxed),
-            REGION_FLOOR.load(Ordering::Relaxed),
-            OUT_ROWS.load(Ordering::Relaxed),
+            token_rows.load(Ordering::Relaxed),
+            piece_rows.load(Ordering::Relaxed),
+            region_floor.load(Ordering::Relaxed),
+            out_rows.load(Ordering::Relaxed),
         );
     }
 }
@@ -195,10 +253,10 @@ fn grow(needs: [u32; 4], token_count: u32, source_bytes: u32) {
 /// submission. The desugaring reads only on its error and retry paths, and
 /// without the rewrite pool, so it can read while another thread holds it.
 fn read_words(
+    device: &Gpu<'_>,
     reads: &[(&LaniusBuffer<u8>, usize, usize)],
     encoder: Option<wgpu::CommandEncoder>,
 ) -> Result<Vec<Vec<u32>>> {
-    let device = crate::gpu::device::global();
     let total: usize = reads.iter().map(|&(_, _, words)| words.max(1) * 4).sum();
     let staging = device.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("desugar.readback"),
@@ -230,12 +288,12 @@ fn read_words(
         at += len;
     }
     crate::gpu::passes_core::submit_with_progress(
-        &device.queue,
+        device.queue,
         "desugar.readback",
         encoder.finish(),
     );
     let slice = staging.slice(..);
-    crate::gpu::passes_core::map_readback_blocking(&device.device, &slice, "desugar.readback")?;
+    crate::gpu::passes_core::map_readback_blocking(device.device, &slice, "desugar.readback")?;
     let mapped = slice.get_mapped_range();
     let mut out = Vec::with_capacity(reads.len());
     let mut at = 0usize;
@@ -256,7 +314,7 @@ fn read_words(
 /// The sizes of every round of the last run, read from the GPU.
 fn last_sizes(last: &LastRun) -> Result<Vec<u32>> {
     let sizes = last.sizes.as_ref().context("the last run recorded no round")?;
-    Ok(read_words(&[(sizes, 0, ROUNDS * SIZE_WORDS)], None)?.remove(0))
+    Ok(read_words(&last.gpu(), &[(sizes, 0, ROUNDS * SIZE_WORDS)], None)?.remove(0))
 }
 
 /// What the last run needed of each floor, read from the GPU after it
@@ -360,6 +418,7 @@ struct PlanParams {
 #[derive(Clone)]
 struct LastRun {
     run: u64,
+    desugaring: Arc<Desugaring>,
     first_base: u32,
     anchors: Option<LaniusBuffer<u8>>,
     sizes: Option<LaniusBuffer<u8>>,
@@ -371,22 +430,30 @@ struct LastRun {
     machines: Option<machines::Run>,
 }
 
-static LAST_RUN: Mutex<Option<LastRun>> = Mutex::new(None);
+impl LastRun {
+    fn gpu(&self) -> Gpu<'_> {
+        self.desugaring.gpu()
+    }
+}
 
-/// The last run, when this thread recorded it. A compile reads the run of
-/// its own lexer recording after the lexer is free; a run another thread
-/// recorded since then would give wrong positions, so that is an error.
+/// The last run this thread recorded. A compile reads the run of its own
+/// lexer recording after the lexer is free; a run another thread recorded
+/// on the same lexer since then overwrote its buffers and would give wrong
+/// positions, so that is an error.
 fn last_run() -> Option<LastRun> {
-    let last = LAST_RUN
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()?;
-    let recorded = RECORDED.with(Cell::get);
+    let last = LAST_RUN.with(|last| last.borrow().clone())?;
     assert_eq!(
-        last.run, recorded,
+        last.run,
+        last.desugaring.latest.load(Ordering::Relaxed),
         "the desugaring's last run belongs to another compile on this lexer"
     );
     Some(last)
+}
+
+/// The desugaring of the lexer this thread recorded last, whose floors and
+/// rounds the next build on that lexer reads.
+fn last_desugaring() -> Option<Arc<Desugaring>> {
+    LAST_RUN.with(|last| last.borrow().as_ref().map(|run| run.desugaring.clone()))
 }
 
 /// Per byte of `text`: bit 0 when it is part of a token, bit 1 when a token
@@ -525,7 +592,7 @@ pub(crate) fn source_position(at: usize) -> Option<usize> {
         if offset >= filled || (offset + 1) * 4 > anchors.byte_size {
             return None;
         }
-        at = read_words(&[(anchors, offset, 1)], None).ok()?[0][0] as usize;
+        at = read_words(&last.gpu(), &[(anchors, offset, 1)], None).ok()?[0][0] as usize;
     }
     None
 }
@@ -540,13 +607,13 @@ pub(in crate::compiler) enum Stop {
 
 /// The rounds the next recording needs for the features of `raw_features`
 /// that it did not record.
-fn unrecorded(raw_features: u32) -> u32 {
-    let used = ROUNDS_USED.load(Ordering::Relaxed);
+fn unrecorded(desugaring: &Desugaring, raw_features: u32) -> u32 {
+    let used = desugaring.rounds_used.load(Ordering::Relaxed);
     let wanted = ROUND_FEATURES
         .iter()
         .fold(0, |bits, &feature| bits | (raw_features & feature));
     let missing = wanted & !used;
-    if REGION_FLOOR.load(Ordering::Relaxed) == 0 {
+    if desugaring.region_floor.load(Ordering::Relaxed) == 0 {
         wanted
     } else {
         missing
@@ -556,7 +623,8 @@ fn unrecorded(raw_features: u32) -> u32 {
 /// Whether the lexer's feature word says the desugaring did not finish. The
 /// caller calls `stop` once the lexer's buffers are free.
 pub(crate) fn stopped(raw_features: u32) -> bool {
-    raw_features & DESUGAR_STOPS != 0 || unrecorded(raw_features) != 0
+    raw_features & DESUGAR_STOPS != 0
+        || last_desugaring().is_some_and(|desugaring| unrecorded(&desugaring, raw_features) != 0)
 }
 
 /// Reads the desugaring's bits of the lexer's feature word. `token_count` is
@@ -589,16 +657,19 @@ pub(in crate::compiler) fn stop(
             )),
         });
     }
-    // A build records only the rounds of the features earlier builds used.
-    let missing = unrecorded(raw_features);
+    // A build records only the rounds of the features earlier builds on its
+    // lexer used.
+    let desugaring = last_desugaring()?;
+    let missing = unrecorded(&desugaring, raw_features);
     if raw_features & DESUGAR_REGION_OVERFLOW != 0 || missing != 0 {
         let needs = if raw_features & DESUGAR_REGION_OVERFLOW != 0 {
             last_needs()
         } else {
             [0; 4]
         };
-        ROUNDS_USED.fetch_or(missing, Ordering::Relaxed);
+        desugaring.rounds_used.fetch_or(missing, Ordering::Relaxed);
         grow(
+            &desugaring,
             needs,
             token_count,
             u32::try_from(source_bytes).unwrap_or(u32::MAX),
@@ -612,11 +683,7 @@ pub(in crate::compiler) fn stop(
 /// first error, and builds the message.
 fn explain(text: impl Fn(usize, usize) -> String) -> Result<RuleError> {
     let last = last_run().context("the desugaring kept no run to explain")?;
-    let device = crate::gpu::device::global();
-    let gpu = Gpu {
-        device: &device.device,
-        queue: &device.queue,
-    };
+    let gpu = last.gpu();
     // A broken rule stops the rounds after it, so the first round with an
     // error has the error the run reports.
     if let Some(run) = &last.closures
@@ -649,8 +716,7 @@ struct ReservedParams {
 /// found. No round ran, so the lexer's tokens are the source's.
 fn reserved(token_count: u32) -> Result<RuleError> {
     let last = last_run().context("the desugaring kept no run to explain")?;
-    let device = crate::gpu::device::global();
-    let gpu = Gpu { device: &device.device, queue: &device.queue };
+    let gpu = last.gpu();
     let status = gpu.fixed_words_from("desugar.reserved.status", &[u32::MAX]);
     let params = gpu.fixed_uniform(
         "desugar.reserved.params",
@@ -669,9 +735,9 @@ fn reserved(token_count: u32) -> Result<RuleError> {
         ],
         token_count,
     )?;
-    let token = read_words(&[(&status, 0, 1)], Some(encoder))?[0][0] as usize;
+    let token = read_words(&gpu, &[(&status, 0, 1)], Some(encoder))?[0][0] as usize;
     anyhow::ensure!(token < token_count as usize, "the lexer found a reserved name the check does not");
-    let row = read_words(&[(&last.tokens_out, token * 3, 3)], None)?.remove(0);
+    let row = read_words(&gpu, &[(&last.tokens_out, token * 3, 3)], None)?.remove(0);
     Ok(RuleError::machine(
         row[1] as usize,
         (row[2] as usize).max(1),
@@ -1143,18 +1209,19 @@ fn scan_work(gpu: &Gpu<'_>, label: &str, rows: usize) -> [LaniusBuffer<u8>; 2] {
 }
 
 /// Records the desugaring after the lexer's token build.
-pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Result<()> {
+pub(crate) fn record(
+    ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>,
+    desugaring: &Arc<Desugaring>,
+) -> Result<()> {
+    let run = RUNS.fetch_add(1, Ordering::Relaxed) + 1;
+    // A recording overwrites the lexer's tokens, so an earlier run on this
+    // lexer can no longer be explained from them.
+    desugaring.latest.store(run, Ordering::Relaxed);
     if SUSPENDED.with(|s| s.get()) {
-        // This recording overwrites the lexer's tokens, so the last run can
-        // no longer be explained from them.
-        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        LAST_RUN.with(|last| *last.borrow_mut() = None);
         return Ok(());
     }
-    let device = crate::gpu::device::global();
-    let gpu = Gpu {
-        device: ctx.device,
-        queue: &device.queue,
-    };
+    let gpu = desugaring.gpu();
     let bufs = ctx.buffers;
     let encoder = &mut *ctx.encoder;
 
@@ -1162,10 +1229,10 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
     // is never a region byte.
     let first_base = bufs.lexed_n.next_multiple_of(4) + 4;
     let region_cap = bufs.n.saturating_sub(first_base) as usize;
-    let used = ROUNDS_USED.load(Ordering::Relaxed);
-    let run = RUNS.fetch_add(1, Ordering::Relaxed) + 1;
+    let used = desugaring.rounds_used.load(Ordering::Relaxed);
     let mut last = LastRun {
         run,
+        desugaring: desugaring.clone(),
         first_base,
         anchors: None,
         sizes: None,
@@ -1186,15 +1253,14 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
     // feature word and runs the build again with a region (`stop`). The
     // lexer's buffers are kept for the reserved names (`reserved`).
     if region_cap == 0 || used == 0 {
-        RECORDED.with(|recorded| recorded.set(run));
-        *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = Some(last);
+        LAST_RUN.with(|slot| *slot.borrow_mut() = Some(last));
         return Ok(());
     }
-    gpu::drop_stale_bind_groups();
+    desugaring.resident.drop_stale_bind_groups();
     let caps = Caps {
-        tokens: (TOKEN_ROWS.load(Ordering::Relaxed) as usize).max(1),
-        pieces: (PIECE_ROWS.load(Ordering::Relaxed) as usize).max(1),
-        out: (OUT_ROWS.load(Ordering::Relaxed) as usize)
+        tokens: (desugaring.token_rows.load(Ordering::Relaxed) as usize).max(1),
+        pieces: (desugaring.piece_rows.load(Ordering::Relaxed) as usize).max(1),
+        out: (desugaring.out_rows.load(Ordering::Relaxed) as usize)
             .min(bufs.tokens_out.count)
             .max(1),
     };
@@ -1267,8 +1333,7 @@ pub(crate) fn record(ctx: &mut PassContext<'_, GpuBuffers, DebugOutput>) -> Resu
         }
         previous = Some(slot);
     }
-    RECORDED.with(|recorded| recorded.set(run));
-    *LAST_RUN.lock().unwrap_or_else(PoisonError::into_inner) = Some(last);
+    LAST_RUN.with(|slot| *slot.borrow_mut() = Some(last));
     Ok(())
 }
 

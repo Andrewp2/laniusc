@@ -414,7 +414,7 @@ pub(super) fn explain(
     run: &Run,
     text: &impl Fn(usize, usize) -> String,
 ) -> Result<Option<RuleError>> {
-    let key = read_words(&[(&run.status, 0, 1)], None)?[0][0];
+    let key = read_words(gpu, &[(&run.status, 0, 1)], None)?[0][0];
     if key == NO_ERROR {
         return Ok(None);
     }
@@ -437,7 +437,7 @@ pub(super) fn explain(
             .map(|&(name, buffer)| (name, buffer.as_entire_binding())),
     );
     gpu.fixed_dispatch(&mut encoder, &gpu.kernel(CHECK)?, CHECK, &all, tokens)?;
-    let detail = read_words(&[(&run.detail, 0, DETAIL_WORDS)], Some(encoder))?.remove(0);
+    let detail = read_words(gpu, &[(&run.detail, 0, DETAIL_WORDS)], Some(encoder))?.remove(0);
     // A token of an earlier round's text names the source byte it came from.
     let at = detail[0] as usize;
     let start = source_position(at).unwrap_or(at);

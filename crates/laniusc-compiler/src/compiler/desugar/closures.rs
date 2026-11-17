@@ -296,12 +296,12 @@ pub(super) fn record(round: &Round<'_>, encoder: &mut wgpu::CommandEncoder) -> R
 /// `token << 4 | code`; a broken rule stops the round before its splice, so
 /// the token is a source token.
 pub(super) fn explain(last: &LastRun, run: &Run) -> Result<Option<RuleError>> {
-    let failure = read_words(&[(&run.status, 0, 1)], None)?[0][0];
+    let failure = read_words(&last.gpu(), &[(&run.status, 0, 1)], None)?[0][0];
     if failure == NO_ERROR {
         return Ok(None);
     }
     let token = (failure >> 4) as usize;
-    let row = read_words(&[(&last.tokens_out, token * 3, 3)], None)?.remove(0);
+    let row = read_words(&last.gpu(), &[(&last.tokens_out, token * 3, 3)], None)?.remove(0);
     let message = match failure & 15 {
         1 => "a closure parameter needs a type: write `|name: Type|`",
         2 => "a closure takes one parameter with a type, `|name: Type|`, or none, `||`",

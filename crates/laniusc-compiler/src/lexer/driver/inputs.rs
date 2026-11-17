@@ -147,7 +147,7 @@ impl GpuLexer {
         let input_bytes = input.as_bytes();
         let n = input_bytes.len() as u32;
         let aligned_len = align_to_word(n);
-        let extent = crate::compiler::desugar::byte_extent(n, aligned_len);
+        let extent = crate::compiler::desugar::byte_extent(&self.passes.desugaring, n, aligned_len);
 
         let mut guard = self
             .buffers
@@ -235,7 +235,7 @@ impl GpuLexer {
         let _span = crate::gpu::trace::HostSpan::new("host.lexer", "lex.source-pack.prepare_buffers");
         let (n, source_files) = source_pack_metadata(sources)?;
         let aligned_len = align_to_word(n);
-        let extent = crate::compiler::desugar::byte_extent(n, aligned_len);
+        let extent = crate::compiler::desugar::byte_extent(&self.passes.desugaring, n, aligned_len);
         let source_file_capacity = source_files.capacity();
 
         let mut guard = self

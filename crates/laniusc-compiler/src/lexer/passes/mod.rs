@@ -54,11 +54,13 @@ pub struct LexerPasses {
     pub compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass,
     /// Builds final resident token records.
     pub tokens_build: tokens_build::TokensBuildPass,
+    /// The desugaring after the token build, with its own buffers and floors.
+    pub(crate) desugaring: std::sync::Arc<crate::compiler::desugar::Desugaring>,
 }
 
 impl LexerPasses {
     /// Creates every lexer shader pass for a device.
-    pub fn new(device: &wgpu::Device) -> Result<Self> {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
         Ok(Self {
             dfa_01: dfa::scan_inblock::Dfa01ScanInblockPass::new(&device)?,
             dfa_02: dfa::scan_block_summaries::Dfa02ScanBlockSummariesPass::new(&device)?,
@@ -70,6 +72,7 @@ impl LexerPasses {
             compact_all: compact::boundaries::all::CompactBoundariesAllPass::new(&device)?,
             compact_kept: compact::boundaries::kept::CompactBoundariesKeptPass::new(&device)?,
             tokens_build: tokens_build::TokensBuildPass::new(&device)?,
+            desugaring: crate::compiler::desugar::Desugaring::new(device, queue),
         })
     }
 }
@@ -135,7 +138,7 @@ pub fn record_all_passes(
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.compact_all, E1(n))?;
             batch.record_pass_cached(ctx.device, ctx.buffers, bg_cache, &p.tokens_build, E1(n))?;
         }
-        return crate::compiler::desugar::record(&mut ctx);
+        return crate::compiler::desugar::record(&mut ctx, &p.desugaring);
     }
 
     p.source_file_boundaries
@@ -150,5 +153,5 @@ pub fn record_all_passes(
     p.compact_kept.record_pass(&mut ctx, E1(n))?;
     p.compact_all.record_pass(&mut ctx, E1(n))?;
     p.tokens_build.record_pass(&mut ctx, E1(n))?;
-    crate::compiler::desugar::record(&mut ctx)
+    crate::compiler::desugar::record(&mut ctx, &p.desugaring)
 }
