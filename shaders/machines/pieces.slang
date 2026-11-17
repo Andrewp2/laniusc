@@ -4,13 +4,14 @@
 // positions the prefix sums of those counts give.
 //
 // A machine's text is its sections in order, and a section holds the pieces
-// of the machine's tokens in token order. The text of the machines follows
-// one machine after another; the tokens outside them stay where they are
-// (compiler/desugar.rs).
+// of the machine's tokens in token order. The pieces of a machine go where
+// its item stood: their owner is the item's first token, and the counting
+// run marks the item's tokens to drop (desugar_common.slang).
 import gpu_index;
 import byte_packing;
 import generated_token_ids;
 import machine_common;
+import desugar.desugar_common;
 
 struct PieceParams
 {
@@ -29,7 +30,6 @@ struct TokenOut
 
 ConstantBuffer<PieceParams> gPieces;
 StructuredBuffer<TokenOut> tokens_out;
-StructuredBuffer<uint> token_file_id;
 ByteAddressBuffer in_bytes;
 StructuredBuffer<uint> records;
 // Inclusive prefix sums: machines, states, transitions, bracket depth.
@@ -42,15 +42,14 @@ StructuredBuffer<uint> transitions;
 StructuredBuffer<uint> arms;
 StructuredBuffer<uint> fields;
 StructuredBuffer<uint> arguments;
-StructuredBuffer<uint> const_index;
 // Inclusive prefix sums of the piece counts, read by the writing run.
 StructuredBuffer<uint4> count_scan0;
 StructuredBuffer<uint4> count_scan1;
 RWStructuredBuffer<uint4> counts0;
 RWStructuredBuffer<uint4> counts1;
 RWStructuredBuffer<uint4> pieces;
-// Per piece: the file, start and length of its anchor token.
-RWStructuredBuffer<uint4> piece_sources;
+RWStructuredBuffer<uint> piece_owner;
+RWStructuredBuffer<uint> drop;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -58,6 +57,7 @@ struct Cursor
 {
     uint base;
     uint count;
+    uint owner;
 };
 
 struct Machine
@@ -97,62 +97,41 @@ uint end_of(uint token)
     return row.start + row.len;
 }
 
-void put(inout Cursor cur, uint len, uint kind, uint value, uint anchor)
+void put(inout Cursor cur, uint count, uint kind, uint value, uint anchor)
 {
     if (gPieces.write != 0u)
     {
         uint at = cur.base + cur.count;
-        TokenOut row = tokens_out[anchor];
-        pieces[at] = uint4(len, kind, value, anchor);
-        piece_sources[at] = uint4(token_file_id[anchor], row.start, row.len, 0u);
+        pieces[at] = uint4(count, kind, value, anchor);
+        piece_owner[at] = cur.owner;
     }
     cur.count += 1u;
 }
 
 void text(inout Cursor cur, uint id, uint anchor)
 {
-    put(cur, const_index[id * 2u + 1u], PIECE_CONST, id, anchor);
+    put(cur, 1u, PIECE_CONST, id, anchor);
 }
 
-void bytes(inout Cursor cur, uint from, uint to, uint anchor)
+// A copy of tokens `[first, end)`.
+void span(inout Cursor cur, uint first, uint end)
 {
-    put(cur, to > from ? to - from : 0u, PIECE_COPY, from, anchor);
+    put(cur, end > first ? end - first : 0u, PIECE_RANGE, first, first);
 }
 
 void token(inout Cursor cur, uint t)
 {
-    bytes(cur, start_of(t), end_of(t), t);
-}
-
-// The source text of tokens `[first, end)`.
-void span(inout Cursor cur, uint first, uint end)
-{
-    bytes(cur, start_of(first), end > first ? end_of(end - 1u) : start_of(first), first);
+    put(cur, 1u, PIECE_RANGE, t, t);
 }
 
 void number(inout Cursor cur, uint value, uint anchor)
 {
-    uint digits = 1u;
-    for (uint rest = value; rest >= 10u; rest /= 10u)
-        digits += 1u;
-    put(cur, digits, PIECE_NUMBER, value, anchor);
+    put(cur, 1u, PIECE_NUMBER, value, anchor);
 }
 
 void snake(inout Cursor cur, uint name)
 {
-    TokenOut row = tokens_out[name];
-    uint len = min(row.len, MAX_NAME);
-    uint extra = 0u;
-    uint previous = 0u;
-    for (uint i = 0u; i < len; i += 1u)
-    {
-        uint current = byte_address_load_u8(in_bytes, row.start + i);
-        uint next = i + 1u < len ? byte_address_load_u8(in_bytes, row.start + i + 1u) : 0u;
-        if (snake_boundary(previous, current, next))
-            extra += 1u;
-        previous = current;
-    }
-    put(cur, row.len + extra, PIECE_SNAKE, 0u, name);
+    put(cur, 1u, PIECE_SNAKE, 0u, name);
 }
 
 bool same_text(uint a, uint b)
@@ -603,17 +582,17 @@ void transition(inout Cursor cur, bool run, Machine m, State s, uint at)
     text(cur, C_CONTINUE, at);
 }
 
-// The byte after the last transition statement before the `count`-th
+// The token after the last transition statement before the `count`-th
 // transition of the pack, inside the block arm that opens at `open`.
-uint copied_until(uint open, uint count)
+uint copied_from(uint open, uint count)
 {
     if (count > 0u)
     {
         uint previous = transitions[count - 1u];
         if (previous > open)
-            return end_of(rec(previous, REC_END));
+            return rec(previous, REC_END) + 1u;
     }
-    return end_of(open);
+    return open + 1u;
 }
 
 // A token inside the arms of a state. `run` selects the text of the state's
@@ -679,14 +658,14 @@ void arm_token(inout Cursor cur, bool run, Machine m, State s, uint t, uint role
         }
         else if (block_arm && t > body)
         {
-            bytes(cur, copied_until(body, scan_a[t].z - 1u), start_of(t), t);
+            span(cur, copied_from(body, scan_a[t].z - 1u), t);
             transition(cur, run, m, s, t);
         }
         return;
     }
     if (block_arm && t + 1u == arm_end)
     {
-        bytes(cur, copied_until(body, scan_a[t].z), end_of(t), t);
+        span(cur, copied_from(body, scan_a[t].z), t + 1u);
         text(cur, C_ARM_COMMA, arrow);
     }
 }
@@ -772,9 +751,15 @@ void main(uint3 tid: SV_DispatchThreadID)
         {
             counts0[t] = uint4(0u, 0u, 0u, 0u);
             counts1[t] = uint4(0u, 0u, 0u, 0u);
+            // The `pub` of a public machine belongs to its item.
+            bool public_head = t + 1u < gPieces.token_count && rec(t + 1u, REC_ROLE) == ROLE_MACHINE &&
+                               (rec(t + 1u, REC_FLAGS) & FLAG_PUBLIC) != 0u;
+            drop[t] = public_head ? 1u : 0u;
         }
         return;
     }
+    if (!write)
+        drop[t] = 1u;
 
     Machine m = machine_at(head);
     uint state_head_token = sums.y > 0u ? states[sums.y - 1u] : MC_NONE;
@@ -813,6 +798,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         Cursor cur;
         cur.base = ch < 4u ? component(base0, ch) : component(base1, ch - 4u);
         cur.count = 0u;
+        cur.owner = (m.flags & FLAG_PUBLIC) != 0u ? m.head - 1u : m.head;
         emit(cur, ch, t, role, m, state_head_token);
         if (ch == 0u)
             n0 = cur.count;

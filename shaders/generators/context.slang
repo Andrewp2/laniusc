@@ -15,11 +15,8 @@ struct ContextParams
 
 ConstantBuffer<ContextParams> gContext;
 StructuredBuffer<uint> records;
-// Inclusive prefix sums: machines, states, transitions, bracket depth.
-StructuredBuffer<uint4> scan_a;
 // Inclusive prefix sums: generators, yields, loop depth, statement depth.
 StructuredBuffer<uint4> scan1;
-StructuredBuffer<uint> gens;
 // Per `}`: the locals its block declares.
 StructuredBuffer<uint> direct;
 RWStructuredBuffer<uint4> marks;
@@ -45,17 +42,10 @@ void main(uint3 tid: SV_DispatchThreadID)
     if (token >= gContext.token_count)
         return;
     uint role = rec(token, GR_ROLE);
-    GenPlace place = gen_place(records, scan_a, scan1, gens, token);
-
-    // A parameter of a generator sits between `gen` and the `)` of the
-    // parameters, at their depth.
-    bool param = false;
-    if (role == GROLE_PARAM && place.gen != GN_NONE)
-    {
-        uint close = rec(place.gen, GR_OWNER);
-        param = token < close && scan_a[token].w == scan_a[close].w + 1u;
-    }
-    bool local = role == GROLE_LET && place.eligible;
+    // The read writes these roles only for a generator's parameters and the
+    // locals at its statement positions.
+    bool param = role == GROLE_PARAM;
+    bool local = role == GROLE_LET;
     uint scope = local ? 1u : 0u;
     uint loops = 0u;
     if (role == GROLE_BLOCK && yields(token))

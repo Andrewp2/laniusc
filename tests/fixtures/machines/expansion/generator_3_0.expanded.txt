@@ -1,0 +1,44 @@
+// The sum of the squares of the odd numbers below LIMIT, pulled from a
+// `gen fn` (M5).
+import core::option;
+const LIMIT: i64 = 200000000;
+
+enum OddSquaresResume { Next }
+machine OddSquares on OddSquaresResume -> core::option::Option<i64> {
+    limit: i64,
+    start Start;
+    state Start {
+        OddSquaresResume::Next -> { let limit: i64 = self.limit; let i: i64 = 0;
+    while (i < limit) {
+        if (i % 2 == 1) { goto Yield0(i) with core::option::Some(i * i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    state Yield0(__lanius_gen_i: i64) {
+        OddSquaresResume::Next -> { let limit: i64 = self.limit; let i: i64 = __lanius_gen_i; { {  } i += 1; } while (i < limit) {
+        if (i % 2 == 1) { goto Yield0(i) with core::option::Some(i * i); }
+        i += 1;
+    } goto Done with core::option::None(); },
+    }
+    final state Done {
+        OddSquaresResume::Next -> stay with core::option::None(),
+    }
+}
+fn odd_squares(limit: i64) -> OddSquares { return odd_squares_start(limit); }
+impl OddSquares {
+    fn next(&mut self) -> core::option::Option<i64> { return self.step(OddSquaresResume::Next); }
+}
+
+
+fn main() -> i32 {
+    let it: OddSquares = odd_squares(LIMIT);
+    let total: i64 = 0;
+    while (true) {
+        match (it.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    print(total);
+    return 0;
+}
