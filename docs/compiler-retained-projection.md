@@ -233,7 +233,10 @@ References keep pointer storage while indexing follows the referent.
 A checked argument mode 2 permits an array-to-slice borrow with equal
 element types, in both projected calls and original-object ABI certification.
 The original ABI record packs eight two-bit argument modes above its eight
-flag bits. Every other argument requires exact type equality. Nongeneric
+flag bits. Every other argument requires exact type equality. A struct
+literal's field value follows the same rule: a fixed array may fill a slice
+field with an equal element type (`View { values: scratch }`), and every
+other field requires exact type equality. Nongeneric
 method calls from original bodies retain their frontend-checked native routes.
 
 Every other form fails closed with its template location:

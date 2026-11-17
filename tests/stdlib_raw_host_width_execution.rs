@@ -18,6 +18,7 @@ fn executable(name: &str) -> common::TempArtifact {
     // Preserve a compile result even when the independent common jump gate
     // rejects it before TempArtifact::write_bytes writes the file.
     let preserved = root.join(format!("target/stdlib-work/{name}.elf"));
+    std::fs::create_dir_all(preserved.parent().unwrap()).unwrap();
     std::fs::write(&preserved, &bytes).unwrap();
     let oracle = root.join("tests/fixtures/stdlib_foundation/raw_host_width_tables.py");
     let checked_runtime = common::process_output_with_timeout(
