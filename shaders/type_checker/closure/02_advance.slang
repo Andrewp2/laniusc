@@ -34,7 +34,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         instance_closure_counts[IC_COUNT_START] = start;
         instance_closure_counts[IC_COUNT_END] = length;
-        groups = (length - start + 255u) / 256u;
+        groups = ((length - start) * IC_LANES_PER_INSTANCE + 255u) / 256u;
     }
     else
     {

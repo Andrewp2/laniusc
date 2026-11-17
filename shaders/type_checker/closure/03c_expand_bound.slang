@@ -1,5 +1,6 @@
 // One instance-closure round over bound-member edges (D3; 01_mark links
-// them): one lane per frontier instance (F, E). Each bound-member call of F,
+// them): one working lane per frontier instance (F, E) (IC_LANES_PER_INSTANCE
+// lanes each). Each bound-member call of F,
 // `value.member(...)` with `value` of F's type parameter P, routes under E
 // as methods/09 routes it in a replay (bound_route.slang). A nongeneric
 // implementation's method is concrete and needs no instance. A generic one's
@@ -76,8 +77,9 @@ void route_bound_edge(uint call, uint token, uint4 instance, inout CtSpare subst
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint index = instance_closure_counts[IC_COUNT_START] + dtid.x + dtid.y * 16776960u;
-    if (index >= instance_closure_counts[IC_COUNT_END]) return;
+    uint lane = dtid.x + dtid.y * 16776960u;
+    uint index = instance_closure_counts[IC_COUNT_START] + lane / IC_LANES_PER_INSTANCE;
+    if (lane % IC_LANES_PER_INSTANCE != 0u || index >= instance_closure_counts[IC_COUNT_END]) return;
     uint4 instance = instance_closure_instances[2u * index];
     if (!valid_node(instance.y)) return;
     CtSpare subst_spare = ct_spare_none();

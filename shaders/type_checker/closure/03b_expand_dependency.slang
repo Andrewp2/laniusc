@@ -1,4 +1,5 @@
-// One dependency closure round (D1b; summary.slang): one lane per frontier
+// One dependency closure round (D1b; summary.slang): one working lane (of
+// IC_LANES_PER_INSTANCE) per frontier
 // instance whose callee is a summary function (SUMMARY_TAG). Each edge of
 // that function has its slot-form bindings substituted under the
 // instance's tagged environment (a dependency slot leaf binds its slot), and
@@ -45,8 +46,9 @@ uint4 next_edge(uint e) { return summary_edge(e + 1u); }
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint index = instance_closure_counts[IC_COUNT_START] + dtid.x + dtid.y * 16776960u;
-    if (index >= instance_closure_counts[IC_COUNT_END]) return;
+    uint lane = dtid.x + dtid.y * 16776960u;
+    uint index = instance_closure_counts[IC_COUNT_START] + lane / IC_LANES_PER_INSTANCE;
+    if (lane % IC_LANES_PER_INSTANCE != 0u || index >= instance_closure_counts[IC_COUNT_END]) return;
     uint4 instance = instance_closure_instances[2u * index];
     if ((instance.y & SUMMARY_TAG) == 0u) return;
     uint2 edges = summary_fn_edges(instance.y & ~SUMMARY_TAG);

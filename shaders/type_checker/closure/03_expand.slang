@@ -1,4 +1,5 @@
-// One instance-closure round: one lane per frontier instance (F, E). Each
+// One instance-closure round: one working lane per frontier instance (F, E)
+// (IC_LANES_PER_INSTANCE lanes each). Each
 // edge of F (a call to a generic local body inside F) gets its call
 // environment substituted under E, and the callee's instance is inserted
 // one level deeper. Edges whose environment stays open or has a hole under
@@ -58,8 +59,9 @@ uint fit_argument_token(uint call, uint slot, bool constant)
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint index = instance_closure_counts[IC_COUNT_START] + dtid.x + dtid.y * 16776960u;
-    if (index >= instance_closure_counts[IC_COUNT_END]) return;
+    uint lane = dtid.x + dtid.y * 16776960u;
+    uint index = instance_closure_counts[IC_COUNT_START] + lane / IC_LANES_PER_INSTANCE;
+    if (lane % IC_LANES_PER_INSTANCE != 0u || index >= instance_closure_counts[IC_COUNT_END]) return;
     uint4 instance = instance_closure_instances[2u * index];
     if (!valid_node(instance.y)) return;
     CtSpare subst_spare = ct_spare_none();
