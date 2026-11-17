@@ -2839,8 +2839,8 @@ mod tests {
             });
         sorter.record(&mut encoder).unwrap();
         let activity = crate::gpu::passes_core::this_thread_gpu_activity().since(before);
-        // Histogram, local scan, apply and scatter per digit.
-        assert_eq!(activity.compute_passes, 4 * 4);
+        // Histogram, bucket scan and scatter per digit.
+        assert_eq!(activity.compute_passes, 3 * 4);
         assert_eq!(
             (activity.pipelines, activity.buffers_created, activity.buffers_released),
             (0, 0, 0),

@@ -10618,15 +10618,18 @@ mod tests {
             assert!(4096u64.pow(small.execution_rank) > u64::from(job.hir_nodes));
             assert!(4096u64.pow(small.ssa_value_link) > u64::from(job.semantic_instructions));
             assert!(
-                256u64.pow(small.dominator_tour)
+                4096u64.pow(small.dominator_tour)
                     > 2 * u64::from(job.optimization_block_capacity())
             );
             assert!(
-                256u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
+                4096u64.pow(small.dominator_depth) > u64::from(job.optimization_block_capacity())
             );
             assert!(4u64.pow(small.region_parent) > u64::from(job.optimization_region_capacity()));
             assert!(small.region_parent < built.region_parent);
-            assert!(small.ssa_value_link < built.ssa_value_link);
+            // Instruction capacity is at least 4096 rows, which already needs
+            // two 4096-link pairs, and two pairs reach 16M rows, so job sizing
+            // never lowers this count below the built one.
+            assert!(small.ssa_value_link <= built.ssa_value_link);
         }
     }
 
