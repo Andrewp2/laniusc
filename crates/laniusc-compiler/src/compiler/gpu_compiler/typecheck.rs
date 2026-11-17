@@ -2727,10 +2727,16 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
 fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
     if let (Some(store), Some(snapshot)) =
         (&recorded.type_check.program_retention, &recorded.retention_snapshot)
-        && let Err(error) = store.prepare_export_job(snapshot)
     {
-        // The submission records the export again and reports the error.
-        log::debug!("program retention export was not prepared: {error:#}");
+        if let Err(error) = store.prepare_export_job(snapshot) {
+            // The submission records the export again and reports the error.
+            log::debug!("program retention export was not prepared: {error:#}");
+        }
+        // The work that follows the export, for example the trait catalog's
+        // count pass; its consumer records it itself when it did not run.
+        if let Err(error) = store.prepare_export_follower() {
+            log::debug!("program retention export follower was not prepared: {error:#}");
+        }
     }
 }
 

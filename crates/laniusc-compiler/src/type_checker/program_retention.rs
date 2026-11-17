@@ -460,6 +460,44 @@ pub struct ProgramRetention {
     job_inputs: std::collections::BTreeSet<String>,
     /// Snapshot buffer sets of finished jobs, reused by later jobs.
     snapshot_pool: Arc<Mutex<Vec<BTreeMap<&'static str, wgpu::Buffer>>>>,
+    /// Records the GPU work that follows an export ([`ExportFollower`]).
+    follower_recorder: Mutex<Option<ExportFollowerRecorder>>,
+    /// That work, recorded and not yet submitted.
+    follower: Mutex<Option<PreparedFollower>>,
+    /// The words its reads returned, for the build's next consumer.
+    followed: Mutex<Option<FollowedWords>>,
+}
+
+/// GPU work that a later stage records before a job's export has produced
+/// the store's counters, sized from the store's capacities: the native
+/// call rewrite submits it right behind itself and reads `reads` with its
+/// own readback, so the work runs without the GPU waiting on the host.
+pub(crate) struct ExportFollower {
+    pub(crate) commands: wgpu::CommandBuffer,
+    /// Buffers whose first `words` words are read with the rewrite.
+    pub(crate) reads: Vec<(wgpu::Buffer, usize)>,
+}
+
+/// Records the [`ExportFollower`] of the store's current state, or none.
+pub(crate) type ExportFollowerRecorder =
+    Box<dyn Fn(&ProgramRetention) -> Result<Option<ExportFollower>> + Send + Sync>;
+
+struct PreparedFollower {
+    follower: ExportFollower,
+    epoch: u64,
+    generation: u32,
+}
+
+/// What an [`ExportFollower`]'s reads returned, and after which committed
+/// export of which build.
+// The trait catalog's count pass will set and consume the follower.
+#[allow(dead_code)]
+pub(crate) struct FollowedWords {
+    pub(crate) generation: u32,
+    /// Committed exports of the build when the follower ran (it followed
+    /// the last one).
+    pub(crate) jobs: usize,
+    pub(crate) words: Vec<Vec<u32>>,
 }
 
 /// One job's export inputs, copied into buffers the store owns when the
@@ -558,6 +596,9 @@ impl ProgramRetention {
             store: Mutex::new(store),
             job_inputs,
             snapshot_pool: Arc::new(Mutex::new(Vec::new())),
+            follower_recorder: Mutex::new(None),
+            follower: Mutex::new(None),
+            followed: Mutex::new(None),
         });
         this.begin_build()?;
         Ok(this)
@@ -588,6 +629,7 @@ impl ProgramRetention {
         );
         self.queue.submit(Some(encoder.finish()));
         store.reports.clear();
+        *self.followed.lock().unwrap() = None;
         store.builds += 1;
         store.generation = generation;
         Ok(())
@@ -663,6 +705,52 @@ impl ProgramRetention {
     /// [`Self::submit_export_job`] submits it if the store still has the
     /// buffers it bound, and records the attempt again otherwise. A job that
     /// is retried or fails drops it with its snapshot.
+    /// Sets the recorder of the work that follows each export.
+    #[allow(dead_code)]
+    pub(crate) fn set_export_follower(&self, recorder: Option<ExportFollowerRecorder>) {
+        *self.follower_recorder.lock().unwrap() = recorder;
+        *self.follower.lock().unwrap() = None;
+    }
+
+    /// Records the export follower while the host waits for a job, after
+    /// [`Self::prepare_export_job`]. The store lock is not held while the
+    /// recorder runs.
+    pub(crate) fn prepare_export_follower(&self) -> Result<()> {
+        if self.follower.lock().unwrap().is_some() {
+            return Ok(());
+        }
+        let recorder = self.follower_recorder.lock().unwrap();
+        let Some(recorder) = recorder.as_ref() else {
+            return Ok(());
+        };
+        let (epoch, generation) = {
+            let store = self.store.lock().unwrap();
+            (store.epoch, store.generation)
+        };
+        if let Some(follower) = recorder(self)? {
+            *self.follower.lock().unwrap() = Some(PreparedFollower { follower, epoch, generation });
+        }
+        Ok(())
+    }
+
+    /// The prepared follower if it bound the store's current buffers.
+    fn take_follower(&self, store: &Store) -> Option<ExportFollower> {
+        self.follower
+            .lock()
+            .unwrap()
+            .take()
+            .filter(|prepared| prepared.epoch == store.epoch && prepared.generation == store.generation)
+            .map(|prepared| prepared.follower)
+    }
+
+    /// The words of the follower that ran behind this build's last export.
+    #[allow(dead_code)]
+    pub(crate) fn take_followed_words(&self) -> Option<FollowedWords> {
+        let followed = self.followed.lock().unwrap().take()?;
+        let store = self.store.lock().unwrap();
+        (followed.generation == store.generation && followed.jobs == store.reports.len()).then_some(followed)
+    }
+
     pub(crate) fn prepare_export_job(&self, snapshot: &JobSnapshot) -> Result<()> {
         if self.export_fault.lock().unwrap().is_some() || snapshot.prepared.lock().unwrap().is_some() {
             return Ok(());
