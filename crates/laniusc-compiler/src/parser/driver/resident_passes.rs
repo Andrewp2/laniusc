@@ -300,7 +300,6 @@ impl GpuParser {
                 ctx.encoder,
                 "parser.hir_semantic_parent_traverse",
             );
-            crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
             self.passes
                 .hir_semantic_nav
                 .record_pass_indirect(&mut ctx, &bufs.hir_semantic_dispatch_args)?;
@@ -1125,7 +1124,6 @@ impl GpuParser {
                     &mut ctx,
                     crate::gpu::passes_core::InputElements::Elements1D(bufs.hir_canonical_capacity),
                 )?;
-                crate::gpu::passes_core::flush_deferred_compute(ctx.encoder);
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_family_mark");
                 crate::parser::passes::record_canonical_call_arguments(&mut ctx, &self.passes)?;
                 stamp_timer(timer_ref, ctx.encoder, "parser.hir_call_arg_compact");
