@@ -104,12 +104,17 @@ struct StoreState {
     generation: u64,
     chunks: Vec<Chunk>,
     slots: Vec<Slot>,
+    /// One `rl_park.slang` parameter block per slot index, rewritten by
+    /// each build's park into that slot.
+    park_params: Vec<wgpu::Buffer>,
 }
 
 /// Lowered objects of the current native build, parked on the GPU.
 pub(crate) struct GpuX86LinkStore {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// `rl_park.slang`: copies an object's used rows and bytes into a slot.
+    park_pass: PassData,
     state: Mutex<StoreState>,
 }
 
@@ -313,24 +318,60 @@ pub(crate) fn park(encoder: &mut wgpu::CommandEncoder, sources: &ParkSources<'_>
     for (buffer, offset, bytes, word) in sources.meta {
         encoder.copy_buffer_counted(buffer, offset, &meta.buffer, (base[0] + word) * 4, bytes);
     }
-    let mut copy = |region: &ParkRegion<'_>, store_region: usize, word: u64| {
-        if region.bytes != 0 {
-            encoder.copy_buffer_counted(
-                region.buffer,
-                region.offset,
-                &chunk.buffers[store_region].buffer,
-                word * 4,
-                region.bytes.next_multiple_of(4),
-            );
-        }
-    };
-    copy(regions[0], 1, base[1]);
-    copy(regions[1], 1, base[1] + words(regions[0]));
-    copy(regions[2], 2, base[2]);
-    copy(regions[3], 3, base[3]);
-    copy(regions[4], 4, base[4]);
-    copy(regions[5], 5, base[5]);
+    // The regions' rows and bytes as far as the object's metadata counts
+    // them (`rl_park.slang`); `need` and `caps` keep the job's bounds, which
+    // the plan checks the counts against.
+    let dst = [base[1], base[1] + words(regions[0]), base[2], base[3], base[4], base[5]];
+    // `ParkParams`: four header words, then source offsets, store bases and
+    // store capacities in words, each as rows (four regions) then bytes
+    // (text, rodata) in one uint4 pair.
+    let mut params = [0u32; 28];
+    let mut words_total = 0u64;
+    for (index, region) in regions.iter().enumerate() {
+        let (src, dst, cap) = (region.offset / 4, dst[index], words(*region));
+        words_total = words_total.max(cap);
+        let (Ok(src), Ok(dst), Ok(cap)) = (u32::try_from(src), u32::try_from(dst), u32::try_from(cap)) else {
+            return None;
+        };
+        params[4 + index] = src;
+        params[12 + index] = dst;
+        params[20 + index] = cap;
+    }
+    let workgroups = u32::try_from(words_total.div_ceil(256).clamp(1, 1024)).unwrap_or(1024);
+    params[0] = u32::try_from(base[0]).ok()?;
+    params[1] = workgroups * 256;
     let slot = state.slots.len();
+    while state.park_params.len() <= slot {
+        state.park_params.push(store.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("codegen.x86.link.resident.park.params"),
+            size: std::mem::size_of_val(&params) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+    }
+    let params_buffer = state.park_params[slot].clone();
+    let bytes: Vec<u8> = params.iter().flat_map(|word| word.to_le_bytes()).collect();
+    store.queue.write_buffer_counted(&params_buffer, 0, &bytes);
+    let chunk = &state.chunks[chunk_index];
+    let meta = &chunk.buffers[0];
+    let resources = [
+        ("gPK", params_buffer.as_entire_binding()),
+        ("pk_meta", meta.as_entire_binding()),
+        ("pk_src_reloc", regions[0].buffer.as_entire_binding()),
+        ("pk_src_runtime", regions[1].buffer.as_entire_binding()),
+        ("pk_src_undef", regions[2].buffer.as_entire_binding()),
+        ("pk_src_def", regions[3].buffer.as_entire_binding()),
+        ("pk_src_text", regions[4].buffer.as_entire_binding()),
+        ("pk_src_rodata", regions[5].buffer.as_entire_binding()),
+        ("pk_reloc", chunk.buffers[1].as_entire_binding()),
+        ("pk_undef", chunk.buffers[2].as_entire_binding()),
+        ("pk_def", chunk.buffers[3].as_entire_binding()),
+        ("pk_text", chunk.buffers[4].as_entire_binding()),
+        ("pk_rodata", chunk.buffers[5].as_entire_binding()),
+    ];
+    let label = "codegen.x86.link.resident.park";
+    let group = bind_group::create_bind_group_from_bindings(&store.device, Some(label), &store.park_pass, 0, &resources).ok()?;
+    record_or_defer_compute_direct(encoder, &store.park_pass, &group, label, (workgroups, 1, 1));
     state.slots.push(Slot { chunk: chunk_index, base, caps, key: None, identities: false });
     Some(ParkTicket { store: store.clone(), generation: state.generation, slot })
 }
@@ -370,11 +411,12 @@ pub(crate) fn park_identities(
 }
 
 impl GpuX86LinkStore {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, park_pass: PassData) -> Self {
         Self {
             device: device.clone(),
             queue: queue.clone(),
-            state: Mutex::new(StoreState { generation: 0, chunks: Vec::new(), slots: Vec::new() }),
+            park_pass,
+            state: Mutex::new(StoreState { generation: 0, chunks: Vec::new(), slots: Vec::new(), park_params: Vec::new() }),
         }
     }
 
@@ -709,7 +751,7 @@ impl GpuX86Linker {
         self.resident_store
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue)))
+            .get_or_insert_with(|| Arc::new(GpuX86LinkStore::new(device, queue, self.rl_park_pass.clone())))
             .clone()
     }
 
