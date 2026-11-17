@@ -149,10 +149,6 @@ pub(super) const CONDITIONS_COMPACT_DISTINCT_NODES_PASS: &str = "type_check.cond
 pub(super) const CONDITIONS_COMPACT_EXCLUSIVE_PASS: &str = "type_check.conditions.compact_exclusive";
 pub(super) const CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS: &str =
     "type_check.conditions.compact_aggregate_requests";
-pub(super) const CONDITIONS_AGGREGATE_ARGS_CALLS_PASS: &str =
-    "type_check.conditions.aggregate_args.calls";
-pub(super) const AGGREGATE_CALL_SCAN_PASSES: PrefixScanGraphPasses =
-    prefix_scan_graph_passes!("type_check.aggregate_requests.calls.scan");
 pub(super) const AGGREGATE_FINAL_SCAN_PASSES: PrefixScanGraphPasses =
     prefix_scan_graph_passes!("type_check.aggregate_requests.final.scan");
 pub(super) const AGGREGATE_SCAN_RESOURCES: PrefixScanResources<&'static str> =
@@ -387,6 +383,15 @@ pub(super) const CALLS_INFERENCE_RANGES_PASS: &str = "type_check.calls.inference
 pub(super) const CALLS_INFERENCE_RANGES_KERNEL: &str = "type_checker/calls/03m0_inference_ranges";
 pub(super) const CALLS_INFERENCE_LIST_ARGS_PASS: &str = "type_check.calls.inference_blocks.list_args";
 pub(super) const CALLS_INFERENCE_LIST_ARGS_KERNEL: &str = "type_checker/calls/03m2_inference_list_args";
+pub(super) const CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS: &str = "type_check.calls.struct_literal_rows.clear";
+pub(super) const CALLS_STRUCT_LITERAL_ROWS_PASS: &str = "type_check.calls.struct_literal_rows.list";
+pub(super) const CALLS_STRUCT_LITERAL_ROWS_KERNEL: &str = "type_checker/calls/03k5_list_struct_literal_rows";
+pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_PASS: &str = "type_check.calls.struct_literal_rows.args";
+pub(super) const CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL: &str = "type_checker/calls/03k6_struct_literal_row_args";
+pub(super) const CALLS_CALL_ROOTS_COUNT_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_count";
+pub(super) const CALLS_CALL_ROOTS_ARGS_CLEAR_PASS: &str = "type_check.substitution.call_roots.clear_args";
+pub(super) const CALLS_CALL_ROOTS_LIST_PASS: &str = "type_check.substitution.call_roots.list";
+pub(super) const CALLS_CALL_ROOTS_LIST_KERNEL: &str = "type_checker/substitution/04a_list_call_roots";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_PASS: &str = "type_check.calls.inference_blocks.list";
 pub(super) const CALLS_INFERENCE_BLOCK_LIST_KERNEL: &str =
     "type_checker/calls/03m1_inference_block_list";
@@ -3146,6 +3151,18 @@ fn build_graph(
         inference_token_blocks as "inference_token_blocks" in Calls => (2 + token_blocks) * 4;
         _inference_hir_list_args as "inference_hir_list_args" in DispatchArguments [StorageIndirect] => 12;
         _inference_token_list_args as "inference_token_list_args" in DispatchArguments [StorageIndirect] => 12;
+        // The locations of the call field closure's roots
+        // (substitution/04a_list_call_roots.slang): two per HIR row at most.
+        _call_root_list as "call_root_list" in HirNodes => (2 * hir_rows).max(1) * 16;
+        call_root_count as "call_root_count" in Calls => 4;
+        call_root_args as "call_root_args" in DispatchArguments [StorageIndirect] => 12;
+        // The rows of the rounds' struct-literal passes
+        // (calls/03k5_list_struct_literal_rows.slang).
+        _struct_literal_field_rows as "struct_literal_field_rows" in Tokens => token_rows * 4;
+        _struct_literal_hir_rows as "struct_literal_hir_rows" in HirNodes => hir_rows * 4;
+        struct_literal_row_counts as "struct_literal_row_counts" in Calls => 8;
+        _struct_literal_field_args as "struct_literal_field_args" in DispatchArguments [StorageIndirect] => 12;
+        _struct_literal_record_args as "struct_literal_record_args" in DispatchArguments [StorageIndirect] => 12;
     });
     // Listed kernels also run outside the rounds, where they bind the lists
     // but read them only in a round (inference_blocks.slang), after 03m0 and
@@ -3823,7 +3840,11 @@ fn build_graph(
         _call_explicit_constant_valid_mask as "call_explicit_constant_valid_mask" in Tokens => token_rows * 4;
         _call_explicit_binding_tag as "call_explicit_binding_tag" in Tokens => token_rows * 8 * 4;
         _call_explicit_binding_payload as "call_explicit_binding_payload" in Tokens => token_rows * 8 * 4;
-        _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 4;
+        // Binding rows, then the applications listed for 03a0b and its
+        // overflow flag.
+        _call_explicit_binding_count as "call_explicit_binding_count" in Tokens => 12;
+        _call_explicit_application_list as "call_explicit_application_list" in Tokens => token_rows * 4;
+        _call_explicit_admission_args as "call_explicit_admission_args" in DispatchArguments [StorageIndirect] => 12;
         backend_call_fn_index in Tokens => token_rows * 4;
         _call_intrinsic_tag as "call_intrinsic_tag" in Tokens => token_rows * 4;
         _call_param_count as "call_param_count" in Tokens => token_rows * 4;
@@ -5685,6 +5706,62 @@ fn build_graph(
         &[],
     )?;
     graph.mark_pass_bindings_initialize(CALLS_INFERENCE_LIST_ARGS_PASS, &["inference_list_writer_args"])?;
+    // The call field closure's root locations, for every round and the final
+    // pass.
+    graph.add_buffer_clear_pass(
+        CALLS_CALL_ROOTS_COUNT_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "call_root_count",
+        call_root_count,
+    )?;
+    graph.add_buffer_clear_pass(
+        CALLS_CALL_ROOTS_ARGS_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "call_root_args",
+        call_root_args,
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_CALL_ROOTS_LIST_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        CALLS_CALL_ROOTS_LIST_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(CALLS_CALL_ROOTS_LIST_PASS, "hir_active_dispatch_args")?;
+    graph.mark_pass_bindings_initialize(CALLS_CALL_ROOTS_LIST_PASS, &["call_root_list"])?;
+    // The rows of the rounds' struct-literal passes, recorded with them.
+    graph.add_buffer_clear_pass(
+        CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS,
+        CompilerPhase::TypeCheck,
+        "struct_literal_row_counts",
+        struct_literal_row_counts,
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_STRUCT_LITERAL_ROWS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        CALLS_STRUCT_LITERAL_ROWS_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(CALLS_STRUCT_LITERAL_ROWS_PASS, "token_hir_active_dispatch_args")?;
+    graph.mark_pass_bindings_initialize(
+        CALLS_STRUCT_LITERAL_ROWS_PASS,
+        &["struct_literal_field_rows", "struct_literal_hir_rows"],
+    )?;
+    graph.add_kernel_pass_by_name(
+        CALLS_STRUCT_LITERAL_ROW_ARGS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Calls,
+        kernels,
+        CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL,
+        &[],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        CALLS_STRUCT_LITERAL_ROW_ARGS_PASS,
+        &["struct_literal_field_args", "struct_literal_record_args"],
+    )?;
     // The unit's own trait implementations and bounds are declaration facts:
     // they are collected once, before the inference rounds (and before the
     // final pass of a job without rounds), and kept for every round.
@@ -5868,25 +5945,6 @@ fn build_graph(
     for spec in [CALLS_BOUND_DEPENDENCY_COLLECT, CALLS_BOUND_INFER] {
         spec.register_kernel(&mut graph, kernels)?;
     }
-    aggregate_scan(AGGREGATE_CALL_SCAN_PASSES).register_with_total_dispatch(
-        &mut graph,
-        prefix_scan_hierarchy_levels(hir_blocks),
-        "aggregate_compare_dispatch_args",
-    )?;
-    graph.add_kernel_pass_by_name(
-        CONDITIONS_AGGREGATE_ARGS_CALLS_PASS,
-        CompilerPhase::TypeCheck,
-        ResourceDomain::CallArguments,
-        kernels,
-        "type_checker/conditions/aggregate_args",
-        reflected_bindings![
-            "call_generic_slot_type" => call_generic_slot_type: ReadWrite,
-        ],
-    )?;
-    graph.add_indirect_dispatch(
-        CONDITIONS_AGGREGATE_ARGS_CALLS_PASS,
-        "aggregate_compare_dispatch_args",
-    )?;
     CALLS_APPLY_FINAL_ARGUMENTS.register_kernel(&mut graph, kernels)?;
     for (name, kernel, domain, bindings) in [
         (
@@ -6005,7 +6063,7 @@ fn build_graph(
                 kernels,
                 &super::substitution_passes::CALL_FIELD_CLOSURE,
                 ResourceDomain::HirNodes,
-                "hir_active_dispatch_args",
+                "call_root_args",
                 &application_bindings[..],
             )?;
         }
@@ -6062,6 +6120,8 @@ fn build_graph(
                     record_name,
                     if record_name == CALLS_RECORD_NESTED_CONTEXTS_PASS {
                         "inference_hir_list_args"
+                    } else if record_name == CALLS_RECORD_FIELDS_AND_REFS_PASS {
+                        "struct_literal_record_args"
                     } else {
                         "hir_active_dispatch_args"
                     },
@@ -8328,14 +8388,6 @@ mod tests {
             semantic_scatter.index() < graph.pass_id(FN_CONTEXT_MARK_PASS).unwrap().index(),
             "type-instance semantic rows are produced before function-context workspace runs",
         );
-        assert!(
-            semantic_scatter.index()
-                < graph
-                    .pass_id(CONDITIONS_AGGREGATE_ARGS_CALLS_PASS)
-                    .unwrap()
-                    .index(),
-            "semantic compaction must finish before aggregate consumers",
-        );
         assert_ne!(
             slot(resource("if_depth_inblock")),
             slot(resource("if_block_prefix")),
@@ -8478,14 +8530,6 @@ mod tests {
                         && access.mode.writes()
                 }),
             "raw struct-literal inference must refine the dense expression-reference artifact",
-        );
-        assert!(
-            graph
-                .pass_id(CONDITIONS_AGGREGATE_ARGS_CALLS_PASS)
-                .unwrap()
-                .index()
-                < graph.pass_id(INIT_PASS).unwrap().index(),
-            "call argument structural comparison must complete before expression typing",
         );
         assert!(
             aggregate_request_pass.index()
@@ -8713,27 +8757,6 @@ mod tests {
                 .index()
                 < aggregate_publish.index(),
             "strict generic claim validation consumes closed inference facts",
-        );
-        assert!(
-            graph
-                .pass_id(CALLS_CONST_CLAIM_INDEX_BUILD.name)
-                .unwrap()
-                .index()
-                < graph
-                    .pass_id(AGGREGATE_CALL_SCAN_PASSES.local)
-                    .unwrap()
-                    .index()
-        );
-        assert!(
-            graph
-                .pass_id(CONDITIONS_AGGREGATE_ARGS_CALLS_PASS)
-                .unwrap()
-                .index()
-                < graph
-                    .pass_id(CALLS_REQUIRED_GENERIC_VALIDATE.name)
-                    .unwrap()
-                    .index(),
-            "required-generic validation consumes aggregate comparison results",
         );
         assert!(
             final_argument_apply.index()

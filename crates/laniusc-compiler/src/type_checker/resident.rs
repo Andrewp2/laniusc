@@ -1887,11 +1887,6 @@ impl GpuTypeChecker {
                 if let Some(bound) = bound_inference {
                     bound.infer.record(encoder)?;
                 }
-                if aggregates_required {
-                    bind_groups
-                        .aggregate_comparison
-                        .record(encoder, AggregateComparisonStage::Calls)?;
-                }
                 bind_groups.calls.apply_final_row_args.record(encoder)?;
                 Ok(())
             };
@@ -2047,6 +2042,14 @@ impl GpuTypeChecker {
             bind_groups.calls.inference_blocks.clear.record(encoder);
             bind_groups.calls.inference_blocks.ranges.record(encoder)?;
             bind_groups.calls.inference_blocks.args.record(encoder)?;
+            // The call field closure's root locations.
+            bind_groups.calls.call_roots.record(encoder)?;
+            // The rows of the rounds' struct-literal passes.
+            if let Some(records) = &bind_groups.calls.record_literal_inference {
+                records.rows_clear.record(encoder);
+                records.rows_list.record(encoder)?;
+                records.rows_args.record(encoder)?;
+            }
             if let Some(list) = bind_groups.calls.type_row_list.as_ref() {
                 list.clear.record(encoder);
                 list.list.record(encoder)?;
@@ -2660,7 +2663,7 @@ impl GpuTypeChecker {
             if aggregates_required {
                 bind_groups
                     .aggregate_comparison
-                    .record(encoder, AggregateComparisonStage::Final)?;
+                    .record(encoder)?;
             }
             if methods_required {
                 // Re-publish method keys after all late call/type projections

@@ -23,6 +23,7 @@ RWStructuredBuffer<uint> call_explicit_arg_slot;
 RWStructuredBuffer<uint4> call_explicit_environment;
 RWStructuredBuffer<uint> call_explicit_constant_valid_mask;
 RWStructuredBuffer<uint> call_explicit_binding_count;
+RWStructuredBuffer<uint> call_explicit_admission_args;
 RWStructuredBuffer<uint> call_explicit_binding_tag;
 RWStructuredBuffer<uint> backend_call_fn_index;
 RWStructuredBuffer<uint> call_intrinsic_tag;
@@ -120,6 +121,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_generic_claim_count_out[0u] = 0u;
         call_const_claim_count_out[0u] = 0u;
         call_explicit_binding_count[0u] = 0u;
+        // No application is listed for 03a0b yet (03a0 appends them).
+        call_explicit_binding_count[1u] = 0u;
+        call_explicit_binding_count[2u] = 0u;
+        call_explicit_admission_args[0u] = 0u;
+        call_explicit_admission_args[1u] = 1u;
+        call_explicit_admission_args[2u] = 1u;
     }
     // Body replay scans the accepted reference column. Zero every unpublished
     // tag, including the spare capacity retained from a larger workspace job.

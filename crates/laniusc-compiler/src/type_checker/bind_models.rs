@@ -120,6 +120,10 @@ pub(in crate::type_checker) struct RecordLiteralInferenceOperations {
     pub(in crate::type_checker) nested_contexts: ComputeOperation,
     /// Field expectations and struct-literal references, one dispatch.
     pub(in crate::type_checker) fields_and_references: ComputeOperation,
+    /// Lists the rows of the struct-literal passes once per job.
+    pub(in crate::type_checker) rows_clear: crate::gpu::operations::ClearBufferOperation,
+    pub(in crate::type_checker) rows_list: ComputeOperation,
+    pub(in crate::type_checker) rows_args: ComputeOperation,
 }
 
 pub(in crate::type_checker) struct TypeInstanceCollectionOperations {
@@ -187,6 +191,7 @@ pub(in crate::type_checker) struct CallBindGroups {
     /// blocks at the start of each round's passes
     /// (calls/inference_blocks.slang).
     pub(in crate::type_checker) inference_blocks: InferenceBlockOperations,
+    pub(in crate::type_checker) call_roots: CallRootListOperations,
     pub(in crate::type_checker) return_type_index: Option<ComputeOperation>,
     pub(in crate::type_checker) return_imported_fields: Option<ComputeOperation>,
     pub(in crate::type_checker) project_expression_types: Option<ComputeOperation>,
@@ -218,6 +223,21 @@ pub(in crate::type_checker) struct CallBindGroups {
 }
 
 /// The passes of bound-directed generic call inference.
+/// The call field closure's root locations, listed once per job.
+pub(in crate::type_checker) struct CallRootListOperations {
+    pub(in crate::type_checker) clear_count: crate::gpu::operations::ClearBufferOperation,
+    pub(in crate::type_checker) clear_args: crate::gpu::operations::ClearBufferOperation,
+    pub(in crate::type_checker) list: ComputeOperation,
+}
+
+impl CallRootListOperations {
+    pub(in crate::type_checker) fn record(&self, encoder: &mut wgpu::CommandEncoder) -> Result<()> {
+        self.clear_count.record(encoder);
+        self.clear_args.record(encoder);
+        self.list.record(encoder)
+    }
+}
+
 pub(in crate::type_checker) struct InferenceBlockOperations {
     /// Zeroes the function ranges, marks and always-active lists.
     pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,

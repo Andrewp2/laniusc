@@ -577,12 +577,7 @@ impl GpuTypeChecker {
             }),
         )?;
         resources.validate_graph_passes_if_present(
-            [
-                compiler_graph::AGGREGATE_CALL_SCAN_PASSES,
-                compiler_graph::AGGREGATE_FINAL_SCAN_PASSES,
-            ]
-            .into_iter()
-            .flat_map(|passes| passes.names()),
+            compiler_graph::AGGREGATE_FINAL_SCAN_PASSES.names(),
         )?;
         allocation_stamp!("conditions_and_calls");
         let predicates =

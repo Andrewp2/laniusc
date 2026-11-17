@@ -309,6 +309,29 @@ The writer's traced cost includes the copy-to-compute barrier after the round nu
 
 Masked passes not yet listed: claim emission `03a1` (its span check visits inactive items), `methods/06_mark_call_keys` (one grid over both domains), `16_project_struct_literals` through the imported fields group, the argument-row passes (`03a0_match_arg_params_init`, argument consumption, `03k`, parameter scatter), the gated explicit binding `03a0`, and the match and enum passes.
 
+## Unmasked passes on lists (2026-11-17, third pass)
+
+Each pass below visited every token or every HIR row in every round. Each now visits a list of the rows it can act on, built before the rounds or appended to by the one pass that adds a row.
+
+| Pass | Rows it can act on | Who adds a row | List |
+|---|---|---|---|
+| `03a0b` explicit constant admission | applying tokens with reserved binding rows. Only those can have a valid constant. | `03a0`, when a token reserves its rows (once per job) | `call_explicit_application_list`, appended by `03a0`, which raises the dispatch arguments `call_explicit_admission_args` with `InterlockedMax`. `calls/01_resolve` resets them. An overflowing list makes `03a0b` visit every token. |
+| `substitution/04` call-root expansion | call rows (their result) and argument rows (their context root) | none: both depend on the HIR and the argument rows only | `call_root_list`, built by `04a_list_call_roots` before the rounds. Each entry keeps the instance row it last pushed. A row interns to one ID for the job, and the ID's mark is set once it is pushed, so an unchanged row is skipped before interning. |
+| `match/01` field expectations | name tokens of struct-literal field rows | `type/instances/04`, `04b` and `dependencies/16` write only those tokens | `struct_literal_field_rows` (`calls/03k5`). The rounds use `01b_listed_field_expected_ids`. The early pass still writes every token, so the other tokens keep `CT_NONE`. |
+| `03k4` record fields and references | struct-literal field rows, and member and struct-literal HIR rows | none (HIR) | `struct_literal_field_rows` then `struct_literal_hir_rows`, sized by `03k6` |
+
+Two more changes removed unmasked work:
+
+- **Empty closure runs.** A field-closure run whose roots queued nothing now closes in its opening advance (`06`). It sets the state that four empty level rounds would leave (start = end = queue length, round count 0, no progress) and writes zero arguments to both level buffers. On settings, rounds 6, 7, 9 and 10 skip their four level dispatches.
+- **The calls-stage aggregate comparison.** Inside the rounds and the final pass, the only writers of `aggregate_compare_scan_input` are `03a4a` and `03a4b`, and both write 0. `03a4a` zeroes every active row in round 1 and in the final pass, so the calls-stage scan always summed zeros and its comparison dispatched no workgroup. The scan, its apply and `conditions.aggregate_args.calls` were removed. `conditions/compact_aggregate_requests` fills the input after the rounds, and the final-stage comparison reads it, as before.
+
+Idle round after convergence, untraced (minimum of 4 builds). "Unmasked" is the round with the masked passes at zero workgroups, minus the round with every pass at zero:
+
+| | Round | Unmasked passes |
+|---|---|---|
+| After the listed active blocks | 225.9 µs | 134.7 µs |
+| After the lists and the two removals | 166.7 µs | 76.2 µs |
+
 ## What remains
 
 - Activity per item, as above.

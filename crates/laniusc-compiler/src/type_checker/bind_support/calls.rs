@@ -243,7 +243,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             resources,
             hir_dispatch_args,
             &listed_hir_args,
-            &token_dispatch_args,
+            &typed_buffer_from_resources(resources, "call_explicit_admission_args")?,
             struct_init_passes_required(parser_feature_flags),
         )?,
         contextual_result_requests: listed_spec(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
@@ -305,7 +305,7 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             resources,
             passes,
             &substitution_passes::CALL_FIELD_CLOSURE,
-            hir_dispatch_args,
+            &typed_buffer_from_resources(resources, "call_root_args")?,
         )?,
         project_argument_contexts: Some(substitution_passes::ArgumentContextOperations {
             call_envs: ComputeOperation::indirect(
@@ -338,6 +338,28 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             "type_checker/type/instances/02c_index_closed_applications",
             &token_dispatch_args,
         )?,
+        call_roots: CallRootListOperations {
+            clear_count: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_CALL_ROOTS_COUNT_CLEAR_PASS,
+                "call_root_count",
+                &typed_buffer_from_resources::<u32>(resources, "call_root_count")?,
+            )?,
+            clear_args: crate::gpu::operations::ClearBufferOperation::entire(
+                graph,
+                compiler_graph::CALLS_CALL_ROOTS_ARGS_CLEAR_PASS,
+                "call_root_args",
+                &typed_buffer_from_resources::<u32>(resources, "call_root_args")?,
+            )?,
+            list: ComputeOperation::indirect(
+                device,
+                graph,
+                resources,
+                compiler_graph::CALLS_CALL_ROOTS_LIST_PASS,
+                &passes.kernel(compiler_graph::CALLS_CALL_ROOTS_LIST_KERNEL),
+                hir_dispatch_args,
+            )?,
+        },
         inference_blocks: InferenceBlockOperations {
             clear: crate::gpu::operations::ClearBufferOperation::entire(
                 graph,
@@ -424,16 +446,6 @@ pub(in crate::type_checker) fn create_call_bind_groups(
             "type_checker/calls/03g_project_expression_types",
         )?,
         record_literal_inference: if struct_init_passes_required(parser_feature_flags) {
-            let operation = |name, kernel| {
-                ComputeOperation::indirect(
-                    device,
-                    graph,
-                    resources,
-                    name,
-                    &passes.kernel(kernel),
-                    hir_dispatch_args,
-                )
-            };
             let listed = |name, kernel| {
                 ComputeOperation::indirect(
                     device,
@@ -453,9 +465,32 @@ pub(in crate::type_checker) fn create_call_bind_groups(
                     compiler_graph::CALLS_RECORD_NESTED_CONTEXTS_PASS,
                     "type_checker/type/instances/04a3_nested_struct_contexts",
                 )?,
-                fields_and_references: operation(
+                fields_and_references: ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
                     compiler_graph::CALLS_RECORD_FIELDS_AND_REFS_PASS,
-                    "type_checker/calls/03k4_record_fields_and_refs",
+                    &passes.kernel("type_checker/calls/03k4_record_fields_and_refs"),
+                    &typed_buffer_from_resources(resources, "struct_literal_record_args")?,
+                )?,
+                rows_clear: crate::gpu::operations::ClearBufferOperation::entire(
+                    graph,
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROWS_CLEAR_PASS,
+                    "struct_literal_row_counts",
+                    &typed_buffer_from_resources::<u32>(resources, "struct_literal_row_counts")?,
+                )?,
+                rows_list: ComputeOperation::indirect(
+                    device,
+                    graph,
+                    resources,
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROWS_PASS,
+                    &passes.kernel(compiler_graph::CALLS_STRUCT_LITERAL_ROWS_KERNEL),
+                    &typed_buffer_from_resources(resources, "token_hir_active_dispatch_args")?,
+                )?,
+                rows_args: direct_name(
+                    compiler_graph::CALLS_STRUCT_LITERAL_ROW_ARGS_PASS,
+                    &passes.kernel(compiler_graph::CALLS_STRUCT_LITERAL_ROW_ARGS_KERNEL),
+                    1,
                 )?,
             })
         } else {

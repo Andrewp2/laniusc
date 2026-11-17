@@ -44,7 +44,13 @@ bool valid_instance(uint instance)
 // One dense HIR row of the struct-literal reference projection.
 public void struct_literal_ref_lane(uint3 dtid)
 {
-    uint dense = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
+    struct_literal_ref_row(linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE));
+}
+
+// The HIR row `dense` (calls/03k4 visits the member and struct-literal rows
+// calls/03k5 listed).
+public void struct_literal_ref_row(uint dense)
+{
     if (dense >= gParams.n_hir_nodes) return;
 
     uint kind = compact_hir_core[dense].kind;

@@ -18,7 +18,8 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_CONSTANTS_ADMIT: ReflectedCompu
         Tokens,
         "type_checker/calls/03a0b_validate_explicit_constants"
     )
-    .with_indirect_dispatch("token_active_dispatch_args");
+    // The applications that reserved binding rows (03a0).
+    .with_indirect_dispatch("call_explicit_admission_args");
 
 pub(in crate::type_checker) const CALLS_CONST_ENVIRONMENT_PUBLISH: ReflectedComputeSpec =
     typecheck_pass!(
@@ -75,7 +76,7 @@ impl CallEnvironmentAdmission {
         resources: &ResourceMap<'_>,
         hir_dispatch_args: &LaniusBuffer<u32>,
         listed_hir_args: &LaniusBuffer<u32>,
-        token_dispatch_args: &LaniusBuffer<u32>,
+        explicit_admission_args: &LaniusBuffer<u32>,
         record_contexts: bool,
     ) -> Result<Self> {
         let context = |spec| {
@@ -92,7 +93,7 @@ impl CallEnvironmentAdmission {
                 resources,
                 passes,
                 CALLS_EXPLICIT_CONSTANTS_ADMIT,
-                token_dispatch_args,
+                explicit_admission_args,
             )?,
             result_requests: listed(CALLS_CONTEXT_CONSTANTS_ADMIT)?,
             record_contexts: if record_contexts {

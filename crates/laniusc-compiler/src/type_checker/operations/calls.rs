@@ -293,6 +293,8 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_BIND: ReflectedCom
         .with_modes(&[
             ("call_explicit_binding_tag", AccessMode::Write),
             ("call_explicit_binding_payload", AccessMode::Write),
+            // 03a0b reads the entries below the listed count only.
+            ("call_explicit_application_list", AccessMode::Write),
         ])
         .with_indirect_dispatch("explicit_application_dispatch_args");
 pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: ReflectedComputeSpec =

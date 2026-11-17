@@ -289,13 +289,22 @@ pub(super) fn register_field_closure_passes(
         &[],
     )?;
     graph.add_indirect_dispatch(passes.roots, roots_dispatch)?;
+    // The advance writes the other level rounds' arguments only to skip a
+    // run without input; a level round writes them before they are read.
+    let other_args = graph
+        .resource_id(EXPAND_ARGS[1])
+        .ok_or("field closure arguments are not declared")?;
     graph.add_kernel_pass_by_name(
         passes.advance,
         CompilerPhase::TypeCheck,
         ResourceDomain::Types,
         kernels,
         EXPAND_ADVANCE_KERNEL,
-        &[],
+        &[ReflectedResourceBinding {
+            binding: "ct_expand_args_b",
+            resource: other_args,
+            mode: Some(AccessMode::Write),
+        }],
     )?;
     graph.mark_pass_bindings_initialize(passes.advance, &["ct_expand_args"])?;
     for (index, &level) in passes.levels.iter().enumerate() {
