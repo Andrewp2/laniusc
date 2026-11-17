@@ -108,7 +108,8 @@ impl CatalogKernels {
             if index == IMPLEMENTATION_HEADS + 1 {
                 continue; // recorded with its heads below
             }
-            let threads = if matches!(phase, 0 | 11) { 1 } else { 256 };
+            // Initialization (0) admits in one workgroup (admission_group.slang).
+            let threads = if phase == 11 { 1 } else { 256 };
             let (steps, chunk) = if index == IMPLEMENTATION_HEADS {
                 (&self.passes[index..index + 2], THREAD_SCRATCH_SLOTS)
             } else {
@@ -541,7 +542,8 @@ impl BatchKernels {
             &self.passes[0],
             12,
             Span::new(0, 1)?,
-            1,
+            // One workgroup (admission_group.slang).
+            256,
             catalog,
             input,
             output,

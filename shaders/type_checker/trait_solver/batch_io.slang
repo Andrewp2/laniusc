@@ -51,14 +51,18 @@ public void ts_batch_failure(SolverStatus status)
 }
 public void ts_batch_initialize()
 {
+    ts_batch_initialize_admitted(ts_admit_output_layout(), ts_admit_directories());
+}
+// Batch initialization with the output layout and directory admission
+// statuses (ts_admit_group).
+public void ts_batch_initialize_admitted(SolverStatus layout, SolverStatus directories)
+{
     // Layout rejection must leave trusted host-initialized state UNPROCESSED;
     // it must never enable later writers. The receipt is reset EVERY submission.
-    SolverStatus status = ts_admit_output_layout();
-    if (status.state != TS_VALID) return;
+    if (layout.state != TS_VALID) return;
     SolverStatus building = ts_ok(); building.state = TS_BATCH_BUILDING;
     ts_write_batch_receipt(building);
-    status = ts_admit_directories();
-    if (status.state != TS_VALID) { ts_batch_failure(status); return; }
+    if (directories.state != TS_VALID) { ts_batch_failure(directories); return; }
     if (!ts_catalog_is_valid()) ts_batch_failure(ts_invalid(15u, 0u, TS_INVALID));
 }
 public bool ts_context_goal_scope(uint context, out uint owner, out bool closed)

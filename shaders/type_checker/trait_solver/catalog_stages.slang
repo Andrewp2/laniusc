@@ -4,14 +4,18 @@ import type_checker.trait_solver.catalog_index;
 
 public void ts_catalog_initialize()
 {
+    ts_catalog_initialize_admitted(ts_admit_output_layout(), ts_admit_directories());
+}
+// Catalog initialization with the output layout and directory admission
+// statuses (ts_admit_group).
+public void ts_catalog_initialize_admitted(SolverStatus layout, SolverStatus directories)
+{
     // Host reset CatalogStatus to UNPROCESSED at a trusted output address first.
     // If the claimed layout itself is unsafe, leave that receipt unprocessed.
-    SolverStatus layout = ts_admit_output_layout();
     if (layout.state != TS_VALID) return;
     SolverStatus blank = ts_ok(); blank.state = TS_CATALOG_BUILDING;
     ts_write_status(0u, 0u, blank);
-    SolverStatus status = ts_admit_directories();
-    if (status.state != TS_VALID) ts_catalog_failure(status);
+    if (directories.state != TS_VALID) ts_catalog_failure(directories);
 }
 public void ts_catalog_clear_work(uint local)
 {
