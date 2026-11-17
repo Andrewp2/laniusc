@@ -952,7 +952,7 @@ fn run(
     }
     write_host_config(&queue, &scratch.config, &config);
     let input_words = submission.plan.input_word_count;
-    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, false, |encoder, input| {
+    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, None, |encoder, input| {
         if options.poison_arenas && input_words > BATCH_FIXED_WORDS {
             let range = (BATCH_FIXED_WORDS, input_words - BATCH_FIXED_WORDS, RETAINED_POISON);
             producer.fill_words(encoder, &workspace, &scratch, store, &input.buffer, &[range])?;
@@ -1404,12 +1404,20 @@ impl GpuTraitSolver {
     /// `fill` (the producer's batch rows) in one submit, then the solver's
     /// batch admission and proof waves. No host acceptance follows: the
     /// selected evidence stays in the GPU output arena.
+    ///
+    /// With `gpu_counts` = (buffer, first word), the submission was prepared
+    /// from bounds of the batch's counts, and the counts are in `buffer`
+    /// at `first word + table` when `fill` returns: they are copied into the
+    /// batch directory (`record_gpu_batch_counts`), and the solve is
+    /// deferred, its progress read by the caller's later readback. Without
+    /// it the submission holds the exact counts and the solve reads its
+    /// progress back.
     fn check_retained(
         &mut self,
         packet: &mut GpuPacket,
         submission: &Submission,
         semantic_rows: bool,
-        defer: bool,
+        gpu_counts: Option<(&LaniusBuffer<u32>, u64)>,
         fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
     ) -> Result<(Option<WaveReadback>, OutputLayout)> {
         ensure!(
@@ -1440,6 +1448,10 @@ impl GpuTraitSolver {
         packet.output.prepare(&mut encoder, submission.plan.output_word_count, &submission.plan.output_copies)?;
         packet.input.upload(&mut encoder, &submission.plan.writes)?;
         fill(&mut encoder, &packet.input)?;
+        let defer = gpu_counts.is_some();
+        if let Some((counts, first_word)) = gpu_counts {
+            super::record_gpu_batch_counts(&mut encoder, &packet.input, counts, first_word)?;
+        }
         passes_core::flush_deferred_compute(&mut encoder);
         self.queue.submit(Some(encoder.finish()));
         let mut templates = std::mem::take(&mut self.wave_templates);

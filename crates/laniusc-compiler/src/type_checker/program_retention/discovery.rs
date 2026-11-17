@@ -361,7 +361,7 @@ impl RetainedDiscovery {
                         hi,
                         Some(&status[STATUS_WORDS..]),
                         true,
-                        !self.eager_closed,
+                        (!self.eager_closed).then_some(wave_predicated),
                     )?;
                     report.closed_trait_waves += 1;
                     if check.producer_failures != 0 {

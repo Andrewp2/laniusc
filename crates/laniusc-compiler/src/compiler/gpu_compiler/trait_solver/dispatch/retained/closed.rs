@@ -7,6 +7,21 @@ use super::*;
 const SOLVER_WORDS: usize = wave::READ_WORDS as usize + 8;
 use super::super::kernels::wave;
 
+/// cw_config words: the host's bound of each batch table count (+ table),
+/// which 07_totals checks.
+const CW_BOUNDS: usize = 104;
+const CW_CONFIG_WORDS: usize = CW_BOUNDS + TABLE_COUNT;
+/// cw_state words from 07_totals (closed/common.slang): the batch table
+/// counts (+ table), then obligations, atoms, calls and the fault word.
+const CW_COUNTS: u64 = 32;
+const CW_PUBLISH: u64 = 50;
+const CW_STATE_WORDS: u32 = 64;
+/// Route header words the GPU copies from CW_PUBLISH: obligations and
+/// atoms, then calls and the producer fault (route_abi.slang).
+const RP_H_OBLIGATIONS: u64 = 12;
+const RP_H_CALLS: u64 = 30;
+const RP_H_PRODUCER: usize = 31;
+
 const CLOSED_KEYS: [&str; 11] = [
     "type_checker/trait_solver/retained/closed/00_init",
     "type_checker/trait_solver/retained/closed/01_catalog",
@@ -86,6 +101,11 @@ impl ClosedTraitPublication {
     /// incomplete and the caller solves again eagerly.
     pub fn accept_receipt(&mut self, receipt: &[u32]) -> Result<Option<[u32; 3]>> {
         ensure!(receipt.len() >= RP_HEADER_WORDS as usize, "closed publication receipt is short");
+        // A deferred batch the producer could not place (07_totals): the
+        // solve ran on no rows, and the eager check reports why.
+        if receipt[RP_H_PRODUCER] != 0 {
+            return Ok(None);
+        }
         if self.solver.is_some() {
             ensure!(receipt.len() >= Self::RECEIPT_WORDS, "closed publication receipt has no solver state");
             let state = &receipt[RP_HEADER_WORDS as usize..][..wave::READ_WORDS as usize];
@@ -223,7 +243,63 @@ impl ClosedProducer {
     }
 }
 
+const A_TERM_ARGS: usize = 3;
+
+/// Bounds of a deferred closed batch's table counts (07_totals checks
+/// them). `selected` is the wave's instances with closed predicates: one
+/// call (tables 11, 15) each, at most 32 type arguments (7, 12) and,
+/// usually, at most 16 predicates (16) over the impl and its parent. Terms
+/// reached from them (1, 5, 6) are bounded by the store and, usually, by 64
+/// per instance. A count over its bound sends the wave to the eager check.
+fn closed_bounds(selected: u32, terms: u32, term_args: u32, traits: u32) -> [u32; TABLE_COUNT] {
+    let per = |n: u32| selected.saturating_mul(n);
+    let reached = terms.min(per(64).saturating_add(64));
+    let mut bounds = [0; TABLE_COUNT];
+    bounds[1] = reached;
+    bounds[5] = reached;
+    bounds[6] = term_args.min(per(128).saturating_add(128));
+    bounds[7] = per(32);
+    bounds[12] = per(32);
+    bounds[11] = selected;
+    bounds[15] = selected;
+    bounds[13] = selected.min(1);
+    bounds[16] = per(traits.saturating_mul(2).min(16));
+    bounds
+}
+
+/// A closed batch placed in its packet and route arena, from counts or
+/// bounds of counts.
+struct ClosedPlacement {
+    packet: GpuPacket,
+    submission: Submission,
+    routes: Arena,
+    uses: u32,
+    use_map: u32,
+    route_rows: u32,
+    atom_ids: u32,
+    route_words: u32,
+}
+
 impl RetainedTraitPublication {
+    /// Places a closed batch of `rows` (exact counts or bounds) and writes
+    /// its locations into `config`: the batch table offsets (68 + table),
+    /// the atom identities (10) and the use map (11) of the route arena.
+    fn place_closed(&self, rows: [u32; TABLE_COUNT], uses: u32, config: &mut [u32]) -> Result<ClosedPlacement> {
+        let catalog = &self.gpu.catalog;
+        let mut packet = self.gpu.new_packet()?;
+        let (submission, offsets) = packet.packet.prepare_retained_submission(rows)?;
+        config[68..86].copy_from_slice(&offsets);
+        let atoms = add(catalog.slices[1].count, rows[1], "closed atoms")?;
+        let use_map = RP_HEADER_WORDS;
+        let route_rows = add(use_map, mul(uses, RP_USE_WORDS, "closed use map")?, "closed routes")?;
+        let atom_ids = add(route_rows, mul(rows[16], RP_ROUTE_WORDS, "closed route rows")?, "closed ids")?;
+        let route_words = add(atom_ids, mul(atoms, 2, "closed ids")?, "closed route arena")?;
+        let routes = Arena::uninitialized(&self.gpu.workspace, "closed.routes", route_words)?;
+        config[10] = atom_ids;
+        config[11] = use_map;
+        Ok(ClosedPlacement { packet, submission, routes, uses, use_map, route_rows, atom_ids, route_words })
+    }
+
     /// `instances` has the discovery/projection layout: two uint4 per row,
     /// beginning with (declaration, normalized closed ENV, generation, ...).
     /// The producer solves applicable predicates for [first, end), without
@@ -235,7 +311,7 @@ impl RetainedTraitPublication {
         first: u32,
         end: u32,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
-        self.solve_instances_with_counts(store, instances, first, end, None, false, false)
+        self.solve_instances_with_counts(store, instances, first, end, None, false, None)
     }
 
     /// `solve_instances` with the store's current `rt_counts` words, when
@@ -244,6 +320,15 @@ impl RetainedTraitPublication {
     /// but its receipt is not read: the caller copies it with
     /// `copy_receipt`, reads it with its next readback and passes it to
     /// `accept_receipt` before using the publication.
+    ///
+    /// `defer_solve` is the number of instances in [first, end) with closed
+    /// predicates, for a solve whose progress the receipt carries. Such a
+    /// check reads nothing back: the host sizes the batch from bounds
+    /// derived from that number (`closed_bounds`), and the GPU writes the
+    /// counts into the batch and route headers. Counts beyond the bounds,
+    /// a producer failure or a wave without calls leave the batch empty and
+    /// set the receipt's producer word: `accept_receipt` then returns None
+    /// and the caller checks again eagerly, which reports any failure.
     pub fn solve_instances_with_counts(
         &mut self,
         store: &ProgramRetention,
@@ -252,9 +337,9 @@ impl RetainedTraitPublication {
         end: u32,
         store_counts: Option<&[u32]>,
         defer_receipt: bool,
-        defer_solve: bool,
+        defer_solve: Option<u32>,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
-        ensure!(defer_receipt || !defer_solve, "a deferred closed solve needs a deferred receipt");
+        ensure!(defer_receipt || defer_solve.is_none(), "a deferred closed solve needs a deferred receipt");
         self.view(store)?;
         ensure!(
             store_counts.is_none_or(|c| c.len() >= counts::WORDS),
@@ -297,7 +382,7 @@ impl RetainedTraitPublication {
         end: u32,
         store_counts: Option<&[u32]>,
         defer_receipt: bool,
-        defer_solve: bool,
+        defer_solve: Option<u32>,
     ) -> Result<(ClosedTraitCheck, Option<ClosedTraitPublication>)> {
         let workspace = self.gpu.workspace.clone();
         let device = self.gpu.device.clone();
@@ -352,7 +437,7 @@ impl RetainedTraitPublication {
         // over the block totals, then the block prefixes added (07_scan
         // modes 0, 1, 2). The result is in cw_scan_a (config word 7 = 0).
         let steps = [0u32, 1, 2];
-        let mut config = vec![0; 104];
+        let mut config = vec![0; CW_CONFIG_WORDS];
         config[..8].copy_from_slice(&[
             terms,
             status[A_PARAMS],
@@ -368,13 +453,23 @@ impl RetainedTraitPublication {
             config[50 + t] = catalog.slices[t].count;
             config[86 + t] = WIDTHS[t];
         }
+        // A deferred check places its batch from bounds before the producer
+        // runs; an eager one from the counts it reads after.
+        let bounds = defer_solve.map(|selected| {
+            closed_bounds(selected.min(end - first), terms, status[A_TERM_ARGS], status[A_TRAITS])
+        });
+        config[CW_BOUNDS..].copy_from_slice(&bounds.unwrap_or([u32::MAX; TABLE_COUNT]));
+        let placed = match bounds {
+            Some(rows) => Some(self.place_closed(rows, end, &mut config)?),
+            None => None,
+        };
         let mut step_words = vec![0; steps.len().max(1) * STAGE_STRIDE as usize / 4];
         for (i, mode) in steps.iter().enumerate() {
             step_words[i * 64] = *mode;
         }
         for (name, size) in [
-            ("cw_config", 104),
-            ("cw_state", 32),
+            ("cw_config", CW_CONFIG_WORDS as u32),
+            ("cw_state", CW_STATE_WORDS),
             ("cw_decl", mul(status[A_DECLS], 4, "closed declarations")?),
             ("cw_param", status[A_PARAMS]),
             ("cw_atom_slots", slots),
@@ -419,7 +514,7 @@ impl RetainedTraitPublication {
                 .max(terms)
                 .max(status[A_DECLS])
                 .max(status[A_PARAMS])
-                .max(32),
+                .max(CW_STATE_WORDS),
             store,
             &ext,
             0,
@@ -451,67 +546,57 @@ impl RetainedTraitPublication {
         passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
         queue.submit(Some(encoder.finish()));
-        let mut state = producer
-            .reader
-            .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
-        if state[5] != 0 {
-            state[0] |= 1 << 7;
-            state[1] = 0;
-        }
         let mut report = ClosedTraitCheck {
-            producer_failures: state[0],
-            first_failure: state[1],
+            producer_failures: 0,
+            first_failure: u32::MAX,
             rows: [0; TABLE_COUNT],
             batch_status: None,
         };
-        if state[0] != 0 {
-            return Ok((report, None));
-        }
-        for (c, t) in [
-            (0, 1),
-            (1, 5),
-            (2, 6),
-            (3, 7),
-            (3, 12),
-            (4, 11),
-            (4, 15),
-            (5, 16),
-        ] {
-            report.rows[t] = state[8 + c];
-        }
-        report.rows[13] = u32::from(report.rows[15] != 0);
-        if report.rows[15] == 0 {
-            return Ok((report, None));
-        }
-        let mut packet = self.gpu.new_packet()?;
-        let (submission, offsets) = packet.packet.prepare_retained_submission(report.rows)?;
-        config[68..86].copy_from_slice(&offsets);
-        let uses = end;
-        let obligations = report.rows[16];
-        let atoms = add(catalog.slices[1].count, report.rows[1], "closed atoms")?;
-        let use_map = RP_HEADER_WORDS;
-        let route_rows = add(
-            use_map,
-            mul(uses, RP_USE_WORDS, "closed use map")?,
-            "closed routes",
-        )?;
-        let atom_ids = add(
-            route_rows,
-            mul(obligations, RP_ROUTE_WORDS, "closed route rows")?,
-            "closed ids",
-        )?;
-        let route_words = add(atom_ids, mul(atoms, 2, "closed ids")?, "closed route arena")?;
-        let routes = Arena::uninitialized(&workspace, "closed.routes", route_words)?;
-        config[10] = atom_ids;
-        config[11] = use_map;
-        producer.buffers["cw_config"].write(&queue, 0, &words_bytes(&config));
+        let placed = match placed {
+            Some(placed) => placed,
+            None => {
+                let mut state = producer
+                    .reader
+                    .read(&producer.buffers["cw_state"], 32, "closed trait demand")?;
+                if state[5] != 0 {
+                    state[0] |= 1 << 7;
+                    state[1] = 0;
+                }
+                report.producer_failures = state[0];
+                report.first_failure = state[1];
+                if state[0] != 0 {
+                    return Ok((report, None));
+                }
+                for (c, t) in [
+                    (0, 1),
+                    (1, 5),
+                    (2, 6),
+                    (3, 7),
+                    (3, 12),
+                    (4, 11),
+                    (4, 15),
+                    (5, 16),
+                ] {
+                    report.rows[t] = state[8 + c];
+                }
+                report.rows[13] = u32::from(report.rows[15] != 0);
+                if report.rows[15] == 0 {
+                    return Ok((report, None));
+                }
+                let placed = self.place_closed(report.rows, end, &mut config)?;
+                producer.buffers["cw_config"].write(&queue, 0, &words_bytes(&config));
+                placed
+            }
+        };
+        let ClosedPlacement { mut packet, submission, routes, uses, atom_ids, use_map, route_rows, route_words } = placed;
+        let gpu_counts = defer_solve.map(|_| (&producer.buffers["cw_state"], CW_COUNTS));
         // Source identity words live at a count-derived offset, not read
         // from a semantic row: source layout is fixed by its packet counts.
         let source_atom_ids = self.route_words - catalog.slices[1].count * 2;
         let catalog_buffer = self.gpu.storage.buffer.clone();
         let (readback, output_layout) =
             self.gpu
-                .check_retained(&mut packet, &submission, false, defer_solve, |encoder, input| {
+                .check_retained(&mut packet, &submission, false, gpu_counts, |encoder, input| {
                     routes
                         .buffer
                         .clear(encoder, 0, Some(u64::from(route_words) * 4));
@@ -532,7 +617,7 @@ impl RetainedTraitPublication {
                     producer.record(encoder, 8, lanes, store, &ext, 0)
                 })?;
         report.batch_status = readback.map(|r| r.batch_status);
-        let solver = if defer_solve {
+        let solver = if defer_solve.is_some() {
             let state = self
                 .gpu
                 .last_wave_state
@@ -565,8 +650,8 @@ impl RetainedTraitPublication {
         ]);
         header[10] = INVALID;
         header[11] = uses;
-        header[12] = obligations;
-        header[13] = atoms;
+        // Obligations, atoms (12, 13), calls and the producer fault (30,
+        // 31) are copied from 07_totals below.
         header[14] = use_map;
         header[15] = route_rows;
         header[16] = atom_ids;
@@ -575,7 +660,6 @@ impl RetainedTraitPublication {
         }
         header[19] = catalog.slices[9].count;
         header[20] = catalog.slices[10].count;
-        header[30] = report.rows[15];
         for (word, t) in [(32, 3), (33, 4), (34, 5), (35, 10)] {
             header[word] = output_layout.slices[t].offset;
         }
@@ -597,6 +681,9 @@ impl RetainedTraitPublication {
                 words: header,
             }],
         )?;
+        let state = &producer.buffers["cw_state"];
+        state.copy_to(&mut encoder, CW_PUBLISH * 4, &routes.buffer, RP_H_OBLIGATIONS * 4, 8);
+        state.copy_to(&mut encoder, (CW_PUBLISH + 2) * 4, &routes.buffer, RP_H_CALLS * 4, 8);
         let ext = [
             ("rc_routes", routes.buffer.as_entire_binding()),
             ("rp_catalog", self.gpu.storage.buffer.as_entire_binding()),
@@ -611,7 +698,7 @@ impl RetainedTraitPublication {
         producer.record(
             &mut encoder,
             9,
-            add(uses, obligations, "closed publication lanes")?,
+            add(uses, submission.obligation_span.count, "closed publication lanes")?,
             store,
             &ext,
             0,

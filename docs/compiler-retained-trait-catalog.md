@@ -457,6 +457,24 @@ producer state word 5 when the frontier is still pending, which is failure
 code 7, as before. Each wave needs one submit and one readback. The
 whole-term scans remain.
 
+A wave whose solve is deferred (discovery's default) reads nothing back
+before its batch is placed. The host places the batch from bounds of its
+counts (`closed_bounds`): each instance with closed predicates, which
+discovery counts, adds one call and environment, at most 32 bindings and,
+usually, at most 16 obligations; the reached terms are bounded by the store
+and, usually, by 64 per instance. `07_totals` writes the table counts to
+`cw_state` 32 + table, or zeros with a fault word (word 53) after a producer
+failure, a pending frontier, a wave without calls or a count over its bound.
+`08_fill` writes nothing after a fault. The solver copies the counts into
+the batch directory before its admission (`check_retained` with GPU counts,
+`record_gpu_batch_counts`), and batch initialization rejects a count above
+its table's capacity. The publication copies obligations, atoms, calls and
+the fault word into route header words 12, 13, 30 and 31. A receipt with a
+fault returns None from `accept_receipt`, and discovery checks the wave
+again eagerly: that check reads the counts and reports any producer
+failure, as before. Settings: one readback fewer per closed wave, three per
+build.
+
 The counter scan (`closed/06_scan`) is a block scan in three dispatches
 for any lane count: each 256-lane workgroup scans its lanes' two `uint4`
 counter blocks in shared memory and writes its totals to `cw_blocks`, one
