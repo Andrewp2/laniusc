@@ -764,6 +764,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             diagnostic_tokens: DiagnosticTokenBuffer::from_lexer_buffers(bufs),
             hir,
             semantic_interface,
+            early_semantic_interface: None,
         })
     }
 
@@ -976,7 +977,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             ));
         }
         finish_timer.stamp("parser_status");
-        let recorded = deferred.recorded;
+        let mut recorded = deferred.recorded;
         crate::gpu::passes_core::debug_dump_buffers(device, queue, "type_check");
         let checked = self
             .type_checker
@@ -1036,12 +1037,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                 store.abandon_export();
             }
         };
+        let early_semantic_interface = recorded.early_semantic_interface.take();
         let semantic_interface = recorded
             .semantic_interface
             .as_ref()
             .map(|identity| {
-                self.type_checker
-                    .finish_semantic_interface(device, queue, identity)
+                early_semantic_interface
+                    .unwrap_or_else(|| self.type_checker.finish_semantic_interface(device, queue, identity))
                     .map_err(|err| {
                         abandon_export(&export_submitted);
                         semantic_interface_error_to_compile_error_for_source_pack(
@@ -1887,10 +1889,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             unit_id,
             true,
         )?;
-        Ok(PendingOriginalUnit {
-            facts: OriginalUnitFacts::from_unit(&unit),
-            unit,
-        })
+        Ok(PendingOriginalUnit::of(unit))
     }
 
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
@@ -1997,8 +1996,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 lowering_output_retry.demand,
                             )
                         },
-                        |device, queue, bufs, parser, recorded| {
+                        |device, queue, bufs, parser, mut recorded| {
                             prepare_retention_export(&recorded);
+                            self.finish_semantic_interface_early(device, queue, &mut recorded);
                             let (token_count, raw_features, lex_error) = bufs
                                 .read_recorded_count_features_and_error(
                                     device,
@@ -2252,6 +2252,10 @@ struct RecordedTypeCheckWithDiagnosticBuffers {
     diagnostic_tokens: DiagnosticTokenBuffer,
     hir: crate::parser::buffers::GpuHirView,
     semantic_interface: Option<gpu_type_checker::RecordedSemanticInterface>,
+    /// The semantic interface, read and decoded while the host waits for
+    /// the rest of the job ([`finish_semantic_interface_early`]). The
+    /// finish reports its error where it reports the interface's.
+    early_semantic_interface: Option<anyhow::Result<crate::compiler::GpuSemanticInterfaceArtifact>>,
 }
 
 /// Immutable source facts available before original program admission. The
@@ -2404,14 +2408,51 @@ impl CompiledSourcePackUnit {
 /// In particular this type exposes no unit/object accessor, Clone, or conversion
 /// into a compiled cache value before that receipt exists.
 pub(super) struct PendingOriginalUnit {
-    unit: CompiledSourcePackUnit,
+    object: CompiledSourcePackObject,
     facts: OriginalUnitFacts,
 }
 
 impl PendingOriginalUnit {
+    /// The unit's facts and its object. The facts take the unit's
+    /// interface and tables without copying them.
+    fn of(unit: CompiledSourcePackUnit) -> Self {
+        let CompiledSourcePackUnit {
+            instance_closure,
+            solver_closed,
+            facts_elided,
+            interface,
+            object,
+            template_sources,
+            template_source_paths,
+            template_dependency_pages,
+            generic_calls,
+            checked_contracts,
+            checked_call_owners,
+            native_call_hirs: _,
+            native_call_function_hirs: _,
+        } = unit;
+        let facts = OriginalUnitFacts {
+            snapshot: std::sync::Arc::new(OriginalUnitSnapshot {
+                target: object.target(),
+                interface,
+                checked_contracts,
+                generic_calls,
+                checked_call_owners,
+                template_sources,
+                template_source_paths,
+                template_dependency_pages,
+                instance_closure,
+                solver_closed,
+                facts_elided,
+                interface_checked: std::sync::atomic::AtomicBool::new(false),
+            }),
+        };
+        Self { object, facts }
+    }
+
     /// Storage changes do not change the immutable facts or release this unit.
     pub(super) fn spill_native(mut self, store: NativeObjectStore) -> Result<Self, CompileError> {
-        self.unit.object = self.unit.object.spill_native(store)?;
+        self.object = self.object.spill_native(store)?;
         Ok(self)
     }
 
@@ -2423,14 +2464,14 @@ impl PendingOriginalUnit {
     /// Release original object bytes to the build driver. The driver publishes
     /// them only after GPU catalog, discovery and ABI certification succeed.
     pub(super) fn release_closed(self) -> CompiledSourcePackObject {
-        self.unit.object
+        self.object
     }
 }
 
 #[cfg(test)]
 impl PendingOriginalUnit {
     pub(super) fn from_unit_for_test(unit: CompiledSourcePackUnit) -> Self {
-        Self { facts: OriginalUnitFacts::from_unit(&unit), unit }
+        Self::of(unit)
     }
 }
 
@@ -2690,13 +2731,39 @@ pub(in crate::compiler) enum CompiledSourcePackObject {
 /// Records the job's retention export while the host waits for the job's
 /// GPU work; it is submitted once the job passes its retry points
 /// (`finish_checked_source_pack_pipeline`).
+impl GpuCompiler<'_> {
+    /// Reads and decodes the job's semantic interface while the host waits
+    /// for the rest of the job. The interface has its own submission ahead
+    /// of lowering, so its readback is ready while lowering still runs; the
+    /// decode is host work no later GPU stage waits on. The job's finish
+    /// takes the result in its usual place, after the parser and type
+    /// check statuses.
+    fn finish_semantic_interface_early(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        recorded: &mut RecordedTypeCheckWithDiagnosticBuffers,
+    ) {
+        if let Some(identity) = &recorded.semantic_interface {
+            recorded.early_semantic_interface =
+                Some(self.type_checker.finish_semantic_interface(device, queue, identity));
+        }
+    }
+}
+
 fn prepare_retention_export(recorded: &RecordedTypeCheckWithDiagnosticBuffers) {
     if let (Some(store), Some(snapshot)) =
         (&recorded.type_check.program_retention, &recorded.retention_snapshot)
-        && let Err(error) = store.prepare_export_job(snapshot)
     {
-        // The submission records the export again and reports the error.
-        log::debug!("program retention export was not prepared: {error:#}");
+        if let Err(error) = store.prepare_export_job(snapshot) {
+            // The submission records the export again and reports the error.
+            log::debug!("program retention export was not prepared: {error:#}");
+        }
+        // The work that follows the export, for example the trait catalog's
+        // count pass; its consumer records it itself when it did not run.
+        if let Err(error) = store.prepare_export_follower() {
+            log::debug!("program retention export follower was not prepared: {error:#}");
+        }
     }
 }
 
