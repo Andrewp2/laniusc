@@ -150,6 +150,12 @@ pub struct RetainedDiscovery {
     published: Option<([u32; 4], ProjectionInputs, wgpu::Buffer, wgpu::Buffer, SubstitutionRequests)>,
     /// See [`Self::defer_final_status`].
     defer_final_status: bool,
+    /// Dispatches recorded but not yet in the encoder: kernel, bind group
+    /// and launch. `flush` records them as one compute pass; it runs before
+    /// every other use of the encoder (a copy, a clear, another module's
+    /// recording, `finish`). wgpu-core's `finish` costs about 13 µs per
+    /// compute pass, so one pass per dispatch cost discovery milliseconds.
+    pending: Vec<(usize, wgpu::BindGroup, PendingLaunch)>,
 }
 impl RetainedDiscovery {
     pub fn new(capacity: DiscoveryCapacity, substitution: SubstitutionCapacity) -> Result<Self> {
@@ -176,6 +182,7 @@ impl RetainedDiscovery {
             eager_closed: false,
             published: None,
             defer_final_status: false,
+            pending: Vec::new(),
         })
     }
     /// With `defer`, discovery publishes without reading the status of its
@@ -285,15 +292,20 @@ impl RetainedDiscovery {
             config[15] = generation;
             let mut encoder = self.encoder();
             for name in ["dg_slots", "dg_instances", "dg_roots", "dg_status"] {
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(&self.scratch[name], 0, None);
             }
             for (_, buffer) in inputs.buffers() {
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(buffer, 0, None);
             }
+            self.flush(&mut encoder);
             encoder.clear_buffer_counted(&root_routes, 0, None);
+            self.flush(&mut encoder);
             encoder.clear_buffer_counted(&root_readiness, 0, None);
+            self.flush(&mut encoder);
             encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
-            self.queue.submit(Some(encoder.finish()));
+            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             self.queue.write_buffer_counted(
                 &self.scratch["dg_status"],
                 (FIRST_ERROR * 4) as u64,
@@ -318,7 +330,7 @@ impl RetainedDiscovery {
             let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
             self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
-            self.queue.submit(Some(encoder.finish()));
+            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             // As in a wave, resolution skips itself after a root failure or
             // overflow (status 12), and its readback reports both.
@@ -452,7 +464,9 @@ impl RetainedDiscovery {
                 // has no workgroups, and resolution skips itself after any
                 // request failure or overflow (status 12). The host reports
                 // both from the wave's status readback, as before.
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(&self.scratch["dg_status"], 28, Some(4));
                 config[0] = 0;
                 self.record_with(
@@ -465,7 +479,7 @@ impl RetainedDiscovery {
                     &mut report,
                 )?;
                 self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
-                self.queue.submit(Some(encoder.finish()));
+                { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
                 drop(guard);
                 // Resolution reads back the status (and store counters)
                 // with the substitution's counts.
@@ -640,7 +654,7 @@ impl RetainedDiscovery {
             )?;
             config[0] = 2;
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
-            self.queue.submit(Some(encoder.finish()));
+            { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             if !self.defer_final_status {
                 let status = self.read_status(&mut report)?;
@@ -700,7 +714,9 @@ impl RetainedDiscovery {
             bound.push(("mr_state", state));
             self.config_cursor = 0;
             self.record(encoder, guard, 6, config, &bound, requests, report)?;
-            self.record(encoder, guard, 5, config, extra, 1, report)
+            self.record(encoder, guard, 5, config, extra, 1, report)?;
+            self.flush(encoder);
+            Ok(())
         };
         routes.run(
             store,
@@ -786,9 +802,11 @@ impl RetainedDiscovery {
                     self.configs.push(self.buffer("dg_config", 64)?);
                 }
                 for slot in first..first + 7 {
+                    self.flush(&mut encoder);
                     encoder.copy_buffer_counted(&wave_buffer, 0, &self.configs[slot], 4, 12);
                 }
                 // An empty frontier's scan does not size the request pass.
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(&indirect, 0, None);
             }
             for mode in [3, 4, 2] {
@@ -800,11 +818,14 @@ impl RetainedDiscovery {
                 };
                 self.record(&mut encoder, &guard, 2, config, extra, lanes, report)?;
             }
+            self.flush(&mut encoder);
             encoder.clear_buffer_counted(requests.buffers()[1].1, 0, None);
+            self.flush(&mut encoder);
             encoder.clear_buffer_counted(&status_buffer, 28, Some(4));
             config[0] = 0;
             self.record_with(&mut encoder, &guard, 0, config, extra, Dispatch::Indirect(&indirect), report)?;
             self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
+            self.flush(&mut encoder);
             let mut consumer = |encoder: &mut wgpu::CommandEncoder,
                                 guard: &Store,
                                 run: u32,
@@ -816,7 +837,9 @@ impl RetainedDiscovery {
                 let mut bindings = extra.to_vec();
                 bindings.extend([("sb_results", results), ("sb_counts", counts)]);
                 self.record(encoder, guard, 1, config, &bindings, request_lanes, report)?;
-                self.record(encoder, guard, 5, config, extra, 1, report)
+                self.record(encoder, guard, 5, config, extra, 1, report)?;
+                self.flush(encoder);
+                Ok(())
             };
             let dispatches = engine.record_chained(&mut encoder, &guard, requests, i as usize, runs[i as usize], &mut consumer)?;
             report.substitution_dispatches += dispatches;
@@ -826,11 +849,12 @@ impl RetainedDiscovery {
         let mut levels_config = config;
         levels_config[0] = 6;
         levels_config[8] = 0;
+        self.flush(&mut encoder);
         encoder.clear_buffer_counted(&levels_buffer, 0, None);
         let term_lanes = guard.capacity.arenas[super::A_TERMS];
         self.record(&mut encoder, &guard, 3, levels_config, extra, term_lanes, report)?;
         let generation = guard.generation;
-        self.queue.submit(Some(encoder.finish()));
+        { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
         drop(guard);
         let sb_counts = engine
             .counts_buffer()
@@ -900,9 +924,12 @@ impl RetainedDiscovery {
                     // the last wave and nothing interns after it.
                     let mut levels_config = config;
                     levels_config[0] = 6;
+                    this.flush(encoder);
                     encoder.clear_buffer_counted(&this.scratch["dg_levels"], 0, None);
                     let lanes = guard.capacity.arenas[super::A_TERMS];
-                    this.record(encoder, guard, 3, levels_config, extra, lanes, report)
+                    this.record(encoder, guard, 3, levels_config, extra, lanes, report)?;
+                    this.flush(encoder);
+                    Ok(())
                 };
                 let Some(spec) = speculative else { return record_levels(self, encoder, report) };
                 // The method routes, the bound routes and the publish pass
@@ -911,6 +938,7 @@ impl RetainedDiscovery {
                 // unless the routes finished and resolution left no
                 // failure (status 12). The counts come from sb_counts and
                 // the receipt copy on the GPU.
+                self.flush(encoder);
                 spec.routes.record_first_batch(
                     encoder,
                     guard,
@@ -972,7 +1000,7 @@ impl RetainedDiscovery {
             report,
         )?;
         self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
-        self.queue.submit(Some(encoder.finish()));
+        { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
         drop(guard);
         self.read_status_counts(store, also_read.as_slice(), report)
             .map(|words| Some((words, false)))
@@ -999,9 +1027,10 @@ impl RetainedDiscovery {
                 config[0] = 0;
                 let guard = store.store.lock().unwrap();
                 let mut encoder = self.encoder();
+                self.flush(&mut encoder);
                 encoder.clear_buffer_counted(&self.scratch["dg_levels"], 0, None);
                 self.record(&mut encoder, &guard, 3, config, extra, terms, report)?;
-                self.queue.submit(Some(encoder.finish()));
+                { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
                 drop(guard);
                 self.read(&self.scratch["dg_levels"], LEVELS, report)?
             }
@@ -1027,6 +1056,7 @@ impl RetainedDiscovery {
         self.config_cursor = 0;
         let guard = store.store.lock().unwrap();
         let mut encoder = self.encoder();
+        self.flush(&mut encoder);
         encoder.clear_buffer_counted(&self.scratch["dg_term_rank"], 0, None);
         config[0] = 4;
         config[13] = end;
@@ -1054,7 +1084,7 @@ impl RetainedDiscovery {
         }
         // The instance ranking follows in the next submit, and the final
         // status readback reports any failure.
-        self.queue.submit(Some(encoder.finish()));
+        { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
         drop(guard);
         Ok(())
     }
@@ -1177,8 +1207,35 @@ impl RetainedDiscovery {
         }
         Ok(())
     }
-    fn encoder(&self) -> wgpu::CommandEncoder {
+    fn encoder(&mut self) -> wgpu::CommandEncoder {
+        // A recording that failed leaves its dispatches here; they belong
+        // to no encoder.
+        self.pending.clear();
         self.device.create_command_encoder(&Default::default())
+    }
+    /// Records the pending dispatches, in order, as one compute pass.
+    fn flush(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let steps = self
+            .pending
+            .iter()
+            .map(|(kernel, bind, launch)| {
+                let launch = match launch {
+                    PendingLaunch::Groups(x, y) => super::substitution::Launch::Groups(*x, *y, 1),
+                    PendingLaunch::Indirect(buffer) => super::substitution::Launch::Indirect(buffer, 0),
+                };
+                (&self.passes[*kernel], bind, launch)
+            })
+            .collect::<Vec<_>>();
+        super::substitution::record_timed(encoder, "retained_discovery", &steps);
+        self.pending.clear();
+    }
+    /// `flush`, then the finished command buffer.
+    fn finish(&mut self, mut encoder: wgpu::CommandEncoder) -> wgpu::CommandBuffer {
+        self.flush(&mut encoder);
+        encoder.finish()
     }
     fn record(
         &mut self,
@@ -1246,11 +1303,12 @@ impl RetainedDiscovery {
         let launch = match dispatch {
             Dispatch::Lanes(lanes) => {
                 let groups = lanes.div_ceil(256).max(1);
-                super::substitution::Launch::Groups(groups.min(65535), groups.div_ceil(65535), 1)
+                PendingLaunch::Groups(groups.min(65535), groups.div_ceil(65535))
             }
-            Dispatch::Indirect(buffer) => super::substitution::Launch::Indirect(buffer, 0),
+            Dispatch::Indirect(buffer) => PendingLaunch::Indirect(buffer.clone()),
         };
-        super::substitution::record_timed(encoder, "retained_discovery", &[(pass, &bind, launch)]);
+        let _ = encoder;
+        self.pending.push((kernel, bind, launch));
         report.dispatches += 1;
         Ok(())
     }
@@ -1292,7 +1350,8 @@ impl RetainedDiscovery {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut encoder = self.encoder();
+        // Only copies: every recording submitted its dispatches before.
+        let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut at = 0;
         for (buffer, words) in parts {
             encoder.copy_buffer_counted(buffer, 0, &rb, at, *words as u64 * 4);
@@ -1336,6 +1395,10 @@ struct Chained {
     ran: u32,
 }
 /// How many workgroups a recorded pass runs.
+enum PendingLaunch {
+    Groups(u32, u32),
+    Indirect(wgpu::Buffer),
+}
 enum Dispatch<'a> {
     /// One lane per item, 256 lanes per workgroup.
     Lanes(u32),
