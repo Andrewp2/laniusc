@@ -32,12 +32,6 @@ RWStructuredBuffer<uint> hir_struct_field_rank_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_owner_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_link_a;
 RWStructuredBuffer<uint> hir_struct_lit_field_rank_a;
-RWStructuredBuffer<uint> hir_struct_field_owner_b;
-RWStructuredBuffer<uint> hir_struct_field_link_b;
-RWStructuredBuffer<uint> hir_struct_field_rank_b;
-RWStructuredBuffer<uint> hir_struct_lit_field_owner_b;
-RWStructuredBuffer<uint> hir_struct_lit_field_link_b;
-RWStructuredBuffer<uint> hir_struct_lit_field_rank_b;
 RWStructuredBuffer<uint> hir_struct_lit_field_previous;
 
 static const uint INVALID = 0xffffffffu;
@@ -224,19 +218,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     hir_struct_lit_field_link_a[node] = INVALID;
     hir_struct_lit_field_rank_a[node] = 0u;
     hir_struct_lit_field_previous[node] = INVALID;
-    // The rank steps write every `_b` row they read, so only row 0 is
-    // written here. That write keeps `_b` live from this pass in the graph's
-    // slot plan; letting its lifetime start at the rank step changes slot
-    // sharing and breaks enum match payload checking (cause not yet found).
-    if (node == 0u)
-    {
-        hir_struct_field_owner_b[0u] = INVALID;
-        hir_struct_field_link_b[0u] = INVALID;
-        hir_struct_field_rank_b[0u] = 0u;
-        hir_struct_lit_field_owner_b[0u] = INVALID;
-        hir_struct_lit_field_link_b[0u] = INVALID;
-        hir_struct_lit_field_rank_b[0u] = 0u;
-    }
     if (!valid_node(node))
         return;
 
