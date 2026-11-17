@@ -2,6 +2,12 @@
 // Packs two dense streams in parallel, one GPU thread per token pair:
 //  - out_sc   : stack-change codes (push=odd, pop=even) from sc_superseq
 //  - out_emit : production IDs from pp_superseq
+//
+// Each thread finds its pair's one or two table runs. The workgroup then
+// copies its 256 pairs' contiguous output range together: lane k writes
+// output words k, k + 256, ..., and finds the pair that owns a word by a
+// binary search over the pairs' output starts. A thread copying its own runs
+// would store to a different word span in every lane of a warp.
 
 struct PackParams
 {
@@ -105,33 +111,38 @@ bool source_file_boundary_pair(uint pair_i, uint token_count_value)
            prev_file != this_file;
 }
 
-uint copy_sc_pair(uint idx2d, uint dst_sc)
-{
-    uint sco = sc_off_at(idx2d);
-    uint scl = sc_len_at(idx2d);
-    for (uint offset = 0u; offset < scl; ++offset)
-    {
-        uint dst = dst_sc + offset;
-        if (dst < gParams.sc_capacity)
-            out_sc[dst] = sc_seq_at(sco + offset);
-    }
-    return scl;
-}
+static const uint NO_RUN = 0xffffffffu;
 
-uint copy_emit_pair(uint idx2d, uint dst_emit, uint emit_pos)
+// Per-lane pair runs: output start (from the offsets scan), first run's
+// table index and length, second run's table index (NO_RUN when absent) and
+// the total length.
+groupshared uint g_sc_start[WG_SIZE];
+groupshared uint g_sc_first_len[WG_SIZE];
+groupshared uint g_sc_total[WG_SIZE];
+groupshared uint g_emit_start[WG_SIZE];
+groupshared uint g_emit_first_len[WG_SIZE];
+groupshared uint g_emit_total[WG_SIZE];
+groupshared uint g_first_idx[WG_SIZE];
+groupshared uint g_second_idx[WG_SIZE];
+groupshared uint g_sc_end;
+groupshared uint g_emit_end;
+
+// The last lane whose output starts at or before `pos`. Starts are an
+// exclusive prefix over the lanes, so they never decrease.
+uint owner_lane(uint pos, bool emit)
 {
-    uint epo = pp_off_at(idx2d);
-    uint epl = pp_len_at(idx2d);
-    for (uint offset = 0u; offset < epl; ++offset)
+    uint lo = 0u;
+    uint hi = WG_SIZE - 1u;
+    while (lo < hi)
     {
-        uint dst = dst_emit + offset;
-        if (dst < gParams.emit_capacity)
-        {
-            out_emit[dst] = pp_seq_at(epo + offset);
-            out_emit_pos[dst] = emit_pos;
-        }
+        uint mid = (lo + hi + 1u) >> 1u;
+        uint start = emit ? g_emit_start[mid] : g_sc_start[mid];
+        if (start <= pos)
+            lo = mid;
+        else
+            hi = mid - 1u;
     }
-    return epl;
+    return lo;
 }
 
 [shader("compute")]
@@ -141,50 +152,106 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     if (gParams.n_tokens < 2)
         return;
 
+    uint lane = ltid.x;
     uint active_tokens = min(gParams.n_tokens, token_count[0] + 2u);
     uint n_pairs = active_tokens > 0u ? active_tokens - 1u : 0u;
     uint i = linear_thread_id(gid, ltid);
-    if (i >= n_pairs)
-        return;
+    uint pair_base = i - lane;
 
-    uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
-    uint prev = token_kinds[i];
-    uint thisK = token_kinds[i + 1];
-    bool prev_is_generic_shr = i > 0u && is_generic_shr(i - 1u);
-    bool this_is_generic_shr = i < count && is_generic_shr(i);
-    if (prev_is_generic_shr)
-        prev = generic_shr_outer(i - 1u);
-    uint checked_this = this_is_generic_shr ? generic_shr_inner(i) : thisK;
-    if (!valid_kind(prev) || !valid_kind(checked_this))
-        return;
-
-    uint dst_sc = sc_offsets[i];
-    uint dst_emit = emit_offsets[i];
-    if (source_file_boundary_pair(i, count))
+    uint first_idx = NO_RUN;
+    uint second_idx = NO_RUN;
+    uint sc_start = NO_RUN;
+    uint emit_start = NO_RUN;
+    if (i < n_pairs)
     {
-        uint close_idx = table_index(prev, 0u);
-        uint open_idx = table_index(0u, thisK);
-        uint first_sc_len = copy_sc_pair(close_idx, dst_sc);
-        uint first_emit_len = copy_emit_pair(close_idx, dst_emit, i);
-        copy_sc_pair(open_idx, dst_sc + first_sc_len);
-        copy_emit_pair(open_idx, dst_emit + first_emit_len, i);
-        return;
+        sc_start = sc_offsets[i];
+        emit_start = emit_offsets[i];
+        uint count = min(token_count[0u], gParams.n_tokens > 2u ? gParams.n_tokens - 2u : 0u);
+        uint prev = token_kinds[i];
+        uint thisK = token_kinds[i + 1];
+        bool prev_is_generic_shr = i > 0u && is_generic_shr(i - 1u);
+        bool this_is_generic_shr = i < count && is_generic_shr(i);
+        if (prev_is_generic_shr)
+            prev = generic_shr_outer(i - 1u);
+        uint checked_this = this_is_generic_shr ? generic_shr_inner(i) : thisK;
+        if (valid_kind(prev) && valid_kind(checked_this))
+        {
+            if (source_file_boundary_pair(i, count))
+            {
+                first_idx = table_index(prev, 0u);
+                second_idx = table_index(0u, thisK);
+            }
+            else if (this_is_generic_shr)
+            {
+                uint inner = generic_shr_inner(i);
+                uint outer = generic_shr_outer(i);
+                first_idx = table_index(prev, inner);
+                second_idx = table_index(inner, outer);
+            }
+            else
+            {
+                first_idx = table_index(prev, thisK);
+            }
+        }
     }
 
-    if (this_is_generic_shr)
+    uint sc_first = first_idx != NO_RUN ? sc_len_at(first_idx) : 0u;
+    uint sc_second = second_idx != NO_RUN ? sc_len_at(second_idx) : 0u;
+    uint emit_first = first_idx != NO_RUN ? pp_len_at(first_idx) : 0u;
+    uint emit_second = second_idx != NO_RUN ? pp_len_at(second_idx) : 0u;
+    g_sc_start[lane] = sc_start;
+    g_sc_first_len[lane] = sc_first;
+    g_sc_total[lane] = sc_first + sc_second;
+    g_emit_start[lane] = emit_start;
+    g_emit_first_len[lane] = emit_first;
+    g_emit_total[lane] = emit_first + emit_second;
+    g_first_idx[lane] = first_idx;
+    g_second_idx[lane] = second_idx;
+    if (lane == 0u)
     {
-        uint inner = generic_shr_inner(i);
-        uint outer = generic_shr_outer(i);
-        uint first_idx = table_index(prev, inner);
-        uint second_idx = table_index(inner, outer);
-        uint first_sc_len = copy_sc_pair(first_idx, dst_sc);
-        uint first_emit_len = copy_emit_pair(first_idx, dst_emit, i);
-        copy_sc_pair(second_idx, dst_sc + first_sc_len);
-        copy_emit_pair(second_idx, dst_emit + first_emit_len, i);
-        return;
+        g_sc_end = 0u;
+        g_emit_end = 0u;
     }
+    GroupMemoryBarrierWithGroupSync();
+    if (first_idx != NO_RUN)
+    {
+        InterlockedMax(g_sc_end, sc_start + sc_first + sc_second);
+        InterlockedMax(g_emit_end, emit_start + emit_first + emit_second);
+    }
+    GroupMemoryBarrierWithGroupSync();
 
-    uint idx2d = table_index(prev, thisK);
-    copy_sc_pair(idx2d, dst_sc);
-    copy_emit_pair(idx2d, dst_emit, i);
+    // Lane 0 holds the group's first pair, so its start is the lowest.
+    if (g_sc_start[0] != NO_RUN)
+    {
+        uint begin = g_sc_start[0];
+        uint end = min(g_sc_end, gParams.sc_capacity);
+        for (uint pos = begin + lane; pos < end; pos += WG_SIZE)
+        {
+            uint owner = owner_lane(pos, false);
+            uint offset = pos - g_sc_start[owner];
+            if (offset >= g_sc_total[owner])
+                continue;
+            uint first_len = g_sc_first_len[owner];
+            uint idx = offset < first_len ? g_first_idx[owner] : g_second_idx[owner];
+            uint k = offset < first_len ? offset : offset - first_len;
+            out_sc[pos] = sc_seq_at(sc_off_at(idx) + k);
+        }
+    }
+    if (g_emit_start[0] != NO_RUN)
+    {
+        uint begin = g_emit_start[0];
+        uint end = min(g_emit_end, gParams.emit_capacity);
+        for (uint pos = begin + lane; pos < end; pos += WG_SIZE)
+        {
+            uint owner = owner_lane(pos, true);
+            uint offset = pos - g_emit_start[owner];
+            if (offset >= g_emit_total[owner])
+                continue;
+            uint first_len = g_emit_first_len[owner];
+            uint idx = offset < first_len ? g_first_idx[owner] : g_second_idx[owner];
+            uint k = offset < first_len ? offset : offset - first_len;
+            out_emit[pos] = pp_seq_at(pp_off_at(idx) + k);
+            out_emit_pos[pos] = pair_base + owner;
+        }
+    }
 }

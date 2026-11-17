@@ -50,7 +50,6 @@ const MATCH_WORKSPACE_RESOURCES: &[&str] = &[
     "hir_match_pattern_parent",
     "hir_match_pattern_parent_b",
     "hir_match_rank_flag",
-    "hir_match_rank_local_prefix",
     "hir_match_rank_block_sum",
     "hir_match_rank_block_prefix_a",
     "hir_match_rank_node",
@@ -186,13 +185,11 @@ fn graph_owned_hir_workspace(name: &str) -> bool {
                 | "hir_list_rank_node"
                 | "hir_list_rank_count"
                 | "hir_enum_rank_flag"
-                | "hir_enum_rank_local_prefix"
                 | "hir_enum_rank_block_sum"
                 | "hir_enum_rank_block_prefix_a"
                 | "hir_enum_rank_node"
                 | "hir_enum_rank_count"
                 | "hir_struct_rank_flag"
-                | "hir_struct_rank_local_prefix"
                 | "hir_struct_rank_block_sum"
                 | "hir_struct_rank_block_prefix_a"
                 | "hir_struct_rank_node"
@@ -353,7 +350,6 @@ pub(super) fn register_resources(
         "hir_match_payload_match_node",
         "hir_match_payload_ordinal",
         "hir_match_rank_flag",
-        "hir_match_rank_local_prefix",
         "hir_match_rank_node",
         "hir_match_arm_family_flag",
         "hir_match_arm_raw_to_row",
@@ -385,7 +381,6 @@ pub(super) fn register_resources(
         "hir_struct_lit_field_rank_b",
         "hir_struct_lit_field_previous",
         "hir_struct_rank_flag",
-        "hir_struct_rank_local_prefix",
         "hir_struct_rank_node",
         "hir_field_family_flag",
         "hir_stmt_context_link_a",
@@ -443,7 +438,6 @@ pub(super) fn register_resources(
         "hir_variant_payload_rank_a",
         "hir_variant_payload_rank_b",
         "hir_enum_rank_flag",
-        "hir_enum_rank_local_prefix",
         "hir_enum_rank_node",
         "hir_list_rank_flag",
         "hir_list_rank_local_prefix",
@@ -995,11 +989,7 @@ fn register_list_rank_compaction(
     )?;
     graph.mark_pass_bindings_initialize(
         invocation.local_label(),
-        &[
-            "hir_list_rank_flag",
-            "hir_list_rank_local_prefix",
-            "hir_list_rank_block_sum",
-        ],
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
     )?;
 
     register_list_rank_scan(graph, passes, invocation)?;
@@ -1333,7 +1323,6 @@ fn register_enum_ranking(
         "hir_enum_rank_prefix_00_local",
         &[
             "hir_enum_rank_flag",
-            "hir_enum_rank_local_prefix",
             "hir_enum_rank_block_sum",
         ],
     )?;
@@ -1883,6 +1872,10 @@ fn register_literals_and_raw_expression_records(
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
     )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_string_compact_local",
+        &["hir_list_rank_flag", "hir_list_rank_block_sum"],
+    )?;
     register_list_rank_scan(graph, passes, ListRankInvocation::StringRecords)?;
     static_pass(
         graph,
@@ -1912,6 +1905,10 @@ fn register_literals_and_raw_expression_records(
         CompilerPhase::Hir,
         ResourceDomain::HirNodes,
         &[("tree_count_status", "partial_parse_status", None)],
+    )?;
+    graph.mark_pass_bindings_initialize(
+        "hir_string_offset_local",
+        &["hir_list_rank_local_prefix", "hir_list_rank_block_sum"],
     )?;
     register_list_rank_scan(graph, passes, ListRankInvocation::StringOffsets)?;
     static_pass(
@@ -2598,7 +2595,6 @@ fn register_matches(
         "hir_match_rank_prefix_00_local",
         &[
             "hir_match_rank_flag",
-            "hir_match_rank_local_prefix",
             "hir_match_rank_block_sum",
         ],
     )?;
@@ -2952,7 +2948,6 @@ fn register_struct_fields(
         "hir_struct_rank_prefix_00_local",
         &[
             "hir_struct_rank_flag",
-            "hir_struct_rank_local_prefix",
             "hir_struct_rank_block_sum",
         ],
     )?;

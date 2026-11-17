@@ -1,10 +1,13 @@
-// Mark owner/link-seeded HIR list nodes and compute block-local prefixes.
+// Mark owner/link-seeded HIR list nodes and count them per block.
 //
 // This generic pass is used for single-list pointer-jump families where the
 // seed pass has already written owner/link records. It consumes those records
 // directly rather than rediscovering list membership from grammar productions.
-
-import prefix_scan;
+//
+// The marks are one bit per node: word w of hir_list_rank_flag holds nodes
+// 32w to 32w + 31, so block b owns words 8b to 8b + 7. The words of a whole
+// tree stay in L2, where the compact scatter reads them back; per-node flag
+// and local-prefix rows would stream two tree-sized arrays through DRAM.
 
 struct Params
 {
@@ -19,8 +22,10 @@ StructuredBuffer<uint> hir_list_owner_a;
 StructuredBuffer<uint> hir_list_link_a;
 
 RWStructuredBuffer<uint> hir_list_rank_flag;
-RWStructuredBuffer<uint> hir_list_rank_local_prefix;
 RWStructuredBuffer<uint> hir_list_rank_block_sum;
+
+static const uint FLAG_WORDS_PER_BLOCK = 8u;
+groupshared uint g_flag_words[FLAG_WORDS_PER_BLOCK];
 
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
@@ -60,15 +65,23 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint lane = ltid.x;
     uint node = block_i * WG_SIZE + lane;
     uint active = active_node_count();
-    uint flag = list_rank_flag(node, active);
-    uint inclusive = prefix_scan_u32_256(lane, flag);
 
-    if (node < gHirList.n)
+    if (lane < FLAG_WORDS_PER_BLOCK)
+        g_flag_words[lane] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (list_rank_flag(node, active) != 0u)
+        InterlockedOr(g_flag_words[lane >> 5u], 1u << (lane & 31u));
+    GroupMemoryBarrierWithGroupSync();
+
+    uint word_i = block_i * FLAG_WORDS_PER_BLOCK + lane;
+    if (lane < FLAG_WORDS_PER_BLOCK && word_i < (gHirList.n + 31u) / 32u)
+        hir_list_rank_flag[word_i] = g_flag_words[lane];
+    if (lane == 0u)
     {
-        hir_list_rank_flag[node] = flag;
-        hir_list_rank_local_prefix[node] = inclusive - flag;
+        uint total = 0u;
+        for (uint w = 0u; w < FLAG_WORDS_PER_BLOCK; ++w)
+            total += countbits(g_flag_words[w]);
+        hir_list_rank_block_sum[block_i] = total;
     }
-
-    if (lane == WG_SIZE - 1u)
-        hir_list_rank_block_sum[block_i] = inclusive;
 }

@@ -1,5 +1,9 @@
 // Scatter owner/link-seeded HIR list nodes into a dense rank worklist and
 // publish indirect dispatch args for pointer-jump rank passes.
+//
+// hir_list_rank_flag holds one mark bit per node (prefix_00_local.slang). A
+// node's row is its block's prefix plus the marked nodes before it in the
+// block, counted from at most eight words.
 
 import prefix_scan;
 
@@ -13,7 +17,6 @@ ConstantBuffer<Params> gHirList;
 
 StructuredBuffer<uint> tree_count_status;
 StructuredBuffer<uint> hir_list_rank_flag;
-StructuredBuffer<uint> hir_list_rank_local_prefix;
 StructuredBuffer<uint> hir_list_rank_block_prefix;
 
 RWStructuredBuffer<uint> hir_list_rank_node;
@@ -53,20 +56,28 @@ void write_dispatch_args(uint active_records)
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
-    uint rank_count = inclusive_scan_total(block_count(), hir_list_rank_block_prefix);
     if (node == 0u)
     {
+        uint rank_count = inclusive_scan_total(block_count(), hir_list_rank_block_prefix);
         hir_list_rank_count[0u] = rank_count;
         write_dispatch_args(rank_count);
     }
 
     uint active = active_node_count();
-    if (node >= gHirList.n || node >= active || hir_list_rank_flag[node] == 0u)
+    if (node >= gHirList.n || node >= active)
+        return;
+    uint word_i = node >> 5u;
+    uint word = hir_list_rank_flag[word_i];
+    uint bit = node & 31u;
+    if (((word >> bit) & 1u) == 0u)
         return;
 
     uint block_i = node / WG_SIZE;
+    uint local = countbits(word & ((1u << bit) - 1u));
+    for (uint w = block_i * (WG_SIZE / 32u); w < word_i; ++w)
+        local += countbits(hir_list_rank_flag[w]);
     uint block_base = block_i == 0u ? 0u : hir_list_rank_block_prefix[block_i - 1u];
-    uint dense_row = block_base + hir_list_rank_local_prefix[node];
+    uint dense_row = block_base + local;
     if (dense_row < gHirList.n)
         hir_list_rank_node[dense_row] = node;
 }

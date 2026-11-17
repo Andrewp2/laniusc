@@ -4,8 +4,8 @@ import prefix_scan;
 struct Params { uint n; uint uses_status_count; };
 ConstantBuffer<Params> gHirString;
 StructuredBuffer<uint> tree_count_status;
+// One mark bit per node (compact_local.slang).
 StructuredBuffer<uint> hir_list_rank_flag;
-StructuredBuffer<uint> hir_list_rank_local_prefix;
 StructuredBuffer<uint> hir_list_rank_block_prefix;
 RWStructuredBuffer<uint> hir_string_node;
 RWStructuredBuffer<uint> hir_string_count;
@@ -32,9 +32,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_list_rank_dispatch_args[1] = count == 0u ? 0u : min((count + MAX_GROUPS_X - 1u) / MAX_GROUPS_X, MAX_GROUPS_X);
         hir_list_rank_dispatch_args[2] = count == 0u ? 0u : 1u;
     }
-    if (node >= active_node_count() || hir_list_rank_flag[node] == 0u)
+    if (node >= active_node_count())
+        return;
+    uint word_i = node >> 5u;
+    uint word = hir_list_rank_flag[word_i];
+    uint bit = node & 31u;
+    if (((word >> bit) & 1u) == 0u)
         return;
     uint block = node / WG_SIZE;
+    uint local = countbits(word & ((1u << bit) - 1u));
+    for (uint w = block * (WG_SIZE / 32u); w < word_i; ++w)
+        local += countbits(hir_list_rank_flag[w]);
     uint base = block == 0u ? 0u : hir_list_rank_block_prefix[block - 1u];
-    hir_string_node[base + hir_list_rank_local_prefix[node]] = node;
+    hir_string_node[base + local] = node;
 }
