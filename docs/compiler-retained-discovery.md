@@ -115,6 +115,13 @@ them as before. Mode 6 skips a term without a valid height, which mode 1
 then reports as before. Discovery's last readback after ranking returns
 the status: settings needs 73 readbacks per build.
 
+A native build skips that last readback (`defer_final_status`). The
+ranking, instance-order and publish passes write the projection's and the
+roots' readiness only when nothing failed, so the projection plan rejects
+the inputs of a failed discovery; the build then reads the status
+(`final_failure`) and reports discovery's error. Direct callers of `run`
+still get the checked outcome.
+
 The implementation uses bitonic sorts within each height and over the instance
 set. Work is O(sum N_h log² N_h + I log² I), with bounded-arity comparisons. It
 currently ranks all closed store terms, not just terms reachable from instance
@@ -248,6 +255,17 @@ each route. Projection checks the selected target's receiver, arguments, result
 and layout before any native lowering. Required-member calls from original
 nongeneric bodies are not admitted through this route; concrete method calls
 there use their frontend-selected implementation.
+
+## Recording
+
+Discovery queues its dispatches and records each run of them as one
+compute pass (`flush`), before any other use of the encoder: a copy, a
+clear, another module's recording into the same encoder (the substitution
+engine, the method routes), the return of a consumer it recorded for the
+engine, and `finish`. wgpu-core's `finish` costs about 13 µs per compute
+pass: with one pass per dispatch, finishing the ranking encoder took
+0.36 ms. Settings: the host gap between the chain readback and the
+projection plan readback went from 1.55-1.85 ms to 1.18-1.34 ms.
 
 ## Buffers across warm builds
 
