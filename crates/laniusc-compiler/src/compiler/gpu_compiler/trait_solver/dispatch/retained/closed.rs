@@ -811,31 +811,18 @@ impl RetainedTraitPublication {
     /// leaves the producer word set, and the check stops the chain.
     pub fn record_chained(
         &mut self,
-        encoder: Option<wgpu::CommandEncoder>,
         store: &ProgramRetention,
         instances: &LaniusBuffer<u32>,
         status: &[u32],
         inputs: &ClosedChainInputs<'_>,
-    ) -> Result<(ClosedTraitPublication, Option<wgpu::CommandEncoder>)> {
+    ) -> Result<ClosedTraitPublication> {
         self.view(store)?;
         ensure!(status.len() >= counts::WORDS, "chained closed solve store counts are short");
         ensure!(
             u64::from(inputs.instances) * 32 <= instances.byte_size as u64,
             "chained closed instance capacity exceeds the instance buffer"
         );
-        store.with_store_buffers(|buffers, generation| {
-            // With an encoder the solve records into it: one submit for the
-            // wave's frontier, the solve and its resolution. Without one it
-            // submits as it records, so an idle GPU starts at once.
-            let Some(encoder) = encoder else {
-                return Ok((self.record_closed_chained(buffers, generation, instances, status, inputs)?, None));
-            };
-            self.gpu.park_chained(encoder);
-            let recorded = self.record_closed_chained(buffers, generation, instances, status, inputs);
-            let encoder = self.gpu.take_chained();
-            let publication = recorded?;
-            Ok((publication, Some(encoder.ok_or_else(|| anyhow!("a chained solve kept its encoder"))?)))
-        })
+        store.with_store_buffers(|buffers, generation| self.record_closed_chained(buffers, generation, instances, status, inputs))
     }
 
     fn record_closed_chained(
@@ -924,7 +911,7 @@ impl RetainedTraitPublication {
             ("cw_wave", inputs.wave.as_entire_binding()),
             ("cw_discovery", inputs.discovery.as_entire_binding()),
         ];
-        let mut encoder = self.gpu.wave_encoder();
+        let mut encoder = device.create_command_encoder(&Default::default());
         let batch = passes_core::DeferredComputeBatchGuard::begin(
             passes_core::compute_pass_batching_allowed(false),
             "trait_solver.closed_instances",
@@ -937,8 +924,9 @@ impl RetainedTraitPublication {
             producer.record_gated(&mut encoder, 6, &args, 6 + i as u32, store, &ext, i as u32)?;
         }
         producer.record_gated(&mut encoder, 7, &args, 9, store, &ext, 0)?;
-        self.gpu.submit_wave(encoder);
+        passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
+        queue.submit(Some(encoder.finish()));
         let gpu_counts = Some((&producer.buffers["cw_state"], CW_COUNTS));
         let source_atom_ids = self.route_words - catalog.slices[1].count * 2;
         let catalog_buffer = self.gpu.storage.buffer.clone();
@@ -1011,7 +999,7 @@ impl RetainedTraitPublication {
         // with the source publication.
         header[RP_H_FILL_FAULTS as usize] = 0;
         header[RP_H_RECIPE_STATUS as usize] = 1;
-        let mut encoder = self.gpu.wave_encoder();
+        let mut encoder = device.create_command_encoder(&Default::default());
         routes.upload(&mut encoder, &[ArenaWrite { first_word: 0, words: header }])?;
         self.gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
         let cw_state = &producer.buffers["cw_state"];
@@ -1035,8 +1023,9 @@ impl RetainedTraitPublication {
         );
         producer.record_gated(&mut encoder, 9, &args, CW_ARG_PUBLISH, store, &ext, 0)?;
         producer.record_gated(&mut encoder, 10, &args, CW_ARG_FINISH, store, &ext, 0)?;
-        self.gpu.submit_wave(encoder);
+        passes_core::flush_deferred_compute(&mut encoder);
         drop(batch);
+        queue.submit(Some(encoder.finish()));
         Ok(ClosedTraitPublication {
             packet,
             routes,

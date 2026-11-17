@@ -1067,22 +1067,11 @@ impl RetainedDiscovery {
                 self.record(&mut encoder, &guard, 5, config, extra, 1, report)?;
             }
             let proofs = if closed {
-                // The solve records after the frontier. The first wave's
-                // GPU is idle: its frontier and its solve submit as they
-                // record. A later wave's GPU runs the waves before it, so
-                // its solve records into its encoder, and the wave submits
-                // once.
-                self.flush(&mut encoder);
+                // The solve's submits follow the frontier's.
+                { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
                 drop(guard);
-                let solve_encoder = if i == 0 {
-                    let commands = encoder.finish();
-                    self.queue.submit(Some(commands));
-                    None
-                } else {
-                    Some(encoder)
-                };
-                let (proofs, solved) = source.record_chained(solve_encoder, store, &instance_buffer, counters, &inputs)?;
-                encoder = solved.unwrap_or_else(|| self.encoder());
+                let proofs = source.record_chained(store, &instance_buffer, counters, &inputs)?;
+                encoder = self.encoder();
                 proofs.copy_receipt(&mut encoder, &receipt_buffer, 0);
                 Some(proofs)
             } else {
@@ -1184,7 +1173,7 @@ impl RetainedDiscovery {
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);
             // The next solve may reuse this one's buffers: the GPU runs
-            // its wave after this one.
+            // its submits after this wave's.
             drop(view);
             drop(proofs);
         }
