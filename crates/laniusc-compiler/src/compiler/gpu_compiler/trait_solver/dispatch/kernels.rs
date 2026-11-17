@@ -920,6 +920,8 @@ pub(super) mod wave {
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
     pub const GROW: u32 = 5;
+    /// A queue round found pending Work before any of its steps ran.
+    pub const FULL_ROUND: u32 = 6;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
     pub const FAULT_RECEIPT: u32 = 3;
@@ -950,6 +952,9 @@ pub(super) enum WavePoint {
     Emitted = 5,
     /// After the recorded rounds: the quiescence test, then the finish.
     Finish = 6,
+    /// The start of a queue round (`QUEUE_ROUND`): a round start that stops
+    /// the solve with `wave::FULL_ROUND` when Work is pending.
+    QueueRound = 7,
 }
 impl WavePoint {
     pub const ROUND: [WavePoint; 5] = [
@@ -959,8 +964,12 @@ impl WavePoint {
         WavePoint::Queue,
         WavePoint::Emitted,
     ];
+    /// A round without Work: its Round, Selected and Expanded points plan
+    /// nothing, so it runs only the queue steps. A queue round records just
+    /// those, after a round start that checks that no Work is pending.
+    pub const QUEUE_ROUND: [WavePoint; 3] = [WavePoint::QueueRound, WavePoint::Queue, WavePoint::Emitted];
     pub fn from_word(word: u32) -> Option<Self> {
-        [WavePoint::FirstWork, WavePoint::Finish]
+        [WavePoint::FirstWork, WavePoint::Finish, WavePoint::QueueRound]
             .into_iter()
             .chain(Self::ROUND)
             .find(|point| *point as u32 == word)
@@ -971,6 +980,7 @@ impl WavePoint {
         match self {
             WavePoint::FirstWork => &[WavePoint::FirstWork],
             WavePoint::Finish => &[WavePoint::Finish],
+            WavePoint::QueueRound => &Self::QUEUE_ROUND,
             point => &Self::ROUND[point as usize - 1..],
         }
     }
@@ -1107,6 +1117,8 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups.push((ExpandedWork, vec![stage(COUNT_PREREQUISITE_NORMALIZATION)?]));
             groups
         }
+        // No steps: the queue round's own Queue and Emitted points follow.
+        WavePoint::QueueRound => Vec::new(),
         WavePoint::Queue => vec![(Queue, vec![stage(58)?])],
         WavePoint::Emitted => vec![
             (EmittedQueue, IMPLEMENTATION_PROOF_STEPS.to_vec()),
