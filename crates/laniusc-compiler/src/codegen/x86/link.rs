@@ -14,7 +14,6 @@ mod paged;
 mod resident;
 pub(crate) use resident::{
     GpuX86LinkStore,
-    NativeImportPrefetch,
     ParkRegion,
     ParkSources,
     ParkTicket,
