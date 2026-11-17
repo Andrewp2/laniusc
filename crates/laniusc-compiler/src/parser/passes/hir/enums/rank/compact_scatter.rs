@@ -50,10 +50,6 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirEnumRankCompa
                 b.hir_enum_rank_flag.as_entire_binding(),
             ),
             (
-                "hir_enum_rank_local_prefix".into(),
-                b.hir_enum_rank_local_prefix.as_entire_binding(),
-            ),
-            (
                 "hir_enum_rank_block_prefix".into(),
                 b.hir_enum_rank_block_prefix_a.as_entire_binding(),
             ),

@@ -1312,7 +1312,6 @@ impl ParserBuffers {
         let hir_list_rank_count = graph_buffer!(u32, "hir_list_rank_count");
         let hir_list_rank_dispatch_args = graph_buffer!(u32, "hir_list_rank_dispatch_args");
         let hir_enum_rank_flag = graph_buffer!(u32, "hir_enum_rank_flag");
-        let hir_enum_rank_local_prefix = graph_buffer!(u32, "hir_enum_rank_local_prefix");
         let hir_enum_rank_block_sum = graph_buffer!(u32, "hir_enum_rank_block_sum");
         let hir_enum_rank_block_prefix_a = graph_buffer!(u32, "hir_enum_rank_block_prefix_a");
         let hir_enum_rank_node = graph_buffer!(u32, "hir_enum_rank_node");
@@ -1372,8 +1371,6 @@ impl ParserBuffers {
             optional_graph_buffer!(u32, "hir_match_payload_rank_b", match_required);
         let hir_match_rank_flag =
             optional_graph_buffer!(u32, "hir_match_rank_flag", match_required);
-        let hir_match_rank_local_prefix =
-            optional_graph_buffer!(u32, "hir_match_rank_local_prefix", match_required);
         let hir_match_rank_block_sum =
             optional_graph_buffer!(u32, "hir_match_rank_block_sum", match_required);
         let hir_match_rank_block_prefix_a =
@@ -1526,7 +1523,6 @@ impl ParserBuffers {
         let hir_nearest_array_element_value_b =
             graph_buffer!(u32, "hir_nearest_array_element_value_b");
         let hir_struct_rank_flag = graph_buffer!(u32, "hir_struct_rank_flag");
-        let hir_struct_rank_local_prefix = graph_buffer!(u32, "hir_struct_rank_local_prefix");
         let hir_struct_rank_block_sum = graph_buffer!(u32, "hir_struct_rank_block_sum");
         let hir_struct_rank_block_prefix_a = graph_buffer!(u32, "hir_struct_rank_block_prefix_a");
         let hir_struct_rank_node = graph_buffer!(u32, "hir_struct_rank_node");
@@ -2277,7 +2273,6 @@ impl ParserBuffers {
             hir_list_rank_count,
             hir_list_rank_dispatch_args,
             hir_enum_rank_flag,
-            hir_enum_rank_local_prefix,
             hir_enum_rank_block_sum,
             hir_enum_rank_block_prefix_a,
             hir_enum_rank_node,
@@ -2311,7 +2306,6 @@ impl ParserBuffers {
             hir_match_payload_rank_a,
             hir_match_payload_rank_b,
             hir_match_rank_flag,
-            hir_match_rank_local_prefix,
             hir_match_rank_block_sum,
             hir_match_rank_block_prefix_a,
             hir_match_rank_node,
@@ -2422,7 +2416,6 @@ impl ParserBuffers {
             hir_nearest_array_element_value_a,
             hir_nearest_array_element_value_b,
             hir_struct_rank_flag,
-            hir_struct_rank_local_prefix,
             hir_struct_rank_block_sum,
             hir_struct_rank_block_prefix_a,
             hir_struct_rank_node,
