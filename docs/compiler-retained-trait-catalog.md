@@ -270,6 +270,15 @@ Records still read by every check, each once:
   bytes are never read. The catalog-owned output regions and the test
   poison are written by `09_fill_words`; the host uploads no arena-sized
   data.
+- `publish` and `record_count_follower` run inside out-of-memory and
+  validation error scopes. wgpu keeps error scopes per thread, so a test or
+  compiler on another thread does not affect them. Without the scopes, a
+  buffer that failed to allocate reached only the uncaptured-error handler.
+  Its submit was then invalid, the producer state read as zeros, and
+  `publish` returned no publication without an error. A second publication
+  while the first is alive takes a fresh workspace, which is the check's
+  peak of GPU memory. A follower whose buffers fail to allocate is dropped,
+  and `publish` runs the count passes itself.
 
 The empty-unit regression exports an import-only job between the library
 and application jobs, with no directory entry for that middle job. Its
