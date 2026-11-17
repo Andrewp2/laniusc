@@ -1017,11 +1017,13 @@ Recording the machine parse is the largest remaining host cost, about 3 ms.
 
 ## Desugaring in the lexer
 
-Status: design, 2026-11-16. Machines move first, then generators, then
-closures. Until a feature moves, the text rewrite of
-[M7](#m7-expansion-on-the-gpu), [M8](#m8-generators-on-the-gpu) and
-[Selecting the files to rewrite](#selecting-the-files-to-rewrite) handles it
-as described there.
+Status: machines are desugared in the token stream since 2026-11-17
+(`crates/laniusc-compiler/src/compiler/desugar.rs`, `shaders/desugar` and
+the kernels of `shaders/machines`). Generators and closures move next. Until
+they do, the text rewrites of [M8](#m8-generators-on-the-gpu) and the
+closure pass handle them as described there, and the machine pass of
+[M7](#m7-expansion-on-the-gpu) keeps only the check of the reserved prefix
+and the rewrite of generators into machines.
 
 The text rewrites of M7 and M8 lex and parse the files a second time before
 the frontend, read the rewritten text back and upload it again. They cost
@@ -1072,33 +1074,52 @@ position.
   the boundaries of its source tokens, a constant piece the boundaries of
   a table built from the constant strings, and adjacent pieces whose
   boundary bytes are both name characters form one token.
-- **Source anchors.** Each byte of the region records the source span its
-  piece came from (M7's segment map, kept on the GPU). A diagnostic at a
-  byte of the region reads the anchor on the error path and labels the
-  source span. No source text is read back and no map is kept between
-  builds.
+- **Source anchors.** Each byte of the region records a source byte: the
+  byte it copies, or for inserted text the first byte of the token the
+  piece was written for. A diagnostic at a byte of the region reads that
+  anchor on the error path and labels the source there. No source text is
+  read back and no map is kept between builds. The region starts four bytes
+  after the padded source, so a span at the end of the source is never a
+  region byte.
 - **Splice.** Each expanded item is a replacement of a token range. A
   prefix sum over the replacements gives every unchanged token its shift.
   One kernel moves the unchanged tokens, the expansion kernels write their
   tokens, and a last kernel copies the stream back into `tokens_out`,
-  `token_file_id` and `token_count`. The lexer's parser feature flags are
-  extended with the flags of the generated tokens.
+  `token_file_id` and `token_count`. The token build sets the parser
+  feature flags of the generated items (enums, matches, structs, members,
+  arrays, references, impls) when it sees a `machine` token.
 
 ### Cost
 
-- The lexer's token build appends the index of each `machine` token to a
-  site list. Every desugaring dispatch is indirect and sized from that list
-  on the GPU, so a build without a machine records the dispatches with zero
-  workgroups and makes no readback for them.
-- With a machine, the kernels read only the files that hold one, as the
-  selection of M7 did.
-- No readback is added. The desugared token count and the region length are
-  checked against the capacities on the GPU. An overflow sets a word that
-  the frontend reads with the token count it already reads, and the build
-  runs again with larger capacities.
-- Errors of the machine rules (`LNC0076`) are written to a status word read
-  with the token count. Their spans and messages are read only when a rule
-  failed.
+- The token build sets `PARSER_FEATURE_MACHINES` for a `machine`, `goto` or
+  `stay` token. The host reads that word with the token count it already
+  reads.
+- The lexer reserves no region until a build has a machine. Without a
+  region the desugaring records nothing, so a build without a machine runs
+  the dispatches it ran before. A build with a machine and no region runs
+  again with one.
+- Every desugaring dispatch is indirect. A plan kernel
+  (`shaders/desugar/plan.slang`) turns the counts of one stage into the
+  workgroup counts and parameters of the next on the GPU, so the host
+  records all of them before it knows a count. When the lexer has a region
+  but the pack has no machine, the 56 dispatches run with zero workgroups.
+- The region, the per-token buffers, the pieces and the spliced tokens have
+  floors that the plan checks against the counts. A count over its floor
+  sets `DESUGAR_REGION_OVERFLOW` in the feature word and writes what it
+  needed; the host raises the floors with an eighth to spare and runs the
+  build again. The floors do not shrink, so later builds of the same
+  program run once.
+- A broken machine rule (`LNC0076`) sets `DESUGAR_RULE_ERROR`. The host
+  then runs the rule kernels again to write the spans of the first error and
+  reads them. Nothing is read when no rule fails.
+
+Settings, 2026-11-17: 445,357 tokens, 112 machines. The desugaring runs 56
+dispatches in the frontend's lexer submission and keeps the GPU busy for
+1.15 ms. Its buffers hold 501,092 token rows, 112,667 pieces, 450,666 region
+bytes and 613,759 spliced rows, about 160 MB. The first build with machines
+runs the lexer twice. The machine pass of M7 no longer expands machines,
+which removes 29 dispatches and 2 readbacks from the elaboration before the
+frontend. The executable is unchanged.
 
 ## Open questions
 

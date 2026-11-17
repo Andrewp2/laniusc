@@ -4,9 +4,9 @@
 // positions the prefix sums of those counts give.
 //
 // A machine's text is its sections in order, and a section holds the pieces
-// of the machine's tokens in token order. Text outside the machines is
-// copied: each machine copies the text before it, and the last token of a
-// file copies the text after the file's last machine.
+// of the machine's tokens in token order. The text of the machines follows
+// one machine after another; the tokens outside them stay where they are
+// (compiler/desugar.rs).
 import gpu_index;
 import byte_packing;
 import generated_token_ids;
@@ -31,8 +31,6 @@ ConstantBuffer<PieceParams> gPieces;
 StructuredBuffer<TokenOut> tokens_out;
 StructuredBuffer<uint> token_file_id;
 ByteAddressBuffer in_bytes;
-StructuredBuffer<uint> source_file_start;
-StructuredBuffer<uint> source_file_len;
 StructuredBuffer<uint> records;
 // Inclusive prefix sums: machines, states, transitions, bracket depth.
 StructuredBuffer<uint4> scan_a;
@@ -270,33 +268,10 @@ void data_arguments(inout Cursor cur, State s)
     }
 }
 
-bool last_in_file(uint t)
-{
-    return t + 1u >= gPieces.token_count || token_file_id[t + 1u] != token_file_id[t];
-}
-
-uint file_end(uint t)
-{
-    uint file = token_file_id[t];
-    return source_file_start[file] + source_file_len[file];
-}
-
 void machine_head(inout Cursor cur, uint ch, Machine m)
 {
     if (ch == CH_ENUM)
     {
-        // The text since the machine before this one in the file.
-        uint file = token_file_id[m.head];
-        uint from = source_file_start[file];
-        uint ordinal = scan_a[m.head].x;
-        if (ordinal >= 2u)
-        {
-            uint previous = machines[ordinal - 2u];
-            if (token_file_id[previous] == file)
-                from = end_of(rec(previous, REC_END) - 1u);
-        }
-        uint first = (m.flags & FLAG_PUBLIC) != 0u ? m.head - 1u : m.head;
-        bytes(cur, from, start_of(first), m.name);
         public_word(cur, m);
         text(cur, C_ENUM, m.name);
         token(cur, m.name);
@@ -410,8 +385,6 @@ void machine_close(inout Cursor cur, uint ch, Machine m)
     else if (ch == CH_RUN_FNS)
     {
         text(cur, C_CLOSE, m.name);
-        if (last_in_file(m.close))
-            bytes(cur, end_of(m.close), file_end(m.close), m.close);
     }
 }
 
@@ -795,15 +768,9 @@ void main(uint3 tid: SV_DispatchThreadID)
 
     if (!in_machine)
     {
-        // The text after the last machine of the file.
-        Cursor cur;
-        cur.base = write ? sum4(scan0_before(t)) + sum4(scan1_before(t)) : 0u;
-        cur.count = 0u;
-        if (head != MC_NONE && last_in_file(t) && token_file_id[head] == token_file_id[t])
-            bytes(cur, end_of(rec(head, REC_END) - 1u), file_end(t), t);
         if (!write)
         {
-            counts0[t] = uint4(cur.count, 0u, 0u, 0u);
+            counts0[t] = uint4(0u, 0u, 0u, 0u);
             counts1[t] = uint4(0u, 0u, 0u, 0u);
         }
         return;

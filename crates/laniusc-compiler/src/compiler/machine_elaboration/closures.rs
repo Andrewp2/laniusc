@@ -169,11 +169,11 @@ const STORAGE: wgpu::BufferUsages =
 /// What a buffer the host maps is used for.
 const READBACK: wgpu::BufferUsages = wgpu::BufferUsages::MAP_READ.union(wgpu::BufferUsages::COPY_DST);
 
-pub(super) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
+pub(in crate::compiler) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
 
-pub(super) struct Gpu<'a> {
-    pub(super) device: &'a wgpu::Device,
-    pub(super) queue: &'a wgpu::Queue,
+pub(in crate::compiler) struct Gpu<'a> {
+    pub(in crate::compiler) device: &'a wgpu::Device,
+    pub(in crate::compiler) queue: &'a wgpu::Queue,
 }
 
 /// The bytes of one capacity step of a resident buffer: 4096 rows of four
@@ -231,7 +231,7 @@ struct ReadBatch {
 }
 
 /// One read of `Gpu::read`: `len` bytes at `offset` of segment `segment`.
-pub(super) struct Readback {
+pub(in crate::compiler) struct Readback {
     batch: Arc<ReadBatch>,
     segment: usize,
     offset: usize,
@@ -262,12 +262,26 @@ impl ResidentState {
         }
         (key, *held)
     }
+
+    /// `take` for a buffer that has one use per run: its key is `label`
+    /// itself, so it needs no run to number its uses.
+    fn take_fixed(&mut self, label: &str, bytes: usize) -> (String, usize) {
+        let bytes = bytes.max(4).next_multiple_of(4);
+        let held = self.capacity.entry(label.to_owned()).or_default();
+        if *held < bytes {
+            *held = (bytes + bytes / 64).next_multiple_of(BUCKET_BYTES);
+        }
+        (label.to_owned(), *held)
+    }
 }
 
 /// Starts one run of a rewrite. The guard keeps other runs out until it
 /// drops.
-pub(super) fn begin_run() -> MutexGuard<'static, ()> {
-    let guard = RESIDENT.run.lock().unwrap_or_else(PoisonError::into_inner);
+pub(in crate::compiler) fn begin_run() -> MutexGuard<'static, ()> {
+    started(RESIDENT.run.lock().unwrap_or_else(PoisonError::into_inner))
+}
+
+fn started(guard: MutexGuard<'static, ()>) -> MutexGuard<'static, ()> {
     let mut state = RESIDENT.state();
     state.taken.clear();
     // A bind group keeps its buffers alive. Drop the ones whose buffer the
@@ -296,11 +310,11 @@ fn binding_identity(resource: &wgpu::BindingResource<'_>) -> Option<[u64; 3]> {
 }
 
 impl Gpu<'_> {
-    pub(super) fn kernel(&self, key: &'static str) -> Result<PassData> {
+    pub(in crate::compiler) fn kernel(&self, key: &'static str) -> Result<PassData> {
         make_pass_data_from_shader_key(self.device, key, "main", key)
     }
 
-    pub(super) fn encoder(&self, label: &str) -> wgpu::CommandEncoder {
+    pub(in crate::compiler) fn encoder(&self, label: &str) -> wgpu::CommandEncoder {
         self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) })
     }
 
@@ -313,7 +327,7 @@ impl Gpu<'_> {
     }
 
     /// A zeroed storage buffer of at least `rows` rows of `row_words` words.
-    pub(super) fn rows(&self, label: &str, rows: usize, row_words: usize) -> LaniusBuffer<u8> {
+    pub(in crate::compiler) fn rows(&self, label: &str, rows: usize, row_words: usize) -> LaniusBuffer<u8> {
         let mut state = RESIDENT.state();
         let buffer = self.resident(&mut state, label, rows.max(1) * row_words * 4, STORAGE);
         state.stale.push(buffer.clone());
@@ -321,20 +335,20 @@ impl Gpu<'_> {
     }
 
     /// A storage buffer that starts with `words`.
-    pub(super) fn words_from(&self, label: &str, words: &[u32]) -> LaniusBuffer<u32> {
+    pub(in crate::compiler) fn words_from(&self, label: &str, words: &[u32]) -> LaniusBuffer<u32> {
         let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
         self.bytes_from(label, &bytes).reinterpret(words.len())
     }
 
     /// A storage buffer that starts with `bytes`, a whole number of words.
-    pub(super) fn bytes_from(&self, label: &str, bytes: &[u8]) -> LaniusBuffer<u8> {
+    pub(in crate::compiler) fn bytes_from(&self, label: &str, bytes: &[u8]) -> LaniusBuffer<u8> {
         let buffer = self.resident(&mut RESIDENT.state(), label, bytes.len(), STORAGE);
         buffer.write(self.queue, 0, bytes);
         buffer
     }
 
     /// The parameters of one dispatch.
-    pub(super) fn uniform<T>(&self, label: &str, value: &T) -> LaniusBuffer<T>
+    pub(in crate::compiler) fn uniform<T>(&self, label: &str, value: &T) -> LaniusBuffer<T>
     where
         T: encase::ShaderType + encase::internal::WriteInto,
     {
@@ -344,13 +358,90 @@ impl Gpu<'_> {
         RESIDENT.buffers.uniform(self.device, self.queue, &key, value)
     }
 
-    pub(super) fn dispatch(
+    /// A resident storage buffer of at least `bytes` bytes that no dispatch
+    /// clears, keyed by `label` alone. The desugaring records its buffers
+    /// inside the lexer's recording, without taking the pool's run, so each
+    /// of its labels names one buffer.
+    pub(in crate::compiler) fn fixed_storage(
+        &self,
+        label: &str,
+        bytes: usize,
+        usage: wgpu::BufferUsages,
+    ) -> LaniusBuffer<u8> {
+        let (key, capacity) = RESIDENT.state().take_fixed(label, bytes);
+        RESIDENT.buffers.binding_capacity(self.device, &key, capacity, usage | STORAGE)
+    }
+
+    /// `words_from` keyed by `label` alone.
+    pub(in crate::compiler) fn fixed_words_from(&self, label: &str, words: &[u32]) -> LaniusBuffer<u8> {
+        let bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+        let buffer = self.fixed_storage(label, bytes.len(), wgpu::BufferUsages::empty());
+        buffer.write(self.queue, 0, &bytes);
+        buffer
+    }
+
+    /// `uniform` keyed by `label` alone.
+    pub(in crate::compiler) fn fixed_uniform<T>(&self, label: &str, value: &T) -> LaniusBuffer<T>
+    where
+        T: encase::ShaderType + encase::internal::WriteInto,
+    {
+        RESIDENT.buffers.uniform(self.device, self.queue, label, value)
+    }
+
+    /// Records one dispatch whose workgroup counts are the three words at
+    /// `args[3 * triple..]`.
+    pub(in crate::compiler) fn dispatch_indirect(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pass: &PassData,
+        label: &str,
+        bindings: &[Binding<'_>],
+        args: &LaniusBuffer<u8>,
+        triple: u32,
+    ) -> Result<()> {
+        self.record(encoder, pass, label, bindings, false, |compute| {
+            compute.dispatch_workgroups_indirect(&args.buffer, args.byte_offset + u64::from(triple) * 12);
+        })
+    }
+
+    /// `dispatch` for the desugaring, which records into another encoder
+    /// than the pool's runs: it leaves the pool's pending clears to them.
+    pub(in crate::compiler) fn fixed_dispatch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         pass: &PassData,
         label: &str,
         bindings: &[Binding<'_>],
         elements: u32,
+    ) -> Result<()> {
+        let (x, y, z) =
+            passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
+        self.record(encoder, pass, label, bindings, false, |compute| compute.dispatch_workgroups(x, y, z))
+    }
+
+    pub(in crate::compiler) fn dispatch(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pass: &PassData,
+        label: &str,
+        bindings: &[Binding<'_>],
+        elements: u32,
+    ) -> Result<()> {
+        let (x, y, z) =
+            passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
+        self.record(encoder, pass, label, bindings, true, |compute| compute.dispatch_workgroups(x, y, z))
+    }
+
+    /// Records one dispatch. With `clear_stale`, the buffers the pool handed
+    /// out since the last dispatch are cleared first, in this encoder.
+    fn record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pass: &PassData,
+        label: &str,
+        bindings: &[Binding<'_>],
+        clear_stale: bool,
+        dispatch: impl FnOnce(&mut wgpu::ComputePass<'_>),
     ) -> Result<()> {
         passes_core::bind_group::validate_exact_binding_names(pass, 0, bindings)
             .with_context(|| format!("bind {label}"))?;
@@ -360,8 +451,10 @@ impl Gpu<'_> {
         };
         let group = {
             let mut state = RESIDENT.state();
-            for buffer in state.stale.drain(..) {
-                buffer.clear(encoder, 0, None);
+            if clear_stale {
+                for buffer in state.stale.drain(..) {
+                    buffer.clear(encoder, 0, None);
+                }
             }
             let identity: Option<Vec<_>> =
                 bindings.iter().map(|(name, resource)| Some((*name, binding_identity(resource)?))).collect();
@@ -373,8 +466,6 @@ impl Gpu<'_> {
                 },
             }
         };
-        let (x, y, z) =
-            passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
@@ -383,7 +474,7 @@ impl Gpu<'_> {
         compute.set_bind_group(0, Some(group.as_ref()), &[]);
         passes_core::record_compute_dispatch();
         if !passes_core::debug_operation_skipped() {
-            compute.dispatch_workgroups(x, y, z);
+            dispatch(&mut compute);
         }
         drop(compute);
         // A profiled job needs one timestamp per dispatch.
@@ -396,7 +487,7 @@ impl Gpu<'_> {
     /// rows, a total, then one workgroup's offsets for the tiles, then each
     /// tile's sum from its offset. A sum of one tile is one dispatch. The
     /// bindings do not depend on `count`, so neither does the bind group.
-    pub(super) fn scan<'b>(
+    pub(in crate::compiler) fn scan<'b>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         pass: &PassData,
@@ -454,7 +545,7 @@ impl Gpu<'_> {
 
     /// Records a copy of `words` words of `source` for the host to read,
     /// into the open readback batch.
-    pub(super) fn read<T>(
+    pub(in crate::compiler) fn read<T>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         source: &LaniusBuffer<T>,
@@ -500,7 +591,7 @@ impl Gpu<'_> {
         Readback { batch, segment, offset, len }
     }
 
-    pub(super) fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
+    pub(in crate::compiler) fn submit(&self, label: &str, encoder: wgpu::CommandEncoder) {
         passes_core::submit_with_progress(self.queue, label, encoder.finish());
     }
 
@@ -529,7 +620,7 @@ impl Gpu<'_> {
         Ok(&mapped[readback.segment][readback.offset..readback.offset + readback.len])
     }
 
-    pub(super) fn words(&self, readback: &Readback) -> Result<Vec<u32>> {
+    pub(in crate::compiler) fn words(&self, readback: &Readback) -> Result<Vec<u32>> {
         Ok(self
             .read_bytes(readback)?
             .chunks_exact(4)
@@ -538,7 +629,7 @@ impl Gpu<'_> {
     }
 
     /// The first `len` bytes of a read, as the GPU wrote them.
-    pub(super) fn bytes(&self, readback: &Readback, len: usize) -> Result<Vec<u8>> {
+    pub(in crate::compiler) fn bytes(&self, readback: &Readback, len: usize) -> Result<Vec<u8>> {
         Ok(self.read_bytes(readback)?.get(..len).context("readback is shorter than its text")?.to_vec())
     }
 }
@@ -554,7 +645,8 @@ pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
     }
     let _run = begin_run();
     let lexer = try_global_lexer()?;
-    pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
+    // The pass reads the source tokens, so its lexes do not desugar.
+    super::super::desugar::without_desugaring(|| pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
         let gpu = Gpu { device, queue };
         let mut encoder = gpu.encoder("closures.select");
         let (_, _, file_flags) = record_mark(&gpu, bufs, &mut encoder, total, sources.len())?;
@@ -567,7 +659,7 @@ pub(super) fn select(sources: &[&str]) -> Result<Option<Vec<u32>>> {
         let mut flags = gpu.words(&flags_read)?;
         flags.truncate(sources.len());
         Ok(Some(flags))
-    }))?
+    })))?
 }
 
 /// The bytes a rewrite's output holds before the rewritten length is
@@ -625,9 +717,12 @@ pub(super) fn rewrite(sources: &[&str], closure_count: u32) -> Result<Option<Out
     }
     let _run = begin_run();
     let lexer = try_global_lexer()?;
-    pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
-        run(&Gpu { device, queue }, bufs, sources, total, closure_count)
-    }))?
+    // The pass reads the source tokens, so its lexes do not desugar.
+    super::super::desugar::without_desugaring(|| {
+        pollster::block_on(lexer.with_resident_source_pack_tokens(sources, |device, queue, bufs| {
+            run(&Gpu { device, queue }, bufs, sources, total, closure_count)
+        }))
+    })?
 }
 
 fn run(gpu: &Gpu<'_>, bufs: &GpuBuffers, sources: &[&str], total: usize, closure_count: u32) -> Result<Option<Outcome>> {

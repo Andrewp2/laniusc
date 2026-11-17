@@ -2256,6 +2256,12 @@ pub(in crate::compiler) fn diagnostic_label_from_source_span(
     len: usize,
     message: impl Into<String>,
 ) -> DiagnosticLabel {
+    // A span of generated text labels the source it came from.
+    if start > source.len()
+        && let Some(start) = super::desugar::source_position(start)
+    {
+        return diagnostic_label_from_source_span(path, source, start, len, message);
+    }
     // A span of an elaborated machine file labels the machine's own text.
     if let Some((elaborated, start, len)) = super::machine_elaboration::original_span(source, start, len) {
         return diagnostic_label_from_source_span(path, elaborated.original(), start, len, message);
@@ -3370,10 +3376,16 @@ pub(in crate::compiler) struct DiagnosticSourceFile {
 impl DiagnosticSourceFile {
     /// Converts a global source-pack byte offset into a file-local byte offset.
     pub(in crate::compiler) fn local_start_for_global(&self, global_start: usize) -> usize {
-        global_start
+        source_global_position(global_start)
             .saturating_sub(self.global_start)
             .min(self.source.len())
     }
+}
+
+/// The source byte of a global position: the position itself, or for a byte
+/// of generated text, the source byte it came from (crate::compiler::desugar).
+fn source_global_position(global_start: usize) -> usize {
+    super::desugar::source_position(global_start).unwrap_or(global_start)
 }
 
 /// Builds diagnostic source-file records for concatenated source-pack input.
@@ -3409,6 +3421,10 @@ pub(in crate::compiler) fn source_pack_file_for_global_span(
     files: &[DiagnosticSourceFile],
     global_start: usize,
 ) -> Option<&DiagnosticSourceFile> {
+    let global_start = match files.last() {
+        Some(last) if global_start > last.global_end => source_global_position(global_start),
+        _ => global_start,
+    };
     files
         .iter()
         .find(|file| global_start >= file.global_start && global_start < file.global_end)

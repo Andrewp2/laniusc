@@ -140,6 +140,9 @@ uint parser_features_for_lexical_token(uint kind)
         flags |= PARSER_FEATURE_TYPE_ALIASES;
     if (kind == TK_MACHINE)
         flags |= PARSER_FEATURES_OF_MACHINE_OUTPUT;
+    // A transition outside a machine is an error the desugaring reports.
+    if (kind == TK_GOTO || kind == TK_STAY)
+        flags |= PARSER_FEATURE_MACHINES;
     return flags;
 }
 

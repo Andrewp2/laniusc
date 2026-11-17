@@ -1,6 +1,7 @@
 // src/compiler/gpu_compiler/typecheck.rs
 
 use super::*;
+use crate::compiler::desugar;
 use crate::{
     codegen::{
         lowering::{LoweringJobBounds, LoweringOutputDemand},
@@ -1544,6 +1545,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             CompileError::GpuFrontend("source exceeds lexer address capacity".into())
         })?;
         let parser_shape_key = parser_shape_key_for_source(&diagnostic_path);
+        let desugar_stop = std::sync::Mutex::new(None);
         loop {
             let warm_shape = (!require_lexer_boundary && forced_tree_capacity.is_none())
                 .then(|| self.cached_parser_shape(&parser_shape_key, source_capacity))
@@ -1589,8 +1591,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     },
                                 ));
                             }
-                            let features =
-                                crate::lexer::features::parser_allocation_features(raw_features);
+                            if desugar::stopped(raw_features) {
+                                *desugar_stop.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((raw_features, token_count));
+                                return Ok(DeferredParserFinish::RetryAfterLexerBoundary);
+                            }
+                            let features = crate::lexer::features::parser_allocation_features(
+                                raw_features & !desugar::DESUGAR_BITS,
+                            );
                             if token_count > shape.token_capacity
                                 || features != shape.parser_feature_flags
                             {
@@ -1613,9 +1620,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                     .with_recorded_resident_tokens_after_count(
                         src,
                         |device, queue, bufs, token_count, encoder, timer| {
+                            if desugar::stopped(bufs.parser_feature_flags_value) {
+                                *desugar_stop.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((bufs.parser_feature_flags_value, token_count));
+                                return Err(CompileError::GpuFrontend("the desugaring stopped".into()));
+                            }
                             let parser_feature_flags =
                                 crate::lexer::features::parser_allocation_features(
-                                    bufs.parser_feature_flags_value,
+                                    bufs.parser_feature_flags_value & !desugar::DESUGAR_BITS,
                                 );
                             let recorded = self.record_checked_source_pipeline(
                                 device,
@@ -1648,8 +1659,18 @@ impl<'gpu> GpuCompiler<'gpu> {
                     )
                     .await
             }
-            .map_err(|err| source_lexer_error_for_source(&diagnostic_path, src, err))??;
-            match attempt {
+            .map_err(|err| source_lexer_error_for_source(&diagnostic_path, src, err))?;
+            let stopped = desugar_stop.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+            if let Some((raw_features, token_count)) = stopped {
+                let text = |start, len| desugar::source_text(src, start, len);
+                if let Some(desugar::Stop::Rejected(rule)) = desugar::stop(raw_features, token_count, src.len(), text) {
+                    return Err(desugar::rejected_in_source(&diagnostic_path, src, rule));
+                }
+                self.note_parser_retry(ParserRetry::LexerBoundary);
+                require_lexer_boundary = true;
+                continue;
+            }
+            match attempt? {
                 DeferredParserFinish::Complete(artifact) => return Ok(artifact),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {
                     self.note_parser_retry(ParserRetry::TreeCapacity);
@@ -1670,6 +1691,22 @@ impl<'gpu> GpuCompiler<'gpu> {
             }
         }
     }
+    /// After a lexer run whose desugaring stopped: `Ok` to run the pack
+    /// again, the diagnostic of a broken machine rule otherwise.
+    fn desugar_stopped_in_source_pack(
+        &self,
+        stopped: &std::sync::Mutex<Option<(u32, u32)>>,
+        source_bytes: u32,
+        files: &[DiagnosticSourceFile],
+    ) -> Option<Result<(), CompileError>> {
+        let (raw_features, token_count) = stopped.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()?;
+        let text = |start, len| desugar::source_pack_text(files, start, len);
+        Some(match desugar::stop(raw_features, token_count, source_bytes as usize, text) {
+            Some(desugar::Stop::Rejected(rule)) => Err(desugar::rejected_in_source_pack(files, rule)),
+            _ => Ok(()),
+        })
+    }
+
     /// Type-checks source-pack text without explicit diagnostic paths.
     pub(super) async fn type_check_explicit_source_pack<S: AsRef<str>>(
         &self,
@@ -1905,6 +1942,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             }
         };
         let parser_shape_key = parser_shape_key_for_source_pack(sources, source_paths, library_id, unit_id);
+        let desugar_stop = std::sync::Mutex::new(None);
         let mut forced_tree_capacity = None;
         let mut require_lexer_boundary = false;
         let mut lowering_output_retry = LoweringOutputRetry::default();
@@ -1968,8 +2006,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                                     },
                                 ));
                             }
-                            let features =
-                                crate::lexer::features::parser_allocation_features(raw_features);
+                            if desugar::stopped(raw_features) {
+                                *desugar_stop.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((raw_features, token_count));
+                                return Ok(DeferredParserFinish::RetryAfterLexerBoundary);
+                            }
+                            let features = crate::lexer::features::parser_allocation_features(
+                                raw_features & !desugar::DESUGAR_BITS,
+                            );
                             if token_count > shape.token_capacity
                                 || features != shape.parser_feature_flags
                             {
@@ -1993,8 +2036,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                         },
                     )
                     .await
-                    .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))??;
-                match attempt {
+                    .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))?;
+                if let Some(stopped) = self.desugar_stopped_in_source_pack(&desugar_stop, source_bytes, &diagnostic_files) {
+                    stopped?;
+                    self.note_parser_retry(ParserRetry::LexerBoundary);
+                    require_lexer_boundary = true;
+                    continue;
+                }
+                match attempt? {
                     DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                     DeferredParserFinish::RetryWithTreeCapacity(required) => {
                         self.note_parser_retry(ParserRetry::TreeCapacity);
@@ -2020,9 +2069,13 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .with_recorded_resident_source_pack_tokens_after_count(
                     sources,
                     |device, queue, bufs, token_count, encoder, timer| {
+                        if desugar::stopped(bufs.parser_feature_flags_value) {
+                            *desugar_stop.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((bufs.parser_feature_flags_value, token_count));
+                            return Err(CompileError::GpuFrontend("the desugaring stopped".into()));
+                        }
                         let parser_feature_flags =
                             crate::lexer::features::parser_allocation_features(
-                                bufs.parser_feature_flags_value,
+                                bufs.parser_feature_flags_value & !desugar::DESUGAR_BITS,
                             );
                         let recorded = self.record_checked_source_pack_pipeline(
                             device,
@@ -2057,8 +2110,14 @@ impl<'gpu> GpuCompiler<'gpu> {
                     },
                 )
                 .await
-                .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))??;
-            match attempt {
+                .map_err(|err| source_lexer_error_for_source_pack(&diagnostic_files, err))?;
+            if let Some(stopped) = self.desugar_stopped_in_source_pack(&desugar_stop, source_bytes, &diagnostic_files) {
+                stopped?;
+                self.note_parser_retry(ParserRetry::LexerBoundary);
+                require_lexer_boundary = true;
+                continue;
+            }
+            match attempt? {
                 DeferredParserFinish::Complete(artifacts) => return Ok(artifacts),
                 DeferredParserFinish::RetryWithTreeCapacity(required) => {
                     self.note_parser_retry(ParserRetry::TreeCapacity);
