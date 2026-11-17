@@ -1887,10 +1887,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             unit_id,
             true,
         )?;
-        Ok(PendingOriginalUnit {
-            facts: OriginalUnitFacts::from_unit(&unit),
-            unit,
-        })
+        Ok(PendingOriginalUnit::of(unit))
     }
 
     async fn type_check_explicit_source_pack_with_paths_and_interface<S: AsRef<str>>(
@@ -2404,14 +2401,51 @@ impl CompiledSourcePackUnit {
 /// In particular this type exposes no unit/object accessor, Clone, or conversion
 /// into a compiled cache value before that receipt exists.
 pub(super) struct PendingOriginalUnit {
-    unit: CompiledSourcePackUnit,
+    object: CompiledSourcePackObject,
     facts: OriginalUnitFacts,
 }
 
 impl PendingOriginalUnit {
+    /// The unit's facts and its object. The facts take the unit's
+    /// interface and tables without copying them.
+    fn of(unit: CompiledSourcePackUnit) -> Self {
+        let CompiledSourcePackUnit {
+            instance_closure,
+            solver_closed,
+            facts_elided,
+            interface,
+            object,
+            template_sources,
+            template_source_paths,
+            template_dependency_pages,
+            generic_calls,
+            checked_contracts,
+            checked_call_owners,
+            native_call_hirs: _,
+            native_call_function_hirs: _,
+        } = unit;
+        let facts = OriginalUnitFacts {
+            snapshot: std::sync::Arc::new(OriginalUnitSnapshot {
+                target: object.target(),
+                interface,
+                checked_contracts,
+                generic_calls,
+                checked_call_owners,
+                template_sources,
+                template_source_paths,
+                template_dependency_pages,
+                instance_closure,
+                solver_closed,
+                facts_elided,
+                interface_checked: std::sync::atomic::AtomicBool::new(false),
+            }),
+        };
+        Self { object, facts }
+    }
+
     /// Storage changes do not change the immutable facts or release this unit.
     pub(super) fn spill_native(mut self, store: NativeObjectStore) -> Result<Self, CompileError> {
-        self.unit.object = self.unit.object.spill_native(store)?;
+        self.object = self.object.spill_native(store)?;
         Ok(self)
     }
 
@@ -2423,14 +2457,14 @@ impl PendingOriginalUnit {
     /// Release original object bytes to the build driver. The driver publishes
     /// them only after GPU catalog, discovery and ABI certification succeed.
     pub(super) fn release_closed(self) -> CompiledSourcePackObject {
-        self.unit.object
+        self.object
     }
 }
 
 #[cfg(test)]
 impl PendingOriginalUnit {
     pub(super) fn from_unit_for_test(unit: CompiledSourcePackUnit) -> Self {
-        Self { facts: OriginalUnitFacts::from_unit(&unit), unit }
+        Self::of(unit)
     }
 }
 
