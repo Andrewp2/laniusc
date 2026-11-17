@@ -1256,6 +1256,7 @@ pub(crate) fn record(
         LAST_RUN.with(|slot| *slot.borrow_mut() = Some(last));
         return Ok(());
     }
+    let buffers_span = crate::gpu::trace::HostSpan::new("host.lexer", "desugar.record.buffers");
     desugaring.resident.drop_stale_bind_groups();
     let caps = Caps {
         tokens: (desugaring.token_rows.load(Ordering::Relaxed) as usize).max(1),
@@ -1308,6 +1309,14 @@ pub(crate) fn record(
         );
     }
 
+    drop(buffers_span);
+    // The rounds' dispatches share one ordered compute pass. Wgpu gives each
+    // dispatch its own usage scope and the barriers it needs, and encoding
+    // one pass costs far less than one pass per dispatch.
+    let batch = crate::gpu::passes_core::DeferredComputeBatchGuard::begin(
+        crate::gpu::passes_core::compute_pass_batching_allowed(ctx.maybe_timer.is_some()),
+        "desugar.batch",
+    );
     last.anchors = Some(shared.anchors.clone());
     last.sizes = Some(shared.sizes.clone());
     let mut previous = None;
@@ -1324,6 +1333,14 @@ pub(crate) fn record(
             previous,
             feature,
         };
+        let _round_span = crate::gpu::trace::HostSpan::new(
+            "host.lexer",
+            match feature {
+                PARSER_FEATURE_CLOSURES => "desugar.record.closures",
+                PARSER_FEATURE_GENERATORS => "desugar.record.generators",
+                _ => "desugar.record.machines",
+            },
+        );
         if feature == PARSER_FEATURE_CLOSURES {
             last.closures = Some(closures::record(&round, encoder)?);
         } else if feature == PARSER_FEATURE_GENERATORS {
@@ -1333,6 +1350,8 @@ pub(crate) fn record(
         }
         previous = Some(slot);
     }
+    crate::gpu::passes_core::flush_deferred_compute(encoder);
+    drop(batch);
     LAST_RUN.with(|slot| *slot.borrow_mut() = Some(last));
     Ok(())
 }

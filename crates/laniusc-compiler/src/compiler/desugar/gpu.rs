@@ -24,6 +24,13 @@ const BUCKET_BYTES: usize = 4 * 1024 * 16;
 
 pub(in crate::compiler) type Binding<'a> = (&'static str, wgpu::BindingResource<'a>);
 
+/// The workgroup counts of one dispatch: given, or read from a buffer.
+#[derive(Clone, Copy)]
+enum Launch<'a> {
+    Direct(u32, u32, u32),
+    Indirect(&'a wgpu::Buffer, u64),
+}
+
 pub(in crate::compiler) struct Gpu<'a> {
     pub(in crate::compiler) device: &'a wgpu::Device,
     pub(in crate::compiler) queue: &'a wgpu::Queue,
@@ -140,9 +147,7 @@ impl Gpu<'_> {
         args: &LaniusBuffer<u8>,
         triple: u32,
     ) -> Result<()> {
-        self.record(encoder, pass, label, bindings, |compute| {
-            compute.dispatch_workgroups_indirect(&args.buffer, args.byte_offset + u64::from(triple) * 12);
-        })
+        self.record(encoder, pass, label, bindings, Launch::Indirect(&args.buffer, args.byte_offset + u64::from(triple) * 12))
     }
 
     /// Records one dispatch of one lane per element.
@@ -156,7 +161,7 @@ impl Gpu<'_> {
     ) -> Result<()> {
         let (x, y, z) =
             passes_core::plan_workgroups(DispatchDim::D1, InputElements::Elements1D(elements), pass.thread_group_size)?;
-        self.record(encoder, pass, label, bindings, |compute| compute.dispatch_workgroups(x, y, z))
+        self.record(encoder, pass, label, bindings, Launch::Direct(x, y, z))
     }
 
     fn record(
@@ -165,7 +170,7 @@ impl Gpu<'_> {
         pass: &PassData,
         label: &str,
         bindings: &[Binding<'_>],
-        dispatch: impl FnOnce(&mut wgpu::ComputePass<'_>),
+        launch: Launch<'_>,
     ) -> Result<()> {
         passes_core::bind_group::validate_exact_binding_names(pass, 0, bindings)
             .with_context(|| format!("bind {label}"))?;
@@ -185,6 +190,15 @@ impl Gpu<'_> {
                 },
             }
         };
+        // Inside the desugaring's batch (`record_batched`) the dispatch joins
+        // one ordered compute pass; wgpu still gives it its own usage scope.
+        let deferred = match launch {
+            Launch::Direct(x, y, z) => passes_core::defer_compute_direct(pass, &group, (x, y, z), label),
+            Launch::Indirect(args, offset) => passes_core::defer_compute_indirect(pass, &group, args, offset, &[], label),
+        };
+        if deferred {
+            return Ok(());
+        }
         let mut compute = passes_core::begin_counted_compute_pass(
             encoder,
             &wgpu::ComputePassDescriptor { label: Some(label), timestamp_writes: None },
@@ -193,7 +207,10 @@ impl Gpu<'_> {
         compute.set_bind_group(0, Some(group.as_ref()), &[]);
         passes_core::record_compute_dispatch();
         if !passes_core::debug_operation_skipped() {
-            dispatch(&mut compute);
+            match launch {
+                Launch::Direct(x, y, z) => compute.dispatch_workgroups(x, y, z),
+                Launch::Indirect(args, offset) => compute.dispatch_workgroups_indirect(args, offset),
+            }
         }
         drop(compute);
         // A profiled job needs one timestamp per dispatch.
