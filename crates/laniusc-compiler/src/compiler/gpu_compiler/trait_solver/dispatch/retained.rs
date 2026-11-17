@@ -121,6 +121,7 @@ const S_TOTALS: usize = 8;
 const S_CLOSURE_SHORT: usize = 24;
 const S_CLOSURE_TERMS: usize = 25;
 const S_CLOSURE_WAVES: usize = 26;
+const S_STALE_COUNTS: usize = 27;
 const S_WORDS: usize = 28;
 
 /// Solver table of each producer counter (producer.slang RC_C_*).
@@ -497,8 +498,12 @@ pub(in crate::compiler::gpu_compiler) fn publish(
 ) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
     let dispatches_before = passes_core::recorded_compute_dispatch_count();
     let readbacks_before = passes_core::readback_round_trips();
+    // The last export's committed readback returned the store's counters.
+    // The producer checks them on the GPU and reports stale ones, and the
+    // run then reads them itself.
+    let exported = store.job_reports().pop().map(|report| report.counts);
     let (mut report, publication) =
-        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options))?;
+        store.with_store_buffers(|buffers, generation| run(workspace, buffers, generation, options, exported))?;
     let readbacks = passes_core::readback_round_trips();
     report.dispatches = passes_core::recorded_compute_dispatch_count() - dispatches_before;
     report.readbacks = readbacks.0 - readbacks_before.0;
@@ -530,6 +535,7 @@ fn run(
     store: &BTreeMap<&'static str, wgpu::Buffer>,
     generation: u32,
     options: &RetainedTraitOptions,
+    exported: Option<Vec<u32>>,
 ) -> Result<(RetainedTraitCheck, Option<RetainedTraitPublication>)> {
     let device = workspace.device().clone();
     let queue = workspace.queue().clone();
@@ -575,9 +581,14 @@ fn run(
         closure_active_waves: 0,
     };
 
-    // The store's counters size the lane regions.
+    // The store's counters size the lane regions: those of the build's
+    // last export when it returned them, which the first pass checks.
     let rt_counts = store.get("rt_counts").ok_or_else(|| anyhow!("retention store has no rt_counts"))?;
-    let status = {
+    let exported = exported.filter(|words| words.len() >= counts::WORDS && words[counts::GENERATION] == generation);
+    let assumed = exported.is_some();
+    let status = if let Some(words) = exported {
+        words
+    } else {
         let staging = workspace.initialized(
             "trait_solver.retained_counts",
             counts::WORDS as u32,
@@ -712,6 +723,13 @@ fn run(
         passes_core::flush_deferred_compute(&mut encoder);
         queue.submit(Some(encoder.finish()));
         let state = producer.read(&scratch.state, S_WORDS, "retained producer state")?;
+        if state[S_STALE_COUNTS] != 0 {
+            // The store changed after its last export: size the run from
+            // its current counters. Nothing this run wrote is kept.
+            ensure!(assumed, "retained producer counters changed while the store was locked");
+            drop(scratch);
+            return run(workspace, store, generation, options, None);
+        }
         if state[S_UNIT_SLOTS_FULL] != 0 || state[S_CLOSURE_SHORT] != 0 {
             if state[S_UNIT_SLOTS_FULL] != 0 {
                 unit_slots = unit_slots.checked_mul(2).ok_or_else(|| anyhow!("retained unit table overflow"))?;
