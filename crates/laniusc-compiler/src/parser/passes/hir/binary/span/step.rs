@@ -141,12 +141,12 @@ mod tests {
     use super::binary_span_step_capacity;
 
     #[test]
-    fn steps_are_even_and_cover_any_chain_with_sixteen_links_each() {
-        for items in [0, 1, 2, 16, 17, 256, 257, 4_096, 1_687_524, u32::MAX] {
+    fn steps_are_even_and_cover_any_chain_with_sixty_four_links_each() {
+        for items in [0, 1, 2, 64, 65, 4_096, 4_097, 262_144, 1_687_524, u32::MAX] {
             let steps = binary_span_step_capacity(items);
             assert_eq!(steps % 2, 0);
-            assert!(16u128.pow(steps) >= u128::from(items.max(1)));
+            assert!(64u128.pow(steps) >= u128::from(items.max(1)));
         }
-        assert_eq!(binary_span_step_capacity(1_687_524), 6);
+        assert_eq!(binary_span_step_capacity(1_687_524), 4);
     }
 }

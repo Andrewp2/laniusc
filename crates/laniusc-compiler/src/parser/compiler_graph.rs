@@ -3969,7 +3969,7 @@ mod tests {
         // This capacity gives the canonical relation walk even parity but the
         // match-owner walk, after its 32-node local traversal, odd parity.
         // The graph must model the exact schedule used by the recorder.
-        match_capacity.tree_capacity = 65_536;
+        match_capacity.tree_capacity = 524_288;
         match_capacity.parser_feature_flags = crate::lexer::features::PARSER_FEATURE_MATCHES;
         let match_graph = build_graph(match_capacity, &passes).unwrap();
         for name in [

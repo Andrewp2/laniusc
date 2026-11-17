@@ -1129,9 +1129,13 @@ mod tests {
                 retained.hir_nodes,
                 retained.semantic_instructions
             );
+            // Pointer-jump pairs follow 4096 links each, so every workspace
+            // from 4097 to 16.7M rows records two execution-rank and SSA
+            // pairs; the region-parent doubling walk still shrinks with the job.
             assert!(
-                job_pairs.ssa_value_link < retained.jump_pairs().ssa_value_link
-                    && job_pairs.execution_rank < retained.jump_pairs().execution_rank,
+                job_pairs.region_parent < retained.jump_pairs().region_parent
+                    && job_pairs.ssa_value_link <= retained.jump_pairs().ssa_value_link
+                    && job_pairs.execution_rank <= retained.jump_pairs().execution_rank,
                 "{case}: the retained workspace should record more pairs than the job needs ({job_pairs:?} of {:?})",
                 retained.jump_pairs()
             );
