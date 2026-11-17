@@ -132,6 +132,11 @@ public uint canonical_live_rearm_candidate(LiveRearm live, uint index)
     return index < 2u * live.constants ? constant : row;
 }
 
+// Lanes every re-arm sweep launches (canonical_passes.rs,
+// CANONICAL_REARM_LANES). A sweep strides its candidates by this count, so
+// its grid does not scale with the table's capacity.
+public static const uint CANONICAL_REARM_LANES = 1u << 19u;
+
 // Resets the round state for the rounds that follow (one lane).
 public void canonical_rearm_reset_rounds()
 {

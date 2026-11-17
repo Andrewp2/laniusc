@@ -11,34 +11,31 @@ import type_checker.canonical.canonical_rearm;
 
 RWStructuredBuffer<uint> canonical_pending;
 
+#include "rearm_list_append.slang"
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
-    uint i = dtid.x + dtid.y * 16776960u;
+    uint lane = dtid.x + dtid.y * 16776960u;
     uint count = ct_candidate_count();
     LiveRearm live = canonical_live_rearm();
-    uint candidate = 0u;
-    bool pending = false;
-    if (i < count)
+    uint constants = count - ct_row_capacity();
+    // The lanes of a wave step together, so each step appends with one
+    // atomic per wave.
+    for (uint first = lane - WaveGetLaneIndex(); first < count; first += CANONICAL_REARM_LANES)
     {
-        uint constants = count - ct_row_capacity();
-        candidate = i < constants ? count - constants + i : count - 1u - i;
-        // Past the allocation counters a candidate is empty
-        // (canonical_live_rearm): it gets CT_NONE without reading it.
-        pending = canonical_rearm_candidate(candidate, canonical_live_rearm_holds(live, candidate));
+        uint i = first + WaveGetLaneIndex();
+        uint candidate = 0u;
+        bool pending = false;
+        if (i < count)
+        {
+            candidate = i < constants ? count - constants + i : count - 1u - i;
+            // Past the allocation counters a candidate is empty
+            // (canonical_live_rearm): it gets CT_NONE without reading it.
+            pending = canonical_rearm_candidate(candidate, canonical_live_rearm_holds(live, candidate));
+        }
+        rearm_list_append(candidate, pending);
     }
-    uint lanes = WaveActiveCountBits(pending);
-    uint base = 0u;
-    if (WaveIsFirstLane() && lanes != 0u)
-        InterlockedAdd(ct_counts[CT_COUNT_REARM_PENDING], lanes, base);
-    base = WaveReadLaneFirst(base);
-    if (pending)
-    {
-        uint slot = base + WavePrefixCountBits(pending);
-        uint capacity; uint stride;
-        canonical_pending.GetDimensions(capacity, stride);
-        if (slot < capacity) canonical_pending[slot] = candidate;
-    }
-    if (i == 0u) canonical_rearm_reset_rounds();
+    if (lane == 0u) canonical_rearm_reset_rounds();
 }
