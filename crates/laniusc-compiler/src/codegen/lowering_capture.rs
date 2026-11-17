@@ -90,7 +90,7 @@ pub(crate) fn record(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        encoder.copy_buffer_to_buffer(&buffer, offset, &copy, 0, bytes);
+        crate::gpu::copies::CountedCommands::copy_buffer_counted(encoder, &buffer, offset, &copy, 0, bytes);
         buffers.push((name, copy, bytes));
     }
     state.pending.push(Pending { buffers });

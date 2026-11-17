@@ -952,6 +952,9 @@ mod compute_pass_counting_tests {
             ("compiler/diagnostics.rs", 1),
             ("compiler/gpu_compiler/typecheck.rs", 2),
             ("gpu/buffers.rs", 2),
+            // The counted boundary every encoder copy and clear goes through
+            // (`CountedCommands`).
+            ("gpu/copies.rs", 4),
             ("gpu/canonical_intern_stress_tests.rs", 6),
             ("gpu/ct_match_tests.rs", 1),
             ("gpu/debug.rs", 1),
