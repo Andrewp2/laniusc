@@ -36,6 +36,7 @@ use super::{
         SubstitutionReport,
         SubstitutionRequests,
         SubstitutionRun,
+        words as sub_words,
     },
     words_bytes,
 };
@@ -1373,12 +1374,19 @@ impl RetainedProjection {
             "substitution: run {run}, statuses {:?}",
             substitution.status_counts()
         ));
+        // The committed attempt's base plus the terms it added is the
+        // store's term count: the schema run needs no status read for it.
+        let terms = substitution
+            .counts
+            .get(sub_words::STORE_TERMS_BASE)
+            .zip(substitution.counts.get(sub_words::STORE_NEW_TERMS))
+            .and_then(|(base, new)| base.checked_add(*new));
         report.substitution = Some(substitution);
         report.substitution_us = started.elapsed().as_micros() as u64;
 
         // Realize nominal schema fields using their own exact binders. New
         // field types form the next frontier; no body is rechecked.
-        report.schema = self.schema.run(store)?;
+        report.schema = self.schema.run(store, terms)?;
 
         // Layout, edges, check and the batch plan.
         let started = std::time::Instant::now();
