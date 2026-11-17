@@ -14,6 +14,8 @@ pub(crate) mod dispatch_capture;
 pub(crate) mod kernels;
 /// Reusable data-parallel operations assembled from reflected kernels.
 pub(crate) mod operations;
+/// Lets the driver's worker threads finish before the process exits.
+pub(crate) mod process_exit;
 /// Limits how many one-shot compiler processes hold a device at once.
 pub(crate) mod process_slot;
 /// Compute pass construction, bind groups, dispatch, and submission helpers.
