@@ -206,8 +206,38 @@ Settings at ab03bbe44, traced, sum of the per-pass minimum over the last 3 build
 
 Settings stayed byte-identical (`115a4d52a2ae77e0`, 5 of 5 builds) and the dispatch count is unchanged (1,421).
 
+## Listed live type rows (2026-11-17, second pass)
+
+Three passes of every round visit every live type row: the closed application index twice (`02c`, as `calls.argument_context_type_index` and `calls.return_types.index`) and the imported fields (`07`). Live rows are one source row per token (about 454,000 on settings) and the generated rows after them. Most source rows hold no type, and the three passes skip a row without a kind.
+
+The source rows that hold a type are now listed once before the rounds (and before the final pass of a job without rounds): `type_check.calls.type_rows.clear` zeroes the count, `02d_list_type_rows` appends every source row with a kind, and `02e_type_row_list_args` sizes the three passes over the list plus the generated rows so far. The three passes visit the listed rows, then the generated rows by index from `source_rows`, as before. Rows generated later in the rounds are reached by striding, as before. (`shaders/type_checker/type/instances/live_type_row_list.slang`.)
+
+Whether a pass inside the rounds gives a source row a kind, settled by reading every writer of `type_instance_kind`:
+
+| Writer | Rows | Inside the rounds |
+|---|---|---|
+| `type/instances/00_clear`, `01b`, `01c`, `modules/10e0l`, `dependencies/14`, `dependencies/07_project_calls`, `methods/02b` | source rows | no, before the rounds |
+| `allocate_application`, `ct_realize`, `methods/08` | generated rows (`source_rows + ordinal`) | yes, but past the source rows |
+| `methods/06_mark_call_keys` (a path receiver's token) | source rows | yes (`methods.mark_call_keys.inference`) |
+| `semantic/artifact/00c` | | no, after the rounds |
+
+So `06` is the only pass inside the rounds that can give a source row its first kind. It now sets the kind with a compare-exchange and appends the row to the list when the old kind was 0. `06` also runs before the list is built; those appends go to the previous job's list, which the clear and the listing replace (`mark_zero_initialized` declares that).
+
+`02c` is one kernel for its seven passes. A listed copy would be a new kernel with the structural hash's per-thread array, which the local array budget forbids. A uniform selects the rows instead: `gTypeRowList.listed` is 1 for the rounds' pass (`TypeRowListParams`, bound with `ComputeOperation::indirect_with_uniform`) and 0 in the shared resource map. The imported fields have no per-thread array, so the rounds use `07b_project_listed_imported_fields`, which shares `imported_fields.slang` with `07`.
+
+Settings, traced, per-pass minimum over the last 3 builds:
+
+| Pass, per round | Before | After |
+|---|---|---|
+| `calls.argument_context_type_index`, rounds 8 to 11 | 16 µs | 6 to 7 µs |
+| `calls.return_types.index`, rounds 6, 7, 9 to 11 | 16 to 17 µs | 6 to 7 µs |
+| `calls.return_types.imported_fields` | 17 to 18 µs | 9 to 11 µs |
+| Sum of the three over 11 rounds | 592 µs | 379 µs |
+| New passes, once: `type_rows.list`, `type_rows.args` | | 14 µs, 5 µs |
+
+Type-check dispatches 1,421 to 1,423. The executable stayed byte-identical (5 of 5 builds). A screen recorder shared the GPU during these traces, and whole-build sums moved by more than 1 ms between runs of the same binary, so this change is measured by its passes.
+
 ## What remains
 
 - Activity per item, as above.
-- A list of the live type rows that can hold a type, for the passes that visit every live row in each round (`02c` twice, imported fields twice).
 - Fusing passes: each removed dispatch saves about 8 µs of host recording and 1 µs of GPU time. Most passes in a round write the shared interner tables, so a fused group needs an argument that it behaves like the passes run in order.

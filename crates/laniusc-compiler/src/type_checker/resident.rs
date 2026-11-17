@@ -2059,6 +2059,13 @@ impl GpuTypeChecker {
                 }
                 Ok(())
             };
+            // The rounds' row passes visit the source rows listed here, which
+            // hold a type, and the generated rows.
+            if let Some(list) = bind_groups.calls.type_row_list.as_ref() {
+                list.clear.record(encoder);
+                list.list.record(encoder)?;
+                list.args.record(encoder)?;
+            }
             // The unit's own trait implementations and bounds are declaration
             // facts: collect them once for every round and the final pass.
             if let Some(bound) = bind_groups.calls.bound_inference.as_ref() {
