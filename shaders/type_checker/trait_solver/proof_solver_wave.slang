@@ -17,6 +17,7 @@ import type_checker.trait_solver.catalog_io;
 import type_checker.trait_solver.batch_io;
 import type_checker.trait_solver.proof_store_abi;
 import type_checker.trait_solver.proof_demand;
+import type_checker.trait_solver.proof_store_lifecycle;
 
 // Solver state, host-initialized every solver attempt.
 public RWStructuredBuffer<uint> trait_solver_wave;
@@ -50,6 +51,7 @@ public static const uint PSW_CHUNK_ROWS = 15u;    // host: rows per scratch chun
 public static const uint PSW_SLOT_WORDS = 16u;    // host: slot stride
 public static const uint PSW_CALLS_FIRST = 17u;   // host: the batch's new call rows
 public static const uint PSW_CALLS_COUNT = 18u;
+public static const uint PSW_QUEUE_COMMIT = 19u;  // the emitted steps' queue commit is due
 public static const uint PSW_SPAN_RECORDS = 32u;  // first, count per span
 public static const uint PSW_STATE_WORDS = 80u;
 
@@ -171,6 +173,22 @@ bool psw_demand_fits()
     if (fits)
         for (uint table = 0u; table < PPS_TABLES; table++) trait_solver_proof_demand[table] = 0u;
     return fits;
+}
+
+// The reduction queue's commit after the emitted steps. It was a
+// one-thread step at the end of the emitted point; every recorded emitted
+// point is followed by a planner, which commits first, so the steps and
+// planners see the same queue.
+void psw_commit_queue()
+{
+    if (trait_solver_wave[PSW_QUEUE_COMMIT] == 0u) return;
+    trait_solver_wave[PSW_QUEUE_COMMIT] = 0u;
+    if (!pps_building() || !ts_batch_is_building()) return;
+    uint4 span; uint accepted;
+    SolverStatus status = pps_descriptor(PPS_REDUCTION_QUEUE, span, accepted) ?
+        pps_publish_validated_prefix(PPS_REDUCTION_QUEUE, span.w, span.y) :
+        ts_invalid(66u, PPS_REDUCTION_QUEUE, TS_INVALID);
+    ts_batch_failure(status);
 }
 
 // The finish of a quiescent solve: root publication (64), call reduction
@@ -313,6 +331,7 @@ uint psw_plan_spans(uint point)
 public void psw_plan()
 {
     uint point = trait_solver_wave_plan.point;
+    psw_commit_queue();
     // A queue round start plans the spans of a round start.
     bool round_start = point == PSW_POINT_ROUND || point == PSW_POINT_QUEUE_ROUND;
     // Every span of this point is empty unless planned below.
@@ -366,6 +385,10 @@ public void psw_plan()
         (finishing && trait_solver_wave[PSW_STOP] == PSW_DONE);
     if (running && planned == PSW_PLANNED_ROUND)
         trait_solver_wave[PSW_ROUNDS] += 1u;
+    // The emitted steps' queue commit, made by the next planner.
+    if (point == PSW_POINT_EMITTED && running &&
+        trait_solver_wave[PSW_SPAN_RECORDS + PSW_SPAN_EMITTED_ONE * 2u + 1u] != 0u)
+        trait_solver_wave[PSW_QUEUE_COMMIT] = 1u;
     for (uint slot = slot_first; slot < slot_end; slot++)
     {
         uint base = slot * stride;

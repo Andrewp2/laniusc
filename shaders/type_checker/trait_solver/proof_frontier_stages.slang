@@ -325,11 +325,6 @@ public void pps_stage_publish_work_proofs(uint local)
     if (status.state == TS_VALID) status = pps_process_notification(row);
     ts_batch_failure(status);
 }
-public void pps_stage_commit_queue()
-{
-    if (!pps_building() || !ts_batch_is_building()) return;
-    ts_batch_failure(pps_commit_tables(PPS_REDUCTION_QUEUE, 1u));
-}
 public void pps_stage_publish_roots(uint local)
 {
     uint row; SolverStatus status;
