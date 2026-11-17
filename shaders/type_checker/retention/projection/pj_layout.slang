@@ -56,6 +56,9 @@ public static const uint PJ_S_BATCHES = 9u;
 // Layouts completed since the host last cleared the word. The host clears
 // it before the last layout round and reruns with more rounds if it is set.
 public static const uint PJ_S_LAYOUT_CHANGED = 10u;
+// Pattern payloads resolved since the host last cleared the word; the same
+// protocol for the pattern payload rounds (04e_pattern_payloads.slang).
+public static const uint PJ_S_PATTERN_CHANGED = 11u;
 public static const uint PJ_S_IDENTITY_OVERFLOW = 12u;
 public static const uint PJ_S_INPUT_ERROR = 13u;   // header error, even with no ranks
 public static const uint PJ_S_INPUT_DETAIL = 14u;
