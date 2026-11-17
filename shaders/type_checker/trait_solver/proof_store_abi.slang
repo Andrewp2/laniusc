@@ -97,24 +97,49 @@ public bool pps_descriptor(uint table, out uint4 span, out uint accepted)
 // init is the only complete directory/overlap admission. Future reservation
 // phases may change logical counts, never offsets/capacities/widths. Growth is
 // an explicit host copy/reinitialize boundary preserving accepted logical IDs.
-public SolverStatus pps_admit_layout()
+// Item `key` of the layout admission, in admission order: table key / 16,
+// item key % 16 (0: the table's descriptor; 1 + other: its overlap with the
+// earlier table `other`). True when the item fails, with its status.
+public static const uint PPS_LAYOUT_ITEMS = 16u;
+public bool pps_layout_item(uint key, out SolverStatus status)
 {
-    if (!pps_identity_is_valid()) return ts_invalid(66u, TS_INVALID, TS_INVALID);
-    for (uint table = 0u; table < PPS_TABLES; table++)
+    status = ts_ok();
+    uint table = key / PPS_LAYOUT_ITEMS; uint item = key % PPS_LAYOUT_ITEMS;
+    if (table >= PPS_TABLES) return false;
+    uint4 span; uint accepted;
+    bool described = pps_descriptor(table, span, accepted);
+    status = ts_invalid(66u, table, select(item == 0u, TS_INVALID, item - 1u));
+    if (item == 0u) return !described;
+    uint other = item - 1u;
+    if (!described || other >= table || span.z == 0u) return false;
+    uint end = span.x + span.z * pps_width(table);
+    uint4 prior; uint unused;
+    if (!pps_descriptor(other, prior, unused)) return true;
+    return prior.z != 0u && span.x < prior.x + prior.z * pps_width(other) && prior.x < end;
+}
+// The layout admission over one workgroup: every lane calls it (barriers)
+// and gets the status of the first failing item in admission order.
+groupshared uint pps_group_first;
+groupshared SolverStatus pps_group_status;
+public static const uint PPS_GROUP_LANES = 256u;
+public SolverStatus pps_admit_layout_group(uint lane)
+{
+    if (lane == 0u) pps_group_first = TS_INVALID;
+    GroupMemoryBarrierWithGroupSync();
+    bool identity = pps_identity_is_valid();
+    uint first = TS_INVALID; SolverStatus status = ts_ok();
+    [loop]
+    for (uint key = lane; identity && key < PPS_TABLES * PPS_LAYOUT_ITEMS; key += PPS_GROUP_LANES)
     {
-        uint4 span; uint accepted;
-        if (!pps_descriptor(table, span, accepted)) return ts_invalid(66u, table, TS_INVALID);
-        if (span.z == 0u) continue;
-        uint end = span.x + span.z * pps_width(table);
-        for (uint other = 0u; other < table; other++)
-        {
-            uint4 prior; uint unused;
-            if (!pps_descriptor(other, prior, unused)) return ts_invalid(66u, table, other);
-            if (prior.z != 0u && span.x < prior.x + prior.z * pps_width(other) && prior.x < end)
-                return ts_invalid(66u, table, other);
-        }
+        SolverStatus item;
+        if (pps_layout_item(key, item)) { first = key; status = item; break; }
     }
-    return ts_ok();
+    if (first != TS_INVALID) InterlockedMin(pps_group_first, first);
+    GroupMemoryBarrierWithGroupSync();
+    if (first != TS_INVALID && first == pps_group_first) pps_group_status = status;
+    GroupMemoryBarrierWithGroupSync();
+    if (!identity) return ts_invalid(66u, TS_INVALID, TS_INVALID);
+    return pps_group_first == TS_INVALID ? ts_ok() : pps_group_status;
 }
 public bool pps_count(uint table, out uint count)
 {

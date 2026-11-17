@@ -282,7 +282,8 @@ public bool ts_scalar_is_valid(uint scalar)
 
 // Reject overlapping physical input table slices, including header/directories.
 // This is fixed 18*18 work, independent of program graph size.
-public SolverStatus ts_admit_directories()
+// The checks before the per-table directory items: word counts and header.
+public SolverStatus ts_admit_directories_globals()
 {
     uint actual_catalog; uint actual_batch; uint stride;
     trait_solver_catalog.GetDimensions(actual_catalog, stride);
@@ -292,40 +293,64 @@ public SolverStatus ts_admit_directories()
     if (trait_solver_params.batch_word_count > actual_batch)
         return ts_limit(20u, 1u, trait_solver_params.batch_word_count, actual_batch);
     if (!ts_header_is_valid()) return ts_invalid(1u, TS_INVALID, TS_INVALID);
-    uint batch_header_end = TS_BATCH_FIXED_WORDS;
-    for (uint table = 0u; table < TS_TABLES; table++)
+    return ts_ok();
+}
+// Directory items, in admission order: item table * TS_DIRECTORY_ITEMS
+// checks the table's own row, item + 1 + prior its overlap with an earlier
+// table. True when the item fails, with its status. The first failing item
+// is the admission's failure; an item after a failing own row may fail
+// spuriously, but never before it. Requires ts_admit_directories_globals.
+public static const uint TS_DIRECTORY_ITEMS = 32u;
+public bool ts_directory_item(uint key, out SolverStatus status)
+{
+    status = ts_ok();
+    uint table = key / TS_DIRECTORY_ITEMS;
+    uint item = key % TS_DIRECTORY_ITEMS;
+    if (table >= TS_TABLES || item > table) return false;
+    SolverTable current;
+    bool described = ts_descriptor(table, current);
+    if (item == 0u)
     {
-        SolverTable current;
         // Header admission made this fixed directory read safe. Preserve the
         // allocation failure separately from an invalid pointer/row encoding.
         uint directory = TS_DIRECTORY_WORD + table * 6u;
         uint used = trait_solver_batch[directory + 3u];
         uint capacity = trait_solver_batch[directory + 4u];
-        if (used > capacity) return ts_limit(20u, table, used, capacity);
+        if (used > capacity) { status = ts_limit(20u, table, used, capacity); return true; }
         uint offset = trait_solver_batch[directory + 2u];
         uint width = trait_solver_batch[directory + 5u];
         if (width == ts_expected_width(table) && offset <= trait_solver_params.batch_word_count)
         {
             uint available = (trait_solver_params.batch_word_count - offset) / width;
-            if (capacity > available) return ts_limit(20u, table, capacity, available);
+            if (capacity > available) { status = ts_limit(20u, table, capacity, available); return true; }
         }
-        if (!ts_descriptor(table, current)) return ts_invalid(1u, table, TS_INVALID);
-        if ((current.catalog_count != 0u && current.catalog_offset < 4u) ||
-            (current.batch_capacity != 0u && current.batch_offset < batch_header_end))
-            return ts_invalid(1u, table, TS_INVALID);
-        uint catalog_end = current.catalog_offset + current.catalog_count * current.width;
-        uint batch_end = current.batch_offset + current.batch_capacity * current.width;
-        for (uint prior = 0u; prior < table; prior++)
-        {
-            SolverTable other;
-            if (!ts_descriptor(prior, other)) return ts_invalid(1u, prior, TS_INVALID);
-            if (current.catalog_count != 0u && other.catalog_count != 0u &&
-                current.catalog_offset < other.catalog_offset + other.catalog_count * other.width &&
-                other.catalog_offset < catalog_end) return ts_invalid(1u, table, prior);
-            if (current.batch_capacity != 0u && other.batch_capacity != 0u &&
-                current.batch_offset < other.batch_offset + other.batch_capacity * other.width &&
-                other.batch_offset < batch_end) return ts_invalid(1u, table, prior);
-        }
+        if (!described ||
+            (current.catalog_count != 0u && current.catalog_offset < 4u) ||
+            (current.batch_capacity != 0u && current.batch_offset < TS_BATCH_FIXED_WORDS))
+        { status = ts_invalid(1u, table, TS_INVALID); return true; }
+        return false;
     }
+    if (!described) return false;
+    uint prior = item - 1u;
+    SolverTable other;
+    if (!ts_descriptor(prior, other)) { status = ts_invalid(1u, prior, TS_INVALID); return true; }
+    uint catalog_end = current.catalog_offset + current.catalog_count * current.width;
+    uint batch_end = current.batch_offset + current.batch_capacity * current.width;
+    if ((current.catalog_count != 0u && other.catalog_count != 0u &&
+        current.catalog_offset < other.catalog_offset + other.catalog_count * other.width &&
+        other.catalog_offset < catalog_end) ||
+        (current.batch_capacity != 0u && other.batch_capacity != 0u &&
+        current.batch_offset < other.batch_offset + other.batch_capacity * other.width &&
+        other.batch_offset < batch_end))
+    { status = ts_invalid(1u, table, prior); return true; }
+    return false;
+}
+public SolverStatus ts_admit_directories()
+{
+    SolverStatus status = ts_admit_directories_globals();
+    if (status.state != TS_VALID) return status;
+    [loop]
+    for (uint key = 0u; key < TS_TABLES * TS_DIRECTORY_ITEMS; key++)
+        if (ts_directory_item(key, status)) return status;
     return ts_ok();
 }

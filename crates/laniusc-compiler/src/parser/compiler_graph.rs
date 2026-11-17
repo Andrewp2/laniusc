@@ -376,6 +376,15 @@ impl ParserCompilerGraph {
             .validate_reflected_runtime_bindings(operation, resources, dispatch_args)
     }
 
+    pub(in crate::parser) fn validate_bound_workspace_bindings(
+        &self,
+        operation: &'static str,
+        bound: &std::collections::HashMap<String, wgpu::BindingResource<'_>>,
+    ) -> anyhow::Result<()> {
+        self.materialized
+            .validate_bound_workspace_bindings(operation, bound)
+    }
+
     pub(in crate::parser) fn status_readback_operations(
         &self,
         ll1_status: &crate::gpu::buffers::LaniusBuffer<u32>,

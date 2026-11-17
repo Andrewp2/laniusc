@@ -24,10 +24,6 @@ StructuredBuffer<uint> lexer_token_count;
 StructuredBuffer<uint> semantic_token_kinds;
 StructuredBuffer<uint> token_impl_context_event;
 StructuredBuffer<uint> statement_event_block;
-// Written with each block's prefix, as the removed scan did. The row keeps
-// this buffer's graph lifetime: dropping it changed the parser slot plan and
-// broke type_checker_checks_enum_field_assignment_categories after earlier tests.
-RWStructuredBuffer<uint> statement_event_block_prefix;
 
 RWStructuredBuffer<uint> token_type_path_context_kind;
 
@@ -201,8 +197,6 @@ void main(uint3 gid: SV_GroupID, uint3 ltid: SV_GroupThreadID)
     uint event = token_i < count ? context_event_for(token_i, count) : 0u;
     uint block_before = context_event_before_block(
         statement_event_block, block_idx, lane, WG_SIZE);
-    if (lane == 0u)
-        statement_event_block_prefix[block_idx] = block_before;
     prefix_scan_inclusive<uint, PrefixScanU32Max, 256>(
         lane,
         event,
