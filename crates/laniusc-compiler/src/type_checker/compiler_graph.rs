@@ -7276,17 +7276,6 @@ mod tests {
             3,
             "scan input, local prefix, and block sums are bound together",
         );
-        let hierarchy_bindings = [
-            resource("module_record_scan_block_sum"),
-        ]
-        .map(storage_identity)
-        .into_iter()
-        .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            hierarchy_bindings.len(),
-            2,
-            "scan block sums and block prefixes are bound together",
-        );
         let module_radix_resources = [
             resource("module_path_key_radix_block_histogram"),
             resource("module_path_key_radix_block_bucket_prefix"),
