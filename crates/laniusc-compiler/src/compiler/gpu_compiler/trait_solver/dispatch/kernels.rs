@@ -910,7 +910,8 @@ pub(super) mod wave {
     pub const FAULT: u32 = 3;
     pub const OVERFLOW: u32 = 4;
     pub const GROW: u32 = 5;
-    /// A queue round found pending Work before any of its steps ran.
+    /// A round start found Work its recorded steps do not take, before any
+    /// of them ran; `OVERFLOW_POINT` names the round start.
     pub const FULL_ROUND: u32 = 6;
     pub const FAULT_IDENTITY: u32 = 1;
     pub const FAULT_LAYOUT: u32 = 2;
@@ -946,6 +947,13 @@ pub(super) enum WavePoint {
     /// the solve with `wave::FULL_ROUND` when Work is pending, then the
     /// queue point, with the queue point's steps.
     QueueRound = 7,
+    /// Round starts of rounds that normalize only original Works (the
+    /// opening round, from Work cursor zero) or only prerequisite Works
+    /// (every later round): `OPENING_ROUND` and `LATER_ROUND`. Either
+    /// stops the solve with `wave::FULL_ROUND` when its Work span starts
+    /// elsewhere.
+    OpeningRound = 8,
+    LaterRound = 9,
 }
 impl WavePoint {
     pub const ROUND: [WavePoint; 5] = [
@@ -960,8 +968,33 @@ impl WavePoint {
     /// those, after a round start that checks that no Work is pending; that
     /// planner also plans the queue point.
     pub const QUEUE_ROUND: [WavePoint; 2] = [WavePoint::QueueRound, WavePoint::Emitted];
+    /// A full round with the normalization of one Work kind.
+    pub const OPENING_ROUND: [WavePoint; 5] = [
+        WavePoint::OpeningRound,
+        WavePoint::Selected,
+        WavePoint::Expanded,
+        WavePoint::Queue,
+        WavePoint::Emitted,
+    ];
+    pub const LATER_ROUND: [WavePoint; 5] = [
+        WavePoint::LaterRound,
+        WavePoint::Selected,
+        WavePoint::Expanded,
+        WavePoint::Queue,
+        WavePoint::Emitted,
+    ];
+    /// A round start of a full round.
+    pub fn starts_full_round(self) -> bool {
+        matches!(self, WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound)
+    }
     pub fn from_word(word: u32) -> Option<Self> {
-        [WavePoint::FirstWork, WavePoint::Finish, WavePoint::QueueRound]
+        [
+            WavePoint::FirstWork,
+            WavePoint::Finish,
+            WavePoint::QueueRound,
+            WavePoint::OpeningRound,
+            WavePoint::LaterRound,
+        ]
             .into_iter()
             .chain(Self::ROUND)
             .find(|point| *point as u32 == word)
@@ -973,6 +1006,8 @@ impl WavePoint {
             WavePoint::FirstWork => &[WavePoint::FirstWork],
             WavePoint::Finish => &[WavePoint::Finish],
             WavePoint::QueueRound => &Self::QUEUE_ROUND,
+            WavePoint::OpeningRound => &Self::OPENING_ROUND,
+            WavePoint::LaterRound => &Self::LATER_ROUND,
             point => &Self::ROUND[point as usize - 1..],
         }
     }
@@ -1078,10 +1113,17 @@ fn wave_segment(point: WavePoint) -> Result<Vec<(WaveSpan, Vec<(&'static str, u3
             groups.push((FirstWork, vec![stage(COUNT_ORIGINAL_NORMALIZATION)?]));
             groups
         }
-        WavePoint::Round => {
-            // Normalization (41 to 47), 51, 52, 57, then selection.
+        WavePoint::Round | WavePoint::OpeningRound | WavePoint::LaterRound => {
+            // Normalization (41 to 47), 51, 52, 57, then selection. The
+            // opening round leaves out the prerequisite Works' 42 and 44,
+            // a later round the original Works' 41 and 43.
             let mut groups = Vec::new();
             for phase in 41..=47 {
+                if (point == WavePoint::OpeningRound && matches!(phase, 42 | 44))
+                    || (point == WavePoint::LaterRound && matches!(phase, 41 | 43))
+                {
+                    continue;
+                }
                 if matches!(phase, 45 | 47) {
                     groups.extend(commit(phase, AllWork, WorkOne)?);
                 } else {

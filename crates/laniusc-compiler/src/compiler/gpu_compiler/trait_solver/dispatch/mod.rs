@@ -723,11 +723,16 @@ impl GpuTraitSolver {
         // A solve with no source obligation has no Work: its finish point
         // follows the first work. Others record FIRST_SUBMIT_ROUNDS full
         // rounds, the opening round with the opening chunk steps, then
-        // FIRST_SUBMIT_QUEUE_ROUNDS queue rounds.
+        // FIRST_SUBMIT_QUEUE_ROUNDS queue rounds. The opening round
+        // normalizes only original Works and the later full rounds only
+        // prerequisite Works, until a round start finds otherwise
+        // (WavePoint::OpeningRound): then every full round normalizes both.
         let mut rounds = if plan.obligations.count == 0 { 0 } else { FIRST_SUBMIT_ROUNDS };
         let mut queue_rounds = if plan.obligations.count == 0 { 0 } else { FIRST_SUBMIT_QUEUE_ROUNDS };
+        let mut opening: &[WavePoint] = &WavePoint::OPENING_ROUND;
+        let mut later: &[WavePoint] = &WavePoint::LATER_ROUND;
         if rounds != 0 {
-            lead.push((pieces(&WavePoint::ROUND), opening_chunks));
+            lead.push((pieces(opening), opening_chunks));
             rounds -= 1;
         }
         // Full rounds the next FULL_ROUND stop records.
@@ -744,7 +749,7 @@ impl GpuTraitSolver {
             // stops the rounds at its point, and the rest of that round is
             // recorded again with enough chunk steps.
             if rounds != 0 {
-                let regular = self.template(templates, packet, submission, &pieces(&WavePoint::ROUND), 1, state, demand)?;
+                let regular = self.template(templates, packet, submission, &pieces(later), 1, state, demand)?;
                 submits.extend(std::iter::repeat_n(vec![regular], rounds as usize));
             }
             // Queue rounds go in one submit: each records 13 dispatches.
@@ -783,7 +788,7 @@ impl GpuTraitSolver {
                     // finish point is the whole submit.
                     lead = vec![(pieces(point.remainder()), chunks)];
                     if point == WavePoint::FirstWork && plan.obligations.count != 0 {
-                        lead.push((pieces(&WavePoint::ROUND), chunks));
+                        lead.push((pieces(opening), chunks));
                     }
                     if point == WavePoint::Finish {
                         rounds = 0;
@@ -796,13 +801,12 @@ impl GpuTraitSolver {
                 wave::GROW => {
                     // In-place growth at the same point. A count that growth
                     // cannot hold is left to the reservation.
-                    ensure!(
-                        words[wave::OVERFLOW_POINT] == WavePoint::Round as u32,
-                        "solver wave grew at a point without a counted admission"
-                    );
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .filter(|point| point.starts_full_round())
+                        .ok_or_else(|| anyhow!("solver wave grew at a point without a counted admission"))?;
                     self.grow_for_demand(packet, &progress, &readback.demand)?;
                     demand.write(&self.queue, 0, &[0u8; PROOF_STORE_TABLES * 4]);
-                    lead = vec![(pieces(WavePoint::Round.remainder()), wave_chunks(words[wave::OVERFLOW_ROWS]))];
+                    lead = vec![(pieces(point.remainder()), wave_chunks(words[wave::OVERFLOW_ROWS]))];
                     state.write(&self.queue, 0, &wave::RUNNING.to_le_bytes());
                 }
                 wave::RUNNING => {
@@ -816,9 +820,17 @@ impl GpuTraitSolver {
                     finish_due = true;
                 }
                 wave::FULL_ROUND => {
-                    // A queue round found Work at its start, before any of
-                    // its steps: record full rounds from there, twice those
-                    // of the last FULL_ROUND, up to 64, then queue rounds.
+                    // A round start found Work its steps do not take, before
+                    // any of them ran: record full rounds from there, twice
+                    // those of the last FULL_ROUND, up to 64, then queue
+                    // rounds. After an opening or later round start, every
+                    // full round normalizes both Work kinds.
+                    let point = WavePoint::from_word(words[wave::OVERFLOW_POINT])
+                        .ok_or_else(|| anyhow!("solver wave stopped a round at an unknown point"))?;
+                    if matches!(point, WavePoint::OpeningRound | WavePoint::LaterRound) {
+                        opening = &WavePoint::ROUND;
+                        later = &WavePoint::ROUND;
+                    }
                     lead.clear();
                     rounds = full_rounds;
                     full_rounds = (full_rounds * 2).min(64);

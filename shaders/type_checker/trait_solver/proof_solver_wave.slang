@@ -70,7 +70,7 @@ public static const uint PSW_DONE = 2u;     // quiescent; the finish point publi
 public static const uint PSW_FAULT = 3u;
 public static const uint PSW_OVERFLOW = 4u; // a span needs more chunk steps than recorded
 public static const uint PSW_GROW = 5u;     // the next normalization's rows do not fit
-public static const uint PSW_FULL_ROUND = 6u; // a queue round found Work: record full rounds
+public static const uint PSW_FULL_ROUND = 6u; // a round start's steps do not fit its Work (OVERFLOW_POINT)
 // Fault details: dispatch/mod.rs maps each to the host's former error.
 public static const uint PSW_FAULT_IDENTITY = 1u;
 public static const uint PSW_FAULT_LAYOUT = 2u;
@@ -93,6 +93,15 @@ public static const uint PSW_POINT_FINISH = 6u;      // after the recorded round
 // this point plans the queue point too, and its steps are the queue
 // point's.
 public static const uint PSW_POINT_QUEUE_ROUND = 7u;
+// Round starts of rounds recorded with the normalization of one Work kind.
+// Original Works (kind 0) are reserved only before the first work and
+// prerequisite Works (kind 1) only by expansion (proof_frontier_expansion,
+// checked again at admission), so a round from Work cursor zero normalizes
+// only originals and every later round only prerequisites. Either start
+// stops the solve (PSW_FULL_ROUND) before any step when its Work span
+// starts elsewhere, and the host records rounds with both kinds.
+public static const uint PSW_POINT_OPENING_ROUND = 8u;
+public static const uint PSW_POINT_LATER_ROUND = 9u;
 
 // Spans (dispatch/kernels.rs, WaveSpan).
 public static const uint PSW_SPAN_FIRST_WORK = 0u;
@@ -222,7 +231,8 @@ uint psw_plan_spans(uint point)
     }
     // A round start and the finish point share the quiescence test. Rounds
     // recorded after quiescence plan nothing; the finish point publishes.
-    if (point == PSW_POINT_ROUND || point == PSW_POINT_FINISH || point == PSW_POINT_QUEUE_ROUND)
+    if (point == PSW_POINT_ROUND || point == PSW_POINT_FINISH || point == PSW_POINT_QUEUE_ROUND ||
+        point == PSW_POINT_OPENING_ROUND || point == PSW_POINT_LATER_ROUND)
     {
         // The previous round's queue steps completed.
         if (trait_solver_wave[PSW_QUEUE_ACTIVE] != 0u)
@@ -250,16 +260,19 @@ uint psw_plan_spans(uint point)
         if (work_cursor == work) return PSW_PLANNED_ROUND;
         // Pending Work needs a full round. Nothing ran since this round
         // start; the host records full rounds from here.
-        if (point == PSW_POINT_QUEUE_ROUND)
+        if (point == PSW_POINT_QUEUE_ROUND ||
+            (point == PSW_POINT_OPENING_ROUND && work_cursor != 0u) ||
+            (point == PSW_POINT_LATER_ROUND && work_cursor == 0u))
         {
             trait_solver_wave[PSW_STOP] = PSW_FULL_ROUND;
+            trait_solver_wave[PSW_OVERFLOW_POINT] = point;
             return PSW_PLANNED;
         }
         if (requirement_cursor > requirements) { psw_fault(PSW_FAULT_CURSOR); return PSW_PLANNED; }
         if (!psw_demand_fits())
         {
             trait_solver_wave[PSW_STOP] = PSW_GROW;
-            trait_solver_wave[PSW_OVERFLOW_POINT] = PSW_POINT_ROUND;
+            trait_solver_wave[PSW_OVERFLOW_POINT] = point;
             trait_solver_wave[PSW_OVERFLOW_ROWS] =
                 max(work - work_cursor, requirements - requirement_cursor);
             return PSW_PLANNED;
@@ -333,7 +346,8 @@ public void psw_plan()
     uint point = trait_solver_wave_plan.point;
     psw_commit_queue();
     // A queue round start plans the spans of a round start.
-    bool round_start = point == PSW_POINT_ROUND || point == PSW_POINT_QUEUE_ROUND;
+    bool round_start = point == PSW_POINT_ROUND || point == PSW_POINT_QUEUE_ROUND ||
+        point == PSW_POINT_OPENING_ROUND || point == PSW_POINT_LATER_ROUND;
     // Every span of this point is empty unless planned below.
     uint first_span = select(point == PSW_POINT_FIRST_WORK, PSW_SPAN_FIRST_WORK,
         select(round_start, PSW_SPAN_WORK,
