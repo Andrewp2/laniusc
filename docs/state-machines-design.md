@@ -1190,16 +1190,18 @@ and compares the streams.
   then runs the rule kernels again to write the spans of the first error and
   reads them. Nothing is read when no rule fails.
 
-Settings, 2026-11-17: 445,357 tokens, 112 machines, no generators. The
-desugaring runs the machine round, 62 dispatches in the frontend's lexer
-submission, and keeps the GPU busy for about 2.2 ms (measured while another
-process shared the GPU). Its buffers hold 501,092 token rows, 112,667
-pieces, 450,666 region bytes and 613,759 spliced rows, about 160 MB. The
-first build with machines runs the lexer twice. The pass before the
-frontend no longer parses: with the generators in the token stream it lexes
-for the closure rewrite and the reserved-name check only, 77 dispatches
-where it ran 418. A settings build runs 3,713 dispatches and 38 round trips
-where origin/main 9a91a9248 runs 4,012 and 39. The executable is unchanged.
+Settings, 2026-11-17: 445,357 tokens, 112 machines, closures, no
+generators. The desugaring runs the closure round and the machine round, 94
+dispatches in the frontend's lexer submission, and keeps the GPU busy for
+about 2.2 ms per build (1.1 ms of it the closure round). A third of that
+time is the shared scan, 39 dispatches of 8 to 45 microseconds each; the
+closure capture search is the costliest single kernel at 0.3 ms. The first
+build with machines runs the lexer twice. No pass runs before the frontend:
+the closure rewrite, its lex and readbacks and the reserved-name check are
+gone, and the token build marks a reserved name in the lexer submission. A
+settings build runs 3,681 dispatches and 33 round trips where origin/main
+d2c63b1db runs 3,713 and 38, with a peak of 5.55 GB of GPU buffers against
+5.61 GB. The executable is unchanged.
 
 ## Open questions
 
