@@ -59,6 +59,9 @@ pub struct RetainedNativeReport {
     pub catalog: Option<RetainedTraitCheck>,
     pub discovery: DiscoveryReport,
     pub projection: ProjectionReport,
+    /// Trait checks run again with their solver state read back, after a
+    /// deferred solve's publication was not valid.
+    pub trait_check_retries: usize,
 }
 
 /// The state of retained builds that reuse one store, discovery,
@@ -77,6 +80,10 @@ pub struct RetainedNativeBuild {
     /// argument term becomes this term.
     #[doc(hidden)]
     pub test_caller_arg_fault: Option<u32>,
+    /// Fault injection for tests: the deferred trait solve publishes as
+    /// unfinished, so the check runs again with its state read back.
+    #[doc(hidden)]
+    pub test_unfinished_solve: bool,
 }
 
 impl RetainedNativeBuild {
@@ -103,6 +110,7 @@ impl RetainedNativeBuild {
             report: RetainedNativeReport::default(),
             native_link: None,
             test_caller_arg_fault: None,
+            test_unfinished_solve: false,
         })
     }
 
@@ -399,13 +407,33 @@ impl GpuCompiler<'_> {
         // Coherence is a whole-program rule, including impls whose methods
         // are never called. Discovery's rejection of unsupported bound uses
         // cannot replace catalog admission.
-        let (mut catalog, mut publication) = self.retained_trait_publish(&store, &RetainedTraitOptions::default())
-            .map_err(|e| retained_error("trait catalog", format!("{e:#}")))?;
-        // Discovery reads the publication's status with its first readback
-        // and rejects an invalid publication; that status decides first.
-        let discovered = publication.as_mut().map(|publication| build.discovery.run_with_traits(&store, publication));
-        catalog.publication_status = publication.as_ref().map(|p| p.checked_status()).transpose()
-            .map_err(|e| retained_error("trait publication", e))?;
+        // The solve runs without a readback: discovery reads the
+        // publication's status with its first readback and rejects an
+        // invalid publication, whose verdict (header words 45 to 47) also
+        // covers a solve that did not finish in its first submit. The roots
+        // append nothing then, and the check runs again with its state read
+        // back, for the exact result and report.
+        let deferred = RetainedTraitOptions {
+            defer_solve: true,
+            test_unfinished_solve: build.test_unfinished_solve,
+            ..RetainedTraitOptions::default()
+        };
+        let mut trait_check_retries = 0;
+        let mut options = &deferred;
+        let eager = RetainedTraitOptions::default();
+        let (catalog, publication, discovered) = loop {
+            let (mut catalog, mut publication) = self.retained_trait_publish(&store, options)
+                .map_err(|e| retained_error("trait catalog", format!("{e:#}")))?;
+            let discovered = publication.as_mut().map(|publication| build.discovery.run_with_traits(&store, publication));
+            catalog.publication_status = publication.as_ref().map(|p| p.checked_status()).transpose()
+                .map_err(|e| retained_error("trait publication", e))?;
+            if options.defer_solve && catalog.publication_status != Some([1, 0, u32::MAX]) {
+                options = &eager;
+                trait_check_retries += 1;
+                continue;
+            }
+            break (catalog, publication, discovered);
+        };
         if catalog.publication_status != Some([1, 0, u32::MAX]) {
             if let Some(publication) = &publication
                 && let Some(span) = publication.diagnostic_span().map_err(|e| retained_error("trait diagnostic",e))?
@@ -585,6 +613,7 @@ impl GpuCompiler<'_> {
             catalog: Some(catalog),
             discovery: roots.report.clone(),
             projection: report,
+            trait_check_retries,
         };
         originals.extend(instances);
         if target==SourcePackArtifactTarget::Wasm {

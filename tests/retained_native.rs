@@ -870,6 +870,30 @@ fn retained_native_closed_chain_retries_with_grown_capacity() {
     });
 }
 
+// The trait solve runs without a readback. A publication whose solve did
+// not finish (forced here) is not valid: the roots pass dispatches nothing,
+// discovery rejects the publication, and the check runs again with its
+// state read back. The build is the same as without the fault.
+#[test]
+fn retained_native_unfinished_deferred_solve_checks_again() {
+    common::run_with_timeout("retained unfinished deferred solve", || {
+        let directory = std::env::temp_dir().join(format!("lanius-retained-unfinished-{}", std::process::id()));
+        let manifest = bounds_manifest(&directory);
+        let compiler = pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build = RetainedNativeBuild::new(DiscoveryCapacity::default()).unwrap();
+        for unfinished in [true, false] {
+            build.test_unfinished_solve = unfinished;
+            let elf = pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest, &mut build)).unwrap();
+            assert_eq!(build.report.trait_check_retries, usize::from(unfinished));
+            assert_eq!(build.report.catalog.as_ref().unwrap().publication_status, Some([1, 0, u32::MAX]));
+            assert_eq!(build.report.discovery.instances, 9);
+            let output = common::run_x86_64_elf_output("retained unfinished", "retained_unfinished", &elf);
+            assert_eq!(output.status.code(), Some(42), "{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
 /// Writes the bounded direct calls program to `directory`: `outer`,
 /// `middle` and `keep` with a `Mark` bound, called with three types, so
 /// discovery solves three waves of closed instances. `main` returns 42.

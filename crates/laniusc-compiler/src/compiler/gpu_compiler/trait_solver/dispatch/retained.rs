@@ -150,6 +150,12 @@ const RT_FIRST_TERM: u32 = 32;
 const RP_MAGIC: u32 = 0x5254_5231;
 const RP_HEADER_WORDS: u32 = 64;
 const RP_H_STATUS: usize = 8;
+/// The verdict words publish_finish requires (route_abi.slang): the
+/// solver's stop word, the producer's fill faults and the native recipe
+/// status, copied on the GPU.
+const RP_H_SOLVE_STOP: u64 = 45;
+pub(super) const RP_H_FILL_FAULTS: u64 = 46;
+pub(super) const RP_H_RECIPE_STATUS: u64 = 47;
 const RP_H_FIRST_FAILURE: usize = 10;
 const RP_USE_WORDS: u32 = 4;
 const RP_ROUTE_WORDS: u32 = 8;
@@ -173,6 +179,16 @@ pub struct RetainedTraitOptions {
     /// First bound on term closure waves (default 65536). A smaller value
     /// forces the retry that raises it.
     pub closure_waves: Option<u32>,
+    /// Run the solve without reading its state back. The publication's
+    /// status then also says whether the solve finished in its first
+    /// submit and the catalog's fill and admission held (header words 45
+    /// to 47), and a consumer that finds it not valid checks again without
+    /// this option for the exact report.
+    pub defer_solve: bool,
+    /// Fault injection for tests: a deferred solve publishes as if it had
+    /// not finished in its first submit (header word 45 is not DONE).
+    #[doc(hidden)]
+    pub test_unfinished_solve: bool,
 }
 
 /// Where a retained trait check stopped.
@@ -965,7 +981,11 @@ fn run(
     // GPU admits the catalog while the host records them: the admission
     // receipts and the producer state after the fill come with the solve's
     // first readback, which leaves their verdict to this function.
-    *gpu.admission_state.lock().unwrap() = Some((scratch.state.clone(), S_WORDS));
+    // A deferred solve reads nothing back: the publication checks the
+    // admission and the fill on the GPU (header words 45 to 47).
+    if !options.defer_solve {
+        *gpu.admission_state.lock().unwrap() = Some((scratch.state.clone(), S_WORDS));
+    }
     let mut packet = gpu.new_packet()?;
     let mut batch_counts = [0; TABLE_COUNT];
     for table in 11..=16 {
@@ -978,7 +998,7 @@ fn run(
     }
     write_host_config(&queue, &scratch.config, &config);
     let input_words = submission.plan.input_word_count;
-    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, None, |encoder, input| {
+    let solved = gpu.check_retained(&mut packet, &submission, options.read_rows, None, options.defer_solve, |encoder, input| {
         if options.poison_arenas && input_words > BATCH_FIXED_WORDS {
             let range = (BATCH_FIXED_WORDS, input_words - BATCH_FIXED_WORDS, RETAINED_POISON);
             producer.fill_words(encoder, &workspace, &scratch, store, &input.buffer, &[range])?;
@@ -998,39 +1018,44 @@ fn run(
         Ok(())
     });
     *gpu.admission_state.lock().unwrap() = None;
-    // A solve that failed before its readback read no receipts: they
-    // decide whether the catalog or the solve failed.
-    let admission = match &solved {
-        Ok((Some(readback), _)) => readback.admission.clone().map(|(recipe, state)| (readback.catalog_status, recipe, state)),
-        _ => None,
-    };
-    let (catalog_status, recipe_status, state) = match admission {
-        Some(admission) => admission,
-        None => gpu.readback_admission(&scratch.state, &mut producer)?,
-    };
-    report.catalog_status = Some(catalog_status);
-    report.recipe_status = Some(recipe_status);
-    report.fill_faults = state[S_FILL_FAULTS];
-    if report.fill_faults != 0 {
-        report.stage = RetainedTraitStage::Fill;
-    } else if catalog_status[0] != 1 || recipe_status[0] != 1 {
-        report.stage = RetainedTraitStage::Admission;
-    }
-    if report.stage != RetainedTraitStage::Producer {
-        if options.read_rows {
-            report.tables = gpu.read_tables(None)?;
+    let output_layout = if options.defer_solve {
+        solved?.1
+    } else {
+        // A solve that failed before its readback read no receipts: they
+        // decide whether the catalog or the solve failed.
+        let admission = match &solved {
+            Ok((Some(readback), _)) => readback.admission.clone().map(|(recipe, state)| (readback.catalog_status, recipe, state)),
+            _ => None,
+        };
+        let (catalog_status, recipe_status, state) = match admission {
+            Some(admission) => admission,
+            None => gpu.readback_admission(&scratch.state, &mut producer)?,
+        };
+        report.catalog_status = Some(catalog_status);
+        report.recipe_status = Some(recipe_status);
+        report.fill_faults = state[S_FILL_FAULTS];
+        if report.fill_faults != 0 {
+            report.stage = RetainedTraitStage::Fill;
+        } else if catalog_status[0] != 1 || recipe_status[0] != 1 {
+            report.stage = RetainedTraitStage::Admission;
         }
-        report.producer_readback_bytes = producer.readback_bytes;
-        return Ok((report, None));
-    }
-    let (readback, output_layout) = solved?;
-    let readback = readback.ok_or_else(|| anyhow!("retained catalog solve deferred its readback"))?;
+        if report.stage != RetainedTraitStage::Producer {
+            if options.read_rows {
+                report.tables = gpu.read_tables(None)?;
+            }
+            report.producer_readback_bytes = producer.readback_bytes;
+            return Ok((report, None));
+        }
+        let (readback, output_layout) = solved?;
+        let readback = readback.ok_or_else(|| anyhow!("retained catalog solve deferred its readback"))?;
+        report.batch_status = Some(readback.batch_status);
+        report.contexts = readback.contexts;
+        report.calls = readback.calls;
+        report.obligations = readback.obligations;
+        report.evidence = readback.evidence;
+        output_layout
+    };
     report.stage = RetainedTraitStage::Solved;
-    report.batch_status = Some(readback.batch_status);
-    report.contexts = readback.contexts;
-    report.calls = readback.calls;
-    report.obligations = readback.obligations;
-    report.evidence = readback.evidence;
 
     // Publication: the host writes the identity and locations; the GPU
     // copies the solver's selections into routes and writes the status.
@@ -1080,6 +1105,16 @@ fn run(
         label: Some("trait_solver.retained_publish"),
     });
     routes.upload(&mut encoder, &[ArenaWrite { first_word: 0, words: header }])?;
+    // The verdict publish_finish requires: the solve finished, the fill
+    // wrote every row and the native recipes were admitted. A deferred
+    // solve reads none of them back.
+    gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
+    scratch.state.copy_to(&mut encoder, S_FILL_FAULTS as u64 * 4, &routes.buffer, RP_H_FILL_FAULTS * 4, 4);
+    let recipes = u64::from(gpu.catalog.native_layout.status.offset) * 4;
+    gpu.native_recipes.buffer.copy_to(&mut encoder, recipes, &routes.buffer, RP_H_RECIPE_STATUS * 4, 4);
+    if options.defer_solve && options.test_unfinished_solve {
+        routes.upload(&mut encoder, &[ArenaWrite { first_word: RP_H_SOLVE_STOP as u32, words: vec![0] }])?;
+    }
     let bound = Bound {
         catalog: &gpu.storage.buffer,
         batch: &packet.input.buffer,
@@ -1371,6 +1406,14 @@ fn words_bytes(words: &[u32]) -> Vec<u8> {
 }
 
 impl GpuTraitSolver {
+    /// Copies the last solve's stop word (kernels::wave::STOP) into the
+    /// publication header, where publish_finish requires it to be DONE.
+    fn copy_solve_stop(&self, encoder: &mut wgpu::CommandEncoder, routes: &LaniusBuffer<u32>) -> Result<()> {
+        let state = self.last_wave_state.lock().unwrap().clone().ok_or_else(|| anyhow!("the publication's solve has no wave state"))?;
+        state.copy_to(encoder, super::kernels::wave::STOP as u64 * 4, routes, RP_H_SOLVE_STOP * 4, 4);
+        Ok(())
+    }
+
     /// The catalog and native recipe receipts of the admission submit, with
     /// the producer state after its catalog fill: one readback.
     fn readback_admission(
@@ -1444,6 +1487,7 @@ impl GpuTraitSolver {
         submission: &Submission,
         semantic_rows: bool,
         gpu_counts: Option<(&LaniusBuffer<u32>, u64)>,
+        defer: bool,
         fill: impl FnOnce(&mut wgpu::CommandEncoder, &Arena) -> Result<()>,
     ) -> Result<(Option<WaveReadback>, OutputLayout)> {
         ensure!(
@@ -1472,7 +1516,6 @@ impl GpuTraitSolver {
         packet.output.prepare(&mut encoder, submission.plan.output_word_count, &submission.plan.output_copies)?;
         packet.input.upload(&mut encoder, &submission.plan.writes)?;
         fill(&mut encoder, &packet.input)?;
-        let defer = gpu_counts.is_some();
         if let Some((counts, first_word)) = gpu_counts {
             super::record_gpu_batch_counts(&mut encoder, &packet.input, counts, first_word)?;
         }

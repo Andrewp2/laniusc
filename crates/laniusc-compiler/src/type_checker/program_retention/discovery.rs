@@ -342,7 +342,20 @@ impl RetainedDiscovery {
                 );
             }
             let publication_read = publication.as_ref().map(|_| (&receipt_buffer, PUBLICATION_STATUS_WORDS));
-            self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
+            if self.admission.is_some() {
+                // The publication's solve may not have finished (its status
+                // is checked on the GPU, 05_publish mode 5): the roots pass
+                // runs only over a valid publication.
+                let bound_args = self.scratch["dg_bound_args"].clone();
+                let mut gate = config;
+                gate[0] = 5;
+                gate[10] = uses.div_ceil(256).max(1);
+                self.record(&mut encoder, &guard, 5, gate, &extra, 1, &mut report)?;
+                self.flush(&mut encoder);
+                self.record_with(&mut encoder, &guard, 0, config, &extra, Dispatch::Indirect(&bound_args), &mut report)?;
+            } else {
+                self.record(&mut encoder, &guard, 0, config, &extra, uses, &mut report)?;
+            }
             self.record(&mut encoder, &guard, 5, config, &extra, 1, &mut report)?;
             { let commands = self.finish(encoder); self.queue.submit(Some(commands)); }
             drop(guard);

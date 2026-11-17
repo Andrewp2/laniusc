@@ -655,7 +655,7 @@ impl RetainedTraitPublication {
         let catalog_buffer = self.gpu.storage.buffer.clone();
         let (readback, output_layout) =
             self.gpu
-                .check_retained(&mut packet, &submission, false, gpu_counts, |encoder, input| {
+                .check_retained(&mut packet, &submission, false, gpu_counts, defer_solve.is_some(), |encoder, input| {
                     routes
                         .buffer
                         .clear(encoder, 0, Some(u64::from(route_words) * 4));
@@ -732,6 +732,11 @@ impl RetainedTraitPublication {
             status[counts::JOBS],
             status[A_DECLS],
         ]);
+        // The verdict publish_finish requires: the solve finished (its stop
+        // word, copied below). The catalog's fill and recipes were checked
+        // with the source publication.
+        header[RP_H_FILL_FAULTS as usize] = 0;
+        header[RP_H_RECIPE_STATUS as usize] = 1;
         let mut encoder = device.create_command_encoder(&Default::default());
         routes.upload(
             &mut encoder,
@@ -740,6 +745,7 @@ impl RetainedTraitPublication {
                 words: header,
             }],
         )?;
+        self.gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
         let state = &producer.buffers["cw_state"];
         state.copy_to(&mut encoder, CW_PUBLISH * 4, &routes.buffer, RP_H_OBLIGATIONS * 4, 8);
         state.copy_to(&mut encoder, (CW_PUBLISH + 2) * 4, &routes.buffer, RP_H_CALLS * 4, 8);
@@ -936,7 +942,7 @@ impl RetainedTraitPublication {
         let gpu_counts = Some((&producer.buffers["cw_state"], CW_COUNTS));
         let source_atom_ids = self.route_words - catalog.slices[1].count * 2;
         let catalog_buffer = self.gpu.storage.buffer.clone();
-        let (_, output_layout) = self.gpu.check_retained(&mut packet, &submission, false, gpu_counts, |encoder, input| {
+        let (_, output_layout) = self.gpu.check_retained(&mut packet, &submission, false, gpu_counts, true, |encoder, input| {
             routes.buffer.clear(encoder, 0, Some(u64::from(route_words) * 4));
             self.routes.buffer.copy_to(
                 encoder,
@@ -1000,8 +1006,14 @@ impl RetainedTraitPublication {
         header[37] = packet.proof.logical_words;
         header[38] = self.gpu.storage.logical_words;
         header[39] = packet.output.logical_words;
+        // The verdict publish_finish requires: the solve finished (its stop
+        // word, copied below). The catalog's fill and recipes were checked
+        // with the source publication.
+        header[RP_H_FILL_FAULTS as usize] = 0;
+        header[RP_H_RECIPE_STATUS as usize] = 1;
         let mut encoder = self.gpu.wave_encoder();
         routes.upload(&mut encoder, &[ArenaWrite { first_word: 0, words: header }])?;
+        self.gpu.copy_solve_stop(&mut encoder, &routes.buffer)?;
         let cw_state = &producer.buffers["cw_state"];
         cw_state.copy_to(&mut encoder, CW_PUBLISH * 4, &routes.buffer, RP_H_OBLIGATIONS * 4, 8);
         cw_state.copy_to(&mut encoder, (CW_PUBLISH + 2) * 4, &routes.buffer, RP_H_CALLS * 4, 8);

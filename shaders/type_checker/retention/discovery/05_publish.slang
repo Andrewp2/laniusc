@@ -11,7 +11,8 @@ RWStructuredBuffer<uint4> dg_root_readiness;
 RWStructuredBuffer<uint> dg_wave;
 // Mode 4: a chained closed solve's receipt (route header, solver state,
 // batch receipt), and the workgroups of its method routes (seven kernels)
-// and of the bound routes, which the receipt gates.
+// and of the bound routes, which the receipt gates. Mode 5: the source
+// publication's status, which gates the roots pass (dg_bound_args).
 StructuredBuffer<uint> dg_receipt;
 RWStructuredBuffer<uint> dg_route_args;
 RWStructuredBuffer<uint> dg_bound_args;
@@ -80,6 +81,26 @@ void main(uint3 id: SV_DispatchThreadID)
             write_groups(18u,dg_config[13],run);
             dg_bound_args[0]=run ? min(requests,65535u) : 0u;
             dg_bound_args[1]=run ? (requests+65534u)/65535u : 0u;
+            dg_bound_args[2]=run ? 1u : 0u;
+        }
+        return;
+    }
+    if(dg_config[0]==5u)
+    {
+        // The roots' gate: the source publication's status words (route
+        // header 8 to 10, copied into dg_receipt words 0 to 2). Its solve
+        // ran without a host readback, so it publishes as valid only when
+        // it finished and its catalog was admitted (header words 45 to 47).
+        // The roots pass dispatches config word 10's workgroups for a valid
+        // publication and none otherwise: nothing requests a substitution
+        // and nothing is appended to the store. The roots' readback returns
+        // the status, and the host rejects or checks again.
+        if(lane==0u)
+        {
+            bool run=dg_receipt[0]==1u && dg_receipt[1]==0u;
+            uint groups=dg_config[10];
+            dg_bound_args[0]=run ? min(groups,65535u) : 0u;
+            dg_bound_args[1]=run ? (groups+65534u)/65535u : 0u;
             dg_bound_args[2]=run ? 1u : 0u;
         }
         return;
