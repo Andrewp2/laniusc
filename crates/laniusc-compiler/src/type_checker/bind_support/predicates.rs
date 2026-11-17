@@ -96,7 +96,8 @@ pub(in crate::type_checker) fn create_predicate_bind_groups(
         "type_check.predicates.obligation_pair_dispatch.params",
         &CountDispatchParams {
             capacity: u32::MAX,
-            multiplier: 1,
+            // OBLIGATION_PAIR_LANES (predicates/02b_validate_obligations.slang).
+            multiplier: 32,
             reserved0: 0,
             reserved1: 0,
         },
