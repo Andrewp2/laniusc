@@ -209,8 +209,13 @@ pub(in crate::type_checker) struct CallBindGroups {
 
 /// The passes of bound-directed generic call inference.
 pub(in crate::type_checker) struct BoundInferenceOperations {
-    /// Zeroes the bound tables' counts.
+    /// Zeroes the bound tables' counts, before the local collection.
     pub(in crate::type_checker) clear: crate::gpu::operations::ClearBufferOperation,
+    /// Saves the counts after the local collection.
+    pub(in crate::type_checker) snapshot: crate::gpu::operations::CopyBufferOperation,
+    /// Returns the counts to the local rows before a round's dependency
+    /// collection.
+    pub(in crate::type_checker) restore: crate::gpu::operations::CopyBufferOperation,
     /// Present when the unit has dependency interfaces.
     pub(in crate::type_checker) collect_dependency: Option<ComputeOperation>,
     pub(in crate::type_checker) collect_local: ComputeOperation,

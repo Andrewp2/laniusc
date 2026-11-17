@@ -42,9 +42,9 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
                 "create the source file or pass a readable .lani input path",
             )
         })?;
-        sources.push((path.to_path_buf(), source));
+        sources.push(source);
     }
-    crate::compiler::machine_elaboration::elaborate_sources(sources)
+    Ok(sources)
 }
 
 /// Reads file metadata for one explicit source path.
@@ -192,15 +192,6 @@ pub(super) fn read_explicit_source_path_files(
     label: &str,
     files: &[ExplicitSourcePathFile],
 ) -> Result<Vec<String>, CompileError> {
-    crate::compiler::machine_elaboration::elaborate_sources(read_explicit_source_path_texts(label, files)?)
-}
-
-/// `read_explicit_source_path_files` before elaboration: each file's path
-/// and text as the disk holds it.
-pub(super) fn read_explicit_source_path_texts(
-    label: &str,
-    files: &[ExplicitSourcePathFile],
-) -> Result<Vec<(PathBuf, String)>, CompileError> {
     validate_explicit_source_path_files_metadata(label, files)?;
     let mut sources = Vec::with_capacity(files.len());
     for (i, file) in files.iter().enumerate() {
@@ -213,7 +204,7 @@ pub(super) fn read_explicit_source_path_texts(
                 "restore the source file or regenerate the source-pack manifest",
             )
         })?;
-        sources.push((file.path.clone(), source));
+        sources.push(source);
     }
     Ok(sources)
 }

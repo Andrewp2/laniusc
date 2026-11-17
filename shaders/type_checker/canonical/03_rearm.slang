@@ -9,6 +9,9 @@ import type_checker.canonical.canonical_rearm;
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint i = dtid.x + dtid.y * 16776960u;
-    if (i < ct_candidate_count()) canonical_rearm_candidate(i);
+    // After the early stage: only the allocated candidates.
+    LiveRearm live = canonical_live_rearm();
+    if (i < canonical_live_rearm_count(live))
+        canonical_rearm_candidate(canonical_live_rearm_candidate(live, i));
     if (i == 0u) canonical_rearm_reset_rounds();
 }

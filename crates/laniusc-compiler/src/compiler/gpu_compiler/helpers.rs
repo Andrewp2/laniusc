@@ -123,29 +123,19 @@ fn type_code_note(code: u32) -> String {
     }
 }
 
-/// Prepares already-loaded source text for GPU compiler input.
+/// Prepares already-loaded source text for GPU compiler input. The
+/// frontend desugars machines, generators and closures in its token stream
+/// (crate::compiler::desugar), so the text is the source.
 pub(in crate::compiler) fn prepare_source_for_gpu(src: &str) -> Result<String, CompileError> {
-    crate::compiler::machine_elaboration::elaborate_source(Path::new("<source>"), src.to_string())
+    Ok(src.to_string())
 }
 
 /// Prepares the already-loaded texts of a source pack for GPU compiler input.
-/// A file without a path is named as the frontend names it.
 pub(in crate::compiler) fn prepare_source_pack_for_gpu<S: AsRef<str>>(
     sources: &[S],
-    source_paths: Option<&[Option<PathBuf>]>,
+    _source_paths: Option<&[Option<PathBuf>]>,
 ) -> Result<Vec<String>, CompileError> {
-    let files = sources
-        .iter()
-        .enumerate()
-        .map(|(index, source)| {
-            let path = source_paths
-                .and_then(|paths| paths.get(index))
-                .and_then(|path| path.clone())
-                .unwrap_or_else(|| PathBuf::from(format!("<source pack file {index}>")));
-            (path, source.as_ref().to_string())
-        })
-        .collect();
-    crate::compiler::machine_elaboration::elaborate_sources(files)
+    Ok(sources.iter().map(|source| source.as_ref().to_string()).collect())
 }
 
 /// Reads source text from disk and prepares it for GPU compiler input.
@@ -153,8 +143,7 @@ pub(in crate::compiler) fn prepare_source_for_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<String, CompileError> {
     let path = path.as_ref();
-    let source = fs::read_to_string(path).map_err(|err| source_input_read_failed(path, err))?;
-    crate::compiler::machine_elaboration::elaborate_source(path, source)
+    fs::read_to_string(path).map_err(|err| source_input_read_failed(path, err))
 }
 
 pub(super) fn source_tokenization_failed_for_source(

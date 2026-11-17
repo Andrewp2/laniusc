@@ -51,66 +51,6 @@ impl GpuCompiler<'_> {
         self.compile_native_program(source_pack, Some(options), output).await
     }
 
-    /// Elaborates the files of every frontend unit of `plan` in one run of
-    /// each rewrite (`elaborate_source_loads`), before the first unit
-    /// compiles. Each unit takes its texts when it compiles; the returned
-    /// guard drops the rest when the build ends. When the run cannot stand
-    /// in for one elaboration per unit, nothing is prepared and each unit
-    /// reads and elaborates its own files.
-    pub(super) fn prepare_unit_sources(
-        &self,
-        source_pack: &ExplicitSourcePackPathManifest,
-        plan: &SourcePackBuildPlan,
-    ) -> PreparedUnitSources<'_> {
-        let guard = PreparedUnitSources { compiler: self };
-        let frontend_jobs = || plan.schedule.jobs.iter()
-            .filter(|job| job.phase == crate::codegen::unit::SourcePackJobPhase::LibraryFrontend);
-        // One unit reads and elaborates its own files when it compiles.
-        // Reading them here as well would read every file twice.
-        if frontend_jobs().count() < 2 {
-            return guard;
-        }
-        let mut units = Vec::new();
-        let mut loads = Vec::new();
-        for job in frontend_jobs() {
-            let files = source_pack.source_files_for_job(job);
-            let Ok(texts) = read_explicit_source_path_texts(UNIT_SOURCES_LABEL, files) else {
-                return guard;
-            };
-            units.push((job.library_id, job.phase_unit_index, files.to_vec()));
-            loads.push(texts);
-        }
-        // No more than the largest unit, which the frontend reads anyway.
-        let max_bytes = loads
-            .iter()
-            .map(|load| load.iter().map(|(_, text)| text.len()).sum::<usize>())
-            .max()
-            .unwrap_or(0);
-        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "compile.source-pack.elaborate_units");
-        let Some(texts) = crate::compiler::machine_elaboration::elaborate_source_loads(loads, max_bytes) else {
-            return guard;
-        };
-        *self.prepared_unit_sources.lock().expect("prepared unit sources mutex poisoned") = units
-            .into_iter()
-            .zip(texts)
-            .map(|((library_id, unit_index, files), texts)| PreparedUnitSource { library_id, unit_index, files, texts })
-            .collect();
-        guard
-    }
-
-    /// The texts `prepare_unit_sources` elaborated for this unit's files.
-    fn take_prepared_unit_sources(
-        &self,
-        job: &SourcePackJob,
-        source_files: &[ExplicitSourcePathFile],
-    ) -> Option<Vec<String>> {
-        let mut prepared = self.prepared_unit_sources.lock().expect("prepared unit sources mutex poisoned");
-        let index = prepared.iter().position(|unit| {
-            unit.library_id == job.library_id && unit.unit_index == job.phase_unit_index && unit.files == source_files
-        })?;
-        Some(prepared.swap_remove(index).texts)
-    }
-
     /// This is a storage policy around the existing pending constructor. Its
     /// immutable fact identity and later publication receipt are unchanged.
     pub(super) async fn compile_pending_unit(
@@ -123,10 +63,7 @@ impl GpuCompiler<'_> {
     ) -> Result<typecheck::PendingOriginalUnit, CompileError> {
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_|
             source_pack_artifact_store_error("pending native source-unit index exceeds u32"))?;
-        let sources = match self.take_prepared_unit_sources(job, source_files) {
-            Some(sources) => sources,
-            None => read_explicit_source_path_files(UNIT_SOURCES_LABEL, source_files)?,
-        };
+        let sources = read_explicit_source_path_files(UNIT_SOURCES_LABEL, source_files)?;
         let paths = source_files.iter().map(|file| Some(file.path.clone())).collect::<Vec<_>>();
         let pending = self.compile_pending_original_source_pack_unit_for_target(
             target, sources.into(), job.library_id, unit_id,
@@ -137,29 +74,6 @@ impl GpuCompiler<'_> {
 }
 
 const UNIT_SOURCES_LABEL: &str = "pending native library-interface job";
-
-/// One unit's elaborated texts, prepared at the start of its build.
-pub(super) struct PreparedUnitSource {
-    library_id: u32,
-    unit_index: usize,
-    files: Vec<ExplicitSourcePathFile>,
-    texts: Vec<String>,
-}
-
-/// Drops the prepared texts a build did not take when the build ends.
-pub(super) struct PreparedUnitSources<'a> {
-    compiler: &'a GpuCompiler<'a>,
-}
-
-impl Drop for PreparedUnitSources<'_> {
-    fn drop(&mut self) {
-        self.compiler
-            .prepared_unit_sources
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
-    }
-}
 
 pub(super) fn native_main_bridge(
     objects: &[x86::GpuX86FileObject],

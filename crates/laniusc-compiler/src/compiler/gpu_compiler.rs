@@ -79,9 +79,6 @@ pub struct GpuCompiler<'gpu> {
     pub(super) x86_lowering: Result<Box<GpuLoweringWorkspaceCache>, String>,
     stable_unit_plan: std::sync::Mutex<Option<stable_unit_plan::StableUnitPlan>>,
     compiled_unit_cache: std::sync::Mutex<unit_cache::CompiledUnitCache>,
-    /// The elaborated texts of the current build's units, prepared together
-    /// at its start (`native_codegen::PreparedUnitSources`).
-    prepared_unit_sources: std::sync::Mutex<Vec<native_codegen::PreparedUnitSource>>,
     parser_shape_cache: std::sync::Mutex<ParserShapeCache>,
     codegen_kernels: Option<Box<crate::gpu::kernels::KernelRegistry>>,
     trait_solver_workspace: trait_solver::SolverWorkspacePool,
@@ -491,7 +488,6 @@ impl<'gpu> GpuCompiler<'gpu> {
                 x86_lowering,
                 stable_unit_plan: std::sync::Mutex::new(None),
                 compiled_unit_cache: std::sync::Mutex::new(unit_cache::CompiledUnitCache::default()),
-                prepared_unit_sources: std::sync::Mutex::new(Vec::new()),
                 parser_shape_cache: std::sync::Mutex::new(ParserShapeCache::default()),
                 codegen_kernels,
                 trait_solver_workspace: trait_solver::SolverWorkspacePool::new(
@@ -650,8 +646,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         self.trait_solver_workspace.release();
         self.retained_trait_workspace.release();
-        // The rewrites bind lexer buffers, so their storage goes first.
-        crate::compiler::machine_elaboration::release_resident_buffers();
+        // The desugaring binds lexer buffers, so its storage goes first.
+        crate::compiler::desugar::release_resident_buffers();
         self.lexer.release_current_resident_buffers();
         self.parser.release_current_resident_buffers();
         self.type_checker.release_current_resident_workspace();
