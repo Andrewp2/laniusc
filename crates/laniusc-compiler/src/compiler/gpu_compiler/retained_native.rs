@@ -91,7 +91,12 @@ impl RetainedNativeBuild {
             store,
             projection: RetainedProjection::new_with_device(gpu, SubstitutionCapacity::default())?,
             finalizer: None,
-            discovery: RetainedDiscovery::new_with_device(gpu, discovery, SubstitutionCapacity::default())?,
+            discovery: {
+                // Projection's plan readback reports a failed discovery.
+                let mut discovery = RetainedDiscovery::new_with_device(gpu, discovery, SubstitutionCapacity::default())?;
+                discovery.defer_final_status(true);
+                discovery
+            },
             calls: Some(NativeCallTables::new_with_device(&gpu.device, uses)),
             sources: Vec::new(),
             options: ProjectionOptions::default(),
@@ -103,6 +108,18 @@ impl RetainedNativeBuild {
 
     pub fn store(&self) -> &Arc<ProgramRetention> {
         &self.store
+    }
+
+    /// Test hook: replaces the projection with one on the process-global
+    /// GPU whose substitutions start at `capacity` and whose schema rounds
+    /// start with `schema_rows` request and field rows, so a build exercises
+    /// their capacity retries.
+    #[doc(hidden)]
+    pub fn reset_projection_for_test(&mut self, capacity: SubstitutionCapacity, schema_rows: u32) -> anyhow::Result<()> {
+        let mut projection = RetainedProjection::new(capacity)?;
+        projection.set_schema_rows_for_test(schema_rows);
+        self.projection = projection;
+        Ok(())
     }
 }
 
@@ -521,7 +538,16 @@ impl GpuCompiler<'_> {
             .map_err(|e| retained_error("projection", format!("{e:#}")))?;
         let (instances, report) = match outcome {
             ProjectionOutcome::Objects { objects, report } => (objects, report),
-            ProjectionOutcome::Rejected { error, .. } => return Err(build.projection_error(error)),
+            ProjectionOutcome::Rejected { error, .. } => {
+                // A discovery that failed after its last wave published no
+                // inputs; its own error decides.
+                if !roots.status_checked
+                    && let Some(e) = build.discovery.final_failure().map_err(|e| retained_error("discovery", format!("{e:#}")))?
+                {
+                    return Err(retained_error("discovery rejected the program", format!("{e:?}")));
+                }
+                return Err(build.projection_error(error));
+            }
         };
         let _tail = x86::TailSpan::new("tail.after_projection");
         let keys = originals.iter().chain(&instances).map(resident_key).collect::<Option<Vec<_>>>();

@@ -10,7 +10,7 @@ use laniusc_compiler::{
         RetainedNativeBuild,
         frontend_check_count,
     },
-    type_checker::program_retention::{counts, discovery::DiscoveryCapacity},
+    type_checker::program_retention::{counts, discovery::DiscoveryCapacity, substitution::SubstitutionCapacity},
 };
 
 use crate::common;
@@ -866,10 +866,9 @@ fn main()->i32 {
     });
 }
 
-#[test]
-fn retained_native_compound_generic_fields_have_exact_layouts() {
-    common::run_with_timeout("retained compound fields", || {
-        let directory=std::env::temp_dir().join(format!("lanius-retained-fields-{}",std::process::id()));
+/// Writes the compound generic fields program to `directory`: generic
+/// structs whose fields need schema rounds. `main` returns 42.
+fn compound_fields_manifest(directory: &std::path::Path) -> ExplicitSourcePackPathManifest {
         std::fs::create_dir_all(&directory).unwrap();
         let lib=directory.join("lib.lani"); let app=directory.join("app.lani");
         std::fs::write(&lib,r#"module fields::lib;
@@ -928,6 +927,14 @@ fn main()->i32 {
             ExplicitSourceLibraryPaths{library_id:1,paths:vec![lib],dependency_library_ids:vec![]},
             ExplicitSourceLibraryPaths{library_id:2,paths:vec![app],dependency_library_ids:vec![1]},
         ]).unwrap();
+        manifest
+}
+
+#[test]
+fn retained_native_compound_generic_fields_have_exact_layouts() {
+    common::run_with_timeout("retained compound fields", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-fields-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
         let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
         let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
         for batch_rows in [8,4096] {
@@ -936,6 +943,37 @@ fn main()->i32 {
 
             assert!(build.report.projection.schema.requests>0);
             let output=common::run_x86_64_elf_output("retained fields","retained_fields",&elf);
+            assert_eq!(output.status.code(),Some(42),"{output:?}");
+        }
+        std::fs::remove_dir_all(directory).ok();
+    });
+}
+
+// The projection's substitution and the schema rounds run chained, with one
+// readback. A tiny substitution capacity makes the chained projection run
+// overflow, so it runs again on the full path; one schema row makes the
+// first round stop for capacity, and the tiny schema engine makes chained
+// rounds overflow, so rounds resume on the full path. Both builds publish
+// the same program, and the second reuses the grown capacities.
+#[test]
+fn retained_native_schema_rounds_retry_with_grown_capacity() {
+    common::run_with_timeout("retained schema retry", || {
+        let directory=std::env::temp_dir().join(format!("lanius-retained-schema-retry-{}",std::process::id()));
+        let manifest=compound_fields_manifest(&directory);
+        let compiler=pollster::block_on(GpuCompiler::new()).unwrap();
+        let mut build=RetainedNativeBuild::new(DiscoveryCapacity::tiny()).unwrap();
+        build.reset_projection_for_test(SubstitutionCapacity::tiny(),1).unwrap();
+        for pass in 0..2 {
+            let elf=pollster::block_on(compiler.compile_path_manifest_to_x86_64_retained(&manifest,&mut build)).unwrap();
+            let projection=&build.report.projection;
+            eprintln!("pass {pass}: schema {:?}",projection.schema);
+            assert!(projection.schema.requests>0);
+            if pass==0 {
+                let substitution=projection.substitution.as_ref().unwrap();
+                assert!(substitution.attempts>1 || substitution.growths>0,"tiny capacity grows: {substitution:?}");
+                assert!(projection.schema.resumed>0,"{:?}",projection.schema);
+            }
+            let output=common::run_x86_64_elf_output("retained schema retry","retained_schema_retry",&elf);
             assert_eq!(output.status.code(),Some(42),"{output:?}");
         }
         std::fs::remove_dir_all(directory).ok();
