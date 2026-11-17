@@ -255,7 +255,14 @@ for the link. `codegen/x86/link/resident.rs` runs the link:
 4. After finalization the second submission runs. It writes the Lanius symbol
    rows, gathers the section bytes and writes the ELF dynamic parts. It then
    applies the relocations and inlines tiny leaf calls, as `splice.rs` does.
-   The host reads the finished image once and writes the file.
+   The same submission copies the image and the link status into one
+   readback buffer, so the image costs one round trip. While the GPU copies,
+   the host creates the temporary output file and allocates its blocks. It
+   then checks the status and writes the image with one `write` call. On
+   Linux the finished file replaces an existing executable through
+   `renameat2(RENAME_EXCHANGE)` and an unlink of the old file. A rename over
+   an existing file on ext4 starts writeback of the new file
+   (`auto_da_alloc`), which costs 0.5 to 7 ms for a 6 MB image.
 
 The shaders are in `shaders/codegen/x86/link/resident/`. Every check the host
 link makes has a GPU error bit. Any error, a C driver link, or a store that

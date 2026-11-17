@@ -521,77 +521,68 @@ pub(crate) struct ResidentRoutes<'a> {
     pub route_capacity: u32,
 }
 
-/// The finished executable in a mapped readback buffer.
+/// The link status words and the dynamic writer's four status words.
+const STATUS_READ_BYTES: u64 = (STATUS_WORDS as u64 + 4) * 4;
+
+/// The executable and the emit status in one readback buffer: the image in
+/// the first `len` bytes, the status words at `status_at`.
 pub(crate) struct ResidentImage {
     device: wgpu::Device,
-    /// The image in order; each chunk's copy has its own submission.
-    chunks: Vec<ImageChunk>,
-    len: usize,
-}
-
-struct ImageChunk {
     buffer: LaniusBuffer<u8>,
     len: usize,
-    /// Until the chunk is mapped.
+    status_at: u64,
+    /// Until the readback is mapped.
     map: Option<crate::gpu::passes_core::PendingReadbackMap>,
 }
-
-/// Chunks of the image readback (`ResidentImage`).
-const IMAGE_CHUNKS: u64 = 4;
-const IMAGE_CHUNK_LABELS: [&str; IMAGE_CHUNKS as usize] = [
-    "rb.codegen.x86.link.resident.image.0",
-    "rb.codegen.x86.link.resident.image.1",
-    "rb.codegen.x86.link.resident.image.2",
-    "rb.codegen.x86.link.resident.image.3",
-];
 
 impl ResidentImage {
     pub(crate) fn len(&self) -> usize {
         self.len
     }
 
-    /// Hands each chunk to `consume` in order as soon as it is mapped.
-    pub(crate) fn for_each_chunk<E>(
-        &mut self,
-        mut consume: impl FnMut(&[u8]) -> std::result::Result<(), E>,
-    ) -> Result<std::result::Result<(), E>> {
-        for chunk in &mut self.chunks {
-            if let Some(map) = chunk.map.take() {
-                crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
-            }
-            let view = chunk.buffer.buffer.slice(..chunk.len as u64).get_mapped_range();
-            if let Err(error) = consume(&view) {
-                return Ok(Err(error));
-            }
+    /// Waits for the readback and checks the emit status: false when the emit
+    /// failed and the image must not be used.
+    pub(crate) fn finish(&mut self) -> Result<bool> {
+        if let Some(map) = self.map.take() {
+            let _wait = TailSpan::new("tail.native.resident.wait_emit");
+            crate::gpu::passes_core::finish_readback_map(&self.device, map, std::time::Duration::from_secs(30))?;
         }
-        Ok(Ok(()))
+        let tail = words_of(&self.buffer.buffer.slice(self.status_at..self.status_at + STATUS_READ_BYTES).get_mapped_range());
+        let failed = tail[ST_ERRORS] != 0
+            || tail[ST_EMIT_ERRORS] != 0
+            || tail[STATUS_WORDS] != 1
+            || tail[STATUS_WORDS + 1] != 0;
+        if failed {
+            log::debug!(
+                "resident x86 link emit failed: errors {:#x}, emit errors {:#x}, dynamic status {:?}",
+                tail[ST_ERRORS],
+                tail[ST_EMIT_ERRORS],
+                &tail[STATUS_WORDS..],
+            );
+        }
+        Ok(!failed)
     }
 
-    pub(crate) fn to_vec(&mut self) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(self.len);
-        self.for_each_chunk(|chunk| {
-            bytes.extend_from_slice(chunk);
-            Ok::<(), std::convert::Infallible>(())
-        })?
-        .unwrap_or_else(|never| match never {});
-        Ok(bytes)
+    /// Hands the image to `consume`; `finish` must have returned true.
+    pub(crate) fn with_bytes<R>(&self, consume: impl FnOnce(&[u8]) -> R) -> R {
+        assert!(self.map.is_none(), "the resident image is read after finish");
+        let view = self.buffer.buffer.slice(..self.len as u64).get_mapped_range();
+        consume(&view)
     }
 }
 
 impl Drop for ResidentImage {
     fn drop(&mut self) {
-        for chunk in &mut self.chunks {
-            if let Some(map) = chunk.map.take() {
-                // A chunk nobody read: finish its map so the buffer can be
-                // unmapped and reused.
-                let _ = crate::gpu::passes_core::finish_readback_map(
-                    &self.device,
-                    map,
-                    std::time::Duration::from_secs(30),
-                );
-            }
-            chunk.buffer.buffer.unmap();
+        if let Some(map) = self.map.take() {
+            // Nobody waited: finish the map so the buffer can be unmapped and
+            // reused.
+            let _ = crate::gpu::passes_core::finish_readback_map(
+                &self.device,
+                map,
+                std::time::Duration::from_secs(30),
+            );
         }
+        self.buffer.buffer.unmap();
     }
 }
 
@@ -1078,7 +1069,8 @@ impl GpuX86Linker {
     }
 
     /// Completes a link `begin_resident_dynamic` started: writes the image
-    /// from the worker's rows and reads it back.
+    /// from the worker's rows and starts its readback, with the emit status,
+    /// in the same submission. `ResidentImage::finish` waits for it.
     pub(crate) fn finish_resident_dynamic(
         &self,
         device: &wgpu::Device,
@@ -1203,74 +1195,40 @@ impl GpuX86Linker {
             )?;
         }
         flush_deferred_compute(&mut encoder);
-        // The status in one small readback with the emit, then the image in
-        // chunks of their own submissions: the host writes one chunk while
-        // the GPU copies the next.
+        // The image and, after it, the status in one readback with the emit.
         let image_bytes = u64::from(output_words) * 4;
-        let status_bytes = (STATUS_WORDS + 4) * 4;
-        let status = self.reusable_readback(device, "rb.codegen.x86.link.resident.status", status_bytes);
+        let readback =
+            self.reusable_readback(device, "rb.codegen.x86.link.resident.image", (image_bytes + STATUS_READ_BYTES) as usize);
+        encoder.copy_buffer_counted(&output.buffer, output.byte_offset, &readback.buffer, 0, image_bytes);
         encoder.copy_buffer_counted(
             &buffers.status.buffer,
             buffers.status.byte_offset,
-            &status.buffer,
-            0,
+            &readback.buffer,
+            image_bytes,
             STATUS_WORDS as u64 * 4,
         );
         encoder.copy_buffer_counted(
             &dyn_status.buffer,
             dyn_status.byte_offset,
-            &status.buffer,
-            STATUS_WORDS as u64 * 4,
+            &readback.buffer,
+            image_bytes + STATUS_WORDS as u64 * 4,
             16,
         );
         crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.emit", encoder.finish());
-        let status_slice = status.buffer.slice(..status_bytes as u64);
-        let status_map = crate::gpu::passes_core::begin_readback_map(&status_slice, "codegen.x86.link.resident.emit");
-        let chunk_bytes = image_bytes.div_ceil(IMAGE_CHUNKS).next_multiple_of(4).max(4);
-        let mut chunks = Vec::with_capacity(IMAGE_CHUNKS as usize);
-        let mut at = 0;
-        while at < u64::from(total) {
-            let bytes = chunk_bytes.min(image_bytes - at);
-            let buffer = self.reusable_readback(
-                device,
-                IMAGE_CHUNK_LABELS[chunks.len()],
-                bytes as usize,
-            );
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("codegen.x86.link.resident.image.encoder"),
-            });
-            encoder.copy_buffer_counted(&output.buffer, output.byte_offset + at, &buffer.buffer, 0, bytes);
-            crate::gpu::passes_core::submit_with_progress(queue, "codegen.x86.link.resident.image", encoder.finish());
-            let len = (u64::from(total) - at).min(bytes);
-            let map = crate::gpu::passes_core::begin_readback_map(
-                &buffer.buffer.slice(..len),
-                "codegen.x86.link.resident.image",
-            );
-            chunks.push(ImageChunk { buffer, len: len as usize, map: Some(map) });
-            at += bytes;
-        }
+        let map = crate::gpu::passes_core::begin_readback_map(
+            &readback.buffer.slice(..image_bytes + STATUS_READ_BYTES),
+            "codegen.x86.link.resident.image",
+        );
         drop(span);
-
-        let wait = TailSpan::new("tail.native.resident.wait_emit");
-        crate::gpu::passes_core::finish_readback_map(device, status_map, std::time::Duration::from_secs(30))?;
-        drop(wait);
-        let tail = words_of(&status_slice.get_mapped_range());
-        status.buffer.unmap();
-        // Dropping the image on a failed emit finishes the chunk maps.
-        let image = ResidentImage { device: device.clone(), chunks, len: total as usize };
-        if tail[ST_ERRORS] != 0
-            || tail[ST_EMIT_ERRORS] != 0
-            || tail[STATUS_WORDS] != 1
-            || tail[STATUS_WORDS + 1] != 0
-        {
-            log::debug!(
-                "resident x86 link emit failed: errors {:#x}, emit errors {:#x}, dynamic status {:?}",
-                tail[ST_ERRORS],
-                tail[ST_EMIT_ERRORS],
-                &tail[STATUS_WORDS..],
-            );
-            return Ok(None);
-        }
+        // The caller waits (`ResidentImage::finish`) after it prepares the
+        // output file.
+        let image = ResidentImage {
+            device: device.clone(),
+            buffer: readback,
+            len: total as usize,
+            status_at: image_bytes,
+            map: Some(map),
+        };
         Ok(Some(image))
     }
 }

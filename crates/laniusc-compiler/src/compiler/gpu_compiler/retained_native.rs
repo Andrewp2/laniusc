@@ -650,18 +650,33 @@ impl GpuCompiler<'_> {
                     Ok(Some(mut image)) => {
                         drop(span);
                         let _write_span = x86::TailSpan::new("tail.native.write");
-                        let len = image.len();
-                        return match output {
+                        let len = image.len() as u64;
+                        // The file is created and its blocks allocated while the
+                        // GPU copies the image.
+                        let mut emitted = true;
+                        let written = match output {
                             Some(path) => super::bounded_path_codegen::write_output_file_atomically(
-                                path, SourcePackArtifactTarget::X86_64, |file| image
-                                    .for_each_chunk(|bytes| std::io::Write::write_all(file, bytes))
-                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?
-                                    .map(|()| len as u64)
-                                    .map_err(|e| retained_error("write native executable", e)))
-                                .map(ResidentLinkedOutput::File),
-                            None => image.to_vec().map(ResidentLinkedOutput::Bytes)
-                                .map_err(|e| retained_error("read native executable", format!("{e:#}"))),
+                                path, SourcePackArtifactTarget::X86_64, |file| {
+                                    super::bounded_path_codegen::preallocate(file, len);
+                                    emitted = image.finish()
+                                        .map_err(|e| retained_error("read native executable", format!("{e:#}")))?;
+                                    if !emitted {
+                                        return Err(retained_error("link", "the resident emit failed"));
+                                    }
+                                    let _span = x86::TailSpan::new("tail.native.write.file");
+                                    image.with_bytes(|bytes| std::io::Write::write_all(file, bytes))
+                                        .map(|()| len)
+                                        .map_err(|e| retained_error("write native executable", e))
+                                }).map(ResidentLinkedOutput::File),
+                            None => {
+                                emitted = image.finish()
+                                    .map_err(|e| retained_error("read native executable", format!("{e:#}")))?;
+                                Ok(ResidentLinkedOutput::Bytes(image.with_bytes(<[u8]>::to_vec)))
+                            }
                         };
+                        if emitted {
+                            return written;
+                        }
                     }
                     Ok(None) => {}
                     Err(error) => log::warn!("resident x86 link failed, linking on the host: {error:#}"),
